@@ -190,6 +190,27 @@ public class HttpWebhookDispatcherTest {
         boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
         assertFalse(result, "169.254.x.x link-local should be blocked");
     }
+
+    @Test
+    public void testBlocksCgnatSharedAddressSpace() throws Exception {
+        InetAddress addr = InetAddress.getByName("100.64.0.1");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertFalse(result, "100.64.0.0/10 shared address space should be blocked");
+    }
+
+    @Test
+    public void testBlocksBenchmarkingAddressSpace() throws Exception {
+        InetAddress addr = InetAddress.getByName("198.18.0.1");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertFalse(result, "198.18.0.0/15 benchmarking address space should be blocked");
+    }
+
+    @Test
+    public void testBlocksReservedIpv4AddressSpace() throws Exception {
+        InetAddress addr = InetAddress.getByName("240.0.0.1");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertFalse(result, "240.0.0.0/4 reserved address space should be blocked");
+    }
     
     // ========================================
     // IPv6 ULA Tests (fc00::/7)
@@ -533,6 +554,24 @@ public class HttpWebhookDispatcherTest {
     }
 
     @Test
+    public void testBlocksNat64LocalUseRfc6052WrappedLoopback() throws Exception {
+        // 64:ff9b:1:7f00:0:100:: is RFC 6052 /48 layout for 127.0.0.1:
+        // prefix /48, first two IPv4 octets in bits 48-63, reserved u octet,
+        // last two IPv4 octets in bits 72-87.
+        InetAddress addr = InetAddress.getByName("64:ff9b:1:7f00:0:100::");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertFalse(result, "RFC 6052 /48 NAT64 local-use wrap of 127.0.0.1 MUST be blocked");
+    }
+
+    @Test
+    public void testAllowsNat64LocalUseRfc6052WrappedPublicIp() throws Exception {
+        // RFC 6052 /48 layout for 8.8.8.8 under 64:ff9b:1::/48.
+        InetAddress addr = InetAddress.getByName("64:ff9b:1:808:8:800::");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertTrue(result, "RFC 6052 /48 NAT64 local-use wrap of public 8.8.8.8 should be allowed");
+    }
+
+    @Test
     public void testBlocks6to4WrappedLoopback() throws Exception {
         // 2002:7f00:1::  is 6to4 (RFC 3056) wrap of 127.0.0.1
         // (bytes 2-5 = 7f 00 00 01)
@@ -577,6 +616,24 @@ public class HttpWebhookDispatcherTest {
     }
 
     @Test
+    public void testBlocksTeredoWrappedLoopback() throws Exception {
+        // Teredo 2001::/32 stores the client's IPv4 address as one's-complement
+        // in the last 32 bits. fffffffe decodes to 0.0.0.1, which is not
+        // globally routable and must be blocked.
+        InetAddress addr = InetAddress.getByName("2001:0:4136:e378:8000:63bf:ffff:fffe");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertFalse(result, "Teredo-wrapped non-routable IPv4 MUST be blocked");
+    }
+
+    @Test
+    public void testAllowsTeredoWrappedPublicIp() throws Exception {
+        // Last 32 bits f7f7:f7f7 decode to public 8.8.8.8.
+        InetAddress addr = InetAddress.getByName("2001:0:4136:e378:8000:63bf:f7f7:f7f7");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertTrue(result, "Teredo-wrapped public IPv4 should be allowed");
+    }
+
+    @Test
     public void testAllowsRegularPublicIPv6() throws Exception {
         // 2606:4700:4700::1111 (Cloudflare public DNS) — must not be
         // mistaken for any transition format.
@@ -613,6 +670,16 @@ public class HttpWebhookDispatcherTest {
         InetAddress extracted2 = (InetAddress) extract.invoke(null, sixToFour);
         assertNotNull(extracted2, "6to4 should be unwrapped");
         assertEquals("8.8.8.8", extracted2.getHostAddress());
+
+        InetAddress nat64LocalUseRfc6052 = InetAddress.getByName("64:ff9b:1:808:8:800::");
+        InetAddress extracted3 = (InetAddress) extract.invoke(null, nat64LocalUseRfc6052);
+        assertNotNull(extracted3, "NAT64 local-use /48 should be unwrapped");
+        assertEquals("8.8.8.8", extracted3.getHostAddress());
+
+        InetAddress teredo = InetAddress.getByName("2001:0:4136:e378:8000:63bf:f7f7:f7f7");
+        InetAddress extracted4 = (InetAddress) extract.invoke(null, teredo);
+        assertNotNull(extracted4, "Teredo should be unwrapped");
+        assertEquals("8.8.8.8", extracted4.getHostAddress());
 
         // Non-transition IPv6 → null
         InetAddress regular = InetAddress.getByName("2606:4700:4700::1111");

@@ -436,6 +436,37 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
                 log.debug("SSRF protection: blocked 169.254.x.x link-local address " + host);
                 return false;
             }
+
+            // 0.0.0.0/8 ("this" network) and limited broadcast
+            if (firstOctet == 0 || (firstOctet == 255 && secondOctet == 255
+                    && (addrBytes[2] & 0xFF) == 255 && (addrBytes[3] & 0xFF) == 255)) {
+                log.debug("SSRF protection: blocked non-routable IPv4 address " + host);
+                return false;
+            }
+
+            // 100.64.0.0/10 (carrier-grade NAT / shared address space)
+            if (firstOctet == 100 && secondOctet >= 64 && secondOctet <= 127) {
+                log.debug("SSRF protection: blocked CGNAT/shared IPv4 address " + host);
+                return false;
+            }
+
+            // 192.0.0.0/24 (IETF protocol assignments, includes 192.0.0.8/32)
+            if (firstOctet == 192 && secondOctet == 0 && (addrBytes[2] & 0xFF) == 0) {
+                log.debug("SSRF protection: blocked IETF protocol-assignment IPv4 address " + host);
+                return false;
+            }
+
+            // 198.18.0.0/15 (benchmarking/interconnect test networks)
+            if (firstOctet == 198 && (secondOctet == 18 || secondOctet == 19)) {
+                log.debug("SSRF protection: blocked benchmarking IPv4 address " + host);
+                return false;
+            }
+
+            // 240.0.0.0/4 (reserved for future use)
+            if (firstOctet >= 240) {
+                log.debug("SSRF protection: blocked reserved IPv4 address " + host);
+                return false;
+            }
         }
         
         // Check for IPv6 ULA (Unique Local Address) fc00::/7
@@ -452,11 +483,12 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
             // re-classify. Without this an attacker can encode an internal
             // IPv4 destination (loopback, RFC 1918, link-local incl.
             // 169.254.169.254 metadata) as a NAT64 (64:ff9b::/96 +
-            // 64:ff9b:1::/48), 6to4 (2002::/16), or IPv4-compatible
-            // (::a.b.c.d) literal — the IPv4-range checks above only fire
-            // for 4-byte InetAddress, and InetAddress.is{Loopback,LinkLocal,
-            // SiteLocal,...} do NOT classify those transition formats as
-            // local (the prefixes are globally routable in the JDK's view).
+            // 64:ff9b:1::/48), 6to4 (2002::/16), Teredo
+            // (2001::/32), or IPv4-compatible (::a.b.c.d) literal — the
+            // IPv4-range checks above only fire for 4-byte InetAddress, and
+            // InetAddress.is{Loopback,LinkLocal,SiteLocal,...} do NOT
+            // classify those transition formats as local (the prefixes are
+            // globally routable in the JDK's view).
             // Dual-stack / NAT64 networks route the literal to the embedded
             // IPv4, reaching the internal target.
             //
@@ -490,12 +522,12 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
      *       §2.5.5.1 but still parseable). Bytes 12-15.</li>
      *   <li>{@code 64:ff9b::/96} — NAT64 well-known prefix (RFC 6052 §2.1).
      *       Bytes 12-15.</li>
-     *   <li>{@code 64:ff9b:1::/48} — NAT64 local-use prefix (RFC 8215). The
-     *       /48 prefix permits multiple PLR styles; we extract bytes 12-15
-     *       as the common /96 PLR. Safe because {@code isAddressSafe}
-     *       re-classifies the result — a public IPv4 extracted by mistake
-     *       still passes.</li>
+     *   <li>{@code 64:ff9b:1::/48} — NAT64 local-use prefix (RFC 8215).
+     *       Supports the RFC 6052 /48 layout and the common /96-style PLR
+     *       layout seen in operational examples.</li>
      *   <li>{@code 2002::/16} — 6to4 (RFC 3056 §2). Bytes 2-5.</li>
+     *   <li>{@code 2001::/32} — Teredo (RFC 4380 §4). Bytes 12-15 contain
+     *       the obfuscated client IPv4 address.</li>
      * </ul>
      */
     private static InetAddress extractEmbeddedIpv4(InetAddress address) {
@@ -542,19 +574,40 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
             }
         }
 
-        // NAT64 local-use 64:ff9b:1::/48  (RFC 8215)
-        // Bytes 0-5 = 00:64:FF:9B:00:01. Best-effort /96-PLR extraction
-        // of bytes 12-15.
+        // NAT64 local-use 64:ff9b:1::/48  (RFC 8215).
+        // RFC 6052 /48 layout:
+        //   prefix bytes 0-5, IPv4[0..1] in bytes 6-7, byte 8 is the
+        //   reserved "u" octet, IPv4[2..3] in bytes 9-10.
         if (embedded == null
                 && (b[0] & 0xFF) == 0x00 && (b[1] & 0xFF) == 0x64
                 && (b[2] & 0xFF) == 0xFF && (b[3] & 0xFF) == 0x9B
                 && (b[4] & 0xFF) == 0x00 && (b[5] & 0xFF) == 0x01) {
-            embedded = new byte[]{b[12], b[13], b[14], b[15]};
+            boolean rfc6052SuffixClear = true;
+            for (int i = 11; i < 16; i++) {
+                if (b[i] != 0) { rfc6052SuffixClear = false; break; }
+            }
+            if (rfc6052SuffixClear) {
+                embedded = new byte[]{b[6], b[7], b[9], b[10]};
+            } else {
+                // Also support a conservative /96-style PLR under the local-use
+                // prefix. Re-classification below decides whether it is blocked.
+                embedded = new byte[]{b[12], b[13], b[14], b[15]};
+            }
         }
 
         // 6to4 2002::/16  (bytes 0-1 = 20:02, bytes 2-5 = embedded IPv4)
         if (embedded == null && (b[0] & 0xFF) == 0x20 && (b[1] & 0xFF) == 0x02) {
             embedded = new byte[]{b[2], b[3], b[4], b[5]};
+        }
+
+        // Teredo 2001::/32. Bytes 12-15 are the one's-complement of the
+        // client IPv4 address.
+        if (embedded == null
+                && (b[0] & 0xFF) == 0x20 && (b[1] & 0xFF) == 0x01
+                && b[2] == 0 && b[3] == 0) {
+            embedded = new byte[]{
+                    (byte) ~b[12], (byte) ~b[13], (byte) ~b[14], (byte) ~b[15]
+            };
         }
 
         if (embedded == null) {
