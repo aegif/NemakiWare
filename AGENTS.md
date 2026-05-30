@@ -486,9 +486,9 @@ const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');  // Not 
 ## Current Work Status (2026-05-30)
 
 ### Active Branch
-- **Branch**: `release/3.1.1-RC6` (latest tag: `v3.1.1-RC6.7`)
-- **Focus**: SSRF guard hardening cycle — RC6.5 closed the GHSA-reported `HttpWebhookDispatcher` IPv6 transition unwrap, RC6.6 added IPv4 special-use ranges + Teredo + RFC 6052 /48, RC6.7 horizontally extends the same closure to `AdapterHttpClient` (all 11 connector adapters) + tightens SHARED HttpClient redirect handling
-- See `CLAUDE.md` for the canonical version log (RC1〜RC31) and security status; see `RELEASE_NOTES.md` for the user-facing per-RC narrative (15 sections RC5 → RC6.7).
+- **Branch**: `release/3.1.1-RC6` (latest tag: `v3.1.1-RC6.8`)
+- **Focus**: SSRF guard hardening cycle — RC6.5 closed the GHSA-reported `HttpWebhookDispatcher` IPv6 transition unwrap, RC6.6 added IPv4 special-use + Teredo + RFC 6052 /48, RC6.7 horizontally extended to `AdapterHttpClient`, RC6.8 closed DNS rebinding (send-time pin + revalidate) + multi-hop redirect + runtime endpoint revalidation
+- See `CLAUDE.md` for the canonical version log (RC1〜RC32) and security status; see `RELEASE_NOTES.md` for the user-facing per-RC narrative (16 sections RC5 → RC6.8).
 
 ### TCK Complete Success Achievement (2025-11-09) 🎉
 

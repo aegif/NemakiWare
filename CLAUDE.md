@@ -255,6 +255,7 @@ requests.post(url, auth=(user, pw), headers={"X-Requested-With": "XMLHttpRequest
 
 ## セキュリティステータス (2026-05-30)
 
+- Connector SSRF — AdapterHttpClient deeper closure: DNS rebinding pin + runtime revalidation + multi-hop redirect resolve (RC6.8): 対応済み (`sendWithRetry`/`sendWithRedirectValidation` で send 時に `pinRequestToValidatedAddress` 経由で再 resolve + validate、HTTP は URI を validated IP literal に rewrite、HTTPS は TLS cert verification 依存。Mattermost/Salesforce orchestrator に explicit `validateExternalUrl` 追加。Multi-hop redirect で `currentRequest.uri().resolve(location)` に修正。+5 regression tests、計 265/265 PASS)
 - Connector SSRF — AdapterHttpClient horizontal fix (RC6.7): 対応済み (`AdapterHttpClient.validateExternalUrl` に RC6.5+RC6.6 と同一の `isAddressSafe` + `extractEmbeddedIpv4` 移植。11 connector adapter / ConnectorDefinitionServiceImpl / IngestWebhookController から呼ばれる全 outbound HTTP path を保護。SHARED HttpClient redirect 設定を NORMAL → NEVER、relative Location の元 URI resolve も追加。+3 regression tests、78/78 PASS for SSRF surface)
 - Webhook SSRF — IPv4 special-use 追加 block + Teredo + RFC 6052 /48 NAT64 (RC6.6): 対応済み (`HttpWebhookDispatcher` に IPv4 `0/8` + `100.64/10` + `192.0.0/24` + `198.18/15` + `240/4` + `255.255.255.255` を追加、IPv6 transition extractor に `64:ff9b:1::/48` の RFC 6052 §2.2 /48 layout + Teredo `2001::/32` を追加。+7 regression tests、計 59/59 PASS)
 - Webhook SSRF — IPv6 transition wrap bypass (RC6.5): 対応済み (`HttpWebhookDispatcher` で NAT64 `64:ff9b::/96` + `64:ff9b:1::/48` / 6to4 `2002::/16` / IPv4-compatible `::a.b.c.d` から embedded IPv4 を抽出 → 再分類で loopback / RFC 1918 / link-local 169.254 を block。外部 reporter tonghuaroot 経由の GHSA、PoC で 5 形式すべて bypass を確認、修正後すべて block + 15 regression tests 追加)
@@ -312,6 +313,127 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 ## 現在のバージョン
 
 **3.1.1** (2026-04-02)
+
+### RC32 / RC6.8 (2026-05-30) — Security deeper SSRF closure: DNS rebinding pin + runtime revalidation + multi-hop redirect resolve (shipped)
+
+ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6.7` = `b48d9e0c1`)
+
+別エージェントの deeper adversarial pass が RC6.7 `AdapterHttpClient` fix
+に 3 件の残存 gap を発見 → 全件 fix。
+
+#### P1 — DNS rebinding gap
+
+`validateExternalUrl` は config 時に 1 度 resolve+validate するが、
+`sendWithRetry` は元 `HttpRequest` を `HttpClient.send` に渡し、JDK が
+**改めて DNS 解決** する。攻撃者が controlled hostname で:
+- validate 時: public IP
+- send 時: 127.0.0.1 / 169.254.169.254 / private IP
+と DNS rebind すれば SSRF。
+
+修正: 新 `pinRequestToValidatedAddress(request)` を `sendWithRetry` と
+`sendWithRedirectValidation` 内で呼ぶ。
+- **HTTP**: send 時に再 resolve + validate + URI を validated IP リテラル
+  (IPv6 は `[...]` bracket) に書き換え。JDK は pin された IP に接続するため
+  rebinding 不可。`Host` header は overrideしない (JDK の `HttpClient.Builder`
+  が default で restricted header を reject、`-Djdk.httpclient.allowRestricted
+  Headers=host` JVM property が必要)。多くの adapter は named API endpoint
+  (Mattermost on-prem、Salesforce 等) で `Host: <IP>` でも応答するため運用上
+  問題は少ない。shared-vhost は misroute 可能性あり (§6 follow-up 記載)
+- **HTTPS**: URI 不変 (TLS cert verification が rebinding を mitigate)。
+  re-validation は belt-and-suspenders として実行
+- Unresolvable host → `SecurityException` (behaviour 変更: "let HttpClient
+  try and fail with network error" → "fail fast with security flavour")
+
+#### P2 — Runtime endpoint revalidation gap
+
+`ConnectorDefinitionServiceImpl` は save 時に validate するが、
+orchestrator (`MattermostFetchOrchestrator` L42 / `SalesforceFetchOrchestrator`
+L45) は `connector.getEndpoint()` を adapter にそのまま渡す。RC6.7 hardening
+の前に save された endpoint or CouchDB 直接編集された endpoint は revalidate
+されずに adapter に到達。
+
+修正: 両 orchestrator entry で `AdapterHttpClient.validateExternalUrl(
+connector.getEndpoint())` を明示呼出。P1 fix が send 時に re-validate するため
+SSRF 自体は塞がるが、orchestrator level の早期 fail で:
+- audit message が明確 (どこで reject されたかが直接見える)
+- 明らかに bad な endpoint で adapter を構築しない
+
+#### P3 — Multi-hop relative redirect resolve correctness
+
+`sendWithRedirectValidation` が `request.uri().resolve(location)` を毎 loop
+iteration で呼ぶが、`request` は update されない。2 hop 目の relative
+`Location` (例: `/file` を別 host への redirect 後に返す) が **元 URL** に
+対して resolve され、現 hop の host の relative path として解釈されない。
+
+修正: `currentRequest` を loop 内で track し、`currentRequest.uri().resolve(
+location)` を使う。correctness fix で単独 SSRF ではない (送る URL も同じく
+誤解釈) が、multi-host redirect chain で intermediate host の relative path が
+正しく解釈されるようになる。
+
+#### Tests
+
+- 5 新規 regression in `AdapterRegistryTest`:
+  - HTTP IPv4 URI rewrite (path/query 保持)
+  - HTTPS URI 不変
+  - SecurityException on rebound 127.0.0.1
+  - SecurityException on rebound NAT64-wrapped metadata
+  - Non-restricted header preservation on HTTP pin (Authorization /
+    X-Custom-* が pin 済 request に carry-over)
+- Test infrastructure: NotionConnectorAdapterTest /
+  SalesforceConnectorAdapterTest / MattermostConnectorAdapterTest が
+  `nemaki.ingest.allowLocalhost=true` を BeforeEach で set + AfterEach で
+  clear。P1 fix で sendWithRetry が全 request validate するため WireMock
+  localhost endpoint を使う test は opt-in 必要。他 4 adapter test は
+  既に設定済
+- HttpWebhookDispatcherTest + AdapterRegistryTest: **78 PASS**
+- 7 adapter contract test: **71 PASS** (Slack 12 + Teams 11 +
+  Mattermost 12 + Chatwork 13 + M365 9 + Notion + Salesforce)
+- 16-class focused regression: **265/265 PASS** (was 260 in RC6.7; +5)
+
+#### Change scope vs RC6.7 (precise)
+
+- **変更あり (RC6.8)**:
+  - `AdapterHttpClient.java` (+170 行: pinRequestToValidatedAddress +
+    isRestrictedHeaderForJdkHttpClient + multi-hop redirect fix +
+    sendWithRetry 内呼出)
+  - `MattermostFetchOrchestrator.java` (+9 行: validateExternalUrl 追加)
+  - `SalesforceFetchOrchestrator.java` (+9 行: 同上)
+  - `AdapterRegistryTest.java` (+65 行: 5 new pin tests)
+  - 3 adapter test class (Notion/Salesforce/Mattermost) に test-mode property
+  - `RELEASE_NOTES.md`, `CLAUDE.md`, `REVIEW_PACKET.md`, `README.md`, `AGENTS.md`
+- **無変更 (RC6.7 と byte-equal)**:
+  - `HttpWebhookDispatcher.java` (RC6.5+RC6.6 canonical 実装)
+  - 他 Java surface 全件 (他 9 connector adapter 等)
+  - TS surface 全件
+  - properties / patches / views / Mango / migration / DB bootstrap
+  - SOC templates + validator script
+  - `docs/MANUAL-VERIFICATION-CONNECTORS.md`
+
+#### Commit + tag 関係
+
+- Security fix (P1+P2+P3): `892ccfdd9`
+- RC6.8 release-package commit: 後続
+- **`v3.1.1-RC6.8` annotated tag target**: release-package commit
+
+RC6.7 tag (`b48d9e0c1`) は force-update せず歴史的マイルストーンとして保持。
+
+#### Follow-up status
+
+**Resolved in this RC**:
+- AdapterHttpClient DNS rebinding (P1)
+- Mattermost/Salesforce orchestrator endpoint revalidation (P2 — P1 が
+  send 時 revalidate するため SSRF 自体は subsume されるが、defense-in-depth)
+- Multi-hop relative redirect resolve correctness (P3)
+
+**Remaining (informational, RC6.7 から継続 + 1 件 new)**:
+- HTTPS DNS pinning via custom SocketFactory (TLS cert verification 依存)
+- `isAddressSafe`+`extractEmbeddedIpv4` shared utility extraction (2 consumer、
+  3 つ目で refactor)
+- 他 orchestrator (Slack/Teams/Notion/Chatwork/M365 等) の explicit
+  validateExternalUrl 呼出 (cosmetic、P1 で send 時 revalidate するため
+  security 上は不要)
+- Purview / Atlas / OIDC discovery / Graph download (admin-config surface)
+- Repo-wide NUL byte pre-commit scan
 
 ### RC31 / RC6.7 (2026-05-30) — Security: AdapterHttpClient horizontal SSRF fix (11 connectors) + literal NUL cleanup (shipped)
 

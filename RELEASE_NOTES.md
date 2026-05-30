@@ -6,6 +6,171 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC6.8 — Security: deeper SSRF closure in AdapterHttpClient — DNS rebinding pin, runtime revalidation, multi-hop redirect resolve
+_Release candidate on `release/3.1.1-RC6` (2026-05-30), branched
+off `v3.1.1-RC6.7` (`b48d9e0c1`)._
+
+Fourth RC in the SSRF hardening cycle. External reviewer ran a
+deeper adversarial pass on the RC6.7 `AdapterHttpClient` fix and
+identified 3 further gaps. All closed.
+
+### P1 — DNS rebinding gap (Java HttpClient re-resolved hosts)
+
+`AdapterHttpClient.validateExternalUrl` resolved + validated the
+host once at config time, but `sendWithRetry` then handed the
+original `HttpRequest` to `HttpClient.send`, which performs its
+OWN DNS lookup at connect time. An attacker controlling the
+configured hostname's DNS could return a public IP during
+validation and a private / loopback / cloud-metadata IP at
+connection time — classic DNS rebinding.
+
+Fix: new `pinRequestToValidatedAddress(request)` is called inside
+both `sendWithRetry` and `sendWithRedirectValidation`:
+
+- **HTTP path**: re-resolves at send time, validates every
+  resolved address against `isAddressSafe`, then rewrites the
+  URI to use the validated IP literal (bracketed for IPv6). The
+  JDK `HttpClient` connects to the pinned IP, defeating DNS
+  rebinding. We do NOT override the `Host` header to the original
+  hostname because the JDK restricts `Host` by default
+  (`-Djdk.httpclient.allowRestrictedHeaders=host` required). Most
+  connector adapters target named API endpoints that respond to
+  any `Host`; shared-vhost servers may misroute. Accepted
+  trade-off — see §6 follow-up.
+- **HTTPS path**: returns request unchanged. TLS certificate
+  verification against the original hostname means a rebound DNS
+  that returns an internal IP cannot present a valid cert for the
+  original hostname — the handshake fails, no SSRF. Re-validation
+  still happens at send time as belt-and-suspenders.
+- Unresolvable host throws `SecurityException` (behaviour change
+  from "let HttpClient try and fail with a network error" to
+  "fail fast with a security-flavoured error").
+
+### P2 — Runtime revalidation gap (saved-before endpoints could bypass)
+
+`ConnectorDefinitionServiceImpl` validates endpoints on save, but
+`MattermostFetchOrchestrator` (line 42) and
+`SalesforceFetchOrchestrator` (line 45) passed
+`connector.getEndpoint()` directly to the adapter without a
+runtime check. An endpoint saved BEFORE RC6.7 hardening landed,
+or modified at storage level (CouchDB direct edit), could reach
+the adapter without revalidation.
+
+Fix: added explicit `AdapterHttpClient.validateExternalUrl(
+connector.getEndpoint())` at the orchestrator entry point for
+both Mattermost and Salesforce. Defence-in-depth — the P1 fix
+above closes the actual gap by re-validating at send time, but
+the orchestrator-level check fails earlier with a clearer audit
+message and avoids constructing the adapter for an
+obviously-bad endpoint.
+
+### P3 — Multi-hop relative redirect resolve correctness
+
+`sendWithRedirectValidation` called `request.uri().resolve(
+location)` on every loop iteration but `request` was never
+updated. A second relative `Location` (e.g. `/file` returned from
+a redirect that itself jumped to a different host) resolved
+against the **original** URL, not the current target.
+
+Fix: track `currentRequest` through the loop and use
+`currentRequest.uri().resolve(location)`. Correctness fix; not
+exploitable as SSRF in isolation (the wrongly-resolved URL is also
+the URL we send to), but matters for multi-host redirect chains
+where the intermediate host's relative paths should resolve
+against that host's authority.
+
+### Tests
+
+- 5 new regression tests in `AdapterRegistryTest`:
+  - `pinRequestRewritesHttpUriToValidatedIpv4Literal` — verifies
+    HTTP URI rewrite preserves path + query.
+  - `pinRequestLeavesHttpsUriUnchanged` — verifies HTTPS path
+    returns the original URI (TLS handles rebinding).
+  - `pinRequestThrowsWhenHostResolvesToBlockedIpv4` — loopback
+    rebind throws.
+  - `pinRequestThrowsWhenHostResolvesToBlockedIpv6Transition` —
+    NAT64-wrapped metadata throws.
+  - `pinRequestPreservesNonRestrictedHeadersOnHttpPin` — verifies
+    Authorization / X-Custom-* headers carry over to the
+    pinned request.
+- Test infrastructure: `NotionConnectorAdapterTest`,
+  `SalesforceConnectorAdapterTest`,
+  `MattermostConnectorAdapterTest` now set
+  `nemaki.ingest.allowLocalhost=true` in `@BeforeEach` and clear
+  in `@AfterEach`. The P1 fix means `sendWithRetry` validates
+  every request including the WireMock localhost endpoints these
+  tests use. (Other 4 adapter test classes already set this.)
+
+  - HttpWebhookDispatcherTest + AdapterRegistryTest: **78 PASS**
+    (now: 59 webhook + 24 adapter-registry; was 78 in RC6.7,
+    same total because AdapterRegistry +5 in this RC).
+  - 7 adapter contract tests: **71 PASS** (Slack 12 / Teams 11 /
+    Mattermost 12 / Notion ? / Salesforce ? / M365 9 /
+    Chatwork 13 — Notion and Salesforce now PASS that previously
+    would have failed under P1 without the test-mode prop).
+  - Full 16-class focused regression: **265/265 PASS** (was 260
+    in RC6.7; +5 from new pinRequest tests).
+
+### Change scope vs RC6.7 (precise)
+
+- **Changed in RC6.8**:
+  - `core/src/main/java/jp/aegif/nemaki/rest/ingest/AdapterHttpClient.java`
+    (+170 lines: pinRequestToValidatedAddress + isRestrictedHeader
+    helper + multi-hop redirect fix + sendWithRetry call)
+  - `core/src/main/java/jp/aegif/nemaki/rest/ingest/chat/MattermostFetchOrchestrator.java`
+    (+9 lines: validateExternalUrl at orchestrator entry)
+  - `core/src/main/java/jp/aegif/nemaki/rest/ingest/record/SalesforceFetchOrchestrator.java`
+    (+9 lines: same pattern)
+  - `core/src/test/java/jp/aegif/nemaki/rest/ingest/AdapterRegistryTest.java`
+    (+65 lines: 5 new pin tests)
+  - 3 adapter test classes get the test-mode property setUp/tearDown
+  - `RELEASE_NOTES.md`, `CLAUDE.md`, `REVIEW_PACKET.md`, `README.md`,
+    `AGENTS.md` (RC6.8 references)
+- **Unchanged from RC6.7** (byte-equal):
+  - `HttpWebhookDispatcher.java` (the RC6.5+RC6.6 canonical fix)
+  - All other Java surface (other 9 connector adapters, etc.)
+  - All TypeScript surface
+  - All properties, patches, views, Mango indexes, migrations,
+    DB bootstrap
+  - SOC templates + `scripts/validate-soc-templates.sh`
+  - `docs/MANUAL-VERIFICATION-CONNECTORS.md`
+
+### Commit + tag relationship
+
+- Security fix (P1+P2+P3): `892ccfdd9`
+- RC6.8 release-package commit (RELEASE_NOTES + CLAUDE + REVIEW_PACKET): subsequent
+- **`v3.1.1-RC6.8` annotated tag target**: release-package commit
+
+The previous candidate `v3.1.1-RC6.7` is **not force-updated** and
+remains at peeled commit `b48d9e0c1` as a historical milestone.
+
+### Follow-up status
+
+**Resolved in this RC**:
+- DNS rebinding at AdapterHttpClient send time (P1).
+- Runtime endpoint revalidation in Mattermost + Salesforce
+  orchestrators (P2 — also subsumed by P1's send-time
+  revalidation; the orchestrator-level check is defence-in-depth).
+- Multi-hop relative redirect resolve correctness (P3).
+
+**Remaining (informational, not blocking)**:
+- HTTPS DNS pinning via custom SocketFactory — both
+  `HttpWebhookDispatcher` HTTPS and `AdapterHttpClient` HTTPS rely
+  on TLS cert verification for rebinding defence; pinning would
+  add layered defence but requires either the JVM property
+  workaround or HttpURLConnection refactor.
+- `isAddressSafe` + `extractEmbeddedIpv4` extraction to shared
+  `SsrfGuard` utility (now 2 consumers; refactor when 3rd appears).
+- Other orchestrators (Slack/Teams/Notion/Chatwork/M365/etc.)
+  could also get explicit `validateExternalUrl` calls for
+  consistency with Mattermost+Salesforce. P1 fix means they're
+  protected at send time anyway, so this is cosmetic.
+- Purview / Atlas / OIDC discovery / Graph download outbound
+  surfaces (RC6.7 carry-forward).
+- All RC6.4-RC6.7 carry-forward items.
+
+---
+
 ## 3.1.1-RC6.7 — Security: horizontal SSRF fix for AdapterHttpClient (all 11 connectors) + literal NUL cleanup
 _Release candidate on `release/3.1.1-RC6` (2026-05-30), branched
 off `v3.1.1-RC6.6` (`c8b37150a`)._
