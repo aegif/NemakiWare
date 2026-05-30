@@ -255,6 +255,7 @@ requests.post(url, auth=(user, pw), headers={"X-Requested-With": "XMLHttpRequest
 
 ## セキュリティステータス (2026-05-30)
 
+- Connector SSRF — AdapterHttpClient horizontal fix (RC6.7): 対応済み (`AdapterHttpClient.validateExternalUrl` に RC6.5+RC6.6 と同一の `isAddressSafe` + `extractEmbeddedIpv4` 移植。11 connector adapter / ConnectorDefinitionServiceImpl / IngestWebhookController から呼ばれる全 outbound HTTP path を保護。SHARED HttpClient redirect 設定を NORMAL → NEVER、relative Location の元 URI resolve も追加。+3 regression tests、78/78 PASS for SSRF surface)
 - Webhook SSRF — IPv4 special-use 追加 block + Teredo + RFC 6052 /48 NAT64 (RC6.6): 対応済み (`HttpWebhookDispatcher` に IPv4 `0/8` + `100.64/10` + `192.0.0/24` + `198.18/15` + `240/4` + `255.255.255.255` を追加、IPv6 transition extractor に `64:ff9b:1::/48` の RFC 6052 §2.2 /48 layout + Teredo `2001::/32` を追加。+7 regression tests、計 59/59 PASS)
 - Webhook SSRF — IPv6 transition wrap bypass (RC6.5): 対応済み (`HttpWebhookDispatcher` で NAT64 `64:ff9b::/96` + `64:ff9b:1::/48` / 6to4 `2002::/16` / IPv4-compatible `::a.b.c.d` から embedded IPv4 を抽出 → 再分類で loopback / RFC 1918 / link-local 169.254 を block。外部 reporter tonghuaroot 経由の GHSA、PoC で 5 形式すべて bypass を確認、修正後すべて block + 15 regression tests 追加)
 - npm脆弱性: 0件 (axios 1.15.2, postcss 8.5.10 など更新)
@@ -311,6 +312,123 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 ## 現在のバージョン
 
 **3.1.1** (2026-04-02)
+
+### RC31 / RC6.7 (2026-05-30) — Security: AdapterHttpClient horizontal SSRF fix (11 connectors) + literal NUL cleanup (shipped)
+
+ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6.6` = `c8b37150a`)
+
+別エージェントの cross-review により、RC6.5+RC6.6 で `HttpWebhookDispatcher`
+に入れた SSRF guard と **同じ class の脆弱性** が `AdapterHttpClient`
+にも残っていることが判明 → fix。
+
+#### Horizontal SSRF fix — AdapterHttpClient
+
+`AdapterHttpClient.validateExternalUrl` は以下から呼ばれる
+**全 outbound HTTP 共通の guard**:
+- 11 connector adapter (Slack / Teams / Mattermost / Notion /
+  Salesforce / M365 Mail / Gmail / Chatwork / Box / Dropbox / IMAP)
+  の `download*File*` / API call
+- `ConnectorDefinitionServiceImpl` (connector config save 時の
+  endpoint validation)
+- `IngestWebhookController` (notification callback URL validation)
+
+RC6.6 までの guard は JDK の `isLoopback` / `isLinkLocal` /
+`isSiteLocal` / `isAnyLocal` predicate のみ。攻撃経路:
+- NAT64 `64:ff9b::/96` + `64:ff9b:1::/48`、6to4 `2002::/16`、
+  Teredo `2001::/32`、IPv4-compatible `::a.b.c.d` で embedded IPv4
+  (127.0.0.1、169.254.169.254 cloud metadata、RFC 1918、etc.) に到達
+- IPv4 special-use range (`0/8`、`100.64/10`、`192.0.0/24`、
+  `198.18/15`、`240/4`、`255.255.255.255`) — JDK predicate で
+  classify されない
+
+修正 (`AdapterHttpClient.java`): `HttpWebhookDispatcher` の RC6.5+RC6.6
+パターン (`isAddressSafe` + `extractEmbeddedIpv4`) を移植。同一の
+6 transition format detection + 9 IPv4 special-use range block。
+
+#### Redirect handling tightened
+
+- `SHARED` HttpClient: `Redirect.NORMAL` → **`Redirect.NEVER`**。
+  JDK の auto-follow が target を revalidate せずに redirect 追従
+  していた (既知の SSRF anti-pattern)
+- `sendWithRedirectValidation` で relative `Location` (`Location: /admin` 等)
+  を元 URI に対して resolve してから `validateExternalUrl` に渡す。
+  以前は relative form が verbatim で渡され URL parse 失敗 or 誤解釈
+
+#### Test NUL cleanup (P3 from prior review round)
+
+`HttpWebhookDispatcherTest.java` line 481 のリテラル NUL byte
+(`"with\x00nul"`) を Java の `\0` octal escape に置換。`.class` は
+byte-equivalent (compiler が `\0` を NUL に解決) で runtime 動作
+同一だが、source file が binary 扱いされず grep / rg / diff /
+auto-review tool で正しく扱える。commit `14b232475` (RC6.7 release-
+package commit 前に push 済、本 tag に含まれる)。
+
+#### Tests
+
+- 3 新規 regression in `AdapterRegistryTest` (IPv6 transition wrap
+  5 形式 / IPv4 special-use 3 範囲 / SHARED redirect 設定)
+- `HttpWebhookDispatcherTest` (59) + `AdapterRegistryTest` (19) =
+  **78 PASS** for SSRF surface
+- 6 connector adapter contract tests (Slack / Teams / Mattermost /
+  Notion / Salesforce / M365 Mail) **63 PASS** — `Redirect.NEVER` への
+  flip が legitimate adapter API call pattern を壊さないことを確認
+- 16-class focused regression: **260/260 PASS** (was 241 in RC6.6;
+  +19 from AdapterRegistryTest を focused set に追加 + 3 新規)
+
+#### Out-of-scope (意図的に未対応)
+
+Purview / Atlas / OIDC discovery / Microsoft Graph download — admin
+が configure した IdP / on-prem endpoint への outbound surface。同 block
+list を無条件適用すると正当な内部統合を壊すリスクがあるため、
+別途 opt-in "production-mode" property or explicit allowlist 方式で
+対応するのが適切。本 RC では touch しない。
+
+#### Code duplication (recognized tech debt)
+
+`isAddressSafe` + `extractEmbeddedIpv4` が `HttpWebhookDispatcher` と
+`AdapterHttpClient` で重複。**Rule of three** に従い、3 つ目の transition
+format が必要になった時点で shared `SsrfGuard` utility に extract
+する。今回の hot security fix では in-place duplication が安全。
+
+#### Change scope vs RC6.6 (precise)
+
+- **変更あり (RC6.7)**:
+  - `AdapterHttpClient.java` (+124 行: isAddressSafe + extractEmbeddedIpv4 +
+    redirect 強化)
+  - `AdapterRegistryTest.java` (+30 行: 3 new tests)
+  - `HttpWebhookDispatcherTest.java` (literal NUL → `\0` escape; .class 同一)
+  - `RELEASE_NOTES.md`, `CLAUDE.md`, `REVIEW_PACKET.md`, `README.md`, `AGENTS.md`
+- **無変更 (RC6.6 と byte-equal)**:
+  - 他 Java surface 全件 (含む `HttpWebhookDispatcher.java` — RC6.5+RC6.6 の
+    canonical 実装をそのまま参照)
+  - TS surface 全件
+  - properties / patches / views / Mango / migration / DB bootstrap
+  - SOC templates + validator script
+  - `docs/MANUAL-VERIFICATION-CONNECTORS.md`
+
+#### Commit + tag 関係
+
+- Test NUL cleanup: `14b232475`
+- Security fix (AdapterHttpClient): `12994c342`
+- RC6.7 release-package commit: 後続
+- **`v3.1.1-RC6.7` annotated tag target**: release-package commit
+
+RC6.6 tag (`c8b37150a`) は force-update せず歴史的マイルストーンとして保持。
+
+#### Follow-up status
+
+**Resolved in this RC**:
+- AdapterHttpClient horizontal SSRF (NAT64 + 6to4 + Teredo +
+  IPv4-compatible + IPv4 special-use)
+- SHARED HttpClient auto-follow redirect → `NEVER`
+- `sendWithRedirectValidation` relative `Location` 解決
+- HttpWebhookDispatcherTest literal NUL → `\0` escape
+
+**Remaining (informational, not blocking, RC6.6 から継続)**:
+- Purview / Atlas / OIDC discovery / Graph download outbound (上記
+  "Out-of-scope" 参照)
+- HTTPS DNS pinning via SocketFactory
+- isAddressSafe + extractEmbeddedIpv4 extraction to shared utility
 
 ### RC30 / RC6.6 (2026-05-30) — Security hardening: SSRF guard で IPv4 special-use + Teredo + RFC 6052 /48 NAT64 を追加 block (shipped)
 

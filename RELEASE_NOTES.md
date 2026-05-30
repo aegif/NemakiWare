@@ -6,6 +6,150 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC6.7 — Security: horizontal SSRF fix for AdapterHttpClient (all 11 connectors) + literal NUL cleanup
+_Release candidate on `release/3.1.1-RC6` (2026-05-30), branched
+off `v3.1.1-RC6.6` (`c8b37150a`)._
+
+Horizontal expansion of the RC6.5+RC6.6 `HttpWebhookDispatcher`
+SSRF fix. Reviewer identified that the same vulnerability class
+exists in `AdapterHttpClient.validateExternalUrl` — the shared
+outbound HTTP validation used by all 11 external-ingest connectors
+(Slack / Teams / Mattermost / Notion / Salesforce / M365 Mail /
+Gmail / Chatwork / Box / Dropbox / IMAP) AND by
+`ConnectorDefinitionServiceImpl` (endpoint validation at connector
+config save time) AND by `IngestWebhookController` (notification
+callback URL validation).
+
+### Horizontal SSRF fix — AdapterHttpClient
+
+Before this RC, `validateExternalUrl` only checked the JDK's
+`isLoopback` / `isLinkLocal` / `isSiteLocal` / `isAnyLocal`
+predicates. An attacker who could supply an adapter endpoint URL
+(admin during connector setup, or via webhook scope / redirect
+chain at runtime) could reach internal IPv4 destinations through
+the same bypass vectors that the RC6.5+RC6.6 fix already closed in
+`HttpWebhookDispatcher`:
+
+| Bypass vector | Reaches |
+|---|---|
+| NAT64 `64:ff9b::/96` | embedded IPv4 (127.0.0.1, 169.254.169.254, etc.) |
+| NAT64 `64:ff9b:1::/48` (RFC 6052 §2.2 /48 layout) | embedded IPv4 |
+| 6to4 `2002::/16` | embedded IPv4 in bytes 2-5 |
+| Teredo `2001::/32` | embedded IPv4 in bytes 12-15 (one's-complement) |
+| IPv4-compatible `::a.b.c.d` | embedded IPv4 in bytes 12-15 |
+| IPv4 special-use ranges (`0/8`, `100.64/10`, `192.0.0/24`, `198.18/15`, `240/4`, `255.255.255.255`) | direct IPv4 not classified by JDK predicates |
+
+Fix: replicate the proven `isAddressSafe` + `extractEmbeddedIpv4`
+design from `HttpWebhookDispatcher` into `AdapterHttpClient`.
+
+### Redirect handling tightened
+
+- `SHARED` HttpClient: `Redirect.NORMAL` → **`Redirect.NEVER`**.
+  Was letting the JDK auto-follow redirects WITHOUT revalidating
+  the target — a known SSRF anti-pattern.
+- `sendWithRedirectValidation` now resolves relative `Location`
+  headers (e.g. `Location: /admin`) against the original request
+  URI before calling `validateExternalUrl`. Previously the
+  relative form would either fail URL parsing or be misinterpreted.
+
+### Tests
+
+- 3 new regression tests in `AdapterRegistryTest`: IPv6 transition
+  wraps (5 forms), IPv4 special-use ranges (3 representatives),
+  SHARED HttpClient redirect setting.
+- `HttpWebhookDispatcherTest` (59) + `AdapterRegistryTest` (19)
+  = **78 PASS** for the SSRF surface.
+- All 6 connector adapter contract tests (Slack / Teams /
+  Mattermost / Notion / Salesforce / M365 Mail) PASS (63 total) —
+  the `Redirect.NEVER` change does NOT break legitimate adapter
+  API call patterns.
+- Full 16-class focused regression: **260/260 PASS** (was 241 in
+  RC6.6; +19 from including `AdapterRegistryTest` in the focused
+  set + the 3 new security tests it gained).
+
+### Other fix included in RC6.7
+
+- `HttpWebhookDispatcherTest.java` line 481: literal NUL byte
+  (`"with\x00nul"`) replaced with Java `\0` octal escape. Source
+  file `file` classification changed from binary to text; `grep
+  -c @Test` now correctly returns 59 (was 0 because the file was
+  binary). Runtime behaviour unchanged — Java compiler resolves
+  `\0` to the same NUL byte. Same class as RC6.1 P2-3
+  (`ConnectorGovernanceTab.tsx` NUL fix). Commit `14b232475`.
+
+### Code duplication note (recognized tech debt)
+
+`isAddressSafe` + `extractEmbeddedIpv4` are now duplicated between
+`HttpWebhookDispatcher` and `AdapterHttpClient`. Tracked for a
+follow-up refactor (extract to a shared `SsrfGuard` utility).
+For this hot security fix in-place duplication was safer than
+refactoring both call sites under time pressure. Both copies
+share identical byte-prefix detection logic; if a 3rd
+transition format needs support, the refactor becomes mandatory.
+
+### Out-of-scope hardening (intentional)
+
+Purview / Atlas / OIDC discovery / Microsoft Graph download —
+separate outbound HTTP surfaces with admin-configured IdP /
+on-prem endpoint use cases. Applying this same blocklist
+unconditionally would break legitimate internal integrations.
+A future opt-in "production-mode" property OR explicit allowlist
+is the right approach for those surfaces; this RC does NOT touch
+them.
+
+### Change scope vs RC6.6 (precise)
+
+- **Changed in RC6.7**:
+  - `core/src/main/java/jp/aegif/nemaki/rest/ingest/AdapterHttpClient.java`
+    (+124 lines: isAddressSafe + extractEmbeddedIpv4 + redirect
+    tightening)
+  - `core/src/test/java/jp/aegif/nemaki/rest/ingest/AdapterRegistryTest.java`
+    (+30 lines: 3 new security tests)
+  - `core/src/test/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcherTest.java`
+    (literal NUL → `\0` escape; .class byte-equivalent)
+  - `RELEASE_NOTES.md`, `CLAUDE.md`, `REVIEW_PACKET.md`, `README.md`,
+    `AGENTS.md` (RC6.7 references)
+- **Unchanged from RC6.6** (byte-equal):
+  - All other Java surface (including HttpWebhookDispatcher.java —
+    the RC6.5+RC6.6 fix is the canonical implementation reused as
+    the design pattern for AdapterHttpClient)
+  - All TypeScript surface (UI, services, tests)
+  - All properties, patches, views, Mango indexes, migrations,
+    DB bootstrap
+  - SOC templates + `scripts/validate-soc-templates.sh`
+  - `docs/MANUAL-VERIFICATION-CONNECTORS.md`
+
+### Commit + tag relationship
+
+- Test NUL fix: `14b232475` (already pushed pre-RC6.7)
+- Security fix (AdapterHttpClient): `12994c342`
+- RC6.7 release-package commit (RELEASE_NOTES + CLAUDE + REVIEW_PACKET): subsequent
+- **`v3.1.1-RC6.7` annotated tag target**: release-package commit
+
+The previous candidate `v3.1.1-RC6.6` is **not force-updated** and
+remains at peeled commit `c8b37150a` as a historical milestone.
+
+### Follow-up status
+
+**Resolved in this RC**:
+- Horizontal SSRF surface in `AdapterHttpClient` (NAT64 / 6to4 /
+  Teredo / IPv4-compatible / IPv4 special-use) — same vector
+  classes as RC6.5+RC6.6, but reachable via the connector dispatch
+  path instead of the webhook dispatch path.
+- Auto-follow redirect on SHARED HttpClient — flipped to
+  `Redirect.NEVER`.
+- Relative `Location` handling in `sendWithRedirectValidation`.
+- Test source binary classification (literal NUL → escape).
+
+**Remaining (informational, not blocking, all carry forward)**:
+- Purview / Atlas / OIDC discovery / Graph download outbound
+  surfaces — see "Out-of-scope hardening" above.
+- HTTPS DNS pinning via custom SocketFactory (RC6.6 informational).
+- `isAddressSafe` + `extractEmbeddedIpv4` extraction to shared
+  utility (recognized tech debt above).
+
+---
+
 ## 3.1.1-RC6.6 — Security: SSRF guard hardening — IPv4 special-use ranges + Teredo + RFC 6052 /48 NAT64
 _Release candidate on `release/3.1.1-RC6` (2026-05-30), branched
 off `v3.1.1-RC6.5` (`94de9d269`)._
