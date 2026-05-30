@@ -25,7 +25,7 @@ Java change: one file (`HttpWebhookDispatcher.java`) + its test.
 TypeScript: no change. SOC templates / validator script: no change.
 
 - **Code artifact under review** = the annotated tag
-  `v3.1.1-RC6.5` (peeled commit `<POST-TAG-FILL>`).
+  `v3.1.1-RC6.5` (peeled commit `94de9d269c89411e9fa9eb2049554a0b9b070016`).
 - **Review supplementary documentation** = files on
   `release/3.1.1-RC6` **branch HEAD** that may land after the
   tag is cut. As of tag time the divergence is zero — see §3.
@@ -40,10 +40,10 @@ Previous historical tags (`v3.1.1-RC6.4`, `…-RC6.3`, `…-RC6.2`,
 | Item | Value |
 |---|---|
 | **Final candidate tag** | `v3.1.1-RC6.5` |
-| Tag annotated object SHA | `<POST-TAG-FILL>` |
-| Tag peeled commit | `<POST-TAG-FILL>` |
+| Tag annotated object SHA | `7c7e67e3a870b01db1f12c15444b26c65771a3b2` |
+| Tag peeled commit | `94de9d269c89411e9fa9eb2049554a0b9b070016` |
 | Branch | `release/3.1.1-RC6` |
-| Branch HEAD at tag time | `<POST-TAG-FILL>` (= tag peeled, zero divergence at tag time) |
+| Branch HEAD at tag time | `94de9d269c89411e9fa9eb2049554a0b9b070016` (= tag peeled, zero divergence at tag time) |
 | Base of RC6.5 cycle | `v3.1.1-RC6.4` (peeled `afdf4d832`) |
 | RC5 cycle baseline | `v3.1.1-RC4.1` (peeled `572aad18b`) |
 | **RC6.4 → RC6.5 diff cmd** | `git diff v3.1.1-RC6.4..v3.1.1-RC6.5` |
