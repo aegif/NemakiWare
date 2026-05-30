@@ -472,4 +472,156 @@ public class HttpWebhookDispatcherTest {
                     "FORBIDDEN_CUSTOM_HEADERS must include " + h + " (compared lower-case)");
         }
     }
+
+    // ========================================
+    // IPv6 transition address SSRF protection
+    // (NAT64 / 6to4 / IPv4-compatible) — GHSA fix
+    //
+    // The IPv4-range checks above only fire for 4-byte InetAddress, so an
+    // internal IPv4 destination encoded as a NAT64 (64:ff9b::/96) or 6to4
+    // (2002::/16) literal would slip past without these tests. On
+    // dual-stack / NAT64 networks the kernel routes the literal to the
+    // embedded IPv4 — that is the SSRF.
+    // ========================================
+
+    @Test
+    public void testBlocksNat64WellKnownWrappedLoopback() throws Exception {
+        // 64:ff9b::7f00:1  is NAT64 wrap of 127.0.0.1
+        InetAddress addr = InetAddress.getByName("64:ff9b::7f00:1");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertFalse(result, "NAT64-wrapped loopback (64:ff9b::7f00:1 = 127.0.0.1) MUST be blocked");
+    }
+
+    @Test
+    public void testBlocksNat64WellKnownWrappedAwsMetadata() throws Exception {
+        // 64:ff9b::a9fe:a9fe  is NAT64 wrap of 169.254.169.254 (cloud metadata)
+        InetAddress addr = InetAddress.getByName("64:ff9b::a9fe:a9fe");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertFalse(result, "NAT64-wrapped AWS metadata (64:ff9b::a9fe:a9fe = 169.254.169.254) MUST be blocked");
+    }
+
+    @Test
+    public void testBlocksNat64WellKnownWrapped10Net() throws Exception {
+        // 64:ff9b::a00:1  is NAT64 wrap of 10.0.0.1
+        InetAddress addr = InetAddress.getByName("64:ff9b::a00:1");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertFalse(result, "NAT64-wrapped 10.0.0.1 MUST be blocked");
+    }
+
+    @Test
+    public void testBlocksNat64WellKnownWrapped192_168() throws Exception {
+        // 64:ff9b::c0a8:101  is NAT64 wrap of 192.168.1.1
+        InetAddress addr = InetAddress.getByName("64:ff9b::c0a8:101");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertFalse(result, "NAT64-wrapped 192.168.1.1 MUST be blocked");
+    }
+
+    @Test
+    public void testAllowsNat64WellKnownWrappedPublicIp() throws Exception {
+        // 64:ff9b::0808:0808  is NAT64 wrap of 8.8.8.8 (Google DNS, public)
+        InetAddress addr = InetAddress.getByName("64:ff9b::808:808");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertTrue(result, "NAT64-wrapped public IPv4 (8.8.8.8) should be allowed (extracted IPv4 is public)");
+    }
+
+    @Test
+    public void testBlocksNat64LocalUseWrappedLoopback() throws Exception {
+        // 64:ff9b:1::7f00:1  is NAT64 local-use (RFC 8215) wrap, /96 PLR
+        InetAddress addr = InetAddress.getByName("64:ff9b:1::7f00:1");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertFalse(result, "NAT64 local-use 64:ff9b:1::/48 wrap of 127.0.0.1 MUST be blocked");
+    }
+
+    @Test
+    public void testBlocks6to4WrappedLoopback() throws Exception {
+        // 2002:7f00:1::  is 6to4 (RFC 3056) wrap of 127.0.0.1
+        // (bytes 2-5 = 7f 00 00 01)
+        InetAddress addr = InetAddress.getByName("2002:7f00:1::");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertFalse(result, "6to4-wrapped loopback (2002:7f00:1:: = 127.0.0.1) MUST be blocked");
+    }
+
+    @Test
+    public void testBlocks6to4WrappedAwsMetadata() throws Exception {
+        // 2002:a9fe:a9fe::  is 6to4 wrap of 169.254.169.254
+        InetAddress addr = InetAddress.getByName("2002:a9fe:a9fe::");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertFalse(result, "6to4-wrapped AWS metadata MUST be blocked");
+    }
+
+    @Test
+    public void testBlocks6to4Wrapped10Net() throws Exception {
+        // 2002:a00:1::  is 6to4 wrap of 10.0.0.1
+        InetAddress addr = InetAddress.getByName("2002:a00:1::");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertFalse(result, "6to4-wrapped 10.0.0.1 MUST be blocked");
+    }
+
+    @Test
+    public void testAllows6to4WrappedPublicIp() throws Exception {
+        // 2002:0808:0808::  is 6to4 wrap of 8.8.8.8 (public, must pass)
+        InetAddress addr = InetAddress.getByName("2002:808:808::");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertTrue(result, "6to4-wrapped public IPv4 (8.8.8.8) should be allowed");
+    }
+
+    @Test
+    public void testBlocksIPv4CompatibleLoopback() throws Exception {
+        // ::127.0.0.1 — deprecated IPv4-compatible form. JDK historically
+        // collapses this to Inet4Address (then loopback check catches it),
+        // but in case future / current behaviour returns Inet6Address we
+        // verify the embedded-extract path catches it too.
+        InetAddress addr = InetAddress.getByName("::7f00:1");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertFalse(result, "IPv4-compatible ::7f00:1 (= 127.0.0.1) MUST be blocked");
+    }
+
+    @Test
+    public void testAllowsRegularPublicIPv6() throws Exception {
+        // 2606:4700:4700::1111 (Cloudflare public DNS) — must not be
+        // mistaken for any transition format.
+        InetAddress addr = InetAddress.getByName("2606:4700:4700::1111");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertTrue(result, "Public IPv6 (Cloudflare DNS) should be allowed (no embedded IPv4)");
+    }
+
+    @Test
+    public void testAllowsRegular2002NotPrefixed() throws Exception {
+        // 2002 is the 6to4 prefix; a real-world address fully under 6to4
+        // wraps a real IPv4. 2002:cb00:7100:: would be 6to4-wrap of
+        // 203.0.113.0 (TEST-NET-3, RFC 5737), which is "documentation"
+        // but isn't blocked by isAddressSafe (not in any private range).
+        // We assert allow to confirm we don't over-block.
+        InetAddress addr = InetAddress.getByName("2002:cb00:7100::");
+        boolean result = (boolean) isAddressSafeMethod.invoke(dispatcher, addr, "test-host");
+        assertTrue(result, "6to4-wrap of 203.0.113.0 (public-routable) should be allowed");
+    }
+
+    @Test
+    public void testExtractEmbeddedIpv4PublicPassthrough() throws Exception {
+        // Direct test of the extractor: NAT64 of 8.8.8.8 → InetAddress("8.8.8.8")
+        java.lang.reflect.Method extract = HttpWebhookDispatcher.class
+                .getDeclaredMethod("extractEmbeddedIpv4", InetAddress.class);
+        extract.setAccessible(true);
+
+        InetAddress nat64 = InetAddress.getByName("64:ff9b::808:808");
+        InetAddress extracted = (InetAddress) extract.invoke(null, nat64);
+        assertNotNull(extracted, "NAT64 well-known should be unwrapped");
+        assertEquals("8.8.8.8", extracted.getHostAddress());
+
+        InetAddress sixToFour = InetAddress.getByName("2002:808:808::");
+        InetAddress extracted2 = (InetAddress) extract.invoke(null, sixToFour);
+        assertNotNull(extracted2, "6to4 should be unwrapped");
+        assertEquals("8.8.8.8", extracted2.getHostAddress());
+
+        // Non-transition IPv6 → null
+        InetAddress regular = InetAddress.getByName("2606:4700:4700::1111");
+        InetAddress notExtracted = (InetAddress) extract.invoke(null, regular);
+        assertNull(notExtracted, "Regular public IPv6 should not produce embedded IPv4");
+
+        // ULA (already blocked elsewhere) → null
+        InetAddress ula = InetAddress.getByName("fc00::1");
+        InetAddress notExtracted2 = (InetAddress) extract.invoke(null, ula);
+        assertNull(notExtracted2, "ULA should not produce embedded IPv4 (handled separately)");
+    }
 }
