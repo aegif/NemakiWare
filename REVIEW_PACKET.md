@@ -39,7 +39,7 @@ SOC templates / validator script / manual-verification doc: no
 change.
 
 - **Code artifact under review** = the annotated tag
-  `v3.1.1-RC6.7` (peeled commit `<POST-TAG-FILL>`).
+  `v3.1.1-RC6.7` (peeled commit `b48d9e0c128ac0a6e659eb7376a52a6a6fc785a9`).
 - **Review supplementary documentation** = files on
   `release/3.1.1-RC6` **branch HEAD** that may land after the
   tag is cut. As of tag time the divergence is zero — see §3.
@@ -55,10 +55,10 @@ unchanged for traceability.
 | Item | Value |
 |---|---|
 | **Final candidate tag** | `v3.1.1-RC6.7` |
-| Tag annotated object SHA | `<POST-TAG-FILL>` |
-| Tag peeled commit | `<POST-TAG-FILL>` |
+| Tag annotated object SHA | `c9e7bac724d33fc23a6993b43ab76ed36ae2ede7` |
+| Tag peeled commit | `b48d9e0c128ac0a6e659eb7376a52a6a6fc785a9` |
 | Branch | `release/3.1.1-RC6` |
-| Branch HEAD at tag time | `<POST-TAG-FILL>` (= tag peeled, zero divergence at tag time) |
+| Branch HEAD at tag time | `b48d9e0c128ac0a6e659eb7376a52a6a6fc785a9` (= tag peeled, zero divergence at tag time) |
 | Base of RC6.7 cycle | `v3.1.1-RC6.6` (peeled `c8b37150a`) |
 | RC5 cycle baseline | `v3.1.1-RC4.1` (peeled `572aad18b`) |
 | **RC6.6 → RC6.7 diff cmd** | `git diff v3.1.1-RC6.6..v3.1.1-RC6.7` |
