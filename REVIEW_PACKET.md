@@ -30,7 +30,7 @@ Java change: one file (`HttpWebhookDispatcher.java`) + its test
 validator script / manual-verification doc: no change.
 
 - **Code artifact under review** = the annotated tag
-  `v3.1.1-RC6.6` (peeled commit `<POST-TAG-FILL>`).
+  `v3.1.1-RC6.6` (peeled commit `c8b37150a6968121cdcd432abbcd60f0a2a8df35`).
 - **Review supplementary documentation** = files on
   `release/3.1.1-RC6` **branch HEAD** that may land after the
   tag is cut. As of tag time the divergence is zero — see §3.
@@ -46,10 +46,10 @@ for traceability.
 | Item | Value |
 |---|---|
 | **Final candidate tag** | `v3.1.1-RC6.6` |
-| Tag annotated object SHA | `<POST-TAG-FILL>` |
-| Tag peeled commit | `<POST-TAG-FILL>` |
+| Tag annotated object SHA | `6d22fc07a146d9d90e54d5e0b1af0c6a35f6d591` |
+| Tag peeled commit | `c8b37150a6968121cdcd432abbcd60f0a2a8df35` |
 | Branch | `release/3.1.1-RC6` |
-| Branch HEAD at tag time | `<POST-TAG-FILL>` (= tag peeled, zero divergence at tag time) |
+| Branch HEAD at tag time | `c8b37150a6968121cdcd432abbcd60f0a2a8df35` (= tag peeled, zero divergence at tag time) |
 | Base of RC6.6 cycle | `v3.1.1-RC6.5` (peeled `94de9d269`) |
 | RC5 cycle baseline | `v3.1.1-RC4.1` (peeled `572aad18b`) |
 | **RC6.5 → RC6.6 diff cmd** | `git diff v3.1.1-RC6.5..v3.1.1-RC6.6` |
