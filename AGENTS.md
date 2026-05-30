@@ -486,9 +486,9 @@ const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');  // Not 
 ## Current Work Status (2026-05-30)
 
 ### Active Branch
-- **Branch**: `release/3.1.1-RC6` (latest tag: `v3.1.1-RC6.5`)
-- **Focus**: GHSA SSRF fix in `HttpWebhookDispatcher` (IPv6 transition address unwrap) + 3-round closure of the connector-area manual-verification guide
-- See `CLAUDE.md` for the canonical version log (RC1〜RC29) and security status; see `RELEASE_NOTES.md` for the user-facing per-RC narrative (13 sections RC5 → RC6.5).
+- **Branch**: `release/3.1.1-RC6` (latest tag: `v3.1.1-RC6.6`)
+- **Focus**: SSRF guard hardening — RC6.5 closed the GHSA-reported IPv6 transition unwrap, RC6.6 follow-on adds 5 IPv4 special-use ranges + Teredo `2001::/32` + RFC 6052 §2.2 /48 NAT64 layout
+- See `CLAUDE.md` for the canonical version log (RC1〜RC30) and security status; see `RELEASE_NOTES.md` for the user-facing per-RC narrative (14 sections RC5 → RC6.6).
 
 ### TCK Complete Success Achievement (2025-11-09) 🎉
 

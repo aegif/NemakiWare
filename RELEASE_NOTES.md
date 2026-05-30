@@ -6,6 +6,115 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC6.6 — Security: SSRF guard hardening — IPv4 special-use ranges + Teredo + RFC 6052 /48 NAT64
+_Release candidate on `release/3.1.1-RC6` (2026-05-30), branched
+off `v3.1.1-RC6.5` (`94de9d269`)._
+
+Follow-on security RC on top of RC6.5. The RC6.5 fix closed the
+obvious IPv6 transition holes (NAT64 well-known `64:ff9b::/96` +
+6to4 `2002::/16` + IPv4-compatible `::a.b.c.d` + IPv4-mapped
+`::ffff:a.b.c.d`). RC6.6 closes a second wave of bypasses an
+attacker could pivot to:
+
+### IPv4 special-use ranges
+
+`isAddressSafe` now blocks 5 additional IANA special-purpose
+ranges that were neither caught by `InetAddress.is{Loopback,
+LinkLocal,SiteLocal,...}` nor the existing manual private-range
+checks:
+
+| Range | RFC | Why block |
+|---|---|---|
+| `0.0.0.0/8` | RFC 1122 §3.2.1.3 | "This" network — addresses beyond just `0.0.0.0` itself (which was already caught by `isAnyLocalAddress`) |
+| `100.64.0.0/10` | RFC 6598 | Carrier-grade NAT / shared address space (internal on most ISP / cloud networks) |
+| `192.0.0.0/24` | RFC 6890 | IETF protocol assignments (DS-Lite, NAT64 well-known, etc.) |
+| `198.18.0.0/15` | RFC 2544 | Benchmarking / interconnect-test networks |
+| `240.0.0.0/4` | RFC 1112 §4 | Reserved for future use, includes `255.255.255.255` limited broadcast |
+
+### IPv6 transition format extensions
+
+`extractEmbeddedIpv4` now recognizes 2 additional formats:
+
+- **`64:ff9b:1::/48` (NAT64 local-use, RFC 8215)** — was only
+  handled via best-effort /96-PLR extraction (bytes 12-15) in
+  RC6.5. RC6.6 properly handles the RFC 6052 §2.2 /48 layout:
+  IPv4[0..15] in bytes 6-7, reserved "u" octet in byte 8,
+  IPv4[16..31] in bytes 9-10, suffix bytes 11-15 must be zero.
+  When the suffix is NOT clear, falls back to the original
+  /96-PLR extraction. Re-classification by `isAddressSafe`
+  gates either result.
+- **Teredo `2001::/32` (RFC 4380 §4)** — IPv6 tunnel-over-UDP
+  prefix. Strict prefix check (bytes 0-3 = `20:01:00:00`) so
+  other `2001::/16` addresses (`2001:db8::` documentation,
+  `2001:4860::` Google, etc.) are NOT mis-extracted. The client
+  IPv4 is stored as one's complement in bytes 12-15; decoded by
+  `(byte) ~b[i]` before re-classification.
+
+### Tests
+
+`HttpWebhookDispatcherTest`: **59/59 PASS** (52 from RC6.5 + 7
+new test methods + 2 additional assertions in the existing
+extractor test).
+
+- 3 IPv4 special-use block tests (100.64, 198.18, 240/4)
+- 2 RFC 6052 /48 NAT64 (blocked loopback wrap, allowed 8.8.8.8 wrap)
+- 2 Teredo (blocked 0.0.0.1 wrap via one's-complement of
+  `ffff:fffe`, allowed 8.8.8.8 wrap via `f7f7:f7f7`)
+
+### Residual note (informational, not a regression)
+
+HTTPS dispatch still connects via the original hostname URL to
+leverage TLS certificate validation against the declared hostname.
+DNS rebinding between resolve-time and connect-time is mitigated
+by TLS verification (an attacker would need a valid cert for the
+target hostname on an internal server) — this is by design and
+unchanged from prior RCs. A future hardening could pin HTTPS to
+the resolved IP via a custom SocketFactory while keeping SNI /
+hostname verification on the original hostname; not required for
+this RC's scope.
+
+### Change scope vs RC6.5 (precise)
+
+- **Changed in RC6.6**:
+  - `core/src/main/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcher.java`
+    (+67 lines: 5 IPv4 range checks + RFC 6052 /48 + Teredo)
+  - `core/src/test/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcherTest.java`
+    (+67 lines: 7 new test methods + 2 inline assertions)
+  - `RELEASE_NOTES.md`, `CLAUDE.md`, `REVIEW_PACKET.md`, `README.md`,
+    `AGENTS.md` (RC6.6 references)
+- **Unchanged from RC6.5** (byte-equal):
+  - All other Java surface
+  - All TypeScript surface (UI, services, tests)
+  - All properties, patches, views, Mango indexes, migrations, DB bootstrap
+  - SOC templates + `scripts/validate-soc-templates.sh`
+  - `docs/MANUAL-VERIFICATION-CONNECTORS.md` (RC6.5's closure stands)
+
+### Commit + tag relationship
+
+- Security hardening: `ce2abf646`
+- RC6.6 release-package commit (RELEASE_NOTES + CLAUDE + REVIEW_PACKET): subsequent
+- **`v3.1.1-RC6.6` annotated tag target**: release-package commit
+
+The previous candidate `v3.1.1-RC6.5` is **not force-updated** and
+remains at peeled commit `94de9d269` as a historical milestone.
+
+### Follow-up status
+
+**Resolved in this RC**:
+- 5 IPv4 special-use bypass surfaces (0/8 beyond 0.0.0.0, 100.64/10,
+  192.0.0/24, 198.18/15, 240/4 + broadcast).
+- 1 IPv6 transition format with incomplete RC6.5 handling
+  (`64:ff9b:1::/48` now per RFC 6052 §2.2 /48 layout).
+- 1 new IPv6 transition format added (`2001::/32` Teredo).
+
+**Remaining (operator-side / future hardening, not blocking)**:
+- HTTPS DNS pinning via custom SocketFactory (currently mitigated
+  by TLS cert verification — see Residual note above).
+- Network/TLS, SIEM credentials, notification routing — all carry
+  forward from prior RCs.
+
+---
+
 ## 3.1.1-RC6.5 — Security: SSRF guard unwraps IPv6 transition addresses (NAT64 / 6to4) + connector-area manual-verification doc closure
 _Release candidate on `release/3.1.1-RC6` (2026-05-30), branched
 off `v3.1.1-RC6.4` (`afdf4d832`)._

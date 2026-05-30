@@ -255,6 +255,7 @@ requests.post(url, auth=(user, pw), headers={"X-Requested-With": "XMLHttpRequest
 
 ## セキュリティステータス (2026-05-30)
 
+- Webhook SSRF — IPv4 special-use 追加 block + Teredo + RFC 6052 /48 NAT64 (RC6.6): 対応済み (`HttpWebhookDispatcher` に IPv4 `0/8` + `100.64/10` + `192.0.0/24` + `198.18/15` + `240/4` + `255.255.255.255` を追加、IPv6 transition extractor に `64:ff9b:1::/48` の RFC 6052 §2.2 /48 layout + Teredo `2001::/32` を追加。+7 regression tests、計 59/59 PASS)
 - Webhook SSRF — IPv6 transition wrap bypass (RC6.5): 対応済み (`HttpWebhookDispatcher` で NAT64 `64:ff9b::/96` + `64:ff9b:1::/48` / 6to4 `2002::/16` / IPv4-compatible `::a.b.c.d` から embedded IPv4 を抽出 → 再分類で loopback / RFC 1918 / link-local 169.254 を block。外部 reporter tonghuaroot 経由の GHSA、PoC で 5 形式すべて bypass を確認、修正後すべて block + 15 regression tests 追加)
 - npm脆弱性: 0件 (axios 1.15.2, postcss 8.5.10 など更新)
 - Maven主要依存: netty 4.1.124, logback 1.5.19, commons-io 2.20.0, HttpClient 4.5.14
@@ -310,6 +311,96 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 ## 現在のバージョン
 
 **3.1.1** (2026-04-02)
+
+### RC30 / RC6.6 (2026-05-30) — Security hardening: SSRF guard で IPv4 special-use + Teredo + RFC 6052 /48 NAT64 を追加 block (shipped)
+
+ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6.5` = `94de9d269`)
+
+RC6.5 で塞いだ「明白な」 IPv6 transition 穴 (NAT64 well-known + 6to4 +
+IPv4-compatible + IPv4-mapped) の **第2波** を別エージェントの追加
+レビューで指摘 → fix。攻撃者が RC6.5 後に pivot 可能な surface を
+network special-use range 観点で塞ぐ。
+
+#### 追加 IPv4 special-use block (5 range)
+
+`isAddressSafe` に IANA special-purpose registry の 5 range を追加:
+
+| Range | RFC | block 理由 |
+|---|---|---|
+| `0.0.0.0/8` | RFC 1122 §3.2.1.3 | "this" network — 0.0.0.0 literal (既存 catch) 以外も |
+| `100.64.0.0/10` | RFC 6598 | Carrier-grade NAT / shared address space — 多くの ISP / cloud で internal |
+| `192.0.0.0/24` | RFC 6890 | IETF protocol assignments (DS-Lite、NAT64 well-known 等) |
+| `198.18.0.0/15` | RFC 2544 | Benchmarking / interconnect-test networks |
+| `240.0.0.0/4` | RFC 1112 §4 | 将来予約 + `255.255.255.255` 限定ブロードキャスト |
+
+#### IPv6 transition format 拡張 (2 form 追加)
+
+`extractEmbeddedIpv4` に 2 form 追加:
+
+- **`64:ff9b:1::/48` (NAT64 local-use, RFC 8215)** — RC6.5 では
+  best-effort /96-PLR 抽出 (bytes 12-15) のみだったが、本 RC で
+  RFC 6052 §2.2 の /48 layout を正式 handle:
+  - IPv4[0..15] = bytes 6-7
+  - reserved "u" octet = byte 8
+  - IPv4[16..31] = bytes 9-10
+  - suffix = bytes 11-15 (全 zero でないと /96-PLR fallback)
+- **Teredo `2001::/32` (RFC 4380 §4)** — IPv6 tunnel-over-UDP prefix。
+  strict prefix check (`bytes 0-3 == 20:01:00:00`) で他の 2001::/16
+  (`2001:db8::` documentation、`2001:4860::` Google 等) を mis-extract
+  しない。bytes 12-15 = client IPv4 の one's complement を `(byte) ~b[i]`
+  で decode → 既存 classification に流す
+
+#### Tests
+
+`HttpWebhookDispatcherTest`: **59/59 PASS** (RC6.5 の 52 + 新規 7
+test method + extractor test 内に 2 assertion 追加)。
+- 3 IPv4 special-use block test (100.64 / 198.18 / 240/4)
+- 2 RFC 6052 /48 NAT64 (loopback wrap blocked、8.8.8.8 wrap allowed)
+- 2 Teredo (`ffff:fffe` 反転 = 0.0.0.1 wrap blocked、`f7f7:f7f7` 反転
+  = 8.8.8.8 wrap allowed)
+
+#### 残存 note (regression ではない、informational)
+
+HTTPS dispatch は元 hostname URL で接続して TLS cert verification を
+活用する設計のため、DNS rebinding は TLS で mitigated。将来的に
+HTTPS を resolved IP に pin する SocketFactory hardening は可能だが
+本 RC 範囲外。
+
+#### Change scope vs RC6.5 (precise)
+
+- **変更あり (RC6.6)**:
+  - `HttpWebhookDispatcher.java` (+67 行: 5 IPv4 range + RFC 6052 /48 + Teredo)
+  - `HttpWebhookDispatcherTest.java` (+67 行: 7 新規 test method + 2 inline)
+  - `RELEASE_NOTES.md`, `CLAUDE.md`, `REVIEW_PACKET.md`, `README.md`, `AGENTS.md`
+- **無変更 (RC6.5 と byte-equal)**:
+  - 他 Java surface 全件
+  - TS surface 全件
+  - properties / patches / views / Mango / migration / DB bootstrap
+  - SOC templates + validator script
+  - `docs/MANUAL-VERIFICATION-CONNECTORS.md` (RC6.5 の closure 維持)
+
+#### Commit + tag 関係
+
+- Security hardening: `ce2abf646`
+- RC6.6 release-package commit: 後続
+- **`v3.1.1-RC6.6` annotated tag target**: release-package commit
+
+RC6.5 tag (`94de9d269`) は force-update せず歴史的マイルストーン
+として保持。
+
+#### Follow-up status
+
+**Resolved in this RC**:
+- 5 IPv4 special-use bypass surface (0/8 + 100.64/10 + 192.0.0/24 +
+  198.18/15 + 240/4 + broadcast)
+- `64:ff9b:1::/48` の RFC 6052 §2.2 /48 layout 対応 (RC6.5 では
+  /96-PLR best-effort のみ)
+- Teredo `2001::/32` の embedded IPv4 unwrap
+
+**Remaining (informational, not blocking)**:
+- HTTPS DNS pinning via SocketFactory (現状は TLS cert verification
+  で mitigated)
+- 他 deployment-side items は RC6.5 から継続
 
 ### RC29 / RC6.5 (2026-05-30) — Security: SSRF guard IPv6 transition unwrap + manual-verification doc 3-round closure (shipped)
 
