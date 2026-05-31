@@ -189,6 +189,19 @@ public class ZipImporter {
         org.dom4j.Document xmlDoc;
         try {
             SAXReader reader = new SAXReader();
+            // XXE protection: disable DOCTYPE declarations and external entities.
+            // Without this, a crafted ACP package XML can read arbitrary local
+            // files (file://) or reach internal HTTP endpoints (http://) by an
+            // authenticated user holding only cmis:write on a target folder
+            // (CWE-611). Mirrors the existing hardening in
+            // jp.aegif.nemaki.rest.TypeResource.parse(...).
+            try {
+                reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+                reader.setFeature("http://xml.org/sax/features/external-general-entities", false);
+                reader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            } catch (org.xml.sax.SAXException e) {
+                throw new DocumentException("Failed to configure XXE protection on SAXReader", e);
+            }
             xmlDoc = reader.read(new ByteArrayInputStream(xmlData));
         } catch (DocumentException e) {
             result.errors.add("Failed to parse package XML: " + e.getMessage());
