@@ -1,30 +1,78 @@
-# NemakiWare v3.1.1-RC6.11 — External Review Packet
+# NemakiWare v3.1.1-RC6.12 — External Review Packet
 
-Single entry point for the **twelfth-round external review** of
-the RC6 series. RC6.11 is a **High-severity security hotfix**:
-closes an XML External Entity (XXE, CWE-611) vulnerability on
-the ACP (Alfresco Content Package) ZIP import path reported by
-**tonghuaroot** via GitHub Security Advisory (same external
-reporter as the RC6.5 SSRF advisory).
+Single entry point for the **thirteenth-round external review**
+of the RC6 series. RC6.12 is a **test-quality follow-up** to the
+RC6.11 GHSA XXE fix. No new security gap closed; the actual
+production guard in `ZipImporter` is byte-equivalent to RC6.11.
+This RC strengthens the regression test so that any future
+deletion of the production `setFeature(...)` calls fails the
+test, and corrects a documentation arithmetic error
+(NUL scan file count).
 
-A non-admin user holding only `cmis:write` on a single target
-folder could upload a crafted ACP whose package XML resolved a
-`SYSTEM` entity (`file:///etc/passwd`) and the resulting file
-content was persisted **verbatim** into a CMIS folder's
-`cmis:name` — fully recoverable through the product's own CMIS
-API (read-capable XXE; out-of-band channel not required). SSRF
-via `http://` SYSTEM and external parameter entities is also
-in-scope.
+### RC6.11 reviewer P2 — test was not binding to production
 
-Fix is a minimal 3-`setFeature` block on the dom4j SAXReader,
-mirroring the existing `TypeResource.parse(...)` hardening
-(present since RC13). The reporter supplied an exact code patch;
-this RC applies that patch verbatim, adds 4 JVM-level regression
-tests, runs the full focused regression (377/377 PASS), and
-performs a repo-wide audit of all other XML parser sinks (all
-already hardened).
+RC6.11's `ZipImporterXxeTest` configured its own SAXReader inside
+a test-local `hardenedReader()` helper. The production
+`ZipImporter.importAcpFormat(...)` had its own (duplicated)
+SAXReader configuration block. If a future change deleted the
+three `setFeature(...)` calls from the production path, the
+test would still pass green — a regression guard that doesn't
+actually guard against regression.
 
-- **RC6.5–RC6.10 closed** (carry-forward, still in effect):
+Fix: extract the production parser into a package-private static
+helper `ZipImporter.parseAcpPackageXml(byte[])`, have
+`importAcpFormat(...)` call it, and rewrite the test cases to
+call the production helper directly. Test-local
+`hardenedReader()` deleted.
+
+**Mutation-test confirmation**: commented out the
+`disallow-doctype-decl` setFeature in the production helper, ran
+the test — 2/4 cases (the two DOCTYPE-rejection cases) failed.
+Restored the production line, re-ran — 4/4 pass. The test now
+binds to production.
+
+### RC6.11 reviewer P3 — NUL scan file count was off-by-2
+
+RC6.11 docs claimed "1683 source files / 0 hits" for the Phase
+1.4.1 source-tree NUL byte scan. Reviewer's local run reported
+**1681 source files / 0 hits**, which is the validator's actual
+output. The 1683 figure was a doc arithmetic error.
+
+RC6.12 docs use the validator's actual output: **1681 source
+files / 0 hits**. The historical RC6.11 entry in `RELEASE_NOTES.md`
+and `CLAUDE.md` was also corrected with a "off-by-2 doc error,
+corrected in RC6.12" annotation.
+
+### Carry-forward (no change in this RC)
+
+The RC6.11 GHSA XXE fix itself is byte-equivalent on the
+production path. The three `setFeature(...)` calls have moved
+from inline inside `importAcpFormat(...)` to inside the
+package-private helper they delegate to — same SAXReader
+configuration, same parse, same `DocumentException` thrown for
+the same DOCTYPE inputs.
+
+Reproduced the reporter's PoC against the RC6.12 patched stack
+to confirm the security boundary is unchanged: identical
+`xxe_passwd.zip` upload by non-admin `bob` still returns the
+documented "DOCTYPE is disallowed" error with
+`foldersCreated: 0`, `status: partial`. Benign DOCTYPE-free ACP
+still imports cleanly.
+
+The reporter who flagged the original XXE was **tonghuaroot**
+(same external reporter as the RC6.5 SSRF advisory); the RC6.11
+fix remains attributed to that GHSA. RC6.12 has no separate
+security credit — it's a test-binding refactor of the RC6.11
+fix.
+
+**Carry-forward** (no change in RC6.12): the RC6.11 GHSA XXE fix
+itself is byte-equivalent — the three SAX-feature flags moved
+from inline inside `importAcpFormat(...)` to inside the new
+package-private helper `parseAcpPackageXml(byte[])` it now
+delegates to. Same SAXReader configuration, same parse, same
+`DocumentException` thrown for the same DOCTYPE inputs.
+
+- **RC6.5–RC6.11 closed** (carry-forward, still in effect):
   - RC6.5: GHSA-reported IPv6 transition unwrap in
     `HttpWebhookDispatcher`.
   - RC6.6: 5 IPv4 special-use ranges + Teredo + RFC 6052 §2.2 /48
@@ -43,33 +91,31 @@ already hardened).
     extracted from the RC6.5–RC6.7 duplicated dispatcher copies;
     Phase 1.4.1 source-tree NUL byte pre-commit scan added; R3
     orchestrator audit closed documentation-only.
-- **RC6.11 adds (this RC — High-severity security)**:
-  - **GHSA XXE on ACP import (`ZipImporter`)** — minimal
-    3-`setFeature` hardening on the dom4j SAXReader used by
-    `importAcpFormat(...)`, mirroring the existing
-    `TypeResource.parse(...)` pattern. Closes a read-capable XXE
-    (CWE-611) reachable by any authenticated user with
-    `cmis:write` on a single folder.
-  - **Repo-wide audit** of every `new SAXReader()` /
-    `DocumentBuilderFactory.newInstance()` / `XMLInputFactory` /
-    `SAXParserFactory` site — all other sinks already hardened
-    (TypeResource RC13, AuthTokenResource SAML response RC13,
-    SolrResource / SolrAllResource RC13). No other unhardened
-    sinks found.
-  - **`ZipImporterXxeTest`** — 4 JVM-level regression cases
-    pinning the SAXReader configuration: reject DOCTYPE with
-    SYSTEM file://, reject DOCTYPE with external DTD (blind/OOB
-    SSRF variant), accept benign DOCTYPE-free ACP (over-block
-    guard), and a feature-readback assertion that locks in all
-    three SAX features.
-  - **Live PoC reproduction + post-fix verification** —
-    reproduced the reporter's exact `file:///etc/passwd` PoC on
-    the deployed `v3.1.1-RC6.10` stack with a non-admin `bob`
-    user (`cmis:write` on one folder), confirmed leaked
-    `/etc/passwd` as folder name; redeployed the RC6.11 WAR,
-    confirmed "DOCTYPE is disallowed" rejection; confirmed benign
-    ACP still imports cleanly. Test artifacts swept from both
-    `bedroom` and `bedroom_closet` after verification.
+  - RC6.11: GHSA XXE on ACP import — 3-`setFeature` hardening on
+    the dom4j SAXReader in `ZipImporter.importAcpFormat(...)`,
+    mirroring `TypeResource.parse(...)`. Closes a read-capable
+    XXE / SSRF reachable by an authenticated user with
+    `cmis:write` on one folder. Repo-wide audit confirmed all
+    other XML parser sinks already hardened. New
+    `ZipImporterXxeTest` 4 cases. Live PoC reproduced
+    pre-/post-fix on the deployed stack; test artifacts swept.
+- **RC6.12 adds (this RC — test-quality follow-up)**:
+  - **Extract `ZipImporter.parseAcpPackageXml(byte[])`** as a
+    package-private static helper containing the 3-`setFeature`
+    block + `reader.read(...)`. `importAcpFormat(...)` now
+    delegates to it. Byte-equivalent on the production path.
+  - **`ZipImporterXxeTest` rewritten** to call the production
+    helper directly. Test-local `hardenedReader()` deleted. This
+    closes the RC6.11 review P2 finding ("test does not exercise
+    the production parser; a future deletion of `setFeature`
+    would not fail the test").
+  - **Mutation-test verification**: temporarily removed the
+    `disallow-doctype-decl` line from the production helper, the
+    two DOCTYPE-rejection cases failed; restored the line, all
+    4 cases pass. Mutation not committed.
+  - **NUL scan file count corrected** from "1683" (RC6.11 doc
+    arithmetic error) to **1681** (validator's actual output).
+    Closes RC6.11 review P3 finding.
 - **RC6.10 reference (carry-forward) adds**:
   - **New shared utility** `jp.aegif.nemaki.security.SsrfGuard`
     (`isAddressSafe`, `extractEmbeddedIpv4`). Both callers
@@ -79,9 +125,12 @@ already hardened).
     (in addition to the 85 cases already covering the dispatchers
     transitively).
   - **`Phase 1.4.1` source-tree NUL scan** in
-    `scripts/validate-soc-templates.sh` — 1683 source files
-    scanned at RC6.11 HEAD, 0 hits (was 1680 in RC6.10; +3 from
-    new test files since).
+    `scripts/validate-soc-templates.sh` — **1681 source files
+    scanned at RC6.12 HEAD, 0 hits** (was 1680 in RC6.10; +1
+    from `ZipImporterXxeTest.java`. RC6.11 docs originally
+    stated "1683" — that was an off-by-2 arithmetic error in the
+    release notes; the validator's actual output then was the
+    same 1681 it reports now).
   - **R3 follow-up closure** — orchestrator audit complete, only
     Mattermost / Salesforce ever pass user-controlled endpoint
     to HTTP and both were RC6.8-protected; no code change needed.
@@ -102,11 +151,21 @@ already hardened).
     "TLS-bounded, NOT fully closed" with residual TCP-connect
     SSRF (port-scan / fingerprint / TCP-side-effect).
 
-**RC6.11 changes**: Code 1 file
+**RC6.12 changes**: Code 1 file
+(`ZipImporter.java` — extract `parseAcpPackageXml(byte[])` as
+package-private static helper; `importAcpFormat(...)` delegates;
+production path byte-equivalent). Tests 1 file
+(`ZipImporterXxeTest.java` — 4 cases rewritten to call the
+production helper directly; test-local `hardenedReader()`
+deleted). Docs 3 files (RELEASE_NOTES, CLAUDE, REVIEW_PACKET).
+**Net for this RC**: production path behaviour unchanged; the
+regression guard now binds to production (mutation-test verified).
+
+**RC6.11 changes (carry-forward)**: Code 1 file
 (`ZipImporter.java` +11 LOC — 3-`setFeature` block on the
 SAXReader, mirroring `TypeResource.parse(...)`). Tests 1 file
 (`ZipImporterXxeTest.java` +140 LOC new, 4 cases). Docs 3 files
-(RELEASE_NOTES, CLAUDE, REVIEW_PACKET). **Net for this RC**: the
+(RELEASE_NOTES, CLAUDE, REVIEW_PACKET). **Net for that RC**: the
 minimum-viable security fix the reporter requested + matching
 test + repo-wide audit confirming no other unhardened sinks.
 
@@ -130,14 +189,16 @@ JVM args: surefire `argLine` + 3 Dockerfile variants
 (1 property each).
 
 - **Code artifact under review** = the annotated tag
-  `v3.1.1-RC6.11` (peeled commit `8e52d95d248b2ca5765f0a6a31d4c80c1887245f`).
+  `v3.1.1-RC6.12` (peeled commit TBD — populated at tag-cut time;
+  see §1 table).
 - **Review supplementary documentation** = files on
   `release/3.1.1-RC6` **branch HEAD** that may land after the
   tag is cut. As of tag time the divergence is zero — see §3.
 
-Previous historical tags (`v3.1.1-RC6.10`, `…-RC6.9`, `…-RC6.8`,
-`…-RC6.7`, `…-RC6.6`, `…-RC6.5`, `…-RC6.4`, `…-RC6.3`, `…-RC6.2`,
-`…-RC6.1`, `…-RC6`, `…-RC5.6`, …) remain unchanged for traceability.
+Previous historical tags (`v3.1.1-RC6.11`, `…-RC6.10`, `…-RC6.9`,
+`…-RC6.8`, `…-RC6.7`, `…-RC6.6`, `…-RC6.5`, `…-RC6.4`, `…-RC6.3`,
+`…-RC6.2`, `…-RC6.1`, `…-RC6`, `…-RC5.6`, …) remain unchanged for
+traceability.
 
 ---
 
@@ -145,26 +206,126 @@ Previous historical tags (`v3.1.1-RC6.10`, `…-RC6.9`, `…-RC6.8`,
 
 | Item | Value |
 |---|---|
-| **Final candidate tag** | `v3.1.1-RC6.11` |
-| Tag annotated object SHA | `e8273fda51e17eff391e001e5563082a65dd9ace` |
-| Tag peeled commit | `8e52d95d248b2ca5765f0a6a31d4c80c1887245f` |
+| **Final candidate tag** | `v3.1.1-RC6.12` |
+| Tag annotated object SHA | TBD (populated at tag-cut time) |
+| Tag peeled commit | TBD (populated at tag-cut time) |
 | Branch | `release/3.1.1-RC6` |
-| Branch HEAD at tag time | `8e52d95d248b2ca5765f0a6a31d4c80c1887245f` (= tag peeled, zero divergence at tag time) |
-| Base of RC6.11 cycle | `v3.1.1-RC6.10` (peeled `cf2f499f3`) |
+| Branch HEAD at tag time | TBD (zero divergence target at tag time) |
+| Base of RC6.12 cycle | `v3.1.1-RC6.11` (peeled `8e52d95d2`) |
 | RC5 cycle baseline | `v3.1.1-RC4.1` (peeled `572aad18b`) |
-| **RC6.10 → RC6.11 diff cmd** | `git diff v3.1.1-RC6.10..v3.1.1-RC6.11` |
-| Cumulative diff cmd (since RC4.1) | `git diff v3.1.1-RC4.1..v3.1.1-RC6.11` |
-| Previous historical candidates | `v3.1.1-RC6.10` (`cf2f499f3`), `…-RC6.9` (`76695f46c`), `…-RC6.8` (`cd82452f4`), `…-RC6.7` (`b48d9e0c1`), `…-RC6.6` (`c8b37150a`), `…-RC6.5` (`94de9d269`), `…-RC6.4` (`afdf4d832`), `…-RC6.3` (`77ddfe071`), `…-RC6.2` (`02afee891`), `…-RC6.1` (`595754b8c`), `…-RC6` (`9dfd87adb`), `…-RC5.6` (`adf8db3b4`) |
+| **RC6.11 → RC6.12 diff cmd** | `git diff v3.1.1-RC6.11..v3.1.1-RC6.12` |
+| Cumulative diff cmd (since RC4.1) | `git diff v3.1.1-RC4.1..v3.1.1-RC6.12` |
+| Previous historical candidates | `v3.1.1-RC6.11` (`8e52d95d2`), `…-RC6.10` (`cf2f499f3`), `…-RC6.9` (`76695f46c`), `…-RC6.8` (`cd82452f4`), `…-RC6.7` (`b48d9e0c1`), `…-RC6.6` (`c8b37150a`), `…-RC6.5` (`94de9d269`), `…-RC6.4` (`afdf4d832`), `…-RC6.3` (`77ddfe071`), `…-RC6.2` (`02afee891`), `…-RC6.1` (`595754b8c`), `…-RC6` (`9dfd87adb`), `…-RC5.6` (`adf8db3b4`) |
 
 ---
 
-## 2. What changed since the previous external review (RC6.10 → RC6.11)
+## 2. What changed since the previous external review (RC6.11 → RC6.12)
 
-RC6.11 is a **High-severity security hotfix**. It closes an XML
-External Entity (XXE, CWE-611) vulnerability on the ACP import
-path reported by **tonghuaroot** via GitHub Security Advisory.
+RC6.12 is a **test-quality follow-up** to the RC6.11 GHSA XXE
+fix. The actual production guard in `ZipImporter` is byte-equivalent
+to RC6.11 (same SAXReader configuration, same parse, same
+exceptions thrown). This RC addresses two RC6.11 reviewer findings.
 
-### 2.A — RC6.11 GHSA XXE on ACP import (`ZipImporter`)
+### 2.A — RC6.12 P2 fix: bind regression test to production parser
+
+#### What the reviewer found
+
+RC6.11's `ZipImporterXxeTest` configured its own SAXReader inside
+a test-local `hardenedReader()` helper. The production
+`ZipImporter.importAcpFormat(...)` had its own (duplicated)
+SAXReader configuration block. The test asserted that the
+test-local reader rejected DOCTYPE — but if someone deleted the
+three `setFeature(...)` calls from `importAcpFormat`, the test
+would still pass green. A regression guard that doesn't guard
+against regression.
+
+#### The fix
+
+Extract the production parser into a package-private static
+helper, have `importAcpFormat(...)` call it, and rewrite the
+test to call the production helper directly.
+
+New method in `ZipImporter`:
+```java
+static org.dom4j.Document parseAcpPackageXml(byte[] xmlData) throws DocumentException {
+    SAXReader reader = new SAXReader();
+    try {
+        reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        reader.setFeature("http://xml.org/sax/features/external-general-entities", false);
+        reader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+    } catch (org.xml.sax.SAXException e) {
+        throw new DocumentException("Failed to configure XXE protection on SAXReader", e);
+    }
+    return reader.read(new ByteArrayInputStream(xmlData));
+}
+```
+
+`importAcpFormat(...)` now contains:
+```java
+try {
+    xmlDoc = parseAcpPackageXml(xmlData);
+} catch (DocumentException e) {
+    result.errors.add("Failed to parse package XML: " + e.getMessage());
+    return result;
+}
+```
+
+Package-private (not `public`) — there is exactly one production
+caller plus the test class; the helper is not intended to be a
+general-purpose hardened-parser facade.
+
+`ZipImporterXxeTest`'s four cases all call
+`ZipImporter.parseAcpPackageXml(...)` directly. The test-local
+`hardenedReader()` helper is deleted.
+
+#### Mutation-test verification
+
+Did the actual mutation test: commented out
+`disallow-doctype-decl` line in the production helper and re-ran
+the test. Output:
+
+```
+[ERROR] Tests run: 4, Failures: 2, Errors: 0
+[ERROR] rejectsDoctypeWithFileSystemEntity:58 ... ==> expected: not <null>
+[ERROR] rejectsDoctypeWithExternalParameterEntity:80 ... ==> expected: not <null>
+```
+
+The two DOCTYPE-rejection cases fail; the benign-allow case and
+the feature-readback probe still pass. Restored the production
+line, re-ran:
+
+```
+[INFO] Tests run: 4, Failures: 0, Errors: 0
+```
+
+The test now binds to production. The mutation was a local
+source-edit + revert; nothing committed.
+
+### 2.B — RC6.12 P3 fix: NUL scan file count corrected
+
+RC6.11 release notes claimed the Phase 1.4.1 source-tree NUL byte
+scan ran across "1683 source files". Reviewer's local run
+reported 1681. Re-ran the validator at RC6.12 HEAD:
+
+```
+== Phase 1.4.1 — source-tree NUL-byte scan ==
+  PASS  source-tree NUL scan — 0 hits across 1681 source files
+  PASS:  17
+  SKIP:  7
+  FAIL:  0
+```
+
+1681 is the validator's actual output (and was the same number
+when RC6.11 was tagged — the "1683" was a doc arithmetic error,
+not a real-state drift). Corrected in RC6.12 docs:
+- `RELEASE_NOTES.md` RC6.11 section now says "1681" with a note
+  explaining the original off-by-2 error and that RC6.12 corrected
+  it.
+- `RELEASE_NOTES.md` new RC6.12 section uses the correct 1681.
+- `CLAUDE.md` security-status block + RC6.11 section corrected.
+- `REVIEW_PACKET.md` carry-forward bullet + §2.6 corrected.
+
+### 2.C — RC6.11 GHSA XXE carry-forward (no change in RC6.12)
 
 #### The bug
 
@@ -235,13 +396,19 @@ Audited every `new SAXReader()` / `DocumentBuilderFactory.newInstance()` /
 
 No other unhardened XML parser sinks found.
 
-#### `ZipImporterXxeTest` (new, 4 cases)
+#### `ZipImporterXxeTest` (introduced in RC6.11, rewritten in RC6.12)
 
 New test class
-`core/src/test/java/jp/aegif/nemaki/rest/importexport/ZipImporterXxeTest.java`.
-JVM-level (no Tomcat / Jersey needed) — exercises the exact
-configured SAXReader that the production code now uses, so any
-regression that removes any of the three SAX features trips it:
+`core/src/test/java/jp/aegif/nemaki/rest/importexport/ZipImporterXxeTest.java`
+added in RC6.11. **As originally shipped**, it had a test-local
+`hardenedReader()` helper that duplicated the production
+SAXReader configuration — see §2.A above for the RC6.12 rewrite
+that now calls the package-private production helper
+`ZipImporter.parseAcpPackageXml(...)` directly and was
+mutation-test verified.
+
+The four cases (unchanged shape, just rewired to call the
+production helper):
 
 1. **`rejectsDoctypeWithFileSystemEntity`** — feeds the reporter's
    exact `<!DOCTYPE r [ <!ENTITY xxe SYSTEM "file:///etc/passwd">
@@ -255,11 +422,11 @@ regression that removes any of the three SAX features trips it:
 3. **`acceptsBenignDoctypeFreePackageXml`** — DOCTYPE-free
    well-formed ACP must still parse cleanly. Guards against an
    over-zealous "harden by failing all XML" regression.
-4. **`hardenedReaderHasAllThreeFeaturesEnabled`** — reads the
-   three SAX feature values back via
-   `getXMLReader().getFeature(...)`. Pins the configuration
-   contract even if a future change reorders the `setFeature`
-   calls or drops one.
+4. **`productionParserHasAllThreeFeaturesEnabled`** (RC6.12 rename
+   from `hardenedReader…`) — drives the production helper to
+   prove the `setFeature` calls succeeded (a failure throws before
+   `reader.read(...)`), then reads back the three feature values
+   on a separately-configured probe SAXReader.
 
 #### Live PoC reproduction + post-fix verification
 
@@ -291,7 +458,7 @@ Done against this session's `v3.1.1-RC6.10` stack:
    and all `bedroom_closet` archive copies were swept after
    verification (zero residue).
 
-### 2.B — RC6.10 carry-forward summary
+### 2.D — RC6.10 carry-forward summary
 
 RC6.10 is a **refactor + tooling RC**. No new security gap is
 closed; no behaviour visible to operators changes. The cycle
@@ -522,11 +689,13 @@ doc fix `d910820d7`):
   classes to the focused regression set + 2 new Host-preserve
   tests).
 
-### 2.6 — Tests at RC6.11 HEAD
+### 2.6 — Tests at RC6.12 HEAD
 
-- **`ZipImporterXxeTest`** (new in RC6.11): **4/4 PASS** — pins
-  the SAXReader configuration; reproduces the exact GHSA PoC
-  rejection.
+- **`ZipImporterXxeTest`** (rewritten in RC6.12 to bind to
+  production): **4/4 PASS** — now calls
+  `ZipImporter.parseAcpPackageXml(...)` directly. Mutation test
+  verified: removing the `disallow-doctype-decl` line from the
+  production helper causes 2/4 cases to fail.
 - **`SsrfGuardTest`** (RC6.10 carry-forward): **30/30 PASS** —
   classification on the extracted helper.
 - **`HttpWebhookDispatcherTest`**: **59/59 PASS** — RC6.10
@@ -536,23 +705,26 @@ doc fix `d910820d7`):
 - **7 adapter contract tests** (Slack 12 / Teams 11 / Mattermost
   12 / Notion 8 / Salesforce 11 / M365 Mail 9 / Chatwork 13):
   **76/76 PASS**.
-- **Focused 25-class regression** (24 from RC6.10 + new
-  `ZipImporterXxeTest`): **377/377 PASS** (was 373 in RC6.10;
-  +4 from XXE test).
+- **Focused 25-class regression**: **377/377 PASS** (same 25
+  classes as RC6.11; RC6.12 refactor is behaviour-equivalent on
+  the production path, so the count is unchanged).
 - **Combined SSRF-classifier surface** (`HttpWebhookDispatcherTest
   + AdapterRegistryTest + SsrfGuardTest`): **115 PASS** —
-  unchanged from RC6.10 (no SSRF code touched in RC6.11).
+  unchanged from RC6.10/RC6.11 (no SSRF code touched in RC6.12).
 - **SOC validator full run** (no Docker): **17 PASS / 7 SKIP** —
-  Phase 1.4.1 source-tree NUL scan walks **1683 source files /
-  0 hits** at RC6.11 HEAD (was 1680 in RC6.10; +3 from new test
-  files and ancillary additions).
-- **Maven compile**: clean. No new compiler warnings introduced
-  by the XXE fix.
-- **Live PoC reproduction + post-fix verification**: completed
-  against this session's stack — see §2.A for the full
-  before/after sequence.
+  Phase 1.4.1 source-tree NUL scan walks **1681 source files /
+  0 hits** at RC6.12 HEAD (was 1680 in RC6.10; +1 from
+  `ZipImporterXxeTest.java`. RC6.11 docs originally said "1683"
+  — off-by-2 arithmetic error in the release notes; the actual
+  validator output at RC6.11 was also 1681. Corrected in this
+  RC's docs).
+- **Maven compile**: clean. No new compiler warnings.
+- **Live PoC reproduction + post-fix verification** (RC6.11):
+  recorded in §2.C "Live PoC reproduction + post-fix
+  verification". Unchanged in RC6.12 — same production path
+  behaviour.
 
-Re-run command (RC6.11 focused regression — 25 classes):
+Re-run command (RC6.12 focused regression — 25 classes, unchanged from RC6.11):
 
 ```bash
 mvn test -Dtest="ZipImporterXxeTest,SsrfGuardTest,HttpWebhookDispatcherTest,\
@@ -835,7 +1007,7 @@ RC6.7's scope.
 
 ## 3. What's on the branch HEAD but NOT in the tag
 
-The tag (`v3.1.1-RC6.11`) and the branch HEAD
+The tag (`v3.1.1-RC6.12`) and the branch HEAD
 (`release/3.1.1-RC6`) MAY diverge during the external review
 window. As of tag time the divergence is zero — both point at
 the same commit.
@@ -947,9 +1119,9 @@ templates AND playbook are part of the tag artifact now.
 
 ---
 
-## 4. What's in the v3.1.1-RC6.11 tag (cumulative since RC4.1)
+## 4. What's in the v3.1.1-RC6.12 tag (cumulative since RC4.1)
 
-RC5 cycle (RC5 → RC5.6) + RC6 + RC6.1 + RC6.2 + RC6.3 + RC6.4 + RC6.5 + RC6.6 + RC6.7 + RC6.8 + RC6.9 + RC6.10 + RC6.11:
+RC5 cycle (RC5 → RC5.6) + RC6 + RC6.1 + RC6.2 + RC6.3 + RC6.4 + RC6.5 + RC6.6 + RC6.7 + RC6.8 + RC6.9 + RC6.10 + RC6.11 + RC6.12:
 
 - **Scheduled delegated profiles** (RC5 §12.1)
 - **Connector governance view** (RC5 §12.3) — `/by-principal/{id}`
@@ -1062,22 +1234,36 @@ RC5 cycle (RC5 → RC5.6) + RC6 + RC6.1 + RC6.2 + RC6.3 + RC6.4 + RC6.5 + RC6.6 
   rejected post-fix; test artifacts swept.
   **377/377 PASS** for full focused regression (25 classes; was
   373 in RC6.10; +4 from `ZipImporterXxeTest`).
+- **RC6.12 test-quality follow-up** — extracts
+  `ZipImporter.parseAcpPackageXml(byte[])` as a package-private
+  static helper, rewrites `ZipImporterXxeTest` to call it
+  directly (closes RC6.11 review P2: previously the test had its
+  own duplicated SAXReader configuration that wouldn't have
+  caught a deletion of the production guards). Mutation-test
+  verified: commenting out `disallow-doctype-decl` in the
+  production helper causes 2/4 cases to fail. NUL scan file
+  count corrected from "1683" (RC6.11 doc arithmetic error) to
+  **1681** (validator's actual output; closes RC6.11 review P3).
+  Production path is byte-equivalent to RC6.11; **377/377 PASS**
+  for the same 25-class focused regression.
 
-Full per-RC narrative: `RELEASE_NOTES.md` (19 sections, RC5 →
-RC6.11), `docs/design/connector-delegation.md` (§12.1 - §12.20).
+Full per-RC narrative: `RELEASE_NOTES.md` (20 sections, RC5 →
+RC6.12), `docs/design/connector-delegation.md` (§12.1 - §12.20).
 
 ---
 
-## 5. Acceptance status summary (RC6.11)
+## 5. Acceptance status summary (RC6.12)
 
 ### Blocking findings
 **0**.
 
 ### Java unit tests — verified at HEAD this session
 
-- **`ZipImporterXxeTest`** (new in RC6.11): **4/4 PASS** — XXE
-  reject (file:// + external DTD), benign-allow, feature
-  readback.
+- **`ZipImporterXxeTest`** (RC6.11 introduction, RC6.12
+  rewritten to bind to production): **4/4 PASS** — calls
+  `ZipImporter.parseAcpPackageXml(...)` directly. Mutation-test
+  verified that removing the production `disallow-doctype-decl`
+  setFeature causes 2/4 cases to fail.
 - **`SsrfGuardTest`** (RC6.10 carry-forward): **30/30 PASS** —
   direct classification coverage on the extracted helper.
 - **`HttpWebhookDispatcherTest`**: **59/59 PASS** — behaviour
@@ -1092,8 +1278,9 @@ RC6.11), `docs/design/connector-delegation.md` (§12.1 - §12.20).
   Chatwork 13): **76 PASS** — confirms the SsrfGuard delegation
   does NOT change legitimate adapter API call patterns.
 - **Full 25-class focused regression** (24 from RC6.10 + new
-  `ZipImporterXxeTest`): **377/377 PASS** (was 373 in RC6.10;
-  +4 from the new XXE test).
+  `ZipImporterXxeTest`): **377/377 PASS** — same count and
+  classes as RC6.11; the RC6.12 refactor is byte-equivalent on
+  the production path.
   Re-run command:
   ```bash
   mvn test -Dtest="ZipImporterXxeTest,SsrfGuardTest,HttpWebhookDispatcherTest,\
@@ -1163,23 +1350,33 @@ npx playwright test --project=chromium \
 ### Live verification
 
 - **XXE + SSRF fix regression tests** — run live this session:
-  - `ZipImporterXxeTest` → 4/4 PASS (new in RC6.11).
+  - `ZipImporterXxeTest` → 4/4 PASS (now calls production
+    helper after RC6.12 rewrite).
+  - **Mutation test** — temporarily commented out the
+    `disallow-doctype-decl` setFeature line in
+    `ZipImporter.parseAcpPackageXml(...)`, re-ran the test:
+    2/4 cases fail (`rejectsDoctypeWithFileSystemEntity` +
+    `rejectsDoctypeWithExternalParameterEntity`). Restored the
+    line, re-ran: 4/4 pass. The regression guard now binds to
+    production. (Mutation was a local source-edit + revert,
+    nothing committed.)
   - `SsrfGuardTest` → 30/30 PASS (RC6.10 carry-forward).
   - `HttpWebhookDispatcherTest` → 59/59 PASS.
   - `AdapterRegistryTest` → 26/26 PASS.
   - 7 adapter contract tests (Slack/Teams/Mattermost/Notion/
     Salesforce/M365/Chatwork): **76 PASS**.
-  - Full 25-class focused regression (24 from RC6.10 + new
-    `ZipImporterXxeTest`): **377/377 PASS**.
-- **Live PoC + post-fix verification** — RC6.10 stack was used
-  to reproduce the reporter's exact `/etc/passwd` PoC with a
-  non-admin `bob` user (`cmis:write` on one folder); confirmed
-  leaked file content as folder name in CouchDB. After
-  redeploying the RC6.11 WAR, the same upload returned the
-  documented "DOCTYPE is disallowed" error with `foldersCreated:
-  0`, `status: partial`. Benign DOCTYPE-free ACP still imports
-  cleanly (`foldersCreated: 1`, `status: success`). All test
-  artifacts swept from `bedroom` + `bedroom_closet`.
+  - Full 25-class focused regression: **377/377 PASS** —
+    behaviour-equivalent to RC6.11.
+- **Live PoC + post-fix verification** (RC6.11) — RC6.10 stack
+  was used to reproduce the reporter's exact `/etc/passwd` PoC
+  with a non-admin `bob` user (`cmis:write` on one folder);
+  confirmed leaked file content as folder name in CouchDB.
+  After redeploying the RC6.11 WAR, the same upload returned
+  the documented "DOCTYPE is disallowed" error with
+  `foldersCreated: 0`, `status: partial`. Benign DOCTYPE-free
+  ACP still imports cleanly. All test artifacts swept from
+  `bedroom` + `bedroom_closet`. RC6.12 production path is
+  byte-equivalent so the PoC outcome is unchanged.
 - **Live SSRF guard smoke against deployed RC6.7 stack** (TODO
   after WAR deploy): 10 vectors via `POST /webhook/test` (NAT64
   well-known + local-use, 6to4, Teredo, IPv4-compatible, plus
@@ -1243,11 +1440,11 @@ Unchanged since RC4.1.
 
 ---
 
-## 6. Remaining follow-ups (post-RC6.11, not blocking review)
+## 6. Remaining follow-ups (post-RC6.12, not blocking review)
 
 (No open repo-shippable items beyond the Medium residual SSRF
 risk and explicitly-deferred admin-config-surface guard. Both
-require larger engineering than a security hotfix RC.)
+require larger engineering than a test-quality follow-up RC.)
 
 | ID | Severity | Scope | Status |
 |---|---|---|---|
@@ -1262,13 +1459,26 @@ require larger engineering than a security hotfix RC.)
 | **Full Playwright green-up of the 155 pre-existing failures** | Medium | UI corpus | RC6.4 proved they are pre-existing (RC5.6 vs RC6 HEAD diff). The triage backlog lives under memory `test-skip-triage`. Separate engineering project. |
 | ~~**Repo-wide NUL byte pre-commit scan**~~ | **CLOSED in RC6.10** | tooling | `scripts/validate-soc-templates.sh` Phase 1.4.1 scans `.java`/`.ts`/`.tsx`/`.js`/`.jsx` for literal `\x00` (1680 files / 0 hits at HEAD). Operators / CI run this before tag-cut; future Slack/Teams/git-hook integration is a separate cosmetic improvement. |
 
-**Resolved in RC6.11 (newly closed)**:
+**Resolved in RC6.12 (newly closed)**:
+- **RC6.11 review P2** (regression test was not exercising the
+  production parser) — `ZipImporter.parseAcpPackageXml(byte[])`
+  extracted as a package-private static helper; `ZipImporterXxeTest`
+  now calls it directly. Mutation-test verified: removing the
+  production `disallow-doctype-decl` line causes 2/4 cases to
+  fail.
+- **RC6.11 review P3** (NUL scan file count was off-by-2 in the
+  release notes) — corrected from "1683" to **1681** (validator's
+  actual output) across RELEASE_NOTES, CLAUDE, REVIEW_PACKET.
+
+**Resolved in RC6.11 (carry-forward, still closed)**:
 - **GHSA XXE on ACP import** (CWE-611, reporter tonghuaroot) —
   3-`setFeature` hardening on the dom4j SAXReader in
   `ZipImporter.importAcpFormat(...)`, mirroring the existing
   `TypeResource.parse(...)` pattern. Closes a read-capable XXE /
   SSRF reachable by an authenticated non-admin user with
-  `cmis:write` on one folder.
+  `cmis:write` on one folder. (RC6.12 moved the configuration
+  block into `parseAcpPackageXml(...)` but the production-path
+  behaviour is byte-equivalent to RC6.11.)
 - Repo-wide XML parser sink audit — confirmed all other sinks
   (TypeResource, AuthTokenResource, SolrResource, SolrAllResource,
   SamlSignatureVerifier) are already hardened. No further code
@@ -1329,14 +1539,14 @@ require larger engineering than a security hotfix RC.)
 - Recurring "template body bug surfaces only at external review"
   pattern — Epic 1 (§10.1) validator gate.
 
-**Resolved during RC5 → RC6.11 cycle**: all listed in
+**Resolved during RC5 → RC6.12 cycle**: all listed in
 `RELEASE_NOTES.md` per-section.
 
 ---
 
 ## 7. Promotion path (operational)
 
-`v3.1.1-RC6.11` is and remains a release candidate. GA path:
+`v3.1.1-RC6.12` is and remains a release candidate. GA path:
 
 1. External review concludes with approval.
 2. Merge `release/3.1.1-RC6` into `master`. The security fix
@@ -1355,27 +1565,68 @@ require larger engineering than a security hotfix RC.)
      future consumers)
    - `282d2aa49` — RC6.11: ACP import XXE fix (the second
      tonghuaroot GHSA closure)
+   - RC6.12 test-quality refactor commit (TBD, populated at
+     tag-cut time) — production path byte-equivalent to RC6.11
+     XXE fix; rebinds the regression test to the production
+     parser
 3. Cut a **new** annotated tag `v3.1.1` against the merge
    commit on `master`.
 4. Optionally create a single GitHub Release attached to
    `v3.1.1`.
-5. The RC tags (`v3.1.1-RC5`, `…-RC5.1`, …, `…-RC6.11`) stay
+5. The RC tags (`v3.1.1-RC5`, `…-RC5.1`, …, `…-RC6.12`) stay
    as internal milestones.
 6. Reply on **both** GHSA advisories:
    - **SSRF advisory** (RC6.5 original report): link the 5
      follow-on commits (RC6.5 → RC6.9) + the RC6.10 SsrfGuard
      refactor.
    - **XXE advisory** (RC6.11 original report): link the
-     RC6.11 fix commit + the repo-wide audit table (§2.A) so
+     RC6.11 fix commit + the repo-wide audit table (§2.C) so
      the reporter sees that the codebase's other XML-parser
-     sinks were checked and found already-hardened.
+     sinks were checked and found already-hardened. Mention
+     the RC6.12 test-quality refactor and the mutation-test
+     verification.
 
 ---
 
 ## 8. Re-send delta summary (what reviewers should focus on)
 
-If you reviewed RC6.10 already, the smallest possible review
-for RC6.11 is:
+If you reviewed RC6.11 already, the smallest possible review
+for RC6.12 is:
+
+```bash
+git diff v3.1.1-RC6.11..v3.1.1-RC6.12
+```
+
+Focused set (test-quality follow-up — production path byte-equivalent):
+
+- **`core/src/main/java/jp/aegif/nemaki/rest/importexport/ZipImporter.java`**
+  — `parseAcpPackageXml(byte[])` extracted as a package-private
+  static helper (the three `setFeature` calls + `reader.read`).
+  `importAcpFormat(...)` now calls it. No behaviour change on
+  the production path — same SAXReader configuration, same
+  parse, same `DocumentException` thrown for the same DOCTYPE
+  inputs.
+- **`core/src/test/java/jp/aegif/nemaki/rest/importexport/ZipImporterXxeTest.java`**
+  — four cases rewritten to call
+  `ZipImporter.parseAcpPackageXml(...)` directly. Test-local
+  `hardenedReader()` deleted. Cases 1-3 unchanged in shape;
+  case 4 renamed to `productionParserHasAllThreeFeaturesEnabled`
+  and now drives the production helper before its readback
+  assertion.
+- `REVIEW_PACKET.md`, `RELEASE_NOTES.md`, `CLAUDE.md`
+  (RC6.12 section + NUL count correction throughout).
+
+Security-focused reviewers can scope to the `ZipImporter.java`
+diff (refactor only — no behaviour change on the production
+path) + the mutation-test note in §2.A (verified that removing
+the production `disallow-doctype-decl` setFeature causes 2/4
+test cases to fail). The RC6.11 GHSA XXE fix is documented in
+§2.C as carry-forward.
+
+---
+
+If you reviewed RC6.10 already, the RC6.10→RC6.11 delta is also
+worth a quick glance (the actual security hotfix):
 
 ```bash
 git diff v3.1.1-RC6.10..v3.1.1-RC6.11
@@ -1385,7 +1636,7 @@ Focused set (security hotfix — single sink, mirrors existing
 hardened pattern in same package):
 
 - **`core/src/main/java/jp/aegif/nemaki/rest/importexport/ZipImporter.java`**
-  (+11 lines) — the only behaviour change in this RC. Three
+  (+11 lines) — the only behaviour change in that RC. Three
   `setFeature` calls added to the SAXReader inside
   `importAcpFormat(...)` before `reader.read(...)`. Byte-for-byte
   the same configuration block used by
@@ -1393,14 +1644,15 @@ hardened pattern in same package):
 - **NEW** `core/src/test/java/jp/aegif/nemaki/rest/importexport/ZipImporterXxeTest.java`
   (~140 lines, 4 cases) — JVM-level regression that pins the
   SAXReader configuration. Doesn't go through Tomcat / Jersey.
+  (RC6.12 has since rewritten this to call the production
+  helper directly — see RC6.12 focused set above.)
 - `REVIEW_PACKET.md`, `RELEASE_NOTES.md`, `CLAUDE.md`
   (RC6.11 section).
 
-Security-focused reviewers can scope to the 11-line diff in
-`ZipImporter.java`. The audit table in §2.A documents every
-other XML parser sink in the codebase and shows each is already
-hardened. The full live PoC sequence is documented in §2.A
-"Live PoC reproduction + post-fix verification".
+The audit table in §2.C documents every other XML parser sink
+in the codebase and shows each is already hardened. The full
+live PoC sequence is documented in §2.C "Live PoC reproduction
++ post-fix verification".
 
 ---
 
@@ -1483,12 +1735,12 @@ cumulative diff (since `v3.1.1-RC4.1`) in §1.
 | Purpose | File |
 |---|---|
 | Re-send overview (this file) | `REVIEW_PACKET.md` |
-| What changed and why (per RC) | `RELEASE_NOTES.md` (19 sections RC5 → RC6.11) |
+| What changed and why (per RC) | `RELEASE_NOTES.md` (20 sections RC5 → RC6.12) |
 | Design rationale | `docs/design/connector-delegation.md` (§12.1 - §12.20) |
 | Multi-replica operational notes | `docs/MULTI-REPLICA-DEPLOYMENT.md` |
 | Project-internal navigation (Japanese) | `CLAUDE.md` |
 | API entry points | `ConnectorDefinitionController.java`, `ImportProfileDefinitionController.java`, `IngestSchedulerService.java`, `AuditEmitSupport.java` |
-| Test coverage proof | `core/src/test/java/jp/aegif/nemaki/rest/ingest/*Test.java` + `core/src/test/java/jp/aegif/nemaki/security/SsrfGuardTest.java` + `core/src/test/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcherTest.java` + `core/src/test/java/jp/aegif/nemaki/rest/importexport/ZipImporterXxeTest.java` (377 PASS across 25 focused classes at RC6.11) |
+| Test coverage proof | `core/src/test/java/jp/aegif/nemaki/rest/ingest/*Test.java` + `core/src/test/java/jp/aegif/nemaki/security/SsrfGuardTest.java` + `core/src/test/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcherTest.java` + `core/src/test/java/jp/aegif/nemaki/rest/importexport/ZipImporterXxeTest.java` (377 PASS across 25 focused classes at RC6.12; ZipImporterXxeTest binds to the production `ZipImporter.parseAcpPackageXml(...)` helper as of RC6.12) |
 | SOC / SIEM audit integration (playbook) | `docs/SOC-AUDIT-INTEGRATION.md` |
 | SOC / SIEM audit integration (import-ready templates, operator validation required) | `docs/soc-templates/` (README + Filebeat / Fluent Bit / Vector shippers + Kibana Detection Engine NDJSON / Loki Ruler / Splunk savedsearches rule sets — see README "Template validation status" table for the per-template syntax-only / no-live-test gap) |
 | Connector-area manual verification (RC6.5) | `docs/MANUAL-VERIFICATION-CONNECTORS.md` (1300+ lines step-by-step curl + UI, 3-round live-verified) |

@@ -6,6 +6,116 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC6.12 — Test quality: bind XXE regression to production parser
+_Release candidate on `release/3.1.1-RC6` (2026-05-31), branched
+off `v3.1.1-RC6.11` (`8e52d95d2`)._
+
+Test-quality follow-up to the RC6.11 GHSA XXE fix. The actual
+security guard in `ZipImporter` is unchanged — this RC strengthens
+the regression test so a future deletion of the production
+`setFeature` calls would fail the test.
+
+### Reviewer P2 — test was not exercising the production path
+
+RC6.11's `ZipImporterXxeTest` configured its own SAXReader inside
+a test-local `hardenedReader()` helper. The production
+`ZipImporter.importAcpFormat(...)` had its own (duplicated)
+SAXReader configuration block. The test asserted that the
+test-local reader rejected DOCTYPE — but if someone deleted the
+three `setFeature(...)` calls from `importAcpFormat`, the test
+would still pass green.
+
+Fix: extract the production parser into a package-private static
+helper and have the test call it directly.
+
+- New method `ZipImporter.parseAcpPackageXml(byte[]) throws DocumentException`
+  contains the SAXReader construction + 3-`setFeature` block + the
+  `reader.read(...)` call. Package-private (not public) — it has a
+  single legitimate caller plus the test class.
+- `ZipImporter.importAcpFormat(...)` now calls
+  `parseAcpPackageXml(xmlData)` instead of inlining the parser
+  configuration. Same behaviour on the production path
+  (byte-equivalent classifier output; same `DocumentException`
+  thrown for the same DOCTYPE inputs).
+- `ZipImporterXxeTest` four cases now call
+  `ZipImporter.parseAcpPackageXml(...)` directly. The test-local
+  `hardenedReader()` helper is deleted.
+
+### Mutation-test confirmation
+
+Verified the new test actually binds to production. Temporarily
+commented out the `disallow-doctype-decl` line in
+`ZipImporter.parseAcpPackageXml`, ran the test:
+
+```
+[ERROR] Tests run: 4, Failures: 2, Errors: 0
+[ERROR]   rejectsDoctypeWithFileSystemEntity:58 ... ==> expected: not <null>
+[ERROR]   rejectsDoctypeWithExternalParameterEntity:80 ... ==> expected: not <null>
+```
+
+Restored the line, re-ran: `Tests run: 4, Failures: 0`. The
+regression guard now bites if a future change removes the
+production hardening. (Did not commit the mutation; it was a
+local source-edit + revert.)
+
+### Reviewer P3 — NUL scan file count corrected in docs
+
+RC6.11 docs stated "1683 source files / 0 hits" for the Phase 1.4.1
+source-tree NUL byte scan. Reviewer's local run reported
+**1681 source files / 0 hits**, which is correct. The RC6.11 doc
+number was wrong (off-by-2 — my arithmetic, not the validator's).
+
+RC6.12 docs use the validator's actual output: **1681 source files
+/ 0 hits**. Same number as RC6.11 actual; no new test files were
+added in this RC (only `ZipImporter.java` and
+`ZipImporterXxeTest.java` were edited).
+
+### Tests
+
+- **`ZipImporterXxeTest`**: 4/4 PASS — now via
+  `ZipImporter.parseAcpPackageXml(...)` directly.
+- **Mutation test**: removing the production `disallow-doctype-decl`
+  feature causes 2/4 tests to fail (the two DOCTYPE-rejection
+  cases). Restored before commit.
+- **Focused 25-class regression**: **377/377 PASS** (unchanged
+  count from RC6.11; same 25 classes, behaviour-equivalent
+  refactor on the production side).
+- **SOC validator full run** (no Docker): **17 PASS / 7 SKIP**
+  including Phase 1.4.1 source-tree NUL scan — **1681 source
+  files / 0 hits**.
+
+### Files touched (RC6.12)
+
+**Code (1 file)**:
+- `core/src/main/java/jp/aegif/nemaki/rest/importexport/ZipImporter.java`
+  — extract `parseAcpPackageXml(byte[])` as package-private static
+  helper; `importAcpFormat(...)` now calls it. No behaviour change
+  on the production path.
+
+**Tests (1 file)**:
+- `core/src/test/java/jp/aegif/nemaki/rest/importexport/ZipImporterXxeTest.java`
+  — four cases rewritten to call
+  `ZipImporter.parseAcpPackageXml(...)` directly. Test-local
+  `hardenedReader()` helper deleted.
+
+**Docs**: `RELEASE_NOTES.md`, `CLAUDE.md`, `REVIEW_PACKET.md`.
+
+### Migration / compatibility
+
+No public API change (`parseAcpPackageXml` is package-private).
+No new properties. No schema / patch / view / Mango index changes.
+Same `DocumentException` thrown for the same DOCTYPE inputs, same
+`Document` returned for the same benign inputs. Operators see
+zero behavioural difference.
+
+### Credit
+
+Reviewer P2/P3 findings on RC6.11 external review — credit for
+catching the test-not-binding-to-production issue + the NUL-count
+drift.
+
+---
+
 ## 3.1.1-RC6.11 — Security: XXE on ACP import (CWE-611, GHSA, reporter tonghuaroot)
 _Release candidate on `release/3.1.1-RC6` (2026-05-31), branched
 off `v3.1.1-RC6.10` (`cf2f499f3`)._
@@ -134,9 +244,10 @@ Done against this session's RC6.10 stack:
   `ZipImporterXxeTest`): **377/377 PASS** (was 373 in RC6.10;
   +4 from new XXE test).
 - **SOC validator full run** (no Docker): **17 PASS / 7 SKIP**
-  including Phase 1.4.1 source-tree NUL scan (1683 source files
-  / 0 hits — was 1680 in RC6.10; +3 from `ZipImporterXxeTest`
-  and other small files).
+  including Phase 1.4.1 source-tree NUL scan (1681 source files
+  / 0 hits — was 1680 in RC6.10; +1 from `ZipImporterXxeTest`.
+  RC6.11 release notes originally claimed "1683"; this was a
+  doc arithmetic error, corrected in RC6.12.).
 
 ### Files touched (RC6.11)
 

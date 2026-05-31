@@ -316,6 +316,100 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
+### RC36 / RC6.12 (2026-05-31) — Test quality: bind XXE regression to production parser (shipped)
+
+ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6.11` = `8e52d95d2`)
+
+RC6.11 GHSA XXE fix の **test-quality follow-up**。actual security
+guard には変更なし、ただし RC6.11 review の P2 で「test が
+production の parser を呼んでいない」(test 内に SAXReader 設定を
+duplicate していた) という指摘を解消。
+
+#### P2: production helper を package-private に切り出し
+
+RC6.11 では `ZipImporterXxeTest` が独自に `hardenedReader()` を
+持っており、production の `ZipImporter.importAcpFormat` で
+duplicate された SAXReader 設定 block とは disjoint。production 側
+から 3 つの `setFeature` 行を削除しても test は green のまま、と
+いう regression guard としては弱い構造だった。
+
+修正:
+- 新 method `ZipImporter.parseAcpPackageXml(byte[]) throws DocumentException`
+  に SAXReader construction + 3-`setFeature` + `read()` を集約。
+  package-private (public ではない) — legitimate caller は
+  importAcpFormat 1 つ + test class のみ。
+- `importAcpFormat` は inline 設定の代わりに
+  `parseAcpPackageXml(xmlData)` を呼ぶように変更。production path
+  上は byte-equivalent (同じ DOCTYPE input で同じ DocumentException、
+  同じ benign input で同じ Document 返却)。
+- `ZipImporterXxeTest` の 4 ケースは
+  `ZipImporter.parseAcpPackageXml(...)` を直接呼ぶように rewrite。
+  test 内の `hardenedReader()` helper は削除。
+
+#### Mutation test で binding を検証
+
+test が本当に production の挙動を捕捉するか mutation で確認:
+production の `disallow-doctype-decl` 行を一時 comment out → test
+実行:
+```
+[ERROR] Tests run: 4, Failures: 2, Errors: 0
+[ERROR]   rejectsDoctypeWithFileSystemEntity:58 ... ==> expected: not <null>
+[ERROR]   rejectsDoctypeWithExternalParameterEntity:80 ... ==> expected: not <null>
+```
+production を restore → `Tests run: 4, Failures: 0`。
+将来 production hardening が削られたら test が即落ちる構造。
+(mutation 自体は commit せず、local source-edit + revert のみ)
+
+#### P3: NUL scan file count を訂正
+
+RC6.11 docs は "1683 source files / 0 hits" と書いていたが、
+reviewer の手元実行で **1681 source files / 0 hits** と判明。
+RC6.11 doc は私の算術ミスで off-by-2。実 validator output は
+1681 が正解。
+
+RC6.12 では validator の actual output を採用: **1681 source
+files / 0 hits**。RC6.11 historical record も RELEASE_NOTES で
+訂正 + 補足追記。
+
+#### Tests
+
+- `ZipImporterXxeTest`: 4/4 PASS — `ZipImporter.parseAcpPackageXml(...)` 直呼び経由
+- Mutation test: production guard 削除で 2/4 fail (DOCTYPE-reject の
+  2 ケース)、restore で 4/4 pass。commit 前に restore 済
+- 25 class focused regression: **377/377 PASS** (RC6.11 と同 count、
+  behaviour-equivalent refactor)
+- SOC validator full run: 17 PASS / 7 SKIP、Phase 1.4.1 source-tree
+  NUL scan = **1681 files / 0 hits**
+
+#### Files touched
+
+- `core/src/main/java/jp/aegif/nemaki/rest/importexport/ZipImporter.java`
+  (`parseAcpPackageXml` を抽出、`importAcpFormat` 内 inline 設定を
+  delegate 化。production path 挙動不変)
+- `core/src/test/java/jp/aegif/nemaki/rest/importexport/ZipImporterXxeTest.java`
+  (4 ケース rewrite、test-local `hardenedReader()` 削除)
+- `RELEASE_NOTES.md`, `CLAUDE.md`, `REVIEW_PACKET.md`
+
+#### Migration / compatibility
+
+public API 変更なし (`parseAcpPackageXml` は package-private)。
+property / schema / patch / view / Mango / migration 一切無変更。
+production path は byte-equivalent。operator は挙動変化なし。
+
+#### Commit + tag 関係
+
+- RC6.12 test-quality refactor commit: 後続
+- doc closure commit: 後続
+- **`v3.1.1-RC6.12` annotated tag target**: doc-closure commit
+
+RC6.11 tag (`8e52d95d2`) は force-update せず歴史的マイルストーン
+として保持。
+
+#### Credit
+
+RC6.11 external review reviewer の P2 (test binding) + P3
+(NUL count) 指摘 — test quality 改善 + doc 訂正に直結。
+
 ### RC35 / RC6.11 (2026-05-31) — Security: ACP import XXE (CWE-611) — GHSA reporter tonghuaroot (shipped)
 
 ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6.10` = `cf2f499f3`)
@@ -430,7 +524,8 @@ JVM-level test なので Tomcat 不要、focused regression に含められる�
 - 25 class focused regression: **377/377 PASS** (RC6.10 baseline
   373 + 4 新規 ZipImporterXxeTest)
 - SOC validator full run: 17 PASS / 7 SKIP (Phase 1.4.1 source-tree
-  NUL scan: 1683 files / 0 hits — RC6.10 の 1680 から +3)
+  NUL scan: 1681 files / 0 hits — RC6.10 の 1680 から +1。RC6.11
+  当初は "1683 files" と記載していたが算術ミスで、RC6.12 で訂正)
 
 #### Files touched
 
