@@ -189,8 +189,7 @@ JVM args: surefire `argLine` + 3 Dockerfile variants
 (1 property each).
 
 - **Code artifact under review** = the annotated tag
-  `v3.1.1-RC6.12` (peeled commit TBD — populated at tag-cut time;
-  see §1 table).
+  `v3.1.1-RC6.12` (peeled commit `f8ec0326c3a20fe8bce73b31b886775beda5d17a`).
 - **Review supplementary documentation** = files on
   `release/3.1.1-RC6` **branch HEAD** that may land after the
   tag is cut. As of tag time the divergence is zero — see §3.
@@ -207,10 +206,10 @@ traceability.
 | Item | Value |
 |---|---|
 | **Final candidate tag** | `v3.1.1-RC6.12` |
-| Tag annotated object SHA | TBD (populated at tag-cut time) |
-| Tag peeled commit | TBD (populated at tag-cut time) |
+| Tag annotated object SHA | `262d59edf10e71c472441dcb7a85ce2c501969b1` |
+| Tag peeled commit | `f8ec0326c3a20fe8bce73b31b886775beda5d17a` |
 | Branch | `release/3.1.1-RC6` |
-| Branch HEAD at tag time | TBD (zero divergence target at tag time) |
+| Branch HEAD at tag time | `f8ec0326c3a20fe8bce73b31b886775beda5d17a` (= tag peeled, zero divergence at tag time) |
 | Base of RC6.12 cycle | `v3.1.1-RC6.11` (peeled `8e52d95d2`) |
 | RC5 cycle baseline | `v3.1.1-RC4.1` (peeled `572aad18b`) |
 | **RC6.11 → RC6.12 diff cmd** | `git diff v3.1.1-RC6.11..v3.1.1-RC6.12` |
@@ -1565,10 +1564,9 @@ require larger engineering than a test-quality follow-up RC.)
      future consumers)
    - `282d2aa49` — RC6.11: ACP import XXE fix (the second
      tonghuaroot GHSA closure)
-   - RC6.12 test-quality refactor commit (TBD, populated at
-     tag-cut time) — production path byte-equivalent to RC6.11
-     XXE fix; rebinds the regression test to the production
-     parser
+   - `5f13120e2` — RC6.12: test-quality refactor (production
+     path byte-equivalent to RC6.11 XXE fix; rebinds the
+     regression test to the production parser)
 3. Cut a **new** annotated tag `v3.1.1` against the merge
    commit on `master`.
 4. Optionally create a single GitHub Release attached to
