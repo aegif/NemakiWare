@@ -253,8 +253,9 @@ requests.post(url, auth=(user, pw), headers={"X-Requested-With": "XMLHttpRequest
 
 ---
 
-## セキュリティステータス (2026-05-30)
+## セキュリティステータス (2026-05-31)
 
+- ACP import XXE (CWE-611) — `ZipImporter` SAXReader 非堅牢化による任意ファイル読取 + SSRF (RC6.11): 対応済み (`importAcpFormat` の `SAXReader` に `disallow-doctype-decl` + `external-general-entities=false` + `external-parameter-entities=false` を設定。修正前は cmis:write 1 個を持つ非 admin user が `<!DOCTYPE r [ <!ENTITY xxe SYSTEM "file:///etc/passwd"> ]>` 入り ACP zip を upload して `/etc/passwd` を folder name として永続化可能、CMIS API で読み戻せる read-capable XXE。修正後は "DOCTYPE is disallowed" error で reject、benign ACP は引き続き import 可。GHSA reporter tonghuaroot。+4 regression test `ZipImporterXxeTest`、focused 25-class 377/377 PASS。Repo-wide audit 実施 — 他の `SAXReader`/`DocumentBuilderFactory` sink (TypeResource / AuthTokenResource / SolrResource / SolrAllResource / SamlSignatureVerifier) は RC13 既に hardening 済)
 - Connector SSRF — AdapterHttpClient Host header preservation on HTTP IP-pin + Javadoc honesty (RC6.9): 対応済み (HTTP IP-pin が `Host: <IP>` 送信で shared-vhost HTTP deployment を misroute する RC6.8 post-tag P3 compat caveat を fix。`pinRequestToValidatedAddress` で URI rewrite + `Host: <original-hostname[:port]>` を明示 set、JDK の restricted-headers check を `-Djdk.httpclient.allowRestrictedHeaders=host` の JVM property で escape (Dockerfile + surefire argLine 両方に追加、AdapterHttpClient の static init で defensive fallback)。Javadoc も RC6.8 post-tag P2 の HTTPS residual TCP-connect SSRF 注記と整合化。+2 regression tests、計 343/343 PASS)
 - Connector SSRF — AdapterHttpClient deeper closure: DNS rebinding pin (HTTP fully closed、HTTPS は TLS-bounded で TCP-connect class が residual) + runtime revalidation + multi-hop redirect resolve (RC6.8): 対応済み (`sendWithRetry`/`sendWithRedirectValidation` で send 時に `pinRequestToValidatedAddress` 経由で再 resolve + validate、HTTP は URI を validated IP literal に rewrite で network 層完全閉、HTTPS は再 validate のみ + TLS cert verification で data-exchange SSRF を遮断するが TCP-connect SSRF が microsecond race window で残存 — Medium 残余として §6 に記録 + 将来の custom SocketFactory が real fix。Mattermost/Salesforce orchestrator に explicit `validateExternalUrl` 追加。Multi-hop redirect で `currentRequest.uri().resolve(location)` に修正。+5 regression tests、計 265/265 PASS。Compat 注意: HTTP IP-pin は `Host: <IP>` 送信のため shared-vhost HTTP deployment が misroute する可能性 — §6 に Medium 互換性 risk として記録)
 - Connector SSRF — AdapterHttpClient horizontal fix (RC6.7): 対応済み (`AdapterHttpClient.validateExternalUrl` に RC6.5+RC6.6 と同一の `isAddressSafe` + `extractEmbeddedIpv4` 移植。11 connector adapter / ConnectorDefinitionServiceImpl / IngestWebhookController から呼ばれる全 outbound HTTP path を保護。SHARED HttpClient redirect 設定を NORMAL → NEVER、relative Location の元 URI resolve も追加。+3 regression tests、78/78 PASS for SSRF surface)
@@ -314,6 +315,152 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 ## 現在のバージョン
 
 **3.1.1** (2026-04-02)
+
+### RC35 / RC6.11 (2026-05-31) — Security: ACP import XXE (CWE-611) — GHSA reporter tonghuaroot (shipped)
+
+ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6.10` = `cf2f499f3`)
+
+GHSA で **High** 脆弱性報告。RC6.5 と同じ reporter (tonghuaroot)、
+今度は **XXE on ACP import**。`ZipImporter.importAcpFormat` の
+SAXReader が DOCTYPE / 外部エンティティを resolve しており、
+**cmis:write 1 個** あれば非 admin user が任意ファイル読取 + SSRF
+を起動可能。reporter が exact code fix + live verify 済みで添付。
+
+#### 脆弱性
+
+`core/src/main/java/jp/aegif/nemaki/rest/importexport/ZipImporter.java`
+line 191-192:
+```java
+SAXReader reader = new SAXReader();
+xmlDoc = reader.read(new ByteArrayInputStream(xmlData));
+```
+
+dom4j の `SAXReader` は default で external entity resolve する。
+ACP ZIP の top-level `*.xml` が攻撃者制御 (`importAcpFormat` で
+中身全体を `byte[] xmlData` に読み込み)、解決されたエンティティは
+`<name>` 要素の text → `getAcpChildName(...)` → 作成される CMIS
+folder の `cmis:name` に **verbatim 永続化** される。CMIS API で
+読み戻せる = read-capable XXE。
+
+攻撃シナリオ:
+```xml
+<?xml version="1.0"?>
+<!DOCTYPE r [ <!ENTITY xxe SYSTEM "file:///etc/passwd"> ]>
+<root><folder><name>&xxe;</name></folder></root>
+```
+これを ZIP に入れて `POST /core/rest/repo/{repo}/importexport/import/{folderId}`
+に流すと、サーバ container の `/etc/passwd` が folder name として
+登録される。Tomcat process が読める任意ファイル (app config、
+credential、key material) が同様に抜き取れる。SYSTEM/外部 parameter
+entity を使えば SSRF も可。
+
+#### 権限境界 (重要)
+
+要件は `hasCreateChildrenPermission(cs, repositoryId, callContext, targetFolder)`
+だけ。admin 不要。**1 つのフォルダに `cmis:write` を持つ通常
+ユーザ** がアタッカー。`applyACL` で `addACEPrincipal[N]=bob` +
+`addACEPermission[N][0]=cmis:write` で簡単に到達。
+
+#### 修正
+
+`ZipImporter.importAcpFormat` の SAXReader を `TypeResource.parse`
+(RC13 で既に hardening 済) と同じ pattern に揃え:
+```java
+SAXReader reader = new SAXReader();
+try {
+    reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+    reader.setFeature("http://xml.org/sax/features/external-general-entities", false);
+    reader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+} catch (org.xml.sax.SAXException e) {
+    throw new DocumentException("Failed to configure XXE protection on SAXReader", e);
+}
+xmlDoc = reader.read(new ByteArrayInputStream(xmlData));
+```
+
+#### Repo-wide audit (reporter 依頼)
+
+`new SAXReader()` / `DocumentBuilderFactory.newInstance` / その他
+XML parser instantiation を全件 grep:
+
+| Sink | 状態 |
+|---|---|
+| `ZipImporter.java:191` | **本 RC で修正** |
+| `TypeResource.java:1721` | RC13 で hardening 済 |
+| `AuthTokenResource.java:475` (SAML response) | RC13 で full 5 feature 設定済 |
+| `SolrResource.java:403`, `SolrAllResource.java:143` | RC13 で hardening 済 |
+| `SamlSignatureVerifier` | XML parse しない (Document を受け取るだけ) |
+
+他に unhardened sink なし。
+
+#### 新規 ZipImporterXxeTest (4 ケース)
+
+`core/src/test/java/jp/aegif/nemaki/rest/importexport/ZipImporterXxeTest.java`:
+1. `rejectsDoctypeWithFileSystemEntity`: reporter PoC そのまま、
+   `DocumentException` + "DOCTYPE is disallowed" 含むこと
+2. `rejectsDoctypeWithExternalParameterEntity`: blind/OOB variant
+   (`<!DOCTYPE root SYSTEM "http://...">`) も block
+3. `acceptsBenignDoctypeFreePackageXml`: 正当な DOCTYPE-free ACP は
+   通る (over-block regression guard)
+4. `hardenedReaderHasAllThreeFeaturesEnabled`: `getXMLReader().
+   getFeature(...)` で 3 feature 値を読み戻し、将来 setFeature が
+   reorder / drop された場合に検知
+
+JVM-level test なので Tomcat 不要、focused regression に含められる。
+
+#### Live PoC 検証
+
+本 session の RC6.10 stack に対して reporter PoC をそのまま実行:
+
+1. **Pre-fix**: bob (非 admin) で xxe_passwd.zip upload → HTTP 200,
+   `foldersCreated: 1`, `/etc/passwd` の中身が folder name として
+   CouchDB に保存されたことを確認
+2. **Post-fix** (patched WAR redeploy 後): 同じ upload → HTTP 200,
+   `foldersCreated: 0`, `errors: ["Failed to parse package XML: ...
+   DOCTYPE is disallowed when the feature \"http://apache.org/xml/
+   features/disallow-doctype-decl\" set to true."]`, `status:
+   partial`
+3. **Benign control**: DOCTYPE なし ACP zip → `foldersCreated: 1`,
+   `status: success` (over-block していないこと確認)
+4. **Cleanup**: 漏洩した folder + bob + parent folder + archive db
+   copy 全て sweep 済
+
+#### Tests
+
+- **新規** `ZipImporterXxeTest`: 4/4 PASS
+- 25 class focused regression: **377/377 PASS** (RC6.10 baseline
+  373 + 4 新規 ZipImporterXxeTest)
+- SOC validator full run: 17 PASS / 7 SKIP (Phase 1.4.1 source-tree
+  NUL scan: 1683 files / 0 hits — RC6.10 の 1680 から +3)
+
+#### Files touched
+
+- `core/src/main/java/jp/aegif/nemaki/rest/importexport/ZipImporter.java`
+  (+11 line, 3-feature hardening block)
+- **新規** `core/src/test/java/jp/aegif/nemaki/rest/importexport/ZipImporterXxeTest.java`
+  (4 cases)
+- `RELEASE_NOTES.md`, `CLAUDE.md`, `REVIEW_PACKET.md`
+
+#### Migration / compatibility
+
+public API 変更なし。新 property 追加なし。schema / patch / view /
+Mango index / migration 一切無変更。正当な ACP import (DOCTYPE
+なし、NemakiWare の ACP format には DOCTYPE 不要) は従来通り動作。
+DOCTYPE 入り payload (NemakiWare に legitimate な use case なし)
+だけが明示的 error message で拒否される。
+
+#### Commit + tag 関係
+
+- RC6.11 security fix + test commit: 後続
+- doc closure commit: 後続
+- **`v3.1.1-RC6.11` annotated tag target**: doc-closure commit
+
+RC6.10 tag (`cf2f499f3`) は force-update せず歴史的マイルストーン
+として保持。
+
+#### Credit
+
+Reported by **tonghuaroot** via GitHub Security Advisory.
+RC6.5 と同じ reporter。
 
 ### RC34 / RC6.10 (2026-05-31) — Refactor: SsrfGuard 共有化 + source-tree NUL pre-commit scan (shipped)
 

