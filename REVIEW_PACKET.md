@@ -79,8 +79,7 @@ JVM args: surefire `argLine` + 3 Dockerfile variants
 (1 property each).
 
 - **Code artifact under review** = the annotated tag
-  `v3.1.1-RC6.10` (peeled commit TBD — populated at tag-cut time;
-  see §1 table).
+  `v3.1.1-RC6.10` (peeled commit `cf2f499f3e876b425d8079036f531b6eb63ab1a5`).
 - **Review supplementary documentation** = files on
   `release/3.1.1-RC6` **branch HEAD** that may land after the
   tag is cut. As of tag time the divergence is zero — see §3.
@@ -96,10 +95,10 @@ Previous historical tags (`v3.1.1-RC6.9`, `…-RC6.8`, `…-RC6.7`,
 | Item | Value |
 |---|---|
 | **Final candidate tag** | `v3.1.1-RC6.10` |
-| Tag annotated object SHA | TBD (populated at tag-cut time) |
-| Tag peeled commit | TBD (populated at tag-cut time) |
+| Tag annotated object SHA | `3d9dc88916103e6e91d9c7b2775f8b96d223f031` |
+| Tag peeled commit | `cf2f499f3e876b425d8079036f531b6eb63ab1a5` |
 | Branch | `release/3.1.1-RC6` |
-| Branch HEAD at tag time | TBD (zero divergence target at tag time) |
+| Branch HEAD at tag time | `cf2f499f3e876b425d8079036f531b6eb63ab1a5` (= tag peeled, zero divergence at tag time) |
 | Base of RC6.10 cycle | `v3.1.1-RC6.9` (peeled `76695f46c`) |
 | RC5 cycle baseline | `v3.1.1-RC4.1` (peeled `572aad18b`) |
 | **RC6.9 → RC6.10 diff cmd** | `git diff v3.1.1-RC6.9..v3.1.1-RC6.10` |
@@ -1102,10 +1101,9 @@ require larger engineering than a refactor RC.)
      (DNS rebinding pin + runtime revalidation + multi-hop redirect)
    - `e45d172bb` — RC6.9: HTTP Host header preservation +
      Javadoc honesty + JVM property wiring
-   - RC6.10 SsrfGuard extraction commit (TBD, populated at
-     tag-cut time) — refactor-only; carries no new SSRF
-     behaviour but consolidates the helpers ready for future
-     consumers
+   - `03be615ee` — RC6.10: SsrfGuard extraction (refactor only,
+     no new SSRF behaviour; consolidates the helpers ready for
+     future consumers)
 3. Cut a **new** annotated tag `v3.1.1` against the merge
    commit on `master`.
 4. Optionally create a single GitHub Release attached to
