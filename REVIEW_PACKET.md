@@ -273,8 +273,21 @@ Fix: rewrite URI to IP literal AND explicitly set
 `b.header("Host", originalHostHeader)`. Uses the documented JDK
 escape hatch via the startup property
 `-Djdk.httpclient.allowRestrictedHeaders=host`, set in:
-- Production: `docker/core/Dockerfile{,.jakarta,.simple}` —
-  `CATALINA_OPTS` / `JAVA_OPTS` augmented.
+- Production (image build): `docker/core/Dockerfile{,.jakarta,.simple}`
+  — `CATALINA_OPTS` / `JAVA_OPTS` augmented.
+- Production (compose runtime override): `docker/docker-compose-simple.yml`,
+  `docker/docker-compose-ldap.yml`,
+  `docker/docker-compose-auth-test.yml` — `CATALINA_OPTS`
+  augmented. **This piece is visible in the `v3.1.1-RC6.9..v3.1.1-RC6.10`
+  diff**: the compose `CATALINA_OPTS` `environment:` entries override
+  the Dockerfile `ENV CATALINA_OPTS` at container-start time, and
+  RC6.9 originally shipped only the Dockerfile half. The compose
+  patch landed as post-RC6.9 commit `84fdfca80` to make the
+  property actually reach the running JVM in the standard compose
+  stacks (the Dockerfile ENV is masked when compose sets the same
+  variable). Carried forward into the RC6.10 tag content. No
+  classifier / no SSRF behaviour change — only widens where the
+  RC6.9 JDK property reaches.
 - Tests: `core/pom.xml` surefire `<argLine>`.
 - Defensive fallback: a static `{}` initializer at the top of
   `AdapterHttpClient` sets the property additively at class load
@@ -817,8 +830,11 @@ RC5 cycle (RC5 → RC5.6) + RC6 + RC6.1 + RC6.2 + RC6.3 + RC6.4 + RC6.5 + RC6.6 
   `Host: <original-hostname[:port]>` after URI rewrite. JDK
   startup property `-Djdk.httpclient.allowRestrictedHeaders=host`
   added to all 3 Dockerfile variants + pom.xml surefire argLine
-  + static initializer fallback. Javadoc aligned with the
-  post-RC6.8 honest wording (HTTP closed at network layer;
+  + static initializer fallback **+ all 3 docker-compose `CATALINA_OPTS`
+  overrides** (post-RC6.9 commit `84fdfca80`, rolled into the
+  RC6.10 tag because compose `environment:` masks the Dockerfile
+  `ENV CATALINA_OPTS` at container-start). Javadoc aligned with
+  the post-RC6.8 honest wording (HTTP closed at network layer;
   HTTPS TLS-bounded with TCP-connect SSRF residual). +2
   AdapterRegistryTest tests (343/343 PASS for full focused
   regression including all 7 adapter contract test classes).
@@ -1171,14 +1187,27 @@ Focused set (refactor + tooling — no new SSRF closure):
   `node_modules`/`target`/`dist`/`build`/`.git`/`coverage`/
   `playwright-report`/`test-results`. 1680 files scanned / 0
   hits at HEAD.
+- `docker/docker-compose-simple.yml`, `docker/docker-compose-ldap.yml`,
+  `docker/docker-compose-auth-test.yml` (1 line each, identical
+  patch). **Not new RC6.10 work** — these are the post-RC6.9 commit
+  `84fdfca80` (the compose-runtime half of the RC6.9 P3 Host header
+  fix; see §2.5.1) being carried into the RC6.10 tag content. No
+  classifier change, no SSRF behaviour change. Reviewers will see
+  these files in `git diff v3.1.1-RC6.9..v3.1.1-RC6.10` but the
+  delta is purely the RC6.9 JVM property
+  `-Djdk.httpclient.allowRestrictedHeaders=host` being appended
+  to the compose `CATALINA_OPTS` `environment:` overrides so the
+  Dockerfile `ENV CATALINA_OPTS` value (which compose masks at
+  container-start time) is no longer the sole carrier.
 - `REVIEW_PACKET.md`, `RELEASE_NOTES.md`, `CLAUDE.md`
   (RC6.10 section).
 
 Security-focused reviewers can scope to `SsrfGuard.java` (the
 extracted source of truth) + the two delegation call sites in
 `HttpWebhookDispatcher` and `AdapterHttpClient` (~30 LOC each
-after subtraction). The behavioural delta vs RC6.9 is zero by
-construction.
+after subtraction). The compose-file delta is the RC6.9 post-tag
+follow-on already-reviewed material. The behavioural delta vs
+RC6.9 is zero by construction.
 
 If you are reviewing RC5+RC6 cold for the first time, use the
 cumulative diff (since `v3.1.1-RC4.1`) in §1.
