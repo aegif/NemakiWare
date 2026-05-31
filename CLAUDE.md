@@ -255,7 +255,7 @@ requests.post(url, auth=(user, pw), headers={"X-Requested-With": "XMLHttpRequest
 
 ## セキュリティステータス (2026-05-30)
 
-- Connector SSRF — AdapterHttpClient deeper closure: DNS rebinding pin + runtime revalidation + multi-hop redirect resolve (RC6.8): 対応済み (`sendWithRetry`/`sendWithRedirectValidation` で send 時に `pinRequestToValidatedAddress` 経由で再 resolve + validate、HTTP は URI を validated IP literal に rewrite、HTTPS は TLS cert verification 依存。Mattermost/Salesforce orchestrator に explicit `validateExternalUrl` 追加。Multi-hop redirect で `currentRequest.uri().resolve(location)` に修正。+5 regression tests、計 265/265 PASS)
+- Connector SSRF — AdapterHttpClient deeper closure: DNS rebinding pin (HTTP fully closed、HTTPS は TLS-bounded で TCP-connect class が residual) + runtime revalidation + multi-hop redirect resolve (RC6.8): 対応済み (`sendWithRetry`/`sendWithRedirectValidation` で send 時に `pinRequestToValidatedAddress` 経由で再 resolve + validate、HTTP は URI を validated IP literal に rewrite で network 層完全閉、HTTPS は再 validate のみ + TLS cert verification で data-exchange SSRF を遮断するが TCP-connect SSRF が microsecond race window で残存 — Medium 残余として §6 に記録 + 将来の custom SocketFactory が real fix。Mattermost/Salesforce orchestrator に explicit `validateExternalUrl` 追加。Multi-hop redirect で `currentRequest.uri().resolve(location)` に修正。+5 regression tests、計 265/265 PASS。Compat 注意: HTTP IP-pin は `Host: <IP>` 送信のため shared-vhost HTTP deployment が misroute する可能性 — §6 に Medium 互換性 risk として記録)
 - Connector SSRF — AdapterHttpClient horizontal fix (RC6.7): 対応済み (`AdapterHttpClient.validateExternalUrl` に RC6.5+RC6.6 と同一の `isAddressSafe` + `extractEmbeddedIpv4` 移植。11 connector adapter / ConnectorDefinitionServiceImpl / IngestWebhookController から呼ばれる全 outbound HTTP path を保護。SHARED HttpClient redirect 設定を NORMAL → NEVER、relative Location の元 URI resolve も追加。+3 regression tests、78/78 PASS for SSRF surface)
 - Webhook SSRF — IPv4 special-use 追加 block + Teredo + RFC 6052 /48 NAT64 (RC6.6): 対応済み (`HttpWebhookDispatcher` に IPv4 `0/8` + `100.64/10` + `192.0.0/24` + `198.18/15` + `240/4` + `255.255.255.255` を追加、IPv6 transition extractor に `64:ff9b:1::/48` の RFC 6052 §2.2 /48 layout + Teredo `2001::/32` を追加。+7 regression tests、計 59/59 PASS)
 - Webhook SSRF — IPv6 transition wrap bypass (RC6.5): 対応済み (`HttpWebhookDispatcher` で NAT64 `64:ff9b::/96` + `64:ff9b:1::/48` / 6to4 `2002::/16` / IPv4-compatible `::a.b.c.d` から embedded IPv4 を抽出 → 再分類で loopback / RFC 1918 / link-local 169.254 を block。外部 reporter tonghuaroot 経由の GHSA、PoC で 5 形式すべて bypass を確認、修正後すべて block + 15 regression tests 追加)
@@ -425,8 +425,22 @@ RC6.7 tag (`b48d9e0c1`) は force-update せず歴史的マイルストーンと
   send 時 revalidate するため SSRF 自体は subsume されるが、defense-in-depth)
 - Multi-hop relative redirect resolve correctness (P3)
 
-**Remaining (informational, RC6.7 から継続 + 1 件 new)**:
-- HTTPS DNS pinning via custom SocketFactory (TLS cert verification 依存)
+**Remaining (一部 Medium に raise、RC6.8 post-tag review で発覚)**:
+- **HTTPS DNS pinning via custom SocketFactory** (Medium 残余、
+  RC6.8 post-tag review で raise) — RC6.8 P1 は HTTPS data-exchange SSRF
+  は塞いだが、TCP-connect SSRF が microsecond race window で残存
+  (`InetAddress.getAllByName` revalidate と JDK 内 resolve の間で rebind
+  すれば TCP 接続自体は到達)。TLS handshake は cert mismatch で失敗するため
+  data exfil は不可だが、port-scan / service fingerprint / inbound-TCP
+  side-effect trigger は可能。real fix は SocketFactory で TCP-connect
+  時に validated IP を pin (SNI/hostname-verification は元 hostname のまま)
+- **HTTP Host header preservation under IP pin** (Medium 互換性、同上)
+  — RC6.8 P1 の HTTP URI rewrite は JDK 制約で `Host: <IP>` 送信。Mattermost
+  / Salesforce 等の単独 server 配備では影響なしだが、**name-based
+  virtual-host deployment** (1 IP の reverse proxy が複数 hostname 配信)
+  では misroute。endpoint を IP 直接設定しても vhost match に hostname が
+  必要なので解消されない。real fix は JVM startup property
+  `-Djdk.httpclient.allowRestrictedHeaders=host` + host-preserving overload
 - `isAddressSafe`+`extractEmbeddedIpv4` shared utility extraction (2 consumer、
   3 つ目で refactor)
 - 他 orchestrator (Slack/Teams/Notion/Chatwork/M365 等) の explicit

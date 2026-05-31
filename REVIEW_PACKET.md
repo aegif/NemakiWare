@@ -18,8 +18,10 @@ fix identified.
     `pinRequestToValidatedAddress(request)` before send. HTTP path
     re-resolves + re-validates + rewrites the URI to use the
     validated IP literal (defeats DNS rebinding). HTTPS path
-    re-validates + returns original (TLS cert verification handles
-    rebinding). Unresolvable host throws `SecurityException`.
+    re-validates + returns original (TLS cert verification stops
+    application-layer data exchange; see §2.2 / §6 for the
+    residual TCP-connect risk). Unresolvable host throws
+    `SecurityException`.
   - **P2 runtime endpoint revalidation**:
     `MattermostFetchOrchestrator` and
     `SalesforceFetchOrchestrator` now call
@@ -105,22 +107,75 @@ metadata IP at connection time.
 Fix: new `pinRequestToValidatedAddress(request)` called inside
 both `sendWithRetry` and `sendWithRedirectValidation`:
 
-- **HTTP path** — re-resolves at send time, validates every
-  resolved address against `isAddressSafe`, then rewrites the URI
-  to use the validated IP literal (bracketed for IPv6). The JDK
-  `HttpClient` connects to the pinned IP, defeating rebinding.
-  We do NOT override the `Host` header to the original hostname
-  because the JDK restricts `Host` by default
-  (`-Djdk.httpclient.allowRestrictedHeaders=host` required). Most
-  connector adapters target named API endpoints (Mattermost
-  on-prem, Salesforce, etc.) that respond to any `Host`;
-  shared-vhost servers may misroute. Accepted trade-off — see §6
-  follow-up table.
-- **HTTPS path** — returns request unchanged. TLS certificate
-  verification against the original hostname means a rebound DNS
-  that returns an internal IP cannot present a valid cert for the
-  original hostname — handshake fails, no SSRF. Re-validation
-  still happens at send time as belt-and-suspenders.
+- **HTTP path — DNS rebinding closed at the network layer**.
+  Re-resolves at send time, validates every resolved address
+  against `isAddressSafe`, then rewrites the URI to use the
+  validated IP literal (bracketed for IPv6). The JDK `HttpClient`
+  connects to the pinned IP. No TCP connection to a rebound IP
+  is possible after the send-time validation succeeds.
+
+  **Known compatibility risk (P3 reviewer finding)**: the JDK
+  `HttpClient.Builder.header(...)` restricts the `Host` header by
+  default (only overridable via the JVM startup property
+  `-Djdk.httpclient.allowRestrictedHeaders=host`, which we do
+  NOT set). After URI rewrite, the JDK sends `Host: <IP>` rather
+  than `Host: <original-hostname>`. For connector adapters that
+  target a single dedicated server (Mattermost / Salesforce
+  on-prem on its own IP, Slack/Teams/Notion/etc. on their
+  public DNS) this works. For **name-based virtual-host
+  deployments** (e.g. a reverse proxy serving several Mattermost
+  instances under different hostnames on the same IP), the
+  rewritten request will reach the proxy but the proxy may 404
+  or route to the wrong vhost because no vhost matches the IP.
+  Setting the connector endpoint to the IP directly does NOT
+  fix this — the vhost match requires the hostname in the
+  `Host` header.
+
+  Operators hitting this need either:
+  - JVM startup flag `-Djdk.httpclient.allowRestrictedHeaders=host`
+    AND a code path that preserves the original `Host` (future
+    enhancement, not in RC6.8); or
+  - A migration to `HttpURLConnection`-based dispatch (same
+    pattern as `HttpWebhookDispatcher`).
+
+  The trade-off was accepted for RC6.8 because (a) the JDK
+  property is a JVM-wide change that operators may not want
+  to flip, and (b) most connector deployments don't use
+  name-based vhosts for the API endpoint.
+
+- **HTTPS path — TLS-bounded, NOT fully closed (P2 reviewer
+  finding)**. Returns the request unchanged. The send-time
+  re-validation (via `InetAddress.getAllByName`) catches
+  rebound IPs *if* the rebound resolve happens before the
+  JDK's internal `HttpClient.send` resolve. **There is a
+  residual race window** between our `InetAddress.getAllByName`
+  call inside `pinRequestToValidatedAddress` and the JDK's
+  own resolve inside `HttpClient.send`. If a DNS attacker
+  rebinds within that microsecond window:
+  - TCP connection to the internal IP **does succeed**
+    (TCP handshake completes before TLS).
+  - TLS handshake then fails because the internal server's
+    certificate doesn't match the declared hostname → no
+    application-layer data exchange, no SSRF data read/write.
+
+  So HTTPS is closed against the **data-exchange** class of
+  SSRF (no body read, no token leak, no internal API call
+  succeeds), but NOT against the **TCP-connect / port-scan /
+  service-fingerprint** class. An attacker could still:
+  - Detect open ports on internal hosts (TCP connect succeeds
+    even when TLS fails).
+  - Measure TLS handshake timing to fingerprint internal
+    services.
+  - Trigger any side effects internal services have on
+    inbound-TCP / inbound-TLS-handshake events.
+
+  Closing the HTTPS path fully requires a custom
+  `SocketFactory` that pins the resolved IP at TCP-connect
+  time while keeping SNI / hostname verification on the
+  original hostname. This is documented as a real follow-up
+  in §6 (raised from "Low defence-in-depth" to "Medium
+  residual risk" by the P2 finding).
+
 - Unresolvable host throws `SecurityException` (behaviour change
   from "let HttpClient try and fail with network error" to
   "fail fast with security flavour").
@@ -176,10 +231,11 @@ against that host's authority.
   in `@AfterEach`. The P1 fix means `sendWithRetry` validates
   every request including the WireMock localhost endpoints these
   tests use; without the opt-in, those 22 tests fail.
-- HttpWebhookDispatcherTest + AdapterRegistryTest: **78 PASS**
-  (now: 59 webhook + 24 adapter-registry).
-- 7 connector adapter contract tests (Slack / Teams / Mattermost /
-  Notion / Salesforce / M365 Mail / Chatwork): **71 PASS**.
+- HttpWebhookDispatcherTest + AdapterRegistryTest: **83 PASS**
+  (59 webhook + 24 adapter-registry).
+- 7 connector adapter contract tests (Slack 12 / Teams 11 /
+  Mattermost 12 / Notion 8 / Salesforce 11 / M365 Mail 9 /
+  Chatwork 13): **76 PASS**.
 - Full 16-class focused regression: **265/265 PASS** (was 260 in
   RC6.7; +5 from new pinRequest tests).
 
@@ -424,14 +480,19 @@ RC5 cycle (RC5 → RC5.6) + RC6 + RC6.1 + RC6.2 + RC6.3 + RC6.4 + RC6.5 + RC6.6 
   replaced with `\0` escape (binary → text classification).
 - **RC6.8 SSRF deeper closure** — `sendWithRetry` and
   `sendWithRedirectValidation` now call
-  `pinRequestToValidatedAddress(request)` before send
-  (re-resolve + revalidate; HTTP rewrites URI to validated IP
-  literal, HTTPS relies on TLS cert verification). Mattermost +
-  Salesforce orchestrators add explicit `validateExternalUrl`
+  `pinRequestToValidatedAddress(request)` before send. HTTP
+  rewrites URI to the validated IP literal (DNS rebinding fully
+  closed at the network layer); HTTPS re-validates at send time
+  but does NOT IP-pin — TLS cert verification stops
+  application-layer data exchange on a rebound IP, BUT a TCP
+  connect to the rebound IP still succeeds within a microsecond
+  race window (residual TCP-connect SSRF — see §6). Mattermost
+  + Salesforce orchestrators add explicit `validateExternalUrl`
   defence-in-depth. Multi-hop relative redirect resolve uses
   `currentRequest.uri()` instead of `request.uri()`. +5 new
   AdapterRegistryTest tests (265/265 PASS for full focused
-  regression).
+  regression). **Compat caveat**: HTTP IP-pin sends `Host: <IP>`
+  → shared-vhost HTTP deployments may misroute (§6).
 
 Full per-RC narrative: `RELEASE_NOTES.md` (16 sections, RC5 →
 RC6.8), `docs/design/connector-delegation.md` (§12.1 - §12.20).
@@ -451,10 +512,10 @@ RC6.8), `docs/design/connector-delegation.md` (§12.1 - §12.20).
   new RC6.8 pinRequest regression tests covering HTTP URI
   rewrite, HTTPS URI unchanged, rebound-IP throw, rebound IPv6
   transition throw, header preservation).
-- **7 connector adapter contract tests** (Slack / Teams /
-  Mattermost / Notion / Salesforce / M365 Mail / Chatwork):
-  **71 PASS** — confirms `pinRequestToValidatedAddress` does NOT
-  break legitimate adapter API call patterns when
+- **7 connector adapter contract tests** (Slack 12 / Teams 11 /
+  Mattermost 12 / Notion 8 / Salesforce 11 / M365 Mail 9 /
+  Chatwork 13): **76 PASS** — confirms `pinRequestToValidatedAddress`
+  does NOT break legitimate adapter API call patterns when
   `nemaki.ingest.allowLocalhost=true` is set for the WireMock
   test endpoints.
 - **Full 16-class focused regression** (connector / governance /
@@ -528,7 +589,7 @@ npx playwright test --project=chromium \
   - Combined SSRF surface: **78 → 83 PASS** (78 from RC6.7
     + 5 new RC6.8).
   - 7 adapter contract tests (Slack/Teams/Mattermost/Notion/
-    Salesforce/M365/Chatwork): **71 PASS** — confirms P1's
+    Salesforce/M365/Chatwork): **76 PASS** — confirms P1's
     send-time pinning doesn't break legitimate adapter API
     patterns when `nemaki.ingest.allowLocalhost=true` is set.
   - Full 16-class focused regression: **265/265 PASS**.
@@ -602,8 +663,8 @@ Unchanged since RC4.1.
 | ID | Severity | Scope | Status |
 |---|---|---|---|
 | **R1** (deployment-side) | Low (ops) | operator infrastructure | 4 inherently per-deployment items: network path / TLS, SIEM credentials from secrets manager, notification routing, threshold tuning from environment baseline. Not repo-shippable. |
-| **HTTPS DNS pinning via SocketFactory** | Low (defence-in-depth) | webhook + connector dispatchers HTTPS path | `HttpWebhookDispatcher` HTTPS uses the original hostname URL and relies on TLS cert verification. `AdapterHttpClient` HTTPS path (after RC6.8 P1) does the same — re-validate at send time, no IP pin, TLS verifies hostname. A future hardening would add a custom `SocketFactory` (or `HttpClient.Builder` extension) that pins HTTPS to the validated IP while keeping SNI / hostname verification on the original hostname. Not required for RC6 series. |
-| **HTTP `Host` header preservation under IP pin** | Low (compat) | AdapterHttpClient HTTP path | RC6.8 P1 rewrites HTTP URI to IP literal; the JDK sends `Host: <IP>` because the `HttpClient.Builder` restricts the `Host` header by default. Shared-vhost servers may misroute. Future: enable `-Djdk.httpclient.allowRestrictedHeaders=host` JVM property + add a host-preserving overload. |
+| **HTTPS DNS pinning via SocketFactory** | **Medium (residual SSRF, RC6.8 P2 reviewer)** | webhook + connector dispatchers HTTPS path | RC6.8 P1 closes the **HTTPS data-exchange SSRF class** for both `HttpWebhookDispatcher` and `AdapterHttpClient` (re-validate at send time + TLS cert verification stops application-layer data on a rebound IP). The **HTTPS TCP-connect SSRF class is NOT closed**: there is a microsecond race window between our `InetAddress.getAllByName` re-validate and the JDK's own resolve in `HttpClient.send` — a rebind inside that window lets the TCP connect succeed (TLS handshake then fails). Attacker can still port-scan / fingerprint / trigger TCP-side-effects on internal services. Real fix: custom `SocketFactory` that pins the validated IP at TCP-connect time while keeping SNI/hostname-verification on the original hostname. |
+| **HTTP `Host` header preservation under IP pin** | **Medium (compat, RC6.8 P3 reviewer)** | AdapterHttpClient HTTP path | RC6.8 P1 rewrites HTTP URI to the validated IP literal. JDK's default restricted-headers behaviour means `Host:` is sent as the IP literal, NOT the original hostname. **For shared-vhost HTTP deployments** (e.g. one reverse proxy serving multiple on-prem Mattermost / Salesforce instances under different hostnames on the same IP), this WILL misroute — the proxy can't match a vhost on an IP-only `Host` header, and falls through to a default vhost or returns 404. Setting the connector endpoint to the IP directly does NOT work either, because the vhost match requires the original hostname. Real fix: enable `-Djdk.httpclient.allowRestrictedHeaders=host` JVM startup property AND add a host-preserving overload of `pinRequestToValidatedAddress`. Operators with shared-vhost HTTP endpoints must wait for that fix OR migrate to HTTPS (TLS provides separate-vhost via SNI which the JDK does pass correctly). |
 | **`isAddressSafe` + `extractEmbeddedIpv4` shared utility** | Low (tech debt) | webhook + adapter dispatchers | Duplicated between `HttpWebhookDispatcher` and `AdapterHttpClient`. Track for a follow-up extract-to-shared-helper (`SsrfGuard` utility class). 2 consumers now; refactor when a 3rd appears (Rule of Three). |
 | **Other connector orchestrator endpoint pre-checks** | Low (cosmetic) | Slack/Teams/Notion/Chatwork/M365 etc. orchestrators | RC6.8 P2 added explicit `validateExternalUrl` at Mattermost + Salesforce orchestrator entry. P1's send-time revalidation already protects all 11 connectors, so explicit pre-checks elsewhere are cosmetic (better audit messages). |
 | **Purview / Atlas / OIDC discovery / Graph download SSRF guard** | Low (admin-config surface) | external integration outbound HTTP | These surfaces are NOT under the AdapterHttpClient guard; they have admin-configured IdP / on-prem endpoint use cases. Applying the same blocklist unconditionally would break legitimate internal integrations. Future opt-in "production-mode" property or explicit allowlist. |

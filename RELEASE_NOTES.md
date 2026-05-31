@@ -27,21 +27,50 @@ connection time — classic DNS rebinding.
 Fix: new `pinRequestToValidatedAddress(request)` is called inside
 both `sendWithRetry` and `sendWithRedirectValidation`:
 
-- **HTTP path**: re-resolves at send time, validates every
-  resolved address against `isAddressSafe`, then rewrites the
-  URI to use the validated IP literal (bracketed for IPv6). The
-  JDK `HttpClient` connects to the pinned IP, defeating DNS
-  rebinding. We do NOT override the `Host` header to the original
-  hostname because the JDK restricts `Host` by default
-  (`-Djdk.httpclient.allowRestrictedHeaders=host` required). Most
-  connector adapters target named API endpoints that respond to
-  any `Host`; shared-vhost servers may misroute. Accepted
-  trade-off — see §6 follow-up.
-- **HTTPS path**: returns request unchanged. TLS certificate
-  verification against the original hostname means a rebound DNS
-  that returns an internal IP cannot present a valid cert for the
-  original hostname — the handshake fails, no SSRF. Re-validation
-  still happens at send time as belt-and-suspenders.
+- **HTTP path — DNS rebinding closed at the network layer**.
+  Re-resolves at send time, validates every resolved address
+  against `isAddressSafe`, then rewrites the URI to use the
+  validated IP literal (bracketed for IPv6). The JDK `HttpClient`
+  connects to the pinned IP — no TCP connection to a rebound IP
+  is possible after the send-time validation succeeds.
+
+  **⚠ Compatibility caveat — shared-vhost HTTP deployments**:
+  the JDK `HttpClient.Builder` restricts the `Host` header by
+  default (only overridable via the JVM startup property
+  `-Djdk.httpclient.allowRestrictedHeaders=host`, which we do
+  NOT set). After URI rewrite, the JDK sends `Host: <IP>` rather
+  than `Host: <original-hostname>`. Connector adapters that
+  target a dedicated server (Mattermost / Salesforce on-prem on
+  its own IP, Slack/Teams/Notion/etc. on public DNS) are
+  unaffected. **Name-based virtual-host deployments** (e.g. a
+  reverse proxy serving several Mattermost instances under
+  different hostnames on the same IP) WILL misroute — the proxy
+  cannot match a vhost on an IP-only `Host` header. Setting the
+  connector endpoint to the IP directly does NOT fix this
+  (the vhost match requires the hostname). Operators hitting
+  this need either the JVM property + a host-preserving overload
+  (queued for a future RC) OR migration to HTTPS (TLS SNI
+  carries the hostname correctly).
+
+- **HTTPS path — TLS-bounded, NOT fully closed**. Returns the
+  request unchanged. The send-time re-validation (via
+  `InetAddress.getAllByName`) catches rebound IPs *if* the
+  rebound resolve happens before the JDK's own resolve inside
+  `HttpClient.send`. **A microsecond race window remains**: a
+  DNS attacker rebinding within that window can still cause
+  the JDK to TCP-connect to the internal IP. The TLS handshake
+  then fails against the original hostname's cert, so:
+  - **Data-exchange SSRF closed**: no body read, no token
+    leak, no internal API call succeeds.
+  - **TCP-connect SSRF residual**: attacker can still
+    port-scan internal hosts, time-fingerprint internal
+    services, and trigger inbound-TCP/TLS-handshake side
+    effects on internal services. Closing this fully requires
+    a custom `SocketFactory` pinning the IP at TCP-connect
+    time while keeping SNI/hostname-verification on the
+    original hostname. **Tracked as Medium residual risk in
+    §6 follow-up.**
+
 - Unresolvable host throws `SecurityException` (behaviour change
   from "let HttpClient try and fail with a network error" to
   "fail fast with a security-flavoured error").
