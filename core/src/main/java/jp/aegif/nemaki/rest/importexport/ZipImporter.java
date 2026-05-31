@@ -185,24 +185,14 @@ public class ZipImporter {
             return result;
         }
 
-        // Parse XML
+        // Parse XML through the hardened helper. Extracted in RC6.12 so
+        // ZipImporterXxeTest can exercise the exact production path
+        // (RC6.11 review P2: the test had its own duplicated SAXReader
+        // configuration, so a future deletion of the production
+        // setFeature(...) calls would not have failed the test).
         org.dom4j.Document xmlDoc;
         try {
-            SAXReader reader = new SAXReader();
-            // XXE protection: disable DOCTYPE declarations and external entities.
-            // Without this, a crafted ACP package XML can read arbitrary local
-            // files (file://) or reach internal HTTP endpoints (http://) by an
-            // authenticated user holding only cmis:write on a target folder
-            // (CWE-611). Mirrors the existing hardening in
-            // jp.aegif.nemaki.rest.TypeResource.parse(...).
-            try {
-                reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-                reader.setFeature("http://xml.org/sax/features/external-general-entities", false);
-                reader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            } catch (org.xml.sax.SAXException e) {
-                throw new DocumentException("Failed to configure XXE protection on SAXReader", e);
-            }
-            xmlDoc = reader.read(new ByteArrayInputStream(xmlData));
+            xmlDoc = parseAcpPackageXml(xmlData);
         } catch (DocumentException e) {
             result.errors.add("Failed to parse package XML: " + e.getMessage());
             return result;
@@ -220,6 +210,42 @@ public class ZipImporter {
         }
 
         return result;
+    }
+
+    /**
+     * Parse the top-level ACP package XML with XXE protections enabled.
+     *
+     * <p>Three SAX features are set on the dom4j {@link SAXReader}:
+     * {@code disallow-doctype-decl=true},
+     * {@code external-general-entities=false}, and
+     * {@code external-parameter-entities=false}. This mirrors the
+     * sibling hardening in
+     * {@code jp.aegif.nemaki.rest.TypeResource.parse(...)} (present
+     * since RC13). Without these features, a non-admin user with
+     * {@code cmis:write} on a single target folder could upload a
+     * crafted ACP whose package XML embedded a {@code SYSTEM} entity
+     * pointing at {@code file:///etc/passwd} or
+     * {@code http://internal-host/...}, and the resolved content
+     * would be persisted verbatim into the created CMIS folder name
+     * — CWE-611 read-capable XXE / SSRF (GHSA, reporter
+     * <em>tonghuaroot</em>).
+     *
+     * <p>Package-private to allow {@code ZipImporterXxeTest} to
+     * exercise this exact code path directly (RC6.12 follow-up to
+     * the RC6.11 reviewer P2 finding that a test-local SAXReader
+     * configuration would not catch future deletion of the
+     * production guards).
+     */
+    static org.dom4j.Document parseAcpPackageXml(byte[] xmlData) throws DocumentException {
+        SAXReader reader = new SAXReader();
+        try {
+            reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            reader.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            reader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+        } catch (org.xml.sax.SAXException e) {
+            throw new DocumentException("Failed to configure XXE protection on SAXReader", e);
+        }
+        return reader.read(new ByteArrayInputStream(xmlData));
     }
 
     @SuppressWarnings("unchecked")
