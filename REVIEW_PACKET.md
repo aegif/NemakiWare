@@ -42,7 +42,7 @@ JVM args: surefire `argLine` + 3 Dockerfile variants
 (1 property each).
 
 - **Code artifact under review** = the annotated tag
-  `v3.1.1-RC6.9` (peeled commit `<POST-TAG-FILL>`).
+  `v3.1.1-RC6.9` (peeled commit `76695f46c72b3c55d46e9f41396f41920fca9062`).
 - **Review supplementary documentation** = files on
   `release/3.1.1-RC6` **branch HEAD** that may land after the
   tag is cut. As of tag time the divergence is zero — see §3.
@@ -58,10 +58,10 @@ Previous historical tags (`v3.1.1-RC6.8`, `…-RC6.7`, `…-RC6.6`,
 | Item | Value |
 |---|---|
 | **Final candidate tag** | `v3.1.1-RC6.9` |
-| Tag annotated object SHA | `<POST-TAG-FILL>` |
-| Tag peeled commit | `<POST-TAG-FILL>` |
+| Tag annotated object SHA | `8fac0ce7e9f94bbb6df5134fdf1881ec4ab6137b` |
+| Tag peeled commit | `76695f46c72b3c55d46e9f41396f41920fca9062` |
 | Branch | `release/3.1.1-RC6` |
-| Branch HEAD at tag time | `<POST-TAG-FILL>` (= tag peeled, zero divergence at tag time) |
+| Branch HEAD at tag time | `76695f46c72b3c55d46e9f41396f41920fca9062` (= tag peeled, zero divergence at tag time) |
 | Base of RC6.9 cycle | `v3.1.1-RC6.8` (peeled `cd82452f4`) |
 | RC5 cycle baseline | `v3.1.1-RC4.1` (peeled `572aad18b`) |
 | **RC6.8 → RC6.9 diff cmd** | `git diff v3.1.1-RC6.8..v3.1.1-RC6.9` |
