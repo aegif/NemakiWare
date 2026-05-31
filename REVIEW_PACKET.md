@@ -130,8 +130,7 @@ JVM args: surefire `argLine` + 3 Dockerfile variants
 (1 property each).
 
 - **Code artifact under review** = the annotated tag
-  `v3.1.1-RC6.11` (peeled commit TBD — populated at tag-cut time;
-  see §1 table).
+  `v3.1.1-RC6.11` (peeled commit `8e52d95d248b2ca5765f0a6a31d4c80c1887245f`).
 - **Review supplementary documentation** = files on
   `release/3.1.1-RC6` **branch HEAD** that may land after the
   tag is cut. As of tag time the divergence is zero — see §3.
@@ -147,10 +146,10 @@ Previous historical tags (`v3.1.1-RC6.10`, `…-RC6.9`, `…-RC6.8`,
 | Item | Value |
 |---|---|
 | **Final candidate tag** | `v3.1.1-RC6.11` |
-| Tag annotated object SHA | TBD (populated at tag-cut time) |
-| Tag peeled commit | TBD (populated at tag-cut time) |
+| Tag annotated object SHA | `e8273fda51e17eff391e001e5563082a65dd9ace` |
+| Tag peeled commit | `8e52d95d248b2ca5765f0a6a31d4c80c1887245f` |
 | Branch | `release/3.1.1-RC6` |
-| Branch HEAD at tag time | TBD (zero divergence target at tag time) |
+| Branch HEAD at tag time | `8e52d95d248b2ca5765f0a6a31d4c80c1887245f` (= tag peeled, zero divergence at tag time) |
 | Base of RC6.11 cycle | `v3.1.1-RC6.10` (peeled `cf2f499f3`) |
 | RC5 cycle baseline | `v3.1.1-RC4.1` (peeled `572aad18b`) |
 | **RC6.10 → RC6.11 diff cmd** | `git diff v3.1.1-RC6.10..v3.1.1-RC6.11` |
@@ -1354,8 +1353,8 @@ require larger engineering than a security hotfix RC.)
    - `03be615ee` — RC6.10: SsrfGuard extraction (refactor only,
      no new SSRF behaviour; consolidates the helpers ready for
      future consumers)
-   - RC6.11 ACP import XXE fix commit (TBD, populated at
-     tag-cut time) — the second tonghuaroot GHSA closure
+   - `282d2aa49` — RC6.11: ACP import XXE fix (the second
+     tonghuaroot GHSA closure)
 3. Cut a **new** annotated tag `v3.1.1` against the merge
    commit on `master`.
 4. Optionally create a single GitHub Release attached to
