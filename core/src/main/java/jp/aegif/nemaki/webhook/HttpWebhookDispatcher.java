@@ -377,248 +377,56 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
     
     /**
      * Check if a single IP address is safe to access.
-     * Blocks loopback, link-local, site-local, any-local, multicast,
-     * and IPv6 ULA (fc00::/7) addresses.
+     *
+     * <p>Delegates the actual classification to
+     * {@link jp.aegif.nemaki.security.SsrfGuard#isAddressSafe(InetAddress)}
+     * (extracted in v3.1.1-RC6.10 from the previously-duplicated copy in
+     * this file). This wrapper adds dispatcher-specific log messages
+     * categorized by reject reason for operator triage; the underlying
+     * classification logic is byte-for-byte identical to the prior
+     * implementation.
+     *
+     * @param host original hostname (informational, used only for log
+     *             messages — the classification is purely on
+     *             {@code address}).
      */
     private boolean isAddressSafe(InetAddress address, String host) {
+        if (jp.aegif.nemaki.security.SsrfGuard.isAddressSafe(address)) {
+            return true;
+        }
+        // Logging strategy: the call to SsrfGuard returns false for any
+        // of ~14 reject categories. We re-run the cheap top-level
+        // predicates here so the operator log line names the specific
+        // bucket. For categories without a distinct predicate (IPv4
+        // special-use, IPv6 transition wrap) we fall through to a
+        // generic "blocked" message — the SsrfGuard javadoc enumerates
+        // the full classification.
         if (address.isLoopbackAddress()) {
             log.debug("SSRF protection: blocked loopback address " + host + " -> " + address.getHostAddress());
-            return false;
-        }
-        
-        if (address.isLinkLocalAddress()) {
+        } else if (address.isLinkLocalAddress()) {
             log.debug("SSRF protection: blocked link-local address " + host + " -> " + address.getHostAddress());
-            return false;
-        }
-        
-        if (address.isSiteLocalAddress()) {
+        } else if (address.isSiteLocalAddress()) {
             log.debug("SSRF protection: blocked site-local (private) address " + host + " -> " + address.getHostAddress());
-            return false;
-        }
-        
-        if (address.isAnyLocalAddress()) {
+        } else if (address.isAnyLocalAddress()) {
             log.debug("SSRF protection: blocked any-local address " + host + " -> " + address.getHostAddress());
-            return false;
-        }
-        
-        if (address.isMulticastAddress()) {
+        } else if (address.isMulticastAddress()) {
             log.debug("SSRF protection: blocked multicast address " + host + " -> " + address.getHostAddress());
-            return false;
-        }
-        
-        byte[] addrBytes = address.getAddress();
-        
-        // Check for IPv4 private ranges that might not be caught by isSiteLocalAddress
-        if (addrBytes.length == 4) {
-            int firstOctet = addrBytes[0] & 0xFF;
-            int secondOctet = addrBytes[1] & 0xFF;
-            
-            // 10.0.0.0/8
-            if (firstOctet == 10) {
-                log.debug("SSRF protection: blocked 10.x.x.x private address " + host);
-                return false;
-            }
-            
-            // 172.16.0.0/12
-            if (firstOctet == 172 && secondOctet >= 16 && secondOctet <= 31) {
-                log.debug("SSRF protection: blocked 172.16-31.x.x private address " + host);
-                return false;
-            }
-            
-            // 192.168.0.0/16
-            if (firstOctet == 192 && secondOctet == 168) {
-                log.debug("SSRF protection: blocked 192.168.x.x private address " + host);
-                return false;
-            }
-            
-            // 169.254.0.0/16 (link-local, includes AWS metadata)
-            if (firstOctet == 169 && secondOctet == 254) {
-                log.debug("SSRF protection: blocked 169.254.x.x link-local address " + host);
-                return false;
-            }
-
-            // 0.0.0.0/8 ("this" network) and limited broadcast
-            if (firstOctet == 0 || (firstOctet == 255 && secondOctet == 255
-                    && (addrBytes[2] & 0xFF) == 255 && (addrBytes[3] & 0xFF) == 255)) {
-                log.debug("SSRF protection: blocked non-routable IPv4 address " + host);
-                return false;
-            }
-
-            // 100.64.0.0/10 (carrier-grade NAT / shared address space)
-            if (firstOctet == 100 && secondOctet >= 64 && secondOctet <= 127) {
-                log.debug("SSRF protection: blocked CGNAT/shared IPv4 address " + host);
-                return false;
-            }
-
-            // 192.0.0.0/24 (IETF protocol assignments, includes 192.0.0.8/32)
-            if (firstOctet == 192 && secondOctet == 0 && (addrBytes[2] & 0xFF) == 0) {
-                log.debug("SSRF protection: blocked IETF protocol-assignment IPv4 address " + host);
-                return false;
-            }
-
-            // 198.18.0.0/15 (benchmarking/interconnect test networks)
-            if (firstOctet == 198 && (secondOctet == 18 || secondOctet == 19)) {
-                log.debug("SSRF protection: blocked benchmarking IPv4 address " + host);
-                return false;
-            }
-
-            // 240.0.0.0/4 (reserved for future use)
-            if (firstOctet >= 240) {
-                log.debug("SSRF protection: blocked reserved IPv4 address " + host);
-                return false;
-            }
-        }
-        
-        // Check for IPv6 ULA (Unique Local Address) fc00::/7
-        // This covers fc00::/8 and fd00::/8
-        if (addrBytes.length == 16) {
-            int firstByte = addrBytes[0] & 0xFF;
-            // fc00::/7 means first 7 bits are 1111110, so first byte is 0xFC or 0xFD
-            if (firstByte == 0xFC || firstByte == 0xFD) {
-                log.debug("SSRF protection: blocked IPv6 ULA address " + host + " -> " + address.getHostAddress());
-                return false;
-            }
-
-            // IPv6 transition addresses: unwrap any embedded IPv4 and
-            // re-classify. Without this an attacker can encode an internal
-            // IPv4 destination (loopback, RFC 1918, link-local incl.
-            // 169.254.169.254 metadata) as a NAT64 (64:ff9b::/96 +
-            // 64:ff9b:1::/48), 6to4 (2002::/16), Teredo
-            // (2001::/32), or IPv4-compatible (::a.b.c.d) literal — the
-            // IPv4-range checks above only fire for 4-byte InetAddress, and
-            // InetAddress.is{Loopback,LinkLocal,SiteLocal,...} do NOT
-            // classify those transition formats as local (the prefixes are
-            // globally routable in the JDK's view).
-            // Dual-stack / NAT64 networks route the literal to the embedded
-            // IPv4, reaching the internal target.
-            //
-            // Reported via GitHub security advisory (RC6.5 fix). PoC:
-            //   64:ff9b::7f00:1     -> 127.0.0.1 (loopback)
-            //   64:ff9b::a9fe:a9fe  -> 169.254.169.254 (cloud metadata)
-            //   2002:7f00:1::       -> 127.0.0.1 (6to4-wrapped loopback)
-            InetAddress embedded = extractEmbeddedIpv4(address);
-            if (embedded != null && !isAddressSafe(embedded, host)) {
+        } else if (address.getAddress().length == 16) {
+            // IPv6 ULA or transition-address embedded-IPv4 reject.
+            InetAddress embedded = jp.aegif.nemaki.security.SsrfGuard.extractEmbeddedIpv4(address);
+            if (embedded != null) {
                 log.warn("SSRF protection: blocked IPv6 transition address "
                         + host + " -> " + address.getHostAddress()
                         + " (embeds blocked IPv4 " + embedded.getHostAddress() + ")");
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * If {@code address} is an IPv6 transition format that embeds an IPv4
-     * address, extract the embedded IPv4 as an {@link Inet4Address}. Returns
-     * {@code null} if the address is not a recognized transition format.
-     *
-     * <p>Recognized formats:
-     * <ul>
-     *   <li>{@code ::ffff:0:0/96} — IPv4-mapped IPv6 (RFC 4291 §2.5.5.2).
-     *       Bytes 12-15. The JDK usually returns these as {@code Inet4Address}
-     *       already, so this branch is defensive.</li>
-     *   <li>{@code ::a.b.c.d} (IPv4-compatible, deprecated by RFC 4291
-     *       §2.5.5.1 but still parseable). Bytes 12-15.</li>
-     *   <li>{@code 64:ff9b::/96} — NAT64 well-known prefix (RFC 6052 §2.1).
-     *       Bytes 12-15.</li>
-     *   <li>{@code 64:ff9b:1::/48} — NAT64 local-use prefix (RFC 8215).
-     *       Supports the RFC 6052 /48 layout and the common /96-style PLR
-     *       layout seen in operational examples.</li>
-     *   <li>{@code 2002::/16} — 6to4 (RFC 3056 §2). Bytes 2-5.</li>
-     *   <li>{@code 2001::/32} — Teredo (RFC 4380 §4). Bytes 12-15 contain
-     *       the obfuscated client IPv4 address.</li>
-     * </ul>
-     */
-    private static InetAddress extractEmbeddedIpv4(InetAddress address) {
-        byte[] b = address.getAddress();
-        if (b.length != 16) {
-            return null;
-        }
-        byte[] embedded = null;
-
-        // IPv4-mapped ::ffff:0:0/96  (bytes 0-9 = 0, bytes 10-11 = 0xFF)
-        boolean mappedPrefix = true;
-        for (int i = 0; i < 10; i++) {
-            if (b[i] != 0) { mappedPrefix = false; break; }
-        }
-        if (mappedPrefix && (b[10] & 0xFF) == 0xFF && (b[11] & 0xFF) == 0xFF) {
-            embedded = new byte[]{b[12], b[13], b[14], b[15]};
-        }
-
-        // IPv4-compatible ::a.b.c.d  (bytes 0-11 = 0). Skip ::0 (any-local)
-        // and ::1 (loopback) — those are caught by the predicate checks
-        // above and don't carry an "embedded" IPv4 in the SSRF sense.
-        if (embedded == null) {
-            boolean compatPrefix = true;
-            for (int i = 0; i < 12; i++) {
-                if (b[i] != 0) { compatPrefix = false; break; }
-            }
-            boolean trivialLow = b[12] == 0 && b[13] == 0 && b[14] == 0
-                    && (b[15] == 0 || b[15] == 1);
-            if (compatPrefix && !trivialLow) {
-                embedded = new byte[]{b[12], b[13], b[14], b[15]};
-            }
-        }
-
-        // NAT64 64:ff9b::/96  (bytes 0-3 = 00:64:FF:9B, bytes 4-11 = 0)
-        if (embedded == null
-                && (b[0] & 0xFF) == 0x00 && (b[1] & 0xFF) == 0x64
-                && (b[2] & 0xFF) == 0xFF && (b[3] & 0xFF) == 0x9B) {
-            boolean nat64WellKnown = true;
-            for (int i = 4; i < 12; i++) {
-                if (b[i] != 0) { nat64WellKnown = false; break; }
-            }
-            if (nat64WellKnown) {
-                embedded = new byte[]{b[12], b[13], b[14], b[15]};
-            }
-        }
-
-        // NAT64 local-use 64:ff9b:1::/48  (RFC 8215).
-        // RFC 6052 /48 layout:
-        //   prefix bytes 0-5, IPv4[0..1] in bytes 6-7, byte 8 is the
-        //   reserved "u" octet, IPv4[2..3] in bytes 9-10.
-        if (embedded == null
-                && (b[0] & 0xFF) == 0x00 && (b[1] & 0xFF) == 0x64
-                && (b[2] & 0xFF) == 0xFF && (b[3] & 0xFF) == 0x9B
-                && (b[4] & 0xFF) == 0x00 && (b[5] & 0xFF) == 0x01) {
-            boolean rfc6052SuffixClear = true;
-            for (int i = 11; i < 16; i++) {
-                if (b[i] != 0) { rfc6052SuffixClear = false; break; }
-            }
-            if (rfc6052SuffixClear) {
-                embedded = new byte[]{b[6], b[7], b[9], b[10]};
             } else {
-                // Also support a conservative /96-style PLR under the local-use
-                // prefix. Re-classification below decides whether it is blocked.
-                embedded = new byte[]{b[12], b[13], b[14], b[15]};
+                log.debug("SSRF protection: blocked IPv6 ULA / restricted address "
+                        + host + " -> " + address.getHostAddress());
             }
+        } else {
+            log.debug("SSRF protection: blocked restricted IPv4 address " + host
+                    + " -> " + address.getHostAddress());
         }
-
-        // 6to4 2002::/16  (bytes 0-1 = 20:02, bytes 2-5 = embedded IPv4)
-        if (embedded == null && (b[0] & 0xFF) == 0x20 && (b[1] & 0xFF) == 0x02) {
-            embedded = new byte[]{b[2], b[3], b[4], b[5]};
-        }
-
-        // Teredo 2001::/32. Bytes 12-15 are the one's-complement of the
-        // client IPv4 address.
-        if (embedded == null
-                && (b[0] & 0xFF) == 0x20 && (b[1] & 0xFF) == 0x01
-                && b[2] == 0 && b[3] == 0) {
-            embedded = new byte[]{
-                    (byte) ~b[12], (byte) ~b[13], (byte) ~b[14], (byte) ~b[15]
-            };
-        }
-
-        if (embedded == null) {
-            return null;
-        }
-        try {
-            return InetAddress.getByAddress(embedded);
-        } catch (UnknownHostException e) {
-            // Unreachable — getByAddress(byte[4]) always returns an Inet4Address.
-            return null;
-        }
+        return false;
     }
     
     public void setConnectTimeout(int connectTimeout) {

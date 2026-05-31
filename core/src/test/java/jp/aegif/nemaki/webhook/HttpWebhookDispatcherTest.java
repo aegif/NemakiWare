@@ -656,39 +656,35 @@ public class HttpWebhookDispatcherTest {
 
     @Test
     public void testExtractEmbeddedIpv4PublicPassthrough() throws Exception {
-        // Direct test of the extractor: NAT64 of 8.8.8.8 → InetAddress("8.8.8.8")
-        java.lang.reflect.Method extract = HttpWebhookDispatcher.class
-                .getDeclaredMethod("extractEmbeddedIpv4", InetAddress.class);
-        extract.setAccessible(true);
-
+        // Direct test of the extractor (now extracted to SsrfGuard in RC6.10).
         InetAddress nat64 = InetAddress.getByName("64:ff9b::808:808");
-        InetAddress extracted = (InetAddress) extract.invoke(null, nat64);
+        InetAddress extracted = jp.aegif.nemaki.security.SsrfGuard.extractEmbeddedIpv4(nat64);
         assertNotNull(extracted, "NAT64 well-known should be unwrapped");
         assertEquals("8.8.8.8", extracted.getHostAddress());
 
         InetAddress sixToFour = InetAddress.getByName("2002:808:808::");
-        InetAddress extracted2 = (InetAddress) extract.invoke(null, sixToFour);
+        InetAddress extracted2 = jp.aegif.nemaki.security.SsrfGuard.extractEmbeddedIpv4(sixToFour);
         assertNotNull(extracted2, "6to4 should be unwrapped");
         assertEquals("8.8.8.8", extracted2.getHostAddress());
 
         InetAddress nat64LocalUseRfc6052 = InetAddress.getByName("64:ff9b:1:808:8:800::");
-        InetAddress extracted3 = (InetAddress) extract.invoke(null, nat64LocalUseRfc6052);
+        InetAddress extracted3 = jp.aegif.nemaki.security.SsrfGuard.extractEmbeddedIpv4(nat64LocalUseRfc6052);
         assertNotNull(extracted3, "NAT64 local-use /48 should be unwrapped");
         assertEquals("8.8.8.8", extracted3.getHostAddress());
 
         InetAddress teredo = InetAddress.getByName("2001:0:4136:e378:8000:63bf:f7f7:f7f7");
-        InetAddress extracted4 = (InetAddress) extract.invoke(null, teredo);
+        InetAddress extracted4 = jp.aegif.nemaki.security.SsrfGuard.extractEmbeddedIpv4(teredo);
         assertNotNull(extracted4, "Teredo should be unwrapped");
         assertEquals("8.8.8.8", extracted4.getHostAddress());
 
         // Non-transition IPv6 → null
         InetAddress regular = InetAddress.getByName("2606:4700:4700::1111");
-        InetAddress notExtracted = (InetAddress) extract.invoke(null, regular);
+        InetAddress notExtracted = jp.aegif.nemaki.security.SsrfGuard.extractEmbeddedIpv4(regular);
         assertNull(notExtracted, "Regular public IPv6 should not produce embedded IPv4");
 
         // ULA (already blocked elsewhere) → null
         InetAddress ula = InetAddress.getByName("fc00::1");
-        InetAddress notExtracted2 = (InetAddress) extract.invoke(null, ula);
+        InetAddress notExtracted2 = jp.aegif.nemaki.security.SsrfGuard.extractEmbeddedIpv4(ula);
         assertNull(notExtracted2, "ULA should not produce embedded IPv4 (handled separately)");
     }
 }

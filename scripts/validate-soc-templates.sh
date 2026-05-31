@@ -155,6 +155,68 @@ print(data.count(b'\x00'))
   fi
 done
 
+hdr "Phase 1.4.1 — source-tree NUL-byte scan (RC6.10 — extends Phase 1.4 to .java/.ts/.tsx/.js/.jsx)"
+# Two NUL-shipped regressions in this RC cycle alone:
+#   - RC6.1 P2-3: ConnectorGovernanceTab.tsx had a literal 0x00 in a
+#     join() separator → grep/file/rg treated the file as binary.
+#   - RC6.7 P3:  HttpWebhookDispatcherTest.java had a literal 0x00 in
+#     a string literal → same.
+# Both got past Java/TypeScript compilation. Add a source-side gate.
+#
+# Honors VALIDATE_SOURCE_NUL=0 to disable for environments where this
+# is run against pre-cleaned trees (default: 1 = run).
+if [ "${VALIDATE_SOURCE_NUL:-1}" = "1" ]; then
+  if ! have python3; then
+    skip "source-tree NUL scan" "python3 unavailable"
+  else
+    SRC_NUL_REPORT="$(python3 - "$REPO_ROOT" <<'PYSRCNUL'
+import os, sys
+root = sys.argv[1]
+exts = ('.java', '.ts', '.tsx', '.js', '.jsx')
+exclude_parts = {'node_modules', 'target', 'dist', 'build', '.git',
+                 'coverage', 'playwright-report', 'test-results'}
+hits = []
+total = 0
+for dirpath, dirnames, filenames in os.walk(root):
+    dirnames[:] = [d for d in dirnames if d not in exclude_parts]
+    for fn in filenames:
+        if not fn.endswith(exts):
+            continue
+        total += 1
+        path = os.path.join(dirpath, fn)
+        try:
+            with open(path, 'rb') as f:
+                data = f.read()
+            n = data.count(b'\x00')
+            if n:
+                rel = os.path.relpath(path, root)
+                hits.append((rel, n))
+        except OSError:
+            pass
+print(f'TOTAL={total}')
+for rel, n in hits:
+    print(f'HIT={rel}:{n}')
+PYSRCNUL
+)"
+    scanned="$(printf '%s\n' "$SRC_NUL_REPORT" | sed -n 's/^TOTAL=//p')"
+    nul_hits="$(printf '%s\n' "$SRC_NUL_REPORT" | grep -c '^HIT=' || true)"
+    if [ "${nul_hits:-0}" = 0 ]; then
+      ok "source-tree NUL scan — 0 hits across $scanned source files"
+    else
+      while IFS= read -r line; do
+        case "$line" in
+          HIT=*)
+            payload="${line#HIT=}"
+            fail "source-tree NUL: $payload" "literal NUL byte in source file"
+            ;;
+        esac
+      done <<< "$SRC_NUL_REPORT"
+    fi
+  fi
+else
+  skip "source-tree NUL scan" "disabled via VALIDATE_SOURCE_NUL=0"
+fi
+
 hdr "Phase 1.5 — file-type smoke"
 # `file` reports NDJSON as "JSON data" which is text-class but
 # the substring "data" alone would false-match here; the real
