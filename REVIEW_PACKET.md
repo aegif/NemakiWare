@@ -228,8 +228,7 @@ JVM args: surefire `argLine` + 3 Dockerfile variants
 (1 property each).
 
 - **Code artifact under review** = the annotated tag
-  `v3.1.1-RC6.13` (peeled commit TBD — populated at tag-cut time;
-  see §1 table).
+  `v3.1.1-RC6.13` (peeled commit `4eb79c6a82fcd5adfc35bb1c242ab9fffc303bd3`).
 - **Review supplementary documentation** = files on
   `release/3.1.1-RC6` **branch HEAD** that may land after the
   tag is cut. As of tag time the divergence is zero — see §3.
@@ -246,10 +245,10 @@ unchanged for traceability.
 | Item | Value |
 |---|---|
 | **Final candidate tag** | `v3.1.1-RC6.13` |
-| Tag annotated object SHA | TBD (populated at tag-cut time) |
-| Tag peeled commit | TBD (populated at tag-cut time) |
+| Tag annotated object SHA | `a2fafbedb08030c3b75d856406bdd436e8969239` |
+| Tag peeled commit | `4eb79c6a82fcd5adfc35bb1c242ab9fffc303bd3` |
 | Branch | `release/3.1.1-RC6` |
-| Branch HEAD at tag time | TBD (zero divergence target at tag time) |
+| Branch HEAD at tag time | `4eb79c6a82fcd5adfc35bb1c242ab9fffc303bd3` (= tag peeled, zero divergence at tag time) |
 | Base of RC6.13 cycle | `v3.1.1-RC6.12` (peeled `f8ec0326c`) |
 | RC5 cycle baseline | `v3.1.1-RC4.1` (peeled `572aad18b`) |
 | **RC6.12 → RC6.13 diff cmd** | `git diff v3.1.1-RC6.12..v3.1.1-RC6.13` |
@@ -1652,10 +1651,9 @@ require larger engineering than a test-quality follow-up RC.)
    - `5f13120e2` — RC6.12: test-quality refactor (production
      path byte-equivalent to RC6.11 XXE fix; rebinds cases
      1-3 to production)
-   - RC6.13 test-quality refactor commit (TBD, populated at
-     tag-cut time) — extracts `configureHardenedSaxReader()`
-     so feature readback binds to production; production path
-     byte-equivalent to RC6.12
+   - `1d833727c` — RC6.13: extracts
+     `configureHardenedSaxReader()` so feature readback binds
+     to production; production path byte-equivalent to RC6.12
 3. Cut a **new** annotated tag `v3.1.1` against the merge
    commit on `master`.
 4. Optionally create a single GitHub Release attached to
