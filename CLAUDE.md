@@ -316,6 +316,121 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
+### RC37 / RC6.13 (2026-05-31) — Test quality: feature-readback now binds to production reader (closes RC6.12 P3) (shipped)
+
+ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6.12` = `f8ec0326c`)
+
+RC6.12 test-quality follow-up に対する 2 段目の reviewer P3 を解消。
+actual security guard は不変 (3 つの SAX feature は依然同じ単一の
+helper method で設定される)、ただし feature-readback assertion が
+test-local probe ではなく production-configured reader instance を
+直接見るように構造を変更。
+
+#### P3: readback が test-local probe を見ていた
+
+RC6.12 の `productionParserHasAllThreeFeaturesEnabled` test は
+1 つの method で 2 つの無関係なことをやっていた:
+1. `ZipImporter.parseAcpPackageXml(...)` を benign payload で 1 回
+   call して production path が reachable であることを確認
+2. その後、**独自の** `SAXReader` を作って 3 つの `setFeature(...)`
+   を手動で再適用し、**その probe** に対して `getXMLReader().
+   getFeature(...)` を query
+
+reviewer が指摘した穴: production から例えば
+`external-general-entities=false` だけが削除されて
+`disallow-doctype-decl=true` が残った場合、DOCTYPE-rejection test
+は依然 pass (DOCTYPE check が先に PoC payload を捕捉)、readback
+test も依然 pass (probe を見ているので production の状態と無関係)。
+production の 3 feature のうち 2 つを削除しても、どの test も落ち
+ない。
+
+#### 修正: `configureHardenedSaxReader()` を抽出 — single source of truth
+
+RC6.12 production helper を 2 つに分割:
+- **`ZipImporter.configureHardenedSaxReader()`** (新規、package-
+  private static): `SAXReader` を build + 3 `setFeature(...)` 適用 +
+  configured reader を return。**SAXReader 設定の単一情報源**
+- **`ZipImporter.parseAcpPackageXml(byte[])`**: 上記 helper を call
+  して `.read(...)` するだけ。production path は RC6.12 と
+  byte-equivalent
+
+`ZipImporterXxeTest.productionParserHasAllThreeFeaturesEnabled`
+は actual production-configured reader を保持:
+```java
+org.dom4j.io.SAXReader productionReader = ZipImporter.configureHardenedSaxReader();
+productionReader.read(...);  // force XMLReader instantiation
+org.xml.sax.XMLReader xmlReader = productionReader.getXMLReader();
+assertTrue (xmlReader.getFeature(".../disallow-doctype-decl"), ...);
+assertFalse(xmlReader.getFeature(".../external-general-entities"), ...);
+assertFalse(xmlReader.getFeature(".../external-parameter-entities"), ...);
+```
+
+`configureHardenedSaxReader()` から 3 つの `setFeature` のどれかが
+削除されれば、該当 assertion が「その feature 名を含む明確な
+diagnostic」で落ちる。
+
+#### 3-way mutation test — 3 feature 全てで binding 証明
+
+3 mutation を 1 つずつ実行:
+
+| Mutation | failing tests | readback diagnostic |
+|---|---|---|
+| `disallow-doctype-decl` 削除 | **3/4** (DOCTYPE-reject 2 + readback) | `disallow-doctype-decl must be true on the production-configured reader` |
+| `external-general-entities` 削除 | **1/4** (readback のみ) | `external-general-entities must be false on the production-configured reader ==> expected: <false> but was: <true>` |
+| `external-parameter-entities` 削除 | **1/4** (readback のみ) | `external-parameter-entities must be false on the production-configured reader ==> expected: <false> but was: <true>` |
+
+mutation はすべて local source-edit + revert、commit には含まれず。
+3 line restore 後: 4/4 PASS。
+
+真ん中の 2 ケース (external-*-entities のどちらかを削除) が、
+**RC6.12 reviewer が懸念した regression class**。RC6.12 では
+これを検知できなかった。RC6.13 で検知可能に。
+
+#### Tests
+
+- `ZipImporterXxeTest`: 4/4 PASS — readback は
+  `ZipImporter.configureHardenedSaxReader()` を直接 query
+- **3-way mutation test** (上表): 3 feature それぞれを独立に削除
+  すると readback test が当該 feature 名入り diagnostic で fail
+- 25 class focused regression: **377/377 PASS** (RC6.12 と同 count、
+  behaviour-equivalent refactor)
+- SOC validator full run: 17 PASS / 7 SKIP、NUL scan 1681 files /
+  0 hits (RC6.12 と不変)
+
+#### Files touched
+
+- `core/src/main/java/jp/aegif/nemaki/rest/importexport/ZipImporter.java`
+  (`parseAcpPackageXml` を `configureHardenedSaxReader()` +
+  `parseAcpPackageXml(byte[])` に分割。production path 挙動不変)
+- `core/src/test/java/jp/aegif/nemaki/rest/importexport/ZipImporterXxeTest.java`
+  (`productionParserHasAllThreeFeaturesEnabled` を
+  `ZipImporter.configureHardenedSaxReader()` 直呼びに rewrite。
+  test-local probe block 削除)
+- `RELEASE_NOTES.md`, `CLAUDE.md`, `REVIEW_PACKET.md`
+
+#### Migration / compatibility
+
+public API 変更なし (`configureHardenedSaxReader` は package-private、
+唯一の production caller は同 class 内 sibling `parseAcpPackageXml`)。
+property / schema / patch / view / Mango / migration 一切無変更。
+operator 挙動変化なし。RC6.11 GHSA XXE security boundary 不変、
+RC6.12 production path 挙動不変。
+
+#### Commit + tag 関係
+
+- RC6.13 test-binding refactor commit: 後続
+- doc closure commit: 後続
+- **`v3.1.1-RC6.13` annotated tag target**: doc-closure commit
+
+RC6.12 tag (`f8ec0326c`) は force-update せず歴史的マイルストーン
+として保持。
+
+#### Credit
+
+RC6.12 external reviewer P3 — readback assertion が test-local
+probe を query していて production-configured reader を見ていない、
+という P3 指摘を構造的に解消。
+
 ### RC36 / RC6.12 (2026-05-31) — Test quality: bind XXE regression to production parser (shipped)
 
 ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6.11` = `8e52d95d2`)

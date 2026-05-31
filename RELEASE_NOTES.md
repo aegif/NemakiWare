@@ -6,6 +6,128 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC6.13 — Test quality: feature-readback now binds to production reader (closes RC6.12 P3)
+_Release candidate on `release/3.1.1-RC6` (2026-05-31), branched
+off `v3.1.1-RC6.12` (`f8ec0326c`)._
+
+Test-quality follow-up to RC6.12. The actual security guard is
+unchanged (the three SAX features are still set on the production
+`SAXReader` by the same single helper method); this RC restructures
+so the feature-readback assertion binds to the production-configured
+reader instance instead of a test-local probe.
+
+### Reviewer P3 — readback was inspecting a test-local probe
+
+RC6.12's `productionParserHasAllThreeFeaturesEnabled` test did
+two unrelated things in one method:
+1. Called `ZipImporter.parseAcpPackageXml(...)` once on a benign
+   payload to prove the production code path is reachable.
+2. Then built **its own** `SAXReader`, manually re-applied the
+   three `setFeature(...)` calls, and queried `getXMLReader().
+   getFeature(...)` on **that** probe.
+
+The reviewer pointed out that if (for example)
+`external-general-entities=false` were deleted from production
+but `disallow-doctype-decl=true` remained, the DOCTYPE-rejection
+tests still pass (the DOCTYPE check catches the PoC payload
+earlier) AND the readback test still passes (because it queries
+the probe, not production). So removing 2 of the 3 features in
+production would not have been caught by any test.
+
+### The fix — `configureHardenedSaxReader()` extracted as single source of truth
+
+Split the RC6.12 production helper into two:
+- **`ZipImporter.configureHardenedSaxReader()`** (new, package-private
+  static) builds a `SAXReader` and applies the three `setFeature(...)`
+  calls. Returns the configured reader. This is the **single source
+  of truth** for the SAXReader configuration.
+- **`ZipImporter.parseAcpPackageXml(byte[])`** now calls
+  `configureHardenedSaxReader()` and then `.read(...)`. Production
+  path is byte-equivalent to RC6.12.
+
+`ZipImporterXxeTest.productionParserHasAllThreeFeaturesEnabled`
+now holds the actual production-configured reader:
+
+```java
+org.dom4j.io.SAXReader productionReader = ZipImporter.configureHardenedSaxReader();
+productionReader.read(...);  // force XMLReader instantiation
+org.xml.sax.XMLReader xmlReader = productionReader.getXMLReader();
+assertTrue (xmlReader.getFeature(".../disallow-doctype-decl"), ...);
+assertFalse(xmlReader.getFeature(".../external-general-entities"), ...);
+assertFalse(xmlReader.getFeature(".../external-parameter-entities"), ...);
+```
+
+If any one of the three `setFeature(...)` calls is removed from
+`configureHardenedSaxReader()`, the matching assertion fails with
+a diagnostic that names that specific feature.
+
+### 3-way mutation test — proves the new test catches all 3 features
+
+Ran the mutation test once per feature, individually:
+
+| Mutation | Tests failing | Diagnostic from readback |
+|---|---|---|
+| Remove `disallow-doctype-decl=true` | **3/4** (2 DOCTYPE-reject + readback) | `disallow-doctype-decl must be true on the production-configured reader` |
+| Remove `external-general-entities=false` | **1/4** (readback only) | `external-general-entities must be false on the production-configured reader ==> expected: <false> but was: <true>` |
+| Remove `external-parameter-entities=false` | **1/4** (readback only) | `external-parameter-entities must be false on the production-configured reader ==> expected: <false> but was: <true>` |
+
+Each mutation was a local source-edit + revert; nothing committed.
+After restoring all three lines: 4/4 PASS.
+
+The middle two cases (removing one of the `external-*-entities`
+features) are exactly the regression class the RC6.12 reviewer
+flagged. RC6.12's test missed them. RC6.13 catches them.
+
+### Tests
+
+- **`ZipImporterXxeTest`**: 4/4 PASS — readback now queries
+  `ZipImporter.configureHardenedSaxReader()` directly.
+- **3-way mutation test** (see table above): each of the 3
+  production `setFeature` lines, when removed in isolation,
+  causes the readback test to fail with a diagnostic naming that
+  feature. Restored before commit.
+- **Focused 25-class regression**: **377/377 PASS** (unchanged
+  from RC6.12 — refactor is behaviour-equivalent on the
+  production path).
+- **SOC validator full run** (no Docker): **17 PASS / 7 SKIP**,
+  Phase 1.4.1 source-tree NUL scan = **1681 source files / 0
+  hits** (unchanged from RC6.12).
+
+### Files touched (RC6.13)
+
+**Code (1 file)**:
+- `core/src/main/java/jp/aegif/nemaki/rest/importexport/ZipImporter.java`
+  — split `parseAcpPackageXml(byte[])` into
+  `configureHardenedSaxReader()` (returns the configured reader)
+  + `parseAcpPackageXml(byte[])` (calls the helper, then `.read`).
+  Production path byte-equivalent.
+
+**Tests (1 file)**:
+- `core/src/test/java/jp/aegif/nemaki/rest/importexport/ZipImporterXxeTest.java`
+  — `productionParserHasAllThreeFeaturesEnabled` rewritten to
+  hold the actual production-configured reader via
+  `ZipImporter.configureHardenedSaxReader()`. Test-local probe
+  block deleted.
+
+**Docs**: `RELEASE_NOTES.md`, `CLAUDE.md`, `REVIEW_PACKET.md`.
+
+### Migration / compatibility
+
+No public API change (`configureHardenedSaxReader` is
+package-private — its only production caller is the sibling
+`parseAcpPackageXml` in the same class). No property / schema /
+patch / view / Mango / migration change. Operators see zero
+behavioural difference. RC6.11 GHSA XXE security boundary is
+unchanged; RC6.12 production path behaviour is unchanged.
+
+### Credit
+
+RC6.12 external reviewer P3 finding — caught that the readback
+assertion was querying a test-local probe rather than the
+production-configured reader.
+
+---
+
 ## 3.1.1-RC6.12 — Test quality: bind XXE regression to production parser
 _Release candidate on `release/3.1.1-RC6` (2026-05-31), branched
 off `v3.1.1-RC6.11` (`8e52d95d2`)._
