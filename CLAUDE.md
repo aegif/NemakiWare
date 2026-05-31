@@ -315,6 +315,147 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
+### RC34 / RC6.10 (2026-05-31) — Refactor: SsrfGuard 共有化 + source-tree NUL pre-commit scan (shipped)
+
+ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6.9` = `76695f46c`)
+
+SSRF hardening cycle 6 本目。新規セキュリティ穴の closure はなし、
+RC6.7 で AdapterHttpClient に horizontal 化した address classifier
+が `HttpWebhookDispatcher` と完全重複している状態を解消し、
+RC6.1 / RC6.7 で 2 回 ship してしまった literal NUL byte regression
+class に pre-commit scan を入れる。
+
+#### Rule of Three refactor
+
+新規: `jp.aegif.nemaki.security.SsrfGuard`
+- `isAddressSafe(InetAddress)`: 全 classification (JDK predicates
+  + 9 IPv4 special-use ranges + IPv6 ULA + 6 IPv6 transition
+  format で embedded IPv4 unwrap + recursive re-classify)
+- `extractEmbeddedIpv4(InetAddress)`: 6 transition format から
+  embedded IPv4 抽出、それ以外は null
+
+2 callsite が delegate:
+- `HttpWebhookDispatcher.isAddressSafe(InetAddress, String)`:
+  classification は SsrfGuard、cheap top-level predicates だけ
+  operator log categorization 用に local 再評価
+- `AdapterHttpClient.isAddressSafe(InetAddress)`: 薄い wrapper
+  (`pinRequestToValidatedAddress`/`validateExternalUrl` の
+  callsite を byte-equivalent に保つため残す)
+
+byte-for-byte extraction。RC6.9 の classification rules と一切
+の挙動差なし。3rd consumer (Purview/Atlas/OIDC/Graph 等の
+outbound URL validator — REVIEW_PACKET §6 で deferred として
+追跡) が将来追加されたとき、duplicate を 3 箇所更新する必要が
+なくなる。
+
+#### SsrfGuardTest 新設 — 30 ケース
+
+- 5 JDK predicate (loopback / link-local / RFC 1918 / any-local /
+  multicast)
+- 6 IPv4 special-use (CGNAT 100.64/10 boundary 含む、0/8、
+  192.0.0/24、198.18/15、240/4、broadcast)
+- IPv6 ULA
+- 6 IPv6 transition format (NAT64 well-known + local-use /48、
+  6to4、Teredo、IPv4-mapped、IPv4-compatible) を private + public
+  両方の wrap で
+- public allowlist (over-block しないこと、特に 2001:db8::
+  documentation prefix が Teredo 厳密 prefix にひっかからないこと)
+- `extractEmbeddedIpv4` 直接テスト
+
+`HttpWebhookDispatcherTest.testExtractEmbeddedIpv4PublicPassthrough`
+は reflection を廃止して `SsrfGuard.extractEmbeddedIpv4` 直呼び
+に変更 (public static)。
+
+#### Source-tree NUL pre-commit scan
+
+`scripts/validate-soc-templates.sh` に Phase 1.4.1 を追加。
+`.java`/`.ts`/`.tsx`/`.js`/`.jsx` を repo 全体 scan して literal
+NUL (0x00) を検出。
+
+過去 2 回 ship してしまった regression:
+- RC6.1 P2-3: `ConnectorGovernanceTab.tsx` の
+  `simulateRemove.join('\0')` separator
+- RC6.7 P3: `HttpWebhookDispatcherTest.java` の string literal
+
+両方とも Java / TS compilation を通過、grep / rg / file が
+binary 扱いするまで気付かれなかった。Phase 1.4.1 で 1680 source
+files を scan、0 hits 確認。
+
+除外: `node_modules`, `target`, `dist`, `build`, `.git`,
+`coverage`, `playwright-report`, `test-results`。clean tree 環境
+向けに `VALIDATE_SOURCE_NUL=0` で無効化可。
+
+#### Follow-up R3 closure (REVIEW_PACKET §6)
+
+「他の orchestrator が SSRF guard を bypass していないか」検証完了:
+- 11 connector adapter のうち、`connector.getEndpoint()` を HTTP
+  call に渡す orchestrator は 3 つだけ
+- `MattermostFetchOrchestrator` / `SalesforceFetchOrchestrator`:
+  RC6.8 で explicit `validateExternalUrl` 配置済 (orchestrator 入口)
+- `ImapFetchOrchestrator`: `imap://` scheme なので
+  `validateExternalUrl` の http/https-only check で reject される
+  (意図的に guard 配下に置かない)
+- 残り 8 (Slack/Teams/Gmail/M365Mail/Notion/Chatwork/Box/Dropbox):
+  vendor API URL hardcoded、user-controlled endpoint 不在
+- 加えて `AdapterHttpClient.pinRequestToValidatedAddress` が
+  send-time に必ず再検証するので、将来 endpoint configurable 化
+  しても HTTP 層で guard が効く
+
+→ R3 は documentation-only にクローズ、code 変更なし
+
+#### Tests
+
+- **新規** `SsrfGuardTest`: 30/30 PASS
+- `HttpWebhookDispatcherTest`: 59/59 PASS (挙動不変、reflection 廃止)
+- `AdapterRegistryTest`: 26/26 PASS
+- 7 adapter contract test (Slack 12 / Teams 11 / Mattermost 12 /
+  Notion 8 / Salesforce 11 / M365 9 / Chatwork 13): 76/76 PASS
+- 24 class focused regression: **373/373 PASS** (RC6.9 baseline
+  343 + 30 新規 SsrfGuardTest)
+- SOC validator full run: 17 PASS / 7 SKIP (Docker phase opt-in)
+
+#### Files touched
+
+- **新規** `core/src/main/java/jp/aegif/nemaki/security/SsrfGuard.java`
+  (263 lines, extracted helper)
+- `core/src/main/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcher.java`
+  (-240 line duplicate classifier, SsrfGuard delegate に置換)
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/AdapterHttpClient.java`
+  (-110 line duplicate classifier、SsrfGuard delegate に置換)
+- **新規** `core/src/test/java/jp/aegif/nemaki/security/SsrfGuardTest.java`
+  (30 cases)
+- `core/src/test/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcherTest.java`
+  (reflection → SsrfGuard 直呼び)
+- `scripts/validate-soc-templates.sh` (Phase 1.4.1 source-tree NUL scan)
+- `RELEASE_NOTES.md`, `CLAUDE.md`, `REVIEW_PACKET.md`
+
+#### Migration / compatibility
+
+public API 変更なし、property 追加なし、DB / patch / view / Mango
+index 一切無変更。classifier output レベルで byte-equivalent。
+operator は connector / webhook / scheduler の挙動変化なし。
+
+RC6.9 で設定済の JVM-wide `jdk.httpclient.allowRestrictedHeaders=host`
+は本 RC では触らない。
+
+#### Follow-up (post-RC6.10)
+
+- **#1 HTTPS SocketFactory pin** (Medium residual TCP-connect
+  SSRF): JDK HttpClient が injection point を expose しない、
+  HttpURLConnection 切替か大規模 refactor 必要 — 別 RC
+- **#4 Purview/Atlas/OIDC/Graph SSRF guard**: admin-config 面、
+  opt-in mechanism 設計が要る — 別 RC、本 RC で抽出した
+  `SsrfGuard` がそのまま使える
+
+#### Commit + tag 関係
+
+- RC6.10 refactor commit: 後続
+- doc closure commit: 後続
+- **`v3.1.1-RC6.10` annotated tag target**: doc-closure commit
+
+RC6.9 tag (`76695f46c`) は force-update せず歴史的マイルストーン
+として保持。
+
 ### RC33 / RC6.9 (2026-05-31) — Security: HTTP IP-pin の original Host header 保持 + Javadoc 誠実化 (shipped)
 
 ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6.8` = `cd82452f4`)

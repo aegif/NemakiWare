@@ -1,13 +1,20 @@
-# NemakiWare v3.1.1-RC6.9 — External Review Packet
+# NemakiWare v3.1.1-RC6.10 — External Review Packet
 
-Single entry point for the **tenth-round external review** of
-the RC6 series. RC6.9 closes the RC6.8 post-tag P3 compat caveat
-(HTTP IP-pin sending `Host: <IP>` and misrouting on shared-vhost
-deployments) and aligns the `AdapterHttpClient` Javadoc with the
-post-RC6.8 doc-only honesty fix (residual HTTPS TCP-connect SSRF
-in `pinRequestToValidatedAddress`).
+Single entry point for the **eleventh-round external review** of
+the RC6 series. RC6.10 is a pure-refactor RC — no new SSRF gap
+closed. It extracts the address-classification logic that has
+been duplicated between `HttpWebhookDispatcher` and
+`AdapterHttpClient` since RC6.7 into a new
+`jp.aegif.nemaki.security.SsrfGuard` helper (Rule-of-Three
+threshold crossed when 2 consumers ship the same 240+ LOC), adds
+a `Phase 1.4.1` source-tree NUL byte scan to
+`scripts/validate-soc-templates.sh` so the RC6.1 / RC6.7 NUL
+regression class can no longer ship untagged, and closes the
+RC6.8 follow-up R3 ("verify other orchestrators don't bypass the
+SSRF guard") as documentation-only after auditing all 11
+connector adapters.
 
-- **RC6.5–RC6.8 closed** (carry-forward, still in effect):
+- **RC6.5–RC6.9 closed** (carry-forward, still in effect):
   - RC6.5: GHSA-reported IPv6 transition unwrap in
     `HttpWebhookDispatcher`.
   - RC6.6: 5 IPv4 special-use ranges + Teredo + RFC 6052 §2.2 /48
@@ -18,7 +25,24 @@ in `pinRequestToValidatedAddress`).
     at network layer, HTTPS TLS-bounded with TCP-connect residual)
     + runtime endpoint revalidation in Mattermost/Salesforce
     orchestrators + multi-hop redirect uses `currentRequest.uri()`.
-- **RC6.9 adds**:
+  - RC6.9: HTTP IP-pin preserves original `Host` header for
+    shared-vhost compat + honest HTTPS Javadoc.
+- **RC6.10 adds (refactor + tooling only)**:
+  - **New shared utility** `jp.aegif.nemaki.security.SsrfGuard`
+    (`isAddressSafe`, `extractEmbeddedIpv4`). Both callers
+    delegate; behaviour is byte-equivalent at the
+    classifier-output level (no security change).
+  - **`SsrfGuardTest`** — 30 cases pinning the helper directly
+    (in addition to the 85 cases already covering the dispatchers
+    transitively).
+  - **`Phase 1.4.1` source-tree NUL scan** in
+    `scripts/validate-soc-templates.sh` — 1680 source files
+    scanned, 0 hits. Catches the RC6.1 P2-3 / RC6.7 P3 regression
+    class at pre-commit / pre-tag time.
+  - **R3 follow-up closure** — orchestrator audit complete, only
+    Mattermost / Salesforce ever pass user-controlled endpoint
+    to HTTP and both were RC6.8-protected; no code change needed.
+- **RC6.9 reference (carry-forward) adds**:
   - **P3 fix — HTTP IP-pin preserves original `Host` header.**
     `pinRequestToValidatedAddress` HTTP branch now rewrites URI
     to validated IP literal AND explicitly sets
@@ -35,21 +59,35 @@ in `pinRequestToValidatedAddress`).
     "TLS-bounded, NOT fully closed" with residual TCP-connect
     SSRF (port-scan / fingerprint / TCP-side-effect).
 
-Java change: 1 file
+**RC6.10 changes**: Code 3 files
+(`SsrfGuard.java` +263 LOC new, `HttpWebhookDispatcher.java`
+−240 line duplicate classifier replaced by delegation,
+`AdapterHttpClient.java` −110 line duplicate classifier replaced
+by delegation). Tests 2 files (`SsrfGuardTest.java` +220 LOC new
+with 30 cases, `HttpWebhookDispatcherTest.java` reflection-on-
+private-method → public-static direct call). Tooling 1 file
+(`scripts/validate-soc-templates.sh` Phase 1.4.1 source-tree NUL
+scan, ~60 LOC). Docs 3 files (RELEASE_NOTES, CLAUDE,
+REVIEW_PACKET). Net: refactor LOC-negative on the dispatchers,
+LOC-positive on the new helper + its dedicated test, no public
+API change.
+
+**RC6.9 changes (carry-forward)**: 1 file
 (`AdapterHttpClient.java` +76 LOC). Tests: 1 file
 (`AdapterRegistryTest.java` +31 LOC = 2 new Host-preserve tests).
 JVM args: surefire `argLine` + 3 Dockerfile variants
 (1 property each).
 
 - **Code artifact under review** = the annotated tag
-  `v3.1.1-RC6.9` (peeled commit `76695f46c72b3c55d46e9f41396f41920fca9062`).
+  `v3.1.1-RC6.10` (peeled commit TBD — populated at tag-cut time;
+  see §1 table).
 - **Review supplementary documentation** = files on
   `release/3.1.1-RC6` **branch HEAD** that may land after the
   tag is cut. As of tag time the divergence is zero — see §3.
 
-Previous historical tags (`v3.1.1-RC6.8`, `…-RC6.7`, `…-RC6.6`,
-`…-RC6.5`, `…-RC6.4`, `…-RC6.3`, `…-RC6.2`, `…-RC6.1`, `…-RC6`,
-`…-RC5.6`, …) remain unchanged for traceability.
+Previous historical tags (`v3.1.1-RC6.9`, `…-RC6.8`, `…-RC6.7`,
+`…-RC6.6`, `…-RC6.5`, `…-RC6.4`, `…-RC6.3`, `…-RC6.2`, `…-RC6.1`,
+`…-RC6`, `…-RC5.6`, …) remain unchanged for traceability.
 
 ---
 
@@ -57,20 +95,160 @@ Previous historical tags (`v3.1.1-RC6.8`, `…-RC6.7`, `…-RC6.6`,
 
 | Item | Value |
 |---|---|
-| **Final candidate tag** | `v3.1.1-RC6.9` |
-| Tag annotated object SHA | `8fac0ce7e9f94bbb6df5134fdf1881ec4ab6137b` |
-| Tag peeled commit | `76695f46c72b3c55d46e9f41396f41920fca9062` |
+| **Final candidate tag** | `v3.1.1-RC6.10` |
+| Tag annotated object SHA | TBD (populated at tag-cut time) |
+| Tag peeled commit | TBD (populated at tag-cut time) |
 | Branch | `release/3.1.1-RC6` |
-| Branch HEAD at tag time | `76695f46c72b3c55d46e9f41396f41920fca9062` (= tag peeled, zero divergence at tag time) |
-| Base of RC6.9 cycle | `v3.1.1-RC6.8` (peeled `cd82452f4`) |
+| Branch HEAD at tag time | TBD (zero divergence target at tag time) |
+| Base of RC6.10 cycle | `v3.1.1-RC6.9` (peeled `76695f46c`) |
 | RC5 cycle baseline | `v3.1.1-RC4.1` (peeled `572aad18b`) |
-| **RC6.8 → RC6.9 diff cmd** | `git diff v3.1.1-RC6.8..v3.1.1-RC6.9` |
-| Cumulative diff cmd (since RC4.1) | `git diff v3.1.1-RC4.1..v3.1.1-RC6.9` |
-| Previous historical candidates | `v3.1.1-RC6.8` (`cd82452f4`), `…-RC6.7` (`b48d9e0c1`), `…-RC6.6` (`c8b37150a`), `…-RC6.5` (`94de9d269`), `…-RC6.4` (`afdf4d832`), `…-RC6.3` (`77ddfe071`), `…-RC6.2` (`02afee891`), `…-RC6.1` (`595754b8c`), `…-RC6` (`9dfd87adb`), `…-RC5.6` (`adf8db3b4`) |
+| **RC6.9 → RC6.10 diff cmd** | `git diff v3.1.1-RC6.9..v3.1.1-RC6.10` |
+| Cumulative diff cmd (since RC4.1) | `git diff v3.1.1-RC4.1..v3.1.1-RC6.10` |
+| Previous historical candidates | `v3.1.1-RC6.9` (`76695f46c`), `…-RC6.8` (`cd82452f4`), `…-RC6.7` (`b48d9e0c1`), `…-RC6.6` (`c8b37150a`), `…-RC6.5` (`94de9d269`), `…-RC6.4` (`afdf4d832`), `…-RC6.3` (`77ddfe071`), `…-RC6.2` (`02afee891`), `…-RC6.1` (`595754b8c`), `…-RC6` (`9dfd87adb`), `…-RC5.6` (`adf8db3b4`) |
 
 ---
 
-## 2. What changed since the previous external review (RC6.8 → RC6.9)
+## 2. What changed since the previous external review (RC6.9 → RC6.10)
+
+RC6.10 is a **refactor + tooling RC**. No new security gap is
+closed; no behaviour visible to operators changes. The cycle
+consolidates the SSRF address classifier that has been duplicated
+in two files since RC6.7, adds a source-tree NUL byte scan to
+the SOC validator so the RC6.1 / RC6.7 NUL-shipped regression
+class can no longer escape pre-tag, and closes the RC6.8 R3
+follow-up ("verify other orchestrators don't bypass SSRF guard")
+as documentation-only.
+
+### 2.1 — Rule-of-Three refactor: new `jp.aegif.nemaki.security.SsrfGuard`
+
+History:
+- **RC6.5** added `isAddressSafe` + `extractEmbeddedIpv4` to
+  `HttpWebhookDispatcher` (closing the GHSA-reported NAT64 / 6to4
+  / IPv4-compatible / IPv4-mapped unwrap gap).
+- **RC6.6** added 5 IPv4 special-use ranges + Teredo + RFC 6052
+  /48 NAT64 to the same dispatcher copy.
+- **RC6.7** replicated the entire `isAddressSafe` +
+  `extractEmbeddedIpv4` (~240 LOC) into
+  `AdapterHttpClient.java` so all 11 connector adapters benefit
+  from the same classification.
+
+After RC6.7, two complete copies of the classifier existed. A
+3rd consumer (Purview / Atlas / OIDC / Graph admin-config URL
+validators — tracked as deferred work in §6) would have required
+synchronously updating duplicated code in 3 places — the classic
+Rule-of-Three trigger.
+
+**Fix** — new utility class
+`core/src/main/java/jp/aegif/nemaki/security/SsrfGuard.java` (263
+LOC, package-new) with exactly two public static methods:
+
+| Method | Purpose |
+|---|---|
+| `boolean isAddressSafe(InetAddress)` | Full classification — JDK predicates (loopback/link-local/site-local/any-local/multicast) + 9 IPv4 special-use ranges (RFC 1918, 169.254, 0/8, 100.64/10 CGNAT, 192.0.0/24, 198.18/15, 240/4, broadcast) + IPv6 ULA (fc00::/7) + 6 IPv6 transition formats (NAT64 well-known + local-use /48 + /96-PLR fallback, 6to4, Teredo strict, IPv4-mapped, IPv4-compatible) with embedded-IPv4 unwrap and recursive re-classify. |
+| `InetAddress extractEmbeddedIpv4(InetAddress)` | Returns the embedded IPv4 for any of the 6 transition formats, or `null` for any other address. Used by `isAddressSafe` internally and (in `HttpWebhookDispatcher`) for operator-log categorization. |
+
+Both callers now delegate:
+- **`HttpWebhookDispatcher.isAddressSafe(InetAddress, String)`** —
+  removed 240 LOC of duplicated classifier; classification now
+  goes through `SsrfGuard.isAddressSafe`. When classification
+  returns `false`, the method re-runs cheap top-level predicates
+  locally only to produce categorized operator log lines
+  (loopback / link-local / site-local / any-local / multicast /
+  IPv6 transition wrap / IPv6 ULA / IPv4 special-use). The
+  categorization-only re-run is a pure logging concern; the
+  security decision is 100% delegated.
+- **`AdapterHttpClient.isAddressSafe(InetAddress)`** — removed 110
+  LOC of duplicated classifier and the entire `extractEmbeddedIpv4`
+  private method (113 LOC). The remaining wrapper is a 3-LOC
+  delegator; both call sites
+  (`pinRequestToValidatedAddress` and `validateExternalUrl`) stay
+  byte-equivalent.
+
+**Behavioural guarantee**: the extracted helper is byte-for-byte
+identical to the prior dispatcher / adapter copies. No
+classification bucket changed, no edge-case threshold moved, no
+predicate sequence reordered. The diff is structural only.
+
+### 2.2 — `SsrfGuardTest` (new, 30 cases)
+
+New test class
+`core/src/test/java/jp/aegif/nemaki/security/SsrfGuardTest.java`
+exercises every classification bucket directly on the helper
+(rather than transitively through the dispatcher / adapter
+wrappers). Coverage:
+
+| Bucket | Cases |
+|---|---|
+| JDK predicate categories (loopback, link-local, RFC 1918, any-local, multicast) | 4 |
+| IPv4 special-use ranges (CGNAT 100.64/10 with 100.63/100.128 boundary tests, 0/8, 192.0.0/24, 198.18/15, 240/4, broadcast) | 5 |
+| IPv6 ULA (fc00::/8, fd00::/8) | 1 |
+| IPv6 transition formats × {private-IPv4 reject, public-IPv4 allow} — NAT64 well-known, NAT64 local-use /48, 6to4, Teredo, IPv4-mapped, IPv4-compatible | 10 |
+| Public-allowlist regression guards (8.8.8.8, 1.1.1.1, 172.15/172.32 outside RFC 1918, 2606:4700::, 2001:4860::, 2001:db8:: documentation) | 2 |
+| `extractEmbeddedIpv4` direct (regular IPv6 → null, ULA → null, 2001:db8 → null because Teredo prefix is strict, all 4 transitions unwrap correctly, trivial low-bits IPv4-compatible skipped) | 8 |
+| **Total** | **30** |
+
+`HttpWebhookDispatcherTest.testExtractEmbeddedIpv4PublicPassthrough`
+updated: previously used reflection to invoke a private dispatcher
+method; now calls `SsrfGuard.extractEmbeddedIpv4` directly
+(public static). Behaviour-equivalent.
+
+### 2.3 — `Phase 1.4.1` source-tree NUL byte scan
+
+`scripts/validate-soc-templates.sh` (the RC6.4 SOC template
+validator) gains a new `Phase 1.4.1` that scans `.java`, `.ts`,
+`.tsx`, `.js`, `.jsx` files for literal NUL (0x00) bytes across
+the repo.
+
+Two regressions in this RC cycle alone shipped NUL bytes:
+- **RC6.1 P2-3**: `ConnectorGovernanceTab.tsx` had a literal
+  `\x00` in a `simulateRemove.join('\0')` separator (Java would
+  fail the same idiom at compile, TypeScript happily emits the
+  binary character). Caused `grep` / `rg` / `file` to misclassify
+  the source file as binary. Reviewer caught it.
+- **RC6.7 P3**: `HttpWebhookDispatcherTest.java` had a literal
+  `\x00` in a test string. Same symptom. Reviewer caught it.
+
+Both got past Java / TypeScript compilation. Now caught at
+pre-commit / pre-tag time by the validator running with no
+docker dependency.
+
+Implementation:
+- Python one-liner walks `REPO_ROOT`, excludes `node_modules`,
+  `target`, `dist`, `build`, `.git`, `coverage`,
+  `playwright-report`, `test-results`.
+- Counts NUL bytes per file via `b'\x00'.count(...)` on raw
+  bytes.
+- 1680 source files scanned at RC6.10 HEAD, 0 hits.
+- Honors `VALIDATE_SOURCE_NUL=0` for clean-tree environments
+  (default: 1 = run).
+
+The check runs in <1 second on the current tree; no performance
+guard needed.
+
+### 2.4 — R3 follow-up closure (orchestrator audit)
+
+REVIEW_PACKET §6 carried an open R3 item from RC6.8: "verify
+other orchestrators don't bypass the SSRF guard by passing
+`connector.getEndpoint()` to HTTP calls without explicit
+validation." Audit complete:
+
+| Orchestrator | Behaviour |
+|---|---|
+| `MattermostFetchOrchestrator` | RC6.8 explicit `validateExternalUrl(connector.getEndpoint())` at orchestrator entry. |
+| `SalesforceFetchOrchestrator` | RC6.8 explicit `validateExternalUrl(connector.getEndpoint())` at orchestrator entry. |
+| `ImapFetchOrchestrator` | Uses `imap://` scheme — would fail `validateExternalUrl`'s http/https-only check. NOT placed behind that guard by design; IMAP authentication path is reviewed separately. |
+| Slack / Teams / Gmail / M365Mail / Notion / Chatwork / Box / Dropbox (×8) | Vendor API URLs hardcoded in the adapter classes. No user-controlled endpoint reaches HTTP. |
+
+In addition, `AdapterHttpClient.pinRequestToValidatedAddress`
+runs send-time re-validation on **every** HTTP request regardless
+of caller path. Even if a future change accidentally introduced
+a configurable endpoint without explicit `validateExternalUrl`
+at orchestrator entry, the SSRF guard still applies at the
+HTTP-send layer.
+
+R3 closure is documentation-only — no code change in this RC.
+
+### 2.5 — RC6.9 carry-forward (already external-reviewed)
 
 RC6.9 closes the RC6.8-post-tag P3 compat caveat (HTTP IP-pin sent
 `Host: <IP>`, breaking shared-vhost HTTP deployments) and aligns
@@ -78,7 +256,7 @@ the `AdapterHttpClient` Javadoc with the post-RC6.8 doc-only P2
 honesty fix that landed in `d910820d7` on REVIEW_PACKET /
 RELEASE_NOTES / CLAUDE.
 
-### 2.1 — RC6.9 P3 fix: HTTP IP-pin preserves original Host header
+#### 2.5.1 — RC6.9 P3 fix: HTTP IP-pin preserves original Host header
 
 In RC6.8, `pinRequestToValidatedAddress` rewrote the HTTP URI to
 the validated IP literal and let the JDK default the `Host`
@@ -108,7 +286,7 @@ JVM-wide effect: other code in the same JVM using
 where it previously threw `IllegalArgumentException`. This is
 intentional (the JDK's documented escape hatch).
 
-### 2.2 — RC6.9 Javadoc honesty alignment
+#### 2.5.2 — RC6.9 Javadoc honesty alignment
 
 `AdapterHttpClient.pinRequestToValidatedAddress` Javadoc now
 reflects the actual security boundary (mirroring the post-RC6.8
@@ -127,7 +305,7 @@ doc fix `d910820d7`):
   SNI / hostname verification on the original hostname. Tracked
   as Medium residual risk in §6.
 
-### Tests
+#### 2.5.3 — RC6.9 Tests (carry-forward)
 
 - 2 new regression tests in `AdapterRegistryTest`:
   - `pinRequestPreservesOriginalHostHeaderOnHttpPin` — URI uses
@@ -138,9 +316,53 @@ doc fix `d910820d7`):
   Mattermost 12 / Notion 8 / Salesforce 11 / M365 Mail 9 /
   Chatwork 13 = **76 PASS**) still pass: WireMock accepts any
   `Host` header so the change is transparent.
-- Full focused regression: **343/343 PASS** (was 265 in RC6.8;
-  +78 from adding all 7 adapter contract test classes to the
-  focused regression set + 2 new Host-preserve tests).
+- Full focused regression (RC6.9 baseline): **343/343 PASS** (was
+  265 in RC6.8; +78 from adding all 7 adapter contract test
+  classes to the focused regression set + 2 new Host-preserve
+  tests).
+
+### 2.6 — RC6.10 Tests (new this RC)
+
+- **`SsrfGuardTest`** (new): **30/30 PASS** — full classification
+  coverage on the extracted helper.
+- **`HttpWebhookDispatcherTest`**: **59/59 PASS** — behaviour
+  unchanged; one test updated to call `SsrfGuard.extractEmbeddedIpv4`
+  directly instead of reflecting on the now-removed private method.
+- **`AdapterRegistryTest`**: **26/26 PASS** — RC6.9 Host-preserve
+  tests still pass through the delegated classifier.
+- **7 adapter contract tests** (Slack 12 / Teams 11 / Mattermost
+  12 / Notion 8 / Salesforce 11 / M365 Mail 9 / Chatwork 13):
+  **76/76 PASS** — refactor doesn't break legitimate API call
+  patterns.
+- **Focused 24-class regression** (23 from RC6.9 + new
+  `SsrfGuardTest`): **373/373 PASS** (was 343 in RC6.9; +30 from
+  new helper test class).
+- **Combined SSRF-classifier surface** (`HttpWebhookDispatcherTest
+  + AdapterRegistryTest + SsrfGuardTest`): **115 PASS** (was 85
+  in RC6.9; +30 from new direct test).
+- **SOC validator full run** (no Docker): **17 PASS / 7 SKIP** —
+  including new Phase 1.4.1 source-tree NUL scan (1680 source
+  files, 0 hits).
+- **Maven compile**: clean. No new compiler warnings introduced
+  by the delegation.
+
+Re-run command (RC6.10 focused regression):
+
+```bash
+mvn test -Dtest="SsrfGuardTest,HttpWebhookDispatcherTest,\
+AdapterRegistryTest,ConnectorByPrincipalGovernanceTest,\
+ConnectorSimulateRemoveTest,IngestSchedulerDelegatedRunTest,\
+ImportProfileSchedulerGateTest,ExternalIngestControllerGateTest,\
+IngestAuthorizationServiceTest,ImportProfileSinceFilterTest,\
+ConnectorDefinitionControllerPartialPutTest,\
+IngestSchedulerDelegationSkipTest,ImportProfileOwnershipTransferTest,\
+ExternalIngestControllerTest,IngestWebhookGraphValidationTest,\
+ImportProfileDefinitionTest,DelegatedCallContextFactoryTest,\
+SlackConnectorAdapterTest,TeamsConnectorAdapterTest,\
+MattermostConnectorAdapterTest,NotionConnectorAdapterTest,\
+SalesforceConnectorAdapterTest,M365MailConnectorAdapterTest,\
+ChatworkConnectorAdapterTest" -f core/pom.xml -Pdevelopment
+```
 
 ### Notable framing decisions
 
@@ -171,14 +393,14 @@ doc fix `d910820d7`):
    source-tree changes. Per §3 rules, a new RC tag is required.
    RC6.9 cut against the release-package commit.
 
-### 2.3 — RC6.8 carry-forward (still in effect, see RELEASE_NOTES.md "3.1.1-RC6.8")
+### 2.7 — RC6.8 carry-forward (still in effect, see RELEASE_NOTES.md "3.1.1-RC6.8")
 
 RC6.8 closed 3 deeper SSRF gaps in `AdapterHttpClient` —
 the P1 / P2 / P3 detailed below remain in effect; this RC
 only adds the Host header preservation and Javadoc honesty
 on top.
 
-### 2.4 — RC6.7 carry-forward (historical reference)
+### 2.8 — RC6.7 carry-forward (historical reference)
 
 RC6.7 horizontally extended the RC6.5+RC6.6 SSRF guard from
 `HttpWebhookDispatcher` into `AdapterHttpClient.validateExternalUrl`
@@ -190,7 +412,7 @@ auto-follow-redirect from `NORMAL` to `NEVER` and resolved relative
 revalidating in `sendWithRedirectValidation`. For RC6.7's full
 detail see RELEASE_NOTES.md "3.1.1-RC6.7".
 
-### 2.5 — RC6.8 P1: DNS rebinding pin (carry-forward detail)
+### 2.9 — RC6.8 P1: DNS rebinding pin (carry-forward detail)
 
 A deeper adversarial pass found that the RC6.7 fix still left
 `AdapterHttpClient` vulnerable to DNS rebinding:
@@ -277,7 +499,7 @@ both `sendWithRetry` and `sendWithRedirectValidation`:
   from "let HttpClient try and fail with network error" to
   "fail fast with security flavour").
 
-### 2.6 — RC6.8 P2: runtime endpoint revalidation (carry-forward detail)
+### 2.10 — RC6.8 P2: runtime endpoint revalidation (carry-forward detail)
 
 `ConnectorDefinitionServiceImpl` validates endpoints on save, but
 `MattermostFetchOrchestrator` (line 42) and
@@ -295,7 +517,7 @@ orchestrator-level check fails earlier with a clearer audit
 message and avoids constructing the adapter for an
 obviously-bad endpoint.
 
-### 2.7 — RC6.8 P3: multi-hop relative redirect resolve correctness (carry-forward detail)
+### 2.11 — RC6.8 P3: multi-hop relative redirect resolve correctness (carry-forward detail)
 
 `sendWithRedirectValidation` called `request.uri().resolve(
 location)` on every loop iteration but `request` was never
@@ -368,7 +590,7 @@ remain on their existing validation (RC6.7 carry-forward).
    §3 rules, a new RC tag is required. RC6.8 cut against the
    release-package commit.
 
-### 2.8 — Carry-forward from RC6.5 + RC6.6 + RC6.7 (still in effect)
+### 2.12 — Carry-forward from RC6.5 + RC6.6 + RC6.7 (still in effect)
 
 For reviewers who skipped earlier rounds, the equivalent
 `HttpWebhookDispatcher` fix shipped in RC6.5 + RC6.6 is unchanged
@@ -407,7 +629,7 @@ RC6.7's scope.
 
 ## 3. What's on the branch HEAD but NOT in the tag
 
-The tag (`v3.1.1-RC6.9`) and the branch HEAD
+The tag (`v3.1.1-RC6.10`) and the branch HEAD
 (`release/3.1.1-RC6`) MAY diverge during the external review
 window. As of tag time the divergence is zero — both point at
 the same commit.
@@ -519,9 +741,9 @@ templates AND playbook are part of the tag artifact now.
 
 ---
 
-## 4. What's in the v3.1.1-RC6.9 tag (cumulative since RC4.1)
+## 4. What's in the v3.1.1-RC6.10 tag (cumulative since RC4.1)
 
-RC5 cycle (RC5 → RC5.6) + RC6 + RC6.1 + RC6.2 + RC6.3 + RC6.4 + RC6.5 + RC6.6 + RC6.7 + RC6.8 + RC6.9:
+RC5 cycle (RC5 → RC5.6) + RC6 + RC6.1 + RC6.2 + RC6.3 + RC6.4 + RC6.5 + RC6.6 + RC6.7 + RC6.8 + RC6.9 + RC6.10:
 
 - **Scheduled delegated profiles** (RC5 §12.1)
 - **Connector governance view** (RC5 §12.3) — `/by-principal/{id}`
@@ -601,46 +823,67 @@ RC5 cycle (RC5 → RC5.6) + RC6 + RC6.1 + RC6.2 + RC6.3 + RC6.4 + RC6.5 + RC6.6 
   HTTPS TLS-bounded with TCP-connect SSRF residual). +2
   AdapterRegistryTest tests (343/343 PASS for full focused
   regression including all 7 adapter contract test classes).
+- **RC6.10 SsrfGuard refactor + source-tree NUL pre-commit scan**
+  — new `jp.aegif.nemaki.security.SsrfGuard` utility (Rule-of-
+  Three threshold: 240+ LOC duplicated between
+  `HttpWebhookDispatcher` and `AdapterHttpClient` since RC6.7).
+  Both call sites delegate; byte-equivalent classification.
+  +30 cases in new `SsrfGuardTest`. Source-tree NUL byte scan
+  added to `scripts/validate-soc-templates.sh` Phase 1.4.1
+  (1680 source files / 0 hits). R3 follow-up (other-orchestrator
+  audit) closed documentation-only after verifying only
+  Mattermost / Salesforce ever pass `connector.getEndpoint()`
+  to HTTP — both already RC6.8-protected.
+  **373/373 PASS** for full focused regression (24 classes;
+  was 343 in RC6.9; +30 from `SsrfGuardTest`).
 
-Full per-RC narrative: `RELEASE_NOTES.md` (17 sections, RC5 →
-RC6.9), `docs/design/connector-delegation.md` (§12.1 - §12.20).
+Full per-RC narrative: `RELEASE_NOTES.md` (18 sections, RC5 →
+RC6.10), `docs/design/connector-delegation.md` (§12.1 - §12.20).
 
 ---
 
-## 5. Acceptance status summary (RC6.9)
+## 5. Acceptance status summary (RC6.10)
 
 ### Blocking findings
 **0**.
 
 ### Java unit tests — verified at HEAD this session
 
-- **`HttpWebhookDispatcherTest`**: **59/59 PASS** (unchanged — no
-  code change in this file in RC6.9).
-- **`AdapterRegistryTest`**: **26/26 PASS** (24 from RC6.8 + 2
-  new RC6.9 Host-preservation tests
-  `pinRequestPreservesOriginalHostHeaderOnHttpPin` and
-  `pinRequestPreservesOriginalHostHeaderWithoutPort`).
+- **`SsrfGuardTest`** (new in RC6.10): **30/30 PASS** — direct
+  classification coverage on the extracted helper.
+- **`HttpWebhookDispatcherTest`**: **59/59 PASS** — behaviour
+  unchanged through the SsrfGuard delegation; one test updated
+  to call `SsrfGuard.extractEmbeddedIpv4` directly (public
+  static) instead of reflecting on the now-removed private
+  dispatcher method.
+- **`AdapterRegistryTest`**: **26/26 PASS** — RC6.9 Host-preserve
+  tests still pass through the delegated classifier.
 - **7 connector adapter contract tests** (Slack 12 / Teams 11 /
   Mattermost 12 / Notion 8 / Salesforce 11 / M365 Mail 9 /
-  Chatwork 13): **76 PASS** — confirms Host-header preservation
-  does NOT break legitimate adapter API call patterns (WireMock
-  accepts any Host).
-- **Full 23-class focused regression** (16 original + 7 adapter
-  contract test classes added to the focused set in this RC):
-  **343/343 PASS** (was 265 in RC6.8; +78 from adding the 7
-  adapter contract test classes + 2 new Host-preserve tests).
+  Chatwork 13): **76 PASS** — confirms the SsrfGuard delegation
+  does NOT change legitimate adapter API call patterns.
+- **Full 24-class focused regression** (23 from RC6.9 + new
+  `SsrfGuardTest`): **373/373 PASS** (was 343 in RC6.9; +30 from
+  the new helper test).
   Re-run command:
   ```bash
-  mvn test -Dtest="HttpWebhookDispatcherTest,AdapterRegistryTest,\
-  ConnectorByPrincipalGovernanceTest,ConnectorSimulateRemoveTest,\
-  IngestSchedulerDelegatedRunTest,ImportProfileSchedulerGateTest,\
-  ExternalIngestControllerGateTest,IngestAuthorizationServiceTest,\
-  ImportProfileSinceFilterTest,ConnectorDefinitionControllerPartialPutTest,\
+  mvn test -Dtest="SsrfGuardTest,HttpWebhookDispatcherTest,\
+  AdapterRegistryTest,ConnectorByPrincipalGovernanceTest,\
+  ConnectorSimulateRemoveTest,IngestSchedulerDelegatedRunTest,\
+  ImportProfileSchedulerGateTest,ExternalIngestControllerGateTest,\
+  IngestAuthorizationServiceTest,ImportProfileSinceFilterTest,\
+  ConnectorDefinitionControllerPartialPutTest,\
   IngestSchedulerDelegationSkipTest,ImportProfileOwnershipTransferTest,\
   ExternalIngestControllerTest,IngestWebhookGraphValidationTest,\
-  ImportProfileDefinitionTest,DelegatedCallContextFactoryTest" \
-  -f core/pom.xml -Pdevelopment
+  ImportProfileDefinitionTest,DelegatedCallContextFactoryTest,\
+  SlackConnectorAdapterTest,TeamsConnectorAdapterTest,\
+  MattermostConnectorAdapterTest,NotionConnectorAdapterTest,\
+  SalesforceConnectorAdapterTest,M365MailConnectorAdapterTest,\
+  ChatworkConnectorAdapterTest" -f core/pom.xml -Pdevelopment
   ```
+- **SOC validator full run** (no Docker): **17 PASS / 7 SKIP** —
+  Phase 1.4.1 source-tree NUL scan exercised across **1680
+  source files with 0 hits**.
 
 ### Playwright E2E — verified at HEAD this session
 
@@ -691,16 +934,17 @@ npx playwright test --project=chromium \
 ### Live verification
 
 - **SSRF fix regression tests** — run live this session:
-  - `HttpWebhookDispatcherTest` → 59/59 PASS (unchanged).
-  - `AdapterRegistryTest` → 26/26 PASS (24 from RC6.8 + 2 new
-    RC6.9 Host-preserve tests).
-  - Combined SSRF surface: **85 PASS** (was 83 in RC6.8; +2).
+  - `SsrfGuardTest` → 30/30 PASS (new in RC6.10).
+  - `HttpWebhookDispatcherTest` → 59/59 PASS (unchanged via
+    delegation).
+  - `AdapterRegistryTest` → 26/26 PASS (unchanged via delegation).
+  - Combined SSRF surface: **115 PASS** (was 85 in RC6.9; +30 from
+    new SsrfGuardTest).
   - 7 adapter contract tests (Slack/Teams/Mattermost/Notion/
-    Salesforce/M365/Chatwork): **76 PASS** — confirms RC6.9
-    Host-header preservation doesn't break legitimate adapter
-    API patterns.
-  - Full 23-class focused regression (16 original + 7 adapter):
-    **343/343 PASS**.
+    Salesforce/M365/Chatwork): **76 PASS** — confirms RC6.10
+    refactor doesn't break legitimate adapter API patterns.
+  - Full 24-class focused regression (23 from RC6.9 + new
+    `SsrfGuardTest`): **373/373 PASS**.
 - **Live SSRF guard smoke against deployed RC6.7 stack** (TODO
   after WAR deploy): 10 vectors via `POST /webhook/test` (NAT64
   well-known + local-use, 6to4, Teredo, IPv4-compatible, plus
@@ -764,24 +1008,36 @@ Unchanged since RC4.1.
 
 ---
 
-## 6. Remaining follow-ups (post-RC6.9, not blocking review)
+## 6. Remaining follow-ups (post-RC6.10, not blocking review)
 
-(No open repo-shippable items.)
+(No open repo-shippable items beyond the Medium residual SSRF
+risk and explicitly-deferred admin-config-surface guard. Both
+require larger engineering than a refactor RC.)
 
 | ID | Severity | Scope | Status |
 |---|---|---|---|
 | **R1** (deployment-side) | Low (ops) | operator infrastructure | 4 inherently per-deployment items: network path / TLS, SIEM credentials from secrets manager, notification routing, threshold tuning from environment baseline. Not repo-shippable. |
 | **HTTPS DNS pinning via SocketFactory** | **Medium (residual SSRF, RC6.8 P2 reviewer)** | webhook + connector dispatchers HTTPS path | RC6.8 P1 closes the **HTTPS data-exchange SSRF class** for both `HttpWebhookDispatcher` and `AdapterHttpClient` (re-validate at send time + TLS cert verification stops application-layer data on a rebound IP). The **HTTPS TCP-connect SSRF class is NOT closed**: there is a microsecond race window between our `InetAddress.getAllByName` re-validate and the JDK's own resolve in `HttpClient.send` — a rebind inside that window lets the TCP connect succeed (TLS handshake then fails). Attacker can still port-scan / fingerprint / trigger TCP-side-effects on internal services. Real fix: custom `SocketFactory` that pins the validated IP at TCP-connect time while keeping SNI/hostname-verification on the original hostname. |
 | ~~**HTTP `Host` header preservation under IP pin**~~ | **CLOSED in RC6.9** | AdapterHttpClient HTTP path | RC6.9 enables `-Djdk.httpclient.allowRestrictedHeaders=host` (all 3 Dockerfile variants + pom.xml argLine + static init fallback) and sets `Host: <original-hostname[:port]>` after URI rewrite in `pinRequestToValidatedAddress`. Shared-vhost HTTP deployments now route correctly. |
-| **`isAddressSafe` + `extractEmbeddedIpv4` shared utility** | Low (tech debt) | webhook + adapter dispatchers | Duplicated between `HttpWebhookDispatcher` and `AdapterHttpClient`. Track for a follow-up extract-to-shared-helper (`SsrfGuard` utility class). 2 consumers now; refactor when a 3rd appears (Rule of Three). |
-| **Other connector orchestrator endpoint pre-checks** | Low (cosmetic) | Slack/Teams/Notion/Chatwork/M365 etc. orchestrators | RC6.8 P2 added explicit `validateExternalUrl` at Mattermost + Salesforce orchestrator entry. P1's send-time revalidation already protects all 11 connectors, so explicit pre-checks elsewhere are cosmetic (better audit messages). |
-| **Purview / Atlas / OIDC discovery / Graph download SSRF guard** | Low (admin-config surface) | external integration outbound HTTP | These surfaces are NOT under the AdapterHttpClient guard; they have admin-configured IdP / on-prem endpoint use cases. Applying the same blocklist unconditionally would break legitimate internal integrations. Future opt-in "production-mode" property or explicit allowlist. |
+| ~~**`isAddressSafe` + `extractEmbeddedIpv4` shared utility**~~ | **CLOSED in RC6.10** | webhook + adapter dispatchers | New `jp.aegif.nemaki.security.SsrfGuard` utility class. Both `HttpWebhookDispatcher` and `AdapterHttpClient` delegate. Byte-equivalent classification. A future 3rd consumer (Purview / Atlas guard) calls the helper directly rather than re-implementing. |
+| ~~**Other connector orchestrator endpoint pre-checks**~~ | **CLOSED in RC6.10** (documentation-only) | Slack/Teams/Notion/Chatwork/M365 etc. orchestrators | Audit complete: only Mattermost + Salesforce orchestrators ever pass `connector.getEndpoint()` to HTTP and both are RC6.8-protected with explicit `validateExternalUrl` at orchestrator entry. The other 8 use hardcoded vendor API URLs and never accept user-controlled endpoint values. Plus `AdapterHttpClient.pinRequestToValidatedAddress` enforces send-time re-validation on every request regardless of caller path. No code change needed. |
+| **Purview / Atlas / OIDC discovery / Graph download SSRF guard** | Low (admin-config surface) | external integration outbound HTTP | These surfaces are NOT under the AdapterHttpClient guard; they have admin-configured IdP / on-prem endpoint use cases. Applying the same blocklist unconditionally would break legitimate internal integrations. Future opt-in "production-mode" property or explicit allowlist — when implemented, calls `SsrfGuard.isAddressSafe` directly (Rule-of-Three threshold already crossed, helper is ready). |
 | **Kibana NDJSON CLI validation** | Low | template QA | No offline parser exists for Detection Engine NDJSON; validation requires importing into a live Elastic 8 cluster. Operator pre-deploy gate. |
 | **Splunk savedsearches CLI validation** | Low | template QA | No offline parser; `splunk btool` requires a Splunk install. Operator pre-deploy gate. |
 | **Full Playwright green-up of the 155 pre-existing failures** | Medium | UI corpus | RC6.4 proved they are pre-existing (RC5.6 vs RC6 HEAD diff). The triage backlog lives under memory `test-skip-triage`. Separate engineering project. |
-| **Repo-wide NUL byte pre-commit scan** | Low (recurring issue) | tooling | RC6.1 P2-3 (TS) + RC6.7 (Java test) both shipped literal NUL bytes. A simple pre-commit hook scanning source files for `\x00` would prevent the pattern. Consider adding alongside the SOC validator script. |
+| ~~**Repo-wide NUL byte pre-commit scan**~~ | **CLOSED in RC6.10** | tooling | `scripts/validate-soc-templates.sh` Phase 1.4.1 scans `.java`/`.ts`/`.tsx`/`.js`/`.jsx` for literal `\x00` (1680 files / 0 hits at HEAD). Operators / CI run this before tag-cut; future Slack/Teams/git-hook integration is a separate cosmetic improvement. |
 
-**Resolved in RC6.9 (newly closed)**:
+**Resolved in RC6.10 (newly closed)**:
+- `SsrfGuard` shared utility — extracted from the duplicated
+  `HttpWebhookDispatcher` + `AdapterHttpClient` copies.
+  Byte-equivalent classification, 30-case dedicated test
+  (`SsrfGuardTest`).
+- Source-tree NUL byte pre-commit scan — new
+  `scripts/validate-soc-templates.sh` Phase 1.4.1.
+- R3 follow-up (other orchestrator audit) — documentation-only
+  closure after auditing all 11 connector adapters.
+
+**Resolved in RC6.9 (carry-forward, still closed)**:
 - HTTP IP-pin shared-vhost compat caveat (RC6.8 post-tag P3) —
   `Host: <original-hostname[:port]>` preserved via JDK escape
   hatch property.
@@ -826,14 +1082,14 @@ Unchanged since RC4.1.
 - Recurring "template body bug surfaces only at external review"
   pattern — Epic 1 (§10.1) validator gate.
 
-**Resolved during RC5 → RC6.9 cycle**: all listed in
+**Resolved during RC5 → RC6.10 cycle**: all listed in
 `RELEASE_NOTES.md` per-section.
 
 ---
 
 ## 7. Promotion path (operational)
 
-`v3.1.1-RC6.9` is and remains a release candidate. GA path:
+`v3.1.1-RC6.10` is and remains a release candidate. GA path:
 
 1. External review concludes with approval.
 2. Merge `release/3.1.1-RC6` into `master`. All 5 SSRF fix
@@ -846,65 +1102,85 @@ Unchanged since RC4.1.
      (DNS rebinding pin + runtime revalidation + multi-hop redirect)
    - `e45d172bb` — RC6.9: HTTP Host header preservation +
      Javadoc honesty + JVM property wiring
+   - RC6.10 SsrfGuard extraction commit (TBD, populated at
+     tag-cut time) — refactor-only; carries no new SSRF
+     behaviour but consolidates the helpers ready for future
+     consumers
 3. Cut a **new** annotated tag `v3.1.1` against the merge
    commit on `master`.
 4. Optionally create a single GitHub Release attached to
    `v3.1.1`.
-5. The RC tags (`v3.1.1-RC5`, `…-RC5.1`, …, `…-RC6.9`) stay
+5. The RC tags (`v3.1.1-RC5`, `…-RC5.1`, …, `…-RC6.10`) stay
    as internal milestones.
 6. Reply on the GHSA advisory linking the 5 fix commits and the
-   cut tag (`v3.1.1-RC6.9`) so the reporter has a clear landing
-   reference covering the original report + the 4 follow-on
-   adversarial-pass findings (RC6.6 IPv4 special-use + Teredo,
-   RC6.7 horizontal expansion to AdapterHttpClient, RC6.8
-   DNS rebinding pin + revalidation + redirect, RC6.9 Host
-   header preservation + Javadoc honesty).
+   cut tag (`v3.1.1-RC6.10`) so the reporter has a clear
+   landing reference covering the original report + the 4
+   follow-on adversarial-pass findings (RC6.6 IPv4 special-use
+   + Teredo, RC6.7 horizontal expansion to AdapterHttpClient,
+   RC6.8 DNS rebinding pin + revalidation + redirect, RC6.9
+   Host header preservation + Javadoc honesty) + the RC6.10
+   shared-helper consolidation (no new closure, structural
+   refactor only).
 
 ---
 
 ## 8. Re-send delta summary (what reviewers should focus on)
 
-If you reviewed RC6.8 already, the smallest possible review
-for RC6.9 is:
+If you reviewed RC6.9 already, the smallest possible review
+for RC6.10 is:
 
 ```bash
-git diff v3.1.1-RC6.8..v3.1.1-RC6.9
+git diff v3.1.1-RC6.9..v3.1.1-RC6.10
 ```
 
-Focused set:
+Focused set (refactor + tooling — no new SSRF closure):
 
+- **NEW** `core/src/main/java/jp/aegif/nemaki/security/SsrfGuard.java`
+  (~263 lines, new file, new package) — the extracted classifier.
+  Read:
+  - `public static boolean isAddressSafe(InetAddress)` —
+    classification rules byte-for-byte from the two prior
+    dispatcher copies (JDK predicates + 9 IPv4 special-use
+    ranges + IPv6 ULA + 6 transition formats unwrap-and-recurse).
+  - `public static InetAddress extractEmbeddedIpv4(InetAddress)`
+    — the 6 transition-format extractor, byte-for-byte from the
+    prior dispatcher copies.
+- `core/src/main/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcher.java`
+  — **−240 LOC duplicate classifier removed**. The remaining
+  2-arg wrapper `isAddressSafe(InetAddress, String)` delegates to
+  `SsrfGuard.isAddressSafe` and re-runs cheap top-level
+  predicates locally only to produce categorized operator log
+  lines (loopback / link-local / etc.). Behaviour unchanged.
 - `core/src/main/java/jp/aegif/nemaki/rest/ingest/AdapterHttpClient.java`
-  (+76 lines) — Host header preservation + Javadoc honesty. Read:
-  - Static `{}` initializer at the top of the class — sets
-    `jdk.httpclient.allowRestrictedHeaders=host` additively
-    before `SHARED` HttpClient field triggers HttpClient class
-    load. Defensive fallback for environments that load
-    AdapterHttpClient before any other HttpClient consumer.
-  - `pinRequestToValidatedAddress` HTTP branch — after URI
-    rewrite to IP literal, explicitly `b.header("Host", hostHeader)`
-    where `hostHeader = host + (port != -1 ? ":" + port : "")`.
-  - Updated Javadoc reflects the actual security boundary:
-    HTTP = network-layer closed (DNS rebinding fully closed);
-    HTTPS = TLS-bounded (data-exchange SSRF closed, TCP-connect
-    SSRF residual).
-- `core/src/test/java/jp/aegif/nemaki/rest/ingest/AdapterRegistryTest.java`
-  (+31 lines) — 2 new Host-preserve regression tests
-  (`pinRequestPreservesOriginalHostHeaderOnHttpPin` and
-  `pinRequestPreservesOriginalHostHeaderWithoutPort`).
-- `core/pom.xml` (1 line) — surefire `<argLine>` adds
-  `-Djdk.httpclient.allowRestrictedHeaders=host` so tests run
-  with the JVM property set at startup (the static initializer
-  is a fallback for environments where AdapterHttpClient happens
-  to be loaded first; the JVM property is the load-bearing path).
-- `docker/core/Dockerfile`, `Dockerfile.jakarta`,
-  `Dockerfile.simple` (1 property each) — production
-  `CATALINA_OPTS` / `JAVA_OPTS` augmented with the same
-  property so production stacks pick it up automatically.
-- `REVIEW_PACKET.md`, `RELEASE_NOTES.md`, `CLAUDE.md`,
-  `README.md`, `AGENTS.md` (RC6.9 section).
+  — **−110 LOC duplicate classifier removed** (full
+  `isAddressSafe` + `extractEmbeddedIpv4` methods deleted). The
+  remaining 1-arg `isAddressSafe(InetAddress)` is a 3-LOC
+  delegator preserved so `pinRequestToValidatedAddress` and
+  `validateExternalUrl` call sites stay byte-equivalent. RC6.9
+  Host-header preservation + static `{}` initializer + Javadoc
+  are unchanged.
+- **NEW** `core/src/test/java/jp/aegif/nemaki/security/SsrfGuardTest.java`
+  (~220 lines, 30 cases) — direct unit test pinning the
+  extracted helper.
+- `core/src/test/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcherTest.java`
+  — `testExtractEmbeddedIpv4PublicPassthrough` updated to call
+  `SsrfGuard.extractEmbeddedIpv4` directly (public static)
+  instead of reflecting on the now-removed private dispatcher
+  method.
+- `scripts/validate-soc-templates.sh` — new Phase 1.4.1
+  source-tree NUL byte scan (~60 LOC). Runs Python walker over
+  `.java`/`.ts`/`.tsx`/`.js`/`.jsx`, excludes
+  `node_modules`/`target`/`dist`/`build`/`.git`/`coverage`/
+  `playwright-report`/`test-results`. 1680 files scanned / 0
+  hits at HEAD.
+- `REVIEW_PACKET.md`, `RELEASE_NOTES.md`, `CLAUDE.md`
+  (RC6.10 section).
 
-Security-focused reviewers can scope to `AdapterHttpClient.java`
-(~76 LOC delta) + the JVM property wiring (4 files × 1 line).
+Security-focused reviewers can scope to `SsrfGuard.java` (the
+extracted source of truth) + the two delegation call sites in
+`HttpWebhookDispatcher` and `AdapterHttpClient` (~30 LOC each
+after subtraction). The behavioural delta vs RC6.9 is zero by
+construction.
 
 If you are reviewing RC5+RC6 cold for the first time, use the
 cumulative diff (since `v3.1.1-RC4.1`) in §1.
@@ -916,12 +1192,12 @@ cumulative diff (since `v3.1.1-RC4.1`) in §1.
 | Purpose | File |
 |---|---|
 | Re-send overview (this file) | `REVIEW_PACKET.md` |
-| What changed and why (per RC) | `RELEASE_NOTES.md` (17 sections RC5 → RC6.9) |
+| What changed and why (per RC) | `RELEASE_NOTES.md` (18 sections RC5 → RC6.10) |
 | Design rationale | `docs/design/connector-delegation.md` (§12.1 - §12.20) |
 | Multi-replica operational notes | `docs/MULTI-REPLICA-DEPLOYMENT.md` |
 | Project-internal navigation (Japanese) | `CLAUDE.md` |
 | API entry points | `ConnectorDefinitionController.java`, `ImportProfileDefinitionController.java`, `IngestSchedulerService.java`, `AuditEmitSupport.java` |
-| Test coverage proof | `core/src/test/java/jp/aegif/nemaki/rest/ingest/*Test.java` (182 focused tests across 14 classes) |
+| Test coverage proof | `core/src/test/java/jp/aegif/nemaki/rest/ingest/*Test.java` + `core/src/test/java/jp/aegif/nemaki/security/SsrfGuardTest.java` + `core/src/test/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcherTest.java` (373 PASS across 24 focused classes at RC6.10) |
 | SOC / SIEM audit integration (playbook) | `docs/SOC-AUDIT-INTEGRATION.md` |
 | SOC / SIEM audit integration (import-ready templates, operator validation required) | `docs/soc-templates/` (README + Filebeat / Fluent Bit / Vector shippers + Kibana Detection Engine NDJSON / Loki Ruler / Splunk savedsearches rule sets — see README "Template validation status" table for the per-template syntax-only / no-live-test gap) |
 | Connector-area manual verification (RC6.5) | `docs/MANUAL-VERIFICATION-CONNECTORS.md` (1300+ lines step-by-step curl + UI, 3-round live-verified) |

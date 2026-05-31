@@ -6,6 +6,175 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC6.10 — Refactor: extract SsrfGuard shared utility + source-tree NUL pre-commit scan
+_Release candidate on `release/3.1.1-RC6` (2026-05-31), branched
+off `v3.1.1-RC6.9` (`76695f46c`)._
+
+Sixth RC in the SSRF hardening cycle. No new security gap closed
+— this RC consolidates the SSRF address-classification logic that
+had been duplicated between `HttpWebhookDispatcher` and
+`AdapterHttpClient` since RC6.7, and adds a source-side NUL byte
+scan so future regressions of the RC6.1 / RC6.7 NUL-shipped class
+get caught before tag.
+
+### Rule-of-Three refactor — new `jp.aegif.nemaki.security.SsrfGuard`
+
+RC6.5 added `isAddressSafe` + `extractEmbeddedIpv4` to
+`HttpWebhookDispatcher`. RC6.7 horizontalized the same logic into
+`AdapterHttpClient`. A 3rd consumer (Purview / Atlas / OIDC /
+Graph outbound URL validators — tracked as deferred work in
+REVIEW_PACKET §6) would have required updating duplicated copies
+in 3 places.
+
+New utility class:
+- `core/src/main/java/jp/aegif/nemaki/security/SsrfGuard.java`
+  with two public static methods:
+  - `isAddressSafe(InetAddress)` — full classification (JDK
+    predicates + 9 IPv4 special-use ranges + IPv6 ULA + 6 IPv6
+    transition formats with embedded-IPv4 unwrap + recursive
+    re-classify).
+  - `extractEmbeddedIpv4(InetAddress)` — returns the embedded
+    IPv4 for any recognized IPv6 transition format, or `null`.
+
+Both call sites now delegate:
+- `HttpWebhookDispatcher.isAddressSafe(InetAddress, String)`
+  delegates the classification and only re-runs cheap top-level
+  predicates locally to produce categorized operator log lines.
+- `AdapterHttpClient.isAddressSafe(InetAddress)` is a thin
+  delegator (kept so `pinRequestToValidatedAddress` and
+  `validateExternalUrl` call sites stay byte-equivalent).
+
+Code is a byte-for-byte extraction — no behavioural change. The
+classification rules are unchanged from RC6.9.
+
+### New `SsrfGuardTest` — 30 cases pinning the helper directly
+
+`core/src/test/java/jp/aegif/nemaki/security/SsrfGuardTest.java`
+covers every classification bucket directly on the helper:
+- 5 JDK predicate categories (loopback, link-local, RFC 1918,
+  any-local, multicast) — 4 tests
+- 6 IPv4 special-use ranges (CGNAT, 0/8, 192.0.0/24, 198.18/15,
+  240/4, broadcast) with boundary tests for 100.63/100.128 — 5
+  tests
+- IPv6 ULA — 1 test
+- 6 IPv6 transition formats (NAT64 well-known, NAT64 local-use
+  /48, 6to4, Teredo, IPv4-mapped, IPv4-compatible) — each tested
+  with both private-IPv4 wrap (reject) and public-IPv4 wrap
+  (allow where applicable) — 10 tests
+- 2 public-allowlist tests (don't over-block public IPv4 / IPv6
+  including 2001:db8:: documentation prefix)
+- 8 `extractEmbeddedIpv4` direct tests including the strict
+  2001::/32 Teredo prefix vs 2001:db8:: documentation distinction
+
+`HttpWebhookDispatcherTest.testExtractEmbeddedIpv4PublicPassthrough`
+updated to call `SsrfGuard.extractEmbeddedIpv4` directly (public
+static, no reflection needed).
+
+### Source-tree NUL byte pre-commit scan — `Phase 1.4.1`
+
+`scripts/validate-soc-templates.sh` extended with a new
+`Phase 1.4.1` that scans `.java`, `.ts`, `.tsx`, `.js`, `.jsx`
+files for literal NUL (0x00) bytes. Two NUL-shipped regressions
+in this RC cycle alone:
+- **RC6.1 P2-3**: `ConnectorGovernanceTab.tsx` had a literal
+  0x00 in a `simulateRemove.join('\0')` separator.
+- **RC6.7 P3**: `HttpWebhookDispatcherTest.java` had a literal
+  0x00 in a string literal.
+
+Both got past Java / TypeScript compilation; both broke `grep` /
+`rg` / `file` which treated the files as binary. Operators
+running the validator now get a source-tree NUL scan as part of
+`Phase 1.4.1` — across the current tree (1680 source files), 0
+NUL bytes detected.
+
+Excludes: `node_modules`, `target`, `dist`, `build`, `.git`,
+`coverage`, `playwright-report`, `test-results`. Disable for
+clean-tree environments via `VALIDATE_SOURCE_NUL=0`.
+
+### Follow-up R3 closed — orchestrator audit complete
+
+REVIEW_PACKET §6 R3 ("verify other orchestrators don't bypass
+SSRF guard"): of 11 connector adapters, only 3 orchestrators
+ever pass `connector.getEndpoint()` to an HTTP call:
+- `MattermostFetchOrchestrator` — already protected (RC6.8
+  explicit `validateExternalUrl` at orchestrator entry).
+- `SalesforceFetchOrchestrator` — already protected (RC6.8
+  explicit `validateExternalUrl` at orchestrator entry).
+- `ImapFetchOrchestrator` — uses `imap://` scheme, would fail
+  `validateExternalUrl`'s http/https-only check; NOT placed
+  behind that guard intentionally.
+
+The other 8 orchestrators (Slack / Teams / Gmail / M365Mail /
+Notion / Chatwork / Box / Dropbox) use hardcoded vendor API URLs
+and never pass user-controlled endpoint values to HTTP. Plus
+`AdapterHttpClient.pinRequestToValidatedAddress` runs send-time
+re-validation on every request regardless of caller path, so even
+if a future change accidentally added a configurable endpoint
+without explicit validation, the SSRF guard still applies at the
+HTTP layer.
+
+R3 is now documentation-only — no code change required.
+
+### Tests + verification
+
+- **`SsrfGuardTest`** — 30/30 PASS (new in this RC).
+- **`HttpWebhookDispatcherTest`** — 59/59 PASS (unchanged
+  behaviour; reflection test updated to call `SsrfGuard`
+  directly).
+- **`AdapterRegistryTest`** — 26/26 PASS (unchanged).
+- **7 adapter contract tests** (Slack 12 / Teams 11 / Mattermost
+  12 / Notion 8 / Salesforce 11 / M365 9 / Chatwork 13): 76/76
+  PASS — confirms refactor doesn't break legitimate adapter API
+  call patterns.
+- **Focused 24-class regression** (23 from RC6.9 + new
+  `SsrfGuardTest`): **373/373 PASS** (was 343 in RC6.9; +30 from
+  new helper test). Combined SSRF surface: 115 PASS (was 85 in
+  RC6.9).
+- **Maven compile** — clean (no behavioural changes to
+  `HttpWebhookDispatcher` or `AdapterHttpClient` from the
+  refactor; both delegate to `SsrfGuard`).
+- **Source-tree NUL scan** — 0 hits across 1680 source files.
+- **SOC validator full run** — 17 PASS / 7 SKIP (Docker phase
+  not run; remains opt-in via `VALIDATE_DOCKER=1`).
+
+### Files touched (RC6.10)
+
+**Code (3 files)**:
+- `core/src/main/java/jp/aegif/nemaki/security/SsrfGuard.java`
+  (NEW, 263 lines — extracted helper).
+- `core/src/main/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcher.java`
+  (removed 240 lines of duplicated classifier, delegates to
+  `SsrfGuard`; preserves operator log categorization).
+- `core/src/main/java/jp/aegif/nemaki/rest/ingest/AdapterHttpClient.java`
+  (removed 110 lines of duplicated classifier, delegates to
+  `SsrfGuard`).
+
+**Tests (2 files)**:
+- `core/src/test/java/jp/aegif/nemaki/security/SsrfGuardTest.java`
+  (NEW, 30 cases).
+- `core/src/test/java/jp/aegif/nemaki/webhook/HttpWebhookDispatcherTest.java`
+  (replaced reflection on private `extractEmbeddedIpv4` with
+  direct `SsrfGuard.extractEmbeddedIpv4` call).
+
+**Tooling (1 file)**:
+- `scripts/validate-soc-templates.sh` (new `Phase 1.4.1`
+  source-tree NUL scan).
+
+**Docs**: `RELEASE_NOTES.md`, `CLAUDE.md`, `REVIEW_PACKET.md`.
+
+### Migration / compatibility
+
+No public API change. No new properties. No schema / patch / view
+/ Mango index changes. The refactor is byte-equivalent at the
+classifier-output level. Operators with existing connectors,
+webhooks, or schedulers see no behavioural change.
+
+JVM-wide `jdk.httpclient.allowRestrictedHeaders=host` property
+already set in RC6.9 (production via `CATALINA_OPTS`, tests via
+surefire `<argLine>`). RC6.10 doesn't touch this surface.
+
+---
+
 ## 3.1.1-RC6.9 — Security: preserve original Host header on HTTP IP-pin (closes shared-vhost compat caveat) + honest HTTPS Javadoc
 _Release candidate on `release/3.1.1-RC6` (2026-05-31), branched
 off `v3.1.1-RC6.8` (`cd82452f4`)._
