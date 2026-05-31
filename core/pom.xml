@@ -1208,6 +1208,7 @@
 						--add-opens=java.base/java.io=ALL-UNNAMED
 						--add-opens=java.base/java.net=ALL-UNNAMED
 						--add-opens=java.base/java.time=ALL-UNNAMED
+						-Djdk.httpclient.allowRestrictedHeaders=host
 					</argLine>
 					<!-- Fork configuration for better test isolation -->
 					<!-- CRITICAL FIX: reuseForks=true to avoid "Error creating properties files for forking" -->

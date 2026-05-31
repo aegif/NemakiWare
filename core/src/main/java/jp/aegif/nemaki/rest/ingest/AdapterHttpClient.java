@@ -46,6 +46,40 @@ import org.slf4j.LoggerFactory;
  */
 public final class AdapterHttpClient {
 
+    /**
+     * Enable the JDK {@link HttpRequest.Builder} to set the {@code Host}
+     * header explicitly. RC6.9 P3 fix: {@link #pinRequestToValidatedAddress}
+     * needs to override {@code Host} to the original hostname when
+     * rewriting the HTTP URI to the validated IP literal, so shared-vhost
+     * deployments (one reverse proxy serving multiple hostnames on the
+     * same IP) reach the correct vhost.
+     *
+     * <p>The JDK's {@code jdk.internal.net.http.common.Utils} reads
+     * {@code jdk.httpclient.allowRestrictedHeaders} once at class load
+     * time. By setting the property in this static initializer BEFORE
+     * the {@link #SHARED} field below triggers HttpClient class loading,
+     * the property is honoured for the JVM lifetime of this WAR.
+     *
+     * <p>The setter is additive — any existing value (e.g. an operator
+     * passing other restricted headers via {@code -D...=connection,host})
+     * is preserved. JVM-wide effect: other code in the same JVM that
+     * uses {@code HttpRequest.Builder.header("Host", ...)} will now
+     * succeed where it previously threw {@code IllegalArgumentException};
+     * this is intentional and matches the documented JDK escape hatch.
+     */
+    static {
+        String key = "jdk.httpclient.allowRestrictedHeaders";
+        String existing = System.getProperty(key, "");
+        java.util.Set<String> values = new java.util.TreeSet<>();
+        for (String v : existing.split(",")) {
+            String t = v.trim().toLowerCase(java.util.Locale.ROOT);
+            if (!t.isEmpty()) values.add(t);
+        }
+        if (values.add("host")) {
+            System.setProperty(key, String.join(",", values));
+        }
+    }
+
     private static final HttpClient SHARED = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .followRedirects(HttpClient.Redirect.NEVER)
@@ -294,34 +328,50 @@ public final class AdapterHttpClient {
     /**
      * Re-resolve the request URI at send time, validate every resolved
      * address against {@link #isAddressSafe}, and for HTTP rewrite the
-     * URI to use the validated IP literal.
+     * URI to use the validated IP literal while preserving the original
+     * {@code Host} header.
      *
      * <p>This closes a DNS rebinding gap: {@link #validateExternalUrl(String)}
      * called at config time (e.g. when an admin saves a connector endpoint)
      * resolves the host once and validates the result; an attacker
      * controlling the DNS for that host could return a public IP at the
      * config-time resolve and a private / loopback / metadata IP at the
-     * actual {@code HttpClient.send} time. Without this method, the JDK
-     * {@code HttpClient} would re-resolve and connect to the rebound IP.
+     * actual {@code HttpClient.send} time.
      *
-     * <p><strong>HTTP</strong>: the returned request has its URI rewritten
-     * to use the validated IP literal (in {@code [...]} brackets for IPv6).
-     * We deliberately do NOT set a {@code Host} header to the original
-     * hostname because the JDK {@code HttpClient.Builder.header} rejects
-     * the restricted {@code Host} name without the
-     * {@code -Djdk.httpclient.allowRestrictedHeaders=host} JVM property.
-     * Most connector adapters target named API endpoints (Mattermost,
-     * Salesforce on-prem) that respond to any Host; shared-vhost servers
-     * may misroute. Operators that need a shared-vhost endpoint should
-     * configure the connector with the IP directly OR enable the JVM
-     * property and call a future host-preserving overload.
+     * <p><strong>HTTP — DNS rebinding closed at the network layer</strong>:
+     * the returned request has its URI rewritten to use the validated IP
+     * literal (in {@code [...]} brackets for IPv6) AND its {@code Host}
+     * header set to the original {@code hostname[:port]}. The IP-pin
+     * means no TCP connection to a rebound IP is possible after this
+     * method returns; the preserved {@code Host} header means name-based
+     * virtual-host deployments (one reverse proxy serving multiple
+     * hostnames on the same IP) reach the correct vhost. The {@code Host}
+     * override requires the {@code jdk.httpclient.allowRestrictedHeaders=host}
+     * JVM property which is set by the static initializer at the top of
+     * this class.
      *
-     * <p><strong>HTTPS</strong>: the original request is returned unchanged.
-     * The JDK will re-resolve, but TLS certificate verification against the
-     * original hostname will fail the handshake if the rebound IP serves
-     * an unrelated certificate. The re-validation above still catches
-     * rebound IPs at the same instant a malicious resolve would happen,
-     * so a rebind window only allows a TLS failure, not a SSRF.
+     * <p><strong>HTTPS — TLS-bounded, NOT fully closed</strong>: the
+     * original request is returned unchanged. The send-time re-validation
+     * above catches rebound IPs <em>if</em> the rebound resolve happens
+     * before the JDK's own resolve inside {@code HttpClient.send}. <strong>A
+     * microsecond race window remains</strong>: a DNS attacker rebinding
+     * within that window can still cause the JDK to TCP-connect to the
+     * internal IP. The TLS handshake then fails against the original
+     * hostname's cert, so:
+     * <ul>
+     *   <li><strong>Data-exchange SSRF is closed</strong> (no body read,
+     *       no token leak, no internal API call succeeds).</li>
+     *   <li><strong>TCP-connect SSRF is NOT closed</strong>: an attacker
+     *       can still port-scan internal hosts, time-fingerprint internal
+     *       services, and trigger inbound-TCP / TLS-handshake side
+     *       effects on internal services.</li>
+     * </ul>
+     * Fully closing the HTTPS path requires a custom {@code SocketFactory}
+     * (or a switch to {@code HttpURLConnection} like
+     * {@code HttpWebhookDispatcher} uses for HTTP) that pins the
+     * resolved IP at TCP-connect time while keeping SNI / hostname
+     * verification on the original hostname. Tracked as Medium residual
+     * risk in {@code REVIEW_PACKET.md §6}.
      *
      * <p>If the host cannot be resolved at all, a {@link SecurityException}
      * is thrown — this is a behaviour change from "let HttpClient try and
@@ -389,12 +439,20 @@ public final class AdapterHttpClient {
             return request;
         }
         HttpRequest.Builder b = HttpRequest.newBuilder().uri(pinnedUri);
-        // Copy headers from original except restricted ones JDK forbids.
+        // Copy headers from original except restricted ones JDK forbids
+        // (we set Host explicitly below using the JDK escape hatch
+        // enabled by the static initializer at the top of this class).
         request.headers().map().forEach((name, vals) -> {
             if (!isRestrictedHeaderForJdkHttpClient(name)) {
                 vals.forEach(v -> b.header(name, v));
             }
         });
+        // RC6.9 P3 fix: preserve original Host header so name-based
+        // virtual-host servers route to the correct vhost. Without
+        // this, the JDK would default Host to the pinned IP literal
+        // and shared-vhost reverse proxies would misroute / 404.
+        String hostHeader = port == -1 ? host : host + ":" + port;
+        b.header("Host", hostHeader);
         request.timeout().ifPresent(b::timeout);
         b.method(request.method(),
                 request.bodyPublisher().orElse(HttpRequest.BodyPublishers.noBody()));

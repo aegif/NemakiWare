@@ -236,6 +236,37 @@ class AdapterRegistryTest {
     }
 
     @Test
+    void pinRequestPreservesOriginalHostHeaderOnHttpPin() throws Exception {
+        // RC6.9 P3 fix: the pinned URI uses the IP literal as authority,
+        // but the Host header must carry the ORIGINAL hostname so that
+        // name-based virtual-host servers route to the correct vhost.
+        // 8.8.8.8 resolves to itself so the "hostname" here IS 8.8.8.8;
+        // for a real DNS name this header would be the original hostname.
+        var req = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create("http://8.8.8.8:8080/path"))
+                .GET().build();
+        var pinned = AdapterHttpClient.pinRequestToValidatedAddress(req);
+        // URI should be IP literal-based with the same port + path.
+        assertEquals("8.8.8.8", pinned.uri().getHost());
+        assertEquals(8080, pinned.uri().getPort());
+        // Host header should carry the ORIGINAL authority (hostname[:port]).
+        assertEquals(java.util.Optional.of("8.8.8.8:8080"),
+                pinned.headers().firstValue("Host"),
+                "Pinned HTTP request must preserve original Host:port for vhost routing");
+    }
+
+    @Test
+    void pinRequestPreservesOriginalHostHeaderWithoutPort() throws Exception {
+        // Default port 80 case — Host header has no :port suffix.
+        var req = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create("http://8.8.8.8/"))
+                .GET().build();
+        var pinned = AdapterHttpClient.pinRequestToValidatedAddress(req);
+        assertEquals(java.util.Optional.of("8.8.8.8"),
+                pinned.headers().firstValue("Host"));
+    }
+
+    @Test
     void allParamsCombinesRequiredAndOptional() {
         var desc = AdapterRegistry.get("teams");
         var all = desc.allParams();
