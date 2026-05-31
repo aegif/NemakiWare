@@ -255,6 +255,7 @@ requests.post(url, auth=(user, pw), headers={"X-Requested-With": "XMLHttpRequest
 
 ## セキュリティステータス (2026-05-30)
 
+- Connector SSRF — AdapterHttpClient Host header preservation on HTTP IP-pin + Javadoc honesty (RC6.9): 対応済み (HTTP IP-pin が `Host: <IP>` 送信で shared-vhost HTTP deployment を misroute する RC6.8 post-tag P3 compat caveat を fix。`pinRequestToValidatedAddress` で URI rewrite + `Host: <original-hostname[:port]>` を明示 set、JDK の restricted-headers check を `-Djdk.httpclient.allowRestrictedHeaders=host` の JVM property で escape (Dockerfile + surefire argLine 両方に追加、AdapterHttpClient の static init で defensive fallback)。Javadoc も RC6.8 post-tag P2 の HTTPS residual TCP-connect SSRF 注記と整合化。+2 regression tests、計 343/343 PASS)
 - Connector SSRF — AdapterHttpClient deeper closure: DNS rebinding pin (HTTP fully closed、HTTPS は TLS-bounded で TCP-connect class が residual) + runtime revalidation + multi-hop redirect resolve (RC6.8): 対応済み (`sendWithRetry`/`sendWithRedirectValidation` で send 時に `pinRequestToValidatedAddress` 経由で再 resolve + validate、HTTP は URI を validated IP literal に rewrite で network 層完全閉、HTTPS は再 validate のみ + TLS cert verification で data-exchange SSRF を遮断するが TCP-connect SSRF が microsecond race window で残存 — Medium 残余として §6 に記録 + 将来の custom SocketFactory が real fix。Mattermost/Salesforce orchestrator に explicit `validateExternalUrl` 追加。Multi-hop redirect で `currentRequest.uri().resolve(location)` に修正。+5 regression tests、計 265/265 PASS。Compat 注意: HTTP IP-pin は `Host: <IP>` 送信のため shared-vhost HTTP deployment が misroute する可能性 — §6 に Medium 互換性 risk として記録)
 - Connector SSRF — AdapterHttpClient horizontal fix (RC6.7): 対応済み (`AdapterHttpClient.validateExternalUrl` に RC6.5+RC6.6 と同一の `isAddressSafe` + `extractEmbeddedIpv4` 移植。11 connector adapter / ConnectorDefinitionServiceImpl / IngestWebhookController から呼ばれる全 outbound HTTP path を保護。SHARED HttpClient redirect 設定を NORMAL → NEVER、relative Location の元 URI resolve も追加。+3 regression tests、78/78 PASS for SSRF surface)
 - Webhook SSRF — IPv4 special-use 追加 block + Teredo + RFC 6052 /48 NAT64 (RC6.6): 対応済み (`HttpWebhookDispatcher` に IPv4 `0/8` + `100.64/10` + `192.0.0/24` + `198.18/15` + `240/4` + `255.255.255.255` を追加、IPv6 transition extractor に `64:ff9b:1::/48` の RFC 6052 §2.2 /48 layout + Teredo `2001::/32` を追加。+7 regression tests、計 59/59 PASS)
@@ -313,6 +314,98 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 ## 現在のバージョン
 
 **3.1.1** (2026-04-02)
+
+### RC33 / RC6.9 (2026-05-31) — Security: HTTP IP-pin の original Host header 保持 + Javadoc 誠実化 (shipped)
+
+ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6.8` = `cd82452f4`)
+
+RC6.8 post-tag review が Medium に raise した 2 件:
+- **P2**: HTTPS DNS rebinding wording が overstated (TCP-connect SSRF が
+  residual)。doc 層は `d910820d7` で対応済、本 RC で Javadoc も整合
+- **P3**: HTTP IP-pin が `Host: <IP>` 送信のため shared-vhost HTTP deployment
+  が misroute。本 RC で fix
+
+#### P3 fix — HTTP IP-pin で original Host header を保持
+
+`pinRequestToValidatedAddress` は RC6.8 まで HTTP URI を IP literal に rewrite
+した後、JDK の default で `Host: <IP>` を送っていた。Shared-vhost reverse proxy
+(1 IP で複数 Mattermost / Salesforce on-prem を hostname 別に配信) で misroute /
+404。
+
+修正: URI rewrite + 明示的に `b.header("Host", originalHostHeader)`。JDK の
+restricted-headers check を escape する documented JVM startup property
+`-Djdk.httpclient.allowRestrictedHeaders=host` を:
+- Production: `docker/core/Dockerfile{,.jakarta,.simple}` の CATALINA_OPTS /
+  JAVA_OPTS に追加
+- Test: `core/pom.xml` の surefire `<argLine>` に追加
+- Defensive fallback: `AdapterHttpClient` の static `{}` initializer で class
+  load 時に additively set (operator が他の restricted header を `-D...=connection,host`
+  のように指定していても preserve)
+
+JVM-wide effect: 同 JVM 内の他 code が `HttpRequest.Builder.header("Host", ...)`
+を呼ぶと従来は `IllegalArgumentException` だったのが成功するようになる。
+意図的 (JDK の documented escape hatch)。
+
+#### Javadoc honesty fix
+
+`pinRequestToValidatedAddress` Javadoc が actual security boundary を正確に反映
+(post-RC6.8 doc fix `d910820d7` と整合):
+- **HTTP**: "DNS rebinding closed at the network layer" (IP-pin で rebound IP
+  への TCP connection 不可)。Host header preservation も明記
+- **HTTPS**: "TLS-bounded, NOT fully closed" — pre-resolve rebind は catch するが
+  microsecond race 残存、TLS cert verification で data-exchange SSRF は遮断するが
+  TCP-connect SSRF (port scan / service fingerprint / inbound-TCP side-effect) は
+  残余。real fix は custom SocketFactory で TCP-connect 時に IP pin
+
+#### Tests
+
+- 2 新規 regression in `AdapterRegistryTest`:
+  - `pinRequestPreservesOriginalHostHeaderOnHttpPin`: rewritten URI = IP literal、
+    Host header = original `hostname:port`
+  - `pinRequestPreservesOriginalHostHeaderWithoutPort`: default port 80 (no :port suffix)
+- 7 adapter contract tests **76 PASS** (WireMock は任意 Host を受理するため透過的)
+- **Full focused regression: 343/343 PASS** (was 265 in RC6.8; +78 from 7 adapter
+  contract test class を focused set に追加 + 2 新規)
+
+#### Change scope vs RC6.8 (precise)
+
+- **変更あり (RC6.9)**:
+  - `AdapterHttpClient.java` (+76 行: static init JVM property、Javadoc 修正、
+    Host header preservation)
+  - `AdapterRegistryTest.java` (+31 行: 2 new Host-preserve tests)
+  - `core/pom.xml` (surefire argLine 1 property 追加)
+  - `docker/core/Dockerfile{,.jakarta,.simple}` (CATALINA_OPTS / JAVA_OPTS 1 property 追加)
+  - `RELEASE_NOTES.md`, `CLAUDE.md`, `REVIEW_PACKET.md`, `README.md`, `AGENTS.md`
+- **無変更 (RC6.8 と byte-equal)**:
+  - `HttpWebhookDispatcher.java` (RC6.5+RC6.6 canonical 実装)
+  - 他 Java surface 全件
+  - TS surface 全件
+  - properties / patches / views / Mango / migration / DB bootstrap
+  - SOC templates + validator script
+  - `docs/MANUAL-VERIFICATION-CONNECTORS.md`
+
+#### Commit + tag 関係
+
+- Security fix + Javadoc + JVM property: `e45d172bb`
+- RC6.9 release-package commit: 後続
+- **`v3.1.1-RC6.9` annotated tag target**: release-package commit
+
+RC6.8 tag (`cd82452f4`) は force-update せず歴史的マイルストーンとして保持。
+
+#### Follow-up status
+
+**Resolved in this RC**:
+- HTTP IP-pin shared-vhost compat caveat (RC6.8 post-tag P3)
+- AdapterHttpClient Javadoc honesty (RC6.8 post-tag P2 echo)
+
+**Remaining (Medium 残余 + carry-forward)**:
+- **HTTPS DNS pinning via SocketFactory** (Medium 残余 SSRF) — HTTPS TCP-connect
+  SSRF class は本 RC でも未閉。real fix は custom SocketFactory or
+  HttpURLConnection 切替
+- `isAddressSafe`+`extractEmbeddedIpv4` shared utility extraction (tech debt)
+- 他 orchestrator (Slack/Teams/Notion/Chatwork/M365 等) の explicit validateExternalUrl
+- Purview / Atlas / OIDC discovery / Graph download (admin-config surface)
+- Repo-wide NUL byte pre-commit scan
 
 ### RC32 / RC6.8 (2026-05-30) — Security deeper SSRF closure: DNS rebinding pin + runtime revalidation + multi-hop redirect resolve (shipped)
 

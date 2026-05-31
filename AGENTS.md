@@ -483,12 +483,12 @@ const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');  // Not 
 - For Java 21, ensure `MAVEN_OPTS` includes required `--add-opens` (see `core/start-jetty-dev.sh`).
 - **External Ingest delegation (3.1.1-RC3+)**: connectors are admin-only by default. To let a folder owner use a connector, set `delegated=true` AND either `allowedFolderIds=[...]` or `delegateAllFolders=true` (the latter only when truly needed — credential reach is repo-wide). Empty `allowedFolderIds` while `delegated=true` is treated as no delegation. See `docs/design/connector-delegation.md`.
 
-## Current Work Status (2026-05-30)
+## Current Work Status (2026-05-31)
 
 ### Active Branch
-- **Branch**: `release/3.1.1-RC6` (latest tag: `v3.1.1-RC6.8`)
-- **Focus**: SSRF guard hardening cycle — RC6.5 closed the GHSA-reported `HttpWebhookDispatcher` IPv6 transition unwrap, RC6.6 added IPv4 special-use + Teredo + RFC 6052 /48, RC6.7 horizontally extended to `AdapterHttpClient`, RC6.8 closed DNS rebinding (send-time pin + revalidate) + multi-hop redirect + runtime endpoint revalidation
-- See `CLAUDE.md` for the canonical version log (RC1〜RC32) and security status; see `RELEASE_NOTES.md` for the user-facing per-RC narrative (16 sections RC5 → RC6.8).
+- **Branch**: `release/3.1.1-RC6` (latest tag: `v3.1.1-RC6.9`)
+- **Focus**: SSRF guard hardening cycle — RC6.5 GHSA IPv6 transition unwrap, RC6.6 IPv4 special-use + Teredo + RFC 6052 /48, RC6.7 horizontal expansion to `AdapterHttpClient`, RC6.8 DNS rebinding pin + multi-hop redirect + runtime endpoint revalidation, RC6.9 HTTP Host header preservation (closes shared-vhost compat caveat via JDK escape-hatch JVM property) + Javadoc honesty
+- See `CLAUDE.md` for the canonical version log (RC1〜RC33) and security status; see `RELEASE_NOTES.md` for the user-facing per-RC narrative (17 sections RC5 → RC6.9).
 
 ### TCK Complete Success Achievement (2025-11-09) 🎉
 

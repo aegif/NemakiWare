@@ -6,6 +6,127 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.1-RC6.9 — Security: preserve original Host header on HTTP IP-pin (closes shared-vhost compat caveat) + honest HTTPS Javadoc
+_Release candidate on `release/3.1.1-RC6` (2026-05-31), branched
+off `v3.1.1-RC6.8` (`cd82452f4`)._
+
+Fifth RC in the SSRF hardening cycle. RC6.8 post-tag review
+raised two findings to Medium:
+- **P2** — HTTPS DNS rebinding wording was overstated (residual
+  TCP-connect SSRF). Addressed in the doc layer by `d910820d7`
+  (post-RC6.8 doc commit on REVIEW_PACKET / RELEASE_NOTES /
+  CLAUDE) AND now in the Javadoc by this RC.
+- **P3** — HTTP IP-pin sends `Host: <IP>` and breaks shared-vhost
+  HTTP deployments. Addressed by this RC's code fix.
+
+### P3 fix — HTTP IP-pin now preserves original Host header
+
+`pinRequestToValidatedAddress` (in `AdapterHttpClient`) previously
+rewrote the HTTP URI to the validated IP literal and let the JDK
+default the `Host` header to that IP. Shared-vhost reverse
+proxies (one IP serving multiple Mattermost / Salesforce on-prem
+instances under different hostnames) would misroute / 404.
+
+Now rewrites URI to IP literal AND explicitly sets
+`b.header("Host", originalHostHeader)`. Uses the documented JDK
+escape hatch via the startup property
+`-Djdk.httpclient.allowRestrictedHeaders=host`, set in:
+- Production: `docker/core/Dockerfile{,.jakarta,.simple}` —
+  `CATALINA_OPTS` / `JAVA_OPTS` augmented.
+- Tests: `core/pom.xml` surefire `<argLine>`.
+- Defensive fallback: a static `{}` initializer at the top of
+  `AdapterHttpClient` sets the property additively at class load
+  time, preserving any other operator-set values.
+
+JVM-wide effect: other code in the same JVM that uses
+`HttpRequest.Builder.header("Host", ...)` will now succeed where
+it previously threw `IllegalArgumentException`. Intentional and
+matches the documented JDK escape hatch.
+
+### Javadoc honesty fix
+
+`AdapterHttpClient.pinRequestToValidatedAddress` Javadoc now
+reflects the actual security boundary (matching the post-RC6.8
+doc fix `d910820d7`):
+- **HTTP**: "DNS rebinding closed at the network layer" — IP-pin
+  prevents any TCP connection to a rebound IP. Host header
+  preservation noted.
+- **HTTPS**: "TLS-bounded, NOT fully closed" — re-validation
+  catches pre-resolve rebinds but a microsecond race remains;
+  TLS cert verification stops data-exchange SSRF but TCP-connect
+  SSRF (port scan / service fingerprint / inbound-TCP side
+  effects) is residual. Real fix queued: custom `SocketFactory`
+  pinning IP at TCP-connect time.
+
+### Tests
+
+- 2 new regression tests in `AdapterRegistryTest`:
+  - `pinRequestPreservesOriginalHostHeaderOnHttpPin`: rewritten
+    URI uses IP literal, `Host` header carries original
+    `hostname:port`.
+  - `pinRequestPreservesOriginalHostHeaderWithoutPort`: default
+    port 80 case (no `:port` suffix in `Host`).
+- All 7 adapter contract tests (Slack 12 / Teams 11 /
+  Mattermost 12 / Notion 8 / Salesforce 11 / M365 Mail 9 /
+  Chatwork 13 = **76 PASS**) still pass — WireMock accepts any
+  `Host` header.
+- **Full focused regression: 343/343 PASS** (was 265 in RC6.8;
+  +78 from including all 7 adapter contract test classes in the
+  focused regression set + 2 new Host-preserve tests).
+
+### Change scope vs RC6.8 (precise)
+
+- **Changed in RC6.9**:
+  - `core/src/main/java/jp/aegif/nemaki/rest/ingest/AdapterHttpClient.java`
+    (+76 lines: static init for JVM property, honest Javadoc,
+    Host header preservation in pinRequestToValidatedAddress)
+  - `core/src/test/java/jp/aegif/nemaki/rest/ingest/AdapterRegistryTest.java`
+    (+31 lines: 2 new Host-preserve tests)
+  - `core/pom.xml` (surefire argLine adds
+    `-Djdk.httpclient.allowRestrictedHeaders=host`)
+  - `docker/core/Dockerfile`, `Dockerfile.jakarta`,
+    `Dockerfile.simple` (CATALINA_OPTS / JAVA_OPTS augmented)
+  - `RELEASE_NOTES.md`, `CLAUDE.md`, `REVIEW_PACKET.md`,
+    `README.md`, `AGENTS.md` (RC6.9 references)
+- **Unchanged from RC6.8** (byte-equal):
+  - `HttpWebhookDispatcher.java` (RC6.5+RC6.6 canonical fix)
+  - All other Java surface
+  - All TypeScript surface
+  - All properties, patches, views, Mango indexes, migrations,
+    DB bootstrap
+  - SOC templates + validator script
+  - `docs/MANUAL-VERIFICATION-CONNECTORS.md`
+
+### Commit + tag relationship
+
+- Security fix + Javadoc + JVM property: `e45d172bb`
+- RC6.9 release-package commit (RELEASE_NOTES + CLAUDE + REVIEW_PACKET): subsequent
+- **`v3.1.1-RC6.9` annotated tag target**: release-package commit
+
+The previous candidate `v3.1.1-RC6.8` is **not force-updated**
+and remains at peeled commit `cd82452f4` as a historical
+milestone.
+
+### Follow-up status
+
+**Resolved in this RC**:
+- HTTP IP-pin shared-vhost compat caveat (RC6.8 post-tag P3).
+- AdapterHttpClient Javadoc honesty (RC6.8 post-tag P2 echo).
+
+**Remaining (Medium residual + carry-forward)**:
+- **HTTPS DNS pinning via SocketFactory** (Medium residual SSRF) —
+  the TCP-connect SSRF class for HTTPS is unchanged. Real fix
+  requires a custom SocketFactory (or switch to HttpURLConnection
+  like `HttpWebhookDispatcher`). Tracked in §6.
+- `isAddressSafe` + `extractEmbeddedIpv4` shared utility extract
+  (tech debt, 2 consumers).
+- Other connector orchestrator endpoint pre-checks (cosmetic).
+- Purview / Atlas / OIDC discovery / Graph download SSRF guard
+  (admin-config surface).
+- Repo-wide NUL byte pre-commit scan.
+
+---
+
 ## 3.1.1-RC6.8 — Security: deeper SSRF closure in AdapterHttpClient — DNS rebinding pin, runtime revalidation, multi-hop redirect resolve
 _Release candidate on `release/3.1.1-RC6` (2026-05-30), branched
 off `v3.1.1-RC6.7` (`b48d9e0c1`)._
