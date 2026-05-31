@@ -213,9 +213,9 @@ public class ZipImporter {
     }
 
     /**
-     * Parse the top-level ACP package XML with XXE protections enabled.
+     * Build a {@link SAXReader} with XXE protections enabled.
      *
-     * <p>Three SAX features are set on the dom4j {@link SAXReader}:
+     * <p>Three SAX features are set:
      * {@code disallow-doctype-decl=true},
      * {@code external-general-entities=false}, and
      * {@code external-parameter-entities=false}. This mirrors the
@@ -230,13 +230,18 @@ public class ZipImporter {
      * — CWE-611 read-capable XXE / SSRF (GHSA, reporter
      * <em>tonghuaroot</em>).
      *
-     * <p>Package-private to allow {@code ZipImporterXxeTest} to
-     * exercise this exact code path directly (RC6.12 follow-up to
-     * the RC6.11 reviewer P2 finding that a test-local SAXReader
-     * configuration would not catch future deletion of the
-     * production guards).
+     * <p>Package-private and extracted (RC6.13) so
+     * {@code ZipImporterXxeTest} can hold the actual
+     * production-configured {@link SAXReader} instance and assert
+     * its {@code getXMLReader().getFeature(...)} values directly. A
+     * deletion of any individual {@code setFeature(...)} call in
+     * this method then fails the readback test for that specific
+     * feature — RC6.12's test only proved a test-local probe was
+     * configured, which would have allowed (e.g.) removing
+     * {@code external-general-entities=false} while leaving
+     * {@code disallow-doctype-decl=true} without any test failure.
      */
-    static org.dom4j.Document parseAcpPackageXml(byte[] xmlData) throws DocumentException {
+    static SAXReader configureHardenedSaxReader() throws DocumentException {
         SAXReader reader = new SAXReader();
         try {
             reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -245,6 +250,18 @@ public class ZipImporter {
         } catch (org.xml.sax.SAXException e) {
             throw new DocumentException("Failed to configure XXE protection on SAXReader", e);
         }
+        return reader;
+    }
+
+    /**
+     * Parse the top-level ACP package XML with XXE protections
+     * enabled. Builds a hardened reader via
+     * {@link #configureHardenedSaxReader()} and parses the supplied
+     * byte stream. See that method's javadoc for the security
+     * rationale.
+     */
+    static org.dom4j.Document parseAcpPackageXml(byte[] xmlData) throws DocumentException {
+        SAXReader reader = configureHardenedSaxReader();
         return reader.read(new ByteArrayInputStream(xmlData));
     }
 

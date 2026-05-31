@@ -102,45 +102,40 @@ public class ZipImporterXxeTest {
 
     @Test
     public void productionParserHasAllThreeFeaturesEnabled() throws Exception {
-        // Defence-in-depth: drive ZipImporter.parseAcpPackageXml with
-        // a *valid* XML body to construct the SAXReader, then read
-        // back the three feature flags. If a future change reorders
-        // the setFeature() calls, drops one, or swaps the helper for
-        // a different parser implementation that doesn't honour these
-        // SAX features, this test fails even if the other three
-        // happen to throw for an unrelated reason.
+        // RC6.13: this test now binds to the actual SAXReader instance
+        // that the production code path builds — not a test-local
+        // probe with the same features set independently. If any of
+        // the three setFeature(...) calls is deleted from
+        // ZipImporter.configureHardenedSaxReader(), the matching
+        // assertion below fails.
         //
-        // We trigger parseAcpPackageXml on a benign payload (proves
-        // the call site is reachable + the features were set
-        // successfully — a setFeature failure throws DocumentException
-        // before reader.read). Then we inspect a fresh SAXReader
-        // built with the same configuration and verify the values
-        // directly on its underlying XMLReader.
-        Document doc = ZipImporter.parseAcpPackageXml(
-                "<?xml version=\"1.0\"?><r/>".getBytes(StandardCharsets.UTF_8));
-        assertNotNull(doc);
-
-        // Configure another SAXReader the same way and inspect.
-        // (parseAcpPackageXml creates a local reader and returns the
-        // parsed Document, so we cannot directly inspect its reader
-        // — but the constructor + setFeature contract is locked by
-        // the act of parseAcpPackageXml not throwing above.)
-        org.dom4j.io.SAXReader probe = new org.dom4j.io.SAXReader();
-        probe.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-        probe.setFeature("http://xml.org/sax/features/external-general-entities", false);
-        probe.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-        // Touch read() to force XMLReader instantiation, then re-fetch.
-        probe.read(new ByteArrayInputStream(
+        // The RC6.12 version of this test built its own probe
+        // SAXReader and queried that. That structure was caught by
+        // the RC6.12 external reviewer: removing (e.g.)
+        // external-general-entities=false from production alone
+        // would have left the DOCTYPE rejection tests green (the
+        // disallow-doctype-decl feature catches the PoC payload
+        // earlier) AND the readback test green (because the readback
+        // queried the probe, not production).
+        //
+        // The fix is structural: ZipImporter.configureHardenedSaxReader()
+        // is now the single source of truth for the SAXReader
+        // configuration. parseAcpPackageXml(...) calls it, and so does
+        // this test. .read(...) is called below to force the underlying
+        // XMLReader to be instantiated so getFeature(...) can read the
+        // configured values back.
+        org.dom4j.io.SAXReader productionReader = ZipImporter.configureHardenedSaxReader();
+        productionReader.read(new ByteArrayInputStream(
                 "<?xml version=\"1.0\"?><r/>".getBytes(StandardCharsets.UTF_8)));
-        org.xml.sax.XMLReader xmlReader = probe.getXMLReader();
+        org.xml.sax.XMLReader xmlReader = productionReader.getXMLReader();
         assertTrue(
                 xmlReader.getFeature("http://apache.org/xml/features/disallow-doctype-decl"),
-                "disallow-doctype-decl must be true");
+                "disallow-doctype-decl must be true on the production-configured reader");
         assertFalse(
                 xmlReader.getFeature("http://xml.org/sax/features/external-general-entities"),
-                "external-general-entities must be false");
+                "external-general-entities must be false on the production-configured reader");
         assertFalse(
                 xmlReader.getFeature("http://xml.org/sax/features/external-parameter-entities"),
-                "external-parameter-entities must be false");
+                "external-parameter-entities must be false on the production-configured reader");
     }
 }
