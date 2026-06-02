@@ -354,7 +354,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 		// Build solr query of FROM
 		String fromQueryString = "";
 		
-		String repositoryQuery = "repository_id:" + repositoryId;
+		// Quote the repository id as a phrase so it is always a literal term.
+		// It is normally a known value from repositories.yml, but treating it
+		// as raw query text would let any special character it contained alter
+		// the filter; escapeAndQuote keeps it inert.
+		String repositoryQuery = "repository_id:"
+				+ jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escapeAndQuote(repositoryId);
 		
 		fromQueryString += repositoryQuery + " AND ";
 		TypeDefinition td = null;
@@ -403,7 +408,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 		// that have objecttype=cmis:document (only subtypes like nemaki:document)
 		String baseTypeId = td.getId();
 		if (baseTypeId != null) {
-			tables.add(baseTypeId.replaceAll(":", "\\\\:"));
+			// Phrase-quote so the whole id is a literal term (see the
+			// descendant branch below for the same rationale).
+			tables.add(jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escapeAndQuote(baseTypeId));
 		}
 
 		while (iterator.hasNext()) {
@@ -419,7 +426,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 			// FIX: Use getId() to match what is indexed in Solr (content.getObjectType())
 			String table = descendant.getId();
 			if (table != null) {
-				tables.add(table.replaceAll(":", "\\\\:"));
+				// Quote each type id as a phrase so its whole content is a
+				// literal term — escaping only ':' left whitespace and other
+				// Solr specials live.
+				tables.add(jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escapeAndQuote(table));
 			}
 		}
 		
