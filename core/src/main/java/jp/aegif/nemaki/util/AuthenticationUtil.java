@@ -14,9 +14,13 @@ public class AuthenticationUtil {
 	 * Supports both legacy MD5 hashes (32 hex chars) and modern BCrypt hashes.
 	 */
 	public static boolean passwordMatches(String candidate, String hashed) {
+		// Fail closed: a blank candidate OR a blank stored hash never
+		// authenticates. Previously "both blank" returned true, which let
+		// a user whose stored hash was empty (legacy / sync / corrupted
+		// record) log in with an empty password — an authentication bypass.
+		// A legitimate account always has a non-blank BCrypt hash.
 		if(StringUtils.isBlank(candidate) || StringUtils.isBlank(hashed)){
-			//both blank pass
-			return StringUtils.isBlank(candidate) && StringUtils.isBlank(hashed); 
+			return false;
 		}
 		
 		// 後方互換性：MD5ハッシュの検出と検証（32文字の16進数）
@@ -54,10 +58,11 @@ public class AuthenticationUtil {
 	 * Returns authentication result and indicates if hash should be upgraded.
 	 */
 	public static PasswordMatchResult passwordMatchesWithUpgrade(String candidate, String hashed) {
+		// Fail closed: blank candidate or blank stored hash never matches
+		// (see passwordMatches for rationale — prevents empty-password
+		// authentication against accounts with an empty stored hash).
 		if(StringUtils.isBlank(candidate) || StringUtils.isBlank(hashed)){
-			//both blank pass
-			boolean matches = StringUtils.isBlank(candidate) && StringUtils.isBlank(hashed);
-			return new PasswordMatchResult(matches, false, null);
+			return new PasswordMatchResult(false, false, null);
 		}
 		
 		// MD5ハッシュの検出と検証（セキュリティ向上のため、成功時にBCryptに移行）

@@ -83,7 +83,14 @@ public class FilesystemExporter {
                 continue;
             }
 
-            java.nio.file.Path childPath = targetDir.resolve(child.getName());
+            // Object names are user-controllable; sanitize to a single safe
+            // segment and verify the resolved path stays under targetDir so
+            // a name like "../../x" cannot escape the export root.
+            java.nio.file.Path childPath = resolveUnderTarget(targetDir, sanitizeExportName(child.getName()));
+            if (childPath == null) {
+                result.errors.add("Skipping unsafe export name: " + child.getName());
+                continue;
+            }
 
             if (child instanceof Folder) {
                 Files.createDirectories(childPath);
@@ -123,7 +130,10 @@ public class FilesystemExporter {
                 }
 
                 JSONObject metadata = zipExporter.buildDocumentMetadata(repositoryId, doc, callContext);
-                java.nio.file.Path metaPath = targetDir.resolve(child.getName() + META_SUFFIX);
+                // Derive from the already-sanitized childPath so the metadata
+                // sidecar shares the same safe, in-bounds name.
+                java.nio.file.Path metaPath = childPath.resolveSibling(
+                        childPath.getFileName().toString() + META_SUFFIX);
                 if (Files.exists(metaPath) && !allowOverwrite) {
                     result.errors.add("Metadata file already exists (overwrite not allowed): " + child.getName() + META_SUFFIX);
                 } else {
@@ -179,8 +189,13 @@ public class FilesystemExporter {
                     continue;
                 }
 
-                String versionFileName = doc.getName() + VERSION_PREFIX + versionNum;
-                java.nio.file.Path versionPath = targetDir.resolve(versionFileName);
+                String versionFileName = sanitizeExportName(doc.getName()) + VERSION_PREFIX + versionNum;
+                java.nio.file.Path versionPath = resolveUnderTarget(targetDir, versionFileName);
+                if (versionPath == null) {
+                    result.errors.add("Skipping unsafe version export name: " + doc.getName());
+                    versionNum++;
+                    continue;
+                }
 
                 if (Files.exists(versionPath) && !allowOverwrite) {
                     result.errors.add("Version file already exists (overwrite not allowed): " + versionFileName);
@@ -214,7 +229,8 @@ public class FilesystemExporter {
                 versionMeta.put("checkinComment", version.getCheckinComment());
                 versionMeta.put("isMajorVersion", version.isMajorVersion());
 
-                java.nio.file.Path versionMetaPath = targetDir.resolve(versionFileName + META_SUFFIX);
+                java.nio.file.Path versionMetaPath = versionPath.resolveSibling(
+                        versionPath.getFileName().toString() + META_SUFFIX);
                 if (Files.exists(versionMetaPath) && !allowOverwrite) {
                     result.errors.add("Version metadata file already exists (overwrite not allowed): " + versionFileName + META_SUFFIX);
                 } else {
@@ -229,5 +245,21 @@ public class FilesystemExporter {
         } catch (Exception e) {
             log.warn("Failed to export version history for: " + doc.getName(), e);
         }
+    }
+
+    /**
+     * Resolve {@code safeName} (already passed through
+     * {@link ImportExportUtils#sanitizeExportName}) under {@code targetDir}
+     * and verify the normalized result is still inside {@code targetDir}.
+     * Returns {@code null} if the resolved path would escape the target
+     * directory — a defense-in-depth check on top of name sanitization.
+     */
+    private static java.nio.file.Path resolveUnderTarget(java.nio.file.Path targetDir, String safeName) {
+        java.nio.file.Path base = targetDir.toAbsolutePath().normalize();
+        java.nio.file.Path resolved = base.resolve(safeName).normalize();
+        if (!resolved.startsWith(base) || resolved.equals(base)) {
+            return null;
+        }
+        return resolved;
     }
 }

@@ -170,14 +170,22 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         try {
             SolrClient solrClient = solrClientProvider.getClient();
 
-            // 1. Retrieve the source document's vector from Solr
-            float[] documentVector = getDocumentVector(solrClient, documentId);
+            // Build the reader ACL filter first so the source document is
+            // only usable as a search seed when the caller can actually READ
+            // it. Without this, a user could pass any documentId — including
+            // one they cannot read — and use its vector as the query seed,
+            // leaking the existence and semantic neighbourhood of private
+            // documents (the later result filter only constrains the
+            // returned hits, not the seed).
+            String aclFilter = aclExpander.buildReaderFilterQuery(repositoryId, userId);
+
+            // 1. Retrieve the source document's vector from Solr, scoped to
+            //    documents the caller may read. A non-readable / non-existent
+            //    source is indistinguishable (both return null → not found).
+            float[] documentVector = getDocumentVector(solrClient, documentId, aclFilter);
             if (documentVector == null) {
                 throw new VectorSearchException("Document not found in RAG index: " + documentId);
             }
-
-            // 2. Build ACL filter
-            String aclFilter = aclExpander.buildReaderFilterQuery(repositoryId, userId);
 
             // 3. Execute KNN search using the document vector
             // Request topK + 1 to account for the source document
@@ -213,13 +221,18 @@ public class VectorSearchServiceImpl implements VectorSearchService {
      * @param documentId Document ID (raw CMIS object ID)
      * @return document_vector as float array, or null if not found
      */
-    private float[] getDocumentVector(SolrClient solrClient, String documentId) throws Exception {
+    private float[] getDocumentVector(SolrClient solrClient, String documentId, String aclFilter) throws Exception {
         SolrQuery query = new SolrQuery();
         // Convert to RAG id prefix and sanitize to prevent Solr query injection
         String ragId = RAGIndexingServiceImpl.toRagId(documentId);
         String sanitizedId = SolrQuerySanitizer.escape(ragId);
         query.setQuery("id:" + sanitizedId);
         query.addFilterQuery("doc_type:document");
+        // Reader ACL filter: only return the vector if the caller may read
+        // the source document, so a non-readable seed is treated as missing.
+        if (aclFilter != null && !aclFilter.isEmpty()) {
+            query.addFilterQuery(aclFilter);
+        }
         query.setFields("id", "document_vector");
         query.setRows(1);
 

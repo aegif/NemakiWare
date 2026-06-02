@@ -74,7 +74,14 @@ public class McpResource {
             @HeaderParam("Authorization") String authorization,
             @HeaderParam("X-MCP-Session-Token") String sessionToken) {
 
-        log.debug("MCP message received: {}", request);
+        // Log only the safe envelope fields (method + id). The full request
+        // is NOT logged: params can carry secrets such as the password on
+        // nemakiware_login, the apiKey on nemakiware_apikey_login, or a
+        // sessionToken — logging the whole map at debug would leak them.
+        if (log.isDebugEnabled() && request != null) {
+            log.debug("MCP message received: method={}, id={}",
+                    request.get("method"), request.get("id"));
+        }
 
         // Build headers map for authentication
         Map<String, String> headers = new HashMap<>();

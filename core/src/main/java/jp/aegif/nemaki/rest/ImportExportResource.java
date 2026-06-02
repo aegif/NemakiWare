@@ -713,14 +713,17 @@ public class ImportExportResource extends ResourceBase {
                         for (Content c : contents) {
                             if (c instanceof Folder) {
                                 Folder folder = (Folder) c;
-                                String folderPath = folder.getName();
+                                // Sanitize the top-level export name: object names
+                                // are user-controllable and must not produce ZIP
+                                // entries with traversal/separators.
+                                String folderPath = sanitizeExportName(folder.getName());
                                 zos.putNextEntry(new java.util.zip.ZipEntry(folderPath + "/"));
                                 zos.closeEntry();
                                 zipExporter.exportFolderRecursive(repositoryId, folder, folderPath, zos, callContext, exportedObjectIds);
                             } else if (c instanceof Document) {
                                 Document doc = (Document) c;
                                 exportedObjectIds.add(doc.getId());
-                                zipExporter.exportSingleDocument(repositoryId, doc, doc.getName(), zos, callContext, cs);
+                                zipExporter.exportSingleDocument(repositoryId, doc, sanitizeExportName(doc.getName()), zos, callContext, cs);
                             }
                         }
 

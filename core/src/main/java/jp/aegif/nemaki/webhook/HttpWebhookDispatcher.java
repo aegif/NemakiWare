@@ -212,6 +212,14 @@ public class HttpWebhookDispatcher implements WebhookDispatcher {
             throw new IllegalArgumentException("unsupported protocol " + protocol);
         }
 
+        // Reject embedded userinfo (https://user:pass@host/...). Such
+        // credentials would be sent on every delivery and are persisted /
+        // logged in webhook delivery records, leaking them through logs and
+        // the API. Legitimate webhooks carry auth via headers, not userinfo.
+        if (targetUrl.getUserInfo() != null && !targetUrl.getUserInfo().isEmpty()) {
+            throw new IllegalArgumentException("webhook URL must not contain embedded credentials (userinfo)");
+        }
+
         // SSRF protection: resolve and validate hostname (blocks private/internal IPs)
         InetAddress resolvedAddress = resolveAndValidateUrl(targetUrl);
         if (resolvedAddress == null) {

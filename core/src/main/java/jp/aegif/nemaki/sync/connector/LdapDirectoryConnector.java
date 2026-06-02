@@ -199,7 +199,13 @@ public class LdapDirectoryConnector {
         env.put("com.sun.jndi.ldap.connect.timeout", String.valueOf(config.getConnectionTimeout()));
         env.put("com.sun.jndi.ldap.read.timeout", String.valueOf(config.getReadTimeout()));
         
-        env.put(Context.REFERRAL, "follow");
+        // Do NOT follow LDAP referrals. A malicious or compromised directory
+        // server can return a referral that points JNDI at an arbitrary
+        // host, turning a sync into internal-network probing and forwarding
+        // the bind credentials to that host (SSRF / credential leak). The
+        // sync use case (bind + search against the configured server) does
+        // not need referral chasing, so we ignore them.
+        env.put(Context.REFERRAL, "ignore");
 
         if (config.isUseTls()) {
             env.put(Context.SECURITY_PROTOCOL, "ssl");

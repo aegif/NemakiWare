@@ -163,6 +163,53 @@ public final class ImportExportUtils {
     }
 
     /**
+     * Sanitize a CMIS object name into a single safe path/entry segment
+     * for EXPORT. Object names are user-controllable and stored verbatim,
+     * so a name like {@code ../../etc/x} or {@code a/b} must not be used
+     * directly to build a filesystem path or ZIP entry — that would let an
+     * export escape its target directory (path traversal) or emit
+     * traversal entries for downstream extractors.
+     *
+     * <p>The result is always a single non-empty segment with no path
+     * separators, no {@code ..}, no leading dots, no drive/colon, and no
+     * control characters (incl. NUL). Empty/blank or fully-stripped names
+     * fall back to a deterministic placeholder so the export still
+     * produces a uniquely addressable entry.
+     */
+    public static String sanitizeExportName(String name) {
+        if (name == null || name.isEmpty()) {
+            return "_unnamed";
+        }
+        // Replace path separators and other unsafe characters with '_'.
+        // Covers '/', '\\', ':' (Windows drive / ADS), and any ISO control
+        // char (NUL, CR, LF, etc.).
+        StringBuilder sb = new StringBuilder(name.length());
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c == '/' || c == '\\' || c == ':' || Character.isISOControl(c)) {
+                sb.append('_');
+            } else {
+                sb.append(c);
+            }
+        }
+        String cleaned = sb.toString();
+        // Collapse any remaining ".." sequences so no traversal token
+        // survives, then strip leading dots so we never produce "." / ".."
+        // / hidden-by-accident segments that some extractors mishandle.
+        cleaned = cleaned.replace("..", "_");
+        int start = 0;
+        while (start < cleaned.length() && cleaned.charAt(start) == '.') {
+            start++;
+        }
+        cleaned = cleaned.substring(start);
+        cleaned = cleaned.trim();
+        if (cleaned.isEmpty()) {
+            return "_unnamed";
+        }
+        return cleaned;
+    }
+
+    /**
      * Check if a path is within one of the allowed filesystem roots (sandbox protection).
      * This prevents access to arbitrary filesystem locations.
      */

@@ -226,9 +226,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // 1. Buffer raw .eml bytes before parsing (for optional original preservation)
             byte[] rawEmlBytes;
             try (java.io.InputStream emlIn = request.getContentStream()) {
-                ByteArrayOutputStream rawEmlBuffer = new ByteArrayOutputStream();
-                emlIn.transferTo(rawEmlBuffer);
-                rawEmlBytes = rawEmlBuffer.toByteArray();
+                rawEmlBytes = readBounded(emlIn, MAX_CONTENT_SIZE, "Mail (.eml) content");
             }
 
             // 1b. Parse .eml from buffered bytes
@@ -806,6 +804,38 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     private static final int MAX_METADATA_SIZE = 1_000_000; // 1 MB
     private static final int MAX_METADATA_DEPTH = 10;
 
+    /**
+     * Hard cap on a single fetched/ingested content stream, matching the
+     * 100 MB limit the manual multipart path enforces in
+     * {@code ExternalIngestController}. Scheduler/connector/webhook fetches
+     * previously buffered the adapter {@code InputStream} into memory with
+     * no bound, so a large (or hostile) remote object could exhaust the
+     * heap. {@link #readBounded} enforces this cap.
+     */
+    private static final int MAX_CONTENT_SIZE = 100 * 1024 * 1024; // 100 MB
+
+    /**
+     * Read {@code in} fully into a byte[] but fail fast once more than
+     * {@code maxBytes} have been read, so an unbounded remote stream cannot
+     * exhaust memory. The stream is NOT closed here (callers use
+     * try-with-resources).
+     */
+    static byte[] readBounded(java.io.InputStream in, int maxBytes, String what) throws java.io.IOException {
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        byte[] chunk = new byte[8192];
+        int n;
+        long total = 0;
+        while ((n = in.read(chunk)) != -1) {
+            total += n;
+            if (total > maxBytes) {
+                throw new java.io.IOException(
+                        what + " exceeds maximum size of " + (maxBytes / (1024 * 1024)) + " MB");
+            }
+            buf.write(chunk, 0, n);
+        }
+        return buf.toByteArray();
+    }
+
     @Override
     public ExternalIngestResult execute(CallContext callContext, ExternalIngestRequest request) {
         String requestId = request.getRequestId();
@@ -911,9 +941,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 // Buffer content to compute hash for dedupe and persistence
                 byte[] contentBytes;
                 try (java.io.InputStream rawIn = request.getContentStream()) {
-                    ByteArrayOutputStream contentBuf = new ByteArrayOutputStream();
-                    rawIn.transferTo(contentBuf);
-                    contentBytes = contentBuf.toByteArray();
+                    contentBytes = readBounded(rawIn, MAX_CONTENT_SIZE, "Content");
                 }
                 bufferedContent = contentBytes; // retain for DLQ if this import fails
                 computedHash = computeContentHash(contentBytes);

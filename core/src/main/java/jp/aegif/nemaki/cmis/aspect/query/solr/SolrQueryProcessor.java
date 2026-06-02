@@ -780,8 +780,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 							if (i > 0) {
 								solrQuery.append(" OR ");
 							}
-							// Escape colons in type IDs for Solr
-							solrQuery.append(values.get(i).replace(":", "\\:"));
+							// Quote each type ID as a phrase so its whole content
+							// (including spaces and words like OR/AND) is a
+							// literal term and cannot inject Solr query syntax
+							// or boolean operators into the (...) group.
+							solrQuery.append(jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escapeAndQuote(values.get(i)));
 						}
 						solrQuery.append(")");
 
@@ -800,7 +803,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 				Matcher equalsMatcher = equalsPattern.matcher(whereClause);
 				if (equalsMatcher.find()) {
 					String value = equalsMatcher.group(1);
-					String solrQuery = "secondary_object_type_ids:" + value.replace(":", "\\:");
+					// Quote the value as a phrase so its whole content (incl.
+					// spaces / boolean words) is a literal term and cannot
+					// inject Solr query syntax.
+					String solrQuery = "secondary_object_type_ids:"
+							+ jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escapeAndQuote(value);
 					if (logger.isDebugEnabled()) {
 						logger.debug("Parsed cmis:secondaryObjectTypeIds = query: " + solrQuery);
 					}
@@ -841,10 +848,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 				// Convert to Solr field name
 				String solrFieldName = solrUtil.getPropertyNameInSolr(repositoryId, propertyName);
 
-				// Convert SQL LIKE pattern to Solr wildcard pattern
-				// % -> *, _ as SQL wildcard -> ? (but literal _ should remain _)
-				// Note: This simple conversion treats all _ as wildcards
-				String solrPattern = pattern.replace("%", "*").replace("_", "?");
+				// Convert SQL LIKE pattern to a Solr wildcard pattern while
+				// keeping the rest of the value safe. Process char-by-char so
+				// there are no sentinel markers a value could collide with:
+				// SQL '%' -> Solr '*', SQL '_' -> Solr '?', and every other
+				// char is individually escaped so it can't inject query syntax.
+				String solrPattern = likeToEscapedSolrWildcard(pattern);
 
 				if (logger.isDebugEnabled()) {
 					logger.debug("Parsed secondary type LIKE query: " + propertyName + " -> " + solrFieldName + ":" + solrPattern);
@@ -863,7 +872,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 				String propertyName = equalsMatcher.group(1);
 				String value = equalsMatcher.group(2);
 				String solrFieldName = solrUtil.getPropertyNameInSolr(repositoryId, propertyName);
-				return solrFieldName + ":\"" + value + "\"";
+				// Escape inside the phrase so a value containing '"' or '\\'
+				// cannot terminate the quoted term and inject query syntax.
+				return solrFieldName + ":"
+						+ jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escapeAndQuote(value);
 			}
 
 			// Pattern for not equals: property != 'value' or property <> 'value'
@@ -876,7 +888,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 				String propertyName = notEqualsMatcher.group(1);
 				String value = notEqualsMatcher.group(2);
 				String solrFieldName = solrUtil.getPropertyNameInSolr(repositoryId, propertyName);
-				return "-" + solrFieldName + ":\"" + value + "\"";
+				// Escape inside the phrase (see equals case) to prevent
+				// query-syntax injection through the value.
+				return "-" + solrFieldName + ":"
+						+ jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escapeAndQuote(value);
 			}
 
 			// Pattern for IS NULL: property IS NULL
@@ -909,6 +924,39 @@ public class SolrQueryProcessor implements QueryProcessor {
 			logger.warn("Error parsing secondary type WHERE clause: " + e.getMessage());
 			return null;
 		}
+	}
+
+	/**
+	 * Convert a SQL LIKE pattern to a Solr wildcard pattern safely. SQL
+	 * wildcards map to Solr wildcards ({@code %}→{@code *}, {@code _}→
+	 * {@code ?}); every other character is individually escaped via
+	 * {@link jp.aegif.nemaki.rag.util.SolrQuerySanitizer#escape(String)} so
+	 * it cannot inject Solr query syntax. Processing char-by-char avoids any
+	 * sentinel/marker that a field value could collide with.
+	 */
+	static String likeToEscapedSolrWildcard(String pattern) {
+		if (pattern == null) {
+			return "";
+		}
+		StringBuilder sb = new StringBuilder(pattern.length() * 2);
+		for (int i = 0; i < pattern.length(); i++) {
+			char c = pattern.charAt(i);
+			if (c == '%') {
+				sb.append('*');
+			} else if (c == '_') {
+				sb.append('?');
+			} else if (Character.isWhitespace(c)) {
+				// Whitespace is a token separator in the Lucene query parser
+				// (an implicit OR between terms). SolrQuerySanitizer.escape
+				// does NOT escape it, so escape it here to keep the value a
+				// single term — otherwise 'foo OR bar' would become two
+				// clauses joined by a live OR operator.
+				sb.append('\\').append(c);
+			} else {
+				sb.append(jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escape(String.valueOf(c)));
+			}
+		}
+		return sb.toString();
 	}
 
 	public void setTypeManager(TypeManager typeManager) {

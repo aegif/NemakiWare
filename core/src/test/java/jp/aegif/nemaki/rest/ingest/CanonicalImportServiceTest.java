@@ -1059,4 +1059,33 @@ class CanonicalImportServiceTest {
         // Verify a new doc was created (not versioned)
         assertFalse(result.isNewVersion(), "Replace should create new, not version-up");
     }
+
+    // ── readBounded: connector/scheduler stream size cap (audit follow-up) ──
+
+    @Test
+    void readBounded_readsContentUnderLimit() throws Exception {
+        byte[] data = new byte[1000];
+        for (int i = 0; i < data.length; i++) data[i] = (byte) (i % 7);
+        byte[] out = CanonicalImportServiceImpl.readBounded(
+                new java.io.ByteArrayInputStream(data), 4096, "Content");
+        assertArrayEquals(data, out, "content within the cap must round-trip unchanged");
+    }
+
+    @Test
+    void readBounded_allowsExactlyTheLimit() throws Exception {
+        byte[] data = new byte[4096];
+        byte[] out = CanonicalImportServiceImpl.readBounded(
+                new java.io.ByteArrayInputStream(data), 4096, "Content");
+        assertEquals(4096, out.length, "content exactly at the cap must be allowed");
+    }
+
+    @Test
+    void readBounded_rejectsContentOverLimit() {
+        byte[] data = new byte[5000];
+        java.io.IOException ex = assertThrows(java.io.IOException.class, () ->
+                CanonicalImportServiceImpl.readBounded(
+                        new java.io.ByteArrayInputStream(data), 4096, "Content"));
+        assertTrue(ex.getMessage().contains("exceeds maximum size"),
+                "must fail fast with a size error; was: " + ex.getMessage());
+    }
 }

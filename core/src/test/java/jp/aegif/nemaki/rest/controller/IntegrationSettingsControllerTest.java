@@ -155,4 +155,51 @@ public class IntegrationSettingsControllerTest {
             assertFalse(response.getBody().containsKey("warning"));
         }
     }
+
+    @Nested
+    @DisplayName("Outbound endpoint SSRF check (opt-in)")
+    class OutboundEndpointSsrf {
+
+        private void setEnforce(boolean v) throws Exception {
+            java.lang.reflect.Field f = IntegrationSettingsController.class
+                    .getDeclaredField("validateOutboundInternal");
+            f.setAccessible(true);
+            f.set(controller, v);
+        }
+
+        @Test
+        @DisplayName("disabled (default): internal endpoint is saved unchanged")
+        void disabledAllowsInternalEndpoint() throws Exception {
+            setEnforce(false);
+            ResponseEntity<Map<String, Object>> response = controller.updateAtlasSettings(
+                    Map.of("atlas.endpoint", "http://127.0.0.1:21000/api"));
+            assertEquals(HttpStatus.OK, response.getStatusCode());
+            org.mockito.Mockito.verify(settingsService).writeSettings(
+                    org.mockito.ArgumentMatchers.argThat(m ->
+                            "http://127.0.0.1:21000/api".equals(m.get("atlas.endpoint"))));
+        }
+
+        @Test
+        @DisplayName("enabled: internal endpoint is rejected with 400 and not persisted")
+        void enabledRejectsInternalEndpoint() throws Exception {
+            setEnforce(true);
+            ResponseEntity<Map<String, Object>> response = controller.updateAtlasSettings(
+                    Map.of("atlas.endpoint", "http://127.0.0.1:21000/api"));
+            assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+            assertEquals("error", response.getBody().get("status"));
+            org.mockito.Mockito.verify(settingsService, org.mockito.Mockito.never())
+                    .writeSettings(org.mockito.ArgumentMatchers.any());
+        }
+
+        @Test
+        @DisplayName("enabled: same check applies to purview.endpoint")
+        void enabledRejectsInternalPurviewEndpoint() throws Exception {
+            setEnforce(true);
+            ResponseEntity<Map<String, Object>> response = controller.updatePurviewSettings(
+                    Map.of("purview.endpoint", "http://169.254.169.254/"));
+            assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+            org.mockito.Mockito.verify(settingsService, org.mockito.Mockito.never())
+                    .writeSettings(org.mockito.ArgumentMatchers.any());
+        }
+    }
 }

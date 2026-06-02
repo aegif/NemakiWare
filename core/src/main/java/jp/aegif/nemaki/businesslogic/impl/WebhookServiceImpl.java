@@ -575,10 +575,47 @@ public class WebhookServiceImpl implements WebhookService {
         return result;
     }
 
+    /**
+     * Reject a webhook URL that carries embedded userinfo
+     * ({@code https://user:pass@host/...}) or is malformed. Such
+     * credentials would be persisted on the config / delivery log and
+     * surfaced through the API. A blank URL is left for the caller's own
+     * required-field handling. Shared by the config-save and test-delivery
+     * entry points.
+     */
+    private static void rejectUserInfoUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return;
+        }
+        try {
+            java.net.URI parsed = new java.net.URI(url);
+            boolean hasUserInfo =
+                    (parsed.getUserInfo() != null && !parsed.getUserInfo().isEmpty())
+                    || (parsed.getRawUserInfo() != null && !parsed.getRawUserInfo().isEmpty());
+            if (hasUserInfo) {
+                throw new IllegalArgumentException(
+                        "webhook URL must not contain embedded credentials (userinfo)");
+            }
+        } catch (java.net.URISyntaxException e) {
+            throw new IllegalArgumentException("webhook URL is malformed: " + e.getMessage());
+        }
+    }
+
     @Override
     public void saveWebhookConfigs(String repositoryId, String objectId, List<WebhookConfig> configs) {
         if (contentService == null) {
             throw new RuntimeException("ContentService not available");
+        }
+
+        // Reject embedded userinfo (https://user:pass@host/...) at save time.
+        // If we let it persist, the credential would later be copied into
+        // every WebhookDeliveryLog.webhookUrl and surfaced through the API,
+        // even though the dispatcher refuses to actually send it. Rejecting
+        // here keeps the secret out of storage and logs entirely.
+        if (configs != null) {
+            for (WebhookConfig config : configs) {
+                rejectUserInfoUrl(config.getUrl());
+            }
         }
 
         Content content = contentService.getContent(repositoryId, objectId);
@@ -906,6 +943,11 @@ public class WebhookServiceImpl implements WebhookService {
     
     @Override
     public WebhookDeliveryLog testWebhook(String repositoryId, String url, String secret) {
+        // Reject embedded userinfo before it is stored on the delivery log
+        // (and thus reflected back through the API). Same rule as
+        // saveWebhookConfigs — this is the ad-hoc "test delivery" entry point.
+        rejectUserInfoUrl(url);
+
         WebhookDeliveryLog result = new WebhookDeliveryLog();
         result.setDeliveryId(java.util.UUID.randomUUID().toString());
         result.setWebhookUrl(url);

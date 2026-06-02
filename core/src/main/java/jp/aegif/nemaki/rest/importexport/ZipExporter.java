@@ -180,7 +180,12 @@ public class ZipExporter {
                 continue;
             }
 
-            String childPath = basePath.isEmpty() ? child.getName() : basePath + "/" + child.getName();
+            // Object names are user-controllable; sanitize each segment so
+            // the ZIP cannot contain traversal entries ("../x") or path
+            // separators that downstream extractors would mishandle. basePath
+            // is already composed of sanitized segments.
+            String safeChildName = sanitizeExportName(child.getName());
+            String childPath = basePath.isEmpty() ? safeChildName : basePath + "/" + safeChildName;
 
             if (child instanceof Folder) {
                 zos.putNextEntry(new ZipEntry(childPath + "/"));

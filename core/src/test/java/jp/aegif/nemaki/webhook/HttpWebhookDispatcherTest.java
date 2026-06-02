@@ -301,6 +301,33 @@ public class HttpWebhookDispatcherTest {
         // Should not throw, just log and return
         dispatcher.dispatch("http://example.com/webhook", null, null, null);
     }
+
+    @Test
+    public void testRejectsUrlWithEmbeddedUserInfo() throws Exception {
+        // openConnection must reject https://user:pass@host/... before any
+        // network use, so embedded credentials are never sent or logged.
+        java.lang.reflect.Method open = HttpWebhookDispatcher.class.getDeclaredMethod(
+                "openConnection", String.class, String.class, java.util.Map.class);
+        open.setAccessible(true);
+        try {
+            open.invoke(dispatcher, "https://user:secret@example.com/webhook", "{}", null);
+            org.junit.jupiter.api.Assertions.fail("URL with userinfo must be rejected");
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            assertTrue(cause instanceof IllegalArgumentException,
+                    "expected IllegalArgumentException, got: " + cause);
+            assertTrue(cause.getMessage().toLowerCase().contains("userinfo")
+                            || cause.getMessage().toLowerCase().contains("credential"),
+                    "message should mention userinfo/credentials; was: " + cause.getMessage());
+        }
+    }
+
+    @Test
+    public void testDispatchSwallowsUserInfoUrlWithoutThrowing() {
+        // End-to-end: dispatch() must not propagate the rejection (it logs
+        // and returns), and must not deliver to a userinfo URL.
+        dispatcher.dispatch("https://user:secret@example.com/webhook", "{}", null, null);
+    }
     
     // ========================================
     // Edge Cases

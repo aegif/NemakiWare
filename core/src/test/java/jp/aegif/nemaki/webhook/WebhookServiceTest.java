@@ -725,6 +725,60 @@ public class WebhookServiceTest {
         return folder;
     }
 
+    // ── userinfo rejection at save time (security audit follow-up) ──
+    // Embedded credentials (https://user:pass@host/...) must be rejected
+    // before persistence so they never reach the stored config, the
+    // delivery log, or the API. Rejection happens before getContent(), so
+    // these tests don't depend on the content mock.
+
+    @org.junit.jupiter.api.Test
+    void saveWebhookConfigs_rejectsUrlWithUserInfo() {
+        WebhookConfig config = new WebhookConfig();
+        config.setId("w1");
+        config.setEnabled(true);
+        config.setUrl("https://user:secret@example.com/webhook");
+        config.setEvents(java.util.List.of("CREATE"));
+
+        IllegalArgumentException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> webhookService.saveWebhookConfigs("bedroom", "obj1",
+                        java.util.List.of(config)));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                ex.getMessage().toLowerCase().contains("userinfo")
+                        || ex.getMessage().toLowerCase().contains("credential"),
+                "message should mention userinfo/credentials; was: " + ex.getMessage());
+        // Nothing persisted: content was never even fetched.
+        verifyNoInteractions(mockContentService);
+    }
+
+    @org.junit.jupiter.api.Test
+    void saveWebhookConfigs_rejectsMalformedUrl() {
+        WebhookConfig config = new WebhookConfig();
+        config.setId("w2");
+        config.setEnabled(true);
+        config.setUrl("ht!tp://bad url with spaces");
+        config.setEvents(java.util.List.of("CREATE"));
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> webhookService.saveWebhookConfigs("bedroom", "obj1",
+                        java.util.List.of(config)));
+    }
+
+    @org.junit.jupiter.api.Test
+    void testWebhook_rejectsUrlWithUserInfo() {
+        // The ad-hoc "test delivery" endpoint must also refuse userinfo so a
+        // credential cannot be reflected back through the delivery log / API.
+        IllegalArgumentException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> webhookService.testWebhook("bedroom",
+                        "https://user:secret@example.com/webhook", "sig"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                ex.getMessage().toLowerCase().contains("userinfo")
+                        || ex.getMessage().toLowerCase().contains("credential"),
+                "message should mention userinfo/credentials; was: " + ex.getMessage());
+    }
+
     /**
      * Set a private field on an object via reflection.
      */

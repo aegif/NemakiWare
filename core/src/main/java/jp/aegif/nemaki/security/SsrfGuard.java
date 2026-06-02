@@ -259,4 +259,55 @@ public final class SsrfGuard {
             return null;
         }
     }
+
+    /**
+     * Opt-in SSRF check for admin-configured outbound URLs (e.g. external
+     * metadata-catalog endpoints). Unlike the webhook / connector
+     * dispatchers — where outbound destinations are always guarded — these
+     * endpoints are configured by an administrator and may legitimately
+     * point at an on-prem / internal host, so enforcement is OFF by default
+     * and an operator turns it on for hardened (internet-facing)
+     * deployments.
+     *
+     * <p>When {@code enforce} is {@code false} this is a no-op (preserving
+     * the historical behaviour). When {@code true}, the URL's host is
+     * resolved and every resolved address is checked with
+     * {@link #isAddressSafe(InetAddress)}; if any address is unsafe (or the
+     * host cannot be resolved) a {@link SecurityException} is thrown so the
+     * caller never connects.
+     *
+     * @param url     the outbound URL about to be contacted
+     * @param enforce whether SSRF enforcement is enabled (operator opt-in)
+     * @param what     short label for diagnostics (e.g. "Purview endpoint")
+     */
+    public static void assertOutboundUrlAllowed(String url, boolean enforce, String what) {
+        if (!enforce) {
+            return;
+        }
+        if (url == null || url.isEmpty()) {
+            return;
+        }
+        final String host;
+        try {
+            java.net.URI uri = new java.net.URI(url);
+            host = uri.getHost();
+        } catch (java.net.URISyntaxException e) {
+            throw new SecurityException(what + " URL is malformed: " + e.getMessage());
+        }
+        if (host == null || host.isEmpty()) {
+            throw new SecurityException(what + " URL has no host: " + url);
+        }
+        InetAddress[] addresses;
+        try {
+            addresses = InetAddress.getAllByName(host);
+        } catch (UnknownHostException e) {
+            throw new SecurityException(what + " host could not be resolved: " + host);
+        }
+        for (InetAddress addr : addresses) {
+            if (!isAddressSafe(addr)) {
+                throw new SecurityException(
+                        what + " resolves to a blocked (internal/special-use) address: " + host);
+            }
+        }
+    }
 }

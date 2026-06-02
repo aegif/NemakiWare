@@ -10,6 +10,7 @@ import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -157,6 +158,16 @@ public class IntegrationSettingsController {
 
 	@Autowired(required = false)
 	private CatalogPropertyMappingResolver propertyMappingResolver;
+
+	/**
+	 * Operator opt-in: when {@code true}, admin-configured outbound catalog
+	 * endpoints (Purview/Atlas/Dataplex) are SSRF-checked at save time and a
+	 * value that resolves to an internal / special-use address is rejected.
+	 * Default {@code false} so existing on-prem / internal deployments are
+	 * unaffected; internet-facing deployments set it to true.
+	 */
+	@Value("${nemakiware.security.outbound.validateInternal:false}")
+	private boolean validateOutboundInternal;
 
 	@Autowired
 	public IntegrationSettingsController(IntegrationSettingsService settingsService) {
@@ -636,6 +647,24 @@ public class IntegrationSettingsController {
 			response.put("status", "success");
 			response.put("message", "No changes to save");
 			return ResponseEntity.ok(response);
+		}
+
+		// Opt-in SSRF check on outbound catalog endpoints. Off by default so
+		// legitimate internal/on-prem endpoints keep working; when enabled,
+		// reject a value that resolves to an internal/special-use address
+		// before it is persisted (so it can never be used for SSRF).
+		for (Map.Entry<String, String> e : toWrite.entrySet()) {
+			if (e.getKey().endsWith(".endpoint")) {
+				try {
+					jp.aegif.nemaki.security.SsrfGuard.assertOutboundUrlAllowed(
+							e.getValue(), validateOutboundInternal, e.getKey());
+				} catch (SecurityException se) {
+					Map<String, Object> response = new LinkedHashMap<>();
+					response.put("status", "error");
+					response.put("message", "Rejected endpoint: " + se.getMessage());
+					return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+				}
+			}
 		}
 
 		try {

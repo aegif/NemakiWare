@@ -9,6 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.net.InetAddress;
@@ -256,5 +258,47 @@ public class SsrfGuardTest {
         // embedded IPv4 — they're caught by JDK predicates instead.
         assertNull(SsrfGuard.extractEmbeddedIpv4(InetAddress.getByName("::")));
         assertNull(SsrfGuard.extractEmbeddedIpv4(InetAddress.getByName("::1")));
+    }
+
+    // ── assertOutboundUrlAllowed: opt-in admin-endpoint SSRF check ──
+
+    @Test
+    public void outboundCheckIsNoOpWhenDisabled() {
+        // enforce=false → never throws, even for a loopback endpoint.
+        assertDoesNotThrow(() ->
+                SsrfGuard.assertOutboundUrlAllowed("http://127.0.0.1/atlas", false, "Atlas endpoint"));
+        assertDoesNotThrow(() ->
+                SsrfGuard.assertOutboundUrlAllowed("http://169.254.169.254/", false, "metadata"));
+        // Blank/null are no-ops regardless of enforcement.
+        assertDoesNotThrow(() ->
+                SsrfGuard.assertOutboundUrlAllowed(null, true, "x"));
+        assertDoesNotThrow(() ->
+                SsrfGuard.assertOutboundUrlAllowed("", true, "x"));
+    }
+
+    @Test
+    public void outboundCheckBlocksLoopbackWhenEnabled() {
+        SecurityException ex = assertThrows(SecurityException.class, () ->
+                SsrfGuard.assertOutboundUrlAllowed("http://127.0.0.1/atlas", true, "Atlas endpoint"));
+        assertTrue(ex.getMessage().contains("Atlas endpoint"),
+                "diagnostic should name the endpoint; was: " + ex.getMessage());
+    }
+
+    @Test
+    public void outboundCheckBlocksMetadataAndPrivateWhenEnabled() {
+        assertThrows(SecurityException.class, () ->
+                SsrfGuard.assertOutboundUrlAllowed("http://169.254.169.254/latest/meta-data/", true, "endpoint"));
+        assertThrows(SecurityException.class, () ->
+                SsrfGuard.assertOutboundUrlAllowed("https://10.0.0.5/api", true, "endpoint"));
+        assertThrows(SecurityException.class, () ->
+                SsrfGuard.assertOutboundUrlAllowed("https://[::1]/api", true, "endpoint"));
+    }
+
+    @Test
+    public void outboundCheckRejectsMalformedOrHostlessWhenEnabled() {
+        assertThrows(SecurityException.class, () ->
+                SsrfGuard.assertOutboundUrlAllowed("http://", true, "endpoint"));
+        assertThrows(SecurityException.class, () ->
+                SsrfGuard.assertOutboundUrlAllowed("not a url", true, "endpoint"));
     }
 }
