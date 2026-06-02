@@ -620,6 +620,23 @@ public class ObjectServiceImpl implements ObjectService {
 			Properties properties, String folderId, VersioningState versioningState, List<String> policies, Acl addAces,
 			Acl removeAces, ExtensionsData extension) {
 		Document original = contentService.getDocument(repositoryId, sourceId);
+
+		// //////////////////
+		// Source-object authorization (security)
+		// //////////////////
+		// The caller must be allowed to READ the copy source. Without this,
+		// any user who knows (or guesses) a sourceId could copy an object
+		// they cannot read into a folder they can write to, then read the
+		// copy back — an ACL bypass / IDOR. Mirror the same checks the
+		// direct read paths (getObject/getContentStream) apply: object
+		// existence, property-read permission, and — since the content is
+		// duplicated into the new document — content-view permission.
+		exceptionService.objectNotFound(DomainType.OBJECT, original, sourceId);
+		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
+				original);
+		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_VIEW_CONTENT_OBJECT,
+				original);
+
 		DocumentTypeDefinition td = (DocumentTypeDefinition) typeManager.getTypeDefinition(repositoryId,
 				original.getObjectType());
 

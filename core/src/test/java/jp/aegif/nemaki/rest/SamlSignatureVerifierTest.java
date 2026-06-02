@@ -506,4 +506,128 @@ class SamlSignatureVerifierTest {
 		DocumentBuilder builder = factory.newDocumentBuilder();
 		return builder.parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
 	}
+
+	// ── InResponseTo binding hardening (security audit follow-up) ──
+	// When the IdP signs only the Assertion, the strict-mode InResponseTo
+	// binding must be read from the SubjectConfirmationData INSIDE the
+	// signed Assertion, not from the unsigned outer Response (which an
+	// attacker could rewrite). extractSignedInResponseTo() scopes the
+	// lookup to the signed subtree.
+
+	private static Element parseElement(String xml) throws Exception {
+		DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
+		f.setNamespaceAware(true);
+		Document d = f.newDocumentBuilder().parse(
+				new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+		return d.getDocumentElement();
+	}
+
+	@Test
+	void extractSignedInResponseTo_readsFromSubjectConfirmationDataInsideAssertion() throws Exception {
+		String assertion = """
+				<saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_a1">
+				  <saml:Subject>
+				    <saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
+				      <saml:SubjectConfirmationData InResponseTo="_signed-req-123"/>
+				    </saml:SubjectConfirmation>
+				  </saml:Subject>
+				</saml:Assertion>
+				""";
+		Element signed = parseElement(assertion);
+		assertEquals("_signed-req-123",
+				SamlSignatureVerifier.extractSignedInResponseTo(signed),
+				"Binding must come from the signed Assertion's SubjectConfirmationData");
+	}
+
+	@Test
+	void extractSignedInResponseTo_nullWhenNoSubjectConfirmationData() throws Exception {
+		String assertion = """
+				<saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_a2">
+				  <saml:Subject/>
+				</saml:Assertion>
+				""";
+		assertNull(SamlSignatureVerifier.extractSignedInResponseTo(parseElement(assertion)),
+				"No SubjectConfirmationData → null so caller can fall back");
+	}
+
+	@Test
+	void extractSignedInResponseTo_ignoresUnsignedOuterResponseAttribute() throws Exception {
+		// The signed element is the Assertion; the (attacker-controllable)
+		// outer Response carries a DIFFERENT InResponseTo. Scoping the
+		// lookup to the signed Assertion must NOT pick up the outer value.
+		String response = """
+				<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"
+				                xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"
+				                InResponseTo="_attacker-forged">
+				  <saml:Assertion ID="_a3">
+				    <saml:Subject>
+				      <saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
+				        <saml:SubjectConfirmationData InResponseTo="_genuine-req"/>
+				      </saml:SubjectConfirmation>
+				    </saml:Subject>
+				  </saml:Assertion>
+				</samlp:Response>
+				""";
+		Element responseEl = parseElement(response);
+		Element assertionEl = (Element) responseEl.getElementsByTagNameNS(
+				"urn:oasis:names:tc:SAML:2.0:assertion", "Assertion").item(0);
+		assertEquals("_genuine-req",
+				SamlSignatureVerifier.extractSignedInResponseTo(assertionEl),
+				"Must read the signed Assertion's value, not the forged outer Response");
+	}
+
+	@Test
+	void extractSignedInResponseTo_nullSafe() {
+		assertNull(SamlSignatureVerifier.extractSignedInResponseTo(null));
+	}
+
+	@Test
+	void strictMode_rejectsInResponseToThatOnlyExistsOnUnsignedResponse() throws Exception {
+		// Assertion-only signature, no SubjectConfirmationData. An attacker
+		// adds InResponseTo to the UNSIGNED outer Response. Strict mode must
+		// NOT accept this unsigned value as the binding — it must be rejected
+		// as "not signature-covered" rather than falling back to it.
+		//
+		// IMPORTANT (regression-guard strength): we issue a REAL binding and
+		// put its genuine authnRequestId on the unsigned outer Response, and
+		// pass the matching binding token. So the binding-token/InResponseTo
+		// pair WOULD satisfy peekMatches() — the ONLY reason this must fail
+		// is that the value isn't signature-covered. Under the old (fallback)
+		// implementation this exact input would have PASSED, so a green here
+		// proves the hardening, not an unrelated binding mismatch.
+		SamlAuthnRequestRegistry.Issued issued =
+				SamlAuthnRequestRegistry.getInstance().issue();
+
+		Document doc = createAssertionSignedSAMLResponse(keyPair, "nemakiware-sp", 5, "alice");
+		doc.getDocumentElement().setAttribute("InResponseTo", issued.getAuthnRequestId());
+
+		SamlSignatureVerifier.VerificationResult result =
+				SamlSignatureVerifier.verify(doc, selfSignedCert, "nemakiware-sp",
+						true, issued.getBindingToken());
+
+		assertFalse(result.isValid(),
+				"strict mode must reject an InResponseTo carried only on the unsigned Response, "
+						+ "even when it would match a real binding");
+		assertNotNull(result.getError());
+		assertTrue(result.getError().contains("signature-covered"),
+				"rejection must be due to the binding not being signature-covered; was: "
+						+ result.getError());
+	}
+
+	@Test
+	void nonStrictMode_stillToleratesUnsignedResponseInResponseTo() throws Exception {
+		// Backward compatibility: with strict mode OFF, an assertion-signed
+		// response with InResponseTo only on the outer Response still
+		// verifies (the binding consume is deferred; signature itself is
+		// valid). This guards against the hardening over-blocking the
+		// legacy non-strict path.
+		Document doc = createAssertionSignedSAMLResponse(keyPair, "nemakiware-sp", 5, "alice");
+		doc.getDocumentElement().setAttribute("InResponseTo", "_legacy-unsigned");
+
+		SamlSignatureVerifier.VerificationResult result =
+				SamlSignatureVerifier.verify(doc, selfSignedCert, "nemakiware-sp");
+
+		assertTrue(result.isValid(),
+				"non-strict mode must still accept the valid assertion signature: " + result.getError());
+	}
 }

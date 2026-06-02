@@ -82,6 +82,12 @@ public class ApiV1Application extends ResourceConfig {
         register(jp.aegif.nemaki.api.v1.exception.ApiExceptionMapper.class);
         register(jp.aegif.nemaki.api.v1.exception.ValidationExceptionMapper.class);
         
+        // Register CSRF filter (runs before authentication). The Spring MVC
+        // CsrfInterceptor only guards /api/v1/admin/*; this protects the
+        // Jersey-served /api/v1/cmis/* state-changing endpoints, which accept
+        // ambient cookie/Basic credentials.
+        register(jp.aegif.nemaki.api.v1.filter.ApiCsrfFilter.class);
+
         // Register authentication filter
         register(jp.aegif.nemaki.api.v1.filter.ApiAuthenticationFilter.class);
         

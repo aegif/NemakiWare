@@ -373,4 +373,82 @@ class IngestSchedulerDelegatedRunTest {
         }
         verify(ctxFactory, atLeast(1)).buildOrNull(REPO, CREATOR);
     }
+
+    // ── authorizeDelegatedFetch: shared guard reused by the webhook path ──
+    // Security audit follow-up: the webhook-triggered fetch path
+    // (IngestWebhookController) previously ran delegated profiles under an
+    // unscoped admin context with NO re-evaluation. These tests pin the
+    // shared guard that closes that bypass.
+
+    @Test
+    void authorizeDelegatedFetch_adminProfile_allowedWithNullContext() {
+        ImportProfileDefinition admin = delegatedProfile();
+        admin.setDelegated(false);
+        ConnectorDefinition c = new ConnectorDefinition();
+        c.setConnectorId("c1");
+
+        IngestSchedulerService.DelegatedAuthorization auth =
+                scheduler.authorizeDelegatedFetch(admin, c);
+
+        assertTrue(auth.isAllowed(), "admin profile must be allowed");
+        assertEquals(null, auth.getCallContext(), "admin profile uses null (admin) context");
+        // No delegation re-eval for admin profiles.
+        verify(ctxFactory, never()).buildOrNull(any(), any());
+    }
+
+    @Test
+    void authorizeDelegatedFetch_creatorInactive_denied() {
+        ConnectorDefinition c = new ConnectorDefinition();
+        c.setConnectorId("c1");
+        when(ctxFactory.buildOrNull(REPO, CREATOR)).thenReturn(null); // inactive
+
+        IngestSchedulerService.DelegatedAuthorization auth =
+                scheduler.authorizeDelegatedFetch(delegatedProfile(), c);
+
+        assertFalse(auth.isAllowed(), "inactive creator must be denied");
+        verify(authService, never()).canUseConnectorForDelegatedProfileAsUser(
+                anyString(), anyString(), any(), anyString());
+    }
+
+    @Test
+    void authorizeDelegatedFetch_connectorRevoked_denied() {
+        CallContext synth = mock(CallContext.class);
+        lenient().when(synth.getUsername()).thenReturn(CREATOR);
+        ConnectorDefinition c = new ConnectorDefinition();
+        c.setConnectorId("c1");
+        when(ctxFactory.buildOrNull(REPO, CREATOR)).thenReturn(synth);
+        when(authService.resolveFolderId(eq(REPO), eq(FOLDER), any())).thenReturn(FOLDER);
+        when(authService.canManageProfileForFolderAsUser(eq(CREATOR), eq(REPO), eq(FOLDER)))
+                .thenReturn(true);
+        // connector delegation revoked
+        when(authService.canUseConnectorForDelegatedProfileAsUser(
+                eq(CREATOR), eq(REPO), any(), eq(FOLDER))).thenReturn(false);
+
+        IngestSchedulerService.DelegatedAuthorization auth =
+                scheduler.authorizeDelegatedFetch(delegatedProfile(), c);
+
+        assertFalse(auth.isAllowed(), "revoked connector delegation must be denied");
+        assertEquals(DenialReason.CONNECTOR_NOT_DELEGATED, auth.getDenialReason());
+    }
+
+    @Test
+    void authorizeDelegatedFetch_allValid_allowedWithSynthContext() {
+        CallContext synth = mock(CallContext.class);
+        lenient().when(synth.getUsername()).thenReturn(CREATOR);
+        ConnectorDefinition c = new ConnectorDefinition();
+        c.setConnectorId("c1");
+        when(ctxFactory.buildOrNull(REPO, CREATOR)).thenReturn(synth);
+        when(authService.resolveFolderId(eq(REPO), eq(FOLDER), any())).thenReturn(FOLDER);
+        when(authService.canManageProfileForFolderAsUser(eq(CREATOR), eq(REPO), eq(FOLDER)))
+                .thenReturn(true);
+        when(authService.canUseConnectorForDelegatedProfileAsUser(
+                eq(CREATOR), eq(REPO), any(), eq(FOLDER))).thenReturn(true);
+
+        IngestSchedulerService.DelegatedAuthorization auth =
+                scheduler.authorizeDelegatedFetch(delegatedProfile(), c);
+
+        assertTrue(auth.isAllowed(), "fully-valid delegated fetch must be allowed");
+        assertEquals(synth, auth.getCallContext(),
+                "must return the synthesised creator context for executeFetch");
+    }
 }

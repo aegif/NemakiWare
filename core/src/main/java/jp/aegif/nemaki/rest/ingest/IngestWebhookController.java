@@ -494,12 +494,30 @@ public class IngestWebhookController {
 
     /**
      * Trigger an async fetch (fire-and-forget) via the scheduler service.
+     *
+     * <p>For delegated profiles we re-run the same authorization the
+     * scheduler applies per tick (creator still active, still holds
+     * {@code cmis:all} on the target folder, connector still delegated
+     * to the creator) and run the fetch under the delegating user's
+     * synthesised CallContext. Without this, a signed webhook event
+     * would keep ingesting under an unscoped admin context even after
+     * the creator lost access or the admin revoked the delegation —
+     * the bypass the scheduled path already prevents. Admin profiles
+     * keep the legacy null-context (admin) behaviour.
      */
     private void triggerFetchAsync(ImportProfileDefinition profile, ConnectorDefinition connector,
                                    Map<String, String> params) {
+        IngestSchedulerService.DelegatedAuthorization auth =
+                schedulerService.authorizeDelegatedFetch(profile, connector);
+        if (!auth.isAllowed()) {
+            logger.warn("Webhook-triggered fetch refused for delegated profile {} (connector {}): {}",
+                    profile.getProfileId(), connector.getConnectorId(), auth.getDenialReason());
+            return;
+        }
+        CallContext fetchCtx = auth.getCallContext();   // null = admin profile
         Thread.ofVirtual().name("webhook-fetch-" + profile.getProfileId()).start(() -> {
             try {
-                schedulerService.executeFetch(null, profile, connector, params);
+                schedulerService.executeFetch(fetchCtx, profile, connector, params);
             } catch (Exception e) {
                 logger.error("Webhook-triggered fetch failed for profile {}: {}",
                         profile.getProfileId(), e.getMessage());

@@ -298,14 +298,45 @@ public class SamlSignatureVerifier {
 			}
 
 			// 7. InResponseTo binding (cookie-bound, server-issued).
-			Element response = SAML_PROTOCOL_NS.equals(signedElement.getNamespaceURI())
-					&& "Response".equals(signedElement.getLocalName())
-					? signedElement
-					: findResponseAncestor(signedElement);
-			String inResponseTo = response == null ? null : response.getAttribute("InResponseTo");
+			// Resolve the binding value from a SIGNATURE-COVERED source first:
+			//   (a) the bearer SubjectConfirmationData inside the signed
+			//       subtree (Assertion/.../SubjectConfirmationData/@InResponseTo);
+			//   (b) the Response/@InResponseTo when the Response element itself
+			//       is what was signed.
+			// Only when neither is available do we look at the unsigned outer
+			// Response ancestor — and that attacker-rewritable value is
+			// permitted for backward compatibility ONLY when strict mode is
+			// off. In strict mode an unsigned-only InResponseTo must NOT be
+			// trusted to satisfy the binding check (it would reintroduce the
+			// very fallback this hardening removes).
+			String inResponseTo = extractSignedInResponseTo(signedElement);
+			boolean signedInResponseTo = inResponseTo != null && !inResponseTo.isEmpty();
+			if (!signedInResponseTo
+					&& SAML_PROTOCOL_NS.equals(signedElement.getNamespaceURI())
+					&& "Response".equals(signedElement.getLocalName())) {
+				// The signed element IS the Response; its @InResponseTo is
+				// signature-covered.
+				inResponseTo = signedElement.getAttribute("InResponseTo");
+				signedInResponseTo = inResponseTo != null && !inResponseTo.isEmpty();
+			}
+			if (inResponseTo == null || inResponseTo.isEmpty()) {
+				// Unsigned outer Response — backward-compat read only.
+				Element response = findResponseAncestor(signedElement);
+				inResponseTo = response == null ? null : response.getAttribute("InResponseTo");
+			}
 			boolean hasInResponseTo = inResponseTo != null && !inResponseTo.isEmpty();
 
 			if (requireInResponseTo) {
+				// Strict mode: the binding value must come from a
+				// signature-covered location. An InResponseTo that only
+				// exists on the unsigned outer Response is rejected.
+				if (!signedInResponseTo) {
+					logger.warn("Strict mode rejected SAML Response: no signature-covered InResponseTo "
+							+ "(InResponseTo must be inside the signed Assertion's SubjectConfirmationData "
+							+ "or on a signed Response)");
+					return VerificationResult.failure(
+							"SAML Response InResponseTo is not signature-covered (strict mode)");
+				}
 				if (!hasInResponseTo) {
 					logger.warn("Strict mode rejected SAML Response: missing InResponseTo");
 					return VerificationResult.failure("SAML Response missing InResponseTo (strict mode)");
@@ -372,6 +403,32 @@ public class SamlSignatureVerifier {
 			if (id != null && !id.isEmpty()) keys.add("assertion:" + id);
 		}
 		return new java.util.ArrayList<>(keys);
+	}
+
+	/**
+	 * Extract {@code @InResponseTo} from a bearer
+	 * {@code SubjectConfirmationData} that lives INSIDE the signed
+	 * element. Because the lookup is scoped to {@code signedElement}
+	 * (the subtree the signature actually covers), the returned value
+	 * cannot be tampered with by rewriting the unsigned outer Response.
+	 * Returns {@code null} if no such attribute is present (e.g. the IdP
+	 * doesn't populate SubjectConfirmationData), letting the caller fall
+	 * back to the Response-level value.
+	 */
+	static String extractSignedInResponseTo(Element signedElement) {
+		if (signedElement == null) {
+			return null;
+		}
+		NodeList scds = signedElement.getElementsByTagNameNS(
+				SAML_ASSERTION_NS, "SubjectConfirmationData");
+		for (int i = 0; i < scds.getLength(); i++) {
+			Element scd = (Element) scds.item(i);
+			String irt = scd.getAttribute("InResponseTo");
+			if (irt != null && !irt.isEmpty()) {
+				return irt;
+			}
+		}
+		return null;
 	}
 
 	/** Walk up to find the enclosing samlp:Response element, if any. */

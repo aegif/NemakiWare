@@ -846,6 +846,95 @@ public class IngestSchedulerService {
         if (checkpointManager != null) checkpointManager.resetCheckpoint(profileId, scope);
     }
 
+    // ── Delegated authorization (shared by scheduler + webhook) ─────
+
+    /**
+     * Outcome of {@link #authorizeDelegatedFetch}. When {@link #allowed}
+     * is {@code true} and {@link #callContext} is non-null, the caller
+     * must pass that synthesised context to {@link #executeFetch} so the
+     * ingest runs under the delegating user's authority. When
+     * {@code allowed} is {@code false}, the fetch must be skipped; the
+     * denial has already been audited.
+     */
+    public static final class DelegatedAuthorization {
+        private final boolean allowed;
+        private final CallContext callContext;
+        private final DenialReason denialReason;
+
+        private DelegatedAuthorization(boolean allowed, CallContext callContext, DenialReason denialReason) {
+            this.allowed = allowed;
+            this.callContext = callContext;
+            this.denialReason = denialReason;
+        }
+        public boolean isAllowed() { return allowed; }
+        public CallContext getCallContext() { return callContext; }
+        public DenialReason getDenialReason() { return denialReason; }
+    }
+
+    /**
+     * Re-evaluate, at fetch time, whether a delegated profile may still
+     * run against the given connector. This is the SAME two-stage guard
+     * the scheduler applies per tick:
+     * <ol>
+     *   <li>{@link #prepareDelegatedTick} — operator opt-in, required
+     *       wiring, creator still active, creator still holds
+     *       {@code cmis:all} on the target folder; and</li>
+     *   <li>connector delegation re-check — the connector is still
+     *       delegated to the creator for that folder.</li>
+     * </ol>
+     *
+     * <p>It exists so non-scheduler entry points (notably the
+     * push/webhook path in {@code IngestWebhookController}) authorise
+     * delegated fetches the same way the scheduler does, instead of
+     * running them as an unscoped admin context. Without this, a
+     * delegated profile would keep ingesting on every signed webhook
+     * event even after the creator lost folder access or the admin
+     * revoked the connector delegation — an authorization bypass that
+     * the scheduled path already prevented.
+     *
+     * <p>Non-delegated (admin) profiles are returned as allowed with a
+     * null context, preserving the legacy admin fetch behaviour.
+     * Denials are audited inside the helpers (same audit shape /
+     * {@link DenialReason} as the scheduler).
+     */
+    public DelegatedAuthorization authorizeDelegatedFetch(ImportProfileDefinition profile,
+                                                          ConnectorDefinition connector) {
+        if (profile == null || !profile.isDelegated()) {
+            // Admin profile: legacy behaviour (null context = admin path).
+            return new DelegatedAuthorization(true, null, null);
+        }
+
+        // Stage 1: creator active + cmis:all on target folder (+ opt-in).
+        CallContext delegatedCtx = prepareDelegatedTick(profile);
+        if (delegatedCtx == null) {
+            // prepareDelegatedTick already emitted WARN/audit + DenialReason.
+            return new DelegatedAuthorization(false, null, DenialReason.CREATOR_CMIS_ALL_LOST);
+        }
+
+        // Stage 2: connector still delegated to the creator for this folder.
+        String delegatedFolderId = ingestAuthorizationService.resolveFolderId(
+                profile.getRepositoryId(),
+                profile.getTargetFolderId(),
+                profile.getTargetFolderPath());
+        if (delegatedFolderId == null) {
+            auditScheduledDelegatedDenial(profile, connector,
+                    DenialReason.TARGET_FOLDER_UNRESOLVABLE,
+                    "Profile's target folder no longer resolvable");
+            return new DelegatedAuthorization(false, null, DenialReason.TARGET_FOLDER_UNRESOLVABLE);
+        }
+        if (!ingestAuthorizationService.canUseConnectorForDelegatedProfileAsUser(
+                delegatedCtx.getUsername(), profile.getRepositoryId(),
+                connector, delegatedFolderId)) {
+            auditScheduledDelegatedDenial(profile, connector,
+                    DenialReason.CONNECTOR_NOT_DELEGATED,
+                    "Connector no longer delegated to "
+                            + delegatedCtx.getUsername() + " for this folder");
+            return new DelegatedAuthorization(false, null, DenialReason.CONNECTOR_NOT_DELEGATED);
+        }
+
+        return new DelegatedAuthorization(true, delegatedCtx, null);
+    }
+
     // ── Unified dispatch ────────────────────────────────────────────
 
     /**
