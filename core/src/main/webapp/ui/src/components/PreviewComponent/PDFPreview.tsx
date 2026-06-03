@@ -102,7 +102,7 @@
  * - ✅ Reduced attack surface: Simpler implementation with fewer features = fewer vulnerabilities
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Button, Spin, Alert } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
@@ -141,6 +141,22 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
 
   // Use ref to track current blob URL for proper cleanup (fixes memory leak)
   const blobUrlRef = useRef<string | null>(null);
+
+  // CRITICAL: memoize the options object. react-pdf reloads the whole
+  // Document (a fresh worker GetDocRequest) whenever the `options` prop is a
+  // new object reference. Passing an inline literal here meant every
+  // re-render (e.g. clicking Next/Prev/zoom, or rapid clicks) triggered a
+  // reload; rapid clicks could fire a GetDocRequest after the previous
+  // worker was terminated, producing the
+  // "Cannot read properties of null (reading 'sendWithPromise')" crash.
+  const documentOptions = useMemo(
+    () => ({
+      cMapUrl: '/core/ui/pdf-worker/cmaps/',
+      cMapPacked: true,
+      standardFontDataUrl: '/core/ui/pdf-worker/standard_fonts/',
+    }),
+    []
+  );
 
   // Fetch PDF content with authentication and convert to Blob URL
   useEffect(() => {
@@ -218,6 +234,16 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
   const onDocumentLoadError = (error: Error) => {
     console.error('PDF load error:', error);
     setError(t('preview.pdf.loadError', { error: error.message }));
+  };
+
+  // Handle clicks on in-PDF links (table of contents / internal links).
+  // react-pdf hands us the destination page; we drive our own page state
+  // instead of letting pdf.js navigate through a link service that isn't
+  // wired up here (which would dereference a null document/worker).
+  const onItemClick = ({ pageNumber: itemPageNumber }: { pageNumber: number }) => {
+    if (Number.isFinite(itemPageNumber) && itemPageNumber >= 1) {
+      setPageNumber(Math.min(itemPageNumber, numPages || itemPageNumber));
+    }
   };
 
   const goToPrevPage = () => {
@@ -304,11 +330,8 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
               file={pdfData}
               onLoadSuccess={onDocumentLoadSuccess}
               onLoadError={onDocumentLoadError}
-              options={{
-                cMapUrl: '/core/ui/pdf-worker/cmaps/',
-                cMapPacked: true,
-                standardFontDataUrl: '/core/ui/pdf-worker/standard_fonts/',
-              }}
+              onItemClick={onItemClick}
+              options={documentOptions}
               loading={
                 <div style={{ textAlign: 'center', padding: '40px' }}>
                   <Spin size="large" tip={t('preview.pdf.loadingDocument')} />
@@ -317,10 +340,18 @@ export const PDFPreview: React.FC<PDFPreviewProps> = ({ url, fileName, repositor
             >
               {numPages && (
                 <Page
+                  key={`page_${pageNumber}_${scale}`}
                   pageNumber={pageNumber}
                   scale={scale}
                   renderTextLayer={true}
                   renderAnnotationLayer={true}
+                  onRenderError={(err: Error) => {
+                    // A render that was cancelled mid-flight (rapid page/zoom
+                    // changes) can reject; swallow it so it doesn't surface as
+                    // the "sendWithPromise" null crash. Real load failures are
+                    // already reported via the Document onLoadError.
+                    console.warn('PDF page render error (likely cancelled):', err?.message);
+                  }}
                 />
               )}
             </Document>

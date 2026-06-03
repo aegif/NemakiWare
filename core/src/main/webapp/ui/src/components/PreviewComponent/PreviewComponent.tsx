@@ -226,6 +226,7 @@ import { OfficePreview } from './OfficePreview';
 import { CadPreview } from './CadPreview';
 import { MarkdownPreview } from './MarkdownPreview';
 import { DiagramPreview } from './DiagramPreview';
+import { PreviewErrorBoundary } from './PreviewErrorBoundary';
 
 interface PreviewComponentProps {
   repositoryId: string;
@@ -281,7 +282,14 @@ export const PreviewComponent: React.FC<PreviewComponentProps> = ({ repositoryId
 
   return (
     <Card>
-      {renderPreview()}
+      <PreviewErrorBoundary
+        resetKey={effectiveObjectId}
+        message={t('preview.previewError')}
+        description={t('preview.errorOccurred')}
+        retryLabel={t('common.retry')}
+      >
+        {renderPreview()}
+      </PreviewErrorBoundary>
     </Card>
   );
 };
