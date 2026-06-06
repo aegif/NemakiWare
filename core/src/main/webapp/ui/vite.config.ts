@@ -14,6 +14,13 @@ const buildTime = new Date().toLocaleString('ja-JP', {
   second: '2-digit'
 }).replace(/\//g, '-')
 
+// UI version label tracks package.json (single source of truth) instead of a
+// hardcoded literal, so a version bump in package.json updates the displayed
+// version automatically.
+const pkgVersion = JSON.parse(
+  fs.readFileSync(new URL('./package.json', import.meta.url), 'utf-8')
+).version as string
+
 /**
  * Loading indicator styles for SSO callback pages
  * These are shown while React initializes
@@ -129,7 +136,7 @@ export default defineConfig({
   base: '/core/ui/',
   define: {
     __UI_BUILD_TIME__: JSON.stringify(buildTime),
-    __UI_VERSION__: JSON.stringify('3.1.1')
+    __UI_VERSION__: JSON.stringify(pkgVersion)
   },
   build: {
     outDir: 'dist',
