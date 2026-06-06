@@ -32,7 +32,26 @@ import java.util.TimeZone;
 @Path("/all/build-info")
 public class BuildInfoResource {
 
-    private static final String VERSION = "3.1.1";
+    // Loaded from version.properties (Maven-filtered to ${project.version}) so
+    // the reported version tracks the build, not a hardcoded literal.
+    private static final String VERSION = loadVersion();
+
+    private static String loadVersion() {
+        try (InputStream is = BuildInfoResource.class.getClassLoader()
+                .getResourceAsStream("version.properties")) {
+            if (is != null) {
+                Properties props = new Properties();
+                props.load(is);
+                String v = props.getProperty("nemakiware.version");
+                if (v != null && !v.trim().isEmpty() && !v.contains("${")) {
+                    return v.trim();
+                }
+            }
+        } catch (Exception ignored) {
+            // fall through to default
+        }
+        return "unknown";
+    }
 
     /**
      * Returns the current NemakiWare version.
