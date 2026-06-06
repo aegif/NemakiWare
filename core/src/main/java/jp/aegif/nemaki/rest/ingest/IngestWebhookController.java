@@ -32,8 +32,18 @@ import java.util.Set;
  *   <li>Slack Events API (url_verification + event_callback)</li>
  *   <li>Microsoft Graph change notifications (validationToken + changeNotification; validation
  *       handshake uses {@code Content-Type: text/plain} per Microsoft)</li>
+ *   <li>Chatwork webhooks (X-ChatWorkWebhookSignature)</li>
+ *   <li>Box Webhooks V2 (BOX-SIGNATURE-PRIMARY/SECONDARY over body+timestamp;
+ *       FILE.* triggers refetch the parent folder)</li>
+ *   <li>Dropbox webhooks (GET challenge handshake + X-Dropbox-Signature;
+ *       notification triggers an incremental cursor fetch)</li>
  *   <li>Generic JSON payload (other systems)</li>
  * </ul>
+ *
+ * <p>Box and Dropbox webhook subscriptions are registered in the provider's
+ * own console (Box Developer / Dropbox App Console) pointing at
+ * {@code .../ingest-webhook/{connectorId}}; unlike Graph there is no
+ * server-side subscription API for them.
  */
 @RestController
 @RequestMapping("/v1/ingest-webhook")
@@ -162,6 +172,8 @@ public class IngestWebhookController {
                 case "slack" -> handleSlackEvent(connector, payload);
                 case "teams", "m365_mail" -> handleGraphNotification(connector, payload);
                 case "chatwork" -> handleChatworkEvent(connector, payload);
+                case "box" -> handleBoxEvent(connector, payload);
+                case "dropbox" -> handleDropboxEvent(connector, payload);
                 default -> handleGenericWebhook(connector, payload);
             };
 
@@ -170,6 +182,35 @@ public class IngestWebhookController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Webhook processing failed"));
         }
+    }
+
+    /**
+     * Webhook verification handshake (GET).
+     *
+     * <p>Dropbox verifies a webhook URL by issuing
+     * {@code GET /{connectorId}?challenge=...} and expecting the challenge
+     * value echoed back verbatim as {@code text/plain}. We gate this on the
+     * connector being an enabled Dropbox connector and the challenge being
+     * present, so the endpoint is not a general open echo. {@code nosniff}
+     * is set per Dropbox guidance.
+     */
+    @GetMapping("/{connectorId}")
+    public ResponseEntity<?> verifyWebhook(
+            @PathVariable String connectorId,
+            @RequestParam(value = "challenge", required = false) String challenge) {
+        ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
+        if (connector == null || !connector.isEnabled()
+                || !"dropbox".equals(connector.getSourceSystem())
+                || challenge == null || challenge.isBlank()
+                || challenge.length() > 1024) {
+            // Uniform 404 — don't reveal connector existence/type, and bound the
+            // echoed value so it can't be used for response amplification.
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+        return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_PLAIN)
+                .header("X-Content-Type-Options", "nosniff")
+                .body(challenge);
     }
 
     /**
@@ -327,6 +368,68 @@ public class IngestWebhookController {
             triggered++;
         }
         return ResponseEntity.ok(Map.of("status", "accepted", "room", roomId, "profiles", triggered));
+    }
+
+    /**
+     * Handle a Box webhook (Webhooks V2). Box delivers a single event with a
+     * {@code trigger} (e.g. FILE.UPLOADED) and a {@code source} object. We act
+     * only on FILE.* triggers and trigger an incremental fetch of the parent
+     * folder for profiles that watch it (folderId scope).
+     */
+    private ResponseEntity<?> handleBoxEvent(ConnectorDefinition connector, JsonNode payload) {
+        String trigger = payload.path("trigger").asText("");
+        // Only file lifecycle events lead to new content to ingest.
+        if (!trigger.startsWith("FILE.")) {
+            return ResponseEntity.ok(Map.of("status", "ignored", "trigger", trigger));
+        }
+        JsonNode source = payload.path("source");
+        String type = source.path("type").asText("");
+        // For a file event the folder to refetch is the file's parent; for a
+        // folder event it is the folder itself.
+        String folderId = "folder".equals(type)
+                ? source.path("id").asText(null)
+                : source.path("parent").path("id").asText(null);
+        if (folderId == null || folderId.isBlank()) {
+            return ResponseEntity.ok(Map.of("status", "ignored", "reason", "no folder id"));
+        }
+
+        Map<String, String> eventScope = Map.of("folderId", folderId);
+        List<ImportProfileDefinition> matchingProfiles = filterProfilesByScope(connector, eventScope);
+        if (matchingProfiles.isEmpty()) {
+            return ResponseEntity.ok(Map.of("status", "no_matching_profile", "folderId", folderId));
+        }
+
+        int triggered = 0;
+        for (ImportProfileDefinition profile : matchingProfiles) {
+            Map<String, String> params = new LinkedHashMap<>();
+            params.put("folderId", folderId);
+            params.put("limit", "25");
+            triggerFetchAsync(profile, connector, params);
+            triggered++;
+        }
+        return ResponseEntity.ok(Map.of("status", "accepted", "folderId", folderId, "profiles", triggered));
+    }
+
+    /**
+     * Handle a Dropbox webhook notification. Dropbox notifications carry no path
+     * information — they only say "something changed for these accounts" — so
+     * every profile on the connector does an incremental (cursor/checkpoint)
+     * fetch, which pulls exactly the delta.
+     */
+    private ResponseEntity<?> handleDropboxEvent(ConnectorDefinition connector, JsonNode payload) {
+        List<ImportProfileDefinition> profiles = findAllProfilesForConnector(connector);
+        if (profiles.isEmpty()) {
+            return ResponseEntity.ok(Map.of("status", "no_profile"));
+        }
+        int triggered = 0;
+        for (ImportProfileDefinition profile : profiles) {
+            Map<String, String> params = profile.getSchedulerParams() != null
+                    ? new LinkedHashMap<>(profile.getSchedulerParams()) : new LinkedHashMap<>();
+            params.put("limit", "25");
+            triggerFetchAsync(profile, connector, params);
+            triggered++;
+        }
+        return ResponseEntity.ok(Map.of("status", "accepted", "profiles", triggered));
     }
 
     private ResponseEntity<?> handleGenericWebhook(ConnectorDefinition connector, JsonNode payload) {
@@ -546,6 +649,12 @@ public class IngestWebhookController {
         if ("chatwork".equals(system)) {
             return verifyChatworkSignature(secret, rawBody);
         }
+        if ("box".equals(system)) {
+            return verifyBoxSignature(secret, rawBody);
+        }
+        if ("dropbox".equals(system)) {
+            return verifyDropboxSignature(secret, rawBody);
+        }
 
         // Generic HMAC-SHA256 verification — require signature when secret is configured.
         //
@@ -631,6 +740,74 @@ public class IngestWebhookController {
         }
     }
 
+    /**
+     * Verify a Box Webhooks V2 signature. Box signs {@code body + delivery-timestamp}
+     * with HMAC-SHA256 and sends the base64 digest in BOX-SIGNATURE-PRIMARY and
+     * BOX-SIGNATURE-SECONDARY (two keys for rotation). Our model holds one
+     * webhookSecret, so we accept the request if it matches either header with
+     * that key (covering whichever key the operator configured). The delivery
+     * timestamp must be within 10 minutes (replay protection).
+     */
+    private boolean verifyBoxSignature(String secret, String rawBody) {
+        String version = httpRequest.getHeader("BOX-SIGNATURE-VERSION");
+        String algorithm = httpRequest.getHeader("BOX-SIGNATURE-ALGORITHM");
+        String timestamp = httpRequest.getHeader("BOX-DELIVERY-TIMESTAMP");
+        String primary = httpRequest.getHeader("BOX-SIGNATURE-PRIMARY");
+        String secondary = httpRequest.getHeader("BOX-SIGNATURE-SECONDARY");
+
+        if (!"1".equals(version) || algorithm == null || !"HmacSHA256".equalsIgnoreCase(algorithm)) {
+            logger.warn("Box webhook unsupported signature version/algorithm: {}/{}", version, algorithm);
+            return false;
+        }
+        if (timestamp == null || timestamp.isBlank()) {
+            logger.warn("Box webhook missing BOX-DELIVERY-TIMESTAMP");
+            return false;
+        }
+        // Replay protection: reject deliveries older than 10 minutes.
+        try {
+            long deliverySec = java.time.OffsetDateTime.parse(timestamp).toInstant().getEpochSecond();
+            long nowSec = System.currentTimeMillis() / 1000L;
+            if (Math.abs(nowSec - deliverySec) > 600) {
+                logger.warn("Box webhook delivery timestamp outside 10-minute window");
+                return false;
+            }
+        } catch (Exception e) {
+            logger.warn("Box webhook BOX-DELIVERY-TIMESTAMP not parseable: {}", timestamp);
+            return false;
+        }
+        if (primary == null && secondary == null) {
+            logger.warn("Box webhook missing both signature headers");
+            return false;
+        }
+        // Box signs the raw body followed by the delivery timestamp.
+        String computed = hmacSha256Base64(secret, rawBody + timestamp);
+        return constantTimeEquals(computed, primary) || constantTimeEquals(computed, secondary);
+    }
+
+    /**
+     * Verify a Dropbox webhook signature: hex HMAC-SHA256 of the raw body using
+     * the app secret, delivered in the {@code X-Dropbox-Signature} header.
+     */
+    private boolean verifyDropboxSignature(String secret, String rawBody) {
+        String headerSig = httpRequest.getHeader("X-Dropbox-Signature");
+        if (headerSig == null || headerSig.isBlank()) {
+            logger.warn("Dropbox webhook missing X-Dropbox-Signature");
+            return false;
+        }
+        String computed = hmacSha256(secret, rawBody);
+        return java.security.MessageDigest.isEqual(
+                headerSig.getBytes(StandardCharsets.UTF_8),
+                computed.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Constant-time string compare that treats null as non-matching. */
+    private static boolean constantTimeEquals(String computed, String header) {
+        if (header == null) return false;
+        return java.security.MessageDigest.isEqual(
+                computed.getBytes(StandardCharsets.UTF_8),
+                header.getBytes(StandardCharsets.UTF_8));
+    }
+
     private boolean verifySlackSignature(String signingSecret, String rawBody) {
         String timestamp = httpRequest.getHeader("X-Slack-Request-Timestamp");
         String signature = httpRequest.getHeader("X-Slack-Signature");
@@ -659,6 +836,18 @@ public class IngestWebhookController {
         } catch (Exception e) {
             // Fail closed: never return empty string from a crypto operation.
             // Callers compare the result; an empty string could match an empty header.
+            throw new RuntimeException("HMAC-SHA256 computation failed", e);
+        }
+    }
+
+    /** Base64 HMAC-SHA256 (used by Box, which delivers base64 signatures). */
+    private static String hmacSha256Base64(String secret, String data) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return java.util.Base64.getEncoder().encodeToString(
+                    mac.doFinal(data.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception e) {
             throw new RuntimeException("HMAC-SHA256 computation failed", e);
         }
     }
