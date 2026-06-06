@@ -1572,19 +1572,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (parentObjectId == null) {
             return null; // No parent specified — skip silently
         }
-        try {
-            PropertiesImpl relProps = new PropertiesImpl();
-            relProps.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, "cmis:relationship"));
-            relProps.addProperty(new PropertyIdImpl(PropertyIds.SOURCE_ID, parentObjectId));
-            relProps.addProperty(new PropertyIdImpl(PropertyIds.TARGET_ID, objectId));
-
-            objectService.createRelationship(callContext, repositoryId, relProps, null, null, null, null);
-            logger.info("Created relationship: {} → {}", parentObjectId, objectId);
-            return null;
-        } catch (Exception e) {
-            logger.warn("Failed to create relationship {} → {}: {}", parentObjectId, objectId, e.getMessage());
-            return "Relationship creation failed: " + e.getMessage();
-        }
+        // Route through the idempotent helper so a re-run (e.g. a webhook-
+        // triggered incremental fetch of an already-imported object) does not
+        // create a duplicate parent→child edge.
+        return createDirectRelationship(callContext, repositoryId, parentObjectId, objectId);
     }
 
     /**

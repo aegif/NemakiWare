@@ -1212,6 +1212,48 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void applyRelationship_isIdempotent_onReimport() {
+        // A FILE_SHARE profile with a relationshipPolicy + parentObjectId, re-run
+        // (as a webhook-triggered incremental fetch would) must not create a
+        // duplicate parent→child edge.
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        profile.setRelationshipPolicy("link");
+        when(profileService.get("p1")).thenReturn(profile);
+
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        connector.setSourceSystem("box");
+        when(connectorService.get("c1")).thenReturn(connector);
+
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                isNull(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn("child-obj-id");
+
+        // The parent→child edge already exists.
+        jp.aegif.nemaki.model.Relationship existing = mock(jp.aegif.nemaki.model.Relationship.class);
+        when(existing.getTargetId()).thenReturn("child-obj-id");
+        when(contentService.getRelationsipsOfObject(eq("bedroom"), eq("parent-1"), any()))
+                .thenReturn(List.of(existing));
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("file-1");
+        req.setMetadata(java.util.Map.of("parentObjectId", "parent-1"));
+
+        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        assertTrue(result.isSuccess(), "errors: " + result.errors());
+        verify(objectService, never()).createRelationship(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     void createDirectRelationship_failsOpen_whenExistenceCheckThrows() {
         noteProfile("files_and_body");
         when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
