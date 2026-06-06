@@ -22,6 +22,13 @@ public class ExternalIngestRequest {
     private String sourceObjectType;
     private String sourceUrl;
     private String executionMode = "api";
+    /**
+     * Carries the profile's importPolicy into the import service for
+     * archetypes with a body/attachment split (Notion notes). "files_only"
+     * (default) skips the body document and imports only attachments;
+     * "files_and_body" imports the body too.
+     */
+    private String importPolicy = "files_only";
     private boolean dryRun;
     private String idempotencyKey;
     private String correlationId;
@@ -65,6 +72,9 @@ public class ExternalIngestRequest {
 
     public String getExecutionMode() { return executionMode; }
     public void setExecutionMode(String executionMode) { this.executionMode = executionMode; }
+
+    public String getImportPolicy() { return importPolicy; }
+    public void setImportPolicy(String importPolicy) { this.importPolicy = importPolicy; }
 
     public boolean isDryRun() { return dryRun; }
     public void setDryRun(boolean dryRun) { this.dryRun = dryRun; }

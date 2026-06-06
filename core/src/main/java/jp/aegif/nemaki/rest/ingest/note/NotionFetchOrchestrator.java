@@ -53,16 +53,23 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
                     skipped++; continue;
                 }
                 try {
-                    String html = notion.fetchPageAsHtml(page.id());
+                    boolean importBody = "files_and_body".equals(profile.getImportPolicy());
                     ExternalIngestRequest req = new ExternalIngestRequest();
                     req.setProfileId(profile.getProfileId());
                     req.setConnectorId(connector.getConnectorId());
                     req.setRepositoryId(profile.getRepositoryId());
                     req.setSourceObjectId(page.id());
                     req.setSourceObjectType("page");
-                    req.setFileName(FetchSupport.sanitizeSubject(page.title()) + ".html");
-                    req.setMimeType("text/html");
-                    req.setContentStream(new ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8)));
+                    // files_only (default) makes executeNoteImport skip the page-body
+                    // document and import only attachments — so we don't even need to
+                    // render the page HTML (the user does not want HTML fragments).
+                    req.setImportPolicy(profile.getImportPolicy());
+                    if (importBody) {
+                        String html = notion.fetchPageAsHtml(page.id());
+                        req.setFileName(FetchSupport.sanitizeSubject(page.title()) + ".html");
+                        req.setMimeType("text/html");
+                        req.setContentStream(new ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8)));
+                    }
                     req.setExecutionMode("scheduled");
 
                     Map<String, Object> metadata = new LinkedHashMap<>();

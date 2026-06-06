@@ -32,6 +32,11 @@ public class SlackFetchOrchestrator implements FetchOrchestrator {
         String token = fetchSupport.resolvePassword(connector);
         if (token == null) return new FetchResult(0, 0, List.of("No token for Slack connector"));
 
+        // files_only (default): import only attached files, keep the message
+        // text as metadata. files_and_body: also import the message text as a
+        // .txt document (legacy behaviour).
+        boolean importBody = "files_and_body".equals(profile.getImportPolicy());
+
         List<String> errors = new ArrayList<>();
         int fetched = 0, imported = 0, skipped = 0;
         try {
@@ -46,31 +51,35 @@ public class SlackFetchOrchestrator implements FetchOrchestrator {
                 fetchSupport.throttle(throttleMs);
                 try {
                     String messageText = msg.text() != null ? msg.text() : "";
-                    ExternalIngestRequest msgReq = new ExternalIngestRequest();
-                    msgReq.setProfileId(profile.getProfileId());
-                    msgReq.setConnectorId(connector.getConnectorId());
-                    msgReq.setRepositoryId(profile.getRepositoryId());
-                    msgReq.setSourceObjectId(msg.ts());
-                    msgReq.setSourceObjectType("chat_message");
-                    msgReq.setFileName("slack-" + msg.ts().replace(".", "-") + ".txt");
-                    msgReq.setMimeType("text/plain");
-                    msgReq.setContentStream(new ByteArrayInputStream(messageText.getBytes(StandardCharsets.UTF_8)));
-                    msgReq.setExecutionMode("scheduled");
-                    Map<String, Object> msgMeta = new LinkedHashMap<>();
-                    msgMeta.put("channelId", channelId);
-                    msgMeta.put("threadId", msg.threadTs());
-                    msgMeta.put("messageId", msg.ts());
-                    msgMeta.put("senderId", msg.userId());
-                    msgMeta.put("messageText", FetchSupport.truncateForContext(messageText));
-                    msgMeta.put("workspaceId", connector.getTenantId());
-                    msgReq.setMetadata(msgMeta);
+                    String parentObjectId = null;
+                    boolean messageOk = true;
+                    if (importBody) {
+                        ExternalIngestRequest msgReq = new ExternalIngestRequest();
+                        msgReq.setProfileId(profile.getProfileId());
+                        msgReq.setConnectorId(connector.getConnectorId());
+                        msgReq.setRepositoryId(profile.getRepositoryId());
+                        msgReq.setSourceObjectId(msg.ts());
+                        msgReq.setSourceObjectType("chat_message");
+                        msgReq.setFileName("slack-" + msg.ts().replace(".", "-") + ".txt");
+                        msgReq.setMimeType("text/plain");
+                        msgReq.setContentStream(new ByteArrayInputStream(messageText.getBytes(StandardCharsets.UTF_8)));
+                        msgReq.setExecutionMode("scheduled");
+                        Map<String, Object> msgMeta = new LinkedHashMap<>();
+                        msgMeta.put("channelId", channelId);
+                        msgMeta.put("threadId", msg.threadTs());
+                        msgMeta.put("messageId", msg.ts());
+                        msgMeta.put("senderId", msg.userId());
+                        msgMeta.put("messageText", FetchSupport.truncateForContext(messageText));
+                        msgMeta.put("workspaceId", connector.getTenantId());
+                        msgReq.setMetadata(msgMeta);
 
-                    ExternalIngestResult msgResult = canonicalImportService.executeChatContextImport(callContext, msgReq);
-                    String parentObjectId = msgResult.isSuccess() ? msgResult.objectId() : null;
-                    boolean messageOk = msgResult.isSuccess() || msgResult.skipped();
-                    if (msgResult.isSuccess()) imported++;
-                    else if (msgResult.skipped()) skipped++;
-                    else FetchSupport.addError(errors, "Slack msg " + msg.ts() + ": " + String.join(", ", msgResult.errors()));
+                        ExternalIngestResult msgResult = canonicalImportService.executeChatContextImport(callContext, msgReq);
+                        parentObjectId = msgResult.isSuccess() ? msgResult.objectId() : null;
+                        messageOk = msgResult.isSuccess() || msgResult.skipped();
+                        if (msgResult.isSuccess()) imported++;
+                        else if (msgResult.skipped()) skipped++;
+                        else FetchSupport.addError(errors, "Slack msg " + msg.ts() + ": " + String.join(", ", msgResult.errors()));
+                    }
                     boolean attachmentFailed = false;
 
                     for (SlackFile file : msg.files()) {

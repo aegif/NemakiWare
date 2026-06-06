@@ -369,21 +369,37 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             request.setSourceObjectType("page");
         }
 
-        // Import page body as main document
-        ExternalIngestResult pageResult = execute(callContext, request);
-        if (!pageResult.isSuccess()) {
-            return pageResult;
+        // files_only (default): do NOT create a document for the page body
+        // (HTML). Import only the attached files, carrying the page's
+        // identity/text as metadata on each attachment (nemaki:noteMetadata
+        // + nemaki:externalContext). files_and_body: keep the page body as a
+        // document and link attachments to it (legacy behaviour).
+        boolean importBody = "files_and_body".equals(request.getImportPolicy());
+
+        String pageObjectId = null;
+        List<String> warnings = new ArrayList<>();
+        String pageVersionLabel = null;
+        boolean pageNewVersion = false;
+        String pageLineageEventId = null;
+
+        if (importBody) {
+            ExternalIngestResult pageResult = execute(callContext, request);
+            if (!pageResult.isSuccess()) {
+                return pageResult;
+            }
+            pageObjectId = pageResult.objectId();
+            pageVersionLabel = pageResult.versionLabel();
+            pageNewVersion = pageResult.isNewVersion();
+            pageLineageEventId = pageResult.lineageEventId();
+            warnings.addAll(pageResult.warnings());
+            // Apply nemaki:noteMetadata to the page document
+            String metaError = ingestMetadataService.applyNoteMetadata(request.getRepositoryId(), pageObjectId, callContext, request);
+            if (metaError != null) warnings.add(metaError);
         }
-
-        String pageObjectId = pageResult.objectId();
-        List<String> warnings = new ArrayList<>(pageResult.warnings());
-
-        // Apply nemaki:noteMetadata
-        String metaError = ingestMetadataService.applyNoteMetadata(request.getRepositoryId(), pageObjectId, callContext, request);
-        if (metaError != null) warnings.add(metaError);
 
         // Import attachments from metadata if provided
         int attachmentCount = 0;
+        String firstAttachmentObjectId = null;
         if (request.getMetadata() != null && request.getMetadata().get("attachments") instanceof List<?> attList) {
             for (Object attObj : attList) {
                 if (!(attObj instanceof Map<?, ?> attMap)) continue;
@@ -401,7 +417,17 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     attReq.setMimeType(mt instanceof String s ? s : "application/octet-stream");
                     attReq.setExecutionMode(request.getExecutionMode());
                     // Do NOT set parentObjectId — relationship created via createDirectRelationship
-                    attReq.setMetadata(new LinkedHashMap<>());
+                    // In files_only mode the page body is not imported, so carry the
+                    // page's metadata (id/url/parent/workspace + any body text the
+                    // orchestrator put in metadata) onto the attachment so it isn't
+                    // lost. Strip the heavy attachment list to avoid recursion.
+                    Map<String, Object> attMeta = new LinkedHashMap<>();
+                    if (!importBody && request.getMetadata() != null) {
+                        for (Map.Entry<String, Object> e : request.getMetadata().entrySet()) {
+                            if (!"attachments".equals(e.getKey())) attMeta.put(e.getKey(), e.getValue());
+                        }
+                    }
+                    attReq.setMetadata(attMeta);
                     // Decode attachment content from base64 in metadata if provided
                     Object contentB64 = attMap.get("contentBase64");
                     if (contentB64 instanceof String b64 && !b64.isBlank()) {
@@ -412,14 +438,23 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         warnings.add("Attachment '" + attReq.getFileName() + "' has no content (provide contentBase64 in metadata)");
                         continue;
                     }
-                    ExternalIngestResult attResult = execute(callContext, attReq);
+                    ExternalIngestResult attResult;
+                    if (!importBody) {
+                        // attachment carries note metadata since there is no page doc
+                        attResult = executeNoteAttachment(callContext, attReq, request);
+                    } else {
+                        attResult = execute(callContext, attReq);
+                    }
                     if (attResult.isSuccess() || attResult.skipped()) {
                         attachmentCount++;
                         String attObjectId = attResult.objectId();
                         if (attObjectId != null) {
-                            String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
-                                    pageObjectId, attObjectId, "nemaki:hasAttachment");
-                            if (relErr != null) warnings.add(relErr);
+                            if (firstAttachmentObjectId == null) firstAttachmentObjectId = attObjectId;
+                            if (importBody && pageObjectId != null) {
+                                String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
+                                        pageObjectId, attObjectId, "nemaki:hasAttachment");
+                                if (relErr != null) warnings.add(relErr);
+                            }
                         }
                     } else {
                         warnings.add("Attachment import failed: " + String.join(", ", attResult.errors()));
@@ -430,12 +465,47 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             }
         }
 
-        logger.info("Note import completed: objectId={}, attachments={}, profile={}",
-                pageObjectId, attachmentCount, request.getProfileId());
+        // In files_only mode with no attachments, there is nothing to import
+        // for this page — report it as skipped (not an error) so the
+        // checkpoint still advances.
+        if (!importBody && pageObjectId == null && attachmentCount == 0) {
+            // (requestId, objectId, versionLabel, isNewVersion, dryRun,
+            //  skipped, skipReason, lineageEventId, errors, warnings)
+            return new ExternalIngestResult(requestId, null, null, false, false, true,
+                    "files_only: page has no attachments", null, List.of(), warnings);
+        }
 
-        return new ExternalIngestResult(requestId, pageObjectId, pageResult.versionLabel(),
-                pageResult.isNewVersion(), false, false, null, pageResult.lineageEventId(),
+        String primaryObjectId = importBody ? pageObjectId : firstAttachmentObjectId;
+        logger.info("Note import completed: pageObjectId={}, attachments={}, importPolicy={}, profile={}",
+                pageObjectId, attachmentCount, request.getImportPolicy(), request.getProfileId());
+
+        return new ExternalIngestResult(requestId, primaryObjectId, pageVersionLabel,
+                pageNewVersion, false, false, null, pageLineageEventId,
                 List.of(), warnings);
+    }
+
+    /**
+     * Import a Notion attachment as a standalone document and apply the note
+     * metadata (from the originating page request) to it. Used in files_only
+     * mode where the page body document is not created, so the attachment
+     * becomes the carrier of the page's source identity / text.
+     */
+    private ExternalIngestResult executeNoteAttachment(CallContext callContext,
+            ExternalIngestRequest attReq, ExternalIngestRequest pageRequest) {
+        ExternalIngestResult attResult = execute(callContext, attReq);
+        if (attResult.isSuccess() && attResult.objectId() != null) {
+            // Reuse the page's metadata for the note-metadata secondary type.
+            String metaError = ingestMetadataService.applyNoteMetadata(
+                    attReq.getRepositoryId(), attResult.objectId(), callContext, pageRequest);
+            if (metaError != null) {
+                List<String> w = new ArrayList<>(attResult.warnings());
+                w.add(metaError);
+                return new ExternalIngestResult(attResult.requestId(), attResult.objectId(),
+                        attResult.versionLabel(), attResult.isNewVersion(), false, false, null,
+                        attResult.lineageEventId(), List.of(), w);
+            }
+        }
+        return attResult;
     }
 
     // applyNoteMetadata → delegated to IngestMetadataService

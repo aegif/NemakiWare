@@ -59,6 +59,15 @@ public class ImportProfileDefinition {
     private boolean enabled = true;
     private boolean schedulerEnabled;
     private boolean preserveOriginalEml;
+    /**
+     * What to import from sources that carry both a body and attachments
+     * (Slack messages, Notion pages). {@code "files_only"} (default) imports
+     * only the attached files and keeps the surrounding body text as metadata
+     * (nemaki:externalContext); {@code "files_and_body"} additionally imports
+     * the message text / page HTML as its own document (legacy behaviour).
+     * Adapters without a body/attachment split ignore this.
+     */
+    private String importPolicy = "files_only";
     /** Marks this profile as the default for its repository when multiple profiles match. */
     private boolean defaultProfile;
     /** Source-scope parameters for scheduled fetches (e.g. channelId, teamId, query, soql, folderId). */
@@ -125,6 +134,9 @@ public class ImportProfileDefinition {
 
     public String getDedupePolicy() { return dedupePolicy; }
     public void setDedupePolicy(String dedupePolicy) { this.dedupePolicy = dedupePolicy; }
+
+    public String getImportPolicy() { return importPolicy; }
+    public void setImportPolicy(String importPolicy) { this.importPolicy = importPolicy; }
 
     public String getDedupeMatchBy() { return dedupeMatchBy; }
     public void setDedupeMatchBy(String dedupeMatchBy) { this.dedupeMatchBy = dedupeMatchBy; }

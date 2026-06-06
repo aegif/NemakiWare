@@ -26,6 +26,7 @@ class CanonicalImportServiceTest {
     private ObjectService objectService;
     private ContentService contentService;
     private jp.aegif.nemaki.cmis.service.VersioningService versioningService;
+    private IngestMetadataService ingestMetadataService;
 
     @BeforeEach
     void setUp() {
@@ -35,11 +36,15 @@ class CanonicalImportServiceTest {
         objectService = mock(ObjectService.class);
         contentService = mock(ContentService.class);
         versioningService = mock(jp.aegif.nemaki.cmis.service.VersioningService.class);
+        ingestMetadataService = mock(IngestMetadataService.class);
+        // null return = metadata applied successfully
+        lenient().when(ingestMetadataService.applyNoteMetadata(any(), any(), any(), any())).thenReturn(null);
         service.setConnectorDefinitionService(connectorService);
         service.setImportProfileDefinitionService(profileService);
         service.setObjectService(objectService);
         service.setContentService(contentService);
         service.setVersioningService(versioningService);
+        service.setIngestMetadataService(ingestMetadataService);
     }
 
     @Test
@@ -1087,5 +1092,102 @@ class CanonicalImportServiceTest {
                         new java.io.ByteArrayInputStream(data), 4096, "Content"));
         assertTrue(ex.getMessage().contains("exceeds maximum size"),
                 "must fail fast with a size error; was: " + ex.getMessage());
+    }
+
+    // ── importPolicy = files_only for Notion notes (spec change 3.1.3) ──
+
+    private ImportProfileDefinition noteProfile(String importPolicy) {
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        profile.setImportPolicy(importPolicy);
+        when(profileService.get("p1")).thenReturn(profile);
+
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.COMPOUND_NOTE);
+        connector.setSourceSystem("notion");
+        when(connectorService.get("c1")).thenReturn(connector);
+        return profile;
+    }
+
+    private ExternalIngestRequest notePageReq(String importPolicy, boolean withAttachment) {
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("page-1");
+        req.setSourceObjectType("page");
+        req.setImportPolicy(importPolicy);
+        if (importPolicy.equals("files_and_body")) {
+            req.setFileName("My Page.html");
+            req.setMimeType("text/html");
+            req.setContentStream(new java.io.ByteArrayInputStream("<p>body</p>".getBytes()));
+        }
+        java.util.Map<String, Object> meta = new java.util.LinkedHashMap<>();
+        meta.put("pageId", "page-1");
+        meta.put("pageUrl", "https://notion.so/page-1");
+        if (withAttachment) {
+            java.util.Map<String, Object> att = new java.util.LinkedHashMap<>();
+            att.put("attachmentId", "blk-1");
+            att.put("filename", "report.pdf");
+            att.put("mimeType", "application/pdf");
+            att.put("contentBase64", java.util.Base64.getEncoder().encodeToString("PDFDATA".getBytes()));
+            meta.put("attachments", new java.util.ArrayList<>(List.of(att)));
+        }
+        req.setMetadata(meta);
+        return req;
+    }
+
+    @Test
+    void filesOnly_notion_importsAttachmentOnly_noPageDocument_noRelationship() {
+        noteProfile("files_only");
+        // Only one createDocument call expected (the attachment). Return its id.
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                any(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn("att-obj-id");
+
+        ExternalIngestResult result = service.executeNoteImport(
+                mock(CallContext.class), notePageReq("files_only", true));
+
+        assertTrue(result.isSuccess(), "errors: " + result.errors());
+        assertEquals("att-obj-id", result.objectId(), "primary object should be the attachment");
+        // Exactly ONE document created (the attachment) — no page-body doc.
+        verify(objectService, times(1)).createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                any(), any(), isNull(), isNull(), isNull(), isNull());
+        // No page->attachment relationship in files_only mode (no page doc).
+        verify(objectService, never()).createRelationship(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void filesOnly_notion_pageWithNoAttachments_isSkipped_noDocument() {
+        noteProfile("files_only");
+
+        ExternalIngestResult result = service.executeNoteImport(
+                mock(CallContext.class), notePageReq("files_only", false));
+
+        assertTrue(result.skipped(), "page with no attachments must be skipped");
+        verify(objectService, never()).createDocument(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void filesAndBody_notion_importsPageAndAttachment_withRelationship() {
+        noteProfile("files_and_body");
+        // Page body doc then attachment doc.
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                any(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn("page-obj-id", "att-obj-id");
+
+        ExternalIngestResult result = service.executeNoteImport(
+                mock(CallContext.class), notePageReq("files_and_body", true));
+
+        assertTrue(result.isSuccess(), "errors: " + result.errors());
+        assertEquals("page-obj-id", result.objectId(), "primary object should be the page in files_and_body");
+        // Two documents: page body + attachment.
+        verify(objectService, times(2)).createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                any(), any(), isNull(), isNull(), isNull(), isNull());
     }
 }
