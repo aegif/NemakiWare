@@ -644,6 +644,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     String createDirectRelationship(CallContext callContext, String repositoryId,
                                             String sourceId, String targetId, String relationshipTypeId) {
         try {
+            // Idempotent: if this source→target link already exists, do not
+            // create a duplicate. Relationship creation is otherwise re-run on
+            // every poll for already-imported objects (e.g. dedupe-skipped
+            // chat attachments), which would accumulate duplicate edges.
+            if (sourceId != null && targetId != null
+                    && relationshipExists(repositoryId, sourceId, targetId)) {
+                return null;
+            }
             PropertiesImpl relProps = new PropertiesImpl();
             relProps.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, relationshipTypeId));
             relProps.addProperty(new PropertyIdImpl(PropertyIds.SOURCE_ID, sourceId));
@@ -659,6 +667,28 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             logger.warn("Relationship {} → {} failed: {}", sourceId, targetId, e.getMessage());
             return "Relationship failed: " + e.getMessage();
         }
+    }
+
+    /**
+     * True if a relationship with the given source already targets {@code targetId}
+     * (any relationship type). Used to keep {@link #createDirectRelationship}
+     * idempotent. Fails open to {@code false} (i.e. allows creation) on error.
+     */
+    private boolean relationshipExists(String repositoryId, String sourceId, String targetId) {
+        if (contentService == null) return false;
+        try {
+            List<jp.aegif.nemaki.model.Relationship> rels = contentService.getRelationsipsOfObject(
+                    repositoryId, sourceId,
+                    org.apache.chemistry.opencmis.commons.enums.RelationshipDirection.SOURCE);
+            if (rels != null) {
+                for (jp.aegif.nemaki.model.Relationship r : rels) {
+                    if (r != null && targetId.equals(r.getTargetId())) return true;
+                }
+            }
+        } catch (Exception e) {
+            logger.debug("Relationship existence check failed for {} -> {}: {}", sourceId, targetId, e.getMessage());
+        }
+        return false;
     }
 
     /**

@@ -111,8 +111,15 @@ public class SlackFetchOrchestrator implements FetchOrchestrator {
                             ExternalIngestResult result = canonicalImportService.executeChatContextImport(callContext, req);
                             // skipped() first: a skipped result also reports
                             // isSuccess()==true (no errors), so check it first.
+                            // Relationship creation is idempotent, so we still
+                            // (re)link a skipped attachment to its message —
+                            // this repairs a missing edge without duplicating.
                             if (result.skipped()) {
                                 skipped++;
+                                if (parentObjectId != null && result.objectId() != null) {
+                                    fetchSupport.createRelationshipSafe(callContext, profile.getRepositoryId(),
+                                            parentObjectId, result.objectId(), errors);
+                                }
                             } else if (result.isSuccess()) {
                                 imported++;
                                 if (parentObjectId != null) {

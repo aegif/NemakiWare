@@ -191,6 +191,38 @@ class FolderConnectorControllerTest {
         assertEquals(false, r.getBody().get("authError"));
     }
 
+    private boolean runAuthErrorFor(String errorMessage) {
+        adminCtx();
+        folder();
+        when(profileService.get(PROFILE)).thenReturn(profile());
+        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
+        when(schedulerService.executeFetch(any(), any(), any(), any()))
+                .thenReturn(new FetchResult(1, 0, List.of(errorMessage)));
+        return (boolean) controller.run(REPO, FOLDER, PROFILE).getBody().get("authError");
+    }
+
+    @Test
+    void run_slackInvalidAuth_isAuthError() {
+        assertTrue(runAuthErrorFor("Slack API error: invalid_auth"));
+    }
+
+    @Test
+    void run_slackNotAuthed_isAuthError() {
+        assertTrue(runAuthErrorFor("Slack: not_authed"));
+    }
+
+    @Test
+    void run_graphInvalidAuthenticationToken_isAuthError() {
+        // "InvalidAuthenticationToken" lowercased contains "authentication".
+        assertTrue(runAuthErrorFor("Graph 401: InvalidAuthenticationToken"));
+    }
+
+    @Test
+    void run_benignTokenMention_isNotAuthError() {
+        // Mentions a token but is not an auth failure — must NOT prompt re-set.
+        assertFalse(runAuthErrorFor("token refresh rate-limited, retry later"));
+    }
+
     @Test
     void run_profileForOtherFolder_returns404() {
         adminCtx();

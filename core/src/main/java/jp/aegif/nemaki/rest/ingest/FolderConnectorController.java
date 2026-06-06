@@ -324,7 +324,11 @@ public class FolderConnectorController {
      */
     private static final List<String> RESERVED_KEY_PREFIXES = List.of(
             "couchdb", "ldap", "saml", "oidc", "setup", "session",
-            "nemakiware.security", "nemakiware.deployment", "auth.token");
+            "nemakiware.security", "nemakiware.deployment", "auth.token",
+            // External-catalog / cloud / mail secret namespaces — these hold
+            // their own client secrets / passwords and are never an ingest
+            // connector's credentialRef.
+            "cloud", "purview", "atlas", "dataplex", "rag", "smtp", "webhook");
 
     private static boolean isReservedConfigKey(String key) {
         if (key == null) return false;

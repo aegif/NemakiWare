@@ -1190,4 +1190,24 @@ class CanonicalImportServiceTest {
         verify(objectService, times(2)).createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
                 any(), any(), isNull(), isNull(), isNull(), isNull());
     }
+
+    @Test
+    void createDirectRelationship_isIdempotent_skipsWhenLinkExists() {
+        noteProfile("files_and_body");
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                any(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn("page-obj-id", "att-obj-id");
+        // The page→attachment edge already exists, so no new relationship
+        // should be created (idempotency).
+        jp.aegif.nemaki.model.Relationship existing = mock(jp.aegif.nemaki.model.Relationship.class);
+        when(existing.getTargetId()).thenReturn("att-obj-id");
+        when(contentService.getRelationsipsOfObject(eq("bedroom"), eq("page-obj-id"), any()))
+                .thenReturn(List.of(existing));
+
+        ExternalIngestResult result = service.executeNoteImport(
+                mock(CallContext.class), notePageReq("files_and_body", true));
+
+        assertTrue(result.isSuccess(), "errors: " + result.errors());
+        verify(objectService, never()).createRelationship(any(), any(), any(), any(), any(), any(), any());
+    }
 }

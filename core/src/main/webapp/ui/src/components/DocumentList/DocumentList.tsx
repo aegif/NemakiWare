@@ -828,15 +828,15 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         message.error(result.message || t('documentList.tokenSaveError'));
         return;
       }
-      if (result.overriddenBySource) {
-        // The saved value is shadowed by a -D / env var; warn instead of
-        // pretending the reset took effect.
-        message.warning(t('documentList.tokenOverridden', { source: result.overriddenBySource }));
-      } else {
-        message.success(t('documentList.tokenSaved'));
-      }
       setTokenDialog(null);
       setTokenValue('');
+      if (result.overriddenBySource) {
+        // The saved value is shadowed by a -D / env var, so re-running would
+        // just fail auth again and reopen this dialog. Warn and stop instead.
+        message.warning(t('documentList.tokenOverridden', { source: result.overriddenBySource }));
+        return;
+      }
+      message.success(t('documentList.tokenSaved'));
       // Retry the run with the fresh token.
       await handleRunConnector(connector);
     } catch (e: any) {
