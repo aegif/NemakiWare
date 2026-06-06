@@ -76,8 +76,10 @@ public class SlackFetchOrchestrator implements FetchOrchestrator {
                         ExternalIngestResult msgResult = canonicalImportService.executeChatContextImport(callContext, msgReq);
                         parentObjectId = msgResult.isSuccess() ? msgResult.objectId() : null;
                         messageOk = msgResult.isSuccess() || msgResult.skipped();
-                        if (msgResult.isSuccess()) imported++;
-                        else if (msgResult.skipped()) skipped++;
+                        // skipped() first: isSuccess() (no-errors) is also true
+                        // for a skipped result, so a skip would be miscounted.
+                        if (msgResult.skipped()) skipped++;
+                        else if (msgResult.isSuccess()) imported++;
                         else FetchSupport.addError(errors, "Slack msg " + msg.ts() + ": " + String.join(", ", msgResult.errors()));
                     }
                     boolean attachmentFailed = false;
@@ -107,14 +109,17 @@ public class SlackFetchOrchestrator implements FetchOrchestrator {
                             req.setMetadata(fileMeta);
 
                             ExternalIngestResult result = canonicalImportService.executeChatContextImport(callContext, req);
-                            if (result.isSuccess()) {
+                            // skipped() first: a skipped result also reports
+                            // isSuccess()==true (no errors), so check it first.
+                            if (result.skipped()) {
+                                skipped++;
+                            } else if (result.isSuccess()) {
                                 imported++;
                                 if (parentObjectId != null) {
                                     fetchSupport.createRelationshipSafe(callContext, profile.getRepositoryId(),
                                             parentObjectId, result.objectId(), errors);
                                 }
-                            } else if (result.skipped()) { skipped++; }
-                            else { attachmentFailed = true; FetchSupport.addError(errors, "Slack file " + file.id() + ": " + String.join(", ", result.errors())); }
+                            } else { attachmentFailed = true; FetchSupport.addError(errors, "Slack file " + file.id() + ": " + String.join(", ", result.errors())); }
                         } catch (Exception e) {
                             attachmentFailed = true;
                             FetchSupport.addError(errors, "Slack file " + file.id() + ": " + e.getMessage());

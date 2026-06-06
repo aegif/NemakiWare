@@ -145,7 +145,7 @@ public class FolderConnectorController {
         }
 
         ImportProfileDefinition profile = importProfileDefinitionService.get(profileId);
-        if (profile == null || !profile.isEnabled() || !folderId.equals(profile.getTargetFolderId())) {
+        if (!profileBelongsToFolder(profile, repositoryId, folderId)) {
             body.put("status", "error");
             body.put("message", "No runnable profile for this folder: " + profileId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
@@ -231,7 +231,7 @@ public class FolderConnectorController {
         }
 
         ImportProfileDefinition profile = importProfileDefinitionService.get(profileId);
-        if (profile == null || !profile.isEnabled() || !folderId.equals(profile.getTargetFolderId())) {
+        if (!profileBelongsToFolder(profile, repositoryId, folderId)) {
             body.put("status", "error");
             body.put("message", "No runnable profile for this folder: " + profileId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
@@ -248,6 +248,19 @@ public class FolderConnectorController {
         if (credentialRef == null || credentialRef.isBlank()) {
             body.put("status", "error");
             body.put("message", "This connector has no credential key to re-set");
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        }
+        // Defence-in-depth: this endpoint only exists to set a connector's
+        // own secret. An admin already has full config write via the admin
+        // settings UI, so this is not a privilege boundary — but we still
+        // refuse to let a connector's credentialRef be pointed at a core
+        // infrastructure / security config key, so the endpoint can't be
+        // quietly repurposed into a general config writer.
+        if (isReservedConfigKey(credentialRef)) {
+            logger.warn("Refusing credential write to reserved config key '{}' (connector {})",
+                    credentialRef, connector.getConnectorId());
+            body.put("status", "error");
+            body.put("message", "This connector's credential key is reserved and cannot be set here");
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
         }
 
@@ -289,6 +302,39 @@ public class FolderConnectorController {
                 ctx, repositoryId, connector, folderId);
     }
 
+    /**
+     * A profile is operable through this folder-scoped endpoint only if it is
+     * enabled, belongs to {@code repositoryId}, and targets {@code folderId}.
+     * Checking the repository id (not just the folder id) prevents a cross-repo
+     * IDOR where a folder id happens to collide across repositories.
+     */
+    private static boolean profileBelongsToFolder(ImportProfileDefinition profile,
+                                                  String repositoryId, String folderId) {
+        return profile != null
+                && profile.isEnabled()
+                && repositoryId.equals(profile.getRepositoryId())
+                && folderId.equals(profile.getTargetFolderId());
+    }
+
+    /**
+     * Reserved infrastructure / security config-key prefixes that the credential
+     * endpoint must never write, so a connector's credentialRef cannot be used
+     * to overwrite core configuration. These prefixes do not match ingest
+     * connector credential refs (e.g. INGEST_SLACK_TOKEN, slack.bot.token).
+     */
+    private static final List<String> RESERVED_KEY_PREFIXES = List.of(
+            "couchdb", "ldap", "saml", "oidc", "setup", "session",
+            "nemakiware.security", "nemakiware.deployment", "auth.token");
+
+    private static boolean isReservedConfigKey(String key) {
+        if (key == null) return false;
+        String k = key.toLowerCase();
+        for (String p : RESERVED_KEY_PREFIXES) {
+            if (k.startsWith(p)) return true;
+        }
+        return false;
+    }
+
     private Map<String, Object> describe(ImportProfileDefinition profile, ConnectorDefinition connector) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("profileId", profile.getProfileId());
@@ -310,8 +356,16 @@ public class FolderConnectorController {
     private static boolean isAuthFailure(String message) {
         if (message == null) return false;
         String m = message.toLowerCase();
+        // Specific token/credential phrases only — a bare "token" substring
+        // over-matches benign errors (e.g. "token refresh rate-limited") and
+        // would wrongly prompt a token re-set.
         return m.contains("no token")
-                || m.contains("token")
+                || m.contains("missing token")
+                || m.contains("invalid token")
+                || m.contains("expired token")
+                || m.contains("token expired")
+                || m.contains("invalid_token")
+                || m.contains("token_expired")
                 || m.contains("unauthorized")
                 || m.contains("401")
                 || m.contains("403")

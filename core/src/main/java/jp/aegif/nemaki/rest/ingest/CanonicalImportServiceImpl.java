@@ -399,6 +399,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
         // Import attachments from metadata if provided
         int attachmentCount = 0;
+        int importedAttachmentCount = 0;   // genuinely new/updated attachments
+        int skippedAttachmentCount = 0;    // dedupe-skipped attachments
         String firstAttachmentObjectId = null;
         if (request.getMetadata() != null && request.getMetadata().get("attachments") instanceof List<?> attList) {
             for (Object attObj : attList) {
@@ -447,6 +449,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     }
                     if (attResult.isSuccess() || attResult.skipped()) {
                         attachmentCount++;
+                        // isSuccess() is true even for a skipped result (it only
+                        // means "no errors"), so test skipped() first.
+                        if (attResult.skipped()) skippedAttachmentCount++;
+                        else importedAttachmentCount++;
                         String attObjectId = attResult.objectId();
                         if (attObjectId != null) {
                             if (firstAttachmentObjectId == null) firstAttachmentObjectId = attObjectId;
@@ -465,14 +471,18 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             }
         }
 
-        // In files_only mode with no attachments, there is nothing to import
-        // for this page — report it as skipped (not an error) so the
-        // checkpoint still advances.
-        if (!importBody && pageObjectId == null && attachmentCount == 0) {
+        // In files_only mode, if nothing new was imported for this page (no
+        // attachments at all, or every attachment was dedupe-skipped) report
+        // the page as skipped — not imported — so run stats are accurate and
+        // the checkpoint still advances.
+        if (!importBody && pageObjectId == null && importedAttachmentCount == 0) {
+            String skipReason = skippedAttachmentCount > 0
+                    ? "files_only: all " + skippedAttachmentCount + " attachment(s) already imported"
+                    : "files_only: page has no attachments";
             // (requestId, objectId, versionLabel, isNewVersion, dryRun,
             //  skipped, skipReason, lineageEventId, errors, warnings)
             return new ExternalIngestResult(requestId, null, null, false, false, true,
-                    "files_only: page has no attachments", null, List.of(), warnings);
+                    skipReason, null, List.of(), warnings);
         }
 
         String primaryObjectId = importBody ? pageObjectId : firstAttachmentObjectId;

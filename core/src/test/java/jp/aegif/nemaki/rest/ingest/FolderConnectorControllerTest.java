@@ -204,6 +204,21 @@ class FolderConnectorControllerTest {
     }
 
     @Test
+    void run_profileForOtherRepository_returns404() {
+        adminCtx();
+        folder();
+        // Same folder id but a different repository — must not be operable
+        // (cross-repo IDOR guard).
+        ImportProfileDefinition other = profile();
+        other.setRepositoryId("canopy");
+        when(profileService.get(PROFILE)).thenReturn(other);
+
+        ResponseEntity<Map<String, Object>> r = controller.run(REPO, FOLDER, PROFILE);
+        assertEquals(HttpStatus.NOT_FOUND, r.getStatusCode());
+        verify(schedulerService, never()).executeFetch(any(), any(), any(), any());
+    }
+
+    @Test
     void run_nonAdmin_connectorNotDelegated_returns403() {
         // Non-admin: isAdmin=false. The static write check falls back to
         // isAdminUser (false) in unit context, so this also exercises the
@@ -294,6 +309,37 @@ class FolderConnectorControllerTest {
         assertEquals(HttpStatus.OK, r.getStatusCode());
         assertEquals("success", r.getBody().get("status"));
         verify(integrationSettingsService).writeSetting("INGEST_SLACK_TOKEN", "new-token");
+    }
+
+    @Test
+    void setCredential_reservedCredentialRef_returns400() {
+        adminCtx();
+        folder();
+        when(profileService.get(PROFILE)).thenReturn(profile());
+        ConnectorDefinition c = connector();
+        // Pointing a connector's credentialRef at a core infra key must be
+        // refused so the endpoint can't be repurposed as a config writer.
+        c.setCredentialRef("couchdb.password");
+        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(c);
+
+        ResponseEntity<Map<String, Object>> r =
+                controller.setCredential(REPO, FOLDER, PROFILE, Map.of("token", "x"));
+        assertEquals(HttpStatus.BAD_REQUEST, r.getStatusCode());
+        verifyNoInteractions(integrationSettingsService);
+    }
+
+    @Test
+    void setCredential_profileForOtherRepository_returns404() {
+        adminCtx();
+        folder();
+        ImportProfileDefinition other = profile();
+        other.setRepositoryId("canopy");
+        when(profileService.get(PROFILE)).thenReturn(other);
+
+        ResponseEntity<Map<String, Object>> r =
+                controller.setCredential(REPO, FOLDER, PROFILE, Map.of("token", "x"));
+        assertEquals(HttpStatus.NOT_FOUND, r.getStatusCode());
+        verifyNoInteractions(integrationSettingsService);
     }
 
     @Test

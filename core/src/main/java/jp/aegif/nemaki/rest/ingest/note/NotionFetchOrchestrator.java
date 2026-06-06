@@ -146,8 +146,11 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
                             highWaterEditedTime = page.lastEditedTime();
                         }
                     }
-                    if (result.isSuccess()) imported++;
-                    else if (result.skipped()) skipped++;
+                    // skipped() first: isSuccess() is true whenever there are no
+                    // errors, which includes a skipped result — so a skip would
+                    // otherwise be miscounted as an import.
+                    if (result.skipped()) skipped++;
+                    else if (result.isSuccess()) imported++;
                     else FetchSupport.addError(errors, "Notion " + page.id() + ": " + String.join(", ", result.errors()));
                 } catch (Exception e) {
                     FetchSupport.addError(errors, "Notion page " + page.id() + ": " + e.getMessage());
