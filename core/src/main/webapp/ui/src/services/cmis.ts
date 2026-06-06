@@ -3854,4 +3854,113 @@ export class CMISService {
       throw new Error('Network error during config properties retrieval');
     }
   }
+
+  // ── Folder-scoped connectors (3.1.3) ──
+
+  /**
+   * List the ingest connectors/profiles that target this folder and that
+   * the current user may run. Empty list ⇒ don't show a run button.
+   */
+  async listFolderConnectors(repositoryId: string, folderId: string): Promise<FolderConnector[]> {
+    const response = await fetch(
+      `/core/api/v1/repo/${repositoryId}/folders/${encodeURIComponent(folderId)}/connectors`,
+      { method: 'GET', headers: { 'Accept': 'application/json', ...this.getAuthHeaders() } }
+    );
+    if (!response.ok) {
+      // 404 (folder gone) / 401 etc. — treat as "no runnable connectors".
+      return [];
+    }
+    const data = await parseJsonResponseBody(response, 'listFolderConnectors');
+    const list = Array.isArray(data.connectors) ? data.connectors : [];
+    return list.map((c: Record<string, unknown>) => ({
+      profileId: String(c.profileId ?? ''),
+      profileName: c.profileName ? String(c.profileName) : undefined,
+      connectorId: String(c.connectorId ?? ''),
+      connectorName: c.connectorName ? String(c.connectorName) : undefined,
+      sourceSystem: String(c.sourceSystem ?? ''),
+      sourceArchetype: c.sourceArchetype ? String(c.sourceArchetype) : undefined,
+      schedulerEnabled: c.schedulerEnabled === true,
+    }));
+  }
+
+  /**
+   * Run a folder connector now. The returned {@link FolderConnectorRunResult}
+   * carries authError=true when the connector's token was missing/invalid,
+   * so the caller can offer to re-set the token.
+   */
+  async runFolderConnector(
+    repositoryId: string, folderId: string, profileId: string
+  ): Promise<FolderConnectorRunResult> {
+    const response = await fetch(
+      `/core/api/v1/repo/${repositoryId}/folders/${encodeURIComponent(folderId)}/connectors/${encodeURIComponent(profileId)}/run`,
+      { method: 'POST', headers: { 'Accept': 'application/json', ...this.getAuthHeaders() } }
+    );
+    const data = await parseJsonResponseBody(response, 'runFolderConnector');
+    return {
+      ok: response.ok,
+      status: String(data.status ?? (response.ok ? 'success' : 'error')),
+      message: data.message ? String(data.message) : undefined,
+      fetched: typeof data.fetched === 'number' ? data.fetched : undefined,
+      imported: typeof data.imported === 'number' ? data.imported : undefined,
+      skipped: typeof data.skipped === 'number' ? data.skipped : undefined,
+      authError: data.authError === true,
+      canManageCredential: data.canManageCredential === true,
+      errors: Array.isArray(data.errors) ? data.errors.map(String) : undefined,
+    };
+  }
+
+  /**
+   * Re-set a folder connector's credential (the short-lived developer token).
+   * Admin only on the server. Returns {ok, overriddenBySource} — when a JVM
+   * -D property or env var of the same name is present the saved value is
+   * shadowed and overriddenBySource names that source.
+   */
+  async setFolderConnectorCredential(
+    repositoryId: string, folderId: string, profileId: string, token: string
+  ): Promise<FolderConnectorCredentialResult> {
+    const response = await fetch(
+      `/core/api/v1/repo/${repositoryId}/folders/${encodeURIComponent(folderId)}/connectors/${encodeURIComponent(profileId)}/credential`,
+      {
+        method: 'POST',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', ...this.getAuthHeaders() },
+        body: JSON.stringify({ token }),
+      }
+    );
+    const data = await parseJsonResponseBody(response, 'setFolderConnectorCredential');
+    return {
+      ok: response.ok,
+      message: data.message ? String(data.message) : undefined,
+      overriddenBySource: data.overriddenBySource ? String(data.overriddenBySource) : undefined,
+    };
+  }
+}
+
+export interface FolderConnector {
+  profileId: string;
+  profileName?: string;
+  connectorId: string;
+  connectorName?: string;
+  sourceSystem: string;
+  sourceArchetype?: string;
+  schedulerEnabled: boolean;
+}
+
+export interface FolderConnectorRunResult {
+  ok: boolean;
+  status: string;
+  message?: string;
+  fetched?: number;
+  imported?: number;
+  skipped?: number;
+  authError: boolean;
+  /** True when the caller (an admin) may re-set the connector credential. */
+  canManageCredential?: boolean;
+  errors?: string[];
+}
+
+export interface FolderConnectorCredentialResult {
+  ok: boolean;
+  message?: string;
+  /** Set when a -D/env var shadows the saved value ('system-property'|'environment-variable'). */
+  overriddenBySource?: string;
 }

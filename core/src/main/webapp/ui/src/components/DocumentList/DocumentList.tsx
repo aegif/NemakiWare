@@ -228,7 +228,8 @@ import {
   Radio,
   Alert,
   DatePicker,
-  notification
+  notification,
+  Dropdown
 } from 'antd';
 import {
   FileOutlined,
@@ -250,11 +251,13 @@ import {
   ExportOutlined,
   GoogleOutlined,
   WindowsOutlined,
-  CloudDownloadOutlined
+  CloudDownloadOutlined,
+  ThunderboltOutlined
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
+import type { FolderConnector } from '../../services/cmis';
 import { CMISObject, TypeDefinition, AllowableActions } from '../../types/cmis';
 import { FolderTree } from '../FolderTree/FolderTree';
 import { useAuth } from '../../contexts/AuthContext';
@@ -413,6 +416,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [folderAllowableActions, setFolderAllowableActions] = useState<AllowableActions | undefined>(undefined);
   const canCreateDoc = folderAllowableActions?.canCreateDocument === true;
   const canCreateFld = folderAllowableActions?.canCreateFolder === true;
+  // Ingest connectors targeting the current folder that the user may run (3.1.3).
+  const [folderConnectors, setFolderConnectors] = useState<FolderConnector[]>([]);
+  const [runningConnectorId, setRunningConnectorId] = useState<string | null>(null);
+  // Token re-entry dialog when a manual run fails auth (task 4).
+  const [tokenDialog, setTokenDialog] = useState<{ connector: FolderConnector } | null>(null);
+  const [tokenValue, setTokenValue] = useState<string>('');
+  const [tokenSubmitting, setTokenSubmitting] = useState<boolean>(false);
 
   // Import/Export states (2026-01-28)
   const [importModalVisible, setImportModalVisible] = useState(false);
@@ -565,6 +575,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       const folderPath = folder.path || '/';
       setCurrentFolderPath(folderPath);
       setFolderAllowableActions(folder.allowableActions);
+      // Load runnable ingest connectors for this folder (best-effort; an
+      // error or empty list just hides the run button).
+      cmisService.listFolderConnectors(repositoryId, selectedFolderId)
+        .then(setFolderConnectors)
+        .catch(() => setFolderConnectors([]));
     } catch (error: any) {
       console.error('[DocumentList] loadObjects error for folder:', selectedFolderId, error);
       // Determine error type: only fallback to root on 404 (folder gone / stale sessionStorage).
@@ -761,6 +776,73 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       setCloudImportModalVisible(false);
     } finally {
       setCloudFilesLoading(false);
+    }
+  };
+
+  /**
+   * Run an ingest connector for the current folder by hand (3.1.3).
+   * On an auth failure (short-lived dev token) open the token-reset dialog.
+   */
+  const handleRunConnector = async (connector: FolderConnector) => {
+    setRunningConnectorId(connector.profileId);
+    try {
+      const result = await cmisService.runFolderConnector(
+        repositoryId, selectedFolderId, connector.profileId);
+      // Auth failure: only admins can re-set the token, so only offer the
+      // dialog when the server says this caller may manage the credential.
+      if (result.authError) {
+        if (result.canManageCredential) {
+          setTokenDialog({ connector });
+        } else {
+          message.error(result.message || t('documentList.runConnectorAuthError'));
+        }
+        return;
+      }
+      if (!result.ok) {
+        message.error(result.message || t('documentList.runConnectorError'));
+        return;
+      }
+      message.success(t('documentList.runConnectorDone', {
+        imported: result.imported ?? 0,
+        skipped: result.skipped ?? 0,
+      }));
+      await loadObjects();
+    } catch (e: any) {
+      message.error(e?.message || t('documentList.runConnectorError'));
+    } finally {
+      setRunningConnectorId(null);
+    }
+  };
+
+  /**
+   * Submit a new token from the re-set dialog, then re-run the connector (3.1.3).
+   */
+  const handleSubmitToken = async () => {
+    if (!tokenDialog || !tokenValue.trim()) return;
+    const connector = tokenDialog.connector;
+    setTokenSubmitting(true);
+    try {
+      const result = await cmisService.setFolderConnectorCredential(
+        repositoryId, selectedFolderId, connector.profileId, tokenValue.trim());
+      if (!result.ok) {
+        message.error(result.message || t('documentList.tokenSaveError'));
+        return;
+      }
+      if (result.overriddenBySource) {
+        // The saved value is shadowed by a -D / env var; warn instead of
+        // pretending the reset took effect.
+        message.warning(t('documentList.tokenOverridden', { source: result.overriddenBySource }));
+      } else {
+        message.success(t('documentList.tokenSaved'));
+      }
+      setTokenDialog(null);
+      setTokenValue('');
+      // Retry the run with the fresh token.
+      await handleRunConnector(connector);
+    } catch (e: any) {
+      message.error(e?.message || t('documentList.tokenSaveError'));
+    } finally {
+      setTokenSubmitting(false);
     }
   };
 
@@ -1784,6 +1866,36 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                     {t('documentList.uploadFile')}
                   </Button>
                 )}
+                {/* Manual connector run (3.1.3): shown when this folder has a
+                    runnable connector and the user may write here. One button
+                    per connector when there are few; a dropdown otherwise. */}
+                {canCreateDoc && folderConnectors.length === 1 && (
+                  <Button
+                    icon={<ThunderboltOutlined />}
+                    loading={runningConnectorId === folderConnectors[0].profileId}
+                    onClick={() => handleRunConnector(folderConnectors[0])}
+                  >
+                    {t('documentList.runConnector', { name: folderConnectors[0].sourceSystem })}
+                  </Button>
+                )}
+                {canCreateDoc && folderConnectors.length > 1 && (
+                  <Dropdown
+                    menu={{
+                      items: folderConnectors.map((c) => ({
+                        key: c.profileId,
+                        label: c.profileName || c.sourceSystem,
+                        onClick: () => handleRunConnector(c),
+                      })),
+                    }}
+                  >
+                    <Button
+                      icon={<ThunderboltOutlined />}
+                      loading={runningConnectorId !== null}
+                    >
+                      {t('documentList.runConnectorMenu')}
+                    </Button>
+                  </Dropdown>
+                )}
                 {/* Cloud import buttons - only shown for the logged-in platform (2026-02-03) */}
                 {canCreateDoc && cloudAuthConfig?.googleEnabled && authToken?.authMethod === 'google' && (
                   <Button
@@ -1874,6 +1986,28 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
           </Card>
         </Col>
       </Row>
+
+      {/* Connector token re-set dialog (3.1.3): shown when a manual run fails
+          auth and the admin may re-set the short-lived developer token. */}
+      <Modal
+        title={t('documentList.tokenDialogTitle', { name: tokenDialog?.connector.sourceSystem ?? '' })}
+        open={tokenDialog !== null}
+        confirmLoading={tokenSubmitting}
+        okButtonProps={{ disabled: !tokenValue.trim() }}
+        okText={t('documentList.tokenDialogOk')}
+        onOk={handleSubmitToken}
+        onCancel={() => { if (!tokenSubmitting) { setTokenDialog(null); setTokenValue(''); } }}
+        destroyOnClose
+      >
+        <p>{t('documentList.tokenDialogHint')}</p>
+        <Input.Password
+          autoFocus
+          value={tokenValue}
+          onChange={(e) => setTokenValue(e.target.value)}
+          onPressEnter={handleSubmitToken}
+          placeholder={t('documentList.tokenDialogPlaceholder')}
+        />
+      </Modal>
 
       <Modal
         title={isUploading ? t('documentList.uploadingFile') : t('documentList.uploadFile')}

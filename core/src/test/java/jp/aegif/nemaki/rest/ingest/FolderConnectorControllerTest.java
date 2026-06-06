@@ -3,6 +3,7 @@ package jp.aegif.nemaki.rest.ingest;
 import jakarta.servlet.http.HttpServletRequest;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.rest.controller.IntegrationSettingsService;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,6 +36,7 @@ class FolderConnectorControllerTest {
     private ConnectorDefinitionService connectorService;
     private IngestAuthorizationService authService;
     private IngestSchedulerService schedulerService;
+    private IntegrationSettingsService integrationSettingsService;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -45,12 +47,14 @@ class FolderConnectorControllerTest {
         connectorService = mock(ConnectorDefinitionService.class);
         authService = mock(IngestAuthorizationService.class);
         schedulerService = mock(IngestSchedulerService.class);
+        integrationSettingsService = mock(IntegrationSettingsService.class);
         inject("httpRequest", httpRequest);
         inject("contentService", contentService);
         inject("importProfileDefinitionService", profileService);
         inject("connectorDefinitionService", connectorService);
         inject("ingestAuthorizationService", authService);
         inject("schedulerService", schedulerService);
+        inject("integrationSettingsService", integrationSettingsService);
     }
 
     private void inject(String field, Object value) throws Exception {
@@ -217,5 +221,92 @@ class FolderConnectorControllerTest {
         ResponseEntity<Map<String, Object>> r = controller.run(REPO, FOLDER, PROFILE);
         assertEquals(HttpStatus.FORBIDDEN, r.getStatusCode());
         verify(schedulerService, never()).executeFetch(any(), any(), any(), any());
+    }
+
+    @Test
+    void run_admin_setsCanManageCredentialTrue() {
+        adminCtx();
+        folder();
+        when(profileService.get(PROFILE)).thenReturn(profile());
+        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
+        when(schedulerService.executeFetch(any(), any(), any(), any()))
+                .thenReturn(new FetchResult(0, 0, List.of("No token for Slack connector")));
+
+        ResponseEntity<Map<String, Object>> r = controller.run(REPO, FOLDER, PROFILE);
+        assertEquals(true, r.getBody().get("canManageCredential"));
+    }
+
+    // ── credential re-set ──
+
+    @Test
+    void setCredential_nonAdmin_returns403() {
+        CallContext ctx = mock(CallContext.class);
+        when(ctx.getUsername()).thenReturn("bob");
+        when(httpRequest.getAttribute("CallContext")).thenReturn(ctx);
+        when(authService.isAdmin(ctx)).thenReturn(false);
+
+        ResponseEntity<Map<String, Object>> r =
+                controller.setCredential(REPO, FOLDER, PROFILE, Map.of("token", "x"));
+        assertEquals(HttpStatus.FORBIDDEN, r.getStatusCode());
+        verifyNoInteractions(integrationSettingsService);
+    }
+
+    @Test
+    void setCredential_admin_blankToken_returns400() {
+        adminCtx();
+        folder();
+        when(profileService.get(PROFILE)).thenReturn(profile());
+        ConnectorDefinition c = connector();
+        c.setCredentialRef("INGEST_SLACK_TOKEN");
+        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(c);
+
+        ResponseEntity<Map<String, Object>> r =
+                controller.setCredential(REPO, FOLDER, PROFILE, Map.of());
+        assertEquals(HttpStatus.BAD_REQUEST, r.getStatusCode());
+        verifyNoInteractions(integrationSettingsService);
+    }
+
+    @Test
+    void setCredential_admin_noCredentialRef_returns400() {
+        adminCtx();
+        folder();
+        when(profileService.get(PROFILE)).thenReturn(profile());
+        // connector() leaves credentialRef null
+        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
+
+        ResponseEntity<Map<String, Object>> r =
+                controller.setCredential(REPO, FOLDER, PROFILE, Map.of("token", "x"));
+        assertEquals(HttpStatus.BAD_REQUEST, r.getStatusCode());
+        verifyNoInteractions(integrationSettingsService);
+    }
+
+    @Test
+    void setCredential_admin_success_writesSetting() {
+        adminCtx();
+        folder();
+        when(profileService.get(PROFILE)).thenReturn(profile());
+        ConnectorDefinition c = connector();
+        c.setCredentialRef("INGEST_SLACK_TOKEN");
+        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(c);
+
+        ResponseEntity<Map<String, Object>> r =
+                controller.setCredential(REPO, FOLDER, PROFILE, Map.of("token", "new-token"));
+        assertEquals(HttpStatus.OK, r.getStatusCode());
+        assertEquals("success", r.getBody().get("status"));
+        verify(integrationSettingsService).writeSetting("INGEST_SLACK_TOKEN", "new-token");
+    }
+
+    @Test
+    void setCredential_profileForOtherFolder_returns404() {
+        adminCtx();
+        folder();
+        ImportProfileDefinition other = profile();
+        other.setTargetFolderId("other-folder");
+        when(profileService.get(PROFILE)).thenReturn(other);
+
+        ResponseEntity<Map<String, Object>> r =
+                controller.setCredential(REPO, FOLDER, PROFILE, Map.of("token", "x"));
+        assertEquals(HttpStatus.NOT_FOUND, r.getStatusCode());
+        verifyNoInteractions(integrationSettingsService);
     }
 }

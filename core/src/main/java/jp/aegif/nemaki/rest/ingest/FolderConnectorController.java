@@ -3,6 +3,7 @@ package jp.aegif.nemaki.rest.ingest;
 import jakarta.servlet.http.HttpServletRequest;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.model.Folder;
+import jp.aegif.nemaki.rest.controller.IntegrationSettingsService;
 import jp.aegif.nemaki.rest.importexport.ImportExportUtils;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.slf4j.Logger;
@@ -62,6 +63,9 @@ public class FolderConnectorController {
 
     @Autowired
     private IngestSchedulerService schedulerService;
+
+    @Autowired
+    private IntegrationSettingsService integrationSettingsService;
 
     private CallContext getCallContext() {
         if (httpRequest == null) return null;
@@ -182,9 +186,98 @@ public class FolderConnectorController {
         if (result.hasErrors()) body.put("errors", result.errors());
         // authError lets the UI pop a "re-set token" dialog (dev tokens are short-lived).
         body.put("authError", authError);
+        // Only an admin may re-set the credential, so the UI only offers the
+        // dialog to admins; a delegated runner just sees the error.
+        body.put("canManageCredential", admin);
         body.put("profileId", profileId);
         body.put("connectorId", connector.getConnectorId());
         body.put("sourceSystem", connector.getSourceSystem());
+        return ResponseEntity.ok(body);
+    }
+
+    /**
+     * Re-set the connector's credential (the short-lived developer token) for
+     * the profile targeting this folder. Admin only: the credential is shared
+     * connector infrastructure, so a delegated (non-admin) runner — who may run
+     * the connector — must not be able to overwrite the owner's token.
+     *
+     * <p>The connector resolves its secret from {@code credentialRef} via
+     * {@link jp.aegif.nemaki.util.PropertyManager}. We write the supplied token
+     * to the {@code nemaki_conf} configuration document keyed by that ref. Note
+     * that a JVM {@code -D} property or environment variable of the same name
+     * takes priority over {@code nemaki_conf}; when one is present this write
+     * has no effect and we say so in {@code overriddenBySource}.
+     */
+    @PostMapping("/{profileId}/credential")
+    public ResponseEntity<Map<String, Object>> setCredential(
+            @PathVariable String repositoryId, @PathVariable String folderId,
+            @PathVariable String profileId, @RequestBody(required = false) Map<String, String> payload) {
+        CallContext ctx = getCallContext();
+        if (ctx == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+
+        Map<String, Object> body = new LinkedHashMap<>();
+
+        if (!ingestAuthorizationService.isAdmin(ctx)) {
+            body.put("status", "error");
+            body.put("message", "Only an administrator may re-set a connector credential");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
+        }
+
+        Folder folder = contentService.getFolder(repositoryId, folderId);
+        if (folder == null) {
+            body.put("status", "error");
+            body.put("message", "Folder not found: " + folderId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+        }
+
+        ImportProfileDefinition profile = importProfileDefinitionService.get(profileId);
+        if (profile == null || !profile.isEnabled() || !folderId.equals(profile.getTargetFolderId())) {
+            body.put("status", "error");
+            body.put("message", "No runnable profile for this folder: " + profileId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+        }
+
+        ConnectorDefinition connector = schedulerService.resolveConnectorForProfile(profile);
+        if (connector == null) {
+            body.put("status", "error");
+            body.put("message", "No connector resolved for profile: " + profileId);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        }
+
+        String credentialRef = connector.getCredentialRef();
+        if (credentialRef == null || credentialRef.isBlank()) {
+            body.put("status", "error");
+            body.put("message", "This connector has no credential key to re-set");
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        }
+
+        String token = payload == null ? null : payload.get("token");
+        if (token == null || token.isBlank()) {
+            body.put("status", "error");
+            body.put("message", "A token value is required");
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        }
+
+        try {
+            integrationSettingsService.writeSetting(credentialRef, token);
+        } catch (Exception e) {
+            logger.warn("Failed to write connector credential for ref {}: {}", credentialRef, e.getMessage());
+            body.put("status", "error");
+            body.put("message", "Failed to save credential: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+        }
+
+        body.put("status", "success");
+        body.put("connectorId", connector.getConnectorId());
+        // Surface the priority chain: -D / env var win over nemaki_conf, so a
+        // write that won't take effect is flagged rather than silently lost.
+        String overrideSource = null;
+        if (System.getProperty(credentialRef) != null) {
+            overrideSource = "system-property";
+        } else if (System.getenv(credentialRef.toUpperCase().replace('.', '_')) != null) {
+            overrideSource = "environment-variable";
+        }
+        body.put("overriddenBySource", overrideSource);
         return ResponseEntity.ok(body);
     }
 
