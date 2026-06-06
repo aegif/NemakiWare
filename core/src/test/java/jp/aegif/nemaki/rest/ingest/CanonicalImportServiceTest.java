@@ -1210,4 +1210,22 @@ class CanonicalImportServiceTest {
         assertTrue(result.isSuccess(), "errors: " + result.errors());
         verify(objectService, never()).createRelationship(any(), any(), any(), any(), any(), any(), any());
     }
+
+    @Test
+    void createDirectRelationship_failsOpen_whenExistenceCheckThrows() {
+        noteProfile("files_and_body");
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                any(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn("page-obj-id", "att-obj-id");
+        // Existence check fails — must fail open (still create the link), not
+        // block the first legitimate relationship.
+        when(contentService.getRelationsipsOfObject(eq("bedroom"), eq("page-obj-id"), any()))
+                .thenThrow(new RuntimeException("view unavailable"));
+
+        ExternalIngestResult result = service.executeNoteImport(
+                mock(CallContext.class), notePageReq("files_and_body", true));
+
+        assertTrue(result.isSuccess(), "errors: " + result.errors());
+        verify(objectService, times(1)).createRelationship(any(), any(), any(), any(), any(), any(), any());
+    }
 }

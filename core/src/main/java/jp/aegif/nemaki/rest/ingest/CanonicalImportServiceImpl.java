@@ -670,9 +670,18 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     }
 
     /**
-     * True if a relationship with the given source already targets {@code targetId}
-     * (any relationship type). Used to keep {@link #createDirectRelationship}
-     * idempotent. Fails open to {@code false} (i.e. allows creation) on error.
+     * True if a relationship with the given source already targets {@code targetId}.
+     * Used to keep {@link #createDirectRelationship} idempotent.
+     *
+     * <p>The match is intentionally <b>type-agnostic</b> (source→target only).
+     * Each ingest flow links a given source/target pair with exactly one
+     * semantic type (nemaki:hasAttachment / nemaki:attachedToRecord /
+     * nemaki:derivedFromContext), so "an edge exists" means "already linked".
+     * Type-agnostic matching also means a custom-type retry won't duplicate an
+     * edge that a previous call had to create as the cmis:relationship fallback.
+     *
+     * <p>Fails open to {@code false} (allows creation) on query error, so a
+     * transient lookup failure never blocks a legitimate first link.
      */
     private boolean relationshipExists(String repositoryId, String sourceId, String targetId) {
         if (contentService == null) return false;

@@ -333,25 +333,44 @@ class FolderConnectorControllerTest {
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
         ConnectorDefinition c = connector();
-        c.setCredentialRef("INGEST_SLACK_TOKEN");
+        // Documented credentialRef convention: ingest.* namespace.
+        c.setCredentialRef("ingest.slack.sales.token");
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(c);
 
         ResponseEntity<Map<String, Object>> r =
                 controller.setCredential(REPO, FOLDER, PROFILE, Map.of("token", "new-token"));
         assertEquals(HttpStatus.OK, r.getStatusCode());
         assertEquals("success", r.getBody().get("status"));
-        verify(integrationSettingsService).writeSetting("INGEST_SLACK_TOKEN", "new-token");
+        verify(integrationSettingsService).writeSetting("ingest.slack.sales.token", "new-token");
     }
 
     @Test
-    void setCredential_reservedCredentialRef_returns400() {
+    void setCredential_nonIngestCredentialRef_returns400() {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
         ConnectorDefinition c = connector();
-        // Pointing a connector's credentialRef at a core infra key must be
-        // refused so the endpoint can't be repurposed as a config writer.
+        // Allowlist: only ingest.* keys may be written. A non-ingest key (here
+        // a core infra key) must be refused so the endpoint can't be
+        // repurposed as a general config writer.
         c.setCredentialRef("couchdb.password");
+        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(c);
+
+        ResponseEntity<Map<String, Object>> r =
+                controller.setCredential(REPO, FOLDER, PROFILE, Map.of("token", "x"));
+        assertEquals(HttpStatus.BAD_REQUEST, r.getStatusCode());
+        verifyNoInteractions(integrationSettingsService);
+    }
+
+    @Test
+    void setCredential_nonInfraNonIngestKey_alsoRejected() {
+        adminCtx();
+        folder();
+        when(profileService.get(PROFILE)).thenReturn(profile());
+        ConnectorDefinition c = connector();
+        // Not infra, but still outside the ingest.* namespace → rejected
+        // (allowlist, not denylist).
+        c.setCredentialRef("myapp.api.secret");
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(c);
 
         ResponseEntity<Map<String, Object>> r =

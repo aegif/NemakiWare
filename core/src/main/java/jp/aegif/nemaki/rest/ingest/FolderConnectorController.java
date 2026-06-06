@@ -250,17 +250,17 @@ public class FolderConnectorController {
             body.put("message", "This connector has no credential key to re-set");
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
         }
-        // Defence-in-depth: this endpoint only exists to set a connector's
-        // own secret. An admin already has full config write via the admin
-        // settings UI, so this is not a privilege boundary — but we still
-        // refuse to let a connector's credentialRef be pointed at a core
-        // infrastructure / security config key, so the endpoint can't be
-        // quietly repurposed into a general config writer.
-        if (isReservedConfigKey(credentialRef)) {
-            logger.warn("Refusing credential write to reserved config key '{}' (connector {})",
+        // Only connector-namespace keys may be written here. The admin config
+        // API writes through per-category allowlists, so without this the
+        // credential endpoint would be a general config writer able to clobber
+        // couchdb / ldap / security / catalog keys. Connector credentialRefs
+        // follow the documented ingest.* convention, so legitimate resets pass.
+        if (!isIngestCredentialKey(credentialRef)) {
+            logger.warn("Refusing credential write to non-ingest config key '{}' (connector {})",
                     credentialRef, connector.getConnectorId());
             body.put("status", "error");
-            body.put("message", "This connector's credential key is reserved and cannot be set here");
+            body.put("message", "Credential key must be in the ingest.* namespace; '"
+                    + credentialRef + "' cannot be set here");
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
         }
 
@@ -317,26 +317,18 @@ public class FolderConnectorController {
     }
 
     /**
-     * Reserved infrastructure / security config-key prefixes that the credential
-     * endpoint must never write, so a connector's credentialRef cannot be used
-     * to overwrite core configuration. These prefixes do not match ingest
-     * connector credential refs (e.g. INGEST_SLACK_TOKEN, slack.bot.token).
+     * Allowlist: the credential endpoint may only write keys in the ingest
+     * connector namespace ({@code ingest.*}), matching the documented
+     * credentialRef convention (e.g. {@code ingest.slack.sales.token}). The
+     * rest of the system writes config only through per-category allowlists
+     * (see {@code IntegrationSettingsController.handleUpdate}); restricting to
+     * {@code ingest.*} keeps this endpoint from becoming a general config
+     * writer that could overwrite couchdb / ldap / security / catalog keys.
      */
-    private static final List<String> RESERVED_KEY_PREFIXES = List.of(
-            "couchdb", "ldap", "saml", "oidc", "setup", "session",
-            "nemakiware.security", "nemakiware.deployment", "auth.token",
-            // External-catalog / cloud / mail secret namespaces — these hold
-            // their own client secrets / passwords and are never an ingest
-            // connector's credentialRef.
-            "cloud", "purview", "atlas", "dataplex", "rag", "smtp", "webhook");
-
-    private static boolean isReservedConfigKey(String key) {
+    private static boolean isIngestCredentialKey(String key) {
         if (key == null) return false;
         String k = key.toLowerCase();
-        for (String p : RESERVED_KEY_PREFIXES) {
-            if (k.startsWith(p)) return true;
-        }
-        return false;
+        return k.equals("ingest") || k.startsWith("ingest.") || k.startsWith("ingest_");
     }
 
     private Map<String, Object> describe(ImportProfileDefinition profile, ConnectorDefinition connector) {
