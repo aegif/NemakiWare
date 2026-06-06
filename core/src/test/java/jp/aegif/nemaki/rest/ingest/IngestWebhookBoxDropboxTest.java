@@ -106,6 +106,24 @@ class IngestWebhookBoxDropboxTest {
     }
 
     @Test
+    void dropboxChallenge_setsTextPlainAndNosniff() throws Exception {
+        connector("c-dbx", "dropbox", "s");
+        mockMvc.perform(get("/v1/ingest-webhook/c-dbx").param("challenge", "abc123"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_PLAIN))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .header().string("X-Content-Type-Options", "nosniff"));
+    }
+
+    @Test
+    void dropboxChallenge_tooLong_returns404() throws Exception {
+        connector("c-dbx", "dropbox", "s");
+        String huge = "a".repeat(1025);
+        mockMvc.perform(get("/v1/ingest-webhook/c-dbx").param("challenge", huge))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void dropboxChallenge_nonDropboxConnector_returns404() throws Exception {
         connector("c-box", "box", "s");
         mockMvc.perform(get("/v1/ingest-webhook/c-box").param("challenge", "abc123"))

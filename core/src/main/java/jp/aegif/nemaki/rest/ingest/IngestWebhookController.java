@@ -193,6 +193,13 @@ public class IngestWebhookController {
      * connector being an enabled Dropbox connector and the challenge being
      * present, so the endpoint is not a general open echo. {@code nosniff}
      * is set per Dropbox guidance.
+     *
+     * <p>Note: Dropbox requires this handshake to be <em>unauthenticated</em>
+     * (no signature is sent during URL verification), so a {@code 200} vs
+     * {@code 404} difference can reveal that an enabled Dropbox connector with a
+     * given id exists. This only leaks connector existence (no secret), and the
+     * connectorId is already embedded in the operator-registered webhook URL.
+     * Operators who care should use non-guessable connector ids.
      */
     @GetMapping("/{connectorId}")
     public ResponseEntity<?> verifyWebhook(
