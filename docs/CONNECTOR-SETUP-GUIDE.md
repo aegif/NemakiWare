@@ -30,7 +30,7 @@ NemakiWare の取り込みは **コネクタ定義** と **インポートプロ
 
 ### コネクタ早見表（正しい組み合わせ）
 
-| サービス | `sourceSystem`（接続先） | `sourceArchetype`（種別） | `endpoint` の要否 | `credentialRef`（認証情報）の種類 | 必須 `schedulerParams` | Webhook |
+| サービス | `sourceSystem`（接続先） | `sourceArchetype`（種別） | `endpoint` の要否 | 実トークンの種類（`credentialRef` キーで参照、§2） | 必須 `schedulerParams` | Webhook |
 |---|---|---|---|---|---|---|
 | Slack | `slack` | `CHAT_CONTEXT` | 任意（既定 slack.com/api） | Bot Token (`xoxb-…`) | `channelId` | あり |
 | Microsoft Teams | `teams` | `CHAT_CONTEXT` | 任意（既定 Graph） | Graph アクセストークン | `teamId`, `channelId` | あり |
@@ -81,8 +81,9 @@ NemakiWare の取り込みは **コネクタ定義** と **インポートプロ
      該当するもの（任意・記録用。実際の認証は credentialRef で行います）。
    - **エンドポイント（endpoint）**：早見表で「必須」のサービスのみ。
    - **テナント ID（tenantId）**：IMAP のみメールアドレスを入れる。
-   - **認証情報（credentialRef）**：§3 以降で取得したトークン/パスワード。
-     保存後はマスク表示（`[configured]`）になります。
+   - **認証情報（credentialRef）**：トークンそのものではなく **解決キー**
+     （例 `ingest.slack.sales.token`）を入れる。実トークンは §2 の手順で
+     環境変数等に provision する。保存後はマスク表示（`[configured]`）になります。
    - **Webhook シークレット（webhookSecret）**：Webhook を使うサービスのみ。
 4. 保存。
 
@@ -113,6 +114,7 @@ UI を使わずスクリプトで登録する場合の最小例（CSRF 回避の
 BASE=http://localhost:8080/core    # or https://avenue.aegif.jp:11469/core (-k)
 
 # コネクタ作成
+# credentialRef はキー。実トークンは env INGEST_SLACK_SALES_TOKEN 等で provision する (§2)
 curl -s $CURLK -u admin:admin -X POST -H "X-Requested-With: XMLHttpRequest" \
   -H "Content-Type: application/json" \
   -d '{
@@ -120,7 +122,7 @@ curl -s $CURLK -u admin:admin -X POST -H "X-Requested-With: XMLHttpRequest" \
         "displayName":"営業 Slack",
         "sourceArchetype":"CHAT_CONTEXT",
         "sourceSystem":"slack",
-        "credentialRef":"xoxb-...",
+        "credentialRef":"ingest.slack.sales.token",
         "enabled":true
       }' \
   "$BASE/api/v1/admin/connectors"
@@ -143,19 +145,59 @@ curl -s $CURLK -u admin:admin -X POST -H "X-Requested-With: XMLHttpRequest" \
 
 ## 2. 認証情報（credentialRef）の考え方
 
-NemakiWare はコネクタの `credentialRef` を **そのまま** 各サービスの認証に使います。
-サービスにより形式が違います（実装で確定している事実）：
+**`credentialRef` には秘密情報そのものを入れません。** `credentialRef` は
+「実トークンを解決するためのキー」で、取り込み実行時に全アダプタ共通の
+`FetchSupport.resolvePassword` → `PropertyManager.readValue(credentialRef)` が
+次の優先順で実トークンを解決します：
+
+1. **JVM システムプロパティ**：`-Dingest.slack.sites.token=xoxb-...`
+2. **環境変数**：キーを大文字化し `.` を `_` に置換した名前
+   （例 `ingest.slack.sites.token` → `INGEST_SLACK_SITES_TOKEN`）
+3. **動的設定**（`nemaki_conf` システム設定 DB。書き込みは super-user 権限が必要）
+4. **nemakiware.properties**
+
+どこにも見つからない場合、取り込みは `No token for <サービス> connector`
+エラーで失敗します。**トークン文字列を credentialRef に直接入れても動きません**
+（キーとして検索されて null になるだけ）。
+
+> **例外**: `webhookSecret` は credentialRef と異なり **リテラル値** として
+> コネクタに保存され、そのまま署名検証に使われます（キー解決されない）。
+
+### 推奨 provisioning: Docker secrets env_file
+
+`docker/secrets/ingest-connectors.env`（gitignore 済み）にトークンを置き、
+`docker-compose-simple.yml` の core サービス `env_file` で読み込みます
+（テンプレート: `docker/secrets/ingest-connectors.env.example`）：
+
+```bash
+# docker/secrets/ingest-connectors.env
+INGEST_SLACK_SITES_TOKEN=xoxb-...
+INGEST_NOTION_SITES_TOKEN=ntn_...
+```
+
+```yaml
+# docker-compose-simple.yml (core サービス)
+    env_file:
+      - path: ./secrets/ingest-connectors.env
+        required: false
+```
+
+環境変数は JVM 起動時に読まれるため、**変更後は core コンテナの再作成が必要**です
+（`docker compose -f docker-compose-simple.yml up -d --build --force-recreate core`。
+`restart` では env_file の変更は反映されません）。
+
+### 解決された実トークンの使われ方（サービス別）
 
 - **Bearer トークン系**（Slack/Teams/Mattermost/Gmail/M365/Notion/Salesforce/Box/Dropbox）：
-  `Authorization: Bearer {credentialRef}` として送信。→ credentialRef には
-  アクセストークン/Bot トークン/Integration トークンをそのまま入れる。
-- **Chatwork**：`X-ChatWorkToken: {credentialRef}`（Bearer ではない）。
-- **IMAP**：`credentialRef` はパスワード、`tenantId` がログインユーザ名（メールアドレス）。
+  `Authorization: Bearer {解決されたトークン}` として送信。
+- **Chatwork**：`X-ChatWorkToken: {解決されたトークン}`（Bearer ではない）。
+- **IMAP**：解決された値はパスワード、`tenantId` がログインユーザ名（メールアドレス）。
 
 **OAuth2 系の注意**：Slack の Bot トークン・Notion の Integration トークンは
 基本的に長期有効ですが、Microsoft Graph / Gmail / Salesforce / Box / Dropbox の
-「アクセストークン」は**短命（数十分〜数時間）**です。本ガイドのトークンは
-「まず疎通確認・手動取り込みを試す」ためのものとして扱い、継続運用では
+「アクセストークン」は**短命（数十分〜数時間）**です。env_file 方式では失効の
+たびに「トークン再発行 → env 更新 → core 再作成」が必要になるため、本ガイドの
+トークンは「まず疎通確認・手動取り込みを試す」ためのものとして扱い、継続運用では
 リフレッシュトークンからの更新運用（または長期トークンの発行）を別途検討してください。
 
 ---
@@ -183,7 +225,8 @@ NemakiWare はコネクタの `credentialRef` を **そのまま** 各サービ�
    「リンクをコピー」の末尾 `C0…`、または details の最下部）。
 
 **B. コネクタ定義**
-- 種別 `CHAT_CONTEXT`、接続先 `slack`、credentialRef = `xoxb-…`。
+- 種別 `CHAT_CONTEXT`、接続先 `slack`、credentialRef = キー
+  （例 `ingest.slack.sales.token`。実トークン `xoxb-…` は §2 で provision）。
 - endpoint は空（既定 `https://slack.com/api`）。
 - Webhook を使う場合は webhookSecret に Slack の **Signing Secret**
   （アプリの Basic Information → App Credentials）を設定。
@@ -221,7 +264,8 @@ NemakiWare はコネクタの `credentialRef` を **そのまま** 各サービ�
    `groupId=`（=teamId）と `channel/…`、または Graph で `/teams` `/channels` を照会）。
 
 **B. コネクタ定義**
-- 種別 `CHAT_CONTEXT`、接続先 `teams`、credentialRef = 取得したアクセストークン。
+- 種別 `CHAT_CONTEXT`、接続先 `teams`、credentialRef = キー
+  （実値は取得したアクセストークン、§2 で provision）。
 - endpoint は空（既定 Graph v1.0）。Webhook を使う場合 webhookSecret に Graph
   サブスクリプションの `clientState` を設定。
 
@@ -248,7 +292,7 @@ NemakiWare はコネクタの `credentialRef` を **そのまま** 各サービ�
 **B. コネクタ定義**
 - 種別 `CHAT_CONTEXT`、接続先 `mattermost`。
 - **endpoint は必須**：Mattermost サーバの base URL（例 `https://mm.example.com`）。
-- credentialRef = Personal Access / Bot Token。
+- credentialRef = キー（実値は Personal Access / Bot Token、§2 で provision）。
 
 **C. プロファイル**
 - `schedulerParams`：`channelId`（必須）、任意 `limit`。
@@ -266,7 +310,8 @@ Webhook はこのコネクタでは未対応（ポーリングのみ）。
    `GET /v2/rooms`）。
 
 **B. コネクタ定義**
-- 種別 `CHAT_CONTEXT`、接続先 `chatwork`、credentialRef = API Token。
+- 種別 `CHAT_CONTEXT`、接続先 `chatwork`、credentialRef = キー
+  （実値は API Token、§2 で provision）。
 - endpoint は空（既定 `https://api.chatwork.com/v2`）。
 - **認証ヘッダは `X-ChatWorkToken`**（Bearer ではない）で NemakiWare が自動送信。
 
@@ -290,7 +335,7 @@ Webhook はこのコネクタでは未対応（ポーリングのみ）。
 - 種別 `MESSAGE_CONTEXT`、接続先 `imap`。
 - **endpoint は必須**：`host:port`（ポート省略時は IMAPS 993）。
 - **tenantId は必須**：メールアドレス（ログインユーザ名）。
-- credentialRef = パスワード（または OAuth2 トークン）。
+- credentialRef = キー（実値はパスワード、または OAuth2 トークン。§2 で provision）。
 - authType：`password`（既定）または `oauth2`。
 
 **C. プロファイル**
@@ -311,7 +356,8 @@ Webhook 非対応（ポーリング。アダプタ内部では IDLE による継
    - 組織運用：サービスアカウント + ドメイン全体委任で対象ユーザを impersonate。
 
 **B. コネクタ定義**
-- 種別 `MESSAGE_CONTEXT`、接続先 `gmail_mail`、credentialRef = アクセストークン。
+- 種別 `MESSAGE_CONTEXT`、接続先 `gmail_mail`、credentialRef = キー
+  （実値はアクセストークン、§2 で provision）。
 - endpoint 不要。
 
 **C. プロファイル**
@@ -330,7 +376,8 @@ Webhook 非対応。アクセストークンは短命なので継続運用では
 - アクセストークンを取得。
 
 **B. コネクタ定義**
-- 種別 `MESSAGE_CONTEXT`、接続先 `m365_mail`、credentialRef = アクセストークン。
+- 種別 `MESSAGE_CONTEXT`、接続先 `m365_mail`、credentialRef = キー
+  （実値はアクセストークン、§2 で provision）。
 - endpoint は空（既定 Graph v1.0）。Webhook 利用時は webhookSecret に Graph `clientState`。
 
 **C. プロファイル**
@@ -355,7 +402,8 @@ Webhook 非対応。アクセストークンは短命なので継続運用では
    で、作成した integration を共有（共有しないと API から見えません）。
 
 **B. コネクタ定義**
-- 種別 `COMPOUND_NOTE`、接続先 `notion`、credentialRef = Integration Token。
+- 種別 `COMPOUND_NOTE`、接続先 `notion`、credentialRef = キー
+  （実値は Integration Token、§2 で provision）。
 - endpoint は空（既定 API、Notion-Version `2022-06-28` を自動送信）。
 
 **C. プロファイル**
@@ -377,7 +425,7 @@ Webhook 非対応。
 **B. コネクタ定義**
 - 種別 `BUSINESS_RECORD`、接続先 `salesforce`。
 - **endpoint は必須**：インスタンス URL。
-- credentialRef = アクセストークン。
+- credentialRef = キー（実値はアクセストークン、§2 で provision）。
 
 **C. プロファイル**
 - `schedulerParams`：`soql`（取得対象の SELECT クエリ。例
@@ -400,7 +448,8 @@ Webhook 非対応。
    ルートは `0`）。
 
 **B. コネクタ定義**
-- 種別 `FILE_SHARE`、接続先 `box`、credentialRef = アクセストークン。
+- 種別 `FILE_SHARE`、接続先 `box`、credentialRef = キー
+  （実値はアクセストークン、§2 で provision）。
 - endpoint 不要（API は `https://api.box.com/2.0` 固定）。
 
 **C. プロファイル**
@@ -419,7 +468,8 @@ Webhook 非対応。
    （継続運用はリフレッシュトークン運用を推奨）。
 
 **B. コネクタ定義**
-- 種別 `FILE_SHARE`、接続先 `dropbox`、credentialRef = アクセストークン。
+- 種別 `FILE_SHARE`、接続先 `dropbox`、credentialRef = キー
+  （実値はアクセストークン、§2 で provision）。
 - endpoint 不要（API は `https://api.dropboxapi.com/2` / content 固定）。
 
 **C. プロファイル**
@@ -458,7 +508,8 @@ POST https://<公開ホスト>/core/api/v1/ingest-webhook/<コネクタID>
 | 症状 | 確認ポイント |
 |---|---|
 | 取り込みが 0 件 | プロファイルの `schedulerParams` が早見表の必須キーを満たしているか／コネクタ ID が一致しているか |
-| 認証エラー | credentialRef のトークン形式（Slack=`xoxb-`、Chatwork は Bearer ではなく X-ChatWorkToken）／OAuth トークンの失効 |
+| `No token for <サービス> connector` | credentialRef キーが実トークンに解決できていない（§2）。env 変数名（キーを大文字化＋`.`→`_`）、env_file の記入、core コンテナ再作成（restart 不可）を確認。credentialRef にトークン文字列を直接入れていないか |
+| 認証エラー | provision した実トークンの形式（Slack=`xoxb-`、Chatwork は Bearer ではなく X-ChatWorkToken）／OAuth トークンの失効 |
 | Mattermost/IMAP/Salesforce で接続不可 | `endpoint`（必須）の設定漏れ。IMAP は `tenantId`（メールアドレス）も必須 |
 | Webhook が発火しない | 対応サービスか（Slack/Teams/M365/Chatwork のみ）／webhookSecret 設定／受信 URL／profile の scope 一致 |
 | 種別と接続先がちぐはぐ | §0 の早見表どおりの `sourceArchetype` × `sourceSystem` 組み合わせか |

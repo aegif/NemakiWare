@@ -122,6 +122,10 @@ services:
     env_file:
       - path: ./secrets/microsoft-entra.env
         required: false
+      # External connector secrets (Slack/Notion/Box/Dropbox ingest tokens).
+      # Resolved by each connector's credentialRef key. See secrets/ingest-connectors.env.
+      - path: ./secrets/ingest-connectors.env
+        required: false
     volumes:
       - ./secrets:/usr/local/tomcat/secrets:ro
     restart: on-failure
