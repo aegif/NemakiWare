@@ -158,6 +158,7 @@
  * - Test folders created in current directory (no specific path required)
  */
 import { test, expect } from '@playwright/test';
+import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 

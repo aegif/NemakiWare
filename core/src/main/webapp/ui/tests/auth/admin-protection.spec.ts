@@ -13,6 +13,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { generateTestId } from '../utils/test-helper';
 
 // CRITICAL: Run tests serially to avoid parallel login conflicts

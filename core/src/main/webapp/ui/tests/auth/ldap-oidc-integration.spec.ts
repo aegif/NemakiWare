@@ -27,6 +27,7 @@
  */
 
 import { test, expect, Page } from '@playwright/test';
+import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { isKeycloakAvailable, KEYCLOAK_SKIP_MESSAGE } from '../utils/test-state';
 
 // Skip entire file if Keycloak is not available

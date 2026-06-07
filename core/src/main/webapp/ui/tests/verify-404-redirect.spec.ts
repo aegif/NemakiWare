@@ -130,6 +130,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { waitForUiStable } from './utils/wait-helpers';
 import { AuthHelper } from './utils/auth-helper';
 
 test.describe('404 Error Handling Verification', () => {

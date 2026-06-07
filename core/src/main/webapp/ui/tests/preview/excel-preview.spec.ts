@@ -21,6 +21,7 @@
  * Re-enable after ensuring LibreOffice is available in test environment.
  */
 import { test, expect } from '@playwright/test';
+import { waitForUiStable } from '../utils/wait-helpers';
 import { setupPreviewTestData, cleanupPreviewTestData, type TestContext } from './preview-setup';
 
 let testContext: TestContext;

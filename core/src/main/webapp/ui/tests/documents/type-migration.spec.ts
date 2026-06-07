@@ -15,6 +15,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 

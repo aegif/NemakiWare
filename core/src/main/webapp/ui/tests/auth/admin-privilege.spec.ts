@@ -17,6 +17,7 @@
 
 import { test, expect } from '@playwright/test';
 
+import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
 test.describe.configure({ mode: 'serial' });
 
 const BASE_URL = 'http://localhost:8080';

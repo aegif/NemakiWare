@@ -11,6 +11,7 @@
  */
 
 import { test, expect, Page } from '@playwright/test';
+import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { generateTestId } from '../utils/test-helper';
 import { AuthHelper } from '../utils/auth-helper';
 import { getKeycloakUrl } from '../utils/test-state';

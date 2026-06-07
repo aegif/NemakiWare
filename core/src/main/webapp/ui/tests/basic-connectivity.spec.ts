@@ -117,6 +117,7 @@
 
 import { test, expect } from '@playwright/test';
 
+import { waitForUiStable } from './utils/wait-helpers';
 test.describe('Basic Connectivity Tests', () => {
   test('should load NemakiWare UI page', async ({ page }) => {
     // Navigate to the UI

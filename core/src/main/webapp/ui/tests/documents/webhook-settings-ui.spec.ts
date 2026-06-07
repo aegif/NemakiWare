@@ -13,6 +13,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { waitForUiStable } from '../utils/wait-helpers';
 import { ApiHelper, generateTestId } from '../utils/test-helper';
 import { AuthHelper } from '../utils/auth-helper';
 

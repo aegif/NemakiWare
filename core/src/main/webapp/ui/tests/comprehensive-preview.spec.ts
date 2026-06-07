@@ -5,6 +5,7 @@
  * Automatically sets up test folder and files before tests, cleans up after.
  */
 import { test, expect } from '@playwright/test';
+import { waitForUiStable } from './utils/wait-helpers';
 import * as fs from 'fs';
 import * as path from 'path';
 

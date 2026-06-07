@@ -20,6 +20,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { waitForRender } from '../utils/wait-helpers';
 import { isKeycloakAvailable, KEYCLOAK_SKIP_MESSAGE } from '../utils/test-state';
 
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://localhost:8088';

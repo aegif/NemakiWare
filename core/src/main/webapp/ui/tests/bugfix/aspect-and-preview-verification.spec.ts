@@ -33,6 +33,7 @@
  */
 
 import { test, expect, Page } from '@playwright/test';
+import { waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 
 // Test configuration

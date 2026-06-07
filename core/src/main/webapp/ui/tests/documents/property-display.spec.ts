@@ -8,6 +8,7 @@
  */
 
 import { test, expect, Page, APIRequestContext } from '@playwright/test';
+import { waitForRender } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 

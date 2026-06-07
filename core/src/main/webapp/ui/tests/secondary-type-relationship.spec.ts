@@ -33,6 +33,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { waitForRender, waitForUiStable } from './utils/wait-helpers';
 import { generateTestId } from './utils/test-helper';
 
 // Test data
