@@ -618,7 +618,7 @@ test.describe.serial('Import/Export Feature', () => {
         `${BASE_URL}/core/rest/repo/bedroom/importexport/filesystem/import/${rootId}`,
         {
           headers: AUTH_JSON_HEADERS,
-          data: { sourcePath: '/nonexistent/path/for/testing' }
+          data: { sourcePath: '/tmp/nemakiware-import/nonexistent-test-path' }
         }
       );
 
@@ -646,7 +646,7 @@ test.describe.serial('Import/Export Feature', () => {
         `${BASE_URL}/core/rest/repo/bedroom/importexport/filesystem/export/${rootId}`,
         {
           headers: AUTH_JSON_HEADERS,
-          data: { targetPath: '/nonexistent/path/for/testing', allowOverwrite: false }
+          data: { targetPath: '/tmp/nemakiware-export/nonexistent-test-path', allowOverwrite: false }
         }
       );
 
