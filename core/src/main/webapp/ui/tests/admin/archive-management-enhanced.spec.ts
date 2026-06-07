@@ -253,6 +253,9 @@ test.describe('Archive Management Enhanced', () => {
       await waitForUiStable(page);
 
       const tabs = page.locator('.ant-tabs-tab');
+      // Wait for the tab bar to finish rendering all tabs before counting
+      // (tabs mount progressively; counting too early sees only the first).
+      await expect(tabs.nth(2)).toBeVisible({ timeout: 15000 });
       const tabCount = await tabs.count();
 
       console.log(`Admin user sees ${tabCount} tabs`);

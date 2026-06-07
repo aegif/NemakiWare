@@ -575,8 +575,10 @@ test.describe.serial('Import/Export Feature', () => {
         await importButton.click();
         await waitForRender(page);
 
-        // Should show validation errors (Ant Design form validation)
+        // Should show validation errors (Ant Design form validation) — wait for
+        // the async validation to render the first error before counting.
         const validationErrors = page.locator('.ant-form-item-explain-error');
+        await expect(validationErrors.first()).toBeVisible({ timeout: 10000 });
         const errorCount = await validationErrors.count();
         console.log(`Validation errors shown: ${errorCount}`);
         expect(errorCount).toBeGreaterThan(0);

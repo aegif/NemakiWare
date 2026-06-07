@@ -62,8 +62,10 @@ test.describe('Config Viewer - Admin Access', () => {
     const table = page.locator('.ant-table');
     await expect(table).toBeVisible({ timeout: 10000 });
 
-    // Should have rows
+    // Should have rows — wait for the async config fetch to populate the table
+    // before counting (the container renders before the rows arrive).
     const rows = page.locator('.ant-table-tbody tr.ant-table-row');
+    await expect(rows.first()).toBeVisible({ timeout: 15000 });
     const rowCount = await rows.count();
     console.log(`Config viewer shows ${rowCount} properties`);
 
@@ -98,7 +100,9 @@ test.describe('Config Viewer - Admin Access', () => {
     await page.goto(`${BASE_URL}/core/ui/#/config-viewer`);
     await waitForUiStable(page, { timeout: 15000 });
 
-    // Source tags should be present (ant-tag elements)
+    // Source tags should be present (ant-tag elements) — wait for rows to load
+    // before counting tags (avoids counting an empty, not-yet-fetched table).
+    await expect(page.locator('.ant-table-tbody tr.ant-table-row').first()).toBeVisible({ timeout: 15000 });
     const tags = page.locator('.ant-table-tbody .ant-tag');
     const tagCount = await tags.count();
     console.log(`Found ${tagCount} source tags`);

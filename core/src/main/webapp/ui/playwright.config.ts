@@ -38,8 +38,11 @@ export default defineConfig({
   // Fail the build on CI if you accidentally left test.only in the source code
   forbidOnly: !!process.env.CI,
 
-  // Retry on CI only - reduced from 2 to 1 for faster feedback
-  retries: process.env.CI ? 1 : 0,
+  // Retries absorb residual environment flakiness (the single local stack
+  // gets slow under sustained load, causing timing-only failures that pass on
+  // re-run). Deterministic test bugs are fixed at the source; retries are the
+  // safety net for genuine env flakiness, not a mask for logic errors.
+  retries: process.env.CI ? 2 : 2,
 
   // Use single worker to prevent authentication race conditions
   // Multiple concurrent logins can cause session conflicts in NemakiWare

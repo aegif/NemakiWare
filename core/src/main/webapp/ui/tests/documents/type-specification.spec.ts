@@ -75,6 +75,12 @@ test.describe('Type Specification Features', () => {
         await waitForUiStable(page);
       }
 
+      // Wait for the dropdown options to load (types are fetched async from
+      // /type/list) before asserting on them — avoids counting an empty list.
+      await expect(
+        page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option').first()
+      ).toBeVisible({ timeout: 15000 });
+
       // Verify cmis:document option exists
       const documentOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: 'cmis:document' });
       const optionVisible = await documentOption.isVisible().catch(() => false);

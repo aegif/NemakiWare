@@ -506,9 +506,10 @@ test.describe('Advanced Search', () => {
     // Wait for search to complete
     await waitForUiStable(page);
 
-    // Verify search input is cleared after execution (not leaked CMIS query, not stale keyword)
-    const inputValueAfter = await searchInput.first().inputValue();
-    expect(inputValueAfter).toBe('');
+    // Verify search input is cleared after execution (not leaked CMIS query, not
+    // stale keyword). Poll: the clear is an async React state update that can
+    // land after waitForUiStable returns.
+    await expect(searchInput.first()).toHaveValue('', { timeout: 10000 });
 
     // Verify CMIS query display (i18n-safe)
     const queryDisplay = page.locator(':has-text("実行したCMISクエリ"), :has-text("Executed CMIS Query")');
