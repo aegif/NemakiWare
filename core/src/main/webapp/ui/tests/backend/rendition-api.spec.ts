@@ -25,7 +25,11 @@ const ADMIN_AUTH = Buffer.from('admin:admin').toString('base64');
 function getAuthHeader(isAdmin: boolean = true): { [key: string]: string } {
   return {
     'Authorization': `Basic ${ADMIN_AUTH}`,
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    // CSRF bypass for programmatic REST clients — Basic auth alone does not
+    // bypass CsrfInterceptor, so state-changing /api/v1/** calls return 403
+    // without this header.
+    'X-Requested-With': 'XMLHttpRequest'
   };
 }
 

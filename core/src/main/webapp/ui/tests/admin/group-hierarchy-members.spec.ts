@@ -564,13 +564,11 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       const groupBOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: groupBId });
 
       if (await groupBOption.count() > 0) {
-        // Check if the option has aria-disabled attribute or disabled class
-        const isDisabled = await groupBOption.evaluate((el) => {
-          return el.getAttribute('aria-disabled') === 'true' ||
-                 el.classList.contains('ant-select-item-option-disabled');
-        });
-
-        expect(isDisabled).toBe(true);
+        // The disabled state is applied by React (circularGroupIds useMemo)
+        // after the group data resolves, so it may not be present the instant
+        // the dropdown opens. Poll for the disabled class rather than reading
+        // it once.
+        await expect(groupBOption).toHaveClass(/ant-select-item-option-disabled/, { timeout: 10000 });
       }
 
       // Close dropdown
