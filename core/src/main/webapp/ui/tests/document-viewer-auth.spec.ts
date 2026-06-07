@@ -252,12 +252,12 @@ test.describe('Document Viewer Authentication', () => {
     if (hasDocumentDetails) {
       console.log('✅ Document details loaded successfully');
 
-      // Verify key document information is displayed
+      // Verify key document information is displayed. Poll for the properties
+      // tab (it renders asynchronously after the detail view mounts) rather
+      // than reading count() once.
+      await expect(page.locator('.ant-tabs-tab:has-text("プロパティ")').first()).toBeVisible({ timeout: 10000 });
       const hasObjectId = await page.locator('text=ID').count() > 0;
-      const hasProperties = await page.locator('.ant-tabs-tab:has-text("プロパティ")').count() > 0;
-
       expect(hasObjectId).toBe(true);
-      expect(hasProperties).toBe(true);
     } else {
       console.log('❌ Document details failed to load');
       expect(hasDocumentDetails).toBe(true);
