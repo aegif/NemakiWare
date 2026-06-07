@@ -89,8 +89,10 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     await submitButton.click(isMobile ? { force: true } : {});
     await waitForUiStable(page);
 
-    // Verify folder created
+    // Verify folder created — wait for the table to refresh and show the new
+    // row (loadObjects runs async after the create modal closes).
     const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: testFolderName }).first();
+    await expect(folderRow).toBeVisible({ timeout: 15000 });
     const folderExists = await folderRow.count() > 0;
     console.log(`Folder ${testFolderName} created: ${folderExists}`);
 

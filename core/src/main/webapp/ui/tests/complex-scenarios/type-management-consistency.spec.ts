@@ -247,8 +247,10 @@ test.describe('Type Management Consistency with Document Operations', () => {
     await submitButton.click(isMobile ? { force: true } : {});
     await waitForUiStable(page, { timeout: 15000 });
 
-    // Verify document created
+    // Verify document created — wait for the table to refresh and show the new
+    // row (loadObjects runs async after the upload modal closes).
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
+    await expect(documentRow).toBeVisible({ timeout: 15000 });
     const docExists = await documentRow.count() > 0;
     console.log(`Document ${testDocumentName} created: ${docExists}`);
 
