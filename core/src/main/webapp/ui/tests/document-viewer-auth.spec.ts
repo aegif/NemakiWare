@@ -255,7 +255,7 @@ test.describe('Document Viewer Authentication', () => {
       // Verify key document information is displayed. Poll for the properties
       // tab (it renders asynchronously after the detail view mounts) rather
       // than reading count() once.
-      await expect(page.locator('.ant-tabs-tab:has-text("プロパティ")').first()).toBeVisible({ timeout: 10000 });
+      await expect(page.locator('.ant-tabs-tab').filter({ hasText: /プロパティ|Properties/i }).first()).toBeVisible({ timeout: 10000 });
       const hasObjectId = await page.locator('text=ID').count() > 0;
       expect(hasObjectId).toBe(true);
     } else {

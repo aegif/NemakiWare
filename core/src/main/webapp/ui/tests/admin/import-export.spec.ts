@@ -630,7 +630,29 @@ test.describe.serial('Import/Export Feature', () => {
       expect(status).not.toBe(401);
       expect(status).not.toBe(403);
       // May get 200/400/500 depending on path validation/runtime environment
-      expect([200, 400, 500]).toContain(status);
+      expect([200, 400]).toContain(status);
+    });
+
+    test('should reject filesystem import to path outside allowed roots', async ({ page }) => {
+      // Security: filesystem import must reject paths outside the configured
+      // allowed roots (path-containment / traversal guard).
+      const rootRes = await page.request.get(
+        `${BASE_URL}/core/browser/bedroom/root?cmisselector=object`,
+        { headers: { 'Authorization': AUTH_HEADER } }
+      );
+      const rootData = await rootRes.json();
+      const rootId = rootData.properties['cmis:objectId'].value;
+
+      const res = await page.request.post(
+        `${BASE_URL}/core/rest/repo/bedroom/importexport/filesystem/import/${rootId}`,
+        {
+          headers: AUTH_JSON_HEADERS,
+          data: { sourcePath: '/etc/passwd' }
+        }
+      );
+      expect(res.status()).toBe(403);
+      const body = await res.json();
+      expect(String(body.message || '')).toMatch(/not within allowed filesystem roots/i);
     });
 
     test('should have filesystem export endpoint', async ({ page }) => {
@@ -654,7 +676,7 @@ test.describe.serial('Import/Export Feature', () => {
       console.log(`Filesystem export endpoint status: ${status}`);
       expect(status).not.toBe(401);
       expect(status).not.toBe(403);
-      expect([200, 400, 500]).toContain(status);
+      expect([200, 400]).toContain(status);
     });
   });
 
