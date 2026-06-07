@@ -606,8 +606,10 @@ test.describe('Group Management CRUD Operations', () => {
     console.log('[DEBUG] Test 5: Waiting for table to refresh...');
     await waitForUiStable(page);
 
-    // Verify group is removed from list
-    const deletedGroup = page.locator(`text=${TEST_GROUP_NAME}`);
+    // Verify group is removed from list — scope to table rows only, so the
+    // deletion success toast (which contains the group name) doesn't keep this
+    // matching after the row is gone.
+    const deletedGroup = page.locator('.ant-table-tbody tr').filter({ hasText: TEST_GROUP_NAME });
     await expect(deletedGroup).not.toBeVisible({ timeout: 10000 });
     console.log('[DEBUG] Test 5: Group successfully removed from list');
   });

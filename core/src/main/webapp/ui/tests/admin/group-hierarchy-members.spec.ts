@@ -127,7 +127,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         // Select first available user if any
         const userOptions = page.locator('.ant-select-dropdown .ant-select-item-option');
         if (await userOptions.count() > 0) {
-          await userOptions.first().click();
+          await page.keyboard.press('Enter'); // select highlighted (option portal may be off-viewport)
           await page.waitForTimeout(200);
         }
 
@@ -216,7 +216,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
           return;
         }
 
-        await groupOptions.first().click();
+        await page.keyboard.press('Enter'); // select highlighted
         await page.waitForTimeout(200);
 
         // Close dropdown by clicking modal title (Escape would close the modal)
@@ -485,7 +485,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         // Find and click group A option
         const groupAOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: groupAId });
         if (await groupAOption.count() > 0) {
-          await groupAOption.click();
+          await groupAOption.scrollIntoViewIfNeeded().catch(() => {}); await groupAOption.click({ force: true });
           await waitForRender(page);
         }
 

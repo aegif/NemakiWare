@@ -712,8 +712,10 @@ test.describe('Required Property Validation Tests', () => {
         has: page.locator('h4')
       });
 
-      // Count required indicators in custom properties
+      // Count required indicators in custom properties — wait for the section
+      // to render its fields before counting.
       const customRequiredIndicators = customPropsContainer.locator('span[style*="color: red"]');
+      await expect(customRequiredIndicators.first()).toBeVisible({ timeout: 10000 });
       const customIndicatorCount = await customRequiredIndicators.count();
 
       // Count total form items in custom properties (should match required indicators if all are required)
