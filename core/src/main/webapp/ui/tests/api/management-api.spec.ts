@@ -143,8 +143,14 @@ async function apiRequestWithAuth(
   const headers: { [key: string]: string } = {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
+    // CSRF bypass for programmatic REST clients (documented pattern): Basic
+    // auth is an ambient credential and does NOT bypass CsrfInterceptor, so
+    // state-changing /api/v1/** calls need X-Requested-With. Without it the
+    // requests are rejected with 403 before reaching auth/authorization, which
+    // masks the real behaviour the tests assert (200/201/401/403-by-authz).
+    'X-Requested-With': 'XMLHttpRequest',
   };
-  
+
   if (authHeader) {
     headers['Authorization'] = authHeader;
   }

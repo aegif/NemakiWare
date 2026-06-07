@@ -36,7 +36,8 @@ test.beforeAll(async ({ request }) => {
   if (ragEnabled) {
     try {
       const testResp = await request.post(`${RAG_BASE}/search`, {
-        headers: { 'Authorization': AUTH_HEADER, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': AUTH_HEADER,
+        'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/json' },
         data: { query: 'test', topK: 1 },
         timeout: 8000,
       });
@@ -84,6 +85,7 @@ test.describe('RAG Input Validation', () => {
     const response = await request.post(`${RAG_BASE}/search`, {
       headers: {
         'Authorization': AUTH_HEADER,
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json'
       },
       data: { query: '' }
@@ -96,6 +98,7 @@ test.describe('RAG Input Validation', () => {
     const response = await request.post(`${RAG_BASE}/search`, {
       headers: {
         'Authorization': AUTH_HEADER,
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json'
       },
       data: { query: 'test', topK: 0 }
@@ -107,6 +110,7 @@ test.describe('RAG Input Validation', () => {
     const response = await request.post(`${RAG_BASE}/search`, {
       headers: {
         'Authorization': AUTH_HEADER,
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json'
       },
       data: { query: 'test', minScore: -1.0 }
@@ -118,6 +122,7 @@ test.describe('RAG Input Validation', () => {
     const response = await request.post(`${RAG_BASE}/search`, {
       headers: {
         'Authorization': AUTH_HEADER,
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json'
       },
       data: { query: 'test', propertyBoost: -5.0 }
@@ -141,6 +146,7 @@ test.describe('RAG Input Validation', () => {
     const response = await request.post(invalidUrl, {
       headers: {
         'Authorization': AUTH_HEADER,
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json'
       },
       data: { query: 'test' }
@@ -167,6 +173,7 @@ test.describe('RAG Search (TEI required)', () => {
     const response = await request.post(`${RAG_BASE}/search`, {
       headers: {
         'Authorization': AUTH_HEADER,
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json'
       },
       data: { query: 'document management', topK: 5 }
@@ -181,6 +188,7 @@ test.describe('RAG Search (TEI required)', () => {
     const response = await request.post(`${RAG_BASE}/search`, {
       headers: {
         'Authorization': AUTH_HEADER,
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json'
       },
       data: { query: 'test', topK: 3 }
@@ -202,6 +210,7 @@ test.describe('RAG Search (TEI required)', () => {
     const response = await request.post(`${RAG_BASE}/search`, {
       headers: {
         'Authorization': AUTH_HEADER,
+        'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/json'
       },
       data: { query: 'test', folderId: rootId }

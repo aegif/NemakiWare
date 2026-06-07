@@ -21,7 +21,7 @@ test.describe('Health API', () => {
 
   test('GET /health returns 200 with status field', async ({ request }) => {
     const response = await request.get(`${API_BASE}/health`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(response.status()).toBe(200);
     const data = await response.json();
@@ -31,7 +31,7 @@ test.describe('Health API', () => {
 
   test('GET /health contains couchdb and memory checks', async ({ request }) => {
     const response = await request.get(`${API_BASE}/health`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(response.status()).toBe(200);
     const data = await response.json();
@@ -51,7 +51,7 @@ test.describe('Health API', () => {
 
   test('GET /health memory check has detail fields', async ({ request }) => {
     const response = await request.get(`${API_BASE}/health`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(response.status()).toBe(200);
     const data = await response.json();
@@ -68,7 +68,7 @@ test.describe('Stats API', () => {
 
   test('GET /repo/bedroom/stats returns repository and jvm sections', async ({ request }) => {
     const response = await request.get(`${API_BASE}/repo/${REPO_ID}/stats`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(response.status()).toBe(200);
     const data = await response.json();
@@ -79,7 +79,7 @@ test.describe('Stats API', () => {
 
   test('GET /repo/bedroom/stats contains JVM details', async ({ request }) => {
     const response = await request.get(`${API_BASE}/repo/${REPO_ID}/stats`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(response.status()).toBe(200);
     const data = await response.json();
@@ -93,7 +93,7 @@ test.describe('Stats API', () => {
 
   test('GET /repo/invalid-repo/stats returns error', async ({ request }) => {
     const response = await request.get(`${API_BASE}/repo/nonexistent-repo/stats`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     // Should return error (401 because auth filter can't resolve repo, or 404/500)
     expect(response.status()).toBeGreaterThanOrEqual(400);
@@ -104,7 +104,7 @@ test.describe('Metrics API (Prometheus)', () => {
 
   test('GET /repo/bedroom/metrics returns Prometheus format', async ({ request }) => {
     const response = await request.get(`${API_BASE}/repo/${REPO_ID}/metrics`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(response.status()).toBe(200);
     const text = await response.text();
@@ -114,7 +114,7 @@ test.describe('Metrics API (Prometheus)', () => {
 
   test('GET /repo/bedroom/metrics contains JVM metrics', async ({ request }) => {
     const response = await request.get(`${API_BASE}/repo/${REPO_ID}/metrics`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(response.status()).toBe(200);
     const text = await response.text();
@@ -124,7 +124,7 @@ test.describe('Metrics API (Prometheus)', () => {
 
   test('GET /repo/bedroom/metrics contains implemented metrics', async ({ request }) => {
     const response = await request.get(`${API_BASE}/repo/${REPO_ID}/metrics`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(response.status()).toBe(200);
     const text = await response.text();
@@ -138,7 +138,7 @@ test.describe.serial('Job Control API', () => {
 
   test('GET /repo/bedroom/jobs returns job status', async ({ request }) => {
     const response = await request.get(`${API_BASE}/repo/${REPO_ID}/jobs`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(response.status()).toBe(200);
     const data = await response.json();
@@ -150,7 +150,7 @@ test.describe.serial('Job Control API', () => {
 
   test('POST /jobs/pause then GET shows paused state', async ({ request }) => {
     const pauseRes = await request.post(`${API_BASE}/repo/${REPO_ID}/jobs/pause`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(pauseRes.status()).toBe(200);
     const pauseData = await pauseRes.json();
@@ -158,7 +158,7 @@ test.describe.serial('Job Control API', () => {
 
     // Verify GET also shows paused
     const getRes = await request.get(`${API_BASE}/repo/${REPO_ID}/jobs`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     const getData = await getRes.json();
     expect(getData.status).toBe('paused');
@@ -166,7 +166,7 @@ test.describe.serial('Job Control API', () => {
 
   test('POST /jobs/resume then GET shows running state', async ({ request }) => {
     const resumeRes = await request.post(`${API_BASE}/repo/${REPO_ID}/jobs/resume`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(resumeRes.status()).toBe(200);
     const resumeData = await resumeRes.json();
@@ -174,7 +174,7 @@ test.describe.serial('Job Control API', () => {
 
     // Verify GET also shows running
     const getRes = await request.get(`${API_BASE}/repo/${REPO_ID}/jobs`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     const getData = await getRes.json();
     expect(getData.status).toBe('running');

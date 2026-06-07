@@ -17,7 +17,7 @@ test.describe.serial('Audit Metrics API', () => {
 
   test('GET /audit/metrics returns 200 with valid JSON structure', async ({ request }) => {
     const response = await request.get(AUDIT_METRICS_URL, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(response.status()).toBe(200);
     const data = await response.json();
@@ -31,7 +31,7 @@ test.describe.serial('Audit Metrics API', () => {
 
   test('GET /audit/metrics contains _links and enabled fields', async ({ request }) => {
     const response = await request.get(AUDIT_METRICS_URL, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(response.status()).toBe(200);
     const data = await response.json();
@@ -42,7 +42,7 @@ test.describe.serial('Audit Metrics API', () => {
 
   test('GET /audit/metrics contains enabled and readAuditLevel', async ({ request }) => {
     const response = await request.get(AUDIT_METRICS_URL, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(response.status()).toBe(200);
     const data = await response.json();
@@ -52,7 +52,7 @@ test.describe.serial('Audit Metrics API', () => {
 
   test('GET /audit/metrics contains HATEOAS _links', async ({ request }) => {
     const response = await request.get(AUDIT_METRICS_URL, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(response.status()).toBe(200);
     const data = await response.json();
@@ -66,7 +66,7 @@ test.describe.serial('Audit Metrics API', () => {
 
   test('POST /audit/metrics/reset returns success with previous values', async ({ request }) => {
     const response = await request.post(`${AUDIT_METRICS_URL}/reset`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(response.status()).toBe(200);
     const data = await response.json();
@@ -78,11 +78,11 @@ test.describe.serial('Audit Metrics API', () => {
   test('GET /audit/metrics after reset shows zeroed counters', async ({ request }) => {
     // Reset first
     await request.post(`${AUDIT_METRICS_URL}/reset`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     // Then check
     const response = await request.get(AUDIT_METRICS_URL, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(response.status()).toBe(200);
     const data = await response.json();
@@ -93,7 +93,7 @@ test.describe.serial('Audit Metrics API', () => {
 
   test('GET /audit/metrics/prometheus returns Prometheus format', async ({ request }) => {
     const response = await request.get(`${AUDIT_METRICS_URL}/prometheus`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(response.status()).toBe(200);
     const text = await response.text();
@@ -103,7 +103,7 @@ test.describe.serial('Audit Metrics API', () => {
 
   test('GET /audit/metrics/prometheus contains nemakiware_audit_events_total', async ({ request }) => {
     const response = await request.get(`${AUDIT_METRICS_URL}/prometheus`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(response.status()).toBe(200);
     const text = await response.text();
@@ -121,12 +121,12 @@ test.describe.serial('Audit Metrics API', () => {
   test('CMIS operation increases audit total count', async ({ request }) => {
     // Reset counters
     await request.post(`${AUDIT_METRICS_URL}/reset`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
 
     // Perform a CMIS operation (get root children)
     await request.get(`${BASE_URL}/core/browser/bedroom/root?cmisselector=children`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
 
     // Wait briefly for async audit processing
@@ -134,7 +134,7 @@ test.describe.serial('Audit Metrics API', () => {
 
     // Check metrics increased
     const response = await request.get(AUDIT_METRICS_URL, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect(response.status()).toBe(200);
     const data = await response.json();

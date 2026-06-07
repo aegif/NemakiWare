@@ -141,6 +141,7 @@ test.describe('Password Change', () => {
       headers: {
         'Authorization': ADMIN_AUTH,
         'Content-Type': 'application/x-www-form-urlencoded',
+        ...REST_CSRF,
       },
       data: formData.toString(),
     });
@@ -201,6 +202,7 @@ test.describe('Password Change', () => {
       headers: {
         'Authorization': testAuth,
         'Content-Type': 'application/x-www-form-urlencoded',
+        ...REST_CSRF,
       },
       data: formData.toString(),
     });
@@ -224,6 +226,7 @@ test.describe('Password Change', () => {
       headers: {
         'Authorization': testAuth,
         'Content-Type': 'application/x-www-form-urlencoded',
+        ...REST_CSRF,
       },
       data: formData.toString(),
     });
@@ -241,6 +244,7 @@ test.describe('Password Change', () => {
       headers: {
         'Authorization': ADMIN_AUTH,
         'Content-Type': 'application/json',
+        ...REST_CSRF,
       },
       data: JSON.stringify({ minLength: 8 }),
     });
@@ -258,6 +262,7 @@ test.describe('Password Change', () => {
         headers: {
           'Authorization': testAuth,
           'Content-Type': 'application/x-www-form-urlencoded',
+          ...REST_CSRF,
         },
         data: formData.toString(),
       });
@@ -272,6 +277,7 @@ test.describe('Password Change', () => {
         headers: {
           'Authorization': ADMIN_AUTH,
           'Content-Type': 'application/json',
+          ...REST_CSRF,
         },
         data: JSON.stringify({ minLength: 0 }),
       });
