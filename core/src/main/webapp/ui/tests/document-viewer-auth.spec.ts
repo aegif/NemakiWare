@@ -224,14 +224,20 @@ test.describe('Document Viewer Authentication', () => {
     await expect(targetDocument).toBeVisible({ timeout: 10000 });
 
     console.log('📍 Clicking on first document to access detail view...');
-    await targetDocument.click({ force: true });
-
-    // Wait for document detail page to load — the detail view (Descriptions)
-    // renders asynchronously after navigation; poll for it before detection so
-    // we don't read the table-list state before the detail mounts.
-    await waitForUiStable(page);
-    await page.locator('.ant-descriptions, .ant-drawer .ant-descriptions, .ant-modal .ant-descriptions')
-      .first().waitFor({ state: 'visible', timeout: 12000 }).catch(() => {});
+    // The row/link click occasionally does not navigate to the detail view;
+    // retry the open until the Descriptions detail renders. Re-locate the row
+    // link each attempt and only click while still on the list (after a
+    // successful click the link is detached, so clicking it again would hang).
+    const detailLocator = page.locator('.ant-descriptions, .ant-drawer .ant-descriptions, .ant-modal .ant-descriptions');
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (await detailLocator.first().isVisible().catch(() => false)) break;
+      const docLink = page.locator('.ant-table-tbody tr:has(.anticon-file) button.ant-btn-link').first();
+      if (await docLink.count() === 0) break; // no longer on the list view
+      await docLink.click({ force: true }).catch(() => {});
+      await waitForUiStable(page);
+      await detailLocator.first().waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+      if (attempt < 2) await page.waitForTimeout(1000);
+    }
 
     // Check for authentication errors
     const hasLoginForm = await page.locator('input[placeholder*="ユーザー名"]').count() > 0;
