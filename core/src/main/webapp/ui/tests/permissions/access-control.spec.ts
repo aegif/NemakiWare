@@ -118,8 +118,6 @@ import { TestHelper, ApiHelper, generateTestId } from '../utils/test-helper';
  * - Batch deletion with re-query after each deletion to avoid stale elements
  */
 test.describe('Access Control and Permissions', () => {
-  // Login can be flaky due to Ant Design form timing; retry once
-  test.describe.configure({ retries: 1 });
 
   let authHelper: AuthHelper;
   let testHelper: TestHelper;

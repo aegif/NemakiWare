@@ -42,7 +42,7 @@ export default defineConfig({
   // gets slow under sustained load, causing timing-only failures that pass on
   // re-run). Deterministic test bugs are fixed at the source; retries are the
   // safety net for genuine env flakiness, not a mask for logic errors.
-  retries: process.env.CI ? 2 : 2,
+  retries: 2,
 
   // Use single worker to prevent authentication race conditions
   // Multiple concurrent logins can cause session conflicts in NemakiWare

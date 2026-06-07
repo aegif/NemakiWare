@@ -25,7 +25,6 @@ import { TestHelper } from '../utils/test-helper';
 const BASE_URL = 'http://localhost:8080';
 
 test.describe('Integration Settings - Page Rendering', () => {
-  test.describe.configure({ retries: 1 });
 
   let authHelper: AuthHelper;
   let testHelper: TestHelper;

@@ -27,8 +27,6 @@ const BASE_URL = 'http://localhost:8080';
 const REPOSITORY_ID = 'bedroom';
 
 test.describe('Config Viewer - Admin Access', () => {
-  // Login can be flaky due to Ant Design form timing; retry once
-  test.describe.configure({ retries: 1 });
 
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
