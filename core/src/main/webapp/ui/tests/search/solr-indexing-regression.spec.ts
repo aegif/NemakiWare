@@ -165,13 +165,16 @@ test.describe('Solr Indexing Regression Tests', () => {
 
     // Step 3: Wait for Solr indexing and search
     console.log('Waiting for Solr indexing...');
-    await waitForUiStable(page, { timeout: 15000 }); // Solr indexing
+    // Real timed wait — Solr indexing is asynchronous (CouchDB→Solr tracker).
+    // NOTE: waitForUiStable returns as soon as the UI is idle and does NOT
+    // sleep, so it cannot be used to wait for backend indexing.
+    await page.waitForTimeout(5000); // initial Solr indexing grace
 
-    // Search via CMIS query (Solr-backed)
+    // Search via CMIS query (Solr-backed), polling with real delays.
     let found = false;
-    for (let attempt = 0; attempt < 5; attempt++) {
+    for (let attempt = 0; attempt < 12; attempt++) {
       const queryResponse = await page.request.get(
-        `http://localhost:8080/core/browser/bedroom?cmisselector=query&q=${encodeURIComponent(`SELECT * FROM cmis:document WHERE CONTAINS('${uniqueDescription}')`)}`,
+        `http://localhost:8080/core/browser/bedroom?cmisselector=query&q=${encodeURIComponent(`SELECT * FROM cmis:document WHERE cmis:description LIKE '%${uniqueDescription}%'`)}`,
         { headers: { 'Authorization': authHeader } }
       );
 
@@ -185,7 +188,7 @@ test.describe('Solr Indexing Regression Tests', () => {
       }
 
       console.log(`  Attempt ${attempt + 1}: not found yet, waiting...`);
-      await waitForUiStable(page, { timeout: 15000 });
+      await page.waitForTimeout(5000); // real wait between Solr polls
     }
 
     // Also verify via UI search
@@ -313,10 +316,12 @@ test.describe('Solr Indexing Regression Tests', () => {
     const resultsTable = page.locator('.ant-table tbody tr');
     let resultCount = await resultsTable.count();
 
-    if (resultCount === 0) {
-      console.log('⚠️ Document not found immediately - waiting for Solr indexing...');
-      await waitForUiStable(page, { timeout: 20000 }); // Solr indexing
-
+    // Poll with real timed waits — Solr indexing is asynchronous and
+    // waitForUiStable does not actually sleep, so a single re-query is not
+    // enough to let the tracker index the new document.
+    for (let attempt = 0; attempt < 10 && resultCount === 0; attempt++) {
+      console.log(`⚠️ Not found yet - waiting for Solr indexing (attempt ${attempt + 1})...`);
+      await page.waitForTimeout(5000);
       await searchInput.fill(uniqueFileName.replace('.txt', ''));
       if (await searchButton.count() > 0) {
         await searchButton.click(isMobile ? { force: true } : {});
@@ -324,7 +329,6 @@ test.describe('Solr Indexing Regression Tests', () => {
         await searchInput.press('Enter');
       }
       await waitForUiStable(page);
-
       resultCount = await resultsTable.count();
     }
 
@@ -435,9 +439,10 @@ test.describe('Solr Indexing Regression Tests', () => {
     const resultsBeforeDelete = page.locator('.ant-table tbody tr');
     let countBeforeDelete = await resultsBeforeDelete.count();
 
-    if (countBeforeDelete === 0) {
-      // Wait for indexing
-      await waitForUiStable(page, { timeout: 20000 }); // Solr indexing
+    // Poll with real timed waits for Solr to index the new document
+    // (waitForUiStable does not sleep; a single re-query is not enough).
+    for (let attempt = 0; attempt < 10 && countBeforeDelete === 0; attempt++) {
+      await page.waitForTimeout(5000);
       await searchInput.fill(uniqueFileName.replace('.txt', ''));
       if (await searchButton.count() > 0) {
         await searchButton.click(isMobile ? { force: true } : {});
@@ -484,8 +489,21 @@ test.describe('Solr Indexing Regression Tests', () => {
 
     await waitForUiStable(page, { timeout: 15000 });
 
+    // Solr removal is asynchronous too — poll with real waits until the
+    // deleted document drops out of the search results.
     const resultsAfterDelete = page.locator('.ant-table tbody tr').filter({ hasText: uniqueFileName });
-    const countAfterDelete = await resultsAfterDelete.count();
+    let countAfterDelete = await resultsAfterDelete.count();
+    for (let attempt = 0; attempt < 10 && countAfterDelete > 0; attempt++) {
+      await page.waitForTimeout(5000);
+      await searchInput.fill(uniqueFileName.replace('.txt', ''));
+      if (await searchButton.count() > 0) {
+        await searchButton.click(isMobile ? { force: true } : {});
+      } else {
+        await searchInput.press('Enter');
+      }
+      await waitForUiStable(page);
+      countAfterDelete = await resultsAfterDelete.count();
+    }
 
     expect(countAfterDelete).toBe(0);
     console.log('✅ Deleted document NOT found in search results - Solr deletion indexing working');

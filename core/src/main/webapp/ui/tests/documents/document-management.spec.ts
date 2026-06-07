@@ -442,12 +442,10 @@ test.describe('Document Management', () => {
         console.log(`DEBUG: Modal still visible: ${modalVisible}`);
       }
 
-      // Wait for modal to close
-      await waitForUiStable(page);
-
-      // Verify modal is closed
-      const modalVisible = await page.locator('.ant-modal:not(.ant-modal-hidden)').isVisible().catch(() => false);
-      expect(modalVisible).toBe(false);
+      // Verify modal closes after a successful upload — poll until hidden
+      // (the close is an async React state update; waitForUiStable does not
+      // wait for it).
+      await expect(page.locator('.ant-modal:not(.ant-modal-hidden)')).not.toBeVisible({ timeout: 15000 });
 
       // CRITICAL FIX (2025-12-24): Wait for table to refresh after successful upload
       // The upload was successful (API returned 201), now wait for UI to update
