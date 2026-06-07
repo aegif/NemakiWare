@@ -425,6 +425,7 @@ test.describe('Required Property Validation Tests', () => {
         has: page.locator('h4')
       });
       const requiredIndicator = customPropsContainer.locator('span[style*="color: red"], span[style*="color:red"]');
+      await expect(requiredIndicator.first()).toBeVisible({ timeout: 10000 });
       const indicatorCount = await requiredIndicator.count();
       console.log(`Found ${indicatorCount} required indicator(s) in custom properties section`);
       expect(indicatorCount).toBeGreaterThan(0);
@@ -448,6 +449,7 @@ test.describe('Required Property Validation Tests', () => {
       // STEP 6: Verify validation error appears
       console.log('STEP 6: Checking for validation error');
       const validationErrors = modal.locator('.ant-form-item-explain-error');
+      await expect(validationErrors.first()).toBeVisible({ timeout: 10000 });
       const errorCount = await validationErrors.count();
       console.log(`Validation errors found: ${errorCount}`);
 
@@ -473,7 +475,9 @@ test.describe('Required Property Validation Tests', () => {
       await waitForUiStable(page);
 
       // STEP 9: Verify success
-      const modalStillVisible = await modal.isVisible();
+      // Wait for the modal to close (async React re-render after a successful
+      // create); only then is it safe to decide success vs failure.
+      const modalStillVisible = !(await modal.waitFor({ state: 'hidden', timeout: 15000 }).then(() => true).catch(() => false));
       const successMessage = page.locator('.ant-message-success');
 
       if (!modalStillVisible || await successMessage.count() > 0) {
@@ -579,6 +583,7 @@ test.describe('Required Property Validation Tests', () => {
         has: page.locator('h4')
       });
       const requiredIndicator = customPropsContainer.locator('span[style*="color: red"], span[style*="color:red"]');
+      await expect(requiredIndicator.first()).toBeVisible({ timeout: 10000 });
       const indicatorCount = await requiredIndicator.count();
       console.log(`Found ${indicatorCount} required indicator(s) in custom properties section`);
       expect(indicatorCount).toBeGreaterThan(0);
@@ -598,6 +603,7 @@ test.describe('Required Property Validation Tests', () => {
       // STEP 6: Verify validation error appears
       console.log('STEP 6: Checking for validation error');
       const validationErrors = modal.locator('.ant-form-item-explain-error');
+      await expect(validationErrors.first()).toBeVisible({ timeout: 10000 });
       const errorCount = await validationErrors.count();
       console.log(`Validation errors found: ${errorCount}`);
 
@@ -616,7 +622,9 @@ test.describe('Required Property Validation Tests', () => {
       await waitForUiStable(page);
 
       // STEP 9: Verify success
-      const modalStillVisible = await modal.isVisible();
+      // Wait for the modal to close (async React re-render after a successful
+      // create); only then is it safe to decide success vs failure.
+      const modalStillVisible = !(await modal.waitFor({ state: 'hidden', timeout: 15000 }).then(() => true).catch(() => false));
       const successMessage = page.locator('.ant-message-success');
 
       if (!modalStillVisible || await successMessage.count() > 0) {

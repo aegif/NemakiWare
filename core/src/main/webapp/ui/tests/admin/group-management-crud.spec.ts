@@ -385,7 +385,7 @@ test.describe('Group Management CRUD Operations', () => {
       const userOption = page.locator('.ant-select-item:has-text("testuser")').first();
       if (await userOption.count() > 0) {
         console.log('[DEBUG] Test 2: Selecting testuser');
-        await userOption.click({ force: true });
+        await page.keyboard.press('Enter'); // select highlighted match (option portal may be outside viewport)
       } else {
         // Clear and try admin
         for (let i = 0; i < 8; i++) await page.keyboard.press('Backspace');
@@ -394,7 +394,7 @@ test.describe('Group Management CRUD Operations', () => {
         const adminOption = page.locator('.ant-select-item:has-text("admin")').first();
         await expect(adminOption).toBeVisible({ timeout: 3000 });
         console.log('[DEBUG] Test 2: Selecting admin');
-        await adminOption.click({ force: true });
+        await page.keyboard.press('Enter'); // select highlighted match
       }
 
       // Close dropdown before submit
