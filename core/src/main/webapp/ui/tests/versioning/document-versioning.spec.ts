@@ -495,40 +495,37 @@ test.describe('Document Versioning', () => {
     await documentRow.click(isMobile ? { force: true } : {});
     await waitForRender(page);
 
-    // Look for version history button (might be in context menu or toolbar)
-    const versionHistoryButton = page.locator('button, .ant-btn, .ant-menu-item').filter({
-      hasText: /バージョン履歴|バージョン|Version.*History|Versions/i
-    }).first();
-
-    if (await versionHistoryButton.count() > 0) {
-      await versionHistoryButton.click(isMobile ? { force: true } : {});
-      await waitForUiStable(page);
-
-      // Version history modal/panel must appear after clicking the button
-      const versionHistoryModal = page.locator('.ant-modal, .ant-drawer').filter({
-        has: page.locator('text=/バージョン履歴|Version.*History/i')
-      });
-      await expect(versionHistoryModal).toBeVisible({ timeout: 10000 });
-
-      // Verify at least one version is listed (initial version 1.0)
-      const versionListItems = page.locator('.ant-table-tbody tr, .ant-list-item').filter({
-        hasText: /1\.0|v1/i
-      });
-      await expect(versionListItems.first()).toBeVisible({ timeout: 5000 });
-
-      // Close the modal
-      const closeButton = page.locator('.ant-modal-close, button').filter({ hasText: /閉じる|Close|キャンセル/i }).first();
-      if (await closeButton.count() > 0) {
-        await closeButton.click();
-      }
+    // Open the document detail view via its name link (a button.ant-btn-link),
+    // falling back to the row itself for mobile layouts.
+    const detailLink = documentRow.locator('button.ant-btn-link').first();
+    if (await detailLink.count() > 0) {
+      await detailLink.click(isMobile ? { force: true } : {});
     } else {
-      // UPDATED (2025-12-26): Version history button IS implemented in DocumentList.tsx lines 983-989
-      test.skip('ENV: Version history button not visible - document may not be versionable');
-      return;
+      await documentRow.click(isMobile ? { force: true } : {});
+    }
+    await waitForUiStable(page);
+
+    // Version history is NOT a modal: DocumentViewer renders it as a tab
+    // (tabItems key 'versions', label t('documentViewer.versionHistory') =
+    // "バージョン履歴" / "Version History") whose panel holds a Table with a
+    // `versionLabel` column. Click that tab and assert the table has a row.
+    const versionTab = page.getByRole('tab', { name: /バージョン履歴|Version\s*History/i }).first();
+    await expect(versionTab).toBeVisible({ timeout: 10000 });
+    await versionTab.click();
+    await waitForUiStable(page);
+
+    // A freshly uploaded document lists at least its initial version.
+    const versionRows = page.locator('.ant-tabs-tabpane-active .ant-table-tbody tr.ant-table-row');
+    await expect(versionRows.first()).toBeVisible({ timeout: 10000 });
+
+    // Return to the document list for cleanup (i18n back button: 戻る / Back).
+    const backToList = page.getByRole('button', { name: /戻る|Back/i }).first();
+    if (await backToList.count() > 0) {
+      await backToList.click({ force: true });
+      await waitForUiStable(page);
     }
 
     // Cleanup: Delete the test document
-    // Wait for modal to close if still open
     await waitForRender(page);
 
     const cleanupDocRow3 = page.locator('.ant-table-tbody tr').filter({ hasText: filename }).first();
