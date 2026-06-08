@@ -241,16 +241,31 @@ test.describe('CMIS API 404 Error Handling', () => {
     await expect(firstDocument).toBeVisible({ timeout: 10000 });
     await firstDocument.click({ force: true });
 
-    // Wait for 404 error handling and potential redirect
+    // Wait for 404 error handling and potential redirect. The graceful outcome
+    // is one of: a login form (handleAuthError logout), a transient toast
+    // (.ant-message — auto-dismisses, so it must not be the only signal we rely
+    // on), or the persistent inline error Alert that DocumentViewer renders when
+    // loadObject fails (`if (loadError) return <Alert type="error" .../>`).
+    // Poll for any of those instead of reading a transient toast after a fixed
+    // settle, which races the toast's auto-dismiss.
     await waitForUiStable(page);
+    // Scope to *error* variants only so an unrelated info/success toast can't
+    // make the test pass: the 404 path raises a `.ant-message-error` toast and
+    // renders a persistent `.ant-alert-error` Alert (DocumentViewer loadObject
+    // catch + `if (loadError) return <Alert type="error" .../>`).
+    const gracefulIndicator = page.locator(
+      'input[placeholder*="ユーザー名"], .ant-alert-error, .ant-message-error, .ant-notification-error'
+    );
+    await gracefulIndicator.first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
 
     // Check current URL and page state after API error
     const currentUrl = page.url();
     console.log('Current URL after 404:', currentUrl);
 
-    // After 404 error, should be redirected to login OR stay on documents with error message
+    // After 404 error, should be redirected to login OR stay on documents with
+    // a 404-driven error indicator (transient error toast or persistent Alert)
     const isOnLoginPage = currentUrl.includes('index.html') && !currentUrl.includes('#/documents');
-    const hasErrorMessage = await page.locator('.ant-message, .ant-notification').count() > 0;
+    const hasErrorMessage = await page.locator('.ant-message-error, .ant-notification-error, .ant-alert-error').count() > 0;
     const hasLoginForm = await page.locator('input[placeholder*="ユーザー名"]').count() > 0;
 
     console.log('Is on login page:', isOnLoginPage);

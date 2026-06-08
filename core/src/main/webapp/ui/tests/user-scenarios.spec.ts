@@ -445,8 +445,12 @@ test.describe('User Scenario Tests', () => {
       await secondaryTab.click();
       await waitForUiStable(page);
 
-      // SecondaryTypeSelector renders Select only when unassigned types exist
-      const selector = page.locator('.ant-select').first();
+      // SecondaryTypeSelector renders Select only when unassigned types exist.
+      // Scope to the active tab panel — `page.locator('.ant-select').first()`
+      // would otherwise grab a layout-level Select (repository/language switcher)
+      // instead of the secondary-type picker, so the wrong dropdown opens and the
+      // Add button stays disabled.
+      const selector = page.locator('.ant-tabs-tabpane-active .ant-select').first();
       if (await selector.count() === 0 || !(await selector.isVisible())) {
         test.skip('ENV: All secondary types already assigned — no add operation possible');
         return;
@@ -461,11 +465,26 @@ test.describe('User Scenario Tests', () => {
         return;
       }
 
-      await options.first().click();
+      // Select the first option via keyboard. A portal-rendered AntD option can
+      // be reported "outside viewport" and a plain .click() may not register the
+      // onChange (leaving selectedTypeId empty), which keeps the Add button
+      // `disabled={!selectedTypeId}` and makes the later click() time out.
+      // ArrowDown+Enter reliably commits the highlighted option.
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('Enter');
       await waitForRender(page);
 
-      const addButton = page.getByRole('button', { name: /追加|Add/i });
-      await expect(addButton).toBeVisible({ timeout: 5000 });
+      // Confirm a value was actually committed (the keyboard path could be a
+      // no-op if focus wasn't on the open dropdown). The picker renders a
+      // `.ant-select-selection-item` once a type is chosen.
+      await expect(selector.locator('.ant-select-selection-item')).toBeVisible({ timeout: 5000 });
+
+      // The Add button is disabled until a type is selected — wait for it to
+      // become enabled before clicking (otherwise click() times out on a
+      // non-actionable disabled button).
+      const addButton = page.locator('.ant-tabs-tabpane-active')
+        .getByRole('button', { name: /追加|Add/i }).first();
+      await expect(addButton).toBeEnabled({ timeout: 5000 });
       await addButton.click();
       await waitForUiStable(page);
 

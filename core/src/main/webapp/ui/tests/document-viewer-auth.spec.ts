@@ -228,11 +228,26 @@ test.describe('Document Viewer Authentication', () => {
     // retry the open until the Descriptions detail renders. Re-locate the row
     // link each attempt and only click while still on the list (after a
     // successful click the link is detached, so clicking it again would hang).
-    const detailLocator = page.locator('.ant-descriptions, .ant-drawer .ant-descriptions, .ant-modal .ant-descriptions');
+    // Wait for the actual metadata cells (not just the container): a bordered
+    // Descriptions renders `.ant-descriptions-item-label` rows once the object
+    // has loaded, which is the real "detail fully rendered" signal. If only the
+    // container shows (e.g. a transient loadObject error), re-open the document.
+    const detailLocator = page.locator('.ant-descriptions-item-label');
     for (let attempt = 0; attempt < 3; attempt++) {
       if (await detailLocator.first().isVisible().catch(() => false)) break;
       const docLink = page.locator('.ant-table-tbody tr:has(.anticon-file) button.ant-btn-link').first();
-      if (await docLink.count() === 0) break; // no longer on the list view
+      if (await docLink.count() === 0) {
+        // No longer on the list view but content not visible: a transient
+        // detail-load error. Go back to the list and retry the open.
+        const back = page.getByRole('button', { name: /戻る|Back/i });
+        if (await back.count() > 0) {
+          await back.click({ force: true }).catch(() => {});
+          await waitForUiStable(page);
+          await page.waitForTimeout(800);
+          continue;
+        }
+        break;
+      }
       await docLink.click({ force: true }).catch(() => {});
       await waitForUiStable(page);
       await detailLocator.first().waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
@@ -266,15 +281,19 @@ test.describe('Document Viewer Authentication', () => {
       // its metadata rows (including the object id) are rendered. Verify the
       // properties tab is present and the descriptions table carries content.
       await expect(page.locator('.ant-tabs-tab').filter({ hasText: /プロパティ|Properties/i }).first()).toBeVisible({ timeout: 10000 });
-      const descRowCount = await page.locator('.ant-descriptions-item').count();
+      // NOTE: the metadata Descriptions is rendered with `bordered`, so Ant
+      // Design 5 emits `.ant-descriptions-item-label` / `-content` cells
+      // directly without a wrapping `.ant-descriptions-item` element. Count the
+      // label cells (present in both bordered and non-bordered layouts).
+      const descRowCount = await page.locator('.ant-descriptions-item-label').count();
       expect(descRowCount).toBeGreaterThan(0);
     } else {
       console.log('❌ Document details failed to load');
       expect(hasDocumentDetails).toBe(true);
     }
 
-    // Verify back button works
-    const backButton = page.locator('button:has-text("戻る")');
+    // Verify back button works (i18n: 戻る / Back)
+    const backButton = page.getByRole('button', { name: /戻る|Back/i }).first();
     if (await backButton.count() > 0) {
       await backButton.click({ force: true });
       await waitForUiStable(page);
