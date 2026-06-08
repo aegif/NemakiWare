@@ -801,6 +801,12 @@ test.describe('Type REST API - Folder Types', () => {
 
 test.describe('Type REST API - All Property Types', () => {
   test('POST /create - should create type with all CMIS property types', async ({ request }) => {
+    // Creating a type with many distinct queryable property types triggers a
+    // Solr managed-schema reload per added field, so the create and the matching
+    // delete each legitimately take ~30s on this backend. Give the whole test
+    // and each slow REST call enough headroom (default test=60s, request=30s
+    // would otherwise expire mid-operation).
+    test.setTimeout(150000);
     const suffix = `allprops${generateTestId()}`;
     const typeWithAllProps = {
       id: `test:allPropertyTypes${suffix}`,
@@ -898,7 +904,8 @@ test.describe('Type REST API - All Property Types', () => {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
-      data: JSON.stringify(typeWithAllProps)
+      data: JSON.stringify(typeWithAllProps),
+      timeout: 60000 // Solr schema reload per property type can take ~30s
     });
 
     expect(response.status()).toBe(200);
@@ -912,7 +919,8 @@ test.describe('Type REST API - All Property Types', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 60000
     });
 
     if (verifyResponse.status() === 200) {
@@ -928,7 +936,8 @@ test.describe('Type REST API - All Property Types', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 60000 // delete also reloads the Solr schema (~30s)
     });
   });
 

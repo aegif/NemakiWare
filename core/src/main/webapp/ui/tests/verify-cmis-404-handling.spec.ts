@@ -309,7 +309,9 @@ test.describe('CMIS API 404 Error Handling', () => {
     // Wait for navigation and UI initialization (longer timeout for webkit/tablet)
     await waitForUiStable(page, { timeout: 15000 });
 
-    await expect(page.locator('.ant-table')).toBeVisible({ timeout: 15000 });
+    // Generous timeout: the initial document list is a Solr-backed query that
+    // can be slow right after login under parallel load.
+    await expect(page.locator('.ant-table')).toBeVisible({ timeout: 30000 });
     console.log('✅ Login successful');
 
     // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
