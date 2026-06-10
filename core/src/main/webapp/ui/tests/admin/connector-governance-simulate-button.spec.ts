@@ -9,13 +9,60 @@ const AUTH = {
 };
 const JSON_HEADERS = { ...AUTH, 'Content-Type': 'application/json' };
 
-// Real fixture present in the dev `bedroom` repo (see CLAUDE.md). The
-// group has 30+ members and contains the chosen user, so an expand=true
-// /by-principal/{user} lookup will return GROUP_ID in expandedPrincipals
-// → the simulate dropdown will offer it as a removable principal.
-const TEST_GROUP = 'cloud-google:a13@aegif.jp';
-const TEST_USER  = 'akinori.ishii@aegif.jp';
+// Self-provisioned fixtures (created/torn down by this spec's
+// beforeAll/afterAll). The group lists the user as a member, so an
+// expand=true /by-principal/{user} lookup returns the group in
+// expandedPrincipals → the simulate dropdown offers it as a removable
+// principal. We provision our own rather than depend on cloud-directory-
+// synced principals, which a clean `bedroom` (init dump only) does not have.
+const TEST_GROUP = 'gov-sim-group';
+const TEST_USER  = 'gov-sim-user';
 const TEST_CONNECTOR_ID = 'h2-simulate-button-test-conn';
+const REST_BASE = `${BASE_URL}/core/rest/repo/bedroom`;
+
+/**
+ * Provision the user + group (user is a member) + connector that grants
+ * both principals. Idempotent: best-effort delete first, then create.
+ * The legacy group/create resource takes the `users` form field as a JSON
+ * array string (see GroupItemResource / ResourceBase.FORM_MEMBER_USERS).
+ */
+async function ensureFixtures(request: import('@playwright/test').APIRequestContext) {
+  await request.delete(`${REST_BASE}/user/delete/${TEST_USER}`, { headers: AUTH }).catch(() => {});
+  const u = await request.post(`${REST_BASE}/user/create/${TEST_USER}`, {
+    headers: AUTH,
+    form: { name: TEST_USER, password: 'GovSim!2345' },
+  });
+  expect(u.ok(), 'provision test user').toBeTruthy();
+
+  await request.delete(`${REST_BASE}/group/delete/${TEST_GROUP}`, { headers: AUTH }).catch(() => {});
+  const g = await request.post(`${REST_BASE}/group/create/${TEST_GROUP}`, {
+    headers: AUTH,
+    form: { name: 'Gov Sim Group', users: JSON.stringify([TEST_USER]) },
+  });
+  expect(g.ok(), 'provision test group with member').toBeTruthy();
+
+  await request.delete(`${API_BASE}/${TEST_CONNECTOR_ID}`, { headers: AUTH }).catch(() => {});
+  const c = await request.post(API_BASE, {
+    headers: JSON_HEADERS,
+    data: {
+      connectorId: TEST_CONNECTOR_ID,
+      displayName: 'H2 Simulate Button Test',
+      sourceArchetype: 'FILE_SHARE',
+      sourceSystem: 'box',
+      delegated: true,
+      delegateAllFolders: true,    // skip per-folder ACL plumbing for the test
+      allowedPrincipalIds: [TEST_USER, TEST_GROUP],
+      enabled: true,
+    },
+  });
+  expect(c.ok(), 'provision test connector').toBeTruthy();
+}
+
+async function cleanupFixtures(request: import('@playwright/test').APIRequestContext) {
+  await request.delete(`${API_BASE}/${TEST_CONNECTOR_ID}`, { headers: AUTH }).catch(() => {});
+  await request.delete(`${REST_BASE}/group/delete/${TEST_GROUP}`, { headers: AUTH }).catch(() => {});
+  await request.delete(`${REST_BASE}/user/delete/${TEST_USER}`, { headers: AUTH }).catch(() => {});
+}
 
 /**
  * RC6 H2: Playwright + server contract coverage for the RC5.4 R3
@@ -40,28 +87,11 @@ test.describe.configure({ mode: 'serial' });
 
 test.describe('H2: simulate-remove server contract', () => {
   test.beforeAll(async ({ request }) => {
-    // Best-effort pre-clean from a previous failed run
-    await request.delete(`${API_BASE}/${TEST_CONNECTOR_ID}`, { headers: AUTH })
-      .catch(() => {});
-    const create = await request.post(API_BASE, {
-      headers: JSON_HEADERS,
-      data: {
-        connectorId: TEST_CONNECTOR_ID,
-        displayName: 'H2 Simulate Button Test',
-        sourceArchetype: 'FILE_SHARE',
-        sourceSystem: 'box',
-        delegated: true,
-        delegateAllFolders: true,    // skip per-folder ACL plumbing for the test
-        allowedPrincipalIds: [TEST_USER, TEST_GROUP],
-        enabled: true,
-      },
-    });
-    expect(create.ok()).toBeTruthy();
+    await ensureFixtures(request);
   });
 
   test.afterAll(async ({ request }) => {
-    await request.delete(`${API_BASE}/${TEST_CONNECTOR_ID}`, { headers: AUTH })
-      .catch(() => {});
+    await cleanupFixtures(request);
   });
 
   test('POST /simulate-remove returns 200 with lost+kept (sole-route detection)', async ({ request }) => {
@@ -209,29 +239,13 @@ test.describe('H2: simulate-remove server contract', () => {
 
 test.describe('H2: Simulate (audit) button UI flow', () => {
   test.beforeAll(async ({ request }) => {
-    // Same fixture as the server-contract describe — re-create idempotently
-    // so this describe can run in isolation too.
-    await request.delete(`${API_BASE}/${TEST_CONNECTOR_ID}`, { headers: AUTH })
-      .catch(() => {});
-    const create = await request.post(API_BASE, {
-      headers: JSON_HEADERS,
-      data: {
-        connectorId: TEST_CONNECTOR_ID,
-        displayName: 'H2 Simulate Button Test',
-        sourceArchetype: 'FILE_SHARE',
-        sourceSystem: 'box',
-        delegated: true,
-        delegateAllFolders: true,
-        allowedPrincipalIds: [TEST_USER, TEST_GROUP],
-        enabled: true,
-      },
-    });
-    expect(create.ok()).toBeTruthy();
+    // Same fixtures as the server-contract describe — re-provision
+    // idempotently so this describe can run in isolation too.
+    await ensureFixtures(request);
   });
 
   test.afterAll(async ({ request }) => {
-    await request.delete(`${API_BASE}/${TEST_CONNECTOR_ID}`, { headers: AUTH })
-      .catch(() => {});
+    await cleanupFixtures(request);
   });
 
   test('button: hidden initially, appears after selection, fires audit, transitions to Audited', async ({ page }) => {
@@ -342,20 +356,23 @@ test.describe('H2: Simulate (audit) button UI flow', () => {
     // one group. Open the dropdown by clicking the visible selector.
     const simulateLabel = page.getByText(/Simulate removing|削除をシミュレート/);
     await expect(simulateLabel).toBeVisible({ timeout: 10000 });
-    // The Select is the next sibling control; click its container.
+    // The Select is the next sibling control; click its container to open.
     const simulateSelect = page.locator('.ant-select-multiple').first();
     await simulateSelect.click();
-    // Pick the FIRST option in the simulate-removal dropdown. AntD
-    // virtualises the list — only the first ~10 options exist in DOM
-    // at any time — so targeting a specific group ID by text is
-    // brittle. The button-flow test only needs SOME principal selected
-    // so the audit button appears; which principal doesn't matter.
+    // Pick the FIRST option in the simulate-removal dropdown. GROUP_EVERYONE
+    // is excluded by the UI (G3), so the provisioned group is the option.
+    // The button-flow test only needs SOME principal selected so the audit
+    // button appears; which principal doesn't matter.
     const firstOption = page.locator('.ant-select-item-option').first();
     await expect(firstOption).toBeVisible({ timeout: 10000 });
     await firstOption.click();
-    // Click the input again to collapse the dropdown without clearing
-    // the selection.
-    await simulateSelect.click();
+    // Confirm the selection registered as a tag BEFORE closing the overlay.
+    // Clicking the select container a second time can toggle-deselect in
+    // AntD's multi-select, so we assert the tag, then close the dropdown
+    // with Escape (which only dismisses the overlay, it does not clear the
+    // committed tags).
+    await expect(simulateSelect.locator('.ant-select-selection-item')).toHaveCount(1);
+    await page.keyboard.press('Escape');
 
     // Now the audit button must appear, enabled.
     await expect(auditButton).toBeVisible({ timeout: 5000 });
