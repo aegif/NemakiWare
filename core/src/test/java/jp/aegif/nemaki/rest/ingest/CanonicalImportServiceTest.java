@@ -1192,6 +1192,88 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void filesAndBody_notion_pageDedupeSkip_reportedSkipped() {
+        // files_and_body: an already-imported page body (dedupe-skip) with no
+        // newly imported attachment must propagate skipped=true to the caller —
+        // not be miscounted as an import. Regression guard for the page-body
+        // skipped-flag fix.
+        noteProfile("files_and_body");
+        jp.aegif.nemaki.dao.ContentDaoService contentDaoService =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        service.setContentDaoService(contentDaoService);
+
+        Content existing = createMockContent("page-obj-id");
+        existing.setName("My Page.html");
+        Aspect ext = new Aspect();
+        ext.setName("nemaki:externalIntegration");
+        ext.setProperties(List.of(
+                new Property("nemaki:sourceObjectId", "page-1"),
+                new Property("nemaki:sourceSystem", "notion"),
+                new Property("nemaki:sourceObjectType", "page")
+        ));
+        existing.setAspects(List.of(ext));
+        when(contentDaoService.getChildren("bedroom", "folder-1")).thenReturn(List.of(existing));
+
+        ExternalIngestResult result = service.executeNoteImport(
+                mock(CallContext.class), notePageReq("files_and_body", false));
+
+        assertTrue(result.skipped(), "dedupe-skipped page body with no new attachment must report skipped");
+        assertEquals("page-obj-id", result.objectId());
+        verify(objectService, never()).createDocument(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void businessRecord_dedupeSkip_preservesSkippedFlag() {
+        // A dedupe-skipped business record must propagate skipped=true (with the
+        // existing object id) instead of the previously hardcoded skipped=false.
+        jp.aegif.nemaki.dao.ContentDaoService contentDaoService =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        service.setContentDaoService(contentDaoService);
+
+        Content existing = createMockContent("rec-obj-1");
+        existing.setName("record.txt");
+        Aspect ext = new Aspect();
+        ext.setName("nemaki:externalIntegration");
+        ext.setProperties(List.of(
+                new Property("nemaki:sourceObjectId", "sf-rec-1"),
+                new Property("nemaki:sourceSystem", "salesforce"),
+                new Property("nemaki:sourceObjectType", "record")
+        ));
+        existing.setAspects(List.of(ext));
+        when(contentDaoService.getChildren("bedroom", "folder-1")).thenReturn(List.of(existing));
+
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        profile.setDedupePolicy("skip_if_same_version");
+        when(profileService.get("p1")).thenReturn(profile);
+
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.BUSINESS_RECORD);
+        connector.setSourceSystem("salesforce");
+        when(connectorService.get("c1")).thenReturn(connector);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("sf-rec-1");
+        req.setSourceObjectType("record");
+        req.setFileName("record.txt");
+        req.setContentStream(new java.io.ByteArrayInputStream("data".getBytes()));
+
+        ExternalIngestResult result = service.executeBusinessRecordImport(mock(CallContext.class), req);
+
+        assertTrue(result.skipped(), "dedupe-skipped record must report skipped=true");
+        assertEquals("rec-obj-1", result.objectId(), "skipped result must carry the existing object id");
+        verify(objectService, never()).createDocument(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     void createDirectRelationship_isIdempotent_skipsWhenLinkExists() {
         noteProfile("files_and_body");
         when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),

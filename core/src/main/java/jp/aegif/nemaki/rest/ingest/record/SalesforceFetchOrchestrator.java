@@ -114,7 +114,9 @@ public class SalesforceFetchOrchestrator implements FetchOrchestrator {
                         if (lmd instanceof String ts && (highWaterModified == null || ts.compareTo(highWaterModified) > 0)) {
                             highWaterModified = ts;
                         }
-                        if (result.isSuccess()) imported++; else skipped++;
+                        // skipped() first: a skipped result also reports isSuccess()==true
+                        // (no errors), so it would be miscounted as imported otherwise.
+                        if (result.skipped()) skipped++; else imported++;
                     } else {
                         FetchSupport.addError(errors, "SF " + rec.id() + ": " + String.join(", ", result.errors()));
                     }

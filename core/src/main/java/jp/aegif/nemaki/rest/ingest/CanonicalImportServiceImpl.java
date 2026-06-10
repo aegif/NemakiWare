@@ -392,6 +392,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         String pageVersionLabel = null;
         boolean pageNewVersion = false;
         String pageLineageEventId = null;
+        boolean pageSkipped = false;     // files_and_body: page body was dedupe-skipped
+        String pageSkipReason = null;
 
         if (importBody) {
             ExternalIngestResult pageResult = execute(callContext, request);
@@ -402,6 +404,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             pageVersionLabel = pageResult.versionLabel();
             pageNewVersion = pageResult.isNewVersion();
             pageLineageEventId = pageResult.lineageEventId();
+            pageSkipped = pageResult.skipped();
+            pageSkipReason = pageResult.skipReason();
             warnings.addAll(pageResult.warnings());
             // Apply nemaki:noteMetadata to the page document
             String metaError = ingestMetadataService.applyNoteMetadata(request.getRepositoryId(), pageObjectId, callContext, request);
@@ -500,8 +504,15 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         logger.info("Note import completed: pageObjectId={}, attachments={}, importPolicy={}, profile={}",
                 pageObjectId, attachmentCount, request.getImportPolicy(), request.getProfileId());
 
+        // files_and_body: if the page body was dedupe-skipped and no attachment
+        // was newly imported either, nothing new was created — report skipped so
+        // the orchestrator counts it accurately (the files_only path is already
+        // handled by the early return above).
+        boolean overallSkipped = importBody && pageSkipped && importedAttachmentCount == 0;
+        String overallSkipReason = overallSkipped ? pageSkipReason : null;
+
         return new ExternalIngestResult(requestId, primaryObjectId, pageVersionLabel,
-                pageNewVersion, false, false, null, pageLineageEventId,
+                pageNewVersion, false, overallSkipped, overallSkipReason, pageLineageEventId,
                 List.of(), warnings);
     }
 
@@ -538,6 +549,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
         ExternalIngestResult result = execute(callContext, request);
         if (!result.isSuccess()) return result;
+        // An empty/pseudo-file skip (objectId == null) has no object to decorate;
+        // return it verbatim. A dedupe skip (objectId != null) falls through to
+        // re-apply metadata/relationship idempotently, and its skip flag is
+        // preserved in the final return below so it is counted as skipped.
+        if (result.skipped() && result.objectId() == null) return result;
 
         List<String> warnings = new ArrayList<>(result.warnings());
         String[][] brFields = {
@@ -559,8 +575,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             }
         }
 
+        // Preserve the skipped flag/reason: a dedupe-skipped record that fell
+        // through above must still be reported as skipped, not imported.
         return new ExternalIngestResult(request.getRequestId(), result.objectId(), result.versionLabel(),
-                result.isNewVersion(), false, false, null, result.lineageEventId(), List.of(), warnings);
+                result.isNewVersion(), false, result.skipped(), result.skipReason(),
+                result.lineageEventId(), List.of(), warnings);
     }
 
     @Override
