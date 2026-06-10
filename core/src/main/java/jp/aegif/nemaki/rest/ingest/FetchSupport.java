@@ -70,7 +70,9 @@ public class FetchSupport {
      */
     public static boolean isPseudoSystemFile(String fileName) {
         if (fileName == null || fileName.isBlank()) return false;
-        String lower = fileName.toLowerCase(java.util.Locale.ROOT);
+        // strip() trailing/leading whitespace so a name re-suffixed on upload to
+        // e.g. "foo.textclipping " (trailing space) is still recognised.
+        String lower = fileName.strip().toLowerCase(java.util.Locale.ROOT);
         for (String suffix : PSEUDO_FILE_SUFFIXES) {
             if (lower.endsWith(suffix)) return true;
         }

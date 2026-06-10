@@ -152,4 +152,48 @@ class FetchSupportTest {
         FetchResult r = new FetchResult(0, 0, 0, null);
         assertFalse(r.hasErrors());
     }
+
+    // ── isPseudoSystemFile ──
+
+    @Test
+    void isPseudoSystemFile_macTextClippingDoubleSuffix() {
+        // The exact case reported: a macOS text clipping uploaded to Notion,
+        // re-suffixed to .textclipping on upload.
+        assertTrue(FetchSupport.isPseudoSystemFile(
+                "現在、初期導入時のセットアップウィザードの実装をすす.textClipping.textclipping"));
+    }
+
+    @Test
+    void isPseudoSystemFile_singleTextClippingSuffix() {
+        assertTrue(FetchSupport.isPseudoSystemFile("foo.textClipping"));
+    }
+
+    @Test
+    void isPseudoSystemFile_caseInsensitive() {
+        assertTrue(FetchSupport.isPseudoSystemFile("FOO.TEXTCLIPPING"));
+        assertTrue(FetchSupport.isPseudoSystemFile(".DS_Store"));
+    }
+
+    @Test
+    void isPseudoSystemFile_realFilesNotMatched() {
+        assertFalse(FetchSupport.isPseudoSystemFile("report.pdf"));
+        assertFalse(FetchSupport.isPseudoSystemFile("image.png"));
+        assertFalse(FetchSupport.isPseudoSystemFile("notes.txt"));
+        // "textclipping" appears mid-name but the real extension is .pdf — keep it.
+        assertFalse(FetchSupport.isPseudoSystemFile("my.textclipping.pdf"));
+    }
+
+    @Test
+    void isPseudoSystemFile_nullAndBlankAreSafe() {
+        assertFalse(FetchSupport.isPseudoSystemFile(null));
+        assertFalse(FetchSupport.isPseudoSystemFile(""));
+        assertFalse(FetchSupport.isPseudoSystemFile("   "));
+    }
+
+    @Test
+    void isPseudoSystemFile_trailingWhitespaceStripped() {
+        // A name re-suffixed on upload can carry trailing/leading whitespace.
+        assertTrue(FetchSupport.isPseudoSystemFile("foo.textClipping "));
+        assertTrue(FetchSupport.isPseudoSystemFile("  .DS_Store\t"));
+    }
 }

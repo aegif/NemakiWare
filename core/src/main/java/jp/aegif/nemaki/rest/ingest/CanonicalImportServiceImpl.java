@@ -268,6 +268,15 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (!messageResult.isSuccess()) {
                 return messageResult;
             }
+            // An empty/pseudo-file skip (objectId == null) produced no object to
+            // decorate — return it verbatim. A dedupe skip (objectId != null)
+            // falls through: the existing message is re-decorated and, crucially,
+            // any previously-failed attachment is retried against the existing
+            // objectId. The dedupe skip flag is preserved in the final return
+            // below so the orchestrator still counts it as skipped, not imported.
+            if (messageResult.skipped() && messageResult.objectId() == null) {
+                return messageResult;
+            }
 
             String messageObjectId = messageResult.objectId();
 
@@ -350,9 +359,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             logger.info("Mail import completed: messageId={}, objectId={}, attachments={}",
                     parsed.messageId(), messageObjectId, attachmentCount);
 
+            // Preserve the skipped flag/reason: a dedupe-skipped message body that
+            // fell through above must still be reported as skipped, not imported.
             return new ExternalIngestResult(requestId, messageObjectId, messageResult.versionLabel(),
-                    messageResult.isNewVersion(), false, false, null, messageResult.lineageEventId(),
-                    List.of(), warnings);
+                    messageResult.isNewVersion(), false, messageResult.skipped(), messageResult.skipReason(),
+                    messageResult.lineageEventId(), List.of(), warnings);
 
         } catch (Exception e) {
             logger.error("Mail import failed: {}", e.getMessage(), e);
@@ -559,6 +570,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
         ExternalIngestResult result = execute(callContext, request);
         if (!result.isSuccess()) return result;
+        // An empty/pseudo-file skip (objectId == null) produced no object to
+        // decorate — applying chat metadata or getContent() on a null id would
+        // fail — so return it verbatim. A dedupe skip (objectId != null) falls
+        // through: re-decorating the existing object is idempotent and lets a
+        // derivedFromContext link be created late (e.g. when the parent context
+        // is imported in a later poll). The skip flag is preserved in the final
+        // return below so the orchestrator still counts it as skipped.
+        if (result.skipped() && result.objectId() == null) return result;
 
         List<String> warnings = new ArrayList<>(result.warnings());
         String[][] chatFields = {
@@ -616,8 +635,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             }
         }
 
+        // Preserve the skipped flag/reason: a dedupe-skipped chat object that fell
+        // through above must still be reported as skipped, not imported.
         return new ExternalIngestResult(request.getRequestId(), result.objectId(), result.versionLabel(),
-                result.isNewVersion(), false, false, null, result.lineageEventId(), List.of(), warnings);
+                result.isNewVersion(), false, result.skipped(), result.skipReason(),
+                result.lineageEventId(), List.of(), warnings);
     }
 
     /**

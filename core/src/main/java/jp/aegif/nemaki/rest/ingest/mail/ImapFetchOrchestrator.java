@@ -92,7 +92,12 @@ public class ImapFetchOrchestrator implements FetchOrchestrator {
                     req.setMetadata(metadata);
 
                     ExternalIngestResult result = canonicalImportService.executeMailImport(callContext, req);
-                    if (result.isSuccess()) {
+                    // skipped() first: a skipped result also reports isSuccess()==true
+                    // (no errors), so it would be miscounted as imported otherwise.
+                    if (result.skipped()) {
+                        skipped++;
+                        highWaterMark = Math.max(highWaterMark, msg.uid());
+                    } else if (result.isSuccess()) {
                         boolean hasAttachmentFailure = result.warnings().stream()
                                 .anyMatch(w -> w.contains("Attachment") && w.contains("failed"));
                         if (hasAttachmentFailure) {
@@ -102,9 +107,6 @@ public class ImapFetchOrchestrator implements FetchOrchestrator {
                             imported++;
                             highWaterMark = Math.max(highWaterMark, msg.uid());
                         }
-                    } else if (result.skipped()) {
-                        skipped++;
-                        highWaterMark = Math.max(highWaterMark, msg.uid());
                     } else {
                         FetchSupport.addError(errors, "Message UID " + msg.uid() + ": " + String.join(", ", result.errors()));
                     }

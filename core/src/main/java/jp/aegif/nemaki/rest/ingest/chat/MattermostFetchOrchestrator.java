@@ -88,8 +88,10 @@ public class MattermostFetchOrchestrator implements FetchOrchestrator {
                     ExternalIngestResult msgResult = canonicalImportService.executeChatContextImport(callContext, msgReq);
                     String parentObjectId = msgResult.isSuccess() ? msgResult.objectId() : null;
                     boolean messageOk = msgResult.isSuccess() || msgResult.skipped();
-                    if (msgResult.isSuccess()) imported++;
-                    else if (msgResult.skipped()) skipped++;
+                    // skipped() first: a skipped result also reports isSuccess()==true
+                    // (no errors), so it would be miscounted as imported otherwise.
+                    if (msgResult.skipped()) skipped++;
+                    else if (msgResult.isSuccess()) imported++;
                     else FetchSupport.addError(errors, "MM msg " + post.id() + ": " + String.join(", ", msgResult.errors()));
                     boolean attachmentFailed = false;
 

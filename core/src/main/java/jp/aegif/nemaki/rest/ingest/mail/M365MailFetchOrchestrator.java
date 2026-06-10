@@ -60,7 +60,9 @@ public class M365MailFetchOrchestrator implements FetchOrchestrator {
                                 && (highWaterDateTime == null || msg.receivedDateTime().compareTo(highWaterDateTime) > 0)) {
                             highWaterDateTime = msg.receivedDateTime();
                         }
-                        if (result.isSuccess()) imported++; else skipped++;
+                        // skipped() first: a skipped result also reports isSuccess()==true
+                        // (no errors), so it would be miscounted as imported otherwise.
+                        if (result.skipped()) skipped++; else imported++;
                     } else {
                         FetchSupport.addError(errors, "M365 " + msg.id() + ": " + String.join(", ", result.errors()));
                     }

@@ -65,7 +65,9 @@ public class GmailFetchOrchestrator implements FetchOrchestrator {
                             && result.warnings().stream().anyMatch(w -> w.contains("Attachment") || w.contains("attachment"));
                     if ((result.isSuccess() && !hasAttachmentWarning) || result.skipped()) {
                         if (msg.internalDate() > highWaterEpochMs) highWaterEpochMs = msg.internalDate();
-                        if (result.isSuccess()) imported++; else skipped++;
+                        // skipped() first: a skipped result also reports isSuccess()==true
+                        // (no errors), so it would be miscounted as imported otherwise.
+                        if (result.skipped()) skipped++; else imported++;
                     } else {
                         FetchSupport.addError(errors, "Gmail " + msg.id() + ": " + String.join(", ", result.errors()));
                     }
