@@ -1063,6 +1063,39 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     contentBytes = readBounded(rawIn, MAX_CONTENT_SIZE, "Content");
                 }
                 bufferedContent = contentBytes; // retain for DLQ if this import fails
+
+                // Skip empty attachments. A 0-byte download — e.g. a macOS
+                // .textClipping placeholder uploaded to Notion, or an
+                // expired/empty file URL from any chat/mail connector — would
+                // otherwise be persisted as a content-less document. This is the
+                // single choke point every connector's attachment passes through
+                // (Notion/Slack/Teams/Mattermost/Chatwork attachments + mail
+                // attachments all reach execute() with sourceObjectType
+                // "attachment"). Message / page / record bodies and file-share
+                // bodies are intentionally exempt: they still carry value via
+                // metadata, and a 0-byte Box/Dropbox file may be a legitimate
+                // user-placed placeholder we must not silently drop.
+                if (contentBytes.length == 0
+                        && "attachment".equals(request.getSourceObjectType())) {
+                    logger.warn("Skipping empty attachment '{}' (0 bytes) from {} source '{}'",
+                            fileName, connector.getSourceSystem(), request.getSourceObjectId());
+                    return ExternalIngestResult.skipped(requestId,
+                            "Empty attachment (0 bytes) — not imported");
+                }
+
+                // Skip OS/desktop pseudo files (e.g. a macOS .textClipping — a
+                // ~12 KB Apple-proprietary plist that opens to nothing, or a
+                // .DS_Store). These have a non-zero body so the size check above
+                // does not catch them; they are filtered by filename instead.
+                // This is the all-connector backstop; adapters that can recognise
+                // them earlier (e.g. NotionConnectorAdapter.extractFiles) skip the
+                // download entirely.
+                if (FetchSupport.isPseudoSystemFile(fileName)) {
+                    logger.warn("Skipping OS pseudo file '{}' from {} source '{}'",
+                            fileName, connector.getSourceSystem(), request.getSourceObjectId());
+                    return ExternalIngestResult.skipped(requestId,
+                            "OS/desktop pseudo file (e.g. .textClipping/.DS_Store) — not imported");
+                }
                 computedHash = computeContentHash(contentBytes);
                 contentStream = new ContentStreamImpl(fileName, BigInteger.valueOf(contentBytes.length),
                         mimeType, new ByteArrayInputStream(contentBytes));

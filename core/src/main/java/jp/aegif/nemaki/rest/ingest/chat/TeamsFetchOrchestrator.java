@@ -100,11 +100,15 @@ public class TeamsFetchOrchestrator implements FetchOrchestrator {
                             if (msg.replyToId() != null) fileMeta.put("threadId", msg.replyToId());
                             req.setMetadata(fileMeta);
                             ExternalIngestResult result = canonicalImportService.executeChatContextImport(callContext, req);
-                            if (result.isSuccess()) {
+                            // skipped() first: a skipped result also reports
+                            // isSuccess()==true (no errors), so it would be
+                            // miscounted as imported otherwise.
+                            if (result.skipped()) {
+                                skipped++;
+                            } else if (result.isSuccess()) {
                                 imported++;
                                 if (parentObjectId != null) fetchSupport.createRelationshipSafe(callContext, profile.getRepositoryId(), parentObjectId, result.objectId(), errors);
-                            } else if (result.skipped()) { skipped++; }
-                            else { attachmentFailed = true; FetchSupport.addError(errors, "Teams " + file.id() + ": " + String.join(", ", result.errors())); }
+                            } else { attachmentFailed = true; FetchSupport.addError(errors, "Teams " + file.id() + ": " + String.join(", ", result.errors())); }
                         } catch (Exception e) { attachmentFailed = true; FetchSupport.addError(errors, "Teams file " + file.id() + ": " + e.getMessage()); }
                         finally { if (content != null) try { content.close(); } catch (Exception ignored) {} }
                     }

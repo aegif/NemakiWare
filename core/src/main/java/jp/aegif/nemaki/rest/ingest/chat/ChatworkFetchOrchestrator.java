@@ -142,8 +142,11 @@ public class ChatworkFetchOrchestrator implements FetchOrchestrator {
                         fileReq.setMetadata(fileMeta);
 
                         ExternalIngestResult fileResult = canonicalImportService.executeChatContextImport(callContext, fileReq);
-                        if (fileResult.isSuccess()) imported++;
-                        else if (fileResult.skipped()) skipped++;
+                        // skipped() first: a skipped result also reports
+                        // isSuccess()==true (no errors), so it would be
+                        // miscounted as imported otherwise.
+                        if (fileResult.skipped()) skipped++;
+                        else if (fileResult.isSuccess()) imported++;
                         else FetchSupport.addError(errors, "Chatwork file " + file.fileId() + ": " + String.join(", ", fileResult.errors()));
                     } catch (Exception e) {
                         FetchSupport.addError(errors, "Chatwork file " + file.fileId() + ": " + e.getMessage());

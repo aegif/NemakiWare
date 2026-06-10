@@ -134,6 +134,14 @@ public class NotionConnectorAdapter {
                 String fileUrl = fileNode.path("file").path("url").asText(
                         fileNode.path("external").path("url").asText(null));
                 String name = fileNode.path("name").asText(block.path("id").asText() + "." + type);
+                // Skip OS/desktop pseudo files (e.g. a macOS .textClipping) here
+                // so we don't even spend a download on a value-less blob. The
+                // canonical import path has the same guard as an all-connector
+                // backstop.
+                if (jp.aegif.nemaki.rest.ingest.FetchSupport.isPseudoSystemFile(name)) {
+                    logger.info("Notion: skipping OS pseudo file attachment '{}'", name);
+                    continue;
+                }
                 if (fileUrl != null && !fileUrl.isBlank()) {
                     files.add(new NotionFile(block.path("id").asText(), name, fileUrl, type));
                 }

@@ -51,6 +51,32 @@ public class FetchSupport {
         }
     }
 
+    /**
+     * Filename suffixes for OS-/desktop-generated pseudo files that carry no
+     * value in an ECM and should never be ingested as documents. The canonical
+     * trigger is the macOS text clipping ({@code .textClipping}, often
+     * re-suffixed to {@code .textclipping} on upload): a 12 KB Apple-proprietary
+     * plist blob that opens to nothing in any normal viewer. Matched
+     * case-insensitively against the trailing characters of the filename.
+     */
+    private static final java.util.List<String> PSEUDO_FILE_SUFFIXES = java.util.List.of(
+            ".textclipping", ".ds_store");
+
+    /**
+     * Returns true when {@code fileName} looks like an OS/desktop pseudo file
+     * (e.g. a macOS {@code .textClipping} or {@code .DS_Store}) that should be
+     * skipped during ingestion rather than persisted as a content-less or
+     * opaque document.
+     */
+    public static boolean isPseudoSystemFile(String fileName) {
+        if (fileName == null || fileName.isBlank()) return false;
+        String lower = fileName.toLowerCase(java.util.Locale.ROOT);
+        for (String suffix : PSEUDO_FILE_SUFFIXES) {
+            if (lower.endsWith(suffix)) return true;
+        }
+        return false;
+    }
+
     /** Guess MIME type from filename extension; returns null if unknown. */
     public static String guessMimeType(String fileName) {
         if (fileName == null) return null;

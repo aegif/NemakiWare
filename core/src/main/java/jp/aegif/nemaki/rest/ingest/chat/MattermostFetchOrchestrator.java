@@ -117,11 +117,15 @@ public class MattermostFetchOrchestrator implements FetchOrchestrator {
                             if (post.rootId() != null && !post.rootId().isEmpty()) fileMeta.put("threadId", post.rootId());
                             req.setMetadata(fileMeta);
                             ExternalIngestResult result = canonicalImportService.executeChatContextImport(callContext, req);
-                            if (result.isSuccess()) {
+                            // skipped() first: a skipped result also reports
+                            // isSuccess()==true (no errors), so it would be
+                            // miscounted as imported otherwise.
+                            if (result.skipped()) {
+                                skipped++;
+                            } else if (result.isSuccess()) {
                                 imported++;
                                 if (parentObjectId != null) fetchSupport.createRelationshipSafe(callContext, profile.getRepositoryId(), parentObjectId, result.objectId(), errors);
-                            } else if (result.skipped()) { skipped++; }
-                            else { attachmentFailed = true; FetchSupport.addError(errors, "MM " + fileId + ": " + String.join(", ", result.errors())); }
+                            } else { attachmentFailed = true; FetchSupport.addError(errors, "MM " + fileId + ": " + String.join(", ", result.errors())); }
                         } catch (Exception e) { attachmentFailed = true; FetchSupport.addError(errors, "MM file " + fileId + ": " + e.getMessage()); }
                         finally { if (content != null) try { content.close(); } catch (Exception ignored) {} }
                     }

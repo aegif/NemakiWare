@@ -68,7 +68,10 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
 
                     ExternalIngestResult result = canonicalImportService.execute(callContext, req);
                     if (result.isSuccess() || result.skipped()) {
-                        if (result.isSuccess()) imported++; else skipped++;
+                        // skipped() first: a skipped result also reports
+                        // isSuccess()==true (no errors), so it would be
+                        // miscounted as imported otherwise.
+                        if (result.skipped()) skipped++; else imported++;
                         if (file.serverModified() != null
                                 && (highWaterModified == null || file.serverModified().compareTo(highWaterModified) > 0)) {
                             highWaterModified = file.serverModified();

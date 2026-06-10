@@ -73,7 +73,10 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
 
                     ExternalIngestResult result = canonicalImportService.execute(callContext, req);
                     if (result.isSuccess() || result.skipped()) {
-                        if (result.isSuccess()) imported++; else skipped++;
+                        // skipped() first: a skipped result also reports
+                        // isSuccess()==true (no errors), so it would be
+                        // miscounted as imported otherwise.
+                        if (result.skipped()) skipped++; else imported++;
                         if (file.modifiedAt() != null
                                 && (highWaterModified == null || file.modifiedAt().compareTo(highWaterModified) > 0)) {
                             highWaterModified = file.modifiedAt();
