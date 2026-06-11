@@ -540,19 +540,28 @@ public class IngestSchedulerService {
 
                     // Timeout fetch to prevent a hung adapter from blocking the entire poll cycle.
                     FetchResult result;
+                    boolean timedOut = false;
                     try {
                         result = future.get(fetchTimeoutMinutes, java.util.concurrent.TimeUnit.MINUTES);
                     } catch (java.util.concurrent.TimeoutException te) {
                         Thread ft = fetchThread.get();
                         if (ft != null) ft.interrupt();
+                        timedOut = true;
                         logger.error("Fetch timed out after {}m for profile {}, cancelling", fetchTimeoutMinutes, profile.getProfileId());
                         result = new FetchResult(0, 0, List.of("Fetch timed out after " + fetchTimeoutMinutes + " minutes"));
                     }
 
-                    // Complete job record
+                    // Complete job record. A timeout is recorded as STUCK (not a
+                    // FAILED with imported=0), because the interrupted fetch may
+                    // have imported items whose counts are lost with the abandoned
+                    // future — see IngestJobService.markTimedOut.
                     if (job != null && ingestJobService != null) {
                         try {
-                            ingestJobService.completeJob(job, result);
+                            if (timedOut) {
+                                ingestJobService.markTimedOut(job, fetchTimeoutMinutes);
+                            } else {
+                                ingestJobService.completeJob(job, result);
+                            }
                         } catch (Exception e) {
                             logger.debug("Failed to update job record: {}", e.getMessage());
                         }

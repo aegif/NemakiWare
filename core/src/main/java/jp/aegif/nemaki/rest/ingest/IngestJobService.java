@@ -115,6 +115,30 @@ public class IngestJobService {
         upsertDocument(job.getJobId(), IngestJobRecord.DOC_TYPE, MAPPER.convertValue(job, Map.class));
     }
 
+    /**
+     * Record a fetch that was interrupted by the poll timeout. This is
+     * deliberately NOT {@code completeJob(..., FetchResult(0,0,[timeout]))}: the
+     * interrupted fetch may have imported some items, but those counts live in
+     * the orchestrator's stack and are lost when the future is abandoned, so
+     * claiming {@code imported=0 / FAILED} misreports a fetch that partially
+     * succeeded. We mark it {@link IngestJobRecord.Status#STUCK} (the same status
+     * the heartbeat watchdog uses) so operators see "timed out / interrupted"
+     * rather than "ran and failed with zero imports". Any items already imported
+     * are reconciled on the next poll by source-identity dedupe (no data loss),
+     * because the checkpoint is not advanced on a timed-out fetch.
+     */
+    public void markTimedOut(IngestJobRecord job, long timeoutMinutes) {
+        job.setCompletedAt(Instant.now().toString());
+        job.setStatus(IngestJobRecord.Status.STUCK);
+        List<String> errors = new java.util.ArrayList<>(
+                job.getErrors() != null ? job.getErrors() : java.util.List.of());
+        errors.add("Fetch timed out after " + timeoutMinutes + " minutes (interrupted; any items "
+                + "already imported are reconciled on the next poll via dedupe)");
+        job.setErrors(errors);
+        job.setFailed(errors.size());
+        upsertDocument(job.getJobId(), IngestJobRecord.DOC_TYPE, MAPPER.convertValue(job, Map.class));
+    }
+
     public List<IngestJobRecord> listJobs(int limit) {
         return findByType(IngestJobRecord.DOC_TYPE, IngestJobRecord.class, limit);
     }
