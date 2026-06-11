@@ -2095,8 +2095,21 @@ export class CMISService {
       if (response.status === 200) {
         try {
           const data = JSON.parse(response.responseText);
+          // The legacy group API returns HTTP 200 even on failure (checkAdmin /
+          // duplicate id / validation) with {status:'failure', error:[...]}. Surface
+          // those as errors instead of reporting success.
+          if (data.status === false || data.status === 'failure' || data.status === 'error') {
+            const errMessages = data.errMsg || data.error || data.errors || [];
+            const errText = Array.isArray(errMessages)
+              ? errMessages.map((e: any) => typeof e === 'string' ? e : JSON.stringify(e)).join(', ')
+              : String(errMessages);
+            throw new Error(errText || 'Group operation failed');
+          }
           return data;
         } catch (e) {
+          if (e instanceof Error && e.message !== 'Invalid response format') {
+            throw e;
+          }
           throw new Error('Invalid response format');
         }
       }
@@ -2136,8 +2149,21 @@ export class CMISService {
       if (response.status === 200) {
         try {
           const data = JSON.parse(response.responseText);
+          // The legacy group API returns HTTP 200 even on failure (checkAdmin /
+          // duplicate id / validation) with {status:'failure', error:[...]}. Surface
+          // those as errors instead of reporting success.
+          if (data.status === false || data.status === 'failure' || data.status === 'error') {
+            const errMessages = data.errMsg || data.error || data.errors || [];
+            const errText = Array.isArray(errMessages)
+              ? errMessages.map((e: any) => typeof e === 'string' ? e : JSON.stringify(e)).join(', ')
+              : String(errMessages);
+            throw new Error(errText || 'Group operation failed');
+          }
           return data;
         } catch (e) {
+          if (e instanceof Error && e.message !== 'Invalid response format') {
+            throw e;
+          }
           throw new Error('Invalid response format');
         }
       }
@@ -2163,7 +2189,26 @@ export class CMISService {
         accept: 'application/json'
       });
 
-      if (response.status === 200 || response.status === 204) {
+      if (response.status === 204) {
+        return;
+      }
+      if (response.status === 200) {
+        // Legacy delete returns HTTP 200 even on failure with {status:'failure'}.
+        try {
+          const data = JSON.parse(response.responseText);
+          if (data && (data.status === false || data.status === 'failure' || data.status === 'error')) {
+            const errMessages = data.errMsg || data.error || data.errors || [];
+            const errText = Array.isArray(errMessages)
+              ? errMessages.map((e: any) => typeof e === 'string' ? e : JSON.stringify(e)).join(', ')
+              : String(errMessages);
+            throw new Error(errText || 'Group deletion failed');
+          }
+        } catch (e) {
+          // Re-throw genuine failure errors; tolerate empty/non-JSON 200 bodies.
+          if (e instanceof Error && !(e instanceof SyntaxError)) {
+            throw e;
+          }
+        }
         return;
       }
 
@@ -3046,28 +3091,29 @@ export class CMISService {
       });
 
       if (response.status === 200 || response.status === 204) {
-        // Check response body for error codes
+        // The archive REST API returns HTTP 200 even on failure with
+        // {status:'failure', error:[...]}. Parse the body in an isolated try so a
+        // genuine failure is surfaced (not swallowed by the JSON.parse catch).
+        let data: any = null;
         if (response.responseText) {
           try {
-            const data = JSON.parse(response.responseText);
-            if (data.status === 'failure' && data.error) {
-              const errors = Array.isArray(data.error) ? data.error : [data.error];
-              for (const err of errors) {
-                if (typeof err === 'object') {
-                  const values = Object.values(err);
-                  if (values.includes('errRestoreBecauseParentNoLongerExists')) {
-                    throw new Error('ERR_RESTORE_BECAUSE_PARENT_NO_LONGER_EXISTS');
-                  }
-                }
-              }
-              throw new Error(JSON.stringify(data.error));
-            }
-          } catch (parseError) {
-            if (parseError instanceof Error && parseError.message.startsWith('ERR_')) {
-              throw parseError;
-            }
-            // Ignore parse errors for non-JSON responses
+            data = JSON.parse(response.responseText);
+          } catch {
+            // Non-JSON / empty body on success — nothing to inspect.
+            data = null;
           }
+        }
+        if (data && data.status === 'failure' && data.error) {
+          const errors = Array.isArray(data.error) ? data.error : [data.error];
+          for (const err of errors) {
+            if (typeof err === 'object') {
+              const values = Object.values(err);
+              if (values.includes('errRestoreBecauseParentNoLongerExists')) {
+                throw new Error('ERR_RESTORE_BECAUSE_PARENT_NO_LONGER_EXISTS');
+              }
+            }
+          }
+          throw new Error(JSON.stringify(data.error));
         }
         return;
       }

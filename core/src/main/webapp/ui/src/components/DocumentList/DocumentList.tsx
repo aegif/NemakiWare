@@ -541,6 +541,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     }
   };
 
+  // Monotonic sequence for loadObjects() race-guarding (see loadObjects).
+  const loadSeqRef = React.useRef(0);
+
   // Load objects when selectedFolderId changes (the folder displayed in list pane)
   useEffect(() => {
     if (selectedFolderId) {
@@ -555,13 +558,22 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       return;
     }
 
+    // Race guard: folder navigation can fire several overlapping loadObjects()
+    // calls. Capture the target folder + a sequence number and bail out of any
+    // state update once a newer load has started, so a slow response for folder A
+    // can never overwrite the list / path / allowableActions of folder B.
+    const requestedFolderId = selectedFolderId;
+    const mySeq = ++loadSeqRef.current;
+    const isStale = () => loadSeqRef.current !== mySeq;
+
     setLoading(true);
     try {
       const skipCount = (page - 1) * pageSize;
-      const result = await cmisService.getChildrenPaged(repositoryId, selectedFolderId, {
+      const result = await cmisService.getChildrenPaged(repositoryId, requestedFolderId, {
         maxItems: pageSize,
         skipCount,
       });
+      if (isStale()) return;
       setObjects(result.items);
       setTotalItems(result.numItems);
       setHasMoreItems(result.hasMoreItems);
@@ -571,17 +583,21 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       // This ensures currentFolderPath is always accurate, not just for root folder
       // Previous bug: Only root folder path was set, causing Up button to be disabled
       // when navigating via table clicks (currentFolderPath stuck at "/")
-      const folder = await cmisService.getObject(repositoryId, selectedFolderId);
+      const folder = await cmisService.getObject(repositoryId, requestedFolderId);
+      if (isStale()) return;
       const folderPath = folder.path || '/';
       setCurrentFolderPath(folderPath);
       setFolderAllowableActions(folder.allowableActions);
       // Load runnable ingest connectors for this folder (best-effort; an
-      // error or empty list just hides the run button).
-      cmisService.listFolderConnectors(repositoryId, selectedFolderId)
-        .then(setFolderConnectors)
-        .catch(() => setFolderConnectors([]));
+      // error or empty list just hides the run button). Guard against a stale
+      // response overwriting a newer folder's connectors.
+      cmisService.listFolderConnectors(repositoryId, requestedFolderId)
+        .then((conns) => { if (!isStale()) setFolderConnectors(conns); })
+        .catch(() => { if (!isStale()) setFolderConnectors([]); });
     } catch (error: any) {
-      console.error('[DocumentList] loadObjects error for folder:', selectedFolderId, error);
+      // A newer folder load has superseded this one — drop its error too.
+      if (isStale()) return;
+      console.error('[DocumentList] loadObjects error for folder:', requestedFolderId, error);
       // Determine error type: only fallback to root on 404 (folder gone / stale sessionStorage).
       // For 401/403/network/500, keep current folder and show explicit error.
       const status = error?.status || error?.response?.status;
@@ -629,7 +645,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       // Clear objects on error to show empty state
       setObjects([]);
     } finally {
-      setLoading(false);
+      // Only the most recent load owns the loading flag.
+      if (!isStale()) setLoading(false);
     }
   };
 

@@ -2891,4 +2891,46 @@ public class CloudantClientWrapper {
 			throw new RuntimeException("Mango query failed: " + e.getMessage(), e);
 		}
 	}
+
+	/**
+	 * Execute a Mango (CouchDB _find) query returning the raw document property
+	 * maps (with {@code _id}/{@code _rev} populated). Unlike {@link #findBySelector}
+	 * this performs no model deserialization, so callers that already map fields
+	 * by hand keep their exact mapping while avoiding an {@code _all_docs +
+	 * include_docs} full-database load. An explicit {@code limit} is required
+	 * because CouchDB's {@code _find} otherwise defaults to returning only 25 docs.
+	 *
+	 * @param selector Mango selector (e.g. {@code {"type":"apiKey"}})
+	 * @param limit    maximum number of documents to return
+	 */
+	public List<Map<String, Object>> findRawBySelector(Map<String, Object> selector, int limit) {
+		try {
+			PostFindOptions findOptions = new PostFindOptions.Builder()
+				.db(databaseName)
+				.selector(selector)
+				.limit(limit)
+				.build();
+			FindResult result = client.postFind(findOptions).execute().getResult();
+			List<Map<String, Object>> rows = new ArrayList<>();
+			if (result.getDocs() != null) {
+				for (com.ibm.cloud.cloudant.v1.model.Document doc : result.getDocs()) {
+					Map<String, Object> docMap = doc.getProperties();
+					if (docMap == null) {
+						docMap = new HashMap<>();
+					}
+					if (!docMap.containsKey("_id") && doc.getId() != null) {
+						docMap.put("_id", doc.getId());
+					}
+					if (!docMap.containsKey("_rev") && doc.getRev() != null) {
+						docMap.put("_rev", doc.getRev());
+					}
+					rows.add(docMap);
+				}
+			}
+			return rows;
+		} catch (Exception e) {
+			log.error("Error executing findRawBySelector: " + e.getMessage(), e);
+			throw new RuntimeException("Mango query failed: " + e.getMessage(), e);
+		}
+	}
 }

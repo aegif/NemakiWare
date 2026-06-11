@@ -133,8 +133,24 @@ public class ContentServiceHelper {
 		return DataUtil.millisToCalendar(System.currentTimeMillis());
 	}
 
+	/**
+	 * Monotonic floor for change-log tokens within this JVM. The CouchDB
+	 * {@code changesByToken} view uses the token as its numeric sort key and the
+	 * resume cursor is {@code Long.parseLong(token)}, so the token must stay a
+	 * parseable, strictly-increasing number — but two change events created in the
+	 * same millisecond (common under Virtual Threads) would otherwise share a
+	 * token, causing duplicate/lost events when getContentChanges resumes on that
+	 * shared key. Bumping to {@code max(now, last+1)} guarantees uniqueness while
+	 * preserving the numeric contract. (Cross-replica uniqueness still relies on
+	 * the documented single-replica posture.)
+	 */
+	private final java.util.concurrent.atomic.AtomicLong lastChangeToken =
+			new java.util.concurrent.atomic.AtomicLong(0L);
+
 	public String generateChangeToken(NodeBase node) {
-		return String.valueOf(node.getCreated().getTimeInMillis());
+		long base = node.getCreated().getTimeInMillis();
+		long token = lastChangeToken.updateAndGet(prev -> Math.max(prev + 1, base));
+		return String.valueOf(token);
 	}
 
 	public String writeChangeEvent(CallContext callContext, String repositoryId, Content content,

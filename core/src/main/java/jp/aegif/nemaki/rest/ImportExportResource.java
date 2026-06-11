@@ -604,7 +604,9 @@ public class ImportExportResource extends ResourceBase {
             String fileName = folder.getName() + "_export.zip";
 
             return Response.ok(streamingOutput)
-                    .header("Content-Disposition", "attachment; filename=\"" + fileName + "\"")
+                    .header("Content-Disposition",
+                            jp.aegif.nemaki.rest.importexport.ImportExportUtils
+                                    .contentDispositionAttachment(fileName))
                     .build();
 
         } catch (Exception e) {
@@ -773,7 +775,9 @@ public class ImportExportResource extends ResourceBase {
 
             String fileName = "export_selected_" + System.currentTimeMillis() + ".zip";
             return Response.ok(streamingOutput)
-                    .header("Content-Disposition", "attachment; filename=\"" + fileName + "\"")
+                    .header("Content-Disposition",
+                            jp.aegif.nemaki.rest.importexport.ImportExportUtils
+                                    .contentDispositionAttachment(fileName))
                     .build();
 
         } catch (ParseException e) {

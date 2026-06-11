@@ -1274,6 +1274,63 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void chatContext_dedupeSkip_preservesSkippedFlag() {
+        // executeChatContextImport had ZERO test coverage. A dedupe-skipped chat
+        // message must propagate skipped=true with the existing object id (guarding
+        // against a regression to the previously hardcoded skipped=false and
+        // against metadata being applied to a null object id).
+        jp.aegif.nemaki.dao.ContentDaoService contentDaoService =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        service.setContentDaoService(contentDaoService);
+
+        Content existing = createMockContent("chat-obj-1");
+        existing.setName("message.txt");
+        Aspect ext = new Aspect();
+        ext.setName("nemaki:externalIntegration");
+        ext.setProperties(List.of(
+                new Property("nemaki:sourceObjectId", "slack-msg-1"),
+                new Property("nemaki:sourceSystem", "slack"),
+                new Property("nemaki:sourceObjectType", "message")
+        ));
+        existing.setAspects(List.of(ext));
+        when(contentDaoService.getChildren("bedroom", "folder-1")).thenReturn(List.of(existing));
+
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        profile.setDedupePolicy("skip_if_same_version");
+        when(profileService.get("p1")).thenReturn(profile);
+
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.CHAT_CONTEXT);
+        connector.setSourceSystem("slack");
+        when(connectorService.get("c1")).thenReturn(connector);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("slack-msg-1");
+        req.setSourceObjectType("message");
+        req.setFileName("message.txt");
+        req.setContentStream(new java.io.ByteArrayInputStream("data".getBytes()));
+        // CHAT_CONTEXT requires metadata.channelId (archetype validation in execute()).
+        java.util.Map<String, Object> meta = new java.util.HashMap<>();
+        meta.put("channelId", "C123");
+        req.setMetadata(meta);
+
+        ExternalIngestResult result = service.executeChatContextImport(mock(CallContext.class), req);
+
+        assertTrue(result.skipped(), "dedupe-skipped chat message must report skipped=true");
+        assertEquals("chat-obj-1", result.objectId(), "skipped result must carry the existing object id");
+        verify(objectService, never()).createDocument(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     void createDirectRelationship_isIdempotent_skipsWhenLinkExists() {
         noteProfile("files_and_body");
         when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),

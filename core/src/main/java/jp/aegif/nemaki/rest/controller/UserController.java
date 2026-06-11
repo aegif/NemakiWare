@@ -104,6 +104,32 @@ public class UserController {
                 .getBean("ContentService", ContentService.class);
     }
 
+    private jp.aegif.nemaki.util.PasswordPolicyService getPasswordPolicyService() {
+        try {
+            return jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
+                    .getBean("passwordPolicyService", jp.aegif.nemaki.util.PasswordPolicyService.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Validate a password against the repository password policy. Returns an
+     * error message when the password is rejected, or {@code null} when it is
+     * acceptable (or no policy service is wired). Mirrors the enforcement done by
+     * the legacy {@code UserItemResource} and {@code api/v1 UserResource} so the
+     * Spring MVC path cannot be used to bypass the configured policy.
+     */
+    private String validatePasswordPolicy(String repositoryId, String password) {
+        jp.aegif.nemaki.util.PasswordPolicyService pps = getPasswordPolicyService();
+        if (pps == null) {
+            return null;
+        }
+        jp.aegif.nemaki.util.PasswordPolicyService.PasswordPolicyResult policyResult =
+                pps.validate(password, repositoryId);
+        return policyResult.isOk() ? null : policyResult.getErrorMessage();
+    }
+
     /**
      * Get all users in repository
      */
@@ -206,8 +232,14 @@ public class UserController {
         }
         if (StringUtils.isBlank(password)) {
             errors.add("Password is required");
+        } else {
+            // Enforce the configured password policy (parity with legacy UserItemResource)
+            String policyError = validatePasswordPolicy(repositoryId, password);
+            if (policyError != null) {
+                errors.add(policyError);
+            }
         }
-        
+
         // Check if user already exists
         if (StringUtils.isNotBlank(userId)) {
             try {
@@ -323,6 +355,13 @@ public class UserController {
             
             // Update password if provided
             if (StringUtils.isNotBlank(password)) {
+                String policyError = validatePasswordPolicy(repositoryId, password);
+                if (policyError != null) {
+                    response.put("status", "error");
+                    response.put("message", "Validation failed");
+                    response.put("errors", java.util.Collections.singletonList(policyError));
+                    return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+                }
                 String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
                 user.setPassowrd(passwordHash);
             }
@@ -425,7 +464,11 @@ public class UserController {
      */
     private Folder getOrCreateSystemSubFolder(String repositoryId, String name) {
         Folder systemFolder = getContentService().getSystemFolder(repositoryId);
-        
+        if (systemFolder == null) {
+            // Guard against NPE when the repository is not fully initialized.
+            throw new RuntimeException("System folder not found for repository: " + repositoryId);
+        }
+
         // Check if folder already exists
         List<Content> children = getContentService().getChildren(repositoryId, systemFolder.getId());
         if (CollectionUtils.isNotEmpty(children)) {

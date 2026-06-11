@@ -1304,7 +1304,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     response.setContentLengthLong(contentLength);
                 }
                 if (contentStream.getFileName() != null) {
-                    response.setHeader("Content-Disposition", "attachment; filename=\"" + contentStream.getFileName() + "\"");
+                    response.setHeader("Content-Disposition",
+                            jp.aegif.nemaki.rest.importexport.ImportExportUtils
+                                    .contentDispositionAttachment(contentStream.getFileName()));
                 }
                 
                 // Get output stream with validation

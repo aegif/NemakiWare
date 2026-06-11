@@ -1476,15 +1476,20 @@ public class ContentServiceImpl implements ContentService {
 		setSignature(callContext, checkedIn);
 		checkedIn.setCheckinComment(checkinComment);
 
-		// Reverse the effect of checkedout
-		cancelCheckOut(callContext, repositoryId, id, extension);
-
 		// update version information
 		VersioningState versioningState = (major) ? VersioningState.MAJOR : VersioningState.MINOR;
 		updateVersionProperties(callContext, repositoryId, versioningState, checkedIn, latest);
 
-		// Create
+		// Create the new version FIRST. The PWC (and its content) must not be
+		// destroyed until the new version is safely persisted; otherwise a
+		// failure in create() would lose the user's checked-out edits with no
+		// way to recover. Only after a successful create do we cancel the
+		// checkout (which physically deletes the PWC).
 		Document result = contentDaoService.create(repositoryId, checkedIn);
+
+		// Reverse the effect of checkedout (deletes the PWC) now that the new
+		// version exists.
+		cancelCheckOut(callContext, repositoryId, id, extension);
 
 		// Apply policies to the newly created document
 		// ACEs are already handled in buildCopyDocument via setAclOnCreated

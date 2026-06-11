@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.rest.ingest.mail;
 
 import jp.aegif.nemaki.rest.ingest.*;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,11 +25,13 @@ public class ImapIdleMonitor {
     private ConnectorDefinitionService connectorService;
     private FetchSupport fetchSupport;
     private CanonicalImportService canonicalImportService;
+    private IngestSchedulerService schedulerService;
 
     public void setProfileService(ImportProfileDefinitionService profileService) { this.profileService = profileService; }
     public void setConnectorService(ConnectorDefinitionService connectorService) { this.connectorService = connectorService; }
     public void setFetchSupport(FetchSupport fetchSupport) { this.fetchSupport = fetchSupport; }
     public void setCanonicalImportService(CanonicalImportService canonicalImportService) { this.canonicalImportService = canonicalImportService; }
+    public void setSchedulerService(IngestSchedulerService schedulerService) { this.schedulerService = schedulerService; }
 
     /**
      * Start IMAP IDLE monitoring for a specific profile.
@@ -48,6 +51,23 @@ public class ImapIdleMonitor {
             return "IDLE is only supported for IMAP connectors (system=" + connector.getSourceSystem() + ")";
         }
 
+        // SECURITY: a delegated profile must pass the same delegation re-authorization
+        // the scheduler/webhook paths apply (creator active + cmis:all on target folder
+        // + connector still delegated). Without this, IDLE would keep ingesting under an
+        // unscoped admin context even after the delegation was revoked. Fail closed when
+        // the authorization wiring is missing.
+        if (profile.isDelegated()) {
+            if (schedulerService == null) {
+                return "Delegated IMAP IDLE requires scheduler wiring for authorization";
+            }
+            IngestSchedulerService.DelegatedAuthorization auth =
+                    schedulerService.authorizeDelegatedFetch(profile, connector);
+            if (!auth.isAllowed()) {
+                return "Delegated authorization denied for profile " + profileId
+                        + " (" + auth.getDenialReason() + ")";
+            }
+        }
+
         String password = fetchSupport.resolvePassword(connector);
         if (password == null) return "No password for IMAP connector";
 
@@ -62,6 +82,26 @@ public class ImapIdleMonitor {
                 imap.connect();
                 imap.startIdle(mailbox, msg -> {
                     try {
+                        // Re-authorize on every message: IDLE is a long-lived session and the
+                        // delegation can be revoked while it runs. Admin profiles return
+                        // allowed + null context (legacy admin behaviour preserved).
+                        CallContext idleCtx = null;
+                        if (profile.isDelegated()) {
+                            if (schedulerService == null) {
+                                logger.error("IDLE: delegated profile {} but scheduler not wired; stopping", profileId);
+                                imap.stopIdle();
+                                return;
+                            }
+                            IngestSchedulerService.DelegatedAuthorization auth =
+                                    schedulerService.authorizeDelegatedFetch(profile, connector);
+                            if (!auth.isAllowed()) {
+                                logger.warn("IDLE: delegated authorization revoked for profile {} ({}); stopping session",
+                                        profileId, auth.getDenialReason());
+                                imap.stopIdle();
+                                return;
+                            }
+                            idleCtx = auth.getCallContext();
+                        }
                         java.io.InputStream eml = imap.fetchMessage(mailbox, msg.uid());
                         ExternalIngestRequest req = new ExternalIngestRequest();
                         req.setProfileId(profileId);
@@ -78,7 +118,7 @@ public class ImapIdleMonitor {
                         metadata.put("messageStableId", msg.stableKey());
                         if (msg.messageId() != null) metadata.put("internetMessageId", msg.messageId());
                         req.setMetadata(metadata);
-                        canonicalImportService.executeMailImport(null, req);
+                        canonicalImportService.executeMailImport(idleCtx, req);
                         logger.info("IDLE: imported message {} from {}", msg.stableKey(), mailbox);
                     } catch (Exception e) {
                         logger.error("IDLE: failed to import message {}: {}", msg.uid(), e.getMessage());

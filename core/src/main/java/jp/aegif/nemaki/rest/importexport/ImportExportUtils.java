@@ -104,6 +104,58 @@ public final class ImportExportUtils {
         // Utility class
     }
 
+    /**
+     * Sanitize a filename for use in the legacy {@code filename="..."} parameter
+     * of a Content-Disposition header. Strips CR/LF (response-splitting) and the
+     * double-quote / backslash that could break out of the quoted-string and
+     * inject additional parameters (e.g. a spoofed extension). Returns
+     * {@code "download"} for null/empty input.
+     */
+    public static String sanitizeHeaderFileName(String fileName) {
+        if (fileName == null || fileName.isEmpty()) {
+            return "download";
+        }
+        return fileName.replaceAll("[\"\\\\\\r\\n]", "_");
+    }
+
+    /**
+     * Build a safe {@code Content-Disposition: attachment} header value for a
+     * download. Emits both the sanitized legacy {@code filename="..."} (ASCII,
+     * injection-safe) and an RFC 6266 / RFC 5987 {@code filename*=UTF-8''...}
+     * parameter so non-ASCII names are preserved without allowing header or
+     * parameter injection. Use this for every content/rendition/export download
+     * instead of concatenating a raw filename.
+     */
+    public static String contentDispositionAttachment(String fileName) {
+        String safeAscii = sanitizeHeaderFileName(fileName);
+        String source = (fileName == null || fileName.isEmpty()) ? "download" : fileName;
+        return "attachment; filename=\"" + safeAscii + "\"; filename*=UTF-8''"
+                + encodeRfc5987(source);
+    }
+
+    /**
+     * Percent-encode a string per RFC 5987 (for the {@code filename*} parameter).
+     * Every byte that is not an RFC 5987 attr-char is percent-encoded, which makes
+     * control characters and quotes inherently safe while preserving UTF-8 names.
+     */
+    private static String encodeRfc5987(String s) {
+        StringBuilder sb = new StringBuilder();
+        byte[] bytes = s.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        final String attrChars = "!#$&+-.^_`|~";
+        for (byte b : bytes) {
+            int c = b & 0xFF;
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+                    || attrChars.indexOf(c) >= 0) {
+                sb.append((char) c);
+            } else {
+                sb.append('%');
+                sb.append(Character.toUpperCase(Character.forDigit((c >> 4) & 0xF, 16)));
+                sb.append(Character.toUpperCase(Character.forDigit(c & 0xF, 16)));
+            }
+        }
+        return sb.toString();
+    }
+
     public static String guessMimeType(String fileName) {
         if (fileName == null) {
             return "application/octet-stream";

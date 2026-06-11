@@ -434,6 +434,13 @@ public class UserResource {
             user.setSubTypeProperties(properties);
 
             if (StringUtils.isNotBlank(request.getPassword())) {
+                // Enforce the configured password policy on update too (parity with
+                // createUser / changePassword); otherwise the update path is a policy bypass.
+                PasswordPolicyService.PasswordPolicyResult policyResult =
+                        passwordPolicyService.validate(request.getPassword(), repositoryId);
+                if (!policyResult.isOk()) {
+                    throw ApiException.invalidArgument(policyResult.getErrorMessage());
+                }
                 String passwordHash = BCrypt.hashpw(request.getPassword(), BCrypt.gensalt());
                 user.setPassowrd(passwordHash);
             }

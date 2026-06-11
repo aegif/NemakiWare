@@ -562,7 +562,11 @@ public class GroupController {
      */
     private Folder getOrCreateSystemSubFolder(String repositoryId, String name) {
         Folder systemFolder = getContentService().getSystemFolder(repositoryId);
-        
+        if (systemFolder == null) {
+            // Guard against NPE when the repository is not fully initialized.
+            throw new RuntimeException("System folder not found for repository: " + repositoryId);
+        }
+
         // Check if folder already exists
         List<Content> children = getContentService().getChildren(repositoryId, systemFolder.getId());
         if (CollectionUtils.isNotEmpty(children)) {

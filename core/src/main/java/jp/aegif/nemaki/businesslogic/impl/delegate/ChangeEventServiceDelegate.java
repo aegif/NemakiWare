@@ -58,7 +58,13 @@ public class ChangeEventServiceDelegate {
 			// Per CMIS spec: null is acceptable when there are no changes in the repository
 			return null;
 		} else {
-			return String.valueOf(latest.getId());
+			// Must return the change-log TOKEN (the value clients pass back to
+			// getContentChanges and that compileChangeDataList advances), NOT the
+			// CouchDB document _id. Returning the _id put RepositoryInfo
+			// .latestChangeLogToken in a different value-space than the per-event
+			// token, so hasMoreItems could never reach equality (endless drain)
+			// and the published cursor was not parseable by getContentChanges.
+			return latest.getToken();
 		}
 	}
 }

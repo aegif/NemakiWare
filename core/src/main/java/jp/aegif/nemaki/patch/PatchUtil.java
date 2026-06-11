@@ -179,6 +179,10 @@ public class PatchUtil {
 
 	protected Folder getOrCreateSystemSubFolder(String repositoryId, String name){
 		Folder systemFolder = contentService.getSystemFolder(repositoryId);
+		if (systemFolder == null) {
+			// Guard against NPE when the repository is not fully initialized.
+			throw new RuntimeException("System folder not found for repository: " + repositoryId);
+		}
 
 		// check existing folder
 		List<Content> children = contentService.getChildren(repositoryId, systemFolder.getId());

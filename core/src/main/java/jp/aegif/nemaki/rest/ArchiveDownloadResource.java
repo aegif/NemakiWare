@@ -69,16 +69,6 @@ public class ArchiveDownloadResource extends ResourceBase {
         }
     }
 
-    /**
-     * Sanitize filename for Content-Disposition header.
-     * Removes characters that could cause header injection (CRLF, double quotes, backslash).
-     */
-    private static String sanitizeFileName(String fileName) {
-        if (fileName == null) return "download";
-        // Remove CRLF, double quotes, and backslash to prevent header injection
-        return fileName.replaceAll("[\"\\\\\\r\\n]", "_");
-    }
-
     @GET
     @Produces(MediaType.APPLICATION_OCTET_STREAM)
     public Response download(
@@ -148,10 +138,10 @@ public class ArchiveDownloadResource extends ResourceBase {
         }
 
         String mimeType = archive.getMimeType() != null ? archive.getMimeType() : "application/octet-stream";
-        String fileName = sanitizeFileName(archive.getName());
 
         return Response.ok(contentStream, mimeType)
-                .header("Content-Disposition", "attachment; filename=\"" + fileName + "\"")
+                .header("Content-Disposition", jp.aegif.nemaki.rest.importexport.ImportExportUtils
+                        .contentDispositionAttachment(archive.getName()))
                 .build();
     }
 

@@ -930,6 +930,9 @@
         <property name="connectorService" ref="connectorDefinitionService" />
         <property name="fetchSupport" ref="fetchSupport" />
         <property name="canonicalImportService" ref="canonicalImportService" />
+        <!-- Delegation re-authorization for IDLE (same gate as scheduler/webhook).
+             Circular ref with ingestSchedulerService is resolvable via setter injection. -->
+        <property name="schedulerService" ref="ingestSchedulerService" />
     </bean>
     <bean id="ingestSchedulerService" class="jp.aegif.nemaki.rest.ingest.IngestSchedulerService">
         <property name="profileService" ref="importProfileDefinitionService" />
@@ -969,6 +972,9 @@
         <property name="propertyManager" ref="propertyManager" />
         <property name="passwordPolicyService" ref="passwordPolicyService" />
         <property name="userGroupSearchService" ref="UserGroupSearchService" />
+        <!-- Explicitly wire threadLockService so it does not silently fall back to
+             the SpringContext manual lookup (the fallback was load-bearing). -->
+        <property name="threadLockService" ref="threadLockService" />
     </bean>
 
     <bean id="groupItemResource" class="jp.aegif.nemaki.rest.GroupItemResource">

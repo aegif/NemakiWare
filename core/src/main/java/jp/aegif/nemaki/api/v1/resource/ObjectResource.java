@@ -544,8 +544,9 @@ public class ObjectResource {
                 responseBuilder.type(contentStream.getMimeType());
             }
             if (contentStream.getFileName() != null) {
-                responseBuilder.header("Content-Disposition", 
-                        "attachment; filename=\"" + contentStream.getFileName() + "\"");
+                responseBuilder.header("Content-Disposition",
+                        jp.aegif.nemaki.rest.importexport.ImportExportUtils
+                                .contentDispositionAttachment(contentStream.getFileName()));
             }
                         if (contentStream.getLength() >= 0) {
                             responseBuilder.header("Content-Length", contentStream.getLength());

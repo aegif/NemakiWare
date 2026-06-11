@@ -757,18 +757,32 @@ private ContentService getContentServiceSafe() {
 
 					// Update password if provided
 					if (StringUtils.isNotBlank(password)) {
-						String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
-						user.setPassowrd(passwordHash);
+						// Enforce the configured password policy on update (parity with create).
+						PasswordPolicyService ppsUpdate = getPasswordPolicyService();
+						if (ppsUpdate != null) {
+							PasswordPolicyService.PasswordPolicyResult policyResult =
+									ppsUpdate.validate(password, repositoryId);
+							if (!policyResult.isOk()) {
+								status = false;
+								addErrMsg(errMsg, ITEM_USER, policyResult.getErrorMessage());
+							}
+						}
+						if (status) {
+							String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
+							user.setPassowrd(passwordHash);
+						}
 					}
 
-					setModifiedSignature(httpRequest, user);
+					if (status) {
+						setModifiedSignature(httpRequest, user);
 
-					try {
-						service.update(new SystemCallContext(repositoryId), repositoryId, user);
-					} catch (Exception e) {
-						log.error("User update error: " + e.getMessage(), e);
-						status = false;
-						addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
+						try {
+							service.update(new SystemCallContext(repositoryId), repositoryId, user);
+						} catch (Exception e) {
+							log.error("User update error: " + e.getMessage(), e);
+							status = false;
+							addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_UPDATE);
+						}
 					}
 				}
 			}
@@ -1196,8 +1210,21 @@ private ContentService getContentServiceSafe() {
 
 			// Set password if provided (on the same user object to preserve subTypeProperties)
 			if (StringUtils.isNotBlank(password)) {
-				String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
-				user.setPassowrd(passwordHash);
+				// Enforce the configured password policy on update (parity with create);
+				// otherwise this path is a policy bypass.
+				PasswordPolicyService ppsUpdate = getPasswordPolicyService();
+				if (ppsUpdate != null) {
+					PasswordPolicyService.PasswordPolicyResult policyResult =
+							ppsUpdate.validate(password, repositoryId);
+					if (!policyResult.isOk()) {
+						status = false;
+						addErrMsg(errMsg, ITEM_USER, policyResult.getErrorMessage());
+					}
+				}
+				if (status) {
+					String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
+					user.setPassowrd(passwordHash);
+				}
 			}
 
 			// Persist changes only if all validation passed

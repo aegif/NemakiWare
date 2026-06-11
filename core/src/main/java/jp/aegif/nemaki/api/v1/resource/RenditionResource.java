@@ -294,7 +294,8 @@ public class RenditionResource {
             
             return Response.ok(streamingOutput)
                     .type(mimeType)
-                    .header("Content-Disposition", "attachment; filename=\"" + (rendition.getTitle() != null ? rendition.getTitle() : "rendition") + "\"")
+                    .header("Content-Disposition", jp.aegif.nemaki.rest.importexport.ImportExportUtils
+                            .contentDispositionAttachment(rendition.getTitle() != null ? rendition.getTitle() : "rendition"))
                     .build();
             
         } catch (ApiException e) {

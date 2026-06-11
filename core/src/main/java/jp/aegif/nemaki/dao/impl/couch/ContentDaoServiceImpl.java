@@ -1648,42 +1648,19 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 
-			// Use _all_docs with include_docs to get all documents, then filter by type
-			Map<String, Object> options = new HashMap<>();
-			options.put("include_docs", true);
-
-			AllDocsResult result = client.getAllDocs(options);
-			if (result != null && result.getRows() != null) {
-				for (DocsResultRow row : result.getRows()) {
+			// Query only apiKey documents via Mango _find instead of loading the
+			// entire repository DB with _all_docs + include_docs (OOM risk on large
+			// repositories). High explicit limit avoids the _find default cap of 25.
+			List<Map<String, Object>> apiKeyDocs = client.findRawBySelector(
+					java.util.Collections.singletonMap("type", (Object) "apiKey"), 100000);
+			for (Map<String, Object> docMap : apiKeyDocs) {
 					try {
-						Object doc = row.getDoc();
-						Map<String, Object> docMap = null;
-
-						// Handle both Document and Map types from Cloudant SDK
-						if (doc instanceof com.ibm.cloud.cloudant.v1.model.Document) {
-							com.ibm.cloud.cloudant.v1.model.Document document = (com.ibm.cloud.cloudant.v1.model.Document) doc;
-							docMap = document.getProperties();
-							// Add _id and _rev from document getters
-							if (document.getId() != null) {
-								docMap.put("_id", document.getId());
-							}
-							if (document.getRev() != null) {
-								docMap.put("_rev", document.getRev());
-							}
-						} else if (doc instanceof Map) {
-							@SuppressWarnings("unchecked")
-							Map<String, Object> map = (Map<String, Object>) doc;
-							docMap = map;
-						}
-
 						if (docMap != null) {
-							String type = (String) docMap.get("type");
-
-							if ("apiKey".equals(type)) {
+							{
 								jp.aegif.nemaki.model.ApiKey apiKey = new jp.aegif.nemaki.model.ApiKey();
 								apiKey.setId((String) docMap.get("_id"));
 								apiKey.setRevision((String) docMap.get("_rev"));
-								apiKey.setType(type);
+								apiKey.setType((String) docMap.get("type"));
 								apiKey.setUserId((String) docMap.get("userId"));
 								apiKey.setRepositoryId((String) docMap.get("repositoryId"));
 								apiKey.setKeyHash((String) docMap.get("keyHash"));
@@ -1736,7 +1713,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 						log.warn("Error converting API key document: " + e.getMessage());
 					}
 				}
-			}
 			log.info("getApiKeys: Retrieved " + apiKeys.size() + " API keys for repository " + repositoryId);
 		} catch (Exception e) {
 			log.error("Error getting API keys for repository " + repositoryId + ": " + e.getMessage(), e);

@@ -786,10 +786,24 @@ public class WebAuthnResource extends ResourceBase {
 			if (cred == null) {
 				return Optional.empty();
 			}
+			// SECURITY: Bind the credential to its STORED owner, never to the
+			// caller-supplied userHandle. In a usernameless / discoverable
+			// assertion the userHandle comes from the (unsigned, attacker
+			// controllable) client response; echoing it back would make the
+			// webauthn library's userHandle-equality check a tautology and allow
+			// impersonation of any user (including admin). Reject when the
+			// supplied userHandle does not match the registered owner.
+			ByteArray storedUserHandle = new ByteArray(
+					cred.getUserId().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+			if (userHandle != null && !userHandle.equals(storedUserHandle)) {
+				log.warn("WebAuthn lookup userHandle mismatch for credential " + cred.getId()
+						+ " (rejecting impersonation attempt)");
+				return Optional.empty();
+			}
 			try {
 				return Optional.of(RegisteredCredential.builder()
 						.credentialId(credentialId)
-						.userHandle(userHandle)
+						.userHandle(storedUserHandle)
 						.publicKeyCose(ByteArray.fromBase64Url(cred.getPublicKeyCose()))
 						.signatureCount(cred.getSignCount())
 						.build());
