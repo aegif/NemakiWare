@@ -6,6 +6,77 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.1.3 — Full-review remediation (security + correctness) (2026-06-11)
+_On `release/3.1.3`. Two passes: Fable multi-agent review + Codex
+independent verification, then prioritized fixes with regression tests
+and live verification (TCK + redeploy)._
+
+### Security
+- **[CRITICAL] WebAuthn authentication bypass** — the discoverable
+  (usernameless) assertion flow trusted the client-supplied `userHandle`:
+  `NemakiCredentialRepository.lookup()` echoed it back instead of binding
+  to the credential's stored owner, making the library's userHandle
+  equality check a tautology. An attacker with their own passkey could set
+  `response.userHandle = bytes("admin")` and authenticate as any user
+  (admin included). Fixed by binding to `cred.getUserId()` and rejecting a
+  mismatched handle (parity with `lookupAll()`). +`WebAuthnResourceLookupTest`.
+- **Password-policy bypass** — the Spring MVC user path (`UserController`
+  create/update), the api/v1 `UserResource` update, and the legacy
+  `UserItemResource` update/updateJson hashed passwords without calling
+  `PasswordPolicyService.validate()`. All paths now enforce the policy.
+  +`UserControllerPasswordPolicyTest`.
+- **IMAP IDLE delegation bypass** — `ImapIdleMonitor` ran imports with a
+  `null` CallContext, skipping the delegated-profile re-authorization that
+  the scheduler/webhook paths apply. IDLE now re-evaluates
+  `authorizeDelegatedFetch` at start and per message and runs under the
+  synthesized context (admin profiles unchanged).
+- **Content-Disposition filename injection** — download filenames were
+  concatenated unsanitized, allowing quote-breakout / extension spoofing.
+  Centralized in `ImportExportUtils.contentDispositionAttachment`
+  (sanitized `filename=` + RFC 5987 `filename*`) across the CMIS Browser,
+  api/v1 Object/Rendition, ImportExport and ArchiveDownload paths.
+  +`ContentDispositionTest`.
+
+### Correctness / data integrity
+- **checkIn data loss** — the new version was created only after the PWC
+  (and the former version's latest flags) had been mutated, so a failed
+  `create()` could lose the user's checked-out edits and leave the version
+  series with no latest version. Reordered so the new version is persisted
+  FIRST; the former-version flag flip and PWC deletion are now post-create
+  cleanup. Verified by TCK VersioningTestGroup.
+- **changeLog token uniqueness + termination** — change-event tokens were
+  the raw millisecond clock (collisions under Virtual Threads → duplicate /
+  lost `getContentChanges` events). Now strictly increasing within the JVM
+  (AtomicLong floor, still a parseable numeric token). Separately,
+  `getLatestChangeToken` returned the CouchDB `_id` instead of the token,
+  so `hasMoreItems` never reached equality (endless drain) and the
+  published `latestChangeLogToken` cursor was unusable — fixed to return
+  the token.
+- **getApiKeys memory** — replaced `_all_docs + include_docs` (full-DB
+  load into the JVM) with a Mango `_find` selector, and added a `(type)`
+  index on each content DB (`Patch_ApiKeyMangoIndex`) so the lookup is
+  index-backed rather than a full scan.
+
+### UI
+- Group create/update/delete now surface server `{status:"failure"}`
+  (HTTP 200) bodies as errors instead of reporting success; `restoreObject`
+  no longer swallows a restore failure as success; `DocumentList` guards
+  against a stale folder response overwriting the current folder's list /
+  path / allowable-actions during rapid navigation.
+
+### Quality / maintainability
+- Null guards on the NPE-prone `getOrCreateSystemSubFolder` copies; explicit
+  `threadLockService` wiring for `userItemResource` (removing a load-bearing
+  SpringContext fallback); +`executeChatContextImport` dedupe-skip
+  regression test.
+
+### Deferred (not active vulnerabilities)
+- Ingest checkpoint cross-item gap (#3) and fetch-timeout misreport (#13) —
+  require orchestrator-wide changes + live-connector integration tests.
+- REST 3-stack consolidation (#14) — large phased refactor.
+
+---
+
 ## 3.1.1-RC6.13 — Test quality: feature-readback now binds to production reader (closes RC6.12 P3)
 _Release candidate on `release/3.1.1-RC6` (2026-05-31), branched
 off `v3.1.1-RC6.12` (`f8ec0326c`)._

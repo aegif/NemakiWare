@@ -104,13 +104,19 @@ public class UserController {
                 .getBean("ContentService", ContentService.class);
     }
 
+    private jp.aegif.nemaki.util.PasswordPolicyService passwordPolicyService;
+
     private jp.aegif.nemaki.util.PasswordPolicyService getPasswordPolicyService() {
+        if (passwordPolicyService != null) {
+            return passwordPolicyService;
+        }
         try {
-            return jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
+            passwordPolicyService = jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
                     .getBean("passwordPolicyService", jp.aegif.nemaki.util.PasswordPolicyService.class);
         } catch (Exception e) {
             return null;
         }
+        return passwordPolicyService;
     }
 
     /**

@@ -55,6 +55,24 @@ public class VersioningServiceDelegate {
 
 	public void updateVersionProperties(CallContext callContext, String repositoryId, VersioningState versioningState,
 			Document d, Document former) {
+		updateVersionProperties(callContext, repositoryId, versioningState, d, former, true);
+	}
+
+	/**
+	 * Set the new version's flags and (optionally) flip the former version's
+	 * latest flags in the database.
+	 *
+	 * @param updateFormerNow when {@code false}, the in-memory flags on {@code d}
+	 *        are set but the former version is NOT written to the database. The
+	 *        caller is then responsible for calling
+	 *        {@link #updateFormerVersionFlags(String, Document, boolean)} AFTER it
+	 *        has durably persisted the new version. checkIn uses this so the former
+	 *        version is not flipped to non-latest before the new version exists —
+	 *        otherwise a failure to create the new version would leave the version
+	 *        series with no latest version.
+	 */
+	public void updateVersionProperties(CallContext callContext, String repositoryId, VersioningState versioningState,
+			Document d, Document former, boolean updateFormerNow) {
 		d.setVersionSeriesId(former.getVersionSeriesId());
 
 		switch (versioningState) {
@@ -68,7 +86,9 @@ public class VersioningServiceDelegate {
 			d.setVersionSeriesCheckedOutBy(null);
 			d.setVersionSeriesCheckedOutId(null);
 			// Update former version flags (refresh from DB to avoid CouchDB conflicts)
-			updateFormerVersionFlags(repositoryId, former, true);
+			if (updateFormerNow) {
+				updateFormerVersionFlags(repositoryId, former, true);
+			}
 			break;
 		case MINOR:
 			d.setLatestVersion(true);
@@ -80,7 +100,9 @@ public class VersioningServiceDelegate {
 			d.setVersionSeriesCheckedOutBy(null);
 			d.setVersionSeriesCheckedOutId(null);
 			// Update former version flags (refresh from DB to avoid CouchDB conflicts)
-			updateFormerVersionFlags(repositoryId, former, false);
+			if (updateFormerNow) {
+				updateFormerVersionFlags(repositoryId, former, false);
+			}
 			break;
 		case CHECKEDOUT:
 			d.setLatestVersion(false);

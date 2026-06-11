@@ -276,6 +276,13 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- (type) Mango index on each content DB so getApiKeys resolves
+				     {type:apiKey} via _find without a full collection scan. -->
+				<bean class="jp.aegif.nemaki.patch.Patch_ApiKeyMangoIndex">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 			</list>
 		</property>
 	</bean>

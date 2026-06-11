@@ -1476,19 +1476,24 @@ public class ContentServiceImpl implements ContentService {
 		setSignature(callContext, checkedIn);
 		checkedIn.setCheckinComment(checkinComment);
 
-		// update version information
+		// Set the new version's flags in memory, but DEFER flipping the former
+		// version's latest flags (a DB write) until after the new version is
+		// created. If we flipped the former version to non-latest before create()
+		// and create() then failed, the version series would be left with NO
+		// latest version.
 		VersioningState versioningState = (major) ? VersioningState.MAJOR : VersioningState.MINOR;
-		updateVersionProperties(callContext, repositoryId, versioningState, checkedIn, latest);
+		updateVersionProperties(callContext, repositoryId, versioningState, checkedIn, latest, false);
 
-		// Create the new version FIRST. The PWC (and its content) must not be
-		// destroyed until the new version is safely persisted; otherwise a
-		// failure in create() would lose the user's checked-out edits with no
-		// way to recover. Only after a successful create do we cancel the
-		// checkout (which physically deletes the PWC).
+		// Create the new version FIRST. Nothing is mutated in the database until
+		// this succeeds: the PWC (and its content) is intact and the former
+		// version is still latest, so a failure here loses no data and leaves a
+		// consistent version series that the user can simply retry.
 		Document result = contentDaoService.create(repositoryId, checkedIn);
 
-		// Reverse the effect of checkedout (deletes the PWC) now that the new
-		// version exists.
+		// New version durably persisted — now flip the former version to
+		// non-latest and delete the PWC (cancel the checkout). These are cleanup
+		// steps; a failure here leaves the new version in place (recoverable).
+		updateFormerVersionFlags(repositoryId, latest, major);
 		cancelCheckOut(callContext, repositoryId, id, extension);
 
 		// Apply policies to the newly created document
@@ -1718,6 +1723,12 @@ public class ContentServiceImpl implements ContentService {
 			Document d, Document former) {
 		initDelegates();
 		versioningDelegate.updateVersionProperties(callContext, repositoryId, versioningState, d, former);
+	}
+
+	private void updateVersionProperties(CallContext callContext, String repositoryId, VersioningState versioningState,
+			Document d, Document former, boolean updateFormerNow) {
+		initDelegates();
+		versioningDelegate.updateVersionProperties(callContext, repositoryId, versioningState, d, former, updateFormerNow);
 	}
 
 	/**

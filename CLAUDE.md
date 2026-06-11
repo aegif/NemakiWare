@@ -360,6 +360,68 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.1.1** (2026-04-02)
 
+### 3.1.3 (2026-06-11) — 全面レビュー remediation (security + correctness)
+
+ブランチ: `release/3.1.3`。Fable マルチエージェントレビュー + Codex
+独立検証で確定した課題を優先順位順に修正。各修正に regression test +
+実機検証 (TCK + redeploy)。詳細は `RELEASE_NOTES.md` の 3.1.3 セクション。
+
+**コミット**: `ef33e0b4f` (主要18修正) + 後続 (P1 follow-up: checkIn 原子性
+完成 / パスワードポリシー test / apiKey index / docs)
+
+**セキュリティ**:
+- [CRITICAL] WebAuthn 認証バイパス: `NemakiCredentialRepository.lookup()`
+  が discoverable flow でクライアント提供の `userHandle` を echo し、保存
+  所有者を無視 → ライブラリの userHandle 一致チェックがトートロジー化。
+  自分の passkey + `response.userHandle=bytes("admin")` で任意ユーザー
+  (admin含む) になりすまし可能だった。`cred.getUserId()` バインド +
+  不一致拒否で修正 (`lookupAll()` と同パターン)。+`WebAuthnResourceLookupTest`
+- パスワードポリシーバイパス: `UserController`(create/update) + api/v1
+  `UserResource`(update) + legacy `UserItemResource`(update/updateJson) が
+  `PasswordPolicyService.validate()` を呼ばず迂回。全経路で enforce。
+  +`UserControllerPasswordPolicyTest` (UserController を field 注入対応に)
+- IMAP IDLE 委譲認可バイパス: `ImapIdleMonitor` が `CallContext=null` で
+  実行し scheduler/webhook の委譲再認可を迂回。起動時 + メッセージ毎に
+  `authorizeDelegatedFetch` を適用し合成 context で実行 (admin は不変)。
+  serviceContext.xml で `imapIdleMonitor ↔ ingestSchedulerService` の
+  setter 循環参照 (Spring singleton で解決、起動確認済)
+- Content-Disposition ファイル名注入: 無サニタイズ連結による quote-breakout
+  / 拡張子偽装。`ImportExportUtils.contentDispositionAttachment`
+  (サニタイズ `filename=` + RFC 5987 `filename*`) に集約、CMIS Browser /
+  api/v1 Object/Rendition / ImportExport / ArchiveDownload に適用。
+  +`ContentDispositionTest`
+
+**正確性 / データ整合性**:
+- checkIn データ損失: 新バージョン create 前に PWC + 旧版 latest フラグを
+  変更していた → create 失敗で編集内容喪失 + 版系列に最新版なし。新版を
+  **先に永続化**し、旧版フラグ flip と PWC 削除を post-create cleanup 化。
+  `VersioningServiceDelegate.updateVersionProperties` に `updateFormerNow`
+  オーバーロード追加。TCK VersioningTestGroup で検証
+- changeLog token: ミリ秒生値で非ユニーク (Virtual Threads 衝突 → 重複/
+  欠落)。AtomicLong で JVM 内単調増加 (数値トークン維持)。別件で
+  `getLatestChangeToken` が CouchDB `_id` を返し `hasMoreItems` が永遠に
+  true (endless drain)・published cursor が使用不能だった → token を返す
+- getApiKeys メモリ: `_all_docs + include_docs` (全DB を JVM ロード) を
+  Mango `_find` に置換 + content DB へ `(type)` index 追加
+  (`Patch_ApiKeyMangoIndex`、per-repository、実機で idx_type 作成確認)。
+  `CloudantClientWrapper.findRawBySelector` 追加
+
+**UI**:
+- group create/update/delete がサーバ `{status:"failure"}`(HTTP200) を
+  未検査で成功通知 → status 検査追加。`restoreObject` の失敗握り潰し修正。
+  `DocumentList` のフォルダ高速移動時 stale レスポンス上書き防止 (連番ガード)
+
+**品質 / 保守性**:
+- `getOrCreateSystemSubFolder` の NPE 危険3コピーに null ガード。
+  `userItemResource` の `threadLockService` 明示 DI 配線 (load-bearing な
+  SpringContext フォールバック解消)。+`executeChatContextImport` の
+  dedupe-skip 伝播 regression test
+
+**Deferred (アクティブな脆弱性ではない)**:
+- ingest checkpoint cross-item gap (#3) / fetch-timeout 誤記録 (#13):
+  全 orchestrator 改修 + ライブコネクタ統合テストが必要
+- REST 3系統統合 (#14): 大規模 phased refactor
+
 ### RC37 / RC6.13 (2026-05-31) — Test quality: feature-readback now binds to production reader (closes RC6.12 P3) (shipped)
 
 ブランチ: `release/3.1.1-RC6` (off `v3.1.1-RC6.12` = `f8ec0326c`)
