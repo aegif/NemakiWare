@@ -70,10 +70,22 @@ and live verification (TCK + redeploy)._
   SpringContext fallback); +`executeChatContextImport` dedupe-skip
   regression test.
 
+### Ingest robustness (P2 follow-up)
+- **Fetch-timeout misreport (#13)** — a scheduled fetch that hits the poll
+  timeout is now recorded as `STUCK` (not a misleading `FAILED` with
+  imported=0); items already imported reconcile on the next poll via dedupe.
+- **Checkpoint cross-item gap (#3)** — an item whose download fails BEFORE
+  reaching `execute()` (Box/Dropbox files; Notion/Teams/Mattermost
+  attachments) is now dead-lettered, so the high-water checkpoint advancing
+  past it (when a newer item in the batch succeeds) no longer silently loses
+  it. New `FetchSupport.saveToDlq` helper. Note: the orchestrator-level DLQ
+  path is not yet unit-covered (adapters are not injectable) — WireMock
+  orchestrator integration tests are a recommended follow-up.
+
 ### Deferred (not active vulnerabilities)
-- Ingest checkpoint cross-item gap (#3) and fetch-timeout misreport (#13) —
-  require orchestrator-wide changes + live-connector integration tests.
-- REST 3-stack consolidation (#14) — large phased refactor.
+- REST 3-stack consolidation (#14) — large phased maintainability refactor
+  (the one active symptom, password-policy divergence, is already fixed
+  above). Best done as its own RC with full API E2E + Playwright gating.
 
 ---
 

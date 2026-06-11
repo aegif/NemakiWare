@@ -417,10 +417,18 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
   SpringContext フォールバック解消)。+`executeChatContextImport` の
   dedupe-skip 伝播 regression test
 
+**Ingest robustness (P2 follow-up、後続コミット)**:
+- fetch-timeout 誤記録 (#13): timeout を STUCK として記録 (FAILED/imported=0 の
+  誤断定をやめる)。`IngestJobService.markTimedOut`
+- checkpoint cross-item gap (#3): execute() 到達前の download 失敗 (Box/Dropbox
+  file、Notion/Teams/Mattermost attachment) を DLQ 退避し、checkpoint leapfrog に
+  よる取りこぼしを防止。`FetchSupport.saveToDlq`。orchestrator 経路は adapter
+  非注入で単体不可 (ヘルパーのみ bound) — WireMock orchestrator IT を follow-up 推奨
+
 **Deferred (アクティブな脆弱性ではない)**:
-- ingest checkpoint cross-item gap (#3) / fetch-timeout 誤記録 (#13):
-  全 orchestrator 改修 + ライブコネクタ統合テストが必要
-- REST 3系統統合 (#14): 大規模 phased refactor
+- REST 3系統統合 (#14): 大規模 phased maintainability refactor。唯一の active
+  症状 (password-policy divergence) は P1 で解消済み。専用 RC で full API E2E +
+  Playwright gating の下で実施すべき
 
 ### RC37 / RC6.13 (2026-05-31) — Test quality: feature-readback now binds to production reader (closes RC6.12 P3) (shipped)
 
