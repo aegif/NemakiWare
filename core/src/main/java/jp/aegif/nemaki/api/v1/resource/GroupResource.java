@@ -30,7 +30,11 @@ import jp.aegif.nemaki.api.v1.model.request.GroupRequest;
 import jp.aegif.nemaki.api.v1.model.response.GroupListResponse;
 import jp.aegif.nemaki.api.v1.model.response.GroupResponse;
 import jp.aegif.nemaki.api.v1.model.response.LinkInfo;
+import java.util.HashSet;
+import java.util.Set;
+
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.businesslogic.GroupMembershipEditor;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
@@ -508,36 +512,38 @@ public class GroupResource {
                         throw ApiException.groupNotFound(groupId, repositoryId);
                     }
             
-                    List<String> currentUsers = group.getUsers() != null ? new ArrayList<>(group.getUsers()) : new ArrayList<>();
-            List<String> currentGroups = group.getGroups() != null ? new ArrayList<>(group.getGroups()) : new ArrayList<>();
-            
+            // Shared merge; api/v1 keeps its fail-fast contract by mapping a
+            // non-existent member (NOT_FOUND) to a 404 ApiException.
             if (request.getUsers() != null) {
-                for (String userId : request.getUsers()) {
-                    UserItem user = contentService.getUserItemById(repositoryId, userId);
-                    if (user == null) {
-                        throw ApiException.userNotFound(userId, repositoryId);
-                    }
-                    if (!currentUsers.contains(userId)) {
-                        currentUsers.add(userId);
+                Set<String> validUserIds = new HashSet<>();
+                for (UserItem u : contentService.getUserItems(repositoryId)) {
+                    validUserIds.add(u.getUserId());
+                }
+                GroupMembershipEditor.EditResult edit = GroupMembershipEditor.edit(
+                        group.getUsers(), request.getUsers(), true, validUserIds, null);
+                for (GroupMembershipEditor.Result r : edit.getResults()) {
+                    if (r.getOutcome() == GroupMembershipEditor.Outcome.NOT_FOUND) {
+                        throw ApiException.userNotFound(r.getId(), repositoryId);
                     }
                 }
+                group.setUsers(edit.getList());
             }
-            
+
             if (request.getGroups() != null) {
-                for (String nestedGroupId : request.getGroups()) {
-                    GroupItem nestedGroup = contentService.getGroupItemById(repositoryId, nestedGroupId);
-                    if (nestedGroup == null) {
-                        throw ApiException.groupNotFound(nestedGroupId, repositoryId);
-                    }
-                    if (!currentGroups.contains(nestedGroupId)) {
-                        currentGroups.add(nestedGroupId);
+                Set<String> validGroupIds = new HashSet<>();
+                for (GroupItem g : contentService.getGroupItems(repositoryId)) {
+                    validGroupIds.add(g.getGroupId());
+                }
+                GroupMembershipEditor.EditResult edit = GroupMembershipEditor.edit(
+                        group.getGroups(), request.getGroups(), true, validGroupIds, groupId);
+                for (GroupMembershipEditor.Result r : edit.getResults()) {
+                    if (r.getOutcome() == GroupMembershipEditor.Outcome.NOT_FOUND) {
+                        throw ApiException.groupNotFound(r.getId(), repositoryId);
                     }
                 }
+                group.setGroups(edit.getList());
             }
-            
-            group.setUsers(currentUsers);
-            group.setGroups(currentGroups);
-            
+
             setModificationSignature(group);
             
             contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
@@ -597,20 +603,11 @@ public class GroupResource {
                         throw ApiException.groupNotFound(groupId, repositoryId);
                     }
             
-                    List<String> currentUsers = group.getUsers() != null ? new ArrayList<>(group.getUsers()) : new ArrayList<>();
-                    List<String> currentGroups = group.getGroups() != null ? new ArrayList<>(group.getGroups()) : new ArrayList<>();
-            
-            if (request.getUsers() != null) {
-                currentUsers.removeAll(request.getUsers());
-            }
-            
-            if (request.getGroups() != null) {
-                currentGroups.removeAll(request.getGroups());
-            }
-            
-            group.setUsers(currentUsers);
-            group.setGroups(currentGroups);
-            
+            group.setUsers(GroupMembershipEditor.edit(
+                    group.getUsers(), request.getUsers(), false, null, null).getList());
+            group.setGroups(GroupMembershipEditor.edit(
+                    group.getGroups(), request.getGroups(), false, null, null).getList());
+
             setModificationSignature(group);
             
             contentService.update(new SystemCallContext(repositoryId), repositoryId, group);

@@ -22,6 +22,7 @@
 package jp.aegif.nemaki.rest;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.businesslogic.GroupMembershipEditor;
 import jp.aegif.nemaki.businesslogic.UserGroupSearchService;
 import jp.aegif.nemaki.businesslogic.UserGroupSearchService.SearchResult;
 import jp.aegif.nemaki.util.spring.SpringContext;
@@ -540,24 +541,16 @@ public class GroupItemResource extends ResourceBase{
 		return result.toJSONString();
 	}
 
-	/**
-	 *if list is null, return true.
-	 * @param errMsg
-	 * @param id
-	 * @param list
-	 * @return
-	 */
-	private boolean isNewRecord(JSONArray errMsg, String id, List<String> list){
-		boolean status = true;
-		if(list != null){
-			for (String s : list){
-				if(id.equals(s)){
-					status = false;
-					break;
+	private static List<String> toStringList(JSONArray array) {
+		List<String> list = new ArrayList<String>();
+		if (array != null) {
+			for (int i = 0; i < array.size(); i++) {
+				if (array.get(i) != null) {
+					list.add(array.get(i).toString());
 				}
 			}
 		}
-		return status;
+		return list;
 	}
 
 	/**
@@ -570,51 +563,26 @@ public class GroupItemResource extends ResourceBase{
 	 * @return
 	 */
 	private List<String> editUserMembers(String repositoryId, JSONArray targetUserIds, JSONArray errMsg, String apiType, GroupItem group){
-		List<String> usersList = new ArrayList<String>();
-		List<String> ul = group.getUsers();
-		if(ul != null) usersList = ul;
-
-		// Pre-fetch all user IDs once for existence validation (avoid N+1 queries)
-		java.util.Set<String> allUserIds = null;
-		if(apiType.equals(API_ADD)){
-			List<jp.aegif.nemaki.model.UserItem> allUsers = getContentServiceSafe().getUserItems(repositoryId);
-			allUserIds = new java.util.HashSet<>();
-			for(jp.aegif.nemaki.model.UserItem u : allUsers){
-				allUserIds.add(u.getUserId());
+		boolean add = API_ADD.equals(apiType);
+		// Existence check is add-only; pre-fetch the valid user ids once.
+		java.util.Set<String> validIds = null;
+		if(add){
+			validIds = new java.util.HashSet<>();
+			for(jp.aegif.nemaki.model.UserItem u : getContentServiceSafe().getUserItems(repositoryId)){
+				validIds.add(u.getUserId());
 			}
 		}
-
-		for (int i = 0; i < targetUserIds.size(); i++) {
-			String userId = targetUserIds.get(i).toString();
-			boolean notSkip = true;
-
-			//check only when "add" API using pre-fetched set
-			if(apiType.equals(API_ADD)){
-				if(!allUserIds.contains(userId)){
-					notSkip = false;
-					addErrMsg(errMsg, ITEM_USER + ":" + userId, ErrorCode.ERR_NOTFOUND);
-				}
-			}
-
-			if(notSkip){
-				//"add" method
-				if(apiType.equals(API_ADD)){
-					if(isNewRecord(errMsg, userId, usersList)){
-						usersList.add(userId);
-					}else{
-						addErrMsg(errMsg, ITEM_USER + ":" + userId, ErrorCode.ERR_ALREADYMEMBER);
-					}
-				//"remove" method
-				}else if(apiType.equals(API_REMOVE)){
-					if(!isNewRecord(errMsg, userId, usersList)){
-						usersList.remove(userId);
-					}else{
-						addErrMsg(errMsg, ITEM_USER + ":" + userId, ErrorCode.ERR_NOTMEMBER);
-					}
-				}
+		GroupMembershipEditor.EditResult result = GroupMembershipEditor.edit(
+				group.getUsers(), toStringList(targetUserIds), add, validIds, null);
+		for(GroupMembershipEditor.Result r : result.getResults()){
+			switch(r.getOutcome()){
+				case NOT_FOUND: addErrMsg(errMsg, ITEM_USER + ":" + r.getId(), ErrorCode.ERR_NOTFOUND); break;
+				case ALREADY_MEMBER: addErrMsg(errMsg, ITEM_USER + ":" + r.getId(), ErrorCode.ERR_ALREADYMEMBER); break;
+				case NOT_MEMBER: addErrMsg(errMsg, ITEM_USER + ":" + r.getId(), ErrorCode.ERR_NOTMEMBER); break;
+				default: break;
 			}
 		}
-		return usersList;
+		return result.getList();
 	}
 
 
@@ -628,55 +596,30 @@ public class GroupItemResource extends ResourceBase{
 	 * @return
 	 */
 	private List<String>editGroupMembers(String repositoryId, JSONArray targetGroupIds, JSONArray errMsg, String apiType, GroupItem group){
-		//check only when "add" API
-		List<String>groupsList = new ArrayList<String>();
-
-		List<String> gl = group.getGroups();
-		if(gl != null) groupsList = gl;
-
-		// Fetch all groups once and build lookup set for existence checks
-		List<GroupItem> allGroupsList = getContentService().getGroupItems(repositoryId);
-		java.util.Set<String> allGroupIds = new java.util.HashSet<>();
-		for(final GroupItem g : allGroupsList){
-			allGroupIds.add(g.getGroupId());
-		}
-
-		for (int i = 0; i < targetGroupIds.size(); i++) {
-			String groupId = targetGroupIds.get(i).toString();
-			boolean notSkip = true;
-
-			// Existence check using pre-fetched set (no individual DB query)
-			if(apiType.equals(API_ADD) && !allGroupIds.contains(groupId)){
-				notSkip = false;
-				addErrMsg(errMsg, ITEM_GROUP + ":" + groupId, ErrorCode.ERR_NOTFOUND);
-			}
-
-			if(notSkip){
-				//"add" method
-				if(apiType.equals(API_ADD)){
-					if(isNewRecord(errMsg, groupId, groupsList)){
-						if(groupId.equals(group.getId())){
-							//skip and error when trying to add the group to itself
-							addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_GROUPITSELF);
-						}else{
-							groupsList.add(groupId);
-						}
-					}else{
-						//skip and message
-						addErrMsg(errMsg, ITEM_GROUP + ":" + groupId, ErrorCode.ERR_ALREADYMEMBER);
-					}
-				//"remove" method
-				}else if(apiType.equals(API_REMOVE)){
-					if(!isNewRecord(errMsg, groupId, groupsList)){
-						groupsList.remove(groupId);
-					}else{
-						//skip
-						addErrMsg(errMsg, ITEM_GROUP + ":" + groupId, ErrorCode.ERR_NOTMEMBER);
-					}
-				}
+		boolean add = API_ADD.equals(apiType);
+		// Existence check is add-only; pre-fetch the valid group ids once.
+		java.util.Set<String> validIds = null;
+		if(add){
+			validIds = new java.util.HashSet<>();
+			for(final GroupItem g : getContentService().getGroupItems(repositoryId)){
+				validIds.add(g.getGroupId());
 			}
 		}
-		return groupsList;
+		// Self-add guard keys on the group's business id (the previous copy compared
+		// against the CouchDB _id, which never matched a member id — a latent bug
+		// that this consolidation fixes).
+		GroupMembershipEditor.EditResult result = GroupMembershipEditor.edit(
+				group.getGroups(), toStringList(targetGroupIds), add, validIds, group.getGroupId());
+		for(GroupMembershipEditor.Result r : result.getResults()){
+			switch(r.getOutcome()){
+				case NOT_FOUND: addErrMsg(errMsg, ITEM_GROUP + ":" + r.getId(), ErrorCode.ERR_NOTFOUND); break;
+				case ALREADY_MEMBER: addErrMsg(errMsg, ITEM_GROUP + ":" + r.getId(), ErrorCode.ERR_ALREADYMEMBER); break;
+				case GROUP_ITSELF: addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_GROUPITSELF); break;
+				case NOT_MEMBER: addErrMsg(errMsg, ITEM_GROUP + ":" + r.getId(), ErrorCode.ERR_NOTMEMBER); break;
+				default: break;
+			}
+		}
+		return result.getList();
 	}
 
 	boolean validateNewGroup(String repositoryId, boolean status, JSONArray errMsg, String groupId, String name){
