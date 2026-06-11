@@ -560,29 +560,8 @@ public class GroupController {
     /**
      * Get or create system subfolder
      */
+    // Consolidated into ContentService.getOrCreateSystemSubFolder (thin delegate).
     private Folder getOrCreateSystemSubFolder(String repositoryId, String name) {
-        Folder systemFolder = getContentService().getSystemFolder(repositoryId);
-        if (systemFolder == null) {
-            // Guard against NPE when the repository is not fully initialized.
-            throw new RuntimeException("System folder not found for repository: " + repositoryId);
-        }
-
-        // Check if folder already exists
-        List<Content> children = getContentService().getChildren(repositoryId, systemFolder.getId());
-        if (CollectionUtils.isNotEmpty(children)) {
-            for (Content child : children) {
-                if (ObjectUtils.equals(name, child.getName())) {
-                    return (Folder) child;
-                }
-            }
-        }
-        
-        // Create new folder
-        PropertiesImpl properties = new PropertiesImpl();
-        properties.addProperty(new PropertyStringImpl("cmis:name", name));
-        properties.addProperty(new PropertyIdImpl("cmis:objectTypeId", "cmis:folder"));
-        properties.addProperty(new PropertyIdImpl("cmis:baseTypeId", "cmis:folder"));
-        
-        return getContentService().createFolder(new SystemCallContext(repositoryId), repositoryId, properties, systemFolder, null, null, null, null);
+        return getContentService().getOrCreateSystemSubFolder(repositoryId, name);
     }
 }

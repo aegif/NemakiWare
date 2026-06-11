@@ -336,55 +336,12 @@ public class GroupItemResource extends ResourceBase{
 		return result.toString();
 	}
 
-	//TODO this is a copy & paste method.
+	// Consolidated into ContentService.getOrCreateSystemSubFolder (was a
+	// copy-pasted helper across ~9 classes). Kept as a thin delegate so callsites
+	// are unchanged.
 	private Folder getOrCreateSystemSubFolder(String repositoryId, String name){
-	if (log.isDebugEnabled()) {
-		log.debug("getOrCreateSystemSubFolder called with repositoryId='" + repositoryId + "', name='" + name + "'");
-		log.debug("About to call getContentService().getSystemFolder(repositoryId)");
+		return getContentService().getOrCreateSystemSubFolder(repositoryId, name);
 	}
-	
-	Folder systemFolder = getContentService().getSystemFolder(repositoryId);
-	
-	if (log.isDebugEnabled()) {
-		log.debug("getContentService().getSystemFolder returned: " + (systemFolder != null ? "NOT NULL (ID=" + systemFolder.getId() + ")" : "NULL"));
-	}
-
-	// Fallback: search for .system folder by path
-	if (systemFolder == null) {
-		log.warn("systemFolder is null - .system folder not found via PropertyManager, searching by path");
-		try {
-			Content content = getContentService().getContentByPath(repositoryId, "/.system");
-			if (content instanceof Folder) {
-				systemFolder = (Folder) content;
-				log.info("Found .system folder via path fallback: ID=" + systemFolder.getId());
-			}
-		} catch (Exception e) {
-			log.error("Failed to find .system folder via path fallback", e);
-		}
-
-		if (systemFolder == null) {
-			throw new RuntimeException(".system folder not accessible - check system folder configuration and security settings");
-		}
-	}
-
-	// check existing folder
-	List<Content> children = getContentService().getChildren(repositoryId, systemFolder.getId());
-	if(CollectionUtils.isNotEmpty(children)){
-		for(Content child : children){
-			if(ObjectUtils.equals(name, child.getName())){
-				return (Folder)child;
-			}
-		}
-	}
-
-	// create
-	PropertiesImpl properties = new PropertiesImpl();
-	properties.addProperty(new PropertyStringImpl("cmis:name", name));
-	properties.addProperty(new PropertyIdImpl("cmis:objectTypeId", "cmis:folder"));
-	properties.addProperty(new PropertyIdImpl("cmis:baseTypeId", "cmis:folder"));
-	Folder _target = getContentService().createFolder(new SystemCallContext(repositoryId), repositoryId, properties, systemFolder, null, null, null, null);
-	return _target;
-}
 
 	@PUT
 	@Path("/update/{id}")

@@ -697,41 +697,9 @@ public class GroupResource {
         return response;
     }
     
+    // Consolidated into ContentService.getOrCreateSystemSubFolder (thin delegate).
     private Folder getOrCreateSystemSubFolder(String repositoryId, String name) {
-        Folder systemFolder = contentService.getSystemFolder(repositoryId);
-        
-        if (systemFolder == null) {
-            // Fallback: search for .system folder by path
-            try {
-                jp.aegif.nemaki.model.Content content = contentService.getContentByPath(repositoryId, "/.system");
-                if (content instanceof Folder) {
-                    systemFolder = (Folder) content;
-                }
-            } catch (Exception e) {
-                logger.severe("Failed to find .system folder via path fallback: " + e.getMessage());
-            }
-
-            if (systemFolder == null) {
-                throw ApiException.internalError(".system folder not accessible");
-            }
-        }
-
-        List<jp.aegif.nemaki.model.Content> children = contentService.getChildren(repositoryId, systemFolder.getId());
-        if (CollectionUtils.isNotEmpty(children)) {
-            for (jp.aegif.nemaki.model.Content child : children) {
-                if (ObjectUtils.equals(name, child.getName())) {
-                    return (Folder) child;
-                }
-            }
-        }
-
-        PropertiesImpl properties = new PropertiesImpl();
-        properties.addProperty(new PropertyStringImpl("cmis:name", name));
-        properties.addProperty(new PropertyIdImpl("cmis:objectTypeId", "cmis:folder"));
-        properties.addProperty(new PropertyIdImpl("cmis:baseTypeId", "cmis:folder"));
-
-        return contentService.createFolder(new SystemCallContext(repositoryId), repositoryId,
-                properties, systemFolder, null, null, null, null);
+        return contentService.getOrCreateSystemSubFolder(repositoryId, name);
     }
     
     private void setCreationSignature(GroupItem group) {

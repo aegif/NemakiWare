@@ -203,7 +203,17 @@ public interface ContentService {
 	Folder getFolder(String repositoryId, String objectId);
 
 	Folder getSystemFolder(String repositoryId);
-	
+
+	/**
+	 * Get (or create if missing) a named sub-folder directly under the system
+	 * folder (e.g. {@code users} / {@code groups}). Consolidates the helper that
+	 * was previously copy-pasted, with divergent null-handling, into ~9 REST
+	 * resources / patches. Resolves the system folder (with a {@code /.system}
+	 * path fallback) and throws if it is genuinely unavailable, finds an existing
+	 * child by name, or creates it under a {@link SystemCallContext}.
+	 */
+	Folder getOrCreateSystemSubFolder(String repositoryId, String name);
+
 	/**
 	 * Get a path string
 	 * @param repositoryId TODO

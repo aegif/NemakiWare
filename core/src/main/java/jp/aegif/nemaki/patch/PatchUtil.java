@@ -177,30 +177,9 @@ public class PatchUtil {
 		props.put(id, pdf);
 	}
 
+	// Consolidated into ContentService.getOrCreateSystemSubFolder (thin delegate).
 	protected Folder getOrCreateSystemSubFolder(String repositoryId, String name){
-		Folder systemFolder = contentService.getSystemFolder(repositoryId);
-		if (systemFolder == null) {
-			// Guard against NPE when the repository is not fully initialized.
-			throw new RuntimeException("System folder not found for repository: " + repositoryId);
-		}
-
-		// check existing folder
-		List<Content> children = contentService.getChildren(repositoryId, systemFolder.getId());
-		if(CollectionUtils.isNotEmpty(children)){
-			for(Content child : children){
-				if(ObjectUtils.equals(name, child.getName())){
-					return (Folder)child;
-				}
-			}
-		}
-
-		// create
-		PropertiesImpl properties = new PropertiesImpl();
-		properties.addProperty(new PropertyStringImpl("cmis:name", name));
-		properties.addProperty(new PropertyIdImpl("cmis:objectTypeId", "cmis:folder"));
-		properties.addProperty(new PropertyIdImpl("cmis:baseTypeId", "cmis:folder"));
-		Folder _target = contentService.createFolder(new SystemCallContext(repositoryId), repositoryId, properties, systemFolder, null, null, null, null);
-		return _target;
+		return contentService.getOrCreateSystemSubFolder(repositoryId, name);
 	}
 
 	public PropertyManager getPropertyManager() {

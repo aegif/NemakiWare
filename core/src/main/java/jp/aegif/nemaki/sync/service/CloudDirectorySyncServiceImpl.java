@@ -1110,67 +1110,17 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 	 * Get or create the system sub-folder (e.g. "users", "groups") under .system folder.
 	 * Mirrors the logic in UserItemResource.getOrCreateSystemSubFolder().
 	 */
+	// Consolidated into ContentService.getOrCreateSystemSubFolder. Directory sync
+	// treats a missing system folder as non-fatal (skip CMIS item creation), so
+	// the delegate is wrapped to preserve the graceful null-return contract.
 	private Folder getOrCreateSystemSubFolder(String repositoryId, String name) {
-		Folder systemFolder = contentService.getSystemFolder(repositoryId);
-
-		// Fallback: search for .system folder directly in root children
-		if (systemFolder == null) {
-			systemFolder = findSystemFolderInRoot(repositoryId);
-		}
-
-		if (systemFolder == null) {
-			log.warn("SystemFolder not found for repository: " + repositoryId + ", skipping CMIS item creation");
+		try {
+			return contentService.getOrCreateSystemSubFolder(repositoryId, name);
+		} catch (RuntimeException e) {
+			log.warn("SystemFolder not available for repository: " + repositoryId
+					+ ", skipping CMIS item creation: " + e.getMessage());
 			return null;
 		}
-
-		List<Content> children = contentService.getChildren(repositoryId, systemFolder.getId());
-		if (CollectionUtils.isNotEmpty(children)) {
-			for (Content child : children) {
-				if (name.equals(child.getName())) {
-					return (Folder) child;
-				}
-			}
-		}
-
-		// Create the sub-folder
-		PropertiesImpl properties = new PropertiesImpl();
-		properties.addProperty(new PropertyStringImpl("cmis:name", name));
-		properties.addProperty(new PropertyIdImpl("cmis:objectTypeId", "cmis:folder"));
-		properties.addProperty(new PropertyIdImpl("cmis:baseTypeId", "cmis:folder"));
-		return contentService.createFolder(new SystemCallContext(repositoryId), repositoryId,
-				properties, systemFolder, null, null, null, null);
-	}
-
-	/**
-	 * Find the .system folder by searching root folder children directly.
-	 * Uses RepositoryInfoMap for dynamic root folder ID lookup.
-	 */
-	private Folder findSystemFolderInRoot(String repositoryId) {
-		try {
-			jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repoInfoMap =
-				jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
-					.getBean("repositoryInfoMap", jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap.class);
-			if (repoInfoMap == null || repoInfoMap.get(repositoryId) == null) {
-				log.warn("RepositoryInfoMap not available for .system folder lookup: " + repositoryId);
-				return null;
-			}
-			String rootFolderId = repoInfoMap.get(repositoryId).getRootFolderId();
-			if (rootFolderId == null) {
-				log.warn("Root folder ID not found for repository: " + repositoryId);
-				return null;
-			}
-			List<Content> rootChildren = contentService.getChildren(repositoryId, rootFolderId);
-			if (rootChildren != null) {
-				for (Content child : rootChildren) {
-					if (child instanceof Folder && ".system".equals(child.getName())) {
-						return (Folder) child;
-					}
-				}
-			}
-		} catch (Exception e) {
-			log.warn("Error finding .system folder for " + repositoryId + ": " + e.getMessage());
-		}
-		return null;
 	}
 
 	/**

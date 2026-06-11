@@ -582,6 +582,52 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public Folder getOrCreateSystemSubFolder(String repositoryId, String name) {
+		Folder systemFolder = getSystemFolder(repositoryId);
+		// Fallback: resolve the system folder by its conventional /.system path
+		// when the property-based lookup returns nothing (mirrors the most robust
+		// of the former copy-pasted helpers).
+		if (systemFolder == null) {
+			try {
+				Content content = getContentByPath(repositoryId, "/.system");
+				if (content instanceof Folder) {
+					systemFolder = (Folder) content;
+					log.info("Resolved .system folder via path fallback for repository " + repositoryId);
+				}
+			} catch (Exception e) {
+				log.warn("Failed to resolve .system folder via path fallback for repository "
+						+ repositoryId + ": " + e.getMessage());
+			}
+		}
+		if (systemFolder == null) {
+			throw new RuntimeException(".system folder not accessible for repository " + repositoryId
+					+ " - check system folder configuration and security settings");
+		}
+
+		// Return the existing sub-folder if present.
+		List<Content> children = getChildren(repositoryId, systemFolder.getId());
+		if (CollectionUtils.isNotEmpty(children)) {
+			for (Content child : children) {
+				if (child instanceof Folder && java.util.Objects.equals(name, child.getName())) {
+					return (Folder) child;
+				}
+			}
+		}
+
+		// Otherwise create it under a system context.
+		org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl properties =
+				new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl();
+		properties.addProperty(new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl(
+				"cmis:name", name));
+		properties.addProperty(new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl(
+				"cmis:objectTypeId", "cmis:folder"));
+		properties.addProperty(new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl(
+				"cmis:baseTypeId", "cmis:folder"));
+		return createFolder(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId),
+				repositoryId, properties, systemFolder, null, null, null, null);
+	}
+
+	@Override
 	public String calculatePath(String repositoryId, Content content) {
 		List<String> path = calculatePathInternal(new ArrayList<String>(), content, repositoryId);
 		path.remove(0);
