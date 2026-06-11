@@ -96,28 +96,32 @@ public class MattermostFetchOrchestrator implements FetchOrchestrator {
                     boolean attachmentFailed = false;
 
                     for (String fileId : post.fileIds()) {
+                        // Build the request skeleton before the download so it is in
+                        // scope for the catch and can be DLQ-ed if getFileInfo/download
+                        // fails before execute() (otherwise the advancing checkpoint
+                        // silently loses it).
+                        ExternalIngestRequest req = new ExternalIngestRequest();
+                        req.setProfileId(profile.getProfileId());
+                        req.setConnectorId(connector.getConnectorId());
+                        req.setRepositoryId(profile.getRepositoryId());
+                        req.setSourceObjectId(fileId);
+                        req.setSourceObjectType("attachment");
+                        req.setExecutionMode("scheduled");
+                        Map<String, Object> fileMeta = new LinkedHashMap<>();
+                        fileMeta.put("channelId", channelId);
+                        fileMeta.put("messageId", post.id());
+                        fileMeta.put("senderId", post.userId());
+                        fileMeta.put("messageText", FetchSupport.truncateForContext(postText));
+                        fileMeta.put("workspaceId", connector.getTenantId());
+                        if (post.rootId() != null && !post.rootId().isEmpty()) fileMeta.put("threadId", post.rootId());
+                        req.setMetadata(fileMeta);
                         InputStream content = null;
                         try {
                             MattermostFile fileInfo = mm.getFileInfo(fileId);
-                            content = mm.downloadFile(fileId);
-                            ExternalIngestRequest req = new ExternalIngestRequest();
-                            req.setProfileId(profile.getProfileId());
-                            req.setConnectorId(connector.getConnectorId());
-                            req.setRepositoryId(profile.getRepositoryId());
-                            req.setSourceObjectId(fileId);
-                            req.setSourceObjectType("attachment");
                             req.setFileName(fileInfo.name());
                             req.setMimeType(fileInfo.mimeType());
+                            content = mm.downloadFile(fileId);
                             req.setContentStream(content);
-                            req.setExecutionMode("scheduled");
-                            Map<String, Object> fileMeta = new LinkedHashMap<>();
-                            fileMeta.put("channelId", channelId);
-                            fileMeta.put("messageId", post.id());
-                            fileMeta.put("senderId", post.userId());
-                            fileMeta.put("messageText", FetchSupport.truncateForContext(postText));
-                            fileMeta.put("workspaceId", connector.getTenantId());
-                            if (post.rootId() != null && !post.rootId().isEmpty()) fileMeta.put("threadId", post.rootId());
-                            req.setMetadata(fileMeta);
                             ExternalIngestResult result = canonicalImportService.executeChatContextImport(callContext, req);
                             // skipped() first: a skipped result also reports
                             // isSuccess()==true (no errors), so it would be
@@ -128,7 +132,11 @@ public class MattermostFetchOrchestrator implements FetchOrchestrator {
                                 imported++;
                                 if (parentObjectId != null) fetchSupport.createRelationshipSafe(callContext, profile.getRepositoryId(), parentObjectId, result.objectId(), errors);
                             } else { attachmentFailed = true; FetchSupport.addError(errors, "MM " + fileId + ": " + String.join(", ", result.errors())); }
-                        } catch (Exception e) { attachmentFailed = true; FetchSupport.addError(errors, "MM file " + fileId + ": " + e.getMessage()); }
+                        } catch (Exception e) {
+                            attachmentFailed = true;
+                            FetchSupport.addError(errors, "MM file " + fileId + ": " + e.getMessage());
+                            fetchSupport.saveToDlq(req, "MM file " + fileId + ": " + e.getMessage(), null);
+                        }
                         finally { if (content != null) try { content.close(); } catch (Exception ignored) {} }
                     }
                     if (messageOk && !attachmentFailed) {

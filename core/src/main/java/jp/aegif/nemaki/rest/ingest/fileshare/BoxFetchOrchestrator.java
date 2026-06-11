@@ -53,23 +53,26 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
                 if (lastModified != null && file.modifiedAt() != null
                         && file.modifiedAt().compareTo(lastModified) <= 0) { skipped++; continue; }
 
+                // Build the request before the download so it is in scope for the
+                // catch and can be DLQ-ed if the download fails before execute().
+                ExternalIngestRequest req = new ExternalIngestRequest();
+                req.setProfileId(profile.getProfileId());
+                req.setConnectorId(connector.getConnectorId());
+                req.setRepositoryId(profile.getRepositoryId());
+                req.setSourceObjectId(file.id());
+                req.setSourceObjectType("file");
+                req.setFileName(file.name());
+                req.setMimeType(FetchSupport.guessMimeType(file.name()));
+                req.setExecutionMode("scheduled");
+                Map<String, Object> metadata = new LinkedHashMap<>();
+                metadata.put("boxFileId", file.id());
+                metadata.put("boxParentId", file.parentId());
+                req.setMetadata(metadata);
+
                 InputStream content = null;
                 try {
                     content = box.downloadFile(file.id());
-                    ExternalIngestRequest req = new ExternalIngestRequest();
-                    req.setProfileId(profile.getProfileId());
-                    req.setConnectorId(connector.getConnectorId());
-                    req.setRepositoryId(profile.getRepositoryId());
-                    req.setSourceObjectId(file.id());
-                    req.setSourceObjectType("file");
-                    req.setFileName(file.name());
-                    req.setMimeType(FetchSupport.guessMimeType(file.name()));
                     req.setContentStream(content);
-                    req.setExecutionMode("scheduled");
-                    Map<String, Object> metadata = new LinkedHashMap<>();
-                    metadata.put("boxFileId", file.id());
-                    metadata.put("boxParentId", file.parentId());
-                    req.setMetadata(metadata);
 
                     ExternalIngestResult result = canonicalImportService.execute(callContext, req);
                     if (result.isSuccess() || result.skipped()) {
@@ -85,7 +88,11 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
                         FetchSupport.addError(errors, "Box " + file.id() + ": " + String.join(", ", result.errors()));
                     }
                 } catch (Exception e) {
+                    // Download/processing failed before execute()'s own DLQ net.
+                    // DLQ the item so the checkpoint advancing past it (when a
+                    // newer file in this batch succeeds) does not silently lose it.
                     FetchSupport.addError(errors, "Box file " + file.id() + ": " + e.getMessage());
+                    fetchSupport.saveToDlq(req, "Box file " + file.id() + ": " + e.getMessage(), null);
                 } finally {
                     if (content != null) try { content.close(); } catch (Exception ignored) {}
                 }

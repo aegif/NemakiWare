@@ -152,6 +152,15 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
                     if (result.skipped()) skipped++;
                     else if (result.isSuccess()) imported++;
                     else FetchSupport.addError(errors, "Notion " + page.id() + ": " + String.join(", ", result.errors()));
+
+                    // If an attachment download failed, the page's own high-water is
+                    // held back (above), but a NEWER page succeeding later in this
+                    // batch would advance the checkpoint past this page and strand
+                    // its attachment. DLQ the page so the attachment stays retryable.
+                    if (attachmentDownloadFailed) {
+                        fetchSupport.saveToDlq(req, "Notion page " + page.id()
+                                + ": attachment download failed", null);
+                    }
                 } catch (Exception e) {
                     FetchSupport.addError(errors, "Notion page " + page.id() + ": " + e.getMessage());
                 }

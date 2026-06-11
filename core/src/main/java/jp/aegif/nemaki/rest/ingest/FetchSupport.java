@@ -137,6 +137,32 @@ public class FetchSupport {
     public static ThreadLocal<long[]> lastProgressHeartbeat() { return lastProgressHeartbeat; }
 
     /**
+     * Save a request to the dead-letter queue from an orchestrator. Use this when
+     * an item fails BEFORE it reaches {@code CanonicalImportService.execute()}
+     * (e.g. the adapter's {@code downloadFile} throws), because those failures do
+     * not hit execute()'s own DLQ safety net. Without this, the scheduler's
+     * high-water checkpoint can advance past a failed item (when a newer item in
+     * the same batch succeeds) and the failed item is never re-fetched —
+     * permanent loss of that item's content. DLQ-ing it keeps it retryable.
+     *
+     * <p>No-op (logged) when the job service is unavailable.
+     *
+     * @param contentBytes already-downloaded bytes if any (may be null when the
+     *        download itself failed); a null/empty value still records a
+     *        retryable metadata-only DLQ entry.
+     */
+    public void saveToDlq(ExternalIngestRequest request, String errorMessage, byte[] contentBytes) {
+        if (ingestJobService == null) {
+            return;
+        }
+        try {
+            ingestJobService.saveToDlq(request, errorMessage, contentBytes);
+        } catch (Exception e) {
+            // DLQ persistence is best-effort; never let it break the fetch loop.
+        }
+    }
+
+    /**
      * Sleep for the throttle delay, if configured. Also sends a progress-based
      * heartbeat at most once per 5 minutes.
      */

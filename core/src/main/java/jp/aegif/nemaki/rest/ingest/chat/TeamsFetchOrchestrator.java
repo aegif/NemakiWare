@@ -80,27 +80,30 @@ public class TeamsFetchOrchestrator implements FetchOrchestrator {
 
                     for (TeamsFile file : msg.attachments()) {
                         if (file.contentUrl() == null) continue;
+                        // Build the request before the download so it is in scope for
+                        // the catch and can be DLQ-ed if the download fails before
+                        // execute() (otherwise the advancing checkpoint silently loses it).
+                        ExternalIngestRequest req = new ExternalIngestRequest();
+                        req.setProfileId(profile.getProfileId());
+                        req.setConnectorId(connector.getConnectorId());
+                        req.setRepositoryId(profile.getRepositoryId());
+                        req.setSourceObjectId(file.id());
+                        req.setSourceObjectType("attachment");
+                        req.setFileName(file.name());
+                        req.setMimeType(file.contentType());
+                        req.setExecutionMode("scheduled");
+                        Map<String, Object> fileMeta = new LinkedHashMap<>();
+                        fileMeta.put("channelId", channelId);
+                        fileMeta.put("messageId", msg.id());
+                        fileMeta.put("senderId", msg.from());
+                        fileMeta.put("messageText", FetchSupport.truncateForContext(messageBody));
+                        fileMeta.put("workspaceId", teamId);
+                        if (msg.replyToId() != null) fileMeta.put("threadId", msg.replyToId());
+                        req.setMetadata(fileMeta);
                         InputStream content = null;
                         try {
                             content = teams.downloadFile(file.contentUrl());
-                            ExternalIngestRequest req = new ExternalIngestRequest();
-                            req.setProfileId(profile.getProfileId());
-                            req.setConnectorId(connector.getConnectorId());
-                            req.setRepositoryId(profile.getRepositoryId());
-                            req.setSourceObjectId(file.id());
-                            req.setSourceObjectType("attachment");
-                            req.setFileName(file.name());
-                            req.setMimeType(file.contentType());
                             req.setContentStream(content);
-                            req.setExecutionMode("scheduled");
-                            Map<String, Object> fileMeta = new LinkedHashMap<>();
-                            fileMeta.put("channelId", channelId);
-                            fileMeta.put("messageId", msg.id());
-                            fileMeta.put("senderId", msg.from());
-                            fileMeta.put("messageText", FetchSupport.truncateForContext(messageBody));
-                            fileMeta.put("workspaceId", teamId);
-                            if (msg.replyToId() != null) fileMeta.put("threadId", msg.replyToId());
-                            req.setMetadata(fileMeta);
                             ExternalIngestResult result = canonicalImportService.executeChatContextImport(callContext, req);
                             // skipped() first: a skipped result also reports
                             // isSuccess()==true (no errors), so it would be
@@ -111,7 +114,11 @@ public class TeamsFetchOrchestrator implements FetchOrchestrator {
                                 imported++;
                                 if (parentObjectId != null) fetchSupport.createRelationshipSafe(callContext, profile.getRepositoryId(), parentObjectId, result.objectId(), errors);
                             } else { attachmentFailed = true; FetchSupport.addError(errors, "Teams " + file.id() + ": " + String.join(", ", result.errors())); }
-                        } catch (Exception e) { attachmentFailed = true; FetchSupport.addError(errors, "Teams file " + file.id() + ": " + e.getMessage()); }
+                        } catch (Exception e) {
+                            attachmentFailed = true;
+                            FetchSupport.addError(errors, "Teams file " + file.id() + ": " + e.getMessage());
+                            fetchSupport.saveToDlq(req, "Teams file " + file.id() + ": " + e.getMessage(), null);
+                        }
                         finally { if (content != null) try { content.close(); } catch (Exception ignored) {} }
                     }
                     if (messageOk && !attachmentFailed) {

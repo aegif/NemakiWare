@@ -48,23 +48,26 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
                 if (lastModified != null && file.serverModified() != null
                         && file.serverModified().compareTo(lastModified) <= 0) { skipped++; continue; }
 
+                // Build the request before the download so it is in scope for the
+                // catch and can be DLQ-ed if the download fails before execute().
+                ExternalIngestRequest req = new ExternalIngestRequest();
+                req.setProfileId(profile.getProfileId());
+                req.setConnectorId(connector.getConnectorId());
+                req.setRepositoryId(profile.getRepositoryId());
+                req.setSourceObjectId(file.id());
+                req.setSourceObjectType("file");
+                req.setFileName(file.name());
+                req.setMimeType(FetchSupport.guessMimeType(file.name()));
+                req.setExecutionMode("scheduled");
+                Map<String, Object> metadata = new LinkedHashMap<>();
+                metadata.put("dropboxPath", file.pathDisplay());
+                metadata.put("dropboxFileId", file.id());
+                req.setMetadata(metadata);
+
                 InputStream content = null;
                 try {
                     content = dropbox.downloadFile(file.pathDisplay());
-                    ExternalIngestRequest req = new ExternalIngestRequest();
-                    req.setProfileId(profile.getProfileId());
-                    req.setConnectorId(connector.getConnectorId());
-                    req.setRepositoryId(profile.getRepositoryId());
-                    req.setSourceObjectId(file.id());
-                    req.setSourceObjectType("file");
-                    req.setFileName(file.name());
-                    req.setMimeType(FetchSupport.guessMimeType(file.name()));
                     req.setContentStream(content);
-                    req.setExecutionMode("scheduled");
-                    Map<String, Object> metadata = new LinkedHashMap<>();
-                    metadata.put("dropboxPath", file.pathDisplay());
-                    metadata.put("dropboxFileId", file.id());
-                    req.setMetadata(metadata);
 
                     ExternalIngestResult result = canonicalImportService.execute(callContext, req);
                     if (result.isSuccess() || result.skipped()) {
@@ -80,7 +83,10 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
                         FetchSupport.addError(errors, "Dropbox " + file.id() + ": " + String.join(", ", result.errors()));
                     }
                 } catch (Exception e) {
+                    // Download/processing failed before execute()'s own DLQ net —
+                    // DLQ so the advancing checkpoint does not silently lose it.
                     FetchSupport.addError(errors, "Dropbox file " + file.id() + ": " + e.getMessage());
+                    fetchSupport.saveToDlq(req, "Dropbox file " + file.id() + ": " + e.getMessage(), null);
                 } finally {
                     if (content != null) try { content.close(); } catch (Exception ignored) {}
                 }
