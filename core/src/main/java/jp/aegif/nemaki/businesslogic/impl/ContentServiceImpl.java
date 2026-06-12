@@ -599,6 +599,34 @@ public class ContentServiceImpl implements ContentService {
 						+ repositoryId + ": " + e.getMessage());
 			}
 		}
+		// Last-resort bootstrap: create the .system folder under the repository
+		// root when it genuinely does not exist yet (mirrors the former
+		// UserItemResource bootstrap helper). Normally .system is created at
+		// repository initialization; this covers a fresh / partially-initialized
+		// repository so user/group create does not hard-fail.
+		if (systemFolder == null) {
+			String rootId = null;
+			try {
+				rootId = repositoryInfoMap.get(repositoryId) != null
+						? repositoryInfoMap.get(repositoryId).getRootFolderId() : null;
+			} catch (Exception e) {
+				log.warn("Failed to resolve root folder id for repository " + repositoryId + ": " + e.getMessage());
+			}
+			Folder root = (rootId != null) ? contentDaoService.getFolder(repositoryId, rootId) : null;
+			if (root != null) {
+				org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl sysProps =
+						new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl();
+				sysProps.addProperty(new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl(
+						"cmis:name", ".system"));
+				sysProps.addProperty(new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl(
+						"cmis:objectTypeId", "cmis:folder"));
+				sysProps.addProperty(new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl(
+						"cmis:baseTypeId", "cmis:folder"));
+				systemFolder = createFolder(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId),
+						repositoryId, sysProps, root, null, null, null, null);
+				log.warn("Created missing .system folder for repository " + repositoryId);
+			}
+		}
 		if (systemFolder == null) {
 			throw new RuntimeException(".system folder not accessible for repository " + repositoryId
 					+ " - check system folder configuration and security settings");

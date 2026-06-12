@@ -101,10 +101,48 @@ public class ContentServiceImplSystemSubFolderTest {
     }
 
     @Test
-    public void throwsWhenSystemFolderUnavailable() {
+    public void throwsWhenSystemFolderUnavailableAndNoRoot() {
+        // No system folder, no /.system path, and no resolvable root (repositoryInfoMap unset)
         doReturn(null).when(service).getSystemFolder(REPO);
         doReturn(null).when(service).getContentByPath(REPO, "/.system");
 
         assertThrows(RuntimeException.class, () -> service.getOrCreateSystemSubFolder(REPO, "users"));
+    }
+
+    @Test
+    public void bootstrapsDotSystemUnderRootWhenMissing() {
+        // getSystemFolder + /.system path both fail, but the repository root is
+        // resolvable -> create .system under root, then the requested sub-folder.
+        Folder root = folder("root-1", "root");
+        Folder createdSystem = folder("sys-new", ".system");
+        Folder createdSub = folder("groups-new", "groups");
+
+        doReturn(null).when(service).getSystemFolder(REPO);
+        doReturn(null).when(service).getContentByPath(REPO, "/.system");
+
+        jp.aegif.nemaki.cmis.factory.info.RepositoryInfo info =
+                mock(jp.aegif.nemaki.cmis.factory.info.RepositoryInfo.class);
+        when(info.getRootFolderId()).thenReturn("root-1");
+        jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap rim =
+                mock(jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap.class);
+        when(rim.get(REPO)).thenReturn(info);
+        service.setRepositoryInfoMap(rim);
+
+        jp.aegif.nemaki.dao.ContentDaoService dao = mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        when(dao.getFolder(REPO, "root-1")).thenReturn(root);
+        service.setContentDaoService(dao);
+
+        // first createFolder (parent=root) -> the new .system; second (parent=.system) -> the sub-folder
+        doReturn(createdSystem).when(service).createFolder(any(), eq(REPO), any(), eq(root),
+                any(), any(), any(), any());
+        doReturn(List.<Content>of()).when(service).getChildren(REPO, "sys-new");
+        doReturn(createdSub).when(service).createFolder(any(), eq(REPO), any(), eq(createdSystem),
+                any(), any(), any(), any());
+
+        Folder result = service.getOrCreateSystemSubFolder(REPO, "groups");
+
+        assertSame(createdSub, result);
+        // .system was created under the root
+        verify(service).createFolder(any(), eq(REPO), any(), eq(root), any(), any(), any(), any());
     }
 }
