@@ -233,6 +233,23 @@ public interface ContentService {
 			String name, java.util.List<String> users, java.util.List<String> groups, String actorUsername);
 
 	/**
+	 * Stamp the modification signature with {@code actorUsername} and persist an
+	 * already-merged group. Each REST stack performs its own field-merge (legacy
+	 * full-replace vs Spring MVC / api/v1 partial) to preserve its contract, then
+	 * delegates the identical signature-and-persist tail here.
+	 */
+	void applyGroupUpdate(String repositoryId, jp.aegif.nemaki.model.GroupItem group, String actorUsername);
+
+	/**
+	 * Delete a group by its business id, returning {@code false} if no such group
+	 * exists. Canonical delete: first strips the group from every other group's
+	 * nested-groups list (preventing dangling references), then deletes it under a
+	 * {@link SystemCallContext}. Consolidates the three group REST stacks, two of
+	 * which previously skipped the nested-reference cleanup.
+	 */
+	boolean deleteGroup(String repositoryId, String groupId);
+
+	/**
 	 * Get a path string
 	 * @param repositoryId TODO
 	 * @param content

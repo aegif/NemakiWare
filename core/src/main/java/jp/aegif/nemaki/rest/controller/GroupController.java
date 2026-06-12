@@ -273,13 +273,9 @@ public class GroupController {
                 group.setGroups(groupList);
             }
 
-            // Set modification metadata
-            group.setModifier(getAuthenticatedUsername());
-            group.setModified(new GregorianCalendar());
-            
-            // Update group in repository
-            getContentService().update(new SystemCallContext(repositoryId), repositoryId, group);
-            
+            // partial-merge above keeps this stack's contract; shared tail stamps + persists
+            getContentService().applyGroupUpdate(repositoryId, group, getAuthenticatedUsername());
+
             response.put("status", "success");
             response.put("message", "Group updated successfully");
             response.put("group", convertGroupToMap(group));
@@ -307,17 +303,13 @@ public class GroupController {
         Map<String, Object> response = new HashMap<>();
 
         try {
-            GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
-
-            if (group == null) {
+            // shared canonical delete also strips nested-group references
+            if (!getContentService().deleteGroup(repositoryId, groupId)) {
                 response.put("status", "error");
                 response.put("message", "Group not found");
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
             }
 
-            // Delete group from repository
-            getContentService().delete(new SystemCallContext(repositoryId), repositoryId, group.getId(), false);
-            
             response.put("status", "success");
             response.put("message", "Group deleted successfully");
             

@@ -663,6 +663,54 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public void applyGroupUpdate(String repositoryId, jp.aegif.nemaki.model.GroupItem group, String actorUsername) {
+		group.setModifier(actorUsername);
+		group.setModified(new java.util.GregorianCalendar());
+		update(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, group);
+	}
+
+	@Override
+	public boolean deleteGroup(String repositoryId, String groupId) {
+		jp.aegif.nemaki.model.GroupItem group = getGroupItemById(repositoryId, groupId);
+		if (group == null) {
+			return false;
+		}
+		removeGroupFromAllNestedGroups(repositoryId, groupId);
+		delete(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, group.getId(), false);
+		return true;
+	}
+
+	/**
+	 * Strip {@code groupId} from the nested-groups list of every other group that
+	 * references it, so deleting a group never leaves dangling references behind.
+	 */
+	private void removeGroupFromAllNestedGroups(String repositoryId, String groupId) {
+		List<jp.aegif.nemaki.model.GroupItem> allGroups = getGroupItems(repositoryId);
+		if (allGroups == null) {
+			return;
+		}
+		for (jp.aegif.nemaki.model.GroupItem listed : allGroups) {
+			List<String> nested = listed.getGroups();
+			if (nested != null && nested.contains(groupId)) {
+				// the list-view instance carries no revision; re-fetch a full,
+				// revision-bearing document before persisting the update
+				jp.aegif.nemaki.model.GroupItem g = getGroupItemById(repositoryId, listed.getGroupId());
+				if (g == null) {
+					continue;
+				}
+				List<String> current = g.getGroups();
+				if (current == null || !current.contains(groupId)) {
+					continue;
+				}
+				List<String> updated = new ArrayList<>(current);
+				updated.remove(groupId);
+				g.setGroups(updated);
+				update(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, g);
+			}
+		}
+	}
+
+	@Override
 	public String calculatePath(String repositoryId, Content content) {
 		List<String> path = calculatePathInternal(new ArrayList<String>(), content, repositoryId);
 		path.remove(0);

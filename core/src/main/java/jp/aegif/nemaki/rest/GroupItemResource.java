@@ -381,10 +381,10 @@ public class GroupItemResource extends ResourceBase{
 			group.setName(name);
 			group.setUsers(users == null ? new JSONArray() :  parseJsonArray(users));
 			group.setGroups(groups  == null ? new JSONArray() : parseJsonArray(groups));
-			setModifiedSignature(httpRequest, group);
 
 			try{
-				getContentService().update(new SystemCallContext(repositoryId), repositoryId, group);
+				// field-merge above keeps the legacy full-replace contract; shared tail stamps + persists
+				getContentService().applyGroupUpdate(repositoryId, group, getCallContextUsername(httpRequest));
 			}catch(CmisObjectNotFoundException ex){
 				log.warn("Object not found while updating group: " + groupId, ex);
 				status = false;
@@ -423,17 +423,13 @@ public class GroupItemResource extends ResourceBase{
 		// Admin check
 		status = checkAdmin(errMsg, httpRequest);
 
-		//Existing group
-		GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
-		if(group == null){
-			status = false;
-			addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
-		}
-
-		//Delete the group
+		//Delete the group (shared canonical delete also strips nested-group references)
 		if(status){
 			try{
-				getContentService().delete(new SystemCallContext(repositoryId), repositoryId, group.getId(), false);
+				if(!getContentService().deleteGroup(repositoryId, groupId)){
+					status = false;
+					addErrMsg(errMsg, ITEM_GROUP, ErrorCode.ERR_NOTFOUND);
+				}
 			}catch(CmisObjectNotFoundException ex){
 				log.warn("Object not found while deleting group: " + groupId, ex);
 				status = false;

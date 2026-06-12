@@ -401,11 +401,10 @@ public class GroupResource {
             if (request.getGroups() != null) {
                 group.setGroups(request.getGroups());
             }
-            
-            setModificationSignature(group);
-            
-            contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
-            
+
+            // partial-merge above keeps this stack's contract; shared tail stamps + persists
+            contentService.applyGroupUpdate(repositoryId, group, getAuthenticatedUsername());
+
             GroupItem updatedGroup = contentService.getGroupItemById(repositoryId, groupId);
             GroupResponse response = convertToGroupResponse(updatedGroup, repositoryId);
             
@@ -450,14 +449,10 @@ public class GroupResource {
                 checkAdminAuthorization();
         
                 try {
-                    GroupItem group = contentService.getGroupItemById(repositoryId, groupId);
-                    if (group == null) {
+                    // shared canonical delete also strips nested-group references
+                    if (!contentService.deleteGroup(repositoryId, groupId)) {
                         throw ApiException.groupNotFound(groupId, repositoryId);
                     }
-            
-                    removeGroupFromAllNestedGroups(repositoryId, groupId);
-
-            contentService.delete(new SystemCallContext(repositoryId), repositoryId, group.getId(), false);
 
             return Response.noContent().build();
             
@@ -640,22 +635,6 @@ public class GroupResource {
                 if (group == null) {
                     throw ApiException.invalidArgument("Group with ID '" + groupId + "' does not exist");
                 }
-            }
-        }
-    }
-    
-    private void removeGroupFromAllNestedGroups(String repositoryId, String groupId) {
-        List<GroupItem> allGroups = ObjectUtils.defaultIfNull(
-                contentService.getGroupItems(repositoryId), Collections.emptyList());
-        
-        for (GroupItem group : allGroups) {
-            List<String> nestedGroups = group.getGroups();
-            if (nestedGroups != null && nestedGroups.contains(groupId)) {
-                List<String> updatedNestedGroups = new ArrayList<>(nestedGroups);
-                updatedNestedGroups.remove(groupId);
-                group.setGroups(updatedNestedGroups);
-                contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
-                logger.info("Removed group " + groupId + " from nestedGroups of group " + group.getGroupId());
             }
         }
     }
