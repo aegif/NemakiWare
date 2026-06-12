@@ -391,34 +391,11 @@ public class RenditionResource extends ResourceBase {
                 return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(response).build();
             }
 
-            // Create rendition object
-            Rendition rendition = new Rendition();
-            rendition.setTitle(renditionTitle);
-            rendition.setKind(RenditionKind.CMIS_PREVIEW.value());
-            rendition.setMimetype(renditionMimeType);
-            rendition.setLength(renditionStream.getLength());
-
-            // Set signature from authenticated user's CallContext
-            String username = callContext.getUsername();
-            rendition.setCreator(username);
-            rendition.setModifier(username);
-            GregorianCalendar now = new GregorianCalendar();
-            rendition.setCreated(now);
-            rendition.setModified(now);
-
-            // Save rendition to database
-            String renditionId = getContentDaoService().createRendition(repositoryId, rendition, renditionStream);
-
-            // Update document with rendition reference
-            List<String> renditionIds = document.getRenditionIds();
-            if (renditionIds == null) {
-                renditionIds = new ArrayList<>();
-            }
-            renditionIds.add(renditionId);
-            document.setRenditionIds(renditionIds);
-
-            // SECURITY FIX: Use authenticated user's CallContext instead of SystemCallContext
-            getContentService().update(callContext, repositoryId, document);
+            // Build + persist rendition + link to document via shared ContentService
+            // (signature stamped with the authenticated user; document updated under the user's CallContext)
+            Rendition rendition = getContentService().createPreviewRendition(repositoryId, document,
+                    renditionStream, renditionMimeType, renditionTitle, callContext.getUsername(), callContext);
+            String renditionId = rendition.getId();
 
             log.info("[RenditionResource] Successfully created " + renditionMimeType + " rendition: " + renditionId);
 

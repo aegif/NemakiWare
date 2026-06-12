@@ -734,6 +734,21 @@ public interface ContentService {
 	 */
 	List<Rendition> getRenditions(String repositoryId, String objectId);
 
+	/**
+	 * Persist a generated preview rendition stream and link it to its document.
+	 * Builds a {@link Rendition} (CMIS_PREVIEW kind) with the given mime type /
+	 * title / length, stamps the signature with {@code actorUsername}, stores it
+	 * via the DAO, appends the new rendition id to {@code document}'s
+	 * renditionIds, and persists the document under {@code updateContext}. Returns
+	 * the rendition with its new id set. Consolidates the identical build+persist
+	 * tail of the three rendition REST stacks (only the actor + update context and
+	 * the upstream SVG/PDF conversion differed).
+	 */
+	Rendition createPreviewRendition(String repositoryId, jp.aegif.nemaki.model.Document document,
+			org.apache.chemistry.opencmis.commons.data.ContentStream renditionStream,
+			String renditionMimeType, String renditionTitle, String actorUsername,
+			org.apache.chemistry.opencmis.commons.server.CallContext updateContext);
+
 	// ///////////////////////////////////////
 	// Acl
 	// ///////////////////////////////////////

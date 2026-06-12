@@ -403,31 +403,10 @@ public class RenditionResource {
                 throw ApiException.internalError("PDF conversion failed");
             }
             
-            Rendition rendition = new Rendition();
-            rendition.setTitle("PDF Preview");
-            rendition.setKind(RenditionKind.CMIS_PREVIEW.value());
-            rendition.setMimetype("application/pdf");
-            rendition.setLength(pdfStream.getLength());
-            
-            String username = getAuthenticatedUsername();
-            rendition.setCreator(username);
-            rendition.setModifier(username);
-            GregorianCalendar now = new GregorianCalendar();
-            rendition.setCreated(now);
-            rendition.setModified(now);
-            
-            String renditionId = contentDaoService.createRendition(repositoryId, rendition, pdfStream);
-            
-            List<String> renditionIds = document.getRenditionIds();
-            if (renditionIds == null) {
-                renditionIds = new ArrayList<>();
-            }
-            renditionIds.add(renditionId);
-            document.setRenditionIds(renditionIds);
-            
-            contentService.update(new SystemCallContext(repositoryId), repositoryId, document);
-            
-            rendition.setId(renditionId);
+            // Build + persist rendition + link to document via shared ContentService
+            Rendition rendition = contentService.createPreviewRendition(repositoryId, document,
+                    pdfStream, "application/pdf", "PDF Preview", getAuthenticatedUsername(),
+                    new SystemCallContext(repositoryId));
             RenditionResponse response = convertToRenditionResponse(rendition, repositoryId, objectId);
             
             return Response.status(Response.Status.CREATED).entity(response).build();

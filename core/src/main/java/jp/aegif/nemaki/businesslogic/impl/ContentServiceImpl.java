@@ -3596,6 +3596,34 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public Rendition createPreviewRendition(String repositoryId, jp.aegif.nemaki.model.Document document,
+			ContentStream renditionStream, String renditionMimeType, String renditionTitle, String actorUsername,
+			CallContext updateContext) {
+		Rendition rendition = new Rendition();
+		rendition.setTitle(renditionTitle);
+		rendition.setKind(jp.aegif.nemaki.util.constant.RenditionKind.CMIS_PREVIEW.value());
+		rendition.setMimetype(renditionMimeType);
+		rendition.setLength(renditionStream.getLength());
+		java.util.GregorianCalendar now = new java.util.GregorianCalendar();
+		rendition.setCreator(actorUsername);
+		rendition.setModifier(actorUsername);
+		rendition.setCreated(now);
+		rendition.setModified(now);
+
+		String renditionId = contentDaoService.createRendition(repositoryId, rendition, renditionStream);
+		rendition.setId(renditionId);
+
+		List<String> renditionIds = document.getRenditionIds();
+		if (renditionIds == null) {
+			renditionIds = new ArrayList<>();
+		}
+		renditionIds.add(renditionId);
+		document.setRenditionIds(renditionIds);
+		update(updateContext, repositoryId, document);
+		return rendition;
+	}
+
+	@Override
 	public List<Rendition> getRenditions(String repositoryId, String objectId) {
 		Content c = getContent(repositoryId, objectId);
 

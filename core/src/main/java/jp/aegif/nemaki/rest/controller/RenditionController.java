@@ -334,34 +334,11 @@ public class RenditionController {
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
             }
 
-            // Create rendition object
-            Rendition rendition = new Rendition();
-            rendition.setTitle(renditionTitle);
-            rendition.setKind(RenditionKind.CMIS_PREVIEW.value());
-            rendition.setMimetype(renditionMimeType);
-            rendition.setLength(renditionStream.getLength());
-
-            // Set signature
+            // Build + persist rendition + link to document via shared ContentService
             SystemCallContext callContext = new SystemCallContext(repositoryId);
-            rendition.setCreator(callContext.getUsername());
-            rendition.setModifier(callContext.getUsername());
-            java.util.GregorianCalendar now = new java.util.GregorianCalendar();
-            rendition.setCreated(now);
-            rendition.setModified(now);
-
-            // Save rendition to database
-            String renditionId = getContentDaoService().createRendition(repositoryId, rendition, renditionStream);
-
-            // Update document with rendition reference
-            List<String> renditionIds = document.getRenditionIds();
-            if (renditionIds == null) {
-                renditionIds = new ArrayList<>();
-            }
-            renditionIds.add(renditionId);
-            document.setRenditionIds(renditionIds);
-
-            // Update document
-            getContentService().update(callContext, repositoryId, document);
+            Rendition rendition = getContentService().createPreviewRendition(repositoryId, document,
+                    renditionStream, renditionMimeType, renditionTitle, callContext.getUsername(), callContext);
+            String renditionId = rendition.getId();
 
             log.info("[RenditionController] Successfully created " + renditionMimeType + " rendition: " + renditionId);
 
