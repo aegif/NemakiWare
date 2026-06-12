@@ -537,25 +537,9 @@ private ContentService getContentServiceSafe() {
 				status = false;
 				addErrMsg(errMsg, "system", "ContentService not available");
 			} else {
-				// Generate a password hash
-				String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
-
-				// parent
-						final Folder usersFolder = getOrCreateSystemSubFolder(repositoryId, "users");
-		
-				UserItem user = new UserItem(null, NemakiObjectType.nemakiUser, userId, name, passwordHash, false, usersFolder.getId());
-
-				Map<String, Object> map = new HashMap<>();
-				if (firstName != null) map.put("nemaki:firstName", firstName);
-				if (lastName != null) map.put("nemaki:lastName", lastName);
-				if (email != null) map.put("nemaki:email", email);
-				List<Property> properties = new ArrayList<>();
-				for(Map.Entry<String, Object> entry : map.entrySet()) properties.add(new Property(entry.getKey(), entry.getValue()));
-				user.setSubTypeProperties(properties);
-
-				setFirstSignature(httpRequest, user);
-
-				service.createUserItem(new SystemCallContext(repositoryId), repositoryId, user);
+				// Build + persist (BCrypt hash, users folder, sub-type props, signature) via shared ContentService
+				service.buildAndCreateUser(repositoryId, userId, name, password, firstName, lastName, email,
+						getCallContextUsername(httpRequest));
 
 				// Process groups assignment
 				log.info("Groups parameter received: '" + groupsJson + "' (isBlank=" + StringUtils.isBlank(groupsJson) + ")");
@@ -631,35 +615,10 @@ private ContentService getContentServiceSafe() {
 					status = false;
 					addErrMsg(errMsg, "system", "ContentService not available");
 				} else {
-					// Generate a password hash
-					log.info("[" + userId + "] Hashing password");
-					String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
-
-					// parent
-					log.info("[" + userId + "] Getting users folder");
-					final Folder usersFolder = getOrCreateSystemSubFolder(repositoryId, "users");
-					log.info("[" + userId + "] Users folder: " + (usersFolder != null ? usersFolder.getId() : "NULL"));
-					if (usersFolder == null) {
-						status = false;
-						addErrMsg(errMsg, ITEM_USERID, "system users folder not found");
-						result = makeResult(status, result, errMsg);
-						return result.toJSONString();
-					}
-
-					UserItem user = new UserItem(null, NemakiObjectType.nemakiUser, userId, name, passwordHash, false, usersFolder.getId());
-
-					Map<String, Object> map = new HashMap<>();
-					if (firstName != null) map.put("nemaki:firstName", firstName);
-					if (lastName != null) map.put("nemaki:lastName", lastName);
-					if (email != null) map.put("nemaki:email", email);
-					List<Property> properties = new ArrayList<>();
-					for(Map.Entry<String, Object> entry : map.entrySet()) properties.add(new Property(entry.getKey(), entry.getValue()));
-					user.setSubTypeProperties(properties);
-
-					setFirstSignature(httpRequest, user);
-
-					log.info("[" + userId + "] Creating user item in repository");
-					service.createUserItem(new SystemCallContext(repositoryId), repositoryId, user);
+					// Build + persist (BCrypt hash, users folder, sub-type props, signature) via shared ContentService
+					log.info("[" + userId + "] Building + creating user item via ContentService");
+					service.buildAndCreateUser(repositoryId, userId, name, password, firstName, lastName, email,
+							getCallContextUsername(httpRequest));
 					log.info("[" + userId + "] User creation completed successfully");
 
 					// Process groups assignment

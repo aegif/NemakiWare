@@ -711,6 +711,31 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public jp.aegif.nemaki.model.UserItem buildAndCreateUser(String repositoryId, String userId, String name,
+			String plainPassword, String firstName, String lastName, String email, String actorUsername) {
+		String passwordHash = org.mindrot.jbcrypt.BCrypt.hashpw(plainPassword, org.mindrot.jbcrypt.BCrypt.gensalt());
+		Folder usersFolder = getOrCreateSystemSubFolder(repositoryId, "users");
+		jp.aegif.nemaki.model.UserItem user = new jp.aegif.nemaki.model.UserItem(null,
+				jp.aegif.nemaki.common.NemakiObjectType.nemakiUser, userId, name, passwordHash, false,
+				usersFolder.getId());
+
+		List<jp.aegif.nemaki.model.Property> properties = new ArrayList<>();
+		if (firstName != null) properties.add(new jp.aegif.nemaki.model.Property("nemaki:firstName", firstName));
+		if (lastName != null) properties.add(new jp.aegif.nemaki.model.Property("nemaki:lastName", lastName));
+		if (email != null) properties.add(new jp.aegif.nemaki.model.Property("nemaki:email", email));
+		user.setSubTypeProperties(properties);
+
+		java.util.GregorianCalendar now = new java.util.GregorianCalendar();
+		user.setCreator(actorUsername);
+		user.setModifier(actorUsername);
+		user.setCreated(now);
+		user.setModified(now);
+
+		createUserItem(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, user);
+		return user;
+	}
+
+	@Override
 	public String calculatePath(String repositoryId, Content content) {
 		List<String> path = calculatePathInternal(new ArrayList<String>(), content, repositoryId);
 		path.remove(0);

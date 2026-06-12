@@ -266,42 +266,14 @@ public class UserController {
         }
         
         try {
-            // Generate password hash
-            String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
-            
-            // Get or create users folder
-            Folder usersFolder = getOrCreateSystemSubFolder(repositoryId, "users");
-            
-            // Create user object
-            UserItem user = new UserItem(null, NemakiObjectType.nemakiUser, userId, name, passwordHash, false, usersFolder.getId());
-            
-            // Set additional properties
-            Map<String, Object> props = new HashMap<>();
-            if (firstName != null) props.put("nemaki:firstName", firstName);
-            if (lastName != null) props.put("nemaki:lastName", lastName);
-            if (email != null) props.put("nemaki:email", email);
+            // Build + persist (BCrypt hash, users folder, sub-type props, signature) via shared ContentService
+            UserItem user = getContentService().buildAndCreateUser(repositoryId, userId, name, password,
+                    firstName, lastName, email, getAuthenticatedUsername());
 
-            List<Property> properties = new ArrayList<>();
-            for (Map.Entry<String, Object> entry : props.entrySet()) {
-                properties.add(new Property(entry.getKey(), entry.getValue()));
-            }
-            user.setSubTypeProperties(properties);
-            
-            // Set creation metadata
-            String username = getAuthenticatedUsername();
-            user.setCreator(username);
-            user.setModifier(username);
-            GregorianCalendar now = new GregorianCalendar();
-            user.setCreated(now);
-            user.setModified(now);
-            
-            // Create user in repository
-            getContentService().createUserItem(new SystemCallContext(repositoryId), repositoryId, user);
-            
             response.put("status", "success");
             response.put("message", "User created successfully");
             response.put("user", convertUserToMap(user));
-            
+
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
             
         } catch (Exception e) {
@@ -463,13 +435,5 @@ public class UserController {
         userMap.put("favorites", MapUtils.getObject(extProps, "nemaki:favorites", new ArrayList<>()));
         
         return userMap;
-    }
-
-    /**
-     * Get or create system subfolder
-     */
-    // Consolidated into ContentService.getOrCreateSystemSubFolder (thin delegate).
-    private Folder getOrCreateSystemSubFolder(String repositoryId, String name) {
-        return getContentService().getOrCreateSystemSubFolder(repositoryId, name);
     }
 }

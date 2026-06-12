@@ -325,28 +325,11 @@ public class UserResource {
                 throw ApiException.conflict("User with ID '" + request.getUserId() + "' already exists");
             }
             
-            String passwordHash = BCrypt.hashpw(request.getPassword(), BCrypt.gensalt());
-            
-            Folder usersFolder = getOrCreateSystemSubFolder(repositoryId, "users");
-            
-            UserItem user = new UserItem(null, NemakiObjectType.nemakiUser, 
-                    request.getUserId(), request.getUserName(), passwordHash, false, usersFolder.getId());
-            
-            Map<String, Object> propMap = new HashMap<>();
-            if (request.getFirstName() != null) propMap.put("nemaki:firstName", request.getFirstName());
-            if (request.getLastName() != null) propMap.put("nemaki:lastName", request.getLastName());
-            if (request.getEmail() != null) propMap.put("nemaki:email", request.getEmail());
+            // Build + persist (BCrypt hash, users folder, sub-type props, signature) via shared ContentService
+            contentService.buildAndCreateUser(repositoryId, request.getUserId(), request.getUserName(),
+                    request.getPassword(), request.getFirstName(), request.getLastName(), request.getEmail(),
+                    getAuthenticatedUsername());
 
-            List<Property> properties = new ArrayList<>();
-            for (Map.Entry<String, Object> entry : propMap.entrySet()) {
-                properties.add(new Property(entry.getKey(), entry.getValue()));
-            }
-            user.setSubTypeProperties(properties);
-            
-            setCreationSignature(user);
-            
-            contentService.createUserItem(new SystemCallContext(repositoryId), repositoryId, user);
-            
             if (request.getGroups() != null && !request.getGroups().isEmpty()) {
                 updateUserGroups(repositoryId, request.getUserId(), request.getGroups());
             }
@@ -704,19 +687,6 @@ public class UserResource {
                 logger.info("Removed user " + userId + " from group " + group.getGroupId());
             }
         }
-    }
-    
-    // Consolidated into ContentService.getOrCreateSystemSubFolder (thin delegate).
-    private Folder getOrCreateSystemSubFolder(String repositoryId, String name) {
-        return contentService.getOrCreateSystemSubFolder(repositoryId, name);
-    }
-    
-    private void setCreationSignature(UserItem user) {
-        String username = getAuthenticatedUsername();
-        user.setCreator(username);
-        user.setCreated(new java.util.GregorianCalendar());
-        user.setModifier(username);
-        user.setModified(new java.util.GregorianCalendar());
     }
     
     private void setModificationSignature(UserItem user) {

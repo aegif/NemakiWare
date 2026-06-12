@@ -250,6 +250,18 @@ public interface ContentService {
 	boolean deleteGroup(String repositoryId, String groupId);
 
 	/**
+	 * Hash {@code plainPassword} (BCrypt), build a {@link jp.aegif.nemaki.model.UserItem}
+	 * under the system {@code users} folder with the optional first/last/email
+	 * sub-type properties, stamp the creation signature with {@code actorUsername}
+	 * and persist it. Assumes the request has already passed each stack's
+	 * validation (mandatory fields, uniqueness, password policy). Consolidates the
+	 * build+persist tail that the four group/user REST create paths duplicated and
+	 * centralises password hashing in one place.
+	 */
+	jp.aegif.nemaki.model.UserItem buildAndCreateUser(String repositoryId, String userId, String name,
+			String plainPassword, String firstName, String lastName, String email, String actorUsername);
+
+	/**
 	 * Get a path string
 	 * @param repositoryId TODO
 	 * @param content
