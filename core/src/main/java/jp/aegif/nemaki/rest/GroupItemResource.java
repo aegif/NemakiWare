@@ -301,24 +301,27 @@ public class GroupItemResource extends ResourceBase{
 		// Admin check
 		status = checkAdmin(errMsg, httpRequest);
 
-		//Validation
+		//Validation (shared with Spring MVC / api/v1 via ContentService)
 		if (status) {
-			status = validateNewGroup(repositoryId, status, errMsg, groupId, name);
+			for (jp.aegif.nemaki.businesslogic.GroupValidation r
+					: getContentService().validateNewGroup(repositoryId, groupId, name)) {
+				status = false;
+				switch (r) {
+					case ID_REQUIRED: addErrMsg(errMsg, ITEM_GROUPID, ErrorCode.ERR_MANDATORY); break;
+					case NAME_REQUIRED: addErrMsg(errMsg, ITEM_GROUPNAME, ErrorCode.ERR_MANDATORY); break;
+					case ALREADY_EXISTS: addErrMsg(errMsg, ITEM_GROUPID, ErrorCode.ERR_ALREADYEXISTS); break;
+					default: break;
+				}
+			}
 		}
 
 		//Create a group
 		if(status){
 			try{
-				//Edit group info
 				JSONArray _users = StringUtils.isBlank(users) ? new JSONArray() : parseJsonArray(users);
 				JSONArray _groups = StringUtils.isBlank(groups) ? new JSONArray() :  parseJsonArray(groups);
-
-				GroupItem group = new GroupItem(null, NemakiObjectType.nemakiGroup, groupId,  name, _users, _groups);
-				final Folder groupsFolder = getOrCreateSystemSubFolder(repositoryId, "groups");
-				group.setParentId(groupsFolder.getId());
-				setFirstSignature(httpRequest, group);
-
-				getContentService().createGroupItem(new SystemCallContext(repositoryId), repositoryId, group);
+				getContentService().buildAndCreateGroup(repositoryId, groupId, name,
+						toStringList(_users), toStringList(_groups), getCallContextUsername(httpRequest));
 			}catch(CmisObjectNotFoundException ex){
 				log.warn("Object not found while creating group: " + groupId, ex);
 				status = false;
@@ -335,13 +338,6 @@ public class GroupItemResource extends ResourceBase{
 		}
 		result = makeResult(status, result, errMsg);
 		return result.toString();
-	}
-
-	// Consolidated into ContentService.getOrCreateSystemSubFolder (was a
-	// copy-pasted helper across ~9 classes). Kept as a thin delegate so callsites
-	// are unchanged.
-	private Folder getOrCreateSystemSubFolder(String repositoryId, String name){
-		return getContentService().getOrCreateSystemSubFolder(repositoryId, name);
 	}
 
 	@PUT
@@ -620,27 +616,6 @@ public class GroupItemResource extends ResourceBase{
 			}
 		}
 		return result.getList();
-	}
-
-	boolean validateNewGroup(String repositoryId, boolean status, JSONArray errMsg, String groupId, String name){
-		if(StringUtils.isBlank(groupId)){
-			status = false;
-			addErrMsg(errMsg, ITEM_GROUPID, ErrorCode.ERR_MANDATORY);
-		}
-
-		//groupID uniqueness
-		GroupItem group = getContentService().getGroupItemById(repositoryId, groupId);
-		if(group != null){
-			status = false;
-			addErrMsg(errMsg, ITEM_GROUPID, ErrorCode.ERR_ALREADYEXISTS);
-		}
-
-		if(StringUtils.isBlank(name)){
-			status = false;
-			addErrMsg(errMsg, ITEM_GROUPNAME, ErrorCode.ERR_MANDATORY);
-		}
-
-		return status;
 	}
 
 	boolean validateGroup(boolean status, JSONArray errMsg, String groupId, String name){

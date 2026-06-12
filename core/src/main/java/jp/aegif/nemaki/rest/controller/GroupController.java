@@ -45,6 +45,7 @@ import jakarta.servlet.http.HttpServletRequest;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.GroupMembershipEditor;
+import jp.aegif.nemaki.businesslogic.GroupValidation;
 import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.common.NemakiObjectType;
@@ -198,64 +199,33 @@ public class GroupController {
         checkAdminAuthorization();
 
         Map<String, Object> response = new HashMap<>();
-        List<String> errors = new ArrayList<>();
 
-        // Validation
-        if (StringUtils.isBlank(groupId)) {
-            errors.add("Group ID is required");
-        }
-        if (StringUtils.isBlank(name)) {
-            errors.add("Group name is required");
-        }
-        
-        // Check if group already exists
-        if (StringUtils.isNotBlank(groupId)) {
-            try {
-                GroupItem existingGroup = getContentService().getGroupItemById(repositoryId, groupId);
-                if (existingGroup != null) {
-                    errors.add("Group ID already exists");
-                }
-            } catch (Exception e) {
-                // Group doesn't exist, which is good for creation
+        // Validation via the shared logic, rendered in this stack's errors-list style.
+        List<String> errors = new ArrayList<>();
+        for (GroupValidation r : getContentService().validateNewGroup(repositoryId, groupId, name)) {
+            switch (r) {
+                case ID_REQUIRED: errors.add("Group ID is required"); break;
+                case NAME_REQUIRED: errors.add("Group name is required"); break;
+                case ALREADY_EXISTS: errors.add("Group ID already exists"); break;
             }
         }
-        
         if (!errors.isEmpty()) {
             response.put("status", "error");
             response.put("message", "Validation failed");
             response.put("errors", errors);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
         }
-        
+
         try {
-            // Parse member lists
-            List<String> userList = parseJsonArray(users);
-            List<String> groupList = parseJsonArray(groups);
-            
-            // Get or create groups folder
-            Folder groupsFolder = getOrCreateSystemSubFolder(repositoryId, "groups");
-            
-            // Create group object
-            GroupItem group = new GroupItem(null, NemakiObjectType.nemakiGroup, groupId, name, userList, groupList);
-            group.setParentId(groupsFolder.getId());
-            
-            // Set creation metadata
-            String username = getAuthenticatedUsername();
-            group.setCreator(username);
-            group.setModifier(username);
-            GregorianCalendar now = new GregorianCalendar();
-            group.setCreated(now);
-            group.setModified(now);
-            
-            // Create group in repository
-            getContentService().createGroupItem(new SystemCallContext(repositoryId), repositoryId, group);
-            
+            GroupItem group = getContentService().buildAndCreateGroup(repositoryId, groupId, name,
+                    parseJsonArray(users), parseJsonArray(groups), getAuthenticatedUsername());
+
             response.put("status", "success");
             response.put("message", "Group created successfully");
             response.put("group", convertGroupToMap(group));
-            
+
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
-            
+
         } catch (Exception e) {
             response.put("status", "error");
             response.put("message", "Failed to create group");
@@ -536,13 +506,5 @@ public class GroupController {
             }
             return new ArrayList<>();
         }
-    }
-
-    /**
-     * Get or create system subfolder
-     */
-    // Consolidated into ContentService.getOrCreateSystemSubFolder (thin delegate).
-    private Folder getOrCreateSystemSubFolder(String repositoryId, String name) {
-        return getContentService().getOrCreateSystemSubFolder(repositoryId, name);
     }
 }

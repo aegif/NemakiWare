@@ -215,6 +215,24 @@ public interface ContentService {
 	Folder getOrCreateSystemSubFolder(String repositoryId, String name);
 
 	/**
+	 * Validate a new-group create request, returning every applicable rejection
+	 * reason (empty = valid). Consolidates the blank-id / blank-name / duplicate
+	 * checks that the three group REST stacks previously re-implemented with
+	 * slightly different logic. The caller renders the reasons in its own format.
+	 */
+	java.util.List<GroupValidation> validateNewGroup(String repositoryId, String groupId, String name);
+
+	/**
+	 * Build a {@link jp.aegif.nemaki.model.GroupItem}, place it under the system
+	 * {@code groups} folder, stamp the creation signature with {@code actorUsername}
+	 * and persist it. Assumes the request has already passed
+	 * {@link #validateNewGroup}. Consolidates the build+persist tail that the three
+	 * group REST stacks duplicated.
+	 */
+	jp.aegif.nemaki.model.GroupItem buildAndCreateGroup(String repositoryId, String groupId,
+			String name, java.util.List<String> users, java.util.List<String> groups, String actorUsername);
+
+	/**
 	 * Get a path string
 	 * @param repositoryId TODO
 	 * @param content

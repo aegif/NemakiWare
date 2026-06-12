@@ -628,6 +628,41 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public java.util.List<jp.aegif.nemaki.businesslogic.GroupValidation> validateNewGroup(
+			String repositoryId, String groupId, String name) {
+		java.util.List<jp.aegif.nemaki.businesslogic.GroupValidation> errors = new ArrayList<>();
+		if (org.apache.commons.lang3.StringUtils.isBlank(groupId)) {
+			errors.add(jp.aegif.nemaki.businesslogic.GroupValidation.ID_REQUIRED);
+		}
+		if (org.apache.commons.lang3.StringUtils.isBlank(name)) {
+			errors.add(jp.aegif.nemaki.businesslogic.GroupValidation.NAME_REQUIRED);
+		}
+		if (org.apache.commons.lang3.StringUtils.isNotBlank(groupId)
+				&& getGroupItemById(repositoryId, groupId) != null) {
+			errors.add(jp.aegif.nemaki.businesslogic.GroupValidation.ALREADY_EXISTS);
+		}
+		return errors;
+	}
+
+	@Override
+	public jp.aegif.nemaki.model.GroupItem buildAndCreateGroup(String repositoryId, String groupId,
+			String name, java.util.List<String> users, java.util.List<String> groups, String actorUsername) {
+		jp.aegif.nemaki.model.GroupItem group = new jp.aegif.nemaki.model.GroupItem(
+				null, jp.aegif.nemaki.common.NemakiObjectType.nemakiGroup, groupId, name,
+				users == null ? new ArrayList<String>() : users,
+				groups == null ? new ArrayList<String>() : groups);
+		Folder groupsFolder = getOrCreateSystemSubFolder(repositoryId, "groups");
+		group.setParentId(groupsFolder.getId());
+		java.util.GregorianCalendar now = new java.util.GregorianCalendar();
+		group.setCreator(actorUsername);
+		group.setModifier(actorUsername);
+		group.setCreated(now);
+		group.setModified(now);
+		createGroupItem(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, group);
+		return group;
+	}
+
+	@Override
 	public String calculatePath(String repositoryId, Content content) {
 		List<String> path = calculatePathInternal(new ArrayList<String>(), content, repositoryId);
 		path.remove(0);

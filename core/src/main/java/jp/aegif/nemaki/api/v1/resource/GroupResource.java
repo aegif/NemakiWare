@@ -313,29 +313,28 @@ public class GroupResource {
                     }
             
                     logger.info("API v1: Creating group " + request.getGroupId() + " in repository " + repositoryId);
-            
-                    validateCreateGroupRequest(request, repositoryId);
-            
-            GroupItem existingGroup = contentService.getGroupItemById(repositoryId, request.getGroupId());
-            if (existingGroup != null) {
-                throw ApiException.conflict("Group with ID '" + request.getGroupId() + "' already exists");
+
+            // Validation (shared with legacy / Spring MVC via ContentService). Fail-fast
+            // on the first reason to preserve api/v1's ProblemDetail-per-error contract.
+            for (jp.aegif.nemaki.businesslogic.GroupValidation r
+                    : contentService.validateNewGroup(repositoryId, request.getGroupId(), request.getGroupName())) {
+                switch (r) {
+                    case ID_REQUIRED: throw ApiException.invalidArgument("groupId is required");
+                    case NAME_REQUIRED: throw ApiException.invalidArgument("groupName is required");
+                    case ALREADY_EXISTS:
+                        throw ApiException.conflict("Group with ID '" + request.getGroupId() + "' already exists");
+                    default: break;
+                }
             }
-            
+
             List<String> users = request.getUsers() != null ? request.getUsers() : new ArrayList<>();
             List<String> groups = request.getGroups() != null ? request.getGroups() : new ArrayList<>();
-            
+
             validateMemberIds(repositoryId, users, groups);
-            
-            GroupItem group = new GroupItem(null, NemakiObjectType.nemakiGroup, 
-                    request.getGroupId(), request.getGroupName(), users, groups);
-            
-            Folder groupsFolder = getOrCreateSystemSubFolder(repositoryId, "groups");
-            group.setParentId(groupsFolder.getId());
-            
-            setCreationSignature(group);
-            
-            contentService.createGroupItem(new SystemCallContext(repositoryId), repositoryId, group);
-            
+
+            contentService.buildAndCreateGroup(repositoryId, request.getGroupId(),
+                    request.getGroupName(), users, groups, getAuthenticatedUsername());
+
             GroupItem createdGroup = contentService.getGroupItemById(repositoryId, request.getGroupId());
             GroupResponse response = convertToGroupResponse(createdGroup, repositoryId);
             
@@ -625,15 +624,6 @@ public class GroupResource {
         }
     }
     
-    private void validateCreateGroupRequest(GroupRequest request, String repositoryId) {
-        if (StringUtils.isBlank(request.getGroupId())) {
-            throw ApiException.invalidArgument("groupId is required");
-        }
-        if (StringUtils.isBlank(request.getGroupName())) {
-            throw ApiException.invalidArgument("groupName is required");
-        }
-    }
-    
     private void validateMemberIds(String repositoryId, List<String> userIds, List<String> groupIds) {
         if (CollectionUtils.isNotEmpty(userIds)) {
             for (String userId : userIds) {
@@ -692,19 +682,6 @@ public class GroupResource {
         response.setLinks(links);
         
         return response;
-    }
-    
-    // Consolidated into ContentService.getOrCreateSystemSubFolder (thin delegate).
-    private Folder getOrCreateSystemSubFolder(String repositoryId, String name) {
-        return contentService.getOrCreateSystemSubFolder(repositoryId, name);
-    }
-    
-    private void setCreationSignature(GroupItem group) {
-        String username = getAuthenticatedUsername();
-        group.setCreator(username);
-        group.setCreated(new java.util.GregorianCalendar());
-        group.setModifier(username);
-        group.setModified(new java.util.GregorianCalendar());
     }
     
     private void setModificationSignature(GroupItem group) {
