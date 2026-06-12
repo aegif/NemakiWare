@@ -901,7 +901,24 @@ public interface ContentService {
 	void restoreArchive(String repositoryId, String archiveId) throws ParentNoLongerExistException;
 
 	/**
-	 * Destroy an archive from database 
+	 * Whether {@code username} may see/restore {@code archive}: true for the
+	 * archive's original creator or the user who deleted it. (Admin callers are
+	 * authorized separately and need not pass through this check.)
+	 */
+	boolean isArchiveAccessible(String username, jp.aegif.nemaki.model.Archive archive);
+
+	/**
+	 * Restore an archive applying the shared guards (authorization, cold-storage
+	 * rejection, parent-existence) and return a structured {@link ArchiveRestoreOutcome}
+	 * so each REST binding renders it in its own style. Consolidates the guard
+	 * logic the legacy and api/v1 archive stacks previously re-implemented (api/v1
+	 * was missing the cold-storage guard).
+	 */
+	ArchiveRestoreOutcome restoreArchiveGuarded(String repositoryId, String archiveId, String username,
+			boolean isAdmin);
+
+	/**
+	 * Destroy an archive from database
 	 * @param repositoryId
 	 * @param archiveId
 	 */

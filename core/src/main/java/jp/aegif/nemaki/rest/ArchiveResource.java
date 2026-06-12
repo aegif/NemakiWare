@@ -298,7 +298,7 @@ public class ArchiveResource extends ResourceBase {
 			// Authorize before revealing existence — return ERR_NOTFOUND for
 			// both "not found" and "not authorized" to prevent ID enumeration.
 			// Both the original document creator and the deleting user can access.
-			if (archive == null || (!adminUser && !isArchiveAccessible(username, archive))) {
+			if (archive == null || (!adminUser && !getContentService().isArchiveAccessible(username, archive))) {
 				status = false;
 				addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_NOTFOUND);
 			} else {
@@ -341,27 +341,24 @@ public class ArchiveResource extends ResourceBase {
 		boolean adminUser = isAdmin(httpRequest);
 
 		try{
-			Archive archiveToRestore = getContentService().getArchive(repositoryId, id);
-			// Authorize before revealing existence — return ERR_NOTFOUND for
-			// both "not found" and "not authorized" to prevent ID enumeration.
-			// Both the original document creator and the deleting user can access.
-			if (archiveToRestore == null || (!adminUser && !isArchiveAccessible(username, archiveToRestore))) {
-				status = false;
-				addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_NOTFOUND);
-				return makeResult(status, result, errMsg).toJSONString();
+			// Shared guard (authorization + cold-storage + parent-existence)
+			switch (getContentService().restoreArchiveGuarded(repositoryId, id, username, adminUser)) {
+				case NOT_FOUND:
+					status = false;
+					addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_NOTFOUND);
+					break;
+				case COLD_STORAGE:
+					status = false;
+					addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_RESTORE_FROM_COLD_STORAGE);
+					break;
+				case PARENT_GONE:
+					status = false;
+					addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_RESTORE_BECAUSE_PARENT_NO_LONGER_EXISTS);
+					break;
+				case RESTORED:
+				default:
+					break;
 			}
-
-			// Check if archive is in cold storage - cannot restore directly
-			if (Archive.STATE_ARCHIVED_COLD.equals(archiveToRestore.getEffectiveArchiveState())) {
-				status = false;
-				addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_RESTORE_FROM_COLD_STORAGE);
-				return makeResult(status, result, errMsg).toJSONString();
-			}
-			getContentService().restoreArchive(repositoryId, id);
-		}catch(ParentNoLongerExistException e){
-			log.error("Failed to restore archive " + id + ": parent no longer exists", e);
-			status = false;
-			addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_RESTORE_BECAUSE_PARENT_NO_LONGER_EXISTS);
 		}catch(Exception e){
 			log.error("Failed to restore archive: " + id, e);
 			status = false;
@@ -816,16 +813,6 @@ public class ArchiveResource extends ResourceBase {
 	}
 
 
-
-	/**
-	 * Check if a non-admin user can access the given archive.
-	 * Access is granted if the user is either the original document creator
-	 * or the user who performed the deletion (archivedBy).
-	 */
-	private boolean isArchiveAccessible(String username, Archive archive) {
-		return username.equals(archive.getCreator())
-				|| username.equals(archive.getArchivedBy());
-	}
 
 	@SuppressWarnings({ "unchecked" })
 	private JSONObject buildArchiveJson(Archive archive){

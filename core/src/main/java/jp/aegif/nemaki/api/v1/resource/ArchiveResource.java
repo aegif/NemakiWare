@@ -255,26 +255,37 @@ public class ArchiveResource {
             if (archive == null) {
                 throw ApiException.objectNotFound(archiveId, repositoryId);
             }
-            
-            contentService.restoreArchive(repositoryId, archiveId);
-            
+
+            // Shared guard (admin endpoint, so isAdmin=true; adds the cold-storage
+            // guard the api/v1 stack previously lacked).
+            CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+            String username = callContext != null ? callContext.getUsername() : null;
+            switch (contentService.restoreArchiveGuarded(repositoryId, archiveId, username, true)) {
+                case NOT_FOUND:
+                    throw ApiException.objectNotFound(archiveId, repositoryId);
+                case COLD_STORAGE:
+                    throw ApiException.conflict("Cannot restore archive: it is in cold storage");
+                case PARENT_GONE:
+                    throw ApiException.conflict("Cannot restore archive: parent folder no longer exists");
+                case RESTORED:
+                default:
+                    break;
+            }
+
             RestoreResponse response = new RestoreResponse();
             response.setArchiveId(archiveId);
             response.setOriginalId(archive.getOriginalId());
             response.setRestored(true);
             response.setMessage("Archive restored successfully");
-            
+
             Map<String, LinkInfo> links = new HashMap<>();
             if (archive.getOriginalId() != null) {
                 links.put("restoredObject", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId + "/objects/" + archive.getOriginalId()));
             }
             response.setLinks(links);
-            
+
             return Response.ok(response).build();
-            
-        } catch (ParentNoLongerExistException e) {
-            logger.warning("Cannot restore archive " + archiveId + ": parent no longer exists");
-            throw ApiException.conflict("Cannot restore archive: parent folder no longer exists");
+
         } catch (ApiException e) {
             throw e;
         } catch (Exception e) {

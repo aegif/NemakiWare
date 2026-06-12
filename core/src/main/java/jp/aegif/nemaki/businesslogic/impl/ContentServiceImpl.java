@@ -3760,6 +3760,35 @@ public class ContentServiceImpl implements ContentService {
 		archiveDelegate.restoreArchive(repositoryId, archiveId);
 	}
 
+	@Override
+	public boolean isArchiveAccessible(String username, Archive archive) {
+		if (username == null || archive == null) {
+			return false;
+		}
+		return username.equals(archive.getCreator()) || username.equals(archive.getArchivedBy());
+	}
+
+	@Override
+	public jp.aegif.nemaki.businesslogic.ArchiveRestoreOutcome restoreArchiveGuarded(String repositoryId,
+			String archiveId, String username, boolean isAdmin) {
+		Archive archive = getArchive(repositoryId, archiveId);
+		// Authorize before revealing existence — treat "not found" and "not
+		// authorized" identically to prevent archive ID enumeration.
+		if (archive == null || (!isAdmin && !isArchiveAccessible(username, archive))) {
+			return jp.aegif.nemaki.businesslogic.ArchiveRestoreOutcome.NOT_FOUND;
+		}
+		// Cold storage cannot be restored directly.
+		if (Archive.STATE_ARCHIVED_COLD.equals(archive.getEffectiveArchiveState())) {
+			return jp.aegif.nemaki.businesslogic.ArchiveRestoreOutcome.COLD_STORAGE;
+		}
+		try {
+			restoreArchive(repositoryId, archiveId);
+		} catch (ParentNoLongerExistException e) {
+			return jp.aegif.nemaki.businesslogic.ArchiveRestoreOutcome.PARENT_GONE;
+		}
+		return jp.aegif.nemaki.businesslogic.ArchiveRestoreOutcome.RESTORED;
+	}
+
 	public void destroyArchive(String repositoryId, String archiveId) {
 		archiveDelegate.destroyArchive(repositoryId, archiveId);
 	}
