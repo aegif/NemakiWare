@@ -340,16 +340,11 @@ public class UserController {
                     response.put("errors", java.util.Collections.singletonList(policyError));
                     return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
                 }
-                String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
-                user.setPassowrd(passwordHash);
+                user.setPassowrd(getContentService().hashPassword(password));
             }
-            
-            // Set modification metadata
-            user.setModifier(getAuthenticatedUsername());
-            user.setModified(new GregorianCalendar());
 
-            // Update user in repository
-            getContentService().update(new SystemCallContext(repositoryId), repositoryId, user);
+            // shared signature + persist tail (modifier stamp inside)
+            getContentService().applyUserUpdate(repositoryId, user, getAuthenticatedUsername());
             
             response.put("status", "success");
             response.put("message", "User updated successfully");
@@ -378,17 +373,13 @@ public class UserController {
         Map<String, Object> response = new HashMap<>();
 
         try {
-            UserItem user = getContentService().getUserItemById(repositoryId, userId);
-            
-            if (user == null) {
+            // shared canonical delete also strips group memberships
+            if (!getContentService().deleteUser(repositoryId, userId)) {
                 response.put("status", "error");
                 response.put("message", "User not found");
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
             }
-            
-            // Delete user from repository
-            getContentService().delete(new SystemCallContext(repositoryId), repositoryId, user.getId(), false);
-            
+
             response.put("status", "success");
             response.put("message", "User deleted successfully");
             

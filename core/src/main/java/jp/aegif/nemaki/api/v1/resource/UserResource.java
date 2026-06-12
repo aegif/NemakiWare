@@ -424,14 +424,12 @@ public class UserResource {
                 if (!policyResult.isOk()) {
                     throw ApiException.invalidArgument(policyResult.getErrorMessage());
                 }
-                String passwordHash = BCrypt.hashpw(request.getPassword(), BCrypt.gensalt());
-                user.setPassowrd(passwordHash);
+                user.setPassowrd(contentService.hashPassword(request.getPassword()));
             }
 
-            setModificationSignature(user);
-            
-            contentService.update(new SystemCallContext(repositoryId), repositoryId, user);
-            
+            // shared signature + persist tail (modifier stamp inside)
+            contentService.applyUserUpdate(repositoryId, user, getAuthenticatedUsername());
+
             if (request.getGroups() != null) {
                 updateUserGroups(repositoryId, userId, request.getGroups());
             }
@@ -480,14 +478,10 @@ public class UserResource {
                 checkAdminAuthorization();
 
                 try {
-                    UserItem user = contentService.getUserItemById(repositoryId, userId);
-                    if (user == null) {
+                    // shared canonical delete also strips group memberships
+                    if (!contentService.deleteUser(repositoryId, userId)) {
                         throw ApiException.userNotFound(userId, repositoryId);
                     }
-
-                    removeUserFromAllGroups(repositoryId, userId);
-
-            contentService.delete(new SystemCallContext(repositoryId), repositoryId, user.getId(), false);
 
             return Response.noContent().build();
             
@@ -559,13 +553,11 @@ public class UserResource {
                 throw ApiException.invalidArgument("Old password is incorrect");
             }
             
-            String newPasswordHash = BCrypt.hashpw(request.getNewPassword(), BCrypt.gensalt());
-            user.setPassowrd(newPasswordHash);
-            
-            setModificationSignature(user);
-            
-            contentService.update(new SystemCallContext(repositoryId), repositoryId, user);
-            
+            user.setPassowrd(contentService.hashPassword(request.getNewPassword()));
+
+            // shared signature + persist tail (modifier stamp inside)
+            contentService.applyUserUpdate(repositoryId, user, getAuthenticatedUsername());
+
             return Response.noContent().build();
             
         } catch (ApiException e) {
@@ -671,28 +663,6 @@ public class UserResource {
                 contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
             }
         }
-    }
-    
-    private void removeUserFromAllGroups(String repositoryId, String userId) {
-        List<GroupItem> allGroups = ObjectUtils.defaultIfNull(
-                contentService.getGroupItems(repositoryId), Collections.emptyList());
-        
-        for (GroupItem group : allGroups) {
-            List<String> members = group.getUsers();
-            if (members != null && members.contains(userId)) {
-                List<String> updatedMembers = new ArrayList<>(members);
-                updatedMembers.remove(userId);
-                group.setUsers(updatedMembers);
-                contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
-                logger.info("Removed user " + userId + " from group " + group.getGroupId());
-            }
-        }
-    }
-    
-    private void setModificationSignature(UserItem user) {
-        String username = getAuthenticatedUsername();
-        user.setModifier(username);
-        user.setModified(new java.util.GregorianCalendar());
     }
     
     private String getAuthenticatedUsername() {

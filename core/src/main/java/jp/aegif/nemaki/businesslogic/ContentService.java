@@ -262,6 +262,31 @@ public interface ContentService {
 			String plainPassword, String firstName, String lastName, String email, String actorUsername);
 
 	/**
+	 * Hash a plaintext password with the canonical scheme (BCrypt + per-hash
+	 * salt). Centralises the hashing previously scattered across every user
+	 * create / update / change-password REST path so the scheme lives in one
+	 * place.
+	 */
+	String hashPassword(String plainPassword);
+
+	/**
+	 * Stamp the modification signature with {@code actorUsername} and persist an
+	 * already-merged user. Each REST stack performs its own field-merge and
+	 * password-policy enforcement to preserve its contract, then delegates the
+	 * identical signature-and-persist tail here.
+	 */
+	void applyUserUpdate(String repositoryId, jp.aegif.nemaki.model.UserItem user, String actorUsername);
+
+	/**
+	 * Delete a user by its business id, returning {@code false} if no such user
+	 * exists. Canonical delete: first strips the user from every group's member
+	 * list (preventing dangling references), then deletes it under a
+	 * {@link SystemCallContext}. Consolidates the three user REST stacks, two of
+	 * which previously skipped the group-membership cleanup.
+	 */
+	boolean deleteUser(String repositoryId, String userId);
+
+	/**
 	 * Get a path string
 	 * @param repositoryId TODO
 	 * @param content

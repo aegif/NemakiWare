@@ -727,16 +727,14 @@ private ContentService getContentServiceSafe() {
 							}
 						}
 						if (status) {
-							String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
-							user.setPassowrd(passwordHash);
+							user.setPassowrd(service.hashPassword(password));
 						}
 					}
 
 					if (status) {
-						setModifiedSignature(httpRequest, user);
-
 						try {
-							service.update(new SystemCallContext(repositoryId), repositoryId, user);
+							// shared signature + persist tail (modifier stamp inside)
+							service.applyUserUpdate(repositoryId, user, getCallContextUsername(httpRequest));
 						} catch (Exception e) {
 							log.error("User update error: " + e.getMessage(), e);
 							status = false;
@@ -1001,7 +999,7 @@ private ContentService getContentServiceSafe() {
 		if (isSelfChange || !isCallerAdmin) {
 			// Self-service change or non-admin: require old password verification
 			if(AuthenticationUtil.passwordMatches(oldPassword, userItem.getPassowrd())){
-				String hash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
+				String hash = getContentService().hashPassword(newPassword);
 				userItem.setPassowrd(hash);
 				try{
 					getContentService().update(new SystemCallContext(repositoryId), repositoryId, userItem);
@@ -1181,17 +1179,15 @@ private ContentService getContentServiceSafe() {
 					}
 				}
 				if (status) {
-					String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
-					user.setPassowrd(passwordHash);
+					user.setPassowrd(service.hashPassword(password));
 				}
 			}
 
 			// Persist changes only if all validation passed
 			if (status) {
-				setModifiedSignature(httpRequest, user);
-
 				try {
-					service.update(new SystemCallContext(repositoryId), repositoryId, user);
+					// shared signature + persist tail (modifier stamp inside)
+					service.applyUserUpdate(repositoryId, user, getCallContextUsername(httpRequest));
 				} catch (Exception e) {
 					log.error("Failed to update user " + userId + ": " + e.getMessage(), e);
 					status = false;
@@ -1233,22 +1229,13 @@ private ContentService getContentServiceSafe() {
 		// Admin check - only admins can delete users
 		status = checkAdmin(errMsg, httpRequest);
 
-		// Existing user
-		UserItem user = null;
-		if (status) {
-			user = getContentServiceSafe().getUserItemById(repositoryId, userId);
-			if (user == null) {
-				status = false;
-				addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
-			}
-		}
-
-		// Delete a user
+		// Delete a user (shared canonical delete also strips group memberships)
 		if (status) {
 			try {
-				log.debug("Attempting to delete user with ID: " + user.getId());
-				getContentService().delete(new SystemCallContext(repositoryId), repositoryId, user.getId(), false);
-				log.debug("User deletion completed successfully");
+				if (!getContentService().deleteUser(repositoryId, userId)) {
+					status = false;
+					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
+				}
 			} catch (Exception ex) {
 				log.error("Failed to delete user: " + userId, ex);
 				status = false;

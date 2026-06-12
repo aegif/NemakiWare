@@ -713,7 +713,7 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public jp.aegif.nemaki.model.UserItem buildAndCreateUser(String repositoryId, String userId, String name,
 			String plainPassword, String firstName, String lastName, String email, String actorUsername) {
-		String passwordHash = org.mindrot.jbcrypt.BCrypt.hashpw(plainPassword, org.mindrot.jbcrypt.BCrypt.gensalt());
+		String passwordHash = hashPassword(plainPassword);
 		Folder usersFolder = getOrCreateSystemSubFolder(repositoryId, "users");
 		jp.aegif.nemaki.model.UserItem user = new jp.aegif.nemaki.model.UserItem(null,
 				jp.aegif.nemaki.common.NemakiObjectType.nemakiUser, userId, name, passwordHash, false,
@@ -733,6 +733,59 @@ public class ContentServiceImpl implements ContentService {
 
 		createUserItem(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, user);
 		return user;
+	}
+
+	@Override
+	public String hashPassword(String plainPassword) {
+		return org.mindrot.jbcrypt.BCrypt.hashpw(plainPassword, org.mindrot.jbcrypt.BCrypt.gensalt());
+	}
+
+	@Override
+	public void applyUserUpdate(String repositoryId, jp.aegif.nemaki.model.UserItem user, String actorUsername) {
+		user.setModifier(actorUsername);
+		user.setModified(new java.util.GregorianCalendar());
+		update(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, user);
+	}
+
+	@Override
+	public boolean deleteUser(String repositoryId, String userId) {
+		jp.aegif.nemaki.model.UserItem user = getUserItemById(repositoryId, userId);
+		if (user == null) {
+			return false;
+		}
+		removeUserFromAllGroups(repositoryId, userId);
+		delete(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, user.getId(), false);
+		return true;
+	}
+
+	/**
+	 * Strip {@code userId} from the member list of every group that references it,
+	 * so deleting a user never leaves dangling references behind.
+	 */
+	private void removeUserFromAllGroups(String repositoryId, String userId) {
+		List<jp.aegif.nemaki.model.GroupItem> allGroups = getGroupItems(repositoryId);
+		if (allGroups == null) {
+			return;
+		}
+		for (jp.aegif.nemaki.model.GroupItem listed : allGroups) {
+			List<String> members = listed.getUsers();
+			if (members != null && members.contains(userId)) {
+				// the list-view instance carries no revision; re-fetch a full,
+				// revision-bearing document before persisting the update
+				jp.aegif.nemaki.model.GroupItem g = getGroupItemById(repositoryId, listed.getGroupId());
+				if (g == null) {
+					continue;
+				}
+				List<String> current = g.getUsers();
+				if (current == null || !current.contains(userId)) {
+					continue;
+				}
+				List<String> updated = new ArrayList<>(current);
+				updated.remove(userId);
+				g.setUsers(updated);
+				update(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, g);
+			}
+		}
 	}
 
 	@Override
