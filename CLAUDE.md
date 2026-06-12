@@ -358,7 +358,8 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 ## 現在のバージョン
 
-**3.1.1** (2026-04-02)
+**3.1.3** (2026-06-13、master マージ済み) — pom.xml `<version>3.1.3</version>。
+3.1.1 系の各 RC を経て 3.1.3 を master に取り込み済み。
 
 ### 3.1.3 (2026-06-11) — 全面レビュー remediation (security + correctness)
 

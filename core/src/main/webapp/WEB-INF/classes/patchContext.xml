@@ -516,5 +516,16 @@
 		</property>
 	</bean>
 
+	<!-- 3.1.3 (#14 follow-up): top-level bean so the fallback
+	     NemakiPatchInitializationListener.getBeansOfType() collects this patch.
+	     Previously it existed only as an inline bean inside cmisPatchList (Path A),
+	     so the fallback path (Path B) silently skipped it — the same registration
+	     asymmetry RC4 (R1) fixed for the other patches. -->
+	<bean id="patch_ApiKeyMangoIndex" class="jp.aegif.nemaki.patch.Patch_ApiKeyMangoIndex">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
 </beans>
 
