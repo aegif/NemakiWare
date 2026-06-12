@@ -737,7 +737,7 @@ fi
 
 echo -n "Testing: Audit Metrics Reset ... "
 total_tests=$((total_tests + 1))
-result=$(curl -s -X POST -u admin:admin "http://localhost:8080/core/api/v1/cmis/audit/metrics/reset" | python3 -c "import sys,json; d=json.load(sys.stdin); print('ok' if 'message' in d else 'fail')" 2>/dev/null)
+result=$(curl -s -X POST -u admin:admin -H "X-Requested-With: XMLHttpRequest" "http://localhost:8080/core/api/v1/cmis/audit/metrics/reset" | python3 -c "import sys,json; d=json.load(sys.stdin); print('ok' if 'message' in d else 'fail')" 2>/dev/null)
 if [[ "$result" == "ok" ]]; then
     echo -e "${GREEN}PASSED${NC}"
     success_count=$((success_count + 1))
@@ -801,8 +801,8 @@ fi
 
 echo -n "Testing: Jobs Pause/Resume Cycle ... "
 total_tests=$((total_tests + 1))
-pause_status=$(curl -s -X POST -u admin:admin "http://localhost:8080/core/api/v1/cmis/repo/bedroom/jobs/pause" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null)
-resume_status=$(curl -s -X POST -u admin:admin "http://localhost:8080/core/api/v1/cmis/repo/bedroom/jobs/resume" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null)
+pause_status=$(curl -s -X POST -u admin:admin -H "X-Requested-With: XMLHttpRequest" "http://localhost:8080/core/api/v1/cmis/repo/bedroom/jobs/pause" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null)
+resume_status=$(curl -s -X POST -u admin:admin -H "X-Requested-With: XMLHttpRequest" "http://localhost:8080/core/api/v1/cmis/repo/bedroom/jobs/resume" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null)
 if [[ "$pause_status" == "paused" ]] && [[ "$resume_status" == "running" ]]; then
     echo -e "${GREEN}PASSED${NC} (pause→$pause_status, resume→$resume_status)"
     success_count=$((success_count + 1))

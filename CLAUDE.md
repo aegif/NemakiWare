@@ -425,10 +425,52 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
   よる取りこぼしを防止。`FetchSupport.saveToDlq`。orchestrator 経路は adapter
   非注入で単体不可 (ヘルパーのみ bound) — WireMock orchestrator IT を follow-up 推奨
 
-**Deferred (アクティブな脆弱性ではない)**:
-- REST 3系統統合 (#14): 大規模 phased maintainability refactor。唯一の active
-  症状 (password-policy divergence) は P1 で解消済み。専用 RC で full API E2E +
-  Playwright gating の下で実施すべき
+**Deferred → 完了**:
+- ~~REST 3系統統合 (#14): 大規模 phased maintainability refactor~~ →
+  **完了**（次セクション参照）。`release/3.1.3` に fast-forward マージ済み
+  (HEAD `c92c2adb6`)
+
+### REST 3系統統合 (#14) — ContentService 集約 (2026-06-13、merged to release/3.1.3)
+
+legacy Jersey (`rest/*`) / Spring MVC (`rest/controller/*`) / api/v1 JAX-RS
+(`api/v1/resource/*`) の 3 つの REST バインディングに重複していた
+User / Group / Rendition / Archive のドメインロジックを `ContentService`
+(impl: `ContentServiceImpl`) に単一情報源として集約。各バインディングは
+検証 / 認可 / 応答整形の「契約」を温存し、共通の build / persist / guard tail
+のみ委譲する方針（応答 shape・ステータスコードは不変）。
+
+増分1〜6 + Codex 反映の 9 コミット（`7f24b1a9b` 〜 `c92c2adb6`）:
+
+| 増分 | 対象 | 新規 API |
+|---|---|---|
+| 1 | system sub-folder | `getOrCreateSystemSubFolder`（`.system` bootstrap fallback 込み） |
+| 2 | group member add/remove | `GroupMembershipEditor`（純粋 util、Outcome enum） |
+| 3 | group create | `validateNewGroup` / `buildAndCreateGroup` / `GroupValidation` enum |
+| 3b | group update/delete | `applyGroupUpdate` / `deleteGroup`（+nested 参照掃除） |
+| 4 | user create | `buildAndCreateUser`（BCrypt 集中） |
+| 4b | user update/delete/changePassword | `hashPassword` / `applyUserUpdate` / `deleteUser`（+group membership 掃除） |
+| 5 | rendition generate tail | `createPreviewRendition` |
+| 6 | archive restore guard | `isArchiveAccessible` / `restoreArchiveGuarded` / `ArchiveRestoreOutcome` enum |
+
+**集約と同時に解消した潜在バグ/ギャップ 5 件**:
+- group delete の dangling nested 参照（legacy/Spring は未掃除だった）
+- user delete の dangling group membership（同上）
+- `removeGroupFromAllNestedGroups`/`removeUserFromAllGroups` が `getGroupItems`
+  の revision なし戻りを update して "no revision" 例外になる潜在バグ →
+  `getGroupItemById` 再取得で修正
+- api/v1 archive restore に cold-storage guard が欠落（cold archive を直接復元
+  しようとしていた）→ `restoreArchiveGuarded` で全スタックに補完
+- `getOrCreateSystemSubFolder` 集約版が `.system` 欠如時に即 throw（legacy
+  user create の bootstrap 復旧を喪失）→ root 配下に `.system` 自動作成を移植
+
+**Codex 独立レビュー**: Blocker/High なし。Medium 1（system folder bootstrap）+
+Low 2（changePassword admin 分岐の hash 集約漏れ / デッドコード約177行）を反映。
+
+**検証**: 集約系ユニット 36 PASS、TCK フルスイート **38/38**（当初の Basics
+rootFolder / Types baseTypes 失敗は前セッション残骸 doc + E2E カスタム型の
+データ汚染で、掃除後 green = 回帰ではないと確証）、Playwright chromium フル
+**932 passed / 0 failed / 2 flaky(retry通過) / 99 skipped**、実機 3 スタック
+手動 API 検証。
 
 ### RC37 / RC6.13 (2026-05-31) — Test quality: feature-readback now binds to production reader (closes RC6.12 P3) (shipped)
 

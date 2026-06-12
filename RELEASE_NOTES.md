@@ -82,10 +82,53 @@ and live verification (TCK + redeploy)._
   path is not yet unit-covered (adapters are not injectable) — WireMock
   orchestrator integration tests are a recommended follow-up.
 
-### Deferred (not active vulnerabilities)
-- REST 3-stack consolidation (#14) — large phased maintainability refactor
-  (the one active symptom, password-policy divergence, is already fixed
-  above). Best done as its own RC with full API E2E + Playwright gating.
+### Deferred → done
+- ~~REST 3-stack consolidation (#14)~~ → **done** (see "REST 3-stack
+  consolidation (#14)" below). Merged into `release/3.1.3` by fast-forward
+  (HEAD `c92c2adb6`).
+
+### REST 3-stack consolidation (#14) — ContentService unification (2026-06-13, merged to release/3.1.3)
+
+The User / Group / Rendition / Archive domain logic that was duplicated across
+the three REST bindings — legacy Jersey (`rest/*`), Spring MVC
+(`rest/controller/*`) and api/v1 JAX-RS (`api/v1/resource/*`) — is consolidated
+into `ContentService` (impl `ContentServiceImpl`) as the single source of truth.
+Each binding keeps its own contract (validation / authorization / response
+shaping) and delegates only the shared build / persist / guard tail, so every
+response shape and status code is unchanged.
+
+Nine commits (`7f24b1a9b` … `c92c2adb6`), increments 1–6 plus a Codex-review pass:
+
+| Inc | Area | New API |
+|---|---|---|
+| 1 | system sub-folder | `getOrCreateSystemSubFolder` (with `.system` bootstrap fallback) |
+| 2 | group member add/remove | `GroupMembershipEditor` (pure util, Outcome enum) |
+| 3 | group create | `validateNewGroup` / `buildAndCreateGroup` / `GroupValidation` |
+| 3b | group update/delete | `applyGroupUpdate` / `deleteGroup` (+nested-ref cleanup) |
+| 4 | user create | `buildAndCreateUser` (centralised BCrypt) |
+| 4b | user update/delete/changePassword | `hashPassword` / `applyUserUpdate` / `deleteUser` (+group-membership cleanup) |
+| 5 | rendition generate tail | `createPreviewRendition` |
+| 6 | archive restore guard | `isArchiveAccessible` / `restoreArchiveGuarded` / `ArchiveRestoreOutcome` |
+
+**Five latent bugs/gaps fixed during consolidation**: group-delete dangling
+nested references and user-delete dangling group memberships (legacy/Spring
+skipped the cleanup); a "no revision" exception when the nested/membership
+cleanup updated the revision-less `getGroupItems` results (fixed by re-fetching
+via `getGroupItemById`); the missing cold-storage guard on api/v1 archive
+restore (now applied to all stacks via `restoreArchiveGuarded`); and the loss of
+the legacy user-create `.system` bootstrap when the consolidated
+`getOrCreateSystemSubFolder` threw instead of creating `.system` (root-level
+auto-create restored).
+
+**Codex independent review**: no Blocker/High. One Medium (system-folder
+bootstrap) + two Low (changePassword admin branch missed the hash helper /
+~177 lines of dead code) reflected.
+
+**Verification**: 36 consolidation unit tests PASS; TCK full suite **38/38** (the
+initial Basics-rootFolder / Types-baseTypes failures were stray-doc + E2E-custom-
+type data pollution from a prior session — green after cleanup, i.e. not a
+regression); Playwright chromium full **932 passed / 0 failed / 2 flaky
+(retry-passed) / 99 skipped**; live 3-stack manual API checks.
 
 ---
 
