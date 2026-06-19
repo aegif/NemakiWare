@@ -1,0 +1,171 @@
+name: Release container images
+
+# Builds and publishes the NemakiWare container images (core + solr) to the
+# GitHub Container Registry (ghcr.io) so that operators can deploy by *pulling*
+# pre-built images instead of building the WAR on the target host.
+#
+# Triggers:
+#   - Pushing a git tag matching v* (e.g. v3.2.0) → publishes that version + latest
+#   - Manual run (workflow_dispatch) with an explicit version input
+#
+# Published images:
+#   ghcr.io/<owner>/nemakiware-core:<version>   (+ :latest on tag builds)
+#   ghcr.io/<owner>/nemakiware-solr:<version>   (+ :latest on tag builds)
+#
+# CouchDB (couchdb:3.x) and TEI are upstream images and are NOT republished.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Image version tag (e.g. 3.2.0). Defaults to the short SHA.'
+        required: false
+        default: ''
+      push_latest:
+        description: 'Also tag/push :latest'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    name: Build & push core + solr images
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with: { java-version: '21', distribution: 'temurin', cache: 'maven' }
+
+      # ── Resolve image coordinates ────────────────────────────────────────
+      # workflow_dispatch inputs are passed through env (never interpolated
+      # directly into the shell) per Actions injection-hardening guidance.
+      - name: Compute image metadata
+        id: meta
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          INPUT_PUSH_LATEST: ${{ github.event.inputs.push_latest }}
+        run: |
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"            # ghcr requires lowercase
+          PREFIX="ghcr.io/${OWNER}/nemakiware"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"               # strip leading v from vX.Y.Z
+            PUSH_LATEST="true"
+          elif [ -n "${INPUT_VERSION}" ]; then
+            VERSION="${INPUT_VERSION}"
+            PUSH_LATEST="${INPUT_PUSH_LATEST}"
+          else
+            VERSION="$(git rev-parse --short HEAD)"
+            PUSH_LATEST="false"
+          fi
+          echo "prefix=${PREFIX}"   >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "push_latest=${PUSH_LATEST}" >> "$GITHUB_OUTPUT"
+          echo "Publishing ${PREFIX}-{core,solr}:${VERSION} (latest=${PUSH_LATEST})"
+
+      # ── Build the WAR (mirrors integration-tests.yml proven build) ───────
+      - name: Build NemakiWare WAR
+        run: |
+          mvn clean install -N -DskipTests -q
+          mvn clean install -f common/pom.xml -DskipTests -q
+          mvn clean install -f cloudant-init/pom.xml -DskipTests -q
+          mvn clean install -f solr/pom.xml -DskipTests -q
+          # frontend-maven-plugin builds the React UI into the WAR during package
+          mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
+
+      - name: Stage WAR into image build context
+        run: cp core/target/core.war docker/core/core.war
+
+      # ── Registry login + buildx ──────────────────────────────────────────
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── core image ───────────────────────────────────────────────────────
+      - name: Compute core tags
+        id: coretags
+        env:
+          PREFIX: ${{ steps.meta.outputs.prefix }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          PUSH_LATEST: ${{ steps.meta.outputs.push_latest }}
+        run: |
+          TAGS="${PREFIX}-core:${VERSION}"
+          if [ "${PUSH_LATEST}" = "true" ]; then
+            TAGS="${TAGS},${PREFIX}-core:latest"
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push core
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/core
+          file: docker/core/Dockerfile.simple
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.coretags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.title=nemakiware-core
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ── solr image ───────────────────────────────────────────────────────
+      - name: Compute solr tags
+        id: solrtags
+        env:
+          PREFIX: ${{ steps.meta.outputs.prefix }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          PUSH_LATEST: ${{ steps.meta.outputs.push_latest }}
+        run: |
+          TAGS="${PREFIX}-solr:${VERSION}"
+          if [ "${PUSH_LATEST}" = "true" ]; then
+            TAGS="${TAGS},${PREFIX}-solr:latest"
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push solr
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/solr
+          file: docker/solr/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.solrtags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.title=nemakiware-solr
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        env:
+          PREFIX: ${{ steps.meta.outputs.prefix }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          PUSH_LATEST: ${{ steps.meta.outputs.push_latest }}
+        run: |
+          {
+            echo "### Published images"
+            echo ""
+            echo '```'
+            echo "${PREFIX}-core:${VERSION}"
+            echo "${PREFIX}-solr:${VERSION}"
+            [ "${PUSH_LATEST}" = "true" ] && echo "(+ :latest)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

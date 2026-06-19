@@ -6,6 +6,53 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.2.0 — IaaS one-step deployment (published images + cloud bootstrap) (2026-06-20)
+_On `release/3.2-iaas-setup`. Removes the "build the WAR on the target
+host" friction: operators now deploy by **pulling pre-built images** on a
+bare VM. No Java/Maven/Node toolchain required on the host._
+
+### New: published container images
+- **`.github/workflows/release-images.yml`** — pushing a `v*` git tag (or a
+  manual `workflow_dispatch`) builds the WAR (same proven steps as the
+  integration-test workflow) and publishes two images to GHCR:
+  - `ghcr.io/<owner>/nemakiware-core:<version>` (+ `:latest` on tag builds)
+  - `ghcr.io/<owner>/nemakiware-solr:<version>`
+  - CouchDB and TEI remain upstream images (not republished).
+- linux/amd64, GHA build cache, OCI source/revision labels.
+
+### New: production compose (pull, don't build)
+- **`docker/docker-compose-prod.yml`** — references the published images via
+  `${NEMAKI_IMAGE_PREFIX}` / `${NEMAKI_VERSION}` instead of `build:`.
+  Hardened posture: CouchDB and Solr have **no published host ports**
+  (internal compose network only); core binds `8080` to
+  `${NEMAKI_HTTP_BIND:-127.0.0.1}` so operators front it with TLS.
+  `restart: unless-stopped`, optional `--profile rag` for TEI.
+- **`docker/.env.prod.example`** — full environment template (image coords,
+  CouchDB credentials, heap, public scheme, optional auth/LDAP/RAG knobs).
+
+### New: cloud bootstrap scripts
+- **`deploy/aws/user-data.sh`** (Amazon Linux 2023) and
+  **`deploy/azure/custom-data.sh`** (Ubuntu 22.04/24.04) — paste into EC2
+  user-data / Azure custom-data. They install Docker, clone the deploy tree
+  at the chosen tag, resolve the CouchDB password (random by default, or
+  AWS Secrets Manager / Azure Key Vault via managed identity), write `.env`,
+  `docker compose pull && up -d`, and install a systemd unit so the stack
+  survives reboot. AWS variant also reads overrides from instance tags.
+- **`deploy/README.md`** — AWS + Azure quickstart, console + CLI, post-launch
+  hardening checklist (change admin/admin, TLS front-end, snapshot volumes),
+  private-image login, and local/on-prem reuse.
+
+### Notes
+- `nemakiware-core` is built from `Dockerfile.simple`; runtime configuration
+  is supplied via `-D` system properties from the compose env (existing
+  convention), with an optional volume mount to fully override
+  `nemakiware.properties`.
+- Backing services (CouchDB, Solr) stay self-hosted — there is no managed
+  equivalent on AWS/Azure — but the guide steers persistence to EBS/Managed
+  Disk snapshots.
+
+---
+
 ## 3.1.3 — Full-review remediation (security + correctness) (2026-06-11)
 _On `release/3.1.3`. Two passes: Fable multi-agent review + Codex
 independent verification, then prioritized fixes with regression tests

@@ -358,8 +358,50 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 ## 現在のバージョン
 
-**3.1.3** (2026-06-13、master マージ済み) — pom.xml `<version>3.1.3</version>。
-3.1.1 系の各 RC を経て 3.1.3 を master に取り込み済み。
+**3.2.0** (2026-06-20、`release/3.2-iaas-setup` 作業中) — pom.xml
+`<version>3.2.0</version>`。全 7 pom を 3.1.3 → 3.2.0 に bump。
+3.1.3 を基点に IaaS ワンステップデプロイ機能を追加。
+
+### 3.2.0 (2026-06-20) — IaaS ワンステップデプロイ (公開イメージ + cloud bootstrap)
+
+ブランチ: `release/3.2-iaas-setup` (off `release/3.1.3`)。AWS / Azure などの
+IaaS で「ターゲットホスト上で WAR をビルドする」摩擦を排除し、**素の VM で
+公開イメージを pull するだけ**でフルスタックが立ち上がる構成を追加。ホストに
+Java / Maven / Node のツールチェーンは不要。詳細は `RELEASE_NOTES.md` の
+3.2.0 セクション、運用手順は `deploy/README.md`。
+
+**追加物**:
+- **公開イメージ CI** `.github/workflows/release-images.yml`: `v*` tag push
+  (または `workflow_dispatch`) で WAR をビルド (integration-tests.yml と同じ
+  実証済み手順) → GHCR に `nemakiware-core` / `nemakiware-solr` を発行
+  (`:<version>` + tag build 時 `:latest`)。CouchDB / TEI は upstream のまま。
+  linux/amd64、GHA build cache、OCI ラベル付与。workflow_dispatch 入力は
+  injection-hardening のため `env:` 経由。
+- **本番 compose** `docker/docker-compose-prod.yml`: `build:` ではなく
+  `${NEMAKI_IMAGE_PREFIX}` / `${NEMAKI_VERSION}` で公開イメージ参照。
+  posture 強化 — CouchDB / Solr は**ホストポート非公開**(内部ネットワーク
+  限定)、core は `${NEMAKI_HTTP_BIND:-127.0.0.1}:8080` バインドで TLS 前段
+  前提。`restart: unless-stopped`、`--profile rag` で TEI 任意追加。
+- **環境テンプレート** `docker/.env.prod.example`。
+- **ブートストラップ** `deploy/aws/user-data.sh` (Amazon Linux 2023) /
+  `deploy/azure/custom-data.sh` (Ubuntu 22.04/24.04): Docker 導入 → 指定 tag を
+  clone → CouchDB パスワード解決 (既定ランダム / AWS Secrets Manager /
+  Azure Key Vault via managed identity) → `.env` 生成 → `docker compose pull
+  && up -d` → reboot 耐性のため systemd unit 登録。AWS 版はインスタンスタグ
+  からの上書きにも対応。
+- **運用ドキュメント** `deploy/README.md` (AWS/Azure quickstart + 起動後の
+  ハードニング checklist)。
+
+**設計判断**:
+- `nemakiware-core` は `Dockerfile.simple` ベース。runtime 設定は compose env
+  からの `-D` system property (既存規約) で注入、`nemakiware.properties` の
+  完全上書きは optional volume mount で対応。
+- backing services (CouchDB / Solr) は AWS/Azure にマネージド同等品が無いため
+  自己ホスト維持。永続化は EBS / Managed Disk スナップショットに誘導。
+
+**検証**: `docker compose -f docker-compose-prod.yml config` (base + rag
+profile) PASS、両ブートストラップ `bash -n` 構文 PASS。GHA workflow / イメージ
+の実 push は tag 発行時に走る (本ブランチでは未 push)。
 
 ### 3.1.3 (2026-06-11) — 全面レビュー remediation (security + correctness)
 
