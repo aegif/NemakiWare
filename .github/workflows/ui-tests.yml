@@ -16,11 +16,18 @@ on:
       - 'core/pom.xml'
       - '.github/workflows/ui-tests.yml'
 
+permissions:
+  contents: read
+  packages: read   # resolve custom OpenCMIS 1.1.0-nemakiware from GitHub Packages
+
 jobs:
   ui-tests:
     name: UI Tests
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      MAVEN_USERNAME: ${{ github.actor }}
+      MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
     - name: Checkout repository
@@ -32,6 +39,9 @@ jobs:
         java-version: '21'
         distribution: 'temurin'
         cache: 'maven'
+        server-id: github-opencmis
+        server-username: MAVEN_USERNAME
+        server-password: MAVEN_PASSWORD
 
     - name: Set up Node.js 20
       uses: actions/setup-node@v4
@@ -74,7 +84,7 @@ jobs:
     - name: Build NemakiWare Core
       run: |
         # Build the core WAR file with all dependencies
-        mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
+        mvn clean package -f core/pom.xml -Pdevelopment,opencmis-github-packages -DskipTests -q
 
         # Verify WAR file was created
         ls -la core/target/core.war

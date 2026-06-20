@@ -45,6 +45,10 @@ on:
     - cron: '0 2 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: read   # resolve custom OpenCMIS 1.1.0-nemakiware from GitHub Packages
+
 jobs:
   npm-audit:
     name: npm audit (frontend)
@@ -78,6 +82,9 @@ jobs:
     name: Maven dependency drift check
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      MAVEN_USERNAME: ${{ github.actor }}
+      MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -85,6 +92,9 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
           cache: 'maven'
+          server-id: github-opencmis
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
       - name: Build sibling modules (install to local repo)
         run: |
           mvn clean install -N -DskipTests -q
@@ -93,7 +103,7 @@ jobs:
           mvn clean install -f solr/pom.xml -DskipTests -q
       - name: Resolve dependency tree
         run: |
-          mvn -f core/pom.xml -Pdevelopment dependency:tree \
+          mvn -f core/pom.xml -Pdevelopment,opencmis-github-packages dependency:tree \
             -DoutputFile=maven-deps.txt -q
           echo "--- Resolved dependencies (security-relevant) ---"
           grep -E "(netty|logback|jackson|spring|httpclient|cxf|commons-io|commons-text|junit|xml-apis|tika|solr-core)" maven-deps.txt | sort -u
