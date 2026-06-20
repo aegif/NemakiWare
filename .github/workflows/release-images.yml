@@ -1,0 +1,270 @@
+name: Release container images
+
+# Builds and publishes the NemakiWare container images (core + solr) to the
+# GitHub Container Registry (ghcr.io) so that operators can deploy by *pulling*
+# pre-built images instead of building the WAR on the target host.
+#
+# Triggers:
+#   - Pushing a git tag matching v* (e.g. v3.2.0) → publishes that version + latest
+#   - Manual run (workflow_dispatch) with an explicit version input
+#
+# Published images:
+#   ghcr.io/<owner>/nemakiware-core:<version>   (+ :latest on tag builds)
+#   ghcr.io/<owner>/nemakiware-solr:<version>   (+ :latest on tag builds)
+#
+# CouchDB (couchdb:3.x) and TEI are upstream images and are NOT republished.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Image version tag (e.g. 3.2.0). Defaults to the short SHA.'
+        required: false
+        default: ''
+      push_latest:
+        description: 'Also tag/push :latest'
+        type: boolean
+        required: false
+        default: false
+      platforms:
+        description: 'Target platforms. arm64 is experimental (slow emulated LibreOffice build); verify before relying on it.'
+        type: choice
+        required: false
+        default: 'linux/amd64'
+        options:
+          - 'linux/amd64'
+          - 'linux/amd64,linux/arm64'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    name: Build & push core + solr images
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      prefix: ${{ steps.meta.outputs.prefix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+          # Writes ~/.m2/settings.xml with a server entry whose id matches the
+          # core pom's opencmis-github-packages repository id, so the custom
+          # OpenCMIS 1.1.0-nemakiware artifacts (jars + poms + parent) resolve
+          # from GitHub Packages with the workflow token.
+          server-id: github-opencmis
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+
+      # ── Resolve image coordinates ────────────────────────────────────────
+      # workflow_dispatch inputs are passed through env (never interpolated
+      # directly into the shell) per Actions injection-hardening guidance.
+      - name: Compute image metadata
+        id: meta
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          INPUT_PUSH_LATEST: ${{ github.event.inputs.push_latest }}
+          INPUT_PLATFORMS: ${{ github.event.inputs.platforms }}
+        run: |
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"            # ghcr requires lowercase
+          PREFIX="ghcr.io/${OWNER}/nemakiware"
+          # Tag pushes publish amd64 only (verified default). Multi-arch is an
+          # explicit opt-in via the workflow_dispatch 'platforms' choice.
+          PLATFORMS="${INPUT_PLATFORMS:-linux/amd64}"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"               # strip leading v from vX.Y.Z
+            PUSH_LATEST="true"
+            PLATFORMS="linux/amd64"
+          elif [ -n "${INPUT_VERSION}" ]; then
+            VERSION="${INPUT_VERSION}"
+            PUSH_LATEST="${INPUT_PUSH_LATEST}"
+          else
+            VERSION="$(git rev-parse --short HEAD)"
+            PUSH_LATEST="false"
+          fi
+          # Validate before it becomes a Docker tag (defense against a malformed
+          # workflow_dispatch input). Docker tag grammar: [A-Za-z0-9_][A-Za-z0-9._-]{0,127}.
+          if ! printf '%s' "${VERSION}" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$'; then
+            echo "::error::Invalid version '${VERSION}' — must match Docker tag grammar." >&2
+            exit 1
+          fi
+          echo "prefix=${PREFIX}"   >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "push_latest=${PUSH_LATEST}" >> "$GITHUB_OUTPUT"
+          echo "platforms=${PLATFORMS}" >> "$GITHUB_OUTPUT"
+          echo "Publishing ${PREFIX}-{core,solr}:${VERSION} (latest=${PUSH_LATEST}, platforms=${PLATFORMS})"
+
+      # ── Build the WAR (mirrors integration-tests.yml proven build) ───────
+      # The core build activates the opencmis-github-packages profile so the
+      # custom OpenCMIS 1.1.0-nemakiware artifacts resolve from GitHub Packages
+      # using the workflow token (read:packages via the packages: write perm).
+      - name: Build NemakiWare WAR
+        env:
+          MAVEN_USERNAME: ${{ github.actor }}
+          MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mvn clean install -N -DskipTests -q
+          mvn clean install -f common/pom.xml -DskipTests -q
+          mvn clean install -f cloudant-init/pom.xml -DskipTests -q
+          mvn clean install -f solr/pom.xml -DskipTests -q
+          # frontend-maven-plugin builds the React UI into the WAR during package
+          mvn clean package -f core/pom.xml -Pdevelopment,opencmis-github-packages -DskipTests -q
+
+      - name: Stage WAR into image build context
+        run: cp core/target/core.war docker/core/core.war
+
+      # ── Registry login + buildx ──────────────────────────────────────────
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── core image ───────────────────────────────────────────────────────
+      - name: Compute core tags
+        id: coretags
+        env:
+          PREFIX: ${{ steps.meta.outputs.prefix }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          PUSH_LATEST: ${{ steps.meta.outputs.push_latest }}
+        run: |
+          TAGS="${PREFIX}-core:${VERSION}"
+          if [ "${PUSH_LATEST}" = "true" ]; then
+            TAGS="${TAGS},${PREFIX}-core:latest"
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push core
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/core
+          file: docker/core/Dockerfile.simple
+          platforms: ${{ steps.meta.outputs.platforms }}
+          push: true
+          tags: ${{ steps.coretags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.title=nemakiware-core
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ── solr image ───────────────────────────────────────────────────────
+      - name: Compute solr tags
+        id: solrtags
+        env:
+          PREFIX: ${{ steps.meta.outputs.prefix }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          PUSH_LATEST: ${{ steps.meta.outputs.push_latest }}
+        run: |
+          TAGS="${PREFIX}-solr:${VERSION}"
+          if [ "${PUSH_LATEST}" = "true" ]; then
+            TAGS="${TAGS},${PREFIX}-solr:latest"
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push solr
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/solr
+          file: docker/solr/Dockerfile
+          platforms: ${{ steps.meta.outputs.platforms }}
+          push: true
+          tags: ${{ steps.solrtags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.title=nemakiware-solr
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        env:
+          PREFIX: ${{ steps.meta.outputs.prefix }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          PUSH_LATEST: ${{ steps.meta.outputs.push_latest }}
+        run: |
+          {
+            echo "### Published images"
+            echo ""
+            echo '```'
+            echo "${PREFIX}-core:${VERSION}"
+            echo "${PREFIX}-solr:${VERSION}"
+            [ "${PUSH_LATEST}" = "true" ] && echo "(+ :latest)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Smoke test: pull the just-published images and bring the prod stack up ──
+  smoke:
+    name: Smoke test published images
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Bring up prod stack from published images and verify boot
+        working-directory: docker
+        env:
+          COUCHDB_USER: admin
+          COUCHDB_PASSWORD: smoke-ci-password
+          NEMAKI_IMAGE_PREFIX: ${{ needs.build-and-push.outputs.prefix }}
+          NEMAKI_VERSION: ${{ needs.build-and-push.outputs.version }}
+        run: |
+          echo "Using ${NEMAKI_IMAGE_PREFIX}-{core,solr}:${NEMAKI_VERSION}"
+          docker compose -f docker-compose-prod.yml pull
+          docker compose -f docker-compose-prod.yml up -d
+          # A FRESH deploy of NemakiWare 3.x reports setupRequired=true and waits
+          # for the Setup Wizard to create the databases + admin. The smoke proves
+          # the published images boot, wire together, and the core connects to
+          # CouchDB (it can only answer setup/state once that probe succeeds).
+          echo "Waiting for the core to serve /api/v1/setup/state ..."
+          body=""
+          for i in $(seq 1 60); do
+            if body=$(curl -sf http://localhost:8080/core/api/v1/setup/state 2>/dev/null); then
+              echo "core answered setup/state on attempt $i"; break
+            fi
+            body=""; sleep 5
+          done
+          if [ -z "$body" ]; then
+            echo "::error::core never served /api/v1/setup/state"
+            docker compose -f docker-compose-prod.yml ps
+            docker compose -f docker-compose-prod.yml logs --tail 150 core
+            exit 1
+          fi
+          echo "setup/state: $body"
+          echo "$body" | grep -q '"setupRequired":true' \
+            || { echo "::error::expected setupRequired:true on a fresh deploy"; exit 1; }
+          # End-to-end version check: the running image must report the build version.
+          echo "$body" | grep -q "\"serverVersion\":\"${NEMAKI_VERSION}\"" \
+            || { echo "::error::serverVersion mismatch — expected ${NEMAKI_VERSION} in: $body"; exit 1; }
+          echo "Smoke test passed: published images boot to setup-ready state, serverVersion=${NEMAKI_VERSION}."
+      - name: Teardown
+        if: always()
+        working-directory: docker
+        env:
+          COUCHDB_USER: admin
+          COUCHDB_PASSWORD: smoke-ci-password
+          NEMAKI_IMAGE_PREFIX: ${{ needs.build-and-push.outputs.prefix }}
+          NEMAKI_VERSION: ${{ needs.build-and-push.outputs.version }}
+        run: docker compose -f docker-compose-prod.yml down -v

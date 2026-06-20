@@ -6,6 +6,89 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.2.0 — IaaS one-step deployment (published images + cloud bootstrap) (2026-06-20)
+_On `release/3.2-iaas-setup`. Removes the "build the WAR on the target
+host" friction: operators now deploy by **pulling pre-built images** on a
+bare VM. No Java/Maven/Node toolchain required on the host._
+
+### New: published container images
+- **`.github/workflows/release-images.yml`** — pushing a `v*` git tag (or a
+  manual `workflow_dispatch`) builds the WAR (same proven steps as the
+  integration-test workflow) and publishes two images to GHCR:
+  - `ghcr.io/<owner>/nemakiware-core:<version>` (+ `:latest` on tag builds)
+  - `ghcr.io/<owner>/nemakiware-solr:<version>`
+  - CouchDB and TEI remain upstream images (not republished).
+- linux/amd64, GHA build cache, OCI source/revision labels.
+
+### New: production compose (pull, don't build)
+- **`docker/docker-compose-prod.yml`** — references the published images via
+  `${NEMAKI_IMAGE_PREFIX}` / `${NEMAKI_VERSION}` instead of `build:`.
+  Hardened posture: CouchDB and Solr have **no published host ports**
+  (internal compose network only); core binds `8080` to
+  `${NEMAKI_HTTP_BIND:-127.0.0.1}` so operators front it with TLS.
+  `restart: unless-stopped`, optional `--profile rag` for TEI.
+- **`docker/.env.prod.example`** — full environment template (image coords,
+  CouchDB credentials, heap, public scheme, optional auth/LDAP/RAG knobs).
+
+### New: cloud bootstrap scripts
+- **`deploy/aws/user-data.sh`** (Amazon Linux 2023) and
+  **`deploy/azure/custom-data.sh`** (Ubuntu 22.04/24.04) — paste into EC2
+  user-data / Azure custom-data. They install Docker, clone the deploy tree
+  at the chosen tag, resolve the CouchDB password (random by default, or
+  AWS Secrets Manager / Azure Key Vault via managed identity), write `.env`,
+  `docker compose pull && up -d`, and install a systemd unit so the stack
+  survives reboot. AWS variant also reads overrides from instance tags.
+- **`deploy/README.md`** — AWS + Azure quickstart, console + CLI, post-launch
+  hardening checklist (change admin/admin, TLS front-end, snapshot volumes),
+  private-image login, and local/on-prem reuse.
+
+### New: Terraform modules (`terraform apply` one-shot)
+- **`deploy/terraform/aws/`** and **`deploy/terraform/azure/`** — provision the
+  VM + network + IAM and hand the (same) bootstrap script as user-data /
+  custom-data. Deploy coordinates are injected deterministically as env exports
+  prepended to the script (no tag-propagation race).
+  - AWS: latest Amazon Linux 2023 resolved from the public SSM parameter
+    (no hardcoded AMI), default-VPC fallback, IMDSv2-only, gp3 encrypted root,
+    SG that opens 443 (and 8080 only in the demo posture), optional EIP, and an
+    IAM policy scoped to a single Secrets Manager secret when configured.
+  - Azure: Ubuntu 22.04 (gen2), VNet/subnet/NSG/public-IP, SSH-key auth,
+    optional system-assigned identity for Key Vault (principal id is output so
+    you can grant `get`).
+  - Both validated with `tofu validate` against the real aws/azurerm providers;
+    `terraform fmt` clean. `deploy/terraform/README.md` documents usage.
+
+### New: deploy-asset validation CI
+- **`.github/workflows/deploy-validate.yml`** — on any change under `deploy/**`
+  or the prod compose, runs `bash -n` + shellcheck on the bootstrap scripts,
+  `docker compose config` (base + rag) with a **JSON security-posture guard**
+  (asserts CouchDB/Solr publish no host ports and core binds 127.0.0.1 by
+  default), and `terraform fmt -check` + `validate` on both modules. Keeps the
+  deployment automation from regressing unnoticed.
+
+### Security hardening (Codex review remediation)
+- Bootstrap scripts assign VM/instance-tag overrides with `printf -v`
+  (literal, no re-evaluation) instead of `eval` — tag values are
+  attacker-influenceable.
+- Script default `NEMAKI_HTTP_BIND` is `127.0.0.1` (safe by default, matches
+  the compose default); public plain-HTTP exposure is an explicit opt-in.
+- Terraform injects deploy coordinates as single-quoted env exports; the AWS
+  IAM grant is scoped to a validated Secrets Manager **ARN**
+  (`couchdb_secret_arn`).
+- Secrets Manager / Key Vault fetch failures fail loudly with guidance instead
+  of aborting silently under `set -euo pipefail`; AWS bootstrap installs the
+  Compose v2 CLI plugin when absent (AL2023 does not bundle it).
+
+### Notes
+- `nemakiware-core` is built from `Dockerfile.simple`; runtime configuration
+  is supplied via `-D` system properties from the compose env (existing
+  convention), with an optional volume mount to fully override
+  `nemakiware.properties`.
+- Backing services (CouchDB, Solr) stay self-hosted — there is no managed
+  equivalent on AWS/Azure — but the guide steers persistence to EBS/Managed
+  Disk snapshots.
+
+---
+
 ## 3.1.3 — Full-review remediation (security + correctness) (2026-06-11)
 _On `release/3.1.3`. Two passes: Fable multi-agent review + Codex
 independent verification, then prioritized fixes with regression tests

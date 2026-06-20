@@ -33,6 +33,10 @@ on:
       - 'scripts/check-*.sh'
       - '.github/workflows/csrf-guards.yml'
 
+permissions:
+  contents: read
+  packages: read   # resolve custom OpenCMIS 1.1.0-nemakiware from GitHub Packages
+
 jobs:
   guards:
     name: Guard scripts (CSRF + Dockerfile parity)
@@ -49,6 +53,9 @@ jobs:
     name: CSRF & ingest unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      MAVEN_USERNAME: ${{ github.actor }}
+      MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - name: Set up Java 21
@@ -56,15 +63,24 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+          server-id: github-opencmis
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
       - name: Cache Maven packages
         uses: actions/cache@v4
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('core/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2-
+      - name: Build sibling modules (install to local repo)
+        run: |
+          mvn clean install -N -DskipTests -q
+          mvn clean install -f common/pom.xml -DskipTests -q
+          mvn clean install -f cloudant-init/pom.xml -DskipTests -q
+          mvn clean install -f solr/pom.xml -DskipTests -q
       - name: Run CSRF & ingest unit tests
         run: |
           mvn test \
             -Dtest='ResourceBaseCsrfProtectionTest,CanonicalImportServiceTest' \
-            -f core/pom.xml -Pdevelopment \
+            -f core/pom.xml -Pdevelopment,opencmis-github-packages \
             -Dmaven.test.failure.ignore=false

@@ -1,0 +1,123 @@
+# NemakiWare — production compose using PRE-BUILT published images.
+#
+# Unlike docker-compose-simple.yml (which builds the WAR locally), this file
+# PULLS the core + solr images from a registry. No Java/Maven/Node toolchain is
+# required on the host — only Docker. This is the file the IaaS bootstrap
+# scripts (deploy/aws, deploy/azure) deploy.
+#
+# Required environment (set in .env or the shell — see .env.prod.example):
+#   COUCHDB_USER, COUCHDB_PASSWORD   CouchDB admin credentials (no defaults)
+#   NEMAKI_IMAGE_PREFIX              e.g. ghcr.io/<owner>/nemakiware
+#   NEMAKI_VERSION                   e.g. 3.2.0 (or latest)
+#
+# Usage:
+#   docker compose -f docker-compose-prod.yml up -d
+#   docker compose -f docker-compose-prod.yml --profile rag up -d   # with RAG/TEI
+#
+# Security posture:
+#   - CouchDB and Solr have NO published host ports — they are reachable only
+#     on the internal compose network. Do not add host port mappings in prod.
+#   - Core publishes 8080 bound to NEMAKI_HTTP_BIND (default 127.0.0.1) so the
+#     operator fronts it with a TLS reverse proxy (nginx / ALB / App Gateway).
+#     Set NEMAKI_HTTP_BIND=0.0.0.0 only for throwaway demos.
+
+services:
+  couchdb:
+    image: couchdb:3.3.3
+    restart: unless-stopped
+    volumes:
+      - couchdb_data:/opt/couchdb/data
+      - ./couchdb/local.ini:/opt/couchdb/etc/local.d/compaction.ini
+    environment:
+      - COUCHDB_USER=${COUCHDB_USER:?COUCHDB_USER must be set}
+      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:?COUCHDB_PASSWORD must be set}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-u", "${COUCHDB_USER}:${COUCHDB_PASSWORD}", "http://localhost:5984/_all_dbs"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  solr:
+    image: ${NEMAKI_IMAGE_PREFIX:?NEMAKI_IMAGE_PREFIX must be set}-solr:${NEMAKI_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      - SOLR_HOME=/var/solr/data
+      - SOLR_HEAP=${SOLR_HEAP:-512m}
+    volumes:
+      - solr_data:/var/solr/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8983/solr/admin/cores?action=STATUS"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  core:
+    image: ${NEMAKI_IMAGE_PREFIX:?NEMAKI_IMAGE_PREFIX must be set}-core:${NEMAKI_VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      # Bound to localhost by default — front with a TLS reverse proxy.
+      - "${NEMAKI_HTTP_BIND:-127.0.0.1}:8080:8080"
+    depends_on:
+      couchdb:
+        condition: service_healthy
+      solr:
+        condition: service_healthy
+    environment:
+      - JAVA_OPTS=-Dorg.ektorp.support.AutoUpdateViewOnChange=false -Dorg.ektorp.http.IdleConnectionMonitor.enabled=false -Dorg.ektorp.support.DesignDocument.UPDATE_ON_DIFF=false -Dorg.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE=true -Dorg.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES=true -Dorg.apache.tomcat.util.scan.StandardJarScanFilter.jarsToSkip=*.jar
+      # CouchDB credentials are mandatory (:? fails-fast if unset). Other ${VAR:-}
+      # fallbacks remain only for optional features where empty/disabled is safe.
+      - CATALINA_OPTS=-Xms${NEMAKI_HEAP_MIN:-1g} -Xmx${NEMAKI_HEAP_MAX:-3g} -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Ddb.couchdb.url=http://couchdb:5984 -Ddb.couchdb.auth.enabled=true -Ddb.couchdb.auth.username=${COUCHDB_USER:?COUCHDB_USER must be set} -Ddb.couchdb.auth.password=${COUCHDB_PASSWORD:?COUCHDB_PASSWORD must be set} -Dsolr.host=solr -Dsolr.port=8983 -Dsolr.protocol=http -Dnemakiware.public.scheme=${NEMAKI_PUBLIC_SCHEME:-auto} -Dcloud.auth.google.enabled=${CLOUD_AUTH_GOOGLE_ENABLED:-false} -Dcloud.auth.google.clientId=${CLOUD_AUTH_GOOGLE_CLIENT_ID:-} -Dcloud.auth.microsoft.enabled=${CLOUD_AUTH_MICROSOFT_ENABLED:-false} -Dcloud.auth.microsoft.clientId=${CLOUD_AUTH_MICROSOFT_CLIENT_ID:-} -Dcloud.auth.microsoft.tenantId=${CLOUD_AUTH_MICROSOFT_TENANT_ID:-} -Dcloud.drive.google.enabled=${CLOUD_DRIVE_GOOGLE_ENABLED:-false} -Dcloud.drive.microsoft.enabled=${CLOUD_DRIVE_MICROSOFT_ENABLED:-false} -Dsso.oidc.enabled=${SSO_OIDC_ENABLED:-false} -Dsso.saml.enabled=${SSO_SAML_ENABLED:-false} -Doidc.enabled=${OIDC_ENABLED:-false} -Doidc.issuer=${OIDC_ISSUER:-} -Doidc.clientId=${OIDC_CLIENT_ID:-} -Ddirectory.sync.enabled=${DIRECTORY_SYNC_ENABLED:-false} -Ddirectory.sync.ldap.url=${LDAP_URL:-} -Ddirectory.sync.ldap.base.dn=${LDAP_BASE_DN:-} -Ddirectory.sync.ldap.bind.dn=${LDAP_BIND_DN:-} -Ddirectory.sync.ldap.bind.password=${LDAP_BIND_PASSWORD:-} -Djdk.httpclient.allowRestrictedHeaders=host
+    env_file:
+      - path: ./secrets/microsoft-entra.env
+        required: false
+      - path: ./secrets/ingest-connectors.env
+        required: false
+    volumes:
+      - ${NEMAKI_SECRETS_DIR:-./secrets}:/usr/local/tomcat/secrets:ro
+      # To fully override the baked-in properties file without rebuilding the
+      # image, uncomment and provide your own file:
+      # - ./config/nemakiware.properties:/usr/local/tomcat/conf/nemakiware.properties:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/core"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # ── RAG (optional) ─ docker compose --profile rag up -d ──────────────────
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
+    profiles:
+      - rag
+    restart: unless-stopped
+    volumes:
+      - tei_cache:/data
+    deploy:
+      resources:
+        limits:
+          memory: ${TEI_MEM_LIMIT:-4g}
+        reservations:
+          memory: ${TEI_MEM_RESERVE:-2g}
+    environment:
+      - MODEL_ID=intfloat/multilingual-e5-large
+      - HF_HUB_URL=https://huggingface.co
+      - HF_ENDPOINT=https://huggingface.co
+      - MAX_CLIENT_BATCH_SIZE=32
+      - MAX_BATCH_TOKENS=16384
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+volumes:
+  couchdb_data:
+  solr_data:
+  tei_cache:
+
+networks:
+  default:
+    name: nemaki-network

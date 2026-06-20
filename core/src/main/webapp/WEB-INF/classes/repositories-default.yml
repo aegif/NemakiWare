@@ -6,6 +6,6 @@ default:
   thinClientUri: http://localhost:8080/core/ui/
   vendor: aegif
   product.name: NemakiWare
-  product.version: 3.1.0
+  product.version: 3.2.0
   namespace: http://www.aegif.jp/NemakiWare/
 super.users: bedroom

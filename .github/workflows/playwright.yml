@@ -10,10 +10,20 @@ on:
     paths:
       - 'core/src/main/webapp/ui/**'
 
+permissions:
+  contents: read
+  packages: read   # resolve custom OpenCMIS 1.1.0-nemakiware from GitHub Packages
+
 jobs:
   test:
     timeout-minutes: 90
     runs-on: ubuntu-latest
+    env:
+      MAVEN_USERNAME: ${{ github.actor }}
+      MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      # docker-compose-simple.yml requires these (?:- fail-fast) for up AND down.
+      COUCHDB_USER: admin
+      COUCHDB_PASSWORD: password
 
     steps:
     - uses: actions/checkout@v4
@@ -23,6 +33,10 @@ jobs:
       with:
         java-version: '21'
         distribution: 'temurin'
+        cache: 'maven'
+        server-id: github-opencmis
+        server-username: MAVEN_USERNAME
+        server-password: MAVEN_PASSWORD
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
@@ -61,7 +75,7 @@ jobs:
 
     - name: Build NemakiWare Core (includes UI assets)
       run: |
-        mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
+        mvn clean package -f core/pom.xml -Pdevelopment,opencmis-github-packages -DskipTests -q
 
     - name: Start NemakiWare Backend
       env:
@@ -75,20 +89,12 @@ jobs:
         cp ../core/target/core.war core/core.war
         docker compose -f docker-compose-simple.yml up -d --build
 
-        # Wait for backend (CMIS + CouchDB) AND UI assets to be ready
-        timeout 300s bash -c '
-          echo "Waiting for backend API..."
-          while ! curl -f -u admin:admin http://localhost:8080/core/atom/bedroom >/dev/null 2>&1; do
-            sleep 5
-          done
-          echo "✅ Backend API is ready"
-          echo "Waiting for UI assets..."
-          while ! curl -f http://localhost:8080/core/ui/ >/dev/null 2>&1; do
-            sleep 3
-          done
-          echo "✅ UI assets are ready"
-        '
+        # Fresh CouchDB → NemakiWare enters Setup Mode (no admin until the
+        # Setup Wizard runs). Drive it via the Setup API so admin:admin works.
+        COMPOSE_FILE=docker-compose-simple.yml bash "$GITHUB_WORKSPACE/scripts/ci-complete-setup.sh"
 
+        echo "Waiting for UI assets..."
+        timeout 120s bash -c 'while ! curl -f http://localhost:8080/core/ui/ >/dev/null 2>&1; do sleep 3; done'
         echo "✅ NemakiWare server is fully ready"
 
     - name: Run Playwright tests
