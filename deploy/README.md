@@ -162,6 +162,16 @@ Key Vault に置き、起動スクリプトを拡張して取得するのが安�
 
 ---
 
+## アーキテクチャ（amd64 / arm64）
+
+公開イメージのデフォルトは **linux/amd64** です（tag push 時）。Graviton /
+Ampere などの **arm64** は実験的扱い: `release-images.yml` を
+`workflow_dispatch` で `platforms=linux/amd64,linux/arm64` を選んで手動発行すると
+multi-arch イメージを publish できます（LibreOffice の arm64 ビルドが
+エミュレーションで遅いため、本番採用前に実機検証してください）。なお RAG の
+`tei` イメージは upstream が amd64 中心のため、arm64 ホストでは `--profile rag`
+が動かない可能性があります（core / solr / couchdb は multi-arch）。
+
 ## ローカル / オンプレでこの compose を使う
 
 クラウドでなくても、イメージを pull できる任意の Docker ホストで同じ手順が使えます。

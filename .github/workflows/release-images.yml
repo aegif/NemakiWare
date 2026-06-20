@@ -29,6 +29,14 @@ on:
         type: boolean
         required: false
         default: false
+      platforms:
+        description: 'Target platforms. arm64 is experimental (slow emulated LibreOffice build); verify before relying on it.'
+        type: choice
+        required: false
+        default: 'linux/amd64'
+        options:
+          - 'linux/amd64'
+          - 'linux/amd64,linux/arm64'
 
 permissions:
   contents: read
@@ -53,12 +61,17 @@ jobs:
         env:
           INPUT_VERSION: ${{ github.event.inputs.version }}
           INPUT_PUSH_LATEST: ${{ github.event.inputs.push_latest }}
+          INPUT_PLATFORMS: ${{ github.event.inputs.platforms }}
         run: |
           OWNER="${GITHUB_REPOSITORY_OWNER,,}"            # ghcr requires lowercase
           PREFIX="ghcr.io/${OWNER}/nemakiware"
+          # Tag pushes publish amd64 only (verified default). Multi-arch is an
+          # explicit opt-in via the workflow_dispatch 'platforms' choice.
+          PLATFORMS="${INPUT_PLATFORMS:-linux/amd64}"
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"               # strip leading v from vX.Y.Z
             PUSH_LATEST="true"
+            PLATFORMS="linux/amd64"
           elif [ -n "${INPUT_VERSION}" ]; then
             VERSION="${INPUT_VERSION}"
             PUSH_LATEST="${INPUT_PUSH_LATEST}"
@@ -75,7 +88,8 @@ jobs:
           echo "prefix=${PREFIX}"   >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "push_latest=${PUSH_LATEST}" >> "$GITHUB_OUTPUT"
-          echo "Publishing ${PREFIX}-{core,solr}:${VERSION} (latest=${PUSH_LATEST})"
+          echo "platforms=${PLATFORMS}" >> "$GITHUB_OUTPUT"
+          echo "Publishing ${PREFIX}-{core,solr}:${VERSION} (latest=${PUSH_LATEST}, platforms=${PLATFORMS})"
 
       # ── Build the WAR (mirrors integration-tests.yml proven build) ───────
       - name: Build NemakiWare WAR
@@ -119,7 +133,7 @@ jobs:
         with:
           context: docker/core
           file: docker/core/Dockerfile.simple
-          platforms: linux/amd64
+          platforms: ${{ steps.meta.outputs.platforms }}
           push: true
           tags: ${{ steps.coretags.outputs.tags }}
           labels: |
@@ -149,7 +163,7 @@ jobs:
         with:
           context: docker/solr
           file: docker/solr/Dockerfile
-          platforms: linux/amd64
+          platforms: ${{ steps.meta.outputs.platforms }}
           push: true
           tags: ${{ steps.solrtags.outputs.tags }}
           labels: |
