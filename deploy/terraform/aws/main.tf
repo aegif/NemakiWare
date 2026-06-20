@@ -8,17 +8,20 @@ locals {
   # Deterministically inject deploy coordinates into the bootstrap via env
   # exports prepended to the committed script (avoids any tag-propagation race).
   # The script body keeps its own shebang (a harmless comment mid-file) and
-  # reads ${NEMAKI_*:-default}, picking up these exported values.
+  # reads ${NEMAKI_*:-default}, picking up these exported values. Values are
+  # single-quoted so spaces / shell metacharacters in a variable cannot break
+  # the export line (these are operator-set config, not untrusted input, but we
+  # quote defensively). None of these values legitimately contain a single quote.
   bootstrap = file("${path.module}/../../aws/user-data.sh")
   user_data = <<-EOT
     #!/bin/bash
-    export NEMAKI_REPO=${var.nemaki_repo}
-    export NEMAKI_REF=${var.nemaki_ref}
-    export NEMAKI_IMAGE_PREFIX=${var.nemaki_image_prefix}
-    export NEMAKI_VERSION=${var.nemaki_version}
-    export NEMAKI_HTTP_BIND=${local.http_bind}
-    export COUCHDB_USER=admin
-    export COUCHDB_SECRET_ID=${var.couchdb_secret_id}
+    export NEMAKI_REPO='${var.nemaki_repo}'
+    export NEMAKI_REF='${var.nemaki_ref}'
+    export NEMAKI_IMAGE_PREFIX='${var.nemaki_image_prefix}'
+    export NEMAKI_VERSION='${var.nemaki_version}'
+    export NEMAKI_HTTP_BIND='${local.http_bind}'
+    export COUCHDB_USER='admin'
+    export COUCHDB_SECRET_ID='${var.couchdb_secret_arn}'
     ${local.bootstrap}
   EOT
 
@@ -113,7 +116,7 @@ resource "aws_iam_role" "this" {
 }
 
 resource "aws_iam_role_policy" "secrets" {
-  count = var.couchdb_secret_id != "" ? 1 : 0
+  count = var.couchdb_secret_arn != "" ? 1 : 0
   name  = "couchdb-secret-read"
   role  = aws_iam_role.this.id
   policy = jsonencode({
@@ -121,7 +124,7 @@ resource "aws_iam_role_policy" "secrets" {
     Statement = [{
       Effect   = "Allow"
       Action   = ["secretsmanager:GetSecretValue"]
-      Resource = var.couchdb_secret_id
+      Resource = var.couchdb_secret_arn
     }]
   })
 }

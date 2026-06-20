@@ -20,9 +20,10 @@ NEMAKI_REF="${NEMAKI_REF:-v3.2.0}"                  # git tag / branch to deploy
 NEMAKI_IMAGE_PREFIX="${NEMAKI_IMAGE_PREFIX:-ghcr.io/aegif/nemakiware}"
 NEMAKI_VERSION="${NEMAKI_VERSION:-3.2.0}"           # image tag (must exist in registry)
 COUCHDB_USER="${COUCHDB_USER:-admin}"
-# Keep 127.0.0.1 if you front with nginx/App Gateway + TLS (see README).
-# Use 0.0.0.0 only for a quick throwaway demo over plain HTTP.
-NEMAKI_HTTP_BIND="${NEMAKI_HTTP_BIND:-0.0.0.0}"
+# Public exposure. SAFE DEFAULT: 127.0.0.1 — core is reachable only via a local
+# reverse proxy (front it with nginx/App Gateway + TLS, see README). For a quick
+# throwaway demo over plain HTTP, explicitly set 0.0.0.0 (and open 8080).
+NEMAKI_HTTP_BIND="${NEMAKI_HTTP_BIND:-127.0.0.1}"
 # Optional: read the CouchDB password from Azure Key Vault via the VM's
 # system-assigned managed identity. Provide the full secret URI, e.g.
 #   https://my-vault.vault.azure.net/secrets/couchdb-password
@@ -56,8 +57,10 @@ for pair in "NemakiVersion:NEMAKI_VERSION" "NemakiRef:NEMAKI_REF" \
             "NemakiHttpBind:NEMAKI_HTTP_BIND" "CouchdbKeyvaultSecretUri:COUCHDB_KEYVAULT_SECRET_URI"; do
   tagkey="${pair%%:*}"; varname="${pair##*:}"
   val=$(read_tag "$tagkey") || true
+  # printf -v assigns the literal value to the named variable with no
+  # re-evaluation — never use eval here (tag values are attacker-influenceable).
   if [ -n "${val:-}" ] && [ "${val}" != "null" ]; then
-    echo "[nemaki] tag override $varname=$val"; eval "$varname=\$val"
+    echo "[nemaki] tag override $varname=$val"; printf -v "$varname" '%s' "$val"
   fi
 done
 
@@ -73,9 +76,17 @@ if [ -n "$COUCHDB_KEYVAULT_SECRET_URI" ]; then
   echo "[nemaki] reading CouchDB password from Key Vault via managed identity"
   AAD_TOKEN=$(curl -sf -H "Metadata: true" \
     "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://vault.azure.net" \
-    | jq -r .access_token)
+    | jq -r .access_token) || AAD_TOKEN=""
+  if [ -z "$AAD_TOKEN" ] || [ "$AAD_TOKEN" = "null" ]; then
+    echo "[nemaki] FATAL: could not obtain an AAD token from IMDS — is a system-assigned managed identity enabled on the VM?" >&2
+    exit 1
+  fi
   COUCHDB_PASSWORD=$(curl -sf -H "Authorization: Bearer ${AAD_TOKEN}" \
-    "${COUCHDB_KEYVAULT_SECRET_URI}?api-version=7.4" | jq -r .value)
+    "${COUCHDB_KEYVAULT_SECRET_URI}?api-version=7.4" | jq -r .value) || COUCHDB_PASSWORD=""
+  if [ -z "$COUCHDB_PASSWORD" ] || [ "$COUCHDB_PASSWORD" = "null" ]; then
+    echo "[nemaki] FATAL: failed to read Key Vault secret '$COUCHDB_KEYVAULT_SECRET_URI' — check the identity has 'get' on the secret and the URI is correct." >&2
+    exit 1
+  fi
 else
   echo "[nemaki] generating random CouchDB password (stored only in $COMPOSE_DIR/.env)"
   COUCHDB_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-28)

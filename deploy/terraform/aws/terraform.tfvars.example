@@ -16,4 +16,5 @@ allowed_cidr_ssh    = []                 # e.g. ["203.0.113.10/32"]
 http_public         = false              # true = open 8080 plain-HTTP demo
 
 # Optional: read CouchDB password from Secrets Manager instead of random.
-# couchdb_secret_id = "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:nemaki/couchdb-AbCdEf"
+# Must be the full ARN (not just the secret name).
+# couchdb_secret_arn = "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:nemaki/couchdb-AbCdEf"

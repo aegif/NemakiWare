@@ -66,6 +66,12 @@ jobs:
             VERSION="$(git rev-parse --short HEAD)"
             PUSH_LATEST="false"
           fi
+          # Validate before it becomes a Docker tag (defense against a malformed
+          # workflow_dispatch input). Docker tag grammar: [A-Za-z0-9_][A-Za-z0-9._-]{0,127}.
+          if ! printf '%s' "${VERSION}" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$'; then
+            echo "::error::Invalid version '${VERSION}' — must match Docker tag grammar." >&2
+            exit 1
+          fi
           echo "prefix=${PREFIX}"   >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "push_latest=${PUSH_LATEST}" >> "$GITHUB_OUTPUT"

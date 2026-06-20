@@ -100,12 +100,17 @@ VM のマネージド ID に Key Vault の `get` 権限を付与（`--assign-ide
 
 1. **管理者パスワード変更**: 初期ログインは `admin / admin`。即変更してください。
 2. **TLS で前段を保護**: 本番は 8080 を直接公開せず、nginx / ALB / Application
-   Gateway などで HTTPS 終端する構成を推奨。`docker-compose-prod.yml` の core は
-   デフォルトで `127.0.0.1:8080` バインドです（ブートストラップは検証用に
-   `NEMAKI_HTTP_BIND=0.0.0.0` を渡します — 本番では `127.0.0.1` に戻し、
-   `.env` の `NEMAKI_PUBLIC_SCHEME=https` を設定）。
+   Gateway などで HTTPS 終端する構成を推奨。core は**安全側のデフォルトで
+   `127.0.0.1:8080` バインド**（ブートストラップ／compose とも既定 127.0.0.1）。
+   本番ではこのままリバースプロキシを前段に置き、`.env` の
+   `NEMAKI_PUBLIC_SCHEME=https` を設定してください。
    詳細なリバースプロキシ + Let's Encrypt 手順は
    [`docs/AWS-DEPLOYMENT-GUIDE.md` §10](../docs/AWS-DEPLOYMENT-GUIDE.md) を参照。
+
+   > **検証用に即アクセスしたい場合のみ**: スクリプト CONFIG の
+   > `NEMAKI_HTTP_BIND=0.0.0.0`（Terraform なら `http_public=true`）にして
+   > 8080 をセキュリティグループ/NSG で開放。`admin/admin` を平文 HTTP で
+   > 露出するため、検証以外では使わないこと。
 3. **CouchDB / Solr は内部ネットワーク限定**: prod compose はこの 2 つに
    ホストポートを公開しません（compose ネットワーク内のみ）。この posture は
    維持してください。

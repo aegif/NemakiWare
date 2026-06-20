@@ -4,16 +4,18 @@ locals {
   # Deterministic config injection (same approach as the AWS module): prepend
   # env exports to the committed bootstrap; its ${NEMAKI_*:-default} reads pick
   # them up. custom_data must be base64-encoded.
+  # Values are single-quoted so spaces / shell metacharacters cannot break the
+  # export line. None of these values legitimately contain a single quote.
   bootstrap = file("${path.module}/../../azure/custom-data.sh")
   user_data = <<-EOT
     #!/bin/bash
-    export NEMAKI_REPO=${var.nemaki_repo}
-    export NEMAKI_REF=${var.nemaki_ref}
-    export NEMAKI_IMAGE_PREFIX=${var.nemaki_image_prefix}
-    export NEMAKI_VERSION=${var.nemaki_version}
-    export NEMAKI_HTTP_BIND=${local.http_bind}
-    export COUCHDB_USER=admin
-    export COUCHDB_KEYVAULT_SECRET_URI=${var.couchdb_keyvault_secret_uri}
+    export NEMAKI_REPO='${var.nemaki_repo}'
+    export NEMAKI_REF='${var.nemaki_ref}'
+    export NEMAKI_IMAGE_PREFIX='${var.nemaki_image_prefix}'
+    export NEMAKI_VERSION='${var.nemaki_version}'
+    export NEMAKI_HTTP_BIND='${local.http_bind}'
+    export COUCHDB_USER='admin'
+    export COUCHDB_KEYVAULT_SECRET_URI='${var.couchdb_keyvault_secret_uri}'
     ${local.bootstrap}
   EOT
 

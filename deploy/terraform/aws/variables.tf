@@ -93,15 +93,21 @@ variable "nemaki_version" {
   default     = "3.2.0"
 }
 
-variable "couchdb_secret_id" {
+variable "couchdb_secret_arn" {
   description = <<-EOT
-    Optional AWS Secrets Manager secret id holding the CouchDB password. When
-    set, an IAM policy granting secretsmanager:GetSecretValue on it is attached
-    and the bootstrap reads the password from it. Empty = random password
-    generated on the host.
+    Optional AWS Secrets Manager secret ARN holding the CouchDB password. When
+    set, an IAM policy granting secretsmanager:GetSecretValue on exactly this
+    ARN is attached and the bootstrap reads the password from it. Must be a full
+    ARN (the IAM Resource and the CLI lookup both need it). Empty = random
+    password generated on the host.
   EOT
   type        = string
   default     = ""
+
+  validation {
+    condition     = var.couchdb_secret_arn == "" || can(regex("^arn:aws[a-z-]*:secretsmanager:", var.couchdb_secret_arn))
+    error_message = "couchdb_secret_arn must be empty or a full Secrets Manager ARN (arn:aws:secretsmanager:...)."
+  }
 }
 
 variable "tags" {

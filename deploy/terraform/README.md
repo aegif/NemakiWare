@@ -36,9 +36,10 @@ terraform output core_url
   し、別途 TLS リバースプロキシ / ALB を前段に。検証用に即アクセスしたいなら
   `http_public=true`（8080 開放 + 0.0.0.0 バインド）。
 - IMDSv2 必須、root EBS は gp3 暗号化。
-- `couchdb_secret_id` を指定すると、その Secret への `GetSecretValue` のみ許可する
-  IAM ポリシーが付与され、ブートストラップがパスワードを Secrets Manager から取得。
-  未指定ならホスト上でランダム生成（`/opt/nemakiware/src/docker/.env` に保存）。
+- `couchdb_secret_arn`（**フル ARN**）を指定すると、その Secret への
+  `GetSecretValue` のみ許可する IAM ポリシーが付与され、ブートストラップが
+  パスワードを Secrets Manager から取得。未指定ならホスト上でランダム生成
+  （`/opt/nemakiware/src/docker/.env` に保存）。
 
 ## Azure
 
