@@ -51,7 +51,17 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
-        with: { java-version: '21', distribution: 'temurin', cache: 'maven' }
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+          # Writes ~/.m2/settings.xml with a server entry whose id matches the
+          # core pom's opencmis-github-packages repository id, so the custom
+          # OpenCMIS 1.1.0-nemakiware artifacts (jars + poms + parent) resolve
+          # from GitHub Packages with the workflow token.
+          server-id: github-opencmis
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
 
       # ── Resolve image coordinates ────────────────────────────────────────
       # workflow_dispatch inputs are passed through env (never interpolated
@@ -91,38 +101,21 @@ jobs:
           echo "platforms=${PLATFORMS}" >> "$GITHUB_OUTPUT"
           echo "Publishing ${PREFIX}-{core,solr}:${VERSION} (latest=${PUSH_LATEST}, platforms=${PLATFORMS})"
 
-      # The custom OpenCMIS 1.1.0-nemakiware artifacts are vendored under
-      # lib/built-jars (synced from GitHub Packages). Install them into the local
-      # Maven repo so the build is self-contained — no GitHub Packages auth and
-      # no reliance on a warm Actions cache (a pom version bump changes the cache
-      # key and would otherwise break resolution).
-      - name: Install vendored OpenCMIS jars into local repo
-        run: |
-          shopt -s nullglob
-          count=0
-          for jar in lib/built-jars/chemistry-opencmis-*-1.1.0-nemakiware.jar; do
-            base="$(basename "$jar" .jar)"
-            artifact="${base%-1.1.0-nemakiware}"   # strip version → artifactId
-            mvn -q org.apache.maven.plugins:maven-install-plugin:3.1.1:install-file \
-              -Dfile="$jar" \
-              -DgroupId=org.apache.chemistry.opencmis \
-              -DartifactId="$artifact" \
-              -Dversion=1.1.0-nemakiware \
-              -Dpackaging=jar
-            count=$((count + 1))
-          done
-          echo "Installed ${count} OpenCMIS artifacts"
-          test "${count}" -ge 8 || { echo "::error::expected >=8 vendored OpenCMIS jars, found ${count}"; exit 1; }
-
       # ── Build the WAR (mirrors integration-tests.yml proven build) ───────
+      # The core build activates the opencmis-github-packages profile so the
+      # custom OpenCMIS 1.1.0-nemakiware artifacts resolve from GitHub Packages
+      # using the workflow token (read:packages via the packages: write perm).
       - name: Build NemakiWare WAR
+        env:
+          MAVEN_USERNAME: ${{ github.actor }}
+          MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mvn clean install -N -DskipTests -q
           mvn clean install -f common/pom.xml -DskipTests -q
           mvn clean install -f cloudant-init/pom.xml -DskipTests -q
           mvn clean install -f solr/pom.xml -DskipTests -q
           # frontend-maven-plugin builds the React UI into the WAR during package
-          mvn clean package -f core/pom.xml -Pdevelopment -DskipTests -q
+          mvn clean package -f core/pom.xml -Pdevelopment,opencmis-github-packages -DskipTests -q
 
       - name: Stage WAR into image build context
         run: cp core/target/core.war docker/core/core.war
