@@ -98,7 +98,14 @@ VM のマネージド ID に Key Vault の `get` 権限を付与（`--assign-ide
 
 ## 起動後にやること（重要）
 
-1. **管理者パスワード変更**: 初期ログインは `admin / admin`。即変更してください。
+1. **Setup Wizard を完了する（初回必須）**: NemakiWare 3.x のフレッシュ
+   インストールは初回起動時に **Setup Mode** に入り、データベースと管理者
+   アカウントは Setup Wizard が作成します（`admin/admin` で即ログインは
+   できません）。ブラウザで `https://<your-domain>/core/ui/`（デモ構成なら
+   `http://<host>:8080/core/ui/`）を開き、ウィザードに従って CouchDB 接続・
+   管理者パスワード・認証方式を設定してください。状態は
+   `GET /core/api/v1/setup/state`（`setupRequired:true` = 未完了）で確認可。
+   完了後に作成した管理者で CMIS / UI が利用可能になります。
 2. **TLS で前段を保護**: 本番は 8080 を直接公開せず、nginx / ALB / Application
    Gateway などで HTTPS 終端する構成を推奨。core は**安全側のデフォルトで
    `127.0.0.1:8080` バインド**（ブートストラップ／compose とも既定 127.0.0.1）。

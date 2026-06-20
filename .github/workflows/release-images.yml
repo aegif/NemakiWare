@@ -223,7 +223,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Bring up prod stack from published images and curl CMIS
+      - name: Bring up prod stack from published images and verify boot
         working-directory: docker
         env:
           COUCHDB_USER: admin
@@ -234,24 +234,31 @@ jobs:
           echo "Using ${NEMAKI_IMAGE_PREFIX}-{core,solr}:${NEMAKI_VERSION}"
           docker compose -f docker-compose-prod.yml pull
           docker compose -f docker-compose-prod.yml up -d
-          echo "Waiting for the CMIS endpoint..."
-          ok=""
+          # A FRESH deploy of NemakiWare 3.x reports setupRequired=true and waits
+          # for the Setup Wizard to create the databases + admin. The smoke proves
+          # the published images boot, wire together, and the core connects to
+          # CouchDB (it can only answer setup/state once that probe succeeds).
+          echo "Waiting for the core to serve /api/v1/setup/state ..."
+          body=""
           for i in $(seq 1 60); do
-            if curl -sf -u admin:admin http://localhost:8080/core/atom/bedroom >/dev/null 2>&1; then
-              echo "CMIS endpoint healthy on attempt $i"; ok=1; break
+            if body=$(curl -sf http://localhost:8080/core/api/v1/setup/state 2>/dev/null); then
+              echo "core answered setup/state on attempt $i"; break
             fi
-            sleep 5
+            body=""; sleep 5
           done
-          if [ -z "$ok" ]; then
-            echo "::error::CMIS endpoint never became healthy"
+          if [ -z "$body" ]; then
+            echo "::error::core never served /api/v1/setup/state"
             docker compose -f docker-compose-prod.yml ps
-            docker compose -f docker-compose-prod.yml logs --tail 120 core
+            docker compose -f docker-compose-prod.yml logs --tail 150 core
             exit 1
           fi
-          # Assert it really is the CMIS service document (XML with repositoryInfo).
-          curl -sf -u admin:admin http://localhost:8080/core/atom/bedroom | grep -q 'repositoryInfo\|<app:service\|cmisra:' \
-            || { echo "::error::unexpected CMIS response"; exit 1; }
-          echo "Smoke test passed."
+          echo "setup/state: $body"
+          echo "$body" | grep -q '"setupRequired":true' \
+            || { echo "::error::expected setupRequired:true on a fresh deploy"; exit 1; }
+          # End-to-end version check: the running image must report the build version.
+          echo "$body" | grep -q "\"serverVersion\":\"${NEMAKI_VERSION}\"" \
+            || { echo "::error::serverVersion mismatch — expected ${NEMAKI_VERSION} in: $body"; exit 1; }
+          echo "Smoke test passed: published images boot to setup-ready state, serverVersion=${NEMAKI_VERSION}."
       - name: Teardown
         if: always()
         working-directory: docker

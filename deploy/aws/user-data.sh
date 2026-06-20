@@ -149,5 +149,5 @@ systemctl daemon-reload
 systemctl enable nemakiware.service
 
 echo "[nemaki] bootstrap complete at $(date -u)."
-echo "[nemaki] health: curl -u ${COUCHDB_USER}:*** http://localhost:8080/core/atom/bedroom"
-echo "[nemaki] (admin UI login defaults to admin/admin — change immediately)"
+echo "[nemaki] setup state: curl -s http://localhost:8080/core/api/v1/setup/state  (setupRequired:true = wizard not done)"
+echo "[nemaki] NEXT: open /core/ui/ and complete the Setup Wizard to create the admin + databases"
