@@ -10,12 +10,14 @@ on:
     paths:
       - 'deploy/**'
       - 'docker/docker-compose-prod.yml'
+      - 'docker/.env.prod.example'
       - '.github/workflows/release-images.yml'
       - '.github/workflows/deploy-validate.yml'
   pull_request:
     paths:
       - 'deploy/**'
       - 'docker/docker-compose-prod.yml'
+      - 'docker/.env.prod.example'
       - '.github/workflows/release-images.yml'
       - '.github/workflows/deploy-validate.yml'
 
@@ -52,6 +54,9 @@ jobs:
           NEMAKI_IMAGE_PREFIX: ghcr.io/aegif/nemakiware
           NEMAKI_VERSION: ci
         run: |
+          # The shipped template must keep the safe localhost default.
+          grep -Eq '^NEMAKI_HTTP_BIND=127\.0\.0\.1$' .env.prod.example \
+            || { echo "::error::.env.prod.example must keep NEMAKI_HTTP_BIND=127.0.0.1"; exit 1; }
           docker compose -f docker-compose-prod.yml config --quiet
           docker compose -f docker-compose-prod.yml --profile rag config --quiet
           # Security-posture guard (robust JSON form): CouchDB/Solr must publish
@@ -68,8 +73,10 @@ jobs:
                   print(f"::error::{s} must not publish host ports (found {ports})"); fail = True
           core_ports = svc.get('core', {}).get('ports', [])
           for p in core_ports:
-              if p.get('host_ip') not in ('127.0.0.1', None):
-                  print(f"::error::core default bind must be 127.0.0.1 (found {p.get('host_ip')})"); fail = True
+              # Require an explicit localhost bind — a missing host_ip means all
+              # interfaces, which must not be the default posture.
+              if p.get('host_ip') != '127.0.0.1':
+                  print(f"::error::core default bind must be 127.0.0.1 (found {p.get('host_ip')!r})"); fail = True
           sys.exit(1 if fail else 0)
           PY
 
