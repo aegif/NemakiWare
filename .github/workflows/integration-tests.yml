@@ -1,6 +1,7 @@
 name: NemakiWare Integration Tests
 
 on:
+  workflow_dispatch:
   push:
     branches: [ master, main, develop, 'release/**' ]
     paths:
@@ -16,6 +17,7 @@ on:
       - 'docker/solr/**'
       - 'docker/docker-compose-simple.yml'
       - '.github/workflows/integration-tests.yml'
+      - 'scripts/ci-complete-setup.sh'
   pull_request:
     branches: [ master, main, develop ]
     paths:
@@ -31,6 +33,7 @@ on:
       - 'docker/solr/**'
       - 'docker/docker-compose-simple.yml'
       - '.github/workflows/integration-tests.yml'
+      - 'scripts/ci-complete-setup.sh'
 
 permissions:
   contents: read
