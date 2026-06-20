@@ -91,6 +91,29 @@ jobs:
           echo "platforms=${PLATFORMS}" >> "$GITHUB_OUTPUT"
           echo "Publishing ${PREFIX}-{core,solr}:${VERSION} (latest=${PUSH_LATEST}, platforms=${PLATFORMS})"
 
+      # The custom OpenCMIS 1.1.0-nemakiware artifacts are vendored under
+      # lib/built-jars (synced from GitHub Packages). Install them into the local
+      # Maven repo so the build is self-contained — no GitHub Packages auth and
+      # no reliance on a warm Actions cache (a pom version bump changes the cache
+      # key and would otherwise break resolution).
+      - name: Install vendored OpenCMIS jars into local repo
+        run: |
+          shopt -s nullglob
+          count=0
+          for jar in lib/built-jars/chemistry-opencmis-*-1.1.0-nemakiware.jar; do
+            base="$(basename "$jar" .jar)"
+            artifact="${base%-1.1.0-nemakiware}"   # strip version → artifactId
+            mvn -q org.apache.maven.plugins:maven-install-plugin:3.1.1:install-file \
+              -Dfile="$jar" \
+              -DgroupId=org.apache.chemistry.opencmis \
+              -DartifactId="$artifact" \
+              -Dversion=1.1.0-nemakiware \
+              -Dpackaging=jar
+            count=$((count + 1))
+          done
+          echo "Installed ${count} OpenCMIS artifacts"
+          test "${count}" -ge 8 || { echo "::error::expected >=8 vendored OpenCMIS jars, found ${count}"; exit 1; }
+
       # ── Build the WAR (mirrors integration-tests.yml proven build) ───────
       - name: Build NemakiWare WAR
         run: |
