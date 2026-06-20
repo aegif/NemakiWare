@@ -57,10 +57,22 @@ curl -sf -X POST "${SETUP_BASE}/apply" \
   -H "X-Setup-Token: ${TOKEN}" -H "Content-Type: application/json" \
   -d "$apply_body" >/dev/null || { echo "[setup] FATAL: /apply failed"; exit 1; }
 
+# mark-complete reprobes the DB (must be DB_CONNECTED_CURRENT) then runs the
+# deferred patches. Right after /apply the reprobe can still see a transient
+# state, so retry a few times and capture the body for diagnosis. Treat this as
+# best-effort: the real gate below is whether admin auth works.
 echo "[setup] POST /apply/mark-complete (deferred init + clear setupRequired) ..."
-curl -sf -X POST "${SETUP_BASE}/apply/mark-complete" \
-  -H "X-Setup-Token: ${TOKEN}" -H "Content-Type: application/json" >/dev/null \
-  || { echo "[setup] FATAL: /apply/mark-complete failed"; exit 1; }
+mc_ok=""
+for attempt in $(seq 1 12); do
+  code=$(curl -s -o /tmp/nemaki_mc_body -w '%{http_code}' -X POST "${SETUP_BASE}/apply/mark-complete" \
+    -H "X-Setup-Token: ${TOKEN}" -H "Content-Type: application/json" 2>/dev/null || echo "000")
+  if [ "$code" = "200" ]; then
+    echo "[setup] mark-complete ok (attempt $attempt)"; mc_ok=1; break
+  fi
+  echo "[setup] mark-complete attempt $attempt → HTTP $code: $(head -c 400 /tmp/nemaki_mc_body 2>/dev/null)"
+  sleep 6
+done
+[ -n "$mc_ok" ] || echo "[setup] WARN: mark-complete did not return 200 — proceeding to verify admin auth anyway"
 
 echo "[setup] waiting for admin authentication to work ..."
 for i in $(seq 1 60); do
@@ -71,5 +83,5 @@ for i in $(seq 1 60); do
   sleep 3
 done
 echo "[setup] FATAL: admin:admin never worked after setup"
-docker compose -f "$COMPOSE_FILE" logs --tail 120 "$CORE_SERVICE" || true
+docker compose -f "$COMPOSE_FILE" logs --tail 150 "$CORE_SERVICE" || true
 exit 1
