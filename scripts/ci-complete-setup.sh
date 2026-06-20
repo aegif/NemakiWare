@@ -51,11 +51,15 @@ TOKEN="$(docker compose -f "$COMPOSE_FILE" exec -T "$CORE_SERVICE" \
 [ -n "$TOKEN" ] || { echo "[setup] FATAL: could not read setup token"; exit 1; }
 
 echo "[setup] POST /apply (DB init + auth config) ..."
-apply_body=$(printf '{"couchdb":{"url":"%s","username":"%s","password":"%s"},"auth":{"passwordEnabled":true}}' \
-  "$COUCHDB_URL" "$COUCHDB_USER" "$COUCHDB_PASSWORD")
+# Build the JSON with jq (robust against special chars in the password) and pass
+# it via a file so the password never appears in the process argument list.
+apply_body_file="$(mktemp)"
+trap 'rm -f "$apply_body_file"' EXIT
+jq -n --arg url "$COUCHDB_URL" --arg u "$COUCHDB_USER" --arg p "$COUCHDB_PASSWORD" \
+  '{couchdb:{url:$url,username:$u,password:$p},auth:{passwordEnabled:true}}' > "$apply_body_file"
 curl -sf -X POST "${SETUP_BASE}/apply" \
   -H "X-Setup-Token: ${TOKEN}" -H "Content-Type: application/json" \
-  -d "$apply_body" >/dev/null || { echo "[setup] FATAL: /apply failed"; exit 1; }
+  --data @"$apply_body_file" >/dev/null || { echo "[setup] FATAL: /apply failed"; exit 1; }
 
 # /apply already self-completes setup (it flips setupRequired=false once the DB
 # is initialized), so mark-complete usually returns 403 "not available in Normal
