@@ -117,7 +117,7 @@ jobs:
         run: |
           mvn test \
             -Dtest='VersioningBehaviorTest,InheritedFlagTest' \
-            -f core/pom.xml -Pdevelopment \
+            -f core/pom.xml -Pdevelopment,opencmis-github-packages \
             -Dmaven.test.failure.ignore=false
 
       - uses: actions/upload-artifact@v4
@@ -176,7 +176,7 @@ jobs:
           mvn test \
             -Dtest='ConnectionTestGroup,BasicsTestGroup,TypesTestGroup,ControlTestGroup,VersioningTestGroup,CrudTestGroup1,CrudTestGroup2,QueryTestGroup' \
             -Dsurefire.excludes= \
-            -f core/pom.xml -Pdevelopment \
+            -f core/pom.xml -Pdevelopment,opencmis-github-packages \
             -Dmaven.test.failure.ignore=false
 
       - uses: actions/upload-artifact@v4

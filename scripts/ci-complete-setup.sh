@@ -57,22 +57,14 @@ curl -sf -X POST "${SETUP_BASE}/apply" \
   -H "X-Setup-Token: ${TOKEN}" -H "Content-Type: application/json" \
   -d "$apply_body" >/dev/null || { echo "[setup] FATAL: /apply failed"; exit 1; }
 
-# mark-complete reprobes the DB (must be DB_CONNECTED_CURRENT) then runs the
-# deferred patches. Right after /apply the reprobe can still see a transient
-# state, so retry a few times and capture the body for diagnosis. Treat this as
-# best-effort: the real gate below is whether admin auth works.
-echo "[setup] POST /apply/mark-complete (deferred init + clear setupRequired) ..."
-mc_ok=""
-for attempt in $(seq 1 12); do
-  code=$(curl -s -o /tmp/nemaki_mc_body -w '%{http_code}' -X POST "${SETUP_BASE}/apply/mark-complete" \
-    -H "X-Setup-Token: ${TOKEN}" -H "Content-Type: application/json" 2>/dev/null || echo "000")
-  if [ "$code" = "200" ]; then
-    echo "[setup] mark-complete ok (attempt $attempt)"; mc_ok=1; break
-  fi
-  echo "[setup] mark-complete attempt $attempt → HTTP $code: $(head -c 400 /tmp/nemaki_mc_body 2>/dev/null)"
-  sleep 6
-done
-[ -n "$mc_ok" ] || echo "[setup] WARN: mark-complete did not return 200 — proceeding to verify admin auth anyway"
+# /apply already self-completes setup (it flips setupRequired=false once the DB
+# is initialized), so mark-complete usually returns 403 "not available in Normal
+# Mode" — that is expected and fine. Call it once, best-effort, only to cover the
+# rare case where apply leaves setup pending. The real gate is admin auth below.
+echo "[setup] POST /apply/mark-complete (best-effort) ..."
+mc_code=$(curl -s -o /tmp/nemaki_mc_body -w '%{http_code}' -X POST "${SETUP_BASE}/apply/mark-complete" \
+  -H "X-Setup-Token: ${TOKEN}" -H "Content-Type: application/json" 2>/dev/null || echo "000")
+echo "[setup] mark-complete → HTTP ${mc_code}: $(head -c 200 /tmp/nemaki_mc_body 2>/dev/null)"
 
 echo "[setup] waiting for admin authentication to work ..."
 for i in $(seq 1 60); do
