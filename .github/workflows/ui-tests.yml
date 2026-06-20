@@ -130,6 +130,10 @@ jobs:
           exit 1
         fi
 
+        # Fresh CouchDB → NemakiWare enters Setup Mode (no admin until the Setup
+        # Wizard runs). Drive it via the Setup API so admin:admin works for tests.
+        COMPOSE_FILE=docker-compose-simple.yml bash "$GITHUB_WORKSPACE/scripts/ci-complete-setup.sh"
+
     - name: Install Playwright
       working-directory: core/src/main/webapp/ui
       run: |

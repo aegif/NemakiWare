@@ -106,16 +106,9 @@ jobs:
           cp ../core/target/core.war core/core.war
           docker compose -f docker-compose-simple.yml up -d --build
 
-          echo "Waiting for NemakiWare server to be ready..."
-          for i in {1..60}; do
-            if curl -sf -u admin:admin http://localhost:8080/core/atom/bedroom > /dev/null 2>&1; then
-              echo "NemakiWare server is ready (attempt $i)"
-              break
-            fi
-            echo "Waiting for server... ($i/60)"
-            sleep 5
-          done
-          curl -sf -u admin:admin http://localhost:8080/core/atom/bedroom > /dev/null || exit 1
+          # Fresh CouchDB → NemakiWare enters Setup Mode (no admin until the
+          # Setup Wizard runs). Drive it via the Setup API so admin:admin works.
+          COMPOSE_FILE=docker-compose-simple.yml bash "$GITHUB_WORKSPACE/scripts/ci-complete-setup.sh"
 
       - name: Run integration tests
         run: |
@@ -171,16 +164,9 @@ jobs:
           cp ../core/target/core.war core/core.war
           docker compose -f docker-compose-simple.yml up -d --build
 
-          echo "Waiting for NemakiWare server to be ready..."
-          for i in {1..60}; do
-            if curl -sf -u admin:admin http://localhost:8080/core/atom/bedroom > /dev/null 2>&1; then
-              echo "NemakiWare server is ready (attempt $i)"
-              break
-            fi
-            echo "Waiting for server... ($i/60)"
-            sleep 5
-          done
-          curl -sf -u admin:admin http://localhost:8080/core/atom/bedroom > /dev/null || exit 1
+          # Fresh CouchDB → NemakiWare enters Setup Mode (no admin until the
+          # Setup Wizard runs). Drive it via the Setup API so admin:admin works.
+          COMPOSE_FILE=docker-compose-simple.yml bash "$GITHUB_WORKSPACE/scripts/ci-complete-setup.sh"
 
       - name: Run TCK tests
         run: |
