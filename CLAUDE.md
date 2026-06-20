@@ -408,10 +408,29 @@ Java / Maven / Node のツールチェーンは不要。詳細は `RELEASE_NOTES
 - backing services (CouchDB / Solr) は AWS/Azure にマネージド同等品が無いため
   自己ホスト維持。永続化は EBS / Managed Disk スナップショットに誘導。
 
+- **回帰防止 CI** `.github/workflows/deploy-validate.yml`: `deploy/**` / prod
+  compose 変更時に bootstrap の `bash -n`+shellcheck、`docker compose config`
+  (base+rag) + **JSON posture ガード** (CouchDB/Solr ポート非公開 & core が
+  127.0.0.1 バインドを assert)、Terraform 両モジュールの `fmt -check`+`validate`
+  を実行。
+
+**Codex レビュー remediation** (HIGH 1 + MED 5 + LOW 2、commit `4a2b5e6cf`):
+- [HIGH] タグ値代入を `eval` → `printf -v` (literal、再評価なし。タグ値は
+  attacker-influenceable)
+- [MED] スクリプト既定 `NEMAKI_HTTP_BIND` を 0.0.0.0 → 127.0.0.1 (safe by
+  default、compose 既定と一致)
+- [MED] Terraform→shell の env 注入をシングルクオート化、AWS IAM を検証済み
+  Secrets Manager **ARN** (`couchdb_secret_arn`) に scope
+- [MED] Secrets Manager/Key Vault 取得失敗を明示エラー+exit に。AL2023 で
+  Compose v2 plugin 不在時のフォールバック導入
+- [LOW] release-images.yml で VERSION を Docker tag 文法で検証
+
 **検証**: `docker compose -f docker-compose-prod.yml config` (base + rag
-profile) PASS、両ブートストラップ `bash -n` 構文 PASS、Terraform 両モジュール
-`tofu validate` (実 aws/azurerm provider) PASS + `fmt` クリーン。GHA workflow /
-イメージの実 push は tag 発行時に走る (本ブランチでは未 push)。
+profile) PASS + posture ガード両方向 (正常 PASS / 0.0.0.0 で FAIL) 確認、両
+ブートストラップ `bash -n`+shellcheck (`-S warning -e SC2086`) PASS、`printf -v`
+非インジェクション確認、Terraform 両モジュール `tofu validate` (実 aws/azurerm
+provider) PASS + `fmt` クリーン。GHA workflow / イメージの実 push は tag 発行時に
+走る (本ブランチでは未 push)。
 
 ### 3.1.3 (2026-06-11) — 全面レビュー remediation (security + correctness)
 

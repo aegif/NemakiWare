@@ -57,6 +57,27 @@ bare VM. No Java/Maven/Node toolchain required on the host._
   - Both validated with `tofu validate` against the real aws/azurerm providers;
     `terraform fmt` clean. `deploy/terraform/README.md` documents usage.
 
+### New: deploy-asset validation CI
+- **`.github/workflows/deploy-validate.yml`** — on any change under `deploy/**`
+  or the prod compose, runs `bash -n` + shellcheck on the bootstrap scripts,
+  `docker compose config` (base + rag) with a **JSON security-posture guard**
+  (asserts CouchDB/Solr publish no host ports and core binds 127.0.0.1 by
+  default), and `terraform fmt -check` + `validate` on both modules. Keeps the
+  deployment automation from regressing unnoticed.
+
+### Security hardening (Codex review remediation)
+- Bootstrap scripts assign VM/instance-tag overrides with `printf -v`
+  (literal, no re-evaluation) instead of `eval` — tag values are
+  attacker-influenceable.
+- Script default `NEMAKI_HTTP_BIND` is `127.0.0.1` (safe by default, matches
+  the compose default); public plain-HTTP exposure is an explicit opt-in.
+- Terraform injects deploy coordinates as single-quoted env exports; the AWS
+  IAM grant is scoped to a validated Secrets Manager **ARN**
+  (`couchdb_secret_arn`).
+- Secrets Manager / Key Vault fetch failures fail loudly with guidance instead
+  of aborting silently under `set -euo pipefail`; AWS bootstrap installs the
+  Compose v2 CLI plugin when absent (AL2023 does not bundle it).
+
 ### Notes
 - `nemakiware-core` is built from `Dockerfile.simple`; runtime configuration
   is supplied via `-D` system properties from the compose env (existing

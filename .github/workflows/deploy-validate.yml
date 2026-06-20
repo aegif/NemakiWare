@@ -1,0 +1,93 @@
+name: Validate deploy assets
+
+# Lint/validate the IaaS deployment assets so the bootstrap scripts, production
+# compose, and Terraform modules cannot regress unnoticed. Fast, no secrets,
+# no image build. No untrusted event inputs are referenced in run: blocks.
+
+on:
+  push:
+    branches: [master, main, develop, 'release/**']
+    paths:
+      - 'deploy/**'
+      - 'docker/docker-compose-prod.yml'
+      - '.github/workflows/release-images.yml'
+      - '.github/workflows/deploy-validate.yml'
+  pull_request:
+    paths:
+      - 'deploy/**'
+      - 'docker/docker-compose-prod.yml'
+      - '.github/workflows/release-images.yml'
+      - '.github/workflows/deploy-validate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    name: Bootstrap scripts (bash + shellcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check
+        run: |
+          bash -n deploy/aws/user-data.sh
+          bash -n deploy/azure/custom-data.sh
+      - name: ShellCheck
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y shellcheck
+          # SC2086 (word splitting) is intentional in a few controlled spots; keep
+          # the rest strict. Fail on warnings and above.
+          shellcheck -S warning -e SC2086 deploy/aws/user-data.sh deploy/azure/custom-data.sh
+
+  compose:
+    name: Production compose (docker compose config)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate base + rag profiles
+        working-directory: docker
+        env:
+          COUCHDB_USER: admin
+          COUCHDB_PASSWORD: ci-placeholder
+          NEMAKI_IMAGE_PREFIX: ghcr.io/aegif/nemakiware
+          NEMAKI_VERSION: ci
+        run: |
+          docker compose -f docker-compose-prod.yml config --quiet
+          docker compose -f docker-compose-prod.yml --profile rag config --quiet
+          # Security-posture guard (robust JSON form): CouchDB/Solr must publish
+          # no host ports, and core must bind localhost by default.
+          docker compose -f docker-compose-prod.yml config --format json > /tmp/cfg.json
+          python3 - <<'PY'
+          import json, sys
+          cfg = json.load(open('/tmp/cfg.json'))
+          svc = cfg.get('services', {})
+          fail = False
+          for s in ('couchdb', 'solr'):
+              ports = svc.get(s, {}).get('ports')
+              if ports:
+                  print(f"::error::{s} must not publish host ports (found {ports})"); fail = True
+          core_ports = svc.get('core', {}).get('ports', [])
+          for p in core_ports:
+              if p.get('host_ip') not in ('127.0.0.1', None):
+                  print(f"::error::core default bind must be 127.0.0.1 (found {p.get('host_ip')})"); fail = True
+          sys.exit(1 if fail else 0)
+          PY
+
+  terraform:
+    name: Terraform modules (fmt + validate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.8'
+      - name: fmt
+        run: terraform -chdir=deploy/terraform fmt -recursive -check -diff
+      - name: validate aws
+        run: |
+          terraform -chdir=deploy/terraform/aws init -backend=false -input=false
+          terraform -chdir=deploy/terraform/aws validate
+      - name: validate azure
+        run: |
+          terraform -chdir=deploy/terraform/azure init -backend=false -input=false
+          terraform -chdir=deploy/terraform/azure validate
