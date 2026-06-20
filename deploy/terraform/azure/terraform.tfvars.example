@@ -1,0 +1,24 @@
+# Copy to terraform.tfvars and adjust.
+location            = "japaneast"
+name                = "nemakiware"
+resource_group_name = "nemakiware-rg"
+vm_size             = "Standard_B2ms"
+admin_username      = "azureuser"
+
+# Required: your SSH public key material.
+ssh_public_key = "ssh-ed25519 AAAA... you@host"
+
+# Image / version coordinates — must match a published image tag.
+nemaki_image_prefix = "ghcr.io/aegif/nemakiware"
+nemaki_version      = "3.2.0"
+nemaki_ref          = "v3.2.0"
+nemaki_repo         = "aegif/NemakiWare"
+
+# Network exposure
+allowed_cidr_https = ["0.0.0.0/0"]      # tighten to your office/VPN CIDR
+allowed_cidr_ssh   = []                 # e.g. ["203.0.113.10/32"]
+http_public        = false              # true = open 8080 plain-HTTP demo
+
+# Optional: read CouchDB password from Key Vault (VM gets a managed identity;
+# grant it 'get' on the secret yourself).
+# couchdb_keyvault_secret_uri = "https://my-vault.vault.azure.net/secrets/couchdb-password"

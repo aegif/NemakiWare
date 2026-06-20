@@ -6,12 +6,22 @@ Java / Maven / Node のビルドは不要 — イメージを **pull するだ�
 
 ```
 deploy/
-├── aws/user-data.sh        # EC2 user-data (Amazon Linux 2023)
-└── azure/custom-data.sh    # Azure VM custom-data (Ubuntu 22.04/24.04)
+├── terraform/aws/          # terraform apply で EC2 一式 (推奨)
+├── terraform/azure/        # terraform apply で Azure VM 一式 (推奨)
+├── aws/user-data.sh        # EC2 user-data (Amazon Linux 2023) — 手貼り経路
+└── azure/custom-data.sh    # Azure VM custom-data (Ubuntu 22.04/24.04) — 手貼り経路
 docker/
 ├── docker-compose-prod.yml # 公開イメージを参照する本番 compose
 └── .env.prod.example       # 環境変数テンプレート
 ```
+
+**2 つの経路があります**:
+1. **Terraform（推奨）** — VM・ネットワーク・IAM ごと `terraform apply` 一発。
+   → [`deploy/terraform/README.md`](terraform/README.md)
+2. **手貼り** — 既存の VM 作成フローの user-data / custom-data 欄にスクリプトを
+   貼る（以下の手順）。
+
+どちらも内部で同じブートストラップスクリプト + `docker-compose-prod.yml` を使います。
 
 ブートストラップは内部で `docker-compose-prod.yml` を起動します。
 構成: **CouchDB + Solr + Core**（RAG/TEI は `--profile rag` で任意追加）。

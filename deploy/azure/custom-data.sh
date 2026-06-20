@@ -45,6 +45,22 @@ apt-get update -y
 apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 systemctl enable --now docker
 
+# ── Read overrides from VM tags via IMDS (best effort) ───────────────────────
+# Lets Terraform / az drive config purely through VM tags, keeping this script
+# as the single source of truth. jq is installed above.
+TAGS_JSON=$(curl -sf -H "Metadata: true" \
+  "http://169.254.169.254/metadata/instance/compute/tagsList?api-version=2021-02-01" 2>/dev/null || echo '[]')
+read_tag() { echo "$TAGS_JSON" | jq -r --arg n "$1" '.[] | select(.name==$n) | .value' 2>/dev/null | head -n1; }
+for pair in "NemakiVersion:NEMAKI_VERSION" "NemakiRef:NEMAKI_REF" \
+            "NemakiRepo:NEMAKI_REPO" "NemakiImagePrefix:NEMAKI_IMAGE_PREFIX" \
+            "NemakiHttpBind:NEMAKI_HTTP_BIND" "CouchdbKeyvaultSecretUri:COUCHDB_KEYVAULT_SECRET_URI"; do
+  tagkey="${pair%%:*}"; varname="${pair##*:}"
+  val=$(read_tag "$tagkey") || true
+  if [ -n "${val:-}" ] && [ "${val}" != "null" ]; then
+    echo "[nemaki] tag override $varname=$val"; eval "$varname=\$val"
+  fi
+done
+
 # ── Fetch the deployment tree (compose + couchdb/local.ini) ──────────────────
 echo "[nemaki] cloning ${NEMAKI_REPO}@${NEMAKI_REF}"
 rm -rf "$INSTALL_DIR/src"

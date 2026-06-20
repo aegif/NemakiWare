@@ -1,0 +1,19 @@
+# Copy to terraform.tfvars and adjust.
+region              = "ap-northeast-1"
+name                = "nemakiware"
+instance_type       = "t3.large"
+# key_name          = "my-key"          # uncomment for SSH access
+
+# Image / version coordinates — must match a published image tag.
+nemaki_image_prefix = "ghcr.io/aegif/nemakiware"
+nemaki_version      = "3.2.0"
+nemaki_ref          = "v3.2.0"
+nemaki_repo         = "aegif/NemakiWare"
+
+# Network exposure
+allowed_cidr_https  = ["0.0.0.0/0"]      # tighten to your office/VPN CIDR
+allowed_cidr_ssh    = []                 # e.g. ["203.0.113.10/32"]
+http_public         = false              # true = open 8080 plain-HTTP demo
+
+# Optional: read CouchDB password from Secrets Manager instead of random.
+# couchdb_secret_id = "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:nemaki/couchdb-AbCdEf"

@@ -47,7 +47,8 @@ read_tag() {
     --query 'Tags[0].Value' --output text 2>/dev/null | grep -v '^None$' || true
 }
 for pair in "NemakiVersion:NEMAKI_VERSION" "NemakiRef:NEMAKI_REF" \
-            "NemakiImagePrefix:NEMAKI_IMAGE_PREFIX" "NemakiHttpBind:NEMAKI_HTTP_BIND"; do
+            "NemakiRepo:NEMAKI_REPO" "NemakiImagePrefix:NEMAKI_IMAGE_PREFIX" \
+            "NemakiHttpBind:NEMAKI_HTTP_BIND" "CouchdbSecretId:COUCHDB_SECRET_ID"; do
   tagkey="${pair%%:*}"; varname="${pair##*:}"
   val=$(read_tag "$tagkey") || true
   if [ -n "${val:-}" ]; then echo "[nemaki] tag override $varname=$val"; eval "$varname=\$val"; fi

@@ -391,6 +391,15 @@ Java / Maven / Node のツールチェーンは不要。詳細は `RELEASE_NOTES
   からの上書きにも対応。
 - **運用ドキュメント** `deploy/README.md` (AWS/Azure quickstart + 起動後の
   ハードニング checklist)。
+- **Terraform モジュール** `deploy/terraform/aws/` + `deploy/terraform/azure/`:
+  VM・ネットワーク・IAM を用意し、同じブートストラップを user-data /
+  custom-data として渡す `terraform apply` 一発経路。デプロイ座標は env export
+  をスクリプト先頭に prepend して**決定的に注入**(タグ伝播レースなし)。
+  AWS は公開 SSM パラメータから最新 AL2023 を解決 (AMI ハードコードなし) +
+  IMDSv2 必須 + gp3 暗号化 + Secrets Manager 1 シークレットに絞った IAM。
+  Azure は Ubuntu 22.04 + VNet/NSG/Public IP + SSH 鍵認証 + Key Vault 用の
+  system-assigned identity (任意)。`deploy/terraform/.gitignore` で state /
+  `.terraform` / 実 tfvars を除外。
 
 **設計判断**:
 - `nemakiware-core` は `Dockerfile.simple` ベース。runtime 設定は compose env
@@ -400,8 +409,9 @@ Java / Maven / Node のツールチェーンは不要。詳細は `RELEASE_NOTES
   自己ホスト維持。永続化は EBS / Managed Disk スナップショットに誘導。
 
 **検証**: `docker compose -f docker-compose-prod.yml config` (base + rag
-profile) PASS、両ブートストラップ `bash -n` 構文 PASS。GHA workflow / イメージ
-の実 push は tag 発行時に走る (本ブランチでは未 push)。
+profile) PASS、両ブートストラップ `bash -n` 構文 PASS、Terraform 両モジュール
+`tofu validate` (実 aws/azurerm provider) PASS + `fmt` クリーン。GHA workflow /
+イメージの実 push は tag 発行時に走る (本ブランチでは未 push)。
 
 ### 3.1.3 (2026-06-11) — 全面レビュー remediation (security + correctness)
 

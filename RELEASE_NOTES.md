@@ -42,6 +42,21 @@ bare VM. No Java/Maven/Node toolchain required on the host._
   hardening checklist (change admin/admin, TLS front-end, snapshot volumes),
   private-image login, and local/on-prem reuse.
 
+### New: Terraform modules (`terraform apply` one-shot)
+- **`deploy/terraform/aws/`** and **`deploy/terraform/azure/`** — provision the
+  VM + network + IAM and hand the (same) bootstrap script as user-data /
+  custom-data. Deploy coordinates are injected deterministically as env exports
+  prepended to the script (no tag-propagation race).
+  - AWS: latest Amazon Linux 2023 resolved from the public SSM parameter
+    (no hardcoded AMI), default-VPC fallback, IMDSv2-only, gp3 encrypted root,
+    SG that opens 443 (and 8080 only in the demo posture), optional EIP, and an
+    IAM policy scoped to a single Secrets Manager secret when configured.
+  - Azure: Ubuntu 22.04 (gen2), VNet/subnet/NSG/public-IP, SSH-key auth,
+    optional system-assigned identity for Key Vault (principal id is output so
+    you can grant `get`).
+  - Both validated with `tofu validate` against the real aws/azurerm providers;
+    `terraform fmt` clean. `deploy/terraform/README.md` documents usage.
+
 ### Notes
 - `nemakiware-core` is built from `Dockerfile.simple`; runtime configuration
   is supplied via `-D` system properties from the compose env (existing
