@@ -72,6 +72,12 @@ jobs:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('core/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2-
+      - name: Build sibling modules (install to local repo)
+        run: |
+          mvn clean install -N -DskipTests -q
+          mvn clean install -f common/pom.xml -DskipTests -q
+          mvn clean install -f cloudant-init/pom.xml -DskipTests -q
+          mvn clean install -f solr/pom.xml -DskipTests -q
       - name: Run CSRF & ingest unit tests
         run: |
           mvn test \
