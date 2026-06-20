@@ -28,6 +28,9 @@ jobs:
     env:
       MAVEN_USERNAME: ${{ github.actor }}
       MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      # docker-compose-simple.yml requires these (?:- fail-fast) for up AND down.
+      COUCHDB_USER: admin
+      COUCHDB_PASSWORD: password
 
     steps:
     - name: Checkout repository

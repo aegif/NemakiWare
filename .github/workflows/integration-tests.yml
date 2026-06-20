@@ -48,6 +48,10 @@ jobs:
     env:
       MAVEN_USERNAME: ${{ github.actor }}
       MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      # docker-compose-simple.yml requires these (?:- fail-fast) for up AND down,
+      # so the Cleanup step (compose down) needs them too.
+      COUCHDB_USER: admin
+      COUCHDB_PASSWORD: password
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -81,6 +85,10 @@ jobs:
     env:
       MAVEN_USERNAME: ${{ github.actor }}
       MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      # docker-compose-simple.yml requires these (?:- fail-fast) for up AND down,
+      # so the Cleanup step (compose down) needs them too.
+      COUCHDB_USER: admin
+      COUCHDB_PASSWORD: password
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -139,6 +147,10 @@ jobs:
     env:
       MAVEN_USERNAME: ${{ github.actor }}
       MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      # docker-compose-simple.yml requires these (?:- fail-fast) for up AND down,
+      # so the Cleanup step (compose down) needs them too.
+      COUCHDB_USER: admin
+      COUCHDB_PASSWORD: password
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
