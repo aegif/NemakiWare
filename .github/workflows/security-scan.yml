@@ -47,7 +47,6 @@ on:
 
 permissions:
   contents: read
-  packages: read   # resolve custom OpenCMIS 1.1.0-nemakiware from GitHub Packages
 
 jobs:
   npm-audit:
@@ -82,6 +81,9 @@ jobs:
     name: Maven dependency drift check
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read   # resolve custom OpenCMIS 1.1.0-nemakiware from GitHub Packages
     env:
       MAVEN_USERNAME: ${{ github.actor }}
       MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
