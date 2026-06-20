@@ -360,6 +360,11 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 **3.2.0** (2026-06-20、`release/3.2-iaas-setup` 作業中) — pom.xml
 `<version>3.2.0</version>`。全 7 pom を 3.1.3 → 3.2.0 に bump。
+ユーザー向けバージョン表記も更新: UI `ui/package.json` (3.1.3→3.2.0、
+ログイン/レイアウトの `__UI_VERSION__` 表示元)、`Layout.tsx` フォールバック
+literal、CMIS `repositories-default.yml` の `product.version` (3.1.0→3.2.0、
+従来 3.1.x でも未更新だった repositoryInfo.productVersion)。Setup の
+serverVersion は `version.properties=${project.version}` 経由で pom 追従。
 3.1.3 を基点に IaaS ワンステップデプロイ機能を追加。
 
 ### 3.2.0 (2026-06-20) — IaaS ワンステップデプロイ (公開イメージ + cloud bootstrap)
