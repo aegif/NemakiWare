@@ -134,6 +134,7 @@
 import { test, expect } from '@playwright/test';
 import { waitForRender, waitForUiStable } from './utils/wait-helpers';
 import { TestHelper } from './utils/test-helper';
+import { ApiHelper } from './utils/api-helper';
 
 /**
  * SELECTOR FIX (2025-12-24) - Document Row Detection Fixed
@@ -172,6 +173,15 @@ test.describe('CMIS API 404 Error Handling', () => {
       console.log('PAGE ERROR:', error.message);
     });
 
+    // Create a deterministic document so the table always has a clickable
+    // document. This removes the dependency on pre-existing content (which makes
+    // the test fail on a fresh DB where the root has no documents) and lets us
+    // target it by name — a stable locator that does not shift as the table
+    // re-renders (the old `.first()` row could detach mid-click under load).
+    const apiHelper = new ApiHelper(page);
+    const doc404Name = `cmis-404-test-${Date.now()}.txt`;
+    const doc404Id = await apiHelper.createDocument({ name: doc404Name, content: 'content for the 404 handling test' });
+
     // NOTE: Route interception is set up AFTER login to avoid intercepting folder requests
     // Navigate to login page FIRST
     await page.goto('http://localhost:8080/core/ui/index.html');
@@ -199,14 +209,22 @@ test.describe('CMIS API 404 Error Handling', () => {
     // This ensures folder requests are not intercepted, only document detail requests
     await page.route('**/core/atom/bedroom/id?id=*', async (route) => {
       const url = route.request().url();
-      console.log('📍 Intercepting getObject request, returning 404:', url);
-      await route.fulfill({
-        status: 404,
-        contentType: 'text/plain',
-        body: 'Object not found'
-      });
+      // Intercept ONLY our test document's getObject. The previous broad match
+      // also 404'd the root-folder getObject, which broke the whole document
+      // list ("rootFolderId is stale (404)") so no rows ever rendered. Let
+      // folder/root loads pass through.
+      if (url.includes(`id=${doc404Id}`)) {
+        console.log('📍 Intercepting getObject for the test document, returning 404:', url);
+        await route.fulfill({
+          status: 404,
+          contentType: 'text/plain',
+          body: 'Object not found'
+        });
+      } else {
+        await route.continue();
+      }
     });
-    console.log('✅ Route interception set up');
+    console.log('✅ Route interception set up (scoped to the test document)');
 
     // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
     const isMobile = testHelper.isMobile(browserName);
@@ -229,16 +247,15 @@ test.describe('CMIS API 404 Error Handling', () => {
     // Click on the first DOCUMENT in the table (not folder - documents trigger getObject which we intercept)
     // FIX: Use .anticon-file class instead of aria-label="file" attribute
     // Ant Design FileOutlined renders as <span class="anticon anticon-file">
-    let firstDocument = page.locator('.ant-table-tbody tr:has(.anticon-file) button.ant-btn-link').first();
-
-    // Fallback: if no documents found, try clicking any button link in table rows
-    const documentCount = await firstDocument.count();
-    if (documentCount === 0) {
-      firstDocument = page.locator('.ant-table-tbody tr button.ant-btn-link').first();
-    }
-
-    // Use force click to bypass sidebar overlay in test environment
+    // Target our own document by name. This row is stable across re-renders,
+    // unlike `.first()`, which can resolve to a row that is replaced mid-click
+    // (the previous "element was detached from the DOM, retrying" timeout).
+    const doc404Row = page.locator(`.ant-table-tbody tr:has-text("${doc404Name}")`).first();
+    await expect(doc404Row).toBeVisible({ timeout: 15000 });
+    const firstDocument = doc404Row.locator('button.ant-btn-link').first();
     await expect(firstDocument).toBeVisible({ timeout: 10000 });
+
+    // Use force click to bypass any sidebar overlay in the test environment.
     await firstDocument.click({ force: true });
 
     // Wait for 404 error handling and potential redirect. The graceful outcome

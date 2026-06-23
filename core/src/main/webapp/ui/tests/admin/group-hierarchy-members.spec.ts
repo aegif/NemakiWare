@@ -561,14 +561,15 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       await waitForRender(page);
 
       // Group B should be disabled in the dropdown (because B contains A, adding B to A would create cycle)
-      const groupBOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: groupBId });
+      const groupBOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: groupBId }).first();
 
       // Group B must appear as an option (catches a "B missing from dropdown"
       // regression) and must be disabled. The disabled state is applied by React
-      // (circularGroupIds useMemo) after the group data resolves, so poll for the
-      // disabled class rather than reading it once.
-      await expect(groupBOption).toBeVisible({ timeout: 10000 });
-      await expect(groupBOption).toHaveClass(/ant-select-item-option-disabled/, { timeout: 10000 });
+      // (circularGroupIds useMemo) only after the group data resolves — which can
+      // be slow when the suite has accumulated many groups — so poll generously
+      // for the disabled class rather than reading it once.
+      await expect(groupBOption).toBeVisible({ timeout: 15000 });
+      await expect(groupBOption).toHaveClass(/ant-select-item-option-disabled/, { timeout: 15000 });
 
       // Close dropdown
       await page.keyboard.press('Escape');
