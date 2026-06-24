@@ -135,6 +135,11 @@ import { test, expect } from '@playwright/test';
 import { waitForRender, waitForUiStable } from './utils/wait-helpers';
 import { TestHelper } from './utils/test-helper';
 import { ApiHelper } from './utils/api-helper';
+import { cleanupTestData } from './utils/cleanup-helper';
+
+// Each test creates its own cmis-404-test-* document; sweep them so they do not
+// accumulate across runs.
+test.afterAll(({ browser }) => cleanupTestData(browser, { documents: ['cmis-404-test-%'] }));
 
 /**
  * SELECTOR FIX (2025-12-24) - Document Row Detection Fixed

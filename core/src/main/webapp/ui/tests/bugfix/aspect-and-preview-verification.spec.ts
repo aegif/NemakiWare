@@ -35,6 +35,13 @@
 import { test, expect, Page } from '@playwright/test';
 import { waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
+import { cleanupTestData } from '../utils/cleanup-helper';
+
+// Sweep test-created objects so they do not accumulate in the root and
+// slow later specs' document-list queries (flaky `.ant-table` timeouts).
+test.afterAll(({ browser }) => cleanupTestData(browser, {
+  documents: ['aspect-test-%'],
+}));
 
 // Test configuration
 const TEST_USER = 'admin';

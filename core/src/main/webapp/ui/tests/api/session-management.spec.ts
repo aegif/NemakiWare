@@ -24,6 +24,13 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test';
 import { generateTestId } from '../utils/test-helper';
 import { isKeycloakAvailable, getKeycloakUrl } from '../utils/test-state';
+import { cleanupTestData } from '../utils/cleanup-helper';
+
+// Sweep test-created objects so they do not accumulate in the root and
+// slow later specs' document-list queries (flaky `.ant-table` timeouts).
+test.afterAll(({ browser }) => cleanupTestData(browser, {
+  documents: ['session-test-%'],
+}));
 
 const BASE_URL = 'http://localhost:8080/core';
 const REPOSITORY_ID = 'bedroom';

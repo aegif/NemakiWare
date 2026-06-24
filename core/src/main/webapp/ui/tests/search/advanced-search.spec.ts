@@ -3,6 +3,12 @@ import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 
+// NOTE: no afterAll cleanup here. The PDFs this spec ensures exist
+// (CMIS-v1.1-Specification-Sample.pdf / 日本語ドキュメント.pdf) are SHARED search
+// fixtures provisioned by tests/global-setup.ts and relied on by the other
+// search specs — deleting them would break those tests. They are stable,
+// idempotently-created fixtures (two docs), so they do not cause accumulation.
+
 /**
  * Advanced Search E2E Tests
  *

@@ -1,4 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { cleanupTestData } from '../utils/cleanup-helper';
+
+// Sweep test-created objects so they do not accumulate in the root and
+// slow later specs' document-list queries (flaky `.ant-table` timeouts).
+test.afterAll(({ browser }) => cleanupTestData(browser, {
+  documents: ['rag-test-%'],
+}));
 
 /**
  * RAG Vector Search API E2E Tests

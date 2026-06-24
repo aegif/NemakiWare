@@ -2,6 +2,16 @@ import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, ApiHelper, generateTestId } from '../utils/test-helper';
+import { cleanupTestData } from '../utils/cleanup-helper';
+
+// Sweep the versioned documents this suite creates so they do not accumulate in
+// the root and slow later specs' document-list queries.
+test.afterAll(({ browser }) => cleanupTestData(browser, {
+  documents: [
+    'versioning-test-%', 'version-history-%', 'checkin-test-%',
+    'cancel-checkout-%', 'version-download-%', 'same-name-version-%',
+  ],
+}));
 
 /**
  * Document Versioning E2E Tests
