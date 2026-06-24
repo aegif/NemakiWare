@@ -15,6 +15,13 @@
 import { test, expect } from '@playwright/test';
 import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { generateTestId } from '../utils/test-helper';
+import { cleanupTestData } from '../utils/cleanup-helper';
+
+// Sweep test-created objects so they do not accumulate in the root and
+// slow later specs' document-list queries (flaky `.ant-table` timeouts).
+test.afterAll(({ browser }) => cleanupTestData(browser, {
+  documents: ['permission-test-%'],
+}));
 
 // CRITICAL: Run tests serially to avoid parallel login conflicts
 test.describe.configure({ mode: 'serial' });

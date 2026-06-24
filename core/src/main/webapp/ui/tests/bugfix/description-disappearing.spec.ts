@@ -14,6 +14,13 @@
 
 import { test, expect } from '@playwright/test';
 import { generateTestId } from '../utils/test-helper';
+import { cleanupTestData } from '../utils/cleanup-helper';
+
+// Sweep test-created objects so they do not accumulate in the root and
+// slow later specs' document-list queries (flaky `.ant-table` timeouts).
+test.afterAll(({ browser }) => cleanupTestData(browser, {
+  documents: ['test-couchdb-check-%', 'test-desc-disappear-%', 'test-desc-persist-%', 'test-multi-update-%'],
+}));
 
 // Test data
 const TEST_USER = 'admin';

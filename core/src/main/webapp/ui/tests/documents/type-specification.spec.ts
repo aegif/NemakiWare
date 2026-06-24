@@ -18,7 +18,24 @@
 import { test, expect, Page } from '@playwright/test';
 import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
-import { TestHelper, generateTestId } from '../utils/test-helper';
+import { TestHelper, generateTestId, ApiHelper } from '../utils/test-helper';
+
+// Remove the documents this suite creates so they do not accumulate in the root
+// folder, which would slow later specs' Solr-backed document-list queries and
+// cause flaky `.ant-table` timeouts.
+test.afterAll(async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    const api = new ApiHelper(page);
+    await api.cleanupTestDocuments('test-default-type-%');
+    await api.cleanupTestDocuments('sec-type-test-%');
+  } catch (e) {
+    console.log(`[type-specification] cleanup error: ${e}`);
+  } finally {
+    await context.close();
+  }
+});
 
 test.describe('Type Specification Features', () => {
   let authHelper: AuthHelper;
