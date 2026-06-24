@@ -19,9 +19,12 @@ export async function cleanupTestData(
   browser: Browser,
   patterns: { documents?: string[]; folders?: string[] }
 ): Promise<void> {
-  const context = await browser.newContext();
-  const page = await context.newPage();
+  // Everything is inside try/finally so cleanup never throws out of afterAll,
+  // including a failure to create or close the context.
+  let context: Awaited<ReturnType<Browser['newContext']>> | undefined;
   try {
+    context = await browser.newContext();
+    const page = await context.newPage();
     const api = new ApiHelper(page);
     for (const p of patterns.folders ?? []) {
       await api.cleanupTestFolders(p);
@@ -32,6 +35,6 @@ export async function cleanupTestData(
   } catch (e) {
     console.log(`[cleanupTestData] error: ${e}`);
   } finally {
-    await context.close();
+    if (context) await context.close().catch(() => {});
   }
 }

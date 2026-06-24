@@ -20,7 +20,9 @@ import { cleanupTestData } from '../utils/cleanup-helper';
 // Sweep test-created objects so they do not accumulate in the root and
 // slow later specs' document-list queries (flaky `.ant-table` timeouts).
 test.afterAll(({ browser }) => cleanupTestData(browser, {
-  documents: ['rel-%'],
+  // Narrow to this spec's own names (rel-test-1-*, rel-test-2-*). A bare 'rel-%'
+  // would also match other specs' rel-source-*/rel-target-* relationship docs.
+  documents: ['rel-test-%'],
 }));
 
 // Test configuration

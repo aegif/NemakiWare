@@ -25,8 +25,11 @@ test.afterAll(async ({ browser }) => {
   const page = await context.newPage();
   try {
     const api = new ApiHelper(page);
-    await api.cleanupTestFolders('srv-cascade-%');
-    await api.cleanupTestDocuments('srv-cascade-%');
+    // This spec creates many srv-* prefixes (srv-cascade-/srv-circ-/srv-deep-/
+    // srv-e4-/srv-mid-/srv-mixed-/srv-multi-/srv-tree-). No other spec uses the
+    // srv- prefix, so sweep them all.
+    await api.cleanupTestFolders('srv-%');
+    await api.cleanupTestDocuments('srv-%');
   } catch (e) {
     console.log(`[server-cascade-delete] cleanup error: ${e}`);
   } finally {
