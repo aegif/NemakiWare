@@ -14,7 +14,25 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { generateTestId } from '../utils/test-helper';
+import { generateTestId, ApiHelper } from '../utils/test-helper';
+
+// Most scenarios delete what they create (that is the feature under test), but
+// the "remain" cases (B3 relationship-only delete, E4 permission-denied) and any
+// failed run leave `srv-cascade-*` objects behind. Sweep them so they do not
+// accumulate in the root and slow later specs' document-list queries.
+test.afterAll(async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    const api = new ApiHelper(page);
+    await api.cleanupTestFolders('srv-cascade-%');
+    await api.cleanupTestDocuments('srv-cascade-%');
+  } catch (e) {
+    console.log(`[server-cascade-delete] cleanup error: ${e}`);
+  } finally {
+    await context.close();
+  }
+});
 
 const REPOSITORY_ID = 'bedroom';
 const BASE_URL = 'http://localhost:8080/core';
