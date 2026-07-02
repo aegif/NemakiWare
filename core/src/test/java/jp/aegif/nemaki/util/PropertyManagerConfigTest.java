@@ -82,9 +82,13 @@ public class PropertyManagerConfigTest {
 
     @AfterEach
     void tearDown() {
-        // Clean up any system properties we set
-        System.getProperties().entrySet().removeIf(
-                e -> e.getKey().toString().startsWith(TEST_KEY_PREFIX));
+        // Clean up any system properties we set (test-prefix + the admin-managed
+        // cloud.* keys exercised by the precedence tests below).
+        System.getProperties().entrySet().removeIf(e -> {
+            String k = e.getKey().toString();
+            return k.startsWith(TEST_KEY_PREFIX)
+                    || k.startsWith("cloud.auth.") || k.startsWith("cloud.drive.");
+        });
     }
 
     // ========================================================================
@@ -190,5 +194,78 @@ public class PropertyManagerConfigTest {
         String result = pm.readValue("bedroom", key);
         assertEquals("abc123-folder-id", result,
                 "key='system.folder' should be retrievable as repo-specific value");
+    }
+
+    // ========================================================================
+    // Admin-managed integration keys (3.2.1): nemaki_conf (admin UI) takes
+    // precedence over deploy-time -D/env for cloud.auth.* / cloud.drive.*, so a
+    // Google/Microsoft client ID set from the admin menu takes effect and
+    // persists without editing config files. A blank stored value falls through
+    // to the deploy bootstrap.
+    // ========================================================================
+
+    @Test
+    public void testIsAdminManagedDynamicKey() {
+        assertTrue(PropertyManager.isAdminManagedDynamicKey("cloud.auth.google.clientId"));
+        assertTrue(PropertyManager.isAdminManagedDynamicKey("cloud.auth.microsoft.tenantId"));
+        assertTrue(PropertyManager.isAdminManagedDynamicKey("cloud.drive.microsoft.enabled"));
+        assertFalse(PropertyManager.isAdminManagedDynamicKey("db.couchdb.auth.password"));
+        assertFalse(PropertyManager.isAdminManagedDynamicKey("sso.oidc.enabled"));
+        assertFalse(PropertyManager.isAdminManagedDynamicKey(null));
+    }
+
+    @Test
+    public void testAdminManagedKey_couchdbOverridesSystemProperty() {
+        String key = "cloud.auth.google.clientId";
+        stubDao.putConfig("nemaki_conf", configWith(key, "ui-set-id"));
+        System.setProperty(key, "deploy-D-id");
+
+        assertEquals("ui-set-id", pm.readValue(key),
+                "admin-managed key: nemaki_conf (admin UI) overrides the -D system property");
+        assertEquals("ui-set-id", pm.readValue("bedroom", key),
+                "admin-managed key (repo overload): nemaki_conf overrides the -D system property");
+    }
+
+    @Test
+    public void testAdminManagedKey_blankCouchdbFallsThroughToSystemProperty() {
+        String key = "cloud.auth.google.clientId";
+        stubDao.putConfig("nemaki_conf", configWith(key, ""));   // blank = not set
+        System.setProperty(key, "deploy-D-id");
+
+        assertEquals("deploy-D-id", pm.readValue(key),
+                "blank nemaki_conf value falls through to the deploy bootstrap");
+        assertEquals("deploy-D-id", pm.readValue("bedroom", key));
+    }
+
+    @Test
+    public void testAdminManagedKey_absentCouchdbFallsThroughToSystemProperty() {
+        String key = "cloud.auth.microsoft.enabled";
+        System.setProperty(key, "true");   // no nemaki_conf value
+
+        assertEquals("true", pm.readValue(key));
+        assertEquals("true", pm.readValue("bedroom", key));
+    }
+
+    @Test
+    public void testAdminManagedKey_repoSpecificCouchdbWins() {
+        String key = "cloud.auth.google.clientId";
+        stubDao.putConfig("bedroom", configWith(key, "repo-ui-id"));
+        stubDao.putConfig("nemaki_conf", configWith(key, "global-ui-id"));
+        System.setProperty(key, "deploy-D-id");
+
+        assertEquals("repo-ui-id", pm.readValue("bedroom", key),
+                "repo-specific nemaki_conf wins over global nemaki_conf and the -D");
+    }
+
+    @Test
+    public void testNonAdminManagedKey_systemPropertyStillWins() {
+        // Regression: a non-cloud key keeps the historical "system property first"
+        // precedence — the admin-managed override is scoped to cloud.* only.
+        String key = TEST_KEY_PREFIX + "regular";
+        stubDao.putConfig("nemaki_conf", configWith(key, "couchdb-val"));
+        System.setProperty(key, "sysprop-val");
+
+        assertEquals("sysprop-val", pm.readValue(key),
+                "non-admin-managed key: system property still takes precedence");
     }
 }

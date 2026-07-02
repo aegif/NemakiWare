@@ -33,12 +33,24 @@ public class PropertyManager{
 	 * @throws Exception
 	 */
 	public String readValue(String key){
+		// Admin-managed integration keys (set via the admin UI and persisted to
+		// nemaki_conf) take precedence over deploy-time -D/env so an operator can
+		// configure them at runtime without editing config files. A blank stored
+		// value is treated as "not set" and falls through to the bootstrap
+		// sources below (deploy default), so clearing reverts to the default.
+		if (isAdminManagedDynamicKey(key)) {
+			Object dyn = getDynamicValue(key);
+			if (dyn != null && !dyn.toString().isBlank()) {
+				return dyn.toString();
+			}
+		}
+
 		// CRITICAL FIX: Check system properties first for Jetty environment override support
 		String systemPropertyValue = System.getProperty(key);
 		if(systemPropertyValue != null){
 			return systemPropertyValue;
 		}
-		
+
 		// Check environment variables (Docker support)
 		// Convert property key format (lowercase.with.dots) to env var format (UPPERCASE_WITH_UNDERSCORES)
 		String envKey = key.toUpperCase().replace('.', '_');
@@ -46,13 +58,26 @@ public class PropertyManager{
 		if(envValue != null){
 			return envValue;
 		}
-		
+
 		Object configVal = getDynamicValue(key);
 		if(configVal == null){
 			return propertyConfigurer.getValue(key);
 		}else{
 			return configVal.toString();
 		}
+	}
+
+	/**
+	 * Keys whose runtime value comes primarily from the admin UI (persisted to
+	 * nemaki_conf), overriding any deploy-time {@code -D}/env bootstrap default.
+	 * Scoped to the cloud authentication / drive integration settings so an
+	 * administrator can set Google/Microsoft client IDs from the admin menu and
+	 * have them take effect (and persist) without a config-file/redeploy round
+	 * trip. Other keys keep the historical "system property first" precedence.
+	 */
+	public static boolean isAdminManagedDynamicKey(String key){
+		return key != null
+				&& (key.startsWith("cloud.auth.") || key.startsWith("cloud.drive."));
 	}
 
 	public String readHeadValue(String key) throws Exception{
@@ -81,6 +106,29 @@ public class PropertyManager{
 	public String readValue(String repositoryId, String key){
 		if (log.isDebugEnabled()) {
 			log.debug("readValue called with repositoryId='" + repositoryId + "', key='" + key + "'");
+		}
+
+		// Admin-managed integration keys: nemaki_conf (admin UI) first, so a
+		// runtime-configured value overrides any deploy-time -D/env bootstrap.
+		// Repo-specific value wins over global; a blank stored value falls
+		// through to the bootstrap sources below. See isAdminManagedDynamicKey.
+		if (isAdminManagedDynamicKey(key)) {
+			try {
+				Configuration repoConf = getConfiguration(repositoryId);
+				if (repoConf != null && repoConf.getConfiguration().containsKey(key)) {
+					Object repoVal = repoConf.getConfiguration().get(key);
+					if (repoVal != null && !repoVal.toString().isBlank()) {
+						return repoVal.toString();
+					}
+				}
+			} catch (Exception e) {
+				log.warn("Repo-specific admin-managed lookup failed for repositoryId='"
+						+ repositoryId + "', key='" + key + "': " + e.getMessage());
+			}
+			Object dyn = getDynamicValue(key);
+			if (dyn != null && !dyn.toString().isBlank()) {
+				return dyn.toString();
+			}
 		}
 
 		// Priority 1: System properties (JVM -D flags, Jetty environment overrides)

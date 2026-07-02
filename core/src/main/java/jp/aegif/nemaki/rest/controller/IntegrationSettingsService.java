@@ -49,6 +49,26 @@ public class IntegrationSettingsService {
 	 * @return one of "system_property", "environment", "couchdb", "properties_file", or "none"
 	 */
 	public String readSettingSource(String key) {
+		// Admin-managed integration keys resolve their effective value from
+		// nemaki_conf first (see PropertyManager.isAdminManagedDynamicKey), so
+		// report "couchdb" when a non-blank value is stored there — otherwise a
+		// deploy-time -D/env default would be mis-reported as the source and the
+		// admin UI would look like it had no effect.
+		if (jp.aegif.nemaki.util.PropertyManager.isAdminManagedDynamicKey(key)) {
+			try {
+				jp.aegif.nemaki.model.Configuration conf =
+						propertyManager.getConfiguration(SystemConst.NEMAKI_CONF_DB);
+				if (conf != null && conf.getConfiguration().containsKey(key)) {
+					Object val = conf.getConfiguration().get(key);
+					if (val != null && !val.toString().isBlank()) {
+						return "couchdb";
+					}
+				}
+			} catch (Exception e) {
+				log.debug("Failed to check CouchDB source for admin-managed key=" + key + ": " + e.getMessage());
+			}
+		}
+
 		// Priority 1: System properties
 		if (System.getProperty(key) != null) {
 			return "system_property";
