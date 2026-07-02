@@ -456,11 +456,32 @@ gate は「プロパティ未設定 → 全許可」の後方互換デフォル�
   エラー解析により flaky (非回帰) と確定
 - productVersion 3.2.1 をライブ検証 (setup/state + cmis:productVersion)
 
-**残 (post-3.2.1)**: SetupVector 接続テストの `SsrfGuard` 統一 (Low、setup
-トークン + bool 応答で悪用限定)、ZipImporter コンテンツストリーム再 bound
-(Low)、CSP ヘッダー (要動作検証)、dev-compose の "開発専用" 注記。依存 hygiene
-(woodstox-core-asl 4.4.1 / cxf-rt-ws-policy 4.1.3 / spring-tx 7.0.4 の skew)。
-2.4→3.2.1 アップグレードスモーク (2.4 dump 用意待ち)。
+**Low ハードニング (v3.2.1 tag 内、上記の後続コミット)**: 監査の Low 項目を
+5 コミットで解消:
+- SetupVector SSRF: `UrlValidator` が `SsrfGuard.extractEmbeddedIpv4` で IPv6
+  transition (NAT64/6to4/Teredo/IPv4-mapped/-compatible) を unwrap して
+  metadata/private を検出 (`allowPrivateNetworks` 挙動不変)。+6 test
+- ZipImporter コンテンツ再 bound: `createContentStreamFromZip` が申告
+  `getSize()` だけでなく実バイト数を bounded `FilterInputStream` で cap (streaming
+  維持、超過で IOException)。+4 test
+- UI セキュリティヘッダ: 新 `UiSecurityHeadersFilter` (`/ui/*`) が nosniff /
+  X-Frame-Options: SAMEORIGIN / Referrer-Policy を enforcing、CSP は **Report-Only**
+  (Ant Design CSS-in-JS + pdf.js を壊さない非ブロック baseline。違反レビュー後に
+  enforcing 昇格)
+- FilesystemStorageAdapter パス containment: `buildPath` を normalize +
+  storage-root `startsWith` check。+4 test
+- 依存 hygiene: spring-tx 7.0.4→7.0.7 / cxf-rt-ws-policy 4.1.3→4.2.0 の skew 整合、
+  旧 `woodstox-core-asl 4.4.1` 除去 (modern woodstox 6.5.0 が StAX provider)、
+  jackson 全モジュールを `jackson-bom` で 2.21.1 に整合
+- dev-compose 注記: `docker-compose-simple.yml` に「開発専用・0.0.0.0 公開」バナー、
+  `docker/realm-export.json` に dev-only `_NOTE`
+
+**残 (post-3.2.1、性質上 deferred)**:
+- RAG `readers` ACL トークンの repo スコープ化 (`user:<id>` → `user:<repo>:<id>`) —
+  インデックス形式変更で既存 RAG データの再インデックス (マイグレーション) 必須。
+  `repository_id` fq 追加で悪用経路は既に封鎖済みのため恒久策は別サイクル
+- 上記 UI CSP の Report-Only → enforcing 昇格 (全 UI ページの違反レビュー後)
+- 2.4→3.2.1 アップグレードスモーク (2.4 dump 用意待ち)
 
 ### 3.2.0 (2026-06-20) — IaaS ワンステップデプロイ (公開イメージ + cloud bootstrap)
 

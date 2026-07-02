@@ -62,6 +62,28 @@ tests and was verified against a live stack (TCK + Playwright)._
 - Version bump 3.2.0 → 3.2.1 across all reactor poms and user-facing
   version strings.
 
+### Low-severity hardening
+- **SetupVector SSRF:** the setup connection validator now unwraps IPv6
+  transition addresses (NAT64 / 6to4 / Teredo / IPv4-mapped) before
+  classifying cloud-metadata / private ranges, matching the
+  connector/webhook SSRF surfaces.
+- **ZIP import size bound:** an imported ZIP entry's content is now bounded
+  to the actual bytes streamed, not just its declared central-directory
+  size, so a mismatched entry cannot exceed the per-file cap.
+- **UI security headers:** the SPA now sends `X-Content-Type-Options:
+  nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy` (enforcing)
+  and a `Content-Security-Policy` in **Report-Only** mode (a non-blocking
+  baseline to be promoted to enforcing after violation review).
+- **Archive path containment:** the filesystem archive adapter verifies the
+  resolved storage path stays under its base directory (defence-in-depth).
+- **Dependency hygiene:** aligned `spring-tx` (7.0.7) and `cxf-rt-ws-policy`
+  (4.2.0) with the rest of their trees, removed the legacy
+  `woodstox-core-asl` StAX impl (modern woodstox retained), and converged
+  all Jackson modules on 2.21.1 via `jackson-bom`.
+- **Dev-compose notes:** `docker-compose-simple.yml` is now clearly marked
+  development/evaluation-only, and `docker/realm-export.json` carries the
+  same dev-only marker as the keycloak variant.
+
 ### Upgrade safety
 No CouchDB view / patch / persisted-schema / Mango-index change — all
 fixes are runtime authorization, the auth filter, the UI, and poms. The
