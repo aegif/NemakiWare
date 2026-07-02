@@ -120,6 +120,17 @@ public class FilesystemStorageAdapter implements LongTermStorageAdapter {
     }
 
     private Path buildPath(String repositoryId, String objectId) {
-        return Paths.get(basePath, repositoryId, objectId, "content");
+        Path base = Paths.get(basePath).toAbsolutePath().normalize();
+        Path resolved = base.resolve(repositoryId).resolve(objectId).resolve("content").normalize();
+        // Defence-in-depth: repositoryId (a configured repository name) and
+        // objectId (a system-generated CMIS UUID) are not user-controlled, so
+        // this containment check should never fire in practice. It ensures that
+        // if a future caller ever passes a traversal token (".." or an absolute
+        // path) the resolved path cannot escape the storage root.
+        if (!resolved.startsWith(base)) {
+            throw new IllegalArgumentException(
+                    "Archive path escapes the storage root for " + repositoryId + "/" + objectId);
+        }
+        return resolved;
     }
 }
