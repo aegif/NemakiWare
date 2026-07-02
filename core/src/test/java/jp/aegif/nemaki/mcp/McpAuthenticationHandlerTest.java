@@ -5,6 +5,7 @@ import static org.mockito.Mockito.*;
 
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -13,9 +14,12 @@ import org.mindrot.jbcrypt.BCrypt;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
+import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.factory.auth.ApiKeyService;
+import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.model.UserItem;
 
 /**
  * TDD Tests for MCP Authentication Handler.
@@ -33,6 +37,9 @@ public class McpAuthenticationHandlerTest {
 
     @Mock
     private ApiKeyService apiKeyService;
+
+    @Mock
+    private ContentService contentService;
 
     private McpAuthenticationHandler authHandler;
 
@@ -478,5 +485,92 @@ public class McpAuthenticationHandlerTest {
         // Then
         assertFalse(result.isSuccess());
         assertEquals("Invalid or expired token", result.getErrorMessage());
+    }
+
+    // ========== allowedAuthMethods policy gate (security audit follow-up, 3.2.1) ==========
+
+    private static UserItem userItemWithPolicy(String userId, String allowedAuthMethods) {
+        UserItem u = new UserItem();
+        u.setUserId(userId);
+        if (allowedAuthMethods != null) {
+            u.setSubTypeProperties(List.of(new Property("nemaki:allowedAuthMethods", allowedAuthMethods)));
+        }
+        return u;
+    }
+
+    /** A correct password must NOT authenticate a "disabled" account over MCP Basic auth. */
+    @Test
+    public void testBasicAuthDeniedForDisabledAccount() {
+        String repositoryId = "bedroom";
+        String username = "admin";
+        String password = "admin"; // correct password
+        String basicAuth = "Basic " + Base64.getEncoder().encodeToString((username + ":" + password).getBytes());
+
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Authorization", basicAuth);
+
+        User mockUser = mock(User.class);
+        when(mockUser.getUserId()).thenReturn(username);
+        when(mockUser.getPasswordHash()).thenReturn(ADMIN_PASSWORD_HASH);
+        when(principalService.getUserById(repositoryId, username)).thenReturn(mockUser);
+
+        authHandler.setContentService(contentService);
+        when(contentService.getUserItemById(repositoryId, username))
+                .thenReturn(userItemWithPolicy(username, "disabled"));
+
+        McpAuthResult result = authHandler.authenticate(repositoryId, headers);
+
+        // Same generic message as a wrong password: no "account disabled" oracle.
+        assertFalse(result.isSuccess());
+        assertEquals("Invalid credentials", result.getErrorMessage());
+    }
+
+    /** A correct password must NOT create a session for a "cloud"-only account via MCP login. */
+    @Test
+    public void testLoginDeniedForCloudOnlyAccount() {
+        String repositoryId = "bedroom";
+        String username = "admin";
+        String password = "admin"; // correct password
+
+        User mockUser = mock(User.class);
+        when(mockUser.getUserId()).thenReturn(username);
+        when(mockUser.getPasswordHash()).thenReturn(ADMIN_PASSWORD_HASH);
+        when(principalService.getUserById(repositoryId, username)).thenReturn(mockUser);
+
+        authHandler.setContentService(contentService);
+        when(contentService.getUserItemById(repositoryId, username))
+                .thenReturn(userItemWithPolicy(username, "cloud"));
+
+        McpLoginResult result = authHandler.login(repositoryId, username, password);
+
+        assertFalse(result.isSuccess());
+        assertNull(result.getSessionToken());
+        assertEquals("Invalid credentials", result.getErrorMessage());
+    }
+
+    /** Control: a "password"-policy account still authenticates (no over-block). */
+    @Test
+    public void testBasicAuthAllowedForPasswordPolicyAccount() {
+        String repositoryId = "bedroom";
+        String username = "admin";
+        String password = "admin";
+        String basicAuth = "Basic " + Base64.getEncoder().encodeToString((username + ":" + password).getBytes());
+
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Authorization", basicAuth);
+
+        User mockUser = mock(User.class);
+        when(mockUser.getUserId()).thenReturn(username);
+        when(mockUser.getPasswordHash()).thenReturn(ADMIN_PASSWORD_HASH);
+        when(principalService.getUserById(repositoryId, username)).thenReturn(mockUser);
+
+        authHandler.setContentService(contentService);
+        when(contentService.getUserItemById(repositoryId, username))
+                .thenReturn(userItemWithPolicy(username, "password"));
+
+        McpAuthResult result = authHandler.authenticate(repositoryId, headers);
+
+        assertTrue(result.isSuccess());
+        assertEquals(username, result.getUserId());
     }
 }

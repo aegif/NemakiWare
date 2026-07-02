@@ -20,10 +20,12 @@ import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.cmis.factory.auth.ApiKeyService;
 import org.springframework.lang.Nullable;
 import jp.aegif.nemaki.model.User;
+import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.AuthenticationUtil;
 
 /**
@@ -62,6 +64,18 @@ public class McpAuthenticationHandler {
 
     private final PrincipalService principalService;
     private final ApiKeyService apiKeyService;
+
+    /**
+     * Optional dependency used to enforce the account's {@code allowedAuthMethods}
+     * policy on password authentication. Wired by Spring in production; it may be
+     * null in isolated unit tests that construct the handler via the package-private
+     * constructor, in which case the policy gate is skipped (those tests do not
+     * exercise the policy). Production always resolves this bean, so the gate is
+     * always enforced on live password logins.
+     */
+    @Autowired(required = false)
+    private ContentService contentService;
+
     private final Map<String, McpSession> sessionTokens = new ConcurrentHashMap<>();
     private final Map<String, CloudLoginRequest> pendingCloudLogins = new ConcurrentHashMap<>();
     private final long sessionTtlSeconds;
@@ -93,6 +107,14 @@ public class McpAuthenticationHandler {
      */
     McpAuthenticationHandler(PrincipalService principalService, ApiKeyService apiKeyService, long sessionTtlSeconds) {
         this(principalService, apiKeyService, sessionTtlSeconds, 15);
+    }
+
+    /**
+     * Package-private for tests: inject a {@link ContentService} so the
+     * allowedAuthMethods policy gate can be exercised in unit tests.
+     */
+    void setContentService(ContentService contentService) {
+        this.contentService = contentService;
     }
 
     /**
@@ -330,6 +352,19 @@ public class McpAuthenticationHandler {
 
         if (!AuthenticationUtil.passwordMatches(password, user.getPasswordHash())) {
             return McpAuthResult.failure("Invalid credentials");
+        }
+
+        // Enforce the account's allowedAuthMethods policy: a disabled or
+        // cloud-only account must not authenticate via password over MCP either
+        // (parity with the primary CMIS auth path). The legacy User object does
+        // not carry the policy, so resolve the UserItem which holds it. Same
+        // "Invalid credentials" failure so a correct password on a disabled
+        // account is not an authentication oracle.
+        if (contentService != null) {
+            UserItem userItem = contentService.getUserItemById(repositoryId, username);
+            if (userItem != null && !AuthenticationUtil.isAuthMethodAllowed(userItem, "password")) {
+                return McpAuthResult.failure("Invalid credentials");
+            }
         }
 
         return McpAuthResult.success(username, repositoryId);

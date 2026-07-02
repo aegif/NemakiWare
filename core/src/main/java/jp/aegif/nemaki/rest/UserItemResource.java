@@ -1360,7 +1360,9 @@ private ContentService getContentServiceSafe() {
 			String storedPassword = user.getPassowrd();
 			if (storedPassword != null) {
 				boolean match = BCrypt.checkpw(password, storedPassword);
-				if (match)
+				// Enforce the allowedAuthMethods policy so a disabled / cloud-only
+				// admin account cannot pass this password re-authentication gate.
+				if (match && AuthenticationUtil.isAuthMethodAllowed(user, "password"))
 					return true;
 			}
 		}

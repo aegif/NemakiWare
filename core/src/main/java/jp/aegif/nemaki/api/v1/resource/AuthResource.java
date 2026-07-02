@@ -140,11 +140,21 @@ public class AuthResource {
             if (!AuthenticationUtil.passwordMatches(request.getPassword(), user.getPassowrd())) {
                 throw ApiException.unauthorized("Invalid credentials");
             }
-            
+
+            // Enforce the account's allowedAuthMethods policy so a disabled or
+            // cloud-only account cannot authenticate via password (parity with the
+            // primary CMIS auth path). Return the same 401 as a wrong password so a
+            // correct password on a disabled account is not an authentication oracle.
+            if (!AuthenticationUtil.isAuthMethodAllowed(user, "password")) {
+                logger.info("API v1: password authentication denied for user " + request.getUserId()
+                        + " (not in allowedAuthMethods)");
+                throw ApiException.unauthorized("Invalid credentials");
+            }
+
             if (tokenService == null) {
                 throw ApiException.internalError("Token service not available");
             }
-            
+
             Token token = tokenService.setToken("", repositoryId, request.getUserId());
             
             AuthResponse response = new AuthResponse();
