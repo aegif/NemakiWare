@@ -358,14 +358,109 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 ## 現在のバージョン
 
-**3.2.0** (2026-06-20、`release/3.2-iaas-setup` 作業中) — pom.xml
-`<version>3.2.0</version>`。全 7 pom を 3.1.3 → 3.2.0 に bump。
-ユーザー向けバージョン表記も更新: UI `ui/package.json` (3.1.3→3.2.0、
-ログイン/レイアウトの `__UI_VERSION__` 表示元)、`Layout.tsx` フォールバック
-literal、CMIS `repositories-default.yml` の `product.version` (3.1.0→3.2.0、
-従来 3.1.x でも未更新だった repositoryInfo.productVersion)。Setup の
-serverVersion は `version.properties=${project.version}` 経由で pom 追従。
-3.1.3 を基点に IaaS ワンステップデプロイ機能を追加。
+**3.2.1** (2026-07-02、`release/3.2.1-security`) — pom.xml
+`<version>3.2.1</version>`。5 reactor pom (root/common/core/solr/cloudant-init)
+＋内部モジュール依存座標 (nemakiware-common / solr) を 3.2.0 → 3.2.1 に bump。
+ユーザー向け版表記も更新: UI `ui/package.json` + `package-lock.json`
+(`__UI_VERSION__` 表示元)、`Layout.tsx` フォールバック literal、CMIS
+`repositories-default.yml` の `product.version` (repositoryInfo.productVersion)。
+Setup の serverVersion は `version.properties=${project.version}` 経由で pom
+追従。3.2.0 を基点に、包括セキュリティ監査で発見した認証/認可の穴と依存 CVE を
+remediation (下記 3.2.1 節)。
+
+### 3.2.1 (2026-07-02) — セキュリティ監査 remediation + cross-repository 分離 + 依存 CVE
+
+ブランチ: `release/3.2.1-security` (off `master` = `3cb56a92b`)。Fable5
+マルチエージェント包括セキュリティ監査 (6 ドメイン: 認証 / 認可-IDOR /
+インジェクション-XML / SSRF / ファイル-CSRF-DoS / フロント-暗号-設定) +
+第2弾 (依存 CVE / リポジトリ間分離) で確定した課題を優先順位順に修正。各修正に
+regression test + 実機検証 (TCK + Playwright + redeploy)。
+
+**セキュリティ (認証/認可)**:
+- [High] `nemaki:allowedAuthMethods` 認証ポリシーのバイパス
+  (`a40960089`): `disabled` / `cloud`-only アカウントのパスワードログインを
+  拒否する gate が主要 CMIS 経路 (`AuthenticationServiceImpl.
+  getAuthenticatedUserItem`) のみで強制され、**3 つの他経路が迂回**していた:
+  api/v1 `AuthResource.login`、MCP `McpAuthenticationHandler.validateCredentials`
+  (Basic auth + login tool)、legacy `UserItemResource.isAdminOperaiton`
+  (admin 操作 re-auth)。policy を `AuthenticationUtil.isAuthMethodAllowed
+  (UserItem, method)` に単一情報源化し `AuthenticationServiceImpl` は委譲、
+  3 経路で enforce。拒否は誤パスワードと同じ 401 / "Invalid credentials"
+  (正パスワードの disabled アカウントを oracle 化しない)。MCP は legacy
+  `User` が policy を持たないため optional `ContentService` で `UserItem`
+  解決。+6 AuthenticationUtilTest / +3 McpAuthenticationHandlerTest
+- [Low] セッショントークン検証の非定数時間比較 (`92f7ad752`):
+  `TokenServiceImpl.TokenMap.validate()` の `String.equals()` を
+  `MessageDigest.isEqual` に統一 (主要トークン検証経路。他経路は既に定数時間)。
+  期限切れ掃除の full scan は維持
+- **cross-repository テナント分離** (`ba18af200`): `/v1/admin/*` は常に
+  デフォルト repo で認証するのに、connector 委譲ガバナンスと import-profile
+  操作は任意の対象 repositoryId に作用していた → (1) デフォルト repo admin が
+  他 repo の import-profile を操作/ガバナンス列挙可 (admin が per-repo persona
+  でない)、(2) 非 admin の委譲認可が (default-repo 認証の) username を対象 repo
+  の ACL に突合 → 他 repo の同名ユーザーに自動アクセス。修正:
+  `IngestAuthorizationService.canManageProfileForFolder` /
+  `canUseConnectorForDelegatedProfile` に「対象 repo == 認証 repo」不変条件
+  (`isAuthenticatedRepository`) を admin 短絡より前に追加 (fail-closed、他 repo
+  の ACL を一切参照しない)。`AuthenticationFilter` は per-repo 面
+  (import-profiles / connectors) のみ `X-Nemaki-Repository` ヘッダで対象 repo
+  認証、他の `/v1/admin/*` (Purview / lineage / integration-settings /
+  ingest jobs-scheduler / connector CRUD) はデフォルト repo 固定 (グローバル
+  設定 = デフォルト repo admin のみ、既存面を広げない)。`ImportProfile
+  DefinitionController` は全操作を認証 repo に限定 (list scope / by-id は
+  profile.repositoryId 一致必須、他 repo は 404)。`ConnectorDefinition
+  Controller` は connector CRUD をデフォルト repo admin 限定、ガバナンスは
+  repositoryId 一致必須。UI は管理系 ingest 呼び出しにログイン repo ヘッダ付与。
+  +3 IngestAuthorizationServiceTest cross-repo / 6 controller test 更新
+  (ingest suite 171/171)。**OIDC 等での「同一人物なら他 repo も見える」は別問題
+  (未着手)**
+
+**依存 CVE** (`39218c4be`): `mvn dependency:tree` (494 artifact) 精査で 2 件:
+- commons-compress 1.24.0 (compile scope、Tika/POI のアーカイブ解析で到達) →
+  1.27.1 (CVE-2024-25710 DUMP 無限ループ DoS / CVE-2024-26308 pack200 メモリ
+  DoS、POI 5.4.1 要件とも整合)
+- lucene-queries/-core を 9.11.1 固定していたが solr-core 9.10.1 は他 Lucene
+  モジュールを 9.12.3 で持ち込む → Lucene は全モジュール同一版必須のため 9.12.3
+  に整合 (全 21 モジュール収束)
+- npm 本番依存 0 件 (dev の esbuild low のみ、Windows dev サーバ限定)
+
+**RAG cross-repository** (`f1344966b`): ベクトル検索の補助 Solr クエリ 3 本
+(`getDocumentVector` シード / `enrichWithFirstChunk` / `enrichResultsWith
+ParentInfo`) が共有 `nemaki` コアに対し `repository_id` fq を欠いていた
+(RAG id は非 repo スコープの生 CMIS ID)。ID 衝突 + 非 repo スコープの reader
+ACL トークンと組み合わさると他 repo のベクトル/メタデータ/チャンクが混入し得た
+→ 全 6 RAG クエリに `escapeAndQuote` 付き `repository_id` fq を付与。RAG
+regression 164/164
+
+**衛生**: 追跡されていた `AclServiceImpl.java.rej` (一時 ACL debug ログの適用
+失敗パッチ、セキュリティロジックなし) を削除 (`92f7ad752`)
+
+**アップグレード安全性**: 全修正は**ランタイム認可 + 認証フィルタ + UI + pom のみ**
+で、CouchDB view (dump) / patch / 永続化モデル / Mango index の変更ゼロ。2.4
+時代からの CouchDB データ持ち越しパスに一切触れない。`allowedAuthMethods`
+gate は「プロパティ未設定 → 全許可」の後方互換デフォルトで、当該プロパティを
+持たない旧データはパスワードログイン継続可。
+
+**検証**:
+- Java unit/regression: AuthenticationUtilTest 13/13、McpAuthenticationHandler
+  Test 24/24、TrustedProxyTest 10/10、IngestAuthorizationServiceTest 37/37、
+  ingest suite 171/171、RAG 164/164
+- reactor `mvn clean install`: BUILD SUCCESS、core.war 3.2.1、UI `tsc` クリーン
+- **TCK 実効 38/38**: 永続 volume の初回 run は `baseTypesTest` (残骸カスタム型
+  `test:customFolderForE2E`) と `contentChangesSmokeTest` (蓄積データ) で 2 fail
+  だったが、クリーン DB (fresh init、`ci-complete-setup.sh` = Setup Wizard
+  `/apply`) で Types 3/3・Query 6/6 green を実証 → データ汚染で回帰ではない
+- **Playwright chromium フル**: 928 passed / 3 flaky-fail / 3 flaky / 99 skipped。
+  3 fail はいずれも本修正と無関係な UI (group-hierarchy 循環参照防止の Ant
+  モーダル `キャンセル` クリック timeout、custom-property-input) で、再実行・
+  エラー解析により flaky (非回帰) と確定
+- productVersion 3.2.1 をライブ検証 (setup/state + cmis:productVersion)
+
+**残 (post-3.2.1)**: SetupVector 接続テストの `SsrfGuard` 統一 (Low、setup
+トークン + bool 応答で悪用限定)、ZipImporter コンテンツストリーム再 bound
+(Low)、CSP ヘッダー (要動作検証)、dev-compose の "開発専用" 注記。依存 hygiene
+(woodstox-core-asl 4.4.1 / cxf-rt-ws-policy 4.1.3 / spring-tx 7.0.4 の skew)。
+2.4→3.2.1 アップグレードスモーク (2.4 dump 用意待ち)。
 
 ### 3.2.0 (2026-06-20) — IaaS ワンステップデプロイ (公開イメージ + cloud bootstrap)
 

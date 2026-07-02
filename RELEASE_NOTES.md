@@ -6,6 +6,81 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.2.1 — Security-audit remediation + cross-repository isolation + dependency CVEs (2026-07-02)
+_On `release/3.2.1-security`. A comprehensive multi-agent security audit
+(auth, authorization/IDOR, injection/XML, SSRF, file/CSRF/DoS,
+frontend/crypto/config) plus a second pass on transitive-dependency CVEs
+and multi-repository tenant isolation. Every fix ships with regression
+tests and was verified against a live stack (TCK + Playwright)._
+
+### Security — authentication / authorization
+- **[High] allowedAuthMethods policy bypass.** An account set to
+  `disabled` (account lock) or `cloud` (SSO-only) could still obtain a
+  token/session with a known password: the `nemaki:allowedAuthMethods`
+  gate was enforced only on the primary CMIS auth path, while three other
+  password entry points bypassed it — the api/v1 login endpoint, MCP
+  (Basic auth + login tool), and the legacy admin-operation re-auth. All
+  three now enforce the same policy (single source of truth in
+  `AuthenticationUtil`); a disabled account gets the same generic 401 as a
+  wrong password, so a correct password is not an oracle.
+- **[Low] Constant-time session-token comparison.** The main token
+  validation path now uses `MessageDigest.isEqual` (consistent with the
+  other token checks).
+- **Cross-repository tenant isolation.** Connector-delegation governance
+  and import-profile admin operations were authorized against the default
+  repository but acted on an arbitrary target repository. This let a
+  default-repository admin manage another repository's import-profiles /
+  enumerate its governance, and let a non-admin's delegated-profile
+  authorization match a same-named user in another repository (automatic
+  cross-repository access). Config operations are now confined to the
+  authenticated repository (fail-closed); per-repository admins
+  authenticate against their own repository via an `X-Nemaki-Repository`
+  header on the import-profile / connector-governance surfaces, while
+  global settings (connector catalogue, Purview, lineage,
+  integration-settings, ingest jobs/scheduler) remain
+  default-repository-admin only. *(OIDC-based "same real person across
+  repositories" visibility is a separate, unaddressed concern.)*
+- **RAG vector-search repository scoping.** Three auxiliary RAG Solr
+  queries omitted the `repository_id` filter (RAG ids are the raw,
+  non-repository-scoped CMIS object id), so a colliding id could leak
+  another repository's vector / metadata / chunk text. All RAG queries now
+  scope to `repository_id`.
+
+### Dependencies
+- **commons-compress 1.24.0 → 1.27.1** (shipped at compile scope via
+  Tika/POI archive parsing) — fixes CVE-2024-25710 (DUMP infinite-loop
+  DoS) and CVE-2024-26308 (pack200 memory DoS), and matches POI 5.4.1.
+- **Lucene aligned to 9.12.3.** `lucene-queries`/`-core` were pinned to
+  9.11.1 while solr-core 9.10.1 brings the other Lucene modules at 9.12.3;
+  Lucene requires a single version across all modules. All 21 modules now
+  converge on 9.12.3.
+- npm production dependencies: 0 vulnerabilities.
+
+### Housekeeping
+- Removed a stale, tracked `AclServiceImpl.java.rej` (a failed
+  temporary-debug patch, no security logic).
+- Version bump 3.2.0 → 3.2.1 across all reactor poms and user-facing
+  version strings.
+
+### Upgrade safety
+No CouchDB view / patch / persisted-schema / Mango-index change — all
+fixes are runtime authorization, the auth filter, the UI, and poms. The
+CouchDB data carry-over path from 2.4-era installs is untouched, and the
+allowedAuthMethods gate defaults to "all methods allowed" when the
+property is absent (as it is on carried-over data).
+
+### Verification
+Java regression suites green (auth, ingest 171/171, RAG 164/164); reactor
+`mvn clean install` BUILD SUCCESS with the UI at 3.2.1. TCK effectively
+38/38 — the two failures on a reused (contaminated) CouchDB volume
+(`baseTypesTest` leftover custom type, `contentChangesSmokeTest`
+accumulated data) both pass green on a freshly-initialized DB, confirming
+data contamination rather than regression. Playwright chromium full suite:
+928 passed / 99 skipped, with 3 pre-existing flaky UI tests (Ant modal
+timing) unrelated to these changes.
+
+---
+
 ## 3.2.0 — IaaS one-step deployment (published images + cloud bootstrap) (2026-06-20)
 _On `release/3.2-iaas-setup`. Removes the "build the WAR on the target
 host" friction: operators now deploy by **pulling pre-built images** on a
