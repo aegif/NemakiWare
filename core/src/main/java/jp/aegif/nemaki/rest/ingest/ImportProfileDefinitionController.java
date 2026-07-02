@@ -66,6 +66,10 @@ public class ImportProfileDefinitionController {
     public ResponseEntity<Map<String, Object>> create(@RequestBody ImportProfileDefinition def) {
         CallContext ctx = currentCallContext();
         if (ctx == null) return errorResponse(HttpStatus.UNAUTHORIZED, "No call context");
+        // Cross-repository confinement: you may only create a profile in the
+        // repository you authenticated against (even as an admin).
+        ResponseEntity<Map<String, Object>> repoErr = requireSameRepository(ctx, def.getRepositoryId());
+        if (repoErr != null) return repoErr;
         boolean admin = ingestAuthorizationService.isAdmin(ctx);
 
         try {
@@ -102,9 +106,14 @@ public class ImportProfileDefinitionController {
         CallContext ctx = currentCallContext();
         if (ctx == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         boolean admin = ingestAuthorizationService.isAdmin(ctx);
-        List<ImportProfileDefinition> all = (repositoryId != null && !repositoryId.isBlank())
-                ? importProfileDefinitionService.listByRepository(repositoryId)
-                : importProfileDefinitionService.list();
+        // Cross-repository confinement: list only the authenticated repository's
+        // profiles (an admin no longer sees every repository's profiles). A
+        // repositoryId param, when supplied, must match the authenticated repo.
+        String authRepo = authRepository(ctx);
+        if (repositoryId != null && !repositoryId.isBlank() && !repositoryId.equals(authRepo)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        List<ImportProfileDefinition> all = importProfileDefinitionService.listByRepository(authRepo);
         // W1 (RC5.3): server-side "auto-disabled since" filter.
         // R4 (RC5.4): malformed ISO-8601 → 400 BAD_REQUEST (was
         // fail-safe pass-through in RC5.3). Empty / missing param
@@ -151,6 +160,8 @@ public class ImportProfileDefinitionController {
         if (ctx == null) return errorResponse(HttpStatus.UNAUTHORIZED, "No call context");
         ImportProfileDefinition def = importProfileDefinitionService.get(profileId);
         if (def == null) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
+        // Cross-repository confinement: a profile in another repository is 404.
+        if (!belongsToAuthRepository(ctx, def)) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
 
         boolean admin = ingestAuthorizationService.isAdmin(ctx);
         if (!admin) {
@@ -178,6 +189,17 @@ public class ImportProfileDefinitionController {
         CallContext ctx = currentCallContext();
         if (ctx == null) return errorResponse(HttpStatus.UNAUTHORIZED, "No call context");
         def.setProfileId(profileId);
+
+        // Cross-repository confinement: the stored profile must belong to the
+        // authenticated repository. Absent → 404; other repository → 404 (no
+        // cross-repository existence disclosure). This runs before any mutation
+        // and covers both the admin and delegated paths below.
+        ImportProfileDefinition existingForRepo = importProfileDefinitionService.get(profileId);
+        if (existingForRepo == null || !belongsToAuthRepository(ctx, existingForRepo)) {
+            return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
+        }
+        // A caller must not relocate a profile into another repository via the body.
+        def.setRepositoryId(existingForRepo.getRepositoryId());
 
         // F1 (RC5 ext): a non-admin must never be able to spoof the
         // scheduler-controlled marker fields via the PUT payload. Strip
@@ -256,6 +278,8 @@ public class ImportProfileDefinitionController {
         boolean admin = ingestAuthorizationService.isAdmin(ctx);
         ImportProfileDefinition existing = importProfileDefinitionService.get(profileId);
         if (existing == null) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
+        // Cross-repository confinement: a profile in another repository is 404.
+        if (!belongsToAuthRepository(ctx, existing)) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
         if (!admin) {
             if (!existing.isDelegated()) {
                 ResponseEntity<Map<String, Object>> resp = denied(HttpStatus.FORBIDDEN,
@@ -327,6 +351,8 @@ public class ImportProfileDefinitionController {
 
         ImportProfileDefinition existing = importProfileDefinitionService.get(profileId);
         if (existing == null) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
+        // Cross-repository confinement: a profile in another repository is 404.
+        if (!belongsToAuthRepository(ctx, existing)) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
 
         String mode = body.get("mode") instanceof String s ? s : null;
         if (!"delegated".equals(mode) && !"admin".equals(mode)) {
@@ -703,6 +729,40 @@ public class ImportProfileDefinitionController {
     private CallContext currentCallContext() {
         if (httpRequest == null) return null;
         return (CallContext) httpRequest.getAttribute("CallContext");
+    }
+
+    /** The repository the caller authenticated against (see AuthenticationFilter /v1/admin/* handling). */
+    private String authRepository(CallContext ctx) {
+        return ctx == null ? null : ctx.getRepositoryId();
+    }
+
+    /**
+     * Cross-repository confinement for by-id operations: a stored profile is
+     * only visible/editable to a caller authenticated against the profile's own
+     * repository. Callers use the returned 404 (not 403) so a profile in
+     * another repository is indistinguishable from a non-existent one — no
+     * cross-repository existence disclosure.
+     */
+    private boolean belongsToAuthRepository(CallContext ctx, ImportProfileDefinition def) {
+        return def != null
+                && def.getRepositoryId() != null
+                && def.getRepositoryId().equals(authRepository(ctx));
+    }
+
+    /**
+     * Cross-repository confinement for create: the target repositoryId supplied
+     * in the request body must be the repository the caller authenticated
+     * against. Returns 400 if missing, 403 on mismatch, else null.
+     */
+    private ResponseEntity<Map<String, Object>> requireSameRepository(CallContext ctx, String targetRepositoryId) {
+        if (targetRepositoryId == null || targetRepositoryId.isBlank()) {
+            return errorResponse(HttpStatus.BAD_REQUEST, "repositoryId is required");
+        }
+        if (!targetRepositoryId.equals(authRepository(ctx))) {
+            return errorResponse(HttpStatus.FORBIDDEN,
+                    "Operation targets a different repository than the authenticated one");
+        }
+        return null;
     }
 
     private List<String> getPhase2Warnings(ImportProfileDefinition def) {

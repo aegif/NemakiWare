@@ -77,12 +77,16 @@ class ConnectorSimulateRemoveTest {
         CallContext ctx = mock(CallContext.class);
         when(ctx.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
         lenient().when(ctx.getUsername()).thenReturn("admin");
+        // Cross-repository confinement (3.2.1): simulate-remove must target the
+        // authenticated repository.
+        lenient().when(ctx.getRepositoryId()).thenReturn(REPO);
         when(httpRequest.getAttribute("CallContext")).thenReturn(ctx);
     }
 
     private void asNonAdmin() {
         CallContext ctx = mock(CallContext.class);
         lenient().when(ctx.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.FALSE);
+        lenient().when(ctx.getRepositoryId()).thenReturn(REPO);
         when(httpRequest.getAttribute("CallContext")).thenReturn(ctx);
     }
 

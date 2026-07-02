@@ -7,11 +7,21 @@ const PROFILE_URL = '/core/api/v1/admin/import-profiles';
 async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
   const authService = AuthService.getInstance();
   const headers = authService.getAuthHeaders();
+  // Scope /v1/admin/* ingest calls to the repository the user logged into.
+  // The server authenticates these endpoints against this header (falling back
+  // to the default repository when absent), so per-repository admins only ever
+  // act on their own repository. Harmless for a default-repository login (the
+  // header simply names the default repository).
+  const repositoryId = authService.getRepositoryId();
+  const repoHeader: Record<string, string> = repositoryId
+    ? { 'X-Nemaki-Repository': repositoryId }
+    : {};
   return fetch(url, {
     ...options,
     headers: {
       'Accept': 'application/json',
       ...headers,
+      ...repoHeader,
       ...options.headers,
     },
   });

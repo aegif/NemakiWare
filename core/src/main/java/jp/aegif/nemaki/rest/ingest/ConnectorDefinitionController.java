@@ -44,9 +44,19 @@ public class ConnectorDefinitionController {
     @Autowired
     private HttpServletRequest httpRequest;
 
+    /**
+     * Used to distinguish the default (system) repository from the others.
+     * Connector definitions are global (no repositoryId), so their CRUD is
+     * confined to an admin of the default repository; per-repository callers
+     * (authenticated via the X-Nemaki-Repository header) must not manage the
+     * shared connector catalogue.
+     */
+    @Autowired
+    private jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repositoryInfoMap;
+
     @PostMapping
     public ResponseEntity<Map<String, Object>> create(@RequestBody ConnectorDefinition def) {
-        ResponseEntity<Map<String, Object>> forbidden = requireAdmin();
+        ResponseEntity<Map<String, Object>> forbidden = requireDefaultRepositoryAdmin();
         if (forbidden != null) return forbidden;
         try {
             ConnectorDefinition created = connectorDefinitionService.create(def);
@@ -62,7 +72,7 @@ public class ConnectorDefinitionController {
     @GetMapping
     public ResponseEntity<List<ConnectorDefinition>> list(
             @RequestParam(required = false) String archetype) {
-        ResponseEntity<List<ConnectorDefinition>> forbidden = requireAdminList();
+        ResponseEntity<List<ConnectorDefinition>> forbidden = requireDefaultRepositoryAdminList();
         if (forbidden != null) return forbidden;
         if (archetype != null && !archetype.isBlank()) {
             try {
@@ -79,7 +89,7 @@ public class ConnectorDefinitionController {
 
     @GetMapping("/{connectorId}")
     public ResponseEntity<ConnectorDefinition> get(@PathVariable String connectorId) {
-        if (!isAdmin()) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        if (!isAdmin() || !isDefaultRepository()) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         ConnectorDefinition def = connectorDefinitionService.get(connectorId);
         if (def == null) return ResponseEntity.notFound().build();
         return ResponseEntity.ok(maskSecrets(def));
@@ -88,7 +98,7 @@ public class ConnectorDefinitionController {
     @PutMapping("/{connectorId}")
     public ResponseEntity<Map<String, Object>> update(
             @PathVariable String connectorId, @RequestBody ConnectorDefinition def) {
-        ResponseEntity<Map<String, Object>> forbidden = requireAdmin();
+        ResponseEntity<Map<String, Object>> forbidden = requireDefaultRepositoryAdmin();
         if (forbidden != null) return forbidden;
         def.setConnectorId(connectorId);
         // Preserve real secrets when client sends back the masked placeholder
@@ -129,7 +139,7 @@ public class ConnectorDefinitionController {
 
     @DeleteMapping("/{connectorId}")
     public ResponseEntity<Map<String, Object>> delete(@PathVariable String connectorId) {
-        ResponseEntity<Map<String, Object>> forbidden = requireAdmin();
+        ResponseEntity<Map<String, Object>> forbidden = requireDefaultRepositoryAdmin();
         if (forbidden != null) return forbidden;
         connectorDefinitionService.delete(connectorId);
         Map<String, Object> response = new LinkedHashMap<>();
@@ -150,9 +160,55 @@ public class ConnectorDefinitionController {
         return null;
     }
 
+    /** The repository the caller authenticated against (via AuthenticationFilter). */
+    private String authRepositoryId() {
+        if (httpRequest == null) return null;
+        CallContext ctx = (CallContext) httpRequest.getAttribute("CallContext");
+        return ctx == null ? null : ctx.getRepositoryId();
+    }
+
+    /** True iff the caller authenticated against the default (system) repository. */
+    private boolean isDefaultRepository() {
+        String repo = authRepositoryId();
+        return repo != null && repo.equals(repositoryInfoMap.getDefaultRepositoryId());
+    }
+
+    /**
+     * Gate for the global connector catalogue (CRUD, adapter-registry): the
+     * caller must be an admin AND authenticated against the default repository.
+     * A per-repository admin (X-Nemaki-Repository header) must not manage the
+     * shared connector definitions.
+     */
+    private ResponseEntity<Map<String, Object>> requireDefaultRepositoryAdmin() {
+        if (!isAdmin()) return errorResponse(HttpStatus.FORBIDDEN, "Admin access required");
+        if (!isDefaultRepository()) {
+            return errorResponse(HttpStatus.FORBIDDEN,
+                    "Connector definitions are global and managed by the default-repository administrator");
+        }
+        return null;
+    }
+
     @SuppressWarnings("unchecked")
-    private <T> ResponseEntity<T> requireAdminList() {
-        if (!isAdmin()) return (ResponseEntity<T>) ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+    private <T> ResponseEntity<T> requireDefaultRepositoryAdminList() {
+        if (!isAdmin() || !isDefaultRepository()) {
+            return (ResponseEntity<T>) ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        return null;
+    }
+
+    /**
+     * Governance endpoints (by-principal / by-group / simulate-remove) expand
+     * principals and read ACLs against {@code repositoryId}. That must be the
+     * repository the caller authenticated against, otherwise a caller could
+     * enumerate another repository's principal/connector relationships. Returns
+     * a 403 on mismatch, else null.
+     */
+    private ResponseEntity<Map<String, Object>> requireGovernanceRepository(String repositoryId) {
+        if (repositoryId == null || repositoryId.isBlank()
+                || !repositoryId.equals(authRepositoryId())) {
+            return errorResponse(HttpStatus.FORBIDDEN,
+                    "repositoryId must match the authenticated repository");
+        }
         return null;
     }
 
@@ -270,6 +326,9 @@ public class ConnectorDefinitionController {
             return errorResponse(HttpStatus.BAD_REQUEST,
                     "principalId and repositoryId are required");
         }
+        // Cross-repository confinement: only query the authenticated repository.
+        ResponseEntity<Map<String, Object>> repoErr = requireGovernanceRepository(repositoryId);
+        if (repoErr != null) return repoErr;
 
         // V2 (RC5 ext): classify the input principal so the operator
         // sees explicit context (querying a user vs a group). Falls back
@@ -383,6 +442,9 @@ public class ConnectorDefinitionController {
             return errorResponse(HttpStatus.BAD_REQUEST,
                     "groupId and repositoryId are required");
         }
+        // Cross-repository confinement: only query the authenticated repository.
+        ResponseEntity<Map<String, Object>> repoErr = requireGovernanceRepository(repositoryId);
+        if (repoErr != null) return repoErr;
         // RC6 B3-2 review M: clamp memberLimit to a hard server-side max
         // so an attacker can't request memberLimit=1_000_000 and force
         // the controller to allocate a per-member impact list of that
@@ -607,6 +669,9 @@ public class ConnectorDefinitionController {
         if (repositoryId == null || repositoryId.isBlank()) {
             return errorResponse(HttpStatus.BAD_REQUEST, "repositoryId is required");
         }
+        // Cross-repository confinement: only simulate against the authenticated repository.
+        ResponseEntity<Map<String, Object>> repoErr = requireGovernanceRepository(repositoryId);
+        if (repoErr != null) return repoErr;
         boolean expand = Boolean.TRUE.equals(body.get("expand"));
         Object removeRaw = body.get("removePrincipalIds");
         if (!(removeRaw instanceof List<?>)) {

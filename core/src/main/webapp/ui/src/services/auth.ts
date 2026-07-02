@@ -171,6 +171,15 @@ export class AuthService {
   }
 
   /**
+   * The repository the user authenticated against. Used to scope per-repository
+   * admin calls (X-Nemaki-Repository header) so a caller only manages the
+   * repository they logged into.
+   */
+  getRepositoryId(): string | null {
+    return this.currentAuth?.repositoryId ?? null;
+  }
+
+  /**
    * Save authentication token from external sources (OIDC, SAML).
    * Used when authentication is performed outside of the normal login flow.
    * Saves to localStorage and dispatches authStateChanged event.

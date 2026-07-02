@@ -155,8 +155,27 @@ public class IngestAuthorizationService {
         if (callContext == null || repositoryId == null || folderId == null || folderId.isBlank()) {
             return false;
         }
+        // Cross-repository isolation (fail-closed): a config operation may only
+        // act on the repository the caller authenticated against. The caller
+        // proved their identity in callContext.getRepositoryId() only; they
+        // must not be treated as an admin — or as a same-named principal — in
+        // any other repository. Checked BEFORE the isAdmin short-circuit so a
+        // default-repo admin cannot manage another repository's profiles.
+        if (!isAuthenticatedRepository(callContext, repositoryId)) return false;
         if (isAdmin(callContext)) return true;
         return canManageProfileForFolderAsUser(callContext.getUsername(), repositoryId, folderId);
+    }
+
+    /**
+     * True iff {@code repositoryId} is the repository the caller actually
+     * authenticated against. Config/delegation operations must be confined to
+     * the authenticated repository: a caller who proved their identity in
+     * repository A must never be authorised against repository B, even if they
+     * are an admin there or share a principal name with a user there.
+     */
+    public boolean isAuthenticatedRepository(CallContext callContext, String repositoryId) {
+        if (callContext == null || repositoryId == null) return false;
+        return repositoryId.equals(callContext.getRepositoryId());
     }
 
     /**
@@ -203,6 +222,8 @@ public class IngestAuthorizationService {
             CallContext callContext, String repositoryId,
             ConnectorDefinition connector, String targetFolderId) {
         if (callContext == null) return false;
+        // Cross-repository isolation (fail-closed): see canManageProfileForFolder.
+        if (!isAuthenticatedRepository(callContext, repositoryId)) return false;
         return canUseConnectorForDelegatedProfileAsUser(
                 callContext.getUsername(), repositoryId, connector, targetFolderId);
     }
