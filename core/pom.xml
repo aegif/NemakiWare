@@ -110,6 +110,18 @@
 				<artifactId>guava</artifactId>
 				<version>33.5.0-jre</version>
 			</dependency>
+			<!-- Override transitive commons-compress 1.24.0 (resolved at compile
+			     scope via testcontainers / POI / Tika). 1.27.1 fixes
+			     CVE-2024-25710 (infinite-loop DoS in the DUMP parser) and
+			     CVE-2024-26308 (excessive memory allocation in pack200), both
+			     reachable when Tika / POI parse an attacker-supplied archive
+			     during content extraction, and matches the version POI 5.4.1
+			     expects. -->
+			<dependency>
+				<groupId>org.apache.commons</groupId>
+				<artifactId>commons-compress</artifactId>
+				<version>1.27.1</version>
+			</dependency>
 		</dependencies>
 	</dependencyManagement>
 
@@ -664,10 +676,15 @@
 		
 		<!-- Solr strategy: Use HttpJdkSolrClient (Java 11+ built-in) to avoid HTTP Client conflicts -->
 
+		<!-- Align with the Lucene version pulled by solr-core 9.10.1 (9.12.3).
+		     Lucene requires every module on the classpath to share the exact
+		     same version; pinning lucene-queries/-core to 9.11.1 while solr
+		     brings lucene-analysis-common etc. at 9.12.3 is an unsupported mix
+		     that can fail at runtime. -->
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
 			<artifactId>lucene-queries</artifactId>
-			<version>9.11.1</version>
+			<version>9.12.3</version>
 		</dependency>
 
 		<dependency>
