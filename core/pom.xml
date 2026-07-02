@@ -122,6 +122,21 @@
 				<artifactId>commons-compress</artifactId>
 				<version>1.27.1</version>
 			</dependency>
+			<!-- Align transitive skews with the versions the rest of the tree
+			     already uses. spring-tx leaks in at 7.0.4 while every other
+			     Spring module is ${org.springframework.version} (7.0.7); Spring
+			     modules must share a version. cxf-rt-ws-policy leaks in at 4.1.3
+			     while the rest of CXF is 4.2.0. -->
+			<dependency>
+				<groupId>org.springframework</groupId>
+				<artifactId>spring-tx</artifactId>
+				<version>${org.springframework.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.cxf</groupId>
+				<artifactId>cxf-rt-ws-policy</artifactId>
+				<version>4.2.0</version>
+			</dependency>
 		</dependencies>
 	</dependencyManagement>
 
@@ -327,6 +342,18 @@
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-commons-impl</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
+			<exclusions>
+				<!-- Drop the legacy Codehaus woodstox-core-asl 4.4.1 (a ~2012 StAX
+				     impl with laxer XXE defaults). The modern
+				     com.fasterxml.woodstox:woodstox-core 6.5.0 is already on the
+				     classpath and registers as the StAX provider, so OpenCMIS's
+				     XML binding keeps a maintained StAX implementation while the
+				     old one no longer competes in service discovery. -->
+				<exclusion>
+					<groupId>org.codehaus.woodstox</groupId>
+					<artifactId>woodstox-core-asl</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
