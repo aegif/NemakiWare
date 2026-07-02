@@ -280,4 +280,53 @@ public class UrlValidatorTest {
         assertTrue(UrlValidator.SETUP_ALLOWED_PORTS.contains(8443));
         assertEquals(6, UrlValidator.SETUP_ALLOWED_PORTS.size());
     }
+
+    // ================================================================
+    // IPv6 transition unwrap (3.2.1): a hostname resolving to an IPv6
+    // transition address that encodes an internal IPv4 (cloud metadata /
+    // private range) must still be classified via the embedded IPv4, using
+    // the same SsrfGuard extractor as the connector/webhook SSRF surfaces.
+    // ================================================================
+
+    @Nested
+    class Ipv6Transition {
+
+        private java.net.InetAddress ip(String literal) throws Exception {
+            // IP literals do not hit DNS.
+            return java.net.InetAddress.getByName(literal);
+        }
+
+        @Test
+        void nat64WrappedPrivateIpv4_isPrivate() throws Exception {
+            // 64:ff9b::0a00:0001 = NAT64-mapped 10.0.0.1 (RFC 1918)
+            assertTrue(UrlValidator.isPrivateAddress(ip("64:ff9b::0a00:0001")));
+        }
+
+        @Test
+        void ipv4CompatibleLoopback_isPrivate() throws Exception {
+            // ::7f00:0001 = IPv4-compatible 127.0.0.1
+            assertTrue(UrlValidator.isPrivateAddress(ip("::7f00:0001")));
+        }
+
+        @Test
+        void nat64WrappedPublicIpv4_isNotPrivate() throws Exception {
+            // 64:ff9b::0808:0808 = NAT64-mapped 8.8.8.8 (public) — must NOT
+            // be over-blocked as private.
+            assertFalse(UrlValidator.isPrivateAddress(ip("64:ff9b::0808:0808")));
+        }
+
+        @Test
+        void nat64WrappedCloudMetadata_isBlockedByValidate() {
+            // 64:ff9b::a9fe:a9fe = NAT64-mapped 169.254.169.254 (metadata).
+            // Blocked even in setup mode (allowPrivateNetworks=true).
+            assertNotNull(UrlValidator.validate("http://[64:ff9b::a9fe:a9fe]:8080/", true));
+        }
+
+        @Test
+        void nat64WrappedPublicIpv4_isAllowedByValidate() {
+            // Control: NAT64-mapped 8.8.8.8 on an allowed port is not blocked
+            // for a metadata/private reason (proves no over-block).
+            assertNull(UrlValidator.validate("http://[64:ff9b::0808:0808]:443/", true));
+        }
+    }
 }

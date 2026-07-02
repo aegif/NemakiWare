@@ -622,12 +622,55 @@ public class ZipImporter {
                 return null;
             }
             InputStream is = zf.getInputStream(entry);
+            // Defence-in-depth: the size check above trusts entry.getSize(), the
+            // ZIP central-directory value the uploader controls. Bound the ACTUAL
+            // bytes streamed so an entry whose declared size passes the check but
+            // whose real (decompressed) content is larger cannot exceed the cap.
+            // Streaming is preserved (no full read into heap).
+            InputStream bounded = boundedStream(is, MAX_SINGLE_FILE_SIZE, entryName);
             BigInteger length = (entrySize >= 0) ? BigInteger.valueOf(entrySize) : null;
-            return new ContentStreamImpl(fileName, length, mimeType, is);
+            return new ContentStreamImpl(fileName, length, mimeType, bounded);
         } catch (IOException e) {
             log.warn("Failed to open ZIP entry stream: " + entryName, e);
             return null;
         }
+    }
+
+    /**
+     * Wraps {@code in} so that reading more than {@code maxBytes} total throws
+     * an {@link IOException}. Guards against a ZIP entry whose declared size
+     * passes the central-directory check but whose actual content is larger.
+     */
+    static InputStream boundedStream(InputStream in, long maxBytes, String entryName) {
+        return new java.io.FilterInputStream(in) {
+            private long count = 0;
+
+            private void add(long n) throws IOException {
+                count += n;
+                if (count > maxBytes) {
+                    throw new IOException("ZIP entry exceeds maximum allowed size ("
+                            + maxBytes + " bytes): " + entryName);
+                }
+            }
+
+            @Override
+            public int read() throws IOException {
+                int b = super.read();
+                if (b != -1) {
+                    add(1);
+                }
+                return b;
+            }
+
+            @Override
+            public int read(byte[] b, int off, int len) throws IOException {
+                int n = super.read(b, off, len);
+                if (n > 0) {
+                    add(n);
+                }
+                return n;
+            }
+        };
     }
 
     // ========== ACP Helper Methods ==========

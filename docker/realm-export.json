@@ -1,5 +1,6 @@
 {
   "realm": "nemakiware",
+  "_NOTE": "DEVELOPMENT ONLY - All passwords and secrets in this file are for local development/testing (sslRequired=none, webOrigins=*, test users with plaintext passwords). Do NOT use in production. Replace all credentials and tighten sslRequired/webOrigins before deploying to any non-local environment.",
   "enabled": true,
   "sslRequired": "none",
   "clients": [

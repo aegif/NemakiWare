@@ -131,8 +131,18 @@ public final class UrlValidator {
     }
 
     private static boolean isCloudMetadataAddress(InetAddress addr) {
-        byte[] bytes = addr.getAddress();
-        if (bytes.length != 4) return false;
+        if (isMetadataIpv4(addr.getAddress())) return true;
+        // Unwrap IPv6 transition addresses (NAT64 / 6to4 / Teredo /
+        // IPv4-mapped / IPv4-compatible) so a hostname resolving to e.g.
+        // 64:ff9b::a9fe:a9fe (metadata via NAT64) is still blocked. Shares the
+        // same extractor as the connector/webhook SSRF guard so all outbound
+        // surfaces classify transition addresses identically.
+        InetAddress embedded = jp.aegif.nemaki.security.SsrfGuard.extractEmbeddedIpv4(addr);
+        return embedded != null && isMetadataIpv4(embedded.getAddress());
+    }
+
+    private static boolean isMetadataIpv4(byte[] bytes) {
+        if (bytes == null || bytes.length != 4) return false;
         return (bytes[0] & 0xFF) == 169 && (bytes[1] & 0xFF) == 254
                 && (bytes[2] & 0xFF) == 169 && (bytes[3] & 0xFF) == 254;
     }
@@ -142,6 +152,13 @@ public final class UrlValidator {
     // ---------------------------------------------------------------
 
     static boolean isPrivateAddress(InetAddress addr) {
+        if (isPrivatePredicate(addr)) return true;
+        // Also block private ranges reached via an IPv6 transition wrapper.
+        InetAddress embedded = jp.aegif.nemaki.security.SsrfGuard.extractEmbeddedIpv4(addr);
+        return embedded != null && isPrivatePredicate(embedded);
+    }
+
+    private static boolean isPrivatePredicate(InetAddress addr) {
         return addr.isLoopbackAddress()
                 || addr.isLinkLocalAddress()
                 || addr.isSiteLocalAddress()      // 10.x, 172.16-31.x, 192.168.x
