@@ -1571,7 +1571,9 @@
       "fetchError": "Failed to fetch Markdown content",
       "noContent": "No content available",
       "previewMode": "Preview",
-      "sourceMode": "Source"
+      "sourceMode": "Source",
+      "imageLoading": "Loading image...",
+      "imageUnresolved": "Image could not be resolved"
     },
     "diagram": {
       "title": "Diagram Preview",

@@ -1325,7 +1325,9 @@
       "fetchError": "Markdownコンテンツの取得に失敗しました",
       "noContent": "コンテンツがありません",
       "previewMode": "プレビュー",
-      "sourceMode": "ソース"
+      "sourceMode": "ソース",
+      "imageLoading": "画像を読み込み中...",
+      "imageUnresolved": "画像を解決できません"
     },
     "diagram": {
       "title": "ダイアグラムプレビュー",
