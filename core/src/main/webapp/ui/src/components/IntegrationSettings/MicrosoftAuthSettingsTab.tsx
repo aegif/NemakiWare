@@ -16,6 +16,7 @@ export function MicrosoftAuthSettingsTab() {
 
   const {
     sources,
+    overridable,
     formValues,
     loading,
     saving,
@@ -44,6 +45,7 @@ export function MicrosoftAuthSettingsTab() {
         fields={FIELDS}
         formValues={formValues}
         sources={sources}
+        overridable={overridable}
         onFieldChange={updateField}
       />
       <Form.Item>

@@ -2876,6 +2876,7 @@
     "dualBackendWarning": "複数のバックエンドが有効です",
     "dualBackendWarningDescription": "Purview と Atlas の両方のバックエンドが有効です。一度にアクティブにできるバックエンドは1つのみです。Purview が優先されます。",
     "overriddenWarning": "この設定は {{source}} で上書きされているため、管理画面からは変更できません",
+    "overridableNotice": "現在は {{source}} の値が使われています。この画面で保存すると、その値を上書きして永続化されます。",
     "source": {
       "system_property": "システムプロパティ",
       "environment": "環境変数",

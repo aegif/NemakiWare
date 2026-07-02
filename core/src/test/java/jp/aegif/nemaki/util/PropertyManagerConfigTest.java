@@ -209,8 +209,15 @@ public class PropertyManagerConfigTest {
         assertTrue(PropertyManager.isAdminManagedDynamicKey("cloud.auth.google.clientId"));
         assertTrue(PropertyManager.isAdminManagedDynamicKey("cloud.auth.microsoft.tenantId"));
         assertTrue(PropertyManager.isAdminManagedDynamicKey("cloud.drive.microsoft.enabled"));
+        // SSO / OIDC (Keycloak) / SAML are admin-managed too, so an operator can
+        // configure them from the admin menu after the setup wizard has written
+        // them as -D system properties.
+        assertTrue(PropertyManager.isAdminManagedDynamicKey("sso.oidc.enabled"));
+        assertTrue(PropertyManager.isAdminManagedDynamicKey("sso.saml.enabled"));
+        assertTrue(PropertyManager.isAdminManagedDynamicKey("oidc.issuer"));
+        assertTrue(PropertyManager.isAdminManagedDynamicKey("oidc.clientId"));
+        assertTrue(PropertyManager.isAdminManagedDynamicKey("saml.idp.sso.url"));
         assertFalse(PropertyManager.isAdminManagedDynamicKey("db.couchdb.auth.password"));
-        assertFalse(PropertyManager.isAdminManagedDynamicKey("sso.oidc.enabled"));
         assertFalse(PropertyManager.isAdminManagedDynamicKey(null));
     }
 

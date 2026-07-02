@@ -591,7 +591,23 @@ public class IntegrationSettingsController {
 		Map<String, Object> response = new LinkedHashMap<>();
 		response.put("settings", maskedSettings);
 		response.put("sources", sources);
+		response.put("overridable", overridableFlags(keys));
 		return response;
+	}
+
+	/**
+	 * Per-key flag telling the admin UI whether a value stored here (nemaki_conf)
+	 * takes precedence over a deploy-time {@code -D}/env default. For these keys
+	 * the field stays editable even when the current source is a system property
+	 * (saving overrides it); for others a system-property source locks the field.
+	 * Mirrors {@link jp.aegif.nemaki.util.PropertyManager#isAdminManagedDynamicKey}.
+	 */
+	private static Map<String, Boolean> overridableFlags(Set<String> keys) {
+		Map<String, Boolean> flags = new LinkedHashMap<>();
+		for (String key : keys) {
+			flags.put(key, jp.aegif.nemaki.util.PropertyManager.isAdminManagedDynamicKey(key));
+		}
+		return flags;
 	}
 
 	private Map<String, Object> buildSettingsResponse(Set<String> keys) {
@@ -612,6 +628,7 @@ public class IntegrationSettingsController {
 		Map<String, Object> response = new LinkedHashMap<>();
 		response.put("settings", maskedSettings);
 		response.put("sources", sources);
+		response.put("overridable", overridableFlags(keys));
 		return response;
 	}
 

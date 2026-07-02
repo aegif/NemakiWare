@@ -70,14 +70,27 @@ public class PropertyManager{
 	/**
 	 * Keys whose runtime value comes primarily from the admin UI (persisted to
 	 * nemaki_conf), overriding any deploy-time {@code -D}/env bootstrap default.
-	 * Scoped to the cloud authentication / drive integration settings so an
-	 * administrator can set Google/Microsoft client IDs from the admin menu and
-	 * have them take effect (and persist) without a config-file/redeploy round
-	 * trip. Other keys keep the historical "system property first" precedence.
+	 * Scoped to the authentication / SSO integration settings so an
+	 * administrator can configure Google / Microsoft / OIDC (Keycloak) / SAML
+	 * from the admin menu and have it take effect (and persist) without a
+	 * config-file/redeploy round trip. Other keys (DB credentials, etc.) keep
+	 * the historical "system property first" precedence.
+	 *
+	 * <p>Prefixes:
+	 * <ul>
+	 *   <li>{@code cloud.auth.} / {@code cloud.drive.} — Google/Microsoft sign-in + Drive</li>
+	 *   <li>{@code sso.} — {@code sso.oidc.enabled} / {@code sso.saml.enabled}</li>
+	 *   <li>{@code oidc.} — OIDC issuer / clientId (Keycloak etc.)</li>
+	 *   <li>{@code saml.} — SAML IdP SSO URL / SP entity id / certificate / SLO</li>
+	 * </ul>
 	 */
 	public static boolean isAdminManagedDynamicKey(String key){
-		return key != null
-				&& (key.startsWith("cloud.auth.") || key.startsWith("cloud.drive."));
+		if (key == null) return false;
+		return key.startsWith("cloud.auth.")
+				|| key.startsWith("cloud.drive.")
+				|| key.startsWith("sso.")
+				|| key.startsWith("oidc.")
+				|| key.startsWith("saml.");
 	}
 
 	public String readHeadValue(String key) throws Exception{

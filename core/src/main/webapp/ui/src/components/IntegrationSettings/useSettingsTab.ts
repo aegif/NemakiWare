@@ -10,6 +10,7 @@ interface UseSettingsTabOptions {
 export function useSettingsTab({ fetchSettings, saveSettings, testConnection }: UseSettingsTabOptions) {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [sources, setSources] = useState<Record<string, SettingSource>>({});
+  const [overridable, setOverridable] = useState<Record<string, boolean>>({});
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -23,6 +24,7 @@ export function useSettingsTab({ fetchSettings, saveSettings, testConnection }: 
       const data = await fetchSettings();
       setSettings(data.settings);
       setSources(data.sources);
+      setOverridable(data.overridable ?? {});
       setFormValues({ ...data.settings });
       // Show/clear dual-backend conflict warning from GET response
       setSaveWarning(data.warning ?? null);
@@ -87,6 +89,7 @@ export function useSettingsTab({ fetchSettings, saveSettings, testConnection }: 
   return {
     settings,
     sources,
+    overridable,
     formValues,
     loading,
     saving,

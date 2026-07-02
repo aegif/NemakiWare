@@ -19,6 +19,7 @@ export function SamlSettingsTab() {
 
   const {
     sources,
+    overridable,
     formValues,
     loading,
     saving,
@@ -47,6 +48,7 @@ export function SamlSettingsTab() {
         fields={FIELDS}
         formValues={formValues}
         sources={sources}
+        overridable={overridable}
         onFieldChange={updateField}
       />
       <Form.Item>
