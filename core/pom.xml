@@ -68,6 +68,19 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
+			<!-- Align all Jackson modules to the version chosen for jackson-databind
+			     (2.21.1). Without this, transitive deps drag in a spread of
+			     Jackson versions (dataformat-xml 2.14.0, dataformat-smile 2.18.0,
+			     jakarta-rs 2.16.2, module-jakarta-xmlbind 2.19.1, cbor/jsr310
+			     2.22.0) mixed with databind 2.21.1 — all Jackson modules are meant
+			     to share a single version. -->
+			<dependency>
+				<groupId>com.fasterxml.jackson</groupId>
+				<artifactId>jackson-bom</artifactId>
+				<version>2.21.1</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
 			<!-- Force logback 1.5.25 to fix CVE-2025-11226 (which is "up to and
 			     including 1.5.18"), CVE-2026-1225, GHSA-25qh-j22f-pwp8 (arbitrary
 			     code execution through file processing), and GHSA-qqpg-mvqg-649v
