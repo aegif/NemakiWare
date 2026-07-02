@@ -93,8 +93,17 @@ public class TokenServiceImpl implements TokenService{
 					repoMap.remove(entry.getKey());
 					continue;
 				}
-				if (token != null && tokenString.equals(token.getToken())) {
-					matchedUser = entry.getKey();
+				// Constant-time comparison to avoid leaking a prefix match of the
+				// session token via timing (consistent with the token check in
+				// AuthenticationServiceImpl.authenticateUserByToken). The full scan
+				// is retained so expired entries are still swept every call.
+				if (token != null) {
+					String stored = token.getToken();
+					if (stored != null && java.security.MessageDigest.isEqual(
+							stored.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+							tokenString.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+						matchedUser = entry.getKey();
+					}
 				}
 			}
 			return matchedUser;
