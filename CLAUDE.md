@@ -476,11 +476,31 @@ gate は「プロパティ未設定 → 全許可」の後方互換デフォル�
 - dev-compose 注記: `docker-compose-simple.yml` に「開発専用・0.0.0.0 公開」バナー、
   `docker/realm-export.json` に dev-only `_NOTE`
 
-**残 (post-3.2.1、性質上 deferred)**:
-- RAG `readers` ACL トークンの repo スコープ化 (`user:<id>` → `user:<repo>:<id>`) —
-  インデックス形式変更で既存 RAG データの再インデックス (マイグレーション) 必須。
-  `repository_id` fq 追加で悪用経路は既に封鎖済みのため恒久策は別サイクル
-- 上記 UI CSP の Report-Only → enforcing 昇格 (全 UI ページの違反レビュー後)
+**deferred 2 件の解消 (Low ハードニング続き、v3.2.1 tag 内)**:
+- **RAG `readers` トークンの repo スコープ化 (恒久策)**: `ACLExpander` を単一
+  情報源として index/query 両側のトークンを `user:{repo}:{id}` /
+  `group:{repo}:{id}` / `anyone:{repo}` に変更 (repo は index/query で verbatim
+  一致、user/group のみ Solr escape)。**⚠️ BREAKING (index 形式変更)**: 後方
+  互換にすると衝突が再発するため意図的にハードブレーク。**アップグレード後は
+  RAG index の再構築が必須**。再構築前は fail-closed (旧形式 doc が RAG 検索に
+  出なくなるだけで、リポジトリ間漏洩はしない)。RAG は新機能で 2.x→3.x 移行自体
+  再インデックス必須。ACLExpanderTest 24/24
+- **UI CSP の昇格手順を実施**: 稼働アプリをブラウザで walkthrough (Report-Only)
+  し違反収集 → 核 SPA (ログイン/一覧/Ant/pdf.js) は全て same-origin で違反ゼロ
+  (pdf.js worker は `/core/ui/pdf-worker/` = `'self'`)、唯一の cross-origin は
+  optional な Google Drive / Microsoft(MSAL) / Purview 連携 → connect-src に
+  `googleapis.com` / `accounts.google.com` / `graph.microsoft.com` /
+  `login.microsoftonline.com` / `*.purview.azure.com`、frame-src に MSAL silent
+  iframe origin を追加。**設定可能化**: `-Dnemakiware.ui.csp.mode`
+  (report-only 既定 / enforce / off) と `-Dnemakiware.ui.csp.extraOrigins`
+  (カスタム IdP / 非 global Azure cloud 用)。既定は upgrade 安全な report-only の
+  まま、operator は自 deployment の cloud/IdP flow 確認後に 1 property で
+  enforce へ昇格可。enforce モードでログインページが違反ゼロで完全描画されること
+  を実機確認
+
+**残 (真に deferred)**:
+- CSP enforce をデフォルト化するか (現状 report-only 既定。cloud deployment の
+  OAuth flow は実クレデンシャルでの検証後が安全)
 - 2.4→3.2.1 アップグレードスモーク (2.4 dump 用意待ち)
 
 ### 3.2.0 (2026-06-20) — IaaS ワンステップデプロイ (公開イメージ + cloud bootstrap)

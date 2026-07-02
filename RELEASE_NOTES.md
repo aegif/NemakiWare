@@ -83,13 +83,36 @@ tests and was verified against a live stack (TCK + Playwright)._
 - **Dev-compose notes:** `docker-compose-simple.yml` is now clearly marked
   development/evaluation-only, and `docker/realm-export.json` carries the
   same dev-only marker as the keycloak variant.
+- **RAG reader ACL tokens are now repository-scoped**
+  (`user:{repo}:{id}` / `group:{repo}:{id}` / `anyone:{repo}`) so a
+  same-named principal in another repository is a distinct token — the
+  permanent fix behind the 3.2.1 RAG `repository_id` scoping. See the
+  migration note below.
+- **UI Content-Security-Policy tuned and made configurable.** Walking the
+  running app confirmed the core SPA (login, documents, Ant Design, pdf.js)
+  is entirely same-origin; the optional Google Drive / Microsoft / Purview
+  integrations' service origins were added to `connect-src`/`frame-src`.
+  New `-Dnemakiware.ui.csp.mode` (`report-only` default | `enforce` | `off`)
+  and `-Dnemakiware.ui.csp.extraOrigins` let operators promote to enforcing
+  and add custom IdP/cloud origins.
+
+### Migration
+- **RAG index rebuild required (only if RAG semantic search is used).** The
+  RAG reader-ACL token format changed (repository-scoped) and is
+  intentionally not backward-compatible. After upgrading, rebuild the RAG
+  Solr index. Behaviour before the rebuild is fail-closed: a document
+  indexed with the old token simply stops appearing in RAG search — it
+  never leaks across repositories. (This only affects the derived RAG Solr
+  index; CouchDB content is untouched, and a 2.x→3.x move already requires
+  a full re-index.)
 
 ### Upgrade safety
 No CouchDB view / patch / persisted-schema / Mango-index change — all
 fixes are runtime authorization, the auth filter, the UI, and poms. The
 CouchDB data carry-over path from 2.4-era installs is untouched, and the
 allowedAuthMethods gate defaults to "all methods allowed" when the
-property is absent (as it is on carried-over data).
+property is absent (as it is on carried-over data). The only index-format
+change is the derived RAG Solr index (see Migration).
 
 ### Verification
 Java regression suites green (auth, ingest 171/171, RAG 164/164); reactor
