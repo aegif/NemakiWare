@@ -217,16 +217,23 @@ test.describe('Integration Settings - Page Rendering', () => {
     expect(tagCount).toBeGreaterThan(0);
   });
 
-  test('should display override warning for system property settings', async ({ page }) => {
+  test('should display override indicator for system property settings', async ({ page }) => {
     await page.goto(`${BASE_URL}/core/ui/#/integration-settings`);
     await waitForUiStable(page);
 
-    // OIDC settings are overridden by system properties in Docker env
-    const warnings = page.locator('.ant-alert-warning');
-    const warningCount = await warnings.count();
-    console.log(`Found ${warningCount} override warnings`);
-    // In Docker env, OIDC settings come from CATALINA_OPTS (system properties)
-    expect(warningCount).toBeGreaterThan(0);
+    // In the Docker env, OIDC/cloud settings come from CATALINA_OPTS (system
+    // properties). A system-property-sourced setting surfaces an override
+    // indicator: a warning for locked (non-admin-managed) keys, or an info
+    // notice for admin-managed auth keys that remain editable from the admin UI
+    // (Google/Microsoft/OIDC/SAML — the value saved here overrides the deploy
+    // default). Match either alert type by its override wording so the test
+    // stays meaningful.
+    const overrideAlerts = page
+      .locator('.ant-alert-warning, .ant-alert-info')
+      .filter({ hasText: /overrid|上書き/i });
+    const count = await overrideAlerts.count();
+    console.log(`Found ${count} override indicators (warning or overridable notice)`);
+    expect(count).toBeGreaterThan(0);
   });
 });
 

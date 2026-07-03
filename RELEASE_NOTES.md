@@ -96,6 +96,40 @@ tests and was verified against a live stack (TCK + Playwright)._
   and `-Dnemakiware.ui.csp.extraOrigins` let operators promote to enforcing
   and add custom IdP/cloud origins.
 
+### Admin usability — runtime-configurable cloud / SSO authentication
+- **Cloud / SSO auth is now configurable from the admin menu and persists,
+  without editing config files.** The setup wizard writes Google / Microsoft
+  client IDs and Keycloak/OIDC/SAML settings as `-D` system properties, so the
+  integration-settings screen previously reported them as `system_property` and
+  **locked the fields** ("cannot be changed from the admin UI"). Operators could
+  not adjust a client ID or point OIDC at a different Keycloak realm without a
+  config-file/redeploy round trip. `PropertyManager` now treats the auth
+  integration keys (`cloud.auth.` / `cloud.drive.` / `sso.` / `oidc.` / `saml.`)
+  as **admin-managed**: the value stored from the admin UI in `nemaki_conf` takes
+  precedence over the deploy-time `-D`/env bootstrap, and a blank stored value
+  falls through to the deploy default (clearing reverts). The API returns a
+  per-key `overridable` flag; the UI keeps these fields editable even when the
+  current source is a system property, showing an informational notice ("saving
+  overrides and persists your value") instead of the lock warning. Google,
+  Microsoft, and OIDC (Keycloak) can all be introduced/updated from this screen
+  after initial setup. Verified live: an admin-UI value overrides the `-D`
+  default (source flips `system_property → couchdb`) and clearing reverts.
+
+### Preview — embedded images in Markdown
+- **Markdown preview now resolves embedded images against the document's CMIS
+  folder.** Previously `MarkdownPreview` rendered react-markdown with no image
+  handling, so relative references (`![](images/foo.png)`, `../assets/a.png`)
+  resolved against the SPA route and 404'd; only absolute URLs worked. A custom
+  image renderer now resolves relative references — parent folder via
+  `getObjectParents`, path arithmetic (subfolders, `./`, `../`, leading `/` =
+  repository root, query/hash stripped, percent-decoded), then
+  `getObjectByPath` → content stream → a blob URL (the CSP `img-src` already
+  allows `blob:`); blob URLs are revoked on unmount. External / `data:` / `blob:`
+  sources pass through unchanged. Unresolved images fall back to the alt text
+  plus a broken-image indicator instead of a silent 404. (HTML files remain a
+  read-only source view via Monaco — not rendered — so this does not change
+  HTML handling.)
+
 ### Migration
 - **RAG index rebuild required (only if RAG semantic search is used).** The
   RAG reader-ACL token format changed (repository-scoped) and is
@@ -123,6 +157,21 @@ accumulated data) both pass green on a freshly-initialized DB, confirming
 data contamination rather than regression. Playwright chromium full suite:
 928 passed / 99 skipped, with 3 pre-existing flaky UI tests (Ant modal
 timing) unrelated to these changes.
+
+Re-validation for the two admin-usability additions (on a freshly
+initialized DB): relevant Java unit suites 60/60 (PropertyManager,
+IntegrationSettings controller, AuthenticationUtil, MCP auth); UI unit
+suite (vitest) 191/191, including 11 new cases for the Markdown image-path
+resolver; **full TCK 38/38 BUILD SUCCESS** (the deploy is CMIS-conformant;
+an initial contaminated-volume `rootFolderTest` failure passed green after
+a clean re-init, again confirming contamination, not regression); full
+Playwright chromium 911 passed / 102 skipped. The failing specs are the
+documented pre-existing flakies (group-hierarchy circular-reference,
+custom-property-input) and environmental serial-timeout flakes
+(archive-restore-consistency, config-viewer's before-render row-count race)
+— none in the changed code paths; the one integration-settings assertion
+affected by the new overridable-notice behaviour was updated and re-runs
+17/17 green.
 
 ---
 

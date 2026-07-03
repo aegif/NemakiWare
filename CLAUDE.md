@@ -503,6 +503,57 @@ gate は「プロパティ未設定 → 全許可」の後方互換デフォル�
   OAuth flow は実クレデンシャルでの検証後が安全)
 - 2.4→3.2.1 アップグレードスモーク (2.4 dump 用意待ち)
 
+#### 3.2.1 追加機能 (post-audit、v3.2.1 tag 内): 管理UIからのクラウド/SSO認証設定 + Markdown画像埋め込み解決
+
+初回 audit remediation の後、運用性 UX を 2 件追加 (いずれも runtime authz /
+永続化モデル不変、CouchDB view/patch/schema/Mango 変更なし)。
+
+- **管理UIからのクラウド/SSO認証設定 (admin-managed precedence)** (`4ded14653`
+  / `5c16ed090`): Setup Wizard は Google/Microsoft の clientId や
+  Keycloak/OIDC/SAML 設定を `-D` システムプロパティとして書き込むため、
+  統合設定画面がこれらを `source=system_property` としてフィールドをロックし
+  「システムプロパティで上書きされているため管理画面からは変更できません」と
+  表示 → 設定ファイル編集 + redeploy 無しに clientId 変更や OIDC の Keycloak
+  realm 変更ができなかった。`PropertyManager.isAdminManagedDynamicKey` の対象を
+  `cloud.auth.` / `cloud.drive.` / `sso.` / `oidc.` / `saml.` に拡張し、これら
+  admin-managed key は **nemaki_conf(管理UIの値)が `-D`/env bootstrap より優先**
+  (blank 値は deploy 既定へ fall-through = クリアで復帰)。`IntegrationSettings
+  Controller` は両応答ビルダーで per-key `overridable` map を返し、
+  `IntegrationSettingsService.readSettingSource` は admin-managed key に非空
+  nemaki_conf 値があれば `couchdb` を報告。UI (`SettingsFormFields`) は
+  admin-managed key を source=system_property でも編集可能なまま維持し、ロック
+  警告の代わりに info notice (`overridableNotice`) 表示。`overridable` を
+  service 型 / `useSettingsTab` / 全 settings tab に配線。i18n ja/en。
+  PropertyManagerConfigTest 12/12。実機検証: admin-UI 値が `-D` を上書き
+  (source `system_property → couchdb`)、blank で deploy 既定へ復帰。**設計上の
+  注意**: admin-managed 化は auth 統合 key に限定 (DB credential 等は従来の
+  「system property first」を維持)。
+- **Markdown プレビューの画像埋め込み解決** (`ddfb831e8`): `MarkdownPreview` は
+  react-markdown を素で呼んでおり画像未解決 (相対参照 `images/foo.png` /
+  `../assets/a.png` が SPA route 基準で 404、絶対URLのみ表示)。カスタム `img`
+  renderer を追加: 相対参照を対象 .md の CMIS フォルダ基準で解決 —
+  `getObjectParents` で親フォルダ path → `resolveRelativeCmisPath` (サブフォルダ
+  / `./` / `../` / 先頭 `/`=repo root / query,hash 除去 / percent-decode) →
+  `getObjectByPath` → `getContentStream` → **blob URL** (CSP `img-src` は既に
+  `blob:` 許可) 化、unmount で revoke。絶対/`data:`/`blob:` は素通し。解決失敗は
+  alt テキスト + 壊れアイコン (`imageUnresolved`) にフォールバック。純ロジック
+  `resolveRelativeCmisPath` を export し vitest 11 ケース。i18n ja/en。実機
+  (ブラウザ) 3 ケース検証: 相対サブフォルダ→blob URL 描画、不在→フォールバック、
+  絶対URL→素通し。**HTML は従来通り Monaco ソース表示 (レンダリングしない) の
+  ままで挙動不変** (信頼できない HTML の XSS 回避)。
+
+**リリース再検証 (clean DB)**: 上記2機能を含む deploy で全面テスト実施 — 関連
+Java unit 60/60 (PropertyManager / IntegrationSettings controller /
+AuthenticationUtil / MCP auth)、UI vitest 191/191 (Markdown resolver +11、
+LineageSettingsTab test を MemoryRouter wrap する pre-existing 修正込み)、
+**TCK フル 38/38 BUILD SUCCESS** (永続 volume 汚染で `rootFolderTest` が初回
+fail するが clean 再init で green = 非回帰を再確認)、Playwright chromium フル
+911 passed / 102 skipped。fail spec は既知 flaky (group-hierarchy 循環参照 /
+custom-property-input) + 環境 serial timeout flake (archive-restore-consistency
+/ config-viewer の render 前 row-count race) で変更コード経路外。overridable
+notice 挙動変更で影響した integration-settings assertion 1 件のみ更新し単体
+再実行 17/17 green。
+
 ### 3.2.0 (2026-06-20) — IaaS ワンステップデプロイ (公開イメージ + cloud bootstrap)
 
 ブランチ: `release/3.2-iaas-setup` (off `release/3.1.3`)。AWS / Azure などの
