@@ -772,6 +772,13 @@ public class ZipImporter {
             }
 
             if (!aces.isEmpty()) {
+                if (!isAclApplyAllowed(repositoryId, callContext)) {
+                    log.warn("Skipping archive ACL for object " + objectId
+                            + ": importer lacks apply-ACL (cmis:canApplyACL) permission");
+                    result.warnings.add("ACL not applied for object " + objectId
+                            + " (importer lacks apply-ACL permission); default/inherited ACL retained");
+                    return;
+                }
                 Acl acl = content.getAcl();
                 if (acl == null) {
                     acl = new Acl();
@@ -926,6 +933,13 @@ public class ZipImporter {
             }
 
             if (!aces.isEmpty()) {
+                if (!isAclApplyAllowed(repositoryId, callContext)) {
+                    log.warn("Skipping archive ACL for object " + objectId
+                            + ": importer lacks apply-ACL (cmis:canApplyACL) permission");
+                    result.warnings.add("ACL not applied for object " + objectId
+                            + " (importer lacks apply-ACL permission); default/inherited ACL retained");
+                    return;
+                }
                 Acl acl = content.getAcl();
                 if (acl == null) {
                     acl = new Acl();

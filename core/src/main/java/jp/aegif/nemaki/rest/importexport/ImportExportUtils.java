@@ -496,6 +496,41 @@ public final class ImportExportUtils {
         return null;
     }
 
+    /**
+     * Gate for applying archive-supplied ACLs on import. Archive ACEs are
+     * attacker-controlled data: the metadata/ACP inside an uploaded package can
+     * name arbitrary principals and permissions. Restore them only for
+     * administrators; a non-admin importer's objects keep their default /
+     * inherited ACL. Without this gate, an importer holding only create-child
+     * permission on the target folder could set arbitrary ACEs on imported
+     * objects (the import path persists ACLs via {@code updateInternal}, which
+     * bypasses the {@code CAN_APPLY_ACL_OBJECT} check enforced by the normal
+     * ACL service). A non-admin who legitimately holds apply-ACL can still set
+     * ACLs directly through the permission-checked ACL service after import.
+     * Fail-closed: any resolution error returns false so the ACL is skipped
+     * rather than applied unchecked.
+     */
+    public static boolean isAclApplyAllowed(String repositoryId,
+            org.apache.chemistry.opencmis.commons.server.CallContext callContext) {
+        try {
+            if (callContext == null) {
+                return false;
+            }
+            if (callContext instanceof jp.aegif.nemaki.cmis.factory.SystemCallContext) {
+                return true;
+            }
+            ContentService cs = getContentService();
+            if (cs == null) {
+                return false;
+            }
+            jp.aegif.nemaki.model.UserItem user = cs.getUserItemById(repositoryId, callContext.getUsername());
+            return user != null && Boolean.TRUE.equals(user.isAdmin());
+        } catch (Exception e) {
+            log.warn("ACL-apply admin check failed, skipping archive ACL: " + e.getMessage());
+            return false;
+        }
+    }
+
     public static TypeService getTypeService() {
         try {
             return SpringContext.getApplicationContext()

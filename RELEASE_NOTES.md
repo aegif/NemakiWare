@@ -6,6 +6,54 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.2.2 — Codex security-review remediation (2026-07-03)
+_On `release/3.2.1-security`. Follow-up to a Codex deep-repository security
+scan of the 3.2.1 tag. Two findings fixed with regression tests + a live
+proof-of-concept; one pre-existing, documented residual re-affirmed._
+
+- **[Medium] Diagram rendition hardened against PlantUML preprocessor
+  includes.** PlantUML/DOT (`.puml`/`.dot`) document content is rendered
+  server-side to SVG; PlantUML's default profile (LEGACY) permits `!include` /
+  `!includeurl`, which read local files and fetch URLs — a local-file-read /
+  SSRF sink on untrusted document bytes. The renderer now forces the **SANDBOX**
+  security profile (no local file access, no network) before PlantUML caches
+  its profile, and bounds source size (512 KB), render time (15 s), and output
+  size (20 MB). Set both in code (static initializer) and via
+  `-DPLANTUML_SECURITY_PROFILE=SANDBOX` in the container images. Verified: a
+  benign diagram still renders; a `!include` of a local secret file no longer
+  leaks its contents into the SVG.
+- **[Medium] Archive import no longer applies attacker-supplied ACLs for
+  non-admins.** The ZIP/ACP import path persisted archive-supplied ACEs via an
+  internal update that bypasses the `CAN_APPLY_ACL_OBJECT` check the normal ACL
+  service enforces, so an importer with only create-child permission could set
+  arbitrary ACLs on imported objects. Archive ACLs are now applied only for
+  administrators (and system restores); a non-admin import keeps the object's
+  default / inherited ACL and returns a warning. The same guard was added to
+  the (admin-only) filesystem-import path for consistency. Verified live: admin
+  import applies the ACL (restore preserved); a non-admin `cmis:write` importer
+  is blocked (injected ACE absent, warning emitted).
+- **[Low] HTTPS connect-only DNS-rebinding residual — re-affirmed, not newly
+  fixed.** The outbound HTTPS path re-validates and rejects unsafe addresses
+  before send but does not pin the TCP destination, leaving a microsecond
+  connect-race. Data-exchange SSRF is already closed by TLS certificate
+  verification (no body read, no token leak); only TCP-connect side effects
+  remain. This is the known residual documented in `AdapterHttpClient` and
+  `REVIEW_PACKET.md §6`; fully closing it needs a custom connect-time
+  IP-pinning transport (tracked, separate effort).
+
+### Upgrade safety
+No CouchDB view / patch / persisted-schema / Mango-index change. Fixes are the
+rendition path, the import ACL gate, and container `-D` flags. The 2.4-era
+CouchDB data carry-over path is untouched.
+
+### Verification
+DiagramRenditionSecurityTest 4/4 (incl. SANDBOX profile + blocked local-file
+include + source-size cap); import/rendition regression 70/70; reactor build
+green; live PoC on a deployed stack for both fixes (admin-applies /
+non-admin-blocked ACL; benign-renders / include-blocked diagram).
+
+---
+
 ## 3.2.1 — Security-audit remediation + cross-repository isolation + dependency CVEs (2026-07-02)
 _On `release/3.2.1-security`. A comprehensive multi-agent security audit
 (auth, authorization/IDOR, injection/XML, SSRF, file/CSRF/DoS,

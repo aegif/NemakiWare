@@ -47,7 +47,7 @@ RUN chmod +x /usr/local/bin/wait-for-couchdb.sh
 ENV CATALINA_OPTS="-Xms512m -Xmx1024m -XX:+DisableExplicitGC \
   -Djakarta.xml.bind.JAXBContext=com.sun.xml.bind.v2.ContextFactory \
   -Djakarta.xml.ws.spi.Provider=com.sun.xml.ws.spi.ProviderImpl \
-  -Djdk.httpclient.allowRestrictedHeaders=host"
+  -Djdk.httpclient.allowRestrictedHeaders=host -DPLANTUML_SECURITY_PROFILE=SANDBOX"
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \

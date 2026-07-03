@@ -368,6 +368,44 @@ Setup の serverVersion は `version.properties=${project.version}` 経由で po
 追従。3.2.0 を基点に、包括セキュリティ監査で発見した認証/認可の穴と依存 CVE を
 remediation (下記 3.2.1 節)。
 
+### 3.2.2 (2026-07-03) — Codex セキュリティレビュー remediation
+
+ブランチ: `release/3.2.1-security`。3.2.1 tag に対する Codex deep-repository
+スキャンの follow-up。Medium 2 件を regression test + 実機 PoC 付きで修正、Low 1
+件は既知 residual として再確認。CouchDB view/patch/schema/Mango 変更なし
+(2.4 データ持ち越しパス無変更)。
+
+- **[Medium] Diagram rendition の PlantUML preprocessor include 対策**
+  (`DiagramRenditionManagerImpl`): `.puml`/`.dot` の文書内容をサーバ側で SVG
+  レンダリングするが、PlantUML の既定 profile は **LEGACY** で `!include` /
+  `!includeurl` によるローカルファイル読取 + URL fetch (local-file-read / SSRF)
+  を許す。profile を **SANDBOX** (ファイル/ネットワークアクセス不可) に静的
+  初期化で強制 (PlantUML が profile を cache する前) + source size (512KB) /
+  render timeout (15s、virtual-thread executor) / output size (20MB、bounded
+  stream) を制限。container image にも `-DPLANTUML_SECURITY_PROFILE=SANDBOX` を
+  付与。`DiagramRenditionSecurityTest` 4/4 (SANDBOX profile 確認 + ローカル
+  ファイル `!include` が secret を SVG に漏らさない + size cap + benign render)。
+- **[Medium] Archive import が非 admin に attacker-supplied ACL を適用しない**
+  (`ImportExportUtils.isAclApplyAllowed` + `ZipImporter` + `FilesystemImporter`):
+  ZIP/ACP import が archive 由来 ACE を `updateInternal` で直接永続化しており、
+  通常 ACL 経路の `CAN_APPLY_ACL_OBJECT` gate を迂回 → create-child しか持たない
+  importer が imported object に任意 ACL を設定可能だった。archive ACL の適用を
+  **admin (と SystemCallContext による system 復元) 限定**に変更、非 admin import
+  は object の既定/継承 ACL を保持し warning + result status `partial` を返す。
+  admin-only 側の filesystem-import path にも同 guard を追加 (Codex は未指摘だが
+  横展開)。permissionDenied 方式は非 admin で `calculateAcl` の side-effect が
+  runtime 挙動を不明瞭にしたため、明示的 admin gate (Codex の alternative
+  remediation) に変更 = 決定論的で side-effect free。実機 PoC 検証: admin import
+  は ACL 適用 (復元機能維持)、非 admin `cmis:write` importer は injected ACE
+  blocked (warning emit、"Skipping archive ACL" ログ)。import/rendition regression
+  70/70。
+- **[Low] HTTPS connect-only DNS rebinding residual — 再確認 (新規修正ではない)**:
+  outbound HTTPS は send 前に再 validate + 危険アドレス reject するが TCP 接続先を
+  pin しないため microsecond connect-race が残る。TLS 証明書検証で data-exchange
+  SSRF は既に閉 (body read / token leak なし)、TCP-connect side-effect のみ残余。
+  `AdapterHttpClient` Javadoc + `REVIEW_PACKET §6` で既知として追跡済。恒久策は
+  custom connect-time IP-pin transport (別 effort)。
+
 ### 3.2.1 (2026-07-02) — セキュリティ監査 remediation + cross-repository 分離 + 依存 CVE
 
 ブランチ: `release/3.2.1-security` (off `master` = `3cb56a92b`)。Fable5
