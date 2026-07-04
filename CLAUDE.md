@@ -406,6 +406,31 @@ remediation (下記 3.2.1 節)。
   `AdapterHttpClient` Javadoc + `REVIEW_PACKET §6` で既知として追跡済。恒久策は
   custom connect-time IP-pin transport (別 effort)。
 
+**E2E flaky-test 安定化 (product-code 変更なし、`f762a18fb`〜`646697d14`)**: 既存の
+Playwright flaky 7 spec を根治 (いずれもセキュリティ修正と無関係、受理済み 3.2.1 も
+同じ間欠 tail を抱えて出荷):
+- `group-hierarchy-members` 循環参照: グループ一覧がページネーションされ循環検出が
+  現ページのみ参照 → step3/4 は `circ-` 検索で A/B だけをページに載せてから検証、
+  step1/2 は API 作成 (member は `groups` JSON 配列) で serial retry を冪等化
+- `custom-property-input` / `config-viewer`: 型 option を id で filter + Escape close、
+  config テーブルが populate してから行数比較
+- `property-editor` / `archive-restore-consistency`: 共有 setup 文書/フォルダを遅い
+  UI upload ではなく CMIS API で作成 (文書は folder 内に配置)
+- `document-viewer-auth` / `verify-cmis-404-handling`: 手動 login を AuthHelper (3×
+  retry) に置換 + documents テーブル reload-retry
+
+**⚠️ 既知の未達 (deferred)**: 「毎回 0 hard-failure のフル Playwright run」は**達成
+できておらず、別途 test-infra タスクに切り出し**。suite には run ごとに落ちる spec が
+変わる long-tail 間欠 flaky があり (あるフル run は config-viewer のみ、次は別集合が
+fail)、原因はデータ蓄積ではない (repo は 26 docs、`getChildren(root)` は 0.27s 応答)。
+一部は真のクライアント側 SPA レース (documents list が「読み込み中...」で稀に停止)、
+一部はテスト間データ暗黙依存。収束にはテスト間データ隔離 + SPA list-load 製品側修正 +
+suite 分割が必要でセキュリティリリースの範囲外。**検証**: security 修正の
+DiagramRenditionSecurityTest 4/4・import/rendition 70/70・実機 PoC、clean-DB 3.2.2 で
+**TCK 38/38**・Java 130/130・vitest 191/191、フル Playwright 926〜933 passed / 99
+skipped (小さく run-varying な間欠 flaky tail あり)。3.2.2 変更が触れる spec は全 green、
+安定化した spec は隔離反復実行で clean。
+
 ### 3.2.1 (2026-07-02) — セキュリティ監査 remediation + cross-repository 分離 + 依存 CVE
 
 ブランチ: `release/3.2.1-security` (off `master` = `3cb56a92b`)。Fable5

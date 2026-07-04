@@ -6,10 +6,11 @@ User-facing changelog. For per-commit detail see
 
 ---
 
-## 3.2.2 — Codex security-review remediation (2026-07-03)
+## 3.2.2 — Codex security-review remediation + E2E flaky-test stabilization (2026-07-04)
 _On `release/3.2.1-security`. Follow-up to a Codex deep-repository security
 scan of the 3.2.1 tag. Two findings fixed with regression tests + a live
-proof-of-concept; one pre-existing, documented residual re-affirmed._
+proof-of-concept; one pre-existing, documented residual re-affirmed. Plus a
+round of E2E test-stabilization (7 pre-existing flaky tests hardened)._
 
 - **[Medium] Diagram rendition hardened against PlantUML preprocessor
   includes.** PlantUML/DOT (`.puml`/`.dot`) document content is rendered
@@ -41,16 +42,49 @@ proof-of-concept; one pre-existing, documented residual re-affirmed._
   `REVIEW_PACKET.md §6`; fully closing it needs a custom connect-time
   IP-pinning transport (tracked, separate effort).
 
+### Test stabilization (E2E, no product-code change)
+Root-caused and hardened seven pre-existing flaky Playwright specs (all
+unrelated to the security fixes; the accepted 3.2.1 release shipped with the
+same intermittent tail):
+- `group-hierarchy-members` (Circular Reference Prevention): the group list is
+  paginated and circular detection only sees the current page — search-narrow to
+  the two test groups before opening the edit modal, and create the setup groups
+  via the REST API (member groups as a JSON array) so serial retries are
+  idempotent.
+- `custom-property-input` / `config-viewer`: filter the relationship-type option
+  by unique id and close via Escape; wait for the config table to populate before
+  the row-count comparison.
+- `property-editor` / `archive-restore-consistency`: create the shared setup
+  document/folder via the CMIS API instead of the slow UI upload (which timed out
+  under full-suite load), placing the document inside the test folder.
+- `document-viewer-auth` / `verify-cmis-404-handling`: use the shared AuthHelper
+  login (3× retry) plus a documents-table reload-retry.
+
+**Known limitation (deferred).** A reliably 0-hard-failure full Playwright run
+was **not** achieved and is deferred to a separate test-infrastructure effort.
+The suite has a long tail of intermittent flakes that vary run-to-run (one full
+run failed only `config-viewer`; the next failed a different set) and are
+environment/timing-driven, not data-accumulation (the repo stays at ~26 docs and
+the server answers `getChildren(root)` in ~0.27 s). Some are genuine client-side
+SPA races (e.g. the documents list occasionally stalling on "loading") and some
+tests implicitly depend on data created by earlier tests. Converging to a single
+green run needs test-data isolation, an SPA list-load fix, and/or suite
+splitting — out of scope for this security release.
+
 ### Upgrade safety
 No CouchDB view / patch / persisted-schema / Mango-index change. Fixes are the
 rendition path, the import ACL gate, and container `-D` flags. The 2.4-era
 CouchDB data carry-over path is untouched.
 
 ### Verification
-DiagramRenditionSecurityTest 4/4 (incl. SANDBOX profile + blocked local-file
-include + source-size cap); import/rendition regression 70/70; reactor build
-green; live PoC on a deployed stack for both fixes (admin-applies /
-non-admin-blocked ACL; benign-renders / include-blocked diagram).
+Security fixes: DiagramRenditionSecurityTest 4/4 (SANDBOX profile + blocked
+local-file include + source-size cap); import/rendition regression 70/70; live
+PoC on a deployed stack (admin-applies / non-admin-blocked ACL; benign-renders /
+include-blocked diagram). Broader (clean-DB 3.2.2 stack): **TCK 38/38**, relevant
+Java unit 130/130, UI vitest 191/191. Full Playwright chromium runs at
+926–933 passed / 99 skipped with a small, run-varying intermittent-flaky tail
+(see Known limitation); every spec touched by the 3.2.2 changes is green, and
+the stabilized specs pass cleanly on repeated isolated runs.
 
 ---
 
