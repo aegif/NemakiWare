@@ -129,6 +129,7 @@ import { test, expect } from '@playwright/test';
 import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
+import { ApiHelper } from '../utils/api-helper';
 
 
 test.describe('PropertyEditor Component Tests', () => {
@@ -152,16 +153,21 @@ test.describe('PropertyEditor Component Tests', () => {
 
     await testHelper.closeMobileSidebar(browserName);
 
-    // CRITICAL FIX (2025-12-26): Ensure test document exists before each test
-    // This eliminates data-dependent test skips
-    const isMobile = testHelper.isMobile(browserName);
-    const docExists = await testHelper.ensureTestDocument(
-      testDocName,
-      'Test content for PropertyEditor testing',
-      isMobile
-    );
-    if (!docExists) {
-      console.log('PropertyEditor: Could not ensure test document exists');
+    // Ensure the shared test document exists via the CMIS API before each test.
+    // The UI upload flow is slow (~50s) and times out under full-suite load; an
+    // API create is fast and deterministic and eliminates data-dependent flakes.
+    const existingRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocName });
+    if (await existingRow.count() === 0) {
+      const apiHelper = new ApiHelper(page);
+      await apiHelper.createDocument({
+        name: testDocName,
+        content: 'Test content for PropertyEditor testing',
+      }).catch((e: any) => {
+        console.log('PropertyEditor: API document create issue (may already exist):', e?.message);
+      });
+      await page.reload();
+      await testHelper.waitForAntdLoad();
+      await waitForRender(page);
     }
   });
 
