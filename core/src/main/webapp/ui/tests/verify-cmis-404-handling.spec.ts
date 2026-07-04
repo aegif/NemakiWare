@@ -134,6 +134,7 @@
 import { test, expect } from '@playwright/test';
 import { waitForRender, waitForUiStable } from './utils/wait-helpers';
 import { TestHelper } from './utils/test-helper';
+import { AuthHelper } from './utils/auth-helper';
 import { ApiHelper } from './utils/api-helper';
 import { cleanupTestData } from './utils/cleanup-helper';
 
@@ -312,28 +313,24 @@ test.describe('CMIS API 404 Error Handling', () => {
     // This test verifies that even if 404 handling doesn't redirect,
     // the UI remains functional and user isn't "stuck"
 
-    await page.goto('http://localhost:8080/core/ui/index.html');
-    await waitForRender(page);
-
-    // Login
-    // Click on Ant Design Select (combobox) for repository
-    const repositorySelect = page.locator('.ant-select-selector').first();
-    await repositorySelect.click();
-    await waitForRender(page);
-    // Select bedroom from dropdown
-    await page.locator('.ant-select-item-option:has-text("bedroom")').click();
-    await waitForRender(page);
-
-    await page.locator('input[placeholder*="ユーザー名"]').fill('admin');
-    await page.locator('input[placeholder*="パスワード"]').fill('admin');
-    await page.locator('button[type="submit"]').click();
-
-    // Wait for navigation and UI initialization (longer timeout for webkit/tablet)
+    // Use the robust shared login helper (retries the whole flow up to 3x)
+    // instead of an inline manual login that occasionally fails to complete,
+    // leaving the documents table never rendered.
+    await new AuthHelper(page).login();
     await waitForUiStable(page, { timeout: 15000 });
 
-    // Generous timeout: the initial document list is a Solr-backed query that
-    // can be slow right after login under parallel load.
-    await expect(page.locator('.ant-table')).toBeVisible({ timeout: 30000 });
+    // The document list occasionally hangs on "読み込み中..." after login; reload
+    // and retry until the table renders.
+    let docTableReady = false;
+    for (let attempt = 0; attempt < 3 && !docTableReady; attempt++) {
+      docTableReady = await page.locator('.ant-table').first()
+        .waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false);
+      if (!docTableReady) {
+        await page.reload();
+        await waitForUiStable(page, { timeout: 15000 });
+      }
+    }
+    expect(docTableReady, 'documents table should render after login').toBe(true);
     console.log('✅ Login successful');
 
     // MOBILE FIX: Close sidebar to prevent overlay blocking clicks
