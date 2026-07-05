@@ -44,6 +44,17 @@
 export type ResponseType = '' | 'arraybuffer' | 'blob' | 'document' | 'json' | 'text';
 
 /**
+ * Default timeout (ms) for metadata requests (getObject, getChildren, type
+ * definitions, ACL, etc.). A stalled metadata request would otherwise hang the
+ * caller's loading state forever ("読み込み中..." with no resolution). 60s is far
+ * beyond any healthy metadata round-trip, so it only trips on a genuine hang and
+ * lets the request reject → the UI can show an error / retry. Content transfers
+ * (arraybuffer/blob downloads, FormData uploads) keep "no timeout" so large
+ * files are not cut off, unless the caller passes an explicit timeout.
+ */
+export const DEFAULT_METADATA_TIMEOUT_MS = 60000;
+
+/**
  * Request options for CmisHttpClient
  */
 export interface CmisHttpRequestOptions {
@@ -245,9 +256,16 @@ export class CmisHttpClient {
         xhr.responseType = options.responseType;
       }
       
-      // Set timeout if provided
-      if (options.timeout) {
-        xhr.timeout = options.timeout;
+      // Apply a request timeout. Metadata requests get a default ceiling so a
+      // stalled request rejects instead of hanging the caller's loading state
+      // forever; content transfers keep "no timeout" unless set explicitly.
+      const isContentTransfer =
+        options.responseType === 'arraybuffer' ||
+        options.responseType === 'blob' ||
+        options.body instanceof FormData;
+      const effectiveTimeout = options.timeout ?? (isContentTransfer ? 0 : DEFAULT_METADATA_TIMEOUT_MS);
+      if (effectiveTimeout > 0) {
+        xhr.timeout = effectiveTimeout;
       }
       
       // Use onload for successful HTTP completion (fires when request completes at network layer)

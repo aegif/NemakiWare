@@ -407,6 +407,15 @@ test.describe('Document Viewer Authentication', () => {
           }
         }
 
+        // The detail view loads its object metadata asynchronously after the
+        // route changes; wait for the Descriptions (page, drawer, or modal) to
+        // render before asserting, otherwise we race the getObject round-trip
+        // and read a count of 0 while the fetch is still in flight. (Test 1
+        // above uses the same wait-for-render signal via a retry loop.)
+        await page.locator(
+          '.ant-descriptions-item-label, .ant-drawer .ant-descriptions, .ant-modal .ant-descriptions'
+        ).first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+
         // Check for errors
         const hasLoginForm = await page.locator('input[placeholder*="ユーザー名"]').count() > 0;
         const hasDocumentDetails = await page.locator('.ant-descriptions').count() > 0;
@@ -485,6 +494,12 @@ test.describe('Document Viewer Authentication', () => {
         
         // Verify we're back on the documents list
         await expect(page.locator('.ant-table')).toBeVisible({ timeout: 5000 });
+        // The table container reappears before its rows finish re-fetching; wait
+        // for at least one document link to render before the next iteration
+        // re-queries, otherwise we read 0 rows and bail out early — which would
+        // silently reduce this "multiple accesses" test to a single access.
+        await page.locator('.ant-table-tbody tr button.ant-btn-link').first()
+          .waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
         console.log(`  ✅ Back on documents list`);
       }
 

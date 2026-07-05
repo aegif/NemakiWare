@@ -78,7 +78,42 @@ async function countRootChildren(request: APIRequestContext): Promise<number> {
   return body.objects?.length ?? 0;
 }
 
-/** Clean up any orphaned e2e- test connectors/profiles from previous failed runs. */
+/**
+ * Document-name prefixes for the docs these tests import. Every test uses
+ * `targetFolderPath: '/'`, so the imported documents land in the repository
+ * root. cleanupOrphans() below removes the stub connectors/profiles, but the
+ * imported documents themselves were never swept — so they accumulated in root
+ * on every run, eventually slowing the Solr-backed document-list query that
+ * most specs wait on after login (the classic flaky-`.ant-table` source). Each
+ * prefix is followed by an epoch-ms timestamp, so a `startsWith` match cannot
+ * collide with seed data (CMIS-v1.1-Specification-Sample.pdf, etc.).
+ */
+const INGEST_DOC_PREFIXES = [
+  'roundtrip-', 'hash-', 'meta-', 'dup-', 'nocont-', 'cloud-', 'cls-', 'skip-test-',
+];
+
+/** Delete this spec's imported documents from the repository root (best effort). */
+async function cleanupIngestDocs(request: APIRequestContext) {
+  try {
+    const res = await request.get(`${CMIS}/root?cmisselector=children&maxItems=1000`, { headers: AUTH });
+    if (!res.ok()) return;
+    const body = await res.json();
+    for (const o of body.objects ?? []) {
+      const props = o.object?.properties ?? {};
+      const name = props['cmis:name']?.value ?? '';
+      const baseType = props['cmis:baseTypeId']?.value ?? '';
+      const objectId = props['cmis:objectId']?.value;
+      if (baseType !== 'cmis:document' || !objectId) continue;
+      if (!INGEST_DOC_PREFIXES.some((p) => name.startsWith(p))) continue;
+      await request.post(`${CMIS}`, {
+        headers: AUTH,
+        form: { cmisaction: 'delete', objectId, allVersions: 'true' },
+      }).catch(() => {});
+    }
+  } catch { /* best effort */ }
+}
+
+/** Clean up any orphaned e2e- test connectors/profiles + imported docs from previous runs. */
 async function cleanupOrphans(request: APIRequestContext) {
   try {
     const profRes = await request.get(`${BASE}/v1/admin/import-profiles?repositoryId=bedroom`, { headers: AUTH });
@@ -98,6 +133,7 @@ async function cleanupOrphans(request: APIRequestContext) {
       }
     }
   } catch { /* best effort */ }
+  await cleanupIngestDocs(request);
 }
 
 // Serial execution: ingest pipeline tests create connector+profile
@@ -109,6 +145,13 @@ test.describe.configure({ mode: 'serial' });
 test.describe('Ingest Pipeline — API Smoke Tests', () => {
 
   test.beforeAll(async ({ request }) => {
+    await cleanupOrphans(request);
+  });
+
+  // Sweep this run's imported documents (and stubs) from root so they do not
+  // accumulate across runs. beforeAll catches residue from a previous crashed
+  // run; afterAll keeps a clean run self-contained.
+  test.afterAll(async ({ request }) => {
     await cleanupOrphans(request);
   });
 
