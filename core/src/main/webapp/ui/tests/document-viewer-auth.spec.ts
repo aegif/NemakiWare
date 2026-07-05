@@ -407,6 +407,15 @@ test.describe('Document Viewer Authentication', () => {
           }
         }
 
+        // The detail view loads its object metadata asynchronously after the
+        // route changes; wait for the Descriptions (page, drawer, or modal) to
+        // render before asserting, otherwise we race the getObject round-trip
+        // and read a count of 0 while the fetch is still in flight. (Test 1
+        // above uses the same wait-for-render signal via a retry loop.)
+        await page.locator(
+          '.ant-descriptions-item-label, .ant-drawer .ant-descriptions, .ant-modal .ant-descriptions'
+        ).first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+
         // Check for errors
         const hasLoginForm = await page.locator('input[placeholder*="ユーザー名"]').count() > 0;
         const hasDocumentDetails = await page.locator('.ant-descriptions').count() > 0;
