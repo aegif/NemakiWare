@@ -419,17 +419,55 @@ Playwright flaky 7 spec を根治 (いずれもセキュリティ修正と無関
 - `document-viewer-auth` / `verify-cmis-404-handling`: 手動 login を AuthHelper (3×
   retry) に置換 + documents テーブル reload-retry
 
-**⚠️ 既知の未達 (deferred)**: 「毎回 0 hard-failure のフル Playwright run」は**達成
-できておらず、別途 test-infra タスクに切り出し**。suite には run ごとに落ちる spec が
-変わる long-tail 間欠 flaky があり (あるフル run は config-viewer のみ、次は別集合が
-fail)、原因はデータ蓄積ではない (repo は 26 docs、`getChildren(root)` は 0.27s 応答)。
-一部は真のクライアント側 SPA レース (documents list が「読み込み中...」で稀に停止)、
-一部はテスト間データ暗黙依存。収束にはテスト間データ隔離 + SPA list-load 製品側修正 +
-suite 分割が必要でセキュリティリリースの範囲外。**検証**: security 修正の
-DiagramRenditionSecurityTest 4/4・import/rendition 70/70・実機 PoC、clean-DB 3.2.2 で
-**TCK 38/38**・Java 130/130・vitest 191/191、フル Playwright 926〜933 passed / 99
-skipped (小さく run-varying な間欠 flaky tail あり)。3.2.2 変更が触れる spec は全 green、
-安定化した spec は隔離反復実行で clean。
+**⚠️ 既知の未達 (deferred) → 解消 (test-infra ブランチ)**: 「毎回 0 hard-failure の
+フル Playwright run」は 3.2.2 リリース時点では未達だったが、後続の test-infra 作業
+(ブランチ `test-infra/e2e-stabilization`、off `release/3.2.1-security`) で**収束を達成**
+(まだ push/merge/tag していない)。詳細は下記「### test-infra E2E 安定化」節。**検証**:
+security 修正の DiagramRenditionSecurityTest 4/4・import/rendition 70/70・実機 PoC、
+clean-DB 3.2.2 で **TCK 38/38**・Java 130/130・vitest 191/191、フル Playwright は 3.2.2
+時点で 926〜933 passed / 99 skipped (小さく run-varying な間欠 flaky tail あり)。
+
+### test-infra E2E 安定化 (2026-07-05、ブランチ `test-infra/e2e-stabilization`)
+
+3.2.2 で deferred した「毎回 0 hard-failure のフル Playwright run」を根治。**製品コードは
+1 箇所** (client-side timeout)、他はすべてテスト側 + テストデータ衛生。5 commit
+(`64fad552c`〜`2189cd719`、off `release/3.2.1-security`)。**未 push / 未 merge / 未 tag**。
+
+**根本原因 (データ蓄積説を否定して特定)**: flake の実体は「読み込み中...」でハングする
+**client-side metadata XHR の停止**。サーバは健全 (`getChildren(root)` 0.27s、repo 26 docs)
+で蓄積は無関係。停止した XHR がタイムアウトを持たず SPA のロード状態が永久に未解決に
+なるのが個々の flake。
+
+**修正**:
+- **製品側 (最大レバレッジ)** `CmisHttpClient.ts`: metadata 系リクエスト
+  (getObject/getChildren/型定義/ACL) に `DEFAULT_METADATA_TIMEOUT_MS=60000` を導入。
+  停止時に reject → UI が error/retry 可能に。コンテンツ転送 (arraybuffer/blob/FormData)
+  は従来通りノータイムアウト (明示指定時を除く)。
+- **横断 (テスト側)** `auth-helper.ts` の `login` + `test-helper.ts` の
+  `navigateToDocuments` に reload-retry ループ (3× `.ant-table` 可視待ち)。
+- **個別** `document-viewer-auth.spec.ts`: (a) multi-access テストがナビ後の非同期
+  getObject を待たず `.ant-descriptions` を即 count していたレースに settle-wait 追加、
+  (b) back 復帰後に行再ロードを待ってから再クエリ → 謳い文句どおり 3 文書を実際に検証
+  (従来は 0 行検出で早期 break し実質 1 文書)。
+- **テストデータ衛生**: (a) `ingest-pipeline-e2e.spec.ts` が全 doc を
+  `targetFolderPath:'/'` で import し `cleanupOrphans` は stub connector/profile しか
+  消していなかった (imported doc が root に ~16/run 蓄積) → beforeAll+afterAll で
+  root doc を sweep。(b) 休眠していた `global-teardown.ts` (config でコメントアウト) を
+  有効化し、`test-*` + 8 ingest prefix の root backstop sweep (doc=delete/folder=deleteTree、
+  seed 5 objects は prefix 不一致で安全、suite 全体完了後に 1 回のみ実行)。
+
+**検証 (フル chromium、workers=1 / retries=2 / ~1033 tests / 各 1.2h)**:
+
+| Run | passed | failed | skipped | 備考 |
+|---|---:|---:|---:|---|
+| Run 1 | 934 | 1 | 98 | 1 = doc-viewer:320 レース (本作業で修正) |
+| Run 2 | 933 | **0** | 100 | timeout 修正稼働 |
+| Run 3 | 933 | **0** | 100 | 全修正込み + teardown で root 27→5 (seed のみ)、0 residue |
+
+以前 flaky だった config-viewer / group-hierarchy / archive-restore / custom-property-input /
+property-editor / verify-cmis-404 / document-viewer-auth は全 run で green。pass/skip の
+微差 (934/98↔933/100) は条件付きスキップの通常変動 (global-setup の test user provisioning
+タイミング等) で回帰ではない。root は run 後に seed baseline (5 objects) へ復帰。
 
 ### 3.2.1 (2026-07-02) — セキュリティ監査 remediation + cross-repository 分離 + 依存 CVE
 
