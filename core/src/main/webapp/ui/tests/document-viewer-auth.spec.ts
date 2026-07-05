@@ -494,6 +494,12 @@ test.describe('Document Viewer Authentication', () => {
         
         // Verify we're back on the documents list
         await expect(page.locator('.ant-table')).toBeVisible({ timeout: 5000 });
+        // The table container reappears before its rows finish re-fetching; wait
+        // for at least one document link to render before the next iteration
+        // re-queries, otherwise we read 0 rows and bail out early — which would
+        // silently reduce this "multiple accesses" test to a single access.
+        await page.locator('.ant-table-tbody tr button.ant-btn-link').first()
+          .waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
         console.log(`  ✅ Back on documents list`);
       }
 
