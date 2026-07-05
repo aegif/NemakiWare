@@ -455,6 +455,15 @@ clean-DB 3.2.2 で **TCK 38/38**・Java 130/130・vitest 191/191、フル Playwr
   root doc を sweep。(b) 休眠していた `global-teardown.ts` (config でコメントアウト) を
   有効化し、`test-*` + 8 ingest prefix の root backstop sweep (doc=delete/folder=deleteTree、
   seed 5 objects は prefix 不一致で安全、suite 全体完了後に 1 回のみ実行)。
+- **skip の棚卸し + 真のバグ 1 件**: ラン時 100 skipped のうち ~84 は環境ゲート
+  (Atlas/Keycloak/LDAP/TEI 未配備で正しく skip、simple スタックでは un-skip 不可)。
+  唯一の**真のバグ**は `permissions/access-control.spec.ts` の 3 skip —
+  beforeAll の test user 作成が `POST /core/api/v1/cmis/.../users` に X-Requested-With
+  欠落で **CSRF 403** され (3.2.1 の ApiCsrfFilter 追加が原因)、user 未作成 → 3 test が
+  毎回サイレント skip だった。CSRF ヘッダ追加 + afterAll に api/v1 DELETE (同ヘッダ) で
+  user cleanup 追加 → **6 passed/3 skipped → 9 passed/0 skipped**、user 蓄積なし。
+  他 spec は `ApiHelper.createUser` (REST_REPO_CSRF_HEADERS 込み、legacy `/core/rest/repo/`)
+  経由なので無傷。
 
 **検証 (フル chromium、workers=1 / retries=2 / ~1033 tests / 各 1.2h)**:
 
@@ -463,6 +472,7 @@ clean-DB 3.2.2 で **TCK 38/38**・Java 130/130・vitest 191/191、フル Playwr
 | Run 1 | 934 | 1 | 98 | 1 = doc-viewer:320 レース (本作業で修正) |
 | Run 2 | 933 | **0** | 100 | timeout 修正稼働 |
 | Run 3 | 933 | **0** | 100 | 全修正込み + teardown で root 27→5 (seed のみ)、0 residue |
+| Run 4 | 936 | **0** | 97 | + access-control CSRF 修正 = +3 pass/-3 skip、回帰ゼロ、root 5 seed、user 蓄積なし |
 
 以前 flaky だった config-viewer / group-hierarchy / archive-restore / custom-property-input /
 property-editor / verify-cmis-404 / document-viewer-auth は全 run で green。pass/skip の
