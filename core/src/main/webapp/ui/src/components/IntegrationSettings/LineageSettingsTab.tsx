@@ -18,6 +18,7 @@ export function LineageSettingsTab() {
 
   const {
     sources,
+    overridable,
     formValues,
     loading,
     saving,
@@ -94,6 +95,7 @@ export function LineageSettingsTab() {
         fields={fields}
         formValues={formValues}
         sources={sources}
+        overridable={overridable}
         onFieldChange={updateField}
       />
 

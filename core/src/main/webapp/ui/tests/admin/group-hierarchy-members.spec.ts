@@ -402,146 +402,114 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       }
     });
 
-    test('step 1: create group A', async ({ page }) => {
-      let createdViaUI = false;
-
-      try {
-        // Create group A (no members)
-        await page.locator('button:has-text("作成")').click();
-        await waitForRender(page);
-
-        await page.fill('input#id', groupAId);
-        await page.fill('input#name', 'Test Circular Group A');
-
-        // Submit form and wait for API response
-        const responsePromise = page.waitForResponse(
-          resp => resp.url().includes('/group/create/') && resp.status() === 200,
-          { timeout: 15000 }
-        ).catch(() => null);
-
-        await page.locator('.ant-modal-footer .ant-btn-primary').click();
-        const response = await responsePromise;
-
-        if (response) {
-          await page.waitForSelector('.ant-modal', { state: 'hidden', timeout: 5000 }).catch(() => {});
-          createdViaUI = true;
+    // Create a group deterministically via the REST API (idempotent: delete
+    // first). UI-based group creation is covered by the "Group Creation with
+    // Members" tests; this serial block only needs groups A and B to exist so
+    // it can exercise circular-reference prevention (steps 3-4), so we avoid the
+    // create-modal timing flake here.
+    const createGroupViaApi = async (page: any, groupId: string, name: string, memberGroupId?: string) => {
+      // The group-create endpoint takes member groups as a JSON array in the
+      // `groups` field (and member users in `users`).
+      const form: Record<string, string> = { name };
+      if (memberGroupId) form.groups = JSON.stringify([memberGroupId]);
+      const created = await page.request.post(
+        `http://localhost:8080/core/rest/repo/bedroom/group/create/${groupId}`,
+        {
+          headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`, 'X-Requested-With': 'XMLHttpRequest' },
+          form,
         }
-      } catch {
-        await page.locator('.ant-modal button:has-text("キャンセル")').click().catch(() => {});
-        await waitForRender(page);
-      }
+      );
+      expect(created.ok()).toBeTruthy();
+      await page.reload();
+      await page.waitForSelector('.ant-table', { timeout: 10000 });
+      await waitForUiStable(page);
+    };
 
-      // Fallback: create via API if UI failed
-      if (!createdViaUI) {
-        console.log('[FALLBACK] Creating group A via API');
-        await page.request.post(
-          `http://localhost:8080/core/rest/repo/bedroom/group/create/${groupAId}`,
-          {
-            headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`, 'X-Requested-With': 'XMLHttpRequest' },
-            form: { name: 'Test Circular Group A' }
-          }
-        );
-        await page.reload();
-        await page.waitForSelector('.ant-table', { timeout: 10000 });
-        await waitForUiStable(page);
-      }
-
-      // Search for the group (may not be on first page)
+    const verifyGroupVisible = async (page: any, groupId: string) => {
       const searchInput = page.locator('.ant-input-search input[type="text"]');
       if (await searchInput.isVisible({ timeout: 3000 }).catch(() => false)) {
-        await searchInput.fill(groupAId);
+        await searchInput.fill(groupId);
         const searchPromise = page.waitForResponse(
-          resp => resp.url().includes('/group/list') && resp.status() === 200,
+          (resp: any) => resp.url().includes('/group/list') && resp.status() === 200,
           { timeout: 10000 }
-        );
+        ).catch(() => null);
         await searchInput.press('Enter');
         await searchPromise;
         await waitForRender(page);
       }
+      await expect(page.locator('.ant-table tbody tr').filter({
+        has: page.locator('td:first-child', { hasText: groupId })
+      }).first()).toBeVisible({ timeout: 10000 });
+    };
 
-      // Verify group A was created
-      await expect(page.locator(`.ant-table tbody tr:has-text("${groupAId}")`).first()).toBeVisible({ timeout: 10000 });
+    test('step 1: create group A', async ({ page }) => {
+      // Idempotent clean slate so serial-mode retries start fresh (delete B
+      // first — it references A).
+      const apiHelper = new ApiHelper(page);
+      await apiHelper.deleteGroup(groupBId);
+      await apiHelper.deleteGroup(groupAId);
+
+      await createGroupViaApi(page, groupAId, 'Test Circular Group A');
+      await verifyGroupVisible(page, groupAId);
     });
 
     test('step 2: create group B with A as member (B contains A)', async ({ page }) => {
-      // Wait for table to be fully loaded
-      await waitForRender(page);
+      // Idempotent clean slate for retries: remove any leftover B (keep A, which
+      // step 1 created and step 3 needs) before (re)creating B via API.
+      const apiHelper = new ApiHelper(page);
+      await apiHelper.deleteGroup(groupBId);
 
-      let createdViaUI = false;
+      await createGroupViaApi(page, groupBId, 'Test Circular Group B', groupAId);
 
-      try {
-        // Create group B with A as member
-        await page.locator('button:has-text("作成")').click();
-        await waitForRender(page);
-
-        await page.fill('input#id', groupBId);
-        await page.fill('input#name', 'Test Circular Group B');
-
-        // Open group members dropdown and select group A
-        const groupMembersSelect = page.locator('.ant-form-item').filter({ hasText: 'グループメンバー' }).locator('.ant-select');
-        await groupMembersSelect.click();
-        await waitForRender(page);
-
-        // Find and click group A option
-        const groupAOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: groupAId });
-        if (await groupAOption.count() > 0) {
-          await groupAOption.scrollIntoViewIfNeeded().catch(() => {}); await groupAOption.click({ force: true });
-          await waitForRender(page);
-        }
-
-        // Close dropdown by clicking title
-        await page.locator('.ant-modal-title').click();
-        await waitForRender(page);
-
-        // Submit and wait for API response
-        const responsePromise = page.waitForResponse(
-          resp => resp.url().includes('/group/create/') && resp.status() === 200,
-          { timeout: 15000 }
+      // Verify group B was created (narrow via search so it is on the page)
+      const searchInput = page.locator('.ant-input-search input[type="text"]');
+      if (await searchInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+        await searchInput.fill(groupBId);
+        const searchPromise = page.waitForResponse(
+          (resp: any) => resp.url().includes('/group/list') && resp.status() === 200,
+          { timeout: 10000 }
         ).catch(() => null);
-
-        await page.locator('.ant-modal-footer .ant-btn-primary').click();
-        const response = await responsePromise;
-
-        if (response) {
-          await page.waitForSelector('.ant-modal', { state: 'hidden', timeout: 5000 }).catch(() => {});
-          createdViaUI = true;
-        }
-      } catch {
-        await page.locator('.ant-modal button:has-text("キャンセル")').click().catch(() => {});
+        await searchInput.press('Enter');
+        await searchPromise;
         await waitForRender(page);
       }
-
-      // Fallback: create via API if UI failed
-      if (!createdViaUI) {
-        console.log('[FALLBACK] Creating group B via API');
-        await page.request.post(
-          `http://localhost:8080/core/rest/repo/bedroom/group/create/${groupBId}`,
-          {
-            headers: { 'Authorization': `Basic ${Buffer.from('admin:admin').toString('base64')}`, 'X-Requested-With': 'XMLHttpRequest' },
-            form: { name: 'Test Circular Group B', groupMembers: groupAId }
-          }
-        );
-        await page.reload();
-        await page.waitForSelector('.ant-table', { timeout: 10000 });
-        await waitForUiStable(page);
-      }
-
-      // Verify group B was created (check first cell contains exact ID)
       const groupBRow = page.locator('.ant-table tbody tr').filter({
         has: page.locator('td:first-child', { hasText: groupBId })
       });
       await expect(groupBRow.first()).toBeVisible({ timeout: 10000 });
 
-      // Verify B has A as member (shown with blue tag) - only if created via UI
-      if (createdViaUI) {
-        const blueTag = groupBRow.first().locator('.ant-tag-blue');
-        await expect(blueTag).toBeVisible();
-      }
+      // Verify B has A as member (shown with a blue group tag)
+      const blueTag = groupBRow.first().locator('.ant-tag-blue');
+      await expect(blueTag.first()).toBeVisible({ timeout: 10000 });
     });
+
+    // The group list is paginated, and the circular-reference detection
+    // (circularGroupIds) only considers groups on the currently loaded page.
+    // With many groups in the repo, B (and its membership) may not be on the
+    // page when A's edit modal opens, so B never gets marked disabled. Narrow
+    // the list to just circ-a/circ-b via search first, so both are loaded.
+    const narrowToCircGroups = async (page: any) => {
+      const searchInput = page.locator('.ant-input-search input[type="text"]');
+      if (await searchInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+        await searchInput.fill('circ-');
+        const searchPromise = page.waitForResponse(
+          resp => resp.url().includes('/group/list') && resp.status() === 200,
+          { timeout: 10000 }
+        ).catch(() => null);
+        await searchInput.press('Enter');
+        await searchPromise;
+        await waitForRender(page);
+      }
+      // Both A and B must be in the loaded list before opening the edit modal.
+      await expect(page.locator('.ant-table tbody tr').filter({
+        has: page.locator('td:first-child', { hasText: groupBId })
+      }).first()).toBeVisible({ timeout: 10000 });
+    };
 
     test('step 3: edit A and verify B is disabled (circular prevention)', async ({ page }) => {
       // Wait for table to load
       await waitForRender(page);
+      await narrowToCircGroups(page);
 
       // Find group A by exact ID in first column and click edit
       const groupARow = page.locator('.ant-table tbody tr').filter({
@@ -584,6 +552,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
 
       // Wait for table to load
       await waitForRender(page);
+      await narrowToCircGroups(page);
 
       // Find group A by exact ID in first column and click edit
       const groupARow = page.locator('.ant-table tbody tr').filter({

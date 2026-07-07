@@ -358,14 +358,312 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 ## 現在のバージョン
 
-**3.2.0** (2026-06-20、`release/3.2-iaas-setup` 作業中) — pom.xml
-`<version>3.2.0</version>`。全 7 pom を 3.1.3 → 3.2.0 に bump。
-ユーザー向けバージョン表記も更新: UI `ui/package.json` (3.1.3→3.2.0、
-ログイン/レイアウトの `__UI_VERSION__` 表示元)、`Layout.tsx` フォールバック
-literal、CMIS `repositories-default.yml` の `product.version` (3.1.0→3.2.0、
-従来 3.1.x でも未更新だった repositoryInfo.productVersion)。Setup の
-serverVersion は `version.properties=${project.version}` 経由で pom 追従。
-3.1.3 を基点に IaaS ワンステップデプロイ機能を追加。
+**3.2.1** (2026-07-02、`release/3.2.1-security`) — pom.xml
+`<version>3.2.1</version>`。5 reactor pom (root/common/core/solr/cloudant-init)
+＋内部モジュール依存座標 (nemakiware-common / solr) を 3.2.0 → 3.2.1 に bump。
+ユーザー向け版表記も更新: UI `ui/package.json` + `package-lock.json`
+(`__UI_VERSION__` 表示元)、`Layout.tsx` フォールバック literal、CMIS
+`repositories-default.yml` の `product.version` (repositoryInfo.productVersion)。
+Setup の serverVersion は `version.properties=${project.version}` 経由で pom
+追従。3.2.0 を基点に、包括セキュリティ監査で発見した認証/認可の穴と依存 CVE を
+remediation (下記 3.2.1 節)。
+
+### 3.2.2 (2026-07-03) — Codex セキュリティレビュー remediation
+
+ブランチ: `release/3.2.1-security`。3.2.1 tag に対する Codex deep-repository
+スキャンの follow-up。Medium 2 件を regression test + 実機 PoC 付きで修正、Low 1
+件は既知 residual として再確認。CouchDB view/patch/schema/Mango 変更なし
+(2.4 データ持ち越しパス無変更)。
+
+- **[Medium] Diagram rendition の PlantUML preprocessor include 対策**
+  (`DiagramRenditionManagerImpl`): `.puml`/`.dot` の文書内容をサーバ側で SVG
+  レンダリングするが、PlantUML の既定 profile は **LEGACY** で `!include` /
+  `!includeurl` によるローカルファイル読取 + URL fetch (local-file-read / SSRF)
+  を許す。profile を **SANDBOX** (ファイル/ネットワークアクセス不可) に静的
+  初期化で強制 (PlantUML が profile を cache する前) + source size (512KB) /
+  render timeout (15s、virtual-thread executor) / output size (20MB、bounded
+  stream) を制限。container image にも `-DPLANTUML_SECURITY_PROFILE=SANDBOX` を
+  付与。`DiagramRenditionSecurityTest` 4/4 (SANDBOX profile 確認 + ローカル
+  ファイル `!include` が secret を SVG に漏らさない + size cap + benign render)。
+- **[Medium] Archive import が非 admin に attacker-supplied ACL を適用しない**
+  (`ImportExportUtils.isAclApplyAllowed` + `ZipImporter` + `FilesystemImporter`):
+  ZIP/ACP import が archive 由来 ACE を `updateInternal` で直接永続化しており、
+  通常 ACL 経路の `CAN_APPLY_ACL_OBJECT` gate を迂回 → create-child しか持たない
+  importer が imported object に任意 ACL を設定可能だった。archive ACL の適用を
+  **admin (と SystemCallContext による system 復元) 限定**に変更、非 admin import
+  は object の既定/継承 ACL を保持し warning + result status `partial` を返す。
+  admin-only 側の filesystem-import path にも同 guard を追加 (Codex は未指摘だが
+  横展開)。permissionDenied 方式は非 admin で `calculateAcl` の side-effect が
+  runtime 挙動を不明瞭にしたため、明示的 admin gate (Codex の alternative
+  remediation) に変更 = 決定論的で side-effect free。実機 PoC 検証: admin import
+  は ACL 適用 (復元機能維持)、非 admin `cmis:write` importer は injected ACE
+  blocked (warning emit、"Skipping archive ACL" ログ)。import/rendition regression
+  70/70。
+- **[Low] HTTPS connect-only DNS rebinding residual — 再確認 (新規修正ではない)**:
+  outbound HTTPS は send 前に再 validate + 危険アドレス reject するが TCP 接続先を
+  pin しないため microsecond connect-race が残る。TLS 証明書検証で data-exchange
+  SSRF は既に閉 (body read / token leak なし)、TCP-connect side-effect のみ残余。
+  `AdapterHttpClient` Javadoc + `REVIEW_PACKET §6` で既知として追跡済。恒久策は
+  custom connect-time IP-pin transport (別 effort)。
+
+**E2E flaky-test 安定化 (product-code 変更なし、`f762a18fb`〜`646697d14`)**: 既存の
+Playwright flaky 7 spec を根治 (いずれもセキュリティ修正と無関係、受理済み 3.2.1 も
+同じ間欠 tail を抱えて出荷):
+- `group-hierarchy-members` 循環参照: グループ一覧がページネーションされ循環検出が
+  現ページのみ参照 → step3/4 は `circ-` 検索で A/B だけをページに載せてから検証、
+  step1/2 は API 作成 (member は `groups` JSON 配列) で serial retry を冪等化
+- `custom-property-input` / `config-viewer`: 型 option を id で filter + Escape close、
+  config テーブルが populate してから行数比較
+- `property-editor` / `archive-restore-consistency`: 共有 setup 文書/フォルダを遅い
+  UI upload ではなく CMIS API で作成 (文書は folder 内に配置)
+- `document-viewer-auth` / `verify-cmis-404-handling`: 手動 login を AuthHelper (3×
+  retry) に置換 + documents テーブル reload-retry
+
+**⚠️ 既知の未達 (deferred) → 解消 (test-infra ブランチ)**: 「毎回 0 hard-failure の
+フル Playwright run」は 3.2.2 リリース時点では未達だったが、後続の test-infra 作業
+(ブランチ `test-infra/e2e-stabilization`、off `release/3.2.1-security`) で**収束を達成**
+(まだ push/merge/tag していない)。詳細は下記「### test-infra E2E 安定化」節。**検証**:
+security 修正の DiagramRenditionSecurityTest 4/4・import/rendition 70/70・実機 PoC、
+clean-DB 3.2.2 で **TCK 38/38**・Java 130/130・vitest 191/191、フル Playwright は 3.2.2
+時点で 926〜933 passed / 99 skipped (小さく run-varying な間欠 flaky tail あり)。
+
+### test-infra E2E 安定化 (2026-07-05、ブランチ `test-infra/e2e-stabilization`)
+
+3.2.2 で deferred した「毎回 0 hard-failure のフル Playwright run」を根治。**製品コードは
+1 箇所** (client-side timeout)、他はすべてテスト側 + テストデータ衛生。5 commit
+(`64fad552c`〜`2189cd719`、off `release/3.2.1-security`)。**未 push / 未 merge / 未 tag**。
+
+**根本原因 (データ蓄積説を否定して特定)**: flake の実体は「読み込み中...」でハングする
+**client-side metadata XHR の停止**。サーバは健全 (`getChildren(root)` 0.27s、repo 26 docs)
+で蓄積は無関係。停止した XHR がタイムアウトを持たず SPA のロード状態が永久に未解決に
+なるのが個々の flake。
+
+**修正**:
+- **製品側 (最大レバレッジ)** `CmisHttpClient.ts`: metadata 系リクエスト
+  (getObject/getChildren/型定義/ACL) に `DEFAULT_METADATA_TIMEOUT_MS=60000` を導入。
+  停止時に reject → UI が error/retry 可能に。コンテンツ転送 (arraybuffer/blob/FormData)
+  は従来通りノータイムアウト (明示指定時を除く)。
+- **横断 (テスト側)** `auth-helper.ts` の `login` + `test-helper.ts` の
+  `navigateToDocuments` に reload-retry ループ (3× `.ant-table` 可視待ち)。
+- **個別** `document-viewer-auth.spec.ts`: (a) multi-access テストがナビ後の非同期
+  getObject を待たず `.ant-descriptions` を即 count していたレースに settle-wait 追加、
+  (b) back 復帰後に行再ロードを待ってから再クエリ → 謳い文句どおり 3 文書を実際に検証
+  (従来は 0 行検出で早期 break し実質 1 文書)。
+- **テストデータ衛生**: (a) `ingest-pipeline-e2e.spec.ts` が全 doc を
+  `targetFolderPath:'/'` で import し `cleanupOrphans` は stub connector/profile しか
+  消していなかった (imported doc が root に ~16/run 蓄積) → beforeAll+afterAll で
+  root doc を sweep。(b) 休眠していた `global-teardown.ts` (config でコメントアウト) を
+  有効化し、`test-*` + 8 ingest prefix の root backstop sweep (doc=delete/folder=deleteTree、
+  seed 5 objects は prefix 不一致で安全、suite 全体完了後に 1 回のみ実行)。
+- **skip の棚卸し + 真のバグ 1 件**: ラン時 100 skipped のうち ~84 は環境ゲート
+  (Atlas/Keycloak/LDAP/TEI 未配備で正しく skip、simple スタックでは un-skip 不可)。
+  唯一の**真のバグ**は `permissions/access-control.spec.ts` の 3 skip —
+  beforeAll の test user 作成が `POST /core/api/v1/cmis/.../users` に X-Requested-With
+  欠落で **CSRF 403** され (3.2.1 の ApiCsrfFilter 追加が原因)、user 未作成 → 3 test が
+  毎回サイレント skip だった。CSRF ヘッダ追加 + afterAll に api/v1 DELETE (同ヘッダ) で
+  user cleanup 追加 → **6 passed/3 skipped → 9 passed/0 skipped**、user 蓄積なし。
+  他 spec は `ApiHelper.createUser` (REST_REPO_CSRF_HEADERS 込み、legacy `/core/rest/repo/`)
+  経由なので無傷。
+
+**検証 (フル chromium、workers=1 / retries=2 / ~1033 tests / 各 1.2h)**:
+
+| Run | passed | failed | skipped | 備考 |
+|---|---:|---:|---:|---|
+| Run 1 | 934 | 1 | 98 | 1 = doc-viewer:320 レース (本作業で修正) |
+| Run 2 | 933 | **0** | 100 | timeout 修正稼働 |
+| Run 3 | 933 | **0** | 100 | 全修正込み + teardown で root 27→5 (seed のみ)、0 residue |
+| Run 4 | 936 | **0** | 97 | + access-control CSRF 修正 = +3 pass/-3 skip、回帰ゼロ、root 5 seed、user 蓄積なし |
+
+以前 flaky だった config-viewer / group-hierarchy / archive-restore / custom-property-input /
+property-editor / verify-cmis-404 / document-viewer-auth は全 run で green。pass/skip の
+微差 (934/98↔933/100) は条件付きスキップの通常変動 (global-setup の test user provisioning
+タイミング等) で回帰ではない。root は run 後に seed baseline (5 objects) へ復帰。
+
+### 3.2.1 (2026-07-02) — セキュリティ監査 remediation + cross-repository 分離 + 依存 CVE
+
+ブランチ: `release/3.2.1-security` (off `master` = `3cb56a92b`)。Fable5
+マルチエージェント包括セキュリティ監査 (6 ドメイン: 認証 / 認可-IDOR /
+インジェクション-XML / SSRF / ファイル-CSRF-DoS / フロント-暗号-設定) +
+第2弾 (依存 CVE / リポジトリ間分離) で確定した課題を優先順位順に修正。各修正に
+regression test + 実機検証 (TCK + Playwright + redeploy)。
+
+**セキュリティ (認証/認可)**:
+- [High] `nemaki:allowedAuthMethods` 認証ポリシーのバイパス
+  (`a40960089`): `disabled` / `cloud`-only アカウントのパスワードログインを
+  拒否する gate が主要 CMIS 経路 (`AuthenticationServiceImpl.
+  getAuthenticatedUserItem`) のみで強制され、**3 つの他経路が迂回**していた:
+  api/v1 `AuthResource.login`、MCP `McpAuthenticationHandler.validateCredentials`
+  (Basic auth + login tool)、legacy `UserItemResource.isAdminOperaiton`
+  (admin 操作 re-auth)。policy を `AuthenticationUtil.isAuthMethodAllowed
+  (UserItem, method)` に単一情報源化し `AuthenticationServiceImpl` は委譲、
+  3 経路で enforce。拒否は誤パスワードと同じ 401 / "Invalid credentials"
+  (正パスワードの disabled アカウントを oracle 化しない)。MCP は legacy
+  `User` が policy を持たないため optional `ContentService` で `UserItem`
+  解決。+6 AuthenticationUtilTest / +3 McpAuthenticationHandlerTest
+- [Low] セッショントークン検証の非定数時間比較 (`92f7ad752`):
+  `TokenServiceImpl.TokenMap.validate()` の `String.equals()` を
+  `MessageDigest.isEqual` に統一 (主要トークン検証経路。他経路は既に定数時間)。
+  期限切れ掃除の full scan は維持
+- **cross-repository テナント分離** (`ba18af200`): `/v1/admin/*` は常に
+  デフォルト repo で認証するのに、connector 委譲ガバナンスと import-profile
+  操作は任意の対象 repositoryId に作用していた → (1) デフォルト repo admin が
+  他 repo の import-profile を操作/ガバナンス列挙可 (admin が per-repo persona
+  でない)、(2) 非 admin の委譲認可が (default-repo 認証の) username を対象 repo
+  の ACL に突合 → 他 repo の同名ユーザーに自動アクセス。修正:
+  `IngestAuthorizationService.canManageProfileForFolder` /
+  `canUseConnectorForDelegatedProfile` に「対象 repo == 認証 repo」不変条件
+  (`isAuthenticatedRepository`) を admin 短絡より前に追加 (fail-closed、他 repo
+  の ACL を一切参照しない)。`AuthenticationFilter` は per-repo 面
+  (import-profiles / connectors) のみ `X-Nemaki-Repository` ヘッダで対象 repo
+  認証、他の `/v1/admin/*` (Purview / lineage / integration-settings /
+  ingest jobs-scheduler / connector CRUD) はデフォルト repo 固定 (グローバル
+  設定 = デフォルト repo admin のみ、既存面を広げない)。`ImportProfile
+  DefinitionController` は全操作を認証 repo に限定 (list scope / by-id は
+  profile.repositoryId 一致必須、他 repo は 404)。`ConnectorDefinition
+  Controller` は connector CRUD をデフォルト repo admin 限定、ガバナンスは
+  repositoryId 一致必須。UI は管理系 ingest 呼び出しにログイン repo ヘッダ付与。
+  +3 IngestAuthorizationServiceTest cross-repo / 6 controller test 更新
+  (ingest suite 171/171)。**OIDC 等での「同一人物なら他 repo も見える」は別問題
+  (未着手)**
+
+**依存 CVE** (`39218c4be`): `mvn dependency:tree` (494 artifact) 精査で 2 件:
+- commons-compress 1.24.0 (compile scope、Tika/POI のアーカイブ解析で到達) →
+  1.27.1 (CVE-2024-25710 DUMP 無限ループ DoS / CVE-2024-26308 pack200 メモリ
+  DoS、POI 5.4.1 要件とも整合)
+- lucene-queries/-core を 9.11.1 固定していたが solr-core 9.10.1 は他 Lucene
+  モジュールを 9.12.3 で持ち込む → Lucene は全モジュール同一版必須のため 9.12.3
+  に整合 (全 21 モジュール収束)
+- npm 本番依存 0 件 (dev の esbuild low のみ、Windows dev サーバ限定)
+
+**RAG cross-repository** (`f1344966b`): ベクトル検索の補助 Solr クエリ 3 本
+(`getDocumentVector` シード / `enrichWithFirstChunk` / `enrichResultsWith
+ParentInfo`) が共有 `nemaki` コアに対し `repository_id` fq を欠いていた
+(RAG id は非 repo スコープの生 CMIS ID)。ID 衝突 + 非 repo スコープの reader
+ACL トークンと組み合わさると他 repo のベクトル/メタデータ/チャンクが混入し得た
+→ 全 6 RAG クエリに `escapeAndQuote` 付き `repository_id` fq を付与。RAG
+regression 164/164
+
+**衛生**: 追跡されていた `AclServiceImpl.java.rej` (一時 ACL debug ログの適用
+失敗パッチ、セキュリティロジックなし) を削除 (`92f7ad752`)
+
+**アップグレード安全性**: 全修正は**ランタイム認可 + 認証フィルタ + UI + pom のみ**
+で、CouchDB view (dump) / patch / 永続化モデル / Mango index の変更ゼロ。2.4
+時代からの CouchDB データ持ち越しパスに一切触れない。`allowedAuthMethods`
+gate は「プロパティ未設定 → 全許可」の後方互換デフォルトで、当該プロパティを
+持たない旧データはパスワードログイン継続可。
+
+**検証**:
+- Java unit/regression: AuthenticationUtilTest 13/13、McpAuthenticationHandler
+  Test 24/24、TrustedProxyTest 10/10、IngestAuthorizationServiceTest 37/37、
+  ingest suite 171/171、RAG 164/164
+- reactor `mvn clean install`: BUILD SUCCESS、core.war 3.2.1、UI `tsc` クリーン
+- **TCK 実効 38/38**: 永続 volume の初回 run は `baseTypesTest` (残骸カスタム型
+  `test:customFolderForE2E`) と `contentChangesSmokeTest` (蓄積データ) で 2 fail
+  だったが、クリーン DB (fresh init、`ci-complete-setup.sh` = Setup Wizard
+  `/apply`) で Types 3/3・Query 6/6 green を実証 → データ汚染で回帰ではない
+- **Playwright chromium フル**: 928 passed / 3 flaky-fail / 3 flaky / 99 skipped。
+  3 fail はいずれも本修正と無関係な UI (group-hierarchy 循環参照防止の Ant
+  モーダル `キャンセル` クリック timeout、custom-property-input) で、再実行・
+  エラー解析により flaky (非回帰) と確定
+- productVersion 3.2.1 をライブ検証 (setup/state + cmis:productVersion)
+
+**Low ハードニング (v3.2.1 tag 内、上記の後続コミット)**: 監査の Low 項目を
+5 コミットで解消:
+- SetupVector SSRF: `UrlValidator` が `SsrfGuard.extractEmbeddedIpv4` で IPv6
+  transition (NAT64/6to4/Teredo/IPv4-mapped/-compatible) を unwrap して
+  metadata/private を検出 (`allowPrivateNetworks` 挙動不変)。+6 test
+- ZipImporter コンテンツ再 bound: `createContentStreamFromZip` が申告
+  `getSize()` だけでなく実バイト数を bounded `FilterInputStream` で cap (streaming
+  維持、超過で IOException)。+4 test
+- UI セキュリティヘッダ: 新 `UiSecurityHeadersFilter` (`/ui/*`) が nosniff /
+  X-Frame-Options: SAMEORIGIN / Referrer-Policy を enforcing、CSP は **Report-Only**
+  (Ant Design CSS-in-JS + pdf.js を壊さない非ブロック baseline。違反レビュー後に
+  enforcing 昇格)
+- FilesystemStorageAdapter パス containment: `buildPath` を normalize +
+  storage-root `startsWith` check。+4 test
+- 依存 hygiene: spring-tx 7.0.4→7.0.7 / cxf-rt-ws-policy 4.1.3→4.2.0 の skew 整合、
+  旧 `woodstox-core-asl 4.4.1` 除去 (modern woodstox 6.5.0 が StAX provider)、
+  jackson 全モジュールを `jackson-bom` で 2.21.1 に整合
+- dev-compose 注記: `docker-compose-simple.yml` に「開発専用・0.0.0.0 公開」バナー、
+  `docker/realm-export.json` に dev-only `_NOTE`
+
+**deferred 2 件の解消 (Low ハードニング続き、v3.2.1 tag 内)**:
+- **RAG `readers` トークンの repo スコープ化 (恒久策)**: `ACLExpander` を単一
+  情報源として index/query 両側のトークンを `user:{repo}:{id}` /
+  `group:{repo}:{id}` / `anyone:{repo}` に変更 (repo は index/query で verbatim
+  一致、user/group のみ Solr escape)。**⚠️ BREAKING (index 形式変更)**: 後方
+  互換にすると衝突が再発するため意図的にハードブレーク。**アップグレード後は
+  RAG index の再構築が必須**。再構築前は fail-closed (旧形式 doc が RAG 検索に
+  出なくなるだけで、リポジトリ間漏洩はしない)。RAG は新機能で 2.x→3.x 移行自体
+  再インデックス必須。ACLExpanderTest 24/24
+- **UI CSP の昇格手順を実施**: 稼働アプリをブラウザで walkthrough (Report-Only)
+  し違反収集 → 核 SPA (ログイン/一覧/Ant/pdf.js) は全て same-origin で違反ゼロ
+  (pdf.js worker は `/core/ui/pdf-worker/` = `'self'`)、唯一の cross-origin は
+  optional な Google Drive / Microsoft(MSAL) / Purview 連携 → connect-src に
+  `googleapis.com` / `accounts.google.com` / `graph.microsoft.com` /
+  `login.microsoftonline.com` / `*.purview.azure.com`、frame-src に MSAL silent
+  iframe origin を追加。**設定可能化**: `-Dnemakiware.ui.csp.mode`
+  (report-only 既定 / enforce / off) と `-Dnemakiware.ui.csp.extraOrigins`
+  (カスタム IdP / 非 global Azure cloud 用)。既定は upgrade 安全な report-only の
+  まま、operator は自 deployment の cloud/IdP flow 確認後に 1 property で
+  enforce へ昇格可。enforce モードでログインページが違反ゼロで完全描画されること
+  を実機確認
+
+**残 (真に deferred)**:
+- CSP enforce をデフォルト化するか (現状 report-only 既定。cloud deployment の
+  OAuth flow は実クレデンシャルでの検証後が安全)
+- 2.4→3.2.1 アップグレードスモーク (2.4 dump 用意待ち)
+
+#### 3.2.1 追加機能 (post-audit、v3.2.1 tag 内): 管理UIからのクラウド/SSO認証設定 + Markdown画像埋め込み解決
+
+初回 audit remediation の後、運用性 UX を 2 件追加 (いずれも runtime authz /
+永続化モデル不変、CouchDB view/patch/schema/Mango 変更なし)。
+
+- **管理UIからのクラウド/SSO認証設定 (admin-managed precedence)** (`4ded14653`
+  / `5c16ed090`): Setup Wizard は Google/Microsoft の clientId や
+  Keycloak/OIDC/SAML 設定を `-D` システムプロパティとして書き込むため、
+  統合設定画面がこれらを `source=system_property` としてフィールドをロックし
+  「システムプロパティで上書きされているため管理画面からは変更できません」と
+  表示 → 設定ファイル編集 + redeploy 無しに clientId 変更や OIDC の Keycloak
+  realm 変更ができなかった。`PropertyManager.isAdminManagedDynamicKey` の対象を
+  `cloud.auth.` / `cloud.drive.` / `sso.` / `oidc.` / `saml.` に拡張し、これら
+  admin-managed key は **nemaki_conf(管理UIの値)が `-D`/env bootstrap より優先**
+  (blank 値は deploy 既定へ fall-through = クリアで復帰)。`IntegrationSettings
+  Controller` は両応答ビルダーで per-key `overridable` map を返し、
+  `IntegrationSettingsService.readSettingSource` は admin-managed key に非空
+  nemaki_conf 値があれば `couchdb` を報告。UI (`SettingsFormFields`) は
+  admin-managed key を source=system_property でも編集可能なまま維持し、ロック
+  警告の代わりに info notice (`overridableNotice`) 表示。`overridable` を
+  service 型 / `useSettingsTab` / 全 settings tab に配線。i18n ja/en。
+  PropertyManagerConfigTest 12/12。実機検証: admin-UI 値が `-D` を上書き
+  (source `system_property → couchdb`)、blank で deploy 既定へ復帰。**設計上の
+  注意**: admin-managed 化は auth 統合 key に限定 (DB credential 等は従来の
+  「system property first」を維持)。
+- **Markdown プレビューの画像埋め込み解決** (`ddfb831e8`): `MarkdownPreview` は
+  react-markdown を素で呼んでおり画像未解決 (相対参照 `images/foo.png` /
+  `../assets/a.png` が SPA route 基準で 404、絶対URLのみ表示)。カスタム `img`
+  renderer を追加: 相対参照を対象 .md の CMIS フォルダ基準で解決 —
+  `getObjectParents` で親フォルダ path → `resolveRelativeCmisPath` (サブフォルダ
+  / `./` / `../` / 先頭 `/`=repo root / query,hash 除去 / percent-decode) →
+  `getObjectByPath` → `getContentStream` → **blob URL** (CSP `img-src` は既に
+  `blob:` 許可) 化、unmount で revoke。絶対/`data:`/`blob:` は素通し。解決失敗は
+  alt テキスト + 壊れアイコン (`imageUnresolved`) にフォールバック。純ロジック
+  `resolveRelativeCmisPath` を export し vitest 11 ケース。i18n ja/en。実機
+  (ブラウザ) 3 ケース検証: 相対サブフォルダ→blob URL 描画、不在→フォールバック、
+  絶対URL→素通し。**HTML は従来通り Monaco ソース表示 (レンダリングしない) の
+  ままで挙動不変** (信頼できない HTML の XSS 回避)。
+
+**リリース再検証 (clean DB)**: 上記2機能を含む deploy で全面テスト実施 — 関連
+Java unit 60/60 (PropertyManager / IntegrationSettings controller /
+AuthenticationUtil / MCP auth)、UI vitest 191/191 (Markdown resolver +11、
+LineageSettingsTab test を MemoryRouter wrap する pre-existing 修正込み)、
+**TCK フル 38/38 BUILD SUCCESS** (永続 volume 汚染で `rootFolderTest` が初回
+fail するが clean 再init で green = 非回帰を再確認)、Playwright chromium フル
+911 passed / 102 skipped。fail spec は既知 flaky (group-hierarchy 循環参照 /
+custom-property-input) + 環境 serial timeout flake (archive-restore-consistency
+/ config-viewer の render 前 row-count race) で変更コード経路外。overridable
+notice 挙動変更で影響した integration-settings assertion 1 件のみ更新し単体
+再実行 17/17 green。
 
 ### 3.2.0 (2026-06-20) — IaaS ワンステップデプロイ (公開イメージ + cloud bootstrap)
 

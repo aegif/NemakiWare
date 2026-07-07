@@ -12,6 +12,7 @@ export function DirectorySyncSettingsTab() {
 
   const {
     sources,
+    overridable,
     formValues,
     loading,
     saving,
@@ -54,6 +55,7 @@ export function DirectorySyncSettingsTab() {
         fields={fields}
         formValues={formValues}
         sources={sources}
+        overridable={overridable}
         onFieldChange={updateField}
       />
 

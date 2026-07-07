@@ -182,7 +182,7 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             // 1. Retrieve the source document's vector from Solr, scoped to
             //    documents the caller may read. A non-readable / non-existent
             //    source is indistinguishable (both return null → not found).
-            float[] documentVector = getDocumentVector(solrClient, documentId, aclFilter);
+            float[] documentVector = getDocumentVector(solrClient, repositoryId, documentId, aclFilter);
             if (documentVector == null) {
                 throw new VectorSearchException("Document not found in RAG index: " + documentId);
             }
@@ -221,13 +221,18 @@ public class VectorSearchServiceImpl implements VectorSearchService {
      * @param documentId Document ID (raw CMIS object ID)
      * @return document_vector as float array, or null if not found
      */
-    private float[] getDocumentVector(SolrClient solrClient, String documentId, String aclFilter) throws Exception {
+    private float[] getDocumentVector(SolrClient solrClient, String repositoryId, String documentId, String aclFilter) throws Exception {
         SolrQuery query = new SolrQuery();
         // Convert to RAG id prefix and sanitize to prevent Solr query injection
         String ragId = RAGIndexingServiceImpl.toRagId(documentId);
         String sanitizedId = SolrQuerySanitizer.escape(ragId);
         query.setQuery("id:" + sanitizedId);
         query.addFilterQuery("doc_type:document");
+        // Cross-repository isolation: the seed document must belong to the
+        // caller's repository. RAG ids are the raw CMIS object id and are not
+        // repository-scoped, so without this filter a colliding id from another
+        // repository could be used as the similarity seed.
+        query.addFilterQuery("repository_id:" + SolrQuerySanitizer.escapeAndQuote(repositoryId));
         // Reader ACL filter: only return the vector if the caller may read
         // the source document, so a non-readable seed is treated as missing.
         if (aclFilter != null && !aclFilter.isEmpty()) {
@@ -284,7 +289,7 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         // Search on document_vector (parent documents)
         solrQuery.setQuery("{!knn f=document_vector topK=" + topK + "}" + vectorStr);
         solrQuery.addFilterQuery("doc_type:document");
-        solrQuery.addFilterQuery("repository_id:" + repositoryId);
+        solrQuery.addFilterQuery("repository_id:" + SolrQuerySanitizer.escapeAndQuote(repositoryId));
         solrQuery.addFilterQuery(aclFilter);
         solrQuery.setFields("id", "name", "path", "objecttype", "score");
         solrQuery.setRows(topK);
@@ -325,7 +330,7 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             result.setScore(score);
 
             // For similar documents, we use the first chunk as representative text
-            enrichWithFirstChunk(solrClient, result);
+            enrichWithFirstChunk(solrClient, repositoryId, result);
 
             results.add(result);
         }
@@ -337,13 +342,16 @@ public class VectorSearchServiceImpl implements VectorSearchService {
      * Enrich a result with the first chunk's information.
      * This provides context text for display in similar documents list.
      */
-    private void enrichWithFirstChunk(SolrClient solrClient, VectorSearchResult result) {
+    private void enrichWithFirstChunk(SolrClient solrClient, String repositoryId, VectorSearchResult result) {
         try {
             SolrQuery query = new SolrQuery();
             // SECURITY: Sanitize documentId to prevent Solr query injection
             String sanitizedId = SolrQuerySanitizer.escape(result.getDocumentId());
             query.setQuery("parent_document_id:" + sanitizedId);
             query.addFilterQuery("doc_type:chunk");
+            // Cross-repository isolation: only enrich with chunks from the
+            // caller's repository (chunk parent ids are not repo-scoped).
+            query.addFilterQuery("repository_id:" + SolrQuerySanitizer.escapeAndQuote(repositoryId));
             query.setFields("chunk_id", "chunk_index", "chunk_text");
             query.setSort("chunk_index", SolrQuery.ORDER.asc);
             query.setRows(1);
@@ -492,7 +500,7 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         SolrQuery solrQuery = new SolrQuery();
         solrQuery.setQuery("{!knn f=chunk_vector topK=" + topK + "}" + vectorStr);
         solrQuery.addFilterQuery("doc_type:chunk");
-        solrQuery.addFilterQuery("repository_id:" + repositoryId);
+        solrQuery.addFilterQuery("repository_id:" + SolrQuerySanitizer.escapeAndQuote(repositoryId));
         solrQuery.addFilterQuery(aclFilter);
 
         if (additionalFilter != null && !additionalFilter.isEmpty()) {
@@ -559,7 +567,7 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         SolrQuery solrQuery = new SolrQuery();
         solrQuery.setQuery("{!knn f=property_vector topK=" + topK + "}" + vectorStr);
         solrQuery.addFilterQuery("doc_type:document");
-        solrQuery.addFilterQuery("repository_id:" + repositoryId);
+        solrQuery.addFilterQuery("repository_id:" + SolrQuerySanitizer.escapeAndQuote(repositoryId));
         solrQuery.addFilterQuery(aclFilter);
         // Note: Range queries not supported for dense vector fields, KNN will only return docs with vectors
 
@@ -656,6 +664,9 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             SolrQuery batchQuery = new SolrQuery();
             batchQuery.setQuery(queryBuilder.toString());
             batchQuery.addFilterQuery("doc_type:document");
+            // Cross-repository isolation: restrict parent-info enrichment to the
+            // caller's repository (RAG ids are not repository-scoped).
+            batchQuery.addFilterQuery("repository_id:" + SolrQuerySanitizer.escapeAndQuote(repositoryId));
             batchQuery.setFields("id", "name", "path", "objecttype");
             batchQuery.setRows(documentIds.size());
 

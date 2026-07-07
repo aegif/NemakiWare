@@ -139,6 +139,18 @@
 	</filter>
 	-->
 	
+	<!-- Security response headers for the React SPA (/ui/*): nosniff,
+	     X-Frame-Options, Referrer-Policy (enforcing) + Content-Security-Policy
+	     in Report-Only mode (non-blocking baseline; promote after review). -->
+	<filter>
+		<filter-name>uiSecurityHeadersFilter</filter-name>
+		<filter-class>jp.aegif.nemaki.ui.UiSecurityHeadersFilter</filter-class>
+	</filter>
+	<filter-mapping>
+		<filter-name>uiSecurityHeadersFilter</filter-name>
+		<url-pattern>/ui/*</url-pattern>
+	</filter-mapping>
+
 	<!-- CORS filter mapping - must be first -->
 	<filter-mapping>
 		<filter-name>corsFilter</filter-name>

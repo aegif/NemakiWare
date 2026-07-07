@@ -75,6 +75,9 @@ class ImportProfileSchedulerGateTest {
     private CallContext nonAdminCtx() {
         CallContext ctx = mock(CallContext.class);
         when(ctx.getUsername()).thenReturn(USER);
+        // Cross-repository confinement (3.2.1): the controller now requires the
+        // operation's repository to match the authenticated one.
+        lenient().when(ctx.getRepositoryId()).thenReturn(REPO);
         lenient().when(ctx.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.FALSE);
         when(httpRequest.getAttribute("CallContext")).thenReturn(ctx);
         when(authService.isAdmin(ctx)).thenReturn(false);
@@ -207,6 +210,7 @@ class ImportProfileSchedulerGateTest {
         // doesn't carry stale audit context forward.
         CallContext admin = mock(CallContext.class);
         when(admin.getUsername()).thenReturn("admin");
+        lenient().when(admin.getRepositoryId()).thenReturn(REPO);
         lenient().when(admin.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
         when(httpRequest.getAttribute("CallContext")).thenReturn(admin);
         when(authService.isAdmin(admin)).thenReturn(true);
@@ -241,6 +245,7 @@ class ImportProfileSchedulerGateTest {
         // previously auto-disabled profile.
         CallContext admin = mock(CallContext.class);
         when(admin.getUsername()).thenReturn("admin");
+        lenient().when(admin.getRepositoryId()).thenReturn(REPO);
         lenient().when(admin.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
         when(httpRequest.getAttribute("CallContext")).thenReturn(admin);
         when(authService.isAdmin(admin)).thenReturn(true);
@@ -334,6 +339,7 @@ class ImportProfileSchedulerGateTest {
         // non-admin.
         CallContext admin = mock(CallContext.class);
         when(admin.getUsername()).thenReturn("admin");
+        lenient().when(admin.getRepositoryId()).thenReturn(REPO);
         lenient().when(admin.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
         when(httpRequest.getAttribute("CallContext")).thenReturn(admin);
         when(authService.isAdmin(admin)).thenReturn(true);

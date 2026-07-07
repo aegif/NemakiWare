@@ -55,6 +55,8 @@ class ImportProfileSinceFilterTest {
         // Admin context so the W1 filter runs against the un-permission-filtered set
         CallContext admin = mock(CallContext.class);
         lenient().when(admin.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        // Cross-repository confinement (3.2.1): list() scopes to the auth repo.
+        lenient().when(admin.getRepositoryId()).thenReturn("bedroom");
         when(httpRequest.getAttribute("CallContext")).thenReturn(admin);
         when(authService.isAdmin(admin)).thenReturn(true);
     }
@@ -78,7 +80,7 @@ class ImportProfileSinceFilterTest {
     void noParam_returnsAllProfiles_unchanged() {
         // V5.2 backward-compat: behaviour with no autoDisabledSince must
         // be identical to before W1.
-        when(profileService.list()).thenReturn(List.of(
+        when(profileService.listByRepository("bedroom")).thenReturn(List.of(
                 profile("p-active", null),
                 profile("p-old", "2026-01-01T00:00:00Z"),
                 profile("p-recent", Instant.now().toString())
@@ -94,7 +96,7 @@ class ImportProfileSinceFilterTest {
 
     @Test
     void emptyStringParam_treatedAsAbsent_passThrough() {
-        when(profileService.list()).thenReturn(List.of(
+        when(profileService.listByRepository("bedroom")).thenReturn(List.of(
                 profile("p-active", null),
                 profile("p-recent", Instant.now().toString())
         ));
@@ -113,7 +115,7 @@ class ImportProfileSinceFilterTest {
         Instant sevenDaysAgo = now.minusSeconds(7 * 24 * 60 * 60);
         Instant tenDaysAgo = now.minusSeconds(10 * 24 * 60 * 60);
 
-        when(profileService.list()).thenReturn(List.of(
+        when(profileService.listByRepository("bedroom")).thenReturn(List.of(
                 profile("p-active", null),                            // no marker → excluded
                 profile("p-recent", now.toString()),                  // within window → kept
                 profile("p-just-old", tenDaysAgo.toString()),         // before cutoff → excluded
@@ -141,7 +143,7 @@ class ImportProfileSinceFilterTest {
         // only CLI / scripting callers with malformed input — for
         // them, an explicit 400 is more useful than a silent
         // pass-through.
-        when(profileService.list()).thenReturn(List.of(
+        when(profileService.listByRepository("bedroom")).thenReturn(List.of(
                 profile("p-active", null),
                 profile("p-recent", Instant.now().toString())
         ));
@@ -156,7 +158,7 @@ class ImportProfileSinceFilterTest {
     void emptyStringCutoff_stillTreatedAsAbsent_passThrough_evenWithR4() {
         // R4 strictness applies only to non-empty malformed input.
         // Empty / null still pass through (treat as "no filter requested").
-        when(profileService.list()).thenReturn(List.of(
+        when(profileService.listByRepository("bedroom")).thenReturn(List.of(
                 profile("p-recent", Instant.now().toString())
         ));
 
@@ -175,7 +177,7 @@ class ImportProfileSinceFilterTest {
         // must NOT be falsely classified as "recent" by the filter. The
         // alternative (include on ambiguity) would mis-surface stale
         // shutdowns as fresh during incident triage.
-        when(profileService.list()).thenReturn(List.of(
+        when(profileService.listByRepository("bedroom")).thenReturn(List.of(
                 profile("p-bad-marker", "this-is-not-iso"),
                 profile("p-recent", Instant.now().toString())
         ));
@@ -191,7 +193,7 @@ class ImportProfileSinceFilterTest {
     void cutoffInFuture_returnsZeroProfiles() {
         // No profile should match a "since tomorrow" filter — the
         // window has no past to look at. Confirms strict >= semantics.
-        when(profileService.list()).thenReturn(List.of(
+        when(profileService.listByRepository("bedroom")).thenReturn(List.of(
                 profile("p-recent", Instant.now().toString())
         ));
 
@@ -210,7 +212,7 @@ class ImportProfileSinceFilterTest {
         // only caught DateTimeParseException. External review caught
         // it as a contract gap with R4's "strict 400 on malformed".
         // RC5.5 closes the gap by also catching ArithmeticException.
-        when(profileService.list()).thenReturn(List.of(
+        when(profileService.listByRepository("bedroom")).thenReturn(List.of(
                 profile("p-recent", Instant.now().toString())
         ));
 
@@ -230,7 +232,7 @@ class ImportProfileSinceFilterTest {
         // ArithmeticException the same way it covers
         // DateTimeParseException — the corrupted profile is silently
         // dropped, the rest of the list returns normally.
-        when(profileService.list()).thenReturn(List.of(
+        when(profileService.listByRepository("bedroom")).thenReturn(List.of(
                 profile("p-overflow-marker", "+999999999-12-31T23:59:59Z"),
                 profile("p-recent", Instant.now().toString())
         ));

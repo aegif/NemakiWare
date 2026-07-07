@@ -11,6 +11,7 @@ export function AtlasSettingsTab() {
 
   const {
     sources,
+    overridable,
     formValues,
     loading,
     saving,
@@ -76,6 +77,7 @@ export function AtlasSettingsTab() {
         fields={fields}
         formValues={formValues}
         sources={sources}
+        overridable={overridable}
         onFieldChange={updateField}
       />
 

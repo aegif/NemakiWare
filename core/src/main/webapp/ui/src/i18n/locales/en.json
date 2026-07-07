@@ -1571,7 +1571,9 @@
       "fetchError": "Failed to fetch Markdown content",
       "noContent": "No content available",
       "previewMode": "Preview",
-      "sourceMode": "Source"
+      "sourceMode": "Source",
+      "imageLoading": "Loading image...",
+      "imageUnresolved": "Image could not be resolved"
     },
     "diagram": {
       "title": "Diagram Preview",
@@ -3122,6 +3124,7 @@
     "dualBackendWarning": "Multiple backends enabled",
     "dualBackendWarningDescription": "Both Purview and Atlas backends are enabled. Only one backend can be active at a time; Purview takes priority.",
     "overriddenWarning": "This setting is overridden by {{source}} and cannot be changed from the admin UI",
+    "overridableNotice": "The current value comes from {{source}}. Saving here overrides and persists your value.",
     "source": {
       "system_property": "System Property",
       "environment": "Environment Variable",

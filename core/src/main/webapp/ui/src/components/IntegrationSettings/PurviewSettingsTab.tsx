@@ -16,6 +16,7 @@ export function PurviewSettingsTab() {
 
   const {
     sources,
+    overridable,
     formValues,
     loading,
     saving,
@@ -76,6 +77,7 @@ export function PurviewSettingsTab() {
         fields={fields}
         formValues={formValues}
         sources={sources}
+        overridable={overridable}
         onFieldChange={updateField}
       />
 

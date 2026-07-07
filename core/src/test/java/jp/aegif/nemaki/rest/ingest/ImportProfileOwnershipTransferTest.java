@@ -87,6 +87,8 @@ class ImportProfileOwnershipTransferTest {
     private CallContext adminCtx() {
         CallContext ctx = mock(CallContext.class);
         when(ctx.getUsername()).thenReturn("admin");
+        // Cross-repository confinement (3.2.1): profile ops target the auth repo.
+        lenient().when(ctx.getRepositoryId()).thenReturn(REPO);
         when(ctx.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
         when(httpRequest.getAttribute("CallContext")).thenReturn(ctx);
         when(ingestAuthorizationService.isAdmin(ctx)).thenReturn(true);
@@ -96,6 +98,7 @@ class ImportProfileOwnershipTransferTest {
     private CallContext nonAdminCtx() {
         CallContext ctx = mock(CallContext.class);
         when(ctx.getUsername()).thenReturn("bob");
+        lenient().when(ctx.getRepositoryId()).thenReturn(REPO);
         when(ctx.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.FALSE);
         when(httpRequest.getAttribute("CallContext")).thenReturn(ctx);
         when(ingestAuthorizationService.isAdmin(ctx)).thenReturn(false);

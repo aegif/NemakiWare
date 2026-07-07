@@ -698,28 +698,35 @@ test.describe('Custom Property Input Feature', () => {
       const modal = page.locator('.ant-modal:visible');
       await expect(modal).toBeVisible({ timeout: 5000 });
 
-      // Select the custom relationship type
+      // Select the custom relationship type. Filter by the type id (unique and
+      // present in every option label as "(id)") rather than the display name,
+      // which can be a substring of several options.
       const typeDropdown = modal.locator('.ant-select').first();
       await typeDropdown.click();
       await page.waitForSelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden)', { timeout: 5000 });
 
-      const typeOption = page.locator('.ant-select-dropdown .ant-select-item-option').filter({ hasText: customRelType.displayName || customRelType.id });
-      if (await typeOption.count() > 0) {
-        await typeOption.click();
-        await waitForRender(page);
-
-        // Check for custom properties section
-        const customPropsSection = modal.locator('h4:has-text("カスタムプロパティ")');
-        await expect(customPropsSection).toBeVisible({ timeout: 5000 });
-      }
-
-      // Close modal
-      const cancelButton = modal.locator('button:has-text("キャンセル")');
-      if (await cancelButton.count() > 0) {
-        await cancelButton.click();
-      } else {
+      const typeOption = page
+        .locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option')
+        .filter({ hasText: customRelType.id })
+        .first();
+      // The custom type must be offered; scroll it into view and select it, then
+      // wait for the dropdown to close so it no longer overlays the modal footer.
+      await expect(typeOption).toBeVisible({ timeout: 10000 });
+      await typeOption.scrollIntoViewIfNeeded().catch(() => {});
+      await typeOption.click();
+      await page.waitForSelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden)', { state: 'detached', timeout: 5000 }).catch(async () => {
+        // Fallback: force the dropdown closed if it lingers.
         await page.keyboard.press('Escape');
-      }
+      });
+      await waitForRender(page);
+
+      // Custom properties section appears for a type with custom property defs.
+      const customPropsSection = modal.locator('h4:has-text("カスタムプロパティ")');
+      await expect(customPropsSection).toBeVisible({ timeout: 10000 });
+
+      // Close modal (Escape is robust against any lingering dropdown overlay).
+      await page.keyboard.press('Escape');
+      await page.locator('.ant-modal:visible').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
     });
 
     test('should not lose form data when clicking outside relationship modal', async ({ page }) => {

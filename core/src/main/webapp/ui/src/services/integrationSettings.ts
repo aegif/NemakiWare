@@ -8,6 +8,12 @@ export type SettingSource = 'system_property' | 'environment' | 'couchdb' | 'pro
 export interface IntegrationSettingsResponse {
   settings: Record<string, string>;
   sources: Record<string, SettingSource>;
+  /**
+   * Per-key flag: true when the key is admin-managed (the admin UI value in
+   * nemaki_conf takes precedence over any deploy-time -D/env), so the field
+   * remains editable even when its current source is a system property / env.
+   */
+  overridable?: Record<string, boolean>;
   warning?: string;
 }
 

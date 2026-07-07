@@ -18,3 +18,35 @@ http_public         = false              # true = open 8080 plain-HTTP demo
 # Optional: read CouchDB password from Secrets Manager instead of random.
 # Must be the full ARN (not just the secret name).
 # couchdb_secret_arn = "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:nemaki/couchdb-AbCdEf"
+
+# ── Full-config ephemeral test env (Atlas + Bedrock RAG + cloud auth + HTTPS) ─
+# Turn this on to auto-configure the instance end-to-end via deploy/aws/
+# nemaki-full-config.sh: runs the Setup Wizard, enables Bedrock RAG (instance
+# IAM role, no static keys), starts an Apache Atlas container + selects the
+# ATLAS catalog backend, enables Microsoft/Google sign-in, and fronts the app
+# with a Caddy + Let's Encrypt HTTPS reverse proxy (a secure context is required
+# for the browser Web Crypto API that MSAL/GIS use).
+#
+# enable_full_config = true
+#
+# Stable hostname across destroy+apply — reuse a persistent Elastic IP you
+# allocated once (`aws ec2 allocate-address --domain vpc`), so the OAuth redirect
+# URI / JS origin is registered in Entra/Google ONCE and never changes. With a
+# reused EIP <ip>, nip_host is "<ip>.nip.io" (no DNS record to manage; Let's
+# Encrypt issues a real cert for it).
+# eip_allocation_id = "eipalloc-0123456789abcdef0"
+# nip_host          = "203.0.113.10.nip.io"
+#
+# Cloud sign-in — PUBLIC identifiers only. No client secret is needed: the UI
+# uses MSAL (SPA/PKCE) and Google Identity Services (origin-based), both public
+# clients. Register the redirect URI  https://<nip_host>/core/ui/auth-popup.html
+# as an Entra "Single-page application" platform, and  https://<nip_host>  as a
+# Google "Authorized JavaScript origin".
+# cloud_auth_microsoft_client_id = "00000000-0000-0000-0000-000000000000"
+# cloud_auth_microsoft_tenant_id = "00000000-0000-0000-0000-000000000000"
+# cloud_auth_google_client_id    = "1234567890-xxxxxxxx.apps.googleusercontent.com"
+#
+# Bedrock embedding model (region must offer it; verify with
+# `aws bedrock list-foundation-models`).
+# bedrock_region   = "ap-northeast-1"
+# bedrock_model_id = "amazon.titan-embed-text-v2:0"

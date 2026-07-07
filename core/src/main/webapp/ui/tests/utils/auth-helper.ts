@@ -294,16 +294,27 @@ export class AuthHelper {
     // Wait for page to stabilize after login
     await this.page.waitForTimeout(1000);
 
-    // Wait for table to appear and finish loading (documents page)
-    try {
-      await this.page.waitForSelector('.ant-table', { timeout: 15000 });
-      // Wait for table data to finish loading (spinner gone)
-      await this.page.waitForFunction(
-        () => document.querySelector('.ant-spin-spinning') === null,
-        { timeout: 10000 }
-      );
-    } catch {
-      // Page may not have a table (e.g. redirected elsewhere), continue
+    // Wait for the documents table to render and finish loading. The list-load
+    // can intermittently hang on "読み込み中..." (a stalled metadata request that
+    // otherwise never resolves); reload and retry so callers reliably land on a
+    // ready documents page rather than a spinning one. Non-fatal if the page
+    // genuinely has no table (some flows navigate elsewhere) — callers that need
+    // the table assert it themselves.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const tableVisible = await this.page.locator('.ant-table').first()
+        .waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false);
+      if (tableVisible) {
+        // Wait for the table spinner to clear.
+        await this.page.waitForFunction(
+          () => document.querySelector('.ant-spin-spinning') === null,
+          { timeout: 10000 }
+        ).catch(() => {});
+        break;
+      }
+      if (attempt < 2) {
+        await this.page.reload();
+        await this.page.waitForTimeout(1000);
+      }
     }
 
     // Additional wait for page stabilization

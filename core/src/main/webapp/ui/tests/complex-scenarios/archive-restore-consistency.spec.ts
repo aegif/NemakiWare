@@ -26,6 +26,7 @@ import { test, expect } from '@playwright/test';
 import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
+import { ApiHelper } from '../utils/api-helper';
 
 import {
   TIMEOUTS,
@@ -134,54 +135,36 @@ test.describe('Archive and Restore Consistency', () => {
   });
 
   test('Step 1: Create test folder and document', async ({ page, browserName }) => {
-    test.setTimeout(120000); // Extended timeout for folder + document creation
+    test.setTimeout(120000);
     console.log(`Creating test folder: ${testFolderName}`);
     console.log(`Creating test document: ${testDocumentName}`);
 
     const isMobile = testHelper.isMobile(browserName);
 
-    // Navigate to documents page
+    // Create the folder and (inside it) the document via the CMIS API. The UI
+    // upload flow is slow (~50s) and times out under full-suite load, which
+    // cascades this whole serial block; and UI folder-navigation could drop the
+    // document at the repository root. An API create is fast, deterministic, and
+    // guarantees the document is a child of the test folder for the later steps.
+    const apiHelper = new ApiHelper(page);
+    testFolderId = await apiHelper.createFolder({ name: testFolderName });
+    expect(testFolderId).toBeTruthy();
+    testDocumentId = await apiHelper.createDocument({
+      name: testDocumentName,
+      content: documentContent,
+      parentId: testFolderId,
+    });
+    expect(testDocumentId).toBeTruthy();
+    console.log(`Folder ID: ${testFolderId}, Document ID: ${testDocumentId}`);
+
+    // Show the documents view so the folder is visible for the subsequent UI steps.
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click(isMobile ? { force: true } : {});
     await waitForUiStable(page);
-
-    // Create folder
-    const folderCreated = await testHelper.createFolder(testFolderName, isMobile);
-    console.log(`Folder created: ${folderCreated}`);
-
-    if (folderCreated) {
-      const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: testFolderName }).first();
-      const rowKey = await folderRow.getAttribute('data-row-key');
-      if (rowKey) {
-        testFolderId = rowKey;
-        console.log(`Folder ID: ${testFolderId}`);
-      }
-
-      // Navigate into folder using helper (single click on folder name, not dblclick on row)
-      const navigationSuccessful = await testHelper.navigateIntoFolder(testFolderName, isMobile);
-      console.log(`Navigation into folder: ${navigationSuccessful}`);
-
-      if (!navigationSuccessful) {
-        console.log('WARNING: Folder navigation may have failed, document will be created at current location');
-      }
-
-      // Create document inside folder
-      const docCreated = await testHelper.uploadDocument(testDocumentName, documentContent, isMobile);
-      console.log(`Document created: ${docCreated}`);
-
-      if (docCreated) {
-        const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
-        const docRowKey = await documentRow.getAttribute('data-row-key');
-        if (docRowKey) {
-          testDocumentId = docRowKey;
-          console.log(`Document ID: ${testDocumentId}`);
-        }
-      }
-
-      expect(docCreated).toBe(true);
-    }
-
-    expect(folderCreated).toBe(true);
+    await page.reload();
+    await testHelper.waitForAntdLoad();
+    await expect(page.locator('.ant-table-tbody tr').filter({ hasText: testFolderName }).first())
+      .toBeVisible({ timeout: 15000 });
   });
 
   test('Step 2: Archive the document', async ({ page, browserName }) => {

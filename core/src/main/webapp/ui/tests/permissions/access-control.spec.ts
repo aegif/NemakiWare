@@ -178,37 +178,55 @@ test.describe('Access Control and Permissions', () => {
     try {
       console.log(`Setup: Creating test user ${testUsername} via REST API`);
 
-      // Create user via REST API
-      const createUserResponse = await page.request.post(
-        `http://localhost:8080/core/api/v1/cmis/repositories/bedroom/users`,
-        {
-          headers: { 'Authorization': adminAuth, 'Content-Type': 'application/json' },
+      // Create + verify with real retries. The previous version created once
+      // (no retry / no timeout / no status check) and slept via
+      // waitForUiStable(page) between verify attempts — but on this API-only
+      // context that resolves near-instantly, so a transient create failure or
+      // any CouchDB consistency lag left the user unprovisioned and every test
+      // in this block skipped with "user not found". Retry the CREATE itself
+      // (treating an already-exists conflict as success) and put a real delay
+      // between verify polls so the user reliably exists before the tests run.
+      const createUrl = `http://localhost:8080/core/api/v1/cmis/repositories/bedroom/users`;
+      const verifyUrl = `http://localhost:8080/core/api/v1/cmis/repositories/bedroom/users/${testUsername}`;
+      let userVerified = false;
+
+      for (let attempt = 0; attempt < 5 && !userVerified; attempt++) {
+        // (Re)issue the create until the user is queryable. A 409/already-exists
+        // just means a prior attempt landed — fall through to verification.
+        const createUserResponse = await page.request.post(createUrl, {
+          // /core/api/v1/cmis/* (Jersey) enforces CSRF via ApiCsrfFilter (added
+          // in 3.2.1). Basic auth is an ambient credential and does NOT bypass
+          // it, so a state-changing POST without X-Requested-With is rejected
+          // with 403 — which is exactly why this user creation silently failed
+          // and every test in this block skipped with "user not found". See
+          // CLAUDE.md "CSRF保護".
+          headers: { 'Authorization': adminAuth, 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
           data: {
             userId: testUsername,
             userName: `${testUsername}_display`,
             firstName: 'Test',
             lastName: 'User',
             email: `${testUsername}@example.com`,
-            password: testUserPassword
-          }
+            password: testUserPassword,
+          },
+          timeout: 10000,
+        }).catch((e) => { console.log(`Setup: create POST error (attempt ${attempt + 1}): ${e}`); return null; });
+        if (createUserResponse) {
+          console.log(`Setup: create response (attempt ${attempt + 1}): ${createUserResponse.status()}`);
         }
-      );
-      console.log(`Setup: REST API user create response: ${createUserResponse.status()}`);
 
-      // Verify user exists (retry up to 3 times)
-      let userVerified = false;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const verifyResponse = await page.request.get(
-          `http://localhost:8080/core/api/v1/cmis/repositories/bedroom/users/${testUsername}`,
-          { headers: { 'Authorization': adminAuth }, timeout: 10000 }
-        );
-        if (verifyResponse.ok()) {
-          userVerified = true;
-          console.log(`Setup: User ${testUsername} verified (attempt ${attempt + 1})`);
-          break;
+        // Poll for the user to become queryable (CouchDB may lag the write).
+        for (let v = 0; v < 3 && !userVerified; v++) {
+          const verifyResponse = await page.request.get(verifyUrl, {
+            headers: { 'Authorization': adminAuth }, timeout: 10000,
+          }).catch(() => null);
+          if (verifyResponse && verifyResponse.ok()) {
+            userVerified = true;
+            console.log(`Setup: User ${testUsername} verified (create attempt ${attempt + 1}, poll ${v + 1})`);
+            break;
+          }
+          await page.waitForTimeout(1000);
         }
-        console.log(`Setup: User verification attempt ${attempt + 1} failed (${verifyResponse.status()}), retrying...`);
-        await waitForUiStable(page);
       }
 
       if (!userVerified) {
@@ -1236,6 +1254,19 @@ test.describe('Access Control and Permissions', () => {
       }
 
       console.log(`Cleanup: Successfully deleted ${deletedCount} test folders`);
+
+      // Delete the test user created in beforeAll. Now that creation actually
+      // succeeds (CSRF header added), the users list would otherwise grow every
+      // run. The api/v1 DELETE needs the same X-Requested-With CSRF header.
+      try {
+        const delUser = await page.request.delete(
+          `http://localhost:8080/core/api/v1/cmis/repositories/bedroom/users/${testUsername}`,
+          { headers: { 'Authorization': authHeader, 'X-Requested-With': 'XMLHttpRequest' }, timeout: 10000 }
+        );
+        console.log(`Cleanup: Deleted test user ${testUsername} (HTTP ${delUser.status()})`);
+      } catch (e) {
+        console.log(`Cleanup: Failed to delete test user ${testUsername}: ${e}`);
+      }
 
     } catch (error) {
       console.log('Cleanup: Test folder cleanup failed:', error);

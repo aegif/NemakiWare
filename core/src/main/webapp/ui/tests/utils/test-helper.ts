@@ -705,14 +705,26 @@ export class TestHelper {
     const currentUrl = this.page.url();
     if (currentUrl.includes('/documents')) {
       console.log('TestHelper: Already on documents page');
-      return;
+    } else {
+      console.log('TestHelper: Navigating to documents page...');
+      const documentsMenuItem = this.page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
+      if (await documentsMenuItem.count() > 0) {
+        await documentsMenuItem.click();
+        await this.page.waitForTimeout(2000);
+      }
     }
 
-    console.log('TestHelper: Navigating to documents page...');
-    const documentsMenuItem = this.page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
-    if (await documentsMenuItem.count() > 0) {
-      await documentsMenuItem.click();
-      await this.page.waitForTimeout(2000);
+    // Ensure the documents table has rendered. The list-load can intermittently
+    // hang on "読み込み中..." (a stalled metadata request); reload and retry so
+    // callers reliably land on a ready table. Non-fatal if no table exists.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const tableVisible = await this.page.locator('.ant-table').first()
+        .waitFor({ state: 'visible', timeout: 12000 }).then(() => true).catch(() => false);
+      if (tableVisible) break;
+      if (attempt < 2) {
+        await this.page.reload();
+        await this.page.waitForTimeout(1000);
+      }
     }
   }
 

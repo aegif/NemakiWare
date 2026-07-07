@@ -16,6 +16,7 @@ export function OidcSettingsTab() {
 
   const {
     sources,
+    overridable,
     formValues,
     loading,
     saving,
@@ -48,6 +49,7 @@ export function OidcSettingsTab() {
         fields={FIELDS}
         formValues={formValues}
         sources={sources}
+        overridable={overridable}
         onFieldChange={updateField}
       />
 

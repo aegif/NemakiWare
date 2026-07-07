@@ -6,9 +6,80 @@ import org.apache.commons.logging.LogFactory;
 import org.mindrot.jbcrypt.BCrypt;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.List;
+
+import jp.aegif.nemaki.model.Property;
+import jp.aegif.nemaki.model.UserItem;
 
 public class AuthenticationUtil {
 	private static final Log log = LogFactory.getLog(AuthenticationUtil.class);
+
+	/** Subtype property key that stores the per-account authentication policy. */
+	private static final String ALLOWED_AUTH_METHODS_KEY = "nemaki:allowedAuthMethods";
+
+	/**
+	 * Single source of truth for the {@code nemaki:allowedAuthMethods} account
+	 * policy gate.
+	 *
+	 * <p>Every authentication entry point that verifies a password (the primary
+	 * CMIS path {@code AuthenticationServiceImpl}, the api/v1 login resource, the
+	 * MCP handler and the legacy admin-operation re-auth) must consult this method
+	 * so a {@code disabled} or {@code cloud}-only account cannot authenticate via
+	 * password on any path.
+	 *
+	 * <p>Semantics (kept byte-compatible with the historical
+	 * {@code AuthenticationServiceImpl} implementation):
+	 * <ul>
+	 *   <li>null/empty/{@code "null"} &rarr; all methods allowed (backward compatibility)</li>
+	 *   <li>{@code "disabled"} &rarr; no authentication allowed (account disabled)</li>
+	 *   <li>otherwise &rarr; comma-separated case-insensitive allow-list</li>
+	 * </ul>
+	 *
+	 * @param user   the account to evaluate (null &rarr; not allowed, fail-closed)
+	 * @param method the requested method, e.g. {@code "password"} or {@code "cloud"}
+	 * @return true if the method is permitted for the account
+	 */
+	public static boolean isAuthMethodAllowed(UserItem user, String method) {
+		if (user == null || method == null) {
+			return false;
+		}
+
+		String allowedMethods = null;
+		List<Property> subTypeProperties = user.getSubTypeProperties();
+		if (subTypeProperties != null) {
+			for (Property prop : subTypeProperties) {
+				if (ALLOWED_AUTH_METHODS_KEY.equals(prop.getKey())) {
+					allowedMethods = prop.getValue() == null ? null : String.valueOf(prop.getValue());
+					break;
+				}
+			}
+		}
+
+		// null/empty means all methods allowed (backward compatibility)
+		if (allowedMethods == null || allowedMethods.isEmpty() || "null".equals(allowedMethods)) {
+			return true;
+		}
+
+		// "disabled" means no authentication allowed
+		if ("disabled".equalsIgnoreCase(allowedMethods.trim())) {
+			if (log.isDebugEnabled()) {
+				log.debug("User " + user.getUserId() + " has authentication disabled");
+			}
+			return false;
+		}
+
+		for (String m : allowedMethods.split(",")) {
+			if (method.equalsIgnoreCase(m.trim())) {
+				return true;
+			}
+		}
+
+		if (log.isDebugEnabled()) {
+			log.debug("Auth method '" + method + "' not allowed for user " + user.getUserId()
+					+ " (allowed: " + allowedMethods + ")");
+		}
+		return false;
+	}
 	/**
 	 * Check whether a password matches a hash.
 	 * Supports both legacy MD5 hashes (32 hex chars) and modern BCrypt hashes.

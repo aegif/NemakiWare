@@ -14,6 +14,11 @@ import java.io.*;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -24,6 +29,33 @@ import java.util.regex.Pattern;
 public class DiagramRenditionManagerImpl implements ExtendedRenditionManager {
 
 	private static final Log log = LogFactory.getLog(DiagramRenditionManagerImpl.class);
+
+	// Security: diagram source is untrusted user document content. PlantUML's
+	// default profile is LEGACY, which permits preprocessor includes that read
+	// local files (!include) and fetch URLs (!includeurl) — a local-file-read /
+	// SSRF sink. Force the SANDBOX profile (no local file access, no network)
+	// before any PlantUML class caches the profile, unless an operator has
+	// explicitly chosen one via -DPLANTUML_SECURITY_PROFILE / env.
+	static {
+		if (isBlank(System.getProperty("PLANTUML_SECURITY_PROFILE"))
+				&& isBlank(System.getenv("PLANTUML_SECURITY_PROFILE"))) {
+			System.setProperty("PLANTUML_SECURITY_PROFILE", "SANDBOX");
+		}
+	}
+
+	/** Reject diagram source larger than this (text diagrams are small; guards DoS). */
+	private static final int MAX_SOURCE_BYTES = 512 * 1024;
+	/** Cap the rendered SVG so a pathological diagram cannot exhaust memory. */
+	private static final int MAX_SVG_BYTES = 20 * 1024 * 1024;
+	/** Bound render wall-clock so a complex diagram cannot hang a request thread. */
+	private static final long RENDER_TIMEOUT_SECONDS = 15;
+
+	private static final ExecutorService RENDER_EXECUTOR = Executors.newThreadPerTaskExecutor(
+			Thread.ofVirtual().name("diagram-rendition-", 0).factory());
+
+	private static boolean isBlank(String s) {
+		return s == null || s.trim().isEmpty();
+	}
 
 	private static final Set<String> PLANTUML_MIME_TYPES = Set.of(
 			"text/x-plantuml"
@@ -73,7 +105,13 @@ public class DiagramRenditionManagerImpl implements ExtendedRenditionManager {
 	public ContentStream convertToSvg(ContentStream contentStream, String documentName) {
 		log.info("[DiagramRendition] Starting SVG conversion for: " + documentName);
 		try {
-			String source = new String(contentStream.getStream().readAllBytes(), StandardCharsets.UTF_8);
+			byte[] sourceBytes = contentStream.getStream().readAllBytes();
+			if (sourceBytes.length > MAX_SOURCE_BYTES) {
+				log.warn("[DiagramRendition] Diagram source too large (" + sourceBytes.length
+						+ " bytes, limit " + MAX_SOURCE_BYTES + ") for: " + documentName);
+				return null;
+			}
+			String source = new String(sourceBytes, StandardCharsets.UTF_8);
 			String mimeType = contentStream.getMimeType();
 
 			// Determine if it's DOT or PlantUML
@@ -87,14 +125,9 @@ public class DiagramRenditionManagerImpl implements ExtendedRenditionManager {
 				plantUmlSource = source;
 			}
 
-			// Use PlantUML SourceStringReader to generate SVG
-			SourceStringReader reader = new SourceStringReader(plantUmlSource);
-			ByteArrayOutputStream svgOut = new ByteArrayOutputStream();
-			reader.outputImage(svgOut, new FileFormatOption(FileFormat.SVG));
-
-			byte[] svgBytes = svgOut.toByteArray();
-			if (svgBytes.length == 0) {
-				log.error("[DiagramRendition] PlantUML produced empty SVG for: " + documentName);
+			byte[] svgBytes = renderWithLimits(plantUmlSource, documentName);
+			if (svgBytes == null || svgBytes.length == 0) {
+				log.error("[DiagramRendition] PlantUML produced no SVG for: " + documentName);
 				return null;
 			}
 
@@ -109,6 +142,66 @@ public class DiagramRenditionManagerImpl implements ExtendedRenditionManager {
 		} catch (Exception e) {
 			log.error("[DiagramRendition] SVG conversion failed for: " + documentName, e);
 			return null;
+		}
+	}
+
+	/**
+	 * Renders PlantUML source to SVG under a wall-clock timeout and a bounded
+	 * output buffer. The SANDBOX profile (set in the static initializer) already
+	 * blocks file/URL includes; these limits additionally cap CPU/memory for a
+	 * pathological but syntactically valid diagram. Returns null on timeout,
+	 * output-cap breach, or render error.
+	 */
+	private byte[] renderWithLimits(String plantUmlSource, String documentName) {
+		Future<byte[]> future = RENDER_EXECUTOR.submit(() -> {
+			SourceStringReader reader = new SourceStringReader(plantUmlSource);
+			BoundedOutputStream svgOut = new BoundedOutputStream(MAX_SVG_BYTES);
+			reader.outputImage(svgOut, new FileFormatOption(FileFormat.SVG));
+			return svgOut.toByteArray();
+		});
+		try {
+			return future.get(RENDER_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+		} catch (TimeoutException e) {
+			future.cancel(true);
+			log.warn("[DiagramRendition] Render exceeded " + RENDER_TIMEOUT_SECONDS
+					+ "s time limit for: " + documentName);
+			return null;
+		} catch (Exception e) {
+			future.cancel(true);
+			log.error("[DiagramRendition] Render failed for: " + documentName + " - " + e.getMessage());
+			return null;
+		}
+	}
+
+	/** OutputStream that fails fast once more than {@code max} bytes are written. */
+	private static final class BoundedOutputStream extends OutputStream {
+		private final ByteArrayOutputStream delegate = new ByteArrayOutputStream();
+		private final int max;
+
+		BoundedOutputStream(int max) {
+			this.max = max;
+		}
+
+		private void ensureCapacity(int add) throws IOException {
+			if ((long) delegate.size() + add > max) {
+				throw new IOException("Rendered diagram exceeds output cap of " + max + " bytes");
+			}
+		}
+
+		@Override
+		public void write(int b) throws IOException {
+			ensureCapacity(1);
+			delegate.write(b);
+		}
+
+		@Override
+		public void write(byte[] b, int off, int len) throws IOException {
+			ensureCapacity(len);
+			delegate.write(b, off, len);
+		}
+
+		byte[] toByteArray() {
+			return delegate.toByteArray();
 		}
 	}
 

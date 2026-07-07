@@ -13,6 +13,10 @@ locals {
   # the export line (these are operator-set config, not untrusted input, but we
   # quote defensively). None of these values legitimately contain a single quote.
   bootstrap = file("${path.module}/../../aws/user-data.sh")
+  # Optional post-bootstrap automation (Setup Wizard + Bedrock + Atlas + cloud
+  # auth + Caddy HTTPS). Appended after the stock bootstrap; reads the CLOUD_AUTH_*
+  # / NIP_HOST / BEDROCK_* exports below.
+  fullconfig = var.enable_full_config ? file("${path.module}/../../aws/nemaki-full-config.sh") : ""
   user_data = <<-EOT
     #!/bin/bash
     export NEMAKI_REPO='${var.nemaki_repo}'
@@ -22,13 +26,22 @@ locals {
     export NEMAKI_HTTP_BIND='${local.http_bind}'
     export COUCHDB_USER='admin'
     export COUCHDB_SECRET_ID='${var.couchdb_secret_arn}'
+    export NIP_HOST='${var.nip_host}'
+    export CLOUD_AUTH_MICROSOFT_CLIENT_ID='${var.cloud_auth_microsoft_client_id}'
+    export CLOUD_AUTH_MICROSOFT_TENANT_ID='${var.cloud_auth_microsoft_tenant_id}'
+    export CLOUD_AUTH_GOOGLE_CLIENT_ID='${var.cloud_auth_google_client_id}'
+    export BEDROCK_REGION='${var.bedrock_region}'
+    export BEDROCK_MODEL_ID='${var.bedrock_model_id}'
     ${local.bootstrap}
+    ${local.fullconfig}
   EOT
 
   vpc_id    = var.vpc_id != null ? var.vpc_id : try(data.aws_vpc.default[0].id, null)
   subnet_id = var.subnet_id != null ? var.subnet_id : try(data.aws_subnets.default[0].ids[0], null)
 
   common_tags = merge({ Project = "NemakiWare", ManagedBy = "terraform" }, var.tags)
+
+  public_ip = var.eip_allocation_id != "" ? try(data.aws_eip.reused[0].public_ip, null) : (var.assign_eip ? try(aws_eip.this[0].public_ip, null) : aws_instance.this.public_ip)
 }
 
 # ── AMI: latest Amazon Linux 2023 (x86_64) via public SSM parameter ──────────
@@ -81,6 +94,18 @@ resource "aws_vpc_security_group_ingress_rule" "http8080" {
   ip_protocol       = "tcp"
 }
 
+# 80 opened for the Caddy Let's Encrypt HTTP-01 challenge + http->https redirect
+# (only when the full-config TLS proxy is enabled).
+resource "aws_vpc_security_group_ingress_rule" "http80" {
+  for_each          = var.enable_full_config ? toset(var.allowed_cidr_https) : toset([])
+  security_group_id = aws_security_group.this.id
+  description       = "HTTP (Caddy ACME/redirect)"
+  cidr_ipv4         = each.value
+  from_port         = 80
+  to_port           = 80
+  ip_protocol       = "tcp"
+}
+
 resource "aws_vpc_security_group_ingress_rule" "ssh" {
   for_each          = toset(var.allowed_cidr_ssh)
   security_group_id = aws_security_group.this.id
@@ -129,6 +154,23 @@ resource "aws_iam_role_policy" "secrets" {
   })
 }
 
+# When the full-config automation is enabled, let the instance call Amazon
+# Bedrock via its instance profile (no static keys) so the RAG
+# BedrockEmbeddingService can generate embeddings. Scoped to InvokeModel only.
+resource "aws_iam_role_policy" "bedrock" {
+  count = var.enable_full_config ? 1 : 0
+  name  = "bedrock-invoke"
+  role  = aws_iam_role.this.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+      Resource = "*"
+    }]
+  })
+}
+
 resource "aws_iam_instance_profile" "this" {
   name_prefix = "${var.name}-"
   role        = aws_iam_role.this.name
@@ -160,9 +202,23 @@ resource "aws_instance" "this" {
   tags = merge(local.common_tags, { Name = var.name })
 }
 
+# Fresh EIP — only when assign_eip AND no persistent EIP is being reused.
 resource "aws_eip" "this" {
-  count    = var.assign_eip ? 1 : 0
+  count    = var.assign_eip && var.eip_allocation_id == "" ? 1 : 0
   instance = aws_instance.this.id
   domain   = "vpc"
   tags     = merge(local.common_tags, { Name = var.name })
+}
+
+# Reuse a persistent EIP (kept across destroy+apply) so the public IP / hostname
+# stays stable — register the OAuth redirect URI / origin once and never again.
+resource "aws_eip_association" "reused" {
+  count         = var.eip_allocation_id != "" ? 1 : 0
+  instance_id   = aws_instance.this.id
+  allocation_id = var.eip_allocation_id
+}
+
+data "aws_eip" "reused" {
+  count = var.eip_allocation_id != "" ? 1 : 0
+  id    = var.eip_allocation_id
 }

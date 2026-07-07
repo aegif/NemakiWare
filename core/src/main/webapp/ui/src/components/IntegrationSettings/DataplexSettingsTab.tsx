@@ -11,6 +11,7 @@ export function DataplexSettingsTab() {
 
   const {
     sources,
+    overridable,
     formValues,
     loading,
     saving,
@@ -65,6 +66,7 @@ export function DataplexSettingsTab() {
         fields={fields}
         formValues={formValues}
         sources={sources}
+        overridable={overridable}
         onFieldChange={updateField}
       />
 

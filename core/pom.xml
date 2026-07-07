@@ -5,7 +5,7 @@
 	<groupId>jp.aegif.nemaki.core</groupId>
 	<artifactId>core</artifactId>
 	<packaging>war</packaging>
-	<version>3.2.0</version>
+	<version>3.2.2</version>
 	<name>core</name>
 	<description>NemakiWare Core Server</description>
 	<url>https://github.com/aegif/NemakiWare</url>
@@ -13,7 +13,7 @@
 	<parent>
 		<groupId>jp.aegif.nemakiware</groupId>
 		<artifactId>nemakiware</artifactId>
-		<version>3.2.0</version>
+		<version>3.2.2</version>
 	</parent>
 
 	<properties>
@@ -68,6 +68,19 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
+			<!-- Align all Jackson modules to the version chosen for jackson-databind
+			     (2.21.1). Without this, transitive deps drag in a spread of
+			     Jackson versions (dataformat-xml 2.14.0, dataformat-smile 2.18.0,
+			     jakarta-rs 2.16.2, module-jakarta-xmlbind 2.19.1, cbor/jsr310
+			     2.22.0) mixed with databind 2.21.1 — all Jackson modules are meant
+			     to share a single version. -->
+			<dependency>
+				<groupId>com.fasterxml.jackson</groupId>
+				<artifactId>jackson-bom</artifactId>
+				<version>2.21.1</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
 			<!-- Force logback 1.5.25 to fix CVE-2025-11226 (which is "up to and
 			     including 1.5.18"), CVE-2026-1225, GHSA-25qh-j22f-pwp8 (arbitrary
 			     code execution through file processing), and GHSA-qqpg-mvqg-649v
@@ -109,6 +122,33 @@
 				<groupId>com.google.guava</groupId>
 				<artifactId>guava</artifactId>
 				<version>33.5.0-jre</version>
+			</dependency>
+			<!-- Override transitive commons-compress 1.24.0 (resolved at compile
+			     scope via testcontainers / POI / Tika). 1.27.1 fixes
+			     CVE-2024-25710 (infinite-loop DoS in the DUMP parser) and
+			     CVE-2024-26308 (excessive memory allocation in pack200), both
+			     reachable when Tika / POI parse an attacker-supplied archive
+			     during content extraction, and matches the version POI 5.4.1
+			     expects. -->
+			<dependency>
+				<groupId>org.apache.commons</groupId>
+				<artifactId>commons-compress</artifactId>
+				<version>1.27.1</version>
+			</dependency>
+			<!-- Align transitive skews with the versions the rest of the tree
+			     already uses. spring-tx leaks in at 7.0.4 while every other
+			     Spring module is ${org.springframework.version} (7.0.7); Spring
+			     modules must share a version. cxf-rt-ws-policy leaks in at 4.1.3
+			     while the rest of CXF is 4.2.0. -->
+			<dependency>
+				<groupId>org.springframework</groupId>
+				<artifactId>spring-tx</artifactId>
+				<version>${org.springframework.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.cxf</groupId>
+				<artifactId>cxf-rt-ws-policy</artifactId>
+				<version>4.2.0</version>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>
@@ -155,7 +195,7 @@
 		<dependency>
 			<groupId>jp.aegif.nemaki.common</groupId>
 			<artifactId>nemakiware-common</artifactId>
-			<version>3.2.0</version>
+			<version>3.2.2</version>
 		</dependency>
 		<dependency>
 			<groupId>jp.aegif.nemaki.cloudantinit</groupId>
@@ -315,6 +355,18 @@
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-commons-impl</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
+			<exclusions>
+				<!-- Drop the legacy Codehaus woodstox-core-asl 4.4.1 (a ~2012 StAX
+				     impl with laxer XXE defaults). The modern
+				     com.fasterxml.woodstox:woodstox-core 6.5.0 is already on the
+				     classpath and registers as the StAX provider, so OpenCMIS's
+				     XML binding keeps a maintained StAX implementation while the
+				     old one no longer competes in service discovery. -->
+				<exclusion>
+					<groupId>org.codehaus.woodstox</groupId>
+					<artifactId>woodstox-core-asl</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
@@ -608,7 +660,7 @@
 		<dependency>
 			<groupId>jp.aegif.nemaki.solr</groupId>
 			<artifactId>solr</artifactId>
-			<version>3.2.0</version>
+			<version>3.2.2</version>
 			<exclusions>
 				<!-- Exclude Jetty 9 to prevent javax.servlet conflicts -->
 				<exclusion>
@@ -664,10 +716,15 @@
 		
 		<!-- Solr strategy: Use HttpJdkSolrClient (Java 11+ built-in) to avoid HTTP Client conflicts -->
 
+		<!-- Align with the Lucene version pulled by solr-core 9.10.1 (9.12.3).
+		     Lucene requires every module on the classpath to share the exact
+		     same version; pinning lucene-queries/-core to 9.11.1 while solr
+		     brings lucene-analysis-common etc. at 9.12.3 is an unsupported mix
+		     that can fail at runtime. -->
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
 			<artifactId>lucene-queries</artifactId>
-			<version>9.11.1</version>
+			<version>9.12.3</version>
 		</dependency>
 
 		<dependency>

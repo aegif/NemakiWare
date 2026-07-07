@@ -57,10 +57,17 @@ class ConnectorDefinitionControllerPartialPutTest {
         inject("connectorDefinitionService", connectorDefinitionService);
         inject("httpRequest", httpRequest);
         inject("ingestAuthorizationService", mock(IngestAuthorizationService.class));
+        // Connector CRUD is now gated to a default-repository admin (3.2.1):
+        // wire a RepositoryInfoMap whose default repo matches the auth context.
+        jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repositoryInfoMap =
+                mock(jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap.class);
+        when(repositoryInfoMap.getDefaultRepositoryId()).thenReturn("bedroom");
+        inject("repositoryInfoMap", repositoryInfoMap);
 
-        // Admin context — the gate check passes
+        // Admin context on the default repository — the gate check passes
         CallContext ctx = mock(CallContext.class);
         when(ctx.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(ctx.getRepositoryId()).thenReturn("bedroom");
         when(httpRequest.getAttribute("CallContext")).thenReturn(ctx);
     }
 

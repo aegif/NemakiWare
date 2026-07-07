@@ -176,6 +176,41 @@ class IngestAuthorizationServiceTest {
         assertFalse(svc.canManageProfileForFolder(userCtx(), REPO, "  "));
     }
 
+    // ── Cross-repository isolation (3.2.1) ──
+    // The caller authenticated against REPO; a config/delegation operation that
+    // targets a DIFFERENT repository must be refused, even for an admin and even
+    // if the same-named principal would hold cmis:all in the other repository.
+
+    @Test
+    void canManage_falseWhenTargetRepositoryDiffersFromAuthenticated_admin() {
+        CallContext ctx = adminCtx(); // authenticated against REPO
+        // Admin in REPO must NOT manage a folder in another repository.
+        assertFalse(svc.canManageProfileForFolder(ctx, "canopy", FOLDER));
+        // The ACL of the other repository must never even be consulted.
+        verify(contentService, never()).getFolder(eq("canopy"), any());
+    }
+
+    @Test
+    void canManage_falseWhenTargetRepositoryDiffersFromAuthenticated_sameNameUser() {
+        CallContext ctx = userCtx(); // alice authenticated against REPO
+        // Even if a folder + cmis:all for "alice" exists in the OTHER repository,
+        // the guard rejects before any ACL evaluation (no same-name carry-over).
+        Folder f = mockFolder(FOLDER);
+        lenient().when(contentService.getFolder("canopy", FOLDER)).thenReturn(f);
+        lenient().doReturn(aclWith(ace(USER, CmisPermission.ALL)))
+                .when(contentService).calculateAcl("canopy", f);
+        assertFalse(svc.canManageProfileForFolder(ctx, "canopy", FOLDER));
+        verify(contentService, never()).getFolder(eq("canopy"), any());
+    }
+
+    @Test
+    void isAuthenticatedRepository_matchesOnlyExact() {
+        assertTrue(svc.isAuthenticatedRepository(adminCtx(), REPO));
+        assertFalse(svc.isAuthenticatedRepository(adminCtx(), "canopy"));
+        assertFalse(svc.isAuthenticatedRepository(adminCtx(), null));
+        assertFalse(svc.isAuthenticatedRepository(null, REPO));
+    }
+
     // ────────────────────────────────────────────────────────────────────
     // canUseConnectorForDelegatedProfile
     // ────────────────────────────────────────────────────────────────────

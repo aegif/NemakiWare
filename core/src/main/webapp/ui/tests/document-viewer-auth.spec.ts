@@ -139,6 +139,7 @@
 import { test, expect } from '@playwright/test';
 import { waitForRender, waitForUiStable } from './utils/wait-helpers';
 import { TestHelper } from './utils/test-helper';
+import { AuthHelper } from './utils/auth-helper';
 
 /**
  * SELECTOR FIX (2025-12-24) - Document Row Detection Fixed
@@ -317,22 +318,23 @@ test.describe('Document Viewer Authentication', () => {
    * Session stability verified via manual testing with real documents.
    */
   test('should handle multiple document detail accesses without session issues', async ({ page, browserName }) => {
-    // Login
-    await page.goto('http://localhost:8080/core/ui/index.html');
-    await waitForRender(page);
-
-    const repositorySelect = page.locator('.ant-select-selector').first();
-    await repositorySelect.click();
-    await waitForRender(page);
-    await page.locator('.ant-select-item-option:has-text("bedroom")').click();
-    await waitForRender(page);
-
-    await page.locator('input[placeholder*="ユーザー名"]').fill('admin');
-    await page.locator('input[placeholder*="パスワード"]').fill('admin');
-    await page.locator('button[type="submit"]').click();
+    // Use the robust shared login helper (retries the whole flow up to 3x)
+    // instead of an inline manual login that occasionally fails to complete.
+    await new AuthHelper(page).login();
     await waitForUiStable(page, { timeout: 15000 });
 
-    await expect(page.locator('.ant-table')).toBeVisible({ timeout: 15000 });
+    // The document list occasionally hangs on "読み込み中..." after login; reload
+    // and retry until the table renders.
+    let docTableReady = false;
+    for (let attempt = 0; attempt < 3 && !docTableReady; attempt++) {
+      docTableReady = await page.locator('.ant-table').first()
+        .waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false);
+      if (!docTableReady) {
+        await page.reload();
+        await waitForUiStable(page, { timeout: 15000 });
+      }
+    }
+    expect(docTableReady, 'documents table should render after login').toBe(true);
 
     // Mobile sidebar handling
     const isMobile = testHelper.isMobile(browserName);
@@ -404,6 +406,15 @@ test.describe('Document Viewer Authentication', () => {
             throw error;
           }
         }
+
+        // The detail view loads its object metadata asynchronously after the
+        // route changes; wait for the Descriptions (page, drawer, or modal) to
+        // render before asserting, otherwise we race the getObject round-trip
+        // and read a count of 0 while the fetch is still in flight. (Test 1
+        // above uses the same wait-for-render signal via a retry loop.)
+        await page.locator(
+          '.ant-descriptions-item-label, .ant-drawer .ant-descriptions, .ant-modal .ant-descriptions'
+        ).first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
 
         // Check for errors
         const hasLoginForm = await page.locator('input[placeholder*="ユーザー名"]').count() > 0;
@@ -483,6 +494,12 @@ test.describe('Document Viewer Authentication', () => {
         
         // Verify we're back on the documents list
         await expect(page.locator('.ant-table')).toBeVisible({ timeout: 5000 });
+        // The table container reappears before its rows finish re-fetching; wait
+        // for at least one document link to render before the next iteration
+        // re-queries, otherwise we read 0 rows and bail out early — which would
+        // silently reduce this "multiple accesses" test to a single access.
+        await page.locator('.ant-table-tbody tr button.ant-btn-link').first()
+          .waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
         console.log(`  ✅ Back on documents list`);
       }
 

@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { LineageSettingsTab } from './LineageSettingsTab';
+
+// LineageSettingsTab renders a <Link> in the journaled-mode notice, which
+// requires a router context.
+const renderTab = () => render(<LineageSettingsTab />, { wrapper: MemoryRouter });
 
 const stableT = (key: string) => key;
 const stableTranslation = { t: stableT };
@@ -58,7 +63,7 @@ describe('LineageSettingsTab', () => {
   });
 
   it('renders form fields after loading', async () => {
-    render(<LineageSettingsTab />);
+    renderTab();
 
     await waitFor(() => {
       expect(screen.queryByRole('img', { name: 'loading' })).not.toBeInTheDocument();
@@ -75,7 +80,7 @@ describe('LineageSettingsTab', () => {
   });
 
   it('displays disabled notice when mode is disabled', async () => {
-    render(<LineageSettingsTab />);
+    renderTab();
 
     await waitFor(() => {
       expect(screen.queryByRole('img', { name: 'loading' })).not.toBeInTheDocument();
@@ -89,7 +94,7 @@ describe('LineageSettingsTab', () => {
       buildSettingsResponse({ 'lineage.mode': 'journaled' }),
     );
 
-    render(<LineageSettingsTab />);
+    renderTab();
 
     await waitFor(() => {
       expect(screen.queryByRole('img', { name: 'loading' })).not.toBeInTheDocument();
@@ -103,7 +108,7 @@ describe('LineageSettingsTab', () => {
       buildSettingsResponse({ 'lineage.mode': 'direct' }),
     );
 
-    render(<LineageSettingsTab />);
+    renderTab();
 
     await waitFor(() => {
       expect(screen.queryByRole('img', { name: 'loading' })).not.toBeInTheDocument();
@@ -113,7 +118,7 @@ describe('LineageSettingsTab', () => {
   });
 
   it('Save button is disabled when no changes', async () => {
-    render(<LineageSettingsTab />);
+    renderTab();
 
     await waitFor(() => {
       expect(screen.queryByRole('img', { name: 'loading' })).not.toBeInTheDocument();
@@ -124,7 +129,7 @@ describe('LineageSettingsTab', () => {
   });
 
   it('saves settings on Save click', async () => {
-    render(<LineageSettingsTab />);
+    renderTab();
 
     await waitFor(() => {
       expect(screen.queryByRole('img', { name: 'loading' })).not.toBeInTheDocument();
@@ -147,7 +152,7 @@ describe('LineageSettingsTab', () => {
   });
 
   it('renders mode select with three options', async () => {
-    render(<LineageSettingsTab />);
+    renderTab();
 
     await waitFor(() => {
       expect(screen.queryByRole('img', { name: 'loading' })).not.toBeInTheDocument();

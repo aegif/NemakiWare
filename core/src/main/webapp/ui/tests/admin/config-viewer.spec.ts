@@ -130,8 +130,13 @@ test.describe('Config Viewer - Admin Access', () => {
     // Find search input
     const searchInput = page.locator('.ant-input-search input, input[placeholder]').first();
     if (await searchInput.count() > 0) {
+      // Wait for the config table to actually populate before counting; without
+      // this, initialRows races to 0 and the filtered<=initial assertion fails.
+      await expect(page.locator('.ant-table-tbody tr.ant-table-row').first()).toBeVisible({ timeout: 15000 });
+
       // Get initial row count
       const initialRows = await page.locator('.ant-table-tbody tr.ant-table-row').count();
+      expect(initialRows).toBeGreaterThan(0);
 
       // Type a search term
       await searchInput.fill('db.');

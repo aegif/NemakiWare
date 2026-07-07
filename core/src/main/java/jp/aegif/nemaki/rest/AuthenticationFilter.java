@@ -425,9 +425,31 @@ public class AuthenticationFilter implements Filter {
         			log.debug("=== AUTH: Found repositoryId from API v1 path=" + repositoryId + " ===");
         			return repositoryId;
         		}else if(pathFragments.length > 1 && "admin".equals(pathFragments[1])){
-        			// Handle global admin endpoints: /v1/admin/purview/...
-        			// These are not tied to a specific repository; use default repository for authentication
+        			// /v1/admin/* endpoints are not tied to a repository in their
+        			// URL. Only the per-repository admin surfaces — import-profiles
+        			// and connector delegation governance — honour a client-named
+        			// target repository via the X-Nemaki-Repository header, so a
+        			// per-repository admin authenticates against their OWN
+        			// repository (no same-name / default-repo carry-over). Every
+        			// other /v1/admin/* surface (Purview, lineage,
+        			// integration-settings, ingest jobs / scheduler, and the global
+        			// connector CRUD catalogue) stays bound to the default
+        			// repository and is therefore default-repository-admin only.
+        			// NB: connector CRUD lives under /v1/admin/connectors too, but
+        			// its controller additionally requires a default-repository
+        			// admin, so honouring the header there only enables the
+        			// repository-scoped governance sub-paths.
         			String defaultRepo = repositoryInfoMap.getDefaultRepositoryId();
+        			boolean repoScopedAdmin = pathFragments.length > 2
+        					&& ("import-profiles".equals(pathFragments[2])
+        							|| "connectors".equals(pathFragments[2]));
+        			if(repoScopedAdmin){
+        				String requestedRepo = request.getHeader("X-Nemaki-Repository");
+        				if(requestedRepo != null && !requestedRepo.isBlank() && repositoryInfoMap.contains(requestedRepo)){
+        					log.debug("=== AUTH: Using client-specified repository for /v1/admin/ path=" + requestedRepo + " ===");
+        					return requestedRepo;
+        				}
+        			}
         			log.debug("=== AUTH: Using default repository for /v1/admin/ path=" + defaultRepo + " ===");
         			return defaultRepo;
         		}else{

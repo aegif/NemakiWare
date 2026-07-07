@@ -15,6 +15,7 @@ export function GoogleAuthSettingsTab() {
 
   const {
     sources,
+    overridable,
     formValues,
     loading,
     saving,
@@ -43,6 +44,7 @@ export function GoogleAuthSettingsTab() {
         fields={FIELDS}
         formValues={formValues}
         sources={sources}
+        overridable={overridable}
         onFieldChange={updateField}
       />
       <Form.Item>

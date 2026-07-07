@@ -153,6 +153,79 @@ TEI は ~4 GB RAM を要します。RAG を使う場合は 16 GB 以上の VM �
 
 ---
 
+## フル構成の使い捨て検証環境（Atlas + Bedrock RAG + クラウド認証 + HTTPS）
+
+`terraform apply` **一発**で、Setup Wizard 完了・**Bedrock RAG**（インスタンス
+IAM ロール、静的キー不要）・**Apache Atlas**（コンテナ + ATLAS カタログバック
+エンド選択）・**Microsoft / Google サインイン**・**Caddy + Let's Encrypt の
+HTTPS 前段**まで揃った検証環境を立ち上げ、`terraform destroy` で落とす — という
+上げ下げを**何度でも繰り返せる**構成です。自動化本体は
+[`deploy/aws/nemaki-full-config.sh`](aws/nemaki-full-config.sh)（stock
+ブートストラップの後に連結実行）。
+
+### なぜ HTTPS + 固定ホスト名が要るか
+
+- **HTTPS 必須**: ブラウザは `window.crypto.subtle`（MSAL / GIS が PKCE に使う）を
+  **セキュアコンテキスト（HTTPS か localhost）でのみ**公開します。平文 HTTP の
+  生 IP では MSAL が `crypto_nonexistent` で失敗します。→ Caddy が
+  `nip_host`（例 `<eip>.nip.io`）に Let's Encrypt の正規証明書を発行して解決。
+- **固定ホスト名**: OAuth のリダイレクト URI / 生成元は provider 側に登録が要り、
+  ホスト名が変わるたびに再登録が要ります。**永続 Elastic IP を 1 個確保して
+  再利用**すれば `<eip>.nip.io` が不変になり、**登録は最初の 1 回だけ**で以降の
+  destroy/apply で触らずに済みます（nip.io なので DNS レコード管理も不要）。
+
+### 手順
+
+1. 永続 EIP を 1 個確保（destroy でも解放されない専用）:
+   ```bash
+   aws ec2 allocate-address --domain vpc \
+     --tag-specifications 'ResourceType=elastic-ip,Tags=[{Key=Name,Value=nemaki-persistent-test}]'
+   # 返る AllocationId と PublicIp を控える。ホスト名は <PublicIp>.nip.io
+   ```
+2. `terraform.tfvars` に full-config 変数を設定（[`terraform.tfvars.example`](terraform/aws/terraform.tfvars.example)
+   の該当節参照）: `enable_full_config=true` / `eip_allocation_id` / `nip_host` /
+   `cloud_auth_microsoft_client_id` / `cloud_auth_microsoft_tenant_id` /
+   `cloud_auth_google_client_id`。**`terraform.tfvars` は gitignored** — clientId 等は
+   ここにだけ置きます。
+3. provider 側にホストを **1 回だけ**登録:
+   - Microsoft（Entra アプリ）: 認証 → **SPA プラットフォーム** →
+     リダイレクト URI `https://<nip_host>/core/ui/auth-popup.html`
+   - Google（OAuth クライアント）: **承認済み JavaScript 生成元**
+     `https://<nip_host>`
+4. 上げ下げ:
+   ```bash
+   cd deploy/terraform/aws
+   tofu apply -auto-approve     # ~12分でフル構成完成（Atlas は初回起動が重く自動 restart）
+   # → 出力 core_url = https://<nip_host>/core/ui/index.html
+   tofu destroy -auto-approve   # 落とす（永続 EIP は state 外なので保持）
+   ```
+
+### セキュリティ上の注意（機微情報の扱い）
+
+- **クライアントシークレットは不要・存在しません**: UI は MSAL（SPA/PKCE）と
+  Google Identity Services（生成元ベース）＝いずれも public client。認証に
+  client secret を使いません（同期など confidential フロー専用）。
+- `terraform.tfvars` / `*.tfstate` / `.terraform/` は **`.gitignore` 済み**。
+  clientId / tenantId（半公開の識別子）・EIP・自 IP はここにだけ置き、リポジトリ
+  には**コミットしません**（この README・`.example`・`.tf` にも実値は入れない）。
+- `enable_full_config=true` は Caddy の Let's Encrypt 用に **80/443 を 0.0.0.0/0** に
+  開けます（`allowed_cidr_https`）。使い捨て検証専用の posture で、`admin/admin`
+  初期資格のまま長期公開しないこと。検証が済んだら `destroy` を。
+- Bedrock は**インスタンス IAM ロール**（`bedrock:InvokeModel` のみ）で呼びます。
+  静的アクセスキーは置きません。
+
+### 既知の落とし穴（自動化で対処済み）
+
+- **Atlas all-in-one（sburn/apache-atlas:2.3.0）は初回起動で NPE 失敗** →
+  スクリプトが 1 回自動 restart して復旧させます。
+- **RAG プロバイダは `-D` で注入**: Spring は `classpath:nemakiware.properties`
+  を読み、そこでは `rag.embedding.provider` がコメントアウト（既定 `tei`）。
+  RAG は admin-managed key でもないため、`/conf` へのファイルマウントや
+  integration-settings API では効きません。スクリプトは Tomcat の `setenv.sh` で
+  `-Drag.embedding.provider=bedrock` 等を CATALINA_OPTS に注入します。
+
+---
+
 ## プライベートイメージを使う場合
 
 イメージを private package にしている場合、VM 起動後に GHCR ログインが必要です。

@@ -26,10 +26,17 @@ import jp.aegif.nemaki.rag.util.SolrQuerySanitizer;
  * This is used for ACL pre-expansion in Solr to enable efficient permission filtering
  * during vector search.
  *
- * Format of readers:
- * - "user:username" for individual users
- * - "group:groupname" for groups
- * - "anyone" for public access
+ * Format of readers (repository-scoped since 3.2.1 so a same-named principal
+ * in another repository is a distinct token):
+ * - "user:{repositoryId}:{username}" for individual users
+ * - "group:{repositoryId}:{groupname}" for groups
+ * - "anyone:{repositoryId}" for public access within the repository
+ *
+ * <p>NOTE: this changes the indexed token format. After upgrading, the RAG
+ * index must be rebuilt — old unscoped tokens ("user:alice") will not match the
+ * new scoped query tokens ("user:bedroom:alice"), which is fail-closed (a
+ * stale-format document simply stops appearing in RAG search until re-indexed;
+ * it never leaks across repositories).
  *
  * The expansion logic:
  * 1. Get all ACEs (inherited and local) from the document
@@ -121,12 +128,12 @@ public class ACLExpander {
         List<User> admins = principalService.getAdmins(repositoryId);
         if (admins != null) {
             for (User admin : admins) {
-                readers.add(PREFIX_USER + admin.getUserId());
+                readers.add(formatUserReader(repositoryId, admin.getUserId()));
             }
         }
         // Always include at least the system admin
         if (readers.isEmpty()) {
-            readers.add(PREFIX_USER + "admin");
+            readers.add(formatUserReader(repositoryId, "admin"));
         }
         return new ArrayList<>(readers);
     }
@@ -161,21 +168,21 @@ public class ACLExpander {
         // Handle special principals
         if (PRINCIPAL_ANYONE.equalsIgnoreCase(principalId) ||
                 PRINCIPAL_ANONYMOUS.equalsIgnoreCase(principalId)) {
-            readers.add(READER_ANYONE);
+            readers.add(formatAnyoneReader(repositoryId));
             return;
         }
 
         // Check if it's a user
         User user = principalService.getUserById(repositoryId, principalId);
         if (user != null) {
-            readers.add(PREFIX_USER + principalId);
+            readers.add(formatUserReader(repositoryId, principalId));
             return;
         }
 
         // Check if it's a group
         Group group = principalService.getGroupById(repositoryId, principalId);
         if (group != null) {
-            readers.add(PREFIX_GROUP + principalId);
+            readers.add(formatGroupReader(repositoryId, principalId));
 
             // Expand group members
             expandGroupMembers(repositoryId, group, readers);
@@ -226,12 +233,12 @@ public class ACLExpander {
                 // Check if member is a user
                 User user = principalService.getUserById(repositoryId, memberId);
                 if (user != null) {
-                    readers.add(PREFIX_USER + memberId);
+                    readers.add(formatUserReader(repositoryId, memberId));
                 } else {
                     // Check if member is a subgroup
                     Group subgroup = principalService.getGroupById(repositoryId, memberId);
-                    if (subgroup != null && !readers.contains(PREFIX_GROUP + memberId)) {
-                        readers.add(PREFIX_GROUP + memberId);
+                    if (subgroup != null && !readers.contains(formatGroupReader(repositoryId, memberId))) {
+                        readers.add(formatGroupReader(repositoryId, memberId));
                         // Recursively expand subgroup with visited tracking
                         expandGroupMembersInternal(repositoryId, subgroup, readers, visitedGroups);
                     }
@@ -241,17 +248,27 @@ public class ACLExpander {
     }
 
     /**
-     * Format a user ID as a reader.
+     * Format a user ID as a repository-scoped reader token
+     * ({@code user:{repositoryId}:{userId}}).
      */
-    public static String formatUserReader(String userId) {
-        return PREFIX_USER + userId;
+    public static String formatUserReader(String repositoryId, String userId) {
+        return PREFIX_USER + repositoryId + ":" + userId;
     }
 
     /**
-     * Format a group ID as a reader.
+     * Format a group ID as a repository-scoped reader token
+     * ({@code group:{repositoryId}:{groupId}}).
      */
-    public static String formatGroupReader(String groupId) {
-        return PREFIX_GROUP + groupId;
+    public static String formatGroupReader(String repositoryId, String groupId) {
+        return PREFIX_GROUP + repositoryId + ":" + groupId;
+    }
+
+    /**
+     * The repository-scoped public-access reader token
+     * ({@code anyone:{repositoryId}}).
+     */
+    public static String formatAnyoneReader(String repositoryId) {
+        return READER_ANYONE + ":" + repositoryId;
     }
 
     /**
@@ -270,20 +287,29 @@ public class ACLExpander {
         StringBuilder query = new StringBuilder();
         query.append("readers:(");
 
-        // Always include "anyone" (no colon, doesn't need quoting)
-        query.append(READER_ANYONE);
+        // All tokens are repository-scoped since 3.2.1, so every token now
+        // contains a colon and must be quoted (an unquoted colon would be parsed
+        // as a nested field:value). The repositoryId is a validated repository
+        // name (repositories.yml) with no quote/backslash, and the index stores
+        // it verbatim, so it is embedded raw to match the stored token exactly;
+        // only the user/group parts (which may come from an external IdP) are
+        // escaped to prevent Solr query injection.
 
-        // Include user - sanitize to prevent Solr injection
-        // Escape special chars and quote the entire value
+        // Public-access token, repository-scoped: anyone:{repo}
+        query.append("\"").append(READER_ANYONE).append(":").append(repositoryId).append("\"");
+
+        // User token, repository-scoped: user:{repo}:{userId}
         String sanitizedUserId = SolrQuerySanitizer.escape(userId);
-        query.append(" OR \"").append(PREFIX_USER).append(sanitizedUserId).append("\"");
+        query.append(" OR \"").append(PREFIX_USER).append(repositoryId).append(":")
+                .append(sanitizedUserId).append("\"");
 
-        // Include user's groups - sanitize each group ID
+        // Group tokens, repository-scoped: group:{repo}:{groupId}
         Set<String> groupIds = principalService.getGroupIdsContainingUser(repositoryId, userId);
         if (groupIds != null) {
             for (String groupId : groupIds) {
                 String sanitizedGroupId = SolrQuerySanitizer.escape(groupId);
-                query.append(" OR \"").append(PREFIX_GROUP).append(sanitizedGroupId).append("\"");
+                query.append(" OR \"").append(PREFIX_GROUP).append(repositoryId).append(":")
+                        .append(sanitizedGroupId).append("\"");
             }
         }
 

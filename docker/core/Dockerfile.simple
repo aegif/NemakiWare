@@ -53,7 +53,7 @@ COPY ./server.xml /usr/local/tomcat/conf/server.xml
 # Configuration file is now embedded in the modified WAR file above
 
 # Set environment variables with multipart debugging and critical HTTP fixes
-ENV CATALINA_OPTS="-Xms512m -Xmx1024m -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Djakarta.xml.ws.spi.Provider=com.sun.xml.ws.spi.ProviderImpl -Djakarta.xml.soap.SAAJMetaFactory=com.sun.xml.messaging.saaj.soap.SAAJMetaFactoryImpl -Dorg.apache.tomcat.util.http.parser.HttpParser.requestTargetAllow=|{} -Djava.util.logging.config.file=/usr/local/tomcat/conf/logging.properties -Dorg.apache.coyote.http11.Http11OutputBuffer.CHUNK_SIZE=-1 -Dorg.apache.coyote.http11.Http11Protocol.chunkedEncodingDisabled=true -Djdk.httpclient.allowRestrictedHeaders=host"
+ENV CATALINA_OPTS="-Xms512m -Xmx1024m -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Djakarta.xml.ws.spi.Provider=com.sun.xml.ws.spi.ProviderImpl -Djakarta.xml.soap.SAAJMetaFactory=com.sun.xml.messaging.saaj.soap.SAAJMetaFactoryImpl -Dorg.apache.tomcat.util.http.parser.HttpParser.requestTargetAllow=|{} -Djava.util.logging.config.file=/usr/local/tomcat/conf/logging.properties -Dorg.apache.coyote.http11.Http11OutputBuffer.CHUNK_SIZE=-1 -Dorg.apache.coyote.http11.Http11Protocol.chunkedEncodingDisabled=true -Djdk.httpclient.allowRestrictedHeaders=host -DPLANTUML_SECURITY_PROFILE=SANDBOX"
 
 # Expose the default Tomcat port
 EXPOSE 8080

@@ -326,47 +326,10 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	 * @return true if the method is allowed, false otherwise
 	 */
 	public boolean isAuthMethodAllowed(UserItem user, String method) {
-		if (user == null || method == null) {
-			return false;
-		}
-
-		// Get allowedAuthMethods from subTypeProperties
-		String allowedMethods = null;
-		if (user.getSubTypeProperties() != null) {
-			for (jp.aegif.nemaki.model.Property prop : user.getSubTypeProperties()) {
-				if ("nemaki:allowedAuthMethods".equals(prop.getKey())) {
-					allowedMethods = String.valueOf(prop.getValue());
-					break;
-				}
-			}
-		}
-
-		// null/empty means all methods allowed (backward compatibility)
-		if (allowedMethods == null || allowedMethods.isEmpty() || "null".equals(allowedMethods)) {
-			return true;
-		}
-
-		// "disabled" means no authentication allowed
-		if ("disabled".equalsIgnoreCase(allowedMethods.trim())) {
-			if (log.isDebugEnabled()) {
-				log.debug("User " + user.getUserId() + " has authentication disabled");
-			}
-			return false;
-		}
-
-		// Check if the requested method is in the comma-separated list
-		String[] methods = allowedMethods.split(",");
-		for (String m : methods) {
-			if (method.equalsIgnoreCase(m.trim())) {
-				return true;
-			}
-		}
-
-		if (log.isDebugEnabled()) {
-			log.debug("Auth method '" + method + "' not allowed for user " + user.getUserId() +
-					  " (allowed: " + allowedMethods + ")");
-		}
-		return false;
+		// Delegate to the shared policy evaluator so every authentication entry
+		// point (this primary CMIS path, api/v1 login, MCP, legacy admin re-auth)
+		// enforces the same allowedAuthMethods gate.
+		return AuthenticationUtil.isAuthMethodAllowed(user, method);
 	}
 
 	private UserItem getAuthenticatedUserItem(String repositoryId, String userId, String password) {

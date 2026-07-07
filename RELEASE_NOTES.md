@@ -6,6 +6,257 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.2.2 — Codex security-review remediation + E2E flaky-test stabilization (2026-07-04)
+_On `release/3.2.1-security`. Follow-up to a Codex deep-repository security
+scan of the 3.2.1 tag. Two findings fixed with regression tests + a live
+proof-of-concept; one pre-existing, documented residual re-affirmed. Plus a
+round of E2E test-stabilization (7 pre-existing flaky tests hardened)._
+
+- **[Medium] Diagram rendition hardened against PlantUML preprocessor
+  includes.** PlantUML/DOT (`.puml`/`.dot`) document content is rendered
+  server-side to SVG; PlantUML's default profile (LEGACY) permits `!include` /
+  `!includeurl`, which read local files and fetch URLs — a local-file-read /
+  SSRF sink on untrusted document bytes. The renderer now forces the **SANDBOX**
+  security profile (no local file access, no network) before PlantUML caches
+  its profile, and bounds source size (512 KB), render time (15 s), and output
+  size (20 MB). Set both in code (static initializer) and via
+  `-DPLANTUML_SECURITY_PROFILE=SANDBOX` in the container images. Verified: a
+  benign diagram still renders; a `!include` of a local secret file no longer
+  leaks its contents into the SVG.
+- **[Medium] Archive import no longer applies attacker-supplied ACLs for
+  non-admins.** The ZIP/ACP import path persisted archive-supplied ACEs via an
+  internal update that bypasses the `CAN_APPLY_ACL_OBJECT` check the normal ACL
+  service enforces, so an importer with only create-child permission could set
+  arbitrary ACLs on imported objects. Archive ACLs are now applied only for
+  administrators (and system restores); a non-admin import keeps the object's
+  default / inherited ACL and returns a warning. The same guard was added to
+  the (admin-only) filesystem-import path for consistency. Verified live: admin
+  import applies the ACL (restore preserved); a non-admin `cmis:write` importer
+  is blocked (injected ACE absent, warning emitted).
+- **[Low] HTTPS connect-only DNS-rebinding residual — re-affirmed, not newly
+  fixed.** The outbound HTTPS path re-validates and rejects unsafe addresses
+  before send but does not pin the TCP destination, leaving a microsecond
+  connect-race. Data-exchange SSRF is already closed by TLS certificate
+  verification (no body read, no token leak); only TCP-connect side effects
+  remain. This is the known residual documented in `AdapterHttpClient` and
+  `REVIEW_PACKET.md §6`; fully closing it needs a custom connect-time
+  IP-pinning transport (tracked, separate effort).
+
+### Test stabilization (E2E, no product-code change)
+Root-caused and hardened seven pre-existing flaky Playwright specs (all
+unrelated to the security fixes; the accepted 3.2.1 release shipped with the
+same intermittent tail):
+- `group-hierarchy-members` (Circular Reference Prevention): the group list is
+  paginated and circular detection only sees the current page — search-narrow to
+  the two test groups before opening the edit modal, and create the setup groups
+  via the REST API (member groups as a JSON array) so serial retries are
+  idempotent.
+- `custom-property-input` / `config-viewer`: filter the relationship-type option
+  by unique id and close via Escape; wait for the config table to populate before
+  the row-count comparison.
+- `property-editor` / `archive-restore-consistency`: create the shared setup
+  document/folder via the CMIS API instead of the slow UI upload (which timed out
+  under full-suite load), placing the document inside the test folder.
+- `document-viewer-auth` / `verify-cmis-404-handling`: use the shared AuthHelper
+  login (3× retry) plus a documents-table reload-retry.
+
+**Known limitation (deferred).** A reliably 0-hard-failure full Playwright run
+was **not** achieved and is deferred to a separate test-infrastructure effort.
+The suite has a long tail of intermittent flakes that vary run-to-run (one full
+run failed only `config-viewer`; the next failed a different set) and are
+environment/timing-driven, not data-accumulation (the repo stays at ~26 docs and
+the server answers `getChildren(root)` in ~0.27 s). Some are genuine client-side
+SPA races (e.g. the documents list occasionally stalling on "loading") and some
+tests implicitly depend on data created by earlier tests. Converging to a single
+green run needs test-data isolation, an SPA list-load fix, and/or suite
+splitting — out of scope for this security release.
+
+### Upgrade safety
+No CouchDB view / patch / persisted-schema / Mango-index change. Fixes are the
+rendition path, the import ACL gate, and container `-D` flags. The 2.4-era
+CouchDB data carry-over path is untouched.
+
+### Verification
+Security fixes: DiagramRenditionSecurityTest 4/4 (SANDBOX profile + blocked
+local-file include + source-size cap); import/rendition regression 70/70; live
+PoC on a deployed stack (admin-applies / non-admin-blocked ACL; benign-renders /
+include-blocked diagram). Broader (clean-DB 3.2.2 stack): **TCK 38/38**, relevant
+Java unit 130/130, UI vitest 191/191. Full Playwright chromium runs at
+926–933 passed / 99 skipped with a small, run-varying intermittent-flaky tail
+(see Known limitation); every spec touched by the 3.2.2 changes is green, and
+the stabilized specs pass cleanly on repeated isolated runs.
+
+---
+
+## 3.2.1 — Security-audit remediation + cross-repository isolation + dependency CVEs (2026-07-02)
+_On `release/3.2.1-security`. A comprehensive multi-agent security audit
+(auth, authorization/IDOR, injection/XML, SSRF, file/CSRF/DoS,
+frontend/crypto/config) plus a second pass on transitive-dependency CVEs
+and multi-repository tenant isolation. Every fix ships with regression
+tests and was verified against a live stack (TCK + Playwright)._
+
+### Security — authentication / authorization
+- **[High] allowedAuthMethods policy bypass.** An account set to
+  `disabled` (account lock) or `cloud` (SSO-only) could still obtain a
+  token/session with a known password: the `nemaki:allowedAuthMethods`
+  gate was enforced only on the primary CMIS auth path, while three other
+  password entry points bypassed it — the api/v1 login endpoint, MCP
+  (Basic auth + login tool), and the legacy admin-operation re-auth. All
+  three now enforce the same policy (single source of truth in
+  `AuthenticationUtil`); a disabled account gets the same generic 401 as a
+  wrong password, so a correct password is not an oracle.
+- **[Low] Constant-time session-token comparison.** The main token
+  validation path now uses `MessageDigest.isEqual` (consistent with the
+  other token checks).
+- **Cross-repository tenant isolation.** Connector-delegation governance
+  and import-profile admin operations were authorized against the default
+  repository but acted on an arbitrary target repository. This let a
+  default-repository admin manage another repository's import-profiles /
+  enumerate its governance, and let a non-admin's delegated-profile
+  authorization match a same-named user in another repository (automatic
+  cross-repository access). Config operations are now confined to the
+  authenticated repository (fail-closed); per-repository admins
+  authenticate against their own repository via an `X-Nemaki-Repository`
+  header on the import-profile / connector-governance surfaces, while
+  global settings (connector catalogue, Purview, lineage,
+  integration-settings, ingest jobs/scheduler) remain
+  default-repository-admin only. *(OIDC-based "same real person across
+  repositories" visibility is a separate, unaddressed concern.)*
+- **RAG vector-search repository scoping.** Three auxiliary RAG Solr
+  queries omitted the `repository_id` filter (RAG ids are the raw,
+  non-repository-scoped CMIS object id), so a colliding id could leak
+  another repository's vector / metadata / chunk text. All RAG queries now
+  scope to `repository_id`.
+
+### Dependencies
+- **commons-compress 1.24.0 → 1.27.1** (shipped at compile scope via
+  Tika/POI archive parsing) — fixes CVE-2024-25710 (DUMP infinite-loop
+  DoS) and CVE-2024-26308 (pack200 memory DoS), and matches POI 5.4.1.
+- **Lucene aligned to 9.12.3.** `lucene-queries`/`-core` were pinned to
+  9.11.1 while solr-core 9.10.1 brings the other Lucene modules at 9.12.3;
+  Lucene requires a single version across all modules. All 21 modules now
+  converge on 9.12.3.
+- npm production dependencies: 0 vulnerabilities.
+
+### Housekeeping
+- Removed a stale, tracked `AclServiceImpl.java.rej` (a failed
+  temporary-debug patch, no security logic).
+- Version bump 3.2.0 → 3.2.1 across all reactor poms and user-facing
+  version strings.
+
+### Low-severity hardening
+- **SetupVector SSRF:** the setup connection validator now unwraps IPv6
+  transition addresses (NAT64 / 6to4 / Teredo / IPv4-mapped) before
+  classifying cloud-metadata / private ranges, matching the
+  connector/webhook SSRF surfaces.
+- **ZIP import size bound:** an imported ZIP entry's content is now bounded
+  to the actual bytes streamed, not just its declared central-directory
+  size, so a mismatched entry cannot exceed the per-file cap.
+- **UI security headers:** the SPA now sends `X-Content-Type-Options:
+  nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy` (enforcing)
+  and a `Content-Security-Policy` in **Report-Only** mode (a non-blocking
+  baseline to be promoted to enforcing after violation review).
+- **Archive path containment:** the filesystem archive adapter verifies the
+  resolved storage path stays under its base directory (defence-in-depth).
+- **Dependency hygiene:** aligned `spring-tx` (7.0.7) and `cxf-rt-ws-policy`
+  (4.2.0) with the rest of their trees, removed the legacy
+  `woodstox-core-asl` StAX impl (modern woodstox retained), and converged
+  all Jackson modules on 2.21.1 via `jackson-bom`.
+- **Dev-compose notes:** `docker-compose-simple.yml` is now clearly marked
+  development/evaluation-only, and `docker/realm-export.json` carries the
+  same dev-only marker as the keycloak variant.
+- **RAG reader ACL tokens are now repository-scoped**
+  (`user:{repo}:{id}` / `group:{repo}:{id}` / `anyone:{repo}`) so a
+  same-named principal in another repository is a distinct token — the
+  permanent fix behind the 3.2.1 RAG `repository_id` scoping. See the
+  migration note below.
+- **UI Content-Security-Policy tuned and made configurable.** Walking the
+  running app confirmed the core SPA (login, documents, Ant Design, pdf.js)
+  is entirely same-origin; the optional Google Drive / Microsoft / Purview
+  integrations' service origins were added to `connect-src`/`frame-src`.
+  New `-Dnemakiware.ui.csp.mode` (`report-only` default | `enforce` | `off`)
+  and `-Dnemakiware.ui.csp.extraOrigins` let operators promote to enforcing
+  and add custom IdP/cloud origins.
+
+### Admin usability — runtime-configurable cloud / SSO authentication
+- **Cloud / SSO auth is now configurable from the admin menu and persists,
+  without editing config files.** The setup wizard writes Google / Microsoft
+  client IDs and Keycloak/OIDC/SAML settings as `-D` system properties, so the
+  integration-settings screen previously reported them as `system_property` and
+  **locked the fields** ("cannot be changed from the admin UI"). Operators could
+  not adjust a client ID or point OIDC at a different Keycloak realm without a
+  config-file/redeploy round trip. `PropertyManager` now treats the auth
+  integration keys (`cloud.auth.` / `cloud.drive.` / `sso.` / `oidc.` / `saml.`)
+  as **admin-managed**: the value stored from the admin UI in `nemaki_conf` takes
+  precedence over the deploy-time `-D`/env bootstrap, and a blank stored value
+  falls through to the deploy default (clearing reverts). The API returns a
+  per-key `overridable` flag; the UI keeps these fields editable even when the
+  current source is a system property, showing an informational notice ("saving
+  overrides and persists your value") instead of the lock warning. Google,
+  Microsoft, and OIDC (Keycloak) can all be introduced/updated from this screen
+  after initial setup. Verified live: an admin-UI value overrides the `-D`
+  default (source flips `system_property → couchdb`) and clearing reverts.
+
+### Preview — embedded images in Markdown
+- **Markdown preview now resolves embedded images against the document's CMIS
+  folder.** Previously `MarkdownPreview` rendered react-markdown with no image
+  handling, so relative references (`![](images/foo.png)`, `../assets/a.png`)
+  resolved against the SPA route and 404'd; only absolute URLs worked. A custom
+  image renderer now resolves relative references — parent folder via
+  `getObjectParents`, path arithmetic (subfolders, `./`, `../`, leading `/` =
+  repository root, query/hash stripped, percent-decoded), then
+  `getObjectByPath` → content stream → a blob URL (the CSP `img-src` already
+  allows `blob:`); blob URLs are revoked on unmount. External / `data:` / `blob:`
+  sources pass through unchanged. Unresolved images fall back to the alt text
+  plus a broken-image indicator instead of a silent 404. (HTML files remain a
+  read-only source view via Monaco — not rendered — so this does not change
+  HTML handling.)
+
+### Migration
+- **RAG index rebuild required (only if RAG semantic search is used).** The
+  RAG reader-ACL token format changed (repository-scoped) and is
+  intentionally not backward-compatible. After upgrading, rebuild the RAG
+  Solr index. Behaviour before the rebuild is fail-closed: a document
+  indexed with the old token simply stops appearing in RAG search — it
+  never leaks across repositories. (This only affects the derived RAG Solr
+  index; CouchDB content is untouched, and a 2.x→3.x move already requires
+  a full re-index.)
+
+### Upgrade safety
+No CouchDB view / patch / persisted-schema / Mango-index change — all
+fixes are runtime authorization, the auth filter, the UI, and poms. The
+CouchDB data carry-over path from 2.4-era installs is untouched, and the
+allowedAuthMethods gate defaults to "all methods allowed" when the
+property is absent (as it is on carried-over data). The only index-format
+change is the derived RAG Solr index (see Migration).
+
+### Verification
+Java regression suites green (auth, ingest 171/171, RAG 164/164); reactor
+`mvn clean install` BUILD SUCCESS with the UI at 3.2.1. TCK effectively
+38/38 — the two failures on a reused (contaminated) CouchDB volume
+(`baseTypesTest` leftover custom type, `contentChangesSmokeTest`
+accumulated data) both pass green on a freshly-initialized DB, confirming
+data contamination rather than regression. Playwright chromium full suite:
+928 passed / 99 skipped, with 3 pre-existing flaky UI tests (Ant modal
+timing) unrelated to these changes.
+
+Re-validation for the two admin-usability additions (on a freshly
+initialized DB): relevant Java unit suites 60/60 (PropertyManager,
+IntegrationSettings controller, AuthenticationUtil, MCP auth); UI unit
+suite (vitest) 191/191, including 11 new cases for the Markdown image-path
+resolver; **full TCK 38/38 BUILD SUCCESS** (the deploy is CMIS-conformant;
+an initial contaminated-volume `rootFolderTest` failure passed green after
+a clean re-init, again confirming contamination, not regression); full
+Playwright chromium 911 passed / 102 skipped. The failing specs are the
+documented pre-existing flakies (group-hierarchy circular-reference,
+custom-property-input) and environmental serial-timeout flakes
+(archive-restore-consistency, config-viewer's before-render row-count race)
+— none in the changed code paths; the one integration-settings assertion
+affected by the new overridable-notice behaviour was updated and re-runs
+17/17 green.
+
+---
+
 ## 3.2.0 — IaaS one-step deployment (published images + cloud bootstrap) (2026-06-20)
 _On `release/3.2-iaas-setup`. Removes the "build the WAR on the target
 host" friction: operators now deploy by **pulling pre-built images** on a

@@ -115,3 +115,52 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+# ── Ephemeral full-config test extensions (persistent EIP + cloud auth + TLS) ─
+variable "eip_allocation_id" {
+  description = "Reuse an existing (persistent) Elastic IP by allocation id, so the public IP / hostname stays stable across destroy+apply. Empty = create a fresh EIP."
+  type        = string
+  default     = ""
+}
+
+variable "enable_full_config" {
+  description = "Append the post-bootstrap automation (Setup Wizard + Bedrock + Atlas + cloud auth + Caddy HTTPS) and open port 80."
+  type        = bool
+  default     = false
+}
+
+variable "nip_host" {
+  description = "Stable hostname for the Caddy/Let's Encrypt reverse proxy, e.g. <eip>.nip.io. Empty disables TLS proxy."
+  type        = string
+  default     = ""
+}
+
+variable "cloud_auth_microsoft_client_id" {
+  description = "Entra (Azure AD) application (client) id for Microsoft login. Public identifier; no secret needed for the MSAL SPA/PKCE flow."
+  type        = string
+  default     = ""
+}
+
+variable "cloud_auth_microsoft_tenant_id" {
+  description = "Entra directory (tenant) id for Microsoft login."
+  type        = string
+  default     = ""
+}
+
+variable "cloud_auth_google_client_id" {
+  description = "Google OAuth 2.0 Web client id for Google (GIS) login. Public identifier."
+  type        = string
+  default     = ""
+}
+
+variable "bedrock_region" {
+  description = "AWS region for Bedrock embeddings."
+  type        = string
+  default     = "ap-northeast-1"
+}
+
+variable "bedrock_model_id" {
+  description = "Bedrock embedding model id."
+  type        = string
+  default     = "amazon.titan-embed-text-v2:0"
+}
