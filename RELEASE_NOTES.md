@@ -64,12 +64,17 @@ schema / Mango changes — the 2.4-era data carry-over path is untouched._
   for compatibility with pre-3.2.3 deployments; `--no-flatten` exercises the
   nested-group resolution fixed in this release. See `tools/test-env/README.md`.
 
-**Verification**: new regression tests (nested-group view keys + transitive
+**Verification**: 16 new regression tests (nested-group view keys + transitive
 expansion + cycle termination; ACLExpander nested-groups list; block rebuild
-preserves chunks/vectors and replaces readers), RAG package 306/306, adjacent
-suites (UserGroupSearch / MCP auth+tools / IngestAuthorization) 136/136,
-QA integration 94/94, full CMIS TCK, full Playwright chromium suite, and live
-grant/revoke verification on a seeded 300-document repository.
+preserves chunks/vectors and replaces readers; content-range length matrix),
+RAG package 306/306, adjacent suites (UserGroupSearch / MCP auth+tools /
+IngestAuthorization) 136/136, QA integration 94/94, CMIS TCK effectively 38/38
+(initial 36/38; the two failures triaged to leftover E2E custom types — known
+data-pollution class, cleaned — and the pre-existing content-range bug fixed
+above), full Playwright chromium 938 passed / 92 skipped (2 failures were
+rag-search spec bugs newly unlocked by a running TEI — missing 403 after
+3.2.1's ApiCsrfFilter — fixed, spec now 15/15), and live grant/revoke
+verification on a seeded 300-document repository.
 
 ---
 

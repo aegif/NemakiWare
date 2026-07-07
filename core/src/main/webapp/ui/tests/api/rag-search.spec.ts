@@ -144,8 +144,10 @@ test.describe('RAG Input Validation', () => {
       data: { query: 'test' },
       timeout: 10000,
     });
-    // May return 401 (auth required), 503 (RAG disabled), or 200 (auth filter pass-through)
-    expect([200, 401, 503]).toContain(response.status());
+    // May return 401 (auth required), 403 (ApiCsrfFilter rejects state-changing
+    // POST without X-Requested-With/Origin — added in 3.2.1), 503 (RAG disabled),
+    // or 200 (auth filter pass-through)
+    expect([200, 401, 403, 503]).toContain(response.status());
   });
 
   test('POST /rag/search with invalid repository returns error', async ({ request }) => {
@@ -255,8 +257,9 @@ test.describe('RAG Search (TEI required)', () => {
   });
 
   test('POST /search-engine/rag/reindex starts reindexing', async ({ request }) => {
+    // X-Requested-With is required since 3.2.1 (ApiCsrfFilter on /api/v1/cmis/*)
     const response = await request.post(`${SE_RAG_BASE}/reindex`, {
-      headers: { 'Authorization': AUTH_HEADER }
+      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' }
     });
     expect([200, 202, 409]).toContain(response.status());
   });

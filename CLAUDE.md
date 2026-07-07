@@ -427,13 +427,17 @@ UI `package.json` / `package-lock.json` / `Layout.tsx` フォールバック、
 確認 (非回帰)。`contentRangesTest` は上記 Range バグ (pre-existing) が原因
 で、修正後 green。
 
-**検証**: 新規 regression 7 件 + ACLExpanderTest 26/26、RAG パッケージ
-306/306、隣接スイート (UserGroupSearch/MCP auth+tools/IngestAuthorization)
-136/136、QA 統合 94/94、TCK フル、Playwright chromium フル、実機
-grant/revoke 検証 (75 文書フォルダでチャンク数不変 + reader 双方向反映)。
-マルチアングルレビュー (correctness 3 + cleanup/altitude/conventions 5 観点)
-で delete-without-add 窓 / 並行クロバー / create 時キャッシュ無効化漏れ等
-10 findings を検出し全件反映済み。
+**検証**: 新規 regression 16 件 (nested-group 4 + ACL update 3 + range 9) +
+ACLExpanderTest 26/26、RAG パッケージ 306/306、隣接スイート
+(UserGroupSearch/MCP auth+tools/IngestAuthorization) 136/136、QA 統合
+94/94、**TCK 実効 38/38** (初回 36/38 → 残骸型掃除 + range 修正で全 green)、
+**Playwright chromium フル 938 passed / 92 skipped** (fail 2 は TEI 稼働で
+初解禁された rag-search spec の 403 未追随 = ApiCsrfFilter 由来のテストバグ、
+修正して 15/15。flaky 1 は retry 通過)、実機 grant/revoke 検証 (75 文書
+フォルダでチャンク数不変 + reader 双方向反映)。マルチアングルレビュー
+(correctness 3 + cleanup/altitude/conventions 5 観点) で delete-without-add
+窓 / 並行クロバー / create 時キャッシュ無効化漏れ等 10 findings を検出し
+全件反映済み。
 
 ### 3.2.2 (2026-07-03) — Codex セキュリティレビュー remediation
 
