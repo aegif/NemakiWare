@@ -70,18 +70,8 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
      * updateDocumentACL read-rebuild-write) for the same ragId within this JVM.
      * 64 stripes bound memory; hash collisions only over-serialize, never under.
      */
-    private static final int RAG_BLOCK_LOCK_STRIPES = 64;
-    private final java.util.concurrent.locks.ReentrantLock[] ragBlockLocks;
-    {
-        ragBlockLocks = new java.util.concurrent.locks.ReentrantLock[RAG_BLOCK_LOCK_STRIPES];
-        for (int i = 0; i < RAG_BLOCK_LOCK_STRIPES; i++) {
-            ragBlockLocks[i] = new java.util.concurrent.locks.ReentrantLock();
-        }
-    }
-
-    private java.util.concurrent.locks.ReentrantLock ragBlockLock(String ragId) {
-        return ragBlockLocks[Math.floorMod(ragId.hashCode(), RAG_BLOCK_LOCK_STRIPES)];
-    }
+    private final com.google.common.util.concurrent.Striped<java.util.concurrent.locks.Lock> ragBlockLocks =
+            com.google.common.util.concurrent.Striped.lock(64);
 
     private final RAGConfig ragConfig;
     private final EmbeddingService embeddingService;
@@ -228,7 +218,7 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             // indexToSolr / updateDocumentACL runs for the same document, so a stale
             // snapshot cannot clobber a newer block (single-replica posture; multi-replica
             // RAG limits are documented in MULTI-REPLICA-DEPLOYMENT.md).
-            java.util.concurrent.locks.ReentrantLock lock = ragBlockLock(ragId);
+            java.util.concurrent.locks.Lock lock = ragBlockLocks.get(ragId);
             lock.lock();
             try {
                 // 1. Fetch the parent document with all stored fields
@@ -279,16 +269,7 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
                 //    the very behavior that caused the original chunk-loss bug), so no
                 //    explicit delete is needed and there is no delete-without-add window
                 //    that could lose the document on a mid-operation failure.
-                UpdateRequest addRequest = new UpdateRequest();
-                addRequest.add(parentDoc);
-                int commitWithinMs = ragConfig.getSolrCommitWithinMs();
-                if (commitWithinMs > 0) {
-                    addRequest.setCommitWithin(commitWithinMs);
-                }
-                addRequest.process(solrClient, "nemaki");
-                if (commitWithinMs <= 0) {
-                    solrClient.commit("nemaki");
-                }
+                addBlock(solrClient, parentDoc);
 
                 log.info("RAG updated ACL for document and {} chunks: {} (ragId={})",
                         children.size(), documentId, ragId);
@@ -298,6 +279,28 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         } catch (Exception e) {
             throw new RAGIndexingException("Failed to update ACL for document: " + documentId, e);
         }
+    }
+
+    /**
+     * Add a block parent (with child documents) honoring the configured commit
+     * policy: commitWithin when configured, otherwise an explicit hard commit.
+     * Shared by indexToSolr and updateDocumentACL so their visibility semantics
+     * cannot drift.
+     */
+    private org.apache.solr.client.solrj.response.UpdateResponse addBlock(
+            SolrClient solrClient, SolrInputDocument parentDoc) throws Exception {
+        UpdateRequest addRequest = new UpdateRequest();
+        addRequest.add(parentDoc);
+        int commitWithinMs = ragConfig.getSolrCommitWithinMs();
+        if (commitWithinMs > 0) {
+            addRequest.setCommitWithin(commitWithinMs);
+        }
+        org.apache.solr.client.solrj.response.UpdateResponse response =
+                addRequest.process(solrClient, "nemaki");
+        if (commitWithinMs <= 0) {
+            solrClient.commit("nemaki");
+        }
+        return response;
     }
 
     /**
@@ -613,8 +616,8 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         parentDoc.addChildDocuments(childDocs);
 
         // Serialize block writes per ragId against concurrent updateDocumentACL /
-        // indexToSolr runs for the same document (see ragBlockLock)
-        java.util.concurrent.locks.ReentrantLock lock = ragBlockLock(ragId);
+        // indexToSolr runs for the same document (see ragBlockLocks)
+        java.util.concurrent.locks.Lock lock = ragBlockLocks.get(ragId);
         lock.lock();
         try {
             // Step 1: Delete existing RAG document and its chunks
@@ -627,21 +630,11 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             // Separated from delete because SolrJ's UpdateRequest may not correctly
             // serialize Block Join (addChildDocuments) when combined with deleteByQuery
             // in the same request.
-            UpdateRequest addRequest = new UpdateRequest();
-            addRequest.add(parentDoc);
-            if (commitWithinMs > 0) {
-                addRequest.setCommitWithin(commitWithinMs);
-            }
-
             log.info("[RAG SOLR] Sending add request for document: {} (ragId={}) with {} chunks, commitWithin={}",
                     document.getId(), ragId, childDocs.size(), commitWithinMs);
-            var response = addRequest.process(solrClient, "nemaki");
+            var response = addBlock(solrClient, parentDoc);
             log.info("[RAG SOLR] Add response status: {} for document: {}",
                     response.getStatus(), document.getId());
-
-            if (commitWithinMs <= 0) {
-                solrClient.commit("nemaki");
-            }
         } catch (Exception e) {
             log.error("[RAG SOLR] Index operation failed for document: " + document.getId() +
                       ". The document may need to be re-indexed.", e);

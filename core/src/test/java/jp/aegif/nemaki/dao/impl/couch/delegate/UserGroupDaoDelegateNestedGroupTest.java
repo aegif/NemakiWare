@@ -1,11 +1,11 @@
 package jp.aegif.nemaki.dao.impl.couch.delegate;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -57,7 +57,7 @@ public class UserGroupDaoDelegateNestedGroupTest {
 
     private ViewResult viewResultWithGroupIds(String... groupIds) {
         ViewResult result = mock(ViewResult.class);
-        java.util.List<ViewResultRow> rows = new java.util.ArrayList<>();
+        List<ViewResultRow> rows = new ArrayList<>();
         for (String groupId : groupIds) {
             ViewResultRow row = mock(ViewResultRow.class);
             Map<String, Object> doc = new HashMap<>();

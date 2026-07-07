@@ -45,6 +45,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--admin-password", default="admin")
     p.add_argument("--manifest", default=str(HERE / "manifest.json"))
     p.add_argument("--skip-docs", action="store_true", help="文書投入をスキップ (組織のみ作成)")
+    p.add_argument("--no-flatten", action="store_true",
+                   help="グループに直接メンバーのみ投入 (3.2.3+ のネストグループACL解決を検証する場合)")
     p.add_argument("--wait-rag", action="store_true", help="RAG インデックスの追い付きを待つ")
     p.add_argument("--rag-timeout", type=int, default=3600, help="--wait-rag の最大待機秒数")
     return p.parse_args()
@@ -59,12 +61,11 @@ def setup_users(client: NemakiClient, manifest: dict) -> None:
         log(f"  {u.user_id:<10} {u.name} ({u.title}): {result}")
 
 
-def setup_groups(client: NemakiClient, manifest: dict) -> None:
-    log("=== 2. グループ作成 (子→親の順、ネストあり) ===")
-    # NemakiWare の実効 ACL 評価は直接メンバーのみ参照するため、
-    # users には推移的メンバーを展開して投入する (org_model.transitive_users 参照)
+def setup_groups(client: NemakiClient, manifest: dict, flatten: bool) -> None:
+    mode = "推移的メンバー展開 (旧環境互換)" if flatten else "直接メンバーのみ (ネスト解決検証)"
+    log(f"=== 2. グループ作成 (子→親の順、ネストあり / {mode}) ===")
     for g in GROUPS:
-        users = sorted(transitive_users(g.group_id))
+        users = sorted(transitive_users(g.group_id)) if flatten else sorted(g.users)
         result = client.create_group(g.group_id, g.name, users, list(g.groups))
         if result == "exists":
             result = client.update_group(g.group_id, g.name, users, list(g.groups))
@@ -242,7 +243,7 @@ def main() -> int:
 
     try:
         setup_users(client, manifest)
-        setup_groups(client, manifest)
+        setup_groups(client, manifest, flatten=not args.no_flatten)
         category_folders = setup_folders(client, manifest)
         save_manifest()
         if not args.skip_docs:

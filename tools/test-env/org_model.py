@@ -10,6 +10,7 @@ sales/engineering/hr/accounting/managers グループ、営業部/技術部/... 
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass, field
 
 DEFAULT_PASSWORD = "Pass1234"
@@ -155,38 +156,25 @@ FOLDERS: tuple[FolderDef, ...] = (
 )
 
 
-def transitive_users(group_id: str) -> set[str]:
+@functools.lru_cache(maxsize=None)
+def transitive_users(group_id: str) -> frozenset[str]:
     """ネストグループを展開した推移的メンバー (ユーザID集合) を返す。
 
-    NemakiWare の実効 ACL 評価 (PermissionService → getJoinedGroupByUserId の
-    CouchDB ビュー) は「直接メンバー」しか見ないため、セットアップ時には
-    各グループにこの推移的閉包を users として投入する (groups のネスト構造は
-    組織構造の表現として保持する)。
+    3.2.3 より前の NemakiWare は実効 ACL 評価がネストグループを解決できな
+    かったため、セットアップ既定ではこの推移的閉包を各グループの users に
+    投入する (未修正環境との互換。groups のネスト構造は常に保持)。修正済み
+    環境でネスト解決そのものを検証したい場合は setup_test_env.py の
+    --no-flatten を使う。
     """
     g = next(gd for gd in GROUPS if gd.group_id == group_id)
     users = set(g.users)
     for child in g.groups:
         users |= transitive_users(child)
-    return users
+    return frozenset(users)
 
 
 def folder_visibility() -> dict[str, set[str]]:
-    """エリア毎の「読めるユーザ集合」を計算する (シナリオのアサーション用)。
-
-    グループのネストを展開してユーザ ID の集合にする。
-    """
-    membership: dict[str, set[str]] = {}
-
-    def expand(group_id: str) -> set[str]:
-        if group_id in membership:
-            return membership[group_id]
-        g = next(gd for gd in GROUPS if gd.group_id == group_id)
-        users = set(g.users)
-        for child in g.groups:
-            users |= expand(child)
-        membership[group_id] = users
-        return users
-
+    """エリア毎の「読めるユーザ集合」を計算する (シナリオのアサーション用)。"""
     result: dict[str, set[str]] = {}
     # ACL 継承をパスの前方一致で解決
     acl_by_path: dict[tuple[str, ...], tuple[tuple[str, str], ...]] = {
@@ -203,6 +191,6 @@ def folder_visibility() -> dict[str, set[str]]:
         readers: set[str] = set()
         if effective:
             for principal, _perm in effective:
-                readers |= expand(principal)
+                readers |= transitive_users(principal)
         result["/".join(f.path)] = readers
     return result

@@ -252,6 +252,11 @@ public class ACLExpander {
         List<String> nestedGroupIds = group.getGroups();
         if (nestedGroupIds != null) {
             for (String nestedGroupId : nestedGroupIds) {
+                if (visitedGroups.contains(nestedGroupId)) {
+                    // Already expanded via another path (diamond/cycle) — its token
+                    // and members are in readers; skip the redundant lookup
+                    continue;
+                }
                 Group subgroup = principalService.getGroupById(repositoryId, nestedGroupId);
                 if (subgroup != null) {
                     readers.add(formatGroupReader(repositoryId, nestedGroupId));
