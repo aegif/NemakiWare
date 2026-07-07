@@ -511,10 +511,14 @@ public class UserGroupDaoDelegate {
 			// Full implementation would require complex recursive group hierarchy traversal
 
 			for (String groupId : groupIdsToCheck) {
-				// Check if this group belongs to other groups using joinedDirectGroupsByGroupId view
+				// Check if this group belongs to other groups using joinedDirectGroupsByGroupId view.
+				// The view emits composite array keys [groupId, n]; startkey/endkey must be passed
+				// as List so the Cloudant SDK serializes them as JSON arrays. Passing a String
+				// ("[\"id\",0]") sends a JSON string key which never matches an array key, so
+				// nested-group expansion silently returned nothing.
 				Map<String, Object> queryParams = new HashMap<String, Object>();
-				queryParams.put("startkey", "[\"" + groupId + "\",0]");
-				queryParams.put("endkey", "[\"" + groupId + "\",19]");
+				queryParams.put("startkey", java.util.Arrays.asList(groupId, 0));
+				queryParams.put("endkey", java.util.Arrays.asList(groupId, 19));
 
 				try {
 					ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "joinedDirectGroupsByGroupId", queryParams);
