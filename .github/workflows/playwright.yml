@@ -5,10 +5,20 @@ on:
     branches: [ main, master, develop, 'release/**' ]
     paths:
       - 'core/src/main/webapp/ui/**'
+      - 'core/src/main/java/**'
+      - 'core/pom.xml'
+      - 'common/**'
+      - 'solr/**'
+      - '.github/workflows/playwright.yml'
   pull_request:
     branches: [ main, master, develop, 'release/**' ]
     paths:
       - 'core/src/main/webapp/ui/**'
+      - 'core/src/main/java/**'
+      - 'core/pom.xml'
+      - 'common/**'
+      - 'solr/**'
+      - '.github/workflows/playwright.yml'
 
 permissions:
   contents: read
