@@ -6,6 +6,78 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.2.3 — Nested-group ACL resolution + RAG chunk-loss fix (2026-07-07)
+_On `release/3.2.3` (off `master`). Two access-control / search defects found
+while building the `tools/test-env` permission-diversity demo environment,
+fixed with regression tests and live verification. No CouchDB view / patch /
+schema / Mango changes — the 2.4-era data carry-over path is untouched._
+
+- **[High] Nested group membership now grants permissions.** Effective ACL
+  evaluation (`getJoinedGroupByUserId`) queries the
+  `joinedDirectGroupsByGroupId` CouchDB view — which emits composite **array**
+  keys `[groupId, n]` — with `startkey`/`endkey` that were passed as
+  pre-serialized **strings**. The Cloudant SDK sent them as JSON string keys,
+  which never match array keys, so ancestor-group expansion silently returned
+  nothing: a member of a section group nested inside a division group was
+  denied on folders whose ACL granted the division group (CMIS browsing,
+  queries, and RAG search alike). Keys are now passed as JSON arrays. The RAG
+  index side (`ACLExpander`) additionally never traversed the dedicated
+  nested-groups list (`nemaki:groups`); `readers` now include nested subgroups
+  and their members. The cached DAO also invalidates the joined-group cache on
+  group **create** (previously only update/delete), so a newly created parent
+  group takes effect immediately. Live-verified: a user reachable only through
+  a nested subgroup gains folder access and RAG hits when the parent group is
+  granted, and loses them on revoke.
+- **[High] ACL changes no longer destroy RAG search chunks.** Updating a
+  document's readers used a Solr atomic update on the Block Join parent, which
+  replaces the whole block and silently deletes all child chunk documents
+  (observed live: 300 chunks → 0 after a folder ACL change; vector search
+  silently degraded to document-vector-only scoring, similarity ~0.94 → ~0.27).
+  The ACL update now rebuilds the entire block from stored fields — chunk text
+  and vectors are stored, so **no re-embedding** — and replaces it with a
+  single add request (re-adding the root id cascades deletion of the old
+  block, so there is no delete-without-add window on failure). Per-document
+  striped locks serialize block writes against concurrent indexing; the
+  rebuild pages through **all** chunks, closing the old partial-update gap
+  where chunks beyond `rag.acl.chunk.update.limit` kept stale ACLs; commit
+  policy follows `rag.solr.commitWithin` like initial indexing. Deployments
+  that changed ACLs on RAG-indexed folders before this fix should run
+  `POST /api/v1/cmis/repositories/{repo}/search-engine/rag/reindex` once to
+  restore lost chunks. Live-verified: grant → revoke on a folder with ~75
+  indexed documents keeps the chunk count constant while reader filtering
+  follows the ACL both ways.
+- **[Medium] Ranged content retrieval no longer misreports Content-Length.**
+  `getContentStream` slices the body for range requests but declared the FULL
+  attachment length on the returned stream, so AtomPub sent
+  `Content-Length: <total>` with a truncated body and range-reading clients
+  failed with "Premature EOF" (TCK ContentRangesTest; live repro:
+  Content-Length 36 for a 33-byte body). Pre-existing on master — A/B-verified
+  against a master-built WAR — and surfaced by this release's QA run. The
+  declared length now mirrors the slicing semantics exactly (offset past end →
+  0, length clamped to remaining bytes), unit-tested against the TCK case
+  matrix and live-verified (`Content-Length: 33`, `Content-Range: bytes 3-35`).
+- **New: `tools/test-env`** — a seeding tool for a 15-user hierarchical
+  organization (nested groups, cross-functional secret project), 31 folders
+  with per-area ACLs, and 300 generated Japanese office documents, plus an MCP
+  scenario runner that demonstrates per-user answer differences for the same
+  natural-language query. Default group seeding flattens transitive members
+  for compatibility with pre-3.2.3 deployments; `--no-flatten` exercises the
+  nested-group resolution fixed in this release. See `tools/test-env/README.md`.
+
+**Verification**: 16 new regression tests (nested-group view keys + transitive
+expansion + cycle termination; ACLExpander nested-groups list; block rebuild
+preserves chunks/vectors and replaces readers; content-range length matrix),
+RAG package 306/306, adjacent suites (UserGroupSearch / MCP auth+tools /
+IngestAuthorization) 136/136, QA integration 94/94, CMIS TCK effectively 38/38
+(initial 36/38; the two failures triaged to leftover E2E custom types — known
+data-pollution class, cleaned — and the pre-existing content-range bug fixed
+above), full Playwright chromium 938 passed / 92 skipped (2 failures were
+rag-search spec bugs newly unlocked by a running TEI — missing 403 after
+3.2.1's ApiCsrfFilter — fixed, spec now 15/15), and live grant/revoke
+verification on a seeded 300-document repository.
+
+---
+
 ## 3.2.2 — Codex security-review remediation + E2E flaky-test stabilization (2026-07-04)
 _On `release/3.2.1-security`. Follow-up to a Codex deep-repository security
 scan of the 3.2.1 tag. Two findings fixed with regression tests + a live

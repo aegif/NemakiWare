@@ -281,7 +281,11 @@ public class ObjectServiceImpl implements ObjectService {
 
 		// Use AttachmentNode metadata length from CouchDB _attachments metadata.
 		// No need to download the entire content again just to measure size.
-		long attachmentLength = attachment.getLength();
+		// For range requests the stream body is sliced (AttachmentNode.getInputStream),
+		// so the declared length must be the SLICED length — advertising the full
+		// attachment length made clients hit "Premature EOF" on ranged reads
+		// (TCK ContentRangesTest).
+		long attachmentLength = computeRangeAwareLength(attachment.getLength(), rangeOffset, rangeLength);
 		BigInteger length;
 		if (attachmentLength >= 0) {
 			length = BigInteger.valueOf(attachmentLength);
@@ -298,6 +302,37 @@ public class ObjectServiceImpl implements ObjectService {
 		ContentStream cs = new ContentStreamImpl(name, length, mimeType, is);
 
 		return cs;
+	}
+
+	/**
+	 * Compute the length of the content stream that will actually be returned,
+	 * taking a range request into account. Mirrors the slicing semantics of
+	 * {@link jp.aegif.nemaki.model.AttachmentNode#getInputStream()}:
+	 * offset defaults to 0 (negative treated as 0), an offset at/past the end
+	 * yields an empty stream, and the length is clamped to the remaining bytes.
+	 *
+	 * @param attachmentLength total attachment length, or negative if unknown
+	 * @return the sliced length, or -1 when the total length is unknown
+	 */
+	static long computeRangeAwareLength(long attachmentLength, BigInteger rangeOffset, BigInteger rangeLength) {
+		if (attachmentLength < 0) {
+			return -1;
+		}
+		if (rangeOffset == null && rangeLength == null) {
+			return attachmentLength;
+		}
+		long offset = (rangeOffset != null) ? rangeOffset.longValue() : 0L;
+		if (offset < 0) {
+			offset = 0;
+		}
+		if (offset >= attachmentLength) {
+			return 0;
+		}
+		long rangeLen = (rangeLength != null) ? rangeLength.longValue() : (attachmentLength - offset);
+		if (offset + rangeLen > attachmentLength) {
+			rangeLen = attachmentLength - offset;
+		}
+		return Math.max(0, rangeLen);
 	}
 
 	/**

@@ -245,6 +245,25 @@ public class ACLExpander {
                 }
             }
         }
+
+        // Nested subgroups live in the dedicated groups list (nemaki:groups), not in
+        // the users list. Without this traversal, members of a nested subgroup were
+        // missing from readers when only the parent group was granted read access.
+        List<String> nestedGroupIds = group.getGroups();
+        if (nestedGroupIds != null) {
+            for (String nestedGroupId : nestedGroupIds) {
+                if (visitedGroups.contains(nestedGroupId)) {
+                    // Already expanded via another path (diamond/cycle) — its token
+                    // and members are in readers; skip the redundant lookup
+                    continue;
+                }
+                Group subgroup = principalService.getGroupById(repositoryId, nestedGroupId);
+                if (subgroup != null) {
+                    readers.add(formatGroupReader(repositoryId, nestedGroupId));
+                    expandGroupMembersInternal(repositoryId, subgroup, readers, visitedGroups);
+                }
+            }
+        }
     }
 
     /**

@@ -358,15 +358,86 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 ## 現在のバージョン
 
-**3.2.1** (2026-07-02、`release/3.2.1-security`) — pom.xml
-`<version>3.2.1</version>`。5 reactor pom (root/common/core/solr/cloudant-init)
-＋内部モジュール依存座標 (nemakiware-common / solr) を 3.2.0 → 3.2.1 に bump。
-ユーザー向け版表記も更新: UI `ui/package.json` + `package-lock.json`
-(`__UI_VERSION__` 表示元)、`Layout.tsx` フォールバック literal、CMIS
-`repositories-default.yml` の `product.version` (repositoryInfo.productVersion)。
-Setup の serverVersion は `version.properties=${project.version}` 経由で pom
-追従。3.2.0 を基点に、包括セキュリティ監査で発見した認証/認可の穴と依存 CVE を
-remediation (下記 3.2.1 節)。
+**3.2.3** (2026-07-07、`release/3.2.3` → master) — ネストグループ ACL 解決 +
+RAG チャンク消失の 2 バグ修正 + `tools/test-env` 同梱 (下記 3.2.3 節)。
+バージョン表記は 3.2.1 と同じ箇所を bump: 5 reactor pom + core 内部依存座標、
+UI `package.json` / `package-lock.json` / `Layout.tsx` フォールバック、
+`repositories-default.yml` の `product.version`。Setup の serverVersion は
+`version.properties=${project.version}` 経由で pom 追従。
+
+### 3.2.3 (2026-07-07) — ネストグループACL解決 + RAGチャンク消失修正
+
+ブランチ: `release/3.2.3` (off `master`)。`tools/test-env` (権限多様性×ベクトル
+検索×MCP のデモ環境シードツール、本リリースに同梱) の構築中に発見した 2 バグを
+修正。CouchDB view / patch / schema / Mango 変更なし (2.4 データ持ち越しパス
+無変更)。
+
+- **[High] ネストグループのメンバーに親グループ宛 ACL の権限が付与されない**
+  (`UserGroupDaoDelegate.checkIndirectGroup`): 実効 ACL 評価が参照する
+  `joinedDirectGroupsByGroupId` ビューは複合配列キー `[groupId, n]` を emit
+  するが、startkey/endkey を**事前シリアライズした文字列**で渡していたため
+  Cloudant SDK が JSON 文字列キーとして送信し配列キーに不一致 → 祖先グループ
+  展開が常に 0 行でサイレント不発。課グループのメンバーが本部グループ宛 ACL の
+  フォルダに permissionDenied になっていた (CMIS/クエリ/RAG 全経路)。List で
+  渡すよう修正。RAG インデックス側 `ACLExpander` も nested groups
+  (`getGroups()` = nemaki:groups) を走査していなかったため追加 (visited 先行
+  チェックつき)。cached DAO の GroupItem **create()** が joinedGroupCache を
+  無効化していないギャップ (update/delete のみ対応) も修正。
+  +2 UserGroupDaoDelegateNestedGroupTest / +2 ACLExpanderTest。実機検証:
+  素のネストグループ (非展開) で子グループのメンバーが親グループ宛 read の
+  フォルダを閲覧可 + RAG ヒット、撤回で消失
+- **[High] ACL 変更が配下文書の RAG チャンクを全消失させる**
+  (`RAGIndexingServiceImpl.updateDocumentACL`): block-join 親への Solr atomic
+  update はブロック全体を置換し子チャンクを削除する (実測 300→0、検索は
+  document_vector のみに劣化し類似度 0.94→0.27)。**保存済みフィールド
+  (chunk_text / 各 vector は stored=true) からブロック全体を再構築**して
+  readers を差し替え、**単一 add リクエスト**で置換 (root id 再投入の
+  delete-by-_root_ カスケードで旧ブロックが消えるため明示 delete 不要 =
+  delete後add失敗でインデックス消失する窓なし)。再エンベディング不要。
+  ragId 単位の Guava Striped ロック (64 stripes) で indexToSolr と直列化
+  (stale スナップショットによるクロバー防止)。チャンクは全ページ取得 (旧実装
+  の `rag.acl.chunk.update.limit` 超過分 ACL 未更新ギャップも解消、limit は
+  ページサイズに転用)。commit は `rag.solr.commitWithin` に整合 (addBlock
+  ヘルパーで indexToSolr と共有)。+3 RAGIndexingServiceImplAclUpdateTest。
+  **既存環境の注意**: 本修正前に RAG 索引済みフォルダの ACL を変更した環境は
+  チャンクが消えている可能性があるため
+  `POST /api/v1/cmis/repositories/{repo}/search-engine/rag/reindex` を一度
+  実行して復旧すること
+- **[Medium] Range 指定の getContentStream が Content-Length を誤申告**
+  (`ObjectServiceImpl.getContentStreamInternal`): 本文は range で切り出す
+  (AttachmentNode.getInputStream) のに ContentStream.length に**全長**を
+  渡していたため、AtomPub が「Content-Length=全長 + 切り詰め本文」を返し
+  クライアントが Premature EOF (TCK ContentRangesTest。実測: 33 バイト
+  本文に Content-Length 36)。**master 由来の pre-existing** (master ビルド
+  WAR との A/B で実証、2026-02-16 のメタデータ長最適化コミット由来) を本
+  リリースの QA で発見・修正。`computeRangeAwareLength` が切り出しと同一
+  セマンティクス (offset 超過→0、残量クランプ、負 offset→0) で申告長を
+  計算。+9 ObjectServiceImplRangeLengthTest (TCK ケース行列)。実機で
+  `Content-Length: 33` / `Content-Range: bytes 3-35` を確認
+- **同梱: `tools/test-env`** — 階層組織 15 ユーザ / ネストグループ 13 /
+  フォルダ 31 + エリア別 ACL / 日本語 Office 文書 300 件の宣言的シード +
+  MCP シナリオランナー (同一クエリのユーザ別応答差デモ)。既定はグループ
+  メンバーを推移的展開して投入 (3.2.3 未満との互換)、`--no-flatten` で
+  ネスト解決自体を検証可能。リポジトリルートへの set_acl/deleteTree を拒否
+  する安全ガード付き。詳細は `tools/test-env/README.md`
+
+**TCK 備考**: 永続 volume 上のフル run は初回 `baseTypesTest` が E2E 残骸
+カスタム型 (queryName null の `test:customFolderForE2E` 等 20 型) で fail
+する既知の汚染クラス。残骸型を type delete API で掃除して再実行し green を
+確認 (非回帰)。`contentRangesTest` は上記 Range バグ (pre-existing) が原因
+で、修正後 green。
+
+**検証**: 新規 regression 16 件 (nested-group 4 + ACL update 3 + range 9) +
+ACLExpanderTest 26/26、RAG パッケージ 306/306、隣接スイート
+(UserGroupSearch/MCP auth+tools/IngestAuthorization) 136/136、QA 統合
+94/94、**TCK 実効 38/38** (初回 36/38 → 残骸型掃除 + range 修正で全 green)、
+**Playwright chromium フル 938 passed / 92 skipped** (fail 2 は TEI 稼働で
+初解禁された rag-search spec の 403 未追随 = ApiCsrfFilter 由来のテストバグ、
+修正して 15/15。flaky 1 は retry 通過)、実機 grant/revoke 検証 (75 文書
+フォルダでチャンク数不変 + reader 双方向反映)。マルチアングルレビュー
+(correctness 3 + cleanup/altitude/conventions 5 観点) で delete-without-add
+窓 / 並行クロバー / create 時キャッシュ無効化漏れ等 10 findings を検出し
+全件反映済み。
 
 ### 3.2.2 (2026-07-03) — Codex セキュリティレビュー remediation
 

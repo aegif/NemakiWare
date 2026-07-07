@@ -1127,6 +1127,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		GroupItem created = nonCachedContentDaoService.create(repositoryId, groupItem);
 		nemakiCachePool.get(repositoryId).getContentCache().put(created.getId(), created);
 		nemakiCachePool.get(repositoryId).getGroupItemCache().put(created.getGroupId(), created);
+		// A new group with members (users or nested groups) changes those members'
+		// joined-group sets; mirror update()'s invalidation so cached lists don't
+		// keep denying access granted via the new group
+		nemakiCachePool.get(repositoryId).getJoinedGroupCache().removeAll();
 		addToTreeCache(repositoryId, created);
 		return created;
 	}

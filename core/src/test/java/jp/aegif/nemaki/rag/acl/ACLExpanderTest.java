@@ -220,6 +220,77 @@ public class ACLExpanderTest {
     }
 
     @Test
+    public void testExpandToReadersWithNestedGroupsInGroupsList() {
+        // Nested subgroups are stored in the dedicated groups list (nemaki:groups),
+        // not in the users list. Members reachable only through that list must
+        // still be expanded into readers (regression for the nested-group ACL bug).
+        Ace ace = createAce("divGroup", Arrays.asList("cmis:all"));
+        when(content.getAcl()).thenReturn(acl);
+        when(acl.getAllAces()).thenReturn(Arrays.asList(ace));
+
+        when(principalService.getUserById(REPO_ID, "divGroup")).thenReturn(null);
+
+        Group divGroup = mock(Group.class);
+        when(divGroup.getGroupId()).thenReturn("divGroup");
+        when(divGroup.getUsers()).thenReturn(Arrays.asList("divHead"));
+        when(divGroup.getGroups()).thenReturn(Arrays.asList("secGroup"));
+        when(principalService.getGroupById(REPO_ID, "divGroup")).thenReturn(divGroup);
+
+        Group secGroup = mock(Group.class);
+        when(secGroup.getGroupId()).thenReturn("secGroup");
+        when(secGroup.getUsers()).thenReturn(Arrays.asList("member1"));
+        when(principalService.getGroupById(REPO_ID, "secGroup")).thenReturn(secGroup);
+
+        User divHead = mock(User.class);
+        User member1 = mock(User.class);
+        when(principalService.getUserById(REPO_ID, "divHead")).thenReturn(divHead);
+        when(principalService.getUserById(REPO_ID, "member1")).thenReturn(member1);
+
+        List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
+
+        assertTrue(readers.contains("group:test-repo:divGroup"), "Should contain group:test-repo:divGroup");
+        assertTrue(readers.contains("group:test-repo:secGroup"),
+                "Nested subgroup from the groups list should be included");
+        assertTrue(readers.contains("user:test-repo:divHead"), "Should contain user:test-repo:divHead");
+        assertTrue(readers.contains("user:test-repo:member1"),
+                "Member reachable only via the nested groups list should be included");
+    }
+
+    @Test
+    public void testExpandToReadersNestedGroupsListCycleDoesNotLoop() {
+        // Circular nesting via the groups list must terminate (visited tracking)
+        Ace ace = createAce("groupA", Arrays.asList("cmis:read"));
+        when(content.getAcl()).thenReturn(acl);
+        when(acl.getAllAces()).thenReturn(Arrays.asList(ace));
+
+        when(principalService.getUserById(REPO_ID, "groupA")).thenReturn(null);
+
+        Group groupA = mock(Group.class);
+        when(groupA.getGroupId()).thenReturn("groupA");
+        when(groupA.getUsers()).thenReturn(Arrays.asList("userA"));
+        when(groupA.getGroups()).thenReturn(Arrays.asList("groupB"));
+        when(principalService.getGroupById(REPO_ID, "groupA")).thenReturn(groupA);
+
+        Group groupB = mock(Group.class);
+        when(groupB.getGroupId()).thenReturn("groupB");
+        when(groupB.getUsers()).thenReturn(Arrays.asList("userB"));
+        when(groupB.getGroups()).thenReturn(Arrays.asList("groupA"));
+        when(principalService.getGroupById(REPO_ID, "groupB")).thenReturn(groupB);
+
+        User userA = mock(User.class);
+        User userB = mock(User.class);
+        when(principalService.getUserById(REPO_ID, "userA")).thenReturn(userA);
+        when(principalService.getUserById(REPO_ID, "userB")).thenReturn(userB);
+
+        List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
+
+        assertTrue(readers.contains("user:test-repo:userA"));
+        assertTrue(readers.contains("user:test-repo:userB"));
+        assertTrue(readers.contains("group:test-repo:groupA"));
+        assertTrue(readers.contains("group:test-repo:groupB"));
+    }
+
+    @Test
     public void testExpandToReadersWithMultipleAces() {
         Ace ace1 = createAce("user1", Arrays.asList("cmis:read"));
         Ace ace2 = createAce("user2", Arrays.asList("cmis:all"));
