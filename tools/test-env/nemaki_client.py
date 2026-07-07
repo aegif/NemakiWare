@@ -419,6 +419,9 @@ class NemakiClient:
             if r.status_code == 429:
                 time.sleep(1.5 * (attempt + 1))
                 continue
+            if 400 <= r.status_code < 500:
+                # 認証・バリデーション系はリトライしても変わらない
+                raise NemakiApiError(f"MCP {method} failed: HTTP {r.status_code}", r.status_code, r.text)
             if r.status_code != 200:
                 last_err = NemakiApiError(f"MCP {method} failed: HTTP {r.status_code}", r.status_code, r.text)
                 time.sleep(0.5)

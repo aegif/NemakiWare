@@ -166,10 +166,10 @@ public class RAGIndexingServiceImplAclUpdateTest {
 
         service.updateDocumentACL(REPO_ID, DOC_ID, newReaders);
 
-        UpdateRequest delete = findDeleteRequest();
-        assertNotNull(delete, "block must be deleted before re-add");
-        assertTrue(delete.getDeleteQuery().get(0).startsWith("_root_:"),
-                "delete must target the whole block via _root_");
+        // Single-request block replacement: an explicit delete would open a
+        // delete-without-add window that loses the document on a mid-operation
+        // failure. Re-adding the root id cascades deletion of the old block.
+        assertNull(findDeleteRequest(), "no separate delete request (single-add block replacement)");
 
         UpdateRequest add = findAddRequest();
         assertNotNull(add, "rebuilt block must be re-added");

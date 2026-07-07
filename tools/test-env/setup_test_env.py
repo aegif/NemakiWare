@@ -138,11 +138,12 @@ def setup_folders(client: NemakiClient, manifest: dict) -> dict[str, str]:
 def upload_documents(client: NemakiClient, manifest: dict,
                      category_folders: dict[str, str]) -> None:
     log(f"=== 4. 文書投入 ({TOTAL_DOCS}件) ===")
-    existing_names = {d["name"] for d in manifest["documents"]}
+    # 同名は同一フォルダ内でのみ衝突するため (category, name) でスキップ判定する
+    existing_names = {(d.get("category"), d["name"]) for d in manifest["documents"]}
     done = skipped = failed = 0
     started = time.time()
     for doc in iter_documents():
-        if doc.filename in existing_names:
+        if (doc.category, doc.filename) in existing_names:
             skipped += 1
             continue
         folder_id = category_folders[doc.category]

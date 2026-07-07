@@ -65,6 +65,24 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         return ragId;
     }
 
+    /**
+     * Striped per-document locks serializing Solr block writes (indexToSolr and
+     * updateDocumentACL read-rebuild-write) for the same ragId within this JVM.
+     * 64 stripes bound memory; hash collisions only over-serialize, never under.
+     */
+    private static final int RAG_BLOCK_LOCK_STRIPES = 64;
+    private final java.util.concurrent.locks.ReentrantLock[] ragBlockLocks;
+    {
+        ragBlockLocks = new java.util.concurrent.locks.ReentrantLock[RAG_BLOCK_LOCK_STRIPES];
+        for (int i = 0; i < RAG_BLOCK_LOCK_STRIPES; i++) {
+            ragBlockLocks[i] = new java.util.concurrent.locks.ReentrantLock();
+        }
+    }
+
+    private java.util.concurrent.locks.ReentrantLock ragBlockLock(String ragId) {
+        return ragBlockLocks[Math.floorMod(ragId.hashCode(), RAG_BLOCK_LOCK_STRIPES)];
+    }
+
     private final RAGConfig ragConfig;
     private final EmbeddingService embeddingService;
     private final ChunkingService chunkingService;
@@ -205,63 +223,78 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             // so their block linkage cannot survive a partial re-add). The only safe way to
             // change readers is to rebuild the entire block from stored fields (text and
             // vectors are stored=true, so no re-embedding is needed) and re-add it.
-
-            // 1. Fetch the parent document with all stored fields
-            SolrQuery parentQuery = new SolrQuery();
-            parentQuery.setQuery("id:" + sanitizedRagId);
-            parentQuery.setFields("*");
-            parentQuery.setRows(1);
-            SolrDocumentList parentDocs = solrClient.query("nemaki", parentQuery).getResults();
-            if (parentDocs == null || parentDocs.isEmpty()) {
-                // Not indexed (yet) — nothing to update; the next indexing run embeds fresh ACL
-                log.debug("RAG ACL update skipped, document not in RAG index: {} (ragId={})",
-                        documentId, ragId);
-                return;
-            }
-
-            // 2. Fetch ALL chunk documents (paged). A partial fetch would silently drop the
-            //    tail chunks on rebuild, so unlike the previous partial-update strategy the
-            //    limit is used as a page size only.
-            int pageSize = Math.max(1, ragConfig.getAclChunkUpdateLimit());
-            List<SolrDocument> chunkDocs = new ArrayList<>();
-            long totalChunks;
-            int start = 0;
-            do {
-                SolrQuery chunkQuery = new SolrQuery();
-                chunkQuery.setQuery("_root_:" + sanitizedRagId);
-                chunkQuery.addFilterQuery("doc_type:" + DOC_TYPE_CHUNK);
-                chunkQuery.setFields("*");
-                chunkQuery.setSort("chunk_index", SolrQuery.ORDER.asc);
-                chunkQuery.setStart(start);
-                chunkQuery.setRows(pageSize);
-                SolrDocumentList page = solrClient.query("nemaki", chunkQuery).getResults();
-                totalChunks = page == null ? 0 : page.getNumFound();
-                if (page != null) {
-                    chunkDocs.addAll(page);
+            //
+            // The per-ragId lock serializes this read-rebuild-write against concurrent
+            // indexToSolr / updateDocumentACL runs for the same document, so a stale
+            // snapshot cannot clobber a newer block (single-replica posture; multi-replica
+            // RAG limits are documented in MULTI-REPLICA-DEPLOYMENT.md).
+            java.util.concurrent.locks.ReentrantLock lock = ragBlockLock(ragId);
+            lock.lock();
+            try {
+                // 1. Fetch the parent document with all stored fields
+                SolrQuery parentQuery = new SolrQuery();
+                parentQuery.setQuery("id:" + sanitizedRagId);
+                parentQuery.setFields("*");
+                parentQuery.setRows(1);
+                SolrDocumentList parentDocs = solrClient.query("nemaki", parentQuery).getResults();
+                if (parentDocs == null || parentDocs.isEmpty()) {
+                    // Not indexed (yet) — nothing to update; the next indexing run embeds fresh ACL
+                    log.debug("RAG ACL update skipped, document not in RAG index: {} (ragId={})",
+                            documentId, ragId);
+                    return;
                 }
-                start += pageSize;
-            } while (start < totalChunks);
 
-            // 3. Rebuild the block with the new readers list
-            SolrInputDocument parentDoc = copyForReindex(parentDocs.get(0), ragId, readers);
-            List<SolrInputDocument> children = new ArrayList<>(chunkDocs.size());
-            for (SolrDocument chunkDoc : chunkDocs) {
-                children.add(copyForReindex(chunkDoc, ragId, readers));
+                // 2. Fetch ALL chunk documents (paged) and convert page-by-page. A partial
+                //    fetch would silently drop the tail chunks on rebuild, so unlike the
+                //    previous partial-update strategy the limit is used as a page size only.
+                //    Peak memory matches initial indexing (which materializes the same block).
+                int pageSize = Math.max(1, ragConfig.getAclChunkUpdateLimit());
+                List<SolrInputDocument> children = new ArrayList<>();
+                long totalChunks;
+                int start = 0;
+                do {
+                    SolrQuery chunkQuery = new SolrQuery();
+                    chunkQuery.setQuery("_root_:" + sanitizedRagId);
+                    chunkQuery.addFilterQuery("doc_type:" + DOC_TYPE_CHUNK);
+                    chunkQuery.setFields("*");
+                    chunkQuery.setSort("chunk_index", SolrQuery.ORDER.asc);
+                    chunkQuery.setStart(start);
+                    chunkQuery.setRows(pageSize);
+                    SolrDocumentList page = solrClient.query("nemaki", chunkQuery).getResults();
+                    totalChunks = page == null ? 0 : page.getNumFound();
+                    if (page != null) {
+                        for (SolrDocument chunkDoc : page) {
+                            children.add(copyForReindex(chunkDoc, ragId, readers));
+                        }
+                    }
+                    start += pageSize;
+                } while (start < totalChunks);
+
+                // 3. Rebuild the block with the new readers list
+                SolrInputDocument parentDoc = copyForReindex(parentDocs.get(0), ragId, readers);
+                parentDoc.addChildDocuments(children);
+
+                // 4. Replace the block with a SINGLE add request. Re-adding a root document
+                //    cascades deletion of the previous block (delete-by-_root_ on update —
+                //    the very behavior that caused the original chunk-loss bug), so no
+                //    explicit delete is needed and there is no delete-without-add window
+                //    that could lose the document on a mid-operation failure.
+                UpdateRequest addRequest = new UpdateRequest();
+                addRequest.add(parentDoc);
+                int commitWithinMs = ragConfig.getSolrCommitWithinMs();
+                if (commitWithinMs > 0) {
+                    addRequest.setCommitWithin(commitWithinMs);
+                }
+                addRequest.process(solrClient, "nemaki");
+                if (commitWithinMs <= 0) {
+                    solrClient.commit("nemaki");
+                }
+
+                log.info("RAG updated ACL for document and {} chunks: {} (ragId={})",
+                        children.size(), documentId, ragId);
+            } finally {
+                lock.unlock();
             }
-            parentDoc.addChildDocuments(children);
-
-            // 4. Replace the block (same two-step pattern as indexToSolr)
-            UpdateRequest deleteRequest = new UpdateRequest();
-            deleteRequest.deleteByQuery("_root_:" + sanitizedRagId);
-            deleteRequest.process(solrClient, "nemaki");
-
-            UpdateRequest addRequest = new UpdateRequest();
-            addRequest.add(parentDoc);
-            addRequest.process(solrClient, "nemaki");
-            solrClient.commit("nemaki");
-
-            log.info("RAG updated ACL for document and {} chunks: {} (ragId={})",
-                    children.size(), documentId, ragId);
         } catch (Exception e) {
             throw new RAGIndexingException("Failed to update ACL for document: " + documentId, e);
         }
@@ -579,6 +612,10 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         // Add children to parent for Block Join
         parentDoc.addChildDocuments(childDocs);
 
+        // Serialize block writes per ragId against concurrent updateDocumentACL /
+        // indexToSolr runs for the same document (see ragBlockLock)
+        java.util.concurrent.locks.ReentrantLock lock = ragBlockLock(ragId);
+        lock.lock();
         try {
             // Step 1: Delete existing RAG document and its chunks
             String sanitizedRagId = SolrQuerySanitizer.escape(ragId);
@@ -609,6 +646,8 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             log.error("[RAG SOLR] Index operation failed for document: " + document.getId() +
                       ". The document may need to be re-indexed.", e);
             throw e;
+        } finally {
+            lock.unlock();
         }
     }
 
