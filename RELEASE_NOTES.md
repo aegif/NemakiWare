@@ -46,6 +46,16 @@ schema / Mango changes — the 2.4-era data carry-over path is untouched._
   restore lost chunks. Live-verified: grant → revoke on a folder with ~75
   indexed documents keeps the chunk count constant while reader filtering
   follows the ACL both ways.
+- **[Medium] Ranged content retrieval no longer misreports Content-Length.**
+  `getContentStream` slices the body for range requests but declared the FULL
+  attachment length on the returned stream, so AtomPub sent
+  `Content-Length: <total>` with a truncated body and range-reading clients
+  failed with "Premature EOF" (TCK ContentRangesTest; live repro:
+  Content-Length 36 for a 33-byte body). Pre-existing on master — A/B-verified
+  against a master-built WAR — and surfaced by this release's QA run. The
+  declared length now mirrors the slicing semantics exactly (offset past end →
+  0, length clamped to remaining bytes), unit-tested against the TCK case
+  matrix and live-verified (`Content-Length: 33`, `Content-Range: bytes 3-35`).
 - **New: `tools/test-env`** — a seeding tool for a 15-user hierarchical
   organization (nested groups, cross-functional secret project), 31 folders
   with per-area ACLs, and 300 generated Japanese office documents, plus an MCP

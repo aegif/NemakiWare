@@ -403,12 +403,29 @@ UI `package.json` / `package-lock.json` / `Layout.tsx` フォールバック、
   チャンクが消えている可能性があるため
   `POST /api/v1/cmis/repositories/{repo}/search-engine/rag/reindex` を一度
   実行して復旧すること
+- **[Medium] Range 指定の getContentStream が Content-Length を誤申告**
+  (`ObjectServiceImpl.getContentStreamInternal`): 本文は range で切り出す
+  (AttachmentNode.getInputStream) のに ContentStream.length に**全長**を
+  渡していたため、AtomPub が「Content-Length=全長 + 切り詰め本文」を返し
+  クライアントが Premature EOF (TCK ContentRangesTest。実測: 33 バイト
+  本文に Content-Length 36)。**master 由来の pre-existing** (master ビルド
+  WAR との A/B で実証、2026-02-16 のメタデータ長最適化コミット由来) を本
+  リリースの QA で発見・修正。`computeRangeAwareLength` が切り出しと同一
+  セマンティクス (offset 超過→0、残量クランプ、負 offset→0) で申告長を
+  計算。+9 ObjectServiceImplRangeLengthTest (TCK ケース行列)。実機で
+  `Content-Length: 33` / `Content-Range: bytes 3-35` を確認
 - **同梱: `tools/test-env`** — 階層組織 15 ユーザ / ネストグループ 13 /
   フォルダ 31 + エリア別 ACL / 日本語 Office 文書 300 件の宣言的シード +
   MCP シナリオランナー (同一クエリのユーザ別応答差デモ)。既定はグループ
   メンバーを推移的展開して投入 (3.2.3 未満との互換)、`--no-flatten` で
   ネスト解決自体を検証可能。リポジトリルートへの set_acl/deleteTree を拒否
   する安全ガード付き。詳細は `tools/test-env/README.md`
+
+**TCK 備考**: 永続 volume 上のフル run は初回 `baseTypesTest` が E2E 残骸
+カスタム型 (queryName null の `test:customFolderForE2E` 等 20 型) で fail
+する既知の汚染クラス。残骸型を type delete API で掃除して再実行し green を
+確認 (非回帰)。`contentRangesTest` は上記 Range バグ (pre-existing) が原因
+で、修正後 green。
 
 **検証**: 新規 regression 7 件 + ACLExpanderTest 26/26、RAG パッケージ
 306/306、隣接スイート (UserGroupSearch/MCP auth+tools/IngestAuthorization)
