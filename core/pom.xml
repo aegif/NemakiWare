@@ -69,19 +69,19 @@
 				<scope>import</scope>
 			</dependency>
 			<!-- Align all Jackson modules to the version chosen for jackson-databind
-			     (2.21.1). Without this, transitive deps drag in a spread of
+			     (2.21.5). Without this, transitive deps drag in a spread of
 			     Jackson versions (dataformat-xml 2.14.0, dataformat-smile 2.18.0,
 			     jakarta-rs 2.16.2, module-jakarta-xmlbind 2.19.1, cbor/jsr310
-			     2.22.0) mixed with databind 2.21.1 — all Jackson modules are meant
+			     2.22.0) mixed with databind 2.21.5 — all Jackson modules are meant
 			     to share a single version. -->
 			<dependency>
 				<groupId>com.fasterxml.jackson</groupId>
 				<artifactId>jackson-bom</artifactId>
-				<version>2.21.1</version>
+				<version>2.21.5</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
-			<!-- Force logback 1.5.25 to fix CVE-2025-11226 (which is "up to and
+			<!-- Force logback 1.5.37 to fix CVE-2025-11226 (which is "up to and
 			     including 1.5.18"), CVE-2026-1225, GHSA-25qh-j22f-pwp8 (arbitrary
 			     code execution through file processing), and GHSA-qqpg-mvqg-649v
 			     (class instantiation via class path). Resolved transitively from
@@ -90,12 +90,12 @@
 			<dependency>
 				<groupId>ch.qos.logback</groupId>
 				<artifactId>logback-classic</artifactId>
-				<version>1.5.25</version>
+				<version>1.5.37</version>
 			</dependency>
 			<dependency>
 				<groupId>ch.qos.logback</groupId>
 				<artifactId>logback-core</artifactId>
-				<version>1.5.25</version>
+				<version>1.5.37</version>
 			</dependency>
 			<!-- Force JUnit 4.x to test scope. mockwebserver and other transitive
 			     deps declare junit:junit at compile, leaking it into runtime. -->
@@ -288,19 +288,19 @@
 			<version>2.0.12</version>
 		</dependency>
 		<!-- Logback bindings: managed transitively via solr-core (logback-classic
-		     1.5.19 forced in dependencyManagement above). logback-contrib
+		     1.5.37 forced in dependencyManagement above). logback-contrib
 		     0.1.5 is incompatible with logback 1.5.x; JSON logging is
 		     provided by logstash-logback-encoder via solr instead. -->
 
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-core</artifactId>
-			<version>2.21.1</version>
+			<version>2.21.5</version>
 		</dependency>
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-databind</artifactId>
-			<version>2.21.1</version>
+			<version>2.21.5</version>
 		</dependency>
 		<!-- WebAuthn (Passkey) support -->
 		<dependency>
@@ -322,9 +322,9 @@
 		<dependency>
 			<groupId>com.fasterxml.jackson.datatype</groupId>
 			<artifactId>jackson-datatype-jdk8</artifactId>
-			<version>2.21.1</version>
+			<version>2.21.5</version>
 		</dependency>
-		<!-- SECURITY UPDATE: Jackson 2.21.1 fixes GHSA-72hv-8253-57qq (async parser DoS) -->
+		<!-- SECURITY UPDATE: Jackson 2.21.5 fixes CVE batch incl. GHSA-72hv-8253-57qq (async parser DoS) and the 2.21.x databind advisories flagged by Dependabot (2026-07) -->
 		<!-- NOTE: jackson-annotations 2.20+ uses major.minor versioning only (no patch version) -->
 
 

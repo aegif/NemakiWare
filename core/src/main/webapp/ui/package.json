@@ -72,6 +72,7 @@
       "react": "$react",
       "react-dom": "$react-dom",
       "dompurify": "3.4.11"
-    }
+    },
+    "esbuild": "0.28.1"
   }
 }

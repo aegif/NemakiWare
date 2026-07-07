@@ -296,6 +296,16 @@ requests.post(url, auth=(user, pw), headers={"X-Requested-With": "XMLHttpRequest
 
 ## セキュリティステータス (2026-06-02)
 
+- Dependabot 棚卸し (2026-07-07, post-3.2.3): open 32 件の実体は 3 件で全て解消。
+  (1) jackson-databind 2.21.x の CVE 群 (high 8 + medium 20 = 4 pom × 複数
+  advisory の重複集計) → jackson-bom + 直接ピン計 9 箇所を 2.21.5 に統一。
+  (2) logback-core ≤1.5.32 (low 3) → 1.5.37 に統一 (core/solr/docker-solr/
+  cloudant-init)。(3) esbuild 0.27.3 (low 1, dev 限定) → npm overrides で
+  0.28.1 (vite build + vitest 191/191 互換確認、npm audit 0 件)。
+  検証: 単体 471/471、QA 統合 94/94、RAG/MCP スモーク
+- CI 修正 (2026-07-07): `ui-tests.yml` / `playwright.yml` の timeout-minutes
+  (60/90) がフル Playwright (~1.3h + CI ビルド ~30min) に不足し master push
+  毎に 1h/1.5h で cancelled → 両方 180 に引き上げ
 - Codex audit follow-up batch 2 — DoS / leak / SSRF / Solr injection (2026-06-02, commit `25870fb58`): 対応済み (Codex 支援の repo-wide 監査で発見した既存 finding 7 件。いずれも RC6.11-6.13 XXE とは別件。(1) `AuthenticationUtil` 空パスワード fail-open → blank candidate/hash で常に false に fail-closed。(2) export パストラバーサル → `ImportExportUtils.sanitizeExportName` + resolve-under-target containment を ZipExporter/FilesystemExporter/selected-object export に適用。(3) webhook URL userinfo 漏洩 → 設定保存時 + testWebhook + dispatcher の 3 層で `user:pass@host` を拒否、credential が storage/log/API に到達しない。(4) ingest stream 無制限 buffer → `readBounded` で 100MB cap (手動 multipart と整合)。(5) MCP debug ログが password/apiKey/sessionToken を含む全 request 出力 → method+id のみに。(6) RAG 類似検索が元文書 read 権限未確認でベクトル取得 → seed lookup に reader ACL filter 適用。(7) secondary-type WHERE の Solr injection → equals/not-equals/IN/secondaryObjectTypeIds を `escapeAndQuote` phrase 化、LIKE は char-by-char で wildcard 保持 + 空白含む全文字エスケープ。加えて FROM 句の `repository_id` / `objecttype` フィルタ連結 (`:` のみ escape だった) も `escapeAndQuote` 化。(8) LDAP `Context.REFERRAL` follow→ignore で referral SSRF/credential 転送防止。(9) Purview/Atlas endpoint SSRF → opt-in `SsrfGuard.assertOutboundUrlAllowed` を `nemakiware.security.outbound.validateInternal` (default false) 下で IntegrationSettings 保存時に適用。595/595 PASS、source-tree NUL scan 0 hits/1687 files。Codex 複数ラウンドで webhook userinfo の delivery-log 漏洩 + Solr の operator injection を捕捉、最終 blocker-free 判定。CMIS query 実機検証で FROM/WHERE/LIKE 正常)
 - Codex audit follow-up batch 1 — access-control / SSRF / CSRF (2026-06-01, commit `398a5b6a0`): 対応済み (P1 4 件。(t6) `ObjectServiceImpl.createDocumentFromSource` がコピー元 read 権限未確認 → `CAN_GET_PROPERTIES_OBJECT` + `CAN_VIEW_CONTENT_OBJECT` 追加 (ACL バイパス/IDOR、OData Copy も同経路)。(t3) webhook 起点 fetch が delegated profile 認可未再評価 → `IngestSchedulerService.authorizeDelegatedFetch` 抽出し webhook path で creator active/cmis:all/connector delegation を再評価、合成 CallContext で実行。(t7) `/api/v1/cmis/*` (Jersey) に CSRF 未適用 → `ApiCsrfFilter` 新設 (Spring MVC 側 CsrfInterceptor と同じ CsrfValidator)。(t1) SAML strict mode が未署名 outer Response の InResponseTo を binding に使用 → 署名カバー由来のみ許可。377/377 PASS、Codex 検証済み)
 - 新 property `nemakiware.security.outbound.validateInternal` (default false): admin 設定の外部カタログ endpoint (Purview/Atlas) を internet-facing 配備で opt-in SSRF 検証。internal/on-prem endpoint を既定で壊さない

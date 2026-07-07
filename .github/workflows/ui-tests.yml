@@ -24,7 +24,7 @@ jobs:
   ui-tests:
     name: UI Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
     env:
       MAVEN_USERNAME: ${{ github.actor }}
       MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
