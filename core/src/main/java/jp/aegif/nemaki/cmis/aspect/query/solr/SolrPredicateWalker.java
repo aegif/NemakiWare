@@ -631,7 +631,8 @@ public class SolrPredicateWalker{
 	 *   CONTAINS('"word1 word2"') → exact phrase search
 	 */
 	private Query walkContainsStringLit(Tree node) {
-		String text = escapeString(node.toString());
+		// Raw text; buildDualFieldQuery does the Solr metacharacter escaping.
+		String text = node.toString();
 
 		// Strip surrounding single quotes from CMIS syntax
 		if (text.length() >= 2 && text.charAt(0) == '\'' && text.charAt(text.length() - 1) == '\'') {
@@ -687,13 +688,15 @@ public class SolrPredicateWalker{
 	}
 
 	private Query walkTextWord(Tree node) {
+		// Pass the RAW word to buildDualFieldQuery, which is the single place that
+		// escapes Solr query-string metacharacters. (Pre-escaping here for ':'
+		// used to double-escape once buildDualFieldQuery also escaped backslashes.)
 		String nodeText = node.toString();
-		String escapedText = escapeString(nodeText);
 
 		// If text contains spaces, split into individual words and combine with AND.
 		// CMIS CONTAINS('word1 word2') means "documents containing both word1 AND word2",
 		// NOT phrase matching. Each word is searched independently against dual-index fields.
-		String[] words = escapedText.trim().split("\\s+");
+		String[] words = nodeText.trim().split("\\s+");
 		if (words.length > 1) {
 			BooleanQuery.Builder andBuilder = new BooleanQuery.Builder();
 			for (String word : words) {
@@ -703,7 +706,7 @@ public class SolrPredicateWalker{
 			return andBuilder.build();
 		}
 
-		return buildDualFieldQuery(escapedText);
+		return buildDualFieldQuery(nodeText);
 	}
 
 	private enum ScriptType { CJK_ONLY, LATIN_ONLY, MIXED }
@@ -760,7 +763,14 @@ public class SolrPredicateWalker{
 	 *   text_en は Porter stemming による英語の語形変化を吸収する。
 	 */
 	private Query buildDualFieldQuery(String word) {
-		String quoted = "\"" + word + "\"";
+		// The term is wrapped in double quotes and later serialized via
+		// Query.toString() into the Solr `q` parameter, which Solr re-parses as a
+		// query string. Any bare double-quote or backslash in the user's CONTAINS()
+		// text would terminate/escape the phrase and leave dangling syntax that Solr
+		// resolves against its (undefined) default field `_text_`, yielding an HTTP
+		// 500. Escape backslash first, then double-quote, so the round-trip is safe.
+		String safe = word.replace("\\", "\\\\").replace("\"", "\\\"");
+		String quoted = "\"" + safe + "\"";
 		ScriptType script = detectScript(word);
 
 		if (script == ScriptType.CJK_ONLY) {
@@ -775,8 +785,8 @@ public class SolrPredicateWalker{
 	}
 
 	private Query walkTextPhrase(Tree node) {
-		String nodeText = node.toString();
-		String termString = escapeString(nodeText);
+		// Raw text; buildDualFieldQuery does the Solr metacharacter escaping.
+		String termString = node.toString();
 
 		// Strip surrounding single quotes from CMIS phrase syntax
 		if(termString.charAt(0) == '\'' && termString.charAt(termString.length()-1) == '\'' ){
@@ -786,12 +796,6 @@ public class SolrPredicateWalker{
 		// Phrase search: wrap in double quotes to force exact phrase matching.
 		// This is correct for walkTextPhrase (CMIS CONTAINS('"phrase here"')).
 		return buildDualFieldQuery(termString);
-	}
-	
-	private String escapeString(String val) {
-				
-		return val.replaceAll(":", "\\\\:");
-		
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////

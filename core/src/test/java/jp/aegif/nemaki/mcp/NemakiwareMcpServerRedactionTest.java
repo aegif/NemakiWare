@@ -18,6 +18,33 @@ import org.junit.jupiter.api.Test;
  */
 class NemakiwareMcpServerRedactionTest {
 
+    /**
+     * Regression: a JSON-RPC request whose {@code params} is a non-object
+     * (e.g. a bare string) must not throw out of handleRequest — the unchecked
+     * (Map) cast used to run outside the try/catch and surface as a raw HTTP 500,
+     * breaking the JSON-RPC contract. It should now be tolerated as empty params
+     * so a param-less method like {@code initialize} still succeeds.
+     */
+    @Test
+    void handleRequest_nonObjectParamsDoesNotThrow() {
+        NemakiwareMcpServer server = new NemakiwareMcpServer(
+                null, null, null, new com.fasterxml.jackson.databind.ObjectMapper(),
+                "bedroom", null);
+        Map<String, Object> req = new LinkedHashMap<>();
+        req.put("jsonrpc", "2.0");
+        req.put("id", 5);
+        req.put("method", "initialize");
+        req.put("params", "not-an-object");
+
+        Map<String, Object> resp = assertDoesNotThrow(() -> server.handleRequest(req, new HashMap<>()));
+        assertNotNull(resp);
+        assertNotNull(resp.get("result"), "initialize should still succeed with tolerated empty params");
+        assertNull(resp.get("error"), "must not be a JSON-RPC error");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> result = (Map<String, Object>) resp.get("result");
+        assertEquals("2024-11-05", result.get("protocolVersion"));
+    }
+
     @Test
     void redactArguments_replacesPasswordToken() {
         Map<String, Object> args = new LinkedHashMap<>();

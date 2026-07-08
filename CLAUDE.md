@@ -372,10 +372,47 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 ## 現在のバージョン
 
-**3.2.4** (2026-07-08、`release/3.2.4` → master) — ドキュメント一覧の
-フォルダ遷移時クラッシュ修正 (下記 3.2.4 節)。バージョン反映箇所は 3.2.1 以降
-と同一 (5 reactor pom + core 内部依存座標、UI package.json/package-lock/
+**3.2.5** (2026-07-08、`release/3.2.5` → master) — 探索的ファズで発見した
+入力堅牢性 + 並行性ハードニング (下記 3.2.5 節)。バージョン反映箇所は 3.2.1
+以降と同一 (5 reactor pom + core 内部依存座標、UI package.json/package-lock/
 Layout.tsx、repositories-default.yml)。
+
+### 3.2.5 (2026-07-08) — 入力堅牢性 + 並行性ハードニング (探索ファズ由来)
+
+ブランチ: `release/3.2.5` (off `master`)。`tools/test-env/monkey` の
+モンキー/ファズ一巡で発見した「不正・極端な入力が 4xx でなく HTTP 500」系 +
+データ整合性レース 1 件を修正。スキーマ/永続化モデル変更なし。
+
+- **[Medium] 同名の子を並行作成すると重複が作られる** (`ObjectServiceImpl`):
+  CMIS 名一意チェックと実作成が非原子で、逐次は `nameConstraintViolation`
+  (409) を返すのに並行だと全員がチェックを通過後に挿入 → 同一フォルダに同名の
+  文書/フォルダが N 個永続化。`createDocument` / `createDocumentFromSource` /
+  `createFolder` を親フォルダ単位の write ロック (`threadLockService`) で
+  チェック+作成を原子化。実機: 10 並行同名作成 → 1 作成 / 9×409 (修正前は 10 重複)
+- **[Medium] 全文 `CONTAINS()` に特殊文字を含めると 500** (`SolrPredicateWalker`):
+  `buildDualFieldQuery` が語を `"…"` 括りにして `toString()`→Solr 再パースする
+  経路で、裸の `"` / `\` が不均衡クエリを生み既定フィールド `_text_` に落ちて
+  500。語値を Solr クエリ文字列メタ文字用にエスケープ (`\` → `\\`、`"` → `\"`)。
+  通常検索は不変。+3 regression (SolrPredicateWalkerMultilingualTest)
+- **[Medium] MCP の JSON-RPC `params` が非オブジェクトだと 500 HTML**
+  (`NemakiwareMcpServer`): `params` の Map キャストが try/catch 外にあり
+  ClassCastException が素通り → Tomcat 500。`instanceof Map` チェックで
+  非オブジェクトは空 params として許容。+1 regression
+  (NemakiwareMcpServerRedactionTest)
+- **[Low] 不正インポートアーカイブを 400 に** (`ImportExportResource`):
+  破損/非ZIP アップロードが 500 だったのを、`isMalformedArchive` で ZipException
+  系を判定してクライアントエラー (400) に。真のサーバ障害は 500 のまま
+- **[Low] RAG 検索の超長クエリを 400 に** (`RAGSearchResource`): 埋め込み
+  モデル上限超過が backend で 500 になっていたのを、8000 字上限で 400 に
+- **同梱**: `tools/test-env/monkey` (ui_monkey.cjs / api_fuzz.py / write_fuzz.py /
+  edge_fuzz2.py) — 本 findings の出所。回帰用に保持
+
+**既知の低重要度残**: CMIS 名に NUL バイトを埋めるとリクエストディスパッチ前の
+マルチパート解析層で 500 になる (不正入力の拒否、security/data 問題ではない)。
+
+**検証**: 新規 regression 4 + 単体ネット 393/393、5 修正すべて実機デプロイで
+確認、モンキー/ファズ再実行で NUL 残件以外の 5xx なし。UI レンダリング系は
+~1,400 ランダム操作でクラッシュ 0 (v3.2.4 の Table key 修正が保持)。
 
 ### 3.2.4 (2026-07-08) — ドキュメント一覧のフォルダ遷移時クラッシュ修正
 

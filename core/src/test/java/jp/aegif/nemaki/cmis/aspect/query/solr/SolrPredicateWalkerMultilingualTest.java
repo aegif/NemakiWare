@@ -289,4 +289,65 @@ public class SolrPredicateWalkerMultilingualTest {
         assertTrue(queryStr.contains("text:\"annual report\""), "Latin phrase must include text field for resourcename coverage");
         assertTrue(queryStr.contains("text_en:\"annual report\""), "Latin phrase should also include text_en for stemming");
     }
+
+    // ========================================
+    // Solr special-character escaping in CONTAINS terms (regression)
+    //
+    // A bare double-quote in CONTAINS() text used to produce a query string like
+    // text:""" whose dangling quote made Solr fall back to the undefined default
+    // field _text_ → HTTP 500. The term value must be escaped so the generated
+    // query string stays balanced.
+    // ========================================
+
+    /** Every double-quote in the generated query string must be balanced (paired). */
+    private static void assertBalancedQuotes(String queryStr) {
+        int unescaped = 0;
+        for (int i = 0; i < queryStr.length(); i++) {
+            if (queryStr.charAt(i) == '"' && (i == 0 || queryStr.charAt(i - 1) != '\\')) {
+                unescaped++;
+            }
+        }
+        assertEquals(0, unescaped % 2,
+                "generated Solr query has an odd number of unescaped quotes (dangling): " + queryStr);
+    }
+
+    @Test
+    public void testContainsWithBareDoubleQuoteIsEscaped() throws Exception {
+        CommonTree node = createWordNode("\"");
+        Query query = (Query) walkTextWordMethod.invoke(walker, node);
+        String queryStr = query.toString();
+        assertBalancedQuotes(queryStr);
+        assertFalse(queryStr.contains("_text_"), "must not leak to default field _text_: " + queryStr);
+    }
+
+    @Test
+    public void testContainsWithEmbeddedQuoteIsEscaped() throws Exception {
+        CommonTree node = createWordNode("foo\"bar");
+        Query query = (Query) walkTextWordMethod.invoke(walker, node);
+        String queryStr = query.toString();
+        assertBalancedQuotes(queryStr);
+        assertTrue(queryStr.contains("foo\\\"bar"), "embedded quote should be backslash-escaped: " + queryStr);
+    }
+
+    @Test
+    public void testContainsWithBackslashIsEscaped() throws Exception {
+        CommonTree node = createWordNode("a\\b");
+        Query query = (Query) walkTextWordMethod.invoke(walker, node);
+        String queryStr = query.toString();
+        assertBalancedQuotes(queryStr);
+        assertTrue(queryStr.contains("a\\\\b"), "backslash should be doubled: " + queryStr);
+    }
+
+    @Test
+    public void testContainsWithColonNotDoubleEscaped() throws Exception {
+        // A colon is literal inside a quoted phrase; it must NOT be turned into
+        // "a\\:b" (literal backslash + colon). Regression for the earlier
+        // escapeString(':' -> '\:') + backslash-doubling double-escape.
+        CommonTree node = createWordNode("a:b");
+        Query query = (Query) walkTextWordMethod.invoke(walker, node);
+        String queryStr = query.toString();
+        assertBalancedQuotes(queryStr);
+        assertFalse(queryStr.contains("a\\\\:b"), "colon must not be double-escaped: " + queryStr);
+        assertTrue(queryStr.contains("text:\"a:b\""), "colon term should search literal a:b: " + queryStr);
+    }
 }

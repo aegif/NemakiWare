@@ -137,6 +137,34 @@ public class ImportExportResource extends ResourceBase {
         }
     }
 
+    /**
+     * True when the exception indicates the uploaded file is not a valid
+     * archive (corrupt / wrong format) — a client error worth a 400 rather
+     * than a 500. Checks the exception chain for zip/archive parse failures.
+     */
+    private boolean isMalformedArchive(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof java.util.zip.ZipException) {
+                return true;
+            }
+            String msg = t.getMessage();
+            if (msg != null) {
+                String m = msg.toLowerCase();
+                if (m.contains("zip end header not found")
+                        || m.contains("not in gzip format")
+                        || m.contains("invalid entry")
+                        || m.contains("invalid cen header")
+                        || m.contains("central directory")
+                        || m.contains("error in opening zip file")
+                        || m.contains("archive is not")
+                        || m.contains("truncated")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     protected PurviewImportExportLineageService getPurviewImportExportLineageService() {
         if (purviewImportExportLineageService != null) {
             return purviewImportExportLineageService;
@@ -469,7 +497,15 @@ public class ImportExportResource extends ResourceBase {
                     .build();
 
         } catch (Exception e) {
-            log.error("Import failed: " + e.getMessage(), e);
+            // A corrupt / non-archive upload is a CLIENT error (bad file), not a
+            // server fault — return 400 for it instead of 500. Genuine server-side
+            // failures still surface as 500.
+            boolean badArchive = isMalformedArchive(e);
+            if (badArchive) {
+                log.warn("Import rejected (malformed archive): " + e.getMessage());
+            } else {
+                log.error("Import failed: " + e.getMessage(), e);
+            }
             result.put("status", "error");
             result.put("message", "Import failed: " + e.getMessage());
             AuditLogger audit = getAuditLogger();
@@ -477,7 +513,7 @@ public class ImportExportResource extends ResourceBase {
                 audit.logOperation(AuditOperation.IMPORT_EXECUTE, repositoryId,
                         getCallContextUsername(request), folderId, false, e.getMessage());
             }
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+            return Response.status(badArchive ? Response.Status.BAD_REQUEST : Response.Status.INTERNAL_SERVER_ERROR)
                     .entity(result.toJSONString())
                     .type(MediaType.APPLICATION_JSON)
                     .build();
