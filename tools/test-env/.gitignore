@@ -4,6 +4,7 @@ frame-*.png
 manifest-remote.json
 manifest.json
 monkey/api-fuzz-*.json
+monkey/edge*.json
 monkey/monkey-findings-*.json
 monkey/monkey-live-*.jsonl
 monkey/write-fuzz-*.json
