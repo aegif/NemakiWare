@@ -6,6 +6,29 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.2.4 — Document list crash on folder navigation (2026-07-08)
+_On `release/3.2.4` (off `master`). One UI stability fix, no server/API/schema
+changes._
+
+- **[High, UI] Document list no longer intermittently crashes to the error
+  screen when navigating folders.** Right after login / on folder change the
+  document list could hit the fatal "エラーが発生しました" boundary with
+  `Failed to execute 'insertBefore' on 'Node': The node before which the new
+  node is to be inserted is not a child of this node.` Root cause: the Ant
+  Design `Table` reconciled a previous folder's rows into a different folder's
+  rows while its `loading` flag and `dataSource` changed in overlapping commits
+  — an rc-table commit-phase reconciliation glitch that only surfaced in the
+  minified production build (never in dev), which is why it had gone unnoticed.
+  The table is now keyed per folder / search view (`key={selectedFolderId}`),
+  so React mounts a fresh table body on navigation instead of moving stale row
+  nodes across datasets. Verified: 30 consecutive login→navigate tours against
+  the production build with zero crashes (previously ~1 in 6), UI unit tests
+  191/191. Diagnosed by de-mapping the production error's React component stack
+  (AuthContext → Layout → DocumentList → Table → Spin) via a temporary
+  sourcemap build.
+
+---
+
 ## 3.2.3 — Nested-group ACL resolution + RAG chunk-loss fix (2026-07-07)
 _On `release/3.2.3` (off `master`). Two access-control / search defects found
 while building the `tools/test-env` permission-diversity demo environment,

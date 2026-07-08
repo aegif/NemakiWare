@@ -372,12 +372,31 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 ## 現在のバージョン
 
-**3.2.3** (2026-07-07、`release/3.2.3` → master) — ネストグループ ACL 解決 +
-RAG チャンク消失の 2 バグ修正 + `tools/test-env` 同梱 (下記 3.2.3 節)。
-バージョン表記は 3.2.1 と同じ箇所を bump: 5 reactor pom + core 内部依存座標、
-UI `package.json` / `package-lock.json` / `Layout.tsx` フォールバック、
-`repositories-default.yml` の `product.version`。Setup の serverVersion は
-`version.properties=${project.version}` 経由で pom 追従。
+**3.2.4** (2026-07-08、`release/3.2.4` → master) — ドキュメント一覧の
+フォルダ遷移時クラッシュ修正 (下記 3.2.4 節)。バージョン反映箇所は 3.2.1 以降
+と同一 (5 reactor pom + core 内部依存座標、UI package.json/package-lock/
+Layout.tsx、repositories-default.yml)。
+
+### 3.2.4 (2026-07-08) — ドキュメント一覧のフォルダ遷移時クラッシュ修正
+
+ブランチ: `release/3.2.4` (off `master`)。デモ動画収録中に写り込んだ UI
+クラッシュを修正。サーバ/API/スキーマ変更なし、UI 1 ファイルのみ。
+
+- **[High, UI] フォルダ遷移でドキュメント一覧がエラー画面に落ちる**
+  (`DocumentList.tsx` の Ant `Table`): ログイン直後やフォルダ切替時に
+  `Failed to execute 'insertBefore' on 'Node': ... not a child of this node`
+  で致命的エラーバウンダリ (「エラーが発生しました」) に落ちることがあった
+  (実測 ~6 回に 1 回)。原因は Table の `loading` フラグと `dataSource` が
+  重なったコミットで切り替わる際、rc-table が**旧フォルダの行を別フォルダの
+  行へ再構成**しようとしてコミットフェーズで DOM 不整合を起こすこと。
+  minify された本番ビルドでのみ顕在化し dev では出ないため見逃されていた。
+  Table にフォルダ/検索単位の `key`
+  (`key={isSearchMode ? 'search' : (selectedFolderId || 'root')}`) を与え、
+  遷移時は行を再利用せず table body を作り直させることで、データセットを
+  跨ぐ再構成を根絶。診断は一時的な sourcemap ビルドで本番エラーの React
+  component stack (AuthContext → Layout → DocumentList → Table → Spin) を
+  de-map して特定。検証: 本番ビルドに対し login→navigate を 30 連続で
+  クラッシュ 0 (修正前 ~1/6)、UI vitest 191/191
 
 ### 3.2.3 (2026-07-07) — ネストグループACL解決 + RAGチャンク消失修正
 

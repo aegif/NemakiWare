@@ -357,7 +357,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
 
   // UI build info from vite.config.ts
   const uiBuildTime = typeof __UI_BUILD_TIME__ !== 'undefined' ? __UI_BUILD_TIME__ : 'dev';
-  const uiVersion = typeof __UI_VERSION__ !== 'undefined' ? __UI_VERSION__ : '3.2.3';
+  const uiVersion = typeof __UI_VERSION__ !== 'undefined' ? __UI_VERSION__ : '3.2.4';
 
   // Check if current user is admin via isAdmin flag from /me endpoint
   const isAdmin = authToken?.isAdmin === true;
