@@ -6,6 +6,38 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.2.7 — Concurrent check-in no longer duplicates versions (2026-07-08)
+_On `release/3.2.7` (off `master`). One data-integrity fix from a versioning
+fuzz pass. No schema/persistence changes._
+
+- **[Medium] Concurrent check-in of the same Private Working Copy no longer
+  creates duplicate versions.** Multiple simultaneous `checkIn` calls for one
+  PWC could each produce a new version (observed under load: 12 simultaneous
+  check-ins all succeeded → 12 versions from one PWC), instead of one winner
+  and the rest failing. The per-PWC write lock already serialized the calls,
+  but the guard read (`does this PWC still exist?`) could return a **stale
+  cached** PWC after a prior check-in had already consumed (deleted) it — so a
+  later call checked the same PWC in again. `checkIn` now invalidates the PWC's
+  content/ACL/data caches **before** the guard read (forcing a fresh DB read
+  that sees the deletion → 404) and explicitly rejects an object that is no
+  longer a Private Working Copy; `cancelCheckOut` also fully evicts the deleted
+  PWC from all caches. Verified: 20 barrier-synchronized 12-way check-in bursts
+  → exactly 1 success each (was ~5/20 bursts producing duplicates); sequential
+  check-in and the rest of the versioning lifecycle unchanged.
+- Also shipped: `tools/test-env/monkey/version_fuzz.py` — versioning
+  lifecycle / concurrency probes (checkOut/checkIn/cancel races, direct PWC
+  delete, deleteTree-while-checked-out).
+
+_This versioning fuzz pass otherwise found the lifecycle **clean**: single-op
+edge cases (check-in without checkout, double checkout/checkin, cancel of a
+consumed PWC) return 4xx (no 5xx); concurrent checkOut yields exactly one PWC;
+no stuck "checked-out" state; deleting a PWC or its folder leaves no orphan._
+
+**Verification**: 20×12-way barrier check-in bursts → 1 success each;
+version_fuzz ×3 clean; QA integration 94/94.
+
+---
+
 ## 3.2.6 — Browser-binding auth status code (2026-07-08)
 _On `release/3.2.6` (off `master`). One HTTP-status correctness fix from a
 second fuzz pass (auth boundaries / multi-repo isolation / webhook). No

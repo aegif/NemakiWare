@@ -372,9 +372,36 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 ## 現在のバージョン
 
-**3.2.6** (2026-07-08、`release/3.2.6` → master) — Browser Binding の認証
-ステータスコード修正 (第2ファズ波: 認証境界/複数リポジトリ分離/Webhook。
-下記 3.2.6 節)。バージョン反映箇所は 3.2.1 以降と同一。
+**3.2.7** (2026-07-08、`release/3.2.7` → master) — 同一 PWC への並行 checkIn
+による版重複を修正 (バージョニング系ファズ波。下記 3.2.7 節)。バージョン
+反映箇所は 3.2.1 以降と同一。
+
+### 3.2.7 (2026-07-08) — 同一 PWC 並行 checkIn の版重複修正
+
+ブランチ: `release/3.2.7` (off `master`)。バージョニング系ファズ
+(`version_fuzz.py`) で発見したデータ整合性バグ。スキーマ/永続化変更なし。
+
+- **[Medium] 同一 PWC への並行 checkIn が版を重複生成**
+  (`VersioningServiceImpl.checkIn` / `ContentServiceImpl.cancelCheckOut`):
+  1 つの PWC に同時 checkIn すると、それぞれが新版を作成しうる (負荷実測:
+  12 並行 checkIn が全成功 → 1 PWC から 12 版)。per-PWC write ロックで直列化
+  はされているが、guard 読取 (`getDocument(pwc)`) が **contentCache の stale**
+  を返し、先行 checkIn が既に PWC を消費 (削除) 済みでも後続が同一 PWC を
+  再 checkIn していた。原因は `removeCmisCache` が objectDataCache のみ消し、
+  `getDocument`→`getContent` が読む **contentCache を消していなかった** こと。
+  修正: checkIn の guard 読取**前**に `removeCmisAndContentCache` で content/
+  ACL/data を無効化して DB 鮮度で読み (削除を必ず観測→404)、`isPrivateWorking
+  Copy()` ガードを追加。`cancelCheckOut` も削除後に `removeCmisAndContentCache`
+  で PWC を全キャッシュから排除。実機検証: 20×12並行バリア checkIn バースト
+  → 各 1 成功のみ (修正前は ~5/20 バーストで重複)、逐次 checkIn と版ライフ
+  サイクルは不変。
+- **同梱**: `tools/test-env/monkey/version_fuzz.py`
+
+**本ファズ波でクリーンと確認**: 単発エッジ (checkout無しcheckin/二重checkout・
+checkin/消費済みPWCのcancel) は 4xx (5xxなし)、並行 checkOut は PWC 1つのみ、
+スタックした checked-out なし、PWC/フォルダ削除でオーファンなし。
+
+**検証**: 20×12並行 checkIn → 各1成功、version_fuzz ×3 clean、QA 94/94。
 
 ### 3.2.6 (2026-07-08) — Browser Binding の認証ステータスコード
 

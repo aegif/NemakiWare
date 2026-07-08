@@ -182,18 +182,33 @@ public class VersioningServiceImpl implements VersioningService {
 		
 		try{
 			lock.lock();
-			
+
 			// //////////////////
 			// General Exception
 			// //////////////////
+
+			// Invalidate the PWC's caches BEFORE reading it, so this guard read is
+			// authoritative (fresh from the DB). Concurrent checkIns on the same PWC
+			// serialize on the write lock above; the first consumes the PWC (checkIn
+			// deletes it in cancelCheckOut). Without a fresh read here a later thread
+			// could see a stale cached PWC and check it in again — producing duplicate
+			// versions from a single PWC. Clearing the content/ACL/data caches forces
+			// a DB read that sees the deletion → objectNotFound (404).
+			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId.getValue());
 
 			Document pwc = contentService.getDocument(repositoryId, objectId.getValue());
 
 			// CRITICAL FIX: Check for null BEFORE accessing pwc.getId()
 			exceptionService.objectNotFound(DomainType.OBJECT, pwc, objectId.getValue());
 
-			// Safe to access pwc.getId() now since objectNotFound throws if null
-			nemakiCachePool.get(repositoryId).removeCmisCache(pwc.getId());
+			// The object must still be a live Private Working Copy. If a racing
+			// checkIn already consumed it (turning the id into a regular version or
+			// deleting it), reject rather than create a second version.
+			if (!pwc.isPrivateWorkingCopy()) {
+				exceptionService.constraint(objectId.getValue(),
+						"checkIn cannot be performed: object is not a Private Working Copy (already checked in?)");
+			}
+
 			// SECURITY FIX: Use CAN_CHECKIN_DOCUMENT instead of CAN_CANCEL_CHECKOUT_DOCUMENT.
 			// The previous key allowed users with cancel-checkout permission (but not write permission)
 			// to perform checkIn operations.

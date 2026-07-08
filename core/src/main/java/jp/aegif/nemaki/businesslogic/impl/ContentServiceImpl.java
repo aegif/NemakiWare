@@ -1639,6 +1639,11 @@ public class ContentServiceImpl implements ContentService {
 	contentDaoService.delete(repositoryId, pwc.getAttachmentNodeId());
 	contentDaoService.delete(repositoryId, pwc.getId());
 
+	// Ensure the deleted PWC cannot be served from ANY cache (content/ACL/data).
+	// A concurrent checkIn/cancel that reads this PWC id must see it as gone;
+	// otherwise a stale cached PWC lets a second checkIn create a duplicate version.
+	nemakiCachePool.get(repositoryId).removeCmisAndContentCache(pwc.getId());
+
 	// CRITICAL FIX: Invalidate cache before fetching to ensure we get fresh data from DB
 	// This prevents using stale cached data if VersionSeries was recently deleted
 	String versionSeriesId = pwc.getVersionSeriesId();
