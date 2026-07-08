@@ -1971,6 +1971,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
               </div>
               
               <Table
+                // Remount the table body per folder / search view so React never
+                // reconciles a previous folder's rows into a different folder's
+                // rows. Cross-dataset reconciliation while `loading` and
+                // `dataSource` change in overlapping commits was intermittently
+                // crashing rc-table's commit phase in the production build
+                // ("Failed to execute 'insertBefore' on 'Node'").
+                key={isSearchMode ? 'search' : (selectedFolderId || 'root')}
                 columns={columns}
                 dataSource={objects}
                 rowKey="id"
