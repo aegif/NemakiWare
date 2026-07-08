@@ -1549,6 +1549,10 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             return 404;  // CRITICAL FIX: CmisObjectNotFoundException should return HTTP 404, not 400
         } else if (ex instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException) {
             return 403;
+        } else if (ex instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisUnauthorizedException) {
+            // Authentication failure (e.g. bad credentials or an unknown repository,
+            // which cannot authenticate) is 401, not the default 500.
+            return 401;
         } else if (ex instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisStorageException) {
             return 500;
         } else if (ex instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisStreamNotSupportedException) {
