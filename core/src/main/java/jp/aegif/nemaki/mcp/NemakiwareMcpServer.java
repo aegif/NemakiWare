@@ -222,8 +222,16 @@ public class NemakiwareMcpServer {
     public Map<String, Object> handleRequest(Map<String, Object> request, Map<String, String> headers) {
         String method = (String) request.get("method");
         Object id = request.get("id");
+        // JSON-RPC "params" is optional and, per spec, a structured value (object/array).
+        // A client may send a non-object (e.g. a bare string); tolerate it as empty params
+        // instead of letting an unchecked (Map) cast throw a ClassCastException here —
+        // outside the try/catch below it would surface as a raw HTTP 500 and break the
+        // JSON-RPC contract.
+        Object rawParams = request.getOrDefault("params", new HashMap<>());
         @SuppressWarnings("unchecked")
-        Map<String, Object> params = (Map<String, Object>) request.getOrDefault("params", new HashMap<>());
+        Map<String, Object> params = (rawParams instanceof Map)
+                ? (Map<String, Object>) rawParams
+                : new HashMap<>();
 
         log.debug("MCP request: method={}, id={}", method, id);
 

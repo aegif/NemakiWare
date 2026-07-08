@@ -541,18 +541,27 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.constraintCotrollableAcl(td, addAces, removeAces, properties);
 		exceptionService.constraintPermissionDefined(repositoryId, addAces, null);
 		exceptionService.constraintPermissionDefined(repositoryId, removeAces, null);
-		exceptionService.nameConstraintViolation(repositoryId, parentFolder, properties);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		Folder folder = contentService.createFolder(callContext, repositoryId, properties, parentFolder, policies,
-				addAces, removeAces, null);
+		// Parent write lock: make the name check + create atomic per parent
+		// (see createDocument for rationale — prevents concurrent duplicate names).
+		Lock parentLock = threadLockService.getWriteLock(repositoryId, parentFolder.getId());
+		parentLock.lock();
+		try {
+			exceptionService.nameConstraintViolation(repositoryId, parentFolder, properties);
 
-		// Invalidate IN_TREE folder hierarchy cache
-		solrUtil.invalidateFolderHierarchyCache(repositoryId);
+			Folder folder = contentService.createFolder(callContext, repositoryId, properties, parentFolder, policies,
+					addAces, removeAces, null);
 
-		return folder.getId();
+			// Invalidate IN_TREE folder hierarchy cache
+			solrUtil.invalidateFolderHierarchyCache(repositoryId);
+
+			return folder.getId();
+		} finally {
+			parentLock.unlock();
+		}
 	}
 
 	@Override
@@ -622,32 +631,44 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.constraintPermissionDefined(repositoryId, addAces, null);
 		exceptionService.constraintPermissionDefined(repositoryId, removeAces, null);
 		exceptionService.streamNotSupported(td, contentStream);
-		exceptionService.nameConstraintViolation(repositoryId, parentFolder, properties);
 
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		if (log.isDebugEnabled()) {
-			log.debug("About to call contentService.createDocument with:");
-			log.debug("  - parentFolder.getId(): " + parentFolder.getId());
-			log.debug("  - versioningState: " + versioningState);
-		}
-		
-		Document document = contentService.createDocument(callContext, repositoryId, properties, parentFolder,
-				contentStream, versioningState, policies, addAces, removeAces);
+		// Hold a write lock on the PARENT folder so the name-uniqueness check and
+		// the actual create are atomic per parent. Without it, concurrent creates
+		// of the same name all pass the check before any of them inserts, so
+		// duplicate-named children get persisted (the sequential path correctly
+		// returns nameConstraintViolation / 409, but the concurrent path did not).
+		Lock parentLock = threadLockService.getWriteLock(repositoryId, parentFolder.getId());
+		parentLock.lock();
+		try {
+			exceptionService.nameConstraintViolation(repositoryId, parentFolder, properties);
 
-		if (log.isDebugEnabled()) {
-			log.debug("Returned document.getId(): " + document.getId());
-			log.debug("Returned document.getAttachmentNodeId(): " + document.getAttachmentNodeId());
-
-			if (document.getAttachmentNodeId() == null) {
-				log.debug("Warning: Document created without attachmentNodeId - getContentStream() will return null");
-			} else {
-				log.debug("SUCCESS: ObjectServiceImpl received document with valid attachmentNodeId: " + document.getAttachmentNodeId());
+			if (log.isDebugEnabled()) {
+				log.debug("About to call contentService.createDocument with:");
+				log.debug("  - parentFolder.getId(): " + parentFolder.getId());
+				log.debug("  - versioningState: " + versioningState);
 			}
-		}
 
-		return document.getId();
+			Document document = contentService.createDocument(callContext, repositoryId, properties, parentFolder,
+					contentStream, versioningState, policies, addAces, removeAces);
+
+			if (log.isDebugEnabled()) {
+				log.debug("Returned document.getId(): " + document.getId());
+				log.debug("Returned document.getAttachmentNodeId(): " + document.getAttachmentNodeId());
+
+				if (document.getAttachmentNodeId() == null) {
+					log.debug("Warning: Document created without attachmentNodeId - getContentStream() will return null");
+				} else {
+					log.debug("SUCCESS: ObjectServiceImpl received document with valid attachmentNodeId: " + document.getAttachmentNodeId());
+				}
+			}
+
+			return document.getId();
+		} finally {
+			parentLock.unlock();
+		}
 	}
 
 	@Override
@@ -699,7 +720,6 @@ public class ObjectServiceImpl implements ObjectService {
 					DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
 			exceptionService.constraintCotrollablePolicies(td, policies, properties);
 			exceptionService.constraintCotrollableAcl(td, addAces, removeAces, properties);
-			exceptionService.nameConstraintViolation(repositoryId, parentFolder, properties);
 		}
 
 		exceptionService.constraintControllableVersionable(td, versioningState, null);
@@ -710,9 +730,20 @@ public class ObjectServiceImpl implements ObjectService {
 		// //////////////////
 		// Body of the method
 		// //////////////////
-		Document document = contentService.createDocumentFromSource(callContext, repositoryId, properties, parentFolder,
-				original, versioningState, policies, addAces, removeAces);
-		return document.getId();
+		// Parent write lock: make the name check + create atomic per parent
+		// (see createDocument for rationale — prevents concurrent duplicate names).
+		Lock parentLock = threadLockService.getWriteLock(repositoryId, parentFolder.getId());
+		parentLock.lock();
+		try {
+			if (properties != null) {
+				exceptionService.nameConstraintViolation(repositoryId, parentFolder, properties);
+			}
+			Document document = contentService.createDocumentFromSource(callContext, repositoryId, properties,
+					parentFolder, original, versioningState, policies, addAces, removeAces);
+			return document.getId();
+		} finally {
+			parentLock.unlock();
+		}
 	}
 
 	@Override

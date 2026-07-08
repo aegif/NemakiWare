@@ -77,6 +77,14 @@ public class RAGSearchResource {
     /** Maximum allowed value for topK to prevent Solr overload */
     private static final int MAX_TOP_K = 100;
 
+    /**
+     * Maximum query length in characters. A natural-language RAG query is short;
+     * anything beyond this exceeds the embedding model's token window and would
+     * fail at the backend. 8000 chars is generous for legitimate queries while
+     * rejecting pasted-document-sized input with a clear 400.
+     */
+    private static final int MAX_QUERY_LENGTH = 8000;
+
     @Autowired
     private VectorSearchService vectorSearchService;
 
@@ -233,6 +241,16 @@ public class RAGSearchResource {
 
             if (request == null || request.getQuery() == null || request.getQuery().trim().isEmpty()) {
                 throw ApiException.invalidArgument("Query text is required");
+            }
+
+            // Guard query length BEFORE it reaches the embedding backend. A very long
+            // query (e.g. a pasted document) exceeds the embedding model's token limit
+            // and the backend rejects it — without this it surfaced as an opaque HTTP
+            // 500 ("Failed to generate query embedding") instead of a clear 400.
+            if (request.getQuery().length() > MAX_QUERY_LENGTH) {
+                throw ApiException.invalidArgument(
+                        "Query text is too long (" + request.getQuery().length()
+                                + " chars, max " + MAX_QUERY_LENGTH + ")");
             }
 
             // Validate boost values (0.0 to 1.0 range) and topK

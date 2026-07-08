@@ -6,6 +6,50 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.2.5 — Input-robustness & concurrency hardening from exploratory fuzzing (2026-07-08)
+_On `release/3.2.5` (off `master`). Findings from a monkey/fuzz pass
+(`tools/test-env/monkey`): bad or extreme input that returned HTTP 500 instead
+of a graceful 4xx, plus one data-integrity race. No schema/persistence-model
+changes._
+
+- **[Medium] Concurrent create of same-named children no longer duplicates.**
+  The CMIS name-uniqueness check and the actual create were not atomic: the
+  sequential path correctly returned `nameConstraintViolation` (409), but
+  under concurrency all racers passed the check before any inserted, so N
+  documents/folders with the same name persisted in one folder.
+  `createDocument`, `createDocumentFromSource`, and `createFolder` now hold a
+  per-parent write lock around the check + create. Verified: 10 parallel
+  same-name creates → 1 created / 9 × 409 (was 10 duplicates).
+- **[Medium] Full-text `CONTAINS()` with special characters no longer 500s.**
+  A double-quote (or backslash) in `CONTAINS('…')` produced an unbalanced Solr
+  query that fell back to the undefined default field `_text_` → HTTP 500, so
+  searching for any text containing a quote failed. The term is now escaped for
+  Solr query-string metacharacters. Normal full-text search is unchanged.
+- **[Medium] MCP with a non-object JSON-RPC `params` no longer 500s.** A client
+  sending `params` as a bare string (or other non-object) triggered an
+  uncaught `ClassCastException` → raw HTTP 500 HTML, breaking the JSON-RPC
+  contract. Non-object params are now tolerated as empty, so the request is
+  handled (or returns a proper JSON-RPC error).
+- **[Low] Malformed import archive now returns 400, not 500.** Uploading a
+  corrupt / non-ZIP file to the import endpoint returned HTTP 500; it is a
+  client error (bad file) and now returns 400 with the same error body.
+- **[Low] Over-long RAG query now returns 400, not 500.** A RAG search query
+  beyond the embedding model's limit failed at the backend as an opaque 500;
+  queries over 8000 chars are now rejected with a clear 400.
+- Also shipped: `tools/test-env/monkey` — the UI monkey / API + write-path
+  fuzz harness these findings came from, kept for regression use.
+
+_Known low-severity residual: a NUL byte embedded in a CMIS name is rejected by
+the multipart-parse layer with a 500 before request dispatch; malformed input,
+not a security/data issue._
+
+**Verification**: new regression tests (Solr CONTAINS escaping ×3, MCP
+non-object params) + full unit net 393/393; all five fixes live-verified on the
+deployed build; the monkey/fuzz harness re-run reports no remaining 5xx beyond
+the documented NUL residual.
+
+---
+
 ## 3.2.4 — Document list crash on folder navigation (2026-07-08)
 _On `release/3.2.4` (off `master`). One UI stability fix, no server/API/schema
 changes._
