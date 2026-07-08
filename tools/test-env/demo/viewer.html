@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>NemakiWare MCP デモビューア</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 720px; overflow: hidden;
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", -apple-system, "Noto Sans JP", sans-serif;
+    background: #0b1020; color: #e8ecf4; }
+  #stage { position: relative; width: 1280px; height: 720px;
+    background:
+      radial-gradient(1000px 500px at 85% -10%, rgba(64,110,255,.18), transparent 60%),
+      radial-gradient(800px 400px at 0% 110%, rgba(0,200,180,.12), transparent 60%),
+      #0b1020; }
+  .slide { position: absolute; inset: 0; padding: 44px 56px; opacity: 0;
+    transition: opacity .45s ease; pointer-events: none; display: flex; flex-direction: column; }
+  .slide.active { opacity: 1; pointer-events: auto; }
+
+  .kicker { font-size: 15px; letter-spacing: .18em; color: #7ea2ff; font-weight: 600; }
+  h1 { font-size: 42px; font-weight: 700; line-height: 1.3; margin-top: 10px; }
+  h2 { font-size: 27px; font-weight: 700; margin-bottom: 4px; }
+  .sub { color: #9aa7bd; font-size: 15.5px; margin-top: 8px; }
+  .accent { background: linear-gradient(90deg,#7ea2ff,#4be3c3);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  code.mono { color: #4be3c3; font-family: "SF Mono", Menlo, monospace; font-size: .9em; }
+
+  #s-title { justify-content: center; }
+  .envchips { display: flex; gap: 10px; margin-top: 26px; flex-wrap: wrap; }
+  .chip { border: 1px solid #2a3550; background: #121a30; border-radius: 999px;
+    padding: 7px 14px; font-size: 14px; color: #b9c4d8; }
+  .chip b { color: #e8ecf4; font-weight: 600; }
+
+  .orgwrap { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; flex: 1; }
+  .mgmtrow { display: flex; gap: 10px; align-items: center; }
+  .grouplabel { font-size: 13px; color: #8fa0ba; width: 92px; flex: none; text-align: right;
+    padding-right: 6px; }
+  .divcols { display: flex; gap: 14px; flex: 1; }
+  .divcol { flex: 1; background: #111930; border: 1px solid #24304e; border-radius: 14px;
+    padding: 12px 14px; }
+  .divname { font-weight: 700; font-size: 17px; }
+  .divhead { font-size: 12.5px; color: #8fa0ba; margin: 2px 0 8px; }
+  .sec { margin-top: 8px; }
+  .secname { font-size: 12.5px; color: #7ea2ff; margin-bottom: 4px; }
+  .members { display: flex; flex-wrap: wrap; gap: 6px; }
+  .person { display: inline-flex; align-items: center; gap: 6px; background: #0e1526;
+    border: 1px solid #263252; border-radius: 999px; padding: 4px 10px 4px 4px; font-size: 13.5px; }
+  .avatar { width: 22px; height: 22px; border-radius: 50%; display: inline-flex;
+    align-items: center; justify-content: center; font-size: 11px; font-weight: 700;
+    color: #fff; flex: none; }
+  .projdot { width: 7px; height: 7px; border-radius: 50%; background: #b197fc; flex: none; }
+  .projx { margin-top: 4px; background: linear-gradient(90deg,#231a3f,#1a1430);
+    border: 1px solid #4c3a80; border-radius: 14px; padding: 10px 16px; display: flex;
+    align-items: center; gap: 12px; }
+  .projx b { color: #cdb6ff; white-space: nowrap; }
+  .nestnote { font-size: 13.5px; color: #9aa7bd; }
+
+  .folwrap { display: flex; gap: 22px; margin-top: 14px; flex: 1; }
+  .foltree { flex: 1.3; background: #111930; border: 1px solid #24304e; border-radius: 14px;
+    padding: 12px 18px; font-size: 14.5px; overflow: hidden; }
+  .folrow { display: flex; align-items: center; gap: 8px; padding: 4.5px 0; }
+  .folrow.l1 { padding-left: 24px; color: #b9c4d8; font-size: 13px; }
+  .folname { font-weight: 600; }
+  .docn { color: #6d7c96; font-size: 12.5px; margin-left: auto; flex: none; }
+  .badge { font-size: 11px; border-radius: 6px; padding: 2px 7px; font-weight: 600; flex: none; }
+  .b-all   { background: #12321f; color: #69db7c; border: 1px solid #2b8a3e; }
+  .b-div   { background: #14263e; color: #74c0fc; border: 1px solid #1971c2; }
+  .b-mgmt  { background: #3b2314; color: #ffc078; border: 1px solid #e8590c; }
+  .b-hr    { background: #38152a; color: #faa2c1; border: 1px solid #c2255c; }
+  .b-projx { background: #241a3f; color: #b197fc; border: 1px solid #7048e8; }
+  .folstats { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+  .statcard { background: #111930; border: 1px solid #24304e; border-radius: 14px;
+    padding: 13px 18px; }
+  .statnum { font-size: 32px; font-weight: 700; }
+  .statlabel { color: #8fa0ba; font-size: 13px; margin-top: 2px; }
+  .statrow { display: flex; gap: 12px; }
+  .statrow .statcard { flex: 1; }
+  .legend { font-size: 13px; color: #9aa7bd; line-height: 2.05; }
+  .legend b { color: #e8ecf4; }
+
+  .scen-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .toolchip { font-family: "SF Mono", Menlo, monospace; font-size: 12.5px; color: #4be3c3;
+    background: #0e2420; border: 1px solid #14532d; padding: 5px 10px; border-radius: 8px; }
+  .querybubble { margin-top: 14px; background: #16223c; border: 1px solid #2c3c63;
+    border-radius: 14px 14px 14px 4px; padding: 13px 20px; font-size: 18.5px;
+    width: fit-content; max-width: 1000px; }
+  .querybubble .q { color: #ffd43b; margin-right: 8px; font-weight: 700; }
+  .personas { display: flex; gap: 16px; margin-top: 16px; flex: 1; }
+  .pcard { flex: 1; background: #111930; border: 1px solid #24304e; border-radius: 16px;
+    padding: 14px 16px; display: flex; flex-direction: column;
+    transition: border-color .4s, box-shadow .4s; }
+  .pcard.running { border-color: #7ea2ff; box-shadow: 0 0 24px rgba(126,162,255,.18); }
+  .phead { display: flex; align-items: center; gap: 10px; }
+  .phead .avatar { width: 38px; height: 38px; font-size: 15px; }
+  .pname { font-weight: 700; font-size: 17px; }
+  .ptitle { color: #8fa0ba; font-size: 11.5px; margin-top: 1px; }
+  .pareas { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0 4px; }
+  .area { font-size: 11px; background: #0e1526; border: 1px solid #263252; color: #93a5c4;
+    padding: 2px 8px; border-radius: 999px; }
+  .results { margin-top: 8px; flex: 1; }
+  .waiting { color: #55617a; font-size: 14px; padding-top: 18px; text-align: center; }
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #33415f;
+    border-top-color: #7ea2ff; border-radius: 50%; animation: spin .7s linear infinite;
+    vertical-align: -3px; margin-right: 8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .hit { opacity: 0; transform: translateY(8px); transition: opacity .4s, transform .4s;
+    padding: 7px 0; border-bottom: 1px solid #1c2742; }
+  .hit.in { opacity: 1; transform: none; }
+  .hitname { font-size: 13px; line-height: 1.35; word-break: break-all; }
+  .ftag { font-size: 10px; color: #6d7c96; border: 1px solid #33415f; padding: 1px 5px;
+    border-radius: 5px; margin-right: 6px; vertical-align: 1px; }
+  .scorebar { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .barbg { flex: 1; background: #1a2440; border-radius: 3px; height: 6px; }
+  .bar { height: 6px; border-radius: 3px; background: linear-gradient(90deg,#7ea2ff,#4be3c3);
+    width: 0; transition: width .7s cubic-bezier(.22,.9,.35,1); }
+  .scoretxt { font-size: 12px; color: #9db4e8; width: 38px; text-align: right;
+    font-variant-numeric: tabular-nums; flex: none; }
+  .secret { border-left: 3px solid #b197fc; padding-left: 8px; }
+  .secret .hitname { color: #d0bfff; }
+  .scen-note { margin-top: 12px; font-size: 15px; color: #c3cede; background: #0e1526;
+    border: 1px solid #263252; border-left: 3px solid #4be3c3; border-radius: 10px;
+    padding: 10px 16px; opacity: 0; transition: opacity .5s; }
+  .scen-note.in { opacity: 1; }
+
+  #s-end { justify-content: center; }
+  .endlist { margin-top: 22px; font-size: 19px; line-height: 2.15; color: #c9d4e8; }
+  .endlist b { color: #fff; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+"use strict";
+// 表示データは tools/test-env が生成した demo-data.json (自前シード + 実MCP応答)。
+// XSS 余地を残さないため描画はすべて createElement/textContent で行う。
+const stage = document.getElementById("stage");
+let DATA = null;
+
+// hyperscript ヘルパー: h(tag, {class:, style:, id:}, ...children[string|Node])
+function h(tag, attrs, ...children) {
+  const e = document.createElement(tag);
+  if (attrs) {
+    if (attrs.class) e.className = attrs.class;
+    if (attrs.id) e.id = attrs.id;
+    if (attrs.style) for (const [k, v] of Object.entries(attrs.style)) e.style[k] = v;
+  }
+  for (const c of children.flat()) {
+    if (c === null || c === undefined) continue;
+    e.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+  }
+  return e;
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const initials = name => name.trim()[0];
+const ftag = name => { const m = name.match(/\.([a-z0-9]+)$/i); return m ? m[1].toUpperCase() : "DOC"; };
+
+const PRINCIPAL_LABEL = { "te-all": "全社員", "te-mgmt": "経営会議", "te-div-sales": "営業本部",
+  "te-div-eng": "技術本部", "te-div-corp": "管理本部", "te-sec-hr": "人事課",
+  "te-sec-finance": "経理課", "te-sec-legal": "法務課", "te-proj-x": "プロジェクトX" };
+function badge(principal, perm) {
+  const cls = principal === "te-all" ? "b-all" : principal === "te-mgmt" ? "b-mgmt"
+    : principal === "te-proj-x" ? "b-projx" : principal === "te-sec-hr" ? "b-hr" : "b-div";
+  return h("span", { class: "badge " + cls }, `${PRINCIPAL_LABEL[principal] || principal}: ${perm}`);
+}
+
+function personChip(u) {
+  return h("span", { class: "person" },
+    h("span", { class: "avatar", style: { background: u.color } }, initials(u.name)),
+    u.name, u.projx ? h("span", { class: "projdot" }) : null);
+}
+
+function buildTitle(d) {
+  return h("div", { class: "slide", id: "s-title" },
+    h("div", { class: "kicker" }, `NEMAKIWARE ${d.env.version} — LIVE DEMO`),
+    h("h1", null, "権限 × ベクトル検索 × ", h("span", { class: "accent" }, "MCP"),
+      document.createElement("br"), "ユーザによって、AIが見える世界は変わる"),
+    h("div", { class: "sub" }, "同じ質問をしても、MCP 経由の応答は「そのユーザが読める文書」だけから作られます"),
+    h("div", { class: "envchips" },
+      h("span", { class: "chip" }, "環境 ", h("b", null, d.env.host), " (AWS / HTTPS)"),
+      h("span", { class: "chip" }, "文書 ", h("b", null, `${d.totalDocs}件`), " / RAGチャンク ", h("b", null, String(d.env.ragChunks))),
+      h("span", { class: "chip" }, "埋め込み ", h("b", null, d.env.embedding))));
+}
+
+function buildOrg(d) {
+  const byId = Object.fromEntries(d.users.map(u => [u.id, u]));
+  const P = id => personChip(byId[id]);
+  const sec = (name, ids) => h("div", { class: "sec" },
+    h("div", { class: "secname" }, name), h("div", { class: "members" }, ids.map(P)));
+  return h("div", { class: "slide", id: "s-org" },
+    h("div", { class: "kicker" }, "ORGANIZATION"),
+    h("h2", null, "ヒナタ産業株式会社 — 15名・ネストグループ13"),
+    h("div", { class: "sub" }, "グループは ", h("code", { class: "mono" }, "課 ⊂ 本部 ⊂ 全社員"),
+      " のネスト構造のまま投入(展開なし) — v3.2.3 のネストグループACL解決を使用"),
+    h("div", { class: "orgwrap" },
+      h("div", { class: "mgmtrow" }, h("span", { class: "grouplabel" }, "経営会議"),
+        P("otsuka"), P("kudo"), P("hirata"), P("nagai")),
+      h("div", { class: "divcols" },
+        h("div", { class: "divcol" }, h("div", { class: "divname" }, "営業本部"),
+          h("div", { class: "divhead" }, "本部長: 工藤"),
+          sec("東日本営業課", ["mori", "asada"]), sec("西日本営業課", ["ueda", "hoshino"])),
+        h("div", { class: "divcol" }, h("div", { class: "divname" }, "技術本部"),
+          h("div", { class: "divhead" }, "本部長: 平田"),
+          sec("開発課", ["fukuda", "ogawa", "nishida"]), sec("インフラ課", ["miyata"])),
+        h("div", { class: "divcol" }, h("div", { class: "divname" }, "管理本部"),
+          h("div", { class: "divhead" }, "本部長: 永井"),
+          sec("人事課", ["shimizu"]), sec("経理課", ["okamoto"]), sec("法務課", ["baba"]))),
+      h("div", { class: "projx" }, h("b", null, "● 新製品Xプロジェクト (部門横断・極秘)"),
+        h("span", { class: "nestnote" },
+          "紫ドット = メンバー: 浅田・星野・小川・西田・馬場 — 「機密プロジェクトX/」はこの5名だけが読める (社長も不可)"))));
+}
+
+function buildFolders(d) {
+  const areas = new Map();
+  for (const f of d.folders) {
+    const a = f.path[0];
+    if (!areas.has(a)) areas.set(a, { acl: null, docs: 0, subs: [] });
+    const area = areas.get(a);
+    if (f.path.length === 1 && f.acl) area.acl = f.acl;
+    if (f.docs) area.docs += f.docs;
+    if (f.path.length > 1 && f.acl) area.subs.push({ name: f.path.slice(1).join("/"), docs: f.docs, acl: f.acl });
+  }
+  const tree = h("div", { class: "foltree" });
+  for (const [name, a] of areas) {
+    tree.appendChild(h("div", { class: "folrow" }, h("span", null, "📁"),
+      h("span", { class: "folname" }, name),
+      (a.acl || []).map(x => badge(x[0], x[1])),
+      h("span", { class: "docn" }, `${a.docs}件`)));
+    for (const s of a.subs) {
+      tree.appendChild(h("div", { class: "folrow l1" }, h("span", null, "📁"),
+        h("span", null, s.name), (s.acl || []).map(x => badge(x[0], x[1])),
+        h("span", { class: "docn" }, s.docs ? `${s.docs}件` : "")));
+    }
+  }
+  const stat = (num, label) => h("div", { class: "statcard" },
+    h("div", { class: "statnum" }, String(num)), h("div", { class: "statlabel" }, label));
+  const legendLine = (b, text, strong) => h("div", null, b, " ", text,
+    strong ? h("b", null, strong) : null);
+  return h("div", { class: "slide", id: "s-folders" },
+    h("div", { class: "kicker" }, "FOLDERS & ACL"),
+    h("h2", null, `フォルダとアクセス制御 — ${d.totalDocs}文書を8エリアに配置`),
+    h("div", { class: "folwrap" }, tree,
+      h("div", { class: "folstats" },
+        h("div", { class: "statrow" }, stat(15, "ユーザ"), stat(13, "ネストグループ")),
+        h("div", { class: "statrow" }, stat(31, "フォルダ"), stat(d.totalDocs, "Office文書 (docx/xlsx/pptx/pdf)")),
+        h("div", { class: "statcard" }, h("div", { class: "legend" },
+          legendLine(badge("te-all", "read"), "誰でも読める (規程・通達)"),
+          legendLine(badge("te-div-eng", "all"), "部門メンバーのみ読み書き"),
+          legendLine(badge("te-mgmt", "all"), "役員レベル限定"),
+          legendLine(badge("te-sec-hr", "all"), "給与は人事課のみ ", "(役員も不可)"),
+          legendLine(badge("te-proj-x", "all"), "部門横断メンバーのみ ", "(社長も不可)"))))));
+}
+
+function buildScenario(sc, si, total) {
+  const cards = sc.personas.map((p, pi) =>
+    h("div", { class: "pcard", id: `pc-${si}-${pi}` },
+      h("div", { class: "phead" },
+        h("span", { class: "avatar", style: { background: p.color } }, initials(p.name)),
+        h("span", null, h("div", { class: "pname" }, p.name), h("div", { class: "ptitle" }, p.title))),
+      h("div", { class: "pareas" }, p.areas.map(a => h("span", { class: "area" }, a))),
+      h("div", { class: "results", id: `res-${si}-${pi}` },
+        h("div", { class: "waiting" }, "待機中…"))));
+  return h("div", { class: "slide", id: `s-scen-${si}` },
+    h("div", { class: "kicker" }, `MCP SCENARIO ${si + 1} / ${total} — ${sc.title}`),
+    h("div", { class: "scen-head" }, h("h2", null, "同じ質問、違う答え"),
+      h("span", { class: "toolchip" }, "tools/call → nemakiware_login → nemakiware_rag_search")),
+    h("div", { class: "querybubble" }, h("span", { class: "q" }, "Q."), sc.query),
+    h("div", { class: "personas" }, cards),
+    h("div", { class: "scen-note", id: `note-${si}` }, "💡 " + sc.note));
+}
+
+function buildEnd() {
+  const line = (...c) => h("div", null, ...c);
+  return h("div", { class: "slide", id: "s-end" },
+    h("div", { class: "kicker" }, "SUMMARY"),
+    h("h1", null, "AIに文書を渡す前に、", h("span", { class: "accent" }, "権限で絞る")),
+    h("div", { class: "endlist" },
+      line("✅ MCP の応答は CMIS ACL でフィルタ — ", h("b", null, "ログインユーザが読める文書だけ"), " が検索対象"),
+      line("✅ ネストグループ (課 ⊂ 本部) も実効権限として解決 ", h("b", null, "(v3.2.3)")),
+      line("✅ 権限の付与・剥奪はベクトル検索へ即時反映 — チャンクを失わずに ", h("b", null, "(v3.2.3)")),
+      line("✅ 環境は ", h("b", null, "tools/test-env"), " でいつでも再現可能 (15ユーザ / 300文書 / シナリオランナー)")));
+}
+
+function clearChildren(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+
+window.demoApi = {
+  init(data) {
+    DATA = data;
+    stage.appendChild(buildTitle(data));
+    stage.appendChild(buildOrg(data));
+    stage.appendChild(buildFolders(data));
+    data.scenarios.forEach((sc, si) => stage.appendChild(buildScenario(sc, si, data.scenarios.length)));
+    stage.appendChild(buildEnd());
+  },
+  show(id) {
+    document.querySelectorAll(".slide").forEach(s => s.classList.remove("active"));
+    document.getElementById(id).classList.add("active");
+  },
+  async runPersona(si, pi) {
+    const p = DATA.scenarios[si].personas[pi];
+    const card = document.getElementById(`pc-${si}-${pi}`);
+    const res = document.getElementById(`res-${si}-${pi}`);
+    card.classList.add("running");
+    clearChildren(res);
+    res.appendChild(h("div", { class: "waiting" }, h("span", { class: "spinner" }), "MCP 検索中…"));
+    await sleep(1100);
+    clearChildren(res);
+    if (!p.hits.length) {
+      res.appendChild(h("div", { class: "waiting" }, "🔒 ヒットなし — この質問に答えられる文書が見えていません"));
+      card.classList.remove("running");
+      return;
+    }
+    const secretPat = /(Aurora|給与テーブル|障害報告|取締役会|人事評価)/;
+    p.hits.slice(0, 4).forEach((hit, i) => {
+      const bar = h("div", { class: "bar" });
+      const row = h("div", { class: "hit" + (secretPat.test(hit.name) ? " secret" : "") },
+        h("div", { class: "hitname" }, h("span", { class: "ftag" }, ftag(hit.name)), hit.name),
+        h("div", { class: "scorebar" }, h("div", { class: "barbg" }, bar),
+          h("span", { class: "scoretxt" }, hit.score + "%")));
+      res.appendChild(row);
+      setTimeout(() => { row.classList.add("in"); bar.style.width = hit.score + "%"; },
+        150 + i * 260);
+    });
+    await sleep(150 + p.hits.length * 260 + 700);
+    card.classList.remove("running");
+  },
+  showNote(si) { document.getElementById(`note-${si}`).classList.add("in"); },
+};
+</script>
+</body>
+</html>

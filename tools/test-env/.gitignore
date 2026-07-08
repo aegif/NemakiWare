@@ -1,3 +1,7 @@
-manifest.json
-report.md
 __pycache__/
+demo-data.json
+manifest-remote.json
+manifest.json
+output/
+report.md
+frame-*.png
