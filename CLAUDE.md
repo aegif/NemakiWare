@@ -372,10 +372,31 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 ## 現在のバージョン
 
-**3.2.5** (2026-07-08、`release/3.2.5` → master) — 探索的ファズで発見した
-入力堅牢性 + 並行性ハードニング (下記 3.2.5 節)。バージョン反映箇所は 3.2.1
-以降と同一 (5 reactor pom + core 内部依存座標、UI package.json/package-lock/
-Layout.tsx、repositories-default.yml)。
+**3.2.6** (2026-07-08、`release/3.2.6` → master) — Browser Binding の認証
+ステータスコード修正 (第2ファズ波: 認証境界/複数リポジトリ分離/Webhook。
+下記 3.2.6 節)。バージョン反映箇所は 3.2.1 以降と同一。
+
+### 3.2.6 (2026-07-08) — Browser Binding の認証ステータスコード
+
+ブランチ: `release/3.2.6` (off `master`)。第2ファズ波 (`edge_fuzz3.py`) の
+1 件。スキーマ/永続化変更なし。
+
+- **[Low] 存在しないリポジトリ / 認証失敗が Browser Binding で 500** →
+  401 に (`NemakiBrowserBindingServlet.getHttpStatusCode`): `/core/browser/
+  {repo}/…` が未知 repo (や誤認証) で `CmisUnauthorizedException` を投げるが、
+  ステータスマッピングに当該分岐が無くデフォルト 500 に落ちていた。
+  `CmisUnauthorizedException → 401` を追加 (応答 body は既に
+  `unauthorizedException` を返しており、ステータスのみ誤り)。
+- **同梱**: `tools/test-env/monkey/edge_fuzz3.py` (認証境界 / 複数リポジトリ
+  分離 / Webhook 受信プローブ)
+
+**本ファズ波でクリーンと確認できた面** (最大の収穫): 不正な
+`Authorization`/token/API-key ヘッダは全て 401 (バイパス・5xx なし)、
+CSRF なし state-change は拒否、`bedroom`↔`canopy` 間で object/ACL/RAG の
+漏洩なし、Webhook 受信は不正/巨大/無署名 payload で 4xx (5xx なし)。
+
+**検証**: 未知repo→401 / 正常repo→200 / object-not-found→404 / 誤PW→401 を
+実機確認、edge_fuzz3 再実行 0 findings、QA 統合 94/94。
 
 ### 3.2.5 (2026-07-08) — 入力堅牢性 + 並行性ハードニング (探索ファズ由来)
 

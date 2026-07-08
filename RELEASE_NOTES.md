@@ -6,6 +6,32 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.2.6 — Browser-binding auth status code (2026-07-08)
+_On `release/3.2.6` (off `master`). One HTTP-status correctness fix from a
+second fuzz pass (auth boundaries / multi-repo isolation / webhook). No
+schema/persistence changes._
+
+- **[Low] Unknown repository / auth failure on the CMIS Browser Binding now
+  returns 401, not 500.** A request to `/core/browser/{repo}/…` for an unknown
+  repository (or with bad credentials) raises `CmisUnauthorizedException`, but
+  the servlet's status-code mapping had no case for it and fell through to the
+  default 500. Added the `CmisUnauthorizedException → 401` mapping (the response
+  body already named it `unauthorizedException`; only the status was wrong).
+- Also shipped: `tools/test-env/monkey/edge_fuzz3.py` — auth-boundary /
+  multi-repository-isolation / webhook-receiver probes.
+
+_This fuzz pass otherwise found the security-relevant surfaces **clean**:
+malformed `Authorization`/token/API-key headers all return 401 (no bypass, no
+5xx); CSRF-less state-changing POSTs are refused; cross-repository object/ACL
+access and RAG search do **not** leak between `bedroom` and `canopy`; the ingest
+webhook receiver returns 4xx (not 5xx) for garbage/oversized/unsigned payloads._
+
+**Verification**: unknown-repo → 401, valid repo → 200, object-not-found → 404,
+wrong-password → 401 all live-verified; the edge_fuzz3 re-run reports 0 findings;
+QA integration 94/94.
+
+---
+
 ## 3.2.5 — Input-robustness & concurrency hardening from exploratory fuzzing (2026-07-08)
 _On `release/3.2.5` (off `master`). Findings from a monkey/fuzz pass
 (`tools/test-env/monkey`): bad or extreme input that returned HTTP 500 instead
