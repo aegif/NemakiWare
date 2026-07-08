@@ -2,7 +2,13 @@
 
 「同じ質問でも、ユーザによって MCP 経由で得られる答えが変わる」ことを見せる
 デモ動画とその生成資材。動画は tools/test-env で投入したリモート環境
-(AWS、NemakiWare 3.2.3、Bedrock RAG) の**実データ・実 MCP 応答**で構成される。
+(AWS、NemakiWare 3.2.4、Bedrock RAG) の**実データ・実 MCP 応答**で構成される。
+
+> 初回収録では実 UI ツアー中に、フォルダ遷移でドキュメント一覧が React
+> 再構成クラッシュ (`insertBefore ... not a child`) を起こしエラー画面が
+> 写り込んだ。これは本番ビルド固有の製品バグだったため v3.2.4 で修正
+> (DocumentList の Table をフォルダ単位で key 化) し、修正済みイメージで
+> リモートを立て直して撮り直している。詳細は RELEASE_NOTES の 3.2.4 節。
 
 ## 成果物
 

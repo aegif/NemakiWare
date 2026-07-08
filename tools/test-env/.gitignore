@@ -1,7 +1,7 @@
 __pycache__/
 demo-data.json
+frame-*.png
 manifest-remote.json
 manifest.json
 output/
 report.md
-frame-*.png
