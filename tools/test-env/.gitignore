@@ -3,5 +3,9 @@ demo-data.json
 frame-*.png
 manifest-remote.json
 manifest.json
+monkey/api-fuzz-*.json
+monkey/monkey-findings-*.json
+monkey/monkey-live-*.jsonl
+monkey/write-fuzz-*.json
 output/
 report.md
