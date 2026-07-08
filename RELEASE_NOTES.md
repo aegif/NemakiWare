@@ -6,6 +6,37 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.2.8 — Malformed multipart filename returns 400, not 500 (2026-07-08)
+_On `release/3.2.8` (off `master`). Closes the last known low-severity residual
+from the fuzz passes. No schema/persistence changes._
+
+- **[Low] A multipart upload whose part filename contains a NUL (or other
+  character the container's file-upload parser rejects) now returns 400, not
+  500.** `POST /core/browser/{repo}` (createDocument) parses the multipart body
+  on first parameter access; a filename like `nul\0name.txt` made the
+  container's file-upload parser throw `InvalidFileNameException`, which escaped
+  as a raw HTTP 500 before the CMIS dispatch. The browser-binding servlet now
+  forces the parse up-front for multipart POSTs and translates that specific
+  malformed-filename failure into a 400 (`invalidArgument`); any other parse
+  failure is rethrown unchanged. Verified: `nul\0name.txt` → 400, a valid
+  upload → 201, a NUL in a property value (not the filename) still creates the
+  object (truncated), and the fuzz harness re-run reports no remaining 5xx.
+
+**Verification**: unit net 431/431, QA integration 94/94, targeted fix
+live-verified (`nul\0name.txt` → 400, valid upload → 201), monkey/fuzz harness
+re-run with zero 5xx findings. Full CMIS TCK: the six non-search groups
+(Connection / Basics / Control / Versioning / CRUD1 / CRUD2) pass; the
+search-dependent groups (Query / Types) showed the previously-documented
+environmental failures on the local instance — Solr async-index lag under the
+sustained multi-suite load (create-then-query timing; the failing case rotates
+run-to-run) and leftover custom types (null queryName) created by the TCK's own
+CRUD tests. Confirmed non-regression: after resetting the local index queue, a
+freshly created document indexes in ~3 s and `CONTAINS`/query return it, and
+none of the 3.2.8 changes touch the indexing or query path. The authoritative
+clean-DB E2E gate is CI (fresh database per push).
+
+---
+
 ## 3.2.7 — Concurrent check-in no longer duplicates versions (2026-07-08)
 _On `release/3.2.7` (off `master`). One data-integrity fix from a versioning
 fuzz pass. No schema/persistence changes._

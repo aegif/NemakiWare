@@ -372,9 +372,37 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 ## 現在のバージョン
 
-**3.2.7** (2026-07-08、`release/3.2.7` → master) — 同一 PWC への並行 checkIn
-による版重複を修正 (バージョニング系ファズ波。下記 3.2.7 節)。バージョン
-反映箇所は 3.2.1 以降と同一。
+**3.2.8** (2026-07-08、`release/3.2.8` → master) — マルチパートのファイル名不正
+(NUL 等) を 500 でなく 400 に (ファズ波の最後の低残件。下記 3.2.8 節)。
+バージョン反映箇所は 3.2.1 以降と同一。
+
+### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
+
+ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度
+残件 (CMIS 名/ファイル名の NUL バイト) を解消。スキーマ/永続化変更なし。
+
+- **[Low] マルチパートのパートファイル名に NUL 等が含まれると 500** → 400 に
+  (`NemakiBrowserBindingServlet.service`): `POST /core/browser/{repo}`
+  (createDocument) は最初のパラメータアクセスでマルチパート本体を解析するが、
+  `nul\0name.txt` のようなファイル名は Tomcat の file-upload パーサが
+  `InvalidFileNameException` を投げ、CMIS ディスパッチ前に素の 500 として
+  漏れていた。multipart POST では冒頭で解析を強制し、この
+  **ファイル名不正例外のみ 400** (`invalidArgument`) に変換 (cause 連鎖を
+  クラス名/メッセージで判定)、それ以外の解析失敗は元通り再送出。実機検証:
+  `nul\0name.txt`→400、正常アップロード→201、プロパティ値内 NUL は従来通り
+  作成 (切り詰め)、edge_fuzz2 再実行で 5xx ゼロ。
+  注: NUL 以外の制御文字 (0x01 等) は Tomcat が受理し 201 (500 ではない) の
+  ため対象外。
+
+**検証**: 単体 431/431、QA 94/94、修正のライブ確認 (`nul\0name.txt`→400 /
+正常→201)、モンキー/ファズ再実行で 5xx ゼロ。TCK フルは検索非依存の 6 グループ
+(Connection/Basics/Control/Versioning/CRUD1/CRUD2) green、検索系 (Query/Types)
+はローカル多重スイート連続実行による **Solr 非同期索引ラグ** (create 直後 query
+のタイミング、失敗ケースは run 毎に入れ替わる) + TCK 自身の CRUD が作る残骸型
+(queryName null) の既知環境要因で fail。非回帰確認: 索引キューをリセットすると
+新規 doc は ~3 秒で索引され CONTAINS/query が返す、本リリース差分は索引/クエリ
+経路に非タッチ。クリーン DB の権威的 E2E は CI (push 毎の fresh DB)。Playwright
+ローカル通しはこの索引ラグで検索系スペックが同様に flaky (非回帰)。
 
 ### 3.2.7 (2026-07-08) — 同一 PWC 並行 checkIn の版重複修正
 

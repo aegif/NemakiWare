@@ -100,6 +100,41 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             log.debug("Browser Binding service: " + request.getMethod() + " " + request.getRequestURI());
         }
 
+        // Malformed multipart (e.g. a NUL byte or other control char in a part's
+        // filename) makes the container's file-upload parser throw during the
+        // first parameter/parts access; without this it escapes as a raw HTTP 500.
+        // Force the parse up-front and translate ONLY that specific failure to a
+        // 400 (bad request). Any other parse failure is rethrown unchanged so
+        // existing behavior is preserved. Tomcat caches the parsed parts, so this
+        // does not double-parse the (single-use) request body.
+        if ("POST".equalsIgnoreCase(request.getMethod())) {
+            String contentType = request.getContentType();
+            if (contentType != null && contentType.regionMatches(true, 0, "multipart/", 0, 10)) {
+                try {
+                    // Force multipart parsing here (same trigger as the code below):
+                    // getParameter parses the body, and a malformed part filename
+                    // (NUL/control char) throws InvalidFileNameException during it.
+                    request.getParameter("cmisaction");
+                } catch (Throwable t) {
+                    if (isInvalidMultipartFilename(t)) {
+                        log.warn("Rejected multipart upload with an invalid part filename: " + t.getMessage());
+                        response.setContentType("application/json");
+                        response.setCharacterEncoding("UTF-8");
+                        response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                        try (java.io.PrintWriter w = response.getWriter()) {
+                            w.write("{\"exception\":\"invalidArgument\",\"message\":\"Invalid multipart file name\"}");
+                        }
+                        return;
+                    }
+                    if (t instanceof RuntimeException) throw (RuntimeException) t;
+                    if (t instanceof Error) throw (Error) t;
+                    if (t instanceof ServletException) throw (ServletException) t;
+                    if (t instanceof IOException) throw (IOException) t;
+                    throw new ServletException(t);
+                }
+            }
+        }
+
         // CRITICAL FIX: Check for versioning and applyACL actions immediately in service method
         if ("POST".equals(request.getMethod())) {
             String postMethodCmisaction = request.getParameter("cmisaction");
@@ -1532,6 +1567,28 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      * Get proper HTTP status code for CMIS exceptions according to OpenCMIS 1.1 standard
      * This method implements the same mapping as CmisBrowserBindingServlet.getErrorCode()
      */
+    /**
+     * True when the throwable chain indicates a multipart part filename the
+     * container's file-upload parser rejected (e.g. a NUL byte or control
+     * character). Matched by class name / message so it works regardless of
+     * which fileupload package the container shades in.
+     */
+    private boolean isInvalidMultipartFilename(Throwable t) {
+        for (Throwable c = t; c != null; c = c.getCause()) {
+            if (c.getClass().getName().contains("InvalidFileNameException")) {
+                return true;
+            }
+            String m = c.getMessage();
+            if (m != null && m.contains("Invalid file name")) {
+                return true;
+            }
+            if (c.getCause() == c) {
+                break;
+            }
+        }
+        return false;
+    }
+
     private int getHttpStatusCode(Exception ex) {
         if (ex instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException) {
             return 400;

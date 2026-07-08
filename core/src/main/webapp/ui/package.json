@@ -1,6 +1,6 @@
 {
   "name": "nemakiware-spa",
-  "version": "3.2.7",
+  "version": "3.2.8",
   "private": true,
   "dependencies": {
     "@ant-design/v5-patch-for-react-19": "^1.0.3",
