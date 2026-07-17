@@ -141,6 +141,15 @@ public class NemakiPatchInitializationListener implements ServletContextListener
         // seeds so the order is explicit.
         "patch_ExternalIntegrationSecondaryType",
         "patch_ExternalIntegrationSourceFields",
+        // Retention: SecondaryTypes registers the retention secondary type;
+        // the Expiration/LastModification views index its properties and must
+        // run AFTER it. MigrationLogViews is independent. Pin all four as seeds
+        // so the SecondaryTypes -> views order is explicit in the fallback path
+        // (mirrors patchContext.xml), not left to alphabetical chance.
+        "patch_RetentionMigrationLogViews",
+        "patch_RetentionSecondaryTypes",
+        "patch_RetentionExpirationView",
+        "patch_RetentionLastModificationView",
     };
 
     private void applyPatchesFromSpringContext(WebApplicationContext springContext) {
