@@ -1,0 +1,63 @@
+name: gitleaks
+
+# Secret scanning (entropy + rule based) over the whole tree and history —
+# complements the narrow hand-written credential-drift check in
+# security-scan.yml. Runs the gitleaks binary directly (the gitleaks-action
+# wrapper requires a paid license for organizations; the tool itself is
+# Apache-2.0). PR runs scan only the diff and BLOCK on a finding; scheduled /
+# master runs scan the full history. Known dev/test example credentials are
+# allowlisted in .gitleaks.toml.
+
+on:
+  pull_request:
+    branches: [ master, main, 'release/**' ]
+  push:
+    branches: [ master ]
+  schedule:
+    - cron: '0 3 * * 1'   # weekly, Monday 03:00 UTC (full-history sweep)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Pinned; checksum-verified below. Bump via Dependabot / manual review.
+  GITLEAKS_VERSION: "8.21.2"
+
+jobs:
+  gitleaks:
+    name: gitleaks secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks (pinned + checksum-verified)
+        run: |
+          set -euo pipefail
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          curl -sSfL -o "/tmp/${tarball}" "${base}/${tarball}"
+          # Verify against the checksums published with the release.
+          curl -sSfL -o /tmp/gitleaks_checksums.txt "${base}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          ( cd /tmp && grep " ${tarball}\$" gitleaks_checksums.txt | sha256sum -c - )
+          tar -xzf "/tmp/${tarball}" -C /tmp gitleaks
+          chmod +x /tmp/gitleaks
+
+      - name: Scan PR diff (blocking)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          /tmp/gitleaks detect --source . --config .gitleaks.toml \
+            --log-opts "origin/${BASE_REF}...HEAD" \
+            --redact --verbose --exit-code 1
+
+      - name: Scan full history
+        if: github.event_name != 'pull_request'
+        run: |
+          /tmp/gitleaks detect --source . --config .gitleaks.toml \
+            --redact --verbose --exit-code 1

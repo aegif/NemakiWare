@@ -1,0 +1,77 @@
+# Dependabot version-update automation.
+#
+# NOTE: Dependabot *security* updates are already enabled on this repo via the
+# GitHub security settings; this file adds the missing scheduled *version*
+# updates so routine bumps arrive as grouped PRs instead of being hand-run
+# every release. Each PR must still pass the security-scan.yml gates (drift
+# denylist, OSV, Trivy) before merge.
+version: 2
+updates:
+  # ── Maven (multi-module reactor) ─────────────────────────────────────────
+  - package-ecosystem: "maven"
+    directories:
+      - "/"
+      - "/common"
+      - "/core"
+      - "/solr"
+      - "/cloudant-init"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    groups:
+      spring:
+        patterns: ["org.springframework*"]
+      jackson:
+        patterns: ["com.fasterxml.jackson*"]
+      netty:
+        patterns: ["io.netty*"]
+      logback-slf4j:
+        patterns: ["ch.qos.logback*", "org.slf4j*"]
+      aws-sdk:
+        patterns: ["software.amazon.awssdk*"]
+      solr-lucene:
+        patterns: ["org.apache.solr*", "org.apache.lucene*"]
+      apache-commons:
+        patterns: ["org.apache.commons*", "commons-io*", "commons-codec*"]
+      testing:
+        patterns:
+          - "org.junit*"
+          - "org.mockito*"
+          - "org.testcontainers*"
+          - "org.wiremock*"
+    labels: ["dependencies", "maven"]
+
+  # ── npm (React UI) ───────────────────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/core/src/main/webapp/ui"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    groups:
+      react:
+        patterns: ["react", "react-dom", "@types/react*"]
+      vite-build:
+        patterns: ["vite", "@vitejs/*", "esbuild", "vitest"]
+      antd:
+        patterns: ["antd", "@ant-design/*"]
+    labels: ["dependencies", "npm"]
+
+  # ── Docker base images ───────────────────────────────────────────────────
+  - package-ecosystem: "docker"
+    directories:
+      - "/docker/core"
+      - "/docker/solr"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels: ["dependencies", "docker"]
+
+  # ── GitHub Actions (keep pinned actions current) ─────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels: ["dependencies", "ci"]

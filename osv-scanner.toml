@@ -1,0 +1,12 @@
+# osv-scanner ignore configuration — documented, time-boxed risk acceptance.
+#
+# Referenced explicitly via `osv-scanner --config=osv-scanner.toml` in
+# .github/workflows/security-scan.yml. Every entry MUST mirror a row in
+# SECURITY-EXCEPTIONS.md and carry an `ignoreUntil`; once the OSV job is
+# gated (continue-on-error removed), an expired ignore lets the vuln fail CI,
+# forcing re-review.
+
+[[IgnoredVulns]]
+id = "GHSA-qhr7-h655-pw6r"
+ignoreUntil = 2027-01-31
+reason = "Not applicable: NemakiWare ships no security.json, does not enable Solr BasicAuthPlugin, and never runs `bin/solr auth enable`. No patched solr-core version exists (<= 9.10.1). Solr is not exposed off-host. See SECURITY-EXCEPTIONS.md."

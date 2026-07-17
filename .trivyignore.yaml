@@ -1,0 +1,19 @@
+# Trivy ignore file (YAML form — supports per-entry expiry).
+#
+# Used by the `trivy-image` jobs in .github/workflows/security-scan.yml. This
+# replaces a blanket `--ignore-unfixed` on the FAIL gate with explicit,
+# dated exceptions so unfixed vulnerabilities stay *visible* (the workflow also
+# uploads a full report including unfixed CVEs as an informational artifact)
+# rather than silently dropped.
+#
+# Every entry MUST mirror a row in SECURITY-EXCEPTIONS.md and carry `expiredAt`.
+# Trivy treats an expired entry as no longer ignored, so it will surface again
+# in CI and force re-review.
+#
+# Template (leave the list empty until a concrete exception is needed):
+# vulnerabilities:
+#   - id: CVE-XXXX-XXXXX
+#     expiredAt: 2027-01-31
+#     statement: "Why this fixable finding is accepted for now. See SECURITY-EXCEPTIONS.md."
+
+vulnerabilities: []
