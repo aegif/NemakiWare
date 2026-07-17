@@ -9,13 +9,26 @@ name: Security Scan
 # What it checks:
 #   1. npm audit (frontend) — fails on any high/critical vulnerability
 #   2. Maven dependency:tree drift — flags reintroduction of known-bad
-#      versions (junit:compile, xml-apis, logback < 1.5.19, netty < 4.1.124,
+#      versions (junit:compile, xml-apis, logback < 1.5.19, netty < 4.1.136,
 #      httpclient < 4.5.14, etc.)
 #   3. Plaintext credential drift — fails if hardcoded admin/password
 #      patterns reappear in compose files / properties
+#   4. OSV dependency scan (osv-scanner) — cross-ecosystem CVE lookup over
+#      every pom.xml + package-lock.json against the OSV.dev database, so a
+#      newly disclosed CVE against a pinned version surfaces without waiting
+#      for a hand-written denylist entry (informational — does not block)
+#   5. Trivy container-image scan — builds the Solr image and fails on
+#      fixable HIGH/CRITICAL OS/library CVEs, closing the gap where the
+#      hand-maintained Maven denylist never saw the runtime base image
+#      (this is exactly how the Solr 9.10.0 -> 9.10.1 CVE-2025-66516 lag
+#      would have been caught)
 #
-# This is an early-warning system: failures here don't block merges
-# automatically, but the GitHub UI shows red checks so reviewers see
+# The hand-written Maven denylist (job 2) stays as a fast, deterministic
+# floor; OSV + Trivy add dynamic, database-backed coverage on top.
+#
+# This is an early-warning system: the drift/credential/Trivy checks fail
+# (red) on regressions; the OSV job is informational. Failures don't block
+# merges automatically, but the GitHub UI shows red checks so reviewers see
 # them. To make it blocking, mark the workflow required in branch
 # protection settings.
 
@@ -133,10 +146,11 @@ jobs:
           deny 'xml-apis:xml-apis:jar:' \
             'xml-apis was removed (replaced by JDK java.xml). dom4j exclusion prevents transitive re-introduction'
 
-          # 3. netty regression check (must be >= 4.1.124)
-          if grep -qE 'io\.netty:.*:jar:4\.1\.(11[0-9]|12[0-3])\.Final' maven-deps.txt; then
-            echo "::error title=netty regression::netty < 4.1.124.Final detected (CVE-2025-55163)"
-            grep -E 'io\.netty:.*:jar:4\.1\.(11[0-9]|12[0-3])\.Final' maven-deps.txt | sed 's/^/  /'
+          # 3. netty regression check (must be >= 4.1.136 — 4.1.136 closes the
+          #    CVSS-10 DNS-cache-poisoning issue on top of CVE-2025-55163)
+          if grep -qE 'io\.netty:[^:]*:jar:4\.1\.([0-9]|[1-9][0-9]|1[0-2][0-9]|13[0-5])\.Final' maven-deps.txt; then
+            echo "::error title=netty regression::netty < 4.1.136.Final detected (CVE-2025-55163 + DNS cache poisoning)"
+            grep -E 'io\.netty:[^:]*:jar:4\.1\.([0-9]|[1-9][0-9]|1[0-2][0-9]|13[0-5])\.Final' maven-deps.txt | sed 's/^/  /'
             fail=1
           fi
 
@@ -234,7 +248,7 @@ jobs:
       - name: Forbid any jar under docker/solr (tracked or untracked)
         # Strict policy: docker/solr/ must contain only Dockerfile, pom.xml,
         # assembly descriptors, and Solr core configs. The Solr 9 image is
-        # built from solr:9.10.0-slim plus our config tree — never from
+        # built from solr:9.10.1-slim plus our config tree — never from
         # bundled jars. Any jar here either:
         #   (a) shaded fat jar carrying stale dependency classes
         #       (e.g., the deleted solr-with-dependencies.jar, which embedded
@@ -269,7 +283,7 @@ jobs:
           declare -A DENY=(
             ["ch.qos.logback:logback-classic"]='^1\.5\.(1[0-8]|[0-9])$|^1\.[0-4]\.'
             ["ch.qos.logback:logback-core"]='^1\.5\.(1[0-8]|[0-9])$|^1\.[0-4]\.'
-            ["io.netty:netty-common"]='^4\.1\.(0|[1-9][0-9]|1[01][0-9]|12[0-3])\.Final$'
+            ["io.netty:netty-common"]='^4\.1\.([0-9]|[1-9][0-9]|1[0-2][0-9]|13[0-5])\.Final$'
             ["org.apache.cxf:cxf-core"]='^[123]\.'
             ["com.fasterxml.jackson.core:jackson-databind"]='^2\.([0-9]|1[0-9]|20)\.'
             ["commons-io:commons-io"]='^2\.(1[0-9])\.'
@@ -326,3 +340,65 @@ jobs:
             exit 1
           fi
           echo "✅ pom.properties drift scan passed (parser ready; no jars currently in scope)."
+
+  osv-scan:
+    name: OSV dependency scan (informational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Informational: OSV can surface unfixable or test-only transitive CVEs,
+    # so a finding here is a triage signal, not an automatic merge block. The
+    # deterministic denylist (maven-dep-check) remains the hard gate.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install osv-scanner (pinned)
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/osv-scanner" \
+            https://github.com/google/osv-scanner/releases/download/v1.9.2/osv-scanner_linux_amd64
+          chmod +x "$RUNNER_TEMP/osv-scanner"
+      - name: Scan every pom.xml + package-lock.json against OSV.dev
+        run: |
+          "$RUNNER_TEMP/osv-scanner" --recursive --skip-git --format table . | tee osv-report.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: osv-report
+          path: osv-report.txt
+          retention-days: 30
+
+  trivy-image:
+    name: Trivy scan — Solr runtime image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Trivy (pinned)
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/v0.72.0/contrib/install.sh \
+            | sh -s -- -b "$RUNNER_TEMP" v0.72.0
+      - name: Build the Solr runtime image
+        run: docker build -t nemakiware-solr:ci docker/solr
+      - name: Trivy image scan — fail on fixable HIGH/CRITICAL
+        # ignore-unfixed keeps the gate actionable: only vulnerabilities with an
+        # available fix (i.e. "bump the base image") fail the build — exactly the
+        # class of issue that let the Solr base lag on 9.10.0 (CVE-2025-66516).
+        run: |
+          "$RUNNER_TEMP/trivy" image \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            --format table \
+            nemakiware-solr:ci
+      - name: Trivy image scan — full SARIF (informational)
+        if: always()
+        run: |
+          "$RUNNER_TEMP/trivy" image \
+            --format sarif \
+            --output trivy-solr.sarif \
+            nemakiware-solr:ci || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-solr-sarif
+          path: trivy-solr.sarif
+          retention-days: 30
