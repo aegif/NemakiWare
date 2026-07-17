@@ -127,6 +127,25 @@ jobs:
       - name: Stage WAR into image build context
         run: cp core/target/core.war docker/core/core.war
 
+      # CycloneDX SBOM for the Java application (complements the OCI image SBOM
+      # attestation added on the push steps below). Uploaded as a build artifact
+      # so each release has an auditable Java bill of materials.
+      - name: Generate CycloneDX SBOM (Java)
+        env:
+          MAVEN_USERNAME: ${{ github.actor }}
+          MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mvn -q org.cyclonedx:cyclonedx-maven-plugin:2.9.1:makeBom \
+            -f core/pom.xml -Pdevelopment,opencmis-github-packages -DskipTests \
+            -DoutputName=nemakiware-core-sbom -DoutputFormat=all
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: |
+            core/target/nemakiware-core-sbom.xml
+            core/target/nemakiware-core-sbom.json
+          retention-days: 90
+
       # ── Registry login + buildx ──────────────────────────────────────────
       - uses: docker/setup-buildx-action@v3
 
@@ -136,6 +155,14 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Trivy for pre-push image scanning (install.sh verifies the release
+      # checksum). Both images are built with load:true first, scanned, and
+      # only pushed if they pass — so a vulnerable image is never published.
+      - name: Install Trivy (pinned)
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/v0.72.0/contrib/install.sh \
+            | sh -s -- -b "$RUNNER_TEMP" v0.72.0
 
       # ── core image ───────────────────────────────────────────────────────
       - name: Compute core tags
@@ -151,13 +178,35 @@ jobs:
           fi
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
-      - name: Build & push core
+      - name: Build core for scan (load, no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/core
+          file: docker/core/Dockerfile.simple
+          load: true
+          tags: nemakiware-core:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy scan core image — fail on fixable HIGH/CRITICAL
+        run: |
+          "$RUNNER_TEMP/trivy" image \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --ignorefile .trivyignore.yaml \
+            --exit-code 1 \
+            --format table \
+            nemakiware-core:scan
+
+      - name: Build & push core (with SBOM + provenance attestation)
         uses: docker/build-push-action@v6
         with:
           context: docker/core
           file: docker/core/Dockerfile.simple
           platforms: ${{ steps.meta.outputs.platforms }}
           push: true
+          sbom: true
+          provenance: mode=max
           tags: ${{ steps.coretags.outputs.tags }}
           labels: |
             org.opencontainers.image.title=nemakiware-core
@@ -181,13 +230,35 @@ jobs:
           fi
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
-      - name: Build & push solr
+      - name: Build solr for scan (load, no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/solr
+          file: docker/solr/Dockerfile
+          load: true
+          tags: nemakiware-solr:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy scan solr image — fail on fixable HIGH/CRITICAL
+        run: |
+          "$RUNNER_TEMP/trivy" image \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --ignorefile .trivyignore.yaml \
+            --exit-code 1 \
+            --format table \
+            nemakiware-solr:scan
+
+      - name: Build & push solr (with SBOM + provenance attestation)
         uses: docker/build-push-action@v6
         with:
           context: docker/solr
           file: docker/solr/Dockerfile
           platforms: ${{ steps.meta.outputs.platforms }}
           push: true
+          sbom: true
+          provenance: mode=max
           tags: ${{ steps.solrtags.outputs.tags }}
           labels: |
             org.opencontainers.image.title=nemakiware-solr
