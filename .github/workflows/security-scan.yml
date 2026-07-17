@@ -43,6 +43,9 @@ on:
       - 'docker/**/Dockerfile*'
       - 'docker/**/*.properties'
       - '.github/workflows/security-scan.yml'
+      - 'osv-scanner.toml'
+      - '.trivyignore.yaml'
+      - 'SECURITY-EXCEPTIONS.md'
   pull_request:
     branches: [ master, main, develop, 'release/**' ]
     paths:
@@ -53,6 +56,9 @@ on:
       - 'docker/**/Dockerfile*'
       - 'docker/**/*.properties'
       - '.github/workflows/security-scan.yml'
+      - 'osv-scanner.toml'
+      - '.trivyignore.yaml'
+      - 'SECURITY-EXCEPTIONS.md'
   schedule:
     # Daily 02:00 UTC == 11:00 JST
     - cron: '0 2 * * *'
@@ -341,24 +347,70 @@ jobs:
           fi
           echo "✅ pom.properties drift scan passed (parser ready; no jars currently in scope)."
 
+  exception-expiry:
+    name: Security exception expiry
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Hard gate: fails if any documented risk-acceptance (osv-scanner.toml
+    # ignoreUntil / .trivyignore.yaml expiredAt) is past its date, forcing
+    # periodic re-review of accepted-but-unfixed advisories. Runs on the daily
+    # schedule so an exception "expires into" a red check over time.
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail on any expired risk-acceptance
+        run: |
+          python3 - <<'PY'
+          import re, datetime, pathlib, sys
+          today = datetime.date.today()
+          fails = []
+          checks = [
+              ("osv-scanner.toml",   r'ignoreUntil\s*=\s*(\d{4}-\d{2}-\d{2})'),
+              (".trivyignore.yaml",  r'expiredAt\s*:\s*(\d{4}-\d{2}-\d{2})'),
+          ]
+          for fname, pat in checks:
+              p = pathlib.Path(fname)
+              if not p.exists():
+                  continue
+              for m in re.finditer(pat, p.read_text()):
+                  d = datetime.date.fromisoformat(m.group(1))
+                  if d < today:
+                      fails.append(f"{fname}: exception dated {d} has expired")
+          if fails:
+              print("::error title=Expired security exception::" + "; ".join(fails))
+              sys.exit(1)
+          print("No expired security exceptions.")
+          PY
+
   osv-scan:
     name: OSV dependency scan (informational)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Informational: OSV can surface unfixable or test-only transitive CVEs,
-    # so a finding here is a triage signal, not an automatic merge block. The
-    # deterministic denylist (maven-dep-check) remains the hard gate.
+    # Informational for now: a full recursive OSV pass can surface unfixable or
+    # test-only transitive CVEs that need triage rather than an automatic block.
+    # FLIP CONDITION (to remove continue-on-error and make this a hard gate):
+    # once a run is clean except for advisories that each have a dated entry in
+    # osv-scanner.toml, set continue-on-error: false so new, un-accepted CVEs
+    # fail the build. The exception-expiry job already hard-fails expired ones.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - name: Install osv-scanner (pinned)
+      - name: Install osv-scanner (pinned + checksum-verified)
         run: |
-          curl -sSfL -o "$RUNNER_TEMP/osv-scanner" \
-            https://github.com/google/osv-scanner/releases/download/v1.9.2/osv-scanner_linux_amd64
+          set -euo pipefail
+          ver="v1.9.2"
+          base="https://github.com/google/osv-scanner/releases/download/${ver}"
+          curl -sSfL -o "$RUNNER_TEMP/osv-scanner" "${base}/osv-scanner_linux_amd64"
+          curl -sSfL -o "$RUNNER_TEMP/osv_sums" "${base}/osv-scanner_SHA256SUMS"
+          want=$(grep 'osv-scanner_linux_amd64$' "$RUNNER_TEMP/osv_sums" | awk '{print $1}')
+          got=$(sha256sum "$RUNNER_TEMP/osv-scanner" | awk '{print $1}')
+          [ -n "$want" ] && [ "$want" = "$got" ] || { echo "osv-scanner checksum mismatch: got=$got want=$want"; exit 1; }
           chmod +x "$RUNNER_TEMP/osv-scanner"
       - name: Scan every pom.xml + package-lock.json against OSV.dev
+        # --config points OSV at the documented, time-boxed ignore list so
+        # accepted no-fix advisories (e.g. the Solr GHSA) do not re-flag until
+        # their ignoreUntil date, at which point exception-expiry fails.
         run: |
-          "$RUNNER_TEMP/osv-scanner" --recursive --skip-git --format table . | tee osv-report.txt
+          "$RUNNER_TEMP/osv-scanner" --config=osv-scanner.toml --recursive --skip-git --format table . | tee osv-report.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -370,29 +422,35 @@ jobs:
     name: Trivy scan — Solr runtime image
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # NOTE: the core application image (Tomcat + LibreOffice, a larger CVE
+    # footprint) is Trivy-scanned in release-images.yml, where it is already
+    # built. Building the core WAR here just to scan would double a ~10 min
+    # build on every PR, so it is gated at release time instead.
     steps:
       - uses: actions/checkout@v4
-      - name: Install Trivy (pinned)
+      - name: Install Trivy (pinned; install.sh verifies the release checksum)
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/v0.72.0/contrib/install.sh \
             | sh -s -- -b "$RUNNER_TEMP" v0.72.0
       - name: Build the Solr runtime image
         run: docker build -t nemakiware-solr:ci docker/solr
       - name: Trivy image scan — fail on fixable HIGH/CRITICAL
-        # ignore-unfixed keeps the gate actionable: only vulnerabilities with an
-        # available fix (i.e. "bump the base image") fail the build — exactly the
-        # class of issue that let the Solr base lag on 9.10.0 (CVE-2025-66516).
+        # Gate on FIXABLE HIGH/CRITICAL (a base-image bump exists) minus the
+        # dated, reasoned exceptions in .trivyignore.yaml. Unfixed CVEs are not
+        # silently dropped — the informational step below records them in full.
         run: |
           "$RUNNER_TEMP/trivy" image \
             --severity HIGH,CRITICAL \
             --ignore-unfixed \
+            --ignorefile .trivyignore.yaml \
             --exit-code 1 \
             --format table \
             nemakiware-solr:ci
-      - name: Trivy image scan — full SARIF (informational)
+      - name: Trivy image scan — full report incl. unfixed (informational)
         if: always()
         run: |
           "$RUNNER_TEMP/trivy" image \
+            --severity HIGH,CRITICAL \
             --format sarif \
             --output trivy-solr.sarif \
             nemakiware-solr:ci || true
