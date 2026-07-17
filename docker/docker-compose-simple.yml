@@ -1,9 +1,11 @@
 # =============================================================================
 # DEVELOPMENT / EVALUATION compose — NOT for production.
-# Publishes service ports (CouchDB 5984, Solr 8983, core 8080) on 0.0.0.0, so
-# on a public host CouchDB/Solr would be reachable externally. For production
-# use docker-compose-prod.yml, which keeps CouchDB/Solr on the internal network
-# and binds core to 127.0.0.1 behind a TLS front. See deploy/README.md.
+# The backing services CouchDB (5984) and Solr (8983) are bound to 127.0.0.1
+# so they are not reachable off-host even on a public IP. The core app (8080)
+# is still published on 0.0.0.0 for LAN/dev access — front it with TLS or a
+# firewall on any shared host. For production use docker-compose-prod.yml,
+# which keeps CouchDB/Solr on the internal network and binds core to 127.0.0.1
+# behind a TLS front. See deploy/README.md.
 # =============================================================================
 services:
   # CouchDB 3.x - Current version
@@ -13,7 +15,7 @@ services:
   couchdb:
     image: couchdb:3.3.3
     ports:
-      - "5984:5984"
+      - "127.0.0.1:5984:5984"
     volumes:
       - couchdb_data:/opt/couchdb/data
       - ./couchdb/local.ini:/opt/couchdb/etc/local.d/compaction.ini
@@ -94,7 +96,7 @@ services:
   solr:
     build: ./solr
     ports:
-      - "8983:8983"
+      - "127.0.0.1:8983:8983"
     environment:
       - SOLR_HOME=/var/solr/data
       - SOLR_HEAP=512m

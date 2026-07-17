@@ -3,10 +3,21 @@ demo-data.json
 frame-*.png
 manifest-remote.json
 manifest.json
+# Any per-environment manifest (contains real user/group/document listings of a
+# live deployment — e.g. manifest-avenue.json — must never be committed).
+manifest-*.json
 monkey/api-fuzz-*.json
 monkey/edge*.json
 monkey/monkey-findings-*.json
 monkey/monkey-live-*.jsonl
 monkey/write-fuzz-*.json
+monkey/version-*.json
 output/
 report.md
+# Local demo-recording tooling: hardcodes a live host + credentials and holds
+# real-environment screenshots. Keep it out of the repo. Commit a sanitised
+# copy explicitly (git add -f) only after moving host/user/password to env vars.
+demo-connector/
+demo/voicepeak-script.txt
+voicepeak-script.txt
+*.DS_Store

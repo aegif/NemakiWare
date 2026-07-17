@@ -133,7 +133,7 @@ services:
 
   # Apache Solr Search Engine
   solr:
-    image: solr:9
+    image: solr:9.10.1 # pinned (>= 9.10.1 mitigates CVE-2025-66516); avoid the floating 9.x tag
     container_name: docker-solr-1
     ports:
       - "8983:8983"
