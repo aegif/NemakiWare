@@ -69,7 +69,10 @@
        The examples below can be used to load some solr-contribs along 
        with their external dependencies.
     -->
-  <lib dir="../../../contrib/extraction/lib" regex=".*\.jar" />
+  <!-- extraction (SolrCell/Tika) contrib lib removed — see the /update/extract
+       removal note below; NemakiWare does text extraction application-side. -->
+  <!-- <lib dir="../../../contrib/extraction/lib" regex=".*\.jar" /> -->
+
 
 
   <lib dir="../../../contrib/clustering/lib/" regex=".*\.jar" />
@@ -972,24 +975,15 @@
        </lst>
   </requestHandler>
 
-  <!-- Solr Cell Update Request Handler
-
-       http://wiki.apache.org/solr/ExtractingRequestHandler 
-
-    -->
-  <requestHandler name="/update/extract" 
-                  startup="lazy"
-                  class="solr.extraction.ExtractingRequestHandler" >
-    <lst name="defaults">
-      <str name="lowernames">true</str>
-      <str name="uprefix">ignored_</str>
-
-      <!-- capture link hrefs but ignore div attributes -->
-      <str name="captureAttr">true</str>
-      <str name="fmap.a">links</str>
-      <str name="fmap.div">ignored_</str>
-    </lst>
-  </requestHandler>
+  <!-- SolrCell / ExtractingRequestHandler (/update/extract) intentionally
+       REMOVED (security hardening). NemakiWare extracts document text
+       application-side with Apache Tika (TextExtractionService, patched
+       Tika 3.2.3) and posts plain text via the normal /update handler, so
+       in-Solr Tika extraction is never used. Removing the handler eliminates
+       the SolrCell XXE/CVE class (e.g. CVE-2025-66516) at the source. On the
+       solr:*-slim image the extraction contrib is not even present, so this
+       handler could only ClassNotFound-error anyway. Do not re-add it; index
+       pre-extracted text instead. -->
 
 
   <!-- Field Analysis Request Handler

@@ -251,6 +251,24 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Forbid the SolrCell /update/extract handler (XXE surface)
+        # NemakiWare extracts document text application-side with Tika and posts
+        # plain text via /update; the in-Solr ExtractingRequestHandler (SolrCell)
+        # was removed to eliminate the SolrCell XXE/CVE class (CVE-2025-66516).
+        # Fail if an ACTIVE handler or extraction <lib> is reintroduced
+        # (commented-out references and prose are allowed).
+        run: |
+          set -e
+          if grep -rniE 'class="solr\.extraction\.ExtractingRequestHandler"' docker/solr/solr \
+             | grep -vE '^\s*[^:]+:\s*<!--'; then
+            echo "::error title=SolrCell reintroduced::An active ExtractingRequestHandler (/update/extract) was found under docker/solr — do not re-enable in-Solr Tika extraction; index pre-extracted text instead."
+            exit 1
+          fi
+          if grep -rnE '^\s*<lib dir="[^"]*contrib/extraction' docker/solr/solr; then
+            echo "::error title=SolrCell lib reintroduced::An active extraction contrib <lib> was found under docker/solr."
+            exit 1
+          fi
+          echo "OK: no active SolrCell handler / extraction lib under docker/solr."
       - name: Forbid any jar under docker/solr (tracked or untracked)
         # Strict policy: docker/solr/ must contain only Dockerfile, pom.xml,
         # assembly descriptors, and Solr core configs. The Solr 9 image is
