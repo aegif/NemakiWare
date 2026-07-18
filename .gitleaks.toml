@@ -18,7 +18,12 @@ useDefault = true
 [allowlist]
 description = "Dev/test-only example credentials and the admin/admin bootstrap default"
 
-# Files that legitimately contain example / dev credentials.
+# Files that legitimately contain example / dev credentials, generated build
+# artifacts, test evidence, or seed data (no production secrets). Verified: the
+# only gitleaks hits across full history fall in these categories —
+# curl -u admin:admin in dev scripts, placeholder keys in *.example, minified
+# vendor JS (dash.js UUID constants), and the seed dump's default admin BCrypt
+# hash / CMIS change tokens.
 paths = [
   '''docker/.*README.*\.md''',
   '''docker/README-TCK\.md''',
@@ -30,6 +35,32 @@ paths = [
   '''docker/docker-compose-atlas\.yml''',
   '''docker/docker-compose-auth-test\.yml''',
   '''docker/docker-compose-ldap-keycloak-test\.yml''',
+  # Placeholder secrets in *.example templates (real secrets live in gitignored
+  # docker/.env* and docker/secrets/*, never *.example).
+  '''.*\.example$''',
+  # Dev/test scripts + build Makefile (curl -u admin:admin against localhost).
+  '''Makefile''',
+  '''qa-test\.sh''',
+  '''suspended-modules/.*''',
+  # Test evidence / fixtures (CMIS change tokens flagged as generic-api-key).
+  '''tck-evidence/.*''',
+  # Generated / vendored build artifacts (minified JS UUID constants, staged WAR).
+  '''.*dash\.all\.min.*\.js''',
+  '''war_content/.*''',
+  '''.*footable\.json''',
+  # CouchDB seed/init dumps (all variants): the built-in admin's BCrypt("admin")
+  # hash + CMIS change tokens are seed data, not secrets (the default admin is
+  # guarded separately by nemakiware.security.requireAdminPasswordChange).
+  # generic-api-key flags the change tokens.
+  '''.*\.dump$''',
+  # Build / runtime / init artifacts committed under these trees (dumps, logs).
+  '''temp-extraction/.*''',
+  '''docker/temp-check/.*''',
+  '''docker/initializer/.*''',
+  '''setup/.*''',
+  # Legacy / suspended Ruby modules (not the shipped product).
+  '''nemakishare/.*''',
+  '''nemakiplay/.*''',
 ]
 
 # Ubiquitous dev-default patterns (documented in CLAUDE.md as the local

@@ -17,7 +17,7 @@ locals {
   # auth + Caddy HTTPS). Appended after the stock bootstrap; reads the CLOUD_AUTH_*
   # / NIP_HOST / BEDROCK_* exports below.
   fullconfig = var.enable_full_config ? file("${path.module}/../../aws/nemaki-full-config.sh") : ""
-  user_data = <<-EOT
+  user_data  = <<-EOT
     #!/bin/bash
     export NEMAKI_REPO='${var.nemaki_repo}'
     export NEMAKI_REF='${var.nemaki_ref}'
