@@ -1,0 +1,44 @@
+# gitleaks configuration for NemakiWare.
+#
+# Extends the built-in ruleset and allowlists the known DEV/TEST-only
+# credential strings (documentation examples, Keycloak test realms, and the
+# admin/admin bootstrap default used only by the local dev composes). This
+# keeps the scan green on the current tree while still catching any NEW real
+# secret introduced in source, config, or test fixtures.
+#
+# Used by .github/workflows/gitleaks.yml (PR diff = blocking; full history =
+# scheduled). Real production secrets live only in gitignored files
+# (docker/.env*, docker/secrets/*), never in the tree.
+
+title = "NemakiWare gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Dev/test-only example credentials and the admin/admin bootstrap default"
+
+# Files that legitimately contain example / dev credentials.
+paths = [
+  '''docker/.*README.*\.md''',
+  '''docker/README-TCK\.md''',
+  '''docker/ldap/README\.md''',
+  '''.*/realm-export\.json''',
+  '''docker/keycloak/.*\.json''',
+  '''docker/realm-export\.json''',
+  # Dev/test-only compose files (idp / atlas / auth-test) with ${VAR:-admin} defaults.
+  '''docker/docker-compose-atlas\.yml''',
+  '''docker/docker-compose-auth-test\.yml''',
+  '''docker/docker-compose-ldap-keycloak-test\.yml''',
+]
+
+# Ubiquitous dev-default patterns (documented in CLAUDE.md as the local
+# credentials). These are NOT production secrets.
+regexes = [
+  '''admin:admin''',
+  '''admin:password''',
+  '''\$\{[A-Z_]+:-admin\}''',
+  '''KEYCLOAK_ADMIN_PASSWORD["=: ]+admin''',
+  # Commented-out example values in docker/core/nemakiware.properties.
+  '''#\s*purview\.(basic\.password|client\.secret)=.*''',
+]

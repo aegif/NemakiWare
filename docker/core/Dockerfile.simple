@@ -61,6 +61,27 @@ EXPOSE 8080
 # FINAL FIX: Copy server.xml again at the very end to ensure it's not overwritten
 COPY ./server.xml /usr/local/tomcat/conf/server.xml
 
+# Run as a dedicated non-root user (defense in depth: the app, its LibreOffice
+# subprocess, and any RCE run unprivileged). LibreOffice headless needs a
+# writable HOME for its profile; the app writes to the Tomcat work/temp/logs
+# dirs and to conf/ (e.g. the first-boot setup-token), so hand those to the
+# user. Read-only config files stay world-readable.
+RUN groupadd -r nemaki \
+    && useradd -r -g nemaki -m -d /home/nemaki -s /usr/sbin/nologin nemaki \
+    && chown -R nemaki:nemaki \
+       /usr/local/tomcat/webapps \
+       /usr/local/tomcat/work \
+       /usr/local/tomcat/temp \
+       /usr/local/tomcat/logs \
+       /usr/local/tomcat/conf \
+       /home/nemaki
+ENV HOME=/home/nemaki
+USER nemaki
+
+# Self-describing liveness even outside compose (mirrors docker-compose-prod.yml).
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=5 \
+  CMD curl -fsS http://localhost:8080/core || exit 1
+
 # Start Tomcat
 CMD ["catalina.sh", "run"]
 # Force rebuild at Wed Aug 14 22:01:00 JST 2025

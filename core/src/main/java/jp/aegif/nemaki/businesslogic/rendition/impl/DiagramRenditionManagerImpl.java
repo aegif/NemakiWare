@@ -105,10 +105,14 @@ public class DiagramRenditionManagerImpl implements ExtendedRenditionManager {
 	public ContentStream convertToSvg(ContentStream contentStream, String documentName) {
 		log.info("[DiagramRendition] Starting SVG conversion for: " + documentName);
 		try {
-			byte[] sourceBytes = contentStream.getStream().readAllBytes();
-			if (sourceBytes.length > MAX_SOURCE_BYTES) {
-				log.warn("[DiagramRendition] Diagram source too large (" + sourceBytes.length
-						+ " bytes, limit " + MAX_SOURCE_BYTES + ") for: " + documentName);
+			byte[] sourceBytes;
+			try {
+				// Fail fast at the cap so nothing beyond MAX_SOURCE_BYTES is buffered.
+				sourceBytes = jp.aegif.nemaki.util.io.BoundedIO.readBounded(
+						contentStream.getStream(), MAX_SOURCE_BYTES, "Diagram source");
+			} catch (java.io.IOException tooLarge) {
+				log.warn("[DiagramRendition] Diagram source unreadable or too large (limit "
+						+ MAX_SOURCE_BYTES + " bytes) for: " + documentName + " — " + tooLarge.getMessage());
 				return null;
 			}
 			String source = new String(sourceBytes, StandardCharsets.UTF_8);
@@ -216,7 +220,10 @@ public class DiagramRenditionManagerImpl implements ExtendedRenditionManager {
 	public String extractText(ContentStream contentStream, String documentName) {
 		log.info("[DiagramRendition] Extracting text from: " + documentName);
 		try {
-			String source = new String(contentStream.getStream().readAllBytes(), StandardCharsets.UTF_8);
+			String source = new String(
+					jp.aegif.nemaki.util.io.BoundedIO.readBounded(
+							contentStream.getStream(), MAX_SOURCE_BYTES, "Diagram source"),
+					StandardCharsets.UTF_8);
 			String mimeType = contentStream.getMimeType();
 			boolean isDot = isDotFormat(mimeType, documentName);
 

@@ -19,6 +19,10 @@ public class CadRenditionManagerImpl implements ExtendedRenditionManager {
 
 	private static final Log log = LogFactory.getLog(CadRenditionManagerImpl.class);
 
+	// Cap the in-memory buffering of CAD source content so a very large stored
+	// document cannot exhaust the heap during rendition (see BoundedIO).
+	private static final int MAX_CAD_SOURCE_BYTES = 50 * 1024 * 1024; // 50 MB
+
 	/** Map of extension → MIME type for CAD formats */
 	private static final Map<String, String> EXTENSION_TO_MIME = new LinkedHashMap<>();
 	static {
@@ -84,7 +88,7 @@ public class CadRenditionManagerImpl implements ExtendedRenditionManager {
 
 			byte[] inputBytes;
 			try (InputStream is = contentStream.getStream()) {
-				inputBytes = is.readAllBytes();
+				inputBytes = jp.aegif.nemaki.util.io.BoundedIO.readBounded(is, MAX_CAD_SOURCE_BYTES, "CAD source");
 			}
 
 			// Use mathacad to convert
@@ -123,7 +127,7 @@ public class CadRenditionManagerImpl implements ExtendedRenditionManager {
 
 			byte[] inputBytes;
 			try (InputStream is = contentStream.getStream()) {
-				inputBytes = is.readAllBytes();
+				inputBytes = jp.aegif.nemaki.util.io.BoundedIO.readBounded(is, MAX_CAD_SOURCE_BYTES, "CAD source");
 			}
 
 			Object cadDoc = readCadDocument(ext, inputBytes);
@@ -157,7 +161,7 @@ public class CadRenditionManagerImpl implements ExtendedRenditionManager {
 
 			byte[] inputBytes;
 			try (InputStream is = contentStream.getStream()) {
-				inputBytes = is.readAllBytes();
+				inputBytes = jp.aegif.nemaki.util.io.BoundedIO.readBounded(is, MAX_CAD_SOURCE_BYTES, "CAD source");
 			}
 
 			Object cadDoc = readCadDocument(ext, inputBytes);

@@ -1718,15 +1718,8 @@ public class TypeResource extends ResourceBase {
 			log.debug("Parse method called for repository: " + repositoryId);
 		}
 		
-		SAXReader saxReader = new SAXReader();
-		// XXE protection: disable external entities to prevent XML External Entity attacks
-		try {
-			saxReader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-			saxReader.setFeature("http://xml.org/sax/features/external-general-entities", false);
-			saxReader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-		} catch (org.xml.sax.SAXException e) {
-			throw new DocumentException("Failed to configure XXE protection on SAXReader", e);
-		}
+		// XXE-safe reader via the shared hardened factory (SecureXml).
+		SAXReader saxReader = jp.aegif.nemaki.util.xml.SecureXml.newSecureSaxReader();
 		Document document = saxReader.read(is);
 		Element model = document.getRootElement();
 		

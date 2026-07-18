@@ -105,10 +105,13 @@ public class SetupAuthResource {
                 return Response.ok("{\"reachable\":false,\"error\":\"OIDC discovery endpoint not available\"}").build();
             }
 
-            // Parse discovery document to extract token_endpoint
+            // Parse discovery document to extract token_endpoint. Cap the body so
+            // a hostile/misbehaving OIDC endpoint cannot exhaust the heap.
             String responseBody;
             try (var is = conn.getInputStream()) {
-                responseBody = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                responseBody = new String(
+                        jp.aegif.nemaki.util.io.BoundedIO.readBounded(is, 1024 * 1024, "OIDC discovery document"),
+                        StandardCharsets.UTF_8);
             }
             conn.disconnect();
 
