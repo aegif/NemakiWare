@@ -981,19 +981,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * try-with-resources).
      */
     static byte[] readBounded(java.io.InputStream in, int maxBytes, String what) throws java.io.IOException {
-        ByteArrayOutputStream buf = new ByteArrayOutputStream();
-        byte[] chunk = new byte[8192];
-        int n;
-        long total = 0;
-        while ((n = in.read(chunk)) != -1) {
-            total += n;
-            if (total > maxBytes) {
-                throw new java.io.IOException(
-                        what + " exceeds maximum size of " + (maxBytes / (1024 * 1024)) + " MB");
-            }
-            buf.write(chunk, 0, n);
-        }
-        return buf.toByteArray();
+        // Delegates to the shared bounded-read utility (single source of truth).
+        return jp.aegif.nemaki.util.io.BoundedIO.readBounded(in, maxBytes, what);
     }
 
     @Override
