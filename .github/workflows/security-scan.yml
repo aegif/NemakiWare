@@ -46,6 +46,11 @@ on:
       - 'osv-scanner.toml'
       - '.trivyignore.yaml'
       - 'SECURITY-EXCEPTIONS.md'
+      # Source paths so the XML-hardening / credential gates also run on
+      # code-only PRs (previously they were skipped when no manifest changed).
+      - 'core/src/main/java/**'
+      - 'common/src/main/java/**'
+      - 'solr/src/main/java/**'
   pull_request:
     branches: [ master, main, develop, 'release/**' ]
     paths:
@@ -59,6 +64,11 @@ on:
       - 'osv-scanner.toml'
       - '.trivyignore.yaml'
       - 'SECURITY-EXCEPTIONS.md'
+      # Source paths so the XML-hardening / credential gates also run on
+      # code-only PRs (previously they were skipped when no manifest changed).
+      - 'core/src/main/java/**'
+      - 'common/src/main/java/**'
+      - 'solr/src/main/java/**'
   schedule:
     # Daily 02:00 UTC == 11:00 JST
     - cron: '0 2 * * *'
@@ -364,6 +374,27 @@ jobs:
             exit 1
           fi
           echo "✅ pom.properties drift scan passed (parser ready; no jars currently in scope)."
+
+  xml-hardening:
+    name: XML parser hardening gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Enforce the "construct XML parsers only via SecureXml" invariant so the
+    # XXE hardening cannot drift or be dropped by a copy-pasted new sink.
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Forbid raw XML parser construction outside SecureXml
+        run: |
+          set -e
+          pattern='DocumentBuilderFactory\.newInstance|new[[:space:]]+SAXReader\(|XMLInputFactory\.newInstance|SAXParserFactory\.newInstance'
+          hits=$(grep -rnE "$pattern" core/src/main/java common/src/main/java 2>/dev/null \
+                 | grep -v 'util/xml/SecureXml\.java' || true)
+          if [ -n "$hits" ]; then
+            echo "::error title=Unhardened XML parser::Construct XML parsers via jp.aegif.nemaki.util.xml.SecureXml (XXE hardening), not raw factory/reader constructors:"
+            echo "$hits" | sed 's/^/  /'
+            exit 1
+          fi
+          echo "OK: all XML parser construction routes through SecureXml."
 
   exception-expiry:
     name: Security exception expiry

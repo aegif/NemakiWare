@@ -471,19 +471,9 @@ public class AuthTokenResource extends ResourceBase{
 				logger.debug("SAML response was not deflate-compressed, using raw bytes");
 			}
 
-			// XXE-safe XML parsing (same pattern as extractUserNameFromSAMLResponse)
-			DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+			// XXE-safe XML parsing via the shared hardened factory (SecureXml).
+			DocumentBuilderFactory factory = jp.aegif.nemaki.util.xml.SecureXml.newSecureDocumentBuilderFactory();
 			factory.setNamespaceAware(true);
-			factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-			factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-			factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-			factory.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true);
-			try {
-				factory.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_DTD, "");
-				factory.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
-			} catch (IllegalArgumentException e) {
-				logger.debug("XML parser does not support ACCESS_EXTERNAL_DTD/SCHEMA (XXE prevented via other features)");
-			}
 
 			DocumentBuilder builder = factory.newDocumentBuilder();
 			Document document = builder.parse(new ByteArrayInputStream(xmlBytes));

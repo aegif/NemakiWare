@@ -242,15 +242,9 @@ public class ZipImporter {
      * {@code disallow-doctype-decl=true} without any test failure.
      */
     static SAXReader configureHardenedSaxReader() throws DocumentException {
-        SAXReader reader = new SAXReader();
-        try {
-            reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            reader.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            reader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-        } catch (org.xml.sax.SAXException e) {
-            throw new DocumentException("Failed to configure XXE protection on SAXReader", e);
-        }
-        return reader;
+        // Delegates to the single hardened-reader source of truth. Retained as a
+        // thin wrapper so existing callers/tests keep their entry point.
+        return jp.aegif.nemaki.util.xml.SecureXml.newSecureSaxReader();
     }
 
     /**
