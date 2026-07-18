@@ -60,7 +60,7 @@
     "@types/pako": "^2.0.4",
     "@types/react-image-gallery": "^1.2.4",
     "@vitejs/plugin-react": "^5.1.1",
-    "jsdom": "^27.3.0",
+    "jsdom": "^29.1.1",
     "jszip": "^3.10.1",
     "vite": "^7.2.2",
     "vitest": "^4.0.16"
