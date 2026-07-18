@@ -28,7 +28,7 @@
 		<opencmis.github.packages.repository.id>github-opencmis</opencmis.github.packages.repository.id>
 		<jersey.version>4.0.0</jersey.version>
 		<org.apache.chemistry.opencmis.version.14>0.14.0</org.apache.chemistry.opencmis.version.14>
-		<aws.sdk.version>2.48.2</aws.sdk.version>
+		<aws.sdk.version>2.48.3</aws.sdk.version>
 		<surefire.excludedGroups>atlas-integration</surefire.excludedGroups>
 	</properties>
 
