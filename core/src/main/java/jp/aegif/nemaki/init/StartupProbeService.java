@@ -178,6 +178,19 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
             // CouchDB reachable — check all main repository DBs
             List<RepositoryOverview> repos = probeRepositories(url, user, pass);
             evaluateRepositoryState(repos, "startup");
+
+            // Admin-password policy (opt-in, for non-dev deployments): refuse to
+            // leave Setup Mode while the built-in 'admin' account still has the
+            // default password, so operators cannot run with admin/admin. On the
+            // initial wizard the AdminStep changes it; this backstops a restart
+            // where the default was never changed.
+            if (!setupRequired.get() && isRequireAdminPasswordChange()
+                    && adminHasDefaultPassword(url, user, pass)) {
+                setupRequired.set(true);
+                log.error("SECURITY: the 'admin' account still has the DEFAULT password and "
+                        + "nemakiware.security.requireAdminPasswordChange=true — staying in Setup Mode "
+                        + "until it is changed (POST /core/api/v1/setup/admin/change-password).");
+            }
         }
 
         // Always publish token when entering Setup Mode — including DB_UNREACHABLE.
@@ -885,6 +898,59 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
     private String basicAuth(String user, String pass) {
         String credentials = user + ":" + pass;
         return "Basic " + Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Opt-in policy flag (default false, so dev / existing deployments are
+     * unaffected). Injected as a -D system property by the production compose.
+     */
+    private boolean isRequireAdminPasswordChange() {
+        return Boolean.parseBoolean(
+                System.getProperty("nemakiware.security.requireAdminPasswordChange", "false"));
+    }
+
+    /**
+     * True if the built-in 'admin' account in ANY main repository still verifies
+     * against the default password "admin". Read-only; failures are treated as
+     * "cannot determine" (returns false) so a transient CouchDB hiccup never
+     * traps a correctly-configured deployment in Setup Mode.
+     */
+    private boolean adminHasDefaultPassword(String url, String user, String pass) {
+        Set<String> repos = mainRepositoryIds;
+        if (repos == null || repos.isEmpty()) {
+            return false;
+        }
+        String authHeader = basicAuth(user, pass);
+        for (String dbName : repos) {
+            try {
+                String viewUrl = url + "/" + dbName
+                        + "/_design/_repo/_view/admin?key=%22admin%22&reduce=false";
+                HttpURLConnection conn = openGet(viewUrl, authHeader);
+                if (conn.getResponseCode() != 200) {
+                    conn.disconnect();
+                    continue;
+                }
+                String body = readResponse(conn);
+                conn.disconnect();
+                JsonNode result = mapper.readTree(body);
+                if (result.has("rows")) {
+                    for (JsonNode row : result.get("rows")) {
+                        JsonNode doc = row.get("value");
+                        if (doc != null && doc.has("userId")
+                                && "admin".equals(doc.get("userId").asText())
+                                && doc.has("passwordHash")) {
+                            String hash = doc.get("passwordHash").asText();
+                            if (jp.aegif.nemaki.util.AuthenticationUtil.passwordMatches("admin", hash)) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("adminHasDefaultPassword check failed for " + dbName + ": " + e.getMessage());
+            }
+        }
+        return false;
     }
 
     private String resolveCouchDbUrl() {
