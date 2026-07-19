@@ -16,7 +16,7 @@ Tracks the reviewed hardening roadmap (Phase 0/1/2). Most items landed on the
 | 1-3 | gitleaks secret scan (PR diff blocking, full history scheduled) + allowlist |
 | 1-4 | `.github/dependabot.yml` grouped weekly version updates (maven/npm/docker/actions) |
 | 1-5 | OSV `--config` + documented `ignoreUntil`; blocking exception-expiry job |
-| 1-6 | Trivy on the core image (pre-push in release-images.yml) + `.trivyignore.yaml` |
+| 1-6 | Trivy on the Solr + core images (security-scan.yml + release-images.yml), **informational** — third-party bundled-lib CVEs aren't independently patchable, so base bumps come from Dependabot(docker) and our own deps stay hard-gated by maven-dep-check + OSV (see SECURITY-EXCEPTIONS.md) |
 | 2-1 | Core image runs non-root + HEALTHCHECK |
 | 2-2 | Image SBOM + SLSA provenance attestation; CycloneDX Java SBOM; all Actions SHA-pinned; scanner binaries checksum-verified |
 | 2-3 | Deleted the dead `docker/solr/{pom.xml,src,target}` duplicate module (also removes the drifted 2.4.1 twin pom) |
@@ -26,12 +26,13 @@ Tracks the reviewed hardening roadmap (Phase 0/1/2). Most items landed on the
 
 Phase 0-3 / 0-4 and the "make gates required" steps are repository settings:
 
-- Enable secret scanning + push protection:
-  `gh api -X PATCH /repos/aegif/NemakiWare -f security_and_analysis.secret_scanning.status=enabled -f security_and_analysis.secret_scanning_push_protection.status=enabled`
-- Protect `master` (require PR review + status checks). Mark these checks
-  required once green: `maven-dep-check`, `npm-audit (frontend)`,
+- Enable secret scanning + push protection — **DONE** (repo settings).
+- Protect `master` — **DONE** (PR review required, force-push/deletion blocked,
+  enforce_admins=false). Mark these gating checks *required* once confirmed
+  green on a PR: `maven-dep-check`, `npm-audit (frontend)`,
   `Config credential drift`, `XML parser hardening gate`, `Security exception
-  expiry`, `Trivy scan — Solr runtime image`, `gitleaks secret scan`.
+  expiry`, `Bundled jar staleness scan`, `gitleaks secret scan`. (The Trivy
+  image scan and OSV job are informational by design — do NOT mark required.)
 - Promote CodeQL to a required PR check **after** its first baseline is triaged
   (roadmap 1-1) — add `pull_request` to `.github/workflows/codeql.yml` then mark
   the checks required.

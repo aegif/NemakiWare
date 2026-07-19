@@ -16,4 +16,13 @@
 #     expiredAt: 2027-01-31
 #     statement: "Why this fixable finding is accepted for now. See SECURITY-EXCEPTIONS.md."
 
+# NOTE: the image Trivy scans in security-scan.yml / release-images.yml are
+# INFORMATIONAL (report, not a hard gate) — see the rationale in those
+# workflows and docs/SECURITY-HARDENING-STATUS.md. The Solr/core images are
+# dominated by third-party bundled libraries (Jetty, ZooKeeper, Netty, Jackson,
+# Tomcat, …) that we cannot patch independently of a new upstream image, so
+# gating on them would be non-actionable churn. Base-image bumps come from
+# Dependabot (docker); our own Java deps are hard-gated by maven-dep-check +
+# OSV. This file is retained for any future case where a specific image finding
+# should be explicitly suppressed with a dated reason.
 vulnerabilities: []
