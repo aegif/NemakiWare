@@ -53,8 +53,8 @@ jobs:
       COUCHDB_USER: admin
       COUCHDB_PASSWORD: password
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -73,7 +73,7 @@ jobs:
           mvn test \
             -Dtest='ResourceBaseCsrfProtectionTest,CanonicalImportServiceTest,WebhookServiceTest,WebhookConfigTest,WebhookConfigParserTest,WebhookDeliveryServiceTest,HttpWebhookDispatcherTest,WebhookEventMatcherTest,ChildEventBatchProcessorTest,LiteralTypeValidatorTest,SolrPredicateWalkerMultilingualTest,NavigationPaginationTest,FilesystemImporterTest,ImportExportResourceTest,SlackConnectorAdapterTest,TeamsConnectorAdapterTest,ChatworkConnectorAdapterTest,MattermostConnectorAdapterTest,NotionConnectorAdapterTest,SalesforceConnectorAdapterTest,BoxDropboxAdapterTest' \
             -f core/pom.xml -Pdevelopment,opencmis-github-packages
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with: { name: unit-test-reports, path: core/target/surefire-reports/, retention-days: 7 }
 
@@ -90,8 +90,8 @@ jobs:
       COUCHDB_USER: admin
       COUCHDB_PASSWORD: password
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -128,7 +128,7 @@ jobs:
             -f core/pom.xml -Pdevelopment,opencmis-github-packages \
             -Dmaven.test.failure.ignore=false
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with: { name: integration-reports, path: core/target/surefire-reports/, retention-days: 14 }
 
@@ -152,8 +152,8 @@ jobs:
       COUCHDB_USER: admin
       COUCHDB_PASSWORD: password
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -191,7 +191,7 @@ jobs:
             -f core/pom.xml -Pdevelopment,opencmis-github-packages \
             -Dmaven.test.failure.ignore=false
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with: { name: tck-reports, path: core/target/surefire-reports/, retention-days: 14 }
 
