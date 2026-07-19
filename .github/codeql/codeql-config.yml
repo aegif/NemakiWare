@@ -1,0 +1,22 @@
+name: "NemakiWare CodeQL config"
+
+# Run the security-extended query pack (declared here rather than in the
+# workflow so the query-filters below apply).
+queries:
+  - uses: security-extended
+
+query-filters:
+  # Exclude java/log-injection (CWE-117). The application log appenders use
+  # net.logstash.logback.encoder.LogstashEncoder (JSON) for STDOUT + the rolling
+  # FILE appender (see core/.../WEB-INF/classes/logback.xml), and the audit /
+  # lineage appenders log content that AuditLogger has already JSON-serialised.
+  # JSON string encoding escapes CR/LF to \n, so a newline in user-controlled
+  # data (username, object id, repository id, …) stays inside the "message"
+  # field and cannot forge a new log line — the CWE-117 impact is structurally
+  # prevented. CodeQL does not model the encoder as a sanitizer, so it flags
+  # 1000+ log call sites as tainted; per-site sanitization of those is
+  # disproportionate and redundant given the encoder. Documented acceptance in
+  # SECURITY-EXCEPTIONS.md. (Re-enable if the log encoders ever change to a
+  # plain-text layout that emits raw messages.)
+  - exclude:
+      id: java/log-injection

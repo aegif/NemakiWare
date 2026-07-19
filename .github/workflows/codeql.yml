@@ -12,6 +12,8 @@ name: CodeQL
 on:
   push:
     branches: [ master ]
+  pull_request:
+    branches: [ master, main, 'release/**' ]
   schedule:
     - cron: '30 2 * * 1'   # weekly, Monday 02:30 UTC
   workflow_dispatch:
@@ -44,7 +46,7 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-          queries: security-extended
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@b7351df727350dca84cb9d725d57dcf5bc82ba26 # v3

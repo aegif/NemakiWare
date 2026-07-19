@@ -89,7 +89,8 @@ public class FilesystemStorageAdapter implements LongTermStorageAdapter {
 
                 // Best-effort chattr +i (Linux only)
                 try {
-                    ProcessBuilder pb = new ProcessBuilder("chattr", "+i", filePath.toString());
+                    // Absolute path so a manipulated PATH cannot substitute a malicious "chattr".
+                    ProcessBuilder pb = new ProcessBuilder("/usr/bin/chattr", "+i", filePath.toString());
                     Process process = pb.start();
                     int exitCode = process.waitFor();
                     if (exitCode == 0) {

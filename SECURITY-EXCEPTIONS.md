@@ -40,6 +40,23 @@ Solr is additionally never exposed to untrusted clients (bound to `127.0.0.1`
 in dev, off-host internal network in prod), so its bundled-server CVEs
 (request smuggling, etc.) are not reachable from outside the app.
 
+## CodeQL query exclusions
+
+- **java/log-injection (CWE-117)** — excluded via
+  `.github/codeql/codeql-config.yml`. The application log appenders use
+  `LogstashEncoder` (JSON) for STDOUT + the rolling file; audit / lineage
+  appenders log content AuditLogger has already JSON-serialised. JSON string
+  encoding escapes CR/LF, so newline-based log forgery is structurally
+  prevented — a newline in a username / object id stays inside the `"message"`
+  field. CodeQL doesn't model the encoder as a sanitizer and flagged 1000+ call
+  sites; per-site sanitization is disproportionate and redundant. Re-enable if
+  the log layout ever changes to a plain-text (non-JSON) encoder.
+
+All other CodeQL findings (high + the 34 non-log-injection medium) were
+individually triaged and dismissed with per-alert reasons, or fixed in code
+(e.g. `FilesystemStorageAdapter` now invokes `/usr/bin/chattr` by absolute
+path).
+
 ## Process
 
 1. A scanner (OSV / Trivy / Dependabot) flags an advisory.
