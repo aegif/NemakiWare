@@ -27,7 +27,7 @@
     "react-image-gallery": "^1.4.0",
     "react-pdf": "^10.0.1",
     "react-player": "^3.2.0",
-    "react-router-dom": "^6.8.0",
+    "react-router-dom": "^7.18.1",
     "swagger-ui-react": "^5.31.0",
     "typescript": "^5.0.0"
   },
