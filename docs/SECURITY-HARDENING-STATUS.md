@@ -37,6 +37,25 @@ Phase 0-3 / 0-4 and the "make gates required" steps are repository settings:
   (roadmap 1-1) — add `pull_request` to `.github/workflows/codeql.yml` then mark
   the checks required.
 
+## Post-merge follow-ups (done)
+
+- **Branch-protection required checks** — set on `master`: `gitleaks secret
+  scan`, `Maven dependency drift check`, `npm audit (frontend)`, `Config
+  credential drift`, `XML parser hardening gate`, `Security exception expiry`,
+  `Bundled jar staleness scan`. security-scan.yml now runs on every PR (paths
+  filter removed on `pull_request`) so these never hang "pending". The
+  informational Trivy/OSV jobs are intentionally NOT required.
+- **CodeQL high-severity baseline triaged — 0 open high.** All 18 high alerts
+  reviewed and dismissed with reasons: 10 tainted-arithmetic (bounded
+  pagination — Math.min + loop/subList guards, overflow yields an empty page
+  not an OOB), 2 uncontrolled-arithmetic (fixed-length salt/iv + internal
+  config plaintext), 4 comparison-with-wider-type (small bounded counts),
+  1 weak-crypto (MD5 is verify-only for pre-BCrypt accounts), 1 TOCTOU (IMAP
+  IDLE loop with exception handling + backoff).
+- **CodeQL medium (82) triage + PR-required promotion** — remaining. Add
+  `pull_request` to codeql.yml and mark the Analyze checks required only after
+  the medium baseline is reviewed.
+
 ## Deferred (with rationale)
 
 - **2-4 Maven parent-POM / BOM consolidation** — the *concrete* drift the review
