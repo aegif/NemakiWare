@@ -20,9 +20,13 @@ echo "=== Checking CSRF header compliance for /rest/repo/ mutating calls ==="
 check_file() {
     local file="$1"
 
-    # Skip self, generated dirs
+    # Skip self, generated dirs, and dev/test tooling. tools/test-env holds
+    # demo-seeding / fuzz scripts that post to MCP (/mcp) and webhook-receiver
+    # endpoints (CSRF-exempt) and some intentionally omit the header to test
+    # rejection — they are not product REST callers, so the guard skips them.
     case "$file" in
         */node_modules/*|*/target/*|*/.git/*|*/check-csrf-headers.sh) return ;;
+        */tools/test-env/*) return ;;
     esac
 
     # Python: check requests.post/put/delete calls that target REST API.
@@ -73,7 +77,7 @@ check_file() {
 
 while IFS= read -r file; do
     check_file "$file"
-done < <(find . \( -name "*.sh" -o -name "*.md" -o -name "*.py" \) -not -path "*/node_modules/*" -not -path "*/target/*" -not -path "*/.git/*")
+done < <(find . \( -name "*.sh" -o -name "*.md" -o -name "*.py" \) -not -path "*/node_modules/*" -not -path "*/target/*" -not -path "*/.git/*" -not -path "*/tools/test-env/*")
 
 echo
 if [ "$VIOLATIONS" -eq 0 ]; then
