@@ -21,6 +21,7 @@ Tracks the reviewed hardening roadmap (Phase 0/1/2). Most items landed on the
 | 2-2 | Image SBOM + SLSA provenance attestation; CycloneDX Java SBOM; all Actions SHA-pinned; scanner binaries checksum-verified |
 | 2-3 | Deleted the dead `docker/solr/{pom.xml,src,target}` duplicate module (also removes the drifted 2.4.1 twin pom) |
 | 2-5 | `BoundedIO` shared bounded-read util applied to CAD/Diagram rendition + OIDC discovery |
+| 2-7 | Brute-force login throttle (`LoginThrottle`) on the CMIS Basic-auth choke point — per repo+user+IP, failures-only, default-on/tunable; TCK 38/38 + Playwright 935/1-flaky/0-fail verified |
 
 ## Requires GitHub repo-admin settings (not code) — recommended commands
 
@@ -65,15 +66,6 @@ Phase 0-3 / 0-4 and the "make gates required" steps are repository settings:
   inherit one version source) is a broad multi-pom refactor; per the review it
   should land as its own small PR(s), not bundled here where it could destabilise
   the build.
-
-- **2-7 Login brute-force protection** — evaluated: SAML has rate limiting
-  (`SamlInitiateServlet`), but password / CMIS Basic-auth login has **no**
-  failed-attempt throttle or lockout (`AuthenticationServiceImpl`,
-  `AuthResource`, `McpAuthenticationHandler` — three separate entry points, the
-  same multi-path shape as the historical `allowedAuthMethods` bypass). A
-  correct fix needs a shared choke point + per-user/IP counters + a
-  single-replica caveat, and touches the highest-blast-radius path, so it is
-  scheduled as a dedicated, test-first change rather than a rushed addition.
 
 - **Base-image digest pinning (2-6)** — lower priority than the CI-integrity
   pins already done (Actions SHA-pinned, scanner binaries checksum-verified);
