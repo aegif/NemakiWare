@@ -53,9 +53,16 @@ Phase 0-3 / 0-4 and the "make gates required" steps are repository settings:
   config plaintext), 4 comparison-with-wider-type (small bounded counts),
   1 weak-crypto (MD5 is verify-only for pre-BCrypt accounts), 1 TOCTOU (IMAP
   IDLE loop with exception handling + backoff).
-- **CodeQL medium (82) triage + PR-required promotion** — remaining. Add
-  `pull_request` to codeql.yml and mark the Analyze checks required only after
-  the medium baseline is reviewed.
+- **CodeQL full baseline triaged → 0 open, and PR-required promotion DONE.**
+  The full security-extended scan surfaced 16 critical + 265 high + 1048
+  log-injection medium. Handled: log-injection excluded via codeql-config
+  (JSON log encoder escapes CR/LF → forgery structurally prevented, auto-closed
+  1048); real fixes for relative-path-command (`/usr/bin/chattr`) and
+  regex-injection (`Pattern.quote`); all other high/critical/medium dismissed
+  with per-alert reasons (admin-config SSRF, metadata sensitive-log, authz-check
+  bypass FPs, escaped XSS, bounded ReDoS, vendored/test). CodeQL now runs on PRs
+  and `Analyze (java-kotlin)` + `Analyze (javascript-typescript)` are required
+  status checks (9 required total).
 
 ## Deferred (with rationale)
 
