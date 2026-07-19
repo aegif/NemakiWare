@@ -52,23 +52,11 @@ on:
       - 'common/src/main/java/**'
       - 'solr/src/main/java/**'
   pull_request:
+    # No paths filter on PRs: the gating jobs (credential drift, XML-hardening,
+    # exception-expiry, dependency drift, npm audit, bundled-jar) run on EVERY
+    # PR so they can be marked as required status checks without a
+    # never-satisfied "pending" on PRs that don't touch a filtered path.
     branches: [ master, main, develop, 'release/**' ]
-    paths:
-      - '**/pom.xml'
-      - 'core/src/main/webapp/ui/package.json'
-      - 'core/src/main/webapp/ui/package-lock.json'
-      - 'docker/**/*.yml'
-      - 'docker/**/Dockerfile*'
-      - 'docker/**/*.properties'
-      - '.github/workflows/security-scan.yml'
-      - 'osv-scanner.toml'
-      - '.trivyignore.yaml'
-      - 'SECURITY-EXCEPTIONS.md'
-      # Source paths so the XML-hardening / credential gates also run on
-      # code-only PRs (previously they were skipped when no manifest changed).
-      - 'core/src/main/java/**'
-      - 'common/src/main/java/**'
-      - 'solr/src/main/java/**'
   schedule:
     # Daily 02:00 UTC == 11:00 JST
     - cron: '0 2 * * *'
