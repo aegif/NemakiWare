@@ -64,6 +64,30 @@ Phase 0-3 / 0-4 and the "make gates required" steps are repository settings:
   and `Analyze (java-kotlin)` + `Analyze (javascript-typescript)` are required
   status checks (9 required total).
 
+## Dependabot version-update backlog (triage)
+
+`.github/dependabot.yml` opened ~31 PRs on first run. Note: their "failing" CI
+is the old **hard-gate** Trivy job (now informational + not required) — the
+required checks actually pass. Triaged:
+
+- **Merged (trivially safe):** jakarta.xml.bind-api 4.0.4→4.0.5 (#450, #458),
+  axios 1.16→1.18 (#454, security-relevant).
+- **Safe minor/patch, rebased (merge one-at-a-time — npm lockfile conflicts):**
+  oidc-client-ts (#448), monaco-editor (#456), picomatch (#428),
+  @playwright/test (#446).
+- **Breaking majors — need individual A+C-style verification (build + TCK + E2E
+  each):** solr 9.10.1→**10.0.0** (#432, Lucene 10 / Jetty 12 / config changes —
+  the report advised against this major with no CVE driver), antd 5→**6** (#444),
+  react-router-dom 6→**7** (#447), i18next 25→**26** (#451), jsdom 27→**29**
+  (#455), jakarta.annotation 2→**3** (#452/#457, Jakarta EE 11 alignment), the
+  GitHub-Actions majors (checkout 4→7 #436, upload-artifact 4→7 #431,
+  setup-java 4→5 #438, codeql-action 3→4 #434, build-push 6→7 #433).
+- **Maven security groups — verify individually (they move the pinned security
+  deps + must stay above the drift-check floors):** jackson (#435), netty
+  (#437), logback-slf4j (#440), aws-sdk (#441), solr-lucene (#443),
+  apache-commons (#445), plus react (#439) / vite-build (#442) / testing (#449)
+  / maven (#427) groups.
+
 ## Deferred (with rationale)
 
 - **2-4 Maven parent-POM / BOM consolidation** — the *concrete* drift the review
