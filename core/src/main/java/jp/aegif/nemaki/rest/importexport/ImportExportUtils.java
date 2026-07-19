@@ -300,8 +300,11 @@ public final class ImportExportUtils {
 
     public static boolean isVersionFileFor(String path, String baseFileName) {
         String fileName = getFileName(path);
-        // Only match actual version content files like "file.txt.v1", not "file.txt.v1.meta.json"
-        return fileName.matches(baseFileName + "\\.v\\d+$");
+        // Only match actual version content files like "file.txt.v1", not "file.txt.v1.meta.json".
+        // Quote baseFileName (an import-archive-supplied name) so its characters are matched
+        // literally — otherwise regex metacharacters in the name would be a regex-injection /
+        // ReDoS vector.
+        return fileName.matches(java.util.regex.Pattern.quote(baseFileName) + "\\.v\\d+$");
     }
 
     public static int extractVersionNumber(String path) {

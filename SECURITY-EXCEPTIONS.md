@@ -52,10 +52,21 @@ in dev, off-host internal network in prod), so its bundled-server CVEs
   sites; per-site sanitization is disproportionate and redundant. Re-enable if
   the log layout ever changes to a plain-text (non-JSON) encoder.
 
-All other CodeQL findings (high + the 34 non-log-injection medium) were
-individually triaged and dismissed with per-alert reasons, or fixed in code
-(e.g. `FilesystemStorageAdapter` now invokes `/usr/bin/chattr` by absolute
-path).
+All other CodeQL findings were individually triaged. Fixed in code:
+`FilesystemStorageAdapter` invokes `/usr/bin/chattr` by absolute path
+(relative-path-command); `ImportExportUtils.isVersionFileFor` now
+`Pattern.quote`s the archive-supplied base name (regex-injection). Dismissed
+with per-alert reasons: **critical java/ssrf (15)** — all outbound to
+admin-configured endpoints (CouchDB URL / Purview / OIDC discovery) set during
+authenticated setup, not untrusted input (opt-in SsrfGuard covers
+internet-facing); **java/sensitive-log (144)** — verified across every site to
+log CMIS change tokens / ids / key-prefixes (metadata), with the only two
+credential-touching sites being intentional guarded one-time displays (MCP
+auto-generated password with opt-out, setup-token file-write-failure fallback);
+**java/user-controlled-bypass** — the authorization checks themselves;
+**java/xss** — output escaped via escapeForJavaScript; **polynomial-redos /
+client-side sanitization** — authenticated/size-bounded or server-authoritative;
+plus vendored JS (Solr admin webapp) and test-only findings.
 
 ## Process
 
