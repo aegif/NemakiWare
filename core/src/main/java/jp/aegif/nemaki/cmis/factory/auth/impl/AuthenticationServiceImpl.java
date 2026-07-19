@@ -49,6 +49,11 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 	private static final Log log = LogFactory.getLog(AuthenticationServiceImpl.class);
 
+	// Brute-force throttle for Basic-auth password logins (JVM-local, per
+	// repo+user+IP). Failures only; a success clears the counter.
+	private final jp.aegif.nemaki.security.LoginThrottle loginThrottle =
+			new jp.aegif.nemaki.security.LoginThrottle();
+
 	private ContentService contentService;
 	private ContentDaoService contentDaoService;
 	private PrincipalService principalService;
@@ -198,13 +203,50 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		//Check repositoryId exists
 		if(!repositoryInfoMap.contains(repositoryId)) return false;
 
+		// Brute-force throttle: deny during lockout before checking the password.
+		String username = callContext.getUsername();
+		String throttleKey = repositoryId + ":" + username + ":" + resolveClientIpForThrottle(callContext);
+		if (loginThrottle.isBlocked(throttleKey)) {
+			log.warn("Login temporarily locked (too many failed attempts) for user '" + username
+					+ "' in repository '" + repositoryId + "'");
+			return false;
+		}
+
 		// Basic auth with id/password
-		UserItem user = getAuthenticatedUserItem(callContext.getRepositoryId(), callContext.getUsername(), callContext.getPassword());
-		if (user == null) return false;
+		UserItem user = getAuthenticatedUserItem(repositoryId, username, callContext.getPassword());
+		if (user == null) {
+			// Count only genuine password attempts (non-blank id + password) as failures,
+			// so ambient/empty probes don't accumulate.
+			if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(callContext.getPassword())) {
+				loginThrottle.recordFailure(throttleKey);
+			}
+			return false;
+		}
+		loginThrottle.recordSuccess(throttleKey);
 
 		boolean isAdmin = Boolean.TRUE.equals(user.isAdmin());
 		setAdminFlagInContext(callContext, isAdmin);
 		return true;
+	}
+
+	/** Best-effort client IP for throttle keying; "unknown" if unavailable. */
+	private String resolveClientIpForThrottle(CallContext callContext) {
+		try {
+			Object ra = callContext.get("remoteAddress");
+			if (ra instanceof String s && StringUtils.isNotBlank(s)) {
+				return s;
+			}
+			Object req = callContext.get("httpServletRequest");
+			if (req instanceof jakarta.servlet.http.HttpServletRequest r) {
+				String addr = r.getRemoteAddr();
+				if (StringUtils.isNotBlank(addr)) {
+					return addr;
+				}
+			}
+		} catch (RuntimeException ignored) {
+			// fall through to "unknown"
+		}
+		return "unknown";
 	}
 
 	/**
