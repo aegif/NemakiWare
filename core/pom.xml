@@ -1000,7 +1000,7 @@
 		<dependency>
 			<groupId>org.apache.olingo</groupId>
 			<artifactId>odata-commons-api</artifactId>
-			<version>4.10.0</version>
+			<version>5.0.0</version>
 		</dependency>
 
 		<!-- Apache Olingo Client for OData testing -->
