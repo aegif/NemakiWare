@@ -145,7 +145,7 @@ export const PurviewGovernancePanel: React.FC<PurviewGovernancePanelProps> = ({ 
         {businessMetadataEntries.length > 0 ? (
           businessMetadataEntries.map(([name, attributes]) => (
             <div key={name}>
-              <Divider orientation="left">{name}</Divider>
+              <Divider titlePlacement="left">{name}</Divider>
               <Descriptions bordered size="small" column={1}>
                 {Object.entries(attributes).map(([attributeName, value]) => (
                   <Descriptions.Item key={`${name}-${attributeName}`} label={attributeName}>

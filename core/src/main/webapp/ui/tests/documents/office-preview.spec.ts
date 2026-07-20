@@ -209,7 +209,7 @@ test.describe('Office Document Preview', () => {
       console.log('✅ Preview tab opened');
 
       // Check for loading state
-      const loadingSpinner = page.locator('.ant-spin');
+      const loadingSpinner = page.locator('.ant-spin-spinning');
       if (await loadingSpinner.count() > 0 && await loadingSpinner.isVisible()) {
         console.log('Waiting for preview to load...');
         await waitForUiStable(page, { timeout: 15000 });
@@ -462,7 +462,7 @@ test.describe('Office Document Preview', () => {
           // Check for PDF document or retry button
           const pdfDocument = page.locator('.react-pdf__Document, canvas');
           const retryButton = page.locator('button').filter({ hasText: /プレビュー生成を試行|再試行/ });
-          const loadingSpinner = page.locator('.ant-spin');
+          const loadingSpinner = page.locator('.ant-spin-spinning');
 
           // Wait for loading to complete
           if (await loadingSpinner.count() > 0 && await loadingSpinner.isVisible()) {

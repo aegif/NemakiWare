@@ -159,7 +159,7 @@ test.describe('NemakiWare Authentication', () => {
     await expect(page).toHaveTitle(/NemakiWare|CMIS/);
 
     // Verify username field is present (try multiple selectors)
-    const usernameField = page.locator('input[type="text"], input[name="username"], input[placeholder="ユーザー名"]').first();
+    const usernameField = page.locator('input[placeholder="ユーザー名"]').first();
     await expect(usernameField).toBeVisible();
 
     // Verify password field is present
@@ -241,7 +241,7 @@ test.describe('NemakiWare Authentication', () => {
       await page.waitForSelector('input[type="password"]', { timeout: 10000 });
 
       // Fill username field
-      const usernameField = page.locator('input[type="text"], input[name="username"]').first();
+      const usernameField = page.locator('input[placeholder="ユーザー名"]').first();
       await usernameField.fill('invalid');
 
       // Fill password field

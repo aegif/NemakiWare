@@ -450,7 +450,7 @@ test.describe('Document Viewer Authentication', () => {
           console.log(`POSSIBLE ISSUE: Document detail page not rendering properly after multiple accesses`);
 
           // Check if we're stuck on a loading state or if there's a UI error
-          const hasSpinner = await page.locator('.ant-spin').count() > 0;
+          const hasSpinner = await page.locator('.ant-spin-spinning').count() > 0;
           const hasDrawer = await page.locator('.ant-drawer').count() > 0;
           console.log(`  Has spinner (loading): ${hasSpinner}`);
           console.log(`  Has drawer: ${hasDrawer}`);

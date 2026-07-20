@@ -258,7 +258,7 @@ test.describe('Document Management', () => {
       await expect(table).toBeVisible({ timeout: 10000 });
 
       // Wait for table to finish loading (wait for spinner to disappear if present)
-      const spinner = page.locator('.ant-spin');
+      const spinner = page.locator('.ant-spin-spinning');
       if (await spinner.count() > 0) {
         await expect(spinner).not.toBeVisible({ timeout: 10000 });
       }
@@ -714,7 +714,7 @@ test.describe('Document Management', () => {
           await waitForUiStable(page); // Give React time to update state
 
           // Wait for any loading indicators to disappear
-          const spinner = page.locator('.ant-spin');
+          const spinner = page.locator('.ant-spin-spinning');
           if (await spinner.count() > 0) {
             await expect(spinner).not.toBeVisible({ timeout: 5000 });
           }
