@@ -390,7 +390,10 @@ test.describe('Custom Type Creation and Property Management', () => {
 
       console.log('Test: Custom type creation verified successfully');
     } else {
-      await expect(page.getByRole('button', { name: /タイプ作成|Create Type/i }).first()).toBeVisible({ timeout: 10000 });
+      // Fallback when the create-type trigger button wasn't found: assert the
+      // page rendered the create button (its label is "新規タイプ" / "New Type"
+      // / "Create Type"), matching the same regex used to locate it above.
+      await expect(page.getByRole('button', { name: /新規タイプ|新規.*作成|Create.*Type/i }).first()).toBeVisible({ timeout: 10000 });
     }
   });
 
