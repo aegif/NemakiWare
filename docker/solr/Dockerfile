@@ -2,7 +2,7 @@
 # NemakiWare enables and posts uploaded documents to) — keep this in lockstep
 # with the Maven solr-core 9.10.1 pin. This Dockerfile is the source for both
 # the dev docker-compose-simple build and the published nemakiware-solr image.
-FROM solr:9.10.1-slim
+FROM solr:10.0.0-slim
 
 USER root
 
