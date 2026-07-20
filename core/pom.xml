@@ -612,11 +612,13 @@
 
 		<!-- Removed Jersey 1.x test framework - conflicts with Jersey 3.x -->
 
-		<!-- Solr 9.10.1 - Unified version across all modules (CVE fixes) -->
+		<!-- Solr 10.0.0 (Lucene 10.3.2) — SolrJ client. Solr 10 runs Jetty 12 /
+		     Jakarta EE 10 server-side; the app is a pure SolrJ client using the
+		     JDK-built-in HttpJdkSolrClient (no Jetty client on the classpath). -->
 		<dependency>
 			<groupId>org.apache.solr</groupId>
 			<artifactId>solr-solrj</artifactId>
-			<version>9.10.1</version>
+			<version>10.0.0</version>
 			<exclusions>
 				<exclusion>
 					<groupId>org.apache.httpcomponents</groupId>
@@ -655,53 +657,28 @@
 			<version>5.2.4</version>
 		</dependency>
 		
-		<!-- NemakiWare Custom Solr Module with Tracker and Quartz Scheduler -->
+		<!-- The custom jp.aegif.nemaki.solr module (NemakiCoreAdminHandler +
+		     Quartz pull-tracker) was decommissioned: the /nemaki request handler
+		     was removed in RC13 (push pipeline replaced pull), the handler jar is
+		     not deployed to the Solr image, and no core class references it. It
+		     also compiled against Solr server-internal APIs that do not exist in
+		     Solr 10. Removed from the reactor and from this WAR. -->
+
+		<!-- JSON log encoder (net.logstash.logback.marker.Markers, used by
+		     JsonLogger / LogResource). Previously reached us transitively via the
+		     now-removed solr module; declared directly here. Matches logback
+		     1.5.x. -->
 		<dependency>
-			<groupId>jp.aegif.nemaki.solr</groupId>
-			<artifactId>solr</artifactId>
-			<version>3.2.8</version>
-			<exclusions>
-				<!-- Exclude Jetty 9 to prevent javax.servlet conflicts -->
-				<exclusion>
-					<groupId>org.eclipse.jetty</groupId>
-					<artifactId>jetty-server</artifactId>
-				</exclusion>
-				<exclusion>
-					<groupId>org.glassfish.jersey.containers</groupId>
-					<artifactId>jersey-container-jetty-http</artifactId>
-				</exclusion>
-				<!-- Exclude javax.servlet API -->
-				<exclusion>
-					<groupId>javax.servlet</groupId>
-					<artifactId>javax.servlet-api</artifactId>
-				</exclusion>
-				<!-- Exclude log4j-slf4j2-impl to prevent dual SLF4J binding
-				     (NemakiWare uses logback-classic as the single SLF4J binding) -->
-				<exclusion>
-					<groupId>org.apache.logging.log4j</groupId>
-					<artifactId>log4j-slf4j2-impl</artifactId>
-				</exclusion>
-			</exclusions>
+			<groupId>net.logstash.logback</groupId>
+			<artifactId>logstash-logback-encoder</artifactId>
+			<version>8.0</version>
 		</dependency>
-		
-		<!-- Jetty HTTP Client for Http2SolrClient (Solr 9.x recommended) -->
-		<dependency>
-			<groupId>org.eclipse.jetty</groupId>
-			<artifactId>jetty-client</artifactId>
-			<version>11.0.18</version>
-		</dependency>
-		<dependency>
-			<groupId>org.eclipse.jetty.http2</groupId>
-			<artifactId>http2-client</artifactId>
-			<version>11.0.18</version>
-		</dependency>
-		<dependency>
-			<groupId>org.eclipse.jetty.http2</groupId>
-			<artifactId>http2-http-client-transport</artifactId>
-			<version>11.0.18</version>
-		</dependency>
-		
-		<!-- HTTP Client 5.x - Required for Solr 9.x compatibility and modern HTTP communication -->
+
+		<!-- No Jetty client on the classpath: the app uses HttpJdkSolrClient
+		     (JDK-built-in). The old Jetty 11 client (for Http2SolrClient) was
+		     removed with the Solr 10 upgrade — Solr 10 server runs Jetty 12. -->
+
+		<!-- HTTP Client 5.x - modern HTTP communication -->
 		<!-- HTTP Client 5.x dependencies moved down to avoid duplication -->
 		<dependency>
 			<groupId>org.apache.httpcomponents.client5</groupId>
@@ -715,15 +692,16 @@
 		
 		<!-- Solr strategy: Use HttpJdkSolrClient (Java 11+ built-in) to avoid HTTP Client conflicts -->
 
-		<!-- Align with the Lucene version pulled by solr-core 9.10.1 (9.12.3).
-		     Lucene requires every module on the classpath to share the exact
-		     same version; pinning lucene-queries/-core to 9.11.1 while solr
-		     brings lucene-analysis-common etc. at 9.12.3 is an unsupported mix
-		     that can fail at runtime. -->
+		<!-- Lucene 10.3.2 = the version Solr 10.0.0 is built on. The app uses
+		     Lucene query-building classes (Term/BooleanQuery/TermInSetQuery/…)
+		     in the CMIS→Solr query translation; lucene-queries pulls lucene-core
+		     transitively. Every Lucene module on the classpath must share one
+		     version (SolrJ 10 no longer drags Lucene in, so this pin is the sole
+		     source). -->
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
 			<artifactId>lucene-queries</artifactId>
-			<version>9.12.3</version>
+			<version>10.3.2</version>
 		</dependency>
 
 		<dependency>

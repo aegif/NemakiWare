@@ -77,7 +77,6 @@ jobs:
         mvn clean install -f cloudant-init/pom.xml -DskipTests -q
         
         echo "Building solr module..."
-        mvn clean install -f solr/pom.xml -DskipTests -q
 
     - name: Build UI
       working-directory: core/src/main/webapp/ui

@@ -17,7 +17,7 @@ import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 
 import org.apache.solr.client.solrj.SolrClient;
-import org.apache.solr.client.solrj.SolrQuery;
+import org.apache.solr.client.solrj.request.SolrQuery;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;

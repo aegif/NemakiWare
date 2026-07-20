@@ -16,7 +16,6 @@
     <modules>
         <module>common</module>
         <module>core</module>
-        <module>solr</module>
         <module>cloudant-init</module>
     </modules>
 </project>

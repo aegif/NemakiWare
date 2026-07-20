@@ -120,7 +120,6 @@ jobs:
           mvn clean install -N -DskipTests -q
           mvn clean install -f common/pom.xml -DskipTests -q
           mvn clean install -f cloudant-init/pom.xml -DskipTests -q
-          mvn clean install -f solr/pom.xml -DskipTests -q
           # frontend-maven-plugin builds the React UI into the WAR during package
           mvn clean package -f core/pom.xml -Pdevelopment,opencmis-github-packages -DskipTests -q
 

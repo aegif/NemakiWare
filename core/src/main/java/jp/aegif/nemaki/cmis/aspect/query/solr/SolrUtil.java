@@ -39,8 +39,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.solr.client.solrj.SolrClient;
-import org.apache.solr.client.solrj.impl.HttpSolrClient;
-import org.apache.solr.client.solrj.impl.Http2SolrClient;
+import org.apache.solr.client.solrj.impl.HttpJdkSolrClient;
 
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.request.UpdateRequest;
@@ -63,7 +62,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import org.apache.solr.client.solrj.SolrQuery;
+import org.apache.solr.client.solrj.request.SolrQuery;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
@@ -175,16 +174,19 @@ public class SolrUtil implements ApplicationContextAware {
 			}
 			log.info("Creating shared Solr client for URL: " + url);
 			try {
-				@SuppressWarnings("deprecation")
-				HttpSolrClient newClient = new HttpSolrClient.Builder(url)
-					.withConnectionTimeout(30000)
-					.withSocketTimeout(30000)
+				// Force HTTP/1.1: the JDK client defaults to HTTP/2, which against
+				// Solr 10 / Jetty 12 throws intermittent "RST_STREAM: Protocol
+				// error" on update/block-join requests.
+				HttpJdkSolrClient newClient = new HttpJdkSolrClient.Builder(url)
+					.useHttp1_1(true)
+					.withConnectionTimeout(30000, java.util.concurrent.TimeUnit.MILLISECONDS)
+					.withRequestTimeout(30000, java.util.concurrent.TimeUnit.MILLISECONDS)
 					.build();
 				sharedSolrClient = newClient;
-				log.info("Shared HttpSolrClient created successfully for URL: " + url);
+				log.info("Shared HttpJdkSolrClient created successfully for URL: " + url);
 				return newClient;
 			} catch (Exception e) {
-				log.error("HttpSolrClient creation failed: " + e.getMessage(), e);
+				log.error("HttpJdkSolrClient creation failed: " + e.getMessage(), e);
 				return null;
 			}
 		}

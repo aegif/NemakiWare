@@ -67,7 +67,6 @@ jobs:
           mvn clean install -N -DskipTests -q
           mvn clean install -f common/pom.xml -DskipTests -q
           mvn clean install -f cloudant-init/pom.xml -DskipTests -q
-          mvn clean install -f solr/pom.xml -DskipTests -q
       - name: Run unit tests
         run: |
           mvn test \
@@ -105,7 +104,6 @@ jobs:
           mvn clean install -N -DskipTests -q
           mvn clean install -f common/pom.xml -DskipTests -q
           mvn clean install -f cloudant-init/pom.xml -DskipTests -q
-          mvn clean install -f solr/pom.xml -DskipTests -q
           mvn clean package -f core/pom.xml -Pdevelopment,opencmis-github-packages -DskipTests -q
 
       - name: Start NemakiWare Server
@@ -167,7 +165,6 @@ jobs:
           mvn clean install -N -DskipTests -q
           mvn clean install -f common/pom.xml -DskipTests -q
           mvn clean install -f cloudant-init/pom.xml -DskipTests -q
-          mvn clean install -f solr/pom.xml -DskipTests -q
           mvn clean package -f core/pom.xml -Pdevelopment,opencmis-github-packages -DskipTests -q
 
       - name: Start NemakiWare Server
