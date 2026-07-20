@@ -8,7 +8,7 @@ test.describe('Connector & Profile Management UI', () => {
   test.beforeEach(async ({ page }) => {
     // Login
     await page.goto(`${BASE_URL}/core/ui/`);
-    await page.fill('input[type="text"], input[name="username"], #username', 'admin');
+    await page.fill('#username', 'admin');
     await page.fill('input[type="password"], input[name="password"], #password', 'admin');
     await page.click('button[type="submit"]');
     await waitForUiStable(page);

@@ -302,22 +302,22 @@ test.describe('Required Property Validation Tests', () => {
 
       const dropdown = page.locator('.ant-select-dropdown');
       let dropdownOpened = false;
-      let modal = page.locator('.ant-modal-content').last();
+      let modal = page.locator('.ant-modal-container').last();
 
       for (let attempt = 1; attempt <= 5; attempt++) {
         try {
           // If modal is not visible, click the upload button
-          if (!(await page.locator('.ant-modal-content').isVisible().catch(() => false))) {
+          if (!(await page.locator('.ant-modal-container').isVisible().catch(() => false))) {
             console.log(`  Opening upload modal (attempt ${attempt})`);
             await uploadButton.click(isMobile ? { force: true } : {});
           }
 
           // Wait for modal with type selector to appear and stabilize
-          await page.waitForSelector('.ant-modal-content .ant-select', { state: 'visible', timeout: 10000 });
+          await page.waitForSelector('.ant-modal-container .ant-select', { state: 'visible', timeout: 10000 });
           console.log(`  Upload modal with type selector visible (attempt ${attempt})`);
 
           // Re-locate modal (use last() to get the most recently opened one)
-          modal = page.locator('.ant-modal-content').last();
+          modal = page.locator('.ant-modal-container').last();
 
           // Click type selector to open dropdown
           const typeSelector = modal.locator('.ant-select').first();
@@ -336,8 +336,8 @@ test.describe('Required Property Validation Tests', () => {
       if (!dropdownOpened) {
         console.log('WARNING: Could not open type dropdown after 5 attempts');
         // Debug info
-        const modalCount = await page.locator('.ant-modal-content').count();
-        const selectCount = await page.locator('.ant-modal-content .ant-select').count();
+        const modalCount = await page.locator('.ant-modal-container').count();
+        const selectCount = await page.locator('.ant-modal-container .ant-select').count();
         console.log(`  DEBUG: ${modalCount} modals, ${selectCount} selects on page`);
       }
 
@@ -494,7 +494,7 @@ test.describe('Required Property Validation Tests', () => {
             await deleteButton.click(isMobile ? { force: true } : {});
             await waitForRender(page);
 
-            const deleteModal = page.locator('.ant-modal-content').filter({ hasText: /削除|Delete/ });
+            const deleteModal = page.locator('.ant-modal-container').filter({ hasText: /削除|Delete/ });
             if (await deleteModal.count() > 0) {
               const confirmBtn = deleteModal.locator('button.ant-btn-dangerous, button').filter({ hasText: /削除|Delete/ });
               if (await confirmBtn.count() > 0) {
@@ -532,9 +532,9 @@ test.describe('Required Property Validation Tests', () => {
       await createFolderButton.click(isMobile ? { force: true } : {});
       await waitForRender(page);
 
-      await expect(page.locator('.ant-modal-content')).toBeVisible({ timeout: 5000 });
+      await expect(page.locator('.ant-modal-container')).toBeVisible({ timeout: 5000 });
       // Target the folder creation modal specifically (last opened modal without upload area)
-      const modal = page.locator('.ant-modal-content').last();
+      const modal = page.locator('.ant-modal-container').last();
 
       // Wait for modal to stabilize
       await waitForUiStable(page);
@@ -641,7 +641,7 @@ test.describe('Required Property Validation Tests', () => {
             await deleteButton.click(isMobile ? { force: true } : {});
             await waitForRender(page);
 
-            const deleteModal = page.locator('.ant-modal-content').filter({ hasText: /削除|Delete/ });
+            const deleteModal = page.locator('.ant-modal-container').filter({ hasText: /削除|Delete/ });
             if (await deleteModal.count() > 0) {
               const confirmBtn = deleteModal.locator('button.ant-btn-dangerous, button').filter({ hasText: /削除|Delete/ });
               if (await confirmBtn.count() > 0) {
@@ -667,17 +667,17 @@ test.describe('Required Property Validation Tests', () => {
 
       // Open upload modal and select type (combined retry — modal may close due to React re-render)
       const uploadButton = page.locator('button').filter({ hasText: /ファイルアップロード|Upload/ });
-      let modal3 = page.locator('.ant-modal-content').last();
+      let modal3 = page.locator('.ant-modal-container').last();
       const dropdown3 = page.locator('.ant-select-dropdown');
       let dropdown3Opened = false;
 
       for (let attempt = 1; attempt <= 5; attempt++) {
         try {
-          if (!(await page.locator('.ant-modal-content').isVisible().catch(() => false))) {
+          if (!(await page.locator('.ant-modal-container').isVisible().catch(() => false))) {
             await uploadButton.click(isMobile ? { force: true } : {});
           }
-          await page.waitForSelector('.ant-modal-content .ant-select', { state: 'visible', timeout: 10000 });
-          modal3 = page.locator('.ant-modal-content').last();
+          await page.waitForSelector('.ant-modal-container .ant-select', { state: 'visible', timeout: 10000 });
+          modal3 = page.locator('.ant-modal-container').last();
           const typeSelector3 = modal3.locator('.ant-select').first();
           await typeSelector3.click({ timeout: 5000 });
           await expect(dropdown3).toBeVisible({ timeout: 3000 });

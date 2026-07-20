@@ -330,7 +330,7 @@ test.describe('Document Versioning', () => {
       await checkinButton.click(isMobile ? { force: true } : {});
 
       // Wait for check-in modal to appear (filter by check-in title to avoid matching upload modal)
-      const modal = page.locator('.ant-modal').filter({ hasText: 'チェックイン' }).last().locator('.ant-modal-content');
+      const modal = page.locator('.ant-modal').filter({ hasText: 'チェックイン' }).last().locator('.ant-modal-container');
       await expect(modal).toBeVisible({ timeout: 10000 });
       console.log('Test: Check-in modal opened');
 

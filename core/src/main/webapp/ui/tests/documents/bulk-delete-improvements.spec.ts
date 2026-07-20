@@ -142,7 +142,7 @@ test.describe('Bulk Delete Improvements', () => {
     await waitForUiStable(page);
 
     // Verify delete confirmation modal appears
-    const modal = page.locator('.ant-modal-content');
+    const modal = page.locator('.ant-modal-container');
     await expect(modal).toBeVisible({ timeout: 10000 });
 
     // Wait for confirm button to be enabled (loading state to finish)

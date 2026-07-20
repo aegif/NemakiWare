@@ -44,7 +44,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       await waitForRender(page);
 
       // Verify modal is open
-      await expect(page.locator('.ant-modal-content')).toBeVisible();
+      await expect(page.locator('.ant-modal-container')).toBeVisible();
 
       // Verify "メンバー設定" divider exists
       const memberSettingsDivider = page.locator('.ant-divider:has-text("メンバー設定")');
@@ -63,7 +63,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       await expect(circularWarning).not.toBeVisible();
 
       // Close modal
-      await page.locator('.ant-modal-content button:has-text("キャンセル")').click();
+      await page.locator('.ant-modal-container button:has-text("キャンセル")').click();
     });
 
     test('should show circular reference warning in edit mode', async ({ page }) => {
@@ -75,14 +75,14 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         await waitForRender(page);
 
         // Verify modal is open
-        await expect(page.locator('.ant-modal-content')).toBeVisible();
+        await expect(page.locator('.ant-modal-container')).toBeVisible();
 
         // In edit mode, circular reference warning should be visible
         const circularWarning = page.locator('text=循環参照');
         await expect(circularWarning).toBeVisible();
 
         // Close modal
-        await page.locator('.ant-modal-content button:has-text("キャンセル")').click();
+        await page.locator('.ant-modal-container button:has-text("キャンセル")').click();
       } else {
         test.skip('ENV: No groups available to edit');
       }
@@ -112,7 +112,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       try {
         // Click create button and wait for modal
         await page.locator('button:has-text("作成")').click();
-        await page.waitForSelector('.ant-modal-content', { state: 'visible', timeout: 10000 });
+        await page.waitForSelector('.ant-modal-container', { state: 'visible', timeout: 10000 });
         await waitForRender(page);
 
         // Fill group form
@@ -196,7 +196,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       let createdViaUI = false;
       try {
         await page.locator('button:has-text("作成")').click();
-        await page.waitForSelector('.ant-modal-content', { state: 'visible', timeout: 10000 });
+        await page.waitForSelector('.ant-modal-container', { state: 'visible', timeout: 10000 });
         await waitForRender(page);
 
         await page.fill('input#id', testGroupId);
@@ -211,7 +211,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         const optionCount = await groupOptions.count();
 
         if (optionCount === 0) {
-          await page.locator('.ant-modal-content button:has-text("キャンセル")').click();
+          await page.locator('.ant-modal-container button:has-text("キャンセル")').click();
           test.skip('ENV: No group options available in dropdown');
           return;
         }
@@ -224,16 +224,16 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         await waitForRender(page);
 
         // Submit form - try multiple selectors
-        const submitBtn = page.locator('.ant-modal-content button[type="submit"], .ant-modal-content .ant-btn-primary').first();
+        const submitBtn = page.locator('.ant-modal-container button[type="submit"], .ant-modal-container .ant-btn-primary').first();
         await submitBtn.click();
 
         // Wait for modal to close as success indicator
-        const modalClosed = await page.waitForSelector('.ant-modal-content', { state: 'hidden', timeout: 10000 }).then(() => true).catch(() => false);
+        const modalClosed = await page.waitForSelector('.ant-modal-container', { state: 'hidden', timeout: 10000 }).then(() => true).catch(() => false);
         await waitForRender(page);
         createdViaUI = modalClosed;
       } catch {
         // Close modal if still open
-        await page.locator('.ant-modal-content button:has-text("キャンセル")').click().catch(() => {});
+        await page.locator('.ant-modal-container button:has-text("キャンセル")').click().catch(() => {});
         await waitForRender(page);
       }
 
@@ -347,7 +347,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       // Close modal
       await page.keyboard.press('Escape');
       await waitForRender(page);
-      await page.locator('.ant-modal-content button:has-text("キャンセル")').click().catch(() => {});
+      await page.locator('.ant-modal-container button:has-text("キャンセル")').click().catch(() => {});
     });
   });
 
@@ -521,7 +521,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       await waitForRender(page);
 
       // Verify modal is open
-      await expect(page.locator('.ant-modal-content')).toBeVisible();
+      await expect(page.locator('.ant-modal-container')).toBeVisible();
 
       // Open group members dropdown
       const groupMembersSelect = page.locator('.ant-form-item').filter({ hasText: 'グループメンバー' }).locator('.ant-select');
@@ -544,7 +544,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       await waitForRender(page);
 
       // Close modal
-      await page.locator('.ant-modal-content button:has-text("キャンセル")').click();
+      await page.locator('.ant-modal-container button:has-text("キャンセル")').click();
     });
 
     test('step 4: verify UI prevents selecting disabled option', async ({ page }) => {
@@ -564,7 +564,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       await waitForRender(page);
 
       // Verify modal is open
-      await expect(page.locator('.ant-modal-content')).toBeVisible();
+      await expect(page.locator('.ant-modal-container')).toBeVisible();
 
       // Open group members dropdown
       const groupMembersField = page.locator('.ant-form-item').filter({ hasText: 'グループメンバー' });
@@ -611,9 +611,9 @@ test.describe('Group Hierarchy and Large Member Display', () => {
 
       // Try to close modal, ignore if already closed
       try {
-        const modal = page.locator('.ant-modal-content');
+        const modal = page.locator('.ant-modal-container');
         if (await modal.isVisible()) {
-          await page.locator('.ant-modal-content button:has-text("キャンセル")').click({ timeout: 3000 });
+          await page.locator('.ant-modal-container button:has-text("キャンセル")').click({ timeout: 3000 });
         }
       } catch {
         // Modal already closed

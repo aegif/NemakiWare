@@ -512,7 +512,7 @@ test.describe('Webhook Settings UI Tests', () => {
     await addButton.click();
 
     // Modal should appear
-    const modal = page.locator('.ant-modal-content');
+    const modal = page.locator('.ant-modal-container');
     await modal.waitFor({ state: 'visible', timeout: 5000 });
 
     // Fill URL
@@ -541,7 +541,7 @@ test.describe('Webhook Settings UI Tests', () => {
     await editButton.click();
 
     // Modal should reappear with existing data
-    const editModal = page.locator('.ant-modal-content');
+    const editModal = page.locator('.ant-modal-container');
     await editModal.waitFor({ state: 'visible', timeout: 5000 });
 
     // Change URL
