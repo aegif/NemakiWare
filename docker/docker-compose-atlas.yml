@@ -12,7 +12,13 @@
 
 services:
   atlas:
-    image: sburn/apache-atlas:2.3.0
+    # Default: the community linux/amd64 image (runs under emulation on Apple
+    # Silicon — heavy + OOM-prone). On ARM64 hosts, build a native image once
+    # with docker/atlas/build-arm64.sh and run with:
+    #   NEMAKI_ATLAS_IMAGE=nemakiware-atlas:2.3.0-arm64 NEMAKI_ATLAS_PLATFORM=linux/arm64
+    # Both expose the same Atlas REST API (api/atlas/v2, port 21000).
+    image: ${NEMAKI_ATLAS_IMAGE:-sburn/apache-atlas:2.3.0}
+    platform: ${NEMAKI_ATLAS_PLATFORM:-linux/amd64}
     ports:
       - "21000:21000"
     healthcheck:
