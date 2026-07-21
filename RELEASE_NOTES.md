@@ -6,6 +6,65 @@ User-facing changelog. For per-commit detail see
 
 ---
 
+## 3.3.0 — Breaking-major dependency uplift + native ARM64 stack + OData repair (2026-07-22)
+_On `deps/v3.3-breaking-majors` (off `master`). First minor with breaking-major
+dependency bumps. No CouchDB view / patch / schema / Mango changes — the 2.4
+data carry-over path is untouched; all changes are dependency, container, and
+OData/runtime code._
+
+### Breaking-major dependency uplift
+- **Apache Olingo (OData) 4.10 → 5.0** (all six modules; Java 17+, jakarta.servlet).
+- **Apache Solr / Lucene 9 → 10** (solr-solrj 10.0.0, lucene 10.3.2). The removed
+  `HttpSolrClient`/`Http2SolrClient` are replaced by `HttpJdkSolrClient` with
+  `useHttp1_1(true)` (avoids HTTP/2 RST_STREAM against Jetty 12); Solr 10 defaults
+  to SolrCloud so the container runs `solr-foreground --user-managed`; the legacy
+  fat-jar Solr module was dropped from the reactor.
+- **Netty 4.1 → 4.2** (netty-bom 4.2.16.Final), **react-router-dom 6 → 7**
+  (HashRouter), **Ant Design 5 → 6** (@ant-design/icons 6), plus the Tier-1/2
+  bumps (jakarta.annotation 3, i18next 26, jsdom 29).
+
+### OData binding repaired + hardened
+Entity-set reads (`/Documents`, `/Folders`, `/Objects`, …) had always returned
+`400 "Function not found in URI"`. Root cause: `CmisFunctionProcessor` implements
+the same Olingo interfaces as the entity-set processors and, since Olingo keeps
+one processor per interface, clobbered them — every read was misrouted to the
+function processor. (Pre-existing; reproduced on Olingo 4.10 and 5.0.) Fixes:
+delegate function URIs from the entity-set processors so one processor serves
+each interface; replace the hand-rolled `ODataHandlerImpl` shim with Olingo 5.0's
+jakarta-native `ODataHttpHandler` + `setSplit(1)`; expose the unbound functions
+(`Query`/`GetObjectByPath`/`GetContentChanges`) as function imports; map CMIS
+exceptions to correct HTTP status (409/400/404/403/405) instead of a blanket 500;
+always emit `@odata.count`; fix a null-`Holder` NPE in `$expand=children`.
+Validated: full OData IT suite 65/65, Apache Olingo *client* consumes the service
+4/4, `$metadata` validates against the OASIS OData 4.0 CSDL XSD, and a
+conformance checklist (Minimal + Intermediate) passes 21/21. See
+`tools/odata-conformance/`.
+
+### Native ARM64 (Apple Silicon) container images
+- **TEI** (`docker/tei/Dockerfile.arm64`): native arm64 build of Hugging Face
+  Text Embeddings Inference (MKL dropped, `ort,candle` backends) exposing the same
+  `/embed` API; non-root UID; opt-in via `NEMAKI_TEI_IMAGE`/`NEMAKI_TEI_PLATFORM`.
+- **Apache Atlas** (`docker/atlas/Dockerfile.arm64`): native arm64 Atlas 2.3.0
+  built from source; the dead expired-cert Hortonworks repo is mirrored to clojars
+  so **full Maven TLS validation stays on**; the container **exits when the Atlas
+  server process dies** (supervised CMD + `restart: unless-stopped`) instead of
+  lingering; non-root UID; build context pinned to a commit SHA; opt-in via
+  `NEMAKI_ATLAS_IMAGE`/`NEMAKI_ATLAS_PLATFORM`.
+- Both dev/eval overlays bind their ports to `127.0.0.1`.
+
+### Security / hygiene
+- npm audit HIGH cleared (brace-expansion 5.0.7, js-yaml 4.3.0); Solr runtime
+  index/tlog data that had been committed by accident was removed from history and
+  is now gitignored.
+
+**Verification**: Java unit + full CMIS TCK green on the v3.3 tree
+(Connection/Basics/Control/Versioning/CRUD1/CRUD2/Query/Types all pass;
+Types requires sweeping E2E residual custom types — a known data-pollution, not a
+regression); UI `tsc` clean + vite build; vitest 191/191; OData 65/65 + Olingo
+client 4/4 + CSDL XSD valid + conformance 21/21; five-service arm64 stack
+(core + CouchDB + Solr 10 + native TEI + native Atlas) healthy with CMIS/RAG/OData
+all serving.
+
 ## 3.2.8 — Malformed multipart filename returns 400, not 500 (2026-07-08)
 _On `release/3.2.8` (off `master`). Closes the last known low-severity residual
 from the fuzz passes. No schema/persistence changes._

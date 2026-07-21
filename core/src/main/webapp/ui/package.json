@@ -1,6 +1,6 @@
 {
   "name": "nemakiware-spa",
-  "version": "3.2.8",
+  "version": "3.3.0",
   "private": true,
   "dependencies": {
     "@ant-design/icons": "^6.3.2",

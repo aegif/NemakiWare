@@ -372,9 +372,70 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 
 ## 現在のバージョン
 
-**3.2.8** (2026-07-08、`release/3.2.8` → master) — マルチパートのファイル名不正
-(NUL 等) を 500 でなく 400 に (ファズ波の最後の低残件。下記 3.2.8 節)。
-バージョン反映箇所は 3.2.1 以降と同一。
+**3.3.0** (2026-07-22、`deps/v3.3-breaking-majors` → master 予定) — breaking-major
+依存アップリフト (Olingo 5.0 / Solr・Lucene 10 / netty 4.2 / react-router 7 /
+antd 6) + ネイティブ arm64 スタック (TEI/Atlas) + OData バインディング修復。
+CouchDB view/patch/schema/Mango 変更なし (2.4 データ持ち越しパス無変更)。
+バージョン反映箇所は 3.2.1 以降と同一。下記 3.3.0 節。
+
+### 3.3.0 (2026-07-22) — breaking-major 依存 + arm64 + OData 修復
+
+ブランチ: `deps/v3.3-breaking-majors` (off `master`)、統合検証は
+`test/v3.3-arm64-full` (deps + infra/tei-arm64-native + infra/atlas-arm64-native
+のマージ)。**スキーマ/patch/view/Mango 変更ゼロ** — 全変更は依存・コンテナ・
+OData/ランタイムコードのみ。
+
+**breaking-major 依存**:
+- **Olingo (OData) 4.10 → 5.0** (全 6 モジュール、Java17+/jakarta.servlet)
+- **Solr/Lucene 9 → 10** (solr-solrj 10.0.0、lucene 10.3.2)。`HttpSolrClient`/
+  `Http2SolrClient` 廃止 → `HttpJdkSolrClient` + `useHttp1_1(true)` (Jetty 12 との
+  HTTP/2 RST_STREAM 回避)。Solr 10 は SolrCloud 既定のためコンテナは
+  `solr-foreground --user-managed`。旧 fat-jar solr モジュールを reactor から除去
+- **netty 4.1 → 4.2** (netty-bom 4.2.16.Final)、**react-router-dom 6 → 7**
+  (HashRouter)、**antd 5 → 6** (@ant-design/icons 6)、Tier1/2 (jakarta.annotation 3
+  / i18next 26 / jsdom 29)
+
+**OData バインディング修復** (`ODataServlet` / `CmisEdmProvider` /
+`CmisEntity*Processor` / 新 `ODataExceptions`): エンティティセット読取が常に
+「Function not found in URI」400 だった根本原因 (= `CmisFunctionProcessor` が同一
+Olingo インターフェースを実装し登録衝突で上書き。Olingo 4.10/5.0 両方で再現＝
+pre-existing) を解消。関数 URI を委譲して 1 インターフェース 1 プロセッサ化、
+手製 `ODataHandlerImpl` を jakarta ネイティブ `ODataHttpHandler`+`setSplit(1)` に
+置換、unbound 関数を FunctionImport 公開、CMIS 例外→正しい HTTP コード
+(409/400/404/403/405)、`@odata.count` 常時 emit、`$expand=children` の null Holder
+NPE 修正。検証: OData IT **65/65**、Olingo **client 4/4**、`$metadata` が OASIS
+OData 4.0 CSDL **XSD 適合**、conformance チェックリスト **21/21** (`tools/odata-conformance/`)。
+
+**ネイティブ arm64 イメージ**:
+- **TEI** (`docker/tei/Dockerfile.arm64`): MKL 除去・`ort,candle` バックエンドで
+  ネイティブビルド (同一 `/embed` API)、非root、`NEMAKI_TEI_IMAGE`/`_PLATFORM` で opt-in
+- **Atlas** (`docker/atlas/Dockerfile.arm64`): Atlas 2.3.0 ソースビルド。死んだ
+  expired-cert Hortonworks repo を clojars にミラーし **Maven TLS 検証を全 repo で
+  維持** (グローバル無効化を撤廃)、Atlas プロセス死亡時に**コンテナ終了** (supervision
+  CMD + `restart: unless-stopped`)、非root、ビルド context を SHA ピン、
+  `NEMAKI_ATLAS_IMAGE`/`_PLATFORM` で opt-in。両 overlay はポートを 127.0.0.1 bind
+
+**セキュリティ/衛生**: npm audit HIGH 解消 (brace-expansion 5.0.7 / js-yaml 4.3.0)、
+誤コミットされていた Solr 実行データ (index/tlog) を履歴除去 + gitignore。
+
+**検証**: v3.3 ツリーで Java 単体 + フル TCK green (Connection/Basics/Control/
+Versioning/CRUD1/CRUD2/Query/Types 全通過。Types は E2E 残骸カスタム型
+(queryName null) の掃除が前提＝データ汚染で非回帰)、UI `tsc`+vite build クリーン、
+vitest 191/191、OData 65/65 + Olingo client 4/4 + CSDL XSD 適合 + conformance
+21/21、5 サービス arm64 スタック (core + CouchDB + Solr10 + ネイティブ TEI +
+ネイティブ Atlas) healthy で CMIS/RAG/OData 全稼働。
+
+**既知の制限 (適合性違反ではない)**: unbound 関数は全宣言パラメータ必須 (OData
+オーバーロード解決)、`GetObjectByPath` のパス内 `/` は Tomcat のエンコード済み
+スラッシュ既定拒否 (Query で代替)、`Types`/`Users`/`Groups` は EDM 宣言のみで
+データ未配線 (空 200)。
+
+**アップグレード注意**: (1) **RAG index 再構築必須** (Solr 10 / TEI 差替時)。
+(2) 非root TEI 採用時は root 所有の `tei_cache` volume を再作成 (初回モデル再 DL)。
+(3) dev/eval overlay の 127.0.0.1 bind でホスト外到達不可に (常設デモ等は要確認)。
+(4) atlas overlay は core の `CATALINA_OPTS` を置換するため、base 値
+(heap/nemakiware.properties/CouchDB 資格情報/solr.*) を事前 export しないと資格情報
+喪失 (compose の注記参照)。
 
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
