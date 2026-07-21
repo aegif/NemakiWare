@@ -43,8 +43,12 @@ recipe:
    `OSError` looking for `jar`).
 2. **node-sass native build** — added `python3` + `build-essential` (+
    `PYTHON=python3`) so node-gyp can compile the Atlas UI's SASS binding on arm64.
-3. **expired-cert repo** — `repo.hortonworks.com`'s TLS cert expired (Sep 2025);
-   `maven.wagon.http.ssl.ignore.validity.dates=true` lets Maven proceed.
+3. **dead expired-cert repo** — `repo.hortonworks.com`'s TLS cert expired (Sep
+   2025) and it 504s. Rather than disabling Maven's TLS validation globally
+   (`ssl.insecure`/`ssl.allowall`), the sole Hortonworks repo (`hortonworks.repo`
+   — the only such reference in Atlas 2.3.0's poms) is mirrored to clojars in
+   `settings-arm64.xml`, so the build never connects to the dead host and full
+   TLS validation stays on for every repository, including Maven Central.
 4. **dead vendor artifacts** — the hive/sqoop/storm/hbase/kafka/impala/falcon
    bridges pull Hortonworks-hosted artifacts that now 504. They're not needed for
    NemakiWare (which uses only the Atlas server/REST API), so they're excluded
@@ -63,7 +67,23 @@ recipe:
 - `GET /api/atlas/v2/types/typedefs/headers` → 200 with 196 type definitions;
   `GET /api/atlas/admin/version` → `2.3.0 / apache-atlas`. ~2 GB RAM at idle.
 
+## Runtime posture (arm64 image)
+
+Beyond parity with the amd64 image, this build hardens the runtime:
+
+- **Non-root** — runs as a dedicated `atlas` UID. Atlas + embedded HBase/Solr
+  bind only unprivileged ports (21000 / 16000 / 9838) and write under
+  `/apache-atlas`, which the build `chown`s to `atlas`.
+- **Process-supervised** — `atlas_start.py` daemonises Atlas and returns, so the
+  container's PID 1 polls the Atlas server pidfile and exits when the process
+  dies. Previously a bare `tail -fF` kept the container reported "Up" even after
+  Atlas had crashed (only embedded HBase surviving), masking the outage from the
+  healthcheck and Docker's restart policy.
+- **Loopback-bound** — `docker-compose-atlas.yml` publishes 21000 on
+  `127.0.0.1` only (dev/eval), because the credentials below are fixed.
+
 ## Credentials
 
 Unchanged from the amd64 image: `admin` / `admin` (baked into the Atlas user
-store; see `docker-compose-atlas.yml`).
+store; see `docker-compose-atlas.yml`). They cannot be overridden, so never
+expose port 21000 off-host without TLS + a real IdP in front.

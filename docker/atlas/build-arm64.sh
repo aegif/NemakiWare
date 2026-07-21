@@ -33,16 +33,21 @@
 set -euo pipefail
 
 IMAGE_TAG="${IMAGE_TAG:-nemakiware-atlas:2.3.0-arm64}"
-SBURN_REF="${SBURN_REF:-master}"
+# Pin the build context to a specific sburn/docker-apache-atlas commit so the
+# image is reproducible (upstream `master` drifts). Override with SBURN_REF.
+SBURN_REF="${SBURN_REF:-9808d67cd47852d56b2501e5d4ae2e8b65e30aeb}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 BUILD_DIR="$(mktemp -d)"
 cleanup() { rm -rf "$BUILD_DIR"; }
 trap cleanup EXIT
 
-echo ">> Cloning sburn/docker-apache-atlas (${SBURN_REF}) for the build context..."
-git clone --depth 1 --branch "${SBURN_REF}" \
+echo ">> Cloning sburn/docker-apache-atlas @ ${SBURN_REF} for the build context..."
+# Treeless clone gets the full commit graph cheaply so a pinned SHA (not just a
+# branch/tag tip) can be checked out; blobs are fetched lazily on checkout.
+git clone --filter=tree:0 --quiet \
     https://github.com/sburn/docker-apache-atlas.git "${BUILD_DIR}/atlas"
+git -C "${BUILD_DIR}/atlas" checkout --quiet "${SBURN_REF}"
 
 # Drop in the arm64 Dockerfile + the clojars mirror settings, and point the
 # runtime atlas-env.sh JAVA_HOME at the arm64 JDK (upstream hardcodes amd64).

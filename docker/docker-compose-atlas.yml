@@ -20,7 +20,10 @@ services:
     image: ${NEMAKI_ATLAS_IMAGE:-sburn/apache-atlas:2.3.0}
     platform: ${NEMAKI_ATLAS_PLATFORM:-linux/amd64}
     ports:
-      - "21000:21000"
+      # Dev/eval: bind to loopback only. This Atlas image ships with baked-in
+      # admin/admin credentials that cannot be overridden, so it must never be
+      # published on 0.0.0.0. Front it with TLS + a real IdP on any shared host.
+      - "127.0.0.1:21000:21000"
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:21000/api/atlas/v2/types/typedefs/headers", "-u", "${ATLAS_USER:-admin}:${ATLAS_PASSWORD:-admin}"]
       interval: 30s
