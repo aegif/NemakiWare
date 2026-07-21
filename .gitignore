@@ -257,3 +257,10 @@ test-data-setup/config.yaml
 # Root node_modules (UI node_modules is handled separately)
 /node_modules/
 core/.factorypath
+
+# Solr runtime data (index / tlog) — never commit
+solr/solr/*/data/
+docker/solr/solr/*/data/
+
+# Codex local workspace (not part of the project)
+.codex/
