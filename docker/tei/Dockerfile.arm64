@@ -48,5 +48,16 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 
 COPY --from=builder /usr/src/target/release/text-embeddings-router /usr/local/bin/text-embeddings-router
 
+# Run as a dedicated non-root user. TEI listens on unprivileged port 80 and
+# only writes the model cache under /data (HUGGINGFACE_HUB_CACHE), so a
+# non-root UID suffices once it owns /data. NOTE: a pre-existing (root-owned)
+# tei_cache volume must be recreated (or chowned) when adopting this image, as
+# Docker does not re-chown an already-populated named volume on first mount.
+RUN groupadd -r tei \
+    && useradd -r -g tei -d /data -s /usr/sbin/nologin tei \
+    && mkdir -p /data \
+    && chown -R tei:tei /data
+USER tei
+
 ENTRYPOINT ["text-embeddings-router"]
 CMD ["--json-output"]

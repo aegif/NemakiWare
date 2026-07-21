@@ -169,13 +169,15 @@ services:
     profiles:
       - rag
     ports:
-      - "8081:80"
+      # Dev/eval: bind to loopback only (embedding service, no auth).
+      - "127.0.0.1:8081:80"
     volumes:
       - tei_cache:/data
     deploy:
       resources:
         limits:
-          memory: 4g
+          # e5-large ONNX warmup peaks ~7 GiB; 8g avoids OOM (exit 137).
+          memory: 8g
         reservations:
           memory: 2g
     environment:

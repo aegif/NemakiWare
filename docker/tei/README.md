@@ -56,6 +56,17 @@ The build enables **both** backends (`--features ort,candle,http`, MKL dropped):
   block-join RAG search returns results (score ≈ 0.94), zero core-side embedding
   errors.
 
+## Runtime posture (arm64 image)
+
+- **Non-root** — runs as a dedicated `tei` UID. TEI binds unprivileged port 80
+  and only writes the model cache under `/data`, which the image `chown`s to
+  `tei`. **Adopting this image requires recreating the `tei_cache` volume** (or
+  chowning it): Docker does not re-chown an already-populated, root-owned named
+  volume on first mount, so a stale root-owned cache would be unreadable by the
+  non-root process. Recreating triggers a one-time model re-download.
+- **Loopback-bound** — `docker-compose-simple.yml` publishes 8081 on
+  `127.0.0.1` only (dev/eval; the embedding endpoint is unauthenticated).
+
 ## Model constraint
 
 The model is fixed by the Solr vector schema: `MODEL_ID=intfloat/multilingual-e5-large`
