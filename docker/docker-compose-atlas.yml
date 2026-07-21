@@ -19,6 +19,9 @@ services:
     # Both expose the same Atlas REST API (api/atlas/v2, port 21000).
     image: ${NEMAKI_ATLAS_IMAGE:-sburn/apache-atlas:2.3.0}
     platform: ${NEMAKI_ATLAS_PLATFORM:-linux/amd64}
+    # The arm64 image's PID 1 exits when the Atlas server process dies; restart
+    # so the container recovers instead of lingering with a dead Atlas.
+    restart: unless-stopped
     ports:
       # Dev/eval: bind to loopback only. This Atlas image ships with baked-in
       # admin/admin credentials that cannot be overridden, so it must never be
@@ -36,4 +39,9 @@ services:
       atlas:
         condition: service_healthy
     environment:
+      # NOTE: this replaces (does not merge with) the base core CATALINA_OPTS,
+      # then re-inlines it via ${CATALINA_OPTS}. Export CATALINA_OPTS with the
+      # base value (heap + nemakiware.properties + CouchDB creds + solr.*) before
+      # running compose with this overlay, or the base opts (incl. CouchDB
+      # credentials) are lost. See deploy notes / CLAUDE.md.
       - CATALINA_OPTS=${CATALINA_OPTS} -Dpurview.enabled=true -Dpurview.endpoint=http://atlas:21000 -Dpurview.auth.type=basic -Dpurview.basic.username=${ATLAS_USER:-admin} -Dpurview.basic.password=${ATLAS_PASSWORD:-admin} -Dpurview.atlas.base-path=api/atlas/v2 -Datlas.enabled=true -Datlas.endpoint=http://atlas:21000 -Datlas.username=${ATLAS_USER:-admin} -Datlas.password=${ATLAS_PASSWORD:-admin} -Dlineage.mode=journaled -Dlineage.targets=atlas
