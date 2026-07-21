@@ -433,7 +433,7 @@ test.describe('Bug Fix Verification Tests', () => {
       console.log('Verifying relationship is visible on target document...');
 
       // Look for the source document name in the relationship tab content
-      const relationshipContent = page.locator('.ant-tabs-tabpane-active');
+      const relationshipContent = page.locator('.ant-tabs-content-active');
       const sourceDocVisible = relationshipContent.locator(`text=${sourceDocName}`);
 
       // Should find at least one reference to the source document

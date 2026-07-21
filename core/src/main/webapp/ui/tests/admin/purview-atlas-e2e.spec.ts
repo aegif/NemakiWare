@@ -587,7 +587,7 @@ test.describe('Group 3: Governance Tab', () => {
       await waitForUiStable(page);
 
       // Verify qualifiedName or entityType is displayed somewhere
-      const pageText = await page.locator('.ant-tabs-tabpane-active').textContent();
+      const pageText = await page.locator('.ant-tabs-content-active').textContent();
       expect(pageText).toBeTruthy();
       console.log('Governance tab text (first 200):', pageText?.substring(0, 200));
     }
@@ -876,7 +876,7 @@ test.describe('Group 6: Lineage Journal UI', () => {
     if (await statsTab.count() > 0) {
       await statsTab.click();
       await waitForUiStable(page);
-      const statsText = await page.locator('.ant-tabs-tabpane-active').textContent();
+      const statsText = await page.locator('.ant-tabs-content-active').textContent();
       console.log('Stats tab text (first 200):', statsText?.substring(0, 200));
     }
   });
@@ -904,7 +904,7 @@ test.describe('Group 6: Lineage Journal UI', () => {
       await deadLetterTab.click();
       await waitForUiStable(page);
 
-      const tabContent = await page.locator('.ant-tabs-tabpane-active').textContent();
+      const tabContent = await page.locator('.ant-tabs-content-active').textContent();
       console.log('Dead Letter tab text (first 200):', tabContent?.substring(0, 200));
 
       // Should have either a table or empty state, plus Replay All button

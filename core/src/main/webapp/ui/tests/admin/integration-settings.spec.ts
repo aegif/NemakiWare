@@ -130,7 +130,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     await waitForUiStable(page);
 
     // Should have Google tab panel visible with a form item
-    const googlePanel = page.locator('.ant-tabs-tabpane-active');
+    const googlePanel = page.locator('.ant-tabs-content-active');
     await expect(googlePanel).toBeVisible({ timeout: 10000 });
     const googleFormItem = googlePanel.locator('.ant-form-item').first();
     await expect(googleFormItem).toBeVisible({ timeout: 5000 });
@@ -142,7 +142,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     await waitForUiStable(page);
 
     // Should have Microsoft tab with Tenant ID field
-    const msPanel = page.locator('.ant-tabs-tabpane-active');
+    const msPanel = page.locator('.ant-tabs-content-active');
     const msFormItems = msPanel.locator('.ant-form-item');
     const msItemCount = await msFormItems.count();
     console.log(`Microsoft tab has ${msItemCount} form items`);
@@ -155,7 +155,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     await waitForUiStable(page);
 
     // Should have SAML tab with form items
-    const samlPanel = page.locator('.ant-tabs-tabpane-active');
+    const samlPanel = page.locator('.ant-tabs-content-active');
     const samlFormItems = samlPanel.locator('.ant-form-item');
     const samlItemCount = await samlFormItems.count();
     console.log(`SAML tab has ${samlItemCount} form items`);
@@ -168,7 +168,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     await waitForUiStable(page);
 
     // Should have Purview tab with form items
-    const purviewPanel = page.locator('.ant-tabs-tabpane-active');
+    const purviewPanel = page.locator('.ant-tabs-content-active');
     const purviewFormItems = purviewPanel.locator('.ant-form-item');
     const purviewItemCount = await purviewFormItems.count();
     console.log(`Purview tab has ${purviewItemCount} form items`);
@@ -186,7 +186,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     await atlasTab.click();
     await waitForUiStable(page);
 
-    const atlasPanel = page.locator('.ant-tabs-tabpane-active');
+    const atlasPanel = page.locator('.ant-tabs-content-active');
     const atlasFormItems = atlasPanel.locator('.ant-form-item');
     const atlasItemCount = await atlasFormItems.count();
     console.log(`Atlas tab has ${atlasItemCount} form items`);
@@ -198,7 +198,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     await dataplexTab.click();
     await waitForUiStable(page);
 
-    const dataplexPanel = page.locator('.ant-tabs-tabpane-active');
+    const dataplexPanel = page.locator('.ant-tabs-content-active');
     const dataplexFormItems = dataplexPanel.locator('.ant-form-item');
     const dataplexItemCount = await dataplexFormItems.count();
     console.log(`Dataplex tab has ${dataplexItemCount} form items`);

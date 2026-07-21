@@ -252,7 +252,7 @@ test.describe('Custom Type Creation and Property Management', () => {
 
       // Method 3: First input in basic info tab
       if (!typeIdFilled) {
-        const basicTabInputs = createModal.locator('.ant-tabs-tabpane-active input');
+        const basicTabInputs = createModal.locator('.ant-tabs-content-active input');
         console.log(`Type ID selector 3 count: ${await basicTabInputs.count()}`);
         if (await basicTabInputs.count() > 0) {
           await basicTabInputs.first().fill(customTypeId);

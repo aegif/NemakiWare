@@ -525,7 +525,7 @@ test.describe('Document Versioning', () => {
     await waitForUiStable(page);
 
     // A freshly uploaded document lists at least its initial version.
-    const versionRows = page.locator('.ant-tabs-tabpane-active .ant-table-tbody tr.ant-table-row');
+    const versionRows = page.locator('.ant-tabs-content-active .ant-table-tbody tr.ant-table-row');
     await expect(versionRows.first()).toBeVisible({ timeout: 10000 });
 
     // Return to the document list for cleanup (i18n back button: 戻る / Back).

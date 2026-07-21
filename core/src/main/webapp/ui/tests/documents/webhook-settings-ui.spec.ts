@@ -529,7 +529,7 @@ test.describe('Webhook Settings UI Tests', () => {
     await waitForUiStable(page);
 
     // Verify row added in webhook table (scope to the active tab panel to exclude property tables)
-    const webhookPanel = page.locator('.ant-tabs-tabpane-active, .ant-tabs-tabpane:not([hidden])').last();
+    const webhookPanel = page.locator('.ant-tabs-content-active, .ant-tabs-tabpane:not([hidden])').last();
     const tableRows = webhookPanel.locator('.ant-table-tbody .ant-table-row');
     await expect(tableRows).toHaveCount(1, { timeout: 5000 });
     // Verify the URL is displayed

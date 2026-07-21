@@ -147,7 +147,7 @@ test.describe('User Scenario Tests', () => {
       await secondaryTypeTab.click();
       await waitForRender(page);
 
-      const tabContent = page.locator('.ant-tabs-tabpane-active');
+      const tabContent = page.locator('.ant-tabs-content-active');
       await expect(tabContent).toBeVisible();
 
       const includesErrors = errors.filter(e => e.includes('includes is not a function'));
@@ -180,7 +180,7 @@ test.describe('User Scenario Tests', () => {
       await relationshipTab.click();
       await waitForRender(page);
 
-      const tabContent = page.locator('.ant-tabs-tabpane-active');
+      const tabContent = page.locator('.ant-tabs-content-active');
       await expect(tabContent).toBeVisible();
 
       const criticalErrors = errors.filter(e =>
@@ -212,7 +212,7 @@ test.describe('User Scenario Tests', () => {
       await previewTab.click();
       await waitForUiStable(page);
 
-      const previewContent = page.locator('.ant-tabs-tabpane-active');
+      const previewContent = page.locator('.ant-tabs-content-active');
       await expect(previewContent).toBeVisible();
     });
   });
@@ -450,7 +450,7 @@ test.describe('User Scenario Tests', () => {
       // would otherwise grab a layout-level Select (repository/language switcher)
       // instead of the secondary-type picker, so the wrong dropdown opens and the
       // Add button stays disabled.
-      const selector = page.locator('.ant-tabs-tabpane-active .ant-select').first();
+      const selector = page.locator('.ant-tabs-content-active .ant-select').first();
       if (await selector.count() === 0 || !(await selector.isVisible())) {
         test.skip('ENV: All secondary types already assigned — no add operation possible');
         return;
@@ -482,7 +482,7 @@ test.describe('User Scenario Tests', () => {
       // The Add button is disabled until a type is selected — wait for it to
       // become enabled before clicking (otherwise click() times out on a
       // non-actionable disabled button).
-      const addButton = page.locator('.ant-tabs-tabpane-active')
+      const addButton = page.locator('.ant-tabs-content-active')
         .getByRole('button', { name: /追加|Add/i }).first();
       await expect(addButton).toBeEnabled({ timeout: 5000 });
       await addButton.click();
