@@ -299,12 +299,7 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
                     Locale.ENGLISH
             );
         } catch (Exception e) {
-            throw new ODataApplicationException(
-                    "Error executing action " + actionName + ": " + e.getMessage(),
-                    HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(),
-                    Locale.ENGLISH,
-                    e
-            );
+            throw ODataExceptions.map("Error executing action " + actionName, e);
         }
     }
     

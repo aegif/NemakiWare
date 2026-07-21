@@ -181,11 +181,47 @@ public class CmisEdmProvider extends CsdlAbstractEdmProvider {
         entitySets.add(getEntitySet(CONTAINER, ES_USERS_NAME));
         entitySets.add(getEntitySet(CONTAINER, ES_GROUPS_NAME));
         
+        // Expose the unbound functions as function imports so they are callable
+        // at the service root (e.g. /Query(...), /GetObjectByPath(...)). Bound
+        // functions/actions are invoked through their binding and need no import.
+        List<CsdlFunctionImport> functionImports = new ArrayList<>();
+        functionImports.add(getFunctionImport(CONTAINER, FUNCTION_GET_OBJECT_BY_PATH));
+        functionImports.add(getFunctionImport(CONTAINER, FUNCTION_QUERY));
+        functionImports.add(getFunctionImport(CONTAINER, FUNCTION_GET_CONTENT_CHANGES));
+
         CsdlEntityContainer entityContainer = new CsdlEntityContainer();
         entityContainer.setName(CONTAINER_NAME);
         entityContainer.setEntitySets(entitySets);
-        
+        entityContainer.setFunctionImports(functionImports);
+
         return entityContainer;
+    }
+
+    @Override
+    public CsdlFunctionImport getFunctionImport(FullQualifiedName entityContainer, String functionImportName)
+            throws ODataException {
+        if (entityContainer.equals(CONTAINER)) {
+            if (functionImportName.equals(FUNCTION_GET_OBJECT_BY_PATH)) {
+                return new CsdlFunctionImport()
+                        .setName(FUNCTION_GET_OBJECT_BY_PATH)
+                        .setFunction(FUNCTION_GET_OBJECT_BY_PATH_FQN)
+                        .setEntitySet(ES_OBJECTS_NAME)
+                        .setIncludeInServiceDocument(true);
+            } else if (functionImportName.equals(FUNCTION_QUERY)) {
+                return new CsdlFunctionImport()
+                        .setName(FUNCTION_QUERY)
+                        .setFunction(FUNCTION_QUERY_FQN)
+                        .setEntitySet(ES_OBJECTS_NAME)
+                        .setIncludeInServiceDocument(true);
+            } else if (functionImportName.equals(FUNCTION_GET_CONTENT_CHANGES)) {
+                return new CsdlFunctionImport()
+                        .setName(FUNCTION_GET_CONTENT_CHANGES)
+                        .setFunction(FUNCTION_GET_CONTENT_CHANGES_FQN)
+                        .setEntitySet(ES_OBJECTS_NAME)
+                        .setIncludeInServiceDocument(true);
+            }
+        }
+        return null;
     }
     
     @Override

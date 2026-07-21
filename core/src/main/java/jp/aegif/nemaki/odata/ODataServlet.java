@@ -7,12 +7,9 @@ import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.olingo.commons.api.edmx.EdmxReference;
-import org.apache.olingo.commons.api.http.HttpMethod;
 import org.apache.olingo.server.api.OData;
-import org.apache.olingo.server.api.ODataRequest;
-import org.apache.olingo.server.api.ODataResponse;
+import org.apache.olingo.server.api.ODataHttpHandler;
 import org.apache.olingo.server.api.ServiceMetadata;
-import org.apache.olingo.server.core.ODataHandlerImpl;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.context.support.WebApplicationContextUtils;
 
@@ -26,13 +23,8 @@ import jp.aegif.nemaki.rest.CsrfValidator;
 
 import java.util.Set;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.ArrayList;
-import java.util.Enumeration;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -137,33 +129,56 @@ public class ODataServlet extends HttpServlet {
                     new ArrayList<EdmxReference>()
             );
             
-            // Create OData handler implementation. The 3rd argument is a
-            // ServerCoreDebugger; passing null here causes a NullPointerException
-            // inside startRuntimeMeasurement on every request. We construct a
-            // real (non-debug-mode) debugger — its overhead is negligible and
-            // the NPE was masking the OData binding entirely.
-            org.apache.olingo.server.core.debug.ServerCoreDebugger debugger =
-                    new org.apache.olingo.server.core.debug.ServerCoreDebugger(odata);
-            ODataHandlerImpl handler = new ODataHandlerImpl(odata, serviceMetadata, debugger);
+            // Olingo 5.0 is jakarta-native, so use the standard public
+            // ODataHttpHandler (which parses the URI, negotiates content and
+            // dispatches to the registered processors) rather than hand-building
+            // an ODataRequest around the internal ODataHandlerImpl. The manual
+            // path mis-parsed every entity-set read as a function call
+            // ("Function not found in URI"); the standard handler resolves entity
+            // sets, entities, bound operations and function imports correctly.
+            ODataHttpHandler handler = odata.createHandler(serviceMetadata);
             
-            // Register processors
-            handler.register(new CmisEntityCollectionProcessor(
+            // Register processors. IMPORTANT: CmisFunctionProcessor implements
+            // the same Olingo interfaces (EntityCollectionProcessor,
+            // EntityProcessor) as the entity-set processors, and Olingo keeps
+            // only ONE processor per interface — the last registered wins. If it
+            // were registered directly it would clobber the entity-set
+            // processors and every /Documents read would be misrouted to it,
+            // yielding "Function not found in URI". Instead it is initialised
+            // manually and injected as a delegate; the entity-set processors
+            // forward function URIs to it.
+            CmisFunctionProcessor functionProcessor = new CmisFunctionProcessor(
+                    repositoryService,
+                    objectService,
+                    navigationService,
+                    discoveryService,
+                    versioningService,
+                    repositoryId,
+                    callContext
+            );
+            functionProcessor.init(odata, serviceMetadata);
+
+            CmisEntityCollectionProcessor collectionProcessor = new CmisEntityCollectionProcessor(
                     repositoryService,
                     objectService,
                     navigationService,
                     discoveryService,
                     repositoryId,
                     callContext
-            ));
-            
-            handler.register(new CmisEntityProcessor(
+            );
+            collectionProcessor.setFunctionProcessor(functionProcessor);
+
+            CmisEntityProcessor entityProcessor = new CmisEntityProcessor(
                     repositoryService,
                     objectService,
                     navigationService,
                     repositoryId,
                     callContext
-            ));
-            
+            );
+            entityProcessor.setFunctionProcessor(functionProcessor);
+
+            handler.register(collectionProcessor);
+            handler.register(entityProcessor);
             handler.register(new CmisActionProcessor(
                     repositoryService,
                     objectService,
@@ -173,122 +188,17 @@ public class ODataServlet extends HttpServlet {
                     repositoryId,
                     callContext
             ));
-            
-            handler.register(new CmisFunctionProcessor(
-                    repositoryService,
-                    objectService,
-                    navigationService,
-                    discoveryService,
-                    versioningService,
-                    repositoryId,
-                    callContext
-            ));
-            
-            // Create OData request from Jakarta servlet request
-            ODataRequest odataRequest = createODataRequest(request, repositoryId);
-            
-            // Process the request
-            ODataResponse odataResponse = handler.process(odataRequest);
-            
-            // Write OData response to Jakarta servlet response
-            writeODataResponse(odataResponse, response);
-            
+
+            // The servlet is mapped at /odata/* and the URL carries the
+            // repository id as the first path segment (/odata/{repositoryId}/...).
+            // Tell Olingo that this one segment is part of the service root, so
+            // the OData resource path starts at the entity set / function import.
+            handler.setSplit(1);
+            handler.process(request, response);
+
         } catch (Exception e) {
             response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, 
                     "OData processing error: " + e.getMessage());
-        }
-    }
-    
-    /**
-     * Create an OData request from a Jakarta servlet request.
-     */
-    private ODataRequest createODataRequest(HttpServletRequest request, String repositoryId) throws IOException {
-        ODataRequest odataRequest = new ODataRequest();
-        
-        // Set HTTP method
-        odataRequest.setMethod(HttpMethod.valueOf(request.getMethod()));
-        
-        // Set raw base URI and service resolution URI
-        String scheme = request.getScheme();
-        String serverName = request.getServerName();
-        int serverPort = request.getServerPort();
-        String contextPath = request.getContextPath();
-        
-        StringBuilder baseUri = new StringBuilder();
-        baseUri.append(scheme).append("://").append(serverName);
-        if ((scheme.equals("http") && serverPort != 80) || (scheme.equals("https") && serverPort != 443)) {
-            baseUri.append(":").append(serverPort);
-        }
-        baseUri.append(contextPath).append("/odata/").append(repositoryId);
-        
-        odataRequest.setRawBaseUri(baseUri.toString());
-        odataRequest.setRawServiceResolutionUri(baseUri.toString());
-        
-        // Set raw request URI and OData path
-        String requestUri = request.getRequestURI();
-        String queryString = request.getQueryString();
-        if (queryString != null && !queryString.isEmpty()) {
-            requestUri = requestUri + "?" + queryString;
-            odataRequest.setRawQueryPath(queryString);
-        }
-        odataRequest.setRawRequestUri(scheme + "://" + serverName + 
-                (serverPort != 80 && serverPort != 443 ? ":" + serverPort : "") + requestUri);
-        
-        // Set OData path (remove /odata/{repositoryId} prefix)
-        String odataPath = getODataPath(request.getRequestURI().substring(contextPath.length()), repositoryId);
-        odataRequest.setRawODataPath(odataPath);
-        
-        // Copy headers
-        Enumeration<String> headerNames = request.getHeaderNames();
-        while (headerNames.hasMoreElements()) {
-            String headerName = headerNames.nextElement();
-            Enumeration<String> headerValues = request.getHeaders(headerName);
-            while (headerValues.hasMoreElements()) {
-                odataRequest.addHeader(headerName, headerValues.nextElement());
-            }
-        }
-        
-        // Copy body for POST/PUT/PATCH requests
-        if ("POST".equals(request.getMethod()) || "PUT".equals(request.getMethod()) || "PATCH".equals(request.getMethod())) {
-            InputStream inputStream = request.getInputStream();
-            if (inputStream != null) {
-                ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                byte[] buffer = new byte[4096];
-                int bytesRead;
-                while ((bytesRead = inputStream.read(buffer)) != -1) {
-                    baos.write(buffer, 0, bytesRead);
-                }
-                odataRequest.setBody(new ByteArrayInputStream(baos.toByteArray()));
-            }
-        }
-        
-        return odataRequest;
-    }
-    
-    /**
-     * Write an OData response to a Jakarta servlet response.
-     */
-    private void writeODataResponse(ODataResponse odataResponse, HttpServletResponse response) throws IOException {
-        // Set status code
-        response.setStatus(odataResponse.getStatusCode());
-        
-        // Copy headers
-        for (String headerName : odataResponse.getAllHeaders().keySet()) {
-            for (String headerValue : odataResponse.getAllHeaders().get(headerName)) {
-                response.addHeader(headerName, headerValue);
-            }
-        }
-        
-        // Copy body
-        InputStream content = odataResponse.getContent();
-        if (content != null) {
-            OutputStream outputStream = response.getOutputStream();
-            byte[] buffer = new byte[4096];
-            int bytesRead;
-            while ((bytesRead = content.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, bytesRead);
-            }
-            outputStream.flush();
         }
     }
     
@@ -308,24 +218,5 @@ public class ODataServlet extends HttpServlet {
             return matcher.group(1);
         }
         return null;
-    }
-    
-    /**
-     * Get the OData path by removing the /odata/{repositoryId} prefix.
-     * 
-     * @param pathInfo The full URL path
-     * @param repositoryId The repositoryId
-     * @return The OData path (e.g., /Documents)
-     */
-    private String getODataPath(String pathInfo, String repositoryId) {
-        String prefix = "/odata/" + repositoryId;
-        if (pathInfo.startsWith(prefix)) {
-            String odataPath = pathInfo.substring(prefix.length());
-            if (odataPath.isEmpty()) {
-                return "/";
-            }
-            return odataPath;
-        }
-        return pathInfo;
     }
 }

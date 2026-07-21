@@ -107,7 +107,9 @@ public class ODataDocumentsIT extends ODataTestBase {
             .statusCode(200)
             .contentType(containsString("application/json"))
             .body("value", notNullValue())
-            .body("@odata.count", notNullValue());
+            // GPath needs the literal '@odata.count' key quoted (the '@' and '.'
+            // are otherwise interpreted as navigation/attribute operators).
+            .body("'@odata.count'", notNullValue());
     }
     
     /**
@@ -273,18 +275,29 @@ public class ODataDocumentsIT extends ODataTestBase {
      */
     @Test
     public void testCreateDocument() {
+        // Unique name so the test is repeatable against a persistent repository
+        // (a fixed name would collide on re-run and now correctly yields 409).
         String documentJson = "{"
-            + "\"name\": \"odata-test-document.txt\","
+            + "\"name\": \"odata-test-document-" + System.nanoTime() + ".txt\","
             + "\"objectTypeId\": \"cmis:document\""
             + "}";
-        
-        given()
+
+        Response response = given()
             .spec(requestSpec)
             .body(documentJson)
         .when()
             .post(documentsPath())
         .then()
-            .statusCode(anyOf(equalTo(201), equalTo(405))); // 405 if POST not supported
+            .statusCode(anyOf(equalTo(201), equalTo(405))) // 405 if POST not supported
+            .extract().response();
+
+        // Clean up the created document so runs do not accumulate residue.
+        if (response.getStatusCode() == 201) {
+            String createdId = response.jsonPath().getString("objectId");
+            if (createdId != null) {
+                given().spec(requestSpec).when().delete(documentPath(createdId));
+            }
+        }
     }
     
     /**

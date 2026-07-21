@@ -43,6 +43,7 @@ import org.apache.olingo.server.api.uri.UriInfo;
 import org.apache.olingo.server.api.uri.UriParameter;
 import org.apache.olingo.server.api.uri.UriResource;
 import org.apache.olingo.server.api.uri.UriResourceEntitySet;
+import org.apache.olingo.server.api.uri.UriResourceFunction;
 import org.apache.olingo.server.api.uri.queryoption.ExpandItem;
 import org.apache.olingo.server.api.uri.queryoption.ExpandOption;
 
@@ -80,7 +81,12 @@ public class CmisEntityProcessor implements EntityProcessor {
     private final NavigationService navigationService;
     private final String repositoryId;
     private final CallContext callContext;
-    
+
+    // A function returning a single entity is dispatched by Olingo to
+    // EntityProcessor.readEntity; delegate those URIs to the function processor
+    // (only one processor may register per Olingo interface).
+    private CmisFunctionProcessor functionProcessor;
+
     public CmisEntityProcessor(
             RepositoryService repositoryService,
             ObjectService objectService,
@@ -99,13 +105,31 @@ public class CmisEntityProcessor implements EntityProcessor {
         this.odata = odata;
         this.serviceMetadata = serviceMetadata;
     }
-    
+
+    /** Inject the delegate that handles function URIs returning a single entity. */
+    public void setFunctionProcessor(CmisFunctionProcessor functionProcessor) {
+        this.functionProcessor = functionProcessor;
+    }
+
     @Override
     public void readEntity(ODataRequest request, ODataResponse response, UriInfo uriInfo, ContentType responseFormat)
             throws ODataApplicationException, SerializerException {
-        
+
         // Get the entity set and key from the URI
         List<UriResource> resourcePaths = uriInfo.getUriResourceParts();
+
+        // A function returning a single entity is dispatched here by Olingo too;
+        // hand it to the function processor instead of treating the first path
+        // segment as an entity set.
+        if (functionProcessor != null) {
+            for (UriResource part : resourcePaths) {
+                if (part instanceof UriResourceFunction) {
+                    functionProcessor.readEntity(request, response, uriInfo, responseFormat);
+                    return;
+                }
+            }
+        }
+
         UriResourceEntitySet uriResourceEntitySet = (UriResourceEntitySet) resourcePaths.get(0);
         EdmEntitySet edmEntitySet = uriResourceEntitySet.getEntitySet();
         
@@ -230,12 +254,7 @@ public class CmisEntityProcessor implements EntityProcessor {
         } catch (ODataApplicationException e) {
             throw e;
         } catch (Exception e) {
-            throw new ODataApplicationException(
-                    "Error creating entity: " + e.getMessage(),
-                    HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(),
-                    Locale.ENGLISH,
-                    e
-            );
+            throw ODataExceptions.map("Error creating entity", e);
         }
     }
     
@@ -321,12 +340,7 @@ public class CmisEntityProcessor implements EntityProcessor {
                     Locale.ENGLISH
             );
         } catch (Exception e) {
-            throw new ODataApplicationException(
-                    "Error updating entity: " + e.getMessage(),
-                    HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(),
-                    Locale.ENGLISH,
-                    e
-            );
+            throw ODataExceptions.map("Error updating entity", e);
         }
     }
     
@@ -368,12 +382,7 @@ public class CmisEntityProcessor implements EntityProcessor {
                     Locale.ENGLISH
             );
         } catch (Exception e) {
-            throw new ODataApplicationException(
-                    "Error deleting entity: " + e.getMessage(),
-                    HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(),
-                    Locale.ENGLISH,
-                    e
-            );
+            throw ODataExceptions.map("Error deleting entity", e);
         }
     }
     
@@ -402,12 +411,7 @@ public class CmisEntityProcessor implements EntityProcessor {
         } catch (CmisObjectNotFoundException e) {
             return null;
         } catch (Exception e) {
-            throw new ODataApplicationException(
-                    "Error fetching entity: " + e.getMessage(),
-                    HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(),
-                    Locale.ENGLISH,
-                    e
-            );
+            throw ODataExceptions.map("Error fetching entity", e);
         }
     }
     
@@ -810,12 +814,7 @@ public class CmisEntityProcessor implements EntityProcessor {
         } catch (CmisObjectNotFoundException e) {
             return null;
         } catch (Exception e) {
-            throw new ODataApplicationException(
-                    "Error fetching entity: " + e.getMessage(),
-                    HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(),
-                    Locale.ENGLISH,
-                    e
-            );
+            throw ODataExceptions.map("Error fetching entity", e);
         }
     }
     

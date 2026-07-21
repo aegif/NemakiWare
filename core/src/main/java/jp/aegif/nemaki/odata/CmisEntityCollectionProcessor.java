@@ -9,6 +9,7 @@ import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.olingo.commons.api.data.ContextURL;
 import org.apache.olingo.commons.api.data.Entity;
 import org.apache.olingo.commons.api.data.EntityCollection;
@@ -33,6 +34,7 @@ import org.apache.olingo.server.api.serializer.SerializerResult;
 import org.apache.olingo.server.api.uri.UriInfo;
 import org.apache.olingo.server.api.uri.UriResource;
 import org.apache.olingo.server.api.uri.UriResourceEntitySet;
+import org.apache.olingo.server.api.uri.UriResourceFunction;
 import org.apache.olingo.server.api.uri.queryoption.CountOption;
 import org.apache.olingo.server.api.uri.queryoption.FilterOption;
 import org.apache.olingo.server.api.uri.queryoption.OrderByOption;
@@ -85,7 +87,14 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
     private final DiscoveryService discoveryService;
     private final String repositoryId;
     private final CallContext callContext;
-    
+
+    // A function/function-import returning a collection is dispatched by Olingo
+    // to this same EntityCollectionProcessor. Only one processor can be
+    // registered per Olingo interface, so instead of registering
+    // CmisFunctionProcessor as a second EntityCollectionProcessor (which would
+    // clobber this one), we delegate function URIs to it.
+    private CmisFunctionProcessor functionProcessor;
+
     public CmisEntityCollectionProcessor(
             RepositoryService repositoryService,
             ObjectService objectService,
@@ -106,13 +115,31 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         this.odata = odata;
         this.serviceMetadata = serviceMetadata;
     }
-    
+
+    /** Inject the delegate that handles function(-import) collection URIs. */
+    public void setFunctionProcessor(CmisFunctionProcessor functionProcessor) {
+        this.functionProcessor = functionProcessor;
+    }
+
     @Override
     public void readEntityCollection(ODataRequest request, ODataResponse response, UriInfo uriInfo, ContentType responseFormat)
             throws ODataApplicationException, SerializerException {
-        
+
         // Get the entity set from the URI
         List<UriResource> resourcePaths = uriInfo.getUriResourceParts();
+
+        // A function (or unbound function import) that returns a collection is
+        // dispatched here by Olingo as well; hand it to the function processor
+        // instead of treating the first path segment as an entity set.
+        if (functionProcessor != null) {
+            for (UriResource part : resourcePaths) {
+                if (part instanceof UriResourceFunction) {
+                    functionProcessor.readEntityCollection(request, response, uriInfo, responseFormat);
+                    return;
+                }
+            }
+        }
+
         UriResourceEntitySet uriResourceEntitySet = (UriResourceEntitySet) resourcePaths.get(0);
         EdmEntitySet edmEntitySet = uriResourceEntitySet.getEntitySet();
         
@@ -219,6 +246,13 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                     
                     if (objectList.getNumItems() != null) {
                         entityCollection.setCount(objectList.getNumItems().intValue());
+                    } else {
+                        // Backend did not report a total; fall back to the number
+                        // of entities returned so a requested @odata.count is still
+                        // emitted (accurate for a non-paginated result). The count
+                        // is only serialized when $count=true, so setting it
+                        // unconditionally here is harmless otherwise.
+                        entityCollection.setCount(entityCollection.getEntities().size());
                     }
                 }
             }
@@ -230,7 +264,14 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                     e
             );
         }
-        
+
+        // Guarantee a non-null count so @odata.count is always emitted when the
+        // client asked for it ($count=true), even when the backend returned no
+        // ObjectList (e.g. an empty result). Only serialized when $count=true.
+        if (entityCollection.getCount() == null) {
+            entityCollection.setCount(entityCollection.getEntities().size());
+        }
+
         return entityCollection;
     }
     
@@ -1119,7 +1160,7 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                     Boolean.FALSE,  // includePathSegment
                     BigInteger.valueOf(100),  // maxItems - limit to 100 children
                     BigInteger.ZERO,  // skipCount
-                    null,  // parentObjectData
+                    new Holder<org.apache.chemistry.opencmis.commons.data.ObjectData>(),  // parentObjectData (out; required non-null)
                     null   // extension
             );
             

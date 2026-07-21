@@ -107,7 +107,9 @@ public class ODataFoldersIT extends ODataTestBase {
             .statusCode(200)
             .contentType(containsString("application/json"))
             .body("value", notNullValue())
-            .body("@odata.count", notNullValue());
+            // GPath needs the literal '@odata.count' key quoted (the '@' and '.'
+            // are otherwise interpreted as navigation/attribute operators).
+            .body("'@odata.count'", notNullValue());
     }
     
     /**
@@ -555,59 +557,80 @@ public class ODataFoldersIT extends ODataTestBase {
      */
     @Test
     public void testMoveActionWithSourceFolder() {
-        // First, get folders to find a valid ID and its parent
-        Response listResponse = given()
-            .spec(requestSpec)
-            .queryParam("$top", 1)
-            .queryParam("$filter", "path ne '/'") // Exclude root folder
-            .queryParam("$expand", "parent")
-        .when()
-            .get(foldersPath())
-        .then()
-            .statusCode(200)
-            .extract().response();
-        
-        java.util.List<?> folders = listResponse.jsonPath().getList("value");
-        if (folders == null || folders.isEmpty()) {
-            // No folders available for move test
+        // Build a deterministic scaffold so the move cannot collide with
+        // pre-existing folders (moving to the shared root could hit a name
+        // conflict -> 409): a source folder and a target folder under root, and
+        // a child inside source that we then move from source to target.
+        long stamp = System.nanoTime();
+        String rootId = getRootFolderId();
+        if (rootId == null) {
             return;
         }
-        
-        String objectIdToMove = listResponse.jsonPath().getString("value[0].objectId");
-        String sourceFolderId = listResponse.jsonPath().getString("value[0].parentId");
-        
-        // Get root folder as target
-        Response rootResponse = given()
-            .spec(requestSpec)
-            .queryParam("$filter", "path eq '/'")
-        .when()
-            .get(foldersPath())
-        .then()
-            .statusCode(200)
-            .extract().response();
-        
-        java.util.List<?> rootFolders = rootResponse.jsonPath().getList("value");
-        if (rootFolders == null || rootFolders.isEmpty()) {
+        String srcId = createFolderUnder("odata-move-src-" + stamp, rootId);
+        String tgtId = createFolderUnder("odata-move-tgt-" + stamp, rootId);
+        String childId = (srcId == null) ? null : createFolderUnder("odata-move-child-" + stamp, srcId);
+        if (srcId == null || tgtId == null || childId == null) {
+            // Environment did not allow folder creation; nothing to assert.
+            deleteFolderQuietly(childId);
+            deleteFolderQuietly(srcId);
+            deleteFolderQuietly(tgtId);
             return;
         }
-        
-        String targetFolderId = rootResponse.jsonPath().getString("value[0].objectId");
-        
-        if (sourceFolderId == null || targetFolderId == null) {
+
+        try {
+            String moveParams = "{\"targetFolderId\": \"" + tgtId + "\", \"sourceFolderId\": \"" + srcId + "\"}";
+            given()
+                .spec(requestSpec)
+                .contentType("application/json")
+                .body(moveParams)
+            .when()
+                .post(folderPath(childId) + "/NemakiWare.CMIS.Move")
+            .then()
+                .statusCode(anyOf(equalTo(200), equalTo(204)));
+        } finally {
+            // child now lives under target; delete it first, then the two folders
+            deleteFolderQuietly(childId);
+            deleteFolderQuietly(srcId);
+            deleteFolderQuietly(tgtId);
+        }
+    }
+
+    /** Resolve the repository root folder id via OData, or null if unavailable. */
+    private String getRootFolderId() {
+        return given()
+                .spec(requestSpec)
+                .queryParam("$filter", "path eq '/'")
+            .when()
+                .get(foldersPath())
+            .then()
+                .extract().jsonPath().getString("value[0].objectId");
+    }
+
+    /** Create a folder under {@code parentId} via OData; return its id or null. */
+    private String createFolderUnder(String name, String parentId) {
+        if (parentId == null) {
+            return null;
+        }
+        String body = "{\"name\": \"" + name + "\", \"objectTypeId\": \"cmis:folder\", \"parentId\": \"" + parentId + "\"}";
+        Response r = given()
+                .spec(requestSpec)
+                .body(body)
+            .when()
+                .post(foldersPath())
+            .then()
+                .extract().response();
+        return r.getStatusCode() == 201 ? r.jsonPath().getString("objectId") : null;
+    }
+
+    /** Best-effort OData delete of a folder; ignores the outcome. */
+    private void deleteFolderQuietly(String objectId) {
+        if (objectId == null) {
             return;
         }
-        
-        // Execute Move action with explicit source folder
-        String moveParams = "{\"targetFolderId\": \"" + targetFolderId + "\", \"sourceFolderId\": \"" + sourceFolderId + "\"}";
-        
         given()
             .spec(requestSpec)
-            .contentType("application/json")
-            .body(moveParams)
         .when()
-            .post(folderPath(objectIdToMove) + "/NemakiWare.CMIS.Move")
-        .then()
-            .statusCode(anyOf(equalTo(200), equalTo(204)));
+            .delete(folderPath(objectId));
     }
     
     /**

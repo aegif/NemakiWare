@@ -50,6 +50,11 @@ public abstract class ODataTestBase {
                 .setContentType(ContentType.JSON)
                 .setAccept(ContentType.JSON)
                 .addHeader("Authorization", createBasicAuthHeader(username, password))
+                // The OData servlet enforces CSRF on state-changing methods
+                // (POST/PUT/PATCH/DELETE). Basic auth does not bypass it (it is
+                // an ambient credential), so send the non-ambient XHR header the
+                // CsrfValidator accepts; otherwise every write would get 403.
+                .addHeader("X-Requested-With", "XMLHttpRequest")
                 .log(LogDetail.METHOD)
                 .log(LogDetail.URI)
                 .build();
