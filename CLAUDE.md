@@ -433,9 +433,29 @@ vitest 191/191、OData 65/65 + Olingo client 4/4 + CSDL XSD 適合 + conformance
 **アップグレード注意**: (1) **RAG index 再構築必須** (Solr 10 / TEI 差替時)。
 (2) 非root TEI 採用時は root 所有の `tei_cache` volume を再作成 (初回モデル再 DL)。
 (3) dev/eval overlay の 127.0.0.1 bind でホスト外到達不可に (常設デモ等は要確認)。
-(4) atlas overlay は core の `CATALINA_OPTS` を置換するため、base 値
-(heap/nemakiware.properties/CouchDB 資格情報/solr.*) を事前 export しないと資格情報
-喪失 (compose の注記参照)。
+
+**レビュー remediation (2件のレビューを受けて追加修正)**:
+- **[P1] OData/CMIS query のページング・$count 修復**: Solr で先ページング→ACL
+  フィルタのため `$count` がページ生存数・`$top`/`$skip` が空穴になっていた
+  (`/Documents?$count=true&$top=1`→count=0/0件で再現)。**Solr を上限付き全取得
+  →ACL 全件フィルタ→numItems=認可後総件数→メモリ内ページング**に変更
+  (`SolrQueryProcessor`/`CompileServiceImpl`。CMIS Browser query も同時修復)。
+  上限は `-Dnemakiware.cmis.query.aclScanMaxRows` (既定 10000)、超過時は認可
+  総件数の下限値 + `hasMoreItems=true`。
+- **[P1] GetContentChanges の nextLink**: token のみで追従 400 だったのを全6
+  パラメータ付与。
+- **[P1] npm audit ゲート**: immutable→4.3.9 / dompurify→3.4.12 を
+  swagger-ui-react override で `--omit=dev --audit-level=high` を 0 件に。
+- **[P1] 検証の甘さ**: Olingo IT / conformance_check.py が空ページを PASS して
+  いたのを、count=認可後総件数・ページ非空を検証するよう厳格化。
+- **[P2] OData 500 で内部例外 message を露出→汎用文言 + 相関ID (サーバーログ)**。
+- **[P1] atlas overlay の CATALINA_OPTS 置換を撤廃**: Atlas opts を
+  `JAVA_TOOL_OPTIONS` (JVM が CATALINA_OPTS に加えて読む) へ分離。base 値
+  (heap/nemakiware.properties/CouchDB 資格情報/solr.*) が保持され、
+  `COUCHDB_USER/PASSWORD` 以外の事前 export 不要に。
+- **残 P2 (次イテレーション)**: Atlas ソース tarball / TEI タグの供給チェーン
+  検証 (checksum/署名)、OData IT の CI ゲート化 (現状 `@Disabled`)、ORDER BY と
+  ページングの相互作用 (Solr 順でスライス後にページ内 sort)。
 
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
