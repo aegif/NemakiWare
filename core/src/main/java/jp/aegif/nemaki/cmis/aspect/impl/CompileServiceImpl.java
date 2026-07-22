@@ -571,13 +571,10 @@ public class CompileServiceImpl implements CompileService {
 			String renditionFilter, Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, boolean folderOnly,
 			String orderBy) {
 		if (CollectionUtils.isEmpty(contents)) {
-			// Empty page (no rows on this page, or an out-of-range skip). numItems
-			// still reports the authorized total (numFound) so @odata.count / the
-			// CMIS numItems is correct even for an empty page; numFound is 0 for a
-			// genuinely empty result.
+			// Empty list
 			ObjectListImpl list = new ObjectListImpl();
 			list.setObjects(new ArrayList<ObjectData>());
-			list.setNumItems(BigInteger.valueOf(numFound));
+			list.setNumItems(BigInteger.ZERO);
 			list.setHasMoreItems(false);
 			return list;
 		} else {
@@ -648,10 +645,12 @@ public class CompileServiceImpl implements CompileService {
 			IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, BigInteger maxItems,
 			BigInteger skipCount, boolean folderOnly, String orderBy, long numFound) {
 		if (CollectionUtils.isEmpty(contents)) {
-			// Empty list
+			// Empty page (out-of-range skip / no rows). numItems still reports the
+			// authorized total (numFound) so @odata.count / CMIS numItems is correct
+			// even for an empty page; numFound is 0 for a genuinely empty result.
 			ObjectListImpl list = new ObjectListImpl();
 			list.setObjects(new ArrayList<ObjectData>());
-			list.setNumItems(BigInteger.ZERO);
+			list.setNumItems(BigInteger.valueOf(numFound));
 			list.setHasMoreItems(false);
 			return list;
 		} else {
