@@ -661,7 +661,19 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         
         List<String> orderClauses = new ArrayList<>();
         for (OrderByItem item : orderByOption.getOrders()) {
-            String property = item.getExpression().toString();
+            // Extract the bare property name. A simple $orderby=name is a Member
+            // expression whose toString() is NOT the property name (it renders the
+            // Olingo AST), so mapODataPropertyToCmis would miss it and the ORDER BY
+            // would be silently dropped (falling back to the repository default
+            // order). Pull the property name from the resource path exactly as the
+            // $filter conversion does above.
+            Expression expr = item.getExpression();
+            String property;
+            if (expr instanceof Member) {
+                property = ((Member) expr).getResourcePath().getUriResourceParts().get(0).toString();
+            } else {
+                property = expr.toString();
+            }
             String cmisProperty = mapODataPropertyToCmis(property);
             if (cmisProperty != null) {
                 String direction = item.isDescending() ? " DESC" : " ASC";

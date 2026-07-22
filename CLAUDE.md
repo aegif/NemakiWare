@@ -454,8 +454,33 @@ vitest 191/191、OData 65/65 + Olingo client 4/4 + CSDL XSD 適合 + conformance
   (heap/nemakiware.properties/CouchDB 資格情報/solr.*) が保持され、
   `COUCHDB_USER/PASSWORD` 以外の事前 export 不要に。
 - **残 P2 (次イテレーション)**: Atlas ソース tarball / TEI タグの供給チェーン
-  検証 (checksum/署名)、OData IT の CI ゲート化 (現状 `@Disabled`)、ORDER BY と
-  ページングの相互作用 (Solr 順でスライス後にページ内 sort)。
+  検証 (checksum/署名)、OData IT の CI ゲート化 (現状 `@Disabled`)。
+
+**レビュー remediation (3件目のレビュー: ORDER BY×ページング)**:
+- **[P1] ORDER BY / 既定順がページング前に適用されず、ページ内だけソートされて
+  いた**: `SolrQueryProcessor` は ACL フィルタ後に `permitted.subList(skip,…)` で
+  先にページを切り、その後 `compileObjectDataListForSearchResult` 内でページ内
+  だけ `sortUtil.sort` していた。`maxItems=1` だとソートが実質 no-op になり、
+  ページ列は Solr の `modified desc` 順のまま → ページ連結が全件 ORDER BY 順と
+  不一致 (`ORDER BY cmis:name ASC` + `maxItems=1&skipCount=0..3` で再現)。加えて
+  `capability.extended.orderBy.default=cmis:creationDate DESC` の既定順も同様に
+  壊れていた。**修正**: `CompileService.sortContentsForSearchResult` を新設し、
+  ACL 認可済み全件を ORDER BY (または既定順) でソート**してから** subList、ページ
+  compile には `orderBy="NONE"` を渡して再ソートを抑止。軽量 compile (プロパティ
+  のみ) は `objectDataCache` にキャッシュされるので、ページ compile は AA/ACL のみ
+  再計算。CMIS Browser / OData 双方の query 経路を同時修復。
+- **[P1] OData `$orderby` が完全に無視されていた (既存バグ)**: `convertOrderByToClause`
+  が `item.getExpression().toString()` を使っており、`$orderby=name` の `Member` 式で
+  生プロパティ名にならず `mapODataPropertyToCmis` が null → ORDER BY 句が付かず
+  既定順にフォールバック。`$filter` と同じく `member.getResourcePath().getUriResourceParts()
+  .get(0)` からプロパティ名を抽出するよう修正。`name asc/desc`・`creationDate` が
+  実際に反映されることを実機確認。
+- **検証**: 実機 pre/post (旧ビルドでバグ再現→修正ビルドで全ケース一致)、Olingo
+  client IT **6/6** (新規 `olingoClientOrderByIsAppliedAndOrderedPagingMatches` =
+  desc==reverse(asc) + 順序付き `$top=1` ページ連結==全件順)、OData 機能 IT
+  **65/65**、conformance `$orderby` を「HTTP 200 のみ」から実際の並び替え検証に
+  厳格化し **25/25**、CMIS Browser ページング無回帰。
+- **残: ORDER BY×ページングの相互作用は解消済み** (旧「残 P2」から除外)。
 
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
