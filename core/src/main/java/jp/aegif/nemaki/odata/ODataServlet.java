@@ -25,8 +25,12 @@ import java.util.Set;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * OData 4.0 Servlet for NemakiWare CMIS.
@@ -48,6 +52,8 @@ import java.util.regex.Pattern;
 public class ODataServlet extends HttpServlet {
     
     private static final long serialVersionUID = 1L;
+
+    private static final Logger LOG = LoggerFactory.getLogger(ODataServlet.class);
 
     // Pattern to extract repositoryId from the URL path
     private static final Pattern REPO_ID_PATTERN = Pattern.compile("/odata/([^/]+)(/.*)?");
@@ -197,8 +203,14 @@ public class ODataServlet extends HttpServlet {
             handler.process(request, response);
 
         } catch (Exception e) {
-            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, 
-                    "OData processing error: " + e.getMessage());
+            // Last-resort handler for exceptions that escape Olingo's own error
+            // handling. Do NOT echo the internal exception message to the client
+            // (it can leak stack/config detail); log it server-side with a
+            // correlation id and return only that id.
+            String ref = UUID.randomUUID().toString();
+            LOG.error("OData processing error [ref={}]", ref, e);
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
+                    "OData processing error (reference " + ref + ")");
         }
     }
     

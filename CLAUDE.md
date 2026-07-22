@@ -440,8 +440,9 @@ vitest 191/191、OData 65/65 + Olingo client 4/4 + CSDL XSD 適合 + conformance
   (`/Documents?$count=true&$top=1`→count=0/0件で再現)。**Solr を上限付き全取得
   →ACL 全件フィルタ→numItems=認可後総件数→メモリ内ページング**に変更
   (`SolrQueryProcessor`/`CompileServiceImpl`。CMIS Browser query も同時修復)。
-  上限は `-Dnemakiware.cmis.query.aclScanMaxRows` (既定 10000)、超過時は認可
-  総件数の下限値 + `hasMoreItems=true`。
+  上限は `-Dnemakiware.cmis.query.aclScanMaxRows` (既定 10000)。**超過時は 400
+  エラー** (統合レビュー P1 で「下限値 + `hasMoreItems=true`」は到達不能を隠す
+  欠陥と判定され是正。下記「ORDER BY×ページング」節末尾参照)。
 - **[P1] GetContentChanges の nextLink**: token のみで追従 400 だったのを全6
   パラメータ付与。
 - **[P1] npm audit ゲート**: immutable→4.3.9 / dompurify→3.4.12 を
@@ -480,7 +481,50 @@ vitest 191/191、OData 65/65 + Olingo client 4/4 + CSDL XSD 適合 + conformance
   desc==reverse(asc) + 順序付き `$top=1` ページ連結==全件順)、OData 機能 IT
   **65/65**、conformance `$orderby` を「HTTP 200 のみ」から実際の並び替え検証に
   厳格化し **25/25**、CMIS Browser ページング無回帰。
-- **残: ORDER BY×ページングの相互作用は解消済み** (旧「残 P2」から除外)。
+- **ORDER BY×ページングの相互作用は解消済み** (旧「残 P2」から除外)。
+
+**P2 remediation (旧「残 P2」の #1 / #2 を対応)**:
+1. **OData IT を CI ゲート化 (完了)**: `integration-tests.yml` に `odata-tests`
+   ジョブを追加。ライブスタックを起動 → `ci-complete-setup.sh` → 新設
+   `scripts/ci-seed-odata-docs.sh` で文書をシード (CMIS Browser Binding、
+   Solr 索引待ち) → `ODataDocumentsIT`/`ODataFoldersIT`/`ODataOlingoClientValidationIT`
+   を `-Djunit.jupiter.conditions.deactivate='*'` で実行 (計 71 テスト)。シードは
+   ページング/`$orderby` 回帰テストの `assumeTrue(total>=2)`/`assumeTrue(distinct)`
+   がフレッシュ DB でスキップして gate が空振りするのを防ぐため。**fail-closed**:
+   固定名 (`odata-ci-seed-{a,b,c}.txt`) を冪等作成 (409 許容) し、query 経由で
+   件数≥3・全シード名 queryable・全名 distinct を満たすまで待機、満たせなければ
+   `exit 1` (空振り PASS を旧 empty-early-return と同型欠陥として排除)。
+   master/`release/**`/PR で常時実行。
+2. **供給チェーン検証 (完了)**: arm64 ビルドの外部取得物を固定ハッシュ/コミットに
+   ピンして検証で fail-closed 化。
+   - **Atlas**: `Dockerfile.arm64` に `ARG ATLAS_SRC_SHA512` を追加し、
+     `apache-atlas-2.3.0-sources.tar.gz` を `sha512sum -c` で検証 (Apache 公式
+     `downloads`/`archive` 両ソースが一致する値をピン)。改ざんミラー/MITM を遮断。
+   - **TEI**: `build-arm64.sh` に `TEI_EXPECTED_COMMIT` を追加し、`git clone
+     --branch v1.7.4` (可変タグ) の後 `rev-parse HEAD` が固定コミット
+     `6e900af…` と一致するか検証 (不一致で abort)。ls-remote + GitHub API 両者が
+     一致するコミットをピン。
+**統合レビュー remediation (P1 ×2、マージ前ブロッカー)**:
+- **[P1] `aclScanMaxRows` 到達性欠陥を是正 (旧「下限 + hasMoreItems=true」を撤回)**:
+  `SolrQueryProcessor` は `START=0/ROWS=cap` で先頭 cap 件だけ取得しメモリ内で
+  認可・ソート・ページングするため、cap 超過時に (a) cap+1 件目以降が永久に
+  取得不能、(b) それでも `hasMoreItems=true` を返してページングクライアントを
+  無限ループさせ、(c) `$orderby` が先頭 cap 件だけの並べ替えで全体順序が誤り、
+  (d) `$top=1` でも cap 件の getContent+ACL+ObjectData+lock で低権限 DoS、という
+  欠陥だった。**修正**: Solr の `numFound`(認可前) が cap を超えたら **getContent
+  ループ前に 400 (`invalidArgument`)** で明確に拒否 (到達不能を嘘の hasMoreItems で
+  隠さない + DoS を早期打ち切り)。cap 以内では全件を materialize するので
+  `numItems` は**厳密な認可総件数**、`hasMoreItems` は `skip+max < total` で正直。
+  `exceedsScanCap(numFound,cap)` を切り出し `SolrQueryProcessorScanCapTest` 5件で
+  境界 (cap 許容 / cap+1 拒否) を回帰固定。実機: cap=2 で広域 query→400
+  (「exceeding the ACL scan limit」)、絞り込み→200、default cap で
+  `maxItems=2/skip=0→hasMoreItems=true`・末尾/範囲外→false・`numItems=6` 実数。
+- **[P1] OData CI ゲートの空振り防止 (fail-closed + distinct)**: 上記「OData IT を
+  CI ゲート化」参照。索引待ちタイムアウトを WARN+exit0 から **exit 1** に、固定名
+  シードの存在と全名 distinct を検証してからテストへ進むよう変更。
+- **残 (対象外・別チケット)**: Browser Binding の CSRF 未適用は CLAUDE.md 明記の
+  既存方針 (CMIS クライアント互換のため `/browser` は CSRF なし) で、本 WIP が
+  新規に開けた穴ではない。必須化は別 epic。
 
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 

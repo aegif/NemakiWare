@@ -196,12 +196,10 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
                     Locale.ENGLISH
             );
         } catch (Exception e) {
-            throw new ODataApplicationException(
-                    "Error executing function " + functionName + ": " + e.getMessage(),
-                    HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(),
-                    Locale.ENGLISH,
-                    e
-            );
+            // Route through ODataExceptions.map so CMIS faults get the right HTTP
+            // status (404/409/400/403/405) and a genuine 500 does NOT echo the
+            // internal exception message (it is logged with a correlation id).
+            throw ODataExceptions.map("Error executing function " + functionName, e);
         }
     }
     
@@ -285,12 +283,10 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
                     Locale.ENGLISH
             );
         } catch (Exception e) {
-            throw new ODataApplicationException(
-                    "Error executing function " + functionName + ": " + e.getMessage(),
-                    HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(),
-                    Locale.ENGLISH,
-                    e
-            );
+            // Route through ODataExceptions.map so CMIS faults get the right HTTP
+            // status (404/409/400/403/405) and a genuine 500 does NOT echo the
+            // internal exception message (it is logged with a correlation id).
+            throw ODataExceptions.map("Error executing function " + functionName, e);
         }
     }
     
