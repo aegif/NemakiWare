@@ -183,6 +183,76 @@ public class ODataOlingoClientValidationIT extends ODataTestBase {
                 "$skip=1&$top=1 must return exactly one authorized item");
     }
 
+    /**
+     * Regression guard for ORDER BY + paging. The pre-fix query path sliced the
+     * page in Solr's native order and then sorted only that page, so with a page
+     * size of 1 the sort was a no-op and page N disagreed with the unpaged order;
+     * $orderby applied to a single-item page was effectively ignored. This test
+     * proves (a) $orderby is actually applied (desc is the exact reverse of asc,
+     * collation-independent) and (b) ordered $top=1 paging reproduces the unpaged
+     * order.
+     */
+    @Test
+    public void olingoClientOrderByIsAppliedAndOrderedPagingMatches() {
+        ODataClient client = ODataClientFactory.getClient();
+
+        java.util.List<String> asc = names(readSetOrdered(client, "name asc", -1, -1, false));
+        java.util.List<String> desc = names(readSetOrdered(client, "name desc", -1, -1, false));
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                asc.size() >= 2 && new java.util.HashSet<>(asc).size() == asc.size(),
+                "need >= 2 distinct document names to test $orderby; have " + asc.size());
+
+        java.util.List<String> ascReversed = new java.util.ArrayList<>(asc);
+        java.util.Collections.reverse(ascReversed);
+        assertEquals(ascReversed, desc,
+                "$orderby=name desc must be the exact reverse of asc (proves $orderby is applied, "
+                        + "not silently dropped to the default order)");
+
+        // Slice one item per page and concatenate; it must equal the unpaged order.
+        java.util.List<String> pagedAsc = new java.util.ArrayList<>();
+        for (int s = 0; s < asc.size(); s++) {
+            java.util.List<String> page = names(readSetOrdered(client, "name asc", 1, s, false));
+            assertEquals(1, page.size(),
+                    "$orderby + $top=1 must return a full authorized page at skip=" + s);
+            pagedAsc.add(page.get(0));
+        }
+        assertEquals(asc, pagedAsc,
+                "ordered $top=1 paging must reproduce the unpaged $orderby order "
+                        + "(page must be sliced AFTER the full authorized set is sorted)");
+    }
+
+    /** Collect the {@code name} property of every entity in the set, in order. */
+    private java.util.List<String> names(ClientEntitySet set) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (ClientEntity e : set.getEntities()) {
+            out.add(e.getProperty("name").getPrimitiveValue().toString());
+        }
+        return out;
+    }
+
+    /** Read the Documents entity set with an $orderby plus optional $top/$skip/$count. */
+    private ClientEntitySet readSetOrdered(ODataClient client, String orderBy, int top, int skip, boolean count) {
+        org.apache.olingo.client.api.uri.URIBuilder b = client.newURIBuilder(serviceRootUrl())
+                .appendEntitySetSegment("Documents");
+        if (count) {
+            b = b.count(true);
+        }
+        if (orderBy != null) {
+            b = b.orderBy(orderBy);
+        }
+        if (top >= 0) {
+            b = b.top(top);
+        }
+        if (skip >= 0) {
+            b = b.skip(skip);
+        }
+        ODataEntitySetRequest<ClientEntitySet> req =
+                client.getRetrieveRequestFactory().getEntitySetRequest(b.build());
+        req.setAccept(ContentType.JSON.toContentTypeString());
+        auth(req);
+        return req.execute().getBody();
+    }
+
     /** Read the Documents entity set with optional $top / $skip / $count. */
     private ClientEntitySet readSet(ODataClient client, int top, int skip, boolean count) {
         org.apache.olingo.client.api.uri.URIBuilder b = client.newURIBuilder(serviceRootUrl())

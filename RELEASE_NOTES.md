@@ -57,6 +57,34 @@ conformance checklist (Minimal + Intermediate) passes 21/21. See
   index/tlog data that had been committed by accident was removed from history and
   is now gitignored.
 
+### Review remediation — ORDER BY + paging correctness
+- **[P1] ORDER BY / the repository default order was applied only within a page,
+  not before paging.** The query path sliced the ACL-filtered page first
+  (`permitted.subList(skip, …)`) and then sorted only that page inside
+  `compileObjectDataListForSearchResult`, so a page size of 1 made the sort a
+  no-op and pages came back in Solr's native `modified desc` order — page N
+  disagreed with the unpaged ORDER BY (and with the configured
+  `capability.extended.orderBy.default=cmis:creationDate DESC`). Fix: a new
+  `CompileService.sortContentsForSearchResult` orders the whole ACL-authorized
+  set (by the ORDER BY, or the repository default when none is given) **before**
+  it is sliced; the page compile is then called with `orderBy="NONE"` so it is
+  not re-sorted. The ordering compile is properties-only and cached
+  (`objectDataCache`), so the page compile only recomputes allowable actions /
+  ACL. Both the CMIS Browser query and the OData entity-set path are fixed.
+- **[P1] OData `$orderby` was silently dropped (pre-existing).**
+  `convertOrderByToClause` read the property name from
+  `item.getExpression().toString()`, which for a `$orderby=name` Member
+  expression is the Olingo AST rendering, not the property name — so it mapped to
+  nothing and no ORDER BY was emitted (falling back to the default order). It now
+  extracts the name from the resource path exactly as `$filter` does.
+- **Verification**: live pre/post (the bug reproduced on the old build, every
+  case matched after the fix); Olingo *client* IT 6/6 (new
+  `olingoClientOrderByIsAppliedAndOrderedPagingMatches`: desc == reverse(asc) and
+  ordered `$top=1` page concatenation == the unpaged order); OData functional IT
+  65/65; the conformance checklist's `$orderby` check was tightened from
+  HTTP-200-only to asserting real ordering (25/25); CMIS Browser paging
+  unregressed.
+
 **Verification**: Java unit + full CMIS TCK green on the v3.3 tree
 (Connection/Basics/Control/Versioning/CRUD1/CRUD2/Query/Types all pass;
 Types requires sweeping E2E residual custom types — a known data-pollution, not a

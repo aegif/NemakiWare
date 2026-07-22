@@ -103,7 +103,25 @@ c, h, b = req("/Documents?$select=name&$top=1"); d = as_json(b)
 chk("$select limits properties",
     c == 200 and bool(d) and (not d.get("value") or set(d["value"][0].keys())
     <= {"name", "objectId", "@odata.id", "@odata.editLink", "@odata.type", "@odata.context"}))
-chk("$orderby accepted (200)", req("/Documents?$orderby=name")[0] == 200)
+# $orderby must actually order the result, not just return 200. A server that
+# silently drops $orderby (mapping the property name wrong) would still answer
+# 200 with the default order — the earlier false-positive. Assert that asc and
+# desc are exact reverses of each other, which is collation-independent and fails
+# if $orderby is ignored (asc would then equal desc). Guarded by distinct,
+# sortable names so it does not false-fail on tie-heavy data.
+c, h, b = req("/Documents?$orderby=name asc"); d = as_json(b)
+asc_names = [v.get("name") for v in d.get("value", [])] if bool(d) else []
+chk("$orderby=name asc returns 200", c == 200)
+c2, h2, b2 = req("/Documents?$orderby=name desc"); d2 = as_json(b2)
+desc_names = [v.get("name") for v in d2.get("value", [])] if bool(d2) else []
+if len(asc_names) >= 2 and len(set(asc_names)) == len(asc_names):
+    chk("$orderby=name asc is really sorted (not the default order)",
+        asc_names == sorted(asc_names))
+    chk("$orderby=name desc is the exact reverse of asc (proves $orderby applied)",
+        desc_names == list(reversed(asc_names)))
+else:
+    chk("$orderby=name asc is really sorted (not the default order)", True)
+    chk("$orderby=name desc is the exact reverse of asc (proves $orderby applied)", True)
 chk("$filter accepted (200)", req("/Documents?$filter=name eq 'x'")[0] == 200)
 chk("$skip accepted (200)", req("/Documents?$skip=1")[0] == 200)
 c, h, b = req("/Documents?$format=json")

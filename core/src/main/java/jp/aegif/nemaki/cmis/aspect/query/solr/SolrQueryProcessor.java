@@ -558,11 +558,21 @@ public class SolrQueryProcessor implements QueryProcessor {
 				// Build ObjectList
 				String orderBy = orderBy(queryObject);
 
-				// ACL-aware paging in memory. `permitted` is the authorized full set
+				// ORDER BY / repository-default ordering must be applied to the FULL
+				// authorized set BEFORE paging. ACL filtering happens after Solr
+				// returns, so the page has to be sliced from the ordered authorized
+				// set — not the Solr-native (modified desc) order. If the page were
+				// sliced first and sorted only within itself, a page size of 1 would
+				// make the sort a no-op and page N would disagree with the unpaged
+				// order. Sort here, then slice.
+				List<Content> ordered = compileService.sortContentsForSearchResult(
+						callContext, repositoryId, permitted, orderBy);
+
+				// ACL-aware paging in memory. `ordered` is the authorized full set
 				// (bounded by aclScanCap); numItems is the authorized total and the
 				// page is sliced here so a full authorized page is returned even when
 				// the Solr window contained non-authorized documents.
-				int totalAuthorized = permitted.size();
+				int totalAuthorized = ordered.size();
 				int skip = (skipCount == null) ? 0 : Math.max(0, skipCount.intValue());
 				int max = (maxItems == null) ? totalAuthorized : Math.max(0, maxItems.intValue());
 				List<Content> pageContents;
@@ -570,7 +580,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 					pageContents = new ArrayList<Content>();
 				} else {
 					pageContents = new ArrayList<Content>(
-							permitted.subList(skip, Math.min(skip + max, totalAuthorized)));
+							ordered.subList(skip, Math.min(skip + max, totalAuthorized)));
 				}
 				boolean scanTruncated = numFound > aclScanCap;
 
@@ -578,10 +588,13 @@ public class SolrQueryProcessor implements QueryProcessor {
 				if (logger.isDebugEnabled()) {
 					logger.debug("TCK Alias: Calling compileObjectDataListForSearchResult with propertyAliases");
 				}
+				// The page is already globally ordered; pass "NONE" so the page compile
+				// does not re-sort it (a SELECT-limited property set could otherwise
+				// reorder the page by a property it no longer carries).
 				ObjectList result = compileService.compileObjectDataListForSearchResult(
 						callContext, repositoryId, pageContents, filter, requestedWithAliasKey,
 						includeAllowableActions, includeRelationships, renditionFilter, false,
-						maxItems, skipCount, false, orderBy, totalAuthorized);
+						maxItems, skipCount, false, "NONE", totalAuthorized);
 
 				// A pre-ACL match set larger than the scan cap means the authorized
 				// total is a lower bound and more results remain to page through.

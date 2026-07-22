@@ -65,6 +65,24 @@ public interface CompileService {
 			String repositoryId, List<T> contents, String filter, Map<String, String> propertyAliases,
 			Boolean includeAllowableActions, IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, boolean folderOnly, String orderBy, long numFound);
 
+	/**
+	 * Order the full authorized result set (Content) by a CMIS ORDER BY (or the
+	 * repository default order when {@code orderBy} is blank) BEFORE it is paged.
+	 *
+	 * <p>Query paging applies ACL filtering after Solr returns, so the page must be
+	 * sliced from the ordered authorized set — not from the Solr-native order. If a
+	 * caller sliced first and then sorted only the page, a page size of 1 would make
+	 * the sort a no-op and pages would disagree with the unpaged order. Callers pass
+	 * the returned list to {@link #compileObjectDataListForSearchResult} with
+	 * {@code orderBy="NONE"} so the page is not re-sorted.
+	 *
+	 * @param orderBy CMIS ORDER BY string, or blank to apply the repository default
+	 *                order, or {@code "NONE"} to skip ordering entirely.
+	 * @return a new list of the same contents in sorted order (input unmodified).
+	 */
+	public <T extends Content> List<T> sortContentsForSearchResult(CallContext callContext,
+			String repositoryId, List<T> contents, String orderBy);
+
 	public ObjectList compileChangeDataList(CallContext context, String repositoryId,
 			List<Change> changes, Holder<String> changeLogToken, Boolean includeProperties,
 			String filter, Boolean includePolicyIds, Boolean includeAcl);
