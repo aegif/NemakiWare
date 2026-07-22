@@ -85,6 +85,50 @@ conformance checklist (Minimal + Intermediate) passes 21/21. See
   HTTP-200-only to asserting real ordering (25/25); CMIS Browser paging
   unregressed.
 
+### P2 remediation — OData IT CI gate + arm64 supply-chain verification
+- **OData ITs are now a real CI gate.** A new `odata-tests` job in
+  `integration-tests.yml` starts the live stack, runs `ci-complete-setup.sh`,
+  seeds documents via the new `scripts/ci-seed-odata-docs.sh` (so the paging /
+  `$orderby` regression tests, which `assumeTrue(total >= 2)` and
+  `assumeTrue(distinct names)`, actually execute instead of skipping on a fresh
+  DB), then runs `ODataDocumentsIT`/`ODataFoldersIT`/`ODataOlingoClientValidationIT`
+  (71 tests) with the JUnit `@Disabled` condition deactivated. Previously these
+  ITs only ran by hand. The seed step is **fail-closed**: it idempotently creates
+  fixed distinct-named documents (409 = already exists is fine) and polls the
+  query path until count ≥ 3, every seed name is queryable, and all names are
+  distinct — exiting non-zero otherwise, so the gate cannot pass by silently
+  skipping its regressions.
+- **arm64 build inputs are pinned and verified (fail-closed).**
+  - Atlas: `docker/atlas/Dockerfile.arm64` adds `ARG ATLAS_SRC_SHA512` and runs
+    `sha512sum -c` on the downloaded `apache-atlas-2.3.0-sources.tar.gz` (the
+    pinned value matches Apache's official `downloads` and `archive` checksums),
+    so a tampered mirror / MITM aborts the build.
+  - TEI: `docker/tei/build-arm64.sh` adds `TEI_EXPECTED_COMMIT` and, after
+    `git clone --branch v1.7.4` (a mutable tag), verifies `HEAD` equals the
+    pinned commit `6e900af…` (resolved identically by `git ls-remote` and the
+    GitHub API) and aborts on mismatch.
+
+### Integration-review remediation — ACL-scan reachability (P1)
+- **The ACL-scan cap now rejects over-large result sets instead of faking
+  `hasMoreItems`.** The query path fetches at most
+  `-Dnemakiware.cmis.query.aclScanMaxRows` (default 10000) Solr rows, then
+  authorizes / sorts / pages them in memory. Previously, when the pre-ACL match
+  count exceeded the cap it reported `numItems` as a lower bound with
+  `hasMoreItems=true` — but rows past the cap are unreachable, so a paging client
+  looped forever, `$orderby` sorted only the first cap rows (wrong global order),
+  and even `$top=1` paid the full cap-sized fetch/authorize cost (a
+  low-privilege DoS). Now, when Solr's `numFound` exceeds the cap the query is
+  rejected with **HTTP 400** *before* the getContent/ACL/ObjectData/lock work,
+  with a message telling the caller to narrow the query or raise the cap. Within
+  the cap the whole authorized set is materialized, so `numItems` is the **exact**
+  authorized total and `hasMoreItems` (`skip+max < total`) is honest. Pinned by
+  `SolrQueryProcessorScanCapTest` (cap allowed, cap+1 rejected) and verified live
+  (cap=2: broad query → 400, narrow → 200; default cap: honest `hasMoreItems`,
+  exact `numItems`).
+- Browser Binding CSRF (raised by one reviewer) is intentionally **out of
+  scope**: `/browser` has no CSRF check by existing design (CMIS client
+  compatibility); this change opens no new gap. Enforcing it is a separate epic.
+
 **Verification**: Java unit + full CMIS TCK green on the v3.3 tree
 (Connection/Basics/Control/Versioning/CRUD1/CRUD2/Query/Types all pass;
 Types requires sweeping E2E residual custom types — a known data-pollution, not a

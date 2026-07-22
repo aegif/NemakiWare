@@ -493,6 +493,24 @@ public class SolrQueryProcessor implements QueryProcessor {
 			SolrDocumentList docs = resp.getResults();
 			numFound = docs.getNumFound();
 
+			// Reachability guard. Access control is enforced in memory after Solr
+			// returns, and we only fetch up to aclScanCap rows (START=0/ROWS=cap
+			// above), so a match set larger than the cap cannot be paged past the
+			// cap, cannot be globally ordered (only the first cap rows would be
+			// sorted), and must NOT be reported with hasMoreItems=true (the extra
+			// pages are unreachable — that would loop a paging client forever).
+			// Reject the query instead of returning a wrong-ordered / silently
+			// truncated page. Checked here from Solr's numFound BEFORE the
+			// getContent + ACL + ObjectData + lock materialization below, so an
+			// over-broad query from a low-privilege user is cheap to reject (DoS).
+			if (exceedsScanCap(numFound, aclScanCap)) {
+				exceptionService.invalidArgument(
+						"The query matched " + numFound + " objects, exceeding the ACL scan limit ("
+						+ aclScanCap + "). Access control is enforced in memory after Solr returns, so a "
+						+ "larger result set cannot be correctly ordered or paged past the limit. Narrow "
+						+ "the query (add a WHERE clause) or raise -Dnemakiware.cmis.query.aclScanMaxRows.");
+			}
+
 			List<Content> contents = new ArrayList<Content>();
 			Set<String> seenIds = new HashSet<String>();
 			for (SolrDocument doc : docs) {
@@ -582,7 +600,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 					pageContents = new ArrayList<Content>(
 							ordered.subList(skip, Math.min(skip + max, totalAuthorized)));
 				}
-				boolean scanTruncated = numFound > aclScanCap;
+				// numFound <= aclScanCap here (the reachability guard above rejects
+				// anything larger), so `ordered` is the COMPLETE authorized set:
+				// numItems is the exact authorized total and hasMoreItems (computed
+				// in compileObjectDataListForSearchResult from skip+max vs the total)
+				// is honest — there is no unreachable remainder to mis-signal.
 
 				// TCK CRITICAL FIX: Pass propertyAliases map to enable query alias support
 				if (logger.isDebugEnabled()) {
@@ -595,12 +617,6 @@ public class SolrQueryProcessor implements QueryProcessor {
 						callContext, repositoryId, pageContents, filter, requestedWithAliasKey,
 						includeAllowableActions, includeRelationships, renditionFilter, false,
 						maxItems, skipCount, false, "NONE", totalAuthorized);
-
-				// A pre-ACL match set larger than the scan cap means the authorized
-				// total is a lower bound and more results remain to page through.
-				if (scanTruncated && result instanceof ObjectListImpl) {
-					((ObjectListImpl) result).setHasMoreItems(true);
-				}
 
 				return result;
 				
@@ -639,6 +655,18 @@ public class SolrQueryProcessor implements QueryProcessor {
 		return value.toString();
 	}
 	
+	/**
+	 * Reachability guard for ACL-aware in-memory paging: the pre-ACL Solr match
+	 * count {@code numFound} exceeds the scan cap. When true the query cannot be
+	 * correctly authorized/ordered/paged in memory (only the first {@code cap}
+	 * rows are fetched) and must be rejected rather than returned as a
+	 * wrong-ordered / truncated page with a misleading {@code hasMoreItems=true}.
+	 * Boundary: {@code numFound == cap} is allowed; {@code cap + 1} is rejected.
+	 */
+	static boolean exceedsScanCap(long numFound, int aclScanCap) {
+		return numFound > aclScanCap;
+	}
+
 	private String orderBy(QueryObject queryObject){
 		List<SortSpec> sortSpecs = queryObject.getOrderBys();
 		List<String> _orderBy = new ArrayList<String>();
