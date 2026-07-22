@@ -159,18 +159,25 @@ services:
   # — but note that Solr schema uses knn_vector_1024 so dimension
   # change requires schema migration + full RAG reindex.
   tei:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
-    platform: linux/amd64  # Required for Apple Silicon (Rosetta emulation)
+    # Default: the official linux/amd64 CPU image (runs under emulation on Apple
+    # Silicon). On ARM64 hosts, build a native image once with
+    # docker/tei/build-arm64.sh and run with:
+    #   NEMAKI_TEI_IMAGE=nemakiware-tei:1.7.4-arm64-ort NEMAKI_TEI_PLATFORM=linux/arm64
+    # to drop the qemu emulation. Both expose the same native TEI /embed API.
+    image: ${NEMAKI_TEI_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:cpu-1.6}
+    platform: ${NEMAKI_TEI_PLATFORM:-linux/amd64}
     profiles:
       - rag
     ports:
-      - "8081:80"
+      # Dev/eval: bind to loopback only (embedding service, no auth).
+      - "127.0.0.1:8081:80"
     volumes:
       - tei_cache:/data
     deploy:
       resources:
         limits:
-          memory: 4g
+          # e5-large ONNX warmup peaks ~7 GiB; 8g avoids OOM (exit 137).
+          memory: 8g
         reservations:
           memory: 2g
     environment:

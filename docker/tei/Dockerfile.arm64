@@ -1,0 +1,63 @@
+# arm64 (aarch64) build of Hugging Face text-embeddings-inference (TEI).
+#
+# The upstream Dockerfile is Intel-MKL-locked (intel-oneapi-mkl-devel + a
+# fakeintel LD_PRELOAD shim + libmkl_*.so copies) and only builds on x86_64.
+# This variant drops MKL and the x86-only sccache download, and builds the
+# candle CPU backend, which runs natively on ARM64 (Apple Silicon / Graviton).
+#
+# Exposes the native TEI HTTP API (POST /embed, GET /health) on port 80 — a
+# drop-in for ghcr.io/huggingface/text-embeddings-inference:cpu-* with no
+# NemakiWare code change. Model is selected at runtime via MODEL_ID.
+FROM rust:1.85-bookworm AS builder
+WORKDIR /usr/src
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    protobuf-compiler \
+    libssl-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY .cargo .cargo
+COPY backends backends
+COPY core core
+COPY router router
+COPY proto proto
+COPY Cargo.toml Cargo.lock ./
+
+# ort = ONNX Runtime backend (arm64 onnxruntime auto-downloaded by the ort
+# crate) — required for XLM-RoBERTa models like intfloat/multilingual-e5-large,
+# which ship an onnx/ export and hang on the candle backend on ARM. candle =
+# pure-Rust CPU backend fallback for BERT models. http = REST server. No MKL.
+RUN cargo build --release --bin text-embeddings-router \
+    --features ort,candle,http --no-default-features
+
+FROM debian:bookworm-slim AS runtime
+
+ENV HUGGINGFACE_HUB_CACHE=/data \
+    PORT=80 \
+    RAYON_NUM_THREADS=8
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    libomp-dev \
+    ca-certificates \
+    libssl-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /usr/src/target/release/text-embeddings-router /usr/local/bin/text-embeddings-router
+
+# Run as a dedicated non-root user. TEI listens on unprivileged port 80 and
+# only writes the model cache under /data (HUGGINGFACE_HUB_CACHE), so a
+# non-root UID suffices once it owns /data. NOTE: a pre-existing (root-owned)
+# tei_cache volume must be recreated (or chowned) when adopting this image, as
+# Docker does not re-chown an already-populated named volume on first mount.
+RUN groupadd -r tei \
+    && useradd -r -g tei -d /data -s /usr/sbin/nologin tei \
+    && mkdir -p /data \
+    && chown -R tei:tei /data
+USER tei
+
+ENTRYPOINT ["text-embeddings-router"]
+CMD ["--json-output"]
