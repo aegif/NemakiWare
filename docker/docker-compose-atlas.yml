@@ -12,9 +12,21 @@
 
 services:
   atlas:
-    image: sburn/apache-atlas:2.3.0
+    # Default: the community linux/amd64 image (runs under emulation on Apple
+    # Silicon — heavy + OOM-prone). On ARM64 hosts, build a native image once
+    # with docker/atlas/build-arm64.sh and run with:
+    #   NEMAKI_ATLAS_IMAGE=nemakiware-atlas:2.3.0-arm64 NEMAKI_ATLAS_PLATFORM=linux/arm64
+    # Both expose the same Atlas REST API (api/atlas/v2, port 21000).
+    image: ${NEMAKI_ATLAS_IMAGE:-sburn/apache-atlas:2.3.0}
+    platform: ${NEMAKI_ATLAS_PLATFORM:-linux/amd64}
+    # The arm64 image's PID 1 exits when the Atlas server process dies; restart
+    # so the container recovers instead of lingering with a dead Atlas.
+    restart: unless-stopped
     ports:
-      - "21000:21000"
+      # Dev/eval: bind to loopback only. This Atlas image ships with baked-in
+      # admin/admin credentials that cannot be overridden, so it must never be
+      # published on 0.0.0.0. Front it with TLS + a real IdP on any shared host.
+      - "127.0.0.1:21000:21000"
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:21000/api/atlas/v2/types/typedefs/headers", "-u", "${ATLAS_USER:-admin}:${ATLAS_PASSWORD:-admin}"]
       interval: 30s
@@ -27,4 +39,11 @@ services:
       atlas:
         condition: service_healthy
     environment:
-      - CATALINA_OPTS=${CATALINA_OPTS} -Dpurview.enabled=true -Dpurview.endpoint=http://atlas:21000 -Dpurview.auth.type=basic -Dpurview.basic.username=${ATLAS_USER:-admin} -Dpurview.basic.password=${ATLAS_PASSWORD:-admin} -Dpurview.atlas.base-path=api/atlas/v2 -Datlas.enabled=true -Datlas.endpoint=http://atlas:21000 -Datlas.username=${ATLAS_USER:-admin} -Datlas.password=${ATLAS_PASSWORD:-admin} -Dlineage.mode=journaled -Dlineage.targets=atlas
+      # Atlas/Purview options go in JAVA_TOOL_OPTIONS, which the JVM reads IN
+      # ADDITION to the base core CATALINA_OPTS (a different key, so compose does
+      # not overwrite it). This overlay therefore no longer clobbers the base
+      # opts (heap, nemakiware.properties, CouchDB credentials, solr.*), so a
+      # fresh environment can start with just COUCHDB_USER/PASSWORD set — no need
+      # to re-export CATALINA_OPTS. (The JVM prints a one-line "Picked up
+      # JAVA_TOOL_OPTIONS" notice at startup.)
+      - JAVA_TOOL_OPTIONS=-Dpurview.enabled=true -Dpurview.endpoint=http://atlas:21000 -Dpurview.auth.type=basic -Dpurview.basic.username=${ATLAS_USER:-admin} -Dpurview.basic.password=${ATLAS_PASSWORD:-admin} -Dpurview.atlas.base-path=api/atlas/v2 -Datlas.enabled=true -Datlas.endpoint=http://atlas:21000 -Datlas.username=${ATLAS_USER:-admin} -Datlas.password=${ATLAS_PASSWORD:-admin} -Dlineage.mode=journaled -Dlineage.targets=atlas
