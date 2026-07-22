@@ -2,6 +2,14 @@ FROM ubuntu:20.04
 LABEL maintainer="vadim@clusterside.com"
 
 ARG VERSION=2.3.0
+# Supply-chain: pin the SHA-512 of the Apache Atlas source tarball and verify the
+# download against it, so a tampered mirror / MITM cannot inject a modified
+# source tree. This value is the official checksum published by Apache and was
+# cross-checked against two independent sources that agree:
+#   https://downloads.apache.org/atlas/2.3.0/apache-atlas-2.3.0-sources.tar.gz.sha512
+#   https://archive.apache.org/dist/atlas/2.3.0/apache-atlas-2.3.0-sources.tar.gz.sha512
+# When bumping VERSION, update this to the new release's published .sha512.
+ARG ATLAS_SRC_SHA512=b24c9785f601b4644090ef0b4c16974fc572100b61f04ef2d6c68fdaa45293e902483f3574342a0e70c54f757c509d3d7ec6a85e494599b1018c65d8126d3480
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
 ENV MAVEN_OPTS="-Xms2g -Xmx2g"
@@ -29,6 +37,7 @@ RUN --mount=type=cache,target=/root/.m2,id=atlas-m2 apt-get update \
         unzip \
     && cd /tmp \
     && wget https://dlcdn.apache.org/atlas/${VERSION}/apache-atlas-${VERSION}-sources.tar.gz \
+    && echo "${ATLAS_SRC_SHA512}  apache-atlas-${VERSION}-sources.tar.gz" | sha512sum -c - \
     && tar --strip 1 -xzvf apache-atlas-${VERSION}-sources.tar.gz -C /tmp/atlas-src \
     && rm apache-atlas-${VERSION}-sources.tar.gz \
     && cd /tmp/atlas-src \
