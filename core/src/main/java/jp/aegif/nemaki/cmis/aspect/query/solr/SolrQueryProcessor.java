@@ -458,16 +458,17 @@ public class SolrQueryProcessor implements QueryProcessor {
 			logger.debug("whereQueryString: " + whereQueryString);
 			logger.debug("fromQueryString: " + fromQueryString);
 		}
-		if(skipCount == null){
-			solrQuery.set(CommonParams.START, 0);
-		}else{
-			solrQuery.set(CommonParams.START, skipCount.intValue());
-		}
-		if(maxItems == null){
-			solrQuery.set(CommonParams.ROWS, 50);
-		}else{
-			solrQuery.set(CommonParams.ROWS, maxItems.intValue());
-		}
+		// Access control is enforced AFTER Solr returns (Solr's numFound is
+		// pre-ACL). Paging in Solr therefore drops authorized items whenever the
+		// requested window contains non-authorized / DB-missing docs, and makes
+		// numItems a per-page survivor count instead of the authorized total.
+		// Instead fetch the matching set up to a bounded cap and apply ACL +
+		// paging in memory below. The cap bounds cost; result sets larger than it
+		// report an authorized-count lower bound with hasMoreItems=true
+		// (override -Dnemakiware.cmis.query.aclScanMaxRows).
+		int aclScanCap = Integer.getInteger("nemakiware.cmis.query.aclScanMaxRows", 10000);
+		solrQuery.set(CommonParams.START, 0);
+		solrQuery.set(CommonParams.ROWS, aclScanCap);
 		
 
 		QueryResponse resp = null;
@@ -556,15 +557,37 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 				// Build ObjectList
 				String orderBy = orderBy(queryObject);
+
+				// ACL-aware paging in memory. `permitted` is the authorized full set
+				// (bounded by aclScanCap); numItems is the authorized total and the
+				// page is sliced here so a full authorized page is returned even when
+				// the Solr window contained non-authorized documents.
+				int totalAuthorized = permitted.size();
+				int skip = (skipCount == null) ? 0 : Math.max(0, skipCount.intValue());
+				int max = (maxItems == null) ? totalAuthorized : Math.max(0, maxItems.intValue());
+				List<Content> pageContents;
+				if (skip >= totalAuthorized) {
+					pageContents = new ArrayList<Content>();
+				} else {
+					pageContents = new ArrayList<Content>(
+							permitted.subList(skip, Math.min(skip + max, totalAuthorized)));
+				}
+				boolean scanTruncated = numFound > aclScanCap;
+
 				// TCK CRITICAL FIX: Pass propertyAliases map to enable query alias support
-				// Build ObjectList with original includeAllowableActions parameter for final response
 				if (logger.isDebugEnabled()) {
 					logger.debug("TCK Alias: Calling compileObjectDataListForSearchResult with propertyAliases");
 				}
 				ObjectList result = compileService.compileObjectDataListForSearchResult(
-						callContext, repositoryId, permitted, filter, requestedWithAliasKey,
+						callContext, repositoryId, pageContents, filter, requestedWithAliasKey,
 						includeAllowableActions, includeRelationships, renditionFilter, false,
-						maxItems, skipCount, false, orderBy,numFound);
+						maxItems, skipCount, false, orderBy, totalAuthorized);
+
+				// A pre-ACL match set larger than the scan cap means the authorized
+				// total is a lower bound and more results remain to page through.
+				if (scanTruncated && result instanceof ObjectListImpl) {
+					((ObjectListImpl) result).setHasMoreItems(true);
+				}
 
 				return result;
 				

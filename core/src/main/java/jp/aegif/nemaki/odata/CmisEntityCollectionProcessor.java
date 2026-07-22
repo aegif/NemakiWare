@@ -257,12 +257,9 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                 }
             }
         } catch (Exception e) {
-            throw new ODataApplicationException(
-                    "Error fetching data: " + e.getMessage(),
-                    HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(),
-                    Locale.ENGLISH,
-                    e
-            );
+            // Map CMIS exceptions to correct HTTP status; a genuine 500 is logged
+            // with a correlation id rather than echoing the internal message.
+            throw ODataExceptions.map("Error fetching data", e);
         }
 
         // Guarantee a non-null count so @odata.count is always emitted when the

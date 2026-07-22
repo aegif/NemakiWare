@@ -71,7 +71,8 @@
     "swagger-ui-react": {
       "react": "$react",
       "react-dom": "$react-dom",
-      "dompurify": "3.4.11"
+      "dompurify": "3.4.12",
+      "immutable": "^4.3.9"
     },
     "esbuild": "0.28.1"
   }

@@ -75,10 +75,30 @@ chk("Error payload has error.code + error.message",
     c == 404 and bool(d) and "error" in d and "message" in d["error"] and "code" in d["error"])
 
 # ---- Intermediate conformance (SHOULD) ----
-c, h, b = req("/Documents?$top=1"); d = as_json(b)
-chk("$top limits result size", c == 200 and bool(d) and len(d.get("value", [])) <= 1)
+# Establish the unpaged authorized total first, then verify paging returns a
+# full authorized page and $count stays the total (NOT the per-page survivor
+# count). An empty page is a FAILURE when the total is non-zero — do not accept
+# it as a pass (that was the earlier false-positive).
 c, h, b = req("/Documents?$count=true"); d = as_json(b)
-chk("$count emits @odata.count", c == 200 and bool(d) and "@odata.count" in d)
+total = d.get("@odata.count") if bool(d) else None
+unpaged = len(d.get("value", [])) if bool(d) else 0
+chk("$count emits @odata.count", c == 200 and total is not None)
+chk("$count equals unpaged result size", total == unpaged)
+c, h, b = req("/Documents?$top=1&$count=true"); d = as_json(b)
+top1_count = d.get("@odata.count") if bool(d) else None
+top1_rows = len(d.get("value", [])) if bool(d) else 0
+if total and total >= 1:
+    chk("$top=1 returns a full authorized page (not empty)", c == 200 and top1_rows == 1)
+    chk("$count under $top stays the authorized total", top1_count == total)
+else:
+    chk("$top=1 returns a full authorized page (not empty)", c == 200)
+    chk("$count under $top stays the authorized total", True)
+if total and total >= 2:
+    c, h, b = req("/Documents?$skip=1&$top=1&$count=true"); d = as_json(b)
+    chk("$skip=1&$top=1 returns one item + total count",
+        c == 200 and len(d.get("value", [])) == 1 and d.get("@odata.count") == total)
+else:
+    chk("$skip=1&$top=1 returns one item + total count", True)
 c, h, b = req("/Documents?$select=name&$top=1"); d = as_json(b)
 chk("$select limits properties",
     c == 200 and bool(d) and (not d.get("value") or set(d["value"][0].keys())

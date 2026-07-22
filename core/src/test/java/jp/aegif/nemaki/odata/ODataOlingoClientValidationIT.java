@@ -1,5 +1,6 @@
 package jp.aegif.nemaki.odata;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -126,29 +127,15 @@ public class ODataOlingoClientValidationIT extends ODataTestBase {
     }
 
     @Test
-    public void olingoClientReadsSingleEntityAndQueryOptions() {
+    public void olingoClientReadsSingleEntity() {
         ODataClient client = ODataClientFactory.getClient();
-
-        // $count + $top through the client URI builder.
-        URI listUri = client.newURIBuilder(serviceRootUrl())
-                .appendEntitySetSegment("Documents")
-                .top(1)
-                .count(true)
-                .build();
-        ODataEntitySetRequest<ClientEntitySet> listReq =
-                client.getRetrieveRequestFactory().getEntitySetRequest(listUri);
-        listReq.setAccept(ContentType.JSON.toContentTypeString());
-        auth(listReq);
-        ClientEntitySet set = listReq.execute().getBody();
-        assertNotNull(set, "collection with $top/$count must deserialize");
-
-        if (set.getEntities().isEmpty()) {
-            return; // no documents to address; nothing further to validate
-        }
+        ClientEntitySet set = readSet(client, -1, -1, false);
+        assertNotNull(set, "Documents collection must deserialize");
+        assertFalse(set.getEntities().isEmpty(),
+                "the test repository must contain at least one document");
 
         String objectId = set.getEntities().get(0).getProperty("objectId")
                 .getPrimitiveValue().toString();
-
         URI entityUri = client.newURIBuilder(serviceRootUrl())
                 .appendEntitySetSegment("Documents")
                 .appendKeySegment(objectId)
@@ -161,5 +148,58 @@ public class ODataOlingoClientValidationIT extends ODataTestBase {
 
         assertNotNull(entity, "single entity must deserialize");
         assertNotNull(entity.getProperty("objectId"), "entity must carry objectId");
+    }
+
+    /**
+     * Regression guard for the "page in Solr, then ACL-filter" defect where
+     * {@code /Documents?$count=true&$top=1} returned count=0 with an empty page.
+     * $count MUST be the authorized total (not the current page's survivor
+     * count) and $top/$skip MUST return a full authorized page. An earlier
+     * version of this test early-returned on an empty page and so passed on the
+     * broken behavior — do NOT reintroduce that.
+     */
+    @Test
+    public void olingoClientPagingReportsAuthorizedTotalAndFullPage() {
+        ODataClient client = ODataClientFactory.getClient();
+
+        ClientEntitySet all = readSet(client, -1, -1, true);
+        assertNotNull(all.getCount(), "@odata.count must be present with $count=true");
+        int total = all.getCount();
+        assertEquals(all.getEntities().size(), total,
+                "unpaged $count must equal the number of returned entities");
+        org.junit.jupiter.api.Assumptions.assumeTrue(total >= 2,
+                "need >= 2 documents to test paging; repository has " + total);
+
+        ClientEntitySet top1 = readSet(client, 1, -1, true);
+        assertEquals(total, top1.getCount().intValue(),
+                "$count must be the authorized total, not the current page size");
+        assertEquals(1, top1.getEntities().size(),
+                "$top=1 must return a full authorized page (1), not an empty page");
+
+        ClientEntitySet skip1 = readSet(client, 1, 1, true);
+        assertEquals(total, skip1.getCount().intValue(),
+                "$count must stay the authorized total under $skip");
+        assertEquals(1, skip1.getEntities().size(),
+                "$skip=1&$top=1 must return exactly one authorized item");
+    }
+
+    /** Read the Documents entity set with optional $top / $skip / $count. */
+    private ClientEntitySet readSet(ODataClient client, int top, int skip, boolean count) {
+        org.apache.olingo.client.api.uri.URIBuilder b = client.newURIBuilder(serviceRootUrl())
+                .appendEntitySetSegment("Documents");
+        if (count) {
+            b = b.count(true);
+        }
+        if (top >= 0) {
+            b = b.top(top);
+        }
+        if (skip >= 0) {
+            b = b.skip(skip);
+        }
+        ODataEntitySetRequest<ClientEntitySet> req =
+                client.getRetrieveRequestFactory().getEntitySetRequest(b.build());
+        req.setAccept(ContentType.JSON.toContentTypeString());
+        auth(req);
+        return req.execute().getBody();
     }
 }

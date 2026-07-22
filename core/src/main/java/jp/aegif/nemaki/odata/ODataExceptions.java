@@ -1,6 +1,10 @@
 package jp.aegif.nemaki.odata;
 
 import java.util.Locale;
+import java.util.UUID;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisContentAlreadyExistsException;
@@ -25,6 +29,8 @@ import org.apache.olingo.server.api.ODataApplicationException;
  */
 final class ODataExceptions {
 
+    private static final Logger LOG = LoggerFactory.getLogger(ODataExceptions.class);
+
     private ODataExceptions() {
     }
 
@@ -32,9 +38,22 @@ final class ODataExceptions {
      * Build an {@link ODataApplicationException} for {@code cause} with a status
      * code chosen from the CMIS exception type. {@code context} is a short human
      * description of the operation (e.g. "Error creating entity").
+     *
+     * <p>For mapped 4xx client errors the CMIS message is safe and useful, so it
+     * is returned to the client. For an unexpected 5xx the internal exception
+     * message is NOT echoed (it can leak stack/config detail); instead the
+     * failure is logged server-side with a correlation id that the returned
+     * message references.
      */
     static ODataApplicationException map(String context, Exception cause) {
         HttpStatusCode status = statusFor(cause);
+        if (status == HttpStatusCode.INTERNAL_SERVER_ERROR) {
+            String ref = UUID.randomUUID().toString();
+            LOG.error("OData {} [ref={}]", context, ref, cause);
+            return new ODataApplicationException(
+                    context + ": internal server error (reference " + ref + ")",
+                    status.getStatusCode(), Locale.ENGLISH);
+        }
         String detail = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
         return new ODataApplicationException(context + ": " + detail,
                 status.getStatusCode(), Locale.ENGLISH, cause);

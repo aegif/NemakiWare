@@ -571,10 +571,13 @@ public class CompileServiceImpl implements CompileService {
 			String renditionFilter, Boolean includeAcl, BigInteger maxItems, BigInteger skipCount, boolean folderOnly,
 			String orderBy) {
 		if (CollectionUtils.isEmpty(contents)) {
-			// Empty list
+			// Empty page (no rows on this page, or an out-of-range skip). numItems
+			// still reports the authorized total (numFound) so @odata.count / the
+			// CMIS numItems is correct even for an empty page; numFound is 0 for a
+			// genuinely empty result.
 			ObjectListImpl list = new ObjectListImpl();
 			list.setObjects(new ArrayList<ObjectData>());
-			list.setNumItems(BigInteger.ZERO);
+			list.setNumItems(BigInteger.valueOf(numFound));
 			list.setHasMoreItems(false);
 			return list;
 		} else {
@@ -688,11 +691,13 @@ public class CompileServiceImpl implements CompileService {
 				// paged list
 				list.setObjects(new ArrayList<>(objectDataList));
 			}
-			// totalNumItem - set to the actual filtered count for consistency
+			// numItems is the authorized total (numFound), NOT the current page
+			// size. Callers pass the ACL-filtered total here and pre-slice the page,
+			// so @odata.count / CMIS numItems reflects the whole authorized result.
 			if (log.isDebugEnabled()) {
-				log.debug("Setting numItems to filtered count: " + objectDataList.size() + " (was " + numFound + ")");
+				log.debug("Setting numItems to authorized total: " + numFound + " (page size " + objectDataList.size() + ")");
 			}
-			list.setNumItems(BigInteger.valueOf(objectDataList.size()));
+			list.setNumItems(BigInteger.valueOf(numFound));
 
 			return list;
 		}
