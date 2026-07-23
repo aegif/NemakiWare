@@ -463,9 +463,13 @@ public class SolrQueryProcessor implements QueryProcessor {
 		// requested window contains non-authorized / DB-missing docs, and makes
 		// numItems a per-page survivor count instead of the authorized total.
 		// Instead fetch the matching set up to a bounded cap and apply ACL +
-		// paging in memory below. The cap bounds cost; result sets larger than it
-		// report an authorized-count lower bound with hasMoreItems=true
-		// (override -Dnemakiware.cmis.query.aclScanMaxRows).
+		// sort + paging in memory below. The cap bounds cost; a match set LARGER
+		// than the cap cannot be correctly authorized/ordered/paged in memory, so
+		// it is REJECTED with a 400 (see the exceedsScanCap guard after the Solr
+		// call) rather than returned as a truncated page with a misleading
+		// hasMoreItems. Within the cap the whole authorized set is materialized,
+		// so numItems is exact and hasMoreItems is honest. Raise the cap with
+		// -Dnemakiware.cmis.query.aclScanMaxRows for larger result sets.
 		int aclScanCap = Integer.getInteger("nemakiware.cmis.query.aclScanMaxRows", 10000);
 		solrQuery.set(CommonParams.START, 0);
 		solrQuery.set(CommonParams.ROWS, aclScanCap);
