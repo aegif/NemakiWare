@@ -71,6 +71,47 @@ public final class CsrfValidator {
         return "missing origin verification headers";
     }
 
+    /**
+     * Lightweight CSRF check for the CMIS Browser Binding ({@code /browser/*}).
+     *
+     * <p>The Browser Binding cannot require the full token / {@code X-Requested-With}
+     * validation without breaking non-browser CMIS clients (cmislib, the TCK,
+     * scripts), which send none of those headers. This instead applies only the
+     * checks a browser cannot forge cross-site:
+     * <ul>
+     *   <li>reject an explicit {@code Sec-Fetch-Site: cross-site} fetch;</li>
+     *   <li>require a same-origin {@code Origin} when one is present.</li>
+     * </ul>
+     * A request with neither header (a non-browser CMIS client) is allowed for
+     * compatibility. Browsers always attach {@code Origin} to cross-origin POSTs
+     * and {@code Sec-Fetch-Site} to same/cross-site fetches, so a forged
+     * cross-site POST is caught while legitimate same-origin UI calls and
+     * header-less API clients pass.
+     *
+     * @return null if acceptable, or a short reason string if it must be rejected.
+     */
+    public static String validateBrowserBindingCsrf(HttpServletRequest request) {
+        String secFetchSite = request.getHeader("Sec-Fetch-Site");
+        if (secFetchSite != null && "cross-site".equalsIgnoreCase(secFetchSite.trim())) {
+            return "cross-site request";
+        }
+        String origin = request.getHeader("Origin");
+        if (origin != null) {
+            String o = origin.trim();
+            // A browser sends "Origin: null" for opaque origins (e.g. sandboxed
+            // iframes, some redirects); treat that as untrusted rather than absent.
+            if (!o.isEmpty()) {
+                String scheme = norm(request.getScheme());
+                String serverHost = norm(request.getServerName());
+                if (scheme == null || serverHost == null
+                        || !isOriginValid(o, scheme, serverHost, request.getServerPort())) {
+                    return "invalid origin";
+                }
+            }
+        }
+        return null;
+    }
+
     // ── Header checks ──
 
     static boolean hasExplicitAuthHeaders(HttpServletRequest request) {

@@ -108,6 +108,28 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         // existing behavior is preserved. Tomcat caches the parsed parts, so this
         // does not double-parse the (single-use) request body.
         if ("POST".equalsIgnoreCase(request.getMethod())) {
+            // CSRF: the Browser Binding intentionally does not require the full
+            // token / X-Requested-With validation (that would break non-browser
+            // CMIS clients), but a forged cross-site POST from a browser IS
+            // rejected — reject Sec-Fetch-Site: cross-site and a cross-origin
+            // Origin. Header-less non-browser clients (cmislib / TCK / scripts)
+            // send neither and are allowed. All Browser Binding mutations are
+            // POST; GET reads are not state-changing.
+            String csrfReason = jp.aegif.nemaki.rest.CsrfValidator.validateBrowserBindingCsrf(request);
+            if (csrfReason != null) {
+                log.warn("Rejected cross-site Browser Binding POST: " + csrfReason
+                        + " (Origin=" + request.getHeader("Origin")
+                        + ", Sec-Fetch-Site=" + request.getHeader("Sec-Fetch-Site") + ")");
+                response.setContentType("application/json");
+                response.setCharacterEncoding("UTF-8");
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                try (java.io.PrintWriter w = response.getWriter()) {
+                    w.write("{\"exception\":\"permissionDenied\",\"message\":\"CSRF check failed: "
+                            + csrfReason + "\"}");
+                }
+                return;
+            }
+
             String contentType = request.getContentType();
             if (contentType != null && contentType.regionMatches(true, 0, "multipart/", 0, 10)) {
                 try {

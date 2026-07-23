@@ -125,9 +125,41 @@ conformance checklist (Minimal + Intermediate) passes 21/21. See
   `SolrQueryProcessorScanCapTest` (cap allowed, cap+1 rejected) and verified live
   (cap=2: broad query → 400, narrow → 200; default cap: honest `hasMoreItems`,
   exact `numItems`).
-- Browser Binding CSRF (raised by one reviewer) is intentionally **out of
-  scope**: `/browser` has no CSRF check by existing design (CMIS client
-  compatibility); this change opens no new gap. Enforcing it is a separate epic.
+
+### Integration-review remediation (second pass)
+- **The cap rejection no longer leaks the pre-ACL count, and rejects before
+  transferring bodies.** The query now runs a `rows=0` count probe first: an
+  over-cap match set is rejected from that cheap probe, before any document
+  bodies are transferred (so even `$top=1` no longer pays a cap-sized fetch), and
+  the 400 message is generic — it no longer echoes the pre-ACL `numFound` (which
+  counts objects the caller cannot read). A race-window re-check on the real
+  fetch keeps the same generic message.
+- **Browser Binding CSRF — a compatibility-preserving check is now applied**
+  (reversing the earlier "out of scope" stance). `/browser/*` POSTs are rejected
+  with 403 when `Sec-Fetch-Site: cross-site` is present or an `Origin` header is
+  cross-origin; a request with neither header — a non-browser CMIS client
+  (cmislib, the TCK, scripts) — is still allowed. This blocks a browser-forged
+  cross-site POST without requiring the full token/`X-Requested-With` validation
+  that would break CMIS clients. `CsrfValidator.validateBrowserBindingCsrf` +
+  `CsrfValidatorBrowserBindingTest` (8 cases); verified live (header-less → 201,
+  cross-site → 403, cross-origin Origin → 403, same-origin → 201).
+- **The OData seed no longer rejects legally same-named documents.**
+  `ci-seed-odata-docs.sh` dropped the repo-wide name-uniqueness requirement (CMIS
+  allows same-named documents in different folders); it now only verifies its own
+  distinct-by-construction seed names are present and count ≥ 3. It stays
+  fail-closed on a Solr-indexing timeout.
+- **The new regression tests are now CI-gated.**
+  `SolrQueryProcessorScanCapTest` and `CsrfValidatorBrowserBindingTest` were added
+  to the unit-tests job's explicit `-Dtest` list. (The Node 20→22 bump and the
+  OData 500 redaction were already completed in the prior commit, including the
+  Maven `frontend-maven-plugin` nodeVersion.)
+- **Deferred (separate, large epic):** letting a low-privilege user search a repo
+  where their authorized set is small but the overall match exceeds the cap
+  requires pushing ACL into Solr (index reader tokens on content documents + an
+  `fq` for the caller's principals) — a schema + indexing + reindex change beyond
+  this dependency-uplift release. Today the cap is honest (400, no count leak, no
+  false `hasMoreItems`, no cap-sized DoS) but a match set larger than the cap is
+  not searchable.
 
 **Verification**: Java unit + full CMIS TCK green on the v3.3 tree
 (Connection/Basics/Control/Versioning/CRUD1/CRUD2/Query/Types all pass;

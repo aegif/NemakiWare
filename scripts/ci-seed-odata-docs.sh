@@ -76,18 +76,18 @@ query_names() {
     | jq -r '.results[]?.properties["cmis:name"].value' 2>/dev/null
 }
 
-# True only when the query path satisfies every precondition the OData tests need:
-# count >= SEED_COUNT, all names distinct, and every seed name present.
+# True only when the query path returns our seed set: count >= SEED_COUNT and
+# every seed name is queryable. We deliberately do NOT reject duplicate names
+# elsewhere in the repository — CMIS legitimately allows same-named documents in
+# different folders, so a repo-wide uniqueness check would fail on valid data.
+# The seed names are distinct by construction (odata-ci-seed-a/b/c...), which is
+# all the $orderby regression needs; unrelated documents are ignored.
 ready() {
-  local names total dup nm
+  local names total nm
   names="$(query_names)" || return 1
   total="$(printf '%s\n' "$names" | grep -c . || true)"
   if [ "${total:-0}" -lt "$SEED_COUNT" ]; then
     echo "[seed]   not ready: indexed count=${total:-0} < ${SEED_COUNT}"; return 1
-  fi
-  dup="$(printf '%s\n' "$names" | grep -v '^$' | LC_ALL=C sort | uniq -d | head -1)"
-  if [ -n "$dup" ]; then
-    echo "[seed]   not ready: duplicate document name '${dup}' (would fail assumeTrue(distinct))"; return 1
   fi
   for nm in $SEED_NAMES; do
     if ! printf '%s\n' "$names" | grep -qxF "$nm"; then

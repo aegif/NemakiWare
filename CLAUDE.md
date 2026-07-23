@@ -530,9 +530,37 @@ vitest 191/191、OData 65/65 + Olingo client 4/4 + CSDL XSD 適合 + conformance
   `v20.19.0`→`v22.14.0`** に更新。`v22.14.0` は swagger-client (`>=22`) と
   jsdom (`^22.13.0`) の両 engines を満たす (途中 `v22.12.0` は jsdom 未満で再選定)。
   実機: `mvn package` で Node 22.14.0 導入・vite build 成功・**EBADENGINE ゼロ**。
-- **残 (対象外・別チケット)**: Browser Binding の CSRF 未適用は CLAUDE.md 明記の
-  既存方針 (CMIS クライアント互換のため `/browser` は CSRF なし) で、本 WIP が
-  新規に開けた穴ではない。必須化は別 epic。
+**統合レビュー remediation (2巡目、6件)**:
+- **[P1] cap 判定が ACL 前件数を漏えい + 事前 rows=0 化 (#1a/#3)**: `SolrQueryProcessor`
+  を **2 段クエリ**化。先に **rows=0 の count プローブ**で Solr の `numFound`(認可前)
+  を取得し、cap 超過なら**本文転送前**に 400 で拒否 (低権限ユーザーへの cap 件転送
+  DoS を排除)。応答メッセージは**汎用文言**にし、`matched N objects` の**認可前
+  件数を出さない** (閲覧不可オブジェクト数の漏えい防止)。cap 以内でのみ rows=cap
+  取得 → 全件 materialize (numItems 厳密 / hasMoreItems 正直)。phase-2 側にも
+  race-window 再チェックを残置 (同じく件数非漏えい)。
+- **[P1] Browser Binding CSRF を互換保持で導入 (#2)**: 前回「対象外」とした判断を
+  是正。`CsrfValidator.validateBrowserBindingCsrf` を新設し、`/browser/*` の
+  **POST** で **`Sec-Fetch-Site: cross-site` を拒否 + `Origin` があれば同一オリジン
+  必須**。`Origin`/`Sec-Fetch-Site` 双方を持たない**非ブラウザ CMIS クライアント
+  (cmislib/TCK/スクリプト) は従来どおり許可**。フルトークン必須化 (CMIS 互換破壊)
+  は依然回避しつつ、ブラウザ由来の cross-site 偽装 POST を遮断。`CsrfValidator
+  BrowserBindingTest` 8 件。実機: header-less→201 / cross-site→403 / cross-origin
+  Origin→403 / same-origin→201。
+- **[P2] OData 500 秘匿 / Node 22 (Maven 込み)**: 前バッチで対応済
+  (`ODataExceptions.map`、`core/pom.xml` `nodeVersion=v22.14.0`)。#4 は解消済み。
+- **[P2] OData シードの合法同名文書対応 (#5)**: `ci-seed-odata-docs.sh` の
+  **リポジトリ全体 distinct 要求を撤廃** (CMIS は別フォルダの同名を許可)。固定
+  シード名 (構成上 distinct) の存在 + 件数≥3 のみ検証し、無関係な合法同名で
+  fail しない。fail-closed (索引未達→exit1) は維持。
+- **[P2] 新規回帰テストを CI ゲート化 (#6)**: `SolrQueryProcessorScanCapTest` +
+  `CsrfValidatorBrowserBindingTest` を `integration-tests.yml` の unit-tests ジョブ
+  明示リストに追加 (PR ゲート対象に)。
+- **残 (別チケット・大規模)**: #1 の**低権限ユーザーが「認可済み数件・全体 >cap」
+  でも検索できる**ようにする恒久策は、**ACL 条件を Solr 索引に載せる** (reader
+  トークンを content doc に index + query 時 fq) 必要があり、schema+indexing+
+  再索引を伴う大規模機能。本サイクル (依存アップリフト) の範囲外として別 epic で
+  対応。現状は「cap 超過は honest に 400 で拒否 (件数漏えい・DoS・偽 hasMoreItems
+  なし)」で、正しく振る舞うが cap 超の集合は検索不可という制限は残る。
 
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
