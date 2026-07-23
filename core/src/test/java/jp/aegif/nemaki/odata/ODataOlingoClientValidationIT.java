@@ -5,7 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.restassured.RestAssured;
+import io.restassured.response.Response;
+
 import java.net.URI;
+import java.util.List;
 
 import org.apache.olingo.client.api.ODataClient;
 import org.apache.olingo.client.api.communication.request.retrieve.EdmMetadataRequest;
@@ -22,6 +26,7 @@ import org.apache.olingo.commons.api.edm.EdmEntitySet;
 import org.apache.olingo.commons.api.edm.EdmEntityType;
 import org.apache.olingo.commons.api.edm.FullQualifiedName;
 import org.apache.olingo.commons.api.format.ContentType;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -55,6 +60,70 @@ public class ODataOlingoClientValidationIT extends ODataTestBase {
 
     private void auth(org.apache.olingo.client.api.communication.request.ODataRequest req) {
         req.addCustomHeader("Authorization", createBasicAuthHeader(username, password));
+    }
+
+    // A dedicated, distinct-by-construction seed set. The paging / $orderby
+    // regression tests operate ONLY on documents whose name starts with this
+    // prefix, so they are deterministic regardless of whatever else lives in the
+    // repository — in particular they do NOT skip when unrelated documents happen
+    // to share a name (CMIS allows same names in different folders). Assertions,
+    // not assumptions, so the CI gate cannot pass by silently skipping.
+    private static final String SEED_PREFIX = "odata-ci-seed-";
+    private static final String[] SEED_NAMES = {
+            SEED_PREFIX + "a.txt", SEED_PREFIX + "b.txt", SEED_PREFIX + "c.txt" };
+
+    /**
+     * Ensure the distinct seed documents exist and are queryable before the
+     * regression tests run. Idempotent (409 = already exists is fine), so it
+     * co-operates with the CI seed script (scripts/ci-seed-odata-docs.sh) and also
+     * makes a bare local run self-sufficient. Uses the CMIS Browser Binding, which
+     * accepts a header-less POST (no Origin / Sec-Fetch-Site) under the new CSRF
+     * policy.
+     */
+    @BeforeAll
+    public static void seedDistinctDocuments() {
+        String browser = baseUrl + "/browser/" + repositoryId;
+        String authHeader = createBasicAuthHeader(username, password);
+
+        String rootId = RestAssured.given().header("Authorization", authHeader)
+                .get(browser + "?cmisselector=repositoryInfo")
+                .jsonPath().getString("'" + repositoryId + "'.rootFolderId");
+        if (rootId == null || rootId.isEmpty()) {
+            // Cannot seed — leave it to the assertions in the tests to fail clearly.
+            return;
+        }
+
+        for (String name : SEED_NAMES) {
+            RestAssured.given().header("Authorization", authHeader)
+                    .multiPart("cmisaction", "createDocument")
+                    .multiPart("folderId", rootId)
+                    .multiPart("propertyId[0]", "cmis:objectTypeId")
+                    .multiPart("propertyValue[0]", "cmis:document")
+                    .multiPart("propertyId[1]", "cmis:name")
+                    .multiPart("propertyValue[1]", name)
+                    .post(browser); // 201 (created) or 409 (already exists) — both fine
+        }
+
+        // Wait for Solr to index the seeds (the OData /Documents collection reads
+        // through the Solr query path, which indexes asynchronously).
+        for (int i = 0; i < 40; i++) {
+            Response r = RestAssured.given().header("Authorization", authHeader)
+                    .queryParam("cmisselector", "query")
+                    .queryParam("q", "SELECT cmis:name FROM cmis:document WHERE cmis:name LIKE '"
+                            + SEED_PREFIX + "%'")
+                    .queryParam("maxItems", "100")
+                    .get(browser);
+            List<String> names = r.jsonPath().getList("results.properties.'cmis:name'.value");
+            if (names != null && names.size() >= SEED_NAMES.length) {
+                return;
+            }
+            try {
+                Thread.sleep(3000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
     }
 
     @Test
@@ -129,7 +198,7 @@ public class ODataOlingoClientValidationIT extends ODataTestBase {
     @Test
     public void olingoClientReadsSingleEntity() {
         ODataClient client = ODataClientFactory.getClient();
-        ClientEntitySet set = readSet(client, -1, -1, false);
+        ClientEntitySet set = readSet(client, null, -1, -1, false);
         assertNotNull(set, "Documents collection must deserialize");
         assertFalse(set.getEntities().isEmpty(),
                 "the test repository must contain at least one document");
@@ -162,21 +231,24 @@ public class ODataOlingoClientValidationIT extends ODataTestBase {
     public void olingoClientPagingReportsAuthorizedTotalAndFullPage() {
         ODataClient client = ODataClientFactory.getClient();
 
-        ClientEntitySet all = readSet(client, -1, -1, true);
+        // Operate on the dedicated seed set only, so the assertions below are hard
+        // (never skipped) and deterministic regardless of other repository content.
+        ClientEntitySet all = readSet(client, SEED_FILTER, -1, -1, true);
         assertNotNull(all.getCount(), "@odata.count must be present with $count=true");
         int total = all.getCount();
         assertEquals(all.getEntities().size(), total,
                 "unpaged $count must equal the number of returned entities");
-        org.junit.jupiter.api.Assumptions.assumeTrue(total >= 2,
-                "need >= 2 documents to test paging; repository has " + total);
+        assertTrue(total >= SEED_NAMES.length,
+                "the " + SEED_NAMES.length + " seed documents must be present and queryable; "
+                        + "count=" + total + " (did scripts/ci-seed-odata-docs.sh / @BeforeAll seed run?)");
 
-        ClientEntitySet top1 = readSet(client, 1, -1, true);
+        ClientEntitySet top1 = readSet(client, SEED_FILTER, 1, -1, true);
         assertEquals(total, top1.getCount().intValue(),
                 "$count must be the authorized total, not the current page size");
         assertEquals(1, top1.getEntities().size(),
                 "$top=1 must return a full authorized page (1), not an empty page");
 
-        ClientEntitySet skip1 = readSet(client, 1, 1, true);
+        ClientEntitySet skip1 = readSet(client, SEED_FILTER, 1, 1, true);
         assertEquals(total, skip1.getCount().intValue(),
                 "$count must stay the authorized total under $skip");
         assertEquals(1, skip1.getEntities().size(),
@@ -190,17 +262,20 @@ public class ODataOlingoClientValidationIT extends ODataTestBase {
      * $orderby applied to a single-item page was effectively ignored. This test
      * proves (a) $orderby is actually applied (desc is the exact reverse of asc,
      * collation-independent) and (b) ordered $top=1 paging reproduces the unpaged
-     * order.
+     * order. It runs over the dedicated seed set (distinct by construction), so it
+     * asserts — it never skips on unrelated same-named documents.
      */
     @Test
     public void olingoClientOrderByIsAppliedAndOrderedPagingMatches() {
         ODataClient client = ODataClientFactory.getClient();
 
-        java.util.List<String> asc = names(readSetOrdered(client, "name asc", -1, -1, false));
-        java.util.List<String> desc = names(readSetOrdered(client, "name desc", -1, -1, false));
-        org.junit.jupiter.api.Assumptions.assumeTrue(
-                asc.size() >= 2 && new java.util.HashSet<>(asc).size() == asc.size(),
-                "need >= 2 distinct document names to test $orderby; have " + asc.size());
+        List<String> asc = names(readSetOrdered(client, SEED_FILTER, "name asc", -1, -1, false));
+        List<String> desc = names(readSetOrdered(client, SEED_FILTER, "name desc", -1, -1, false));
+
+        assertTrue(asc.size() >= SEED_NAMES.length,
+                "the " + SEED_NAMES.length + " distinct seed documents must be present; have " + asc.size());
+        assertEquals(asc.size(), new java.util.HashSet<>(asc).size(),
+                "seed document names must be distinct: " + asc);
 
         java.util.List<String> ascReversed = new java.util.ArrayList<>(asc);
         java.util.Collections.reverse(ascReversed);
@@ -211,7 +286,7 @@ public class ODataOlingoClientValidationIT extends ODataTestBase {
         // Slice one item per page and concatenate; it must equal the unpaged order.
         java.util.List<String> pagedAsc = new java.util.ArrayList<>();
         for (int s = 0; s < asc.size(); s++) {
-            java.util.List<String> page = names(readSetOrdered(client, "name asc", 1, s, false));
+            List<String> page = names(readSetOrdered(client, SEED_FILTER, "name asc", 1, s, false));
             assertEquals(1, page.size(),
                     "$orderby + $top=1 must return a full authorized page at skip=" + s);
             pagedAsc.add(page.get(0));
@@ -221,19 +296,26 @@ public class ODataOlingoClientValidationIT extends ODataTestBase {
                         + "(page must be sliced AFTER the full authorized set is sorted)");
     }
 
+    /** OData $filter that restricts a read to the dedicated seed set. */
+    private static final String SEED_FILTER = "startswith(name,'" + SEED_PREFIX + "')";
+
     /** Collect the {@code name} property of every entity in the set, in order. */
-    private java.util.List<String> names(ClientEntitySet set) {
-        java.util.List<String> out = new java.util.ArrayList<>();
+    private List<String> names(ClientEntitySet set) {
+        List<String> out = new java.util.ArrayList<>();
         for (ClientEntity e : set.getEntities()) {
             out.add(e.getProperty("name").getPrimitiveValue().toString());
         }
         return out;
     }
 
-    /** Read the Documents entity set with an $orderby plus optional $top/$skip/$count. */
-    private ClientEntitySet readSetOrdered(ODataClient client, String orderBy, int top, int skip, boolean count) {
+    /** Read the Documents entity set with an optional $filter/$orderby/$top/$skip/$count. */
+    private ClientEntitySet readSetOrdered(ODataClient client, String filter, String orderBy,
+            int top, int skip, boolean count) {
         org.apache.olingo.client.api.uri.URIBuilder b = client.newURIBuilder(serviceRootUrl())
                 .appendEntitySetSegment("Documents");
+        if (filter != null) {
+            b = b.filter(filter);
+        }
         if (count) {
             b = b.count(true);
         }
@@ -253,23 +335,8 @@ public class ODataOlingoClientValidationIT extends ODataTestBase {
         return req.execute().getBody();
     }
 
-    /** Read the Documents entity set with optional $top / $skip / $count. */
-    private ClientEntitySet readSet(ODataClient client, int top, int skip, boolean count) {
-        org.apache.olingo.client.api.uri.URIBuilder b = client.newURIBuilder(serviceRootUrl())
-                .appendEntitySetSegment("Documents");
-        if (count) {
-            b = b.count(true);
-        }
-        if (top >= 0) {
-            b = b.top(top);
-        }
-        if (skip >= 0) {
-            b = b.skip(skip);
-        }
-        ODataEntitySetRequest<ClientEntitySet> req =
-                client.getRetrieveRequestFactory().getEntitySetRequest(b.build());
-        req.setAccept(ContentType.JSON.toContentTypeString());
-        auth(req);
-        return req.execute().getBody();
+    /** Read the Documents entity set with an optional $filter plus $top/$skip/$count. */
+    private ClientEntitySet readSet(ODataClient client, String filter, int top, int skip, boolean count) {
+        return readSetOrdered(client, filter, null, top, skip, count);
     }
 }

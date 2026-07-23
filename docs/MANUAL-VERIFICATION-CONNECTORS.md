@@ -23,7 +23,9 @@
 
 > **注**: `/v1/admin/...` は Spring MVC dispatcher、`CsrfInterceptor`
 > が POST/PUT/DELETE で起動する。`X-Requested-With` を忘れると 403。
-> `/core/atom/...` (CMIS Browser Binding) は CSRF 検証なし。
+> CMIS Browser Binding (`/core/browser/...`) は完全 CSRF 必須化はしないが、POST に
+> 軽量チェックが入る (v3.3〜): `Sec-Fetch-Site: cross-site` / cross-origin `Origin`
+> は 403、両ヘッダーを持たない curl 等は許可。
 
 ### 共通 shell 設定
 

@@ -1,8 +1,26 @@
 package jp.aegif.nemaki.cmis.aspect.query.solr;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
+import org.apache.solr.client.solrj.SolrClient;
+import org.apache.solr.client.solrj.request.SolrQuery;
+import org.apache.solr.client.solrj.response.QueryResponse;
+import org.apache.solr.common.SolrDocumentList;
+import org.apache.solr.common.params.CommonParams;
+import org.apache.solr.common.params.SolrParams;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -47,5 +65,89 @@ public class SolrQueryProcessorScanCapTest {
 		// The cap is configurable via -Dnemakiware.cmis.query.aclScanMaxRows.
 		assertFalse(SolrQueryProcessor.exceedsScanCap(2, 2), "at the custom cap: allowed");
 		assertTrue(SolrQueryProcessor.exceedsScanCap(3, 2), "one over the custom cap: rejected");
+	}
+
+	// ── Two-phase queryWithinScanCap behaviour (mock SolrClient) ──
+
+	/** Records the ROWS value seen on each SolrClient.query call (the query is mutated in place). */
+	private static SolrClient clientReturning(List<Integer> rowsSeen, long... numFoundPerCall) {
+		SolrClient client = mock(SolrClient.class);
+		try {
+			when(client.query(any(SolrParams.class))).thenAnswer(inv -> {
+				SolrParams p = inv.getArgument(0);
+				int callIndex = rowsSeen.size();
+				rowsSeen.add(p.getInt(CommonParams.ROWS, -1));
+				long nf = numFoundPerCall[Math.min(callIndex, numFoundPerCall.length - 1)];
+				QueryResponse qr = mock(QueryResponse.class);
+				SolrDocumentList sdl = new SolrDocumentList();
+				sdl.setNumFound(nf);
+				when(qr.getResults()).thenReturn(sdl);
+				return qr;
+			});
+		} catch (Exception e) {
+			throw new RuntimeException(e);
+		}
+		return client;
+	}
+
+	@Test
+	public void overCapProbeRejectsWithoutASecondQuery() throws Exception {
+		List<Integer> rowsSeen = new ArrayList<>();
+		// Phase 1 (rows=0) already reports > cap.
+		SolrClient client = clientReturning(rowsSeen, 10001);
+		SolrQuery q = new SolrQuery();
+
+		CmisInvalidArgumentException ex = assertThrows(CmisInvalidArgumentException.class,
+				() -> SolrQueryProcessor.queryWithinScanCap(client, q, 10000));
+
+		// Only ONE query was issued (no cap-sized body fetch on rejection)...
+		verify(client, times(1)).query(any(SolrParams.class));
+		// ...and it was the rows=0 probe.
+		assertEquals(1, rowsSeen.size());
+		assertEquals(0, rowsSeen.get(0), "phase 1 must query with rows=0 (no body transfer)");
+		// The message must NOT leak the pre-ACL count.
+		assertFalse(ex.getMessage().matches(".*\\b10001\\b.*"),
+				"rejection message must not echo the pre-ACL numFound");
+	}
+
+	@Test
+	public void withinCapFetchesWithRowsCapAfterTheProbe() throws Exception {
+		List<Integer> rowsSeen = new ArrayList<>();
+		// Phase 1 (rows=0) -> 42 (<= cap); phase 2 (rows=cap) -> 42.
+		SolrClient client = clientReturning(rowsSeen, 42, 42);
+		SolrQuery q = new SolrQuery();
+
+		QueryResponse resp = SolrQueryProcessor.queryWithinScanCap(client, q, 10000);
+
+		verify(client, times(2)).query(any(SolrParams.class));
+		assertEquals(0, rowsSeen.get(0), "phase 1 is the rows=0 probe");
+		assertEquals(10000, rowsSeen.get(1), "phase 2 fetches with rows=cap");
+		assertEquals(42L, resp.getResults().getNumFound());
+	}
+
+	@Test
+	public void growthBetweenProbeAndFetchIsRejectedOnRecheck() throws Exception {
+		List<Integer> rowsSeen = new ArrayList<>();
+		// Probe sees 9000 (<= cap 10000) but the fetch sees 10001 (docs added).
+		SolrClient client = clientReturning(rowsSeen, 9000, 10001);
+		SolrQuery q = new SolrQuery();
+
+		assertThrows(CmisInvalidArgumentException.class,
+				() -> SolrQueryProcessor.queryWithinScanCap(client, q, 10000));
+
+		// Both phases ran (probe passed, fetch happened), then the re-check rejected.
+		verify(client, times(2)).query(any(SolrParams.class));
+		assertEquals(10000, rowsSeen.get(1), "phase 2 still fetches with rows=cap before the re-check");
+	}
+
+	@Test
+	public void exactlyAtCapProbeProceedsToFetch() throws Exception {
+		List<Integer> rowsSeen = new ArrayList<>();
+		SolrClient client = clientReturning(rowsSeen, 10000, 10000);
+		SolrQuery q = new SolrQuery();
+
+		QueryResponse resp = SolrQueryProcessor.queryWithinScanCap(client, q, 10000);
+		verify(client, times(2)).query(any(SolrParams.class));
+		assertEquals(10000L, resp.getResults().getNumFound());
 	}
 }

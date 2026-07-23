@@ -51,6 +51,7 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectListImpl;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject.SortSpec;
@@ -477,39 +478,14 @@ public class SolrQueryProcessor implements QueryProcessor {
 			return null;
 		}
 
-		// Phase 1: a rows=0 count probe. This returns Solr's pre-ACL numFound
-		// WITHOUT transferring any document bodies, so an over-broad query is
-		// rejected cheaply — before the cap-sized body transfer and before any
-		// getContent / ACL / lock work. The count is PRE-ACL (it includes objects
-		// the caller cannot read), so it is NOT echoed to the client; only the
-		// fact that the scan limit was exceeded is reported.
-		solrQuery.set(CommonParams.START, 0);
-		solrQuery.set(CommonParams.ROWS, 0);
-		try {
-			QueryResponse countResp = solrClient.query(solrQuery);
-			long preAclNumFound = (countResp != null && countResp.getResults() != null)
-					? countResp.getResults().getNumFound() : 0;
-			if (exceedsScanCap(preAclNumFound, aclScanCap)) {
-				exceptionService.invalidArgument(
-						"The query is too broad to authorize in memory: it matches more than the "
-						+ aclScanCap + "-row ACL scan limit. Narrow the query (add a WHERE clause) "
-						+ "or raise -Dnemakiware.cmis.query.aclScanMaxRows.");
-			}
-		} catch (SolrServerException | IOException e) {
-			logger.error("Solr count query failed: " + e.getMessage(), e);
-			exceptionService.invalidArgument("Solr query execution failed: " + e.getMessage());
-			return null;
-		}
-
-		// Phase 2: fetch the matching set up to the cap for in-memory ACL + sort
-		// + paging. numFound here is still pre-ACL and <= cap in the common case;
-		// the guard below re-checks it to close the small window where documents
-		// were added between the probe and this fetch.
-		solrQuery.set(CommonParams.ROWS, aclScanCap);
+		// Two-phase, scan-cap-bounded fetch (rows=0 count probe → reject over-cap
+		// before any body transfer → rows=cap fetch → race re-check). Extracted so
+		// the guard behaviour is unit-testable (see SolrQueryProcessorScanCapTest).
+		// A CmisInvalidArgumentException from the guard is a 400 that propagates
+		// out; its message never echoes the pre-ACL count.
 		QueryResponse resp = null;
 		try {
-			// Core name is already included in the URL from SolrUtil.getSolrUrl()
-			resp = solrClient.query(solrQuery);
+			resp = queryWithinScanCap(solrClient, solrQuery, aclScanCap);
 		} catch (SolrServerException | IOException e) {
 			logger.error("Solr query failed: " + e.getMessage(), e);
 			exceptionService.invalidArgument("Solr query execution failed: " + e.getMessage());
@@ -522,22 +498,6 @@ public class SolrQueryProcessor implements QueryProcessor {
 				&& resp.getResults().getNumFound() != 0) {
 			SolrDocumentList docs = resp.getResults();
 			numFound = docs.getNumFound();
-
-			// Reachability guard (race-window re-check). Phase 1's rows=0 probe
-			// already rejected an over-cap match set cheaply; this repeats the
-			// check on the fetched response to close the small window where
-			// documents were added between the probe and this fetch. A match set
-			// larger than the cap cannot be authorized / ordered / paged past the
-			// cap in memory, so it is rejected rather than returned as a
-			// wrong-ordered / truncated page with a misleading hasMoreItems. The
-			// pre-ACL count is NOT echoed (it would leak the number of objects the
-			// caller cannot read).
-			if (exceedsScanCap(numFound, aclScanCap)) {
-				exceptionService.invalidArgument(
-						"The query is too broad to authorize in memory: it matches more than the "
-						+ aclScanCap + "-row ACL scan limit. Narrow the query (add a WHERE clause) "
-						+ "or raise -Dnemakiware.cmis.query.aclScanMaxRows.");
-			}
 
 			List<Content> contents = new ArrayList<Content>();
 			Set<String> seenIds = new HashSet<String>();
@@ -693,6 +653,54 @@ public class SolrQueryProcessor implements QueryProcessor {
 	 */
 	static boolean exceedsScanCap(long numFound, int aclScanCap) {
 		return numFound > aclScanCap;
+	}
+
+	/**
+	 * Execute the Solr query in two phases so the ACL-scan cap is enforced without
+	 * transferring document bodies for an over-cap match set:
+	 * <ol>
+	 *   <li><b>Phase 1</b> issues the query with {@code rows=0} — this returns
+	 *       Solr's pre-ACL {@code numFound} with NO body transfer. If it exceeds
+	 *       the cap the query is rejected here (no second query, no cap-sized
+	 *       fetch), so even {@code $top=1} is cheap to reject.</li>
+	 *   <li><b>Phase 2</b> (only when within the cap) re-issues the query with
+	 *       {@code rows=cap} to fetch the set for in-memory ACL + sort + paging,
+	 *       then re-checks the count to close the race window where documents were
+	 *       added between the probe and the fetch.</li>
+	 * </ol>
+	 * The rejection {@link CmisInvalidArgumentException} (HTTP 400) never echoes
+	 * the pre-ACL count — that would leak the number of objects the caller cannot
+	 * read. Package-private so {@code SolrQueryProcessorScanCapTest} can drive it
+	 * with a mock {@link SolrClient}.
+	 */
+	static QueryResponse queryWithinScanCap(SolrClient solrClient, SolrQuery solrQuery, int aclScanCap)
+			throws SolrServerException, IOException {
+		// Phase 1: rows=0 count probe.
+		solrQuery.set(CommonParams.START, 0);
+		solrQuery.set(CommonParams.ROWS, 0);
+		if (exceedsScanCap(numFoundOf(solrClient.query(solrQuery)), aclScanCap)) {
+			throw scanCapExceeded(aclScanCap);
+		}
+		// Phase 2: fetch up to the cap.
+		solrQuery.set(CommonParams.ROWS, aclScanCap);
+		QueryResponse resp = solrClient.query(solrQuery);
+		// Race-window re-check (documents added between the probe and the fetch).
+		if (exceedsScanCap(numFoundOf(resp), aclScanCap)) {
+			throw scanCapExceeded(aclScanCap);
+		}
+		return resp;
+	}
+
+	private static long numFoundOf(QueryResponse resp) {
+		return (resp != null && resp.getResults() != null) ? resp.getResults().getNumFound() : 0;
+	}
+
+	/** Build the 400 for an over-cap result set — note: NO pre-ACL count in the message. */
+	static CmisInvalidArgumentException scanCapExceeded(int aclScanCap) {
+		return new CmisInvalidArgumentException(
+				"The query is too broad to authorize in memory: it matches more than the "
+				+ aclScanCap + "-row ACL scan limit. Narrow the query (add a WHERE clause) "
+				+ "or raise -Dnemakiware.cmis.query.aclScanMaxRows.");
 	}
 
 	private String orderBy(QueryObject queryObject){
