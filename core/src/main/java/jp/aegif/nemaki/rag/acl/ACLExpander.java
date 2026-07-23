@@ -139,10 +139,10 @@ public class ACLExpander {
      * the current admins into individual {@code user:} tokens. Expanding admins
      * had the same revocation hole as expanding group members: a demoted admin
      * kept a stale {@code user:} token on every fallback document until it was
-     * re-indexed, and the RAG path (no final in-memory ACL check) would still
-     * return it. The role token is resolved at query time to the CURRENT admins
-     * only (see {@link #buildReaderTokenSet}), so demotion takes effect
-     * immediately without re-indexing.
+     * re-indexed, so the CMIS numFound stayed inflated and the RAG seed/similar
+     * paths stayed matchable until reindex. The role token is resolved at query
+     * time to the CURRENT admins only (see {@link #buildReaderTokenSet}), so
+     * demotion takes effect immediately without re-indexing.
      */
     private List<String> getAdminOnlyReaders(String repositoryId) {
         List<String> readers = new ArrayList<>();
@@ -198,11 +198,12 @@ public class ACLExpander {
         // (or a removed nested-subgroup member, or a demoted admin) kept a stale
         // `user:{repo}:{id}` token on every document until it was re-indexed, so
         // the query — which always includes the caller's own user token —
-        // continued to match. The RAG path has no final in-memory ACL check, so
-        // that was an actual leak (document names / paths / chunk text); the CMIS
-        // path was corrected by getFiltered but the stale tokens inflated numFound
-        // and could trip the ACL scan cap. Instead, index only `group:{repo}:{id}`
-        // and let the QUERY resolve the caller's groups at request time
+        // continued to match. On the CMIS path getFiltered removed the result but
+        // the stale tokens inflated numFound and could trip the ACL scan cap; on
+        // the RAG path this surfaced document names / paths / chunk text (the RAG
+        // result stage is authorized by PermissionService, but the numFound / seed
+        // exposure remained). Instead, index only `group:{repo}:{id}` and let the
+        // QUERY resolve the caller's groups at request time
         // (getGroupIdsContainingUser is transitive over nested groups on both the
         // CMIS and RAG paths), which is inherently revocation-safe.
         Group group = principalService.getGroupById(repositoryId, principalId);

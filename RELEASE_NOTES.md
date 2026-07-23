@@ -206,16 +206,20 @@ authorization into Solr, mirroring the pattern RAG already uses.
   calculateAcl` recomputes readers from the just-applied ACL (calculateAcl
   otherwise returns the cached Acl).
 - **⚠️⚠️ Upgrade — a full CMIS + RAG reindex is SECURITY-MANDATORY, not
-  optional.** Two independent reasons: (1) existing content has no `readers`
-  field, so it is invisible to non-admin search until re-indexed (fail-closed —
-  no leak); (2) more importantly, any index built by a pre-fix build carries the
-  old **member-expanded `user:` tokens** on documents (group members and the
-  admins expanded at index time). Those stale tokens keep matching after a group
-  departure / admin demotion, so the P0 group-departure fix below **does not take
-  effect for old data until the index is rebuilt** — and RAG (no in-memory
-  getFiltered) would still leak names/paths/chunks from that stale corpus. v3.3
-  already requires a Solr-10 reindex, so this is the same step, but it MUST be run
-  before exposing the upgraded system:
+  optional.** An index built by a pre-fix build carries the old
+  **member-expanded `user:` tokens** on documents (group members and admins
+  expanded at index time), and existing content has no `readers` field at all.
+  Until the rebuild, the round-2 revocation fixes (group departure / admin
+  demotion) **do not take effect for old data**, with three concrete consequences:
+  (1) content with no `readers` is invisible to non-admin search (fail-closed —
+  not a leak); (2) stale member-expanded tokens keep matching after a departure,
+  so CMIS `numFound` stays inflated and can trip the ACL scan-cap 400, and the RAG
+  seed / findSimilar paths (token-gated, no PermissionService on the seed) stay
+  matchable for a departed member; (3) the over-broad token sets bloat the RAG
+  candidate pool. (The RAG *result* stage is still filtered by PermissionService,
+  so this is not a plain body leak — but the seed oracle and numFound/cap
+  correctness are real.) v3.3 already requires a Solr-10 reindex, so this is the
+  same step, but it MUST run before exposing the upgraded system:
   `POST /api/v1/cmis/repositories/{repo}/search-engine/reindex` and (if RAG is
   enabled) `POST /api/v1/cmis/repositories/{repo}/search-engine/rag/reindex`.
   Until the rebuild completes, treat the deployment as pre-fix for revocation.
@@ -342,8 +346,42 @@ residual defects; all fixed and live-verified.
   a dangling-subgroup abort-the-whole-walk side bug was also fixed).
 - **Reviewed and cleared:** the CMIS getFiltered path's cyclic-group DoS is a
   non-issue — `UserGroupDaoDelegate.getJoinedGroupByUserId` already carries a
-  visited set + maxIterations=50; directory sync bypasses the `update()` write
-  guard but only ever writes empty nested-group lists, so it cannot create a cycle.
+  visited set + maxIterations=50.
+
+### ACL-in-Solr — revocation soundness, round 4 (review: P0 + P2 + P3 batch)
+- **[P0/design] Private Working Copies are now excluded from RAG indexing.**
+  A PWC is a checkout-owner-only draft — `PermissionServiceImpl` authorizes it by
+  ownership and ignores the normal inherited ACL — but RAG authorizes by
+  inherited-ACL token intersection (Solr readers fq + the live
+  `isReadableByTokens` gate), which does not know the PWC rule. The RAG *result*
+  stage is still filtered by `PermissionService` (so a same-group non-owner could
+  not read draft chunk text in results), but the round-3 `findSimilarDocuments`
+  seed gate is token-based, so a same-group non-owner could use a PWC as a
+  similarity seed (existence + semantic-neighbourhood oracle), and an owner not in
+  the inherited ACL would be denied their own draft. Fix: `SolrUtil.triggerRAGIndexing`
+  skips a PWC and deletes any RAG block a prior build indexed for it; the CMIS
+  content doc is unaffected (the CMIS query path still enforces the PWC rule via
+  `getFiltered`). Verified live: after checkout, the PWC has no RAG document block.
+- **[P2] The nested-group cycle guard now covers the CREATE path.** round 2's
+  guard lived in `update()` (edits) and `buildAndCreateGroup`, but LDAP directory
+  sync (`DirectorySyncServiceImpl.createGroup` with `syncNestedGroups=true`)
+  persists real nested-group lists through `createGroupItem(cc,repo,groupItem)`,
+  which was unguarded — so a create could persist an A→B→A cycle. Fix: the guard
+  is now enforced in `createGroupItem` (the GroupItem create choke point), so REST,
+  LDAP and cloud sync all pass through it. (Correction to round 3's note: cloud
+  sync writes empty nested lists, but LDAP sync does not — hence this fix.)
+  Verified live: creating a group whose nested list closes a cycle is rejected.
+- **[P3 batch]** (a) corrected the stale `ACLExpander` comments that claimed the
+  RAG path has "no final in-memory ACL check" (the live gate + the REST/MCP
+  `PermissionService` re-check exist); (b) reframed the reindex-mandatory rationale
+  above to the accurate reasons (fail-closed invisibility, numFound/cap inflation +
+  seed oracle, candidate-pool bloat) rather than a plain "RAG leak"; (c) documented
+  the relationship reverse-reindex as **async best-effort** — a grant is briefly
+  unsearchable on its relationships until the async refresh lands, `indexDocument`
+  itself retries on Solr write failure, but a reverse-lookup that permanently fails
+  leaves the relationship stale until the next ACL touch or a full reindex (a
+  durable reconciliation queue is a separate, cross-cutting effort tracked for a
+  future release, as it applies to all async ACL propagation, not just this path).
 
 **Verification**: Java unit + full CMIS TCK green on the v3.3 tree
 (Connection/Basics/Control/Versioning/CRUD1/CRUD2/Query/Types all pass;

@@ -499,6 +499,24 @@ public class SolrUtil implements ApplicationContextAware {
 		}
 		Document document = (Document) content;
 
+		// PWC exclusion (security): a Private Working Copy is a checkout-owner-only
+		// draft. PermissionServiceImpl authorizes a PWC by CHECKOUT OWNERSHIP and
+		// deliberately ignores the normal inherited ACL, but RAG authorizes by
+		// inherited-ACL token intersection (the Solr readers fq + the live
+		// isReadableByTokens gate), which does NOT know the PWC rule. An indexed PWC
+		// would therefore (a) let a same-group non-owner use the in-progress draft as
+		// a findSimilarDocuments seed — an existence + semantic-neighbourhood oracle
+		// (the result stage is still filtered by PermissionService, but the seed is
+		// only token-gated), and (b) hide the draft from its own owner when the owner
+		// is not in the inherited ACL. PWCs are transient drafts, not semantic-search
+		// targets, so exclude them from RAG entirely and remove any block a prior
+		// build indexed for this id (the CMIS content doc is unaffected — the CMIS
+		// query path still has PermissionService.getFiltered enforcing the PWC rule).
+		if (Boolean.TRUE.equals(document.isPrivateWorkingCopy())) {
+			triggerRAGDeletion(repositoryId, document.getId());
+			return;
+		}
+
 		CompletableFuture.runAsync(() -> {
 			try {
 				RAGIndexingService ragService = getRAGIndexingServiceSafely();

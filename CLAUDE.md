@@ -616,15 +616,17 @@ cap 前拒否 (低権限ユーザーが大規模リポジトリを検索でき�
   `updateInternal`(再索引) の**前**に対象の cmis/content キャッシュを evict し新 ACL
   から readers を計算 (子孫向け `clearCachesRecursively` は DB 更新後のまま)。
 - **⚠️⚠️ アップグレード: 全 CMIS + RAG 再索引はセキュリティ必須 (任意ではない)**:
-  理由は2つ。(1) 既存コンテンツに `readers` が無く非 admin 検索に出ない (fail-closed、
-  漏洩なし)。(2) より重要な点として、**修正前ビルドが作った索引は旧 member-expanded
-  `user:` token を doc に持つ**ため、下記 P0 のグループ脱退/admin 降格の修正は
-  **旧データでは再索引するまで効かず**、RAG (getFiltered 無し) はその旧コーパスから
-  名前/パス/chunk を漏らし続ける。v3.3 は Solr 10 移行で元々再索引必須なので追加
-  コストは無いが、**アップグレード後に公開する前に必ず実行すること**:
-  `POST /api/v1/cmis/repositories/{repo}/search-engine/reindex` + (RAG 有効なら)
-  `POST /api/v1/cmis/repositories/{repo}/search-engine/rag/reindex`。再索引完了までは
-  剥奪について修正前扱いとみなす。
+  **修正前ビルドが作った索引は旧 member-expanded `user:` token を doc に持ち**、既存
+  コンテンツには `readers` 自体が無い。再索引までは下記 P0 の剥奪修正が旧データに効かず、
+  具体的な影響は3つ。(1) `readers` 未付与コンテンツは非 admin 検索に出ない (fail-closed、
+  漏洩なし)。(2) 脱退後も stale token が一致するため CMIS numFound が膨張し scan-cap 400
+  を誤発火、RAG の seed/findSimilar 経路 (token 判定でシードに PermissionService 無し) は
+  脱退メンバーに一致し続ける。(3) 過大な token 集合が RAG 候補プールを膨張。**RAG の結果段は
+  PermissionService で filter されるため本文の素の漏洩ではない**が、seed oracle と
+  numFound/cap の不整合は実在。v3.3 は Solr 10 移行で元々再索引必須なので追加コストは無いが、
+  **公開前に必ず実行**: `POST /api/v1/cmis/repositories/{repo}/search-engine/reindex` +
+  (RAG 有効なら) `POST /api/v1/cmis/repositories/{repo}/search-engine/rag/reindex`。
+  再索引完了までは剥奪について修正前扱いとみなす。
 - **実機検証**: readers 索引確認、非 admin が GROUP_EVERYONE 文書を閲覧可、制限文書は
   非表示 (admin は表示)、grant/revoke 即時反映 (readers add/remove)、**cap=2/14 文書で
   低権限 alice(認可2)→200・admin(認可14)→400**。admin バイパスで TCK Query 6/6・
@@ -714,8 +716,29 @@ cap 前拒否 (低権限ユーザーが大規模リポジトリを検索でき�
   潜在ハザード解消、dangling subgroup で全走査を中断していた副次バグも `continue` 化で修正)。
 - **レビューで棄却/確認済**: CMIS getFiltered 経路の循環 DoS は `UserGroupDaoDelegate.
   getJoinedGroupByUserId` が既に visited set + maxIterations=50 を持つため非該当(棄却)。
-  directory-sync は `principalService.updateGroup` 直呼びで update() write ガードを迂回するが、
-  sync は nested groups を空でしか設定しないため循環を作らない(無害、doc 精度のみ)。
+
+**ACL-in-Solr 権限剥奪の健全性修正 — 第4巡 (レビュー: P0 + P2 + P3群)**:
+- **[P0/設計] PWC を RAG 索引から除外**: PWC は checkout owner 専用の draft で
+  `PermissionServiceImpl` は所有権で認可し通常 ACL を無視するが、RAG は継承 ACL の token 交差
+  (readers fq + live gate) で認可するため PWC 規則を知らない。RAG の**結果段**は
+  PermissionService で filter されるため同グループ非 owner が draft 本文を結果で読むことは無いが、
+  第3巡で追加した `findSimilarDocuments` の**シード**は token 判定なので、同グループ非 owner が PWC を
+  類似シードに使える (存在+意味近傍オラクル)、かつ owner が継承 ACL に居ないと自分の draft を検索
+  できない。**修正**: `SolrUtil.triggerRAGIndexing` が PWC を skip + 既存 RAG block を削除
+  (CMIS content doc は不変=CMIS query は getFiltered が PWC 規則を強制)。実機: checkout 後、PWC の
+  RAG document block が無いことを確認。
+- **[P2] cycle guard を CREATE 経路へ**: 第2巡のガードは `update()`(編集) と `buildAndCreateGroup`
+  のみで、**LDAP directory sync** (`DirectorySyncServiceImpl.createGroup`、`syncNestedGroups=true`)
+  は実 nested list を `createGroupItem(cc,repo,groupItem)` に渡すが未ガードだった → create で A→B→A を
+  永続化可能。**修正**: `createGroupItem`(GroupItem create の choke point)にガードを移動し REST/LDAP/
+  cloud 全 create が通過。**第3巡の記述を訂正**: cloud sync は空 nested を書くが LDAP sync は書かない。
+  実機: nested で循環を閉じる group create は拒否。
+- **[P3群]**: (a) `ACLExpander` の「RAG は最終 in-memory ACL 検査なし」旧コメントを是正 (live gate +
+  REST/MCP の PermissionService 再検査が存在)。(b) 再索引必須の根拠を「RAG 漏洩継続」から正確な3点
+  (fail-closed 不可視 / numFound・cap 膨張 + seed oracle / 候補プール膨張) に再定義。(c) relationship
+  逆引き再索引を**非同期 best-effort** として明記 (grant は async 反映まで一時 unsearchable、
+  `indexDocument` は Solr write 失敗を retry するが逆引き自体の恒久失敗は次回全再索引まで残る。恒久
+  reconciliation キューは全 async ACL 伝播に関わる横断課題として別リリースで追跡)。
 
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
