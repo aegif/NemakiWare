@@ -675,7 +675,8 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public jp.aegif.nemaki.model.GroupItem buildAndCreateGroup(String repositoryId, String groupId,
 			String name, java.util.List<String> users, java.util.List<String> groups, String actorUsername) {
-		assertNoNestedGroupCycle(repositoryId, groupId, groups);
+		// Cycle guard is enforced centrally in createGroupItem (the create choke
+		// point) — the build path below persists through it.
 		jp.aegif.nemaki.model.GroupItem group = new jp.aegif.nemaki.model.GroupItem(
 				null, jp.aegif.nemaki.common.NemakiObjectType.nemakiGroup, groupId, name,
 				users == null ? new ArrayList<String>() : users,
@@ -2305,6 +2306,15 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public GroupItem createGroupItem(CallContext callContext, String repositoryId, GroupItem groupItem) {
 		validateGroupItem(repositoryId, groupItem);
+
+		// Reject a create that would persist a nested-group cycle. This is the
+		// GroupItem CREATE choke point (REST buildAndCreateGroup, LDAP directory
+		// sync createGroup with syncNestedGroups=true, cloud sync) — the sibling
+		// guard in update() only covers edits, so without this a create could
+		// persist an A->B->A cycle that the read side then has to defend against.
+		if (groupItem != null) {
+			assertNoNestedGroupCycle(repositoryId, groupItem.getGroupId(), groupItem.getGroups());
+		}
 
 		GroupItem created = contentDaoService.create(repositoryId, groupItem);
 
