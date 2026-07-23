@@ -351,37 +351,58 @@ residual defects; all fixed and live-verified.
 ### ACL-in-Solr — durable reconciliation queue for failed async ACL refreshes
 Closes the round-3/4 known limitation ("the relationship reverse-reindex is async
 best-effort; a permanently-failed refresh stays stale until the next ACL touch or a
-full reindex"). Failed asynchronous search-index ACL refreshes are now recorded in a
-durable CouchDB queue and automatically re-driven, and are operator-observable.
-- **Queue** (`nemaki_conf`, `searchIndexAclReindexTask`): a
-  `SearchIndexReconciliationService` records `(repositoryId, objectId, reason,
-  attempts, status)` deduped by object, with CouchDB `_rev` as an optimistic lock
-  (two replicas cannot process the same entry). Mango indexes registered by
-  `Patch_SearchIndexReconcileMangoIndex`.
-- **Enqueue**: `AclServiceImpl.updateSearchIndexACLRecursively` now records the
-  failing object on every caught failure — a per-node content/RAG/relationship
-  refresh, a `getChildren` traversal failure, and (via a new
-  `SolrUtil.indexDocument` `onPermanentFailure` callback) an async Solr write that
-  ultimately fails after its bounded retries. The outer async task also enqueues the
-  root if the whole traversal throws.
-- **Poller** (`SearchIndexReconciliationScheduler`): a leader-gated fixed-delay poll
-  (default 120s) drains due tasks by re-driving `AclService.reindexSearchIndexAclForObject`
-  (a single-object refresh: content readers + RAG + relationships + inheriting
-  descendants). A clean re-drive deletes the task; a failure reserves it for a
-  backed-off retry; after `maxAttempts` (default 10) it is marked `FAILED` and kept
-  for inspection. Multi-replica safe (LeaderElection + `_rev` reservation).
-- **Admin API** (`GET/POST/DELETE /api/v1/admin/search-index/reconcile`, admin-gated,
-  CSRF-protected): list tasks (optionally by status), force an immediate retry, or
-  delete an entry.
-- **Config** (all optional, code defaults shown):
-  `nemakiware.searchindex.reconcile.pollIntervalSeconds=120`, `.maxAttempts=10`,
-  `.batchSize=50`, `.baseBackoffSeconds=60`.
-- **Verified**: `SearchIndexReconciliationSchedulerTest` (5 — clean→delete,
-  under-cap→retry, at-cap→FAILED, lost-reservation→skip, non-leader→no-op); live —
-  the 3 Mango indexes registered, the scheduler started, the admin API lists /
-  retries (a real object → `reconciled`, task deleted), and the poller drains an
-  enqueued task automatically. No schema/view change (a new `nemaki_conf` record
-  type + Mango index only).
+full reindex"). Failed asynchronous search-index ACL refreshes are recorded in a
+CouchDB queue, **re-driven with confirmed (synchronous) writes**, and are
+operator-observable. A first implementation was reworked after review to make the
+concurrency/durability semantics actually hold:
+- **Atomic dedupe + CAS** (`SearchIndexReconciliationService`): each entry lives
+  under a DETERMINISTIC `_id` (`search-index-acl-reconcile::{repo}::{object}`), so
+  concurrent enqueues for the same object collapse to one document (a create
+  conflict resolves to an in-place update), and **every state transition is a
+  `_rev` compare-and-swap** — a stale rev → 409 → the operation is abandoned. Two
+  replicas therefore cannot both process an entry, and a poller cannot clobber a
+  newer failure event that arrived mid-flight (a new enqueue bumps `generation`,
+  which changes the rev and makes the in-flight CAS delete fail, so the fresh
+  failure survives). Lifecycle `PENDING → LEASED → (deleted | PENDING | FAILED)`;
+  a crashed poller's lease expires and is reclaimable.
+- **Confirmed re-drive** (fixes the core review defect): the poller re-drives via
+  `AclService.reindexSearchIndexAclForObject` with `forceSync=true`, so the Solr
+  writes complete SYNCHRONOUSLY and a failure throws and is counted — the entry is
+  only completed (CAS-deleted) when the re-drive is genuinely clean (previously a
+  fire-and-forget async submit reported clean and the entry was deleted before the
+  write was known to have landed, re-opening the very `INDEX_WRITE_FAILURE` it was
+  meant to fix). A cache-eviction failure (a precondition for a correct re-index)
+  is also counted / enqueued rather than treated as success.
+- **DB-side due selection**: the poller claims via a Mango `$lte` range + ascending
+  sort on `nextAttemptAt` (epoch millis), served by `(type,status,nextAttemptAt)` —
+  so the oldest-due entries come first and a backlog beyond one batch is not
+  starved. Expired leases are reclaimed via `(type,status,leaseExpiresAt)`.
+- **Enqueue points** (`AclServiceImpl`): every caught failure — per-node
+  content/RAG/relationship refresh, a `getChildren` traversal failure, a cache
+  eviction failure, and (via a `SolrUtil.indexDocument` `onPermanentFailure`
+  callback) an async Solr write that exhausts its bounded retries — records the
+  object; the outer async task enqueues the root on a whole-traversal throw.
+- **Admin API + metrics** (`/api/v1/admin/search-index/reconcile`, admin-gated,
+  CSRF-protected): list (by status), `GET /metrics` (pending/leased/failed counts,
+  oldest-pending age, enqueue-failure count — for alerting), force-retry, delete.
+- **Config** (optional; defaults): `nemakiware.searchindex.reconcile
+  .pollIntervalSeconds=120 / .maxAttempts=10 / .batchSize=50 / .baseBackoffSeconds=60
+  / .leaseSeconds=300`.
+- **Honest scope**: this is a durable retry queue for the common case — a **Solr
+  failure while CouchDB is healthy** (the ACL change that triggered it was already
+  persisted to CouchDB). If CouchDB itself is unavailable, the queue write also
+  fails; that is surfaced via the `enqueueFailureCount` metric (alert on it) rather
+  than silently lost, and the true belt-and-suspenders for that case is a periodic
+  authoritative ACL-to-index audit (a separate, larger effort). After `maxAttempts`
+  an entry is kept as `FAILED` for inspection — operators should alert on the
+  `failed` count and `oldestPendingAgeMs`.
+- **Verified**: `SearchIndexReconciliationSchedulerTest` (5 — clean→complete,
+  under-cap→retryLater, at-cap→markFailed, non-leader→no-claim, deterministic-id
+  encoding); live against real CouchDB — deterministic-id dedupe (duplicate `_id` →
+  409), a synchronous retry re-drove a real object and CAS-deleted the entry, the
+  Mango due query returned entries sorted by `nextAttemptAt`, and the metrics
+  endpoint reported the correct oldest-pending age. No schema/view change (a new
+  `nemaki_conf` record type + Mango indexes only).
 
 ### ACL-in-Solr — revocation soundness, round 4 (review: P0 + P2 + P3 batch)
 - **[P0/design] Private Working Copies are now excluded from RAG indexing.**

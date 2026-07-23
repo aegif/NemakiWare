@@ -314,9 +314,19 @@ public class AclServiceImpl implements AclService {
 		// content-readers re-index but still refreshes its relationships, and only
 		// recurses into inheriting descendants when the root is a folder, so passing a
 		// leaf here does exactly the relationship refresh and nothing more.
+		final jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconcile = reconciliationService;
 		// Evict aclCache for the root + all inheriting descendants so their readers
 		// are recomputed from the new ancestor chain (must happen before re-index).
-		clearCachesRecursively(repositoryId, content);
+		// Eviction failure is a precondition failure — enqueue for reconciliation.
+		try {
+			clearCachesRecursively(repositoryId, content);
+		} catch (Exception e) {
+			log.warn("Moved-subtree cache eviction failed for " + content.getId() + ": " + e.getMessage());
+			if (reconcile != null) {
+				reconcile.enqueue(repositoryId, content.getId(),
+						jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.CACHE_EVICTION_FAILURE);
+			}
+		}
 
 		RAGIndexingService ragService = getRagIndexingService();
 		ACLExpander expander = getAclExpander();
@@ -327,13 +337,13 @@ public class AclServiceImpl implements AclService {
 			return;
 		}
 		final RAGIndexingService ragRef = ragEnabled ? ragService : null;
-		final jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconcile = reconciliationService;
 		ragAclExecutor.submit(() -> {
 			try {
 				// isRoot=true: the moved object itself was already re-indexed by
 				// ContentServiceImpl.move; re-index only the inheriting descendants.
+				// syncConfirm=false: async best-effort with enqueue-on-failure.
 				updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,
-						new java.util.HashSet<>(), true, reconcile, null);
+						new java.util.HashSet<>(), true, reconcile, null, false);
 				log.info("Moved-subtree search index ACL refresh triggered for: " + content.getId());
 			} catch (Exception e) {
 				log.warn("Failed to refresh moved-subtree search index ACL for " + content.getId()
@@ -370,8 +380,9 @@ public class AclServiceImpl implements AclService {
 
 		ragAclExecutor.submit(() -> {
 			try {
+				// syncConfirm=false: async best-effort with enqueue-on-failure.
 				updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,
-						new java.util.HashSet<>(), true, reconcile, null);
+						new java.util.HashSet<>(), true, reconcile, null, false);
 				log.info("Search index ACL update triggered for: " + content.getId());
 			} catch (Exception e) {
 				log.warn("Failed to update search index ACL for " + content.getId() + ": " + e.getMessage());
@@ -419,15 +430,21 @@ public class AclServiceImpl implements AclService {
 			return true;
 		}
 		RAGIndexingService ragRef = ragEnabled ? ragService : null;
+		java.util.concurrent.atomic.AtomicInteger failures = new java.util.concurrent.atomic.AtomicInteger(0);
 		// Fresh ACL: evict caches so expandToReaders recomputes from the current ACL.
+		// Eviction is a PRECONDITION for a correct re-index — if it fails, the readers
+		// would be recomputed from a stale cache, so count it as a failure and keep the
+		// task (a later poll retries with a fresh eviction).
 		try {
 			clearCachesRecursively(repositoryId, content);
 		} catch (Exception e) {
 			log.warn("Reconcile: cache eviction failed for " + objectId + ": " + e.getMessage());
+			failures.incrementAndGet();
 		}
-		java.util.concurrent.atomic.AtomicInteger failures = new java.util.concurrent.atomic.AtomicInteger(0);
+		// syncConfirm=true: writes are forced synchronous so a Solr failure is counted
+		// (the task is only completed/deleted when the re-drive is genuinely clean).
 		updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,
-				new java.util.HashSet<>(), false, null, failures);
+				new java.util.HashSet<>(), false, null, failures, true);
 		return failures.get() == 0;
 	}
 
@@ -455,7 +472,7 @@ public class AclServiceImpl implements AclService {
 			jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil solrUtil,
 			java.util.Set<String> visitedIds, boolean isRoot,
 			jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconcile,
-			java.util.concurrent.atomic.AtomicInteger failureCounter) {
+			java.util.concurrent.atomic.AtomicInteger failureCounter, boolean syncConfirm) {
 		if (content == null || visitedIds.contains(content.getId())) {
 			return;
 		}
@@ -474,7 +491,11 @@ public class AclServiceImpl implements AclService {
 		// re-index inheriting descendants (their effective ACL changed).
 		if (!isRoot && solrUtil != null) {
 			try {
-				solrUtil.indexDocument(repositoryId, content, false, true, onWriteFailed);
+				// syncConfirm (reconciliation re-drive): force a synchronous write so a
+				// Solr failure THROWS here and is counted — otherwise a fire-and-forget
+				// async submit would report clean and the task would be deleted before
+				// the write is known to have landed.
+				solrUtil.indexDocument(repositoryId, content, syncConfirm, true, onWriteFailed);
 			} catch (Exception e) {
 				log.warn("Failed to refresh content readers for " + content.getId() + ": " + e.getMessage());
 				recordNodeFailure(reconcile, failureCounter, repositoryId, content.getId(),
@@ -510,7 +531,7 @@ public class AclServiceImpl implements AclService {
 						org.apache.chemistry.opencmis.commons.enums.RelationshipDirection.EITHER);
 				if (rels != null) {
 					for (jp.aegif.nemaki.model.Relationship rel : rels) {
-						solrUtil.indexDocument(repositoryId, rel, false, true, onWriteFailed);
+						solrUtil.indexDocument(repositoryId, rel, syncConfirm, true, onWriteFailed);
 					}
 				}
 			} catch (Exception e) {
@@ -543,7 +564,7 @@ public class AclServiceImpl implements AclService {
 					try {
 						if (contentService.getAclInheritedWithDefault(repositoryId, child)) {
 							updateSearchIndexACLRecursively(repositoryId, child, ragService, expander,
-									solrUtil, visitedIds, false, reconcile, failureCounter);
+									solrUtil, visitedIds, false, reconcile, failureCounter, syncConfirm);
 						}
 					} catch (Exception e) {
 						log.warn("Failed to refresh search-index ACL for child " + child.getId()

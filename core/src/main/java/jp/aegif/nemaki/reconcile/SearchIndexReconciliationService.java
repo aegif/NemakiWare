@@ -4,10 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions;
 import com.ibm.cloud.cloudant.v1.model.Document;
-import com.ibm.cloud.cloudant.v1.model.DocumentResult;
 import com.ibm.cloud.cloudant.v1.model.FindResult;
-import com.ibm.cloud.cloudant.v1.model.PostDocumentOptions;
+import com.ibm.cloud.cloudant.v1.model.GetDocumentOptions;
 import com.ibm.cloud.cloudant.v1.model.PostFindOptions;
+import com.ibm.cloud.cloudant.v1.model.PutDocumentOptions;
+import com.ibm.cloud.sdk.core.service.exception.ConflictException;
+import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
 
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
@@ -16,230 +18,353 @@ import jp.aegif.nemaki.util.constant.SystemConst;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * CouchDB-backed durable queue for {@link SearchIndexAclReindexTask} entries.
+ * CouchDB-backed durable queue for {@link SearchIndexAclReindexTask}, redesigned
+ * for correct concurrency / durability semantics:
  *
- * <p>Records objects whose asynchronous search-index ACL refresh
- * ({@code AclServiceImpl}) failed, so a scheduled poller can re-drive them and an
- * operator can observe / retry them. Persisted in {@code nemaki_conf}, following
- * the same pattern as {@code IngestJobService}: Mango {@code _find} selectors,
- * upsert keyed by the natural {@code taskId}, and CouchDB {@code _rev} as an
- * optimistic lock so two replicas cannot process the same entry twice.
+ * <ul>
+ *   <li><b>Deterministic {@code _id}</b> ({@code (repository, object)}): concurrent
+ *       enqueues collapse to one document — a create conflict (409) is resolved as
+ *       an in-place update.</li>
+ *   <li><b>{@code _rev} compare-and-swap</b> for every transition (claim / complete
+ *       / retry / fail): a stale rev → 409 → the operation is abandoned, so two
+ *       replicas cannot both process the same entry and a poller cannot clobber a
+ *       newer failure event that arrived mid-flight.</li>
+ *   <li><b>Lease</b> ({@code LEASED} + {@code leaseExpiresAt}): a crashed poller's
+ *       claim expires and is reclaimable.</li>
+ *   <li><b>DB-side due selection</b>: a Mango {@code $lte} range + ascending sort on
+ *       {@code nextAttemptAt} (epoch millis), so the oldest-due entries are served
+ *       first and a backlog beyond one batch is not starved.</li>
+ * </ul>
+ *
+ * <p>Enqueue never throws; a persistence failure increments an in-JVM counter
+ * ({@link #getEnqueueFailureCount()}) surfaced via the admin metrics endpoint —
+ * because if CouchDB itself is unavailable, the queue write fails too (the ACL
+ * change that triggered it was persisted earlier while CouchDB was up; this queue
+ * targets the common case of a Solr-only failure with CouchDB healthy).
  */
 public class SearchIndexReconciliationService {
 
     private static final Logger logger = LoggerFactory.getLogger(SearchIndexReconciliationService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final int ENQUEUE_CONFLICT_RETRIES = 5;
+    private static final int METRICS_CAP = 1000;
 
     private CloudantClientPool connectorPool;
+    private final AtomicLong enqueueFailureCount = new AtomicLong(0);
 
     public void setConnectorPool(CloudantClientPool connectorPool) {
         this.connectorPool = connectorPool;
     }
 
-    // ── Enqueue ────────────────────────────────────────────────────
+    public long getEnqueueFailureCount() {
+        return enqueueFailureCount.get();
+    }
+
+    // ── Enqueue (atomic dedupe by deterministic _id, generation bump) ──
 
     /**
-     * Enqueue (or refresh) a reconciliation task for {@code objectId}. Deduped by
-     * {@code (repositoryId, objectId)}:
-     * <ul>
-     *   <li>no existing entry → create a fresh {@code PENDING} task (attempts=0,
-     *       due now);</li>
-     *   <li>existing {@code PENDING} → update its reason/timestamp but keep its
-     *       attempt count and backoff so a storm of enqueues cannot reset the
-     *       retry clock;</li>
-     *   <li>existing {@code FAILED} (previously gave up) → re-open it as
-     *       {@code PENDING} with attempts=0, due now (a fresh ACL event deserves a
-     *       fresh set of retries).</li>
-     * </ul>
-     * Never throws — a reconciliation-queue write failure must not break the ACL
-     * change that triggered it.
+     * Enqueue (or refresh) the reconciliation entry for {@code objectId}. Idempotent
+     * per {@code (repositoryId, objectId)} via the deterministic {@code _id}: if an
+     * entry exists it is flipped back to {@code PENDING}, its {@code generation} is
+     * bumped (which invalidates any in-flight lease's rev) and it becomes due now;
+     * otherwise a fresh {@code PENDING} entry is created. Create/update conflicts are
+     * retried a bounded number of times. Never throws.
      */
     public void enqueue(String repositoryId, String objectId, String reason) {
         if (repositoryId == null || objectId == null) {
             return;
         }
-        try {
-            String now = Instant.now().toString();
-            SearchIndexAclReindexTask existing = findByRepoAndObject(repositoryId, objectId);
-            SearchIndexAclReindexTask task;
-            if (existing == null) {
-                task = new SearchIndexAclReindexTask();
-                task.setTaskId("sir-" + UUID.randomUUID().toString().substring(0, 8));
-                task.setRepositoryId(repositoryId);
-                task.setObjectId(objectId);
-                task.setAttempts(0);
-                task.setStatus(SearchIndexAclReindexTask.Status.PENDING);
-                task.setCreatedAt(now);
-                task.setNextAttemptAt(now);
-            } else {
-                task = existing;
-                if (SearchIndexAclReindexTask.Status.FAILED.equals(task.getStatus())) {
-                    task.setStatus(SearchIndexAclReindexTask.Status.PENDING);
+        String docId = SearchIndexAclReindexTask.deterministicId(repositoryId, objectId);
+        for (int attempt = 0; attempt < ENQUEUE_CONFLICT_RETRIES; attempt++) {
+            try {
+                long now = System.currentTimeMillis();
+                SearchIndexAclReindexTask existing = getByCouchId(docId);
+                SearchIndexAclReindexTask task;
+                if (existing == null) {
+                    task = new SearchIndexAclReindexTask();
+                    task.setTaskId("sir-" + UUID.randomUUID());
+                    task.setRepositoryId(repositoryId);
+                    task.setObjectId(objectId);
+                    task.setCouchId(docId);
+                    task.setCouchRev(null); // create
                     task.setAttempts(0);
-                    task.setNextAttemptAt(now);
+                    task.setGeneration(1);
+                    task.setCreatedAt(now);
+                } else {
+                    task = existing;
+                    task.setGeneration(task.getGeneration() + 1);
                 }
+                task.setStatus(SearchIndexAclReindexTask.Status.PENDING);
+                task.setReason(reason);
+                task.setNextAttemptAt(now); // a fresh failure is due immediately
+                task.setLeaseOwner(null);
+                task.setLeaseExpiresAt(0);
+                task.setUpdatedAt(now);
+                if (putCas(task) != null) {
+                    return; // success
+                }
+                // CAS conflict — another writer changed the doc; retry the loop.
+            } catch (Exception e) {
+                logger.warn("Failed to enqueue reconcile for {} / {} (attempt {}): {}",
+                        repositoryId, objectId, attempt + 1, e.getMessage());
+                enqueueFailureCount.incrementAndGet();
+                return;
             }
-            task.setReason(reason);
-            task.setUpdatedAt(now);
-            upsert(task);
-            if (logger.isDebugEnabled()) {
-                logger.debug("Enqueued search-index ACL reconcile: repo={} object={} reason={} taskId={}",
-                        repositoryId, objectId, reason, task.getTaskId());
-            }
-        } catch (Exception e) {
-            logger.warn("Failed to enqueue search-index ACL reconcile for {} / {}: {}",
-                    repositoryId, objectId, e.getMessage());
         }
+        logger.warn("Failed to enqueue reconcile for {} / {} after {} conflict retries",
+                repositoryId, objectId, ENQUEUE_CONFLICT_RETRIES);
+        enqueueFailureCount.incrementAndGet();
     }
 
-    // ── Query ──────────────────────────────────────────────────────
+    // ── Claim (CAS lease) ──────────────────────────────────────────
 
-    /** All PENDING tasks whose {@code nextAttemptAt} is at or before now, up to {@code limit}. */
-    public List<SearchIndexAclReindexTask> listDue(int limit) {
-        String now = Instant.now().toString();
-        List<SearchIndexAclReindexTask> pending = findBySelector(
+    /**
+     * Claim up to {@code batchSize} due entries for {@code nodeId}, leasing each for
+     * {@code leaseMillis}. "Due" = {@code PENDING} with {@code nextAttemptAt <= now},
+     * plus {@code LEASED} entries whose lease has expired (crashed holder). Each claim
+     * is a {@code _rev} CAS that flips the entry to {@code LEASED}; a lost CAS (another
+     * replica won) simply drops the candidate. Returns the entries actually claimed
+     * (each carrying the post-claim {@code _rev} for a later CAS complete/retry/fail).
+     */
+    public List<SearchIndexAclReindexTask> claimDue(int batchSize, String nodeId, long leaseMillis) {
+        long now = System.currentTimeMillis();
+        List<SearchIndexAclReindexTask> candidates = new ArrayList<>();
+        candidates.addAll(findSortedAsc(
                 Map.of("type", SearchIndexAclReindexTask.DOC_TYPE,
-                        "status", SearchIndexAclReindexTask.Status.PENDING),
-                200);
-        List<SearchIndexAclReindexTask> due = new ArrayList<>();
-        for (SearchIndexAclReindexTask t : pending) {
-            String next = t.getNextAttemptAt();
-            if (next == null || next.compareTo(now) <= 0) {
-                due.add(t);
-                if (due.size() >= limit) break;
-            }
+                        "status", SearchIndexAclReindexTask.Status.PENDING,
+                        "nextAttemptAt", Map.of("$lte", now)),
+                "nextAttemptAt", batchSize));
+        if (candidates.size() < batchSize) {
+            candidates.addAll(findSortedAsc(
+                    Map.of("type", SearchIndexAclReindexTask.DOC_TYPE,
+                            "status", SearchIndexAclReindexTask.Status.LEASED,
+                            "leaseExpiresAt", Map.of("$lte", now)),
+                    "leaseExpiresAt", batchSize - candidates.size()));
         }
-        return due;
+        List<SearchIndexAclReindexTask> claimed = new ArrayList<>();
+        for (SearchIndexAclReindexTask task : candidates) {
+            if (claimed.size() >= batchSize) break;
+            task.setStatus(SearchIndexAclReindexTask.Status.LEASED);
+            task.setLeaseOwner(nodeId);
+            task.setLeaseExpiresAt(now + Math.max(1000L, leaseMillis));
+            task.setUpdatedAt(now);
+            String newRev = putCas(task);
+            if (newRev != null) {
+                claimed.add(task); // couchRev updated by putCas
+            }
+            // else: another replica claimed / a new event superseded — skip.
+        }
+        return claimed;
     }
+
+    // ── ACK / retry / fail (CAS on the claim rev) ──────────────────
+
+    /**
+     * Complete a claimed task (delete it). CAS on the claim {@code _rev}: if a new
+     * enqueue bumped the generation while we were re-driving, the rev changed and the
+     * delete fails (409) — the fresh {@code PENDING} entry survives and is re-processed.
+     *
+     * @return true if deleted, false if the CAS lost (a newer event survived).
+     */
+    public boolean complete(SearchIndexAclReindexTask task) {
+        return deleteCas(task);
+    }
+
+    /** Release the lease and reschedule with backoff (CAS on the claim rev). */
+    public boolean retryLater(SearchIndexAclReindexTask task, long backoffMillis) {
+        long now = System.currentTimeMillis();
+        task.setAttempts(task.getAttempts() + 1);
+        task.setStatus(SearchIndexAclReindexTask.Status.PENDING);
+        task.setNextAttemptAt(now + Math.max(0, backoffMillis));
+        task.setLeaseOwner(null);
+        task.setLeaseExpiresAt(0);
+        task.setUpdatedAt(now);
+        return putCas(task) != null;
+    }
+
+    /** Mark permanently FAILED — kept for operator inspection (CAS on the claim rev). */
+    public boolean markFailed(SearchIndexAclReindexTask task, String error) {
+        long now = System.currentTimeMillis();
+        task.setAttempts(task.getAttempts() + 1);
+        task.setStatus(SearchIndexAclReindexTask.Status.FAILED);
+        task.setLastError(truncate(error));
+        task.setLeaseOwner(null);
+        task.setLeaseExpiresAt(0);
+        task.setUpdatedAt(now);
+        return putCas(task) != null;
+    }
+
+    // ── Admin / metrics ────────────────────────────────────────────
 
     public List<SearchIndexAclReindexTask> list(int limit) {
-        return findBySelector(Map.of("type", SearchIndexAclReindexTask.DOC_TYPE), limit);
+        return find(Map.of("type", SearchIndexAclReindexTask.DOC_TYPE), limit);
     }
 
     public SearchIndexAclReindexTask getByTaskId(String taskId) {
-        List<SearchIndexAclReindexTask> r = findBySelector(
+        List<SearchIndexAclReindexTask> r = find(
                 Map.of("type", SearchIndexAclReindexTask.DOC_TYPE, "taskId", taskId), 1);
         return r.isEmpty() ? null : r.get(0);
     }
 
-    private SearchIndexAclReindexTask findByRepoAndObject(String repositoryId, String objectId) {
-        List<SearchIndexAclReindexTask> r = findBySelector(
-                Map.of("type", SearchIndexAclReindexTask.DOC_TYPE,
-                        "repositoryId", repositoryId, "objectId", objectId), 1);
-        return r.isEmpty() ? null : r.get(0);
+    /** Admin override: delete the entry addressed by its opaque taskId (CAS on the current rev). */
+    public boolean forceDeleteByTaskId(String taskId) {
+        SearchIndexAclReindexTask t = getByTaskId(taskId);
+        return t != null && deleteCas(t);
     }
 
-    // ── Retry lifecycle ────────────────────────────────────────────
+    /** Queue-health snapshot for alerting: counts by status + oldest pending age (ms). */
+    public Map<String, Object> metrics() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        int pending = countCapped(SearchIndexAclReindexTask.Status.PENDING);
+        int leased = countCapped(SearchIndexAclReindexTask.Status.LEASED);
+        int failed = countCapped(SearchIndexAclReindexTask.Status.FAILED);
+        m.put("pending", pending);
+        m.put("leased", leased);
+        m.put("failed", failed);
+        m.put("countsCappedAt", METRICS_CAP);
+        m.put("enqueueFailureCount", enqueueFailureCount.get());
+        // Most-overdue pending age: the PENDING task with the smallest nextAttemptAt
+        // (uses the indexed (type,status,nextAttemptAt) sort) — its age since creation
+        // is the "how long has something been waiting" alerting signal.
+        List<SearchIndexAclReindexTask> oldest = findSortedAsc(
+                Map.of("type", SearchIndexAclReindexTask.DOC_TYPE,
+                        "status", SearchIndexAclReindexTask.Status.PENDING),
+                "nextAttemptAt", 1);
+        m.put("oldestPendingAgeMs",
+                oldest.isEmpty() ? 0L : Math.max(0L, System.currentTimeMillis() - oldest.get(0).getCreatedAt()));
+        return m;
+    }
 
-    /**
-     * Reserve a task for a retry attempt: bump attempts, push {@code nextAttemptAt}
-     * out by {@code backoffMs}, and persist under the current {@code _rev}. Uses the
-     * {@code _rev} optimistic lock — returns {@code false} if another replica /
-     * thread already claimed this entry (concurrent poll), so the caller must not
-     * proceed with the re-index.
-     */
-    public boolean reserveForRetry(SearchIndexAclReindexTask task, long backoffMs) {
-        task.setAttempts(task.getAttempts() + 1);
-        String now = Instant.now().toString();
-        task.setUpdatedAt(now);
-        task.setNextAttemptAt(Instant.now().plusMillis(Math.max(0, backoffMs)).toString());
+    // ── CouchDB primitives (CAS) ───────────────────────────────────
+
+    /** PUT the task at its deterministic id with its captured rev (CAS). Returns the new rev, or null on 409. */
+    @SuppressWarnings("unchecked")
+    private String putCas(SearchIndexAclReindexTask task) {
+        CloudantClientWrapper client = getConfClient();
+        Cloudant cloudant = client.getClient();
+        String db = client.getDatabaseName();
+
+        Map<String, Object> props = MAPPER.convertValue(task, Map.class);
+        props.put("type", SearchIndexAclReindexTask.DOC_TYPE);
+        props.remove("_id");
+        props.remove("_rev");
+
+        Document doc = new Document();
+        doc.setId(task.getCouchId());
+        if (task.getCouchRev() != null) {
+            doc.setRev(task.getCouchRev());
+        }
+        doc.setProperties(props);
         try {
-            return upsert(task) != null;
-        } catch (Exception e) {
-            logger.debug("Reconcile retry reservation failed (concurrent poll?): {}", e.getMessage());
+            var result = cloudant.putDocument(new PutDocumentOptions.Builder()
+                    .db(db).docId(task.getCouchId()).document(doc).build()).execute().getResult();
+            if (result != null && result.isOk()) {
+                task.setCouchRev(result.getRev());
+                return result.getRev();
+            }
+            return null;
+        } catch (ConflictException e) {
+            return null; // CAS lost
+        }
+    }
+
+    private boolean deleteCas(SearchIndexAclReindexTask task) {
+        if (task.getCouchId() == null || task.getCouchRev() == null) {
             return false;
         }
-    }
-
-    /** Mark a task permanently FAILED (retries exhausted) — kept for operator visibility. */
-    public void markFailed(SearchIndexAclReindexTask task, String error) {
-        task.setStatus(SearchIndexAclReindexTask.Status.FAILED);
-        task.setLastError(truncate(error));
-        task.setUpdatedAt(Instant.now().toString());
+        CloudantClientWrapper client = getConfClient();
+        Cloudant cloudant = client.getClient();
+        String db = client.getDatabaseName();
         try {
-            upsert(task);
-        } catch (Exception e) {
-            logger.warn("Failed to mark reconcile task {} FAILED: {}", task.getTaskId(), e.getMessage());
+            var result = cloudant.deleteDocument(new DeleteDocumentOptions.Builder()
+                    .db(db).docId(task.getCouchId()).rev(task.getCouchRev()).build()).execute().getResult();
+            return result != null && result.isOk();
+        } catch (ConflictException e) {
+            return false; // a newer event changed the doc — leave it
         }
     }
 
-    public void delete(String taskId) {
+    private SearchIndexAclReindexTask getByCouchId(String docId) {
         CloudantClientWrapper client = getConfClient();
-        String dbName = client.getDatabaseName();
         Cloudant cloudant = client.getClient();
-        for (Document doc : findRawDocs(cloudant, dbName,
-                Map.of("type", SearchIndexAclReindexTask.DOC_TYPE, "taskId", taskId))) {
-            cloudant.deleteDocument(new DeleteDocumentOptions.Builder()
-                    .db(dbName).docId(doc.getId()).rev(doc.getRev()).build()).execute();
-        }
-    }
-
-    // ── Internal ───────────────────────────────────────────────────
-
-    @SuppressWarnings("unchecked")
-    private String upsert(SearchIndexAclReindexTask task) {
-        CloudantClientWrapper client = getConfClient();
-        String dbName = client.getDatabaseName();
-        Cloudant cloudant = client.getClient();
-
-        Map<String, Object> jsonMap = MAPPER.convertValue(task, Map.class);
-        jsonMap.put("type", SearchIndexAclReindexTask.DOC_TYPE);
-        Document doc = new Document();
-        for (Map.Entry<String, Object> entry : jsonMap.entrySet()) {
-            doc.put(entry.getKey(), entry.getValue());
-        }
-        List<Document> existing = findRawDocs(cloudant, dbName,
-                Map.of("type", SearchIndexAclReindexTask.DOC_TYPE, "taskId", task.getTaskId()));
-        if (!existing.isEmpty()) {
-            doc.setId(existing.get(0).getId());
-            doc.setRev(existing.get(0).getRev());
-        }
-        DocumentResult result = cloudant.postDocument(new PostDocumentOptions.Builder()
-                .db(dbName).document(doc).build()).execute().getResult();
-        if (result == null || !result.isOk()) {
-            logger.debug("Reconcile upsert not ok for {}: {}", task.getTaskId(),
-                    result != null ? result.getError() : "null result");
+        String db = client.getDatabaseName();
+        try {
+            Document doc = cloudant.getDocument(new GetDocumentOptions.Builder()
+                    .db(db).docId(docId).build()).execute().getResult();
+            return toTask(doc);
+        } catch (NotFoundException e) {
             return null;
         }
-        return result.getId();
     }
 
-    @SuppressWarnings("unchecked")
-    private List<SearchIndexAclReindexTask> findBySelector(Map<String, Object> selector, int limit) {
+    // ── Mango find helpers ─────────────────────────────────────────
+
+    private List<SearchIndexAclReindexTask> find(Map<String, Object> selector, int limit) {
         CloudantClientWrapper client = getConfClient();
-        String dbName = client.getDatabaseName();
         Cloudant cloudant = client.getClient();
-        List<Document> rawDocs = findRawDocs(cloudant, dbName, selector);
-        List<SearchIndexAclReindexTask> results = new ArrayList<>();
-        for (Document rawDoc : rawDocs) {
-            if (results.size() >= limit) break;
-            try {
-                Map<String, Object> props = new HashMap<>(rawDoc.getProperties());
-                props.remove("_id");
-                props.remove("_rev");
-                props.remove("type");
-                results.add(MAPPER.convertValue(props, SearchIndexAclReindexTask.class));
-            } catch (Exception e) {
-                logger.warn("Failed to deserialize reconcile task: {}", e.getMessage());
-            }
-        }
-        return results;
+        String db = client.getDatabaseName();
+        FindResult r = cloudant.postFind(new PostFindOptions.Builder()
+                .db(db).selector(selector).limit(Math.max(1, limit)).build()).execute().getResult();
+        return toTasks(r);
     }
 
-    private List<Document> findRawDocs(Cloudant cloudant, String dbName, Map<String, Object> selector) {
-        PostFindOptions findOptions = new PostFindOptions.Builder()
-                .db(dbName).selector(selector).limit(200).build();
-        FindResult findResult = cloudant.postFind(findOptions).execute().getResult();
-        List<Document> docs = findResult.getDocs();
-        return docs != null ? docs : List.of();
+    private List<SearchIndexAclReindexTask> findSortedAsc(Map<String, Object> selector, String sortField, int limit) {
+        if (limit <= 0) return List.of();
+        CloudantClientWrapper client = getConfClient();
+        Cloudant cloudant = client.getClient();
+        String db = client.getDatabaseName();
+        try {
+            FindResult r = cloudant.postFind(new PostFindOptions.Builder()
+                    .db(db).selector(selector)
+                    .sort(List.of(Map.of(sortField, "asc")))
+                    .limit(limit).build()).execute().getResult();
+            return toTasks(r);
+        } catch (Exception e) {
+            // A missing sort index degrades to an unsorted scan rather than failing
+            // the whole poll (the patch registers the index; this is a safety net).
+            logger.debug("Sorted find fell back to unsorted (index not ready?): {}", e.getMessage());
+            return find(selector, limit);
+        }
+    }
+
+    private List<SearchIndexAclReindexTask> toTasks(FindResult r) {
+        List<SearchIndexAclReindexTask> out = new ArrayList<>();
+        if (r == null || r.getDocs() == null) return out;
+        for (Document d : r.getDocs()) {
+            SearchIndexAclReindexTask t = toTask(d);
+            if (t != null) out.add(t);
+        }
+        return out;
+    }
+
+    private SearchIndexAclReindexTask toTask(Document doc) {
+        if (doc == null) return null;
+        try {
+            Map<String, Object> props = new HashMap<>(doc.getProperties());
+            props.remove("_id");
+            props.remove("_rev");
+            props.remove("type");
+            SearchIndexAclReindexTask t = MAPPER.convertValue(props, SearchIndexAclReindexTask.class);
+            t.setCouchId(doc.getId());
+            t.setCouchRev(doc.getRev());
+            return t;
+        } catch (Exception e) {
+            logger.warn("Failed to deserialize reconcile task {}: {}", doc.getId(), e.getMessage());
+            return null;
+        }
+    }
+
+    private int countCapped(String status) {
+        return find(Map.of("type", SearchIndexAclReindexTask.DOC_TYPE, "status", status), METRICS_CAP).size();
     }
 
     private CloudantClientWrapper getConfClient() {

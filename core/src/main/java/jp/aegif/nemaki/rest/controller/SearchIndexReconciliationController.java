@@ -36,7 +36,7 @@ public class SearchIndexReconciliationController {
     @Autowired
     private HttpServletRequest httpRequest;
 
-    /** List reconciliation tasks (default all; {@code status=PENDING|FAILED} to filter). */
+    /** List reconciliation tasks (default all; {@code status=PENDING|LEASED|FAILED} to filter). */
     @GetMapping
     public ResponseEntity<?> list(@RequestParam(defaultValue = "200") int limit,
             @RequestParam(required = false) String status) {
@@ -52,7 +52,15 @@ public class SearchIndexReconciliationController {
         return ResponseEntity.ok(body);
     }
 
-    /** Force an immediate re-drive of one task; on a clean re-drive the task is removed. */
+    /** Queue-health metrics for alerting (counts by status, oldest-pending age, enqueue-failure count). */
+    @GetMapping("/metrics")
+    public ResponseEntity<?> metrics() {
+        if (!isAdmin()) return forbidden();
+        if (reconciliationService == null) return unavailable();
+        return ResponseEntity.ok(reconciliationService.metrics());
+    }
+
+    /** Force an immediate re-drive of one task; a clean re-drive removes it, a failure re-opens it as PENDING. */
     @PostMapping("/{taskId}/retry")
     public ResponseEntity<?> retry(@PathVariable String taskId) {
         if (!isAdmin()) return forbidden();
@@ -68,12 +76,12 @@ public class SearchIndexReconciliationController {
             return error(HttpStatus.INTERNAL_SERVER_ERROR, "Re-drive failed: " + e.getMessage());
         }
         Map<String, Object> body = new LinkedHashMap<>();
-        if (clean) {
-            reconciliationService.delete(taskId);
+        if (clean && reconciliationService.complete(task)) {
             body.put("status", "reconciled");
         } else {
-            // reserveForRetry bumps attempts + pushes the backoff; keep the task.
-            reconciliationService.reserveForRetry(task, 0L);
+            // Failed (or a poll claimed it concurrently) — re-open it PENDING / due-now
+            // (best-effort CAS; if it lost, the poller owns it).
+            reconciliationService.retryLater(task, 0L);
             body.put("status", "still-failing");
         }
         body.put("taskId", taskId);
@@ -85,8 +93,8 @@ public class SearchIndexReconciliationController {
     public ResponseEntity<?> delete(@PathVariable String taskId) {
         if (!isAdmin()) return forbidden();
         if (reconciliationService == null) return unavailable();
-        reconciliationService.delete(taskId);
-        return ResponseEntity.ok(Map.of("status", "success"));
+        boolean deleted = reconciliationService.forceDeleteByTaskId(taskId);
+        return ResponseEntity.ok(Map.of("status", deleted ? "success" : "not-found-or-conflict"));
     }
 
     // ── Internal ───────────────────────────────────────────────────

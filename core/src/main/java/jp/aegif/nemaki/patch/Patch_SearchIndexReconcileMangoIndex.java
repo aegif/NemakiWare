@@ -30,7 +30,7 @@ import java.util.List;
 public class Patch_SearchIndexReconcileMangoIndex extends AbstractNemakiPatch {
 
     private static final Log log = LogFactory.getLog(Patch_SearchIndexReconcileMangoIndex.class);
-    private static final String PATCH_NAME = "SearchIndexReconcileMangoIndex-20260724";
+    private static final String PATCH_NAME = "SearchIndexReconcileMangoIndex-20260724b";
 
     private record IndexSpec(String name, List<String> fields) {
         IndexSpec(String name, String... fields) {
@@ -39,12 +39,12 @@ public class Patch_SearchIndexReconcileMangoIndex extends AbstractNemakiPatch {
     }
 
     private static final List<IndexSpec> INDEXES = List.of(
-            // upsert key-match / getByTaskId / delete
-            new IndexSpec("idx_type_sirTaskId", "type", "taskId"),
-            // listDue (status=PENDING) + admin list by status
-            new IndexSpec("idx_type_sirStatus", "type", "status"),
-            // enqueue dedupe by (repositoryId, objectId)
-            new IndexSpec("idx_type_sirRepoObject", "type", "repositoryId", "objectId")
+            // due selection: status=PENDING AND nextAttemptAt<=now, sorted asc
+            new IndexSpec("idx_type_sirStatus_next", "type", "status", "nextAttemptAt"),
+            // expired-lease reclaim: status=LEASED AND leaseExpiresAt<=now, sorted asc
+            new IndexSpec("idx_type_sirStatus_lease", "type", "status", "leaseExpiresAt"),
+            // admin retry/delete by opaque taskId (dedupe/CAS use the deterministic _id, no index)
+            new IndexSpec("idx_type_sirTaskId", "type", "taskId")
     );
 
     @Override
