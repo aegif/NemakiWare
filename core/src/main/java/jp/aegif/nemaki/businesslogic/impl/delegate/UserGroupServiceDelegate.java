@@ -92,6 +92,19 @@ public class UserGroupServiceDelegate {
 	}
 
 	public boolean containsUserInGroup(String repositoryId, String userId, GroupItem group) {
+		return containsUserInGroup(repositoryId, userId, group, new java.util.HashSet<String>());
+	}
+
+	/**
+	 * Transitive membership test with a per-walk visited set so an indirect
+	 * nested-group cycle (A -> B -> A) terminates instead of recursing until
+	 * StackOverflow. Mirrors the guard in {@code PrincipalServiceImpl}.
+	 */
+	private boolean containsUserInGroup(String repositoryId, String userId, GroupItem group,
+			java.util.Set<String> visited) {
+		if (group == null || group.getGroupId() == null || !visited.add(group.getGroupId())) {
+			return false;
+		}
 		log.debug("$$ group:" + group.getName());
 		if (group.getUsers().contains(userId))
 			return true;
@@ -100,10 +113,11 @@ public class UserGroupServiceDelegate {
 			GroupItem g = getGroupItemById(repositoryId, groupId);
 			if (g == null) {
 				log.debug("$$ group:" + groupId + "does not exist!");
-				return false;
+				// A dangling subgroup reference is not a match; keep checking the
+				// remaining siblings rather than aborting the whole walk.
+				continue;
 			}
-			boolean result = containsUserInGroup(repositoryId, userId, g);
-			if (result)
+			if (containsUserInGroup(repositoryId, userId, g, visited))
 				return true;
 		}
 		return false;

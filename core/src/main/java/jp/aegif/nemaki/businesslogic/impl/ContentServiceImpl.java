@@ -721,7 +721,11 @@ public class ContentServiceImpl implements ContentService {
 			}
 			if (groupId.equals(sub)
 					|| groupReaches(repositoryId, sub, groupId, new java.util.HashSet<String>())) {
-				throw new IllegalStateException("Nested-group cycle: adding group '" + sub
+				// IllegalArgumentException (not IllegalState): this is invalid CLIENT
+				// input, so the REST layers map it to HTTP 400 (Spring
+				// GlobalExceptionHandler / api-v1 ApiExceptionMapper both map
+				// IllegalArgumentException -> 400), not a 500 server error.
+				throw new IllegalArgumentException("Nested-group cycle: adding group '" + sub
 						+ "' to group '" + groupId + "' would create a membership cycle");
 			}
 		}

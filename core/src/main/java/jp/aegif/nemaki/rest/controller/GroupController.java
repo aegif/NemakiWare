@@ -226,6 +226,12 @@ public class GroupController {
 
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
 
+        } catch (IllegalArgumentException e) {
+            // Invalid client input (e.g. a nested-group cycle) -> 400, not 500.
+            response.put("status", "error");
+            response.put("message", "Failed to create group");
+            response.put("error", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
         } catch (Exception e) {
             response.put("status", "error");
             response.put("message", "Failed to create group");
@@ -281,7 +287,13 @@ public class GroupController {
             response.put("group", convertGroupToMap(group));
             
             return ResponseEntity.ok(response);
-            
+
+        } catch (IllegalArgumentException e) {
+            // Invalid client input (e.g. a nested-group cycle) -> 400, not 500.
+            response.put("status", "error");
+            response.put("message", "Failed to update group");
+            response.put("error", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
         } catch (Exception e) {
             response.put("status", "error");
             response.put("message", "Failed to update group");

@@ -684,6 +684,39 @@ cap 前拒否 (低権限ユーザーが大規模リポジトリを検索でき�
   `queryWithinScanCap` "pre-ACL numFound"、`ACLExpander` クラス Javadoc step 3、
   `SolrUtil.relationshipReaders` の residual 注記)。
 
+**ACL-in-Solr 権限剥奪の健全性修正 — 第3巡 (マルチエージェント セルフレビュー: P1 + P2×2 + P3群)**:
+第2巡後、5レンズ×3反証者の敵対的セルフレビューで残存欠陥を検出。全て修正 + 実機確認。
+- **[P1] リーフ文書の move で relationship が再索引されない**: `refreshMovedSubtreeSearchIndexAcl`
+  が非 folder で早期 return していたため、**リーフ文書**(ingest 由来の hasAttachment 等を持つ)を
+  move しても relationship の逆引き再索引が走らず、grant 方向は永続 unsearchable・revoke 方向は
+  numFound 膨張が残った(第2巡で folder move と applyAcl は直したがリーフ move が漏れていた)。
+  **修正**: 早期 return を `content == null` のみにし、リーフでも relationship refresh を実行
+  (`updateSearchIndexACLRecursively(isRoot=true)` は root の content readers をスキップしつつ
+  relationship を refresh、folder のときだけ子孫再帰)。実機: 制限フォルダ内のリーフ文書を公開
+  フォルダへ move→**relationship の readers に GROUP_EVERYONE が反映**(修正前は admin/system のまま)。
+- **[P2] findSimilarDocuments のシード認可が stale 可能な Solr fq のみ**: 結果には live-ACL ゲートが
+  効くが、類似検索の**シード** (`getDocumentVector`) は索引 readers fq だけで認可していたため、
+  非同期窓/再索引失敗/未再索引の pre-fix 索引では、read 剥奪済みユーザーが剥奪文書をシードに使えた
+  (存在 + 意味近傍オラクル)。**修正**: `getDocumentVector` 成功後に `isReadableByTokens` で live 再検査し、
+  不可なら not-found と同一の例外(区別不能性を維持)。
+- **[P2] 循環グループ拒否が Spring/api-v1 で HTTP 500**: `assertNoNestedGroupCycle` の
+  `IllegalStateException` が両バインディングの generic catch で 500 になっていた
+  (不正クライアント入力→500 は本プロジェクトが是正対象としてきた欠陥クラス)。**修正**:
+  `IllegalArgumentException` に変更し、`GroupController`/`GroupResource` の generic catch の前に
+  専用 catch を追加(両者とも既に IllegalArgumentException→400 を map 済)。実機: api/v1 で
+  循環追加→**400 ProblemDetail**、循環なし→200。
+- **[P3群]**: (a) `searchWithBoost`/`searchInFolder` の live-gate を **topK トリム前**に移動
+  (`executeWeightedKnnSearch` 内、`findSimilarDocuments` と整合、stale ヒットでページが topK 未満に
+  縮まる under-fill を解消)。(b) `updateSearchIndexACLRecursively` の子孫走査を **per-node ガード**化
+  (getChildren/1子の transient 失敗が subtree 全体を放棄せず兄弟を継続、doc も best-effort に是正)。
+  (c) move カバレッジの Javadoc (`AclService`/`AclServiceImpl`/`ObjectServiceImpl`) を「リーフも対象」に
+  更新。(d) `UserGroupServiceDelegate.containsUserInGroup` に visited set 追加(実 caller は無いが
+  潜在ハザード解消、dangling subgroup で全走査を中断していた副次バグも `continue` 化で修正)。
+- **レビューで棄却/確認済**: CMIS getFiltered 経路の循環 DoS は `UserGroupDaoDelegate.
+  getJoinedGroupByUserId` が既に visited set + maxIterations=50 を持つため非該当(棄却)。
+  directory-sync は `principalService.updateGroup` 直呼びで update() write ガードを迂回するが、
+  sync は nested groups を空でしか設定しないため循環を作らない(無害、doc 精度のみ)。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度

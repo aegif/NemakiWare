@@ -300,6 +300,51 @@ open. All fixed; each has an automated pin and (where observable) a live check.
   and `queryWithinScanCap` "pre-ACL numFound"; `ACLExpander` class Javadoc step 3;
   `SolrUtil.relationshipReaders` residual note).
 
+### ACL-in-Solr — revocation soundness, round 3 (multi-agent self-review: P1 + two P2 + P3 batch)
+A 5-lens × 3-refuter adversarial self-review of the round-2 commit surfaced four
+residual defects; all fixed and live-verified.
+- **[P1] Moving a LEAF document never refreshed its relationships.**
+  `refreshMovedSubtreeSearchIndexAcl` early-returned for any non-folder, so round
+  2's relationship reverse-reindex ran for folder moves and applyAcl but not for a
+  moved leaf document (the common case — ingest links documents via
+  hasAttachment / attachedToRecord / derivedFromContext). A grant via the new
+  parent stayed permanently unsearchable on those relationships; a restrictive
+  move kept inflating numFound. Fix: the early return is now `content == null`
+  only; a leaf still runs the relationship refresh
+  (`updateSearchIndexACLRecursively(isRoot=true)` skips the root's own content
+  readers but refreshes its relationships, and recurses only for a folder).
+  Verified live: moving a leaf from a restricted folder into a public one now adds
+  `GROUP_EVERYONE` to the relationship's readers (previously stuck at admin/system).
+- **[P2] findSimilarDocuments authorized the similarity SEED only via the
+  stale-able Solr fq.** The results get the live-ACL gate, but the seed vector
+  (`getDocumentVector`) was authorized purely by the indexed readers fq, so during
+  a stale-permissive window (async re-index, a failed refresh, or a not-yet-rebuilt
+  pre-fix index) a revoked caller could use a revoked document as a seed — an
+  existence + semantic-neighbourhood oracle. Fix: re-verify the seed with
+  `isReadableByTokens` and treat an unreadable seed identically to "not found"
+  (same exception, preserving indistinguishability).
+- **[P2] The cyclic-group rejection returned HTTP 500 on the Spring/api-v1 group
+  endpoints.** `assertNoNestedGroupCycle` threw `IllegalStateException`, which the
+  per-method generic `catch (Exception)` mapped to 500 (invalid client input → 500,
+  a class this project treats as a defect). Fix: throw `IllegalArgumentException`
+  (both layers already map it to 400) and add a specific catch ahead of the generic
+  one in `GroupController` and `GroupResource`. Verified live: api/v1 cycle add →
+  400 ProblemDetail; a non-cyclic edit → 200.
+- **[P3 batch]** (a) `searchWithBoost`/`searchInFolder` now apply the live gate
+  BEFORE the topK trim (inside `executeWeightedKnnSearch`, matching
+  findSimilarDocuments) so a dropped stale hit no longer shrinks the page below
+  topK; (b) `updateSearchIndexACLRecursively`'s descendant walk is now guarded per
+  node so a transient `getChildren`/single-child failure is bounded to that subtree
+  instead of abandoning the whole traversal (docs softened to best-effort);
+  (c) move-coverage Javadoc (`AclService`, `AclServiceImpl`, `ObjectServiceImpl`)
+  corrected to include leaves; (d) `UserGroupServiceDelegate.containsUserInGroup`
+  gained a visited set (no live caller today, but a latent StackOverflow hazard;
+  a dangling-subgroup abort-the-whole-walk side bug was also fixed).
+- **Reviewed and cleared:** the CMIS getFiltered path's cyclic-group DoS is a
+  non-issue — `UserGroupDaoDelegate.getJoinedGroupByUserId` already carries a
+  visited set + maxIterations=50; directory sync bypasses the `update()` write
+  guard but only ever writes empty nested-group lists, so it cannot create a cycle.
+
 **Verification**: Java unit + full CMIS TCK green on the v3.3 tree
 (Connection/Basics/Control/Versioning/CRUD1/CRUD2/Query/Types all pass;
 Types requires sweeping E2E residual custom types — a known data-pollution, not a

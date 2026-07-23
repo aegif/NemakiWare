@@ -109,10 +109,10 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             // Build ACL filter
             String aclFilter = aclExpander.buildReaderFilterQuery(repositoryId, userId);
 
-            // Execute weighted KNN search
-            List<VectorSearchResult> hits = executeWeightedKnnSearch(repositoryId, queryVector, aclFilter,
+            // Execute weighted KNN search (the live-ACL gate is applied inside,
+            // BEFORE the topK trim, so a dropped stale hit does not shrink the page).
+            return executeWeightedKnnSearch(repositoryId, userId, queryVector, aclFilter,
                     null, topK, minScore, propertyBoost, contentBoost);
-            return filterByLiveAcl(repositoryId, userId, hits);
 
         } catch (EmbeddingException e) {
             log.error("Failed to generate query embedding", e);
@@ -138,11 +138,10 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             String sanitizedFolderId = SolrQuerySanitizer.escape(folderId);
             String folderFilter = "{!parent which='doc_type:document'}parent_id:" + sanitizedFolderId;
 
-            // Execute weighted KNN search
-            List<VectorSearchResult> hits = executeWeightedKnnSearch(repositoryId, queryVector, aclFilter,
+            // Execute weighted KNN search (live-ACL gate applied inside, before trim).
+            return executeWeightedKnnSearch(repositoryId, userId, queryVector, aclFilter,
                     folderFilter, topK, ragConfig.getSearchSimilarityThreshold(),
                     ragConfig.getPropertyBoost(), ragConfig.getContentBoost());
-            return filterByLiveAcl(repositoryId, userId, hits);
 
         } catch (EmbeddingException e) {
             throw new VectorSearchException("Failed to generate query embedding", e);
@@ -186,6 +185,22 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             //    source is indistinguishable (both return null → not found).
             float[] documentVector = getDocumentVector(solrClient, repositoryId, documentId, aclFilter);
             if (documentVector == null) {
+                throw new VectorSearchException("Document not found in RAG index: " + documentId);
+            }
+
+            // Live-ACL gate on the SEED, not just the results. getDocumentVector
+            // authorizes the seed only via the indexed readers fq, which is merely
+            // an optimization and can be stale-permissive (the async re-index window
+            // after applyAcl/move, a failed/WARN-swallowed refresh, or a not-yet-
+            // rebuilt pre-fix index whose docs still carry member-expanded tokens).
+            // Without re-checking live ACL here, a caller whose read was revoked
+            // could still use the revoked document as a similarity seed — an
+            // existence + semantic-neighbourhood oracle over its content. Re-verify
+            // against live ACL and treat an unreadable seed identically to "not
+            // found" (same exception, preserving the indistinguishability contract
+            // in getDocumentVector's comment).
+            java.util.Set<String> seedTokens = aclExpander.buildReaderTokenSet(repositoryId, userId);
+            if (!aclExpander.isReadableByTokens(repositoryId, documentId, seedTokens)) {
                 throw new VectorSearchException("Document not found in RAG index: " + documentId);
             }
 
@@ -382,7 +397,7 @@ public class VectorSearchServiceImpl implements VectorSearchService {
      *
      * KNN queries are executed in parallel for better performance.
      */
-    private List<VectorSearchResult> executeWeightedKnnSearch(String repositoryId, float[] queryVector,
+    private List<VectorSearchResult> executeWeightedKnnSearch(String repositoryId, String userId, float[] queryVector,
                                                                String aclFilter, String additionalFilter,
                                                                int topK, float minScore,
                                                                float propertyBoost, float contentBoost)
@@ -475,6 +490,12 @@ public class VectorSearchServiceImpl implements VectorSearchService {
 
             // Sort by combined score descending
             results.sort((a, b) -> Float.compare(b.getScore(), a.getScore()));
+
+            // Final live-ACL gate BEFORE the topK trim, so a hit dropped for stale
+            // over-permissive index readers does not leave the page short of topK
+            // (the candidate pool here is topK * multiplier). Consistent with
+            // findSimilarDocuments, which also gates before its trim.
+            results = filterByLiveAcl(repositoryId, userId, results);
 
             // Limit to topK
             if (results.size() > topK) {

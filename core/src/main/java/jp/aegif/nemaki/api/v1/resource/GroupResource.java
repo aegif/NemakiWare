@@ -339,9 +339,12 @@ public class GroupResource {
             GroupResponse response = convertToGroupResponse(createdGroup, repositoryId);
             
             return Response.status(Response.Status.CREATED).entity(response).build();
-            
+
         } catch (ApiException e) {
             throw e;
+        } catch (IllegalArgumentException e) {
+            // Invalid client input (e.g. a nested-group cycle) -> 400, not 500.
+            throw ApiException.invalidArgument(e.getMessage());
         } catch (Exception e) {
             logger.severe("Error creating group: " + e.getMessage());
             throw ApiException.internalError("Failed to create group: " + e.getMessage(), e);
@@ -409,9 +412,12 @@ public class GroupResource {
             GroupResponse response = convertToGroupResponse(updatedGroup, repositoryId);
             
             return Response.ok(response).build();
-            
+
         } catch (ApiException e) {
             throw e;
+        } catch (IllegalArgumentException e) {
+            // Invalid client input (e.g. a nested-group cycle) -> 400, not 500.
+            throw ApiException.invalidArgument(e.getMessage());
         } catch (Exception e) {
             logger.severe("Error updating group " + groupId + ": " + e.getMessage());
             throw ApiException.internalError("Failed to update group: " + e.getMessage(), e);
