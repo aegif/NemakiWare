@@ -153,13 +153,37 @@ conformance checklist (Minimal + Intermediate) passes 21/21. See
   to the unit-tests job's explicit `-Dtest` list. (The Node 20→22 bump and the
   OData 500 redaction were already completed in the prior commit, including the
   Maven `frontend-maven-plugin` nodeVersion.)
-- **Deferred (separate, large epic):** letting a low-privilege user search a repo
-  where their authorized set is small but the overall match exceeds the cap
-  requires pushing ACL into Solr (index reader tokens on content documents + an
-  `fq` for the caller's principals) — a schema + indexing + reindex change beyond
-  this dependency-uplift release. Today the cap is honest (400, no count leak, no
-  false `hasMoreItems`, no cap-sized DoS) but a match set larger than the cap is
-  not searchable.
+### Integration-review remediation (third pass)
+- **The OData gate can no longer go green by skipping.** The seed relaxation
+  above meant the `$orderby` test would `assumeTrue`-skip whenever *any* two
+  documents in the repository shared a name (which CMIS allows across folders),
+  passing Surefire without running the regression. The Olingo IT now **self-seeds**
+  a distinct set (`@BeforeAll`, idempotent, co-operating with the CI seed script)
+  and both paging/`$orderby` regressions read **only** that set via
+  `$filter=startswith(name,'odata-ci-seed-')` with **hard assertions** (no
+  `assumeTrue`). Verified live: 6/6, 0 skipped.
+- **The two-phase cap logic is now regression-pinned.** `queryWithinScanCap` was
+  extracted and `SolrQueryProcessorScanCapTest` (9 tests) now drives it with a
+  mock `SolrClient` to assert: phase 1 queries with `rows=0`, an over-cap match is
+  rejected **without a second query**, the rejection message carries **no pre-ACL
+  count**, growth between the probe and the fetch is caught by the re-check, and a
+  within-cap query fetches with `rows=cap`.
+- **Security docs reconciled** with the new Browser Binding CSRF policy
+  (`CLAUDE.md`, `docs/MANUAL-VERIFICATION-SECURITY-AUDIT.md`,
+  `docs/MANUAL-VERIFICATION-CONNECTORS.md`, `docs/design/connector-delegation.md`
+  no longer say `/browser` is CSRF-exempt).
+- **Accepted release limitation (P1, explicit):** the cap check is still made on
+  the *pre-ACL* count, so a query whose overall match (including documents the
+  caller cannot read) exceeds the cap is rejected with 400 **even if the caller's
+  authorized subset is tiny**, and the "is the overall match over the cap"
+  one-bit fact is observable pre-ACL. The `rows=0` probe removed the body transfer
+  and the exact-count leak, but not this. Serving such users correctly requires
+  ACL-in-Solr (reader tokens on content documents + an `fq` per principal) — a
+  schema/indexing/reindex change beyond this dependency-uplift release. **v3.3
+  therefore explicitly accepts that a single query matching more than the cap
+  (default 10000) documents in one repository is not supported**; raise
+  `-Dnemakiware.cmis.query.aclScanMaxRows`, narrow the query, or wait for the
+  ACL-in-Solr epic.
 
 **Verification**: Java unit + full CMIS TCK green on the v3.3 tree
 (Connection/Basics/Control/Versioning/CRUD1/CRUD2/Query/Types all pass;

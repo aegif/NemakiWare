@@ -288,7 +288,15 @@ curl -u admin:admin -X POST -H "X-Requested-With: XMLHttpRequest" \
 requests.post(url, auth=(user, pw), headers={"X-Requested-With": "XMLHttpRequest"})
 ```
 
-**注意**: `/core/browser/...` (CMIS Browser Binding) はCSRF検証なし。`/core/api/v1/...` (Spring MVC) は `CsrfInterceptor` (HandlerInterceptor) で検証される（Webhook receiver パスを除く）。
+**CMIS Browser Binding (`/core/browser/...`) の CSRF**: 完全な token / `X-Requested-With`
+必須化は非ブラウザ CMIS クライアント (cmislib / TCK / スクリプト) を壊すため行わないが、
+POST に対し `CsrfValidator.validateBrowserBindingCsrf` による**軽量チェック**を適用する
+(v3.3〜)。**`Sec-Fetch-Site: cross-site` を拒否**し、**`Origin` があれば同一オリジン必須**
+(cross-origin は 403)。`Origin`/`Sec-Fetch-Site` の**どちらも持たない**リクエスト
+(非ブラウザ CMIS クライアント) は**従来どおり許可**。これによりブラウザ由来の cross-site
+偽装 POST を遮断しつつ CMIS クライアント互換を維持する。curl 等の直接呼び出しは
+ヘッダーを送らないので影響なし。`/core/api/v1/...` (Spring MVC) は `CsrfInterceptor`
+(HandlerInterceptor) で完全検証される（Webhook receiver パスを除く）。
 
 **Tomcat RemoteIpValve**: `docker/core/server.xml` に設定済み。信頼proxyからのX-Forwarded-Proto/Host/PortをservletAPI値に反映する。アプリ側ではforwardedヘッダーを自前パースしない。
 
@@ -555,12 +563,35 @@ vitest 191/191、OData 65/65 + Olingo client 4/4 + CSDL XSD 適合 + conformance
 - **[P2] 新規回帰テストを CI ゲート化 (#6)**: `SolrQueryProcessorScanCapTest` +
   `CsrfValidatorBrowserBindingTest` を `integration-tests.yml` の unit-tests ジョブ
   明示リストに追加 (PR ゲート対象に)。
-- **残 (別チケット・大規模)**: #1 の**低権限ユーザーが「認可済み数件・全体 >cap」
-  でも検索できる**ようにする恒久策は、**ACL 条件を Solr 索引に載せる** (reader
-  トークンを content doc に index + query 時 fq) 必要があり、schema+indexing+
-  再索引を伴う大規模機能。本サイクル (依存アップリフト) の範囲外として別 epic で
-  対応。現状は「cap 超過は honest に 400 で拒否 (件数漏えい・DoS・偽 hasMoreItems
-  なし)」で、正しく振る舞うが cap 超の集合は検索不可という制限は残る。
+- **[P2] 新規回帰テストを CI ゲート化 (#6)** は上記のとおり対応済み。
+
+**統合レビュー remediation (3巡目、5件)**:
+- **[P1] OData ゲート空振りの根絶 (#1)**: `ci-seed-odata-docs.sh` の緩和 (合法同名
+  許可) で、全 Document 名が distinct でないと `assumeTrue` がスキップ→Surefire
+  緑、という空振りが再発しうる点を是正。`ODataOlingoClientValidationIT` に
+  **`@BeforeAll` 自己シード** (固定名 `odata-ci-seed-{a,b,c}.txt` を Browser Binding
+  で冪等作成 + Solr 索引待ち) を追加し、回帰2本を **`$filter=startswith(name,
+  'odata-ci-seed-')` でシード集合に限定 + `assumeTrue`→hard assert** に変更。
+  リポジトリの他文書に左右されず**必ず実行**され (空振り不能)、実機 6/6・Skipped 0。
+- **[P1] cap 判定は依然 ACL 前 — 明示的に受容する本リリースの制約**: `rows=0` 化で
+  「10,000件本文転送」と「正確件数の漏えい」は解消したが、**拒否判定自体は ACL 前**
+  で、低権限ユーザーの閲覧可能文書が1件でも**非公開含む全体が cap 超なら 400**。
+  「全体件数が cap 超か」という**認可前の二値情報**も観測可能。**恒久策 = ACL を
+  Solr 索引に載せる** (reader トークンを content doc に index + query 時 fq) は
+  schema+indexing+**再索引**を伴う大規模機能で本サイクル (依存アップリフト) 外。
+  **→ v3.3 は「1リポジトリで単一クエリのマッチが cap (既定 10000) を超える規模は
+  非対応」を明示的に受容する P1 制約**とする。10,000件超のマッチを要する運用は
+  (a) `-Dnemakiware.cmis.query.aclScanMaxRows` 引き上げ、(b) クエリを WHERE で
+  絞る、(c) ACL-in-Solr epic 完了まで待つ、のいずれか。現状は honest な 400
+  (件数漏えい・DoS・偽 hasMoreItems なし)。
+- **[P2] Solr 2 段クエリの回帰固定 (#3)**: `queryWithinScanCap(SolrClient,
+  SolrQuery, cap)` を抽出し、`SolrQueryProcessorScanCapTest` に mock SolrClient で
+  **①1回目が rows=0 ②cap 超過時に2回目を発行しない ③例外メッセージに認可前件数を
+  含めない ④phase1↔phase2 の増加を再検査 ⑤cap 以内は rows=cap で取得**を固定 (計9件)。
+- **[P2] セキュリティ文書の整合 (#4/P3)**: 「Browser Binding は CSRF 検証なし」の
+  記述を新軽量ポリシー (cross-site/cross-origin 拒否・ヘッダー無し許可) に更新
+  (`CLAUDE.md` CSRF 節 / `docs/MANUAL-VERIFICATION-SECURITY-AUDIT.md` /
+  `docs/MANUAL-VERIFICATION-CONNECTORS.md` / `docs/design/connector-delegation.md`)。
 
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 

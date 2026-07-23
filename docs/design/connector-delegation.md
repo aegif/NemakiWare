@@ -1039,9 +1039,12 @@ RC5.5 fixed CSRF headers in 3 RC5-area spec files. RC5.6 extends
 the audit to the entire spec corpus, adding
 `X-Requested-With: XMLHttpRequest` to 2 additional spec files
 that hit Spring MVC `/core/api/v1/admin/*` with basic auth.
-Jersey-served `/core/api/v1/cmis/*` paths and CMIS Browser Binding
-`/core/browser/*` are CSRF-exempt at the servlet level and need
-no change. Also tightens the integration-settings tab assertion to
+Jersey-served `/core/api/v1/cmis/*` paths need no change. CMIS Browser
+Binding `/core/browser/*` is not fully CSRF-gated (to preserve non-browser
+CMIS-client compatibility) but, since v3.3, applies a lightweight check on
+POST (`CsrfValidator.validateBrowserBindingCsrf`): a `Sec-Fetch-Site: cross-site`
+fetch or a cross-origin `Origin` is rejected with 403, while a request with
+neither header (a non-browser client) is allowed. Also tightens the integration-settings tab assertion to
 the anchored `/^(コネクタ ベータ|Connectors\s+Beta)$/` pattern so
 removing the management tab cannot be silently masked by the
 governance tab matching the same loose `/Connector/i` regex.

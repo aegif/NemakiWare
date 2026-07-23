@@ -16,7 +16,9 @@
 
 REST API (`/core/rest/...`, `/core/api/v1/...`) を curl で叩くときは
 `-H "X-Requested-With: XMLHttpRequest"` を付ける (CSRF バイパス)。CMIS Browser
-Binding (`/core/browser/...`) は CSRF 検証なし。
+Binding (`/core/browser/...`) は完全な CSRF 必須化はしないが、POST に軽量チェックが
+入る (v3.3〜): `Sec-Fetch-Site: cross-site` と cross-origin `Origin` は 403 で拒否、
+`Origin`/`Sec-Fetch-Site` を持たない curl 等は許可 (ヘッダー不要)。
 
 以下は `BASE` を環境に合わせて差し替える:
 
