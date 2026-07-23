@@ -91,6 +91,11 @@ public class SolrUtil implements ApplicationContextAware {
 	// Cached ContentService instance to avoid repeated applicationContext.getBean() calls
 	private volatile ContentService contentServiceCache;
 
+	// ACL-in-Solr: lazily-resolved ACLExpander (RAG @Component) used to stamp
+	// repository-scoped reader tokens onto the `readers` field of every content
+	// document, so the query path can filter by the caller's principals in Solr.
+	private volatile jp.aegif.nemaki.rag.acl.ACLExpander aclExpanderCache;
+
 	// BTL-004: Shared SolrClient instance — HttpSolrClient is thread-safe
 	private volatile SolrClient sharedSolrClient;
 	private final Object solrClientLock = new Object();
@@ -817,6 +822,33 @@ public class SolrUtil implements ApplicationContextAware {
 			}
 		}
 
+		// ACL-in-Solr: stamp repository-scoped reader tokens onto the content doc
+		// so the CMIS query path can filter by the caller's principals in Solr
+		// (returning only authorized documents; numFound becomes the authorized
+		// count). Applied to all queryable content (documents, folders, items,
+		// relationships, policies) but NOT to principal items (users/groups are
+		// not returned by cmis:document/folder queries and calculateAcl on them is
+		// not meaningful). expandToReaders is itself fail-closed (admin-only when
+		// the ACL is null/empty), so a document always carries at least one token.
+		if (!(content instanceof jp.aegif.nemaki.model.UserItem)
+				&& !(content instanceof jp.aegif.nemaki.model.GroupItem)) {
+			jp.aegif.nemaki.rag.acl.ACLExpander aclExpander = getAclExpanderSafely();
+			if (aclExpander != null) {
+				try {
+					List<String> readers = aclExpander.expandToReaders(repositoryId, content);
+					if (readers != null) {
+						for (String reader : readers) {
+							doc.addField("readers", reader);
+						}
+					}
+				} catch (Exception e) {
+					// Fail-closed: leave `readers` empty so the query-side fq excludes
+					// this doc for non-admin users until it is re-indexed. Never leaks.
+					log.warn("Failed to compute readers for content {}: {}", content.getId(), e.getMessage());
+				}
+			}
+		}
+
 		if (log.isDebugEnabled()) {
 			log.debug("Created Solr document for content: {} with {} fields", content.getId(), doc.size());
 		}
@@ -1332,6 +1364,38 @@ public class SolrUtil implements ApplicationContextAware {
 			}
 		} catch (Exception e) {
 			log.debug("ContentService not yet available: {}", e.getMessage());
+			return null;
+		}
+	}
+
+	/**
+	 * Resolve the ACLExpander lazily from the Spring context (it is a RAG
+	 * {@code @Component}), mirroring {@link #getContentServiceSafely()} to avoid a
+	 * hard construction-time dependency. Returns null if unavailable, in which
+	 * case content is indexed without reader tokens — fail-closed at query time
+	 * (the query-side readers fq simply will not match, so the document is not
+	 * returned to non-admin users until re-indexed; it never leaks).
+	 */
+	private jp.aegif.nemaki.rag.acl.ACLExpander getAclExpanderSafely() {
+		jp.aegif.nemaki.rag.acl.ACLExpander cached = aclExpanderCache;
+		if (cached != null) {
+			return cached;
+		}
+		if (applicationContext == null) {
+			return null;
+		}
+		try {
+			synchronized (this) {
+				cached = aclExpanderCache;
+				if (cached != null) {
+					return cached;
+				}
+				cached = applicationContext.getBean(jp.aegif.nemaki.rag.acl.ACLExpander.class);
+				aclExpanderCache = cached;
+				return cached;
+			}
+		} catch (Exception e) {
+			log.debug("ACLExpander not yet available: {}", e.getMessage());
 			return null;
 		}
 	}

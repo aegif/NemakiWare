@@ -76,6 +76,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 	private ContentService contentService;
 	private PermissionService permissionService;
 	private CompileService compileService;
+	// ACL-in-Solr: builds the query-time readers fq from the caller's principals.
+	private jp.aegif.nemaki.rag.acl.ACLExpander aclExpander;
 	private ExceptionService exceptionService;
 	private ThreadLockService threadLockService;
 	private SolrUtil solrUtil;
@@ -444,7 +446,32 @@ public class SolrQueryProcessor implements QueryProcessor {
 		SolrQuery solrQuery = new SolrQuery();
 		solrQuery.setQuery(whereQueryString);
 		solrQuery.setFilterQueries(fromQueryString);
-		
+
+		// ACL-in-Solr: filter to documents the caller may read, IN SOLR, so
+		// numFound is the authorized count (not the pre-ACL total). This lets a
+		// low-privilege user search a large repository — their authorized subset
+		// is small even if the overall match exceeds the scan cap — and removes
+		// the pre-ACL cap rejection for such users. Admins bypass the fq (they see
+		// everything, matching the in-memory admin bypass). The in-memory
+		// permissionService.getFiltered below is kept as defense-in-depth.
+		boolean callerIsAdmin = false;
+		String callerUsername = (callContext != null) ? callContext.getUsername() : null;
+		try {
+			jp.aegif.nemaki.model.UserItem callerItem =
+					(callerUsername != null) ? contentService.getUserItemById(repositoryId, callerUsername) : null;
+			callerIsAdmin = (callerItem != null && Boolean.TRUE.equals(callerItem.isAdmin()));
+		} catch (Exception e) {
+			// Fail-closed: an admin-check failure is treated as non-admin, so the
+			// readers fq is applied rather than skipped.
+			callerIsAdmin = false;
+		}
+		if (!callerIsAdmin && aclExpander != null && callerUsername != null) {
+			solrQuery.addFilterQuery(aclExpander.buildReaderFilterQuery(repositoryId, callerUsername));
+		}
+		// Exclude RAG parent/chunk docs, which share this Solr core and also carry
+		// a `readers` field. CMIS content documents have no doc_type.
+		solrQuery.addFilterQuery("-doc_type:[* TO *]");
+
 		// RANKING FIX: Add sort by modification date descending to prioritize recent documents
 		// This ensures that newly created documents appear at the top of search results
 		solrQuery.setSort("modified", SolrQuery.ORDER.desc);
@@ -1083,6 +1110,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 	public void setCompileService(CompileService compileService) {
 		this.compileService = compileService;
+	}
+
+	public void setAclExpander(jp.aegif.nemaki.rag.acl.ACLExpander aclExpander) {
+		this.aclExpander = aclExpander;
 	}
 
 	public void setExceptionService(ExceptionService exceptionService) {

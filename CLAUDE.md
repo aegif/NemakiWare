@@ -573,17 +573,14 @@ vitest 191/191、OData 65/65 + Olingo client 4/4 + CSDL XSD 適合 + conformance
   で冪等作成 + Solr 索引待ち) を追加し、回帰2本を **`$filter=startswith(name,
   'odata-ci-seed-')` でシード集合に限定 + `assumeTrue`→hard assert** に変更。
   リポジトリの他文書に左右されず**必ず実行**され (空振り不能)、実機 6/6・Skipped 0。
-- **[P1] cap 判定は依然 ACL 前 — 明示的に受容する本リリースの制約**: `rows=0` 化で
-  「10,000件本文転送」と「正確件数の漏えい」は解消したが、**拒否判定自体は ACL 前**
-  で、低権限ユーザーの閲覧可能文書が1件でも**非公開含む全体が cap 超なら 400**。
-  「全体件数が cap 超か」という**認可前の二値情報**も観測可能。**恒久策 = ACL を
-  Solr 索引に載せる** (reader トークンを content doc に index + query 時 fq) は
-  schema+indexing+**再索引**を伴う大規模機能で本サイクル (依存アップリフト) 外。
-  **→ v3.3 は「1リポジトリで単一クエリのマッチが cap (既定 10000) を超える規模は
-  非対応」を明示的に受容する P1 制約**とする。10,000件超のマッチを要する運用は
-  (a) `-Dnemakiware.cmis.query.aclScanMaxRows` 引き上げ、(b) クエリを WHERE で
-  絞る、(c) ACL-in-Solr epic 完了まで待つ、のいずれか。現状は honest な 400
-  (件数漏えい・DoS・偽 hasMoreItems なし)。
+- **[P1] cap 判定が ACL 前だった件 → ACL-in-Solr で解消 (下記「ACL-in-Solr」節)**:
+  3巡目時点では「cap は ACL 前判定なので低権限ユーザーの認可分が小さくても全体
+  (非公開含む) が cap 超なら 400」を明示的に受容する制約としていたが、後続で
+  **ACL-in-Solr を実装**して解消。Solr の `readers` フィールド + query 時 fq により
+  **numFound が認可後件数**になり、cap は**利用者自身の認可件数**に適用される。実機
+  (cap=2, 14 文書): 低権限 alice (認可2件≤cap)→**200** で認可分取得、admin (認可
+  14件>cap)→400。**残制限は「単一利用者の認可可視文書が cap 超」の場合のみ**
+  (property 引き上げ or WHERE 絞りで対応)。
 - **[P2] Solr 2 段クエリの回帰固定 (#3)**: `queryWithinScanCap(SolrClient,
   SolrQuery, cap)` を抽出し、`SolrQueryProcessorScanCapTest` に mock SolrClient で
   **①1回目が rows=0 ②cap 超過時に2回目を発行しない ③例外メッセージに認可前件数を
@@ -592,6 +589,35 @@ vitest 191/191、OData 65/65 + Olingo client 4/4 + CSDL XSD 適合 + conformance
   記述を新軽量ポリシー (cross-site/cross-origin 拒否・ヘッダー無し許可) に更新
   (`CLAUDE.md` CSRF 節 / `docs/MANUAL-VERIFICATION-SECURITY-AUDIT.md` /
   `docs/MANUAL-VERIFICATION-CONNECTORS.md` / `docs/design/connector-delegation.md`)。
+
+**ACL-in-Solr (CMIS query の認可を Solr 索引に前倒し)**:
+cap 前拒否 (低権限ユーザーが大規模リポジトリを検索できない) を根治するため、RAG が
+既に持つ reader-token パターンを CMIS コンテンツ索引へ横展開。
+- **索引側** (`SolrUtil.createSolrDocument`): principal item (user/group) 以外の全
+  コンテンツに、`ACLExpander.expandToReaders` の**リポジトリスコープ reader トークン**
+  (`user:{repo}:{id}` / `group:{repo}:{id}` / `anyone:{repo}`、nested group 展開・
+  admin-only fail-closed) を `readers` フィールドとして付与。`readers` は既に nemaki
+  コア schema に存在 (RAG 用)、**スキーマ変更なし**。ACLExpander は循環依存回避のため
+  `applicationContext` から遅延取得。
+- **query 側** (`SolrQueryProcessor`): 非 admin は `ACLExpander.buildReaderFilterQuery`
+  の `readers` fq + RAG doc 除外 (`-doc_type:[* TO *]`) を追加 → **Solr が認可済みのみ
+  返し numFound=認可後件数**。admin は fq バイパス (in-memory と同じ全件)。in-memory
+  `permissionService.getFiltered` は多層防御として維持。fail-closed: admin 判定失敗は
+  非 admin 扱い、ACLExpander 未配線時は fq 無し (getFiltered が保証)。
+- **ACL 変更伝播** (`AclServiceImpl`): 対象は `updateInternal` で再索引、**継承する
+  子孫**は RAG 再帰を `updateSearchIndexACLRecursively` に拡張し content の `readers` も
+  再索引 (RAG 有無に関わらず実行)。**stale-cache 修正**: `calculateAcl` は `aclCache`
+  優先のため、`updateInternal`(再索引) の**前**に対象の cmis/content キャッシュを evict
+  し、再索引が新 ACL から readers を計算するように (子孫向け `clearCachesRecursively`
+  は DB 更新後のまま維持)。
+- **⚠️ アップグレード: 全 CMIS 再索引が必須** (既存コンテンツに `readers` を付与。
+  未再索引の doc は非 admin 検索に出ない=fail-closed で漏洩なし)。v3.3 は Solr 10
+  移行で元々再索引必須なので追加コストは無し。`POST /api/v1/cmis/repositories/{repo}/
+  search-engine/reindex`。
+- **実機検証**: readers 索引確認、非 admin が GROUP_EVERYONE 文書を閲覧可、制限文書は
+  非表示 (admin は表示)、grant/revoke 即時反映 (readers add/remove)、**cap=2/14 文書で
+  低権限 alice(認可2)→200・admin(認可14)→400**。admin バイパスで TCK Query 6/6・
+  OData IT 71/71・conformance 25/25・unit 17/17 無回帰。
 
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
