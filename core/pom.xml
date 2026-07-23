@@ -1146,7 +1146,11 @@
 				<version>1.15.0</version>
 				<configuration>
 					<workingDirectory>src/main/webapp/ui</workingDirectory>
-					<nodeVersion>v20.19.0</nodeVersion>
+					<!-- Node 22 (LTS) so the Maven WAR build satisfies swagger-client's
+					     engines.node>=22, matching the CI workflows (playwright /
+					     security-scan use Node 22). Use >=22.13 so jsdom's
+					     engines (^22.13.0) is also satisfied. Keep in lockstep. -->
+					<nodeVersion>v22.14.0</nodeVersion>
 				</configuration>
 				<executions>
 					<execution>

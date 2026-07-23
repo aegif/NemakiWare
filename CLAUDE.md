@@ -522,6 +522,14 @@ vitest 191/191、OData 65/65 + Olingo client 4/4 + CSDL XSD 適合 + conformance
 - **[P1] OData CI ゲートの空振り防止 (fail-closed + distinct)**: 上記「OData IT を
   CI ゲート化」参照。索引待ちタイムアウトを WARN+exit0 から **exit 1** に、固定名
   シードの存在と全名 distinct を検証してからテストへ進むよう変更。
+- **[P2] OData 500 の内部メッセージ残留**: `CmisFunctionProcessor` の function 実行
+  catch 2 箇所 + `ODataServlet` 最外周 catch を `ODataExceptions.map()`／相関ID付き
+  汎用文言に寄せた (4xx は CMIS メッセージ、5xx は redact + サーバーログ)。
+- **[P2] Node 20→22 を完結**: GHA (`playwright`/`security-scan` の `node-version`)
+  に加え **WAR ビルド経路の `core/pom.xml` `frontend-maven-plugin.nodeVersion` も
+  `v20.19.0`→`v22.14.0`** に更新。`v22.14.0` は swagger-client (`>=22`) と
+  jsdom (`^22.13.0`) の両 engines を満たす (途中 `v22.12.0` は jsdom 未満で再選定)。
+  実機: `mvn package` で Node 22.14.0 導入・vite build 成功・**EBADENGINE ゼロ**。
 - **残 (対象外・別チケット)**: Browser Binding の CSRF 未適用は CLAUDE.md 明記の
   既存方針 (CMIS クライアント互換のため `/browser` は CSRF なし) で、本 WIP が
   新規に開けた穴ではない。必須化は別 epic。
