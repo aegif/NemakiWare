@@ -465,23 +465,49 @@ public class SolrQueryProcessor implements QueryProcessor {
 		// Instead fetch the matching set up to a bounded cap and apply ACL +
 		// sort + paging in memory below. The cap bounds cost; a match set LARGER
 		// than the cap cannot be correctly authorized/ordered/paged in memory, so
-		// it is REJECTED with a 400 (see the exceedsScanCap guard after the Solr
-		// call) rather than returned as a truncated page with a misleading
-		// hasMoreItems. Within the cap the whole authorized set is materialized,
-		// so numItems is exact and hasMoreItems is honest. Raise the cap with
-		// -Dnemakiware.cmis.query.aclScanMaxRows for larger result sets.
+		// it is REJECTED (see the count probe below) rather than returned as a
+		// truncated page with a misleading hasMoreItems. Within the cap the whole
+		// authorized set is materialized, so numItems is exact and hasMoreItems is
+		// honest. Raise the cap with -Dnemakiware.cmis.query.aclScanMaxRows.
 		int aclScanCap = Integer.getInteger("nemakiware.cmis.query.aclScanMaxRows", 10000);
-		solrQuery.set(CommonParams.START, 0);
-		solrQuery.set(CommonParams.ROWS, aclScanCap);
-		
 
+		if (solrClient == null) {
+			logger.error("SolrClient is null - cannot execute query");
+			exceptionService.invalidArgument("Solr client initialization failed");
+			return null;
+		}
+
+		// Phase 1: a rows=0 count probe. This returns Solr's pre-ACL numFound
+		// WITHOUT transferring any document bodies, so an over-broad query is
+		// rejected cheaply — before the cap-sized body transfer and before any
+		// getContent / ACL / lock work. The count is PRE-ACL (it includes objects
+		// the caller cannot read), so it is NOT echoed to the client; only the
+		// fact that the scan limit was exceeded is reported.
+		solrQuery.set(CommonParams.START, 0);
+		solrQuery.set(CommonParams.ROWS, 0);
+		try {
+			QueryResponse countResp = solrClient.query(solrQuery);
+			long preAclNumFound = (countResp != null && countResp.getResults() != null)
+					? countResp.getResults().getNumFound() : 0;
+			if (exceedsScanCap(preAclNumFound, aclScanCap)) {
+				exceptionService.invalidArgument(
+						"The query is too broad to authorize in memory: it matches more than the "
+						+ aclScanCap + "-row ACL scan limit. Narrow the query (add a WHERE clause) "
+						+ "or raise -Dnemakiware.cmis.query.aclScanMaxRows.");
+			}
+		} catch (SolrServerException | IOException e) {
+			logger.error("Solr count query failed: " + e.getMessage(), e);
+			exceptionService.invalidArgument("Solr query execution failed: " + e.getMessage());
+			return null;
+		}
+
+		// Phase 2: fetch the matching set up to the cap for in-memory ACL + sort
+		// + paging. numFound here is still pre-ACL and <= cap in the common case;
+		// the guard below re-checks it to close the small window where documents
+		// were added between the probe and this fetch.
+		solrQuery.set(CommonParams.ROWS, aclScanCap);
 		QueryResponse resp = null;
 		try {
-			if (solrClient == null) {
-				logger.error("SolrClient is null - cannot execute query");
-				exceptionService.invalidArgument("Solr client initialization failed");
-				return null;
-			}
 			// Core name is already included in the URL from SolrUtil.getSolrUrl()
 			resp = solrClient.query(solrQuery);
 		} catch (SolrServerException | IOException e) {
@@ -497,22 +523,20 @@ public class SolrQueryProcessor implements QueryProcessor {
 			SolrDocumentList docs = resp.getResults();
 			numFound = docs.getNumFound();
 
-			// Reachability guard. Access control is enforced in memory after Solr
-			// returns, and we only fetch up to aclScanCap rows (START=0/ROWS=cap
-			// above), so a match set larger than the cap cannot be paged past the
-			// cap, cannot be globally ordered (only the first cap rows would be
-			// sorted), and must NOT be reported with hasMoreItems=true (the extra
-			// pages are unreachable — that would loop a paging client forever).
-			// Reject the query instead of returning a wrong-ordered / silently
-			// truncated page. Checked here from Solr's numFound BEFORE the
-			// getContent + ACL + ObjectData + lock materialization below, so an
-			// over-broad query from a low-privilege user is cheap to reject (DoS).
+			// Reachability guard (race-window re-check). Phase 1's rows=0 probe
+			// already rejected an over-cap match set cheaply; this repeats the
+			// check on the fetched response to close the small window where
+			// documents were added between the probe and this fetch. A match set
+			// larger than the cap cannot be authorized / ordered / paged past the
+			// cap in memory, so it is rejected rather than returned as a
+			// wrong-ordered / truncated page with a misleading hasMoreItems. The
+			// pre-ACL count is NOT echoed (it would leak the number of objects the
+			// caller cannot read).
 			if (exceedsScanCap(numFound, aclScanCap)) {
 				exceptionService.invalidArgument(
-						"The query matched " + numFound + " objects, exceeding the ACL scan limit ("
-						+ aclScanCap + "). Access control is enforced in memory after Solr returns, so a "
-						+ "larger result set cannot be correctly ordered or paged past the limit. Narrow "
-						+ "the query (add a WHERE clause) or raise -Dnemakiware.cmis.query.aclScanMaxRows.");
+						"The query is too broad to authorize in memory: it matches more than the "
+						+ aclScanCap + "-row ACL scan limit. Narrow the query (add a WHERE clause) "
+						+ "or raise -Dnemakiware.cmis.query.aclScanMaxRows.");
 			}
 
 			List<Content> contents = new ArrayList<Content>();
