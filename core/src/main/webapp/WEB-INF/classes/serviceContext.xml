@@ -408,6 +408,25 @@
         <property name="nemakiCachePool">
             <ref bean="nemakiCachePool" />
         </property>
+        <!-- Durable reconciliation queue for failed async search-index ACL refreshes -->
+        <property name="reconciliationService">
+            <ref bean="searchIndexReconciliationService" />
+        </property>
+    </bean>
+
+    <!-- Search-index ACL reconciliation: durable CouchDB queue + leader-gated poller -->
+    <bean id="searchIndexReconciliationService"
+          class="jp.aegif.nemaki.reconcile.SearchIndexReconciliationService">
+        <property name="connectorPool" ref="connectorPool" />
+    </bean>
+    <bean id="searchIndexReconciliationScheduler"
+          class="jp.aegif.nemaki.reconcile.SearchIndexReconciliationScheduler"
+          init-method="start" destroy-method="stop">
+        <property name="reconciliationService" ref="searchIndexReconciliationService" />
+        <property name="aclService" ref="AclService" />
+        <property name="propertyManager" ref="propertyManager" />
+        <!-- Multi-replica safety: only the leader drains the shared queue. -->
+        <property name="leaderElection" ref="leaderElection" />
     </bean>
 
 

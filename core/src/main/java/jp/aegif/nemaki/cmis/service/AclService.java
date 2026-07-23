@@ -78,4 +78,16 @@ public interface AclService {
 	 */
 	void refreshMovedSubtreeSearchIndexAcl(String repositoryId, jp.aegif.nemaki.model.Content content);
 
+	/**
+	 * Reconciliation entry point: re-drive the search-index ACL refresh
+	 * (content {@code readers} + RAG block + relationships + inheriting
+	 * descendants) for a SINGLE object that a prior async refresh failed to
+	 * complete. Called by the reconciliation scheduler out of the durable queue.
+	 *
+	 * @return {@code true} if the object no longer needs reconciliation (clean
+	 *         re-drive, or the object was deleted / no search index is wired);
+	 *         {@code false} if a failure was hit and the task should be retried.
+	 */
+	boolean reindexSearchIndexAclForObject(String repositoryId, String objectId);
+
 }

@@ -284,11 +284,24 @@ public class SolrUtil implements ApplicationContextAware {
 	 *                        Use this for metadata-only changes (e.g. ACL) where document content has not changed.
 	 */
 	public void indexDocument(String repositoryId, Content content, boolean forceSync, boolean skipRAGIndexing) {
+		indexDocument(repositoryId, content, forceSync, skipRAGIndexing, null);
+	}
+
+	/**
+	 * As {@link #indexDocument(String, Content, boolean, boolean)}, but with an
+	 * optional {@code onPermanentFailure} callback run when an ASYNC index write
+	 * ultimately fails after exhausting its bounded retries. Used by the
+	 * search-index ACL refresh path to record the object in the reconciliation
+	 * queue (so a permanently-failed readers write is not lost to a WARN). Null
+	 * (the default overload) preserves the existing behaviour exactly.
+	 */
+	public void indexDocument(String repositoryId, Content content, boolean forceSync, boolean skipRAGIndexing,
+			Runnable onPermanentFailure) {
 		if (log.isDebugEnabled()) {
 			log.debug("indexDocument called for " + content.getId());
 		}
 		log.info("SolrUtil.indexDocument called for document: " + content.getId() + " in repository: " + repositoryId);
-		
+
 		String _force = propertyManager
 				.readValue(PropertyKey.SOLR_INDEXING_FORCE);
 		boolean force = (Boolean.TRUE.toString().equals(_force)) ? true : false;
@@ -310,7 +323,8 @@ public class SolrUtil implements ApplicationContextAware {
 				indexDocumentInternal(repositoryId, content, skipRAGIndexing);
 			}, asyncSolrExecutor).exceptionally(ex -> {
 				log.warn("Solr async indexing failed for {}, scheduling retry: {}", content.getId(), ex.getMessage());
-				scheduleRetry(() -> indexDocumentInternal(repositoryId, content, skipRAGIndexing), content.getId(), 1);
+				scheduleRetry(() -> indexDocumentInternal(repositoryId, content, skipRAGIndexing), content.getId(), 1,
+						onPermanentFailure);
 				return null;
 			});
 		}
@@ -323,8 +337,19 @@ public class SolrUtil implements ApplicationContextAware {
 	 * @param attempt current retry attempt (1-based)
 	 */
 	private void scheduleRetry(Runnable task, String docId, int attempt) {
+		scheduleRetry(task, docId, attempt, null);
+	}
+
+	private void scheduleRetry(Runnable task, String docId, int attempt, Runnable onPermanentFailure) {
 		if (attempt > SOLR_INDEX_MAX_RETRY) {
 			log.error("Solr indexing permanently failed for document {} after {} retries", docId, SOLR_INDEX_MAX_RETRY);
+			if (onPermanentFailure != null) {
+				try {
+					onPermanentFailure.run();
+				} catch (Exception e) {
+					log.warn("onPermanentFailure hook failed for {}: {}", docId, e.getMessage());
+				}
+			}
 			return;
 		}
 		long delay = SOLR_INDEX_RETRY_DELAYS_MS[Math.min(attempt - 1, SOLR_INDEX_RETRY_DELAYS_MS.length - 1)];
@@ -339,7 +364,7 @@ public class SolrUtil implements ApplicationContextAware {
 			task.run();
 		}, asyncSolrExecutor).exceptionally(ex -> {
 			log.warn("Solr indexing retry {} failed for {}: {}", attempt, docId, ex.getMessage());
-			scheduleRetry(task, docId, attempt + 1);
+			scheduleRetry(task, docId, attempt + 1, onPermanentFailure);
 			return null;
 		});
 	}

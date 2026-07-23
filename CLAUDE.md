@@ -737,8 +737,29 @@ cap 前拒否 (低権限ユーザーが大規模リポジトリを検索でき�
   REST/MCP の PermissionService 再検査が存在)。(b) 再索引必須の根拠を「RAG 漏洩継続」から正確な3点
   (fail-closed 不可視 / numFound・cap 膨張 + seed oracle / 候補プール膨張) に再定義。(c) relationship
   逆引き再索引を**非同期 best-effort** として明記 (grant は async 反映まで一時 unsearchable、
-  `indexDocument` は Solr write 失敗を retry するが逆引き自体の恒久失敗は次回全再索引まで残る。恒久
-  reconciliation キューは全 async ACL 伝播に関わる横断課題として別リリースで追跡)。
+  `indexDocument` は Solr write 失敗を retry するが逆引き自体の恒久失敗は次回全再索引まで残る)。
+
+**ACL-in-Solr — 失敗した非同期 ACL 更新の永続 reconciliation キュー**:
+第3/4巡の既知制限 (「relationship 逆引き再索引は async best-effort、恒久失敗は次回全再索引まで stale」) を
+解消。失敗した非同期 search-index ACL 更新を CouchDB 永続キューに記録し、自動再実行 + 運用可視化する。
+- **キュー** (`nemaki_conf` の `searchIndexAclReindexTask`): `SearchIndexReconciliationService` が
+  `(repositoryId, objectId, reason, attempts, status)` をオブジェクト単位で dedupe 記録。CouchDB `_rev`
+  楽観ロックで複製間の二重処理を防止。Mango index は `Patch_SearchIndexReconcileMangoIndex` が登録。
+- **enqueue**: `AclServiceImpl.updateSearchIndexACLRecursively` が全 catch (per-node content/RAG/
+  relationship / getChildren traversal / 新設 `SolrUtil.indexDocument` の `onPermanentFailure` = async
+  Solr write の retry 枯渇) で失敗オブジェクトを記録。外側 async task も traversal 全体 throw 時に root を記録。
+- **poller** (`SearchIndexReconciliationScheduler`): leader-gated 固定間隔 poll (既定 120s) が due task を
+  `AclService.reindexSearchIndexAclForObject` (単体再索引: content readers + RAG + relationship + 継承子孫)
+  で再実行。clean なら delete、失敗なら backoff 付き retry 予約、`maxAttempts` (既定 10) 超過で `FAILED`
+  マーク保持。LeaderElection + `_rev` 予約で multi-replica 安全。
+- **管理 API** (`GET/POST/DELETE /api/v1/admin/search-index/reconcile`、admin 限定・CSRF 保護): 一覧
+  (status filter 可) / 即時 retry / 削除。
+- **設定** (全 optional、コード既定): `nemakiware.searchindex.reconcile.pollIntervalSeconds=120` /
+  `.maxAttempts=10` / `.batchSize=50` / `.baseBackoffSeconds=60`。
+- **検証**: `SearchIndexReconciliationSchedulerTest` 5件 (clean→delete / under-cap→retry / at-cap→FAILED /
+  予約喪失→skip / 非leader→no-op)。実機: Mango index 3件登録、scheduler 起動、管理 API の list/retry
+  (実オブジェクト→reconciled で task 削除)、poller が enqueue 済 task を自動 drain。スキーマ/view 変更なし
+  (`nemaki_conf` の新 record type + Mango index のみ)。
 
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 

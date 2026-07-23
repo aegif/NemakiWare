@@ -348,6 +348,41 @@ residual defects; all fixed and live-verified.
   non-issue — `UserGroupDaoDelegate.getJoinedGroupByUserId` already carries a
   visited set + maxIterations=50.
 
+### ACL-in-Solr — durable reconciliation queue for failed async ACL refreshes
+Closes the round-3/4 known limitation ("the relationship reverse-reindex is async
+best-effort; a permanently-failed refresh stays stale until the next ACL touch or a
+full reindex"). Failed asynchronous search-index ACL refreshes are now recorded in a
+durable CouchDB queue and automatically re-driven, and are operator-observable.
+- **Queue** (`nemaki_conf`, `searchIndexAclReindexTask`): a
+  `SearchIndexReconciliationService` records `(repositoryId, objectId, reason,
+  attempts, status)` deduped by object, with CouchDB `_rev` as an optimistic lock
+  (two replicas cannot process the same entry). Mango indexes registered by
+  `Patch_SearchIndexReconcileMangoIndex`.
+- **Enqueue**: `AclServiceImpl.updateSearchIndexACLRecursively` now records the
+  failing object on every caught failure — a per-node content/RAG/relationship
+  refresh, a `getChildren` traversal failure, and (via a new
+  `SolrUtil.indexDocument` `onPermanentFailure` callback) an async Solr write that
+  ultimately fails after its bounded retries. The outer async task also enqueues the
+  root if the whole traversal throws.
+- **Poller** (`SearchIndexReconciliationScheduler`): a leader-gated fixed-delay poll
+  (default 120s) drains due tasks by re-driving `AclService.reindexSearchIndexAclForObject`
+  (a single-object refresh: content readers + RAG + relationships + inheriting
+  descendants). A clean re-drive deletes the task; a failure reserves it for a
+  backed-off retry; after `maxAttempts` (default 10) it is marked `FAILED` and kept
+  for inspection. Multi-replica safe (LeaderElection + `_rev` reservation).
+- **Admin API** (`GET/POST/DELETE /api/v1/admin/search-index/reconcile`, admin-gated,
+  CSRF-protected): list tasks (optionally by status), force an immediate retry, or
+  delete an entry.
+- **Config** (all optional, code defaults shown):
+  `nemakiware.searchindex.reconcile.pollIntervalSeconds=120`, `.maxAttempts=10`,
+  `.batchSize=50`, `.baseBackoffSeconds=60`.
+- **Verified**: `SearchIndexReconciliationSchedulerTest` (5 — clean→delete,
+  under-cap→retry, at-cap→FAILED, lost-reservation→skip, non-leader→no-op); live —
+  the 3 Mango indexes registered, the scheduler started, the admin API lists /
+  retries (a real object → `reconciled`, task deleted), and the poller drains an
+  enqueued task automatically. No schema/view change (a new `nemaki_conf` record
+  type + Mango index only).
+
 ### ACL-in-Solr — revocation soundness, round 4 (review: P0 + P2 + P3 batch)
 - **[P0/design] Private Working Copies are now excluded from RAG indexing.**
   A PWC is a checkout-owner-only draft — `PermissionServiceImpl` authorizes it by
