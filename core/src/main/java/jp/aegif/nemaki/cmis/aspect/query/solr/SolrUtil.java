@@ -562,6 +562,22 @@ public class SolrUtil implements ApplicationContextAware {
 	/**
 	 * Create SolrInputDocument from NemakiWare Content
 	 */
+	/**
+	 * ACL-in-Solr: whether this content should carry the {@code readers} field.
+	 * Everything queryable is stamped — documents, folders, items INCLUDING
+	 * principal items (user/group items sit under /.system with a normal
+	 * inherited ACL, default {@code GROUP_EVERYONE:read}, and were visible to
+	 * non-admins through the in-memory filter) — EXCEPT relationships, which
+	 * store no ACL of their own: their read permission derives from the source
+	 * object at evaluation time, so a stamped token set would be a misleading
+	 * admin-only fallback. Relationships are exempted from the query-side
+	 * readers fq and authorized in memory instead. Package-private for the unit
+	 * test.
+	 */
+	static boolean needsReadersStamp(Content content) {
+		return !(content instanceof Relationship);
+	}
+
 	private SolrInputDocument createSolrDocument(String repositoryId, Content content) {
 		if (log.isDebugEnabled()) {
 			log.debug("Creating Solr document for content: {} (type: {}) in repository: {}",
@@ -825,13 +841,17 @@ public class SolrUtil implements ApplicationContextAware {
 		// ACL-in-Solr: stamp repository-scoped reader tokens onto the content doc
 		// so the CMIS query path can filter by the caller's principals in Solr
 		// (returning only authorized documents; numFound becomes the authorized
-		// count). Applied to all queryable content (documents, folders, items,
-		// relationships, policies) but NOT to principal items (users/groups are
-		// not returned by cmis:document/folder queries and calculateAcl on them is
-		// not meaningful). expandToReaders is itself fail-closed (admin-only when
-		// the ACL is null/empty), so a document always carries at least one token.
-		if (!(content instanceof jp.aegif.nemaki.model.UserItem)
-				&& !(content instanceof jp.aegif.nemaki.model.GroupItem)) {
+		// count). Applied to all queryable content INCLUDING principal items
+		// (user/group items live under /.system with a normal inherited ACL —
+		// default GROUP_EVERYONE:read — and were readable through the in-memory
+		// filter before, so they must carry readers too). Relationships are the
+		// one exception: they store no ACL (read permission derives from the
+		// SOURCE object at evaluation time), so stamping would produce a
+		// misleading admin-only token set — they are exempted from the query-side
+		// readers fq instead and authorized in memory. expandToReaders is itself
+		// fail-closed (admin-only when the ACL is null/empty), so a stamped doc
+		// always carries at least one token.
+		if (needsReadersStamp(content)) {
 			jp.aegif.nemaki.rag.acl.ACLExpander aclExpander = getAclExpanderSafely();
 			if (aclExpander != null) {
 				try {

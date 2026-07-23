@@ -465,12 +465,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 			// readers fq is applied rather than skipped.
 			callerIsAdmin = false;
 		}
-		if (!callerIsAdmin && aclExpander != null && callerUsername != null) {
-			solrQuery.addFilterQuery(aclExpander.buildReaderFilterQuery(repositoryId, callerUsername));
+		String readersFilterQuery = (!callerIsAdmin && aclExpander != null && callerUsername != null)
+				? aclExpander.buildReaderFilterQuery(repositoryId, callerUsername)
+				: null;
+		for (String aclFq : aclFilterQueries(callerIsAdmin, readersFilterQuery)) {
+			solrQuery.addFilterQuery(aclFq);
 		}
-		// Exclude RAG parent/chunk docs, which share this Solr core and also carry
-		// a `readers` field. CMIS content documents have no doc_type.
-		solrQuery.addFilterQuery("-doc_type:[* TO *]");
 
 		// RANKING FIX: Add sort by modification date descending to prioritize recent documents
 		// This ensures that newly created documents appear at the top of search results
@@ -680,6 +680,33 @@ public class SolrQueryProcessor implements QueryProcessor {
 	 */
 	static boolean exceedsScanCap(long numFound, int aclScanCap) {
 		return numFound > aclScanCap;
+	}
+
+	/**
+	 * ACL-in-Solr: build the ACL-related filter queries for a CMIS query.
+	 * <ul>
+	 *   <li><b>Admin</b> (or no readers fq available — expander unwired /
+	 *       anonymous): NO readers filtering in Solr; the in-memory
+	 *       {@code permissionService.getFiltered} still enforces ACL.</li>
+	 *   <li><b>Non-admin</b>: restrict to documents carrying one of the caller's
+	 *       reader tokens, OR relationships — relationships store no ACL of their
+	 *       own (read permission derives from the SOURCE object), so they carry no
+	 *       readers and are authorized by the in-memory relationship check
+	 *       instead. Without this exemption every non-admin relationship query
+	 *       would return nothing.</li>
+	 *   <li>Always: exclude RAG parent/chunk docs, which share this Solr core and
+	 *       also carry a {@code readers} field (CMIS content has no
+	 *       {@code doc_type}).</li>
+	 * </ul>
+	 * Package-private + static for the unit test.
+	 */
+	static List<String> aclFilterQueries(boolean callerIsAdmin, String readersFilterQuery) {
+		List<String> fqs = new ArrayList<String>();
+		if (!callerIsAdmin && readersFilterQuery != null) {
+			fqs.add("(" + readersFilterQuery + ") OR basetype:\"cmis:relationship\"");
+		}
+		fqs.add("-doc_type:[* TO *]");
+		return fqs;
 	}
 
 	/**
