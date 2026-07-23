@@ -177,29 +177,27 @@ The pre-ACL cap rejection (a low-privilege user could not search a large
 repository even when their authorized subset was tiny, and the "is the overall
 match over the cap" bit was observable pre-ACL) is **resolved** by pushing
 authorization into Solr, mirroring the pattern RAG already uses.
-- **Index side** (`SolrUtil.createSolrDocument` + `needsReadersStamp`): every
-  queryable content object — documents, folders, items **including principal
-  items** (user/group items sit under `/.system` with a normal inherited ACL,
-  default `GROUP_EVERYONE:read`, and were visible to non-admins through the
-  in-memory filter) — is stamped with repository-scoped reader tokens from
-  `ACLExpander.expandToReaders` (`user:{repo}:{id}` / `group:{repo}:{id}` /
-  `anyone:{repo}`, nested-group expansion, admin-only fail-closed) in the
-  `readers` field. **Relationships are the one exception**: they store no ACL
-  (read permission derives from the source object at evaluation time), so
-  stamping would fail closed to a misleading admin-only token set. The field
-  already exists in the nemaki core schema (used by RAG) — **no schema change**.
-- **Query side** (`SolrQueryProcessor.aclFilterQueries`): a non-admin query adds
-  `(readers:(...)) OR basetype:"cmis:relationship"` — relationships pass the fq
-  and are authorized by the in-memory source-object check as before — plus a
-  `-doc_type:[* TO *]` exclusion of RAG docs, so **Solr returns only authorized
-  documents and `numFound` is the authorized count**. Admins bypass the readers
-  restriction (they see everything, as before); the in-memory
-  `permissionService.getFiltered` stays as defense-in-depth. Fail-safe: an
-  admin-check failure is treated as non-admin, and if the expander is unwired
-  (or the caller anonymous) the fq is skipped and `getFiltered` still enforces
-  ACL. Pinned by `SolrQueryProcessorAclFilterTest` (7 tests: admin bypass,
-  relationship exemption, RAG exclusion, stamping scope incl. principal items) —
-  added to the CI unit-tests gate.
+- **Index side** (`SolrUtil.createSolrDocument`): every queryable content object —
+  documents, folders, items **including principal items** (user/group items sit
+  under `/.system` with a normal inherited ACL, default `GROUP_EVERYONE:read`, and
+  were visible to non-admins through the in-memory filter) — is stamped with
+  repository-scoped reader tokens from `ACLExpander.expandToReaders`
+  (`user:{repo}:{id}` / `group:{repo}:{id}` / `anyone:{repo}`, admin-only
+  fail-closed) in the `readers` field. A **relationship** stores no ACL of its
+  own — its read permission is `read(source) OR read(target)`
+  (`checkRelationshipPermission`) — so it is stamped with the **union of its
+  source's and target's readers** (`relationshipReaders`). The field already
+  exists in the nemaki core schema (used by RAG) — **no schema change**.
+- **Query side** (`SolrQueryProcessor.aclFilterQueries`): a non-admin query adds a
+  plain `readers:(...)` fq plus a `-doc_type:[* TO *]` exclusion of RAG docs, so
+  **Solr returns only authorized documents and `numFound` is the authorized
+  count** — relationships carry their source/target readers so they are filtered
+  like any other content (no carve-out). Admins bypass the readers restriction
+  (they see everything, as before); the in-memory `permissionService.getFiltered`
+  stays as defense-in-depth. Fail-safe: an admin-check failure is treated as
+  non-admin, and if the expander is unwired (or the caller anonymous) the fq is
+  skipped and `getFiltered` still enforces ACL. Pinned by
+  `SolrQueryProcessorAclFilterTest`, added to the CI unit-tests gate.
 - **ACL changes propagate** (`AclServiceImpl`): the changed object is re-indexed
   by `updateInternal`; inheriting descendants have their content `readers`
   re-indexed by the (now content-aware) recursion, regardless of whether RAG is
@@ -218,7 +216,39 @@ authorization into Solr, mirroring the pattern RAG already uses.
   14-document repository a low-privilege user authorized to 2 documents gets
   **HTTP 200** with their two docs while an admin authorized to all 14 gets 400.
   Admin bypass keeps TCK QueryTestGroup 6/6, OData IT 71/71, conformance 25/25 and
-  the focused unit tests 17/17 unregressed.
+  the focused unit tests unregressed.
+
+### ACL-in-Solr — revocation soundness (review: P0 + two P1)
+- **[P0] Group departure left stale search access (an actual RAG leak).**
+  `ACLExpander.expandToReaders` expanded a group's *current members* into
+  `user:{repo}:{id}` tokens at index time, so a removed member (or nested-subgroup
+  member, or demoted admin) kept a stale user token on every document until it was
+  re-indexed — and the query always includes the caller's own user token, so it
+  kept matching. CMIS was corrected by `getFiltered` (but numFound inflated and
+  could trip the scan cap); **RAG has no final ACL check, so it returned document
+  names / paths / chunk text**. Fix: the index now stores **only the
+  ACL-directly-named principal tokens** (member expansion removed); membership is
+  resolved at query time (`getGroupIdsContainingUser` is transitive over nested
+  groups on both the CMIS and RAG paths — verified), which is **revocation-safe
+  with no re-index**. Verified live: a user loses search access to a
+  group-granted document the instant they leave the group, without re-indexing the
+  document. This also closes the pre-existing RAG leak. `ACLExpanderTest` updated
+  to the no-expansion contract.
+- **[P1] Move left the old parent's inherited ACL.** A folder move did not evict
+  the moved object's ACL cache before re-indexing, and never re-indexed
+  descendants, so a public→private move left stale, over-permissive readers.
+  Fix: `ContentServiceImpl.move` evicts the moved object's ACL cache before its
+  re-index, and `ObjectServiceImpl.moveObject` calls the new
+  `AclService.refreshMovedSubtreeSearchIndexAcl` (same evict + recursive re-index
+  as the applyAcl path) for inheriting descendants. Verified live: after moving a
+  public folder into a private one, a descendant document's readers refresh within
+  ~5 s and a non-admin loses search access — no manual re-index.
+- **[P1] Relationships reintroduced the pre-ACL cap.** (Superseded the earlier
+  full fq exemption.) Relationships now carry `readers(source) ∪ readers(target)`
+  and are filtered by the normal fq, so numFound is authorized. Residual: a
+  source/target ACL change does not re-index the relationship, so its stamped
+  readers can go stale — `getFiltered` still yields the correct result, only
+  numFound is approximate for such relationships.
 
 **Verification**: Java unit + full CMIS TCK green on the v3.3 tree
 (Connection/Basics/Control/Versioning/CRUD1/CRUD2/Query/Types all pass;

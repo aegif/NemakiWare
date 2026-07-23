@@ -67,4 +67,13 @@ public interface AclService {
 			@LogParam("objectId") String objectId, @LogParam("aces") Acl aces,
 			@LogParam("aclPropagation") AclPropagation aclPropagation);
 
+	/**
+	 * ACL-in-Solr: after a folder move, refresh the search-index {@code readers}
+	 * of the moved object's inheriting descendants (their effective inherited ACL
+	 * changed with the new ancestor chain). The moved object itself is handled by
+	 * {@code ContentServiceImpl.move}. No-op for a moved leaf. See
+	 * {@code AclServiceImpl.refreshMovedSubtreeSearchIndexAcl}.
+	 */
+	void refreshMovedSubtreeSearchIndexAcl(String repositoryId, jp.aegif.nemaki.model.Content content);
+
 }

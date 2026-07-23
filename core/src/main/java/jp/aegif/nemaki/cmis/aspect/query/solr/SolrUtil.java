@@ -563,19 +563,38 @@ public class SolrUtil implements ApplicationContextAware {
 	 * Create SolrInputDocument from NemakiWare Content
 	 */
 	/**
-	 * ACL-in-Solr: whether this content should carry the {@code readers} field.
-	 * Everything queryable is stamped — documents, folders, items INCLUDING
-	 * principal items (user/group items sit under /.system with a normal
-	 * inherited ACL, default {@code GROUP_EVERYONE:read}, and were visible to
-	 * non-admins through the in-memory filter) — EXCEPT relationships, which
-	 * store no ACL of their own: their read permission derives from the source
-	 * object at evaluation time, so a stamped token set would be a misleading
-	 * admin-only fallback. Relationships are exempted from the query-side
-	 * readers fq and authorized in memory instead. Package-private for the unit
-	 * test.
+	 * ACL-in-Solr readers for a relationship: the UNION of the source object's
+	 * and target object's readers, reproducing {@code read(source) OR read(target)}
+	 * (PermissionServiceImpl.checkRelationshipPermission). A relationship has no
+	 * ACL of its own, so this lets the query-side readers fq apply to
+	 * relationships like any other content instead of exempting them (which would
+	 * inflate numFound with unauthorized relationships). If both source and target
+	 * are missing (a dangling relationship) the set is empty — fail-closed, and
+	 * the in-memory check returns false for a dangling relationship anyway.
+	 *
+	 * <p>Residual: a source/target ACL change does not re-index the relationship,
+	 * so its stamped readers can go stale until re-indexed. The in-memory
+	 * getFiltered still yields the correct RESULT (it re-evaluates
+	 * checkRelationshipPermission live); only numFound is approximate for such
+	 * relationships.
 	 */
-	static boolean needsReadersStamp(Content content) {
-		return !(content instanceof Relationship);
+	private List<String> relationshipReaders(String repositoryId, Relationship relationship,
+			jp.aegif.nemaki.rag.acl.ACLExpander aclExpander) {
+		java.util.LinkedHashSet<String> union = new java.util.LinkedHashSet<String>();
+		ContentService cs = getContentServiceSafely();
+		if (cs != null) {
+			Content source = (relationship.getSourceId() != null)
+					? cs.getContent(repositoryId, relationship.getSourceId()) : null;
+			Content target = (relationship.getTargetId() != null)
+					? cs.getContent(repositoryId, relationship.getTargetId()) : null;
+			if (source != null) {
+				union.addAll(aclExpander.expandToReaders(repositoryId, source));
+			}
+			if (target != null) {
+				union.addAll(aclExpander.expandToReaders(repositoryId, target));
+			}
+		}
+		return new ArrayList<String>(union);
 	}
 
 	private SolrInputDocument createSolrDocument(String repositoryId, Content content) {
@@ -841,31 +860,32 @@ public class SolrUtil implements ApplicationContextAware {
 		// ACL-in-Solr: stamp repository-scoped reader tokens onto the content doc
 		// so the CMIS query path can filter by the caller's principals in Solr
 		// (returning only authorized documents; numFound becomes the authorized
-		// count). Applied to all queryable content INCLUDING principal items
-		// (user/group items live under /.system with a normal inherited ACL —
-		// default GROUP_EVERYONE:read — and were readable through the in-memory
-		// filter before, so they must carry readers too). Relationships are the
-		// one exception: they store no ACL (read permission derives from the
-		// SOURCE object at evaluation time), so stamping would produce a
-		// misleading admin-only token set — they are exempted from the query-side
-		// readers fq instead and authorized in memory. expandToReaders is itself
+		// count). Applied to ALL queryable content: documents, folders, items,
+		// principal items (user/group items live under /.system with a normal
+		// inherited ACL — default GROUP_EVERYONE:read — and were readable through
+		// the in-memory filter, so they must carry readers too), AND relationships.
+		// A relationship stores no ACL of its own; its read permission is
+		// read(source) OR read(target) (PermissionServiceImpl.checkRelationshipPermission),
+		// so it is stamped with the UNION of its source's and target's readers —
+		// not exempted from the fq (which would let unauthorized relationships
+		// inflate numFound and trip the ACL scan cap). expandToReaders is itself
 		// fail-closed (admin-only when the ACL is null/empty), so a stamped doc
 		// always carries at least one token.
-		if (needsReadersStamp(content)) {
-			jp.aegif.nemaki.rag.acl.ACLExpander aclExpander = getAclExpanderSafely();
-			if (aclExpander != null) {
-				try {
-					List<String> readers = aclExpander.expandToReaders(repositoryId, content);
-					if (readers != null) {
-						for (String reader : readers) {
-							doc.addField("readers", reader);
-						}
+		jp.aegif.nemaki.rag.acl.ACLExpander aclExpander = getAclExpanderSafely();
+		if (aclExpander != null) {
+			try {
+				List<String> readers = (content instanceof Relationship)
+						? relationshipReaders(repositoryId, (Relationship) content, aclExpander)
+						: aclExpander.expandToReaders(repositoryId, content);
+				if (readers != null) {
+					for (String reader : readers) {
+						doc.addField("readers", reader);
 					}
-				} catch (Exception e) {
-					// Fail-closed: leave `readers` empty so the query-side fq excludes
-					// this doc for non-admin users until it is re-indexed. Never leaks.
-					log.warn("Failed to compute readers for content {}: {}", content.getId(), e.getMessage());
 				}
+			} catch (Exception e) {
+				// Fail-closed: leave `readers` empty so the query-side fq excludes
+				// this doc for non-admin users until it is re-indexed. Never leaks.
+				log.warn("Failed to compute readers for content {}: {}", content.getId(), e.getMessage());
 			}
 		}
 

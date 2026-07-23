@@ -593,31 +593,28 @@ vitest 191/191、OData 65/65 + Olingo client 4/4 + CSDL XSD 適合 + conformance
 **ACL-in-Solr (CMIS query の認可を Solr 索引に前倒し)**:
 cap 前拒否 (低権限ユーザーが大規模リポジトリを検索できない) を根治するため、RAG が
 既に持つ reader-token パターンを CMIS コンテンツ索引へ横展開。
-- **索引側** (`SolrUtil.createSolrDocument` + `needsReadersStamp`): **relationship
-  以外の全コンテンツ** (document/folder/item、**principal item (user/group) 含む** —
-  `.system` 配下の通常 ACL (既定 GROUP_EVERYONE:read) を持ち従来 in-memory filter で
-  非 admin 可視だったため) に、`ACLExpander.expandToReaders` の**リポジトリスコープ
-  reader トークン** (`user:{repo}:{id}` / `group:{repo}:{id}` / `anyone:{repo}`、
-  nested group 展開・admin-only fail-closed) を `readers` フィールドとして付与。
-  relationship は ACL を持たず (読み権限は source 文書から評価時に導出) stamping
-  すると admin-only に fail-closed してしまうため対象外。`readers` は既に nemaki
-  コア schema に存在 (RAG 用)、**スキーマ変更なし**。ACLExpander は循環依存回避のため
-  `applicationContext` から遅延取得。
-- **query 側** (`SolrQueryProcessor.aclFilterQueries`): 非 admin は
-  `(readers:(...)) OR basetype:"cmis:relationship"` の fq + RAG doc 除外
-  (`-doc_type:[* TO *]`) を追加 → **Solr が認可済みのみ返し numFound=認可後件数**。
-  relationship は fq を素通しし in-memory の source 文書判定
-  (`checkRelationshipPermission`) で認可 (従来挙動を維持)。admin は readers fq
-  バイパス (in-memory と同じ全件)。in-memory `permissionService.getFiltered` は
-  多層防御として維持。fail-closed: admin 判定失敗は非 admin 扱い、ACLExpander
-  未配線/匿名は fq 無し (getFiltered が保証)。`SolrQueryProcessorAclFilterTest`
-  7件で fq 構成 + stamping 対象判定を回帰固定 (CI unit-tests 追加済)。
+- **索引側** (`SolrUtil.createSolrDocument`): **全コンテンツ** (document/folder/item、
+  **principal item (user/group) 含む** — `.system` 配下の通常 ACL (既定
+  GROUP_EVERYONE:read) を持ち従来 in-memory filter で非 admin 可視だったため) に
+  `ACLExpander.expandToReaders` の**リポジトリスコープ reader トークン**
+  (`user:{repo}:{id}` / `group:{repo}:{id}` / `anyone:{repo}`、admin-only fail-closed)
+  を `readers` として付与。**relationship** は ACL を持たず読み権限 =
+  read(source) OR read(target) (`checkRelationshipPermission`) なので、
+  **source と target の readers の和集合**を付与 (`relationshipReaders`)。`readers` は
+  既に nemaki コア schema に存在 (RAG 用)、**スキーマ変更なし**。ACLExpander は循環
+  依存回避のため `applicationContext` から遅延取得。
+- **query 側** (`SolrQueryProcessor.aclFilterQueries`): 非 admin は `readers:(...)` fq
+  + RAG doc 除外 (`-doc_type:[* TO *]`) → **Solr が認可済みのみ返し numFound=認可後
+  件数**。relationship も readers を持つので通常どおり fq が効く (免除なし)。admin は
+  readers fq バイパス。in-memory `permissionService.getFiltered` は多層防御として維持。
+  fail-closed: admin 判定失敗は非 admin 扱い、ACLExpander 未配線/匿名は fq 無し
+  (getFiltered が保証)。`SolrQueryProcessorAclFilterTest` で fq 構成を回帰固定
+  (CI unit-tests 追加済)。
 - **ACL 変更伝播** (`AclServiceImpl`): 対象は `updateInternal` で再索引、**継承する
-  子孫**は RAG 再帰を `updateSearchIndexACLRecursively` に拡張し content の `readers` も
-  再索引 (RAG 有無に関わらず実行)。**stale-cache 修正**: `calculateAcl` は `aclCache`
-  優先のため、`updateInternal`(再索引) の**前**に対象の cmis/content キャッシュを evict
-  し、再索引が新 ACL から readers を計算するように (子孫向け `clearCachesRecursively`
-  は DB 更新後のまま維持)。
+  子孫**は `updateSearchIndexACLRecursively` で content の `readers` も再索引 (RAG 有無に
+  関わらず実行)。**stale-cache 修正**: `calculateAcl` は `aclCache` 優先のため、
+  `updateInternal`(再索引) の**前**に対象の cmis/content キャッシュを evict し新 ACL
+  から readers を計算 (子孫向け `clearCachesRecursively` は DB 更新後のまま)。
 - **⚠️ アップグレード: 全 CMIS 再索引が必須** (既存コンテンツに `readers` を付与。
   未再索引の doc は非 admin 検索に出ない=fail-closed で漏洩なし)。v3.3 は Solr 10
   移行で元々再索引必須なので追加コストは無し。`POST /api/v1/cmis/repositories/{repo}/
@@ -625,7 +622,31 @@ cap 前拒否 (低権限ユーザーが大規模リポジトリを検索でき�
 - **実機検証**: readers 索引確認、非 admin が GROUP_EVERYONE 文書を閲覧可、制限文書は
   非表示 (admin は表示)、grant/revoke 即時反映 (readers add/remove)、**cap=2/14 文書で
   低権限 alice(認可2)→200・admin(認可14)→400**。admin バイパスで TCK Query 6/6・
-  OData IT 71/71・conformance 25/25・unit 17/17 無回帰。
+  OData IT 71/71・conformance 25/25 無回帰。
+
+**ACL-in-Solr 権限剥奪の健全性修正 (レビュー: P0 + P1×2)**:
+- **[P0] グループ脱退後も検索権限が残る (RAG は実漏洩)**: `ACLExpander.expandToReaders`
+  がグループの**現メンバーを user token に展開**して索引保存していたため、脱退・nested
+  脱退・admin 剥奪後も stale token が doc に残り、query は常に本人の user token を含む
+  ので一致し続けた。CMIS は getFiltered が結果除外するが numFound 膨張で cap 誤拒否、
+  **RAG は最終 ACL 検査がなく doc 名/パス/chunk を返す実漏洩**。**修正**: メンバー展開を
+  撤廃し索引には **ACL 直指定の principal token のみ**保存。所属は query 時に透過解決
+  (`getGroupIdsContainingUser` は CMIS/RAG 両経路で nested 祖先まで透過的＝調査で確認)
+  なので nested を含め正しく一致し、**再索引不要で剥奪即反映**。実機: alice を grp1 に
+  入れ grp1 付与 doc を可視→**doc 再索引せず grp1 から外すと即不可視**。`ACLExpanderTest`
+  を新挙動 (メンバー非展開) に更新。**RAG の既存漏洩も同時に解消**。
+- **[P1] move 後に旧親の継承 ACL が残る**: フォルダ移動で `ContentServiceImpl.move` が
+  再索引前に ACL キャッシュを evict せず、子孫も再索引しなかったため公開→非公開移動で
+  旧 readers が残存 (RAG 漏洩)。**修正**: 移動対象は `move` 内で再索引前に evict、
+  **継承子孫**は `ObjectServiceImpl.moveObject` から新設 `AclService.
+  refreshMovedSubtreeSearchIndexAcl` (applyAcl と同じ evict+再帰再索引) を呼ぶ。実機:
+  公開フォルダを非公開親へ移動→**手動再索引なしで ~5s で子孫の readers 更新・alice 失効**。
+- **[P1] relationship の pre-ACL cap 再発**: 一旦 relationship を fq から全面除外したが
+  numFound に非認可 relationship が混入し cap 誤拒否が残った。**修正**: 上記のとおり
+  relationship に **source∪target の readers を索引**し fq を通常適用。実機: source が
+  EVERYONE 可読なら非 admin 可視、両制限なら不可視。**残**: source/target の ACL 変更は
+  relationship を再索引しないため readers が stale 化しうる (getFiltered が結果は補正、
+  numFound のみ近似) — 既知の低リスク残余。
 
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 

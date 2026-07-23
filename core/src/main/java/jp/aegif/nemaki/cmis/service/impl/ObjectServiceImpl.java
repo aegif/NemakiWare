@@ -1292,6 +1292,19 @@ public class ObjectServiceImpl implements ObjectService {
 
 			nemakiCachePool.get(repositoryId).removeCmisCache(content.getId());
 
+			// ACL-in-Solr: refresh the readers of inheriting descendants of the
+			// moved folder (their inherited ACL changed with the new ancestor
+			// chain); the moved object itself is refreshed by ContentServiceImpl.move.
+			// Resolved lazily to avoid a construction-time dependency cycle.
+			try {
+				jp.aegif.nemaki.cmis.service.AclService aclService =
+						jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
+								.getBean("AclService", jp.aegif.nemaki.cmis.service.AclService.class);
+				aclService.refreshMovedSubtreeSearchIndexAcl(repositoryId, content);
+			} catch (Exception e) {
+				log.warn("moveObject: descendant readers refresh failed: " + e.getMessage());
+			}
+
 			// Invalidate IN_TREE folder hierarchy cache (folder may have been moved)
 			solrUtil.invalidateFolderHierarchyCache(repositoryId);
 		} finally {

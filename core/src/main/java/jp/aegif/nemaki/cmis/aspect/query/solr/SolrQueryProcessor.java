@@ -486,17 +486,18 @@ public class SolrQueryProcessor implements QueryProcessor {
 			logger.debug("whereQueryString: " + whereQueryString);
 			logger.debug("fromQueryString: " + fromQueryString);
 		}
-		// Access control is enforced AFTER Solr returns (Solr's numFound is
-		// pre-ACL). Paging in Solr therefore drops authorized items whenever the
-		// requested window contains non-authorized / DB-missing docs, and makes
-		// numItems a per-page survivor count instead of the authorized total.
-		// Instead fetch the matching set up to a bounded cap and apply ACL +
-		// sort + paging in memory below. The cap bounds cost; a match set LARGER
-		// than the cap cannot be correctly authorized/ordered/paged in memory, so
-		// it is REJECTED (see the count probe below) rather than returned as a
-		// truncated page with a misleading hasMoreItems. Within the cap the whole
-		// authorized set is materialized, so numItems is exact and hasMoreItems is
-		// honest. Raise the cap with -Dnemakiware.cmis.query.aclScanMaxRows.
+		// Authorization is applied primarily IN SOLR via the readers fq added
+		// above (ACL-in-Solr), so for a non-admin caller Solr's numFound is already
+		// the authorized count and the pre-ACL total is never materialized. The
+		// in-memory permissionService.getFiltered below remains as defense-in-depth
+		// (and is the sole ACL gate for admins, who bypass the fq, and for the
+		// relationship carve-out whose readers fq is relaxed). The matching set is
+		// fetched up to a bounded cap and sorted + paged in memory so ORDER BY is
+		// correct across pages; a set LARGER than the cap cannot be ordered/paged
+		// in memory and is REJECTED (see the count probe below) rather than
+		// returned as a truncated page with a misleading hasMoreItems. Within the
+		// cap the whole set is materialized, so numItems is exact and hasMoreItems
+		// is honest. Raise the cap with -Dnemakiware.cmis.query.aclScanMaxRows.
 		int aclScanCap = Integer.getInteger("nemakiware.cmis.query.aclScanMaxRows", 10000);
 
 		if (solrClient == null) {
@@ -688,12 +689,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 	 *   <li><b>Admin</b> (or no readers fq available — expander unwired /
 	 *       anonymous): NO readers filtering in Solr; the in-memory
 	 *       {@code permissionService.getFiltered} still enforces ACL.</li>
-	 *   <li><b>Non-admin</b>: restrict to documents carrying one of the caller's
-	 *       reader tokens, OR relationships — relationships store no ACL of their
-	 *       own (read permission derives from the SOURCE object), so they carry no
-	 *       readers and are authorized by the in-memory relationship check
-	 *       instead. Without this exemption every non-admin relationship query
-	 *       would return nothing.</li>
+	 *   <li><b>Non-admin</b>: restrict to content carrying one of the caller's
+	 *       reader tokens. Relationships carry the union of their source/target
+	 *       readers (stamped at index time), so they are filtered like any other
+	 *       content — no carve-out.</li>
 	 *   <li>Always: exclude RAG parent/chunk docs, which share this Solr core and
 	 *       also carry a {@code readers} field (CMIS content has no
 	 *       {@code doc_type}).</li>
@@ -703,7 +702,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 	static List<String> aclFilterQueries(boolean callerIsAdmin, String readersFilterQuery) {
 		List<String> fqs = new ArrayList<String>();
 		if (!callerIsAdmin && readersFilterQuery != null) {
-			fqs.add("(" + readersFilterQuery + ") OR basetype:\"cmis:relationship\"");
+			fqs.add(readersFilterQuery);
 		}
 		fqs.add("-doc_type:[* TO *]");
 		return fqs;

@@ -161,104 +161,62 @@ public class ACLExpanderTest {
 
     @Test
     public void testExpandToReadersWithGroup() {
+        // The index stores ONLY the group token the ACL names — NOT the group's
+        // current members. Membership is resolved at query time
+        // (getGroupIdsContainingUser, transitive), which is revocation-safe: a
+        // removed member's stale user token cannot linger on the document.
         Ace ace = createAce("group1", Arrays.asList("cmis:read"));
         when(content.getAcl()).thenReturn(acl);
         when(acl.getAllAces()).thenReturn(Arrays.asList(ace));
-        
+
         when(principalService.getUserById(REPO_ID, "group1")).thenReturn(null);
-        
+
         Group group1 = mock(Group.class);
         when(group1.getGroupId()).thenReturn("group1");
         when(group1.getUsers()).thenReturn(Arrays.asList("user1", "user2"));
         when(principalService.getGroupById(REPO_ID, "group1")).thenReturn(group1);
-        
-        User user1 = mock(User.class);
-        User user2 = mock(User.class);
-        when(principalService.getUserById(REPO_ID, "user1")).thenReturn(user1);
-        when(principalService.getUserById(REPO_ID, "user2")).thenReturn(user2);
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
         assertNotNull(readers, "Readers should not be null");
         assertTrue(readers.contains("group:test-repo:group1"), "Should contain group:test-repo:group1");
-        assertTrue(readers.contains("user:test-repo:user1"), "Should contain user:test-repo:user1");
-        assertTrue(readers.contains("user:test-repo:user2"), "Should contain user:test-repo:user2");
+        assertFalse(readers.contains("user:test-repo:user1"),
+                "Group members must NOT be expanded into user tokens (revocation hole)");
+        assertFalse(readers.contains("user:test-repo:user2"),
+                "Group members must NOT be expanded into user tokens (revocation hole)");
     }
 
     @Test
-    public void testExpandToReadersWithNestedGroups() {
+    public void testExpandToReadersDoesNotExpandNestedGroups() {
+        // Only the ACL-named group token is indexed; nested subgroups and their
+        // members are resolved transitively at query time, not at index time.
         Ace ace = createAce("parentGroup", Arrays.asList("cmis:read"));
         when(content.getAcl()).thenReturn(acl);
         when(acl.getAllAces()).thenReturn(Arrays.asList(ace));
-        
+
         when(principalService.getUserById(REPO_ID, "parentGroup")).thenReturn(null);
-        
+
         Group parentGroup = mock(Group.class);
         when(parentGroup.getGroupId()).thenReturn("parentGroup");
-        when(parentGroup.getUsers()).thenReturn(Arrays.asList("childGroup", "user1"));
+        when(parentGroup.getUsers()).thenReturn(Arrays.asList("user1"));
+        when(parentGroup.getGroups()).thenReturn(Arrays.asList("childGroup"));
         when(principalService.getGroupById(REPO_ID, "parentGroup")).thenReturn(parentGroup);
-
-        when(principalService.getUserById(REPO_ID, "childGroup")).thenReturn(null);
-
-        Group childGroup = mock(Group.class);
-        when(childGroup.getGroupId()).thenReturn("childGroup");
-        when(childGroup.getUsers()).thenReturn(Arrays.asList("user2"));
-        when(principalService.getGroupById(REPO_ID, "childGroup")).thenReturn(childGroup);
-        
-        User user1 = mock(User.class);
-        User user2 = mock(User.class);
-        when(principalService.getUserById(REPO_ID, "user1")).thenReturn(user1);
-        when(principalService.getUserById(REPO_ID, "user2")).thenReturn(user2);
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
         assertNotNull(readers, "Readers should not be null");
-        assertTrue(readers.contains("group:test-repo:parentGroup"), "Should contain group:test-repo:parentGroup");
-        assertTrue(readers.contains("group:test-repo:childGroup"), "Should contain group:test-repo:childGroup");
-        assertTrue(readers.contains("user:test-repo:user1"), "Should contain user:test-repo:user1");
-        assertTrue(readers.contains("user:test-repo:user2"), "Should contain user:test-repo:user2");
+        assertTrue(readers.contains("group:test-repo:parentGroup"), "Should contain the ACL-named group token");
+        assertFalse(readers.contains("group:test-repo:childGroup"),
+                "Nested subgroups must NOT be expanded at index time");
+        assertFalse(readers.contains("user:test-repo:user1"),
+                "Group members must NOT be expanded at index time");
     }
 
     @Test
-    public void testExpandToReadersWithNestedGroupsInGroupsList() {
-        // Nested subgroups are stored in the dedicated groups list (nemaki:groups),
-        // not in the users list. Members reachable only through that list must
-        // still be expanded into readers (regression for the nested-group ACL bug).
-        Ace ace = createAce("divGroup", Arrays.asList("cmis:all"));
-        when(content.getAcl()).thenReturn(acl);
-        when(acl.getAllAces()).thenReturn(Arrays.asList(ace));
-
-        when(principalService.getUserById(REPO_ID, "divGroup")).thenReturn(null);
-
-        Group divGroup = mock(Group.class);
-        when(divGroup.getGroupId()).thenReturn("divGroup");
-        when(divGroup.getUsers()).thenReturn(Arrays.asList("divHead"));
-        when(divGroup.getGroups()).thenReturn(Arrays.asList("secGroup"));
-        when(principalService.getGroupById(REPO_ID, "divGroup")).thenReturn(divGroup);
-
-        Group secGroup = mock(Group.class);
-        when(secGroup.getGroupId()).thenReturn("secGroup");
-        when(secGroup.getUsers()).thenReturn(Arrays.asList("member1"));
-        when(principalService.getGroupById(REPO_ID, "secGroup")).thenReturn(secGroup);
-
-        User divHead = mock(User.class);
-        User member1 = mock(User.class);
-        when(principalService.getUserById(REPO_ID, "divHead")).thenReturn(divHead);
-        when(principalService.getUserById(REPO_ID, "member1")).thenReturn(member1);
-
-        List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
-
-        assertTrue(readers.contains("group:test-repo:divGroup"), "Should contain group:test-repo:divGroup");
-        assertTrue(readers.contains("group:test-repo:secGroup"),
-                "Nested subgroup from the groups list should be included");
-        assertTrue(readers.contains("user:test-repo:divHead"), "Should contain user:test-repo:divHead");
-        assertTrue(readers.contains("user:test-repo:member1"),
-                "Member reachable only via the nested groups list should be included");
-    }
-
-    @Test
-    public void testExpandToReadersNestedGroupsListCycleDoesNotLoop() {
-        // Circular nesting via the groups list must terminate (visited tracking)
+    public void testExpandToReadersIndexesOnlyTheAclNamedGroup() {
+        // Only the ACL-named group is indexed; a nested-group graph (even a cyclic
+        // one) is never traversed at index time, so it cannot loop or leak member
+        // tokens. Transitive membership is a query-time concern.
         Ace ace = createAce("groupA", Arrays.asList("cmis:read"));
         when(content.getAcl()).thenReturn(acl);
         when(acl.getAllAces()).thenReturn(Arrays.asList(ace));
@@ -271,23 +229,11 @@ public class ACLExpanderTest {
         when(groupA.getGroups()).thenReturn(Arrays.asList("groupB"));
         when(principalService.getGroupById(REPO_ID, "groupA")).thenReturn(groupA);
 
-        Group groupB = mock(Group.class);
-        when(groupB.getGroupId()).thenReturn("groupB");
-        when(groupB.getUsers()).thenReturn(Arrays.asList("userB"));
-        when(groupB.getGroups()).thenReturn(Arrays.asList("groupA"));
-        when(principalService.getGroupById(REPO_ID, "groupB")).thenReturn(groupB);
-
-        User userA = mock(User.class);
-        User userB = mock(User.class);
-        when(principalService.getUserById(REPO_ID, "userA")).thenReturn(userA);
-        when(principalService.getUserById(REPO_ID, "userB")).thenReturn(userB);
-
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
-        assertTrue(readers.contains("user:test-repo:userA"));
-        assertTrue(readers.contains("user:test-repo:userB"));
-        assertTrue(readers.contains("group:test-repo:groupA"));
-        assertTrue(readers.contains("group:test-repo:groupB"));
+        assertTrue(readers.contains("group:test-repo:groupA"), "Only the ACL-named group is indexed");
+        assertFalse(readers.contains("group:test-repo:groupB"), "Nested groups are not traversed at index time");
+        assertFalse(readers.contains("user:test-repo:userA"), "Members are not expanded at index time");
     }
 
     @Test
