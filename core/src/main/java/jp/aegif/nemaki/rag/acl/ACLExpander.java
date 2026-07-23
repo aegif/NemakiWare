@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.rag.acl;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -31,6 +32,10 @@ import jp.aegif.nemaki.rag.util.SolrQuerySanitizer;
  * - "user:{repositoryId}:{username}" for individual users
  * - "group:{repositoryId}:{groupname}" for groups
  * - "anyone:{repositoryId}" for public access within the repository
+ * - "admin:{repositoryId}" — a ROLE token stamped as the null/empty-ACL
+ *   fail-closed fallback; only a CURRENT admin is granted this token at query
+ *   time, so demoting an admin revokes access immediately without re-indexing
+ *   (the same revocation-safety property the group token has).
  *
  * <p>NOTE: this changes the indexed token format. After upgrading, the RAG
  * index must be rebuilt — old unscoped tokens ("user:alice") will not match the
@@ -41,8 +46,12 @@ import jp.aegif.nemaki.rag.util.SolrQuerySanitizer;
  * The expansion logic:
  * 1. Get all ACEs (inherited and local) from the document
  * 2. Filter to those with read permission
- * 3. Expand group membership to include transitive memberships
- * 4. Return formatted list of readers
+ * 3. Emit ONLY the principal token that the ACE names (user/group/anyone) — do
+ *    NOT expand a group's current members into user tokens. Group (and admin)
+ *    membership is resolved at QUERY time instead, which makes revocation take
+ *    effect immediately without re-indexing (see {@link #addReaderFromPrincipal}
+ *    and {@link #buildReaderTokenSet}).
+ * 4. Return the formatted list of readers
  */
 @Component
 public class ACLExpander {
@@ -61,6 +70,9 @@ public class ACLExpander {
     public static final String PREFIX_USER = "user:";
     public static final String PREFIX_GROUP = "group:";
     public static final String READER_ANYONE = "anyone";
+    // Role token for the null/empty-ACL admin-only fallback. Resolved at query
+    // time to the CURRENT admins only (revocation-safe on admin demotion).
+    public static final String READER_ADMIN = "admin";
 
     private final PrincipalService principalService;
     private final ContentService contentService;
@@ -122,20 +134,20 @@ public class ACLExpander {
 
     /**
      * Get admin-only readers list for fallback security.
+     *
+     * <p>Stamps the single {@code admin:{repo}} ROLE token rather than expanding
+     * the current admins into individual {@code user:} tokens. Expanding admins
+     * had the same revocation hole as expanding group members: a demoted admin
+     * kept a stale {@code user:} token on every fallback document until it was
+     * re-indexed, and the RAG path (no final in-memory ACL check) would still
+     * return it. The role token is resolved at query time to the CURRENT admins
+     * only (see {@link #buildReaderTokenSet}), so demotion takes effect
+     * immediately without re-indexing.
      */
     private List<String> getAdminOnlyReaders(String repositoryId) {
-        Set<String> readers = new HashSet<>();
-        List<User> admins = principalService.getAdmins(repositoryId);
-        if (admins != null) {
-            for (User admin : admins) {
-                readers.add(formatUserReader(repositoryId, admin.getUserId()));
-            }
-        }
-        // Always include at least the system admin
-        if (readers.isEmpty()) {
-            readers.add(formatUserReader(repositoryId, "admin"));
-        }
-        return new ArrayList<>(readers);
+        List<String> readers = new ArrayList<>();
+        readers.add(formatAdminReader(repositoryId));
+        return readers;
     }
 
     /**
@@ -224,6 +236,90 @@ public class ACLExpander {
     }
 
     /**
+     * The repository-scoped admin role token ({@code admin:{repositoryId}}),
+     * stamped as the null/empty-ACL fallback and matched at query time only by
+     * a current admin.
+     */
+    public static String formatAdminReader(String repositoryId) {
+        return READER_ADMIN + ":" + repositoryId;
+    }
+
+    /**
+     * True if {@code userId} is a CURRENT admin of the repository. Evaluated live
+     * (from the principal store) so admin demotion is reflected immediately.
+     */
+    private boolean isAdminUser(String repositoryId, String userId) {
+        if (userId == null) {
+            return false;
+        }
+        try {
+            User u = principalService.getUserById(repositoryId, userId);
+            return u != null && Boolean.TRUE.equals(u.isAdmin());
+        } catch (Exception e) {
+            // Fail-closed: an admin-lookup failure is treated as non-admin.
+            return false;
+        }
+    }
+
+    /**
+     * Build the caller's live reader-token set: {@code anyone:{repo}}, the
+     * caller's own {@code user:} token, one {@code group:} token per group that
+     * currently contains the caller (transitive over nested groups), and
+     * {@code admin:{repo}} iff the caller is currently an admin. All membership is
+     * resolved live here (not from the index), which is what makes revocation —
+     * group departure, admin demotion — take effect without re-indexing.
+     *
+     * <p>Returned tokens are RAW (unsanitized), intended for in-memory
+     * {@code equals} comparison against a document's stored readers (see
+     * {@link #isReadableByTokens}); the Solr-query form is built separately by
+     * {@link #buildReaderFilterQuery}, which escapes the user/group parts.
+     */
+    public Set<String> buildReaderTokenSet(String repositoryId, String userId) {
+        Set<String> tokens = new HashSet<>();
+        tokens.add(formatAnyoneReader(repositoryId));
+        if (userId != null) {
+            tokens.add(formatUserReader(repositoryId, userId));
+            Set<String> groupIds = principalService.getGroupIdsContainingUser(repositoryId, userId);
+            if (groupIds != null) {
+                for (String groupId : groupIds) {
+                    tokens.add(formatGroupReader(repositoryId, groupId));
+                }
+            }
+            if (isAdminUser(repositoryId, userId)) {
+                tokens.add(formatAdminReader(repositoryId));
+            }
+        }
+        return tokens;
+    }
+
+    /**
+     * Final live-ACL check for a RAG search hit: load the content and test
+     * whether its CURRENT readers ({@link #expandToReaders}, computed live from
+     * calculateAcl) intersect the caller's live token set. This is the RAG analog
+     * of the CMIS in-memory {@code getFiltered} gate — it re-verifies every hit
+     * against live ACL so that a stale, over-permissive {@code readers} value in
+     * the Solr index (e.g. during the async re-index window after a move /
+     * applyAcl, or a relationship whose endpoint ACL changed) can never leak a
+     * document name / path / chunk. Fail-closed: a missing (deleted) content or
+     * any lookup error drops the hit.
+     */
+    public boolean isReadableByTokens(String repositoryId, String documentId, Set<String> callerTokens) {
+        if (documentId == null || callerTokens == null || callerTokens.isEmpty()) {
+            return false;
+        }
+        try {
+            Content content = contentService.getContent(repositoryId, documentId);
+            if (content == null) {
+                return false;
+            }
+            List<String> live = expandToReaders(repositoryId, content);
+            return live != null && !Collections.disjoint(live, callerTokens);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
      * Build a Solr filter query for the given user.
      * Includes the user, their groups, and "anyone".
      *
@@ -255,7 +351,10 @@ public class ACLExpander {
         query.append(" OR \"").append(PREFIX_USER).append(repositoryId).append(":")
                 .append(sanitizedUserId).append("\"");
 
-        // Group tokens, repository-scoped: group:{repo}:{groupId}
+        // Group tokens, repository-scoped: group:{repo}:{groupId}. Membership is
+        // resolved live and transitively over nested groups (cycle-safe: the
+        // recursion carries a visited set, so an A->B->A cycle can no longer
+        // StackOverflow the reader-filter build for a non-member searcher).
         Set<String> groupIds = principalService.getGroupIdsContainingUser(repositoryId, userId);
         if (groupIds != null) {
             for (String groupId : groupIds) {
@@ -263,6 +362,15 @@ public class ACLExpander {
                 query.append(" OR \"").append(PREFIX_GROUP).append(repositoryId).append(":")
                         .append(sanitizedGroupId).append("\"");
             }
+        }
+
+        // Admin role token, repository-scoped: admin:{repo}. Only a CURRENT admin
+        // is granted it, so it matches the null/empty-ACL fallback documents; a
+        // demoted admin stops matching immediately (no re-index needed). The
+        // repositoryId is embedded raw (validated repo name), matching the stored
+        // token exactly.
+        if (isAdminUser(repositoryId, userId)) {
+            query.append(" OR \"").append(READER_ADMIN).append(":").append(repositoryId).append("\"");
         }
 
         query.append(")");

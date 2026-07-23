@@ -383,6 +383,30 @@ public class AclServiceImpl implements AclService {
 			}
 		}
 
+		// Relationships that reference this object (as source OR target) derive
+		// their `readers` from readers(source) UNION readers(target)
+		// (SolrUtil.relationshipReaders). This object's effective ACL just
+		// changed, so re-index its relationships too — this runs for the ROOT as
+		// well as inheriting descendants. Without it a GRANT to this object never
+		// becomes searchable on its relationships (the in-memory getFiltered can
+		// only REMOVE hits, never ADD one Solr already excluded), and a REVOKE
+		// leaves a stale over-permissive relationship inflating numFound (which
+		// can trip the ACL scan cap).
+		if (solrUtil != null) {
+			try {
+				List<jp.aegif.nemaki.model.Relationship> rels = contentService.getRelationsipsOfObject(
+						repositoryId, content.getId(),
+						org.apache.chemistry.opencmis.commons.enums.RelationshipDirection.EITHER);
+				if (rels != null) {
+					for (jp.aegif.nemaki.model.Relationship rel : rels) {
+						solrUtil.indexDocument(repositoryId, rel, false, true);
+					}
+				}
+			} catch (Exception e) {
+				log.warn("Failed to refresh relationship readers for " + content.getId() + ": " + e.getMessage());
+			}
+		}
+
 		// Recursively process children that inherit ACL.
 		if (content.isFolder()) {
 			List<Content> children = contentService.getChildren(repositoryId, content.getId());

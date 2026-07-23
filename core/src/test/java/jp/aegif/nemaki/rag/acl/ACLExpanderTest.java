@@ -74,7 +74,8 @@ public class ACLExpanderTest {
 
         assertNotNull(readers, "Readers should not be null");
         // Null ACL should now default to admin-only for security
-        assertTrue(readers.contains("user:test-repo:admin"), "Null ACL should result in admin-only readers");
+        assertTrue(readers.contains("admin:test-repo"), "Null ACL should fall back to the admin role token");
+        assertFalse(readers.contains("user:test-repo:admin"), "Fallback must be the role token, not an expanded admin user token");
     }
 
     @Test
@@ -88,7 +89,7 @@ public class ACLExpanderTest {
 
         assertNotNull(readers, "Readers should not be null");
         // Empty ACEs should now default to admin-only for security
-        assertTrue(readers.contains("user:test-repo:admin"), "Empty ACEs should result in admin-only readers");
+        assertTrue(readers.contains("admin:test-repo"), "Empty ACEs should fall back to the admin role token");
     }
 
     @Test
@@ -102,7 +103,7 @@ public class ACLExpanderTest {
 
         assertNotNull(readers, "Readers should not be null");
         // Null ACEs should now default to admin-only for security
-        assertTrue(readers.contains("user:test-repo:admin"), "Null ACEs should result in admin-only readers");
+        assertTrue(readers.contains("admin:test-repo"), "Null ACEs should fall back to the admin role token");
     }
 
     @Test
@@ -275,7 +276,7 @@ public class ACLExpanderTest {
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
         assertNotNull(readers, "Readers should not be null");
-        assertTrue(readers.contains("user:test-repo:admin"), "Should fall back to admin users");
+        assertTrue(readers.contains("admin:test-repo"), "Should fall back to the admin role token");
     }
 
     // ========== formatUserReader and formatGroupReader Tests ==========
@@ -295,6 +296,111 @@ public class ACLExpanderTest {
     @Test
     public void testFormatAnyoneReader() {
         assertEquals("anyone:test-repo", ACLExpander.formatAnyoneReader(REPO_ID));
+    }
+
+    @Test
+    public void testFormatAdminReader() {
+        assertEquals("admin:test-repo", ACLExpander.formatAdminReader(REPO_ID));
+    }
+
+    // ========== admin role token (query time) ==========
+
+    @Test
+    public void testBuildReaderFilterQueryAddsAdminTokenForCurrentAdmin() {
+        when(principalService.getGroupIdsContainingUser(REPO_ID, "root")).thenReturn(new HashSet<>());
+        User admin = mock(User.class);
+        when(admin.isAdmin()).thenReturn(Boolean.TRUE);
+        when(principalService.getUserById(REPO_ID, "root")).thenReturn(admin);
+
+        String query = aclExpander.buildReaderFilterQuery(REPO_ID, "root");
+
+        assertTrue(query.contains("\"admin:test-repo\""),
+                "A current admin's reader filter must include the admin role token");
+    }
+
+    @Test
+    public void testBuildReaderFilterQueryOmitsAdminTokenForNonAdmin() {
+        when(principalService.getGroupIdsContainingUser(REPO_ID, "user1")).thenReturn(new HashSet<>());
+        User plain = mock(User.class);
+        when(plain.isAdmin()).thenReturn(Boolean.FALSE);
+        when(principalService.getUserById(REPO_ID, "user1")).thenReturn(plain);
+
+        String query = aclExpander.buildReaderFilterQuery(REPO_ID, "user1");
+
+        assertFalse(query.contains("\"admin:test-repo\""),
+                "A non-admin (or demoted admin) must NOT receive the admin role token");
+    }
+
+    // ========== buildReaderTokenSet + isReadableByTokens (live-ACL gate) ==========
+
+    @Test
+    public void testBuildReaderTokenSetIncludesAnyoneUserGroupsAndAdmin() {
+        Set<String> groups = new HashSet<>();
+        groups.add("grp1");
+        when(principalService.getGroupIdsContainingUser(REPO_ID, "root")).thenReturn(groups);
+        User admin = mock(User.class);
+        when(admin.isAdmin()).thenReturn(Boolean.TRUE);
+        when(principalService.getUserById(REPO_ID, "root")).thenReturn(admin);
+
+        Set<String> tokens = aclExpander.buildReaderTokenSet(REPO_ID, "root");
+
+        assertTrue(tokens.contains("anyone:test-repo"));
+        assertTrue(tokens.contains("user:test-repo:root"));
+        assertTrue(tokens.contains("group:test-repo:grp1"));
+        assertTrue(tokens.contains("admin:test-repo"), "current admin gets the admin role token");
+    }
+
+    @Test
+    public void testBuildReaderTokenSetOmitsAdminForNonAdmin() {
+        when(principalService.getGroupIdsContainingUser(REPO_ID, "user1")).thenReturn(new HashSet<>());
+        User plain = mock(User.class);
+        when(plain.isAdmin()).thenReturn(Boolean.FALSE);
+        when(principalService.getUserById(REPO_ID, "user1")).thenReturn(plain);
+
+        Set<String> tokens = aclExpander.buildReaderTokenSet(REPO_ID, "user1");
+
+        assertFalse(tokens.contains("admin:test-repo"));
+    }
+
+    @Test
+    public void testIsReadableByTokensTrueWhenLiveReadersIntersect() {
+        // Live ACL grants user1 read; the caller holds user:test-repo:user1.
+        Content doc = mock(Content.class);
+        Acl liveAcl = mock(Acl.class);
+        Ace ace = createAce("user1", Arrays.asList("cmis:read"));
+        when(liveAcl.getAllAces()).thenReturn(Arrays.asList(ace));
+        when(contentService.getContent(REPO_ID, "doc-1")).thenReturn(doc);
+        when(contentService.calculateAcl(REPO_ID, doc)).thenReturn(liveAcl);
+        User user1 = mock(User.class);
+        when(principalService.getUserById(REPO_ID, "user1")).thenReturn(user1);
+
+        Set<String> caller = new HashSet<>(Arrays.asList("user:test-repo:user1"));
+        assertTrue(aclExpander.isReadableByTokens(REPO_ID, "doc-1", caller));
+    }
+
+    @Test
+    public void testIsReadableByTokensFalseWhenLiveReadersDisjoint() {
+        // Live ACL grants only user2; caller holds only user1 -> dropped (this is
+        // the stale-index leak the RAG final gate closes).
+        Content doc = mock(Content.class);
+        Acl liveAcl = mock(Acl.class);
+        Ace ace = createAce("user2", Arrays.asList("cmis:read"));
+        when(liveAcl.getAllAces()).thenReturn(Arrays.asList(ace));
+        when(contentService.getContent(REPO_ID, "doc-1")).thenReturn(doc);
+        when(contentService.calculateAcl(REPO_ID, doc)).thenReturn(liveAcl);
+        User user2 = mock(User.class);
+        when(principalService.getUserById(REPO_ID, "user2")).thenReturn(user2);
+
+        Set<String> caller = new HashSet<>(Arrays.asList("user:test-repo:user1"));
+        assertFalse(aclExpander.isReadableByTokens(REPO_ID, "doc-1", caller));
+    }
+
+    @Test
+    public void testIsReadableByTokensFalseWhenContentMissing() {
+        when(contentService.getContent(REPO_ID, "gone")).thenReturn(null);
+        Set<String> caller = new HashSet<>(Arrays.asList("user:test-repo:user1"));
+        assertFalse(aclExpander.isReadableByTokens(REPO_ID, "gone", caller),
+                "A deleted/missing hit must be dropped (fail-closed)");
     }
 
     // ========== buildReaderFilterQuery Tests ==========

@@ -488,10 +488,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 		}
 		// Authorization is applied primarily IN SOLR via the readers fq added
 		// above (ACL-in-Solr), so for a non-admin caller Solr's numFound is already
-		// the authorized count and the pre-ACL total is never materialized. The
-		// in-memory permissionService.getFiltered below remains as defense-in-depth
-		// (and is the sole ACL gate for admins, who bypass the fq, and for the
-		// relationship carve-out whose readers fq is relaxed). The matching set is
+		// the authorized count and the pre-ACL total is never materialized
+		// (relationships are NOT exempt — they carry their source/target readers).
+		// The in-memory permissionService.getFiltered below remains as
+		// defense-in-depth (and is the sole ACL gate for admins, who bypass the
+		// fq). The matching set is
 		// fetched up to a bounded cap and sorted + paged in memory so ORDER BY is
 		// correct across pages; a set LARGER than the cap cannot be ordered/paged
 		// in memory and is REJECTED (see the count probe below) rather than
@@ -713,18 +714,21 @@ public class SolrQueryProcessor implements QueryProcessor {
 	 * transferring document bodies for an over-cap match set:
 	 * <ol>
 	 *   <li><b>Phase 1</b> issues the query with {@code rows=0} — this returns
-	 *       Solr's pre-ACL {@code numFound} with NO body transfer. If it exceeds
-	 *       the cap the query is rejected here (no second query, no cap-sized
-	 *       fetch), so even {@code $top=1} is cheap to reject.</li>
+	 *       {@code numFound} with NO body transfer. Because the ACL-in-Solr readers
+	 *       fq is already applied to {@code solrQuery}, for a non-admin caller this
+	 *       count is the AUTHORIZED match count (an admin, who bypasses the fq,
+	 *       sees the full count — which is fine, they may read everything). If it
+	 *       exceeds the cap the query is rejected here (no second query, no
+	 *       cap-sized fetch), so even {@code $top=1} is cheap to reject.</li>
 	 *   <li><b>Phase 2</b> (only when within the cap) re-issues the query with
 	 *       {@code rows=cap} to fetch the set for in-memory ACL + sort + paging,
 	 *       then re-checks the count to close the race window where documents were
 	 *       added between the probe and the fetch.</li>
 	 * </ol>
 	 * The rejection {@link CmisInvalidArgumentException} (HTTP 400) never echoes
-	 * the pre-ACL count — that would leak the number of objects the caller cannot
-	 * read. Package-private so {@code SolrQueryProcessorScanCapTest} can drive it
-	 * with a mock {@link SolrClient}.
+	 * the count — that would leak the number of matching objects. Package-private
+	 * so {@code SolrQueryProcessorScanCapTest} can drive it with a mock
+	 * {@link SolrClient}.
 	 */
 	static QueryResponse queryWithinScanCap(SolrClient solrClient, SolrQuery solrQuery, int aclScanCap)
 			throws SolrServerException, IOException {

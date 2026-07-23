@@ -615,10 +615,16 @@ cap 前拒否 (低権限ユーザーが大規模リポジトリを検索でき�
   関わらず実行)。**stale-cache 修正**: `calculateAcl` は `aclCache` 優先のため、
   `updateInternal`(再索引) の**前**に対象の cmis/content キャッシュを evict し新 ACL
   から readers を計算 (子孫向け `clearCachesRecursively` は DB 更新後のまま)。
-- **⚠️ アップグレード: 全 CMIS 再索引が必須** (既存コンテンツに `readers` を付与。
-  未再索引の doc は非 admin 検索に出ない=fail-closed で漏洩なし)。v3.3 は Solr 10
-  移行で元々再索引必須なので追加コストは無し。`POST /api/v1/cmis/repositories/{repo}/
-  search-engine/reindex`。
+- **⚠️⚠️ アップグレード: 全 CMIS + RAG 再索引はセキュリティ必須 (任意ではない)**:
+  理由は2つ。(1) 既存コンテンツに `readers` が無く非 admin 検索に出ない (fail-closed、
+  漏洩なし)。(2) より重要な点として、**修正前ビルドが作った索引は旧 member-expanded
+  `user:` token を doc に持つ**ため、下記 P0 のグループ脱退/admin 降格の修正は
+  **旧データでは再索引するまで効かず**、RAG (getFiltered 無し) はその旧コーパスから
+  名前/パス/chunk を漏らし続ける。v3.3 は Solr 10 移行で元々再索引必須なので追加
+  コストは無いが、**アップグレード後に公開する前に必ず実行すること**:
+  `POST /api/v1/cmis/repositories/{repo}/search-engine/reindex` + (RAG 有効なら)
+  `POST /api/v1/cmis/repositories/{repo}/search-engine/rag/reindex`。再索引完了までは
+  剥奪について修正前扱いとみなす。
 - **実機検証**: readers 索引確認、非 admin が GROUP_EVERYONE 文書を閲覧可、制限文書は
   非表示 (admin は表示)、grant/revoke 即時反映 (readers add/remove)、**cap=2/14 文書で
   低権限 alice(認可2)→200・admin(認可14)→400**。admin バイパスで TCK Query 6/6・
@@ -644,9 +650,39 @@ cap 前拒否 (低権限ユーザーが大規模リポジトリを検索でき�
 - **[P1] relationship の pre-ACL cap 再発**: 一旦 relationship を fq から全面除外したが
   numFound に非認可 relationship が混入し cap 誤拒否が残った。**修正**: 上記のとおり
   relationship に **source∪target の readers を索引**し fq を通常適用。実機: source が
-  EVERYONE 可読なら非 admin 可視、両制限なら不可視。**残**: source/target の ACL 変更は
-  relationship を再索引しないため readers が stale 化しうる (getFiltered が結果は補正、
-  numFound のみ近似) — 既知の低リスク残余。
+  EVERYONE 可読なら非 admin 可視、両制限なら不可視。
+
+**ACL-in-Solr 権限剥奪の健全性修正 — 第2巡 (レビュー: P1×3 + P2 + P3)**:
+第1巡はグループ脱退には正しかったが、grant 方向・admin 降格・非同期窓・循環グループ DoS
+が残っていた。全て修正、各々に自動ピン + (観測可能なものは) 実機確認。
+- **[P1] relationship への grant が検索に反映されない (永続 unsearchable) + revoke で cap
+  再誤拒否**: relationship は `getFiltered` が結果を**除去できても追加できない**ため、
+  source/target に新規 read を得たユーザーは relationship を永久に検索できず、revoke 側は
+  stale token が numFound を膨張させ誤 400。**修正**: ACL 変更 (`applyAcl`) と move が対象を
+  source/target とする relationship を**逆引き** (`getRelationsipsOfObject(..., EITHER)`)
+  して再索引 (`AclServiceImpl.updateSearchIndexACLRecursively`、root + 継承子孫の各ノード)。
+  実機: source に read 付与→relationship の `readers` に新 principal が反映。
+- **[P1] admin 降格後も RAG アクセスが残る**: null/empty ACL fallback が**現 admin を個別
+  `user:` token に展開**していた (グループメンバーと同型の穴)。**修正**: 単一の
+  **`admin:{repo}` ロールトークン**を索引し、query 時に**現 admin のみ**が付与される
+  (`ACLExpander.buildReaderTokenSet` / `buildReaderFilterQuery`)。降格は再索引なしで即反映。
+  `ACLExpanderTest` でピン。
+- **[P1] move / applyAcl の子孫再索引が非同期＝RAG に stale 窓** (CMIS は getFiltered が補正、
+  RAG は最終 ACL 検査なし)。**修正 (レビュー推奨の恒久策)**: **RAG 全ヒットに最終 live-ACL
+  ゲート** (`VectorSearchServiceImpl.filterByLiveAcl` → `ACLExpander.isReadableByTokens`) =
+  CMIS getFiltered の RAG 版。Solr `readers` fq は最適化に格下げし、各ヒットを live ACL
+  (calculateAcl、ACL 変更/move で cache evict 済) で再検証。stale な過剰許可索引が
+  名前/パス/chunk を漏らせなくなり、move・applyAcl・relationship・admin 降格・グループ脱退
+  の窓を RAG について一括で閉じる。`ACLExpanderTest` でピン (intersect/disjoint/missing)。
+- **[P2] 循環 nested group (A→B→A) で全非 admin 検索が StackOverflow**: query 時グループ解決の
+  再帰に visited set が無く、グループ編集は直接 self-add しか拒否していなかった。**修正**:
+  `PrincipalServiceImpl.containsUserInGroup` に per-walk visited set (read 側 = DoS 修正)、
+  `ContentServiceImpl.update()` (全グループ編集が通る単一 choke point) が間接循環を作る編集を
+  拒否 (write 側)。実機: A→B→A add は明確なエラーで拒否、正当な C→B add は成功。
+  `PrincipalServiceImplCycleTest` でピン。
+- **[P3]** 陳腐コメント修正 (`SolrQueryProcessor` の relationship "carve-out" と
+  `queryWithinScanCap` "pre-ACL numFound"、`ACLExpander` クラス Javadoc step 3、
+  `SolrUtil.relationshipReaders` の residual 注記)。
 
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 

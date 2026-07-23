@@ -76,7 +76,11 @@ public class PrincipalServiceImpl implements PrincipalService {
 
 		List<Group> groups = getGroups(repositoryId);
 		for (Group g : groups) {
-			if ( containsUserInGroup(repositoryId, userId, g) ) {
+			// Fresh visited set per top-level group: a node is skipped only if
+			// already seen within THIS depth-first walk (cycle guard), never
+			// across sibling top-level groups (which would drop a legitimate
+			// match reachable through a different branch).
+			if ( containsUserInGroup(repositoryId, userId, g, new HashSet<String>()) ) {
 				groupIds.add(g.getGroupId());
 			}
 		}
@@ -84,7 +88,19 @@ public class PrincipalServiceImpl implements PrincipalService {
 		return groupIds;
 	}
 
-	private boolean containsUserInGroup(String repositoryId, String userId, Group group) {
+	/**
+	 * Depth-first test for transitive membership of {@code userId} in
+	 * {@code group}, following nested subgroups. {@code visited} carries the
+	 * group ids already entered on this walk so an indirect cycle
+	 * (A -> B -> A) terminates instead of recursing until StackOverflow — a
+	 * non-member searcher would otherwise walk the whole cyclic component and
+	 * blow the stack, taking down every non-admin CMIS/RAG query.
+	 */
+	private boolean containsUserInGroup(String repositoryId, String userId, Group group,
+			Set<String> visited) {
+		if (group == null || group.getGroupId() == null || !visited.add(group.getGroupId())) {
+			return false;
+		}
 		log.debug("$$ group:" + group.getName());
 		// Null check for users list
 		if (group.getUsers() != null && group.getUsers().contains(userId))
@@ -95,7 +111,7 @@ public class PrincipalServiceImpl implements PrincipalService {
 				log.debug("$$ subgroup: " + groupId);
 				Group g = this.getGroupById(repositoryId, groupId);
 				if (g != null) {
-					boolean result = containsUserInGroup(repositoryId, userId, g);
+					boolean result = containsUserInGroup(repositoryId, userId, g, visited);
 					if ( result ) return true;
 				}
 			}
