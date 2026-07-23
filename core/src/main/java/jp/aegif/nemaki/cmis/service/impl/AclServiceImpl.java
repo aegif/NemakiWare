@@ -273,6 +273,49 @@ public class AclServiceImpl implements AclService {
 	}
 
 	/**
+	 * Refresh the search-index ACL (`readers`) for the INHERITING DESCENDANTS of a
+	 * moved object. When an object is moved, the effective (inherited) ACL of the
+	 * object and of every ACL-inheriting descendant changes because their ancestor
+	 * chain changed. The moved object itself is re-indexed with a fresh ACL by
+	 * {@code ContentServiceImpl.move} (which evicts its ACL cache first); this
+	 * evicts the descendants' cached ACLs and re-indexes their `readers`
+	 * (mirroring the applyAcl path), so a public->private move does not leave
+	 * stale, over-permissive readers on descendants in Solr / RAG.
+	 */
+	public void refreshMovedSubtreeSearchIndexAcl(String repositoryId, Content content) {
+		if (content == null || !content.isFolder()) {
+			// Only a folder has inheriting descendants; a moved leaf is fully
+			// handled by ContentServiceImpl.move's own re-index.
+			return;
+		}
+		// Evict aclCache for the root + all inheriting descendants so their readers
+		// are recomputed from the new ancestor chain (must happen before re-index).
+		clearCachesRecursively(repositoryId, content);
+
+		RAGIndexingService ragService = getRagIndexingService();
+		ACLExpander expander = getAclExpander();
+		final jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil solrUtil = getSolrUtil();
+		final boolean ragEnabled = ragService != null && ragService.isEnabled() && expander != null;
+		final boolean contentAclInSolr = solrUtil != null && expander != null;
+		if (!ragEnabled && !contentAclInSolr) {
+			return;
+		}
+		final RAGIndexingService ragRef = ragEnabled ? ragService : null;
+		ragAclExecutor.submit(() -> {
+			try {
+				// isRoot=true: the moved object itself was already re-indexed by
+				// ContentServiceImpl.move; re-index only the inheriting descendants.
+				updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,
+						new java.util.HashSet<>(), true);
+				log.info("Moved-subtree search index ACL refresh triggered for: " + content.getId());
+			} catch (Exception e) {
+				log.warn("Failed to refresh moved-subtree search index ACL for " + content.getId()
+						+ ": " + e.getMessage());
+			}
+		});
+	}
+
+	/**
 	 * Asynchronously update RAG index ACL for a document/folder and its descendants.
 	 * This ensures that RAG search results reflect the latest permission changes.
 	 * Uses the shared ragAclExecutor to prevent thread leak.

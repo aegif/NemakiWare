@@ -2818,6 +2818,22 @@ public class ContentServiceImpl implements ContentService {
 			writeChangeEvent(callContext, repositoryId, target, ChangeType.UPDATED);
 		}
 
+		// ACL-in-Solr: the moved object's effective (inherited) ACL changed because
+		// its parent changed, so its `readers` field must be recomputed from the
+		// NEW ancestor chain. calculateAcl caches by object id, so evict the moved
+		// object's cached ACL BEFORE the re-index below, else it would recompute
+		// readers from the stale (old-parent) inherited ACL — a public->private
+		// move would otherwise leave the old, more-permissive readers in Solr.
+		// (Inheriting descendants are refreshed by the caller — see
+		// ObjectServiceImpl.moveObject -> AclService.refreshMovedSubtreeSearchIndexAcl.)
+		if (result != null && nemakiCachePool != null) {
+			try {
+				nemakiCachePool.get(repositoryId).removeCmisAndContentCache(result.getId());
+			} catch (Exception e) {
+				log.warn("moveObject: ACL cache eviction failed for " + result.getId() + ": " + e.getMessage());
+			}
+		}
+
 		// Solr indexing for moved content (failure won't affect main operation)
 		try {
 			if (solrUtil != null) {

@@ -179,90 +179,23 @@ public class ACLExpander {
             return;
         }
 
-        // Check if it's a group
+        // Check if it's a group. Index ONLY the group token that the ACL names —
+        // do NOT expand the group's current members into user tokens.
+        //
+        // Expanding members at index time was a revocation hole: a removed member
+        // (or a removed nested-subgroup member, or a demoted admin) kept a stale
+        // `user:{repo}:{id}` token on every document until it was re-indexed, so
+        // the query — which always includes the caller's own user token —
+        // continued to match. The RAG path has no final in-memory ACL check, so
+        // that was an actual leak (document names / paths / chunk text); the CMIS
+        // path was corrected by getFiltered but the stale tokens inflated numFound
+        // and could trip the ACL scan cap. Instead, index only `group:{repo}:{id}`
+        // and let the QUERY resolve the caller's groups at request time
+        // (getGroupIdsContainingUser is transitive over nested groups on both the
+        // CMIS and RAG paths), which is inherently revocation-safe.
         Group group = principalService.getGroupById(repositoryId, principalId);
         if (group != null) {
             readers.add(formatGroupReader(repositoryId, principalId));
-
-            // Expand group members
-            expandGroupMembers(repositoryId, group, readers);
-        }
-    }
-
-    /**
-     * Recursively expand group members.
-     * Includes all users in the group and nested subgroups.
-     *
-     * Uses a visited set to prevent infinite recursion from circular group membership.
-     */
-    private void expandGroupMembers(String repositoryId, Group group, Set<String> readers) {
-        expandGroupMembersInternal(repositoryId, group, readers, new HashSet<>());
-    }
-
-    /**
-     * Internal recursive method with visited tracking to prevent infinite loops.
-     *
-     * @param repositoryId Repository ID
-     * @param group Group to expand
-     * @param readers Set of readers being built
-     * @param visitedGroups Set of group IDs already visited (prevents cycles)
-     */
-    private void expandGroupMembersInternal(String repositoryId, Group group,
-                                             Set<String> readers, Set<String> visitedGroups) {
-        if (group == null) {
-            return;
-        }
-
-        String groupId = group.getGroupId();
-        if (groupId == null) {
-            return;
-        }
-
-        // Check for circular reference
-        if (visitedGroups.contains(groupId)) {
-            if (log.isDebugEnabled()) {
-                log.debug("Circular group membership detected, skipping: " + groupId);
-            }
-            return;
-        }
-        visitedGroups.add(groupId);
-
-        List<String> memberIds = group.getUsers();
-        if (memberIds != null) {
-            for (String memberId : memberIds) {
-                // Check if member is a user
-                User user = principalService.getUserById(repositoryId, memberId);
-                if (user != null) {
-                    readers.add(formatUserReader(repositoryId, memberId));
-                } else {
-                    // Check if member is a subgroup
-                    Group subgroup = principalService.getGroupById(repositoryId, memberId);
-                    if (subgroup != null && !readers.contains(formatGroupReader(repositoryId, memberId))) {
-                        readers.add(formatGroupReader(repositoryId, memberId));
-                        // Recursively expand subgroup with visited tracking
-                        expandGroupMembersInternal(repositoryId, subgroup, readers, visitedGroups);
-                    }
-                }
-            }
-        }
-
-        // Nested subgroups live in the dedicated groups list (nemaki:groups), not in
-        // the users list. Without this traversal, members of a nested subgroup were
-        // missing from readers when only the parent group was granted read access.
-        List<String> nestedGroupIds = group.getGroups();
-        if (nestedGroupIds != null) {
-            for (String nestedGroupId : nestedGroupIds) {
-                if (visitedGroups.contains(nestedGroupId)) {
-                    // Already expanded via another path (diamond/cycle) — its token
-                    // and members are in readers; skip the redundant lookup
-                    continue;
-                }
-                Group subgroup = principalService.getGroupById(repositoryId, nestedGroupId);
-                if (subgroup != null) {
-                    readers.add(formatGroupReader(repositoryId, nestedGroupId));
-                    expandGroupMembersInternal(repositoryId, subgroup, readers, visitedGroups);
-                }
-            }
         }
     }
 
