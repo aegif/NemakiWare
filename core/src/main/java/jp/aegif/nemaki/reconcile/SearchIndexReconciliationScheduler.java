@@ -8,21 +8,26 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Periodic poller that drains the {@link SearchIndexReconciliationService} durable
- * queue: for each due {@link SearchIndexAclReindexTask} it re-drives the object's
- * search-index ACL refresh via {@link AclService#reindexSearchIndexAclForObject}.
- * A clean re-drive deletes the task; a failure reserves it for a later retry with
- * backoff; after {@code maxAttempts} it is marked {@code FAILED} and kept for
- * operator inspection (the admin API can retry or delete it).
- *
- * <p>Multi-replica safe: gated by {@link LeaderElection} (only the leader polls)
- * and by CouchDB {@code _rev} optimistic locking on each reservation. XML-wired
- * (serviceContext.xml) with {@code init-method="start"} / {@code destroy-method="stop"}.
+ * Leader-gated poller that drains the {@link SearchIndexReconciliationService}
+ * queue with confirmed re-drives:
+ * <ol>
+ *   <li>{@code claimDue} leases a batch of due entries via {@code _rev} CAS
+ *       (two replicas cannot claim the same entry);</li>
+ *   <li>{@link AclService#reindexSearchIndexAclForObject} re-drives each object
+ *       SYNCHRONOUSLY (writes are confirmed, failures are counted) — see that
+ *       method's {@code forceSync} contract;</li>
+ *   <li>a clean re-drive {@code complete}s (CAS delete, so a failure event that
+ *       arrived mid-flight survives); a failure {@code retryLater}s with backoff;
+ *       at the attempt cap it is {@code markFailed} and kept for inspection.</li>
+ * </ol>
+ * XML-wired (serviceContext.xml) with {@code init-method="start"} /
+ * {@code destroy-method="stop"}.
  */
 public class SearchIndexReconciliationScheduler {
 
@@ -32,6 +37,7 @@ public class SearchIndexReconciliationScheduler {
     private static final int DEFAULT_MAX_ATTEMPTS = 10;
     private static final int DEFAULT_BATCH = 50;
     private static final long DEFAULT_BASE_BACKOFF_SECONDS = 60;
+    private static final long DEFAULT_LEASE_SECONDS = 300;
     private static final long MAX_BACKOFF_SECONDS = 3600;
     private static final String LEADER_ROLE = "search-index-reconciliation";
 
@@ -44,6 +50,8 @@ public class SearchIndexReconciliationScheduler {
     private int maxAttempts = DEFAULT_MAX_ATTEMPTS;
     private int batchSize = DEFAULT_BATCH;
     private long baseBackoffSeconds = DEFAULT_BASE_BACKOFF_SECONDS;
+    private long leaseSeconds = DEFAULT_LEASE_SECONDS;
+    private String nodeId = "node-" + UUID.randomUUID();
 
     private volatile ScheduledExecutorService scheduler;
 
@@ -63,6 +71,13 @@ public class SearchIndexReconciliationScheduler {
             maxAttempts = (int) readLong("nemakiware.searchindex.reconcile.maxAttempts", DEFAULT_MAX_ATTEMPTS);
             batchSize = (int) readLong("nemakiware.searchindex.reconcile.batchSize", DEFAULT_BATCH);
             baseBackoffSeconds = readLong("nemakiware.searchindex.reconcile.baseBackoffSeconds", DEFAULT_BASE_BACKOFF_SECONDS);
+            leaseSeconds = readLong("nemakiware.searchindex.reconcile.leaseSeconds", DEFAULT_LEASE_SECONDS);
+        }
+        if (leaderElection != null) {
+            try {
+                String id = leaderElection.getNodeId();
+                if (id != null && !id.isBlank()) nodeId = id;
+            } catch (Exception ignore) { /* keep generated node id */ }
         }
         scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "SearchIndexReconcile");
@@ -71,8 +86,8 @@ public class SearchIndexReconciliationScheduler {
         });
         scheduler.scheduleWithFixedDelay(this::pollSafe,
                 pollIntervalSeconds, pollIntervalSeconds, TimeUnit.SECONDS);
-        logger.info("Search-index reconciliation scheduler started (interval={}s, maxAttempts={}, leaderElection={})",
-                pollIntervalSeconds, maxAttempts,
+        logger.info("Search-index reconciliation scheduler started (interval={}s, maxAttempts={}, lease={}s, node={}, leaderElection={})",
+                pollIntervalSeconds, maxAttempts, leaseSeconds, nodeId,
                 (leaderElection != null && leaderElection.isEnabled()) ? "enabled" : "disabled");
     }
 
@@ -102,24 +117,17 @@ public class SearchIndexReconciliationScheduler {
 
     /** One poll cycle. Package-private so it can be unit-driven. */
     void poll() {
-        // Multi-replica: only the leader drains the shared queue.
         if (leaderElection != null && leaderElection.isEnabled() && !leaderElection.isLeader(LEADER_ROLE)) {
             logger.debug("Not the leader for '{}' — skipping reconciliation poll", LEADER_ROLE);
             return;
         }
-        List<SearchIndexAclReindexTask> due = reconciliationService.listDue(batchSize);
-        if (due.isEmpty()) {
+        List<SearchIndexAclReindexTask> claimed =
+                reconciliationService.claimDue(batchSize, nodeId, leaseSeconds * 1000L);
+        if (claimed.isEmpty()) {
             return;
         }
         int reconciled = 0, retried = 0, failed = 0;
-        for (SearchIndexAclReindexTask task : due) {
-            // Reserve via _rev optimistic lock (bump attempts + push nextAttemptAt out)
-            // BEFORE the re-drive, so a crash mid-reindex still leaves the task due
-            // later and two replicas cannot both claim it.
-            long backoff = backoffMillis(task.getAttempts() + 1);
-            if (!reconciliationService.reserveForRetry(task, backoff)) {
-                continue; // another replica claimed it
-            }
+        for (SearchIndexAclReindexTask task : claimed) {
             boolean clean;
             try {
                 clean = aclService.reindexSearchIndexAclForObject(task.getRepositoryId(), task.getObjectId());
@@ -129,19 +137,19 @@ public class SearchIndexReconciliationScheduler {
                 clean = false;
             }
             if (clean) {
-                reconciliationService.delete(task.getTaskId());
-                reconciled++;
+                if (reconciliationService.complete(task)) reconciled++;
+                // else: a newer failure event superseded the claim — left PENDING, re-processed later.
             } else if (task.getAttempts() >= maxAttempts) {
-                reconciliationService.markFailed(task,
-                        "Exhausted " + maxAttempts + " reconciliation attempts");
+                reconciliationService.markFailed(task, "Exhausted " + maxAttempts + " reconciliation attempts");
                 failed++;
             } else {
-                retried++; // reservation already pushed nextAttemptAt out
+                reconciliationService.retryLater(task, backoffMillis(task.getAttempts() + 1));
+                retried++;
             }
         }
         if (reconciled + retried + failed > 0) {
-            logger.info("Search-index reconciliation poll: reconciled={}, retrying={}, failed={} (due={})",
-                    reconciled, retried, failed, due.size());
+            logger.info("Search-index reconciliation poll: reconciled={}, retrying={}, failed={} (claimed={})",
+                    reconciled, retried, failed, claimed.size());
         }
     }
 

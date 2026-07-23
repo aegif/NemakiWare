@@ -739,27 +739,38 @@ cap 前拒否 (低権限ユーザーが大規模リポジトリを検索でき�
   逆引き再索引を**非同期 best-effort** として明記 (grant は async 反映まで一時 unsearchable、
   `indexDocument` は Solr write 失敗を retry するが逆引き自体の恒久失敗は次回全再索引まで残る)。
 
-**ACL-in-Solr — 失敗した非同期 ACL 更新の永続 reconciliation キュー**:
-第3/4巡の既知制限 (「relationship 逆引き再索引は async best-effort、恒久失敗は次回全再索引まで stale」) を
-解消。失敗した非同期 search-index ACL 更新を CouchDB 永続キューに記録し、自動再実行 + 運用可視化する。
-- **キュー** (`nemaki_conf` の `searchIndexAclReindexTask`): `SearchIndexReconciliationService` が
-  `(repositoryId, objectId, reason, attempts, status)` をオブジェクト単位で dedupe 記録。CouchDB `_rev`
-  楽観ロックで複製間の二重処理を防止。Mango index は `Patch_SearchIndexReconcileMangoIndex` が登録。
-- **enqueue**: `AclServiceImpl.updateSearchIndexACLRecursively` が全 catch (per-node content/RAG/
-  relationship / getChildren traversal / 新設 `SolrUtil.indexDocument` の `onPermanentFailure` = async
-  Solr write の retry 枯渇) で失敗オブジェクトを記録。外側 async task も traversal 全体 throw 時に root を記録。
-- **poller** (`SearchIndexReconciliationScheduler`): leader-gated 固定間隔 poll (既定 120s) が due task を
-  `AclService.reindexSearchIndexAclForObject` (単体再索引: content readers + RAG + relationship + 継承子孫)
-  で再実行。clean なら delete、失敗なら backoff 付き retry 予約、`maxAttempts` (既定 10) 超過で `FAILED`
-  マーク保持。LeaderElection + `_rev` 予約で multi-replica 安全。
-- **管理 API** (`GET/POST/DELETE /api/v1/admin/search-index/reconcile`、admin 限定・CSRF 保護): 一覧
-  (status filter 可) / 即時 retry / 削除。
-- **設定** (全 optional、コード既定): `nemakiware.searchindex.reconcile.pollIntervalSeconds=120` /
-  `.maxAttempts=10` / `.batchSize=50` / `.baseBackoffSeconds=60`。
-- **検証**: `SearchIndexReconciliationSchedulerTest` 5件 (clean→delete / under-cap→retry / at-cap→FAILED /
-  予約喪失→skip / 非leader→no-op)。実機: Mango index 3件登録、scheduler 起動、管理 API の list/retry
-  (実オブジェクト→reconciled で task 削除)、poller が enqueue 済 task を自動 drain。スキーマ/view 変更なし
-  (`nemaki_conf` の新 record type + Mango index のみ)。
+**ACL-in-Solr — 失敗した非同期 ACL 更新の永続 reconciliation キュー (レビュー後に並行/耐障害性を再設計)**:
+第3/4巡の既知制限を解消。初版はレビューで「CAS 未実装 / 書込み未確定で削除 / due starvation / dedupe 非原子」
+と指摘され、以下に作り直した(指摘は全て妥当)。
+- **原子的 dedupe + CAS** (`SearchIndexReconciliationService`): 各エントリは deterministic `_id`
+  (`search-index-acl-reconcile::{repo}::{object}`) 下に存在し、同一オブジェクトへの並行 enqueue は 1 文書に
+  収束(create 競合は in-place update に解決)、**全状態遷移を `_rev` CAS**(stale rev→409→中止)。よって
+  2 レプリカが同一エントリを二重処理できず、処理中に届いた新失敗イベント(= `generation` bump で rev 変化)
+  を poller が消せない(claim rev CAS delete が 409 で失敗→新 PENDING が生存)。lifecycle は
+  `PENDING → LEASED → (delete | PENDING | FAILED)`、crash した poller の lease は expire で再取得可能。
+- **確定的再実行 (レビュー中核欠陥の修正)**: poller は `AclService.reindexSearchIndexAclForObject` を
+  **`forceSync=true`** で再実行し Solr 書込みを**同期完了待ち**、失敗は throw→count。**genuinely clean な時だけ**
+  complete(CAS delete)する(旧実装は fire-and-forget async で clean を返し、書込み未確定のままエントリを削除して
+  `INDEX_WRITE_FAILURE` を再発させていた)。cache eviction 失敗(再索引の前提)も failure 計上/enqueue。
+- **DB 側 due 選択**: Mango `$lte` range + `nextAttemptAt`(epoch millis)昇順 sort を `(type,status,nextAttemptAt)`
+  index で serve。最古 due 優先で 1 batch 超のバックログも starve しない。expired lease は
+  `(type,status,leaseExpiresAt)` で再取得。
+- **enqueue**: `AclServiceImpl` の全 catch(per-node content/RAG/relationship / getChildren traversal /
+  cache eviction / `SolrUtil.indexDocument` の `onPermanentFailure` = async Solr write の retry 枯渇)で記録、
+  外側 async task は traversal 全体 throw 時に root。
+- **管理 API + metrics** (`/api/v1/admin/search-index/reconcile`、admin 限定・CSRF 保護): list(status filter)、
+  `GET /metrics`(pending/leased/failed 件数・最古 pending age・enqueue-failure count = アラート用)、retry、delete。
+- **設定** (optional、既定): `nemakiware.searchindex.reconcile.pollIntervalSeconds=120` / `.maxAttempts=10` /
+  `.batchSize=50` / `.baseBackoffSeconds=60` / `.leaseSeconds=300`。
+- **正直なスコープ**: これは「**CouchDB 稼働中に Solr だけ失敗**」という主ケース向けの durable retry キュー
+  (トリガーとなった ACL 変更は既に CouchDB に永続済み)。CouchDB 自体が停止するとキュー書込みも失敗するが、
+  `enqueueFailureCount` metric で可視化(アラート推奨)。真の belt-and-suspenders は定期 authoritative
+  ACL-to-index 全体照合(別 effort)。`maxAttempts` 超過は `FAILED` 保持で、`failed` 件数と `oldestPendingAgeMs`
+  にアラートすべき。
+- **検証**: `SearchIndexReconciliationSchedulerTest` 5件(clean→complete / under-cap→retryLater /
+  at-cap→markFailed / 非leader→no-claim / deterministic-id encoding)。実 CouchDB で: deterministic-id dedupe
+  (重複 `_id`→409)、同期 retry で実オブジェクト再索引 + CAS delete、Mango due query が `nextAttemptAt` 昇順、
+  metrics が正しい最古 pending age。スキーマ/view 変更なし(`nemaki_conf` の新 record type + Mango index のみ)。
 
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
