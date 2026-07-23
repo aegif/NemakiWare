@@ -593,17 +593,25 @@ vitest 191/191、OData 65/65 + Olingo client 4/4 + CSDL XSD 適合 + conformance
 **ACL-in-Solr (CMIS query の認可を Solr 索引に前倒し)**:
 cap 前拒否 (低権限ユーザーが大規模リポジトリを検索できない) を根治するため、RAG が
 既に持つ reader-token パターンを CMIS コンテンツ索引へ横展開。
-- **索引側** (`SolrUtil.createSolrDocument`): principal item (user/group) 以外の全
-  コンテンツに、`ACLExpander.expandToReaders` の**リポジトリスコープ reader トークン**
-  (`user:{repo}:{id}` / `group:{repo}:{id}` / `anyone:{repo}`、nested group 展開・
-  admin-only fail-closed) を `readers` フィールドとして付与。`readers` は既に nemaki
+- **索引側** (`SolrUtil.createSolrDocument` + `needsReadersStamp`): **relationship
+  以外の全コンテンツ** (document/folder/item、**principal item (user/group) 含む** —
+  `.system` 配下の通常 ACL (既定 GROUP_EVERYONE:read) を持ち従来 in-memory filter で
+  非 admin 可視だったため) に、`ACLExpander.expandToReaders` の**リポジトリスコープ
+  reader トークン** (`user:{repo}:{id}` / `group:{repo}:{id}` / `anyone:{repo}`、
+  nested group 展開・admin-only fail-closed) を `readers` フィールドとして付与。
+  relationship は ACL を持たず (読み権限は source 文書から評価時に導出) stamping
+  すると admin-only に fail-closed してしまうため対象外。`readers` は既に nemaki
   コア schema に存在 (RAG 用)、**スキーマ変更なし**。ACLExpander は循環依存回避のため
   `applicationContext` から遅延取得。
-- **query 側** (`SolrQueryProcessor`): 非 admin は `ACLExpander.buildReaderFilterQuery`
-  の `readers` fq + RAG doc 除外 (`-doc_type:[* TO *]`) を追加 → **Solr が認可済みのみ
-  返し numFound=認可後件数**。admin は fq バイパス (in-memory と同じ全件)。in-memory
-  `permissionService.getFiltered` は多層防御として維持。fail-closed: admin 判定失敗は
-  非 admin 扱い、ACLExpander 未配線時は fq 無し (getFiltered が保証)。
+- **query 側** (`SolrQueryProcessor.aclFilterQueries`): 非 admin は
+  `(readers:(...)) OR basetype:"cmis:relationship"` の fq + RAG doc 除外
+  (`-doc_type:[* TO *]`) を追加 → **Solr が認可済みのみ返し numFound=認可後件数**。
+  relationship は fq を素通しし in-memory の source 文書判定
+  (`checkRelationshipPermission`) で認可 (従来挙動を維持)。admin は readers fq
+  バイパス (in-memory と同じ全件)。in-memory `permissionService.getFiltered` は
+  多層防御として維持。fail-closed: admin 判定失敗は非 admin 扱い、ACLExpander
+  未配線/匿名は fq 無し (getFiltered が保証)。`SolrQueryProcessorAclFilterTest`
+  7件で fq 構成 + stamping 対象判定を回帰固定 (CI unit-tests 追加済)。
 - **ACL 変更伝播** (`AclServiceImpl`): 対象は `updateInternal` で再索引、**継承する
   子孫**は RAG 再帰を `updateSearchIndexACLRecursively` に拡張し content の `readers` も
   再索引 (RAG 有無に関わらず実行)。**stale-cache 修正**: `calculateAcl` は `aclCache`

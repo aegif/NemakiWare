@@ -177,19 +177,29 @@ The pre-ACL cap rejection (a low-privilege user could not search a large
 repository even when their authorized subset was tiny, and the "is the overall
 match over the cap" bit was observable pre-ACL) is **resolved** by pushing
 authorization into Solr, mirroring the pattern RAG already uses.
-- **Index side** (`SolrUtil.createSolrDocument`): every queryable content object
-  (documents, folders, items — not principal items) is stamped with
-  repository-scoped reader tokens from `ACLExpander.expandToReaders`
-  (`user:{repo}:{id}` / `group:{repo}:{id}` / `anyone:{repo}`, nested-group
-  expansion, admin-only fail-closed) in the `readers` field. That field already
-  exists in the nemaki core schema (used by RAG), so **there is no schema change**.
-- **Query side** (`SolrQueryProcessor`): a non-admin query adds a `readers` fq
-  (`ACLExpander.buildReaderFilterQuery`) plus a `-doc_type:[* TO *]` exclusion of
-  RAG docs, so **Solr returns only authorized documents and `numFound` is the
-  authorized count**. Admins bypass the fq (they see everything, as before); the
-  in-memory `permissionService.getFiltered` stays as defense-in-depth. Fail-safe:
-  an admin-check failure is treated as non-admin, and if the expander is unwired
-  the fq is skipped and `getFiltered` still enforces ACL.
+- **Index side** (`SolrUtil.createSolrDocument` + `needsReadersStamp`): every
+  queryable content object — documents, folders, items **including principal
+  items** (user/group items sit under `/.system` with a normal inherited ACL,
+  default `GROUP_EVERYONE:read`, and were visible to non-admins through the
+  in-memory filter) — is stamped with repository-scoped reader tokens from
+  `ACLExpander.expandToReaders` (`user:{repo}:{id}` / `group:{repo}:{id}` /
+  `anyone:{repo}`, nested-group expansion, admin-only fail-closed) in the
+  `readers` field. **Relationships are the one exception**: they store no ACL
+  (read permission derives from the source object at evaluation time), so
+  stamping would fail closed to a misleading admin-only token set. The field
+  already exists in the nemaki core schema (used by RAG) — **no schema change**.
+- **Query side** (`SolrQueryProcessor.aclFilterQueries`): a non-admin query adds
+  `(readers:(...)) OR basetype:"cmis:relationship"` — relationships pass the fq
+  and are authorized by the in-memory source-object check as before — plus a
+  `-doc_type:[* TO *]` exclusion of RAG docs, so **Solr returns only authorized
+  documents and `numFound` is the authorized count**. Admins bypass the readers
+  restriction (they see everything, as before); the in-memory
+  `permissionService.getFiltered` stays as defense-in-depth. Fail-safe: an
+  admin-check failure is treated as non-admin, and if the expander is unwired
+  (or the caller anonymous) the fq is skipped and `getFiltered` still enforces
+  ACL. Pinned by `SolrQueryProcessorAclFilterTest` (7 tests: admin bypass,
+  relationship exemption, RAG exclusion, stamping scope incl. principal items) —
+  added to the CI unit-tests gate.
 - **ACL changes propagate** (`AclServiceImpl`): the changed object is re-indexed
   by `updateInternal`; inheriting descendants have their content `readers`
   re-indexed by the (now content-aware) recursion, regardless of whether RAG is
