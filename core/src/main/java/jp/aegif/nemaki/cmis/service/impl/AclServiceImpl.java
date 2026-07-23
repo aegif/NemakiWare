@@ -273,21 +273,36 @@ public class AclServiceImpl implements AclService {
 	}
 
 	/**
-	 * Refresh the search-index ACL (`readers`) for the INHERITING DESCENDANTS of a
-	 * moved object. When an object is moved, the effective (inherited) ACL of the
-	 * object and of every ACL-inheriting descendant changes because their ancestor
-	 * chain changed. The moved object itself is re-indexed with a fresh ACL by
-	 * {@code ContentServiceImpl.move} (which evicts its ACL cache first); this
-	 * evicts the descendants' cached ACLs and re-indexes their `readers`
-	 * (mirroring the applyAcl path), so a public->private move does not leave
-	 * stale, over-permissive readers on descendants in Solr / RAG.
+	 * Refresh the search-index ACL (`readers`) impacted by a move: the INHERITING
+	 * DESCENDANTS of a moved folder, AND the RELATIONSHIPS referencing the moved
+	 * object (leaf or folder). When an object is moved, the effective (inherited)
+	 * ACL of the object and of every ACL-inheriting descendant changes because
+	 * their ancestor chain changed. The moved object's OWN content readers + RAG
+	 * block are re-indexed by {@code ContentServiceImpl.move} (which evicts its ACL
+	 * cache first), but move does NOT reverse-look-up relationships; this method
+	 * evicts the affected ACL caches and re-indexes the descendants' readers plus
+	 * the readers of relationships whose source/target is the moved object
+	 * (mirroring the applyAcl path), so a public->private move leaves neither stale
+	 * over-permissive descendant readers nor a stale/never-updated relationship. A
+	 * moved LEAF still enters here (it has no descendants but can be a relationship
+	 * endpoint); only {@code content == null} is a no-op.
 	 */
 	public void refreshMovedSubtreeSearchIndexAcl(String repositoryId, Content content) {
-		if (content == null || !content.isFolder()) {
-			// Only a folder has inheriting descendants; a moved leaf is fully
-			// handled by ContentServiceImpl.move's own re-index.
+		if (content == null) {
 			return;
 		}
+		// The moved object's OWN content readers + RAG block are already refreshed
+		// by ContentServiceImpl.move. What move does NOT do is reverse-look-up the
+		// RELATIONSHIPS that reference the moved object — their readers derive from
+		// readers(source) UNION readers(target), and the moved object's effective
+		// ACL just changed, so they must be re-indexed here as well. This is needed
+		// for a moved LEAF (e.g. an ingest-created document with hasAttachment /
+		// attachedToRecord / derivedFromContext relationships) just as much as for a
+		// folder — a leaf has no inheriting descendants but it can be a relationship
+		// endpoint. updateSearchIndexACLRecursively(isRoot=true) skips the root's own
+		// content-readers re-index but still refreshes its relationships, and only
+		// recurses into inheriting descendants when the root is a folder, so passing a
+		// leaf here does exactly the relationship refresh and nothing more.
 		// Evict aclCache for the root + all inheriting descendants so their readers
 		// are recomputed from the new ancestor chain (must happen before re-index).
 		clearCachesRecursively(repositoryId, content);
@@ -407,14 +422,32 @@ public class AclServiceImpl implements AclService {
 			}
 		}
 
-		// Recursively process children that inherit ACL.
+		// Recursively process children that inherit ACL. Guard per node so a
+		// transient backend failure (e.g. a CouchDB view timeout on getChildren, or
+		// one bad child) is bounded to that node/subtree instead of abandoning the
+		// entire remaining traversal — the un-refreshed nodes keep stale readers,
+		// which stays result-safe (CMIS getFiltered / RAG filterByLiveAcl re-check
+		// live ACL) but must not silently take down siblings. Best-effort: results
+		// stay correct, only search visibility of the failed node lags until the
+		// next ACL touch or a reindex.
 		if (content.isFolder()) {
-			List<Content> children = contentService.getChildren(repositoryId, content.getId());
+			List<Content> children = null;
+			try {
+				children = contentService.getChildren(repositoryId, content.getId());
+			} catch (Exception e) {
+				log.warn("Failed to list children of " + content.getId()
+						+ " during search-index ACL refresh (subtree skipped): " + e.getMessage());
+			}
 			if (!CollectionUtils.isEmpty(children)) {
 				for (Content child : children) {
-					if (contentService.getAclInheritedWithDefault(repositoryId, child)) {
-						updateSearchIndexACLRecursively(repositoryId, child, ragService, expander,
-								solrUtil, visitedIds, false);
+					try {
+						if (contentService.getAclInheritedWithDefault(repositoryId, child)) {
+							updateSearchIndexACLRecursively(repositoryId, child, ragService, expander,
+									solrUtil, visitedIds, false);
+						}
+					} catch (Exception e) {
+						log.warn("Failed to refresh search-index ACL for child " + child.getId()
+								+ " (continuing with siblings): " + e.getMessage());
 					}
 				}
 			}
