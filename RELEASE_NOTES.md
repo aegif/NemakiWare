@@ -205,11 +205,20 @@ authorization into Solr, mirroring the pattern RAG already uses.
   `updateInternal` re-indexes, so `createSolrDocument → expandToReaders →
   calculateAcl` recomputes readers from the just-applied ACL (calculateAcl
   otherwise returns the cached Acl).
-- **⚠️ Upgrade: a full CMIS reindex is required** so existing content gets
-  `readers` populated (until then a document is not returned to non-admin
-  searches — fail-closed, never a leak). v3.3 already requires a Solr-10 reindex,
-  so there is no additional step: `POST
-  /api/v1/cmis/repositories/{repo}/search-engine/reindex`.
+- **⚠️⚠️ Upgrade — a full CMIS + RAG reindex is SECURITY-MANDATORY, not
+  optional.** Two independent reasons: (1) existing content has no `readers`
+  field, so it is invisible to non-admin search until re-indexed (fail-closed —
+  no leak); (2) more importantly, any index built by a pre-fix build carries the
+  old **member-expanded `user:` tokens** on documents (group members and the
+  admins expanded at index time). Those stale tokens keep matching after a group
+  departure / admin demotion, so the P0 group-departure fix below **does not take
+  effect for old data until the index is rebuilt** — and RAG (no in-memory
+  getFiltered) would still leak names/paths/chunks from that stale corpus. v3.3
+  already requires a Solr-10 reindex, so this is the same step, but it MUST be run
+  before exposing the upgraded system:
+  `POST /api/v1/cmis/repositories/{repo}/search-engine/reindex` and (if RAG is
+  enabled) `POST /api/v1/cmis/repositories/{repo}/search-engine/rag/reindex`.
+  Until the rebuild completes, treat the deployment as pre-fix for revocation.
 - **Verified live**: readers populated on content; a non-admin sees the
   `GROUP_EVERYONE` documents but not a restricted one (admin sees it);
   grant/revoke reflects immediately (tokens add/remove); and with `cap=2` over a
@@ -245,10 +254,51 @@ authorization into Solr, mirroring the pattern RAG already uses.
   ~5 s and a non-admin loses search access — no manual re-index.
 - **[P1] Relationships reintroduced the pre-ACL cap.** (Superseded the earlier
   full fq exemption.) Relationships now carry `readers(source) ∪ readers(target)`
-  and are filtered by the normal fq, so numFound is authorized. Residual: a
-  source/target ACL change does not re-index the relationship, so its stamped
-  readers can go stale — `getFiltered` still yields the correct result, only
-  numFound is approximate for such relationships.
+  and are filtered by the normal fq, so numFound is authorized.
+
+### ACL-in-Solr — revocation soundness, round 2 (review: three P1 + one P2 + P3)
+The round-1 fixes were correct for group departure but a second review found the
+grant direction, admin demotion, the async window, and a cyclic-group DoS still
+open. All fixed; each has an automated pin and (where observable) a live check.
+- **[P1] A grant on a relationship endpoint was never reflected in search
+  (permanent unsearchability), and a revoke re-tripped the cap.** For a
+  relationship, `getFiltered` can only REMOVE a hit Solr returned — it cannot ADD
+  one Solr excluded. So a user newly granted read on the source/target could never
+  find the relationship, and a revoke left a stale over-permissive token inflating
+  numFound (false 400). Fix: an ACL change (`applyAcl`) and a move now
+  **reverse-look-up the relationships referencing the changed object**
+  (`getRelationsipsOfObject(..., EITHER)`) and re-index them
+  (`AclServiceImpl.updateSearchIndexACLRecursively`, for the root as well as
+  inheriting descendants). Verified live: granting read on a source document
+  propagates the new principal onto the relationship's `readers` within the async
+  refresh.
+- **[P1] Admin demotion still left RAG access.** The null/empty-ACL fallback
+  expanded the *current* admins into individual `user:` tokens — the same
+  revocation hole as group members. Fix: stamp the single **`admin:{repo}` ROLE
+  token**; only a current admin is granted it at query time
+  (`ACLExpander.buildReaderTokenSet` / `buildReaderFilterQuery`), so demotion takes
+  effect immediately without re-indexing. Pinned by `ACLExpanderTest`.
+- **[P1] The move / applyAcl descendant re-index is async, so RAG had a stale
+  window** (CMIS is corrected by `getFiltered`, but RAG had no final ACL check).
+  Fix (the reviewer's recommended permanent closure): a **final live-ACL gate on
+  every RAG hit** (`VectorSearchServiceImpl.filterByLiveAcl` →
+  `ACLExpander.isReadableByTokens`) — the RAG analog of CMIS `getFiltered`. The
+  Solr `readers` fq is now only an optimization; each hit is re-verified against
+  live ACL (calculateAcl, whose cache is evicted on any ACL change / move), so a
+  stale, over-permissive index entry can never leak a name/path/chunk — closing
+  the move, applyAcl, relationship, admin-demotion and group-departure windows for
+  RAG in one place. Pinned by `ACLExpanderTest` (intersect / disjoint / missing).
+- **[P2] A cyclic nested group (A→B→A) StackOverflowed every non-admin search.**
+  The query-time group resolution recursed with no visited set, and group editing
+  only rejected direct self-add. Fix: `PrincipalServiceImpl.containsUserInGroup`
+  now carries a per-walk visited set (read side, the DoS fix), and
+  `ContentServiceImpl.update()` — the single choke point all group edits route
+  through — rejects an edit that would introduce an indirect cycle (write side).
+  Verified live: A→B→A add is rejected with a clear error, a legitimate C→B add
+  still succeeds; pinned by `PrincipalServiceImplCycleTest`.
+- **[P3]** Stale comments corrected (`SolrQueryProcessor` relationship "carve-out"
+  and `queryWithinScanCap` "pre-ACL numFound"; `ACLExpander` class Javadoc step 3;
+  `SolrUtil.relationshipReaders` residual note).
 
 **Verification**: Java unit + full CMIS TCK green on the v3.3 tree
 (Connection/Basics/Control/Versioning/CRUD1/CRUD2/Query/Types all pass;

@@ -110,8 +110,9 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             String aclFilter = aclExpander.buildReaderFilterQuery(repositoryId, userId);
 
             // Execute weighted KNN search
-            return executeWeightedKnnSearch(repositoryId, queryVector, aclFilter, null, topK, minScore,
-                    propertyBoost, contentBoost);
+            List<VectorSearchResult> hits = executeWeightedKnnSearch(repositoryId, queryVector, aclFilter,
+                    null, topK, minScore, propertyBoost, contentBoost);
+            return filterByLiveAcl(repositoryId, userId, hits);
 
         } catch (EmbeddingException e) {
             log.error("Failed to generate query embedding", e);
@@ -138,9 +139,10 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             String folderFilter = "{!parent which='doc_type:document'}parent_id:" + sanitizedFolderId;
 
             // Execute weighted KNN search
-            return executeWeightedKnnSearch(repositoryId, queryVector, aclFilter, folderFilter, topK,
-                    ragConfig.getSearchSimilarityThreshold(),
+            List<VectorSearchResult> hits = executeWeightedKnnSearch(repositoryId, queryVector, aclFilter,
+                    folderFilter, topK, ragConfig.getSearchSimilarityThreshold(),
                     ragConfig.getPropertyBoost(), ragConfig.getContentBoost());
+            return filterByLiveAcl(repositoryId, userId, hits);
 
         } catch (EmbeddingException e) {
             throw new VectorSearchException("Failed to generate query embedding", e);
@@ -194,6 +196,10 @@ public class VectorSearchServiceImpl implements VectorSearchService {
 
             // 4. Filter out the source document from results
             results.removeIf(r -> documentId.equals(r.getDocumentId()));
+
+            // Final live-ACL gate (see filterByLiveAcl) before the topK trim, so a
+            // stale over-permissive index entry cannot leak a similar document.
+            results = filterByLiveAcl(repositoryId, userId, results);
 
             // 5. Limit to topK after filtering
             if (results.size() > topK) {
@@ -704,6 +710,38 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         } catch (Exception e) {
             log.warn("Failed to batch enrich parent info for " + results.size() + " results", e);
         }
+    }
+
+    /**
+     * Final live-ACL gate over RAG hits — the RAG analog of the CMIS in-memory
+     * {@code getFiltered} check. The Solr {@code readers} fq is only an
+     * optimization; here every surviving hit is re-verified against LIVE ACL
+     * (loaded through calculateAcl, whose cache is evicted on any ACL change /
+     * move), so a stale, over-permissive {@code readers} value in the index —
+     * during the async re-index window after a move / applyAcl, on a relationship
+     * whose endpoint ACL changed, or after an admin demotion / group departure —
+     * can never leak a document name, path, or chunk text. Fail-closed: a hit
+     * whose content is missing or unreadable is dropped.
+     *
+     * <p>topK is small, and both the content load and calculateAcl are cached, so
+     * this per-hit re-check is cheap relative to the KNN search itself.
+     */
+    private List<VectorSearchResult> filterByLiveAcl(String repositoryId, String userId,
+            List<VectorSearchResult> results) {
+        if (results == null || results.isEmpty()) {
+            return results;
+        }
+        java.util.Set<String> callerTokens = aclExpander.buildReaderTokenSet(repositoryId, userId);
+        List<VectorSearchResult> authorized = new ArrayList<>(results.size());
+        for (VectorSearchResult r : results) {
+            if (r != null && aclExpander.isReadableByTokens(repositoryId, r.getDocumentId(), callerTokens)) {
+                authorized.add(r);
+            } else if (log.isDebugEnabled()) {
+                log.debug("RAG hit dropped by live-ACL gate: "
+                        + (r != null ? r.getDocumentId() : "null"));
+            }
+        }
+        return authorized;
     }
 
     private String getStringField(SolrDocument doc, String field) {

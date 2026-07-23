@@ -572,27 +572,49 @@ public class SolrUtil implements ApplicationContextAware {
 	 * are missing (a dangling relationship) the set is empty — fail-closed, and
 	 * the in-memory check returns false for a dangling relationship anyway.
 	 *
-	 * <p>Residual: a source/target ACL change does not re-index the relationship,
-	 * so its stamped readers can go stale until re-indexed. The in-memory
-	 * getFiltered still yields the correct RESULT (it re-evaluates
-	 * checkRelationshipPermission live); only numFound is approximate for such
-	 * relationships.
+	 * <p>Staleness is bounded: an endpoint ACL change (applyAcl) and a move both
+	 * reverse-look-up the relationships referencing the changed object and
+	 * re-index them (AclServiceImpl.updateSearchIndexACLRecursively), so a GRANT
+	 * becomes searchable and a REVOKE stops inflating numFound once that async
+	 * refresh runs. The in-memory getFiltered re-evaluates
+	 * checkRelationshipPermission live, so the RESULT is always correct even
+	 * within that brief refresh window.
 	 */
 	private List<String> relationshipReaders(String repositoryId, Relationship relationship,
 			jp.aegif.nemaki.rag.acl.ACLExpander aclExpander) {
-		java.util.LinkedHashSet<String> union = new java.util.LinkedHashSet<String>();
 		ContentService cs = getContentServiceSafely();
+		List<String> sourceReaders = null;
+		List<String> targetReaders = null;
 		if (cs != null) {
 			Content source = (relationship.getSourceId() != null)
 					? cs.getContent(repositoryId, relationship.getSourceId()) : null;
 			Content target = (relationship.getTargetId() != null)
 					? cs.getContent(repositoryId, relationship.getTargetId()) : null;
 			if (source != null) {
-				union.addAll(aclExpander.expandToReaders(repositoryId, source));
+				sourceReaders = aclExpander.expandToReaders(repositoryId, source);
 			}
 			if (target != null) {
-				union.addAll(aclExpander.expandToReaders(repositoryId, target));
+				targetReaders = aclExpander.expandToReaders(repositoryId, target);
 			}
+		}
+		return unionReaders(sourceReaders, targetReaders);
+	}
+
+	/**
+	 * Pure union of a relationship's source and target reader tokens (dedup,
+	 * source order first). A null side contributes nothing; two null sides (a
+	 * dangling relationship, or ContentService unavailable) yield an EMPTY list,
+	 * which is fail-closed — the query-side readers fq then excludes the
+	 * relationship for every non-admin caller. Extracted + package-private so the
+	 * union / fail-closed contract is unit-testable without Spring.
+	 */
+	static List<String> unionReaders(List<String> sourceReaders, List<String> targetReaders) {
+		java.util.LinkedHashSet<String> union = new java.util.LinkedHashSet<String>();
+		if (sourceReaders != null) {
+			union.addAll(sourceReaders);
+		}
+		if (targetReaders != null) {
+			union.addAll(targetReaders);
 		}
 		return new ArrayList<String>(union);
 	}

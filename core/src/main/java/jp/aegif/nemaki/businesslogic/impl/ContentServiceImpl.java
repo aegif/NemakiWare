@@ -675,6 +675,7 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public jp.aegif.nemaki.model.GroupItem buildAndCreateGroup(String repositoryId, String groupId,
 			String name, java.util.List<String> users, java.util.List<String> groups, String actorUsername) {
+		assertNoNestedGroupCycle(repositoryId, groupId, groups);
 		jp.aegif.nemaki.model.GroupItem group = new jp.aegif.nemaki.model.GroupItem(
 				null, jp.aegif.nemaki.common.NemakiObjectType.nemakiGroup, groupId, name,
 				users == null ? new ArrayList<String>() : users,
@@ -692,9 +693,59 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public void applyGroupUpdate(String repositoryId, jp.aegif.nemaki.model.GroupItem group, String actorUsername) {
+		// Cycle guard is enforced centrally in update() (the shared choke point);
+		// no separate call needed here.
 		group.setModifier(actorUsername);
 		group.setModified(new java.util.GregorianCalendar());
 		update(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, group);
+	}
+
+	/**
+	 * Reject a nested-group edit that would create a membership cycle. Adding
+	 * subgroup {@code S} to group {@code G} is a cycle if {@code S == G} or if
+	 * {@code G} is already reachable from {@code S} (S transitively contains G).
+	 * The existing self-add check ({@code GroupMembershipEditor}) only caught the
+	 * direct {@code S == G} case; an indirect A->B->A cycle slipped through and,
+	 * before the read-side visited-set guard, StackOverflowed every non-admin
+	 * query. This is the write-side half of that fix (defense in depth: the
+	 * read side is now cycle-safe regardless).
+	 */
+	private void assertNoNestedGroupCycle(String repositoryId, String groupId,
+			java.util.List<String> nestedGroupIds) {
+		if (groupId == null || nestedGroupIds == null) {
+			return;
+		}
+		for (String sub : nestedGroupIds) {
+			if (sub == null) {
+				continue;
+			}
+			if (groupId.equals(sub)
+					|| groupReaches(repositoryId, sub, groupId, new java.util.HashSet<String>())) {
+				throw new IllegalStateException("Nested-group cycle: adding group '" + sub
+						+ "' to group '" + groupId + "' would create a membership cycle");
+			}
+		}
+	}
+
+	/** True if {@code targetGroupId} is reachable from {@code fromGroupId} by walking nested groups (cycle-safe). */
+	private boolean groupReaches(String repositoryId, String fromGroupId, String targetGroupId,
+			java.util.Set<String> visited) {
+		if (fromGroupId == null || !visited.add(fromGroupId)) {
+			return false;
+		}
+		if (fromGroupId.equals(targetGroupId)) {
+			return true;
+		}
+		jp.aegif.nemaki.model.GroupItem g = getGroupItemById(repositoryId, fromGroupId);
+		if (g == null || g.getGroups() == null) {
+			return false;
+		}
+		for (String sub : g.getGroups()) {
+			if (groupReaches(repositoryId, sub, targetGroupId, visited)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	@Override
@@ -2718,6 +2769,16 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public Content update(CallContext callContext, String repositoryId, Content content) {
+		// Reject a nested-group edit that would introduce a membership cycle. This
+		// is the single choke point every group persistence path routes through
+		// (legacy add/update members, Spring MVC, api/v1, applyGroupUpdate), so
+		// the guard here covers them all — see assertNoNestedGroupCycle. The
+		// read-side resolution is cycle-safe regardless (visited set); this is the
+		// write-side half that keeps such data from being created in the first place.
+		if (content instanceof jp.aegif.nemaki.model.GroupItem) {
+			jp.aegif.nemaki.model.GroupItem gi = (jp.aegif.nemaki.model.GroupItem) content;
+			assertNoNestedGroupCycle(repositoryId, gi.getGroupId(), gi.getGroups());
+		}
 		Content result = updateInternal(repositoryId, content);
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.UPDATED);
 		return result;
