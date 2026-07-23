@@ -172,18 +172,43 @@ conformance checklist (Minimal + Intermediate) passes 21/21. See
   (`CLAUDE.md`, `docs/MANUAL-VERIFICATION-SECURITY-AUDIT.md`,
   `docs/MANUAL-VERIFICATION-CONNECTORS.md`, `docs/design/connector-delegation.md`
   no longer say `/browser` is CSRF-exempt).
-- **Accepted release limitation (P1, explicit):** the cap check is still made on
-  the *pre-ACL* count, so a query whose overall match (including documents the
-  caller cannot read) exceeds the cap is rejected with 400 **even if the caller's
-  authorized subset is tiny**, and the "is the overall match over the cap"
-  one-bit fact is observable pre-ACL. The `rows=0` probe removed the body transfer
-  and the exact-count leak, but not this. Serving such users correctly requires
-  ACL-in-Solr (reader tokens on content documents + an `fq` per principal) — a
-  schema/indexing/reindex change beyond this dependency-uplift release. **v3.3
-  therefore explicitly accepts that a single query matching more than the cap
-  (default 10000) documents in one repository is not supported**; raise
-  `-Dnemakiware.cmis.query.aclScanMaxRows`, narrow the query, or wait for the
-  ACL-in-Solr epic.
+### ACL-in-Solr — the cap now bounds the caller's authorized count, not the repo total
+The pre-ACL cap rejection (a low-privilege user could not search a large
+repository even when their authorized subset was tiny, and the "is the overall
+match over the cap" bit was observable pre-ACL) is **resolved** by pushing
+authorization into Solr, mirroring the pattern RAG already uses.
+- **Index side** (`SolrUtil.createSolrDocument`): every queryable content object
+  (documents, folders, items — not principal items) is stamped with
+  repository-scoped reader tokens from `ACLExpander.expandToReaders`
+  (`user:{repo}:{id}` / `group:{repo}:{id}` / `anyone:{repo}`, nested-group
+  expansion, admin-only fail-closed) in the `readers` field. That field already
+  exists in the nemaki core schema (used by RAG), so **there is no schema change**.
+- **Query side** (`SolrQueryProcessor`): a non-admin query adds a `readers` fq
+  (`ACLExpander.buildReaderFilterQuery`) plus a `-doc_type:[* TO *]` exclusion of
+  RAG docs, so **Solr returns only authorized documents and `numFound` is the
+  authorized count**. Admins bypass the fq (they see everything, as before); the
+  in-memory `permissionService.getFiltered` stays as defense-in-depth. Fail-safe:
+  an admin-check failure is treated as non-admin, and if the expander is unwired
+  the fq is skipped and `getFiltered` still enforces ACL.
+- **ACL changes propagate** (`AclServiceImpl`): the changed object is re-indexed
+  by `updateInternal`; inheriting descendants have their content `readers`
+  re-indexed by the (now content-aware) recursion, regardless of whether RAG is
+  enabled. A **stale-cache fix** evicts the object's cached ACL *before*
+  `updateInternal` re-indexes, so `createSolrDocument → expandToReaders →
+  calculateAcl` recomputes readers from the just-applied ACL (calculateAcl
+  otherwise returns the cached Acl).
+- **⚠️ Upgrade: a full CMIS reindex is required** so existing content gets
+  `readers` populated (until then a document is not returned to non-admin
+  searches — fail-closed, never a leak). v3.3 already requires a Solr-10 reindex,
+  so there is no additional step: `POST
+  /api/v1/cmis/repositories/{repo}/search-engine/reindex`.
+- **Verified live**: readers populated on content; a non-admin sees the
+  `GROUP_EVERYONE` documents but not a restricted one (admin sees it);
+  grant/revoke reflects immediately (tokens add/remove); and with `cap=2` over a
+  14-document repository a low-privilege user authorized to 2 documents gets
+  **HTTP 200** with their two docs while an admin authorized to all 14 gets 400.
+  Admin bypass keeps TCK QueryTestGroup 6/6, OData IT 71/71, conformance 25/25 and
+  the focused unit tests 17/17 unregressed.
 
 **Verification**: Java unit + full CMIS TCK green on the v3.3 tree
 (Connection/Basics/Control/Versioning/CRUD1/CRUD2/Query/Types all pass;

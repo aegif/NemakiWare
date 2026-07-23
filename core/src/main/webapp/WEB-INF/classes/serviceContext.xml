@@ -638,6 +638,10 @@
         <property name="threadLockService">
             <ref bean="ThreadLockService" />
         </property>
+        <!-- ACL-in-Solr: readers fq builder (RAG @Component, bean id "ACLExpander") -->
+        <property name="aclExpander">
+            <ref bean="ACLExpander" />
+        </property>
     </bean>
 
     <!-- SolrUtil bean - Use original SolrUtil for now -->

@@ -201,6 +201,14 @@ public class AclServiceImpl implements AclService {
 				content.setAclInherited(inherited);
 			}
 	
+			// ACL-in-Solr: evict THIS object's cached ACL before the re-index that
+			// updateInternal triggers, so createSolrDocument -> expandToReaders ->
+			// calculateAcl recomputes the `readers` field from the just-applied ACL
+			// instead of a stale cache entry (calculateAcl returns the cached Acl
+			// when present). Descendants are evicted by clearCachesRecursively AFTER
+			// the DB update below, so they re-read the new parent ACL.
+			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(content.getId());
+
 			// skipRAGIndexing=true: ACL change does not alter document content,
 			// so TEI re-embedding is unnecessary. RAG ACL is updated separately below.
 			contentService.updateInternal(repositoryId, content, true);
@@ -251,42 +259,79 @@ public class AclServiceImpl implements AclService {
 	}
 
 	/**
+	 * Get SolrUtil from the Spring context (lazy). Used to refresh the CMIS
+	 * content `readers` field (ACL-in-Solr) on inheriting descendants after an
+	 * ACL change — the changed object itself is re-indexed by updateInternal.
+	 */
+	private jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil getSolrUtil() {
+		try {
+			return SpringContext.getApplicationContext()
+					.getBean(jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.class);
+		} catch (Exception e) {
+			return null;
+		}
+	}
+
+	/**
 	 * Asynchronously update RAG index ACL for a document/folder and its descendants.
 	 * This ensures that RAG search results reflect the latest permission changes.
 	 * Uses the shared ragAclExecutor to prevent thread leak.
 	 */
 	private void updateRAGIndexACLAsync(String repositoryId, Content content) {
-		// Get RAG services from Spring context (optional dependencies)
+		// Get search services from the Spring context (optional dependencies).
 		RAGIndexingService ragService = getRagIndexingService();
 		ACLExpander expander = getAclExpander();
+		final jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil solrUtil = getSolrUtil();
 
-		// Skip if RAG indexing is not enabled or dependencies are not available
-		if (ragService == null || !ragService.isEnabled() || expander == null) {
+		// RAG readers are only refreshed when RAG is enabled; CMIS content
+		// `readers` (ACL-in-Solr) must refresh regardless of RAG so the query-time
+		// readers fq stays correct on inheriting descendants.
+		final boolean ragEnabled = ragService != null && ragService.isEnabled() && expander != null;
+		final boolean contentAclInSolr = solrUtil != null && expander != null;
+		if (!ragEnabled && !contentAclInSolr) {
 			return;
 		}
+		final RAGIndexingService ragRef = ragEnabled ? ragService : null;
 
 		ragAclExecutor.submit(() -> {
 			try {
-				updateRAGIndexACLRecursively(repositoryId, content, ragService, expander, new java.util.HashSet<>());
-				log.info("RAG index ACL update triggered for: " + content.getId());
+				updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,
+						new java.util.HashSet<>(), true);
+				log.info("Search index ACL update triggered for: " + content.getId());
 			} catch (Exception e) {
-				log.warn("Failed to update RAG index ACL for " + content.getId() + ": " + e.getMessage());
+				log.warn("Failed to update search index ACL for " + content.getId() + ": " + e.getMessage());
 			}
 		});
 	}
 
 	/**
-	 * Recursively update RAG index ACL for documents.
+	 * Recursively refresh search-index ACL after an ACL change: the CMIS content
+	 * {@code readers} field (all queryable content) and, when RAG is enabled, the
+	 * RAG document readers. The root object was already re-indexed synchronously
+	 * by {@code updateInternal}; only inheriting descendants are re-indexed here.
 	 */
-	private void updateRAGIndexACLRecursively(String repositoryId, Content content,
-			RAGIndexingService ragService, ACLExpander expander, java.util.Set<String> visitedIds) {
+	private void updateSearchIndexACLRecursively(String repositoryId, Content content,
+			RAGIndexingService ragService, ACLExpander expander,
+			jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil solrUtil,
+			java.util.Set<String> visitedIds, boolean isRoot) {
 		if (content == null || visitedIds.contains(content.getId())) {
 			return;
 		}
 		visitedIds.add(content.getId());
 
-		// Update this content's RAG ACL if it's a document
-		if (content instanceof Document) {
+		// CMIS content readers: refresh the Solr `readers` field so the query-time
+		// readers fq stays correct. Skip the root (updateInternal already did it);
+		// re-index inheriting descendants (their effective ACL changed).
+		if (!isRoot && solrUtil != null) {
+			try {
+				solrUtil.indexDocument(repositoryId, content, false, true);
+			} catch (Exception e) {
+				log.warn("Failed to refresh content readers for " + content.getId() + ": " + e.getMessage());
+			}
+		}
+
+		// RAG readers (documents only, when RAG enabled) — unchanged behavior.
+		if (ragService != null && expander != null && content instanceof Document) {
 			try {
 				java.util.List<String> readers = expander.expandToReaders(repositoryId, content);
 				ragService.updateDocumentACL(repositoryId, content.getId(), readers);
@@ -295,14 +340,14 @@ public class AclServiceImpl implements AclService {
 			}
 		}
 
-		// Recursively process children if this is a folder
+		// Recursively process children that inherit ACL.
 		if (content.isFolder()) {
 			List<Content> children = contentService.getChildren(repositoryId, content.getId());
 			if (!CollectionUtils.isEmpty(children)) {
 				for (Content child : children) {
-					// Only update children that inherit ACL
 					if (contentService.getAclInheritedWithDefault(repositoryId, child)) {
-						updateRAGIndexACLRecursively(repositoryId, child, ragService, expander, visitedIds);
+						updateSearchIndexACLRecursively(repositoryId, child, ragService, expander,
+								solrUtil, visitedIds, false);
 					}
 				}
 			}
