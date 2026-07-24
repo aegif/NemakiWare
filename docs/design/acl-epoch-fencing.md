@@ -2,9 +2,9 @@
 
 Status: **DESIGN v2.1 — awaiting re-sign-off. No epoch implementation code exists or
 may be written until sign-off.** v2.1 adds, per review: `content_incarnation`
-(restore resets `_rev`, §4.4), independent per-operation task obligations (§5), and
-a strengthened outbox ACK condition (§3). Supersedes v1 after two review rounds.
-v1's flaws corrected in v2:
+(restore resets `_rev`, §4.4) WITH a full existing-Content migration lifecycle (§8.1,
+round-7), independent per-operation task obligations (§5), and a strengthened outbox
+ACK condition (§3). Supersedes v1 after two review rounds. v1's flaws corrected in v2:
 
 - v1 allocated the epoch BEFORE the CouchDB commit (under the per-object lock) and
   claimed "allocation order == commit order". That holds only per-object; across
@@ -268,13 +268,16 @@ independent.)
 | A ↓ \ B → | ACL-UPDATE (higher e) | ACL-UPDATE (equal e) | ACL-UPDATE (lower e) | CONTENT-UPDATE | CREATE/batch | RAG block |
 |---|---|---|---|---|---|---|
 | ACL-UPDATE | B wins; A skips on re-read | equal-epoch rule §4.3 (same readers → skip; else recompute+CAS) | A wins; B skips | disjoint groups; both preserve the other via RTG copy + `_version_` CAS | fenced create-if-absent; higher epoch wins | separate doc; same contract |
-| CONTENT-UPDATE | disjoint | disjoint | disjoint | `content_generation` fence + `_version_` CAS; newer own-`_rev` wins | 409 → update path | disjoint |
+| CONTENT-UPDATE | disjoint | disjoint | disjoint | same incarnation → `content_generation` fence + `_version_` CAS (newer own-`_rev` wins); incarnation mismatch → authoritative CAS from current Content | 409 → update path | disjoint |
 | CREATE/batch | epoch fence | §4.3 | batch skips (stored ≥) | 409 → content path | one create wins; loser re-reads | independent |
 
 Invariant (v2): **within the ACL group, strictly-higher effective epoch wins; equal
 epoch resolves by the §4.3 recompute rule (equal ≠ idempotent); lower is skipped;
 every CAS loser recomputes from authoritative sources.** Within the content group,
-newer `content_generation` wins.
+`content_generation` is compared **only within the same `content_incarnation`** (newer
+own-`_rev` wins); on incarnation MISMATCH the writer does not compare generations and
+CAS-updates from the current authoritative Content (§4.4 / §8.1) — a restore's
+`_rev`-restart must not be misjudged "older".
 
 ## 7. Authorization during the pending window (scoped claim)
 
@@ -310,6 +313,51 @@ stale-cache limitation and is documented, not silently claimed solved.
   the first ACL mutation allocates a real epoch. `Patch_AclEpochCounter` creates the
   counter + Mango index.
 
+### 8.1 `content_incarnation` lifecycle & migration of existing Content (round-7 [P1])
+
+`content_incarnation` (§4.4) is the second axis' identity: numeric `content_generation`
+(own-`_rev`) is compared ONLY within one incarnation, and a restore mints a new one so
+its `_rev`-restart-at-1 is not misjudged "older". This only holds if EVERY Content
+carries an incarnation and no writer ever invents an ephemeral one. Rules:
+
+- **New Content — persist at creation.** A `content_incarnation` UUID is generated and
+  persisted ON THE CONTENT in the SAME CouchDB commit that creates it (authoritative
+  write). It is never Solr-only.
+- **Existing (pre-migration) Content — CAS-assigned, two convergent paths.** Old
+  Contents have no incarnation. Each acquires one exactly once, via whichever runs
+  first, both `_rev`-CAS and idempotent (skip if already present):
+  1. `Patch_ContentIncarnationBackfill` (startup migration patch) CAS-assigns a fresh
+     UUID to every incarnation-less Content; and
+  2. lazily, the first AUTHORITATIVE write (ACL-group or content-group) that touches an
+     incarnation-less Content CAS-assigns one on the CouchDB Content BEFORE it stamps
+     Solr.
+  Whichever wins the `_rev` CAS establishes the value; the other reads it present and
+  proceeds. There is exactly one authoritative incarnation per Content.
+- **NEVER stamp an ad-hoc incarnation to Solr only.** A writer that finds the Content
+  lacking an incarnation MUST persist one on CouchDB (CAS) and THEN stamp that same
+  value to Solr. Minting a UUID and writing it to Solr without persisting it would let
+  two concurrent writers pick DIFFERENT UUIDs → perpetual incarnation-mismatch → CAS
+  thrash / clobber loop. If the writer cannot persist the incarnation (CAS contention,
+  CouchDB down), it **fails closed** (retry) — it does not Solr-stamp.
+- **Archive restore issues a NEW incarnation; never copies the archived one.**
+  `ArchiveDaoDelegate.restoreContent` must generate a fresh UUID for the restored
+  Content and MUST NOT copy the incarnation stored in the archived copy — that value
+  belongs to the pre-delete lifetime, and reusing it would make the restored write look
+  "same incarnation, generation 1 < stored 50" and be permanently refused. A new
+  incarnation forces the §4.4 "mismatch → authoritative CAS from current Content" path,
+  which correctly overwrites the pre-delete Solr doc.
+- **Fail-closed when any of {stored, incoming, current} incarnation is missing.**
+  - *stored* (Solr) absent while the doc exists → treat as incarnation MISMATCH →
+    recompute + CAS from authoritative Content (do NOT skip-as-newer on generation).
+  - *incoming* (the writer's resolved incarnation) absent → the writer could not
+    establish an authoritative incarnation → **throw / retry**; never Solr-stamp.
+  - *current* (authoritative CouchDB Content) unreadable → three-valued: NOT_FOUND =
+    deleted (hand to the purge path), ERROR = **retry**; never proceed on a guess.
+
+Persistent-format note (release notes): new Content field `content_incarnation`;
+new patch `Patch_ContentIncarnationBackfill`; the mandatory v3.3 full reindex stamps
+`content_incarnation` + `content_generation` alongside the ACL group.
+
 ## 9. Required deterministic tests (live-Solr concurrency IT; §8-v1 list superseded)
 
 1. Commit-order inversion across different ancestors (post-commit allocation:
@@ -342,6 +390,12 @@ stale-cache limitation and is documented, not silently claimed solved.
     restored content IS written to Solr (incarnation mismatch → authoritative CAS,
     never "older-generation" refusal); an ACL_REINDEX task and a RAG_PURGE task on
     the same object complete independently (neither erases the other's obligation).
+16. Pre-migration Content (§8.1): a Content with NO `content_incarnation` plus a stale
+    Solr doc → the first authoritative write CAS-persists an incarnation on the CouchDB
+    Content (never Solr-only) and then stamps Solr; a second concurrent writer reads the
+    SAME persisted incarnation and compares generations (no dual-UUID clobber loop);
+    `Patch_ContentIncarnationBackfill` is idempotent (skips a Content that already has
+    one); a writer that cannot persist the incarnation fails closed (no Solr-only stamp).
 
 ## 10. Known adjacent issue (out of scope, tracked)
 

@@ -119,10 +119,6 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             log.debug("RAG indexDocument called for: " + document.getId() + " (" + document.getName() + ")");
         }
 
-        if (!isEnabled()) {
-            throw RAGIndexingException.serviceDisabled("RAG indexing is disabled");
-        }
-
         // SECURITY (single choke point): NEVER RAG-index a Private Working Copy. A PWC is
         // a checkout-owner-only draft that PermissionServiceImpl authorizes by OWNERSHIP,
         // ignoring the normal inherited ACL — but RAG authorizes by inherited-ACL token
@@ -132,11 +128,22 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         // gated). Excluding here (not only in SolrUtil.triggerRAGIndexing) closes the
         // bypass where the RAG full/single reindex (RAGIndexMaintenanceServiceImpl) calls
         // this method DIRECTLY. Remove any block a prior build indexed for this id.
+        //
+        // This runs BEFORE the isEnabled() gate ON PURPOSE (review round-7 [P1]): a PWC
+        // whose stale block was indexed by an EARLIER build must be purged even while RAG
+        // is CURRENTLY disabled — otherwise the seed-oracle block silently reappears in
+        // search the moment RAG is re-enabled. handlePwcPurge → purgeDocumentBlocks is
+        // deliberately isEnabled()-independent for exactly this reason. (Moving this after
+        // the gate would let `isEnabled()==false` skip the choke point entirely.)
         if (Boolean.TRUE.equals(document.isPrivateWorkingCopy())) {
             log.debug("RAG indexDocument: skipping Private Working Copy {} (owner-only draft, excluded from RAG)",
                     document.getId());
             handlePwcPurge(repositoryId, document.getId());
             return;
+        }
+
+        if (!isEnabled()) {
+            throw RAGIndexingException.serviceDisabled("RAG indexing is disabled");
         }
 
         String mimeType = getMimeType(repositoryId, document);
@@ -259,9 +266,20 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         }
         // enqueueOrThrow: fail if we cannot even record the obligation (otherwise
         // "Solr delete failed AND queue write failed AND caller reports success").
-        reconciliationService.enqueueOrThrow(repositoryId, documentId,
-                jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.PWC_PURGE_FAILURE,
-                jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Operation.RAG_PURGE);
+        //
+        // Convert the queue's UNCHECKED IllegalStateException into a CHECKED
+        // RAGIndexingException (review round-7 [P2]): indexDocumentsBatch catches
+        // RAGIndexingException and continues to the next document, so a queue outage
+        // fails THIS PWC only. An uncaught IllegalStateException would escape the batch
+        // loop's catch and abort the ENTIRE reindex.
+        try {
+            reconciliationService.enqueueOrThrow(repositoryId, documentId,
+                    jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.PWC_PURGE_FAILURE,
+                    jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Operation.RAG_PURGE);
+        } catch (RuntimeException e) {
+            throw new RAGIndexingException("PWC block for " + documentId + " could not be purged ("
+                    + problem + ") and the durable RAG_PURGE task could not be recorded", e);
+        }
         log.warn("RAG indexDocument: PWC block purge for {} not confirmed ({}); durable RAG_PURGE task enqueued",
                 documentId, problem);
     }

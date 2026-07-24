@@ -1026,6 +1026,33 @@ single-replica でも残余は無害ではない — (a) **stale-deny** は Solr
   scheduler **11/11**(purge dispatch / **非 terminal FAILED** / 失敗 retry / 後方互換 追加)、実 CouchDB IT **12/12**
   (**ACL と PURGE が独立 task で共存** / enqueueOrThrow durable 追加)、RAG AclUpdate 3/3・ACLExpander 33/33 無回帰。
 
+**ACL-epoch 第7巡: Q0 中核は妥当・sign-off は保留。PWC 残 3 点 + 設計 v2.1 の incarnation 移行を閉塞**:
+レビュー判定「Q0 の post-commit finalization・RTG→revalidate→CAS 順序・equal-epoch 規則・Content outbox の中核方針は妥当。
+次巡で v2.x を sign-off し記載の増分順で epoch 実装へ進んでよい」。epoch 実装は**引き続き未着手**(sign-off 待ち)。残 3 点を閉塞:
+- **[P1] RAG 無効時に PWC choke point へ到達しない** (`RAGIndexingServiceImpl.indexDocument`): PWC 判定が `isEnabled()`
+  throw の**後**にあり、旧 build が索引した stale PWC block が「RAG 無効中に PWC を処理→purge も task 作成もされない→
+  RAG 再有効化→block が再び検索可能」で残存し得た。**PWC 判定を `isEnabled()` より前へ移動**(`handlePwcPurge`→
+  `purgeDocumentBlocks` は元々 rag.enabled 非依存)。旧 `purgeIgnoresRagDisabled` は `purgeDocumentBlocks` 直呼びで
+  choke-point 抜けを検出できなかったため、`indexDocument` 経由の `pwcPurgeRunsAtChokePointEvenWhenRagDisabled` を追加。
+- **[P2] enqueue 失敗が batch 全体を中断** (`handlePwcPurge` / `indexDocumentsBatch`): `enqueueOrThrow` は unchecked
+  `IllegalStateException` を投げるが `indexDocumentsBatch` は `RAGIndexingException` (checked) しか catch せず、queue 障害で
+  batch 全体が中断していた(報告の「当該文書のみ失敗させ batch 継続」と不一致)。`handlePwcPurge` で
+  `IllegalStateException`→`RAGIndexingException` へ **wrap**。テストも単体 `assertThrows(RuntimeException)` を廃し、
+  **2文書 batch で「PWC 失敗後も次文書の purge が走る」** (`batchContinuesAfterPwcEnqueueFailure`、`deleteByQuery` times(2))
+  + wrap 検証 (`pwcEnqueueFailureThrowsCheckedSoBatchCanCatchIt`) に置換。
+- **[P1/設計] 既存 Content の `content_incarnation` 移行を定義** (`docs/design/acl-epoch-fencing.md §8.1` 新設、実装コードなし):
+  v2.1 は restore の巻き戻りは解決したが既存 Content に incarnation が無い。§8.1 で規定 — (a) 新規 Content は作成時に
+  UUID を CouchDB へ永続化、(b) 既存 Content は `Patch_ContentIncarnationBackfill` (起動 patch) **または**初回 authoritative
+  write が **CAS 付与**(両者 idempotent、先着が確定)、(c) incarnation 欠落時に **Solr だけへ即席 UUID を stamp 禁止**
+  (二 writer が別 UUID→incarnation-mismatch の CAS thrash になるため。CouchDB へ CAS 永続後に stamp、不能なら fail-closed)、
+  (d) archive restore は**必ず新規 incarnation を発行**し archive 内の旧値をコピーしない、(e) stored/incoming/current の
+  いずれか欠落時の fail-closed 規則(stored 欠落=mismatch 扱いで authoritative CAS / incoming 欠落=throw / current 不能=
+  tri-state)、(f) pre-migration Content の決定的テスト(§9 #16)。競合表 §6 の「newer content_generation wins」を
+  **「同一 incarnation 内でのみ generation 比較・不一致は current authoritative Content から再計算」**に修正。
+- **検証**: `RAGIndexingServiceImplPwcTest` **13/13**(第6巡 11 + choke-point RAG無効 purge + batch 継続、
+  `pwcEnqueueFailureThrows`→checked 版に差替)、scheduler 11/11・RAG AclUpdate 3/3・ACLExpander 33/33 無回帰(単体 60/60)、
+  実 CouchDB IT 12/12。設計は DESIGN-ONLY で epoch 実装コードは依然ゼロ。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度

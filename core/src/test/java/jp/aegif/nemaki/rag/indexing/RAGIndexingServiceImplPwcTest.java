@@ -129,13 +129,36 @@ public class RAGIndexingServiceImplPwcTest {
     }
 
     @Test
-    public void pwcEnqueueFailureThrows() throws Exception {
+    public void pwcEnqueueFailureThrowsCheckedSoBatchCanCatchIt() throws Exception {
         stubVerify(1); // still present
         doThrow(new IllegalStateException("couchdb down"))
                 .when(reconciliationService).enqueueOrThrow(anyString(), anyString(), anyString(), anyString());
 
-        // Cannot record the durable obligation → fail (never silent success).
-        assertThrows(RuntimeException.class, () -> service.indexDocument(REPO_ID, pwc()));
+        // Cannot record the durable obligation → fail (never silent success). The queue's
+        // unchecked IllegalStateException is WRAPPED into a CHECKED RAGIndexingException so
+        // that indexDocumentsBatch's catch(RAGIndexingException) can handle it — a bare
+        // RuntimeException would escape the batch loop and abort every remaining document.
+        assertThrows(RAGIndexingException.class, () -> service.indexDocument(REPO_ID, pwc()));
+    }
+
+    @Test
+    public void batchContinuesAfterPwcEnqueueFailure() throws Exception {
+        // round-7 [P2]: a queue outage on one PWC must fail THAT document only, not abort
+        // the batch. Both PWCs are "still present" after delete so both reach enqueue; the
+        // enqueue throws for every call. If the first failure aborted the batch, the second
+        // PWC's purge (deleteByQuery) would never run — so times(2) proves continuation.
+        stubVerify(1);
+        doThrow(new IllegalStateException("couchdb down"))
+                .when(reconciliationService).enqueueOrThrow(anyString(), anyString(), anyString(), anyString());
+
+        Document pwc2 = new Document();
+        pwc2.setId("pwc-second");
+        pwc2.setName("draft2.docx");
+        pwc2.setPrivateWorkingCopy(Boolean.TRUE);
+
+        service.indexDocumentsBatch(REPO_ID, java.util.List.of(pwc(), pwc2));
+
+        verify(solrClient, times(2)).deleteByQuery(eq("nemaki"), anyString());
     }
 
     @Test
@@ -200,5 +223,19 @@ public class RAGIndexingServiceImplPwcTest {
         when(ragConfig.isEnabled()).thenReturn(false);
         service.purgeDocumentBlocks(REPO_ID, PWC_ID);
         verify(solrClient).deleteByQuery(eq("nemaki"), anyString());
+    }
+
+    @Test
+    public void pwcPurgeRunsAtChokePointEvenWhenRagDisabled() throws Exception {
+        // round-7 [P1]: the CHOKE POINT (indexDocument) must purge a PWC's stale block
+        // BEFORE the isEnabled() gate. purgeIgnoresRagDisabled only exercises
+        // purgeDocumentBlocks DIRECTLY and cannot catch a choke-point bypass — if the PWC
+        // check sat after `if (!isEnabled()) throw`, indexDocument would throw
+        // serviceDisabled and never delete, so the block would reappear on re-enablement.
+        when(ragConfig.isEnabled()).thenReturn(false); // isEnabled() == false
+        stubVerify(0); // absent after delete → clean, no task
+        service.indexDocument(REPO_ID, pwc());
+        verify(solrClient).deleteByQuery(eq("nemaki"), anyString());
+        verify(reconciliationService, never()).enqueueOrThrow(anyString(), anyString(), anyString(), anyString());
     }
 }
