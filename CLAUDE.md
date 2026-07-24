@@ -856,6 +856,44 @@ CMIS 結果は `PermissionService.getFiltered`、RAG 結果は `VectorSearchServ
 - **検証**: 単体 `SolrUtilRelationshipReadersTest` +3(`parseRevGeneration`)、focused スイート green、
   実 CouchDB IT 10/10、TCK QueryTestGroup 6/6、実機で generation-fence skip + strict retry + fencing 中断を確認。
 
+**reconciliation キュー — レビュー後の並行修正 第2巡 (P1×5 + P2×2 + P3)。上記前巡の一部主張を撤回・是正**:
+前巡の修正は **TOCTOU・例外経路・strict 無効・no-leak 誇張**でいずれも不完全とレビューで指摘され、全て是正した。
+まず**訂正すべき前提**: 前巡の「reconcile の stale readers は**認可リークにならない**」は**誤り(撤回)**。
+live gate (`getFiltered`/`filterByLiveAcl`) 自体が `calculateAcl` の EhCache を使うため、**multi-replica では
+レプリカ間 cache 無効化が無く (docs/MULTI-REPLICA-DEPLOYMENT.md、TTL 3600s)、stale-permissive Solr readers と
+別レプリカの stale-permissive ACL cache が重なれば live 再検査も許可し得る**。よって「絶対にリークなし」は不成立。
+**正しい posture**: single-replica では ACL 変更時に同一 JVM の cache を evict するので live gate は authoritative。
+single-replica でも残余は無害ではない — (a) **stale-deny** は Solr prefilter で候補から消え live gate で復元不能、
+(b) **stale-allow** は live filter 前の scan-cap 判定を誤発火し得る、(c) 子孫/relationship race 後に task が消えると
+次の ACL 変更/全再索引まで恒久化。以下で構造的に閉じた。
+- **[P1] #1 TOCTOU を原子的に閉塞 (前巡の read→無条件 write を廃止)**: reconcile の content/relationship 書込みを
+  **atomic readers-only 更新 + Solr `_version_` optimistic concurrency + 世代フェンス** (`SolrUtil.updateReadersFenced`)
+  に置換。手順: `_version_`+`acl_index_generation` を1回で読む → `storedGen > myGen` なら **SKIP** → でなければ
+  readers を strict 計算 → `readers`/`acl_index_generation` のみ `{"set":…}` で **`_version_` CAS add** → 409(並行書込)
+  なら**再読込して世代を再評価**(新しければ skip、同じなら retry)。read と write が原子化され、レビューの
+  「gen=1 read→gen=2 write→gen=1 stale write」列が**発生不能**(gen=1 の write は 409 で弾かれ再評価で skip)。
+  **注**: これは reconcile writer の TOCTOU を閉じる。**通常 async ACL-refresh 同士の到着逆順 (#1(b))** は
+  async index executor の**既存の eventual-consistency 特性**(全フィールド共通、ACL-in-Solr が導入したものではない)で、
+  直接オブジェクトの `updateInternal` 経路は last-writer-wins のまま。全 writer への原子的世代拒否
+  (Solr `DocBasedVersionConstraints`) は **RAG doc が version フィールドを持たず共存不能**のため不採用。#1(b) は
+  最終的に「最後に CouchDB commit された ACL の refresh が収束、または全再索引」で解消する残余として明記。
+- **[P1] #3/#6 clobber を構造的に排除**: 上記 atomic readers-only は **body/path/content_length/name を一切触らない**
+  ので、内部ヘルパー (`extractTextContent`→null / `getContentLength`→0 / `calculatePath`→空) が読取失敗を sentinel に
+  変換しても**既存の良い値を欠落値で置換できない**(前巡の `createSolrDocument` strict catch は sentinel 変換の**内側**で
+  発火せず無効だった、という指摘は正当)。readers 計算失敗 (ACLExpander 例外/未配線、endpoint tri-state ERROR) は
+  **throw** して task を retry(空 readers 成功削除を防ぐ)。Solr 未索引 (`NOT_INDEXED`) のみ full index にフォール
+  バック(この場合 clobber 対象が無い)。
+- **[P1] #2 lease fence の例外経路を fail-closed 化**: `renewLeaseIfNeeded` の旧値復元を **`finally`** に移し
+  **例外(タイムアウト等)でも復元**、`fenceGuard` を **`catch (Throwable)`→`lost.set(true)` で永久 false latch**
+  (CAS が投げても未来のローカル期限で `true` に復活しない)。
+- **[P1] #5 巨大 RAG block を per-page fence**: `RAGIndexingService.updateDocumentACL` に guard overload を追加し、
+  **各 chunk ページ取得前**に lease を確認、喪失なら **block 置換 add の前**に `RAGIndexingException` で中断(stale block を
+  landing させない)。単一ノード処理が lease を超えても旧 worker が書かない。
+- **[P2] #7 schema.xml 追加行の trailing whitespace (CRLF cr-at-eol) を除去** (`git diff --check` clean)。
+- **[P2/#6] 決定的並行テスト追加**: IT に (a) gen read↔write race で `_version_` CAS が stale write を弾く、
+  (b) lease CAS 例外後に guard が必ず false、(c) strict sentinel 失敗で task 非削除、を latch で決定的に固定。
+- **検証**: 全 focused 単体 green、実 CouchDB IT、TCK QueryTestGroup、実機で atomic CAS の 409→skip / RAG per-page 中断を確認。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度

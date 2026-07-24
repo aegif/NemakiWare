@@ -198,6 +198,12 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
 
     @Override
     public void updateDocumentACL(String repositoryId, String documentId, List<String> readers) throws RAGIndexingException {
+        updateDocumentACL(repositoryId, documentId, readers, null);
+    }
+
+    @Override
+    public void updateDocumentACL(String repositoryId, String documentId, List<String> readers,
+            java.util.function.BooleanSupplier leaseStillHeld) throws RAGIndexingException {
         if (!isEnabled()) {
             return;
         }
@@ -243,6 +249,14 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
                 long totalChunks;
                 int start = 0;
                 do {
+                    // Cooperative fencing: before fetching each page, confirm we still hold
+                    // the reconciliation lease. Aborting HERE (before the block-replacing
+                    // add below) means a worker that lost its lease mid-rebuild lands NO
+                    // stale block — the reclaimer owns the write.
+                    if (leaseStillHeld != null && !leaseStillHeld.getAsBoolean()) {
+                        throw new RAGIndexingException("Reconciliation lease lost during RAG block "
+                                + "rebuild for " + documentId + " — aborting before block add");
+                    }
                     SolrQuery chunkQuery = new SolrQuery();
                     chunkQuery.setQuery("_root_:" + sanitizedRagId);
                     chunkQuery.addFilterQuery("doc_type:" + DOC_TYPE_CHUNK);

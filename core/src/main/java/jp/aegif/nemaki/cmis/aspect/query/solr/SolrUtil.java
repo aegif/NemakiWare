@@ -844,6 +844,147 @@ public class SolrUtil implements ApplicationContextAware {
 		}
 	}
 
+	/** Outcome of a fenced atomic readers-only reconciliation write. */
+	public enum ReadersUpdateResult { UPDATED, SKIPPED_NEWER_GENERATION, NOT_INDEXED }
+
+	/** Bounded retry for the {@code _version_} optimistic-concurrency loop. */
+	private static final int READERS_CAS_MAX_ATTEMPTS = 6;
+
+	/**
+	 * Reconciliation write: ATOMICALLY set ONLY the {@code readers} (and
+	 * {@code acl_index_generation}) of an already-indexed content/relationship doc,
+	 * fenced by the CouchDB {@code _rev} generation AND Solr {@code _version_}
+	 * optimistic concurrency. This closes three review findings structurally:
+	 *
+	 * <ul>
+	 *   <li><b>No clobber (#3/#6)</b>: a readers-only atomic update never touches the
+	 *       body / path / content_length / name fields, so a transient text-extraction
+	 *       or path-calculation failure cannot replace a good indexed value with an
+	 *       empty one. (The prior full-document re-add did, because its inner helpers
+	 *       swallow read failures into null/0 sentinels BEFORE the strict catch.)</li>
+	 *   <li><b>No TOCTOU (#1)</b>: the generation check and the write are made atomic by
+	 *       the {@code _version_} CAS. If a concurrent applyAcl bumps the doc between our
+	 *       read and write, the CAS returns 409 and we RE-READ and re-evaluate the
+	 *       generation — so a stale re-drive (lower generation) is either skipped or
+	 *       loses the CAS, never overwriting fresher readers with a later add.</li>
+	 * </ul>
+	 *
+	 * <p>Readers are computed strictly (a genuine ACL/endpoint read failure THROWS so
+	 * the reconcile counts it and retries, rather than persisting an empty readers set).
+	 * Returns {@link ReadersUpdateResult#NOT_INDEXED} when the doc is absent (the caller
+	 * decides — a content doc absent from Solr needs a full index, where there is no
+	 * good value to clobber). Throws on a genuine Solr/ACL failure.
+	 */
+	public ReadersUpdateResult updateReadersFenced(String repositoryId, Content content) throws Exception {
+		SolrClient solrClient = getSolrClient();
+		if (solrClient == null) {
+			throw new RuntimeException("Reconcile: Solr client unavailable for " + content.getId());
+		}
+		jp.aegif.nemaki.rag.acl.ACLExpander expander = getAclExpanderSafely();
+		if (expander == null) {
+			// Cannot compute readers → never persist an empty (invisible) doc as success.
+			throw new RuntimeException("Reconcile: ACLExpander unavailable — cannot compute readers for "
+					+ content.getId());
+		}
+		long myGen = parseRevGeneration(content.getRevision());
+		for (int attempt = 0; attempt < READERS_CAS_MAX_ATTEMPTS; attempt++) {
+			// 1. Read the current _version_ + stored generation (single atomic snapshot).
+			SolrDocument cur = readVersionAndGeneration(repositoryId, content.getId());
+			if (cur == null) {
+				return ReadersUpdateResult.NOT_INDEXED;
+			}
+			long storedGen = toLongOrDefault(cur.getFieldValue("acl_index_generation"), 0L);
+			// 2. Generation fence: a strictly-newer indexed generation means a concurrent
+			//    applyAcl already wrote fresher readers — do NOT overwrite them.
+			if (myGen > 0 && storedGen > myGen) {
+				return ReadersUpdateResult.SKIPPED_NEWER_GENERATION;
+			}
+			long version = toLongOrDefault(cur.getFieldValue("_version_"), 0L);
+			// 3. Compute readers strictly (throws on a genuine failure).
+			List<String> readers = (content instanceof Relationship)
+					? relationshipReaders(repositoryId, (Relationship) content, expander, true)
+					: expander.expandToReaders(repositoryId, content);
+			// 4. Atomic readers-only update, CAS-guarded by the read _version_.
+			SolrInputDocument upd = new SolrInputDocument();
+			upd.addField("id", content.getId());
+			upd.setField("readers", java.util.Collections.singletonMap("set",
+					readers != null ? readers : java.util.Collections.emptyList()));
+			if (myGen > 0) {
+				upd.setField("acl_index_generation", java.util.Collections.singletonMap("set", myGen));
+			}
+			if (version != 0L) {
+				// Optimistic concurrency: apply only if the doc still has this version.
+				upd.addField("_version_", version);
+			}
+			try {
+				UpdateRequest req = new UpdateRequest();
+				req.add(upd);
+				req.setCommitWithin(1000);
+				UpdateResponse resp = req.process(solrClient);
+				if (resp.getStatus() != 0) {
+					throw new RuntimeException("Solr atomic readers update failed status "
+							+ resp.getStatus() + " for " + content.getId());
+				}
+				return ReadersUpdateResult.UPDATED;
+			} catch (org.apache.solr.client.solrj.RemoteSolrException e) {
+				if (e.code() == 409) {
+					// A concurrent write changed the doc — re-read and re-evaluate the
+					// generation (which may now be newer → skip, or same → retry).
+					log.debug("Reconcile readers CAS conflict for {} (attempt {}), re-reading",
+							content.getId(), attempt + 1);
+					continue;
+				}
+				throw e;
+			}
+		}
+		// Persistent contention: report as a failure so the task is retried later rather
+		// than silently completed.
+		throw new RuntimeException("Reconcile: readers CAS exhausted " + READERS_CAS_MAX_ATTEMPTS
+				+ " attempts for " + content.getId());
+	}
+
+	/**
+	 * Read the current {@code _version_} + {@code acl_index_generation} for an object, or
+	 * {@code null} if it is not indexed. Uses Solr REALTIME GET ({@code /get}) — NOT a
+	 * searcher query — so it returns the latest (possibly uncommitted) {@code _version_}.
+	 * A searcher query would lag behind by the soft-commit window (commitWithin=1s), so the
+	 * {@code _version_} CAS in {@link #updateReadersFenced} would keep reading a stale
+	 * version and loop to exhaustion whenever the doc was written in the last second. The
+	 * nemaki core has {@code <updateLog>} + a {@code _version_} field, so realtime get and
+	 * optimistic concurrency are both available.
+	 */
+	private SolrDocument readVersionAndGeneration(String repositoryId, String objectId) throws Exception {
+		SolrClient solrClient = getSolrClient();
+		if (solrClient == null) {
+			throw new RuntimeException("Solr client unavailable");
+		}
+		SolrDocument doc = solrClient.getById(objectId);
+		if (doc == null) {
+			return null;
+		}
+		// Ids are globally-unique CMIS ids, but the core is shared across repositories —
+		// guard against a cross-repo id collision returning the wrong doc.
+		Object repo = doc.getFieldValue("repository_id");
+		if (repo != null && !repositoryId.equals(repo.toString())) {
+			return null;
+		}
+		return doc;
+	}
+
+	private static long toLongOrDefault(Object v, long dflt) {
+		if (v instanceof Number) {
+			return ((Number) v).longValue();
+		}
+		if (v != null) {
+			try {
+				return Long.parseLong(v.toString());
+			} catch (NumberFormatException ignore) {
+				return dflt;
+			}
+		}
+		return dflt;
+	}
+
 	private SolrInputDocument createSolrDocument(String repositoryId, Content content) {
 		return createSolrDocument(repositoryId, content, false);
 	}
