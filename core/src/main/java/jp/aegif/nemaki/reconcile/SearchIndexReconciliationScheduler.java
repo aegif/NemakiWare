@@ -135,14 +135,23 @@ public class SearchIndexReconciliationScheduler {
         for (SearchIndexAclReindexTask task : claimed) {
             boolean clean;
             try {
-                // Cooperative fencing: the re-drive polls this LATCHED guard before
-                // every index write; it heartbeats/renews the lease and returns false
-                // (permanently, once lost) so a long re-drive that outlives its lease
-                // stops writing instead of clobbering a reclaiming worker's fresher
-                // readers. The admin manual-retry uses the SAME guard.
-                clean = aclService.reindexSearchIndexAclForObject(
-                        task.getRepositoryId(), task.getObjectId(),
-                        reconciliationService.fenceGuard(task, leaseSeconds * 1000L));
+                // Dispatch on the task's OPERATION — a purge must not be handled by an
+                // ACL reindex (which would leave, or even refresh, the very RAG block
+                // the purge exists to remove).
+                if (SearchIndexAclReindexTask.Operation.RAG_PURGE.equals(task.getEffectiveOperation())) {
+                    // Purge is an idempotent delete + verify; no epoch/lease fencing
+                    // needed beyond the queue lease (a double delete is harmless).
+                    clean = aclService.purgeRagBlockForObject(task.getRepositoryId(), task.getObjectId());
+                } else {
+                    // Cooperative fencing: the re-drive polls this LATCHED guard before
+                    // every index write; it heartbeats/renews the lease and returns false
+                    // (permanently, once lost) so a long re-drive that outlives its lease
+                    // stops writing instead of clobbering a reclaiming worker's fresher
+                    // readers. The admin manual-retry uses the SAME guard.
+                    clean = aclService.reindexSearchIndexAclForObject(
+                            task.getRepositoryId(), task.getObjectId(),
+                            reconciliationService.fenceGuard(task, leaseSeconds * 1000L));
+                }
             } catch (Exception e) {
                 logger.warn("Reconcile re-drive threw for {} / {}: {}",
                         task.getRepositoryId(), task.getObjectId(), e.getMessage());

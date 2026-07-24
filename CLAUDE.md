@@ -959,6 +959,46 @@ single-replica でも残余は無害ではない — (a) **stale-deny** は Solr
   **multi-replica は既存の stale-ACL-cache 窓**(本機能以前からの制約、MULTI-REPLICA-DEPLOYMENT.md)で over-permissive になり得る。
   唯一の具体的 oracle だった PWC は本巡で閉塞。**「全 writer 恒久収束」は effective-ACL epoch の再設計まで未達であり、マージ保留継続**。
 
+**ACL-epoch 再設計 (第5巡): 設計文書 v2 (再sign-off待ち) + PWC purge の durable retry (実装済み)**:
+前巡の `max(ancestor _rev)` 方式はレビューで**却下**(異なる CouchDB 文書の `_rev` は比較不能・
+祖先集合変化で非単調)され撤回済み。承認された方針 = **リポジトリ単位の永続・単調増加 ACL epoch
+(CAS 払い出し) + aclSourceEpoch を Content に永続化**。実装は設計 sign-off 後。
+- **設計文書 v2** (`docs/design/acl-epoch-fencing.md`、実装コードなし): (1) **Q0 = post-commit
+  two-phase finalization** — pre-commit 払い出しは別ノード間で allocation/commit が逆転し
+  「同 epoch・異 readers」を生むため、Phase1 = mutation + `PENDING_EPOCH` marker を commit →
+  Phase2 = counter から払い出し + mutationId 一致時のみ CAS-patch で確定(追い越しは ID 不一致で
+  旧 finalizer 無効化)。(2) **厳密順序 walk→compute→RTG(`_version_`+epoch)→全依存元 revalidate→
+  即CAS→409で完全再実行**(revalidate→RTG 順は間に別 writer が書くと新 `_version_` で上書きできる
+  ため不可)。(3) **同 epoch 規則**: 同 readers=skip / 異 readers=authoritative 再計算値を CAS /
+  409=payload 再利用禁止(「同値冪等」は撤回)。(4) **durable outbox on Content**
+  (`PENDING_EPOCH→FINALIZED_NEEDS_RECONCILE→RECONCILE_ENQUEUED` + 冪等 scanner) — finalize と
+  enqueue は別 DB で非原子、crash で task 恒久喪失を防ぐ(queue 一次駆動だけでは不足)。
+  (5) **live gate 限定**: 「ACL commit 済みなので認可は正しい」は authoritative CouchDB に限る —
+  cache eviction 前 crash / multi-replica は別。finalizer/scanner が **eviction を冪等再実行**。
+  (6) Q1=persisted high-watermark(counter 消失 fail-closed、restore 非巻き戻し、overflow 拒否、
+  timestamp baseline 却下)、Q2=第一段は read+preserve full add + **二軸**(`content_generation`=
+  自文書 `_rev` は同一文書内なので有効)、Q3=per-doc CAS + full-reindex 後の authoritative final
+  sweep(repo-wide pause 却下)、Q4=全 ACL writer が cache-bypass authoritative walk(reconcile
+  だけ strict では不足)、Q5=relationship 単位 task + `minRequiredEpoch`。テスト14項目(commit 逆転
+  /read-skew/RTG 前後変更/同epoch異readers/各crash窓/RAG mid-rebuild/PWC 一式)。
+  祖先 rename の子孫 path stale は同型だが認可無関係 — スコープ外の既知 issue として記録。
+- **PWC purge durable retry (実装済み、レビュー承認の独立作業)**: 前巡の PWC choke point は
+  stale block の delete 失敗を **WARN で握り潰して正常 return** していた(旧 build の残存 PWC block
+  = seed oracle が恒久生存、再試行なし)。また scheduler は task の reason を見ず常に ACL 再索引を
+  呼ぶため、reason 追加だけでは purge されない(それどころか `updateDocumentACL` が block を維持)。
+  **修正**: task に **`operation` (`ACL_REINDEX` default / `RAG_PURGE`)** を追加(旧文書は absent→
+  ACL_REINDEX で後方互換)、enqueue マージは **RAG_PURGE が双方向優先**(purge を later ACL event が
+  降格できない)。scheduler/管理 retry が operation で **dispatch**、`RAG_PURGE` は新設
+  `AclService.purgeRagBlockForObject` = `deleteDocument` 実呼出 + **`isDocumentInRagIndex`
+  (`_root_` count) で残存確認**(delete は RAG 無効時 silent no-op のため検証必須。unknown≠absent、
+  検証不能は throw→retry)。PWC 分岐の delete 失敗は `PWC_PURGE_FAILURE`/`RAG_PURGE` を enqueue
+  (握り潰さない、ただし full reindex を 1 PWC で止めない)。
+- **検証**: scheduler 10/10 (purge dispatch 3 追加: purge≠ACL-reindex / 失敗は retry / absent
+  operation 後方互換)、新規 `RAGIndexingServiceImplPwcTest` 7/7 (PWC 非索引+block 削除 / delete
+  失敗→durable enqueue / queue 無し縮退 / 非 PWC 回帰 / verifier tri-state)、実 CouchDB IT 11/11
+  (operation マージ双方向 PURGE 優先を追加)、既存 RAG AclUpdate 3/3・ACLExpander 33/33 無回帰。
+  CI unit リストに PwcTest/AclUpdateTest を追加。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度

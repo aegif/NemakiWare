@@ -80,6 +80,19 @@ public class SearchIndexReconciliationService {
      * retried a bounded number of times. Never throws.
      */
     public void enqueue(String repositoryId, String objectId, String reason) {
+        enqueue(repositoryId, objectId, reason, SearchIndexAclReindexTask.Operation.ACL_REINDEX);
+    }
+
+    /**
+     * As {@link #enqueue(String, String, String)} with an explicit
+     * {@link SearchIndexAclReindexTask.Operation}. Tasks share the deterministic
+     * per-object {@code _id}; on a merge with an existing task {@code RAG_PURGE}
+     * takes precedence over {@code ACL_REINDEX} in BOTH directions (a pending purge
+     * must not be downgraded by a later ACL event — the purge handler removes the
+     * block, which supersedes any readers refresh of it; and a purge request must
+     * upgrade a pending ACL task).
+     */
+    public void enqueue(String repositoryId, String objectId, String reason, String operation) {
         if (repositoryId == null || objectId == null) {
             return;
         }
@@ -109,6 +122,15 @@ public class SearchIndexReconciliationService {
                 }
                 task.setStatus(SearchIndexAclReindexTask.Status.PENDING);
                 task.setReason(reason);
+                // Operation merge: RAG_PURGE wins in both directions (never downgrade
+                // a pending purge to an ACL reindex, and a purge request upgrades a
+                // pending ACL task). Otherwise take the requested operation.
+                if (SearchIndexAclReindexTask.Operation.RAG_PURGE.equals(operation)
+                        || SearchIndexAclReindexTask.Operation.RAG_PURGE.equals(task.getOperation())) {
+                    task.setOperation(SearchIndexAclReindexTask.Operation.RAG_PURGE);
+                } else {
+                    task.setOperation(SearchIndexAclReindexTask.Operation.ACL_REINDEX);
+                }
                 task.setNextAttemptAt(now); // a fresh failure is due immediately
                 task.setLeaseOwner(null);
                 task.setLeaseExpiresAt(0);

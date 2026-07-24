@@ -1,263 +1,301 @@
-# ACL-in-Solr: Repository-wide monotonic ACL epoch fencing (design)
+# ACL-in-Solr: Repository-wide monotonic ACL epoch fencing (design v2)
 
-Status: **DESIGN — not yet implemented.** This document must be reviewed and
-accepted before any code is written. It supersedes the round-3 `_rev`-generation
-fence and the (rejected) round-4 `max(ancestor _rev)` approach.
+Status: **DESIGN v2 — awaiting re-sign-off. No epoch implementation code exists or
+may be written until sign-off.** Supersedes v1 (this file's previous revision) after
+two review rounds. v1's flaws corrected here:
 
-## 1. Problem and why prior approaches fail
+- v1 allocated the epoch BEFORE the CouchDB commit (under the per-object lock) and
+  claimed "allocation order == commit order". That holds only per-object; across
+  DIFFERENT chain nodes (ancestors, relationship endpoints) allocation and commit
+  reorder, producing EQUAL effective epochs for DIFFERENT ACL states. v2 uses
+  **post-commit allocation** (§2).
+- v1's invariant "equal epochs are idempotent (same ACL source)" is **false** and is
+  replaced by the equal-epoch convergence rule (§4.3).
+- v1 had no durable link between epoch finalization and reconciliation-task creation
+  (crash window losing the task forever). v2 adds a **durable outbox state on the
+  Content** (§3).
+- v1 said "a failed counter CAS may waste a value" — wrong: a failed CAS persists
+  nothing; gaps arise only when an ALLOCATED epoch's finalization is abandoned (§2.1).
 
-ACL-in-Solr stores a `readers` token set on every queryable Solr doc so the CMIS
-query and RAG paths can pre-filter by the caller's principals. When an ACL changes
-(applyAcl / move / inheritance toggle / relationship endpoint change) the affected
-docs must be re-indexed with fresh `readers`. These re-index writes are async and
-can fail (Solr down) → a durable reconciliation queue re-drives them.
+## 1. Problem recap (unchanged from v1)
 
-The **convergence requirement**: after all writers settle, each Solr doc's `readers`
-must reflect the LATEST committed CouchDB ACL, for **every** writer path (normal
-async ACL-refresh, reconcile re-drive, CMIS batch/full-reindex, RAG block writer)
-and must not be undone by a late "stale" writer.
+Solr docs carry a `readers` token set (ACL-in-Solr). All ACL-refresh writers (normal
+async applyAcl/move refresh, reconcile re-drive, batch/full reindex, RAG block writer)
+must converge so each doc's readers reflect the LATEST committed CouchDB ACL, and a
+late stale writer can never permanently overwrite a fresher write. Rejected fences:
+the object's own `_rev` (cannot order inherited/relationship writes — a parent ACL
+change doesn't bump a child's `_rev`); `max(ancestor _rev)` (different documents'
+`_rev` counters are not comparable; non-monotonic under ancestor-set changes).
 
-Two rejected fence values:
+## 2. Epoch issuance: post-commit two-phase finalization (Q0)
 
-- **Round 3 — the object's own CouchDB `_rev` leading integer.** Fails because a
-  PARENT ACL change does not bump a CHILD's `_rev`, and an ENDPOINT ACL change does
-  not bump a RELATIONSHIP's `_rev`. So for inherited descendants / relationships —
-  the majority of ACL-refresh writes — two writers compute the SAME fence value and
-  the CAS only serializes (last-writer-wins); a late stale writer overwrites a fresh
-  one. "Highest generation wins" holds only for the directly-ACL-changed object.
+### 2.1 Global counter
 
-- **Round 4 (rejected by review) — `max(_rev)` over the object + inheriting
-  ancestors.** Fails because **`_rev` values of DIFFERENT CouchDB documents are not
-  comparable** — each is an independent per-document counter. `max` over different
-  documents is semantically meaningless and is **not monotonic** for a given object:
-  it can DECREASE when the ancestor set changes (move to a shallower parent, or an
-  ancestor dropping out of the inheritance chain), which would wrongly fence out a
-  legitimately-newer write. **This approach is abandoned.**
+- One per-repository counter doc in `nemaki_conf`: `_id = acl-epoch-counter::{repo}`,
+  `{type: "aclEpochCounter", value: <long>}`. Allocation = read + CAS(`_rev`) write of
+  `value+1`; on conflict re-read + retry. **A failed CAS consumes nothing**; gaps
+  occur only when an allocated epoch's finalization is later abandoned (harmless —
+  only strict monotonicity matters). Long overflow is explicitly rejected (throw).
 
-## 2. Design: repository-wide monotonic ACL epoch
+### 2.2 Two-phase mutation (the Q0 fix)
 
-### 2.1 The counter (issuance)
+An ACL-affecting mutation on object X (applyAcl / move / inheritance toggle /
+relationship re-point) proceeds:
 
-- One **per-repository** counter document in `nemaki_conf`:
-  - `_id = acl-epoch-counter::{repositoryId}`
-  - fields: `{ "type": "aclEpochCounter", "repositoryId": "...", "value": <long> }`
-- **Allocation (`allocateAclEpoch(repo) -> long`)**: read the counter doc, compute
-  `next = value + 1`, CAS-write via CouchDB `_rev` (`putDocument` catching
-  `ConflictException`). On conflict, re-read + retry (bounded loop; monotonic
-  progress is guaranteed because every successful CAS strictly increases `value`).
-  The counter is created lazily (create-if-absent at `value = <baseline>`).
-- **Gap tolerance**: gaps are irrelevant — only strict monotonicity matters. A
-  failed CAS that is retried may "waste" a value; that is fine.
-- **Baseline / migration watermark**: the counter starts at a value strictly greater
-  than any epoch a pre-migration doc could be interpreted as. Pre-migration docs have
-  NO `aclSourceEpoch` (interpreted as epoch `0`), so a baseline of `1` suffices, but
-  we start at a **timestamp-derived baseline** (e.g. `System.currentTimeMillis()` at
-  first allocation, persisted) so that even a counter doc lost + recreated cannot
-  re-issue an already-used low value that a stale in-flight writer still holds.
-  (DECISION NEEDED — see §7 Q1.)
+1. **Phase 1 — commit with pending marker** (inside the existing per-object lock):
+   persist the mutation itself PLUS `aclEpochState = PENDING_EPOCH` and a fresh
+   `aclEpochMutationId` (UUID) on X. The ACL change is now durable and
+   **authoritatively effective for authorization** (with the cache caveat in §7).
+   No epoch is allocated yet.
+2. **Phase 2 — finalize** (same request continues; a crash here is recovered by the
+   scanner, §3): allocate `e` from the counter (§2.1), then CAS-patch X (`_rev` CAS):
+   if `aclEpochMutationId` still matches, set `aclSourceEpoch = e`,
+   `aclEpochState = FINALIZED_NEEDS_RECONCILE`. If the mutation id does NOT match, a
+   NEWER mutation superseded this one — abandon this finalization (the newer
+   mutation's own finalizer assigns a newer epoch to the newest state).
 
-### 2.2 `aclSourceEpoch` on Content (persistence)
+Consequences: epochs are assigned in **finalize order over committed states**; the
+last-finalized mutation of any object holds the strictly-highest epoch among that
+object's mutations; and (critically) a writer can DETECT an in-flight mutation via
+the pending marker instead of silently reading a pre-epoch state.
 
-- New model + CouchDB field on `Content`: `aclSourceEpoch` (long, default absent →
-  treated as `0`).
-- It is set to a **newly-allocated** epoch on, and ONLY on, an operation that changes
-  the object's OWN effective ACL SOURCE:
-  - **applyAcl(X)**: `X.aclSourceEpoch = allocate()`.
-  - **move(X)**: `X.aclSourceEpoch = allocate()` (the inheritance chain / effective
-    ACL of X changed).
-  - **inheritance toggle** (`aclInherited` flip on X): `X.aclSourceEpoch = allocate()`.
-  - **relationship re-point** (source/target changed on a relationship R):
-    `R.aclSourceEpoch = allocate()`.
-- The epoch is allocated and the object persisted **inside the existing per-object
-  write lock** (`threadLockService`), so concurrent applyAcls on the SAME object are
-  serialized and the object's final `aclSourceEpoch` is the epoch of the
-  last-committed change (allocation order == commit order under the lock). See the
-  conflict table (§6, row A).
-- Ordinary content changes (createDocument body, updateProperties, checkIn) do NOT
-  allocate or change `aclSourceEpoch`.
+### 2.3 Why post-commit allocation alone is still not enough: read skew
 
-### 2.3 Effective epoch (computed at index time)
+A writer whose read of chain node P PRE-DATES P's phase-1 commit sees neither the new
+ACL nor the pending marker; if it then reads another node A AFTER A's finalization,
+it computes an effective epoch equal to a later correct writer's, with different
+readers. The pending gate cannot catch a reader that never saw the pending marker.
+Convergence therefore requires the full contract of §4 (gate + ordered
+RTG-revalidate-CAS + conflict-recompute), not the gate alone.
 
-The fence value stamped in Solr is `effective_acl_epoch`:
+## 3. Durable outbox on the Content (task-creation atomicity)
 
-- **Regular object X**:
-  `effectiveEpoch(X) = max(X.aclSourceEpoch, effectiveEpoch(parent(X)))` while X
-  inherits; stop at the root or a non-inheriting node. Equivalent to
-  `max(aclSourceEpoch)` over X + its inheriting ancestor chain. Because every
-  `aclSourceEpoch` comes from the SAME global counter, this max IS comparable and IS
-  monotonic for X: any effective-ACL change to X (own or an inheriting ancestor)
-  allocates a strictly-greater epoch on some node in the chain, so `effectiveEpoch(X)`
-  strictly increases; nothing in the chain can decrease a node's `aclSourceEpoch`.
-  Move changing the ancestor set is safe: X's OWN `aclSourceEpoch` was bumped by the
-  move to a value greater than any prior chain member, so even if the new (shallower)
-  chain has smaller ancestor epochs, `effectiveEpoch(X) >= X.aclSourceEpoch` is still
-  strictly greater than before the move.
-- **Relationship R**:
-  `effectiveEpoch(R) = max(effectiveEpoch(source), effectiveEpoch(target),
-  R.aclSourceEpoch)`. An endpoint ACL change bumps that endpoint's effective epoch →
-  R's; a re-point bumps `R.aclSourceEpoch`.
-- Reads: the ancestor / endpoint walk uses the SAME reads `calculateAcl` makes. On
-  the reconcile (strict) path the reads are cache-bypassing and an unreadable
-  ancestor/endpoint THROWS (retry) rather than truncating the max (which would fence
-  low and let a stale writer win).
-- **Performance**: this is an ancestor walk per index write. It reuses `calculateAcl`'s
-  walk; a follow-up may compute readers + epoch in ONE walk. Batch/full-reindex amortizes.
+Finalizing X (CouchDB) and creating the reconciliation task (`nemaki_conf`) are
+writes to different documents/databases — NOT atomic. A crash between them must not
+lose the refresh forever. Durable state ON THE CONTENT:
 
-### 2.4 Solr field ownership (separation of concerns)
+```
+PENDING_EPOCH                (ACL committed; epoch not yet assigned)
+  → FINALIZED_NEEDS_RECONCILE (epoch assigned; task creation not yet confirmed)
+  → RECONCILE_ENQUEUED        (task durably exists; steady state = marker cleared)
+```
 
-Each Solr doc has two disjoint field groups with different owners:
+- After phase 2, the mutating request enqueues the subtree-root reconciliation task
+  (idempotent deterministic `_id`), then CAS-patches X to `RECONCILE_ENQUEUED` /
+  clears the marker **only after confirming the task document durably exists**.
+- A **scanner** (piggybacked on the existing reconciliation scheduler tick) sweeps
+  Contents in `PENDING_EPOCH` (crash before finalize → finalize them, §2.2 step 2)
+  and `FINALIZED_NEEDS_RECONCILE` (crash before enqueue → enqueue idempotently, then
+  advance). Duplicate enqueues are permitted (dedupe by task `_id`); task completion
+  racing a re-enqueue is resolved by the queue's existing generation/`_rev` CAS.
+- The inline async refresh (today's `ragAclExecutor` traversal) remains as
+  best-effort ACCELERATION; the durable queue is the correctness path.
 
-| Group | Fields | Owner | Write mode |
-|---|---|---|---|
-| Content | id, name, path, parent_id, body/`text`, `content_length`, dynamic props, `_root_`, … | CMIS content writers | create = full add; update = atomic `{set}` of changed content fields |
-| ACL | `readers`, `effective_acl_epoch` | ACL writers only (applyAcl/move/reconcile/RAG) | atomic `{set}`, epoch-fenced + `_version_` CAS |
+Mango index addition: `(type, aclEpochState)` on content DBs for the scanner.
+(Persistent-format note for the release notes: new Content fields `aclSourceEpoch`,
+`aclEpochState`, `aclEpochMutationId`; new counter doc type; new Mango index.)
 
-- **A full-content write MUST NOT recompute or overwrite `readers` /
-  `effective_acl_epoch`.** A body/property update uses a Solr ATOMIC update of only
-  the changed content fields, leaving the ACL group untouched.
-- **CREATE is the only place both groups are written together** (a brand-new doc has
-  no existing ACL group to preserve), as a create-if-absent (`_version_ = -1`) full
-  add carrying the initial `readers` + `effective_acl_epoch`.
+## 4. The unified write contract (every ACL writer)
 
-## 3. Write modes and the unified CAS / ordering contract
+### 4.1 Effective epoch
 
-Three modes, all sharing the `_version_` optimistic-concurrency + epoch fence where
-they touch the ACL group:
+- Object X: `effectiveEpoch(X) = max(aclSourceEpoch over X + inheriting ancestors)`
+  (walk stops at root / non-inheriting node). All values come from ONE counter →
+  comparable and monotonic per object (move bumps X's own epoch above any prior
+  chain member, so ancestor-set changes cannot decrease it).
+- Relationship R: `max(effectiveEpoch(source), effectiveEpoch(target),
+  R.aclSourceEpoch)`.
+- Pre-migration docs: absent `aclSourceEpoch` = 0 (§8).
 
-1. **CREATE (content + ACL, create-if-absent)** — `_version_ = -1`; on 409 (already
-   exists) fall through to the appropriate update mode after a realtime GET.
-2. **CONTENT-UPDATE (atomic content fields only)** — never touches the ACL group; no
-   epoch fence needed (does not race the ACL group). `_version_` CAS on the doc to
-   avoid lost updates vs another content update, re-read on 409.
-3. **ACL-UPDATE (atomic `readers` + `effective_acl_epoch`, epoch-fenced)** — realtime
-   GET the current `_version_` + `effective_acl_epoch`; **SKIP if stored epoch > mine**
-   (a strictly-newer effective ACL already landed); else atomic `{set}` with the read
-   `_version_`; on 409 re-read + re-evaluate; on missing/unparsable epoch or version
-   **FAIL CLOSED** (throw → enqueue/retry) on the reconcile path.
+### 4.2 Mandatory operation order (fixed; review-required)
 
-Participation of every writer:
+Every ACL-group write (normal async refresh, reconcile, batch, RAG) MUST:
 
-| Writer | Mode(s) | Notes |
-|---|---|---|
-| CMIS create | CREATE | initial epoch = effectiveEpoch at create |
-| CMIS update-body / properties | CONTENT-UPDATE | never touches ACL group (fixes round-3 clobber) |
-| applyAcl / move async refresh | ACL-UPDATE (self + inheriting descendants + reverse-looked-up relationships) | epoch-fenced |
-| reconcile re-drive | ACL-UPDATE (strict epoch, fail-closed) | drives to CURRENT epoch (fresh compute) |
-| CMIS batch / full reindex | CREATE per doc, but epoch-fenced (see §5) | must not lose to a concurrent ACL-UPDATE |
-| RAG block writer (indexToSolr / updateDocumentACL) | block CREATE / ACL-UPDATE | realtime GET parent, `_version_` CAS, epoch-fenced (see §5.3) |
+1. **Walk** authoritative sources (cache-bypassing): record for EVERY dependency
+   (self + inheriting ancestors; for a relationship also both endpoints) its `_rev`,
+   `aclSourceEpoch`, `aclEpochState`, parent id, inheritance flag, endpoint ids.
+   **If any dependency is `PENDING_EPOCH` (or `FINALIZED_NEEDS_RECONCILE` mid-CAS
+   ambiguity): do not write — retry/back off** (the pending gate).
+2. **Compute** readers + effectiveEpoch from the recorded snapshot.
+3. **Realtime GET** (`/get`, never a searcher query) the Solr doc's `_version_` +
+   stored `effective_acl_epoch` (+ stored readers for the equal-epoch rule).
+4. **Revalidate**: re-read every dependency recorded in step 1 and require identical
+   `_rev`/epoch/state/topology. Any change → restart from step 1.
+5. **Immediately CAS** the atomic ACL-group update (`readers` +
+   `effective_acl_epoch` `{set}`) with the step-3 `_version_`.
+6. On **409**: restart from step 1. **Payload reuse after a conflict is forbidden.**
 
-## 4. Reconciliation task dedupe (unchanged core + epoch note)
+Rationale for the order (review round-2 refinement): the `_version_` must be read
+BEFORE revalidation so that any Solr write after step 3 — including a correct
+writer's — fails our CAS at step 5. The reverse order (revalidate → RTG → CAS) lets
+a stale-but-revalidated writer acquire a fresher `_version_` written in between and
+overwrite it. With this order: source changes are caught by step 4 + restart; Solr
+changes are caught by the step-5 CAS; the residual TOCTOU (source changes between
+step 4 and step 5) resolves via §4.3 because the NEXT writer's step-1 recompute uses
+the newest sources.
 
-- Task keyed by deterministic `_id = search-index-acl-reconcile::{repo}::{object}`;
-  concurrent enqueues collapse to one doc; `_rev` CAS lifecycle (PENDING/LEASED/…).
-- The task does **NOT** carry a target epoch. The re-drive reads the object FRESH and
-  computes the CURRENT `effectiveEpoch`, so it always drives to the latest ACL. If the
-  ACL changes again after enqueue, the re-drive naturally targets the newer epoch.
-- The epoch fence in ACL-UPDATE guarantees the re-drive's write is dropped if a fresher
-  epoch already landed (no stale overwrite), and completes (deletes the task) only when
-  the write lands OR is superseded by a strictly-newer epoch.
+### 4.3 Fence decision + equal-epoch convergence rule (replaces v1 §6 invariant)
 
-## 5. State transitions (the required tables)
+At step 5, comparing `mine` vs stored:
 
-### 5.1 Counter issuance
+- stored epoch **>** mine → **skip** (clean no-op; a fresher effective ACL landed).
+- stored epoch **<** mine → CAS-update.
+- stored epoch **==** mine:
+  - stored readers **==** canonical(mine) → **skip** (true idempotence).
+  - stored readers **≠** mine → **recompute from authoritative sources (step 1) and
+    CAS-update the recomputed value** — never "my payload wins by default". Equal
+    epochs with different readers exist only transiently (read-skew windows); every
+    conflicting writer recomputing from source converges to the last-finalized state.
+- 409 at any point → full restart (step 1), never payload retry.
+- Missing/unparsable stored epoch or `_version_` on the reconcile path →
+  **fail-closed** (throw → task retained/retried). Optional observability:
+  `effective_acl_fingerprint` (hash of canonical readers) may be stamped for
+  diagnosis but is NEVER a correctness input.
 
-| Event | Pre | Action | Post | Conflict handling |
-|---|---|---|---|---|
-| allocate() first ever | counter absent | create `{value: baseline}` (create-if-absent) | `value = baseline` | 409 → someone created; re-read + increment |
-| allocate() | `value = n` | CAS `value = n+1` on `_rev` | `value = n+1` | 409 → re-read + retry (monotonic) |
+### 4.4 Field-group separation and the two ordering axes (Q2)
 
-### 5.2 Content ACL-source persistence (per-object lock held)
+- Solr fields split into **content group** (name/path/body/…) and **ACL group**
+  (`readers`, `effective_acl_epoch`). ACL-group writes are atomic `{set}` only.
+- **Stage 1 for content writers (accepted): read+preserve full add** — realtime GET
+  the existing ACL group and copy it verbatim into the full doc, `_version_` CAS,
+  on 409 re-read + re-preserve. If the ACL group is absent on an EXISTING doc, do
+  not full-add unconditionally — hand off to reconcile. (Full atomic-content-update
+  migration is a later stage; too much regression surface now.)
+- **Second axis — `content_generation`**: the doc's OWN CouchDB `_rev` leading int,
+  stamped by content writers and fenced among content writers (skip if stored
+  content_generation is newer). Own-`_rev` IS valid here — same document, so
+  comparable. ACL epoch orders the ACL group; content_generation orders the content
+  group. Both axes ride the same `_version_` CAS.
+- CREATE (doc absent) uses `_version_ = -1` create-if-absent carrying both groups;
+  409 → the doc appeared → fall back to the update modes.
 
-| Event | Pre | Action (in lock) | Post |
-|---|---|---|---|
-| applyAcl(X) | `X.aclSourceEpoch = a` | `e = allocate()`; set ACL; `X.aclSourceEpoch = e`; persist | `e > a`; async ACL-UPDATE of X + descendants + rels |
-| move(X) | `X.aclSourceEpoch = a` | `e = allocate()`; move; `X.aclSourceEpoch = e`; persist | `e > a`; async ACL-UPDATE of moved subtree + rels |
-| inheritance toggle(X) | `X.aclSourceEpoch = a` | `e = allocate()`; `X.aclSourceEpoch = e`; persist | `e > a` |
-| relationship re-point(R) | `R.aclSourceEpoch = a` | `e = allocate()`; `R.aclSourceEpoch = e`; persist | `e > a` |
+### 4.5 Batch / full reindex (Q3)
 
-### 5.3 RAG block state transitions
+- **No repository-wide ACL-write pause** (multi-replica pause validity, crash
+  leakage, doesn't stop content races, doesn't fix clear-vs-live-write deletion).
+- Every batch doc write follows §4.2 (create-if-absent + fences). After the batch, an
+  **authoritative final sweep** reconciles CouchDB vs Solr (docs deleted by the
+  initial clear that raced a live write; mid-batch creations; orphans). Performance
+  optimizations (bounded parallelism, multi-get) come after correctness.
 
-| State | Event | Action | Fence |
-|---|---|---|---|
-| absent | index | build block (parent+chunks) with `effective_acl_epoch`; add create-if-absent | `_version_=-1`; 409 → re-evaluate |
-| present | ACL-UPDATE | realtime GET parent (`/get`) for `_version_`+epoch; SKIP if stored epoch > mine; else rebuild block readers+epoch; add with `_version_` CAS | 409 → re-read; lease checkpoint before add |
-| present | content re-embed | rebuild block (chunks+vectors) — CONTENT-UPDATE semantics: preserve readers+epoch from realtime GET | `_version_` CAS |
-| present | PWC detected | delete block (never index a PWC — single choke point `RAGIndexingServiceImpl.indexDocument`) | n/a |
+### 4.6 All writers authoritative (Q4)
 
-### 5.4 Full reindex
+- The §4.2 walk is cache-bypassing for EVERY ACL writer, not just reconcile ("only
+  reconcile strict" is insufficient — a normal writer on a stale cache could stamp a
+  max-epoch wrong readers set and fence out the correct writer).
+- Within ONE traversal, a child may reuse the ancestor chain read by its parent (one
+  authoritative snapshot per traversal); per-node revalidation (step 4) still applies
+  before each node's CAS.
+- RAG long block rebuilds re-run step 4 against the source snapshot immediately
+  before the block add (in addition to the lease checkpoint).
+- Caches may later be reintroduced as advisory acceleration only, never correctness.
 
-| Phase | Action | Concurrency rule |
-|---|---|---|
-| clear | `deleteByQuery(repository_id)` | new writes after clear are fine (create-if-absent) |
-| re-add (batch) | per doc: compute `effectiveEpoch` fresh; CREATE (content+ACL) create-if-absent | if a concurrent ACL-UPDATE already created/updated the doc with a **higher** epoch, the batch's create-if-absent 409s → batch re-reads → SKIP (stored epoch >= its own) so it never lowers the epoch; if lower-or-equal it may re-add. Batch participates in the epoch fence (NOT a plain add — this is the round-3 #3 fix). |
-| RAG rebuild | `triggerFullRAGReindex` re-embeds; per block create-if-absent + epoch | same fence |
+### 4.7 Relationship tasks (Q5)
 
-## 6. Conflict table (writer × writer, same object)
+- Refresh scope of an ACL mutation on X: X itself; all inheriting descendants; all
+  relationships with source or target in that set (EITHER); on re-point, the
+  relationship itself.
+- Traversal dedupes relationship ids; a failed relationship write enqueues a
+  **relationship-scoped task** (own deterministic `_id`); failure of the reverse
+  lookup / child enumeration ALSO retains the subtree-root task. Relationship tasks
+  re-drive standalone with fresh tri-state endpoint reads (dangling endpoint ≠
+  transient ERROR).
+- Tasks carry `minRequiredEpoch` (dedupe keeps the max) for completion checks,
+  monitoring and forensics; the re-drive still recomputes the CURRENT epoch.
 
-Legend: **W** = wins (its readers/epoch is final), **S** = skipped/dropped by fence,
-**R** = retried.
+## 5. Reconciliation queue: operations (also covers PWC purge)
 
-| A ↓ \ B → | ACL-UPDATE(e2>e1) | ACL-UPDATE(e1, stale) | CONTENT-UPDATE | CREATE(batch) | RAG ACL-UPDATE |
-|---|---|---|---|---|---|
-| ACL-UPDATE(e1) | B **W** (e2>e1), A **S** on re-read | higher-epoch **W**, lower **S** | independent field group (no conflict) | epoch fence: higher **W** | separate doc (RAG block) — own epoch fence |
-| CONTENT-UPDATE | independent (ACL vs content group) | independent | `_version_` CAS, later **W**, other **R** | CREATE only if absent; else content atomic | independent |
-| CREATE(batch) | ACL-UPDATE higher epoch **W** | batch **W** if higher/equal | create-if-absent 409 → content atomic | one CREATE wins, other 409→update | independent |
+Task gains an `operation` field: `ACL_REINDEX` (default; absent = ACL_REINDEX for
+old tasks) | `RAG_PURGE`. The scheduler/manual-retry dispatch on it (the current
+scheduler ignores reason and always ACL-reindexes — insufficient for purge).
+`RAG_PURGE` guarantees: actually calls `ragIndexingService.deleteDocument`; does not
+complete the task on failure; verifies absence after delete; shares the deterministic
+`_id` with ACL tasks for the same object with **PURGE taking precedence on merge**;
+completion CAS cannot delete a task superseded mid-flight (existing generation CAS).
+(The PWC purge fix is implemented AHEAD of the epoch work — approved as independent.)
 
-Key invariant: **within the ACL field group, the strictly-highest `effective_acl_epoch`
-always wins; equal epochs are idempotent (same ACL source); a lower epoch is always
-skipped.** Because epochs are globally monotonic and allocated under the per-object
-lock in commit order, the last-committed ACL change has the strictly-highest epoch, so
-no late stale writer (any path) can undo it.
+## 6. Conflict table (v2)
 
-## 7. Migration / restore, and open decisions
+| A ↓ \ B → | ACL-UPDATE (higher e) | ACL-UPDATE (equal e) | ACL-UPDATE (lower e) | CONTENT-UPDATE | CREATE/batch | RAG block |
+|---|---|---|---|---|---|---|
+| ACL-UPDATE | B wins; A skips on re-read | equal-epoch rule §4.3 (same readers → skip; else recompute+CAS) | A wins; B skips | disjoint groups; both preserve the other via RTG copy + `_version_` CAS | fenced create-if-absent; higher epoch wins | separate doc; same contract |
+| CONTENT-UPDATE | disjoint | disjoint | disjoint | `content_generation` fence + `_version_` CAS; newer own-`_rev` wins | 409 → update path | disjoint |
+| CREATE/batch | epoch fence | §4.3 | batch skips (stored ≥) | 409 → content path | one create wins; loser re-reads | independent |
 
-- **Migration**: pre-epoch docs have no `aclSourceEpoch` (→ `0`). The mandatory v3.3
-  full reindex stamps `effective_acl_epoch` (initially `0` for untouched docs). First
-  ACL change on any doc allocates a real epoch. A doc at epoch `0` is fenced leniently
-  (any real-epoch write wins), which is correct (any real ACL change supersedes the
-  pre-migration state). A `Patch_AclEpochCounter` creates the counter doc + a Mango
-  index if needed.
-- **Restore** (archive restore of an object): treat as a new ACL source → allocate on
-  restore so the restored object's readers are re-established with a fresh epoch.
+Invariant (v2): **within the ACL group, strictly-higher effective epoch wins; equal
+epoch resolves by the §4.3 recompute rule (equal ≠ idempotent); lower is skipped;
+every CAS loser recomputes from authoritative sources.** Within the content group,
+newer `content_generation` wins.
 
-Open decisions requiring sign-off before coding:
+## 7. Authorization during the pending window (scoped claim)
 
-- **Q1 — counter baseline**: fixed `1`, or timestamp-derived, or a persisted
-  high-watermark? (Affects counter-doc-loss safety.)
-- **Q2 — CONTENT-UPDATE atomic-only**: switching CMIS body/property indexing from
-  full add to atomic content-field updates is a broad change to `indexDocumentInternal`
-  and every field it writes. Acceptable, or scope CONTENT-UPDATE to "full add that
-  READS + preserves the existing readers/epoch" as a smaller first step?
-- **Q3 — batch epoch fence**: per-doc create-if-absent + re-read on 409 slows full
-  reindex. Acceptable, or gate full reindex behind a repository-wide "ACL writes
-  paused" flag instead?
-- **Q4 — effective-epoch walk cost**: compute per index (ancestor walk) now, or
-  denormalize a cached `effectiveEpoch` (needs propagation on ancestor change)?
-- **Q5 — relationship reverse-index scope**: on an endpoint ACL change, which
-  relationships get an ACL-UPDATE (already reverse-looked-up today) and do they need
-  their own re-drive tasks?
+"The ACL is committed in phase 1" makes the **authoritative CouchDB ACL** correct
+before finalization — but live authorization reads `calculateAcl`'s EhCache, so this
+does NOT unconditionally extend to the live gate:
 
-## 8. Required deterministic tests (live-Solr concurrency IT, to be built with impl)
+- crash after commit but before cache eviction (descendant eviction runs
+  post-commit) leaves same-JVM stale cache up to TTL;
+- multi-replica caches are never invalidated cross-replica (pre-existing, documented);
+- pending state does not itself bypass the cache.
 
-1. Parent ACL change → child's `effective_acl_epoch` increases → a stale child writer
-   (old epoch) is SKIPPED.
-2. Endpoint ACL change → relationship epoch increases → stale relationship writer
-   SKIPPED.
-3. Full-reindex batch vs concurrent ACL-UPDATE → higher epoch wins (batch does not
-   lower the epoch).
-4. applyAcl/move root uses the POST-persist revision/epoch (not the pre-persist one).
-5. Strict ancestor/endpoint ERROR → NO Solr add on any of CMIS / relationship / RAG.
-6. RAG parent read via realtime GET (not searcher) during commitWithin window.
-7. reconcile success + task delete, then release an old normal ACL writer → final
-   readers = the newer epoch.
-8. missing `_version_` / unparsable epoch → fail-closed (throw → task retained), no
-   unconditional write.
-9. CONTENT-UPDATE does not alter `readers` / `effective_acl_epoch`.
-10. Existing RAG test (`RAGIndexingServiceImplAclUpdateTest`) + focused suite green.
+v2 requires ONE of (decided: the second):
+(a) live authorization bypasses the ACL cache when the Content is `PENDING_EPOCH`, or
+(b) **the finalizer/scanner re-runs the cache eviction (idempotent, self + inheriting
+descendants) as part of finalize**, so a crash between commit and eviction is healed
+by the same recovery that heals the epoch. Multi-replica remains the pre-existing
+stale-cache limitation and is documented, not silently claimed solved.
+
+## 8. Counter safety, migration, restore (Q1 decided: persisted high-watermark)
+
+- The counter doc is the sole persisted high-watermark. Invariant:
+  `counter.value >= every aclSourceEpoch in the repository`.
+- Counter missing while epoch-bearing Content exists → **fail closed** (no lazy
+  recreation). Recovery procedure: with writes stopped, scan max epoch over Content
+  (and Solr) and restore `max+1`.
+- Solr stored epoch > counter → treat as index corruption → fail, do not skip-as-newer.
+- Repository restore must not roll the counter back; restored ACLs get NEW epochs
+  from the current counter.
+- No timestamp baselines (clock rollback / counter-beyond-clock reissue is not a
+  safety argument). Baseline for a fresh repository: 1.
+- Pre-migration docs: epoch 0; the mandatory v3.3 full reindex stamps ACL groups;
+  the first ACL mutation allocates a real epoch. `Patch_AclEpochCounter` creates the
+  counter + Mango index.
+
+## 9. Required deterministic tests (live-Solr concurrency IT; §8-v1 list superseded)
+
+1. Commit-order inversion across different ancestors (post-commit allocation:
+   later-finalized gets the higher epoch; converged readers correct).
+2. Cross-document read skew spanning the pending-marker visibility boundary
+   (reader saw pre-pending P + post-finalize A) → §4.2/§4.3 converge.
+3. ACL source change between step 1 and step 3 (before RTG) → caught by step 4.
+4. Source change after step 4 / immediately before the step-5 CAS → next writer's
+   recompute converges; no stale final state.
+5. Equal epoch + different readers → recompute rule ends at last-finalized readers.
+6. Crash after phase-1 commit, before allocation → scanner finalizes; authorization
+   cache eviction re-run (§7b).
+7. Crash after finalize, before enqueue → scanner enqueues; no lost task.
+8. Duplicate outbox enqueue racing task completion → generation CAS keeps the newer.
+9. Concurrent endpoint changes on both relationship endpoints.
+10. RAG block rebuild with a source change mid-rebuild → pre-add revalidation aborts.
+11. Full-reindex batch vs live ACL-UPDATE → higher epoch survives; final sweep
+    restores docs deleted by clear-races.
+12. Content writer preserves the ACL group byte-identically (read+preserve mode);
+    `content_generation` fences stale content writers.
+13. Missing `_version_` / unparsable epoch → fail-closed, task retained.
+14. PWC: full/single RAG reindex adds no PWC block; existing PWC block deleted;
+    delete failure does not report success; durable retry deletes it after restart;
+    duplicate purge tasks merge; deletion verified by absence check; no regression
+    for non-PWC docs.
+
+## 10. Known adjacent issue (out of scope, tracked)
+
+Descendant `path` staleness on ancestor rename/move is the same "own-`_rev` cannot
+order it" class, but is NOT authorization-relevant (display/IN_TREE correctness). It
+is explicitly out of the ACL-epoch sign-off scope, must be filed as its own issue,
+and the §4.4 content-writer changes must not make it worse (read+preserve mode
+copies, never recomputes, the ACL group; path handling is unchanged in stage 1).
 
 ---
 
-Nothing in this document is implemented yet. On acceptance, implementation proceeds in
-ordered increments: counter → `aclSourceEpoch` persistence → effective-epoch compute →
-ACL-UPDATE atomic+fence → CONTENT/CREATE separation → batch fence → RAG unification →
-strict end-to-end → migration patch → the live-Solr concurrency IT.
+Implementation remains BLOCKED until this v2 is signed off. The PWC purge fix (§5)
+is approved for independent implementation ahead of the epoch work.
