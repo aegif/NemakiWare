@@ -29,6 +29,15 @@ public class SearchIndexAclReindexTask {
 
     public static final String DOC_TYPE = "searchIndexAclReindexTask";
     public static final String ID_PREFIX = "search-index-acl-reconcile::";
+    /**
+     * Separate deterministic-id namespace for {@link Operation#RAG_PURGE} tasks.
+     * ACL_REINDEX and RAG_PURGE are INDEPENDENT obligations (an ACL reindex covers
+     * CMIS readers + descendants + relationships; a purge covers only the RAG
+     * block) — sharing one document with a precedence rule would let a completed
+     * purge delete an unfinished ACL obligation. The same object may hold BOTH
+     * tasks; each completes on its own.
+     */
+    public static final String PURGE_ID_PREFIX = "search-index-rag-purge::";
 
     public static final class Status {
         public static final String PENDING = "PENDING";
@@ -155,12 +164,25 @@ public class SearchIndexAclReindexTask {
     public void setCouchRev(String couchRev) { this.couchRev = couchRev; }
 
     /**
-     * The deterministic CouchDB {@code _id} for a (repository, object) pair.
+     * The deterministic CouchDB {@code _id} for a (repository, object) pair —
+     * ACL_REINDEX namespace (unchanged; pre-existing queue documents live here).
      * The objectId is percent-ish encoded (only {@code :} and {@code %}) so the
      * {@code ::} separator is unambiguous even if an id ever contained a colon.
      */
     public static String deterministicId(String repositoryId, String objectId) {
         return ID_PREFIX + repositoryId + "::" + encode(objectId);
+    }
+
+    /**
+     * The deterministic {@code _id} for the given OPERATION. RAG_PURGE tasks live in
+     * their own namespace so an ACL_REINDEX obligation and a RAG_PURGE obligation on
+     * the same object are separate documents that complete independently.
+     */
+    public static String deterministicId(String repositoryId, String objectId, String operation) {
+        if (Operation.RAG_PURGE.equals(operation)) {
+            return PURGE_ID_PREFIX + repositoryId + "::" + encode(objectId);
+        }
+        return deterministicId(repositoryId, objectId);
     }
 
     private static String encode(String s) {

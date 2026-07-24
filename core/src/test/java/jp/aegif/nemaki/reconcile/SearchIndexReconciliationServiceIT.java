@@ -141,23 +141,36 @@ public class SearchIndexReconciliationServiceIT {
     }
 
     @Test
-    void operationMergePurgeWinsInBothDirections() {
-        // ACL first, then PURGE → task upgrades to RAG_PURGE.
+    void aclAndPurgeAreIndependentTasksNotOneMergedDoc() {
+        // ACL_REINDEX and RAG_PURGE for the SAME object are separate documents
+        // (separate deterministic-id namespaces): a completed purge must not delete
+        // the unfinished ACL obligation, and vice versa. Enqueue both, in either
+        // order, and observe TWO distinct tasks both surviving.
         svc.enqueue(repo, "objOp1", SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE);
         svc.enqueue(repo, "objOp1", SearchIndexAclReindexTask.Reason.PWC_PURGE_FAILURE,
                 SearchIndexAclReindexTask.Operation.RAG_PURGE);
-        SearchIndexAclReindexTask t1 = svc.getByTaskId(taskIdFor("objOp1"));
-        assertEquals(SearchIndexAclReindexTask.Operation.RAG_PURGE, t1.getEffectiveOperation(),
-                "a purge request must upgrade a pending ACL task");
 
-        // PURGE first, then ACL → PURGE must NOT be downgraded (the block would
-        // survive an ACL reindex).
-        svc.enqueue(repo, "objOp2", SearchIndexAclReindexTask.Reason.PWC_PURGE_FAILURE,
+        List<SearchIndexAclReindexTask> forObj = svc.list(2000).stream()
+                .filter(t -> repo.equals(t.getRepositoryId()) && "objOp1".equals(t.getObjectId()))
+                .toList();
+        assertEquals(2, forObj.size(), "ACL and PURGE for one object must be two independent tasks");
+        assertTrue(forObj.stream().anyMatch(t ->
+                SearchIndexAclReindexTask.Operation.ACL_REINDEX.equals(t.getEffectiveOperation())));
+        assertTrue(forObj.stream().anyMatch(t ->
+                SearchIndexAclReindexTask.Operation.RAG_PURGE.equals(t.getEffectiveOperation())));
+    }
+
+    @Test
+    void enqueueOrThrowSucceedsWhenDurable() {
+        // The durable variant for security obligations returns (no throw) when the
+        // task is persisted, and the task exists afterwards.
+        svc.enqueueOrThrow(repo, "objOr1", SearchIndexAclReindexTask.Reason.PWC_PURGE_FAILURE,
                 SearchIndexAclReindexTask.Operation.RAG_PURGE);
-        svc.enqueue(repo, "objOp2", SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE);
-        SearchIndexAclReindexTask t2 = svc.getByTaskId(taskIdFor("objOp2"));
-        assertEquals(SearchIndexAclReindexTask.Operation.RAG_PURGE, t2.getEffectiveOperation(),
-                "a later ACL event must not downgrade a pending purge");
+        long n = svc.list(2000).stream()
+                .filter(t -> repo.equals(t.getRepositoryId()) && "objOr1".equals(t.getObjectId())
+                        && SearchIndexAclReindexTask.Operation.RAG_PURGE.equals(t.getEffectiveOperation()))
+                .count();
+        assertEquals(1, n, "enqueueOrThrow must durably persist the purge task");
     }
 
     // ── CAS claim exclusivity ──────────────────────────────────────

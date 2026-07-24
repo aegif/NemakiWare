@@ -1,8 +1,10 @@
-# ACL-in-Solr: Repository-wide monotonic ACL epoch fencing (design v2)
+# ACL-in-Solr: Repository-wide monotonic ACL epoch fencing (design v2.1)
 
-Status: **DESIGN v2 — awaiting re-sign-off. No epoch implementation code exists or
-may be written until sign-off.** Supersedes v1 (this file's previous revision) after
-two review rounds. v1's flaws corrected here:
+Status: **DESIGN v2.1 — awaiting re-sign-off. No epoch implementation code exists or
+may be written until sign-off.** v2.1 adds, per review: `content_incarnation`
+(restore resets `_rev`, §4.4), independent per-operation task obligations (§5), and
+a strengthened outbox ACK condition (§3). Supersedes v1 after two review rounds.
+v1's flaws corrected in v2:
 
 - v1 allocated the epoch BEFORE the CouchDB commit (under the per-object lock) and
   claimed "allocation order == commit order". That holds only per-object; across
@@ -82,7 +84,13 @@ PENDING_EPOCH                (ACL committed; epoch not yet assigned)
 
 - After phase 2, the mutating request enqueues the subtree-root reconciliation task
   (idempotent deterministic `_id`), then CAS-patches X to `RECONCILE_ENQUEUED` /
-  clears the marker **only after confirming the task document durably exists**.
+  clears the marker. **v2.1 ACK condition (strengthened): the outbox may be cleared
+  only after confirming that an `ACL_REINDEX` task for X durably exists AND its
+  `minRequiredEpoch` >= the epoch finalized in phase 2** (a merge with an existing
+  task must have kept the max). "A task document exists" alone is insufficient — a
+  concurrently-completing older task could delete it between our check and the ACK,
+  or an existing task could carry a lower obligation; the `minRequiredEpoch` merge
+  plus the queue's generation CAS make the obligation itself durable.
 - A **scanner** (piggybacked on the existing reconciliation scheduler tick) sweeps
   Contents in `PENDING_EPOCH` (crash before finalize → finalize them, §2.2 step 2)
   and `FINALIZED_NEEDS_RECONCILE` (crash before enqueue → enqueue idempotently, then
@@ -161,10 +169,24 @@ At step 5, comparing `mine` vs stored:
   on 409 re-read + re-preserve. If the ACL group is absent on an EXISTING doc, do
   not full-add unconditionally — hand off to reconcile. (Full atomic-content-update
   migration is a later stage; too much regression surface now.)
-- **Second axis — `content_generation`**: the doc's OWN CouchDB `_rev` leading int,
-  stamped by content writers and fenced among content writers (skip if stored
-  content_generation is newer). Own-`_rev` IS valid here — same document, so
-  comparable. ACL epoch orders the ACL group; content_generation orders the content
+- **Second axis — `content_generation` + `content_incarnation`**: the doc's OWN
+  CouchDB `_rev` leading int, stamped by content writers and fenced among content
+  writers (skip if stored content_generation is newer) — own-`_rev` IS comparable
+  within one document lifetime. **BUT a restore re-uses the original `_id` while
+  letting CouchDB assign a FRESH `_rev` (`ArchiveDaoDelegate.restoreContent`
+  explicitly skips `_rev`), so `_rev` numbering RESTARTS at 1-*: a numeric-only
+  fence would judge the correctly-restored content "older" than the pre-delete
+  Solr doc (e.g. stored 50 vs restored 1) and permanently refuse to write it.**
+  Therefore v2.1 adds `content_incarnation`, a UUID persisted on the Content and
+  stamped alongside `content_generation`:
+  - numeric `content_generation` comparison applies ONLY when the stored and
+    incoming `content_incarnation` are EQUAL;
+  - restore / recreate-under-the-same-id issues a NEW incarnation;
+  - on incarnation MISMATCH the writer does not compare generations at all — it
+    CAS-updates from the current authoritative Content (the live CouchDB state is
+    by definition the truth for a new incarnation), establishing the new
+    incarnation + its generation in Solr.
+  ACL epoch orders the ACL group; (incarnation, generation) orders the content
   group. Both axes ride the same `_version_` CAS.
 - CREATE (doc absent) uses `_version_ = -1` create-if-absent carrying both groups;
   409 → the doc appeared → fall back to the update modes.
@@ -203,16 +225,43 @@ At step 5, comparing `mine` vs stored:
 - Tasks carry `minRequiredEpoch` (dedupe keeps the max) for completion checks,
   monitoring and forensics; the re-drive still recomputes the CURRENT epoch.
 
-## 5. Reconciliation queue: operations (also covers PWC purge)
+## 5. Reconciliation queue: INDEPENDENT per-operation obligations (v2.1)
 
 Task gains an `operation` field: `ACL_REINDEX` (default; absent = ACL_REINDEX for
-old tasks) | `RAG_PURGE`. The scheduler/manual-retry dispatch on it (the current
-scheduler ignores reason and always ACL-reindexes — insufficient for purge).
-`RAG_PURGE` guarantees: actually calls `ragIndexingService.deleteDocument`; does not
-complete the task on failure; verifies absence after delete; shares the deterministic
-`_id` with ACL tasks for the same object with **PURGE taking precedence on merge**;
-completion CAS cannot delete a task superseded mid-flight (existing generation CAS).
-(The PWC purge fix is implemented AHEAD of the epoch work — approved as independent.)
+old tasks) | `RAG_PURGE`, and the scheduler/manual-retry dispatch on it (the prior
+scheduler ignored reason and always ACL-reindexed — insufficient for a purge, which
+an ACL reindex would leave alive or even refresh).
+
+**v2.1 correction — the operations are NOT exclusive and must not share one task
+document.** An ACL_REINDEX obligation covers CMIS content readers + descendants +
+relationships (+ RAG readers); a RAG_PURGE covers only the RAG block. The v2 scheme
+(one deterministic `_id`, PURGE wins on merge) could REPLACE a pending ACL task with
+a purge: the purge completes, the task is deleted, and the unfinished ACL work —
+soon to be the durable outbox's obligation — is silently lost. Therefore:
+
+- **Per-operation deterministic ids**:
+  `search-index-acl-reconcile::{repo}::{obj}` (ACL_REINDEX, unchanged — backward
+  compatible with existing queue documents) and
+  `search-index-rag-purge::{repo}::{obj}` (RAG_PURGE). The same object may hold BOTH
+  tasks; each completes independently. No cross-operation merge rule exists.
+- `RAG_PURGE` guarantees: actually deletes the block via a purge-dedicated,
+  **`rag.enabled`-independent** delete (a disabled RAG must not turn the purge into
+  a silent no-op); the delete and the absence verification are both
+  **repository-scoped** (`repository_id` condition — the RAG id is the raw CMIS id,
+  not repo-scoped); never completes without a verified-absent read;
+  **never becomes terminal FAILED** — a purge that cannot run (e.g. RAG disabled,
+  Solr down) stays PENDING under capped backoff so it resumes when the blocker
+  clears (a terminal FAILED purge would let the block silently return with RAG
+  re-enablement).
+- **Enqueue durability**: the plain `enqueue()` is fire-and-fail-soft (metrics
+  only). Security obligations (the PWC purge) use `enqueueOrThrow`, which returns
+  only after the task durably exists and THROWS otherwise — the caller must fail
+  (per-document, so a batch reindex records the failure without aborting the run).
+  "Solr delete failed AND queue write failed AND caller reports success" must be
+  impossible.
+
+(The PWC purge fix is implemented AHEAD of the epoch work — approved as
+independent.)
 
 ## 6. Conflict table (v2)
 
@@ -285,7 +334,14 @@ stale-cache limitation and is documented, not silently claimed solved.
 14. PWC: full/single RAG reindex adds no PWC block; existing PWC block deleted;
     delete failure does not report success; durable retry deletes it after restart;
     duplicate purge tasks merge; deletion verified by absence check; no regression
-    for non-PWC docs.
+    for non-PWC docs; **delete failure + queue-write failure is impossible to report
+    as success (enqueueOrThrow)**; purge runs with RAG disabled and never terminal-
+    FAILs; delete/verify are repository-scoped (a same-id doc in another repository
+    is untouched).
+15. Restore/incarnation: delete → restore (same `_id`, fresh `_rev` 1-*) → the
+    restored content IS written to Solr (incarnation mismatch → authoritative CAS,
+    never "older-generation" refusal); an ACL_REINDEX task and a RAG_PURGE task on
+    the same object complete independently (neither erases the other's obligation).
 
 ## 10. Known adjacent issue (out of scope, tracked)
 

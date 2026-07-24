@@ -479,9 +479,9 @@ public class AclServiceImpl implements AclService {
 			return false;
 		}
 		try {
-			// deleteDocument silently no-ops when RAG is disabled — the verification
-			// below catches that (block still present -> false -> task retained).
-			ragService.deleteDocument(repositoryId, objectId);
+			// purgeDocumentBlocks ignores rag.enabled (a disabled RAG must not turn a
+			// security purge into a silent no-op) and is repository-scoped.
+			ragService.purgeDocumentBlocks(repositoryId, objectId);
 		} catch (Exception e) {
 			log.warn("RAG purge: delete failed for " + objectId + ": " + e.getMessage());
 			return false;
