@@ -500,20 +500,25 @@ public class AclServiceImpl implements AclService {
 	 * Throws on a genuine failure so the caller records/retries it.
 	 */
 	private void writeContentReaders(jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil solrUtil,
-			String repositoryId, Content content, boolean syncConfirm, Runnable onWriteFailed) throws Exception {
-		if (syncConfirm) {
-			jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.ReadersUpdateResult result =
-					solrUtil.updateReadersFenced(repositoryId, content);
-			if (result == jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.ReadersUpdateResult.NOT_INDEXED) {
-				// Not in Solr yet — nothing to clobber. Full strict index so the readers
-				// (and body/path) are established; a genuine build/Solr failure throws.
-				solrUtil.indexDocument(repositoryId, content, true, true, onWriteFailed, true);
-			}
-			// UPDATED / SKIPPED_NEWER_GENERATION → done (skip is a clean no-op: a fresher
-			// generation already landed).
-		} else {
-			solrUtil.indexDocument(repositoryId, content, false, true, onWriteFailed, false);
+			String repositoryId, Content content, Runnable onWriteFailed) throws Exception {
+		// UNIFIED write path (review round 3, #1): BOTH the async applyAcl/move refresh
+		// AND the reconciliation re-drive write ACL readers through the SAME
+		// generation-fenced atomic readers-only CAS. Previously only the reconcile used
+		// the CAS while the async refresh did an un-fenced full-doc add — so a late stale
+		// async writer (gen=1) could overwrite a fresher reconcile write (gen=2) with no
+		// subsequent convergence event, leaving Solr permanently stale. Routing every
+		// ACL-only writer through updateReadersFenced makes the highest generation win.
+		jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.ReadersUpdateResult result =
+				solrUtil.updateReadersFenced(repositoryId, content);
+		if (result == jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.ReadersUpdateResult.NOT_INDEXED) {
+			// Not in Solr yet — nothing to clobber. Full index (itself generation-fenced
+			// + create-if-absent via indexDocumentInternal, so a concurrent create cannot
+			// be overwritten). strict=true: a genuine readers/body/path failure throws so
+			// the node is recorded/retried instead of persisting a degraded doc as clean.
+			solrUtil.indexDocument(repositoryId, content, true, true, onWriteFailed, true);
 		}
+		// UPDATED / SKIPPED_NEWER_GENERATION → done (skip is a clean no-op: a fresher
+		// generation already landed and must not be overwritten).
 	}
 
 	@Override
@@ -641,12 +646,18 @@ public class AclServiceImpl implements AclService {
 		};
 
 		// CMIS content readers: refresh the Solr `readers` field so the query-time
-		// readers fq stays correct. Skip the root (updateInternal already did it);
-		// re-index inheriting descendants (their effective ACL changed).
-		if (!isRoot && solrUtil != null) {
+		// readers fq stays correct — for EVERY node INCLUDING the root (review round 3,
+		// #2). The root object's ACL was persisted + full-doc indexed by updateInternal
+		// (applyAcl) / ContentServiceImpl.move, but that write is fire-and-forget with no
+		// permanent-failure callback: if it exhausts its retries the root's readers are
+		// lost with nothing to reconcile them. Writing the root here too — through the
+		// generation-fenced readers-only CAS with the enqueue-on-failure hook — makes a
+		// permanent root Solr failure land in the reconciliation queue, and the fence
+		// keeps this (idempotent) write from clobbering a fresher generation.
+		if (solrUtil != null) {
 			try {
 				checkpointLease(leaseStillHeld);
-				writeContentReaders(solrUtil, repositoryId, content, syncConfirm, onWriteFailed);
+				writeContentReaders(solrUtil, repositoryId, content, onWriteFailed);
 			} catch (LeaseLostException lle) {
 				throw lle;
 			} catch (Exception e) {
@@ -693,7 +704,7 @@ public class AclServiceImpl implements AclService {
 						// with thousands of relationships must not let a lease-lost worker
 						// keep writing for the whole batch (finer than per-node fencing).
 						checkpointLease(leaseStillHeld);
-						writeContentReaders(solrUtil, repositoryId, rel, syncConfirm, onWriteFailed);
+						writeContentReaders(solrUtil, repositoryId, rel, onWriteFailed);
 					}
 				}
 			} catch (LeaseLostException lle) {

@@ -890,9 +890,46 @@ single-replica でも残余は無害ではない — (a) **stale-deny** は Solr
   **各 chunk ページ取得前**に lease を確認、喪失なら **block 置換 add の前**に `RAGIndexingException` で中断(stale block を
   landing させない)。単一ノード処理が lease を超えても旧 worker が書かない。
 - **[P2] #7 schema.xml 追加行の trailing whitespace (CRLF cr-at-eol) を除去** (`git diff --check` clean)。
-- **[P2/#6] 決定的並行テスト追加**: IT に (a) gen read↔write race で `_version_` CAS が stale write を弾く、
-  (b) lease CAS 例外後に guard が必ず false、(c) strict sentinel 失敗で task 非削除、を latch で決定的に固定。
-- **検証**: 全 focused 単体 green、実 CouchDB IT、TCK QueryTestGroup、実機で atomic CAS の 409→skip / RAG per-page 中断を確認。
+- **[P2/#6] 決定的テスト追加 (現時点で実在するもののみ)**: **`SearchIndexReconciliationFenceGuardTest`** (Mockito 単体 4件) で
+  guard の **fail-closed** (renew が false/throw で guard false) と **一方向 latch** (一度 false なら以後 renew を呼ばず false 維持) を
+  決定的に固定。**未実装 (次巡の必須テスト、下記「残 P1」参照)**: `updateReadersFenced` の 409 再評価、`NOT_INDEXED` 競合、
+  root 失敗 enqueue、strict ACL の ERROR 非完了、RAG 最終 add 前の guard は、**live-Solr の barrier/latch 並行 IT が必要**で未追加。
+  実機の手動静止試験 (atomic 修復+clobber 非発生 / 世代 skip / realtime `_version_`) は補助であり、決定的競合試験の代替ではない。
+- **検証**: focused 単体 57/57、実 CouchDB IT 10/10 (**本巡で IT ファイルは未変更 — 前巡の 10件のまま**)、TCK QueryTestGroup 6/6、
+  実機で atomic CAS 修復+clobber 非発生 / 世代 skip / RAG per-page 中断を手動確認。
+
+**reconciliation キュー — 恒久収束の統一実装 第3巡 (前掲「残 5 P1」を全対応)**:
+第2巡後のレビューが「全 writer 統一 CAS が無いため後着 stale writer で恒久 stale」他 5 P1 を指摘。reviewer の
+「次担当者への作業指示」に沿って**全 ACL-only 書込みを共通の世代フェンス経路へ統一**した。
+- **[P1] #1 全 writer 統一 (最重要)**: `SolrUtil.indexDocumentInternal` (単一 doc index の中核・全 content/ACL 書込みが通る) を
+  **世代フェンス + `_version_` optimistic-concurrency CAS** 化。手順: `myGen = _rev 先頭整数` → realtime-GET で
+  `_version_`+`acl_index_generation` 取得 → `storedGen > myGen` なら **SKIP**(後着 stale を弾く) → 未索引は `_version_=-1`
+  create-if-absent、既存は read version で **CAS add** → 409 で再読込・再評価。これで **root/move/descendant/一般更新**すべてが
+  世代順序化され、後着 stale writer が成功 reconcile を上書きできない(最高 gen が勝つ)。**batch/全再索引は clear 先行なので非対象**、
+  gen<=0 は fail-open plain add(後方互換)。加えて `AclServiceImpl.writeContentReaders` が reconcile/async 両方で
+  `updateReadersFenced` を使うよう統一。全再索引不要の Solr `DocBasedVersionConstraints` は RAG doc が version 非搭載で不採用の
+  ままだが、**アプリ層の `_version_` CAS を全 writer に効かせることで同等の収束**を得た。実機: applyAcl で root が fenced 経路経由で
+  gen bump + readers 更新を確認。
+- **[P1] #2 root 失敗 enqueue**: traversal の content-readers 書込みから `!isRoot` ガードを撤去。root も
+  `writeContentReaders`(fenced + `onWriteFailed` enqueue)で書くので、root の Solr write が retry 枯渇しても reconcile queue に載る。
+- **[P1] #3 NOT_INDEXED を create-if-absent CAS 化 + repo 不一致 hard fail**: 未索引は上記 `indexDocumentInternal` の
+  `_version_=-1` 経路で作成(並行 create は 409 で再評価)、`readVersionAndGeneration` は **repo 不一致を throw**(別 repo の同一 id を
+  full add で上書きしない)。
+- **[P1] #4 strict ACL (ancestor)**: `ContentService.calculateAcl(repo, content, strict)` overload を新設、strict では
+  `calculateAclInternal` の **継承親が読めない (parentId≠null かつ getFolder=null) 場合に throw**(local-ACE-only への縮退で
+  under-visible readers を書いて task 削除するのを防ぐ)+ cache bypass。reconcile は `expandToReaders(..., strict=true)` を使用。
+  **残余 (正直に)**: principal lookup null(user/group)の transient-vs-deleted 区別は principal DAO の tri-state 化が必要で本巡は未対応
+  (継承親の tri-state で最大の blast radius=全継承 grant drop は閉じた)。
+- **[P1] #5 RAG add 直前 fence + parent `_version_` CAS**: 最終ページ後・block 置換 add の**直前**に lease 再確認、かつ parent の
+  `_version_` を読んで add に CAS 付与(並行 block 置換なら 409 で中断)。旧 worker の stale block が着地しない。
+- **検証**: 中核 CAS 変更を **TCK Basics 3/3・CRUD1 10/10・Versioning 4/4・Query 6/6 (BUILD SUCCESS)** で無回帰確認(create/update/
+  query/version 全通過)、focused 単体 76/76(ACLExpander 33/33 含む・IT 10/10)、実機で applyAcl→root fenced 更新 + 実在ユーザー grant
+  が readers 反映 + gen bump、smoke で create/update(CAS)/CONTAINS 正常。
+- **残 test-infra (正直に)**: reviewer 要求の**自動 live-Solr barrier/latch 並行 IT**(gen1↔gen2 race で CAS 409→skip、create race を
+  `_version_=-1` で拒否、reconcile 成功後の旧 writer 解放で最終 gen2、root retry 枯渇 enqueue、ancestor ERROR で無送信、RAG 最終ページ後
+  guard false で add 不発、repo collision 非上書き、atomic 後の全フィールド+CONTAINS 不変)は SolrUtil を Spring/Solr 配線する専用 IT が
+  必要で本巡未追加(単体は fenceGuard 4 + parseRevGeneration 3、実機は手動決定検証)。マージ可否はこの IT 整備 + 上記 principal tri-state を
+  含めて再レビュー待ち。
 
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 

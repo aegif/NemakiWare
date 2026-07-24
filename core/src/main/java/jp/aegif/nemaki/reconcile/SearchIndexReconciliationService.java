@@ -249,11 +249,13 @@ public class SearchIndexReconciliationService {
             boolean held;
             try {
                 held = renewLeaseIfNeeded(task, leaseMillis);
-            } catch (Throwable t) {
-                // FAIL-CLOSED: any error while renewing the lease means we can no longer
-                // PROVE we still hold it (a CouchDB timeout could hide a reclaim). Latch
-                // the guard false permanently so the re-drive aborts instead of resuming
-                // writes on an unprovable lease.
+            } catch (Exception t) {
+                // FAIL-CLOSED: any Exception while renewing the lease means we can no
+                // longer PROVE we still hold it (a CouchDB timeout could hide a reclaim).
+                // Latch the guard false permanently so the re-drive aborts instead of
+                // resuming writes on an unprovable lease. NOTE: only Exception, NOT
+                // Throwable — a fatal Error (OutOfMemoryError, ThreadDeath, linkage) must
+                // propagate, not be swallowed as a mere "lease lost".
                 logger.warn("Lease renewal threw for task {} — fencing closed (lease treated as lost): {}",
                         task != null ? task.getTaskId() : "?", t.toString());
                 lost.set(true);
