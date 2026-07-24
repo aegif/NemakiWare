@@ -632,6 +632,128 @@ public class AclEpochFinalizationServiceIT {
                 "quarantine must either succeed or record a failure (never silent): " + sum.quarantineFailures);
     }
 
+    // ── review 2e: explicit-null marker (SDK stores JSON null as present) ──
+
+    @Test
+    void explicitNullQuarantineMarkerIsNotHiddenAndIsNormalizedToTrue() throws Exception {
+        // The IBM Cloudant SDK stores an explicit JSON null as a PRESENT map entry, so a
+        // {"aclEpochQuarantined": null} must be treated as a malformed marker (not absent):
+        // the $ne:true branch of the selector matches it, validate() rejects it, and it is
+        // normalized to true. Written via raw HTTP to guarantee an explicit JSON null.
+        String m = AclEpochState.newMutationId();
+        putRawJson("q-null", "{\"type\":\"epoch-it-fixture\",\"aclEpochState\":\"PENDING_EPOCH\","
+                + "\"aclEpochMutationId\":\"" + m + "\",\"aclEpochQuarantined\":null}");
+        for (int i = 0; i < 3; i++) svc.scan(contentDb, 100);
+        assertEquals(Boolean.TRUE, props("q-null").get(AclEpochState.FIELD_QUARANTINED),
+                "an explicit-null marker must be normalized to true, not treated as absent");
+        assertEquals(AclEpochState.PENDING_EPOCH, props("q-null").get(AclEpochState.FIELD_STATE),
+                "the null-marker doc must NOT be finalized (it is a marker anomaly)");
+    }
+
+    @Test
+    void directFinalizeOnExplicitNullMarkerIsRejectedBeforeAllocate() throws Exception {
+        String m = AclEpochState.newMutationId();
+        putRawJson("q-null-fin", "{\"type\":\"epoch-it-fixture\",\"aclEpochState\":\"PENDING_EPOCH\","
+                + "\"aclEpochMutationId\":\"" + m + "\",\"aclEpochQuarantined\":null}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.finalizePending(contentDb, "q-null-fin"));
+        assertEquals(0L, counterValue(contentDb), "an explicit-null marker must not consume an epoch");
+    }
+
+    @Test
+    void quarantineNormalizesAnExplicitNullMarkerOnReGet() throws Exception {
+        String m = AclEpochState.newMutationId();
+        putRawJson("q-null-q", "{\"type\":\"epoch-it-fixture\",\"aclEpochState\":\"PENDING_EPOCH\","
+                + "\"aclEpochMutationId\":\"" + m + "\",\"aclEpochQuarantined\":null}");
+        ScanSummary sum = new ScanSummary();
+        svc.quarantine(contentDb, "q-null-q", "explicit null marker", sum);
+        assertEquals(1, sum.quarantined, "an explicit-null marker present on re-GET must be quarantined");
+        assertEquals(Boolean.TRUE, props("q-null-q").get(AclEpochState.FIELD_QUARANTINED));
+    }
+
+    @Test
+    void quarantineAbortsWhenTheMarkerWasRemovedAndEpochIsValid() {
+        // The marker was cleared (repaired) and the epoch fields are valid → quarantine aborts
+        // (a repaired document must never be quarantined), even though an anomaly was detected
+        // earlier.
+        seedPending("q-cleared", AclEpochState.newMutationId()); // valid, no marker
+        ScanSummary sum = new ScanSummary();
+        svc.quarantine(contentDb, "q-cleared", "stale marker anomaly", sum);
+        assertEquals(0, sum.quarantined);
+        assertFalse(props("q-cleared").containsKey(AclEpochState.FIELD_QUARANTINED));
+    }
+
+    // ── review 2f: present-null state / contention / terminal cursor ──
+
+    @Test
+    void presentNullStateIsQuarantinedNotTreatedAsRepairedStateLess() throws Exception {
+        // An explicit-null aclEpochState is PRESENT (SDK contract), so it is corruption, not
+        // "repaired to state-less" — the unknown-state audit selects it and quarantine must
+        // contain it (review 2f: the containsKey fix on the STATE field, not just the marker).
+        putRawJson("nullstate", "{\"type\":\"epoch-it-fixture\",\"aclEpochState\":null}");
+        for (int i = 0; i < 3; i++) svc.scan(contentDb, 100);
+        assertEquals(Boolean.TRUE, props("nullstate").get(AclEpochState.FIELD_QUARANTINED),
+                "a present-null aclEpochState must be quarantined, not skipped as state-less");
+    }
+
+    @Test
+    void directFinalizeOnPresentNullStateIsAnomalyNotSilentSkip() throws Exception {
+        putRawJson("nullstate-fin", "{\"type\":\"epoch-it-fixture\",\"aclEpochState\":null,"
+                + "\"aclEpochMutationId\":\"" + AclEpochState.newMutationId() + "\"}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.finalizePending(contentDb, "nullstate-fin"));
+    }
+
+    @Test
+    void contentionOnAValidPendingIsRecordedAndNeverQuarantined() throws Exception {
+        // A finalize CAS livelock (a competing writer bumping a VALID PENDING) is CONTENTION,
+        // not a data anomaly: it must be recorded (contended/more) and the doc NEVER quarantined
+        // (review 2f [P3]). A bumper keeps the doc a valid PENDING so finalize keeps losing.
+        seedPending("contend", AclEpochState.newMutationId());
+        java.util.concurrent.atomic.AtomicBoolean stop = new java.util.concurrent.atomic.AtomicBoolean(false);
+        Thread bumper = new Thread(() -> {
+            while (!stop.get()) {
+                try {
+                    Document d = getContent("contend");
+                    Map<String, Object> p = d.getProperties();
+                    if (!AclEpochState.PENDING_EPOCH.equals(p.get(AclEpochState.FIELD_STATE))) break; // finalized
+                    p.put("bump", UUID.randomUUID().toString()); // keep state + mutation id (still valid PENDING)
+                    d.setProperties(p);
+                    putContent(d);
+                } catch (Exception ignore) { /* race with the finalize CAS */ }
+            }
+        });
+        bumper.start();
+        ScanSummary last = null;
+        for (int i = 0; i < 3; i++) {
+            last = svc.scan(contentDb, 100);
+            if (AclEpochState.FINALIZED_NEEDS_RECONCILE.equals(props("contend").get(AclEpochState.FIELD_STATE))) break;
+        }
+        stop.set(true);
+        bumper.join(5000);
+        assertFalse(props("contend").containsKey(AclEpochState.FIELD_QUARANTINED),
+                "a valid contended PENDING must NEVER be quarantined");
+    }
+
+    @Test
+    void corruptTerminalDocIsQuarantinedPastAValidBacklogInFiniteScans() {
+        // review 2f [P1]: valid FINALIZED docs never leave the terminal selector (no ACK yet).
+        // With a persistent cursor, a corrupt FINALIZED behind a >budget valid backlog is still
+        // reached and quarantined within a FINITE number of scans.
+        int budget = 3;
+        for (int i = 0; i < budget + 4; i++) {
+            seedFinalized("vf-" + i, AclEpochState.newMutationId(), 10 + i); // > budget valid FINALIZED
+        }
+        Map<String, Object> bad = baseFixture();
+        bad.put(AclEpochState.FIELD_STATE, AclEpochState.FINALIZED_NEEDS_RECONCILE);
+        bad.put(AclEpochState.FIELD_MUTATION_ID, AclEpochState.newMutationId());
+        bad.put(AclEpochState.FIELD_SOURCE_EPOCH, 0L); // invalid epoch (< 1)
+        putContentRaw("vf-bad", bad);
+
+        int scans = scanUntil(() -> Boolean.TRUE.equals(props("vf-bad").get(AclEpochState.FIELD_QUARANTINED)),
+                budget, 30);
+        assertTrue(scans <= 30, "the corrupt terminal doc must be quarantined in a FINITE number of scans "
+                + "via the resume cursor (took " + scans + ")");
+    }
+
     // ── fixtures / helpers ─────────────────────────────────────────
 
     private Map<String, Object> baseFixture() {
@@ -746,6 +868,18 @@ public class AclEpochFinalizationServiceIT {
                         .db(SystemConst.NEMAKI_CONF_DB).docId(id).rev(rev).build()).execute();
             } catch (Exception ignore) { /* best effort */ }
         }
+    }
+
+    /** PUT a document with an EXACT raw JSON body (to guarantee explicit JSON null / shape). */
+    private void putRawJson(String id, String json) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/" + contentDb + "/" + id))
+                .header("Authorization", basicAuth)
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(json))
+                .build();
+        HttpResponse<String> resp = HttpClient.newHttpClient().send(req, HttpResponse.BodyHandlers.ofString());
+        if (resp.statusCode() >= 300) throw new IllegalStateException("raw put failed: " + resp.body());
     }
 
     private static String cfg(String sysProp, String envVar, String dflt) {

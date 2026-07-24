@@ -518,3 +518,30 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
     epoch there is quarantined; a valid one is counted). (5) A quarantine that cannot durably
     persist is NOT swallowed — it increments `quarantineFailures`, records an error, and sets
     `more` so the driver re-scans.
+  - **Increment 2e — explicit-null marker (presence contract).** The Cloudant SDK stores an
+    explicit JSON `null` as a PRESENT map entry, so `get()!=null` mistook a
+    `{aclEpochQuarantined:null}` marker for an ABSENT one (the `$ne:true` branch still selected
+    it, but `validate`/`quarantine` treated it as un-marked → finalized / not normalized). Both
+    now decide by `containsKey`: absent = process; Boolean `true` = quarantined; any other
+    PRESENT value (incl. explicit null) = malformed anomaly → normalized to true. The
+    marker/epoch contract is scoped to EPOCH-STATE-BEARING documents (a state-less document is
+    normal content, matched by no pass). Javadoc corrected (`$or` exclusion; "all OTHER fields
+    preserved, the malformed marker normalized to true").
+  - **Increment 2f — adversarial-audit closure (presence on STATE, contention, terminal
+    cursor).** A pre-commit multi-lens adversarial workflow (6 lenses, each finding
+    independently verified) found six issues; all fixed. (1)+(2) The 2e `containsKey` presence
+    fix was applied to the marker only — `quarantine()` and `finalizePending()` still used
+    `get(FIELD_STATE)==null`, so an explicit-null `aclEpochState` was mistaken for "repaired
+    state-less" (never quarantined / silently skipped). Both now use `containsKey`. (3) A
+    finalize CAS non-convergence (CONTENTION on a VALID doc) was thrown as
+    `AclEpochAnomalyException` and routed to `quarantine()` (which then aborted silently); it is
+    now a distinct `AclEpochContentionException` — recorded (`contended` + `more`), NEVER
+    quarantined. (4, P1) The FINALIZED / RECONCILE_ENQUEUED terminal states are TERMINAL-parked
+    (no ACK yet), so a VALID terminal doc never leaves the selector; a stateless bookmark=null
+    pass re-counted the same `>budget` valid pile every scan and STARVED an anomalous terminal
+    doc behind it. Replaced the two per-doc terminal passes with a single CURSORED terminal
+    audit that resumes from a PERSISTENT per-content-DB cursor (`acl-epoch-audit-cursor`, no
+    `aclEpochState`, matched by no pass) and wraps on exhaustion, so it cycles through the whole
+    terminal set across scans — every corrupt terminal doc is reached and quarantined in a
+    FINITE number of scans. (5) `FIELD_QUARANTINED` Javadoc corrected to the real `$or`
+    exclusion form. Persistent-format addition: the audit-cursor document (release-note it).

@@ -43,10 +43,14 @@ public class AclEpochFinalizationService {
 
     private static final Logger logger = LoggerFactory.getLogger(AclEpochFinalizationService.class);
 
-    /** Default PER-PASS processing budget (each of the four passes is bounded independently). */
+    /** Default PER-PASS processing budget (each pass is bounded independently). */
     public static final int DEFAULT_SCAN_MAX_DOCS = 500;
     private static final int PAGE_SIZE = 100;
     private static final int FINALIZE_CAS_RETRIES = 8;
+    /** Deterministic id of the per-content-DB terminal-audit resume cursor (no aclEpochState → matched by no pass). */
+    private static final String AUDIT_CURSOR_ID = "acl-epoch-audit-cursor";
+    private static final String AUDIT_CURSOR_TYPE = "aclEpochAuditCursor";
+    private static final String AUDIT_CURSOR_FIELD = "terminalBookmark";
     private static final int QUARANTINE_CAS_RETRIES = 4;
 
     private CloudantClientPool connectorPool;
@@ -80,13 +84,24 @@ public class AclEpochFinalizationService {
         public int enqueued;             // valid RECONCILE_ENQUEUED docs seen by the terminal audit
         public int quarantined;          // anomalous docs moved to durable quarantine this scan
         public int quarantineFailures;   // anomalies that could NOT be durably quarantined this scan
-        public boolean more;             // hit a pass's budget OR a quarantine write failed → re-scan
+        public int contended;            // valid docs a finalize CAS could not converge on (not anomalies)
+        public boolean more;             // hit a pass's budget / quarantine write failed / contention → re-scan
         public final List<Map<String, String>> errors = new ArrayList<>();
     }
 
     /** Anomaly in the epoch outbox data — fail-closed (record + retain), never silently skipped. */
     public static final class AclEpochAnomalyException extends RuntimeException {
         public AclEpochAnomalyException(String message) { super(message); }
+    }
+
+    /**
+     * CONTENTION (a CAS livelock), NOT a data anomaly: a finalize could not converge because
+     * another writer kept bumping the document's {@code _rev} while it stayed a valid PENDING.
+     * It must NOT be routed to {@link #quarantine} (the document is valid, not corrupt) — the
+     * scan records it and sets {@code more} so the driver re-scans (review 2f [P3]).
+     */
+    public static final class AclEpochContentionException extends RuntimeException {
+        public AclEpochContentionException(String message) { super(message); }
     }
 
     /** Validated epoch fields of one document. */
@@ -110,13 +125,17 @@ public class AclEpochFinalizationService {
      *         fields are anomalous
      */
     private static EpochFields validate(Document doc) {
-        Object q = doc.getProperties() != null ? doc.getProperties().get(AclEpochState.FIELD_QUARANTINED) : null;
-        if (q != null) {
-            if (Boolean.TRUE.equals(q)) {
+        // Marker CONTRACT is by PRESENCE, not by non-null value: the IBM Cloudant SDK stores
+        // an explicit JSON null as a present map entry (value null), so {@code get()!=null}
+        // would mistake an explicit-null marker for an absent one. Use containsKey (review 2e).
+        Map<String, Object> props = doc.getProperties();
+        if (props != null && props.containsKey(AclEpochState.FIELD_QUARANTINED)) {
+            Object marker = props.get(AclEpochState.FIELD_QUARANTINED);
+            if (Boolean.TRUE.equals(marker)) {
                 throw new AclEpochAnomalyException("document is quarantined on " + doc.getId());
             }
-            throw new AclEpochAnomalyException("malformed aclEpochQuarantined marker (not Boolean true) on "
-                    + doc.getId());
+            throw new AclEpochAnomalyException("malformed aclEpochQuarantined marker (not Boolean true, "
+                    + "including explicit null) on " + doc.getId());
         }
         return validateEpochFields(doc);
     }
@@ -194,8 +213,11 @@ public class AclEpochFinalizationService {
      */
     public FinalizeOutcome finalizePending(String repositoryId, Document hint) {
         Map<String, Object> hp = hint.getProperties();
-        Object rawState = hp != null ? hp.get(AclEpochState.FIELD_STATE) : null;
-        if (rawState == null) {
+        // ABSENT state = not an epoch doc (skip). PRESENT-but-null state is corruption, NOT
+        // "not an epoch doc": use containsKey so a present-null state falls through to
+        // validate() and is raised as an anomaly rather than silently skipped (review 2f;
+        // the SDK stores an explicit JSON null as a present entry).
+        if (hp == null || !hp.containsKey(AclEpochState.FIELD_STATE)) {
             return new FinalizeOutcome(FinalizeResult.SKIPPED_NOT_PENDING, null); // not an epoch doc
         }
         // Phase-2 precondition: a committed Phase-1 document (id + rev), checked BEFORE
@@ -244,7 +266,10 @@ public class AclEpochFinalizationService {
             }
             // still PENDING with the owned mutation id → retry the CAS with the fresh rev.
         }
-        throw new AclEpochAnomalyException("finalize did not converge for " + docId
+        // CONTENTION, not a data anomaly: the document is a valid PENDING that a competing
+        // writer kept bumping. Throw the contention type so the scan records it (never
+        // quarantines a valid document — review 2f).
+        throw new AclEpochContentionException("finalize did not converge for " + docId
                 + " after " + FINALIZE_CAS_RETRIES + " CAS attempts");
     }
 
@@ -280,27 +305,40 @@ public class AclEpochFinalizationService {
     // ── scan (crash recovery) ──────────────────────────────────────
 
     /**
-     * Advance epoch-outbox documents by one step. Four passes, each with its OWN
-     * {@code maxDocsPerPass} budget (never a shared cap, so no pass can starve another —
-     * review 2b [P1]). Every selector excludes already-quarantined documents
-     * ({@code aclEpochQuarantined:{$exists:false}}).
+     * Advance epoch-outbox documents by one step. Each pass has its OWN {@code maxDocsPerPass}
+     * budget (never a shared cap, so no pass can starve another — review 2b [P1]). Every
+     * selector excludes an already-quarantined document via {@link #notQuarantined}
+     * ({@code $or({$exists:false}, {$ne:true})} — Mango {@code $ne}/{@code $not} do NOT match an
+     * absent field, so this is the only form that excludes a TRUE marker while still matching an
+     * absent OR malformed marker).
      * <ol>
-     *   <li><b>Finalize PENDING</b> — {@code aclEpochState=PENDING_EPOCH} with a mutation id.</li>
-     *   <li><b>Count FINALIZED</b> — validate + count (the RECONCILE_ENQUEUED ACK is a later
-     *       increment).</li>
-     *   <li><b>Audit — live state WITHOUT a mutation id.</b></li>
-     *   <li><b>Audit — a state that is set but is NEITHER live nor RECONCILE_ENQUEUED</b>
-     *       (unknown / non-String).</li>
+     *   <li><b>Finalize PENDING</b> — {@code aclEpochState=PENDING_EPOCH} with a mutation id
+     *       (advances → leaves the selector).</li>
+     *   <li><b>Audit — live state WITHOUT a mutation id</b> (anomaly → quarantined → leaves).</li>
+     *   <li><b>Audit — a state that is set but is NEITHER live nor terminal</b> (unknown /
+     *       non-String; anomaly → quarantined → leaves).</li>
+     *   <li><b>Terminal audit (CURSORED)</b> — FINALIZED + RECONCILE_ENQUEUED. A VALID terminal
+     *       doc never leaves the selector (the ACK is a later increment), so this pass uses a
+     *       PERSISTENT cursor ({@link #runCursoredPass}) to cycle through the whole terminal set
+     *       across scans, guaranteeing every anomalous terminal doc is reached in FINITE scans.
+     *       A valid one is counted (awaitingReconcile / enqueued).</li>
      * </ol>
-     * <b>Guaranteed progression (review 2c [P1]):</b> ANY document {@link #validate} rejects —
+     * <b>Guaranteed progression (review 2c/2f [P1]):</b> ANY document {@link #validate} rejects —
      * a null / non-String / blank / non-UUID mutation id, a missing mutation id, an invalid
-     * epoch, an unknown state — is moved to DURABLE QUARANTINE the moment the scanner sees it
-     * (an {@code aclEpochQuarantined=true} flag added by CAS, ALL original fields preserved).
-     * Because every selector excludes quarantined documents, an anomalous document is removed
-     * from the live selectors after at most one scan and can NEVER block a valid document
-     * again — even a {@code >budget} pile of anomalies clears in a FINITE number of scans and
-     * the trailing valid documents are then finalized. A state-less (normal) document is never
-     * matched by any pass.
+     * epoch, an unknown or present-null state, OR a malformed quarantine marker — is moved to
+     * DURABLE QUARANTINE (an {@code aclEpochQuarantined=true} flag added by CAS; all OTHER fields
+     * preserved — a malformed marker is the one field normalized to {@code true}). Because every
+     * selector excludes a true marker, an anomalous document is removed from the live selectors
+     * (advance passes: at most one scan; cursored terminal pass: within a finite number of
+     * scans) and can NEVER block a valid document again. A CAS contention (a valid doc a
+     * competing writer keeps bumping) is recorded as {@code contended} + {@code more}, never
+     * quarantined.
+     *
+     * <p><b>Scope:</b> the marker/epoch contract applies ONLY to EPOCH-STATE-BEARING documents
+     * (those carrying an {@code aclEpochState}); a state-less document is normal content, is
+     * matched by no pass, and a stray marker on it is irrelevant to the epoch machine. The
+     * terminal-audit resume cursor is a per-content-DB document (id {@code acl-epoch-audit-cursor},
+     * no {@code aclEpochState}) — a new persistent-format artefact, matched by no scan pass.
      */
     public ScanSummary scan(String repositoryId, int maxDocsPerPass) {
         int budget = maxDocsPerPass > 0 ? maxDocsPerPass : DEFAULT_SCAN_MAX_DOCS;
@@ -315,30 +353,11 @@ public class AclEpochFinalizationService {
                 });
 
         runPass(repositoryId, notQuarantined(Map.of(
-                        AclEpochState.FIELD_STATE, AclEpochState.FINALIZED_NEEDS_RECONCILE,
-                        AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true))),
-                budget, summary, d -> {
-                    validate(d); // rejects a present marker + an invalid UUID / epoch → quarantined
-                    summary.awaitingReconcile++;
-                });
-
-        runPass(repositoryId, notQuarantined(Map.of(
                         AclEpochState.FIELD_STATE, Map.of("$in", List.of(
                                 AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE)),
                         AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", false))),
                 budget, summary, d -> {
                     throw new AclEpochAnomalyException("live state without aclEpochMutationId on " + d.getId());
-                });
-
-        // Terminal audit (review 2d [P2]): a RECONCILE_ENQUEUED with a malformed marker,
-        // non-UUID mutation id, or invalid epoch is quarantined too, so "whatever validate()
-        // rejects is quarantined" holds for the terminal state as well. A valid one is
-        // counted (the ACK that consumes it is a later increment).
-        runPass(repositoryId, notQuarantined(Map.of(
-                        AclEpochState.FIELD_STATE, AclEpochState.RECONCILE_ENQUEUED)),
-                budget, summary, d -> {
-                    validate(d);
-                    summary.enqueued++;
                 });
 
         runPass(repositoryId, notQuarantined(Map.of(
@@ -347,6 +366,22 @@ public class AclEpochFinalizationService {
                                 AclEpochState.RECONCILE_ENQUEUED)))),
                 budget, summary, d -> {
                     throw new AclEpochAnomalyException("unknown / non-String aclEpochState on " + d.getId());
+                });
+
+        // TERMINAL audit (review 2f [P1]): FINALIZED_NEEDS_RECONCILE + RECONCILE_ENQUEUED. These
+        // are TERMINAL-parked (the ACK that clears them is a later increment), so a VALID one
+        // never leaves the selector; a stateless bookmark=null pass would count the same >budget
+        // valid pile every scan and STARVE an anomalous terminal doc behind it. A PERSISTENT
+        // cursor makes this pass resume where it left off and wrap on exhaustion, so it cycles
+        // through the whole terminal set across scans — every corrupt terminal doc is reached and
+        // quarantined within FINITE scans (bounded by |terminal| / budget). A valid one is counted.
+        runCursoredPass(repositoryId, notQuarantined(Map.of(
+                        AclEpochState.FIELD_STATE, Map.of("$in", List.of(
+                                AclEpochState.FINALIZED_NEEDS_RECONCILE, AclEpochState.RECONCILE_ENQUEUED)))),
+                budget, summary, d -> {
+                    EpochFields ef = validate(d); // marker / UUID / epoch anomalies → quarantined
+                    if (AclEpochState.FINALIZED_NEEDS_RECONCILE.equals(ef.state)) summary.awaitingReconcile++;
+                    else summary.enqueued++;
                 });
 
         return summary;
@@ -408,6 +443,12 @@ public class AclEpochFinalizationService {
                     handler.handle(d);
                 } catch (AclEpochAnomalyException ae) {
                     quarantine(repositoryId, d.getId(), ae.getMessage(), summary);
+                } catch (AclEpochContentionException ce) {
+                    // Contention on a VALID document — record + re-scan, but do NOT quarantine
+                    // (the document is not corrupt). review 2f [P3].
+                    summary.contended++;
+                    summary.more = true;
+                    record(summary, d.getId(), ce.getMessage());
                 }
             }
             bookmark = r.getBookmark();
@@ -421,9 +462,104 @@ public class AclEpochFinalizationService {
     }
 
     /**
-     * Move an anomalous document to DURABLE QUARANTINE: CAS-add {@code aclEpochQuarantined=true}
-     * (preserving every original field, including {@code _attachments}) so it is excluded from
-     * the live selectors and can never block a valid document again.
+     * Like {@link #runPass} but RESUMES from a persistent per-content-DB cursor and WRAPS on
+     * exhaustion (review 2f [P1]). Used only for the TERMINAL states, whose VALID documents
+     * never leave the selector (the ACK is a later increment): a stateless bookmark=null pass
+     * would re-count the same {@code >budget} valid pile every scan and starve an anomalous
+     * terminal doc behind it. By persisting the bookmark and wrapping when the selector is
+     * exhausted, the pass cycles through the whole terminal set across scans, so every
+     * anomalous terminal doc is reached and quarantined within a FINITE number of scans. On any
+     * cursor read/write failure it degrades to a bookmark=null pass (no worse than {@link #runPass}).
+     */
+    private void runCursoredPass(String repositoryId, Map<String, Object> selector, int budget,
+                                 ScanSummary summary, PassHandler handler) {
+        CloudantClientWrapper client = contentClient(repositoryId);
+        Cloudant cloudant = client.getClient();
+        String db = client.getDatabaseName();
+        String bookmark = readCursorBookmark(repositoryId);
+        int processed = 0;
+        boolean exhausted = false;
+        while (processed < budget) {
+            int limit = Math.min(PAGE_SIZE, budget - processed);
+            PostFindOptions.Builder b = new PostFindOptions.Builder()
+                    .db(db).selector(selector).limit(limit);
+            if (bookmark != null) b.bookmark(bookmark);
+            FindResult r = cloudant.postFind(b.build()).execute().getResult();
+            List<Document> docs = r.getDocs();
+            if (docs == null || docs.isEmpty()) {
+                exhausted = true;
+                break;
+            }
+            for (Document d : docs) {
+                if (processed >= budget) break;
+                processed++;
+                summary.scanned++;
+                try {
+                    handler.handle(d);
+                } catch (AclEpochAnomalyException ae) {
+                    quarantine(repositoryId, d.getId(), ae.getMessage(), summary);
+                } catch (AclEpochContentionException ce) {
+                    summary.contended++;
+                    summary.more = true;
+                    record(summary, d.getId(), ce.getMessage());
+                }
+            }
+            bookmark = r.getBookmark();
+            if (docs.size() < limit) {
+                exhausted = true;
+                break;
+            }
+        }
+        // Exhausted → reset (wrap to the start next scan). Otherwise save the position and flag
+        // that the terminal set is not fully swept yet, so a driver keeps scanning.
+        saveCursorBookmark(repositoryId, exhausted ? null : bookmark);
+        if (!exhausted) {
+            summary.more = true;
+        }
+    }
+
+    /** Read the persistent terminal-audit bookmark for this content DB, or null (start / on error). */
+    private String readCursorBookmark(String repositoryId) {
+        try {
+            Document c = getDoc(repositoryId, AUDIT_CURSOR_ID);
+            Object v = (c != null && c.getProperties() != null) ? c.getProperties().get(AUDIT_CURSOR_FIELD) : null;
+            return (v instanceof String && !((String) v).isBlank()) ? (String) v : null;
+        } catch (RuntimeException e) {
+            logger.warn("ACL epoch audit cursor read failed for {} — restarting from the top: {}",
+                    repositoryId, e.getMessage());
+            return null;
+        }
+    }
+
+    /** Persist (or clear, when {@code bookmark==null}) the terminal-audit resume position. Best-effort. */
+    private void saveCursorBookmark(String repositoryId, String bookmark) {
+        try {
+            Document c = getDoc(repositoryId, AUDIT_CURSOR_ID);
+            Map<String, Object> props = (c != null && c.getProperties() != null)
+                    ? c.getProperties() : new LinkedHashMap<>();
+            props.put("type", AUDIT_CURSOR_TYPE);
+            if (bookmark == null) {
+                props.remove(AUDIT_CURSOR_FIELD);
+            } else {
+                props.put(AUDIT_CURSOR_FIELD, bookmark);
+            }
+            Document out = new Document();
+            out.setId(AUDIT_CURSOR_ID);
+            if (c != null) {
+                out.setRev(c.getRev());
+            }
+            out.setProperties(props);
+            putBack(repositoryId, out); // 409 (a concurrent scanner won) is harmless — next scan re-reads
+        } catch (RuntimeException e) {
+            logger.warn("ACL epoch audit cursor save failed for {}: {}", repositoryId, e.getMessage());
+        }
+    }
+
+    /**
+     * Move an anomalous document to DURABLE QUARANTINE: CAS-set {@code aclEpochQuarantined=true}
+     * (preserving every other field, including {@code _attachments}; a malformed marker is the
+     * one field this NORMALIZES to {@code true}) so it is excluded from the live selectors and
+     * can never block a valid document again.
      *
      * <p><b>Re-validates on every CAS attempt (review 2d [P1]):</b> the flag is set ONLY if the
      * freshly-read document is STILL anomalous — if a concurrent normal Phase 1 REPAIRED it
@@ -445,14 +581,21 @@ public class AclEpochFinalizationService {
                     return; // gone — nothing to quarantine (no error: transient anomaly resolved)
                 }
                 Map<String, Object> p = d.getProperties();
-                Object q = p.get(AclEpochState.FIELD_QUARANTINED);
-                if (Boolean.TRUE.equals(q)) {
+                if (Boolean.TRUE.equals(p.get(AclEpochState.FIELD_QUARANTINED))) {
                     return; // already properly quarantined by a concurrent scan
                 }
-                boolean markerAnomalous = (q != null); // present but not Boolean true
+                // PRESENCE contract (review 2e): an explicit-null marker is present (the SDK
+                // stores it), so use containsKey — a non-true PRESENT marker (false / null /
+                // string / …) is a marker anomaly to normalize to true.
+                boolean markerAnomalous = p.containsKey(AclEpochState.FIELD_QUARANTINED);
                 boolean epochAnomalous;
-                if (p.get(AclEpochState.FIELD_STATE) == null) {
-                    epochAnomalous = false; // repaired to state-less normal content
+                if (!p.containsKey(AclEpochState.FIELD_STATE)) {
+                    // ABSENT state = repaired to state-less normal content. Use containsKey,
+                    // NOT get()==null: the SDK stores an explicit-null state as PRESENT, and a
+                    // present-null state is corruption (validateEpochFields rejects it), not
+                    // "repaired" — the earlier review 2e containsKey fix was on the marker only,
+                    // this closes the same class on the STATE field (review 2f).
+                    epochAnomalous = false;
                 } else {
                     try {
                         validateEpochFields(d);
