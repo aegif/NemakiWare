@@ -408,16 +408,84 @@ public class AclEpochFinalizationServiceIT {
 
     @Test
     void allScanSelectorsUseTheAclEpochStateIndex() throws Exception {
-        // The four selectors the service uses, in the same shape.
+        // The four selectors the service uses, in the same shape (all exclude quarantined).
+        Map<String, Object> notQ = Map.of("$exists", false);
         assertIndexServed(Map.of(AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH,
-                AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true)), "PENDING finalize");
+                AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true),
+                AclEpochState.FIELD_QUARANTINED, notQ), "PENDING finalize");
         assertIndexServed(Map.of(AclEpochState.FIELD_STATE, AclEpochState.FINALIZED_NEEDS_RECONCILE,
-                AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true)), "FINALIZED count");
+                AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true),
+                AclEpochState.FIELD_QUARANTINED, notQ), "FINALIZED count");
         assertIndexServed(Map.of(AclEpochState.FIELD_STATE, Map.of("$in", List.of(
                         AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE)),
-                AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", false)), "missing-mutation-id audit");
+                AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", false),
+                AclEpochState.FIELD_QUARANTINED, notQ), "missing-mutation-id audit");
         assertIndexServed(Map.of(AclEpochState.FIELD_STATE, Map.of("$exists", true, "$nin", List.of(
-                        AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE))), "unknown-state audit");
+                        AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE,
+                        AclEpochState.RECONCILE_ENQUEUED)),
+                AclEpochState.FIELD_QUARANTINED, notQ), "unknown-state audit");
+    }
+
+    // ── review 2c: guaranteed FINITE-scan progression past ANY anomaly type ──
+
+    @Test
+    void validPendingFinalizedPastNonUuidPendingBacklogInFiniteScans() {
+        int budget = 3;
+        for (int i = 0; i < budget + 3; i++) {
+            seedPending("nonuuid-" + i, "not-a-uuid-" + i); // present but non-UUID
+        }
+        seedPending("valid-nu", AclEpochState.newMutationId());
+
+        int scans = scanUntil(() -> AclEpochState.FINALIZED_NEEDS_RECONCILE
+                .equals(props("valid-nu").get(AclEpochState.FIELD_STATE)), budget, 20);
+        assertTrue(scans <= 20, "the valid PENDING must be finalized in a FINITE number of scans");
+        // The anomalous ones are durably quarantined (excluded from the live selectors).
+        assertTrue(Boolean.TRUE.equals(props("nonuuid-0").get(AclEpochState.FIELD_QUARANTINED)),
+                "a non-UUID PENDING is moved to durable quarantine");
+    }
+
+    @Test
+    void validPendingFinalizedPastNullNonStringBlankMutationIdBacklog() {
+        int budget = 2;
+        for (int i = 0; i < budget + 2; i++) seedPendingRawMutationId("mnull-" + i, null);   // JSON null
+        for (int i = 0; i < budget + 2; i++) seedPendingRawMutationId("mnum-" + i, 12345);    // non-String
+        for (int i = 0; i < budget + 2; i++) seedPendingRawMutationId("mblank-" + i, "  ");   // blank
+        seedPending("valid-mixed", AclEpochState.newMutationId());
+
+        int scans = scanUntil(() -> AclEpochState.FINALIZED_NEEDS_RECONCILE
+                .equals(props("valid-mixed").get(AclEpochState.FIELD_STATE)), budget, 40);
+        assertTrue(scans <= 40, "the valid PENDING must be finalized past a null/non-String/blank backlog");
+    }
+
+    @Test
+    void validFinalizedNotQuarantinedPastInvalidEpochBacklog() {
+        int budget = 2;
+        for (int i = 0; i < budget + 3; i++) {
+            Map<String, Object> p = baseFixture();
+            p.put(AclEpochState.FIELD_STATE, AclEpochState.FINALIZED_NEEDS_RECONCILE);
+            p.put(AclEpochState.FIELD_MUTATION_ID, AclEpochState.newMutationId()); // valid UUID
+            p.put(AclEpochState.FIELD_SOURCE_EPOCH, 1.5d);                          // invalid epoch
+            putContentRaw("badep-" + i, p);
+        }
+        seedFinalized("valid-final", AclEpochState.newMutationId(), 5L);
+
+        // Drive several scans; the invalid-epoch docs are quarantined, the valid FINALIZED is
+        // neither quarantined nor altered.
+        for (int i = 0; i < 20; i++) svc.scan(contentDb, budget);
+        assertFalse(props("valid-final").containsKey(AclEpochState.FIELD_QUARANTINED),
+                "a valid FINALIZED must never be quarantined");
+        assertEquals(AclEpochState.FINALIZED_NEEDS_RECONCILE, props("valid-final").get(AclEpochState.FIELD_STATE));
+        assertTrue(Boolean.TRUE.equals(props("badep-0").get(AclEpochState.FIELD_QUARANTINED)),
+                "an invalid-epoch FINALIZED is quarantined");
+    }
+
+    /** Run scan() repeatedly (per-pass budget = {@code budget}) until {@code done} or {@code maxScans}. */
+    private int scanUntil(java.util.function.BooleanSupplier done, int budget, int maxScans) {
+        for (int i = 1; i <= maxScans; i++) {
+            svc.scan(contentDb, budget);
+            if (done.getAsBoolean()) return i;
+        }
+        return maxScans + 1; // signal "did not converge"
     }
 
     private void assertIndexServed(Map<String, Object> selector, String label) throws Exception {
@@ -456,6 +524,14 @@ public class AclEpochFinalizationServiceIT {
     private void seedPendingNoMutationId(String id) {
         Map<String, Object> p = baseFixture();
         p.put(AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH); // deliberately no mutation id
+        putContentRaw(id, p);
+    }
+
+    /** PENDING with an arbitrary raw mutation-id value (JSON null / non-String / blank / …). */
+    private void seedPendingRawMutationId(String id, Object rawMutationId) {
+        Map<String, Object> p = baseFixture();
+        p.put(AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH);
+        p.put(AclEpochState.FIELD_MUTATION_ID, rawMutationId); // may be null (JSON null / omitted by the SDK)
         putContentRaw(id, p);
     }
 

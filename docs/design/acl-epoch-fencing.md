@@ -477,14 +477,29 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
   (absent by default) + the `(aclEpochState)` content-DB Mango index.
   - **Increment 2a — scanner PENDING-first, anomaly visibility, snapshot precondition,
     attachment preservation, patch-throw.**
-  - **Increment 2b — no scanner starvation + UUID mutation ids.** The scanner is now
-    FOUR passes, each with its OWN budget (never a shared cap, so no pass starves
-    another) and each targeting EITHER valid or anomalous documents (so an unadvanceable
-    anomalous document is not in a valid-doc selector and cannot block valid ones across
-    invocations): (1) finalize `{state:PENDING, mutationId:$exists}`, (2) count
-    `{state:FINALIZED, mutationId:$exists}`, (3) audit `{state:$in[live],
-    mutationId:$exists:false}`, (4) audit `{state:$exists, $nin:[PENDING,FINALIZED]}`.
-    All four are `(aclEpochState)`-index-served (verified by `_explain`). `aclEpochMutationId`
-    MUST be a canonical UUID (`AclEpochState.newMutationId()` for Phase 1); a non-UUID is a
-    fail-closed anomaly. A document that still exists but LOST its `aclEpochState` is marker
-    loss (anomaly), not a delete-race supersede.
+  - **Increment 2b — no cross-pass starvation + UUID mutation ids.** Four passes, each
+    with its OWN budget (no shared cap). `aclEpochMutationId` MUST be a canonical UUID
+    (`AclEpochState.newMutationId()` for Phase 1); a non-UUID is a fail-closed anomaly. A
+    document that still exists but LOST its `aclEpochState` is marker loss (anomaly), not a
+    delete-race supersede.
+  - **Increment 2c — durable quarantine → GUARANTEED finite-scan progression.** A
+    `mutationId:$exists` selector does not match the validator's full validity (a
+    null / non-String / blank / non-UUID id, or an invalid epoch, all pass `$exists` yet
+    `validate()` rejects them), so such a document sat in a valid selector and, with a
+    `>budget` pile of them, blocked trailing valid documents forever (each scan restarts at
+    bookmark=null). Fixed by DURABLE QUARANTINE: the instant the scanner sees ANY document
+    `validate()` rejects, it CAS-adds `aclEpochQuarantined=true` (ALL original fields
+    preserved — inspection/repair) and every scan selector excludes
+    `{aclEpochQuarantined:{$exists:false}}`. An anomalous document therefore leaves the live
+    selectors after at most one scan and can never block a valid document again; even a
+    `>budget` anomaly pile clears in a FINITE number of scans and the trailing valid
+    documents are then finalized. The four selectors (all still `(aclEpochState)`-index-
+    served, verified by `_explain`): (1) `{state:PENDING, mutationId:$exists, !quarantined}`,
+    (2) `{state:FINALIZED, mutationId:$exists, !quarantined}`, (3) `{state:$in[live],
+    mutationId:$exists:false, !quarantined}`, (4) `{state:$exists,
+    $nin:[PENDING,FINALIZED,RECONCILE_ENQUEUED], !quarantined}`. **Future consideration (out
+    of this increment):** when a later increment CLEARS the marker after the RECONCILE_ENQUEUED
+    ACK, a delayed finalizer that re-reads the (legitimately) marker-less document must
+    distinguish that terminal state from corruption — a separate terminal check is needed
+    then (today `stillOursOrOutcome` treats an existing marker-less document as an anomaly,
+    which is correct while no increment clears the marker).

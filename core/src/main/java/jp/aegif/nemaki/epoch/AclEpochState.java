@@ -34,6 +34,15 @@ public final class AclEpochState {
     public static final String FIELD_MUTATION_ID = "aclEpochMutationId";
     /** CouchDB content-doc field: the allocated epoch (set at finalize). */
     public static final String FIELD_SOURCE_EPOCH = "aclSourceEpoch";
+    /**
+     * CouchDB content-doc field ({@code true} once set): DURABLE QUARANTINE. The scanner
+     * sets it on a document whose epoch fields are anomalous (unknown / non-String / blank /
+     * non-UUID mutation id, missing mutation id, or an invalid epoch) so the document is
+     * excluded from the live valid/anomaly selectors and can never block a valid document
+     * again — the original fields are preserved for inspection / repair. Excluded from every
+     * scan selector via {@code {$exists:false}}.
+     */
+    public static final String FIELD_QUARANTINED = "aclEpochQuarantined";
 
     public static final String PENDING_EPOCH = "PENDING_EPOCH";
     public static final String FINALIZED_NEEDS_RECONCILE = "FINALIZED_NEEDS_RECONCILE";
