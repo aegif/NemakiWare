@@ -9,6 +9,12 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,13 +28,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -56,9 +55,8 @@ import jp.aegif.nemaki.util.constant.SystemConst;
 /**
  * Integration tests for {@link AclEpochFinalizationService} against a LIVE CouchDB. Each
  * test runs in its OWN throwaway content database (created WITH the {@code (aclEpochState)}
- * Mango index so the scanner selectors are index-served, not an {@code _all_docs} fallback;
- * dropped in {@code @AfterEach}) with its own seeded ACL-epoch counter. Gated like the
- * other CouchDB ITs.
+ * Mango index; dropped afterward) with its own seeded ACL-epoch counter. Mutation ids are
+ * canonical UUIDs (the validator now rejects non-UUIDs). Gated like the other CouchDB ITs.
  */
 public class AclEpochFinalizationServiceIT {
 
@@ -102,8 +100,6 @@ public class AclEpochFinalizationServiceIT {
         assumeTrue(available, "nemaki_conf not reachable — skipping ACL epoch finalization IT");
         contentDb = "epoch-fin-it-" + UUID.randomUUID();
         cloudant.putDatabase(new PutDatabaseOptions.Builder().db(contentDb).build()).execute();
-        // Create the SAME (aclEpochState) index the production patch creates, so scan is
-        // index-served rather than passing only because of an _all_docs fallback.
         cloudant.postIndex(new PostIndexOptions.Builder()
                 .db(contentDb)
                 .index(new IndexDefinition.Builder()
@@ -141,7 +137,8 @@ public class AclEpochFinalizationServiceIT {
 
     @Test
     void finalizeAllocatesEpochAndPreservesOtherFields() {
-        seedPending("d1", "m-1");
+        String m = AclEpochState.newMutationId();
+        seedPending("d1", m);
         FinalizeOutcome o = svc.finalizePending(contentDb, "d1");
         assertEquals(FinalizeResult.FINALIZED, o.result);
         assertEquals(1L, o.epoch.longValue());
@@ -149,33 +146,25 @@ public class AclEpochFinalizationServiceIT {
         Map<String, Object> p = props("d1");
         assertEquals(AclEpochState.FINALIZED_NEEDS_RECONCILE, p.get(AclEpochState.FIELD_STATE));
         assertEquals(1L, ((Number) p.get(AclEpochState.FIELD_SOURCE_EPOCH)).longValue());
-        assertEquals("m-1", p.get(AclEpochState.FIELD_MUTATION_ID));
+        assertEquals(m, p.get(AclEpochState.FIELD_MUTATION_ID));
         assertEquals("keep-me", p.get("name"), "other content fields preserved");
     }
 
     @Test
     void finalizePreservesInlineAttachment() {
-        // A committed content doc with a real inline attachment. Finalize (which re-reads
-        // through getDoc so it has the _attachments stubs, even when driven by a _find hint)
-        // must NOT drop the attachment.
         Map<String, Object> p = baseFixture();
         p.put(AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH);
-        p.put(AclEpochState.FIELD_MUTATION_ID, "m-att");
+        p.put(AclEpochState.FIELD_MUTATION_ID, AclEpochState.newMutationId());
         Document d = new Document();
         d.setId("d-att");
         d.setProperties(p);
-        Attachment att = new Attachment.Builder()
-                .contentType("text/plain")
-                .data("aGVsbG8=".getBytes()) // base64 for "hello"
-                .build();
+        Attachment att = new Attachment.Builder().contentType("text/plain").data("hello".getBytes()).build();
         Map<String, Attachment> atts = new LinkedHashMap<>();
         atts.put("note.txt", att);
         d.setAttachments(atts);
         cloudant.putDocument(new PutDocumentOptions.Builder()
                 .db(contentDb).docId("d-att").document(d).build()).execute();
 
-        // Drive via the DOCUMENT overload with a _find-style hint (no _attachments) to prove
-        // the finalize itself re-reads and preserves attachments.
         Document hint = getContent("d-att");
         hint.setAttachments(null); // simulate a _find hint that lacks attachment stubs
         FinalizeOutcome o = svc.finalizePending(contentDb, hint);
@@ -189,7 +178,7 @@ public class AclEpochFinalizationServiceIT {
 
     @Test
     void finalizeIsIdempotentOnAlreadyFinalizedNeverReallocates() {
-        seedFinalized("d2", "m-2", 7L);
+        seedFinalized("d2", AclEpochState.newMutationId(), 7L);
         FinalizeOutcome o = svc.finalizePending(contentDb, "d2");
         assertEquals(FinalizeResult.SKIPPED_NOT_PENDING, o.result);
         assertNull(o.epoch);
@@ -206,30 +195,37 @@ public class AclEpochFinalizationServiceIT {
 
     @Test
     void finalizeRejectsRevlessDocumentBeforeAllocating() {
-        // A hand-built PENDING document with NO _rev (never committed). Phase 2 must refuse
-        // it BEFORE allocating an epoch — otherwise it could PUT itself as a NEW document.
         Map<String, Object> p = baseFixture();
         p.put(AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH);
-        p.put(AclEpochState.FIELD_MUTATION_ID, "m-ghost");
+        p.put(AclEpochState.FIELD_MUTATION_ID, AclEpochState.newMutationId());
         Document ghost = new Document();
-        ghost.setId("ghost-1"); // id set, but no _rev and never persisted
+        ghost.setId("ghost-1"); // id set, no _rev, never persisted
         ghost.setProperties(p);
 
         assertThrows(AclEpochAnomalyException.class, () -> svc.finalizePending(contentDb, ghost));
-        // It must NOT have created the document.
         assertNull(revOf(contentDb, "ghost-1"), "a rev-less finalize must not create a new document");
-        // And it must NOT have consumed an epoch (counter still at 0).
         assertEquals(0L, counterValue(contentDb), "no epoch allocated for a rejected rev-less finalize");
     }
 
     @Test
+    void finalizeRejectsNonUuidMutationId() {
+        // A PENDING doc whose mutation id is present but NOT a UUID → anomaly (review 2b
+        // [P2]), no finalize, no epoch consumed.
+        seedPending("nu", "not-a-uuid");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.finalizePending(contentDb, "nu"));
+        assertEquals(AclEpochState.PENDING_EPOCH, props("nu").get(AclEpochState.FIELD_STATE));
+        assertEquals(0L, counterValue(contentDb), "a non-UUID mutation id must not consume an epoch");
+    }
+
+    @Test
     void finalizeAbandonsWhenMutationIdChangedUnderneath() {
-        seedPending("d4", "m-A");
-        Document stale = getContent("d4"); // owns m-A
-        // A newer Phase-1 supersedes with m-B (still PENDING).
+        String mA = AclEpochState.newMutationId();
+        String mB = AclEpochState.newMutationId();
+        seedPending("d4", mA);
+        Document stale = getContent("d4"); // owns mA
         Document fresh = getContent("d4");
         Map<String, Object> fp = fresh.getProperties();
-        fp.put(AclEpochState.FIELD_MUTATION_ID, "m-B");
+        fp.put(AclEpochState.FIELD_MUTATION_ID, mB);
         fresh.setProperties(fp);
         putContent(fresh);
 
@@ -237,16 +233,13 @@ public class AclEpochFinalizationServiceIT {
         assertEquals(FinalizeResult.ABANDONED_SUPERSEDED, o.result);
         Map<String, Object> p = props("d4");
         assertEquals(AclEpochState.PENDING_EPOCH, p.get(AclEpochState.FIELD_STATE));
-        assertEquals("m-B", p.get(AclEpochState.FIELD_MUTATION_ID));
+        assertEquals(mB, p.get(AclEpochState.FIELD_MUTATION_ID));
         assertFalse(p.containsKey(AclEpochState.FIELD_SOURCE_EPOCH));
     }
 
     @Test
     void finalizeThrowsAnomalyWhenReReadIsCorruptNotSuperseded() {
-        // Owned hint says PENDING m-C; the live doc is corrupted to an UNKNOWN state before
-        // finalize reads it. A corrupt live state must be an ANOMALY, not a silent
-        // ABANDONED_SUPERSEDED (review 2a #4).
-        seedPending("d6", "m-C");
+        seedPending("d6", AclEpochState.newMutationId());
         Document stale = getContent("d6");
         Document corrupt = getContent("d6");
         Map<String, Object> cp = corrupt.getProperties();
@@ -258,8 +251,23 @@ public class AclEpochFinalizationServiceIT {
     }
 
     @Test
+    void finalizeThrowsAnomalyWhenStateVanishesFromExistingDocEpochNotConsumed() {
+        // review 2b [P1]: a document that STILL EXISTS but has LOST its aclEpochState is
+        // marker loss (corruption), NOT a delete race — it must be an ANOMALY, and the
+        // pre-allocate re-read means NO epoch is consumed.
+        seedPending("d7", AclEpochState.newMutationId());
+        Document stale = getContent("d7");
+        // Remove the epoch state from the live document (doc still exists).
+        Map<String, Object> plain = baseFixture(); // no aclEpochState / mutationId
+        putContentRaw("d7", plain);
+
+        assertThrows(AclEpochAnomalyException.class, () -> svc.finalizePending(contentDb, stale));
+        assertEquals(0L, counterValue(contentDb), "marker loss detected before allocate → no epoch consumed");
+    }
+
+    @Test
     void concurrentFinalizeExactlyOneWins() throws Exception {
-        seedPending("d5", "m-5");
+        seedPending("d5", AclEpochState.newMutationId());
         int threads = 6;
         AtomicInteger finalized = new AtomicInteger(0);
         List<Throwable> workerErrors = new CopyOnWriteArrayList<>();
@@ -272,7 +280,7 @@ public class AclEpochFinalizationServiceIT {
                     FinalizeOutcome o = svc.finalizePending(contentDb, getContent("d5"));
                     if (o.result == FinalizeResult.FINALIZED) finalized.incrementAndGet();
                 } catch (Throwable t) {
-                    workerErrors.add(t); // do NOT swallow — a loser must ABANDON cleanly, not throw
+                    workerErrors.add(t);
                 } finally {
                     done.countDown();
                 }
@@ -285,39 +293,71 @@ public class AclEpochFinalizationServiceIT {
         assertEquals(AclEpochState.FINALIZED_NEEDS_RECONCILE, props("d5").get(AclEpochState.FIELD_STATE));
     }
 
-    // ── scan priority / anomaly visibility ─────────────────────────
+    // ── scan priority / independent budgets / anomaly visibility ───
 
     @Test
     void scanFinalizesPendingCountsFinalizedAndStopsAtFinalized() {
-        seedPending("s-pending", "m-p");
-        seedFinalized("s-final", "m-f", 3L);
+        seedPending("s-pending", AclEpochState.newMutationId());
+        seedFinalized("s-final", AclEpochState.newMutationId(), 3L);
         seedStateless("s-plain");
 
         ScanSummary sum = svc.scan(contentDb, 100);
         assertEquals(1, sum.finalized, "only the PENDING doc is finalized this scan");
-        // The PENDING-first pass finalizes s-pending → it is now FINALIZED too, so the
-        // FINALIZED pass counts BOTH the pre-existing s-final and the just-finalized
-        // s-pending. (awaitingReconcile is an informational count of FINALIZED docs.)
-        assertEquals(2, sum.awaitingReconcile);
+        assertEquals(2, sum.awaitingReconcile, "pre-existing FINALIZED + the one just finalized");
         assertTrue(sum.errors.isEmpty());
         assertEquals(AclEpochState.FINALIZED_NEEDS_RECONCILE, props("s-final").get(AclEpochState.FIELD_STATE));
         assertEquals(AclEpochState.FINALIZED_NEEDS_RECONCILE, props("s-pending").get(AclEpochState.FIELD_STATE));
     }
 
     @Test
-    void pendingIsNotStarvedByAFinalizedBacklogOverTheCap() {
-        // The review's real-CouchDB observation: FINALIZED sorts ahead of PENDING. With a
-        // small cap and MORE finalized docs than the cap plus a single pending doc, the
-        // PENDING-first pass must still finalize the pending one (never starved).
-        int cap = 5;
+    void validPendingIsFinalizedDespiteAnAnomalousPendingBacklogOverTheCap() {
+        // review 2b [P1] Mode B: > (per-pass cap) PENDING with MISSING mutation ids plus one
+        // valid PENDING. The valid-PENDING selector excludes missing-mutation-id docs, so the
+        // valid one is finalized regardless of how many anomalous PENDING precede it.
+        int cap = 3;
         for (int i = 0; i < cap + 3; i++) {
-            seedFinalized("f-" + i, "mf-" + i, 10 + i); // > cap finalized docs
+            seedPendingNoMutationId("bad-p-" + i); // anomalous PENDING (missing mutation id)
         }
-        seedPending("the-pending", "mp-1");
+        seedPending("valid-pending", AclEpochState.newMutationId());
 
         ScanSummary sum = svc.scan(contentDb, cap);
-        assertEquals(1, sum.finalized, "the single PENDING doc is finalized despite the FINALIZED backlog");
-        assertEquals(AclEpochState.FINALIZED_NEEDS_RECONCILE, props("the-pending").get(AclEpochState.FIELD_STATE));
+        assertEquals(AclEpochState.FINALIZED_NEEDS_RECONCILE,
+                props("valid-pending").get(AclEpochState.FIELD_STATE),
+                "the valid PENDING is finalized despite the anomalous-PENDING backlog");
+        assertEquals(1, sum.finalized);
+    }
+
+    @Test
+    void unknownStateIsReportedDespiteAFinalizedBacklogOverTheCap() {
+        // review 2b [P1] Mode A: > (per-pass cap) FINALIZED plus one UNKNOWN-state doc. With
+        // INDEPENDENT per-pass budgets the anomaly (audit) pass runs regardless of the
+        // FINALIZED volume, so the UNKNOWN is reported.
+        int cap = 3;
+        for (int i = 0; i < cap + 3; i++) {
+            seedFinalized("f-" + i, AclEpochState.newMutationId(), 10 + i);
+        }
+        Map<String, Object> u = baseFixture();
+        u.put(AclEpochState.FIELD_STATE, "MYSTERY_STATE");
+        putContentRaw("the-unknown", u);
+
+        ScanSummary sum = svc.scan(contentDb, cap);
+        assertTrue(sum.errors.stream().anyMatch(e -> "the-unknown".equals(e.get("docId"))),
+                "the UNKNOWN state is reported even behind a FINALIZED backlog: " + sum.errors);
+    }
+
+    @Test
+    void allPassesProgressUnderAMixedLoad() {
+        // review 2b [P1]: each pass makes non-zero progress in one scan (independent budgets).
+        seedPending("mix-p", AclEpochState.newMutationId());
+        seedFinalized("mix-f", AclEpochState.newMutationId(), 9L);
+        Map<String, Object> u = baseFixture();
+        u.put(AclEpochState.FIELD_STATE, "MIX_UNKNOWN");
+        putContentRaw("mix-u", u);
+
+        ScanSummary sum = svc.scan(contentDb, 100);
+        assertTrue(sum.finalized >= 1, "PENDING pass progressed");
+        assertTrue(sum.awaitingReconcile >= 1, "FINALIZED pass progressed");
+        assertTrue(sum.errors.stream().anyMatch(e -> "mix-u".equals(e.get("docId"))), "audit pass progressed");
     }
 
     @Test
@@ -330,84 +370,71 @@ public class AclEpochFinalizationServiceIT {
     }
 
     @Test
-    void scanRecordsUnknownStateAsAnomaly() {
-        // An UNKNOWN state is OUTSIDE the $in selector; the bounded audit pass must still
-        // surface it (review 2a #2) rather than leaving it forever invisible.
-        Map<String, Object> p = baseFixture();
-        p.put(AclEpochState.FIELD_STATE, "GARBAGE_STATE");
-        p.put(AclEpochState.FIELD_MUTATION_ID, "m-u");
-        putContentRaw("bad-unknown", p);
-
-        ScanSummary sum = svc.scan(contentDb, 100);
-        assertEquals(1, sum.errors.size());
-        assertEquals("bad-unknown", sum.errors.get(0).get("docId"));
-    }
-
-    @Test
     void scanRecordsPendingWithoutMutationIdAsAnomalyAndRetains() {
-        Map<String, Object> p = baseFixture();
-        p.put(AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH); // no mutation id
-        putContentRaw("bad-pending", p);
-
+        seedPendingNoMutationId("bad-pending");
         ScanSummary sum = svc.scan(contentDb, 100);
         assertEquals(0, sum.finalized);
-        assertEquals(1, sum.errors.size());
-        assertEquals("bad-pending", sum.errors.get(0).get("docId"));
+        assertTrue(sum.errors.stream().anyMatch(e -> "bad-pending".equals(e.get("docId"))));
         assertEquals(AclEpochState.PENDING_EPOCH, props("bad-pending").get(AclEpochState.FIELD_STATE),
                 "an anomalous doc is left unprocessed, not finalized");
     }
 
     @Test
     void scanRecordsFinalizedWithoutMutationIdAsAnomaly() {
-        // FINALIZED with an epoch but NO mutation id must be an anomaly, not a clean
-        // awaitingReconcile (review 2a #2).
         Map<String, Object> p = baseFixture();
         p.put(AclEpochState.FIELD_STATE, AclEpochState.FINALIZED_NEEDS_RECONCILE);
-        p.put(AclEpochState.FIELD_SOURCE_EPOCH, 5L); // valid epoch, but...
-        // no aclEpochMutationId
+        p.put(AclEpochState.FIELD_SOURCE_EPOCH, 5L); // valid epoch, but no mutation id
         putContentRaw("bad-final-nomut", p);
 
         ScanSummary sum = svc.scan(contentDb, 100);
         assertEquals(0, sum.awaitingReconcile, "a FINALIZED doc without a mutation id is not clean");
-        assertEquals(1, sum.errors.size());
-        assertEquals("bad-final-nomut", sum.errors.get(0).get("docId"));
+        assertTrue(sum.errors.stream().anyMatch(e -> "bad-final-nomut".equals(e.get("docId"))));
     }
 
     @Test
     void scanRecordsFinalizedWithInvalidEpochAsAnomaly() {
         Map<String, Object> p = baseFixture();
         p.put(AclEpochState.FIELD_STATE, AclEpochState.FINALIZED_NEEDS_RECONCILE);
-        p.put(AclEpochState.FIELD_MUTATION_ID, "m-x");
-        p.put(AclEpochState.FIELD_SOURCE_EPOCH, 1.5d);
+        p.put(AclEpochState.FIELD_MUTATION_ID, AclEpochState.newMutationId()); // valid UUID
+        p.put(AclEpochState.FIELD_SOURCE_EPOCH, 1.5d);                          // invalid epoch
         putContentRaw("bad-final-epoch", p);
 
         ScanSummary sum = svc.scan(contentDb, 100);
-        assertEquals(1, sum.errors.size());
-        assertEquals("bad-final-epoch", sum.errors.get(0).get("docId"));
+        assertTrue(sum.errors.stream().anyMatch(e -> "bad-final-epoch".equals(e.get("docId"))));
         assertEquals(0, sum.awaitingReconcile);
     }
 
-    // ── index is actually used (not an _all_docs fallback) ─────────
+    // ── every scan selector is index-served (not _all_docs) ────────
 
     @Test
-    void pendingSelectorUsesTheAclEpochStateIndex() throws Exception {
-        // Raw _explain (the SDK's typed ExplainResult mis-deserializes opts.fields).
+    void allScanSelectorsUseTheAclEpochStateIndex() throws Exception {
+        // The four selectors the service uses, in the same shape.
+        assertIndexServed(Map.of(AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH,
+                AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true)), "PENDING finalize");
+        assertIndexServed(Map.of(AclEpochState.FIELD_STATE, AclEpochState.FINALIZED_NEEDS_RECONCILE,
+                AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true)), "FINALIZED count");
+        assertIndexServed(Map.of(AclEpochState.FIELD_STATE, Map.of("$in", List.of(
+                        AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE)),
+                AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", false)), "missing-mutation-id audit");
+        assertIndexServed(Map.of(AclEpochState.FIELD_STATE, Map.of("$exists", true, "$nin", List.of(
+                        AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE))), "unknown-state audit");
+    }
+
+    private void assertIndexServed(Map<String, Object> selector, String label) throws Exception {
         ObjectMapper om = new ObjectMapper();
-        String body = om.writeValueAsString(Map.of("selector",
-                Map.of(AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH)));
+        String body = om.writeValueAsString(Map.of("selector", selector));
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/" + contentDb + "/_explain"))
                 .header("Authorization", basicAuth)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
-        HttpResponse<String> resp = HttpClient.newHttpClient()
-                .send(req, HttpResponse.BodyHandlers.ofString());
-        assertEquals(200, resp.statusCode(), "_explain call failed: " + resp.body());
+        HttpResponse<String> resp = HttpClient.newHttpClient().send(req, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, resp.statusCode(), label + " _explain failed: " + resp.body());
         JsonNode root = om.readTree(resp.body());
         String indexName = root.path("index").path("name").asText(null);
         assertEquals("idx_aclEpochState", indexName,
-                "the PENDING selector must be served by the (aclEpochState) index, not a full _all_docs scan");
+                label + " selector must be served by the (aclEpochState) index, not _all_docs");
     }
 
     // ── fixtures / helpers ─────────────────────────────────────────
@@ -423,6 +450,12 @@ public class AclEpochFinalizationServiceIT {
         Map<String, Object> p = baseFixture();
         p.put(AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH);
         p.put(AclEpochState.FIELD_MUTATION_ID, mutationId);
+        putContentRaw(id, p);
+    }
+
+    private void seedPendingNoMutationId(String id) {
+        Map<String, Object> p = baseFixture();
+        p.put(AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH); // deliberately no mutation id
         putContentRaw(id, p);
     }
 

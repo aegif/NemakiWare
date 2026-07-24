@@ -117,9 +117,14 @@ public class AclEpochFinalizationService {
         Object rawMut = props.get(AclEpochState.FIELD_MUTATION_ID);
         String mutationId = (rawMut instanceof String && !((String) rawMut).isBlank())
                 ? (String) rawMut : null;
-        // All three states carry a mutation id (Phase 1 always writes it).
+        // All three states carry a mutation id (Phase 1 always writes it) and it MUST be a
+        // canonical UUID — reusing / malforming it would let an old finalizer believe it
+        // still owns a newer mutation (review 2b [P2]).
         if (mutationId == null) {
             throw new AclEpochAnomalyException(state + " without aclEpochMutationId on " + doc.getId());
+        }
+        if (!AclEpochState.isValidMutationId(mutationId)) {
+            throw new AclEpochAnomalyException(state + " with non-UUID aclEpochMutationId on " + doc.getId());
         }
         Long epoch = null;
         if (AclEpochState.FINALIZED_NEEDS_RECONCILE.equals(state)
@@ -221,14 +226,21 @@ public class AclEpochFinalizationService {
     /**
      * Decide whether the live {@code current} is still the PENDING document we own. Returns
      * {@code null} to PROCEED (still PENDING with {@code ownedMutation}), or a terminal
-     * {@link FinalizeOutcome} otherwise. A corrupt live state THROWS an anomaly (a corrupt
-     * re-read is never a silent supersede, review 2a #4).
+     * {@link FinalizeOutcome} otherwise. Only a GENUINE supersede — a real delete race, a
+     * valid newer mutation, or a valid finalized/enqueued state — abandons. Corruption
+     * THROWS an anomaly (never a silent supersede, review 2a #4 / 2b): a document that STILL
+     * EXISTS but has LOST its {@code aclEpochState} is marker loss (a valid content doc does
+     * not lose an epoch marker on its own), NOT a delete race, so it is reported and
+     * retained rather than quietly abandoned.
      */
     private FinalizeOutcome stillOursOrOutcome(Document current, String ownedMutation) {
-        if (current == null
-                || current.getProperties() == null
-                || current.getProperties().get(AclEpochState.FIELD_STATE) == null) {
-            return new FinalizeOutcome(FinalizeResult.ABANDONED_SUPERSEDED, null); // gone / no longer an epoch doc
+        if (current == null) {
+            return new FinalizeOutcome(FinalizeResult.ABANDONED_SUPERSEDED, null); // genuine delete race
+        }
+        Map<String, Object> props = current.getProperties();
+        if (props == null || props.get(AclEpochState.FIELD_STATE) == null) {
+            throw new AclEpochAnomalyException("epoch marker disappeared from an existing document "
+                    + current.getId() + " (marker loss — not a delete race)");
         }
         EpochFields cur = validate(current); // corrupt → AclEpochAnomalyException
         if (!AclEpochState.PENDING_EPOCH.equals(cur.state)) {
@@ -243,52 +255,66 @@ public class AclEpochFinalizationService {
     // ── scan (crash recovery) ──────────────────────────────────────
 
     /**
-     * Advance epoch-outbox documents by one step, up to {@code maxDocs} total, in
-     * PRIORITY order:
+     * Advance epoch-outbox documents by one step. Four passes, each with its OWN
+     * {@code maxDocsPerPass} budget (never a shared cap, so no pass can starve another —
+     * review 2b [P1]) and each targeting EITHER valid or anomalous documents (so an
+     * unadvanceable anomalous document is not in a valid-doc selector and cannot block valid
+     * ones across invocations — review 2b [P1]):
      * <ol>
-     *   <li><b>PENDING pass (always first)</b> — finalize every {@code PENDING_EPOCH}
-     *       document. Running this first means a large backlog of parked
-     *       {@code FINALIZED_NEEDS_RECONCILE} documents can NEVER starve pending
-     *       finalization (the review's real-CouchDB observation that FINALIZED sorts ahead
-     *       of PENDING).</li>
-     *   <li><b>FINALIZED pass</b> (remaining capacity) — validate each and COUNT it, but
-     *       LEAVE it (the RECONCILE_ENQUEUED ACK is a later increment).</li>
-     *   <li><b>Anomaly audit pass</b> (remaining capacity) — a bounded sweep of documents
-     *       whose state is set but is NEITHER live state, so an unknown / non-String state
-     *       is surfaced instead of being invisible outside the {@code $in} selector.</li>
+     *   <li><b>Finalize valid PENDING</b> — {@code aclEpochState=PENDING_EPOCH} WITH a
+     *       mutation id. Missing-mutation-id PENDING are excluded here (Pass 3 audits them),
+     *       so a pile of them cannot starve valid PENDING.</li>
+     *   <li><b>Count valid FINALIZED</b> — validate + count (the RECONCILE_ENQUEUED ACK is a
+     *       later increment). Its own budget, so a PENDING inflow cannot starve it.</li>
+     *   <li><b>Audit — live state WITHOUT a mutation id</b> (own budget).</li>
+     *   <li><b>Audit — a state that is set but is NEITHER live state</b> (unknown /
+     *       non-String; own budget). A valid {@code RECONCILE_ENQUEUED} is counted.</li>
      * </ol>
      * A state-less (normal) document is never matched by any pass. Anomalies are recorded
      * and the document left unprocessed.
+     *
+     * <p>Residual (documented, not in the required-case scope): a document whose mutation id
+     * is PRESENT but is a non-UUID string enters Pass 1/2 and is recorded as an anomaly
+     * there rather than in a dedicated audit selector; Phase 1 only ever writes
+     * {@link AclEpochState#newMutationId()} UUIDs, so this arises only from external
+     * corruption, and such documents are surfaced (as errors) every scan.
      */
-    public ScanSummary scan(String repositoryId, int maxDocs) {
-        int cap = maxDocs > 0 ? maxDocs : DEFAULT_SCAN_MAX_DOCS;
+    public ScanSummary scan(String repositoryId, int maxDocsPerPass) {
+        int budget = maxDocsPerPass > 0 ? maxDocsPerPass : DEFAULT_SCAN_MAX_DOCS;
         ScanSummary summary = new ScanSummary();
 
-        // Pass 1 — PENDING first (priority; bookmark-paged so an anomalous PENDING that
-        // cannot advance is paged past rather than looped on).
-        pagedPass(repositoryId, Map.of(AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH),
-                cap, summary, d -> {
+        runPass(repositoryId, Map.of(
+                        AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH,
+                        AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true)),
+                budget, summary, d -> {
                     FinalizeOutcome o = finalizePending(repositoryId, d);
                     if (o.result == FinalizeResult.FINALIZED) summary.finalized++;
                 });
 
-        // Pass 2 — FINALIZED validation (only remaining capacity).
-        pagedPass(repositoryId, Map.of(AclEpochState.FIELD_STATE, AclEpochState.FINALIZED_NEEDS_RECONCILE),
-                cap, summary, d -> {
-                    validate(d); // throws on missing mutation id / invalid epoch
+        runPass(repositoryId, Map.of(
+                        AclEpochState.FIELD_STATE, AclEpochState.FINALIZED_NEEDS_RECONCILE,
+                        AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true)),
+                budget, summary, d -> {
+                    validate(d); // valid-UUID guaranteed by selector for the mutation id; epoch still checked
                     summary.awaitingReconcile++;
                 });
 
-        // Pass 3 — bounded anomaly audit: state set but neither live state (unknown /
-        // non-String / a valid RECONCILE_ENQUEUED). validate() surfaces the anomalies.
-        pagedPass(repositoryId, Map.of(AclEpochState.FIELD_STATE, Map.of("$exists", true,
-                        "$nin", List.of(AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE))),
-                cap, summary, d -> {
+        runPass(repositoryId, Map.of(
+                        AclEpochState.FIELD_STATE, Map.of("$in", List.of(
+                                AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE)),
+                        AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", false)),
+                budget, summary, d -> {
+                    throw new AclEpochAnomalyException("live state without aclEpochMutationId on " + d.getId());
+                });
+
+        runPass(repositoryId, Map.of(
+                        AclEpochState.FIELD_STATE, Map.of("$exists", true, "$nin", List.of(
+                                AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE))),
+                budget, summary, d -> {
                     EpochFields ef = validate(d); // unknown / non-String → anomaly
                     if (AclEpochState.RECONCILE_ENQUEUED.equals(ef.state)) summary.enqueued++;
                 });
 
-        summary.more = summary.scanned >= cap;
         return summary;
     }
 
@@ -299,19 +325,21 @@ public class AclEpochFinalizationService {
     }
 
     /**
-     * Bookmark-paged pass over {@code selector}, invoking {@code handler} per document until
-     * the shared {@code cap} ({@code summary.scanned}) is reached or the selector is
-     * exhausted. An {@link AclEpochAnomalyException} is recorded and the document left
-     * unprocessed; a non-anomaly (infrastructure) error propagates (fails the scan).
+     * Bookmark-paged pass over {@code selector} with its OWN {@code budget} (a per-pass cap,
+     * NOT shared with other passes), invoking {@code handler} per document. An
+     * {@link AclEpochAnomalyException} is recorded and the document left unprocessed; a
+     * non-anomaly (infrastructure) error propagates (fails the scan). {@code summary.more}
+     * is set if this pass hit its budget with more possibly due.
      */
-    private void pagedPass(String repositoryId, Map<String, Object> selector, int cap,
-                           ScanSummary summary, PassHandler handler) {
+    private void runPass(String repositoryId, Map<String, Object> selector, int budget,
+                         ScanSummary summary, PassHandler handler) {
         CloudantClientWrapper client = contentClient(repositoryId);
         Cloudant cloudant = client.getClient();
         String db = client.getDatabaseName();
         String bookmark = null;
-        while (summary.scanned < cap) {
-            int limit = Math.min(PAGE_SIZE, cap - summary.scanned);
+        int processed = 0;
+        while (processed < budget) {
+            int limit = Math.min(PAGE_SIZE, budget - processed);
             PostFindOptions.Builder b = new PostFindOptions.Builder()
                     .db(db).selector(selector).limit(limit);
             if (bookmark != null) b.bookmark(bookmark);
@@ -321,7 +349,8 @@ public class AclEpochFinalizationService {
                 break;
             }
             for (Document d : docs) {
-                if (summary.scanned >= cap) break;
+                if (processed >= budget) break;
+                processed++;
                 summary.scanned++;
                 try {
                     handler.handle(d);
@@ -337,6 +366,9 @@ public class AclEpochFinalizationService {
             if (docs.size() < limit) {
                 break; // last page
             }
+        }
+        if (processed >= budget) {
+            summary.more = true; // hit this pass's budget — more may be due
         }
     }
 
