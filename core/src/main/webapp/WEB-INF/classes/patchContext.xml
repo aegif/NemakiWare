@@ -290,6 +290,13 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- One-time cleanup of first-generation reconciliation docs
+				     (auto-id / ISO timestamps) superseded by the deterministic-id format. -->
+				<bean class="jp.aegif.nemaki.patch.Patch_SearchIndexReconcileV1Cleanup">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 			</list>
 		</property>
 	</bean>
@@ -529,6 +536,11 @@
 	     so the fallback path (Path B) silently skipped it — the same registration
 	     asymmetry RC4 (R1) fixed for the other patches. -->
 	<bean id="patch_SearchIndexReconcileMangoIndex" class="jp.aegif.nemaki.patch.Patch_SearchIndexReconcileMangoIndex">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+	<bean id="patch_SearchIndexReconcileV1Cleanup" class="jp.aegif.nemaki.patch.Patch_SearchIndexReconcileV1Cleanup">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

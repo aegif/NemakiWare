@@ -42,13 +42,11 @@ public class SearchIndexReconciliationController {
             @RequestParam(required = false) String status) {
         if (!isAdmin()) return forbidden();
         if (reconciliationService == null) return unavailable();
-        List<SearchIndexAclReindexTask> all = reconciliationService.list(limit);
-        List<SearchIndexAclReindexTask> filtered = (status == null || status.isBlank())
-                ? all
-                : all.stream().filter(t -> status.equalsIgnoreCase(t.getStatus())).toList();
+        // status is applied in the Mango selector (server side), before the limit.
+        List<SearchIndexAclReindexTask> tasks = reconciliationService.list(status, limit);
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("count", filtered.size());
-        body.put("tasks", filtered);
+        body.put("count", tasks.size());
+        body.put("tasks", tasks);
         return ResponseEntity.ok(body);
     }
 
@@ -60,27 +58,38 @@ public class SearchIndexReconciliationController {
         return ResponseEntity.ok(reconciliationService.metrics());
     }
 
-    /** Force an immediate re-drive of one task; a clean re-drive removes it, a failure re-opens it as PENDING. */
+    /**
+     * Force an immediate re-drive of one task. CLAIMS the task (a {@code _rev} CAS
+     * lease, the same the poller uses) so it does not race a concurrent scheduler
+     * re-drive; a task the poller is currently processing (active lease) returns 409.
+     * A clean re-drive removes it, a failure re-opens it as PENDING.
+     */
     @PostMapping("/{taskId}/retry")
     public ResponseEntity<?> retry(@PathVariable String taskId) {
         if (!isAdmin()) return forbidden();
         if (reconciliationService == null || aclService == null) return unavailable();
-        SearchIndexAclReindexTask task = reconciliationService.getByTaskId(taskId);
+        SearchIndexAclReindexTask task =
+                reconciliationService.claimForManualRetry(taskId, "admin-manual", 300_000L);
         if (task == null) {
-            return error(HttpStatus.NOT_FOUND, "Reconciliation task not found: " + taskId);
+            if (reconciliationService.getByTaskId(taskId) == null) {
+                return error(HttpStatus.NOT_FOUND, "Reconciliation task not found: " + taskId);
+            }
+            return error(HttpStatus.CONFLICT,
+                    "Task is currently being processed by a poller; retry later");
         }
         boolean clean;
         try {
             clean = aclService.reindexSearchIndexAclForObject(task.getRepositoryId(), task.getObjectId());
         } catch (Exception e) {
+            // Release the lease so it is retried, then report the failure.
+            reconciliationService.retryLater(task, 0L);
             return error(HttpStatus.INTERNAL_SERVER_ERROR, "Re-drive failed: " + e.getMessage());
         }
         Map<String, Object> body = new LinkedHashMap<>();
         if (clean && reconciliationService.complete(task)) {
             body.put("status", "reconciled");
         } else {
-            // Failed (or a poll claimed it concurrently) — re-open it PENDING / due-now
-            // (best-effort CAS; if it lost, the poller owns it).
+            // Failed (or a newer event superseded the claim) — re-open PENDING / due-now.
             reconciliationService.retryLater(task, 0L);
             body.put("status", "still-failing");
         }
@@ -89,10 +98,21 @@ public class SearchIndexReconciliationController {
         return ResponseEntity.ok(body);
     }
 
+    /**
+     * Delete a task. A task the poller is actively processing (unexpired lease) is
+     * refused with 409 unless {@code ?force=true} — a bare delete of a LEASED entry
+     * would not stop the in-flight worker's side effects.
+     */
     @DeleteMapping("/{taskId}")
-    public ResponseEntity<?> delete(@PathVariable String taskId) {
+    public ResponseEntity<?> delete(@PathVariable String taskId,
+            @RequestParam(defaultValue = "false") boolean force) {
         if (!isAdmin()) return forbidden();
         if (reconciliationService == null) return unavailable();
+        if (!force && reconciliationService.isActivelyLeased(taskId)) {
+            return error(HttpStatus.CONFLICT,
+                    "Task is leased (a poller is processing it); a worker's writes are already in "
+                            + "flight — use ?force=true to delete anyway");
+        }
         boolean deleted = reconciliationService.forceDeleteByTaskId(taskId);
         return ResponseEntity.ok(Map.of("status", deleted ? "success" : "not-found-or-conflict"));
     }

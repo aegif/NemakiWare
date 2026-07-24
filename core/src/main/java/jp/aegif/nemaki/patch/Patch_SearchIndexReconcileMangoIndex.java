@@ -30,7 +30,7 @@ import java.util.List;
 public class Patch_SearchIndexReconcileMangoIndex extends AbstractNemakiPatch {
 
     private static final Log log = LogFactory.getLog(Patch_SearchIndexReconcileMangoIndex.class);
-    private static final String PATCH_NAME = "SearchIndexReconcileMangoIndex-20260724b";
+    private static final String PATCH_NAME = "SearchIndexReconcileMangoIndex-20260724c";
 
     private record IndexSpec(String name, List<String> fields) {
         IndexSpec(String name, String... fields) {
@@ -43,6 +43,8 @@ public class Patch_SearchIndexReconcileMangoIndex extends AbstractNemakiPatch {
             new IndexSpec("idx_type_sirStatus_next", "type", "status", "nextAttemptAt"),
             // expired-lease reclaim: status=LEASED AND leaseExpiresAt<=now, sorted asc
             new IndexSpec("idx_type_sirStatus_lease", "type", "status", "leaseExpiresAt"),
+            // metrics: oldest PENDING by createdAt (age since first enqueued)
+            new IndexSpec("idx_type_sirStatus_created", "type", "status", "createdAt"),
             // admin retry/delete by opaque taskId (dedupe/CAS use the deterministic _id, no index)
             new IndexSpec("idx_type_sirTaskId", "type", "taskId")
     );

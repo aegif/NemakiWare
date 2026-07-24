@@ -67,11 +67,16 @@ public class SearchIndexReconciliationScheduler {
             return;
         }
         if (propertyManager != null) {
-            pollIntervalSeconds = readLong("nemakiware.searchindex.reconcile.pollIntervalSeconds", DEFAULT_POLL_INTERVAL_SECONDS);
-            maxAttempts = (int) readLong("nemakiware.searchindex.reconcile.maxAttempts", DEFAULT_MAX_ATTEMPTS);
-            batchSize = (int) readLong("nemakiware.searchindex.reconcile.batchSize", DEFAULT_BATCH);
-            baseBackoffSeconds = readLong("nemakiware.searchindex.reconcile.baseBackoffSeconds", DEFAULT_BASE_BACKOFF_SECONDS);
-            leaseSeconds = readLong("nemakiware.searchindex.reconcile.leaseSeconds", DEFAULT_LEASE_SECONDS);
+            // All values must be positive; a non-positive / unparseable override is
+            // rejected with a WARN and the default kept (a 0 poll interval would spin,
+            // a 0 batch would never drain, a 0 lease would let every claim expire).
+            pollIntervalSeconds = readPositiveLong("nemakiware.searchindex.reconcile.pollIntervalSeconds", DEFAULT_POLL_INTERVAL_SECONDS);
+            maxAttempts = (int) Math.min(Integer.MAX_VALUE,
+                    readPositiveLong("nemakiware.searchindex.reconcile.maxAttempts", DEFAULT_MAX_ATTEMPTS));
+            batchSize = (int) Math.min(Integer.MAX_VALUE,
+                    readPositiveLong("nemakiware.searchindex.reconcile.batchSize", DEFAULT_BATCH));
+            baseBackoffSeconds = readPositiveLong("nemakiware.searchindex.reconcile.baseBackoffSeconds", DEFAULT_BASE_BACKOFF_SECONDS);
+            leaseSeconds = readPositiveLong("nemakiware.searchindex.reconcile.leaseSeconds", DEFAULT_LEASE_SECONDS);
         }
         if (leaderElection != null) {
             try {
@@ -139,7 +144,9 @@ public class SearchIndexReconciliationScheduler {
             if (clean) {
                 if (reconciliationService.complete(task)) reconciled++;
                 // else: a newer failure event superseded the claim — left PENDING, re-processed later.
-            } else if (task.getAttempts() >= maxAttempts) {
+            } else if (task.getAttempts() + 1 >= maxAttempts) {
+                // This drive is the maxAttempts-th (attempts counts PRIOR failed drives),
+                // so give up after exactly maxAttempts re-drives.
                 reconciliationService.markFailed(task, "Exhausted " + maxAttempts + " reconciliation attempts");
                 failed++;
             } else {
@@ -162,12 +169,19 @@ public class SearchIndexReconciliationScheduler {
         return Math.min(secs, MAX_BACKOFF_SECONDS) * 1000L;
     }
 
-    private long readLong(String key, long dflt) {
+    /** Read a strictly-positive long; a non-positive or unparseable value keeps the default (with a WARN). */
+    private long readPositiveLong(String key, long dflt) {
         try {
             String v = propertyManager.readValue(key);
-            if (v != null && !v.isBlank()) return Long.parseLong(v.trim());
-        } catch (Exception ignore) {
-            // fall through to default
+            if (v != null && !v.isBlank()) {
+                long parsed = Long.parseLong(v.trim());
+                if (parsed > 0) {
+                    return parsed;
+                }
+                logger.warn("Ignoring non-positive config {}='{}', using default {}", key, v, dflt);
+            }
+        } catch (Exception e) {
+            logger.warn("Ignoring invalid config {} ('{}'), using default {}", key, e.getMessage(), dflt);
         }
         return dflt;
     }

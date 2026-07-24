@@ -93,6 +93,28 @@ public class SearchIndexReconciliationSchedulerTest {
     }
 
     @Test
+    public void boundaryTheNthDriveFailsAtExactlyMaxAttempts() {
+        // attempts counts PRIOR failed drives; the 10th drive (attempts=9) fails ->
+        // (9+1)>=10 -> markFailed. So exactly maxAttempts(=10) re-drives, no off-by-one.
+        SearchIndexAclReindexTask ninth = task("sir-9", "obj-9", 8); // 9th drive
+        when(svc.claimDue(anyInt(), anyString(), anyLong())).thenReturn(List.of(ninth));
+        when(acl.reindexSearchIndexAclForObject("bedroom", "obj-9")).thenReturn(false);
+        scheduler.poll();
+        verify(svc).retryLater(eq(ninth), anyLong());   // 9th drive -> still retried
+        verify(svc, never()).markFailed(any(), any());
+    }
+
+    @Test
+    public void boundaryTenthDriveIsMarkedFailed() {
+        SearchIndexAclReindexTask tenth = task("sir-10", "obj-10", 9); // 10th drive
+        when(svc.claimDue(anyInt(), anyString(), anyLong())).thenReturn(List.of(tenth));
+        when(acl.reindexSearchIndexAclForObject("bedroom", "obj-10")).thenReturn(false);
+        scheduler.poll();
+        verify(svc).markFailed(eq(tenth), any());       // 10th drive -> FAILED (exactly maxAttempts)
+        verify(svc, never()).retryLater(any(), anyLong());
+    }
+
+    @Test
     public void nonLeaderDoesNotClaim() {
         LeaderElection leader = mock(LeaderElection.class);
         when(leader.isEnabled()).thenReturn(true);
