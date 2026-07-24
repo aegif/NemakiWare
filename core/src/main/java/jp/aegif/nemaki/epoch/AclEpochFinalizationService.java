@@ -43,10 +43,11 @@ public class AclEpochFinalizationService {
 
     private static final Logger logger = LoggerFactory.getLogger(AclEpochFinalizationService.class);
 
-    /** Default per-scan processing cap (bounds one scan invocation across all passes). */
+    /** Default PER-PASS processing budget (each of the four passes is bounded independently). */
     public static final int DEFAULT_SCAN_MAX_DOCS = 500;
     private static final int PAGE_SIZE = 100;
     private static final int FINALIZE_CAS_RETRIES = 8;
+    private static final int QUARANTINE_CAS_RETRIES = 4;
 
     private CloudantClientPool connectorPool;
     private AclEpochCounterService counterService;
@@ -76,8 +77,8 @@ public class AclEpochFinalizationService {
         public int scanned;
         public int finalized;
         public int awaitingReconcile;
-        public int enqueued;          // valid RECONCILE_ENQUEUED docs seen by the audit pass
-        public boolean more;          // hit the processing cap with (possibly) more due
+        public int quarantined;       // anomalous docs moved to durable quarantine this scan
+        public boolean more;          // hit a pass's budget with (possibly) more due
         public final List<Map<String, String>> errors = new ArrayList<>();
     }
 
@@ -257,35 +258,35 @@ public class AclEpochFinalizationService {
     /**
      * Advance epoch-outbox documents by one step. Four passes, each with its OWN
      * {@code maxDocsPerPass} budget (never a shared cap, so no pass can starve another —
-     * review 2b [P1]) and each targeting EITHER valid or anomalous documents (so an
-     * unadvanceable anomalous document is not in a valid-doc selector and cannot block valid
-     * ones across invocations — review 2b [P1]):
+     * review 2b [P1]). Every selector excludes already-quarantined documents
+     * ({@code aclEpochQuarantined:{$exists:false}}).
      * <ol>
-     *   <li><b>Finalize valid PENDING</b> — {@code aclEpochState=PENDING_EPOCH} WITH a
-     *       mutation id. Missing-mutation-id PENDING are excluded here (Pass 3 audits them),
-     *       so a pile of them cannot starve valid PENDING.</li>
-     *   <li><b>Count valid FINALIZED</b> — validate + count (the RECONCILE_ENQUEUED ACK is a
-     *       later increment). Its own budget, so a PENDING inflow cannot starve it.</li>
-     *   <li><b>Audit — live state WITHOUT a mutation id</b> (own budget).</li>
-     *   <li><b>Audit — a state that is set but is NEITHER live state</b> (unknown /
-     *       non-String; own budget). A valid {@code RECONCILE_ENQUEUED} is counted.</li>
+     *   <li><b>Finalize PENDING</b> — {@code aclEpochState=PENDING_EPOCH} with a mutation id.</li>
+     *   <li><b>Count FINALIZED</b> — validate + count (the RECONCILE_ENQUEUED ACK is a later
+     *       increment).</li>
+     *   <li><b>Audit — live state WITHOUT a mutation id.</b></li>
+     *   <li><b>Audit — a state that is set but is NEITHER live nor RECONCILE_ENQUEUED</b>
+     *       (unknown / non-String).</li>
      * </ol>
-     * A state-less (normal) document is never matched by any pass. Anomalies are recorded
-     * and the document left unprocessed.
-     *
-     * <p>Residual (documented, not in the required-case scope): a document whose mutation id
-     * is PRESENT but is a non-UUID string enters Pass 1/2 and is recorded as an anomaly
-     * there rather than in a dedicated audit selector; Phase 1 only ever writes
-     * {@link AclEpochState#newMutationId()} UUIDs, so this arises only from external
-     * corruption, and such documents are surfaced (as errors) every scan.
+     * <b>Guaranteed progression (review 2c [P1]):</b> ANY document {@link #validate} rejects —
+     * a null / non-String / blank / non-UUID mutation id, a missing mutation id, an invalid
+     * epoch, an unknown state — is moved to DURABLE QUARANTINE the moment the scanner sees it
+     * (an {@code aclEpochQuarantined=true} flag added by CAS, ALL original fields preserved).
+     * Because every selector excludes quarantined documents, an anomalous document is removed
+     * from the live selectors after at most one scan and can NEVER block a valid document
+     * again — even a {@code >budget} pile of anomalies clears in a FINITE number of scans and
+     * the trailing valid documents are then finalized. A state-less (normal) document is never
+     * matched by any pass.
      */
     public ScanSummary scan(String repositoryId, int maxDocsPerPass) {
         int budget = maxDocsPerPass > 0 ? maxDocsPerPass : DEFAULT_SCAN_MAX_DOCS;
         ScanSummary summary = new ScanSummary();
+        Map<String, Object> notQuarantined = Map.of("$exists", false);
 
         runPass(repositoryId, Map.of(
                         AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH,
-                        AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true)),
+                        AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true),
+                        AclEpochState.FIELD_QUARANTINED, notQuarantined),
                 budget, summary, d -> {
                     FinalizeOutcome o = finalizePending(repositoryId, d);
                     if (o.result == FinalizeResult.FINALIZED) summary.finalized++;
@@ -293,26 +294,31 @@ public class AclEpochFinalizationService {
 
         runPass(repositoryId, Map.of(
                         AclEpochState.FIELD_STATE, AclEpochState.FINALIZED_NEEDS_RECONCILE,
-                        AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true)),
+                        AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true),
+                        AclEpochState.FIELD_QUARANTINED, notQuarantined),
                 budget, summary, d -> {
-                    validate(d); // valid-UUID guaranteed by selector for the mutation id; epoch still checked
+                    // The selector guarantees a mutation-id FIELD, not its VALIDITY — validate
+                    // still enforces the UUID form and the epoch (anomalies are quarantined).
+                    validate(d);
                     summary.awaitingReconcile++;
                 });
 
         runPass(repositoryId, Map.of(
                         AclEpochState.FIELD_STATE, Map.of("$in", List.of(
                                 AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE)),
-                        AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", false)),
+                        AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", false),
+                        AclEpochState.FIELD_QUARANTINED, notQuarantined),
                 budget, summary, d -> {
                     throw new AclEpochAnomalyException("live state without aclEpochMutationId on " + d.getId());
                 });
 
         runPass(repositoryId, Map.of(
                         AclEpochState.FIELD_STATE, Map.of("$exists", true, "$nin", List.of(
-                                AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE))),
+                                AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE,
+                                AclEpochState.RECONCILE_ENQUEUED)),
+                        AclEpochState.FIELD_QUARANTINED, notQuarantined),
                 budget, summary, d -> {
-                    EpochFields ef = validate(d); // unknown / non-String → anomaly
-                    if (AclEpochState.RECONCILE_ENQUEUED.equals(ef.state)) summary.enqueued++;
+                    throw new AclEpochAnomalyException("unknown / non-String aclEpochState on " + d.getId());
                 });
 
         return summary;
@@ -326,10 +332,11 @@ public class AclEpochFinalizationService {
 
     /**
      * Bookmark-paged pass over {@code selector} with its OWN {@code budget} (a per-pass cap,
-     * NOT shared with other passes), invoking {@code handler} per document. An
-     * {@link AclEpochAnomalyException} is recorded and the document left unprocessed; a
-     * non-anomaly (infrastructure) error propagates (fails the scan). {@code summary.more}
-     * is set if this pass hit its budget with more possibly due.
+     * NOT shared with other passes), invoking {@code handler} per document. On an
+     * {@link AclEpochAnomalyException} the document is moved to durable quarantine (so it
+     * leaves the live selectors and can never block a valid document again) and recorded; a
+     * non-anomaly (infrastructure) error propagates (fails the scan). {@code summary.more} is
+     * set if this pass hit its budget with more possibly due.
      */
     private void runPass(String repositoryId, Map<String, Object> selector, int budget,
                          ScanSummary summary, PassHandler handler) {
@@ -355,11 +362,7 @@ public class AclEpochFinalizationService {
                 try {
                     handler.handle(d);
                 } catch (AclEpochAnomalyException ae) {
-                    Map<String, String> err = new LinkedHashMap<>();
-                    err.put("docId", d.getId());
-                    err.put("problem", ae.getMessage());
-                    summary.errors.add(err);
-                    logger.warn("ACL epoch scan anomaly for {}/{}: {}", repositoryId, d.getId(), ae.getMessage());
+                    quarantine(repositoryId, d.getId(), ae.getMessage(), summary);
                 }
             }
             bookmark = r.getBookmark();
@@ -369,6 +372,47 @@ public class AclEpochFinalizationService {
         }
         if (processed >= budget) {
             summary.more = true; // hit this pass's budget — more may be due
+        }
+    }
+
+    /**
+     * Move an anomalous document to DURABLE QUARANTINE: CAS-add {@code aclEpochQuarantined=true}
+     * (preserving every original field, including {@code _attachments}) so it is excluded from
+     * all live selectors and can never block a valid document again. Always records the anomaly
+     * in {@code summary.errors}; increments {@code summary.quarantined} when the flag is
+     * durably set. Best-effort on a transient CAS/read failure (the next scan re-detects the
+     * still-un-quarantined document), so quarantine failure never fails the scan.
+     */
+    private void quarantine(String repositoryId, String docId, String problem, ScanSummary summary) {
+        Map<String, String> err = new LinkedHashMap<>();
+        err.put("docId", docId);
+        err.put("problem", problem);
+        summary.errors.add(err);
+        logger.warn("ACL epoch scan anomaly for {}/{} — quarantining: {}", repositoryId, docId, problem);
+        try {
+            for (int attempt = 0; attempt < QUARANTINE_CAS_RETRIES; attempt++) {
+                Document d = getDoc(repositoryId, docId);
+                if (d == null || d.getProperties() == null) {
+                    return; // gone — nothing to quarantine
+                }
+                Map<String, Object> p = d.getProperties();
+                if (Boolean.TRUE.equals(p.get(AclEpochState.FIELD_QUARANTINED))) {
+                    return; // already quarantined by a concurrent scan
+                }
+                p.put(AclEpochState.FIELD_QUARANTINED, true);
+                d.setProperties(p);
+                if (putBack(repositoryId, d) != null) {
+                    summary.quarantined++;
+                    return;
+                }
+                // 409 — retry with a fresh read.
+            }
+            logger.warn("ACL epoch quarantine did not converge for {}/{} — will retry next scan",
+                    repositoryId, docId);
+        } catch (RuntimeException e) {
+            // Best-effort: a transient failure leaves the doc un-quarantined; the next scan
+            // re-detects it. Never fail the scan on a quarantine write.
+            logger.warn("ACL epoch quarantine write failed for {}/{}: {}", repositoryId, docId, e.getMessage());
         }
     }
 

@@ -1160,9 +1160,26 @@ ABANDON 誤り + mutationId 形式無保証、を指摘され是正。
 - **検証**: `AclEpochStateTest` **4/4**(newMutationId が毎回新規 UUID / canonical UUID 検証)、実 CouchDB IT
   `AclEpochFinalizationServiceIT` **19/19**。新規: **>cap FINALIZED + UNKNOWN→UNKNOWN 報告**(Mode A)/ **>cap 異常 PENDING +
   正常 PENDING→正常 finalize**(Mode B)/ 全 pass 進行 / **state 消失→anomaly + epoch 非消費** / **全4 selector が index 使用** /
-  非UUID mutationId 拒否 + epoch 非消費。CI に両テスト。**残余(正直に)**: mutationId が present だが非UUID の PENDING は Pass1
-  で anomaly 記録されるが selector 除外はされず、>cap そういう外部破損があると Pass1 を塞ぎ得る(Phase 1 は UUID のみ書くため
-  外部破損限定、毎 scan 可視)。
+  非UUID mutationId 拒否 + epoch 非消費。CI に両テスト。
+
+**増分2c: durable quarantine で全異常型の進行性を保証(2b 残余の根治)**:
+増分2b レビューで「valid selector(`mutationId:$exists`)が validator の有効条件(UUID + 有効 epoch)と不一致 → null/非String/blank/
+非UUID mutationId・不正 epoch が valid pass に残り、>budget あると正常文書を永久に塞ぐ。『非UUID 限定』は受入理由にならない
+(scanner 自身が破損を fail-closed で扱う機構)」と指摘され根治。
+- **[P1] durable quarantine**: `validate()` が anomaly と判定した文書を見た瞬間、**`aclEpochQuarantined=true` を CAS 付与**
+  (元フィールドは全保持=検査/修復用)。**全 scan selector が `{aclEpochQuarantined:{$exists:false}}` で quarantine 除外**。
+  異常文書は最大1 scan で live selector から外れ、二度と正常文書を塞がない → **>budget の異常山でも有限 scan で解消し、後方の
+  正常文書が finalize される**(進行性を構造的に保証)。selector を validator と完全一致させる代わりに、validator が弾く全型
+  (null/非String/blank/非UUID mutationId・欠落・不正 epoch・未知 state)を quarantine で確実に除外。全4 selector は引き続き
+  `idx_aclEpochState` 使用(`_explain` 確認)。Pass4 selector の `$nin` に `RECONCILE_ENQUEUED` を追加(有効 terminal を除外)。
+- **[P2] cap 契約整合**: `DEFAULT_SCAN_MAX_DOCS` コメントを「全 pass 通算」→「per-pass budget」に、FINALIZED handler の
+  「selector が UUID 保証」コメントを削除(selector は $exists のみ、UUID は validate が強制)。
+- **検証**: 実 CouchDB IT `AclEpochFinalizationServiceIT` **22/22**。新規(複数 scan 進行性): **>budget 非UUID PENDING + 正常→
+  有限 scan で finalize** / **>budget null・非String・blank mutationId + 正常→finalize** / **>budget 不正 epoch FINALIZED +
+  正常 FINALIZED→正常は quarantine されず不正のみ quarantine** / 全4 selector index 使用(quarantine 除外込み)。既存の異常
+  記録テストは quarantine 付与後も state 不変・errors 記録を確認。CI 済。
+- **将来注記**: marker を ACK 後に消す段階(次増分)では、遅延 finalizer が「正常な marker 消去」を破損と誤認しない終端判定が
+  別途必要(現状 `stillOursOrOutcome` は既存 marker 消失を anomaly 扱い=marker を消す増分がない今は正しい)。設計 §3 に記載。
 
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
