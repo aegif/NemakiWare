@@ -395,7 +395,8 @@ concurrency/durability semantics actually hold:
   than silently lost, and the true belt-and-suspenders for that case is a periodic
   authoritative ACL-to-index audit (a separate, larger effort). After `maxAttempts`
   an entry is kept as `FAILED` for inspection — operators should alert on the
-  `failed` count and `oldestPendingAgeMs`.
+  `failed` count, `oldestPendingCreatedAgeMs` (backlog age) and `mostOverduePendingMs`
+  (how far past its next-attempt time the most-overdue entry is).
 - **Verified**: `SearchIndexReconciliationSchedulerTest` (5 — clean→complete,
   under-cap→retryLater, at-cap→markFailed, non-leader→no-claim, deterministic-id
   encoding); live against real CouchDB — deterministic-id dedupe (duplicate `_id` →

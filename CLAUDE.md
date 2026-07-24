@@ -818,6 +818,44 @@ v2 のキュー層 CAS は正しかったが、レビューで**再実行(re-dri
   `mvn -o test -Dtest=SearchIndexReconciliationServiceIT -Dnemaki.test.couchdb.url=http://localhost:5984 ...`
   (surefire 既定の `*Test` パターン外なので通常ビルドでは走らず、明示実行のみ = OData IT と同方式)。
 
+**reconciliation キュー — レビュー後の並行/耐障害性修正 (P1×5 + P2×3)**:
+前巡の cooperative fencing には実装バグがあり、いくつかの窓が残っていた。**重要な前提**:
+CMIS 結果は `PermissionService.getFiltered`、RAG 結果は `VectorSearchServiceImpl.filterByLiveAcl`
+が**全ヒットを live ACL で再検査**するため、reconcile が書いた stale readers は**認可リークにはならず**、
+影響は numFound/cap 集計の drift と RAG 候補プールの鮮度に限定される(次の ACL 変更 or 全再索引で自己修復)。
+- **[P1] fencing 実装バグ (機能不全) を修正**: (a) `renewLeaseIfNeeded` が CAS 前にローカル
+  `leaseExpiresAt` を未来へ変異させ、CAS 失敗後も次回チェックが「余裕あり」で `true` を返していた →
+  **CAS 失敗時に旧値を復元**。(b) 子ノードの `LeaseLostException` を親の `catch (Exception)` が握り潰し
+  traversal が継続 → **子再帰 catch で明示再throw**。(c) 共通の **latched guard**
+  (`SearchIndexReconciliationService.fenceGuard`、一度 false で永久 false)を scheduler と管理 retry で共有。
+- **[P1] fence をノード単位→書込み単位に細粒度化**: `checkpointLease` を content readers 前・RAG 前・
+  **relationship ループ各回**に挿入。数千 relationship / 巨大 RAG block でも lease 喪失後に旧 worker が
+  書き続けない。
+- **[P1] 管理手動 retry が fencing 未使用**: Controller の 300s claim が 2 引数 overload(guard=null)を
+  呼んでいた → scheduler と同じ **latched `fenceGuard` を渡す 3 引数**に。
+- **[P1] relationship endpoint の読取障害/例外を「正常」確定**: `createSolrDocument` の readers/本文/path
+  計算 catch が例外を握り潰し、空 readers/本文欠落 doc を成功として書き、reconcile が task を誤削除して
+  いた → **`strict` フラグ**を `indexDocument`→`indexDocumentInternal`→`createSolrDocument` に通し、reconcile
+  経路(`syncConfirm=true`)では**再throw**して失敗計上・retry。`relationshipReaders` は strict 時に endpoint を
+  **tri-state probe**(ERROR→throw / NOT_FOUND→dangling として空寄与)で読む(片側 endpoint の dangling が
+  近傍オブジェクトの他 relationship 再索引を巻き込まないよう per-endpoint 判定)。
+- **[P1] content 世代フェンス (#1)**: `applyAcl`/move は CMIS change token を bump しないが CouchDB `_rev`
+  (`N-hash`)は bump する。`createSolrDocument` が `_rev` 先頭整数を `acl_index_generation` として**常時 stamp**
+  (schema に long フィールド追加)。reconcile は書込み前に Solr の stored generation を読み、**mine より厳密に
+  新しければ skip**(並行成功 `applyAcl` の fresher readers を stale reconcile が上書きしない)。0/不明は skip せず
+  (fail-open to write、live gate が再検査)。直接 ACL 変更オブジェクトの race を閉じる。継承子孫/relationship の
+  race は live gate で無害・全再索引で自己修復の残余として明記。
+- **[P2] 本文/path 一時失敗で full-doc 上書きしない**: 上記 strict が抽出/path 失敗も再throw(body/path 欠落
+  doc で既存を置換＋task 成功削除を防ぐ)。専用 atomic readers-only API は将来の最適化として保留(strict で
+  clobber+誤削除は解消済み)。
+- **[P2] IT を CI ゲート化 + unreachable は fail**: `integration-tests.yml` に `reconcile-it` ジョブを追加
+  (CouchDB/Solr 起動 → `SearchIndexReconciliationServiceIT` を `-Dnemaki.test.couchdb.required=true` で実行、
+  接続不能なら **skip でなく fail**)。IT に fence guard latch + renew-restore の 2 件を追加(計 10 件)。
+- **[P2] docs typo**: RELEASE_NOTES のアラートキー `oldestPendingAgeMs`→`oldestPendingCreatedAgeMs` +
+  `mostOverduePendingMs`。
+- **検証**: 単体 `SolrUtilRelationshipReadersTest` +3(`parseRevGeneration`)、focused スイート green、
+  実 CouchDB IT 10/10、TCK QueryTestGroup 6/6、実機で generation-fence skip + strict retry + fencing 中断を確認。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度

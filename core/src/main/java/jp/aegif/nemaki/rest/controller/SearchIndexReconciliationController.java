@@ -79,7 +79,13 @@ public class SearchIndexReconciliationController {
         }
         boolean clean;
         try {
-            clean = aclService.reindexSearchIndexAclForObject(task.getRepositoryId(), task.getObjectId());
+            // Fence the manual re-drive with the SAME latched cooperative-fencing
+            // guard the poller uses: a large subtree that outlives the 300s lease is
+            // reclaimable by the scheduler, and without the guard this admin worker
+            // would keep writing over the reclaimer. The guard heartbeats/renews the
+            // lease and aborts the re-drive once the lease is lost.
+            clean = aclService.reindexSearchIndexAclForObject(task.getRepositoryId(), task.getObjectId(),
+                    reconciliationService.fenceGuard(task, 300_000L));
         } catch (Exception e) {
             // Release the lease so it is retried, then report the failure.
             reconciliationService.retryLater(task, 0L);

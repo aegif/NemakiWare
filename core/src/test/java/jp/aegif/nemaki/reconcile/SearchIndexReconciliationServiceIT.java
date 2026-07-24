@@ -70,6 +70,17 @@ public class SearchIndexReconciliationServiceIT {
         } catch (Exception e) {
             available = false;
         }
+        // In CI (nemaki.test.couchdb.required=true) an unreachable nemaki_conf is a
+        // HARD FAILURE, not a silent skip — a dedicated CI job spins up CouchDB/Solr,
+        // so a skip there would falsely green-light the re-drive queue's concurrency
+        // guarantees. Locally the flag defaults false, so the class still skips when
+        // there is no dev stack.
+        if (!available && Boolean.parseBoolean(
+                cfg("nemaki.test.couchdb.required", "NEMAKI_TEST_COUCHDB_REQUIRED", "false"))) {
+            throw new IllegalStateException(
+                    "nemaki.test.couchdb.required=true but nemaki_conf is not reachable — "
+                    + "the reconciliation IT cannot run (start CouchDB/Solr + Setup Wizard first)");
+        }
     }
 
     @BeforeEach
@@ -189,6 +200,50 @@ public class SearchIndexReconciliationServiceIT {
         // observe the loss: my stale rev now conflicts.
         assertFalse(svc.renewLeaseIfNeeded(mine, 1_000_000_000L),
                 "renewal on a stale rev must report the lease as lost");
+    }
+
+    @Test
+    void renewRestoresLocalExpiryOnCasFailure() {
+        svc.enqueue(repo, "objR", SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE);
+        String taskId = taskIdFor("objR");
+        SearchIndexAclReindexTask mine = svc.claimForManualRetry(taskId, "node-A", 60_000L);
+        assertNotNull(mine);
+
+        // Another worker reclaims the lease (bumps the rev), so my rev is stale.
+        SearchIndexAclReindexTask other = svc.getByTaskId(taskId);
+        assertTrue(svc.retryLater(other, 0L));
+
+        long before = mine.getLeaseExpiresAt();
+        // Huge lease forces a real CAS (half > remaining); the CAS fails on the stale rev.
+        assertFalse(svc.renewLeaseIfNeeded(mine, 1_000_000_000L),
+                "a renewal on a reclaimed lease must report the lease lost");
+        assertEquals(before, mine.getLeaseExpiresAt(),
+                "a failed renewal must NOT leave the local expiry in the future — otherwise the "
+                + "next checkpoint would see 'plenty of time left', skip the CAS, and wrongly "
+                + "report the lease as still held (defeating cooperative fencing).");
+    }
+
+    @Test
+    void fenceGuardLatchesFalsePermanentlyOnceLost() {
+        svc.enqueue(repo, "objG2", SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE);
+        String taskId = taskIdFor("objG2");
+        SearchIndexAclReindexTask mine = svc.claimForManualRetry(taskId, "node-A", 60_000L);
+        assertNotNull(mine);
+        java.util.function.BooleanSupplier guard = svc.fenceGuard(mine, 60_000L);
+
+        // Another worker reclaims the lease, invalidating my rev.
+        SearchIndexAclReindexTask other = svc.getByTaskId(taskId);
+        assertTrue(svc.retryLater(other, 0L));
+
+        // Force the heartbeat to fire (expiry in the past) so the guard actually CASes,
+        // then observe the loss.
+        mine.setLeaseExpiresAt(0L);
+        assertFalse(guard.getAsBoolean(), "the checkpoint after a reclaim must report the lease lost");
+
+        // Even if the local expiry is (wrongly) reset far into the future, the guard must
+        // STAY false forever — a worker that lost its lease must never resume writing.
+        mine.setLeaseExpiresAt(Long.MAX_VALUE);
+        assertFalse(guard.getAsBoolean(), "the guard must latch false permanently once the lease is lost");
     }
 
     // ── complete CAS vs a concurrent new event ─────────────────────
