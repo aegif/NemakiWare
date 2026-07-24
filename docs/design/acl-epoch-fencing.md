@@ -503,3 +503,18 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
     distinguish that terminal state from corruption — a separate terminal check is needed
     then (today `stillOursOrOutcome` treats an existing marker-less document as an anomaly,
     which is correct while no increment clears the marker).
+  - **Increment 2d — quarantine race / bypass / terminal / failure closed.** (1) The
+    quarantine write RE-VALIDATES the freshly-read document on every CAS attempt and
+    ABORTS if a concurrent normal Phase 1 already repaired it (valid epoch fields + no
+    stray marker) — a repaired ACL mutation is never permanently isolated. (2) The
+    quarantine field's contract is strict: absent = process, Boolean `true` = quarantined,
+    anything else (`false` / `null` / string / …) is itself an anomaly and is NORMALIZED to
+    `true`. CouchDB Mango `$ne`/`$not` do NOT match an absent field, so every selector
+    excludes a true marker via `$or({$exists:false}, {$ne:true})` (still index-served) — a
+    malformed marker can no longer hide a document. (3) A direct `finalizePending` /
+    `validate` REJECTS a quarantined document fail-closed (a repair must clear the marker in
+    the same Phase-1 commit — a design contract for the wiring increment). (4) A terminal
+    audit pass validates `RECONCILE_ENQUEUED` too (a malformed marker / non-UUID id / invalid
+    epoch there is quarantined; a valid one is counted). (5) A quarantine that cannot durably
+    persist is NOT swallowed — it increments `quarantineFailures`, records an error, and sets
+    `more` so the driver re-scans.

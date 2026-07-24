@@ -77,8 +77,10 @@ public class AclEpochFinalizationService {
         public int scanned;
         public int finalized;
         public int awaitingReconcile;
-        public int quarantined;       // anomalous docs moved to durable quarantine this scan
-        public boolean more;          // hit a pass's budget with (possibly) more due
+        public int enqueued;             // valid RECONCILE_ENQUEUED docs seen by the terminal audit
+        public int quarantined;          // anomalous docs moved to durable quarantine this scan
+        public int quarantineFailures;   // anomalies that could NOT be durably quarantined this scan
+        public boolean more;             // hit a pass's budget OR a quarantine write failed → re-scan
         public final List<Map<String, String>> errors = new ArrayList<>();
     }
 
@@ -98,14 +100,36 @@ public class AclEpochFinalizationService {
     }
 
     /**
-     * Strictly validate the epoch fields of a document that HAS a state (the caller has
-     * already established {@code aclEpochState} is present). Shared by finalize, the 409
-     * re-read, and every scan pass so "valid" has one definition.
+     * Validate a document as a live epoch doc: it must NOT be quarantined (or carry a
+     * malformed quarantine marker) AND its epoch fields must be valid. Shared by finalize,
+     * the 409 re-read, and the scan passes so "valid" has one definition, and so a
+     * quarantined document is fail-closed-rejected everywhere (a direct finalizer must never
+     * finalize a quarantined document — review 2d [P1]).
      *
-     * @throws AclEpochAnomalyException on a non-String / unknown state, a missing mutation
-     *         id, or (for FINALIZED / ENQUEUED) a missing / non-integral / non-positive epoch
+     * @throws AclEpochAnomalyException if quarantined / the marker is malformed / the epoch
+     *         fields are anomalous
      */
     private static EpochFields validate(Document doc) {
+        Object q = doc.getProperties() != null ? doc.getProperties().get(AclEpochState.FIELD_QUARANTINED) : null;
+        if (q != null) {
+            if (Boolean.TRUE.equals(q)) {
+                throw new AclEpochAnomalyException("document is quarantined on " + doc.getId());
+            }
+            throw new AclEpochAnomalyException("malformed aclEpochQuarantined marker (not Boolean true) on "
+                    + doc.getId());
+        }
+        return validateEpochFields(doc);
+    }
+
+    /**
+     * Strictly validate ONLY the epoch fields (state / mutationId / epoch), ignoring the
+     * quarantine marker. Used by {@link #quarantine} to decide whether a document is STILL
+     * anomalous on re-read (a repaired document must not be quarantined — review 2d [P1]).
+     *
+     * @throws AclEpochAnomalyException on a non-String / unknown state, a missing / non-UUID
+     *         mutation id, or (for FINALIZED / ENQUEUED) an invalid epoch
+     */
+    private static EpochFields validateEpochFields(Document doc) {
         Map<String, Object> props = doc.getProperties();
         Object rawState = props != null ? props.get(AclEpochState.FIELD_STATE) : null;
         if (!(rawState instanceof String)) {
@@ -281,47 +305,68 @@ public class AclEpochFinalizationService {
     public ScanSummary scan(String repositoryId, int maxDocsPerPass) {
         int budget = maxDocsPerPass > 0 ? maxDocsPerPass : DEFAULT_SCAN_MAX_DOCS;
         ScanSummary summary = new ScanSummary();
-        Map<String, Object> notQuarantined = Map.of("$exists", false);
 
-        runPass(repositoryId, Map.of(
+        runPass(repositoryId, notQuarantined(Map.of(
                         AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH,
-                        AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true),
-                        AclEpochState.FIELD_QUARANTINED, notQuarantined),
+                        AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true))),
                 budget, summary, d -> {
                     FinalizeOutcome o = finalizePending(repositoryId, d);
                     if (o.result == FinalizeResult.FINALIZED) summary.finalized++;
                 });
 
-        runPass(repositoryId, Map.of(
+        runPass(repositoryId, notQuarantined(Map.of(
                         AclEpochState.FIELD_STATE, AclEpochState.FINALIZED_NEEDS_RECONCILE,
-                        AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true),
-                        AclEpochState.FIELD_QUARANTINED, notQuarantined),
+                        AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true))),
                 budget, summary, d -> {
-                    // The selector guarantees a mutation-id FIELD, not its VALIDITY — validate
-                    // still enforces the UUID form and the epoch (anomalies are quarantined).
-                    validate(d);
+                    validate(d); // rejects a present marker + an invalid UUID / epoch → quarantined
                     summary.awaitingReconcile++;
                 });
 
-        runPass(repositoryId, Map.of(
+        runPass(repositoryId, notQuarantined(Map.of(
                         AclEpochState.FIELD_STATE, Map.of("$in", List.of(
                                 AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE)),
-                        AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", false),
-                        AclEpochState.FIELD_QUARANTINED, notQuarantined),
+                        AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", false))),
                 budget, summary, d -> {
                     throw new AclEpochAnomalyException("live state without aclEpochMutationId on " + d.getId());
                 });
 
-        runPass(repositoryId, Map.of(
+        // Terminal audit (review 2d [P2]): a RECONCILE_ENQUEUED with a malformed marker,
+        // non-UUID mutation id, or invalid epoch is quarantined too, so "whatever validate()
+        // rejects is quarantined" holds for the terminal state as well. A valid one is
+        // counted (the ACK that consumes it is a later increment).
+        runPass(repositoryId, notQuarantined(Map.of(
+                        AclEpochState.FIELD_STATE, AclEpochState.RECONCILE_ENQUEUED)),
+                budget, summary, d -> {
+                    validate(d);
+                    summary.enqueued++;
+                });
+
+        runPass(repositoryId, notQuarantined(Map.of(
                         AclEpochState.FIELD_STATE, Map.of("$exists", true, "$nin", List.of(
                                 AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE,
-                                AclEpochState.RECONCILE_ENQUEUED)),
-                        AclEpochState.FIELD_QUARANTINED, notQuarantined),
+                                AclEpochState.RECONCILE_ENQUEUED)))),
                 budget, summary, d -> {
                     throw new AclEpochAnomalyException("unknown / non-String aclEpochState on " + d.getId());
                 });
 
         return summary;
+    }
+
+    /**
+     * Add the "not quarantined" condition to a state selector. CouchDB Mango {@code $ne} /
+     * {@code $not} do NOT match an ABSENT field, so excluding a TRUE marker while still
+     * matching an absent OR malformed (false / null / non-Boolean) marker requires an
+     * explicit {@code $or}: {@code {$exists:false} OR {$ne:true}}. This matches an absent
+     * marker and any non-true value but NOT a proper {@code true} — so a malformed marker can
+     * NOT hide a document from the scanner (review 2d [P1]); it is surfaced and normalized to
+     * true. Still {@code (aclEpochState)}-index-served (verified by {@code _explain}).
+     */
+    private static Map<String, Object> notQuarantined(Map<String, Object> stateAndFields) {
+        Map<String, Object> s = new LinkedHashMap<>(stateAndFields);
+        s.put("$or", List.of(
+                Map.of(AclEpochState.FIELD_QUARANTINED, Map.of("$exists", false)),
+                Map.of(AclEpochState.FIELD_QUARANTINED, Map.of("$ne", true))));
+        return s;
     }
 
     /** Functional per-document handler for a scan pass (may throw an anomaly). */
@@ -378,42 +423,74 @@ public class AclEpochFinalizationService {
     /**
      * Move an anomalous document to DURABLE QUARANTINE: CAS-add {@code aclEpochQuarantined=true}
      * (preserving every original field, including {@code _attachments}) so it is excluded from
-     * all live selectors and can never block a valid document again. Always records the anomaly
-     * in {@code summary.errors}; increments {@code summary.quarantined} when the flag is
-     * durably set. Best-effort on a transient CAS/read failure (the next scan re-detects the
-     * still-un-quarantined document), so quarantine failure never fails the scan.
+     * the live selectors and can never block a valid document again.
+     *
+     * <p><b>Re-validates on every CAS attempt (review 2d [P1]):</b> the flag is set ONLY if the
+     * freshly-read document is STILL anomalous — if a concurrent normal Phase 1 REPAIRED it
+     * (valid epoch fields AND no stray marker) or it became state-less normal content, the
+     * quarantine is ABORTED (a repaired ACL mutation must never be permanently isolated). A
+     * malformed non-true marker is itself an anomaly and is normalized to {@code true}.
+     *
+     * <p>A failure to durably quarantine is NOT swallowed silently (review 2d [P2]): it
+     * increments {@code summary.quarantineFailures}, records an error, and sets
+     * {@code summary.more} so a monitor/driver re-scans.
+     *
+     * <p>Package-private so the IT can drive the re-validation / failure paths deterministically.
      */
-    private void quarantine(String repositoryId, String docId, String problem, ScanSummary summary) {
-        Map<String, String> err = new LinkedHashMap<>();
-        err.put("docId", docId);
-        err.put("problem", problem);
-        summary.errors.add(err);
-        logger.warn("ACL epoch scan anomaly for {}/{} — quarantining: {}", repositoryId, docId, problem);
+    void quarantine(String repositoryId, String docId, String problem, ScanSummary summary) {
         try {
             for (int attempt = 0; attempt < QUARANTINE_CAS_RETRIES; attempt++) {
                 Document d = getDoc(repositoryId, docId);
                 if (d == null || d.getProperties() == null) {
-                    return; // gone — nothing to quarantine
+                    return; // gone — nothing to quarantine (no error: transient anomaly resolved)
                 }
                 Map<String, Object> p = d.getProperties();
-                if (Boolean.TRUE.equals(p.get(AclEpochState.FIELD_QUARANTINED))) {
-                    return; // already quarantined by a concurrent scan
+                Object q = p.get(AclEpochState.FIELD_QUARANTINED);
+                if (Boolean.TRUE.equals(q)) {
+                    return; // already properly quarantined by a concurrent scan
+                }
+                boolean markerAnomalous = (q != null); // present but not Boolean true
+                boolean epochAnomalous;
+                if (p.get(AclEpochState.FIELD_STATE) == null) {
+                    epochAnomalous = false; // repaired to state-less normal content
+                } else {
+                    try {
+                        validateEpochFields(d);
+                        epochAnomalous = false; // epoch fields are valid now (repaired)
+                    } catch (AclEpochAnomalyException stillBad) {
+                        epochAnomalous = true;
+                    }
+                }
+                if (!epochAnomalous && !markerAnomalous) {
+                    return; // fully repaired between detection and now → do NOT quarantine
                 }
                 p.put(AclEpochState.FIELD_QUARANTINED, true);
                 d.setProperties(p);
                 if (putBack(repositoryId, d) != null) {
                     summary.quarantined++;
+                    record(summary, docId, problem);
                     return;
                 }
-                // 409 — retry with a fresh read.
+                // 409 — retry with a fresh read (re-validated above each iteration).
             }
-            logger.warn("ACL epoch quarantine did not converge for {}/{} — will retry next scan",
-                    repositoryId, docId);
+            recordQuarantineFailure(summary, docId, "quarantine CAS did not converge: " + problem);
         } catch (RuntimeException e) {
-            // Best-effort: a transient failure leaves the doc un-quarantined; the next scan
-            // re-detects it. Never fail the scan on a quarantine write.
-            logger.warn("ACL epoch quarantine write failed for {}/{}: {}", repositoryId, docId, e.getMessage());
+            recordQuarantineFailure(summary, docId, "quarantine write failed: " + e.getMessage());
         }
+    }
+
+    private void record(ScanSummary summary, String docId, String problem) {
+        Map<String, String> err = new LinkedHashMap<>();
+        err.put("docId", docId);
+        err.put("problem", problem);
+        summary.errors.add(err);
+        logger.warn("ACL epoch scan anomaly {} — quarantined: {}", docId, problem);
+    }
+
+    private void recordQuarantineFailure(ScanSummary summary, String docId, String problem) {
+        summary.quarantineFailures++;
+        summary.more = true; // signal the driver to re-scan (the anomaly is not yet contained)
+        record(summary, docId, problem);
     }
 
     // ── CouchDB primitives (content DB = repositoryId) ─────────────
