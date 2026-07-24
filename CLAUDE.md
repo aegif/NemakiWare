@@ -383,15 +383,19 @@ mcp.tools.list.public=false  # インターネット公開環境向け: 認証�
 **3.3.0** (2026-07-22、`deps/v3.3-breaking-majors` → master 予定) — breaking-major
 依存アップリフト (Olingo 5.0 / Solr・Lucene 10 / netty 4.2 / react-router 7 /
 antd 6) + ネイティブ arm64 スタック (TEI/Atlas) + OData バインディング修復。
-CouchDB view/patch/schema/Mango 変更なし (2.4 データ持ち越しパス無変更)。
+既存 CouchDB view/schema/2.4 データ持ち越しパスは無変更。**唯一の追加**は後続の
+ACL-in-Solr reconciliation キュー (`nemaki_conf` に新 record type
+`searchIndexAclReindexTask` + Mango index を追加する `Patch_SearchIndexReconcile*`。
+既存 view/2.4 持ち越しには非タッチ。下記「reconciliation キュー」節参照)。
 バージョン反映箇所は 3.2.1 以降と同一。下記 3.3.0 節。
 
 ### 3.3.0 (2026-07-22) — breaking-major 依存 + arm64 + OData 修復
 
 ブランチ: `deps/v3.3-breaking-majors` (off `master`)、統合検証は
 `test/v3.3-arm64-full` (deps + infra/tei-arm64-native + infra/atlas-arm64-native
-のマージ)。**スキーマ/patch/view/Mango 変更ゼロ** — 全変更は依存・コンテナ・
-OData/ランタイムコードのみ。
+のマージ)。既存 schema/view/2.4 持ち越しパスは無変更 — 全変更は依存・コンテナ・
+OData/ランタイムコードのみ。**例外**: 後続の ACL-in-Solr reconciliation キューが
+`nemaki_conf` に新 record type + Mango index を追加(既存 view/2.4 パスには非タッチ)。
 
 **breaking-major 依存**:
 - **Olingo (OData) 4.10 → 5.0** (全 6 モジュール、Java17+/jakarta.servlet)
@@ -767,10 +771,38 @@ cap 前拒否 (低権限ユーザーが大規模リポジトリを検索でき�
   `enqueueFailureCount` metric で可視化(アラート推奨)。真の belt-and-suspenders は定期 authoritative
   ACL-to-index 全体照合(別 effort)。`maxAttempts` 超過は `FAILED` 保持で、`failed` 件数と `oldestPendingAgeMs`
   にアラートすべき。
-- **検証**: `SearchIndexReconciliationSchedulerTest` 5件(clean→complete / under-cap→retryLater /
-  at-cap→markFailed / 非leader→no-claim / deterministic-id encoding)。実 CouchDB で: deterministic-id dedupe
-  (重複 `_id`→409)、同期 retry で実オブジェクト再索引 + CAS delete、Mango due query が `nextAttemptAt` 昇順、
-  metrics が正しい最古 pending age。スキーマ/view 変更なし(`nemaki_conf` の新 record type + Mango index のみ)。
+- **⚠️ 永続フォーマット注記**: これは v3.3 の他変更と異なり **CouchDB に新 record type
+  (`searchIndexAclReindexTask`) + Mango index (`Patch_SearchIndexReconcileMangoIndex`) を追加**する
+  (view/patch 変更ゼロという v3.3 全体の記述の唯一の例外)。CouchDB は固定 schema を持たないが、
+  **永続文書フォーマットの追加**としてアップグレードノートに記載。既存 view/2.4 持ち越しパスには非タッチ。
+
+**ACL-in-Solr reconciliation キュー — レビュー後の堅牢化 (P1×4 + P2×3 + P3)**:
+v2 のキュー層 CAS は正しかったが、レビューで**再実行(re-drive)層と管理API**に欠陥を検出。全て修正。
+- **[P1] stale content を clean 扱い**: `reindexSearchIndexAclForObject` が cache 削除**前**に取得した
+  古い object を再索引していた(別レプリカの ACL 変更が JVM cache に残ると stale 書込みが成功→CAS delete)。
+  **修正**: **root cache を先に evict → authoritative に再読込**(cache miss で store から)。
+- **[P1] 読取障害を「削除済み」と誤認**: 両 DAO 層が全例外を `null` に握り潰すため、DB timeout 等で
+  `content==null`→削除扱い→CAS delete でタスク消失。**修正**: `null` 時は content DB を **raw getDocument で
+  三値判定**(NotFoundException/`_deleted`=NOT_FOUND=complete、それ以外=ERROR=retry)。`connectorPool` を
+  AclServiceImpl に注入。
+- **[P1] 管理 retry/delete が claim せず並行書込み**: **修正**: retry は `claimForManualRetry`(CAS lease、
+  active LEASED は **409**)してから再索引、DELETE は active LEASED を **409**(`?force=true` で強制)。
+- **[P1/P2] lease starvation + fencing**: **修正**: `claimDue` が **expired-lease を優先取得**(持続 backlog で
+  starve しない)。長 subtree の stale-writer は fresh-read + CAS ACK + 再 poll で**最終収束**する旨を明記
+  (索引側 fencing token は別 effort として残余)。
+- **[P2] eviction 失敗後の stale 再索引**: **修正**: eviction 失敗はその回の索引を**中止**(retry)、move 非同期も
+  stale 投入せず enqueue して return。
+- **[P2] v1 旧形式文書**: 初版の auto-id / ISO timestamp 文書は新形式で読めず deterministic `_id` とも別物。
+  **修正**: `Patch_SearchIndexReconcileV1Cleanup` が非 deterministic-id の旧文書を削除(未リリース前提の安全策)。
+- **[P2] admin list の status filter**: limit 後に Java filter していた→**Mango selector に status を入れ**、
+  limit 上限(1000)。
+- **[P2] metrics 不足**: **修正**: `oldestPendingCreatedAgeMs` と `mostOverduePendingMs` を分離、CouchDB 失敗時も
+  in-proc `enqueueFailureCount` + `queueMetricsAvailable=false` を返す fail-soft(`(type,status,createdAt)` index 追加)。
+  enqueueFailureCount は per-JVM(複数レプリカは合算)と注記。
+- **[P3] retry 回数/設定**: `maxAttempts` を**実 N 回**に是正(off-by-one)、enqueue で `attempts=0` リセット
+  (新イベントに満額の retry budget)、pollInterval/batch/lease 等の**負数/0/不正値を default に clamp**。
+- **検証**: `SearchIndexReconciliationSchedulerTest` 7件(境界 off-by-one 2件追加)。実 CouchDB で三値判定・
+  claim 競合(active LEASED→409)・list status filter・metrics fail-soft・v1 cleanup patch を検証(下記)。
 
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 

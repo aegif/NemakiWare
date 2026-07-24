@@ -83,6 +83,58 @@ public class AclServiceImpl implements AclService {
 		this.reconciliationService = reconciliationService;
 	}
 
+	/**
+	 * Content-DB connector pool — used ONLY by the reconciliation re-drive to make an
+	 * authoritative (cache-bypassing) existence probe that distinguishes a genuine
+	 * 404 from a transient read error (the DAO layers collapse both to {@code null}).
+	 * Optional; when unwired the re-drive treats an unresolvable object as a retry.
+	 */
+	private jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool connectorPool;
+
+	public void setConnectorPool(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool connectorPool) {
+		this.connectorPool = connectorPool;
+	}
+
+	/** Tri-state authoritative existence for the reconciliation re-drive. */
+	private enum DocState { FOUND, NOT_FOUND, ERROR }
+
+	/**
+	 * Authoritative (cache-bypassing) existence probe against the repository's
+	 * content DB: a genuine 404 (or a {@code _deleted} tombstone) is
+	 * {@link DocState#NOT_FOUND}; any other failure is {@link DocState#ERROR} (so it
+	 * is retried, not mistaken for a deletion). {@link DocState#FOUND} otherwise.
+	 * ERROR when the pool is unwired (fail-safe: the caller retries rather than
+	 * completing on an unverifiable read).
+	 */
+	private DocState probeContentExists(String repositoryId, String objectId) {
+		if (connectorPool == null) {
+			return DocState.ERROR;
+		}
+		try {
+			jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper client =
+					connectorPool.getClient(repositoryId);
+			if (client == null) {
+				return DocState.ERROR;
+			}
+			com.ibm.cloud.cloudant.v1.model.Document doc = client.getClient().getDocument(
+					new com.ibm.cloud.cloudant.v1.model.GetDocumentOptions.Builder()
+							.db(client.getDatabaseName()).docId(objectId).build())
+					.execute().getResult();
+			if (doc == null) {
+				return DocState.NOT_FOUND;
+			}
+			if (doc.getProperties() != null && Boolean.TRUE.equals(doc.getProperties().get("_deleted"))) {
+				return DocState.NOT_FOUND; // tombstone
+			}
+			return DocState.FOUND;
+		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
+			return DocState.NOT_FOUND;
+		} catch (Exception e) {
+			log.warn("Reconcile: existence probe errored for " + objectId + ": " + e.getMessage());
+			return DocState.ERROR;
+		}
+	}
+
 	// Shared single-thread executor for async RAG ACL updates.
 	// CallerRunsPolicy provides backpressure: when the queue is full the calling
 	// thread executes the task synchronously, ensuring no ACL update is silently
@@ -317,15 +369,19 @@ public class AclServiceImpl implements AclService {
 		final jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconcile = reconciliationService;
 		// Evict aclCache for the root + all inheriting descendants so their readers
 		// are recomputed from the new ancestor chain (must happen before re-index).
-		// Eviction failure is a precondition failure — enqueue for reconciliation.
+		// Eviction is a PRECONDITION — if it fails, do NOT submit the re-index (it
+		// would overwrite correct readers with stale-cache values); enqueue for the
+		// reconciliation poll to re-drive later with a fresh eviction.
 		try {
 			clearCachesRecursively(repositoryId, content);
 		} catch (Exception e) {
-			log.warn("Moved-subtree cache eviction failed for " + content.getId() + ": " + e.getMessage());
+			log.warn("Moved-subtree cache eviction failed for " + content.getId()
+					+ " — deferring re-index to reconciliation: " + e.getMessage());
 			if (reconcile != null) {
 				reconcile.enqueue(repositoryId, content.getId(),
 						jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.CACHE_EVICTION_FAILURE);
 			}
+			return;
 		}
 
 		RAGIndexingService ragService = getRagIndexingService();
@@ -409,6 +465,21 @@ public class AclServiceImpl implements AclService {
 	 *         be retried later.
 	 */
 	public boolean reindexSearchIndexAclForObject(String repositoryId, String objectId) {
+		// EVICT FIRST, then read authoritatively. A stale JVM cache (e.g. an ACL
+		// change made on another replica) must not be re-indexed as if fresh: if we
+		// read before evicting, the already-fetched Java object still holds the OLD
+		// ACL even after the cache is cleared. Evicting first makes the read below a
+		// cache miss that re-loads from the store. If eviction fails we cannot
+		// guarantee a fresh read, so retry rather than write a stale value.
+		try {
+			if (nemakiCachePool != null) {
+				nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId);
+			}
+		} catch (Exception e) {
+			log.warn("Reconcile: root cache eviction failed for " + objectId + ": " + e.getMessage());
+			return false;
+		}
+
 		Content content;
 		try {
 			content = contentService.getContent(repositoryId, objectId);
@@ -417,9 +488,17 @@ public class AclServiceImpl implements AclService {
 			return false;
 		}
 		if (content == null) {
-			// Object was deleted after enqueue — nothing to reconcile.
-			return true;
+			// Ambiguous: the DAO layers collapse a genuine 404 AND a transient read
+			// error to null. Probe the store authoritatively — only treat it as
+			// reconciled (complete) when it is genuinely gone; on any read error,
+			// retry (never CAS-delete the task on a read blip).
+			DocState state = probeContentExists(repositoryId, objectId);
+			if (state == DocState.NOT_FOUND) {
+				return true; // genuinely deleted — nothing to reconcile
+			}
+			return false; // ERROR (or FOUND-but-unconvertible) — retry later
 		}
+
 		RAGIndexingService ragService = getRagIndexingService();
 		ACLExpander expander = getAclExpander();
 		jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil solrUtil = getSolrUtil();
@@ -430,17 +509,17 @@ public class AclServiceImpl implements AclService {
 			return true;
 		}
 		RAGIndexingService ragRef = ragEnabled ? ragService : null;
-		java.util.concurrent.atomic.AtomicInteger failures = new java.util.concurrent.atomic.AtomicInteger(0);
-		// Fresh ACL: evict caches so expandToReaders recomputes from the current ACL.
+		// Evict the INHERITING DESCENDANTS' caches too (the root was evicted above).
 		// Eviction is a PRECONDITION for a correct re-index — if it fails, the readers
-		// would be recomputed from a stale cache, so count it as a failure and keep the
-		// task (a later poll retries with a fresh eviction).
+		// would be recomputed from a stale cache, so ABORT this re-drive (retry later)
+		// rather than overwriting the index with stale values.
 		try {
 			clearCachesRecursively(repositoryId, content);
 		} catch (Exception e) {
-			log.warn("Reconcile: cache eviction failed for " + objectId + ": " + e.getMessage());
-			failures.incrementAndGet();
+			log.warn("Reconcile: descendant cache eviction failed for " + objectId + ": " + e.getMessage());
+			return false;
 		}
+		java.util.concurrent.atomic.AtomicInteger failures = new java.util.concurrent.atomic.AtomicInteger(0);
 		// syncConfirm=true: writes are forced synchronous so a Solr failure is counted
 		// (the task is only completed/deleted when the re-drive is genuinely clean).
 		updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,

@@ -102,6 +102,10 @@ public class SearchIndexReconciliationService {
                 } else {
                     task = existing;
                     task.setGeneration(task.getGeneration() + 1);
+                    // A fresh failure event deserves a fresh retry budget — reset the
+                    // attempt count so re-opening a FAILED entry (or any new event) does
+                    // not inherit a nearly-exhausted count from the previous episode.
+                    task.setAttempts(0);
                 }
                 task.setStatus(SearchIndexAclReindexTask.Status.PENDING);
                 task.setReason(reason);
@@ -138,17 +142,21 @@ public class SearchIndexReconciliationService {
     public List<SearchIndexAclReindexTask> claimDue(int batchSize, String nodeId, long leaseMillis) {
         long now = System.currentTimeMillis();
         List<SearchIndexAclReindexTask> candidates = new ArrayList<>();
+        // Expired LEASED first: these are tasks a crashed/stalled worker abandoned, so
+        // they must be recovered promptly — and taking them first prevents them from
+        // being starved under a sustained PENDING backlog (a full batch of PENDING
+        // would otherwise never leave room for expired-lease reclaim).
         candidates.addAll(findSortedAsc(
                 Map.of("type", SearchIndexAclReindexTask.DOC_TYPE,
-                        "status", SearchIndexAclReindexTask.Status.PENDING,
-                        "nextAttemptAt", Map.of("$lte", now)),
-                "nextAttemptAt", batchSize));
+                        "status", SearchIndexAclReindexTask.Status.LEASED,
+                        "leaseExpiresAt", Map.of("$lte", now)),
+                "leaseExpiresAt", batchSize));
         if (candidates.size() < batchSize) {
             candidates.addAll(findSortedAsc(
                     Map.of("type", SearchIndexAclReindexTask.DOC_TYPE,
-                            "status", SearchIndexAclReindexTask.Status.LEASED,
-                            "leaseExpiresAt", Map.of("$lte", now)),
-                    "leaseExpiresAt", batchSize - candidates.size()));
+                            "status", SearchIndexAclReindexTask.Status.PENDING,
+                            "nextAttemptAt", Map.of("$lte", now)),
+                    "nextAttemptAt", batchSize - candidates.size()));
         }
         List<SearchIndexAclReindexTask> claimed = new ArrayList<>();
         for (SearchIndexAclReindexTask task : candidates) {
@@ -205,8 +213,24 @@ public class SearchIndexReconciliationService {
 
     // ── Admin / metrics ────────────────────────────────────────────
 
+    private static final int LIST_LIMIT_CAP = 1000;
+
     public List<SearchIndexAclReindexTask> list(int limit) {
-        return find(Map.of("type", SearchIndexAclReindexTask.DOC_TYPE), limit);
+        return list(null, limit);
+    }
+
+    /**
+     * List tasks, optionally filtered by {@code status} — applied in the Mango
+     * selector (NOT after a limit) so {@code ?status=FAILED} is accurate even when
+     * FAILED entries sit past the first page of PENDING ones. The limit is capped.
+     */
+    public List<SearchIndexAclReindexTask> list(String status, int limit) {
+        int capped = Math.min(Math.max(1, limit), LIST_LIMIT_CAP);
+        Map<String, Object> selector = (status == null || status.isBlank())
+                ? Map.of("type", SearchIndexAclReindexTask.DOC_TYPE)
+                : Map.of("type", SearchIndexAclReindexTask.DOC_TYPE,
+                        "status", status.toUpperCase(java.util.Locale.ROOT));
+        return find(selector, capped);
     }
 
     public SearchIndexAclReindexTask getByTaskId(String taskId) {
@@ -221,26 +245,80 @@ public class SearchIndexReconciliationService {
         return t != null && deleteCas(t);
     }
 
-    /** Queue-health snapshot for alerting: counts by status + oldest pending age (ms). */
+    /**
+     * Claim a single task by its opaque taskId for a MANUAL (admin) retry — the same
+     * {@code _rev} CAS lease the poller uses, so a manual retry serializes with the
+     * scheduler instead of racing it (two workers must not re-index the same object
+     * concurrently). Returns the claimed task (carrying the post-claim rev), or
+     * {@code null} if the task is missing, is currently {@code LEASED} with an
+     * unexpired lease (a poller is processing it), or the claim CAS lost.
+     */
+    public SearchIndexAclReindexTask claimForManualRetry(String taskId, String nodeId, long leaseMillis) {
+        SearchIndexAclReindexTask t = getByTaskId(taskId);
+        if (t == null) {
+            return null;
+        }
+        long now = System.currentTimeMillis();
+        if (SearchIndexAclReindexTask.Status.LEASED.equals(t.getStatus()) && t.getLeaseExpiresAt() > now) {
+            return null; // an active lease means a poller is (or just was) processing it
+        }
+        t.setStatus(SearchIndexAclReindexTask.Status.LEASED);
+        t.setLeaseOwner(nodeId);
+        t.setLeaseExpiresAt(now + Math.max(1000L, leaseMillis));
+        t.setUpdatedAt(now);
+        return putCas(t) != null ? t : null;
+    }
+
+    /** True if the task addressed by taskId is currently LEASED with an unexpired lease. */
+    public boolean isActivelyLeased(String taskId) {
+        SearchIndexAclReindexTask t = getByTaskId(taskId);
+        return t != null && SearchIndexAclReindexTask.Status.LEASED.equals(t.getStatus())
+                && t.getLeaseExpiresAt() > System.currentTimeMillis();
+    }
+
+    /**
+     * Queue-health snapshot for alerting. Fail-SOFT: the in-process
+     * {@code enqueueFailureCount} is ALWAYS reported (even when CouchDB is down),
+     * and if the CouchDB count/age queries fail the response carries
+     * {@code queueMetricsAvailable=false} rather than erroring — so a monitor can
+     * still see "enqueues are failing" during a CouchDB outage.
+     *
+     * <p>Two distinct age signals: {@code oldestPendingCreatedAgeMs} (how long the
+     * longest-waiting entry has existed) and {@code mostOverduePendingMs} (how far
+     * past its due time the most-overdue entry is — 0 if nothing is due yet).
+     * Note: {@code enqueueFailureCount} is per-JVM and resets on restart; in a
+     * multi-replica deployment aggregate it across replicas.
+     */
     public Map<String, Object> metrics() {
         Map<String, Object> m = new LinkedHashMap<>();
-        int pending = countCapped(SearchIndexAclReindexTask.Status.PENDING);
-        int leased = countCapped(SearchIndexAclReindexTask.Status.LEASED);
-        int failed = countCapped(SearchIndexAclReindexTask.Status.FAILED);
-        m.put("pending", pending);
-        m.put("leased", leased);
-        m.put("failed", failed);
-        m.put("countsCappedAt", METRICS_CAP);
         m.put("enqueueFailureCount", enqueueFailureCount.get());
-        // Most-overdue pending age: the PENDING task with the smallest nextAttemptAt
-        // (uses the indexed (type,status,nextAttemptAt) sort) — its age since creation
-        // is the "how long has something been waiting" alerting signal.
-        List<SearchIndexAclReindexTask> oldest = findSortedAsc(
-                Map.of("type", SearchIndexAclReindexTask.DOC_TYPE,
-                        "status", SearchIndexAclReindexTask.Status.PENDING),
-                "nextAttemptAt", 1);
-        m.put("oldestPendingAgeMs",
-                oldest.isEmpty() ? 0L : Math.max(0L, System.currentTimeMillis() - oldest.get(0).getCreatedAt()));
+        m.put("countsCappedAt", METRICS_CAP);
+        try {
+            long now = System.currentTimeMillis();
+            m.put("pending", countCapped(SearchIndexAclReindexTask.Status.PENDING));
+            m.put("leased", countCapped(SearchIndexAclReindexTask.Status.LEASED));
+            m.put("failed", countCapped(SearchIndexAclReindexTask.Status.FAILED));
+
+            List<SearchIndexAclReindexTask> oldestCreated = findSortedAsc(
+                    Map.of("type", SearchIndexAclReindexTask.DOC_TYPE,
+                            "status", SearchIndexAclReindexTask.Status.PENDING),
+                    "createdAt", 1);
+            m.put("oldestPendingCreatedAgeMs", oldestCreated.isEmpty()
+                    ? 0L : Math.max(0L, now - oldestCreated.get(0).getCreatedAt()));
+
+            List<SearchIndexAclReindexTask> mostOverdue = findSortedAsc(
+                    Map.of("type", SearchIndexAclReindexTask.DOC_TYPE,
+                            "status", SearchIndexAclReindexTask.Status.PENDING),
+                    "nextAttemptAt", 1);
+            long overdue = mostOverdue.isEmpty() ? 0L
+                    : Math.max(0L, now - mostOverdue.get(0).getNextAttemptAt());
+            m.put("mostOverduePendingMs", overdue);
+
+            m.put("queueMetricsAvailable", true);
+        } catch (Exception e) {
+            logger.warn("Reconcile metrics query failed (CouchDB unavailable?): {}", e.getMessage());
+            m.put("queueMetricsAvailable", false);
+        }
         return m;
     }
 

@@ -401,8 +401,52 @@ concurrency/durability semantics actually hold:
   encoding); live against real CouchDB — deterministic-id dedupe (duplicate `_id` →
   409), a synchronous retry re-drove a real object and CAS-deleted the entry, the
   Mango due query returned entries sorted by `nextAttemptAt`, and the metrics
-  endpoint reported the correct oldest-pending age. No schema/view change (a new
-  `nemaki_conf` record type + Mango indexes only).
+  endpoint reported the correct oldest-pending age. **Persistent-format note**:
+  unlike the rest of v3.3 this ADDS a `nemaki_conf` record type
+  (`searchIndexAclReindexTask`) + Mango indexes (existing views / 2.4 carry-over
+  untouched) — call it out in upgrade notes.
+
+### ACL-in-Solr — reconciliation queue hardening (review: four P1 + three P2 + P3)
+A further review found the v2 queue-layer CAS was sound but the RE-DRIVE layer and
+admin surface still had holes. All fixed.
+- **[P1] Stale content re-indexed as clean.** `reindexSearchIndexAclForObject` read
+  the object BEFORE clearing the cache, then re-indexed the already-fetched (stale)
+  Java object — so a stale JVM cache (e.g. an ACL change made on another replica)
+  was written as if fresh and the task CAS-deleted. Fix: **evict the root cache
+  first, then read authoritatively** (a cache miss re-loads from the store).
+- **[P1] A read error was mistaken for "object deleted."** Both DAO layers collapse
+  every exception to `null`, so a transient DB timeout made `content == null` →
+  treated as deleted → CAS delete → task lost. Fix: on `null`, an **authoritative
+  tri-state existence probe** against the content DB (`NotFoundException` /
+  `_deleted` tombstone → complete; any other error → retry — never delete on a read
+  blip). `connectorPool` injected into `AclServiceImpl`.
+- **[P1] Admin retry/delete raced a running poller.** Fix: retry now CAS-**claims**
+  the task (an actively-`LEASED` task → **409**) before re-driving; `DELETE` of an
+  actively-leased task → 409 unless `?force=true`.
+- **[P1/P2] Lease starvation + stale writer.** Fix: `claimDue` reclaims **expired
+  leases first** (no starvation under a sustained PENDING backlog). A long re-drive
+  that outlives its lease self-heals to eventual consistency (fresh-read per worker
+  + generation bump on new events + CAS-ACK failure + re-poll); strict index-side
+  fencing tokens are noted as a separate residual.
+- **[P2] Eviction failure proceeded with a stale re-index.** Fix: an eviction
+  failure now ABORTS that re-drive (retry later) instead of overwriting correct
+  readers with stale-cache values; the async move path defers to reconciliation too.
+- **[P2] No migration from the first queue format.** Fix:
+  `Patch_SearchIndexReconcileV1Cleanup` deletes the first-generation docs
+  (auto-id / ISO timestamps) that the deterministic-id format supersedes.
+- **[P2] Admin `?status=` filtered after the limit.** Fix: status is applied in the
+  Mango selector (accurate regardless of page), and the limit is capped.
+- **[P2] Metrics insufficient for alerting.** Fix: split `oldestPendingCreatedAgeMs`
+  from `mostOverduePendingMs`; the response is fail-soft — the in-process
+  `enqueueFailureCount` is always returned and `queueMetricsAvailable=false` on a
+  CouchDB outage (noted per-JVM, aggregate across replicas).
+- **[P3] Off-by-one + boundaries.** `maxAttempts` now means exactly N re-drives; a
+  fresh enqueue resets the attempt count (a new event gets a full retry budget); and
+  non-positive / invalid config values are clamped to defaults with a WARN.
+- **Verified**: `SearchIndexReconciliationSchedulerTest` 7 (added two off-by-one
+  boundary cases); live against real CouchDB — the tri-state probe, admin
+  claim-conflict (active lease → 409), Mango-selector status filter, fail-soft
+  metrics, and the v1-cleanup patch.
 
 ### ACL-in-Solr — revocation soundness, round 4 (review: P0 + P2 + P3 batch)
 - **[P0/design] Private Working Copies are now excluded from RAG indexing.**

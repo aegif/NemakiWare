@@ -412,6 +412,10 @@
         <property name="reconciliationService">
             <ref bean="searchIndexReconciliationService" />
         </property>
+        <!-- Content-DB pool for the reconciliation re-drive's authoritative existence probe -->
+        <property name="connectorPool">
+            <ref bean="connectorPool" />
+        </property>
     </bean>
 
     <!-- Search-index ACL reconciliation: durable CouchDB queue + leader-gated poller -->
