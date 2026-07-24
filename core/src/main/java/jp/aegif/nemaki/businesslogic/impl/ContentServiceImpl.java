@@ -3795,6 +3795,11 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public Acl calculateAcl(String repositoryId, Content content, boolean strict) {
+		return aclDelegate.calculateAcl(repositoryId, content, strict);
+	}
+
+	@Override
 	public Map<String, Content> getContentsByIds(String repositoryId, List<String> objectIds) {
 		return aclDelegate.getContentsByIds(repositoryId, objectIds);
 	}

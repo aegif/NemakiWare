@@ -93,10 +93,29 @@ public class ACLExpander {
      * @return List of readers in format: "user:xxx", "group:xxx", or "anyone"
      */
     public List<String> expandToReaders(String repositoryId, Content content) {
+        return expandToReaders(repositoryId, content, false);
+    }
+
+    /**
+     * As {@link #expandToReaders(String, Content)} but with {@code strict} mode for the
+     * search-index ACL reconciliation re-drive: the inherited-ACL walk THROWS on an
+     * unreadable parent (rather than degrading to local ACEs only), so a transient
+     * ancestor-read failure makes the reconcile retry instead of persisting under-visible
+     * readers and completing the task. NOTE: a null/deleted PRINCIPAL is still treated as
+     * a legitimate omission — distinguishing a transient principal-lookup failure from a
+     * genuinely-deleted principal needs tri-state on the principal DAO (a separate, larger
+     * change, tracked in CLAUDE.md as the remaining strict-ACL residual).
+     */
+    public List<String> expandToReaders(String repositoryId, Content content, boolean strict) {
         Set<String> readers = new HashSet<>();
 
-        // Use calculateAcl to get both local and inherited ACLs
-        Acl acl = contentService.calculateAcl(repositoryId, content);
+        // Use calculateAcl to get both local and inherited ACLs. Non-strict callers use
+        // the original 2-arg method (behaviour + mockability unchanged); only the strict
+        // reconcile path uses the 3-arg overload that throws on an unreadable inherited
+        // parent instead of silently dropping inherited grants.
+        Acl acl = strict
+                ? contentService.calculateAcl(repositoryId, content, true)
+                : contentService.calculateAcl(repositoryId, content);
         if (acl == null) {
             // No ACL = default to admin only for security
             log.warn(String.format("No ACL calculated for content %s, defaulting to admin-only access", content.getId()));

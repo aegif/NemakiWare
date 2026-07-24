@@ -755,6 +755,14 @@ public interface ContentService {
 	public Acl calculateAcl(String repositoryId, Content content);
 
 	/**
+	 * As {@link #calculateAcl(String, Content)} but with a {@code strict} mode used by
+	 * the search-index ACL reconciliation re-drive: an unreadable inherited parent
+	 * THROWS instead of silently degrading to local ACEs only (so the reconcile retries
+	 * rather than writing under-visible readers and completing the task).
+	 */
+	public Acl calculateAcl(String repositoryId, Content content, boolean strict);
+
+	/**
 	 * Get multiple contents by their IDs in a single batch operation.
 	 * 
 	 * @param repositoryId the repository identifier

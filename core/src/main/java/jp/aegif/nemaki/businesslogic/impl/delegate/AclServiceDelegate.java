@@ -49,8 +49,22 @@ public class AclServiceDelegate {
 	}
 
 	public Acl calculateAcl(String repositoryId, Content content) {
+		return calculateAcl(repositoryId, content, false);
+	}
+
+	/**
+	 * As {@link #calculateAcl(String, Content)} but with a {@code strict} mode for the
+	 * search-index ACL reconciliation re-drive. In strict mode an unreadable inherited
+	 * PARENT (a non-null {@code parentId} whose folder cannot be loaded) THROWS instead
+	 * of silently degrading to local-ACEs-only — a transient parent-read failure would
+	 * otherwise drop every inherited grant, and the reconcile would then CAS-write those
+	 * under-visible readers and delete its task as if clean (no leak, but permanent
+	 * under-visibility until the next ACL touch). Strict also bypasses the ACL cache so
+	 * the walk is always fresh (the reconcile evicts first, but this guarantees it).
+	 */
+	public Acl calculateAcl(String repositoryId, Content content, boolean strict) {
 		NemakiCache<Acl> aclCache = nemakiCachePool.get(repositoryId).getAclCache();
-		Acl acl = aclCache.get(content.getId());
+		Acl acl = strict ? null : aclCache.get(content.getId());
 
 		if (acl == null) {
 			boolean iht = getAclInheritedWithDefault(repositoryId, content);
@@ -58,7 +72,7 @@ public class AclServiceDelegate {
 
 			if (!isRootContent && iht) {
 				List<Ace> aces = new ArrayList<Ace>();
-				List<Ace> result = calculateAclInternal(repositoryId, aces, content);
+				List<Ace> result = calculateAclInternal(repositoryId, aces, content, strict);
 
 				acl = new Acl();
 				for (Ace r : result) {
@@ -73,7 +87,9 @@ public class AclServiceDelegate {
 			}
 
 			convertSystemPrincipalId(repositoryId, acl.getAllAces());
-			aclCache.put(content.getId(), acl);
+			if (!strict) {
+				aclCache.put(content.getId(), acl);
+			}
 		}
 		return acl;
 	}
@@ -131,6 +147,10 @@ public class AclServiceDelegate {
 	}
 
 	private List<Ace> calculateAclInternal(String repositoryId, List<Ace> result, Content content) {
+		return calculateAclInternal(repositoryId, result, content, false);
+	}
+
+	private List<Ace> calculateAclInternal(String repositoryId, List<Ace> result, Content content, boolean strict) {
 		Acl contentAcl = content.getAcl();
 		List<Ace> aces = null;
 		if (contentAcl == null) {
@@ -155,10 +175,20 @@ public class AclServiceDelegate {
 			} else {
 				Folder parent = contentService.getFolder(repositoryId, content.getParentId());
 				if (parent == null) {
+					// getFolder collapses a genuine 404 AND a transient read error to null.
+					// Non-strict: keep the historical best-effort (local ACEs only). Strict
+					// (reconciliation re-drive): an inheriting object MUST have a readable
+					// parent — a null here is either a transient failure or a data
+					// inconsistency, and silently dropping the inherited grants would write
+					// under-visible readers and complete the task. Fail so it is retried.
+					if (strict) {
+						throw new IllegalStateException("Strict ACL: parent " + content.getParentId()
+								+ " of " + content.getId() + " is unreadable — cannot compute inherited ACL");
+					}
 					return aces;
 				} else {
 					return mergeAcl(repositoryId, aces,
-							calculateAclInternal(repositoryId, new ArrayList<Ace>(), parent));
+							calculateAclInternal(repositoryId, new ArrayList<Ace>(), parent, strict));
 				}
 			}
 		}

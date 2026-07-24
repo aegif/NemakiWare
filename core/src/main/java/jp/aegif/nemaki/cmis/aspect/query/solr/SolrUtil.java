@@ -471,8 +471,28 @@ public class SolrUtil implements ApplicationContextAware {
 		indexDocumentInternal(repositoryId, content, skipRAGIndexing, false);
 	}
 
+	/** Bounded retry for the single-doc index {@code _version_} CAS loop. */
+	private static final int INDEX_CAS_MAX_ATTEMPTS = 6;
+
 	private void indexDocumentInternal(String repositoryId, Content content, boolean skipRAGIndexing, boolean strict) {
 		SolrClient solrClient = null;
+		// Generation-fenced write (single-doc). Every ACL/content write of an object
+		// carries acl_index_generation = the CouchDB _rev leading integer (monotonic per
+		// object). To make ALL writers converge on the latest state — not just the
+		// reconciliation re-drive — a single-doc index does an OPTIMISTIC-CONCURRENCY add:
+		//   1. realtime-GET the current _version_ + stored generation,
+		//   2. SKIP if a strictly-newer generation already landed (a late stale writer,
+		//      e.g. a delayed applyAcl-refresh or move add, must not overwrite it),
+		//   3. otherwise add with `_version_` CAS (create-if-absent when the doc is
+		//      absent), retrying on 409 by re-reading + re-evaluating the generation.
+		// This closes the "reconcile succeeds + task deleted, then an old normal writer
+		// lands stale readers with no further convergence event" hole. Batch indexing
+		// (full reindex) stays a plain add — it clears the index first, so there is no
+		// stale generation to fence. A 0/unknown generation is fail-open (plain add) to
+		// preserve behaviour for docs without a parsable _rev.
+		long myGen = parseRevGeneration(content.getRevision());
+		int attempt = 0;
+		while (true) {
 		try {
 			log.info("Starting Solr indexing for document: " + content.getId());
 			solrClient = getSolrClient();
@@ -481,23 +501,43 @@ public class SolrUtil implements ApplicationContextAware {
 				throw new RuntimeException("Solr client is not available, cannot index document: " + content.getId());
 			}
 
+			Long versionField = null; // null => plain add (no CAS), fail-open
+			if (myGen > 0) {
+				SolrDocument cur = readVersionAndGeneration(repositoryId, content.getId());
+				if (cur == null) {
+					versionField = -1L; // create-if-absent
+				} else {
+					long storedGen = toLongOrDefault(cur.getFieldValue("acl_index_generation"), -1L);
+					if (storedGen > myGen) {
+						log.info("Index fence: skipping write for {} — Solr holds newer generation ({} > {})",
+								content.getId(), storedGen, myGen);
+						return; // clean: a strictly-fresher write already landed
+					}
+					long version = toLongOrDefault(cur.getFieldValue("_version_"), 0L);
+					versionField = (version != 0L) ? Long.valueOf(version) : null;
+				}
+			}
+
 			SolrInputDocument doc = createSolrDocument(repositoryId, content, strict);
-			
+			if (versionField != null) {
+				doc.addField("_version_", versionField);
+			}
+
 			log.info("Created SolrInputDocument with " + doc.size() + " fields for document: " + content.getId());
-			log.debug("Document fields: repository_id={}, object_id={}, basetype={}, name={}", 
-				doc.getFieldValue("repository_id"), doc.getFieldValue("object_id"), 
+			log.debug("Document fields: repository_id={}, object_id={}, basetype={}, name={}",
+				doc.getFieldValue("repository_id"), doc.getFieldValue("object_id"),
 				doc.getFieldValue("basetype"), doc.getFieldValue("name"));
-			
+
 			UpdateRequest updateRequest = new UpdateRequest();
 			updateRequest.add(doc);
 			updateRequest.setCommitWithin(1000); // Commit within 1 second
-			
+
 			// DIRECT FIX: Don't pass core name to avoid URL duplication
 			// getSolrUrl() already returns full URL with core path
 			UpdateResponse response = updateRequest.process(solrClient);
-			
+
 			log.info("Solr response status: " + response.getStatus() + " for document: " + content.getId());
-			
+
 			if (response.getStatus() == 0) {
 				log.info("Document indexed successfully in Solr: " + content.getId() + " for repository: " + repositoryId);
 				// Trigger RAG indexing asynchronously if enabled (skip for metadata-only changes like ACL)
@@ -509,6 +549,17 @@ public class SolrUtil implements ApplicationContextAware {
 			} else {
 				throw new RuntimeException("Solr indexing failed with status: " + response.getStatus() + " for document: " + content.getId());
 			}
+			return;
+		} catch (org.apache.solr.client.solrj.RemoteSolrException e) {
+			if (e.code() == 409 && myGen > 0 && attempt < INDEX_CAS_MAX_ATTEMPTS) {
+				// Concurrent write changed the doc/version (or a create-if-absent lost the
+				// race) — re-read + re-evaluate the generation and retry.
+				attempt++;
+				log.debug("Index CAS conflict for {} (attempt {}), re-reading", content.getId(), attempt);
+				continue;
+			}
+			log.error("Solr error during indexing for document: " + content.getId() + " in repository: " + repositoryId + ", code=" + e.code() + ", details: " + e.getMessage(), e);
+			throw new RuntimeException("Solr indexing failed: " + e.getMessage(), e);
 		} catch (SolrServerException e) {
 			log.error("Solr server error during indexing for document: " + content.getId() + " in repository: " + repositoryId + ", details: " + e.getMessage(), e);
 			throw new RuntimeException("Solr indexing failed: " + e.getMessage(), e);
@@ -526,6 +577,7 @@ public class SolrUtil implements ApplicationContextAware {
 			log.error("Unexpected error during Solr indexing for document: " + content.getId() + " in repository: " + repositoryId + ", details: " + e.getMessage(), e);
 			throw new RuntimeException("Solr indexing failed: " + e.getMessage(), e);
 		}
+		} // end while(true) CAS retry loop (exited only via return on success/skip or throw)
 	}
 
 	/**
@@ -900,10 +952,14 @@ public class SolrUtil implements ApplicationContextAware {
 				return ReadersUpdateResult.SKIPPED_NEWER_GENERATION;
 			}
 			long version = toLongOrDefault(cur.getFieldValue("_version_"), 0L);
-			// 3. Compute readers strictly (throws on a genuine failure).
+			// 3. Compute readers strictly: a relationship uses tri-state endpoint reads,
+			//    and a regular object uses the strict inherited-ACL walk (an unreadable
+			//    ancestor THROWS rather than degrading to local-ACEs-only). A genuine
+			//    failure propagates so the reconcile retries instead of writing under-
+			//    visible readers and completing the task.
 			List<String> readers = (content instanceof Relationship)
 					? relationshipReaders(repositoryId, (Relationship) content, expander, true)
-					: expander.expandToReaders(repositoryId, content);
+					: expander.expandToReaders(repositoryId, content, true);
 			// 4. Atomic readers-only update, CAS-guarded by the read _version_.
 			SolrInputDocument upd = new SolrInputDocument();
 			upd.addField("id", content.getId());
@@ -962,11 +1018,14 @@ public class SolrUtil implements ApplicationContextAware {
 		if (doc == null) {
 			return null;
 		}
-		// Ids are globally-unique CMIS ids, but the core is shared across repositories —
-		// guard against a cross-repo id collision returning the wrong doc.
+		// Ids are globally-unique CMIS ids, but the core is shared across repositories.
+		// A cross-repo id collision is a HARD FAILURE — returning null here would make the
+		// caller treat the id as absent and create-if-absent / overwrite ANOTHER repo's
+		// document under the same unique key. Fail closed so the write is aborted + retried.
 		Object repo = doc.getFieldValue("repository_id");
 		if (repo != null && !repositoryId.equals(repo.toString())) {
-			return null;
+			throw new RuntimeException("Solr id collision: object " + objectId + " belongs to repository '"
+					+ repo + "', not '" + repositoryId + "' — refusing to overwrite");
 		}
 		return doc;
 	}

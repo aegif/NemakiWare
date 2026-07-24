@@ -227,10 +227,11 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             java.util.concurrent.locks.Lock lock = ragBlockLocks.get(ragId);
             lock.lock();
             try {
-                // 1. Fetch the parent document with all stored fields
+                // 1. Fetch the parent document with all stored fields + its _version_
+                //    (for the block-add optimistic-concurrency CAS at step 4).
                 SolrQuery parentQuery = new SolrQuery();
                 parentQuery.setQuery("id:" + sanitizedRagId);
-                parentQuery.setFields("*");
+                parentQuery.setFields("*", "_version_");
                 parentQuery.setRows(1);
                 SolrDocumentList parentDocs = solrClient.query("nemaki", parentQuery).getResults();
                 if (parentDocs == null || parentDocs.isEmpty()) {
@@ -275,8 +276,26 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
                 } while (start < totalChunks);
 
                 // 3. Rebuild the block with the new readers list
-                SolrInputDocument parentDoc = copyForReindex(parentDocs.get(0), ragId, readers);
+                SolrDocument parentSnapshot = parentDocs.get(0);
+                SolrInputDocument parentDoc = copyForReindex(parentSnapshot, ragId, readers);
                 parentDoc.addChildDocuments(children);
+
+                // Final fence check + optimistic-concurrency version (review round 3, #5):
+                //   (a) re-confirm the lease AFTER the last page fetch and RIGHT BEFORE the
+                //       block-replacing add, so a worker whose lease was reclaimed during
+                //       the (possibly long) rebuild does not land a stale block; and
+                //   (b) CAS the add on the parent's _version_ read above, so a concurrent
+                //       indexToSolr / updateDocumentACL that replaced the block in the
+                //       meantime makes THIS add fail (409) instead of clobbering it.
+                if (leaseStillHeld != null && !leaseStillHeld.getAsBoolean()) {
+                    throw new RAGIndexingException("Reconciliation lease lost before RAG block add for "
+                            + documentId + " — aborting (reclaimer owns the write)");
+                }
+                Object parentVersion = parentSnapshot.getFieldValue("_version_");
+                if (parentVersion instanceof Number) {
+                    // Only if the block still has exactly this version; else 409 -> abort/retry.
+                    parentDoc.setField("_version_", ((Number) parentVersion).longValue());
+                }
 
                 // 4. Replace the block with a SINGLE add request. Re-adding a root document
                 //    cascades deletion of the previous block (delete-by-_root_ on update —
