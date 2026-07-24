@@ -39,6 +39,8 @@ public class SearchIndexReconciliationScheduler {
     private static final long DEFAULT_BASE_BACKOFF_SECONDS = 60;
     private static final long DEFAULT_LEASE_SECONDS = 300;
     private static final long MAX_BACKOFF_SECONDS = 3600;
+    /** Attempt number whose backoff (capped by MAX_BACKOFF_SECONDS) a never-failing RAG_PURGE settles at. */
+    private static final int PURGE_BACKOFF_CAP_ATTEMPT = 10;
     private static final String LEADER_ROLE = "search-index-reconciliation";
 
     private SearchIndexReconciliationService reconciliationService;
@@ -157,16 +159,25 @@ public class SearchIndexReconciliationScheduler {
                         task.getRepositoryId(), task.getObjectId(), e.getMessage());
                 clean = false;
             }
+            boolean isPurge = SearchIndexAclReindexTask.Operation.RAG_PURGE.equals(task.getEffectiveOperation());
             if (clean) {
                 if (reconciliationService.complete(task)) reconciled++;
                 // else: a newer failure event superseded the claim — left PENDING, re-processed later.
-            } else if (task.getAttempts() + 1 >= maxAttempts) {
+            } else if (!isPurge && task.getAttempts() + 1 >= maxAttempts) {
                 // This drive is the maxAttempts-th (attempts counts PRIOR failed drives),
-                // so give up after exactly maxAttempts re-drives.
+                // so give up after exactly maxAttempts re-drives — for ACL_REINDEX only.
                 reconciliationService.markFailed(task, "Exhausted " + maxAttempts + " reconciliation attempts");
                 failed++;
             } else {
-                reconciliationService.retryLater(task, backoffMillis(task.getAttempts() + 1));
+                // A RAG_PURGE NEVER becomes terminal FAILED: a purge that cannot run yet
+                // (RAG disabled, Solr down) must resume when the blocker clears, or a
+                // stale PWC block (the seed oracle) would silently return. It stays
+                // PENDING under CAPPED backoff (attempts stop growing the delay past the
+                // cap, but the task is never abandoned).
+                long backoff = backoffMillis(isPurge
+                        ? Math.min(task.getAttempts() + 1, PURGE_BACKOFF_CAP_ATTEMPT)
+                        : task.getAttempts() + 1);
+                reconciliationService.retryLater(task, backoff);
                 retried++;
             }
         }

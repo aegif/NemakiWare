@@ -957,7 +957,7 @@ single-replica でも残余は無害ではない — (a) **stale-deny** は Solr
 - **セキュリティ境界の再確認 (正直に)**: 上記収束ギャップは **single-replica では認可リークではない**(live gate=`getFiltered`/
   `filterByLiveAcl` が同一 JVM で ACL 変更時 evict され authoritative、stale Solr readers は候補/ numFound の drift に留まる)。
   **multi-replica は既存の stale-ACL-cache 窓**(本機能以前からの制約、MULTI-REPLICA-DEPLOYMENT.md)で over-permissive になり得る。
-  唯一の具体的 oracle だった PWC は本巡で閉塞。**「全 writer 恒久収束」は effective-ACL epoch の再設計まで未達であり、マージ保留継続**。
+  PWC oracle は第6巡で閉塞(下記)。**「全 writer 恒久収束」は effective-ACL epoch の再設計まで未達であり、マージ保留継続**。
 
 **ACL-epoch 再設計 (第5巡): 設計文書 v2 (再sign-off待ち) + PWC purge の durable retry (実装済み)**:
 前巡の `max(ancestor _rev)` 方式はレビューで**却下**(異なる CouchDB 文書の `_rev` は比較不能・
@@ -998,6 +998,33 @@ single-replica でも残余は無害ではない — (a) **stale-deny** は Solr
   失敗→durable enqueue / queue 無し縮退 / 非 PWC 回帰 / verifier tri-state)、実 CouchDB IT 11/11
   (operation マージ双方向 PURGE 優先を追加)、既存 RAG AclUpdate 3/3・ACLExpander 33/33 無回帰。
   CI unit リストに PwcTest/AclUpdateTest を追加。
+
+**ACL-epoch 第6巡: 設計 v2.1 + PWC purge の残 5 セキュリティ欠陥を閉塞**:
+レビューで「PWC oracle 閉塞済み」は**時期尚早**(削除成功時のみ閉塞)と指摘され是正。epoch 実装は依然 sign-off 待ち。
+- **設計 v2.1** (`docs/design/acl-epoch-fencing.md`、実装コードなし): (a) **`content_incarnation` UUID 追加** —
+  restore は元 `_id` を再利用しつつ `_rev` を新規採番(`ArchiveDaoDelegate.restoreContent` が `_rev` を skip)するため、
+  数値 `content_generation`(自文書 `_rev`)だけでは「復元内容が古い」と誤判定し恒久書込不能。incarnation 一致時のみ
+  数値比較し、不一致は authoritative な現 Content を CAS。(b) **ACL_REINDEX と RAG_PURGE を独立 task obligation 化** —
+  「同一 task ID で PURGE 優先」は purge 成功で ACL 未完了作業を消し得る(outbox 導入後は特に危険)ので**別 deterministic-id
+  namespace**(`search-index-rag-purge::`)で共存・独立完了。(c) **outbox ACK 条件を「task が存在」から
+  「ACL_REINDEX + `minRequiredEpoch` が durable merge 済み」へ強化**。
+- **PWC purge の残 5 欠陥を閉塞**(実装済み、独立):
+  1. **enqueueOrThrow** — 旧 `enqueue` は void/never-throw で「Solr delete 失敗 + queue 書込失敗 → stale block あり・task
+     なし・呼出元成功扱い」が成立。security obligation 用に **task が durable に存在した時のみ return、失敗は throw** する
+     `enqueueOrThrow` を新設。PWC delete 未確認時はこれで enqueue し、記録できなければ `indexDocument` を**失敗**させる
+     (batch は per-doc catch で可視化、full reindex は止めない)。queue 未配線も throw。
+  2. **purge を rag.enabled 独立化 + 非 terminal FAILED** — `deleteDocument` は RAG 無効時 no-op。新設
+     `purgeDocumentBlocks`(rag.enabled 無視)で削除し、scheduler は **RAG_PURGE を markFailed せず**上限付き backoff で
+     PENDING 継続(RAG 再有効化で確実に purge)。
+  3. **即時削除にも absence verification** — 旧即時経路は delete が throw しなければ成功扱い。新 `handlePwcPurge` が
+     即時経路でも **delete + `isDocumentInRagIndex` 確認**、残存/検証不能で durable enqueueOrThrow。
+  4. **repository-scoped delete/query** — RAG id は生 CMIS id で repo 非スコープ。`purgeScopeQuery` が
+     **`_root_:… AND repository_id:…`** を付与し別 repo の同一 id を purge/報告しない(chunk/parent とも repository_id 保持を実機確認)。
+  5. **verifier tri-state** — `isDocumentInRagIndex` は present/empty/**throw(unknown≠absent)** で、検証不能は task を残す。
+- **検証**: `RAGIndexingServiceImplPwcTest` **11/11**(delete+verify absent→task無 / 残存→durable enqueue / delete 失敗→enqueue /
+  **queue 無し→throw** / enqueue 失敗→throw / 非 PWC 回帰 / verifier tri-state / **repo-scoped delete+query** / **RAG 無効でも purge 実行**)、
+  scheduler **11/11**(purge dispatch / **非 terminal FAILED** / 失敗 retry / 後方互換 追加)、実 CouchDB IT **12/12**
+  (**ACL と PURGE が独立 task で共存** / enqueueOrThrow durable 追加)、RAG AclUpdate 3/3・ACLExpander 33/33 無回帰。
 
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 

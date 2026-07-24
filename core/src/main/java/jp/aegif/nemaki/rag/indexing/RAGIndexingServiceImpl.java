@@ -135,32 +135,7 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         if (Boolean.TRUE.equals(document.isPrivateWorkingCopy())) {
             log.debug("RAG indexDocument: skipping Private Working Copy {} (owner-only draft, excluded from RAG)",
                     document.getId());
-            // Best-effort immediate delete of any stale block a prior build indexed.
-            // A FAILURE here must NOT be treated as success (a WARN-and-return would
-            // leave the PWC block — the seed oracle — alive forever): it becomes a
-            // durable RAG_PURGE reconciliation task, whose handler deletes AND
-            // verifies absence, retrying until confirmed.
-            boolean purgeFailed;
-            try {
-                deleteDocument(repositoryId, document.getId());
-                purgeFailed = false;
-            } catch (Exception e) {
-                log.warn("RAG indexDocument: failed to remove stale RAG block for PWC {}: {} — enqueueing durable purge",
-                        document.getId(), e.getMessage());
-                purgeFailed = true;
-            }
-            if (purgeFailed) {
-                if (reconciliationService != null) {
-                    reconciliationService.enqueue(repositoryId, document.getId(),
-                            jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.PWC_PURGE_FAILURE,
-                            jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Operation.RAG_PURGE);
-                } else {
-                    // No queue wired (minimal test context) — surface loudly; the block
-                    // survives until the next reindex attempt.
-                    log.error("RAG indexDocument: PWC block delete failed for {} and no reconciliation "
-                            + "queue is wired — stale PWC block persists", document.getId());
-                }
-            }
+            handlePwcPurge(repositoryId, document.getId());
             return;
         }
 
@@ -251,16 +226,56 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         }
     }
 
+    /**
+     * Immediate PWC block purge with VERIFICATION (review round-6): the immediate
+     * path (not just the queue handler) deletes AND verifies absence, and on a
+     * still-present OR unverifiable outcome enqueues a DURABLE {@code RAG_PURGE}
+     * task via {@link SearchIndexReconciliationService#enqueueOrThrow} so the caller
+     * fails if the obligation could not be durably recorded. It never throws for a
+     * transient Solr/RAG problem alone (a single PWC must not abort a full reindex):
+     * it converts that into a durable task; it throws ONLY if the durable task
+     * itself cannot be persisted (or no queue is wired), because then the block
+     * would silently survive with no record.
+     */
+    private void handlePwcPurge(String repositoryId, String documentId) throws RAGIndexingException {
+        boolean confirmedAbsent = false;
+        String problem = null;
+        try {
+            purgeDocumentBlocks(repositoryId, documentId); // rag.enabled-independent, repo-scoped
+            confirmedAbsent = !isDocumentInRagIndex(repositoryId, documentId);
+            if (!confirmedAbsent) {
+                problem = "block still present after delete";
+            }
+        } catch (Exception e) {
+            problem = e.getMessage();
+        }
+        if (confirmedAbsent) {
+            return;
+        }
+        // Not confirmed gone → the obligation MUST become durable.
+        if (reconciliationService == null) {
+            throw new RAGIndexingException("PWC block for " + documentId + " could not be purged ("
+                    + problem + ") and no reconciliation queue is wired to make the purge durable");
+        }
+        // enqueueOrThrow: fail if we cannot even record the obligation (otherwise
+        // "Solr delete failed AND queue write failed AND caller reports success").
+        reconciliationService.enqueueOrThrow(repositoryId, documentId,
+                jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.PWC_PURGE_FAILURE,
+                jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Operation.RAG_PURGE);
+        log.warn("RAG indexDocument: PWC block purge for {} not confirmed ({}); durable RAG_PURGE task enqueued",
+                documentId, problem);
+    }
+
     @Override
     public boolean isDocumentInRagIndex(String repositoryId, String documentId) throws RAGIndexingException {
         try {
             SolrClient solrClient = solrClientProvider.getClient();
-            String ragId = toRagId(documentId);
-            String sanitizedRagId = SolrQuerySanitizer.escape(ragId);
             SolrQuery q = new SolrQuery();
-            // _root_ matches the block parent AND every chunk (deleteDocument deletes
-            // by the same key), so a non-zero count means SOMETHING survived.
-            q.setQuery("_root_:" + sanitizedRagId);
+            // _root_ matches the block parent AND every chunk (the purge deletes by
+            // the same key), so a non-zero count means SOMETHING survived. Scoped to
+            // the repository — the RAG id is the raw CMIS id, and a same-id doc in
+            // another repository must not be reported (or purged) here.
+            q.setQuery(purgeScopeQuery(repositoryId, documentId));
             q.setRows(0);
             SolrDocumentList results = solrClient.query("nemaki", q).getResults();
             return results != null && results.getNumFound() > 0;
@@ -268,6 +283,27 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             // Unknown ≠ absent: the caller must retry, not complete.
             throw new RAGIndexingException("Failed to verify RAG block absence for: " + documentId, e);
         }
+    }
+
+    @Override
+    public void purgeDocumentBlocks(String repositoryId, String documentId) throws RAGIndexingException {
+        // NOTE: deliberately NO isEnabled() gate — see the interface contract. A
+        // disabled RAG must not silently keep a PWC block alive until re-enablement.
+        try {
+            SolrClient solrClient = solrClientProvider.getClient();
+            solrClient.deleteByQuery("nemaki", purgeScopeQuery(repositoryId, documentId));
+            solrClient.commit("nemaki");
+            log.info("RAG purged blocks for document {} (repository {})", documentId, repositoryId);
+        } catch (Exception e) {
+            throw new RAGIndexingException("Failed to purge RAG blocks for: " + documentId, e);
+        }
+    }
+
+    /** Repository-scoped block selector shared by the purge delete and its verifier. */
+    private static String purgeScopeQuery(String repositoryId, String documentId) {
+        String sanitizedRagId = SolrQuerySanitizer.escape(toRagId(documentId));
+        String sanitizedRepo = SolrQuerySanitizer.escape(repositoryId);
+        return "_root_:" + sanitizedRagId + " AND repository_id:" + sanitizedRepo;
     }
 
     @Override

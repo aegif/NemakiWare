@@ -170,6 +170,21 @@ public class SearchIndexReconciliationSchedulerTest {
     }
 
     @Test
+    public void ragPurgeNeverBecomesTerminalFailed() {
+        // A purge at/over the attempt cap must NOT be markFailed — a terminal FAILED
+        // purge would let a stale PWC block silently return when RAG is re-enabled.
+        SearchIndexAclReindexTask t = task("sir-p9", "pwc-9", 99); // way over any cap
+        t.setOperation(SearchIndexAclReindexTask.Operation.RAG_PURGE);
+        when(svc.claimDue(anyInt(), anyString(), anyLong())).thenReturn(List.of(t));
+        when(acl.purgeRagBlockForObject("bedroom", "pwc-9")).thenReturn(false);
+
+        scheduler.poll();
+
+        verify(svc, never()).markFailed(any(), anyString());
+        verify(svc).retryLater(eq(t), anyLong()); // stays PENDING under capped backoff
+    }
+
+    @Test
     public void absentOperationDefaultsToAclReindexBackwardCompatible() {
         // Pre-existing queue documents have no operation field at all.
         SearchIndexAclReindexTask t = task("sir-p3", "obj-old", 0);
