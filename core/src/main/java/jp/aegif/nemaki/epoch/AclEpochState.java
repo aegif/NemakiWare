@@ -39,8 +39,16 @@ public final class AclEpochState {
      * sets it on a document whose epoch fields are anomalous (unknown / non-String / blank /
      * non-UUID mutation id, missing mutation id, or an invalid epoch) so the document is
      * excluded from the live valid/anomaly selectors and can never block a valid document
-     * again — the original fields are preserved for inspection / repair. Excluded from every
-     * scan selector via {@code {$exists:false}}.
+     * again — all OTHER fields are preserved for inspection / repair (a malformed marker is
+     * the one field normalized to {@code true}).
+     *
+     * <p>Marker CONTRACT is by PRESENCE (the SDK stores an explicit JSON null as a present
+     * entry): absent = process, Boolean {@code true} = quarantined, any other PRESENT value
+     * ({@code false} / {@code null} / string / …) = a malformed marker that is itself an
+     * anomaly and is normalized to {@code true}. Because CouchDB Mango {@code $ne}/{@code $not}
+     * do NOT match an absent field, every scan selector excludes a TRUE marker via
+     * {@code $or({$exists:false}, {$ne:true})} — which matches an absent OR malformed marker
+     * while excluding a proper {@code true}.
      */
     public static final String FIELD_QUARANTINED = "aclEpochQuarantined";
 

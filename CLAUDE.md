@@ -1200,6 +1200,38 @@ ABANDON 誤り + mutationId 形式無保証、を指摘され是正。
   attachment 保持 / 不正 RECONCILE_ENQUEUED→quarantine・正常→カウント / **quarantine 失敗→summary 反映(並行 bumper)** /
   全5 selector が `$or` 込みで idx 使用。統合 unit 80/80。CI 済。実機: patch success、index 存在、atom 200、scanner 非自動起動。
 
+**増分2e: explicit-null marker(presence 契約) + doc 残差**:
+増分2d レビューで「`null` marker に実装上の穴が残る」と P1 を指摘され是正(IBM Cloudant SDK の `DynamicModelTypeAdapterFactory`
+は追加プロパティの JSON `null` を map に**present として格納**するため、`get()!=null` では「欠落」と「明示 null」を区別できない)。
+- **[P1] presence 契約に統一**: `validate()` と `quarantine()` を **`containsKey` 判定**に変更(absent=処理 / Boolean `true`=
+  quarantine 済 / それ以外の present 値=malformed anomaly→true 正規化)。明示 null は selector の `$ne:true` 枝で選択されるが、
+  旧 `get()!=null` では un-marked 扱いで finalize/非正規化されていた穴を閉塞。marker/epoch 契約の対象を **epoch-state 保持文書に
+  限定**と明記(state-less は通常 content で全 pass 非マッチ)。
+- **[P2] Javadoc 残差**: 「four passes」→「five passes」、「`$exists:false` のみ除外」→ `$or` 説明、「ALL original fields
+  preserved」→「malformed marker のみ true 正規化、他は保持」、scope を epoch-state 保持文書に限定と明記。
+- **検証**: 実 CouchDB IT **33/33**(2d 29 + explicit-null 4: raw JSON `null` を scan が true 正規化 / direct finalize 拒否・
+  epoch 非消費 / re-GET で null→quarantine / marker 除去+epoch 有効→abort)。raw HTTP PUT で明示 JSON null を保証。統合 unit 80/80。
+
+**増分2f: 敵対的 workflow レビュー(6視点×独立検証)の confirmed 6件を閉塞**:
+コミット前に epoch モジュール全体を多視点(concurrency/Mango/presence-null-type/fail-closed/progression/doc-drift)で敵対的
+workflow レビューし、各 finding を独立 skeptic が default-refute で検証。**confirmed 6件**を全対応(核心は 2e の containsKey 修正を
+STATE フィールドで漏らしていた同一クラス)。
+- **[P2×2] presence 契約を STATE フィールドにも適用**: `quarantine()` と `finalizePending()` が `get(FIELD_STATE)==null` を使い、
+  explicit-null state を「repaired state-less」と誤判定(quarantine されず / silent skip)。**両者を `containsKey` に**(present-null
+  は corruption として validate→quarantine / anomaly)。
+- **[P3] CAS 非収束を contention として分離**: finalize の CAS livelock(valid doc への競合)を `AclEpochAnomalyException` で投げて
+  quarantine 経路(silent abort)に流していた。**`AclEpochContentionException` を新設**し、runPass で `contended`+`more` 記録・
+  **quarantine しない**(valid doc を隔離しない)。
+- **[P1] terminal 飢餓を永続カーソルで根治**: FINALIZED/RECONCILE_ENQUEUED は ACK 未実装で terminal-parked のため valid doc が
+  selector を離れず、stateless bookmark=null では >budget valid backlog 背後の corrupt terminal を永久に到達不能だった。2つの
+  per-doc terminal pass を**1つの cursored terminal audit** に統合し、**per-content-DB 永続カーソル**(`acl-epoch-audit-cursor`、
+  aclEpochState なし=全 pass 非マッチ)で resume + 枯渇時 wrap。terminal 集合全体を scan 跨ぎで巡回し、corrupt terminal を**有限
+  scan で quarantine**。⚠ 永続フォーマット追加(cursor doc)。
+- **[P3] Javadoc**: `FIELD_QUARANTINED` の除外条件を実際の `$or({$exists:false},{$ne:true})` に是正。
+- **検証**: 実 CouchDB IT **37/37**(2e 33 + 2f 4: present-null state→quarantine / present-null direct finalize→anomaly /
+  contention→非quarantine / **corrupt terminal を >budget valid backlog 背後で有限 scan quarantine**)、`AclEpochStateTest` 4/4、
+  統合 unit 80/80。workflow: 14 agents、6視点レビュー→各 finding 独立検証。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度
