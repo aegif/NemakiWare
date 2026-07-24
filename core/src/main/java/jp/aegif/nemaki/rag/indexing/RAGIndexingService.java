@@ -69,6 +69,19 @@ public interface RAGIndexingService {
     void updateDocumentACL(String repositoryId, String documentId, List<String> readers) throws RAGIndexingException;
 
     /**
+     * As {@link #updateDocumentACL(String, String, List)}, but with a cooperative-fencing
+     * lease guard checked before EACH chunk page is fetched. Rebuilding a large block
+     * (thousands of chunks) can outlive the reconciliation lease; if {@code leaseStillHeld}
+     * reports the lease lost mid-rebuild the method ABORTS with a {@link RAGIndexingException}
+     * BEFORE the single block-replacing add, so a worker that lost its lease to a reclaimer
+     * never lands a stale block. A {@code null} guard disables fencing (normal ACL refresh).
+     *
+     * @param leaseStillHeld returns {@code false} once the reconciliation lease is lost
+     */
+    void updateDocumentACL(String repositoryId, String documentId, List<String> readers,
+            java.util.function.BooleanSupplier leaseStillHeld) throws RAGIndexingException;
+
+    /**
      * Check if RAG indexing is enabled and available.
      *
      * @return true if RAG indexing can be performed

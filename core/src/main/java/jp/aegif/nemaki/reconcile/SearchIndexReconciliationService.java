@@ -207,22 +207,27 @@ public class SearchIndexReconciliationService {
             return true;
         }
         // Attempt to extend the lease via CAS. CRITICAL: do NOT commit the local
-        // leaseExpiresAt/updatedAt mutation unless the CAS succeeds — otherwise a
-        // failed renewal (the lease was reclaimed) would leave the local expiry in
-        // the future, so the NEXT checkpoint would see "plenty of time left", skip
-        // the CAS, and wrongly report the lease as still held. That would silently
-        // defeat cooperative fencing after the first loss. Snapshot + restore on
-        // failure keeps a lost lease reported as lost forever.
+        // leaseExpiresAt/updatedAt mutation unless the CAS SUCCEEDS — otherwise a
+        // failed renewal (the lease was reclaimed, or putCas THREW on a timeout)
+        // would leave the local expiry in the future, so the NEXT checkpoint would
+        // see "plenty of time left", skip the CAS, and wrongly report the lease as
+        // still held, silently defeating cooperative fencing. The restore runs in a
+        // finally so it covers BOTH a null (conflict) return AND a thrown exception;
+        // the exception itself still propagates (the guard treats it as lease-lost).
         long prevExpires = task.getLeaseExpiresAt();
         long prevUpdated = task.getUpdatedAt();
-        task.setLeaseExpiresAt(now + Math.max(1000L, leaseMillis));
-        task.setUpdatedAt(now);
-        if (putCas(task) != null) {
-            return true;
+        boolean committed = false;
+        try {
+            task.setLeaseExpiresAt(now + Math.max(1000L, leaseMillis));
+            task.setUpdatedAt(now);
+            committed = putCas(task) != null;
+            return committed;
+        } finally {
+            if (!committed) {
+                task.setLeaseExpiresAt(prevExpires);
+                task.setUpdatedAt(prevUpdated);
+            }
         }
-        task.setLeaseExpiresAt(prevExpires);
-        task.setUpdatedAt(prevUpdated);
-        return false;
     }
 
     /**
@@ -241,7 +246,19 @@ public class SearchIndexReconciliationService {
             if (lost.get()) {
                 return false;
             }
-            boolean held = renewLeaseIfNeeded(task, leaseMillis);
+            boolean held;
+            try {
+                held = renewLeaseIfNeeded(task, leaseMillis);
+            } catch (Throwable t) {
+                // FAIL-CLOSED: any error while renewing the lease means we can no longer
+                // PROVE we still hold it (a CouchDB timeout could hide a reclaim). Latch
+                // the guard false permanently so the re-drive aborts instead of resuming
+                // writes on an unprovable lease.
+                logger.warn("Lease renewal threw for task {} — fencing closed (lease treated as lost): {}",
+                        task != null ? task.getTaskId() : "?", t.toString());
+                lost.set(true);
+                return false;
+            }
             if (!held) {
                 lost.set(true);
             }
