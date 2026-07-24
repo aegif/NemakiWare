@@ -1077,6 +1077,25 @@ batch fence + final sweep → RAG 統一 → strict → migration patch → live
   read無変更 / 巻き戻しなし)。CI: unit-tests リストに Test 追加、reconcile-it ジョブに IT 追加(required=true で fail-closed)。
   実機: 再デプロイで patch が bedroom/canopy を value 0 で seed + Mango index 作成、atom 200、allocate 未配線を確認。
 
+**増分1a: counter hardening (レビュー P1×2 + P2)**:
+- **[P1] JSON 数値の厳密 fail-closed read**: `longValue()` は `1.5→1`・`-0.5→0`・long 超過 wrap・非有限を黙って切詰め、
+  破損 counter を低い値として受理→epoch 再発行を招く。**`parseExactLong`**(`BigDecimal(value.toString()).longValueExact()`、
+  有限・整数・long 範囲を厳密検証、非 Number/欠落も拒否)+ **`requireValidCounter`**(`type==aclEpochCounter`・`_rev` 存在・
+  非負も検証)を新設し、`readCounter` を厳密化(破損は throw、低値化しない)。
+- **[P1] patch の 409 = counter 存在とは限らない**: create の 409 は削除済み tombstone 競合(live counter 不在)でも起こる。
+  旧実装は 409 を無条件成功扱い→PatchHistory 記録で patch 再実行されず。**`ensureCounter`/`resolveAfterCreateConflict`** を抽出:
+  409 後は必ず再 GET し **live かつ厳密有効な counter がある場合のみ成功**、null(tombstone)/不正/type 不正は throw
+  (→ PatchHistory 未記録で次回再試行)。初回 GET で既存 counter を見つけた場合も**単なる温存でなく検証**(破損は throw)。
+- **[P2] 欠落メッセージの分離 + gap-free 記述の訂正**: `allocate()` 欠落時の案内を「fresh install=bootstrap patch を write
+  有効化前に / counter loss=ACL write 停止下で Content・Solr の max を調査し max+1 へ明示復旧(seed patch を復旧に使わない)」
+  に分離。設計 §2.1 の「純粋 allocate は gap-free」を「**競合のみ・通信障害なしの条件で** gap-free。ambiguous timeout
+  (CouchDB commit 済だが HTTP 応答喪失→再読込で value+2)でも欠番し得る。**値の欠番は安全**(単調性のみが要件)」に訂正。
+- **検証**: 単体 `AclEpochCounterServiceTest` **15/15**(1.5・-0.5・long 範囲外・非有限・欠落・非 Number・wrong type・missing
+  `_rev`・負値の拒否 + currentHighWatermark null/blank)、`Patch_AclEpochCounterTest` **4/4**(409 後 null→失敗 / live valid→成功 /
+  破損→失敗 / wrong type→失敗)、実 CouchDB IT `AclEpochCounterServiceIT` 6/6 + `Patch_AclEpochCounterIT` **4/4**(create-if-absent /
+  有効既存の high-watermark 非変更 / 破損既存→throw で成功履歴なし / tombstone-create は throw か有効 counter 残存のいずれか=
+  「成功記録+live counter 不在」を排除)。CI に両テスト追加。実機: hardened patch 起動クリーン、counters value 0 保持、atom 200。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度

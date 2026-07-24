@@ -88,21 +88,34 @@ public class Patch_AclEpochCounter extends AbstractNemakiPatch {
         if (client == null) {
             throw new IllegalStateException("nemaki_conf client unavailable for " + PATCH_NAME);
         }
-        Cloudant cloudant = client.getClient();
-        String db = client.getDatabaseName();
+        // Throwing here means AbstractNemakiPatch does NOT record PatchHistory for this
+        // repository, so a genuinely-missing / corrupt counter re-runs next startup.
+        ensureCounter(client.getClient(), client.getDatabaseName(), repositoryId);
+    }
+
+    /**
+     * Ensure a valid counter exists for {@code repositoryId} (package-static so the IT
+     * can drive it against a live CouchDB). Idempotent and fail-closed:
+     * <ul>
+     *   <li>an existing document is VALIDATED (type / {@code _rev} / finite-integral-
+     *       non-negative value) and PRESERVED — never overwritten (a reseed would roll
+     *       the high-watermark back). A corrupt existing counter THROWS (no success).</li>
+     *   <li>if absent, seed {@code value 0}; on a create {@code 409} — which can be a
+     *       tombstone conflict where NO live counter exists, not only a concurrent
+     *       create — RE-GET and require a live, strictly-valid counter, else THROW.</li>
+     * </ul>
+     */
+    static void ensureCounter(Cloudant cloudant, String db, String repositoryId) {
         String docId = AclEpochCounterService.counterDocId(repositoryId);
 
-        // Present? Leave it exactly as-is — re-seeding would roll the high-watermark back.
-        try {
-            Document existing = cloudant.getDocument(new GetDocumentOptions.Builder()
-                    .db(db).docId(docId).build()).execute().getResult();
-            if (existing != null) {
-                log.info("[patch=" + PATCH_NAME + "] counter already present for '" + repositoryId
-                        + "' (value preserved)");
-                return;
-            }
-        } catch (NotFoundException nfe) {
-            // fall through to create
+        Document existing = tryGet(cloudant, db, docId);
+        if (existing != null) {
+            // Validate — throws on corruption so we do NOT record success for a bad counter.
+            AclEpochCounterService.requireValidCounter(
+                    fieldOf(existing, "type"), fieldOf(existing, "value"), existing.getRev());
+            log.info("[patch=" + PATCH_NAME + "] counter present and valid for '" + repositoryId
+                    + "' (value preserved)");
+            return;
         }
 
         Map<String, Object> props = new LinkedHashMap<>();
@@ -117,9 +130,43 @@ public class Patch_AclEpochCounter extends AbstractNemakiPatch {
             log.info("[patch=" + PATCH_NAME + "] seeded counter for '" + repositoryId
                     + "' at value " + AclEpochCounterService.SEED_VALUE);
         } catch (ConflictException ce) {
-            // A concurrent create won — the counter now exists, which is the goal.
-            log.info("[patch=" + PATCH_NAME + "] counter concurrently created for '" + repositoryId + "'");
+            // A 409 is NOT proof the counter exists: creating over a deleted tombstone also
+            // 409s, leaving no live counter. Re-GET and require a live, valid counter —
+            // otherwise throw so PatchHistory is NOT recorded and the seed retries.
+            resolveAfterCreateConflict(tryGet(cloudant, db, docId), repositoryId);
         }
+    }
+
+    /**
+     * Resolve a create {@code 409}: the re-GET result must be a live, strictly-valid
+     * counter (a concurrent create won). A {@code null} (tombstone / still absent) or a
+     * corrupt counter THROWS. Package-static + pure so both 409 branches are unit-testable
+     * without forcing a real race.
+     */
+    static void resolveAfterCreateConflict(Document after, String repositoryId) {
+        if (after == null) {
+            throw new IllegalStateException("[patch=" + PATCH_NAME + "] counter create for '"
+                    + repositoryId + "' hit a 409 but no live counter exists (tombstone conflict) "
+                    + "— refusing to record success");
+        }
+        // Throws if the concurrently-created doc is corrupt.
+        AclEpochCounterService.requireValidCounter(
+                fieldOf(after, "type"), fieldOf(after, "value"), after.getRev());
+        log.info("[patch=" + PATCH_NAME + "] counter concurrently created and valid for '"
+                + repositoryId + "'");
+    }
+
+    private static Document tryGet(Cloudant cloudant, String db, String docId) {
+        try {
+            return cloudant.getDocument(new GetDocumentOptions.Builder()
+                    .db(db).docId(docId).build()).execute().getResult();
+        } catch (NotFoundException nfe) {
+            return null;
+        }
+    }
+
+    private static Object fieldOf(Document doc, String field) {
+        return doc.getProperties() != null ? doc.getProperties().get(field) : null;
     }
 
     private CloudantClientWrapper confClient() {

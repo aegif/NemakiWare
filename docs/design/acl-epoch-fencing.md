@@ -54,9 +54,17 @@ change doesn't bump a child's `_rev`); `max(ancestor _rev)` (different documents
 
 - One per-repository counter doc in `nemaki_conf`: `_id = acl-epoch-counter::{repo}`,
   `{type: "aclEpochCounter", value: <long>}`. Allocation = read + CAS(`_rev`) write of
-  `value+1`; on conflict re-read + retry. **A failed CAS consumes nothing**; gaps
-  occur only when an allocated epoch's finalization is later abandoned (harmless —
-  only strict monotonicity matters). Long overflow is explicitly rejected (throw).
+  `value+1`; on conflict re-read + retry. **Value gaps are SAFE — only strict
+  monotonicity matters.** Allocation is gap-free ONLY under conflict-only,
+  no-communication-failure conditions (a lost CAS persists nothing); an **ambiguous
+  timeout** (CouchDB commits `value+1` but the HTTP response is lost, so the caller
+  re-reads and allocates `value+2`) skips a value, and an allocated epoch whose
+  finalization is later abandoned skips one too — all harmless. Long overflow is
+  explicitly rejected (throw). **Fail-closed read (increment 1a): a stored value is
+  accepted only if it is a finite, integral, in-`long`-range, non-negative number with
+  `type == aclEpochCounter` and a `_rev` — a fractional (`1.5`), out-of-range,
+  non-finite, wrong-type, or negative value throws (never read as a lower value, which
+  would re-issue epochs).**
 
 ### 2.2 Two-phase mutation (the Q0 fix)
 
@@ -433,8 +441,15 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
 
 ### Implementation progress
 
-- **Increment 1 — counter foundation (§2.1, §8): IN PROGRESS.** Per-repository
-  monotonic `acl-epoch-counter::{repo}` doc + `_rev`-CAS allocation (overflow-reject,
+- **Increment 1 — counter foundation (§2.1, §8): DONE.** Per-repository monotonic
+  `acl-epoch-counter::{repo}` doc + `_rev`-CAS allocation (overflow-reject,
   conflict-retry, no-consume-on-failed-CAS) + `Patch_AclEpochCounter` (counter doc +
-  `(type)` Mango index on `nemaki_conf`). Standalone service; NOT yet wired into any
-  ACL write path (fail-closed until the ACL-UPDATE increment).
+  `(type)` Mango index on `nemaki_conf`). Standalone service; NOT wired into any ACL
+  write path (fail-closed until the ACL-UPDATE increment).
+- **Increment 1a — counter hardening: DONE.** Strict fail-closed value read
+  (`BigDecimal.longValueExact` — rejects fractional / out-of-range / non-finite /
+  wrong-type / missing-`_rev` / negative rather than truncating to a lower value); the
+  patch re-GETs and requires a live valid counter after a create `409` (a tombstone
+  conflict is not "exists"), validates an existing counter (throws → no PatchHistory on
+  corruption), and never overwrites a valid one; the missing-counter error separates
+  fresh-install bootstrap from live-repository recovery (`max+1`, never reseed).

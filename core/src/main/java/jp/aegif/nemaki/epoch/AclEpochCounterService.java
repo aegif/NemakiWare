@@ -25,11 +25,22 @@ import java.util.Map;
  * <p>One counter document per repository lives in {@code nemaki_conf} at the
  * deterministic id {@code acl-epoch-counter::{repo}} as {@code {type:"aclEpochCounter",
  * value:<long>}}. {@link #allocate(String)} reads the value and writes {@code value+1}
- * under a CouchDB {@code _rev} compare-and-swap, retrying on conflict; a FAILED CAS
- * consumes nothing (no value is persisted), so allocation is gap-free except when an
- * already-allocated epoch's finalization is later abandoned (harmless — only strict
- * monotonicity matters). The counter is the sole persisted high-watermark; the
+ * under a CouchDB {@code _rev} compare-and-swap, retrying on conflict.
+ *
+ * <p><b>Value gaps are SAFE</b> (only strict monotonicity matters). A lost CAS persists
+ * nothing, so allocation is gap-free ONLY under conflict-only, no-communication-failure
+ * conditions; an ambiguous timeout (CouchDB commits {@code value+1} but the HTTP
+ * response is lost, so the caller re-reads and allocates {@code value+2}) also skips a
+ * value, and an already-allocated epoch whose finalization is later abandoned leaves a
+ * gap too — all harmless. The counter is the sole persisted high-watermark; the
  * invariant is {@code value >= every aclSourceEpoch in the repository}.
+ *
+ * <p><b>Strict fail-closed read (increment 1a):</b> a counter is only accepted when its
+ * {@code type} is {@code aclEpochCounter}, it has a {@code _rev}, and its {@code value}
+ * is a FINITE, INTEGRAL, in-{@code long}-range, NON-NEGATIVE number. A fractional
+ * ({@code 1.5}), out-of-range, non-finite, wrong-type, or negative value is treated as
+ * CORRUPTION and throws — never silently truncated to a lower value (which would let a
+ * corrupt counter re-issue already-used epochs).
  *
  * <p><b>Fail-closed by design (§8):</b>
  * <ul>
@@ -72,6 +83,57 @@ public class AclEpochCounterService {
     }
 
     /**
+     * Strictly parse a CouchDB-JSON counter {@code value} to an exact {@code long} (pure,
+     * unit-testable). Rejects — as CORRUPTION — a missing / non-numeric / fractional /
+     * out-of-{@code long}-range / non-finite value. NEVER truncates or wraps: reading a
+     * corrupt counter as a lower value would let epochs be re-issued.
+     *
+     * @throws IllegalStateException if the value is not a finite, integral, in-range long
+     */
+    static long parseExactLong(Object value) {
+        if (value == null) {
+            throw new IllegalStateException("ACL epoch counter value is missing");
+        }
+        if (!(value instanceof Number)) {
+            throw new IllegalStateException("ACL epoch counter value is not numeric: "
+                    + value.getClass().getName());
+        }
+        try {
+            // BigDecimal(toString) is exact for the SDK's numeric types; longValueExact()
+            // throws on any non-zero fraction OR out-of-long-range, and the BigDecimal
+            // ctor throws on "NaN"/"Infinity" — so 1.5, -0.5, 1e30, NaN all fail closed.
+            return new java.math.BigDecimal(value.toString()).longValueExact();
+        } catch (ArithmeticException | NumberFormatException e) {
+            throw new IllegalStateException("ACL epoch counter value is non-integral, "
+                    + "out-of-range, or non-finite: " + value);
+        }
+    }
+
+    /**
+     * Validate a counter document's {@code type} / {@code value} / {@code _rev} and return
+     * the exact value. A valid counter has {@code type == aclEpochCounter}, a non-blank
+     * {@code _rev}, and a finite, integral, in-range, NON-NEGATIVE value. Shared by the
+     * service read path and {@code Patch_AclEpochCounter} so "valid counter" has one
+     * definition.
+     *
+     * @throws IllegalStateException on any corruption (so callers fail closed / do not
+     *         record a success)
+     */
+    public static long requireValidCounter(Object typeField, Object valueField, String rev) {
+        if (!DOC_TYPE.equals(typeField)) {
+            throw new IllegalStateException("ACL epoch counter has wrong type: " + typeField);
+        }
+        if (rev == null || rev.isBlank()) {
+            throw new IllegalStateException("ACL epoch counter has no _rev");
+        }
+        long v = parseExactLong(valueField);
+        if (v < 0) {
+            throw new IllegalStateException("ACL epoch counter is corrupt (negative value " + v + ")");
+        }
+        return v;
+    }
+
+    /**
      * Overflow-/corruption-guarded successor of the current counter value (pure, so it
      * is unit-testable without CouchDB).
      *
@@ -106,10 +168,23 @@ public class AclEpochCounterService {
             if (c == null) {
                 // Fail-closed: never recreate a missing counter — a lazily-recreated
                 // counter would restart at the seed and roll the high-watermark back
-                // below already-issued epochs. Recovery is an explicit operator step.
+                // below already-issued epochs.
+                //
+                // The two legitimate causes need DIFFERENT recovery, and the seed patch is
+                // NOT a recovery tool: reseeding a live repository that already has
+                // epoch-bearing Content is a design violation (it rolls back).
+                //   * Fresh install: run the bootstrap counter patch BEFORE enabling ACL
+                //     writes (no epoch-bearing Content exists yet, so seed 0 is correct).
+                //   * Counter loss on a live repository: STOP ACL writes, survey the max
+                //     epoch across Content and Solr, and explicitly restore the counter to
+                //     max+1 — do NOT reseed.
                 throw new IllegalStateException("ACL epoch counter missing for repository '"
-                        + repositoryId + "' — refusing to lazily recreate (would roll back the "
-                        + "high-watermark). Run Patch_AclEpochCounter / the recovery procedure.");
+                        + repositoryId + "' — failing closed (refusing to lazily recreate; that "
+                        + "would roll the high-watermark back below already-issued epochs). "
+                        + "Fresh install: run the bootstrap counter patch before enabling ACL "
+                        + "writes. Counter loss on a live repository: stop ACL writes, survey the "
+                        + "max epoch across Content and Solr, and restore the counter to max+1 "
+                        + "explicitly — do NOT reseed.");
             }
             long next = nextValue(c.value); // throws on overflow / corruption
             if (casWrite(docId, next, c.rev) != null) {
@@ -126,15 +201,15 @@ public class AclEpochCounterService {
      * is missing or corrupt.
      */
     public long currentHighWatermark(String repositoryId) {
+        if (repositoryId == null || repositoryId.isBlank()) {
+            throw new IllegalArgumentException("repositoryId is required to read the ACL epoch counter");
+        }
         Counter c = readCounter(counterDocId(repositoryId));
         if (c == null) {
             throw new IllegalStateException("ACL epoch counter missing for repository '"
                     + repositoryId + "'");
         }
-        if (c.value < 0) {
-            throw new IllegalStateException("ACL epoch counter corrupt (negative) for repository '"
-                    + repositoryId + "'");
-        }
+        // readCounter already validated type / _rev / finite-integral-non-negative value.
         return c.value;
     }
 
@@ -157,12 +232,13 @@ public class AclEpochCounterService {
             if (doc == null) {
                 return null;
             }
-            Object v = doc.getProperties() != null ? doc.getProperties().get("value") : null;
-            if (!(v instanceof Number)) {
-                throw new IllegalStateException("ACL epoch counter '" + docId
-                        + "' has a missing / non-numeric value: " + v);
-            }
-            return new Counter(((Number) v).longValue(), doc.getRev());
+            Map<String, Object> props = doc.getProperties();
+            Object typeField = props != null ? props.get("type") : null;
+            Object valueField = props != null ? props.get("value") : null;
+            // Strict validation: type + _rev + finite/integral/in-range/non-negative value.
+            // A corrupt counter THROWS (fail-closed) rather than being read as a low value.
+            long value = requireValidCounter(typeField, valueField, doc.getRev());
+            return new Counter(value, doc.getRev());
         } catch (NotFoundException e) {
             return null;
         }
