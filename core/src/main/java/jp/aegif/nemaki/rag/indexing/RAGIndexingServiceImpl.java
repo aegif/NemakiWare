@@ -109,6 +109,27 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             throw RAGIndexingException.serviceDisabled("RAG indexing is disabled");
         }
 
+        // SECURITY (single choke point): NEVER RAG-index a Private Working Copy. A PWC is
+        // a checkout-owner-only draft that PermissionServiceImpl authorizes by OWNERSHIP,
+        // ignoring the normal inherited ACL — but RAG authorizes by inherited-ACL token
+        // intersection, which does not know the PWC rule. An indexed PWC would let a
+        // same-group non-owner use the in-progress draft as a findSimilarDocuments seed
+        // (an existence + semantic-neighbourhood oracle, since the seed is only token-
+        // gated). Excluding here (not only in SolrUtil.triggerRAGIndexing) closes the
+        // bypass where the RAG full/single reindex (RAGIndexMaintenanceServiceImpl) calls
+        // this method DIRECTLY. Remove any block a prior build indexed for this id.
+        if (Boolean.TRUE.equals(document.isPrivateWorkingCopy())) {
+            log.debug("RAG indexDocument: skipping Private Working Copy {} (owner-only draft, excluded from RAG)",
+                    document.getId());
+            try {
+                deleteDocument(repositoryId, document.getId());
+            } catch (Exception e) {
+                log.warn("RAG indexDocument: failed to remove stale RAG block for PWC {}: {}",
+                        document.getId(), e.getMessage());
+            }
+            return;
+        }
+
         String mimeType = getMimeType(repositoryId, document);
         if (!isMimeTypeSupported(mimeType)) {
             throw RAGIndexingException.unsupportedMimeType(mimeType);
@@ -227,11 +248,10 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             java.util.concurrent.locks.Lock lock = ragBlockLocks.get(ragId);
             lock.lock();
             try {
-                // 1. Fetch the parent document with all stored fields + its _version_
-                //    (for the block-add optimistic-concurrency CAS at step 4).
+                // 1. Fetch the parent document with all stored fields
                 SolrQuery parentQuery = new SolrQuery();
                 parentQuery.setQuery("id:" + sanitizedRagId);
-                parentQuery.setFields("*", "_version_");
+                parentQuery.setFields("*");
                 parentQuery.setRows(1);
                 SolrDocumentList parentDocs = solrClient.query("nemaki", parentQuery).getResults();
                 if (parentDocs == null || parentDocs.isEmpty()) {
@@ -276,25 +296,24 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
                 } while (start < totalChunks);
 
                 // 3. Rebuild the block with the new readers list
-                SolrDocument parentSnapshot = parentDocs.get(0);
-                SolrInputDocument parentDoc = copyForReindex(parentSnapshot, ragId, readers);
+                SolrInputDocument parentDoc = copyForReindex(parentDocs.get(0), ragId, readers);
                 parentDoc.addChildDocuments(children);
 
-                // Final fence check + optimistic-concurrency version (review round 3, #5):
-                //   (a) re-confirm the lease AFTER the last page fetch and RIGHT BEFORE the
-                //       block-replacing add, so a worker whose lease was reclaimed during
-                //       the (possibly long) rebuild does not land a stale block; and
-                //   (b) CAS the add on the parent's _version_ read above, so a concurrent
-                //       indexToSolr / updateDocumentACL that replaced the block in the
-                //       meantime makes THIS add fail (409) instead of clobbering it.
+                // Final fence check (review round 3, #5): re-confirm the lease AFTER the
+                // last page fetch and RIGHT BEFORE the block-replacing add, so a worker
+                // whose lease was reclaimed during the (possibly long) rebuild does not
+                // land a stale block.
+                // NOTE: a parent `_version_` CAS on the block add was ATTEMPTED but
+                // reverted — the parent was read via a searcher query (subject to the
+                // commitWithin soft-commit lag), so its `_version_` can be stale and would
+                // spuriously 409 (or CAS on an out-of-date value). A correct RAG block CAS
+                // needs a realtime GET of the parent + a durable ACL epoch; tracked in
+                // CLAUDE.md as the remaining RAG-unification item. Concurrent RAG block
+                // writers are still ordered ONLY by the JVM-local per-ragId lock (single-
+                // replica), NOT across replicas.
                 if (leaseStillHeld != null && !leaseStillHeld.getAsBoolean()) {
                     throw new RAGIndexingException("Reconciliation lease lost before RAG block add for "
                             + documentId + " — aborting (reclaimer owns the write)");
-                }
-                Object parentVersion = parentSnapshot.getFieldValue("_version_");
-                if (parentVersion instanceof Number) {
-                    // Only if the block still has exactly this version; else 409 -> abort/retry.
-                    parentDoc.setField("_version_", ((Number) parentVersion).longValue());
                 }
 
                 // 4. Replace the block with a SINGLE add request. Re-adding a root document
