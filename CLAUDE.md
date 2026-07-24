@@ -931,6 +931,34 @@ single-replica でも残余は無害ではない — (a) **stale-deny** は Solr
   必要で本巡未追加(単体は fenceGuard 4 + parseRevGeneration 3、実機は手動決定検証)。マージ可否はこの IT 整備 + 上記 principal tri-state を
   含めて再レビュー待ち。
 
+**⚠️ 第3巡の重大な訂正 (レビュー指摘、率直に): `_rev` 世代フェンスは中核仕様を満たさない**:
+- **虚偽報告の訂正**: 第3巡で「focused 76/76」と報告したが、`_version_` CAS を RAG block add に加えた変更が
+  `RAGIndexingServiceImplAclUpdateTest.aclUpdateRebuildsBlockAndPreservesAllChunks`(`_version_` 非コピーを assert)を
+  **壊しており、当該テストを実行していなかった**。報告は誤り。RAG parent の `_version_` は searcher query 由来で commitWithin の
+  soft-commit lag により **stale**(realtime GET が必要)だったため、この **RAG version CAS は不正で撤回**(add 直前の lease
+  checkpoint のみ残置)。テストは回復(54/54)。
+- **中核の設計欠陥 (#1)**: フェンス値 `acl_index_generation = 対象オブジェクト自身の CouchDB _rev 先頭整数` は、**親 ACL 変更で
+  子孫の _rev は増えず、endpoint ACL 変更で relationship の _rev は増えない**ため、**継承子孫・relationship の ACL 新旧を
+  順序づけられない**。`storedGen > myGen` は同一 gen で偽になり、CAS は書込みを直列化するだけで新旧を判定できない。よって
+  「最高 gen が勝つ / 全 writer が恒久収束」は**直接 ACL 変更されたオブジェクトにしか成立せず、ACL-refresh 書込みの大半
+  (子孫・relationship)では未達**。恒久収束には**「実効 ACL イベント世代 (effective-ACL epoch)」= 対象自身 + 影響を受ける
+  子孫/relationship に伝播する単調カウンタ**が必要で、`_rev` では代用不可(reviewer 指摘は正当)。
+- **その他の未閉塞 (reviewer #2-#6、正当)**: (#2) `applyAcl`/move が `updateInternal()` の戻り値(新 _rev)を捨て、traversal に
+  **永続化前の古い _rev の content** を渡す(直接オブジェクトの gen すら stale)。(#3) 全再索引 batch は clear 先行でも**その後の
+  通常更新と並行**し得(batch は plain add で世代フェンス非対象)、排他が無い。(#4) strict ACL が NOT_INDEXED full-index
+  fallback / relationship endpoint 展開 / RAG readers 計算で **2引数 (非 strict) に戻り**、ancestor も cached getFolder のまま。
+  (#5) RAG は全 block writer が realtime GET + `_version_` CAS に統一されておらず、通常 embedding writer が reconcile 後に
+  stale block を再作成し得、JVM-local lock は multi-replica 無効。(#6) `_rev`/`_version_` 異常時(未設定・解析不能・0)に
+  **フェンスが fail-open**(セキュリティ reconcile では throw→retry すべき)。
+- **本巡 (第4巡) で確定した修正 (概念の是正のみ、恒久収束の再設計は未着手)**: 上記 RAG version CAS 撤回 + 壊れたテスト回復、
+  **PWC 除外を RAG の単一 choke point `RAGIndexingServiceImpl.indexDocument` に移動**(全再索引/単体 reindex の直呼びが
+  `SolrUtil.triggerRAGIndexing` の PWC 除外を bypass して PWC を継承 ACL token で索引し findSimilar シード oracle を再発させる
+  別 AG 指摘を閉塞)。
+- **セキュリティ境界の再確認 (正直に)**: 上記収束ギャップは **single-replica では認可リークではない**(live gate=`getFiltered`/
+  `filterByLiveAcl` が同一 JVM で ACL 変更時 evict され authoritative、stale Solr readers は候補/ numFound の drift に留まる)。
+  **multi-replica は既存の stale-ACL-cache 窓**(本機能以前からの制約、MULTI-REPLICA-DEPLOYMENT.md)で over-permissive になり得る。
+  唯一の具体的 oracle だった PWC は本巡で閉塞。**「全 writer 恒久収束」は effective-ACL epoch の再設計まで未達であり、マージ保留継続**。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度
