@@ -206,9 +206,47 @@ public class SearchIndexReconciliationService {
         if (task.getLeaseExpiresAt() - now > Math.max(1000L, leaseMillis) / 2) {
             return true;
         }
+        // Attempt to extend the lease via CAS. CRITICAL: do NOT commit the local
+        // leaseExpiresAt/updatedAt mutation unless the CAS succeeds — otherwise a
+        // failed renewal (the lease was reclaimed) would leave the local expiry in
+        // the future, so the NEXT checkpoint would see "plenty of time left", skip
+        // the CAS, and wrongly report the lease as still held. That would silently
+        // defeat cooperative fencing after the first loss. Snapshot + restore on
+        // failure keeps a lost lease reported as lost forever.
+        long prevExpires = task.getLeaseExpiresAt();
+        long prevUpdated = task.getUpdatedAt();
         task.setLeaseExpiresAt(now + Math.max(1000L, leaseMillis));
         task.setUpdatedAt(now);
-        return putCas(task) != null;
+        if (putCas(task) != null) {
+            return true;
+        }
+        task.setLeaseExpiresAt(prevExpires);
+        task.setUpdatedAt(prevUpdated);
+        return false;
+    }
+
+    /**
+     * A latched cooperative-fencing guard for a claimed task, shared by the poller
+     * and the admin manual-retry so both fence identically. Each call
+     * {@link #renewLeaseIfNeeded heartbeats/renews} the lease and returns whether it
+     * is still held; once a renewal fails (the lease was reclaimed by another worker)
+     * the guard LATCHES to {@code false} permanently — a worker that lost its lease
+     * must never resume writing, even if a later renewal transiently looked fine. The
+     * re-drive polls this before every index write and aborts (LeaseLostException)
+     * the moment it returns {@code false}.
+     */
+    public java.util.function.BooleanSupplier fenceGuard(SearchIndexAclReindexTask task, long leaseMillis) {
+        final java.util.concurrent.atomic.AtomicBoolean lost = new java.util.concurrent.atomic.AtomicBoolean(false);
+        return () -> {
+            if (lost.get()) {
+                return false;
+            }
+            boolean held = renewLeaseIfNeeded(task, leaseMillis);
+            if (!held) {
+                lost.set(true);
+            }
+            return held;
+        };
     }
 
     /** Release the lease and reschedule with backoff (CAS on the claim rev). */

@@ -469,6 +469,45 @@ public class AclServiceImpl implements AclService {
 		LeaseLostException() { super("reconciliation lease lost"); }
 	}
 
+	/**
+	 * Cooperative-fencing checkpoint: poll the (latched) lease guard before an index
+	 * write. Throwing {@link LeaseLostException} aborts the whole re-drive so a worker
+	 * that outlived its lease stops writing. A null guard (async refresh / short manual
+	 * paths) disables fencing.
+	 */
+	private void checkpointLease(java.util.function.BooleanSupplier leaseStillHeld) {
+		if (leaseStillHeld != null && !leaseStillHeld.getAsBoolean()) {
+			throw new LeaseLostException();
+		}
+	}
+
+	/**
+	 * Generation fence (#1): true when Solr already holds a STRICTLY-NEWER
+	 * {@code acl_index_generation} for this object than the one we are about to write,
+	 * meaning a concurrent applyAcl/move already indexed fresher readers and this
+	 * (slower) re-drive must NOT overwrite them. Only consulted on the reconciliation
+	 * re-drive ({@code reconcile == true}); a 0/unknown generation on either side never
+	 * skips (fail-open to a write, which the query-side live gate re-checks anyway).
+	 */
+	private boolean isSupersededByNewerIndexedGeneration(
+			jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil solrUtil,
+			String repositoryId, Content content, boolean reconcile) {
+		if (!reconcile) {
+			return false;
+		}
+		long myGen = jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.parseRevGeneration(content.getRevision());
+		if (myGen <= 0) {
+			return false;
+		}
+		long indexedGen = solrUtil.readIndexedGeneration(repositoryId, content.getId());
+		if (indexedGen > myGen) {
+			log.info("Reconcile: skipping content readers write for " + content.getId()
+					+ " — Solr already holds a newer generation (" + indexedGen + " > " + myGen + ")");
+			return true;
+		}
+		return false;
+	}
+
 	@Override
 	public boolean reindexSearchIndexAclForObject(String repositoryId, String objectId) {
 		return reindexSearchIndexAclForObject(repositoryId, objectId, null);
@@ -598,11 +637,17 @@ public class AclServiceImpl implements AclService {
 		// re-index inheriting descendants (their effective ACL changed).
 		if (!isRoot && solrUtil != null) {
 			try {
-				// syncConfirm (reconciliation re-drive): force a synchronous write so a
-				// Solr failure THROWS here and is counted — otherwise a fire-and-forget
-				// async submit would report clean and the task would be deleted before
-				// the write is known to have landed.
-				solrUtil.indexDocument(repositoryId, content, syncConfirm, true, onWriteFailed);
+				checkpointLease(leaseStillHeld);
+				if (!isSupersededByNewerIndexedGeneration(solrUtil, repositoryId, content, syncConfirm)) {
+					// syncConfirm (reconciliation re-drive): force a synchronous write so
+					// a Solr failure THROWS here and is counted, and pass strict=true so a
+					// readers/body/path computation failure THROWS too (never persist a
+					// degraded doc + delete the task as if clean). The async applyAcl/move
+					// path stays best-effort (strict=false, onWriteFailed enqueues).
+					solrUtil.indexDocument(repositoryId, content, syncConfirm, true, onWriteFailed, syncConfirm);
+				}
+			} catch (LeaseLostException lle) {
+				throw lle;
 			} catch (Exception e) {
 				log.warn("Failed to refresh content readers for " + content.getId() + ": " + e.getMessage());
 				recordNodeFailure(reconcile, failureCounter, repositoryId, content.getId(),
@@ -613,8 +658,11 @@ public class AclServiceImpl implements AclService {
 		// RAG readers (documents only, when RAG enabled) — unchanged behavior.
 		if (ragService != null && expander != null && content instanceof Document) {
 			try {
+				checkpointLease(leaseStillHeld);
 				java.util.List<String> readers = expander.expandToReaders(repositoryId, content);
 				ragService.updateDocumentACL(repositoryId, content.getId(), readers);
+			} catch (LeaseLostException lle) {
+				throw lle;
 			} catch (Exception e) {
 				log.warn("Failed to update RAG ACL for document " + content.getId() + ": " + e.getMessage());
 				recordNodeFailure(reconcile, failureCounter, repositoryId, content.getId(),
@@ -638,9 +686,18 @@ public class AclServiceImpl implements AclService {
 						org.apache.chemistry.opencmis.commons.enums.RelationshipDirection.EITHER);
 				if (rels != null) {
 					for (jp.aegif.nemaki.model.Relationship rel : rels) {
-						solrUtil.indexDocument(repositoryId, rel, syncConfirm, true, onWriteFailed);
+						// Re-check the lease before EACH relationship write: an endpoint
+						// with thousands of relationships must not let a lease-lost worker
+						// keep writing for the whole batch (finer than per-node fencing).
+						checkpointLease(leaseStillHeld);
+						// strict=syncConfirm: on the reconciliation re-drive a transient
+						// endpoint read (source/target) must THROW rather than persist a
+						// one-sided/empty relationship readers set as success.
+						solrUtil.indexDocument(repositoryId, rel, syncConfirm, true, onWriteFailed, syncConfirm);
 					}
 				}
+			} catch (LeaseLostException lle) {
+				throw lle;
 			} catch (Exception e) {
 				log.warn("Failed to refresh relationship readers for " + content.getId() + ": " + e.getMessage());
 				recordNodeFailure(reconcile, failureCounter, repositoryId, content.getId(),
@@ -673,6 +730,12 @@ public class AclServiceImpl implements AclService {
 							updateSearchIndexACLRecursively(repositoryId, child, ragService, expander,
 									solrUtil, visitedIds, false, reconcile, failureCounter, syncConfirm, leaseStillHeld);
 						}
+					} catch (LeaseLostException lle) {
+						// A descendant lost the reconciliation lease — propagate so the
+						// WHOLE re-drive aborts. Must be re-thrown BEFORE the generic catch,
+						// otherwise the traversal would swallow it and keep writing after
+						// the lease was reclaimed (defeats cooperative fencing).
+						throw lle;
 					} catch (Exception e) {
 						log.warn("Failed to refresh search-index ACL for child " + child.getId()
 								+ " (continuing with siblings): " + e.getMessage());

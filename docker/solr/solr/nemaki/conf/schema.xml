@@ -232,6 +232,13 @@
    <!-- Format: "user:username" or "group:groupname" or "anyone" -->
    <field name="readers" type="string" indexed="true" stored="true" required="false" multiValued="true" />
 
+   <!-- ACL-in-Solr generation fence: the leading integer of the object's CouchDB
+        _rev (bumps on every applyAcl / move / update). The reconciliation re-drive
+        reads this back and skips its write when Solr already holds a strictly-newer
+        generation, so a slow stale re-drive cannot overwrite a concurrent applyAcl's
+        fresher readers. -->
+   <field name="acl_index_generation" type="long" indexed="true" stored="true" required="false" multiValued="false" />
+
    <!-- Block Join routing field (Solr 9 requires _root_ for nested documents) -->
    <field name="_root_" type="string" indexed="true" stored="false" docValues="false" />
 

@@ -297,6 +297,18 @@ public class SolrUtil implements ApplicationContextAware {
 	 */
 	public void indexDocument(String repositoryId, Content content, boolean forceSync, boolean skipRAGIndexing,
 			Runnable onPermanentFailure) {
+		indexDocument(repositoryId, content, forceSync, skipRAGIndexing, onPermanentFailure, false);
+	}
+
+	/**
+	 * As above, with {@code strict}: when true (the synchronous reconciliation
+	 * re-drive), a transient computation failure of a security/completeness field
+	 * ({@code readers} / body / path) THROWS instead of persisting a degraded
+	 * document — see {@link #createSolrDocument(String, Content, boolean)}. Only
+	 * meaningful with {@code forceSync=true} (the async path swallows + retries).
+	 */
+	public void indexDocument(String repositoryId, Content content, boolean forceSync, boolean skipRAGIndexing,
+			Runnable onPermanentFailure, boolean strict) {
 		if (log.isDebugEnabled()) {
 			log.debug("indexDocument called for " + content.getId());
 		}
@@ -316,14 +328,14 @@ public class SolrUtil implements ApplicationContextAware {
 
 		// For maintenance operations, execute synchronously to track progress accurately
 		if (forceSync) {
-			indexDocumentInternal(repositoryId, content, skipRAGIndexing);
+			indexDocumentInternal(repositoryId, content, skipRAGIndexing, strict);
 		} else {
 			// Execute Solr indexing asynchronously to avoid blocking CMIS operations
 			CompletableFuture.runAsync(() -> {
-				indexDocumentInternal(repositoryId, content, skipRAGIndexing);
+				indexDocumentInternal(repositoryId, content, skipRAGIndexing, strict);
 			}, asyncSolrExecutor).exceptionally(ex -> {
 				log.warn("Solr async indexing failed for {}, scheduling retry: {}", content.getId(), ex.getMessage());
-				scheduleRetry(() -> indexDocumentInternal(repositoryId, content, skipRAGIndexing), content.getId(), 1,
+				scheduleRetry(() -> indexDocumentInternal(repositoryId, content, skipRAGIndexing, strict), content.getId(), 1,
 						onPermanentFailure);
 				return null;
 			});
@@ -456,16 +468,20 @@ public class SolrUtil implements ApplicationContextAware {
 	 * @param skipRAGIndexing if true, skip RAG re-indexing after Solr update
 	 */
 	private void indexDocumentInternal(String repositoryId, Content content, boolean skipRAGIndexing) {
+		indexDocumentInternal(repositoryId, content, skipRAGIndexing, false);
+	}
+
+	private void indexDocumentInternal(String repositoryId, Content content, boolean skipRAGIndexing, boolean strict) {
 		SolrClient solrClient = null;
 		try {
 			log.info("Starting Solr indexing for document: " + content.getId());
 			solrClient = getSolrClient();
-			
+
 			if (solrClient == null) {
 				throw new RuntimeException("Solr client is not available, cannot index document: " + content.getId());
 			}
-			
-			SolrInputDocument doc = createSolrDocument(repositoryId, content);
+
+			SolrInputDocument doc = createSolrDocument(repositoryId, content, strict);
 			
 			log.info("Created SolrInputDocument with " + doc.size() + " fields for document: " + content.getId());
 			log.debug("Document fields: repository_id={}, object_id={}, basetype={}, name={}", 
@@ -624,23 +640,63 @@ public class SolrUtil implements ApplicationContextAware {
 	 * within that brief refresh window.
 	 */
 	private List<String> relationshipReaders(String repositoryId, Relationship relationship,
-			jp.aegif.nemaki.rag.acl.ACLExpander aclExpander) {
+			jp.aegif.nemaki.rag.acl.ACLExpander aclExpander, boolean strict) {
 		ContentService cs = getContentServiceSafely();
-		List<String> sourceReaders = null;
-		List<String> targetReaders = null;
-		if (cs != null) {
-			Content source = (relationship.getSourceId() != null)
-					? cs.getContent(repositoryId, relationship.getSourceId()) : null;
-			Content target = (relationship.getTargetId() != null)
-					? cs.getContent(repositoryId, relationship.getTargetId()) : null;
-			if (source != null) {
-				sourceReaders = aclExpander.expandToReaders(repositoryId, source);
+		if (cs == null) {
+			if (strict) {
+				// Reconciliation re-drive: we cannot compute readers without the
+				// ContentService — do not persist an empty (invisible) relationship as
+				// success. Fail so the task retries.
+				throw new RuntimeException("Strict reindex: ContentService unavailable for relationship "
+						+ relationship.getId());
 			}
-			if (target != null) {
-				targetReaders = aclExpander.expandToReaders(repositoryId, target);
-			}
+			return unionReaders(null, null);
 		}
+		List<String> sourceReaders = resolveEndpointReaders(repositoryId, relationship.getSourceId(),
+				cs, aclExpander, strict, relationship.getId(), "source");
+		List<String> targetReaders = resolveEndpointReaders(repositoryId, relationship.getTargetId(),
+				cs, aclExpander, strict, relationship.getId(), "target");
 		return unionReaders(sourceReaders, targetReaders);
+	}
+
+	/**
+	 * Resolve one relationship endpoint's reader tokens.
+	 *
+	 * <p>A null endpoint id contributes nothing. Otherwise the endpoint is read via
+	 * {@code getContent} — but the DAO layers collapse BOTH a genuine 404 and a
+	 * transient read error to {@code null}, so on a null read the behaviour depends on
+	 * {@code strict}:
+	 * <ul>
+	 *   <li>{@code strict == false} (normal indexing): treat null as "no contribution"
+	 *       (the historical best-effort behaviour).</li>
+	 *   <li>{@code strict == true} (reconciliation re-drive): probe the store
+	 *       authoritatively (tri-state). NOT_FOUND ⇒ a genuinely dangling endpoint,
+	 *       contribute nothing; ERROR / still-present-but-unreadable ⇒ a TRANSIENT
+	 *       failure, THROW so the task retries rather than persisting a one-sided (or
+	 *       empty) readers set that under-exposes the relationship.</li>
+	 * </ul>
+	 * Per-endpoint (not per-relationship-whole) so one dangling far endpoint does not
+	 * block the reconciliation of the near object's other relationships.
+	 */
+	private List<String> resolveEndpointReaders(String repositoryId, String endpointId,
+			ContentService cs, jp.aegif.nemaki.rag.acl.ACLExpander aclExpander, boolean strict,
+			String relationshipId, String side) {
+		if (endpointId == null) {
+			return null;
+		}
+		Content endpoint = cs.getContent(repositoryId, endpointId);
+		if (endpoint != null) {
+			return aclExpander.expandToReaders(repositoryId, endpoint);
+		}
+		if (!strict) {
+			return null;
+		}
+		DocState state = probeEndpointExists(repositoryId, endpointId);
+		if (state == DocState.NOT_FOUND) {
+			return null; // genuinely dangling endpoint — the union with the other side stands
+		}
+		throw new RuntimeException("Strict reindex: relationship " + relationshipId + " " + side
+				+ " endpoint " + endpointId + " unreadable (" + state + ") — retrying");
 	}
 
 	/**
@@ -662,7 +718,154 @@ public class SolrUtil implements ApplicationContextAware {
 		return new ArrayList<String>(union);
 	}
 
+	/** Tri-state document existence used by strict relationship-endpoint reads. */
+	private enum DocState { FOUND, NOT_FOUND, ERROR }
+
+	/**
+	 * Authoritative tri-state existence probe against CouchDB (distinguishing a
+	 * genuine 404/tombstone from a transient read error, which the DAO layers both
+	 * collapse to {@code null}). Mirrors {@code AclServiceImpl.probeContentExists}.
+	 */
+	private DocState probeEndpointExists(String repositoryId, String objectId) {
+		jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool pool = getConnectorPoolSafely();
+		if (pool == null) {
+			return DocState.ERROR;
+		}
+		try {
+			jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper client = pool.getClient(repositoryId);
+			if (client == null) {
+				return DocState.ERROR;
+			}
+			com.ibm.cloud.cloudant.v1.model.Document doc = client.getClient().getDocument(
+					new com.ibm.cloud.cloudant.v1.model.GetDocumentOptions.Builder()
+							.db(client.getDatabaseName()).docId(objectId).build())
+					.execute().getResult();
+			if (doc == null) {
+				return DocState.NOT_FOUND;
+			}
+			if (doc.getProperties() != null && Boolean.TRUE.equals(doc.getProperties().get("_deleted"))) {
+				return DocState.NOT_FOUND;
+			}
+			return DocState.FOUND;
+		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
+			return DocState.NOT_FOUND;
+		} catch (Exception e) {
+			log.warn("Strict reindex: existence probe errored for {}: {}", objectId, e.getMessage());
+			return DocState.ERROR;
+		}
+	}
+
+	private volatile jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool connectorPoolCache;
+
+	/** Lazily resolve the CouchDB connector pool from Spring (mirrors {@link #getContentServiceSafely()}). */
+	private jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool getConnectorPoolSafely() {
+		jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool cached = connectorPoolCache;
+		if (cached != null) {
+			return cached;
+		}
+		if (applicationContext == null) {
+			return null;
+		}
+		try {
+			synchronized (this) {
+				cached = connectorPoolCache;
+				if (cached != null) {
+					return cached;
+				}
+				cached = applicationContext.getBean("connectorPool",
+						jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
+				connectorPoolCache = cached;
+				return cached;
+			}
+		} catch (Exception e) {
+			log.debug("connectorPool not yet available: {}", e.getMessage());
+			return null;
+		}
+	}
+
+	/**
+	 * Parse the monotonic generation from a CouchDB {@code _rev} ("N-hash"): the
+	 * leading integer N, which increments on every document write (including every
+	 * applyAcl / move / update). Returns 0 when the revision is null or unparseable,
+	 * which disables the generation fence for that write (never skips).
+	 */
+	public static long parseRevGeneration(String revision) {
+		if (revision == null) {
+			return 0L;
+		}
+		int dash = revision.indexOf('-');
+		String head = (dash > 0) ? revision.substring(0, dash) : revision;
+		try {
+			long gen = Long.parseLong(head.trim());
+			return gen > 0 ? gen : 0L;
+		} catch (NumberFormatException e) {
+			return 0L;
+		}
+	}
+
+	/**
+	 * Read the {@code acl_index_generation} currently stored in Solr for an object,
+	 * or {@code -1} if the doc is absent / has no generation field / Solr is
+	 * unavailable (in which case the caller must NOT skip its write). Used by the
+	 * reconciliation re-drive to avoid overwriting a strictly-newer indexed
+	 * generation with a stale one (#1).
+	 */
+	public long readIndexedGeneration(String repositoryId, String objectId) {
+		try {
+			SolrClient solrClient = getSolrClient();
+			if (solrClient == null) {
+				return -1L;
+			}
+			SolrQuery q = new SolrQuery();
+			q.setQuery("id:" + org.apache.solr.client.solrj.util.ClientUtils.escapeQueryChars(objectId));
+			q.addFilterQuery("repository_id:"
+					+ org.apache.solr.client.solrj.util.ClientUtils.escapeQueryChars(repositoryId));
+			q.setFields("acl_index_generation");
+			q.setRows(1);
+			SolrDocumentList results = solrClient.query(q).getResults();
+			if (results == null || results.isEmpty()) {
+				return -1L;
+			}
+			Object v = results.get(0).getFieldValue("acl_index_generation");
+			if (v instanceof Number) {
+				return ((Number) v).longValue();
+			}
+			if (v != null) {
+				try {
+					return Long.parseLong(v.toString());
+				} catch (NumberFormatException ignore) {
+					return -1L;
+				}
+			}
+			return -1L;
+		} catch (Exception e) {
+			log.debug("readIndexedGeneration failed for {}: {}", objectId, e.getMessage());
+			return -1L;
+		}
+	}
+
 	private SolrInputDocument createSolrDocument(String repositoryId, Content content) {
+		return createSolrDocument(repositoryId, content, false);
+	}
+
+	/**
+	 * Build the Solr document for a content node.
+	 *
+	 * <p>{@code strict} controls how a transient computation failure of a
+	 * SECURITY-relevant or completeness-relevant field (the {@code readers} tokens,
+	 * the extracted body text, the calculated path) is handled:
+	 * <ul>
+	 *   <li>{@code strict == false} (normal indexing): the failure is logged and the
+	 *       field is left empty — a best-effort content save must not fail wholesale
+	 *       on a transient Tika/ACL hiccup.</li>
+	 *   <li>{@code strict == true} (the reconciliation re-drive): the failure is
+	 *       RE-THROWN so the caller counts it and retries, instead of persisting a
+	 *       degraded document (empty readers → invisible; missing body/path →
+	 *       clobbers the good copy) and then deleting the reconciliation task as if it
+	 *       were clean. See SearchIndexReconciliationScheduler.</li>
+	 * </ul>
+	 */
+	private SolrInputDocument createSolrDocument(String repositoryId, Content content, boolean strict) {
 		if (log.isDebugEnabled()) {
 			log.debug("Creating Solr document for content: {} (type: {}) in repository: {}",
 				content.getId(), content.getType(), repositoryId);
@@ -719,6 +922,13 @@ public class SolrUtil implements ApplicationContextAware {
 					log.debug("Added path field: {} for content: {}", path, content.getId());
 				}
 			} catch (Exception e) {
+				if (strict) {
+					// Reconciliation re-drive: a full-document write with a transiently
+					// unresolvable path would clobber the good indexed path. Fail so the
+					// task retries instead of persisting a path-less doc as "reconciled".
+					throw new RuntimeException("Strict reindex: path calculation failed for "
+							+ content.getId() + ": " + e.getMessage(), e);
+				}
 				log.warn("Failed to calculate path for content {}: {}", content.getId(), e.getMessage());
 			}
 		} else {
@@ -750,6 +960,14 @@ public class SolrUtil implements ApplicationContextAware {
 						}
 					}
 				} catch (Exception e) {
+					if (strict) {
+						// Reconciliation re-drive: a full-document write with a
+						// transiently-failed extraction would replace the good indexed
+						// body with an empty one. Fail so the task retries instead of
+						// clobbering + deleting the task as "reconciled".
+						throw new RuntimeException("Strict reindex: text extraction failed for "
+								+ content.getId() + ": " + e.getMessage(), e);
+					}
 					log.warn("Failed to extract text content for document {}: {}", content.getId(), e.getMessage());
 				}
 				
@@ -940,7 +1158,7 @@ public class SolrUtil implements ApplicationContextAware {
 		if (aclExpander != null) {
 			try {
 				List<String> readers = (content instanceof Relationship)
-						? relationshipReaders(repositoryId, (Relationship) content, aclExpander)
+						? relationshipReaders(repositoryId, (Relationship) content, aclExpander, strict)
 						: aclExpander.expandToReaders(repositoryId, content);
 				if (readers != null) {
 					for (String reader : readers) {
@@ -948,10 +1166,29 @@ public class SolrUtil implements ApplicationContextAware {
 					}
 				}
 			} catch (Exception e) {
+				if (strict) {
+					// Reconciliation re-drive: a swallowed readers-computation failure
+					// would persist an EMPTY readers set (the doc becomes invisible to
+					// every non-admin) and then let the poller delete the task as if it
+					// had reconciled. Fail so the task is counted + retried instead.
+					throw new RuntimeException("Strict reindex: readers computation failed for "
+							+ content.getId() + ": " + e.getMessage(), e);
+				}
 				// Fail-closed: leave `readers` empty so the query-side fq excludes
 				// this doc for non-admin users until it is re-indexed. Never leaks.
 				log.warn("Failed to compute readers for content {}: {}", content.getId(), e.getMessage());
 			}
+		}
+
+		// ACL-in-Solr generation fence (#1): stamp the object's CouchDB revision
+		// generation (the leading integer of `_rev`, which bumps on every applyAcl /
+		// move / update — unlike the CMIS change token, which an ACL change does NOT
+		// move). The reconciliation re-drive reads this back before writing and skips
+		// its write when Solr already holds a STRICTLY-NEWER generation, so a slow
+		// stale re-drive cannot overwrite a concurrent applyAcl's fresher readers.
+		long aclGen = parseRevGeneration(content.getRevision());
+		if (aclGen > 0) {
+			doc.addField("acl_index_generation", aclGen);
 		}
 
 		if (log.isDebugEnabled()) {

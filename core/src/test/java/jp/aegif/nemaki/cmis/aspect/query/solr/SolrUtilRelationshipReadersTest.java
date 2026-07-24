@@ -46,4 +46,32 @@ public class SolrUtilRelationshipReadersTest {
         assertTrue(SolrUtil.unionReaders(null, null).isEmpty(),
                 "a dangling relationship (both endpoints unresolvable) must stamp NO readers");
     }
+
+    // ── ACL-in-Solr generation fence (#1): parse the CouchDB _rev leading integer ──
+
+    @Test
+    public void parseRevGenerationExtractsLeadingInteger() {
+        assertEquals(3L, SolrUtil.parseRevGeneration("3-abc123"));
+        assertEquals(10L, SolrUtil.parseRevGeneration("10-deadbeef"));
+        assertEquals(1L, SolrUtil.parseRevGeneration("1-x"));
+    }
+
+    @Test
+    public void parseRevGenerationIsMonotonicAcrossWrites() {
+        // The whole point of the fence: a later CouchDB write has a strictly greater
+        // leading generation, so the reconcile can compare "mine < indexed" and skip.
+        assertTrue(SolrUtil.parseRevGeneration("7-a") > SolrUtil.parseRevGeneration("6-a"),
+                "a newer _rev must parse to a strictly greater generation");
+    }
+
+    @Test
+    public void parseRevGenerationReturnsZeroWhenUnusable() {
+        // 0 disables the fence (never skips) — fail-open to a write, which the
+        // query-side live gate re-checks anyway.
+        assertEquals(0L, SolrUtil.parseRevGeneration(null));
+        assertEquals(0L, SolrUtil.parseRevGeneration(""));
+        assertEquals(0L, SolrUtil.parseRevGeneration("abc"));
+        assertEquals(0L, SolrUtil.parseRevGeneration("-5"));
+        assertEquals(0L, SolrUtil.parseRevGeneration("0-zero"));
+    }
 }

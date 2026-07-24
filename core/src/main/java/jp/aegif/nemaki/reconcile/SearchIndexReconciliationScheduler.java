@@ -135,14 +135,14 @@ public class SearchIndexReconciliationScheduler {
         for (SearchIndexAclReindexTask task : claimed) {
             boolean clean;
             try {
-                // Cooperative fencing: the re-drive polls this before each node's
-                // writes; it heartbeats/renews the lease and returns false once the
-                // lease is lost, so a long re-drive that outlives its lease stops
-                // writing instead of clobbering a reclaiming worker's fresher readers.
-                final long leaseMs = leaseSeconds * 1000L;
+                // Cooperative fencing: the re-drive polls this LATCHED guard before
+                // every index write; it heartbeats/renews the lease and returns false
+                // (permanently, once lost) so a long re-drive that outlives its lease
+                // stops writing instead of clobbering a reclaiming worker's fresher
+                // readers. The admin manual-retry uses the SAME guard.
                 clean = aclService.reindexSearchIndexAclForObject(
                         task.getRepositoryId(), task.getObjectId(),
-                        () -> reconciliationService.renewLeaseIfNeeded(task, leaseMs));
+                        reconciliationService.fenceGuard(task, leaseSeconds * 1000L));
             } catch (Exception e) {
                 logger.warn("Reconcile re-drive threw for {} / {}: {}",
                         task.getRepositoryId(), task.getObjectId(), e.getMessage());
