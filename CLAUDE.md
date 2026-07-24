@@ -1181,6 +1181,25 @@ ABANDON 誤り + mutationId 形式無保証、を指摘され是正。
 - **将来注記**: marker を ACK 後に消す段階(次増分)では、遅延 finalizer が「正常な marker 消去」を破損と誤認しない終端判定が
   別途必要(現状 `stillOursOrOutcome` は既存 marker 消失を anomaly 扱い=marker を消す増分がない今は正しい)。設計 §3 に記載。
 
+**増分2d: quarantine の race / 回避経路 / terminal / 失敗報告を閉塞**:
+増分2c レビューで「quarantine という新永続状態に race と回避経路がある」と P1×3 + P2×2 を指摘され是正。
+- **[P1] 修復済み文書の quarantine 阻止(race)**: `quarantine()` が再GET後に**再検証していなかった**ため、非UUID PENDING を
+  scanner が読む→正常 Phase 1 が新UUIDで修復→quarantine が修復後を quarantine、で正常 mutation を永続隔離し得た。**CAS retry
+  ごとに `validateEpochFields` で再検証し、正常化(有効 epoch + 余分な marker なし)なら quarantine 中止**。
+- **[P1] marker「存在」だけの回避経路**: 全 selector が `{$exists:false}` だったため `false`/`null`/`"false"`/非Boolean でも全 pass
+  から不可視だった。CouchDB Mango の `$ne`/`$not` は**欠落フィールドに非マッチ**(MongoDB と異なる、実機確認)なので、true のみ
+  除外し absent+非true を含めるには **`$or({$exists:false},{$ne:true})`** が必要(index 使用も実機確認)。全 selector をこれに変更、
+  非true marker は**検出して true へ正規化**。marker 契約を厳密化(absent=処理 / true=quarantine 済 / それ以外=anomaly→正規化)。
+- **[P1] direct finalizer の quarantine 無視**: `finalizePending`/`validate` が quarantine を見ず、修復が flag を消し忘れると
+  inline finalizer が `FINALIZED + quarantined=true` を作り scanner が永久に task 化不能だった。**validate が quarantine を
+  fail-closed で拒否**(Phase 1 は同一 commit で quarantine 解除する契約を設計に明記)。
+- **[P2] terminal 監査 + 失敗報告**: Pass5 で **`RECONCILE_ENQUEUED` も validate**(不正 UUID/epoch/marker は quarantine、正常は
+  カウント)。quarantine 書込み失敗を**握り潰さず** `quarantineFailures` 計上 + error 記録 + `more=true`。
+- **検証**: 実 CouchDB IT `AclEpochFinalizationServiceIT` **29/29**。新規: 修復済み→非quarantine / 依然異常→quarantine /
+  `false`・`"false"`・`0` marker→回避せず true 正規化 / quarantined の direct finalize→拒否・epoch非消費 / quarantine時
+  attachment 保持 / 不正 RECONCILE_ENQUEUED→quarantine・正常→カウント / **quarantine 失敗→summary 反映(並行 bumper)** /
+  全5 selector が `$or` 込みで idx 使用。統合 unit 80/80。CI 済。実機: patch success、index 存在、atom 200、scanner 非自動起動。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度

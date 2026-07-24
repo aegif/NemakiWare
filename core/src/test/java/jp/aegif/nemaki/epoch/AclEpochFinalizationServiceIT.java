@@ -408,22 +408,28 @@ public class AclEpochFinalizationServiceIT {
 
     @Test
     void allScanSelectorsUseTheAclEpochStateIndex() throws Exception {
-        // The four selectors the service uses, in the same shape (all exclude quarantined).
-        Map<String, Object> notQ = Map.of("$exists", false);
-        assertIndexServed(Map.of(AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH,
-                AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true),
-                AclEpochState.FIELD_QUARANTINED, notQ), "PENDING finalize");
-        assertIndexServed(Map.of(AclEpochState.FIELD_STATE, AclEpochState.FINALIZED_NEEDS_RECONCILE,
-                AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true),
-                AclEpochState.FIELD_QUARANTINED, notQ), "FINALIZED count");
-        assertIndexServed(Map.of(AclEpochState.FIELD_STATE, Map.of("$in", List.of(
+        // The five selectors the service uses (all exclude a TRUE quarantine marker via the
+        // $or of {$exists:false} and {$ne:true} — a malformed marker is NOT hidden).
+        assertIndexServed(withNotQ(Map.of(AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH,
+                AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true))), "PENDING finalize");
+        assertIndexServed(withNotQ(Map.of(AclEpochState.FIELD_STATE, AclEpochState.FINALIZED_NEEDS_RECONCILE,
+                AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true))), "FINALIZED count");
+        assertIndexServed(withNotQ(Map.of(AclEpochState.FIELD_STATE, Map.of("$in", List.of(
                         AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE)),
-                AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", false),
-                AclEpochState.FIELD_QUARANTINED, notQ), "missing-mutation-id audit");
-        assertIndexServed(Map.of(AclEpochState.FIELD_STATE, Map.of("$exists", true, "$nin", List.of(
+                AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", false))), "missing-mutation-id audit");
+        assertIndexServed(withNotQ(Map.of(AclEpochState.FIELD_STATE, AclEpochState.RECONCILE_ENQUEUED)),
+                "terminal audit");
+        assertIndexServed(withNotQ(Map.of(AclEpochState.FIELD_STATE, Map.of("$exists", true, "$nin", List.of(
                         AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE,
-                        AclEpochState.RECONCILE_ENQUEUED)),
-                AclEpochState.FIELD_QUARANTINED, notQ), "unknown-state audit");
+                        AclEpochState.RECONCILE_ENQUEUED)))), "unknown-state audit");
+    }
+
+    private Map<String, Object> withNotQ(Map<String, Object> stateAndFields) {
+        Map<String, Object> s = new LinkedHashMap<>(stateAndFields);
+        s.put("$or", List.of(
+                Map.of(AclEpochState.FIELD_QUARANTINED, Map.of("$exists", false)),
+                Map.of(AclEpochState.FIELD_QUARANTINED, Map.of("$ne", true))));
+        return s;
     }
 
     // ── review 2c: guaranteed FINITE-scan progression past ANY anomaly type ──
@@ -505,6 +511,127 @@ public class AclEpochFinalizationServiceIT {
                 label + " selector must be served by the (aclEpochState) index, not _all_docs");
     }
 
+    // ── review 2d: quarantine race / bypass / terminal / failure ───
+
+    @Test
+    void quarantineAbortsWhenTheDocumentIsAlreadyRepaired() {
+        // review 2d [P1]: a stale anomaly detection must NOT quarantine a document that is
+        // now valid (a concurrent normal Phase 1 repaired it). quarantine() re-validates.
+        seedPending("repaired", AclEpochState.newMutationId());
+        ScanSummary sum = new ScanSummary();
+        svc.quarantine(contentDb, "repaired", "stale non-UUID anomaly", sum);
+        assertEquals(0, sum.quarantined, "a repaired (valid) document must not be quarantined");
+        assertFalse(props("repaired").containsKey(AclEpochState.FIELD_QUARANTINED));
+    }
+
+    @Test
+    void quarantineProceedsWhenStillAnomalous() {
+        seedPending("stillbad", "not-a-uuid");
+        ScanSummary sum = new ScanSummary();
+        svc.quarantine(contentDb, "stillbad", "non-UUID", sum);
+        assertEquals(1, sum.quarantined);
+        assertTrue(Boolean.TRUE.equals(props("stillbad").get(AclEpochState.FIELD_QUARANTINED)));
+    }
+
+    @Test
+    void nonTrueQuarantineMarkerDoesNotHideAndIsNormalizedToTrue() {
+        // review 2d [P1]: a false / "false" / numeric marker must NOT hide a document from
+        // the scanner; it is surfaced and normalized to Boolean true.
+        seedPendingWithMarker("q-false", false);
+        seedPendingWithMarker("q-string", "false");
+        seedPendingWithMarker("q-num", 0);
+        for (int i = 0; i < 5; i++) svc.scan(contentDb, 100);
+        assertEquals(Boolean.TRUE, props("q-false").get(AclEpochState.FIELD_QUARANTINED));
+        assertEquals(Boolean.TRUE, props("q-string").get(AclEpochState.FIELD_QUARANTINED));
+        assertEquals(Boolean.TRUE, props("q-num").get(AclEpochState.FIELD_QUARANTINED));
+    }
+
+    @Test
+    void directFinalizeOnAQuarantinedDocumentIsRejected() {
+        // review 2d [P1]: even a valid-looking PENDING that is quarantined must be refused by
+        // a direct finalizer (no epoch consumed, state unchanged).
+        Map<String, Object> p = baseFixture();
+        p.put(AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH);
+        p.put(AclEpochState.FIELD_MUTATION_ID, AclEpochState.newMutationId());
+        p.put(AclEpochState.FIELD_QUARANTINED, true);
+        putContentRaw("q-direct", p);
+
+        assertThrows(AclEpochAnomalyException.class, () -> svc.finalizePending(contentDb, "q-direct"));
+        assertEquals(AclEpochState.PENDING_EPOCH, props("q-direct").get(AclEpochState.FIELD_STATE));
+        assertEquals(0L, counterValue(contentDb), "a quarantined document must not consume an epoch");
+    }
+
+    @Test
+    void quarantinePreservesInlineAttachment() {
+        Map<String, Object> p = baseFixture();
+        p.put(AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH);
+        p.put(AclEpochState.FIELD_MUTATION_ID, "not-a-uuid"); // anomalous -> will be quarantined
+        Document d = new Document();
+        d.setId("q-att");
+        d.setProperties(p);
+        Attachment att = new Attachment.Builder().contentType("text/plain").data("hi".getBytes()).build();
+        Map<String, Attachment> atts = new LinkedHashMap<>();
+        atts.put("keep.txt", att);
+        d.setAttachments(atts);
+        cloudant.putDocument(new PutDocumentOptions.Builder().db(contentDb).docId("q-att").document(d).build()).execute();
+
+        svc.scan(contentDb, 100);
+        Document after = getContent("q-att");
+        assertEquals(Boolean.TRUE, after.getProperties().get(AclEpochState.FIELD_QUARANTINED));
+        assertTrue(after.getAttachments() != null && after.getAttachments().containsKey("keep.txt"),
+                "quarantine must preserve the inline attachment");
+    }
+
+    @Test
+    void invalidReconcileEnqueuedIsQuarantinedValidIsCounted() {
+        // review 2d [P2]: the terminal state is audited too.
+        Map<String, Object> bad = baseFixture();
+        bad.put(AclEpochState.FIELD_STATE, AclEpochState.RECONCILE_ENQUEUED);
+        bad.put(AclEpochState.FIELD_MUTATION_ID, AclEpochState.newMutationId());
+        bad.put(AclEpochState.FIELD_SOURCE_EPOCH, -3L); // invalid epoch
+        putContentRaw("enq-bad", bad);
+
+        Map<String, Object> good = baseFixture();
+        good.put(AclEpochState.FIELD_STATE, AclEpochState.RECONCILE_ENQUEUED);
+        good.put(AclEpochState.FIELD_MUTATION_ID, AclEpochState.newMutationId());
+        good.put(AclEpochState.FIELD_SOURCE_EPOCH, 4L);
+        putContentRaw("enq-good", good);
+
+        ScanSummary sum = svc.scan(contentDb, 100);
+        assertEquals(Boolean.TRUE, props("enq-bad").get(AclEpochState.FIELD_QUARANTINED),
+                "an invalid RECONCILE_ENQUEUED is quarantined");
+        assertFalse(props("enq-good").containsKey(AclEpochState.FIELD_QUARANTINED),
+                "a valid RECONCILE_ENQUEUED is not quarantined");
+        assertTrue(sum.enqueued >= 1, "a valid RECONCILE_ENQUEUED is counted");
+    }
+
+    @Test
+    void quarantineFailureIsReportedNotSwallowed() throws Exception {
+        // review 2d [P2]: a quarantine that cannot durably persist must surface in the summary
+        // (quarantineFailures + more), never appear as silent success. A concurrent writer that
+        // keeps bumping the (still-anomalous) doc forces the CAS to lose. The invariant holds
+        // whichever side wins: either it quarantines, or it records a failure.
+        seedPending("qfail", "not-a-uuid");
+        java.util.concurrent.atomic.AtomicBoolean stop = new java.util.concurrent.atomic.AtomicBoolean(false);
+        Thread bumper = new Thread(() -> {
+            while (!stop.get()) {
+                try {
+                    Document d = getContent("qfail");
+                    if (Boolean.TRUE.equals(d.getProperties().get(AclEpochState.FIELD_QUARANTINED))) break;
+                    d.getProperties().put("bump", UUID.randomUUID().toString());
+                    putContent(d);
+                } catch (Exception ignore) { /* race with the quarantine PUT */ }
+            }
+        });
+        bumper.start();
+        ScanSummary sum = new ScanSummary();
+        svc.quarantine(contentDb, "qfail", "non-UUID", sum);
+        stop.set(true);
+        bumper.join(5000);
+        assertTrue(sum.quarantined == 1 || (sum.quarantineFailures >= 1 && sum.more),
+                "quarantine must either succeed or record a failure (never silent): " + sum.quarantineFailures);
+    }
+
     // ── fixtures / helpers ─────────────────────────────────────────
 
     private Map<String, Object> baseFixture() {
@@ -532,6 +659,15 @@ public class AclEpochFinalizationServiceIT {
         Map<String, Object> p = baseFixture();
         p.put(AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH);
         p.put(AclEpochState.FIELD_MUTATION_ID, rawMutationId); // may be null (JSON null / omitted by the SDK)
+        putContentRaw(id, p);
+    }
+
+    /** A valid PENDING (UUID mutation id) carrying a non-true quarantine marker value. */
+    private void seedPendingWithMarker(String id, Object markerValue) {
+        Map<String, Object> p = baseFixture();
+        p.put(AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH);
+        p.put(AclEpochState.FIELD_MUTATION_ID, AclEpochState.newMutationId());
+        p.put(AclEpochState.FIELD_QUARANTINED, markerValue); // false / "false" / 0 / …
         putContentRaw(id, p);
     }
 
