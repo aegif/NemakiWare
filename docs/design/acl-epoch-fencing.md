@@ -126,9 +126,15 @@ PENDING_EPOCH                (ACL committed; epoch not yet assigned)
 - The inline async refresh (today's `ragAclExecutor` traversal) remains as
   best-effort ACCELERATION; the durable queue is the correctness path.
 
-Mango index addition: `(type, aclEpochState)` on content DBs for the scanner.
-(Persistent-format note for the release notes: new Content fields `aclSourceEpoch`,
-`aclEpochState`, `aclEpochMutationId`; new counter doc type; new Mango index.)
+Mango index addition: **`(aclEpochState)`** on content DBs for the scanner (increment 2
+adopted a state-first single-field index rather than the originally-sketched `(type,
+aclEpochState)`: epoch state spans MULTIPLE content types and the scanner selects purely
+by state (`aclEpochState $in [PENDING_EPOCH, FINALIZED_NEEDS_RECONCILE]` and a bounded
+`$exists`/`$nin` audit), so a state-first index serves those directly and excludes
+state-less documents, whereas a type-first compound index would require enumerating
+types). (Persistent-format note for the release notes: new Content fields
+`aclSourceEpoch`, `aclEpochState`, `aclEpochMutationId`; new counter doc type; new
+`(aclEpochState)` Mango index.)
 
 ## 4. The unified write contract (every ACL writer)
 
