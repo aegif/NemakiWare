@@ -1,5 +1,8 @@
 package jp.aegif.nemaki.epoch;
 
+import java.util.UUID;
+import java.util.regex.Pattern;
+
 /**
  * The ACL-epoch outbox state machine and the CouchDB content-document field names it
  * uses (design {@code docs/design/acl-epoch-fencing.md} §2.2 / §3 — increment 2).
@@ -41,5 +44,24 @@ public final class AclEpochState {
         return PENDING_EPOCH.equals(state)
                 || FINALIZED_NEEDS_RECONCILE.equals(state)
                 || RECONCILE_ENQUEUED.equals(state);
+    }
+
+    /**
+     * Canonical (8-4-4-4-12 hex) UUID form. Phase 1 writes a FRESH {@link #newMutationId()}
+     * for every mutation; reusing an id would let an old finalizer believe it still owns a
+     * newer mutation, so the format is enforced at read time (validate) — a non-UUID
+     * {@code aclEpochMutationId} is a fail-closed anomaly.
+     */
+    private static final Pattern MUTATION_ID_PATTERN = Pattern.compile(
+            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+
+    /** A fresh, unique mutation id for a Phase-1 write (canonical UUID form). */
+    public static String newMutationId() {
+        return UUID.randomUUID().toString();
+    }
+
+    /** True iff {@code id} is a canonical-form UUID (fail-closed: null / malformed → false). */
+    public static boolean isValidMutationId(String id) {
+        return id != null && MUTATION_ID_PATTERN.matcher(id).matches();
     }
 }

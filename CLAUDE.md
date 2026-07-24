@@ -1143,6 +1143,27 @@ snapshot 前提→patch 失敗→決定的 IT。
   allocate 前に拒否・新規作成なし・epoch 非消費 / **inline attachment 保持** / 並行 6 worker **例外を捕捉して fail**(握り潰さない)。
   CI に両テスト追加。実機: patch success、index 存在、atom 200、scanner 非自動起動、実 content の epoch-state doc ゼロ。
 
+**増分2b: scanner 別形態の恒久飢餓 P1×2 + UUID 強制 P2**:
+増分2a レビューで「3-pass が同じ `summary.scanned` cap を共有 → (a) cap 以上 FINALIZED + UNKNOWN 1件で Pass3 が毎回一度も
+走らず UNKNOWN 永久不可視、(b) cap 以上の異常 PENDING が selector 内に残り後方の正常 PENDING を永久に塞ぐ」+ state 消失の
+ABANDON 誤り + mutationId 形式無保証、を指摘され是正。
+- **[P1] 各 pass 独立 budget + valid/anomaly selector 分離**: 共有 cap を廃止し **4-pass 各々に独立 budget**(どの pass も他を
+  飢餓させない)。各 pass を **valid selector**(`{state:PENDING/FINALIZED, mutationId:$exists:true}`)と **anomaly selector**
+  (`{state:$in[live], mutationId:$exists:false}` / `{state:$exists, $nin:[PENDING,FINALIZED]}`)に分離し、**異常文書は valid
+  selector に入らない**ため cap 超でも正常文書を塞がない。両飢餓モードを構造的に閉塞。**全4 selector が idx_aclEpochState を
+  使用**(`_explain` で確認)。
+- **[P1] state 消失は anomaly**: live 文書が**存在するのに `aclEpochState` だけ消失**した場合(marker 消失=破損)を、旧実装は
+  `current==null`(delete race)と同じ ABANDONED にしていた。**delete race のみ ABANDONED、存在+state 消失は anomaly として
+  throw・保持・報告**。pre-allocate 再読込で検出するため **epoch 非消費**。
+- **[P2] mutationId UUID 形式強制**: 共通 validator が非blank String までしか確認していなかった。**canonical UUID を validator
+  で強制**(非UUID は anomaly)+ `AclEpochState.newMutationId()`(Phase 1 が毎回新規 UUID を永続化する契約)を新設。
+- **検証**: `AclEpochStateTest` **4/4**(newMutationId が毎回新規 UUID / canonical UUID 検証)、実 CouchDB IT
+  `AclEpochFinalizationServiceIT` **19/19**。新規: **>cap FINALIZED + UNKNOWN→UNKNOWN 報告**(Mode A)/ **>cap 異常 PENDING +
+  正常 PENDING→正常 finalize**(Mode B)/ 全 pass 進行 / **state 消失→anomaly + epoch 非消費** / **全4 selector が index 使用** /
+  非UUID mutationId 拒否 + epoch 非消費。CI に両テスト。**残余(正直に)**: mutationId が present だが非UUID の PENDING は Pass1
+  で anomaly 記録されるが selector 除外はされず、>cap そういう外部破損があると Pass1 を塞ぎ得る(Phase 1 は UUID のみ書くため
+  外部破損限定、毎 scan 可視)。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度

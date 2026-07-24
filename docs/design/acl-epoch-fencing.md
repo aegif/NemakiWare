@@ -475,3 +475,16 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
   Persistent-format additions (release-note them; view/2.4 carry-over untouched): new
   content-DB document fields `aclEpochState`, `aclEpochMutationId`, `aclSourceEpoch`
   (absent by default) + the `(aclEpochState)` content-DB Mango index.
+  - **Increment 2a — scanner PENDING-first, anomaly visibility, snapshot precondition,
+    attachment preservation, patch-throw.**
+  - **Increment 2b — no scanner starvation + UUID mutation ids.** The scanner is now
+    FOUR passes, each with its OWN budget (never a shared cap, so no pass starves
+    another) and each targeting EITHER valid or anomalous documents (so an unadvanceable
+    anomalous document is not in a valid-doc selector and cannot block valid ones across
+    invocations): (1) finalize `{state:PENDING, mutationId:$exists}`, (2) count
+    `{state:FINALIZED, mutationId:$exists}`, (3) audit `{state:$in[live],
+    mutationId:$exists:false}`, (4) audit `{state:$exists, $nin:[PENDING,FINALIZED]}`.
+    All four are `(aclEpochState)`-index-served (verified by `_explain`). `aclEpochMutationId`
+    MUST be a canonical UUID (`AclEpochState.newMutationId()` for Phase 1); a non-UUID is a
+    fail-closed anomaly. A document that still exists but LOST its `aclEpochState` is marker
+    loss (anomaly), not a delete-race supersede.
