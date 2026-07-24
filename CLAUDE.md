@@ -1120,6 +1120,29 @@ batch fence + final sweep → RAG 統一 → strict → migration patch → live
   実機: 再デプロイで (aclEpochState) index を bedroom/canopy に作成、atom 200、**scanner 非自動起動**(scan/finalize ログなし)、
   実 content に epoch-state doc ゼロ(通常 Content 不変)。
 
+**増分2a: scanner 恒久飢餓ほか P1×3 + P2×2 + テスト強化**:
+増分2 レビューで P1×3(実 CouchDB で FINALIZED が PENDING より先に返る→PENDING 恒久飢餓 / 未知状態が selector 外で不可視 /
+`_rev` なし Document を finalize 可能)+ P2×2 + テスト不足を指摘され是正。修正順: scanner 優先→anomaly 可視化・共通 validator→
+snapshot 前提→patch 失敗→決定的 IT。
+- **[P1]#1 PENDING 優先 3-pass**: 旧 `$in [PENDING,FINALIZED]` 単一 pass は FINALIZED が cap を食い潰し PENDING を永久に
+  finalize しない。**Pass1=PENDING 専用(常に最優先)→Pass2=FINALIZED 検証(残容量)→Pass3=bounded anomaly audit**。全 pass
+  bookmark ページング + 共有 cap。PENDING が FINALIZED backlog で飢餓しない。
+- **[P1]#2 未知状態の bounded audit + 共通 validator**: `$in` 外の未知状態は永久不可視、FINALIZED の mutationId 欠落も正常
+  受理だった。共通 `validate()`(非String/未知 state / mutationId 欠落 / 不正 epoch を anomaly)を finalize・409 再読込・全 scan
+  pass で共有。Pass3 は `{$exists:true, $nin:[PENDING,FINALIZED]}` で未知/非String/RECONCILE_ENQUEUED を bounded に検査。
+- **[P1]#3 snapshot 前提(id/_rev 必須)**: public Document overload に `_rev` なし文書を渡すと epoch allocate 後に新規
+  文書として PUT され得た。**allocate 前に id/_rev を必須検証**(Phase-2 = commit 済み Phase-1 文書のみ)。さらに CAS 書込みは
+  必ず `getDoc`(添付スタブ付き)に対して行い、`_find` hint は所有 mutationId + 前提確認のみに使う→**添付を保持**。
+- **[P2]#4 409 後破損は anomaly**: 再読込が未知状態/mutationId 欠落なら旧実装は ABANDONED_SUPERSEDED にしていた。共通
+  validator を通し、**真正な別 mutation / 正常 finalized のみ ABANDONED**、破損は anomaly として throw。
+- **[P2]#5 index patch を throw**: `connectorPool == null` で return だと PatchHistory 成功記録で再実行されない→**throw**。
+- **§3 更新**: canonical の `(type, aclEpochState)` を採用した `(aclEpochState)` に是正(複数型跨ぎ + state 単独 `$in`/audit)。
+- **検証**: `AclEpochStateTest` 2/2、実 CouchDB IT `AclEpochFinalizationServiceIT` **16/16**(専用 throwaway DB は **本物の
+  (aclEpochState) index を作成**し `_explain` で index 使用を確認 = `_all_docs` fallback 排除)。新規/強化: **>cap FINALIZED +
+  PENDING で PENDING 飢餓なし** / 未知状態 anomaly / FINALIZED の mutationId 欠落 anomaly / 409 後破損 anomaly / `_rev` 欠落は
+  allocate 前に拒否・新規作成なし・epoch 非消費 / **inline attachment 保持** / 並行 6 worker **例外を捕捉して fail**(握り潰さない)。
+  CI に両テスト追加。実機: patch success、index 存在、atom 200、scanner 非自動起動、実 content の epoch-state doc ゼロ。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度

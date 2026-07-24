@@ -54,8 +54,10 @@ public class Patch_AclEpochStateMangoIndex extends AbstractNemakiPatch {
     @Override
     protected void applyPerRepositoryPatch(String repositoryId) {
         if (patchUtil == null || patchUtil.getConnectorPool() == null) {
-            log.warn("[patch=" + PATCH_NAME + "] connectorPool unavailable — skipping repo " + repositoryId);
-            return;
+            // THROW (not return): returning would let AbstractNemakiPatch record PatchHistory
+            // as applied, so the index would never be created on a later, healthy startup.
+            throw new RuntimeException("Patch_AclEpochStateMangoIndex: connectorPool unavailable for repo "
+                    + repositoryId);
         }
         CloudantClientWrapper client;
         try {
