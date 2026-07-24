@@ -1096,6 +1096,30 @@ batch fence + final sweep → RAG 統一 → strict → migration patch → live
   有効既存の high-watermark 非変更 / 破損既存→throw で成功履歴なし / tombstone-create は throw か有効 counter 残存のいずれか=
   「成功記録+live counter 不在」を排除)。CI に両テスト追加。実機: hardened patch 起動クリーン、counters value 0 保持、atom 200。
 
+**増分2: post-commit finalization + crash-recovery scanner (§2.2/§3)**:
+着手承認時の追加6条件(scanner 非自動起動 / 通常 Content 不変 / 厳密 CAS 遷移 / ACK は FINALIZED で停止 / 異常 fail-closed /
+副作用なし)を厳守。**production ACL write path には未配線**(sign-off 不変条件9)。
+- **`AclEpochState`**(新規): 3 状態(`PENDING_EPOCH`→`FINALIZED_NEEDS_RECONCILE`→`RECONCILE_ENQUEUED`)+ content-doc
+  フィールド名(`aclEpochState`/`aclEpochMutationId`/`aclSourceEpoch`)+ `isKnown`(未知/null は fail-closed で false)。
+- **`AclEpochFinalizationService`**(新規、standalone bean、**init/scheduler/cron なし**): `finalizePending`(Phase-2) は
+  **厳密 CAS 遷移** — epoch を1回 allocate し、`PENDING_EPOCH` かつ同一 `aclEpochMutationId` の間だけ `FINALIZED_NEEDS_RECONCILE`
+  へ commit。409 は再読込し、別 mutation/既 finalized なら **ABANDONED**(再割当・上書き・後退なし、per-JVM lock 非依存、
+  割当済 epoch は破棄=安全な gap)。`scan`(crash 復旧) は Mango `aclEpochState $in [PENDING,FINALIZED]` で **状態付き文書のみ選択**
+  (state-less な通常 Content は不可視)、`PENDING`→finalize、`FINALIZED`→**検証のみで据え置き**(enqueue/ACK は次増分)、異常
+  (未知状態/mutationId 欠落/不正 epoch)は **error 記録 + 未処理保持**(黙殺しない)、bookmark ページング + 処理上限。**Solr/reconcile
+  task/ACL cache に一切触れない**。
+- **`Patch_AclEpochStateMangoIndex`**: 各 content DB に `(aclEpochState)` Mango index(§3 の (type,aclEpochState) は複数型跨ぎの
+  ため state 単独に。state-less 除外 + `$in` 直サーブ)。冪等、Path A/B 登録。
+- **fail-closed staging**: `finalizePending`/`scan` の **production caller ゼロ**(grep 確認)、bean に init/scheduler/cron なし、
+  通常 Content を PENDING_EPOCH 等に初期化しない。⚠ 永続フォーマット追加: content DB に新フィールド
+  `aclEpochState`/`aclEpochMutationId`/`aclSourceEpoch`(既定 absent)+ `(aclEpochState)` Mango index(view/2.4 持ち越し非タッチ)。
+- **検証**: 単体 `AclEpochStateTest` 2/2、実 CouchDB IT `AclEpochFinalizationServiceIT` **9/9**(専用 throwaway DB で完全隔離 —
+  finalize+epoch 割当+他フィールド保持 / 既 finalized 冪等・非再割当 / state-less skip / **mutationId 変化で ABANDONED** /
+  **6並行 finalize→ちょうど1つ FINALIZED**(CAS・lock 非依存) / scan は PENDING を finalize し FINALIZED で停止 / **state-less を
+  選択しない** / PENDING に mutationId 欠落=anomaly 記録+PENDING 保持 / FINALIZED に不正 epoch=anomaly)。CI に両テスト追加。
+  実機: 再デプロイで (aclEpochState) index を bedroom/canopy に作成、atom 200、**scanner 非自動起動**(scan/finalize ログなし)、
+  実 content に epoch-state doc ゼロ(通常 Content 不変)。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度

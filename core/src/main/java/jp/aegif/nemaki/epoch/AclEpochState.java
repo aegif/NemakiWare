@@ -1,0 +1,45 @@
+package jp.aegif.nemaki.epoch;
+
+/**
+ * The ACL-epoch outbox state machine and the CouchDB content-document field names it
+ * uses (design {@code docs/design/acl-epoch-fencing.md} §2.2 / §3 — increment 2).
+ *
+ * <p>The states live as fields ON THE CONTENT document (so the Phase-1 marker can be
+ * committed atomically with the ACL change in a later increment):
+ * <pre>
+ *   PENDING_EPOCH               (ACL change committed; no epoch allocated yet)
+ *     → FINALIZED_NEEDS_RECONCILE (epoch allocated; reconcile task not yet confirmed)
+ *     → RECONCILE_ENQUEUED        (task durably exists; steady state = marker cleared)
+ * </pre>
+ *
+ * <p><b>Increment-2 scope:</b> only {@code PENDING_EPOCH → FINALIZED_NEEDS_RECONCILE} is
+ * implemented. The {@code → RECONCILE_ENQUEUED} ACK is deliberately NOT implemented here:
+ * clearing the marker requires the v2.1 condition (an {@code ACL_REINDEX} task with
+ * {@code minRequiredEpoch >= finalized}), whose task-side fields are a later increment —
+ * so a finalized document STOPS at {@code FINALIZED_NEEDS_RECONCILE}.
+ *
+ * <p>A state-less content document (all three fields absent — every normal document) is
+ * NEVER selected by the scanner; only documents carrying one of these states are.
+ */
+public final class AclEpochState {
+
+    private AclEpochState() {}
+
+    /** CouchDB content-doc field: the outbox state (one of the constants below). */
+    public static final String FIELD_STATE = "aclEpochState";
+    /** CouchDB content-doc field: the Phase-1 mutation UUID (finalize matches on it). */
+    public static final String FIELD_MUTATION_ID = "aclEpochMutationId";
+    /** CouchDB content-doc field: the allocated epoch (set at finalize). */
+    public static final String FIELD_SOURCE_EPOCH = "aclSourceEpoch";
+
+    public static final String PENDING_EPOCH = "PENDING_EPOCH";
+    public static final String FINALIZED_NEEDS_RECONCILE = "FINALIZED_NEEDS_RECONCILE";
+    public static final String RECONCILE_ENQUEUED = "RECONCILE_ENQUEUED";
+
+    /** True for the three defined states; false for null / any unknown value (fail-closed). */
+    public static boolean isKnown(String state) {
+        return PENDING_EPOCH.equals(state)
+                || FINALIZED_NEEDS_RECONCILE.equals(state)
+                || RECONCILE_ENQUEUED.equals(state);
+    }
+}
