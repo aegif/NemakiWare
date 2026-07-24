@@ -1,10 +1,29 @@
 # ACL-in-Solr: Repository-wide monotonic ACL epoch fencing (design v2.1)
 
-Status: **DESIGN v2.1 — awaiting re-sign-off. No epoch implementation code exists or
-may be written until sign-off.** v2.1 adds, per review: `content_incarnation`
-(restore resets `_rev`, §4.4) WITH a full existing-Content migration lifecycle (§8.1,
-round-7), independent per-operation task obligations (§5), and a strengthened outbox
-ACK condition (§3). Supersedes v1 after two review rounds. v1's flaws corrected in v2:
+Status: **SIGNED OFF (design v2.1) — 2026-07-24, baseline `f251e1c16` on
+`test/v3.3-arm64-full`.** This authorizes staged implementation in the report order
+(counter → outbox finalization → effective-epoch → ACL-UPDATE atomic+fence →
+CONTENT/CREATE separation → batch fence + final sweep → RAG unification → strict →
+migration patch → live-Solr concurrency IT). It is NOT master-merge or
+production-ready approval; the final master-merge decision is re-made once §9 tests
+1–16 + the live-Solr concurrency IT + related TCK are all green.
+
+**Mandatory implementation invariants (sign-off conditions — every increment):**
+1. Do NOT allocate an epoch before the Phase-1 commit.
+2. `PENDING_EPOCH` + `aclEpochMutationId` are written in the SAME commit as the ACL change.
+3. The ACL-write order is walk → compute → RTG → revalidate → CAS — never reordered.
+4. On 409, NEVER reuse the payload — restart from the walk.
+5. The outbox marker is cleared only after confirming an `ACL_REINDEX` task durably
+   exists AND its `minRequiredEpoch` >= the finalized epoch.
+6. EVERY ACL writer, RAG, and batch participates in the one §4.2 contract.
+7. `content_incarnation` is CAS-persisted to CouchDB BEFORE it is stamped to Solr.
+8. Restore ALWAYS issues a fresh `content_incarnation`.
+9. Each increment stays fail-closed; half-finished code is not enabled in a write path.
+
+v2.1 adds, per review: `content_incarnation` (restore resets `_rev`, §4.4) WITH a full
+existing-Content migration lifecycle (§8.1, round-7), independent per-operation task
+obligations (§5), and a strengthened outbox ACK condition (§3). Supersedes v1 after two
+review rounds. v1's flaws corrected in v2:
 
 - v1 allocated the epoch BEFORE the CouchDB commit (under the per-object lock) and
   claimed "allocation order == commit order". That holds only per-object; across
@@ -407,5 +426,15 @@ copies, never recomputes, the ACL group; path handling is unchanged in stage 1).
 
 ---
 
-Implementation remains BLOCKED until this v2 is signed off. The PWC purge fix (§5)
-is approved for independent implementation ahead of the epoch work.
+Implementation is UNBLOCKED as of the 2026-07-24 sign-off (baseline `f251e1c16`) and
+proceeds in the staged report order; each increment must land fail-closed (§ sign-off
+invariant 9) and is not enabled in a write path until its stage is complete. The PWC
+purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5–7).
+
+### Implementation progress
+
+- **Increment 1 — counter foundation (§2.1, §8): IN PROGRESS.** Per-repository
+  monotonic `acl-epoch-counter::{repo}` doc + `_rev`-CAS allocation (overflow-reject,
+  conflict-retry, no-consume-on-failed-CAS) + `Patch_AclEpochCounter` (counter doc +
+  `(type)` Mango index on `nemaki_conf`). Standalone service; NOT yet wired into any
+  ACL write path (fail-closed until the ACL-UPDATE increment).

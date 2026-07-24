@@ -1053,6 +1053,30 @@ single-replica でも残余は無害ではない — (a) **stale-deny** は Solr
   `pwcEnqueueFailureThrows`→checked 版に差替)、scheduler 11/11・RAG AclUpdate 3/3・ACLExpander 33/33 無回帰(単体 60/60)、
   実 CouchDB IT 12/12。設計は DESIGN-ONLY で epoch 実装コードは依然ゼロ。
 
+**ACL-epoch 設計 v2.1 を正式 sign-off (2026-07-24、基準 `f251e1c16`) → 段階実装開始**:
+レビューで設計 v2.1 を **SIGNED OFF**(「設計に基づく段階実装の開始許可。master マージ/本番準備完了の承認ではない」)。
+`docs/design/acl-epoch-fencing.md` の Status を `SIGNED OFF`(基準コミット・日付・実装時必須不変条件9点)に更新。
+最終 master マージ判定は §9 決定的テスト1〜16 + live-Solr 並行 IT + 関連 TCK が揃った段階で再実施。実装順:
+counter → outbox finalization → effective-epoch → ACL-UPDATE atomic+fence → CONTENT/CREATE 分離 →
+batch fence + final sweep → RAG 統一 → strict → migration patch → live-Solr 並行 IT。
+
+**増分1: ACL-epoch counter 基盤 (§2.1/§8) 実装完了**:
+- **`AclEpochCounterService`** (新規 `jp.aegif.nemaki.epoch`): リポジトリ単位の単調増加カウンタ。`nemaki_conf` の
+  deterministic id `acl-epoch-counter::{repo}` に `{type:aclEpochCounter, value:<long>}`。`allocate(repo)` は
+  read→`_rev` CAS で `value+1`、conflict は再読込 retry。**失敗 CAS は何も消費しない**(gap は allocated epoch の
+  finalize 放棄時のみ=無害)。**fail-closed**: counter 欠落は lazy 再作成せず throw(high-watermark 巻き戻し防止)、
+  負値=corruption throw、`Long.MAX_VALUE` overflow throw。`currentHighWatermark(repo)` は read-only。
+- **`Patch_AclEpochCounter`**: per-repo で counter を value 0 で seed(既存は非上書き=巻き戻し防止)+ `nemaki_conf` に
+  `(type)` Mango index。冪等(既存 counter 保持 / postIndex `exists` / PatchHistory dedupe)。patchContext.xml の
+  Path A(cmisPatchList)+ Path B(top-level bean)両方に登録。
+- **fail-closed staging**: **standalone bean。ACL write path から一切呼ばれない**(allocate の production caller ゼロを
+  grep で確認)。出荷しても ACL 挙動不変で、後続増分のために counter を用意するだけ。⚠ **永続フォーマット追加**:
+  新 record type `aclEpochCounter` + Mango index(reconcile キューと同様の nemaki_conf 追加。既存 view/2.4 持ち越し非タッチ)。
+- **検証**: 単体 `AclEpochCounterServiceTest` 5/5(id/overflow/corruption/引数)、実 CouchDB IT `AclEpochCounterServiceIT`
+  6/6(単調 allocate / 8並行→distinct gap-free {1..8} / 欠落 fail-closed 非再作成 / 負値 fail-closed / high-watermark
+  read無変更 / 巻き戻しなし)。CI: unit-tests リストに Test 追加、reconcile-it ジョブに IT 追加(required=true で fail-closed)。
+  実機: 再デプロイで patch が bedroom/canopy を value 0 で seed + Mango index 作成、atom 200、allocate 未配線を確認。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度

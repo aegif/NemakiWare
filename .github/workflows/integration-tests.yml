@@ -72,7 +72,7 @@ jobs:
       - name: Run unit tests
         run: |
           mvn test \
-            -Dtest='ResourceBaseCsrfProtectionTest,CanonicalImportServiceTest,WebhookServiceTest,WebhookConfigTest,WebhookConfigParserTest,WebhookDeliveryServiceTest,HttpWebhookDispatcherTest,WebhookEventMatcherTest,ChildEventBatchProcessorTest,LiteralTypeValidatorTest,SolrPredicateWalkerMultilingualTest,SolrQueryProcessorScanCapTest,SolrQueryProcessorAclFilterTest,SolrUtilRelationshipReadersTest,ACLExpanderTest,PrincipalServiceImplCycleTest,SearchIndexReconciliationSchedulerTest,SearchIndexReconciliationFenceGuardTest,RAGIndexingServiceImplPwcTest,RAGIndexingServiceImplAclUpdateTest,CsrfValidatorBrowserBindingTest,NavigationPaginationTest,FilesystemImporterTest,ImportExportResourceTest,SlackConnectorAdapterTest,TeamsConnectorAdapterTest,ChatworkConnectorAdapterTest,MattermostConnectorAdapterTest,NotionConnectorAdapterTest,SalesforceConnectorAdapterTest,BoxDropboxAdapterTest' \
+            -Dtest='ResourceBaseCsrfProtectionTest,CanonicalImportServiceTest,WebhookServiceTest,WebhookConfigTest,WebhookConfigParserTest,WebhookDeliveryServiceTest,HttpWebhookDispatcherTest,WebhookEventMatcherTest,ChildEventBatchProcessorTest,LiteralTypeValidatorTest,SolrPredicateWalkerMultilingualTest,SolrQueryProcessorScanCapTest,SolrQueryProcessorAclFilterTest,SolrUtilRelationshipReadersTest,ACLExpanderTest,PrincipalServiceImplCycleTest,SearchIndexReconciliationSchedulerTest,SearchIndexReconciliationFenceGuardTest,RAGIndexingServiceImplPwcTest,RAGIndexingServiceImplAclUpdateTest,AclEpochCounterServiceTest,CsrfValidatorBrowserBindingTest,NavigationPaginationTest,FilesystemImporterTest,ImportExportResourceTest,SlackConnectorAdapterTest,TeamsConnectorAdapterTest,ChatworkConnectorAdapterTest,MattermostConnectorAdapterTest,NotionConnectorAdapterTest,SalesforceConnectorAdapterTest,BoxDropboxAdapterTest' \
             -f core/pom.xml -Pdevelopment,opencmis-github-packages
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
@@ -281,7 +281,7 @@ jobs:
   # nemaki.test.couchdb.required=true, so an unreachable store FAILS the job
   # instead of silently skipping (no false green).
   reconcile-it:
-    name: Search-index ACL reconciliation IT (live CouchDB, 10 tests)
+    name: Search-index ACL reconciliation + ACL-epoch counter IT (live CouchDB)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -321,10 +321,10 @@ jobs:
           # (the Mango indexes the queue's claimDue/list use).
           COMPOSE_FILE=docker-compose-simple.yml bash "$GITHUB_WORKSPACE/scripts/ci-complete-setup.sh"
 
-      - name: Run reconciliation IT (fail if CouchDB unreachable)
+      - name: Run reconciliation + ACL-epoch counter IT (fail if CouchDB unreachable)
         run: |
           mvn test \
-            -Dtest='SearchIndexReconciliationServiceIT' \
+            -Dtest='SearchIndexReconciliationServiceIT,AclEpochCounterServiceIT' \
             -Dnemaki.test.couchdb.required=true \
             -Dnemaki.test.couchdb.url=http://localhost:5984 \
             -Dnemaki.test.couchdb.user=admin \

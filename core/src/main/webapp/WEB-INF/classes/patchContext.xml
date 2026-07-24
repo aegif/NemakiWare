@@ -297,6 +297,13 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- ACL-epoch counter (acl-epoch-fencing.md §2.1/§8, increment 1):
+				     seed acl-epoch-counter::{repo} at 0 if absent + (type) index. -->
+				<bean class="jp.aegif.nemaki.patch.Patch_AclEpochCounter">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 			</list>
 		</property>
 	</bean>
@@ -541,6 +548,13 @@
 		</property>
 	</bean>
 	<bean id="patch_SearchIndexReconcileV1Cleanup" class="jp.aegif.nemaki.patch.Patch_SearchIndexReconcileV1Cleanup">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+	<!-- Top-level bean so NemakiPatchInitializationListener.getBeansOfType() (Path B)
+	     also collects the ACL-epoch counter patch (registration symmetry, per RC4 R1). -->
+	<bean id="patch_AclEpochCounter" class="jp.aegif.nemaki.patch.Patch_AclEpochCounter">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>
