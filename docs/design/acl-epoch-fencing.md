@@ -453,3 +453,19 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
   conflict is not "exists"), validates an existing counter (throws → no PatchHistory on
   corruption), and never overwrites a valid one; the missing-counter error separates
   fresh-install bootstrap from live-repository recovery (`max+1`, never reseed).
+- **Increment 2 — post-commit finalization + crash-recovery scanner (§2.2/§3): DONE.**
+  `AclEpochState` (the 3 outbox states + content-doc field names) +
+  `AclEpochFinalizationService.finalizePending` (strict CAS: allocate once, commit to
+  `FINALIZED_NEEDS_RECONCILE` only while still `PENDING_EPOCH` with the SAME
+  `aclEpochMutationId`; a 409 re-reads and ABANDONS on a different mutation or an
+  already-finalized doc — never re-allocates, overwrites, or regresses; no JVM lock) +
+  `scan` (Mango `aclEpochState $in [PENDING,FINALIZED]` — a state-less doc is NEVER
+  selected; `PENDING → finalize`; `FINALIZED → counted but LEFT` because the enqueue/ACK
+  is a later increment; anomalies recorded + retained, never silently skipped;
+  bookmark-paged + capped). `Patch_AclEpochStateMangoIndex` adds the `(aclEpochState)`
+  index per content DB. **Fail-closed staging: standalone bean, NO scheduler / init /
+  cron; `scan`/`finalizePending` have ZERO production callers; it never touches Solr,
+  reconcile tasks, or the ACL cache, and never initializes a state-less document.**
+  Persistent-format additions (release-note them; view/2.4 carry-over untouched): new
+  content-DB document fields `aclEpochState`, `aclEpochMutationId`, `aclSourceEpoch`
+  (absent by default) + the `(aclEpochState)` content-DB Mango index.
