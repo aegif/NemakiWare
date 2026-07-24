@@ -90,4 +90,16 @@ public interface AclService {
 	 */
 	boolean reindexSearchIndexAclForObject(String repositoryId, String objectId);
 
+	/**
+	 * As {@link #reindexSearchIndexAclForObject(String, String)} but with a
+	 * cooperative-fencing lease guard: {@code leaseStillHeld} is polled before each
+	 * node's writes (it heartbeats/renews the reconciliation lease and returns
+	 * {@code false} once the lease has been lost to a reclaiming worker). When it
+	 * returns {@code false} the re-drive ABORTS (returns {@code false}, not clean) so
+	 * a worker that outlived its lease stops overwriting the reclaimer's fresher
+	 * readers. A {@code null} guard disables fencing (e.g. a short manual retry).
+	 */
+	boolean reindexSearchIndexAclForObject(String repositoryId, String objectId,
+			java.util.function.BooleanSupplier leaseStillHeld);
+
 }

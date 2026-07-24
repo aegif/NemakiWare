@@ -443,8 +443,24 @@ admin surface still had holes. All fixed.
 - **[P3] Off-by-one + boundaries.** `maxAttempts` now means exactly N re-drives; a
   fresh enqueue resets the attempt count (a new event gets a full retry budget); and
   non-positive / invalid config values are clamped to defaults with a WARN.
-- **Verified**: `SearchIndexReconciliationSchedulerTest` 7 (added two off-by-one
-  boundary cases); live against real CouchDB — the tri-state probe, admin
+- **[fencing residual] Cooperative lease fencing.** The long-subtree × lease-expiry
+  stale-writer window (previously self-healing but transient) is now closed: the
+  scheduler passes a lease guard the re-drive polls before each node's writes — it
+  heartbeats/renews the lease (CAS) so a legitimately long re-drive keeps it, and
+  returns `false` once the lease has been reclaimed (rev changed), at which point the
+  re-drive ABORTS (the reclaiming worker owns it). No index-side generation token is
+  needed. Verified in the IT (`renewDetectsLeaseLoss`).
+- **[test residual] Real-CouchDB integration tests.** `SearchIndexReconciliationServiceIT`
+  (gated on a reachable `nemaki_conf`, skipped offline; each test isolated under a
+  unique repo prefix) — 8 cases against a live CouchDB: deterministic-id dedupe, an
+  8-thread concurrent enqueue collapsing to one document, CAS claim exclusivity, a
+  6-thread concurrent claim with exactly one winner, lease-loss detection, the
+  complete-CAS-fails-after-a-concurrent-enqueue case, the Mango-selector status
+  filter, and metrics. Not in the default surefire run (opt-in via `-Dtest`, like the
+  OData ITs).
+- **Verified**: `SearchIndexReconciliationSchedulerTest` 7 (two off-by-one boundary
+  cases) + `SearchIndexReconciliationServiceIT` 8 (live CouchDB); the focused suite
+  and TCK QueryTestGroup 6/6 unregressed; live — the tri-state probe, admin
   claim-conflict (active lease → 409), Mango-selector status filter, fail-soft
   metrics, and the v1-cleanup patch.
 

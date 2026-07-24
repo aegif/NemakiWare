@@ -56,7 +56,7 @@ public class SearchIndexReconciliationSchedulerTest {
     public void cleanReDriveCompletesTask() {
         SearchIndexAclReindexTask t = task("sir-1", "obj-1", 0);
         when(svc.claimDue(anyInt(), anyString(), anyLong())).thenReturn(List.of(t));
-        when(acl.reindexSearchIndexAclForObject("bedroom", "obj-1")).thenReturn(true);
+        when(acl.reindexSearchIndexAclForObject(eq("bedroom"), eq("obj-1"), org.mockito.ArgumentMatchers.any())).thenReturn(true);
         when(svc.complete(t)).thenReturn(true);
 
         scheduler.poll();
@@ -70,7 +70,7 @@ public class SearchIndexReconciliationSchedulerTest {
     public void failingUnderCapIsRetried() {
         SearchIndexAclReindexTask t = task("sir-2", "obj-2", 1); // under default max (10)
         when(svc.claimDue(anyInt(), anyString(), anyLong())).thenReturn(List.of(t));
-        when(acl.reindexSearchIndexAclForObject("bedroom", "obj-2")).thenReturn(false);
+        when(acl.reindexSearchIndexAclForObject(eq("bedroom"), eq("obj-2"), org.mockito.ArgumentMatchers.any())).thenReturn(false);
 
         scheduler.poll();
 
@@ -83,7 +83,7 @@ public class SearchIndexReconciliationSchedulerTest {
     public void failingAtCapIsMarkedFailed() {
         SearchIndexAclReindexTask t = task("sir-3", "obj-3", 10); // == default maxAttempts
         when(svc.claimDue(anyInt(), anyString(), anyLong())).thenReturn(List.of(t));
-        when(acl.reindexSearchIndexAclForObject("bedroom", "obj-3")).thenReturn(false);
+        when(acl.reindexSearchIndexAclForObject(eq("bedroom"), eq("obj-3"), org.mockito.ArgumentMatchers.any())).thenReturn(false);
 
         scheduler.poll();
 
@@ -98,7 +98,7 @@ public class SearchIndexReconciliationSchedulerTest {
         // (9+1)>=10 -> markFailed. So exactly maxAttempts(=10) re-drives, no off-by-one.
         SearchIndexAclReindexTask ninth = task("sir-9", "obj-9", 8); // 9th drive
         when(svc.claimDue(anyInt(), anyString(), anyLong())).thenReturn(List.of(ninth));
-        when(acl.reindexSearchIndexAclForObject("bedroom", "obj-9")).thenReturn(false);
+        when(acl.reindexSearchIndexAclForObject(eq("bedroom"), eq("obj-9"), org.mockito.ArgumentMatchers.any())).thenReturn(false);
         scheduler.poll();
         verify(svc).retryLater(eq(ninth), anyLong());   // 9th drive -> still retried
         verify(svc, never()).markFailed(any(), any());
@@ -108,7 +108,7 @@ public class SearchIndexReconciliationSchedulerTest {
     public void boundaryTenthDriveIsMarkedFailed() {
         SearchIndexAclReindexTask tenth = task("sir-10", "obj-10", 9); // 10th drive
         when(svc.claimDue(anyInt(), anyString(), anyLong())).thenReturn(List.of(tenth));
-        when(acl.reindexSearchIndexAclForObject("bedroom", "obj-10")).thenReturn(false);
+        when(acl.reindexSearchIndexAclForObject(eq("bedroom"), eq("obj-10"), org.mockito.ArgumentMatchers.any())).thenReturn(false);
         scheduler.poll();
         verify(svc).markFailed(eq(tenth), any());       // 10th drive -> FAILED (exactly maxAttempts)
         verify(svc, never()).retryLater(any(), anyLong());

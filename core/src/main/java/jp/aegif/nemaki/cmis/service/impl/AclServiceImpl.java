@@ -399,7 +399,7 @@ public class AclServiceImpl implements AclService {
 				// ContentServiceImpl.move; re-index only the inheriting descendants.
 				// syncConfirm=false: async best-effort with enqueue-on-failure.
 				updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,
-						new java.util.HashSet<>(), true, reconcile, null, false);
+						new java.util.HashSet<>(), true, reconcile, null, false, null);
 				log.info("Moved-subtree search index ACL refresh triggered for: " + content.getId());
 			} catch (Exception e) {
 				log.warn("Failed to refresh moved-subtree search index ACL for " + content.getId()
@@ -438,7 +438,7 @@ public class AclServiceImpl implements AclService {
 			try {
 				// syncConfirm=false: async best-effort with enqueue-on-failure.
 				updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,
-						new java.util.HashSet<>(), true, reconcile, null, false);
+						new java.util.HashSet<>(), true, reconcile, null, false, null);
 				log.info("Search index ACL update triggered for: " + content.getId());
 			} catch (Exception e) {
 				log.warn("Failed to update search index ACL for " + content.getId() + ": " + e.getMessage());
@@ -464,7 +464,19 @@ public class AclServiceImpl implements AclService {
 	 *         search index); {@code false} if a failure was hit and the task should
 	 *         be retried later.
 	 */
+	/** Thrown internally when the reconciliation lease is lost mid re-drive (cooperative fencing). */
+	private static final class LeaseLostException extends RuntimeException {
+		LeaseLostException() { super("reconciliation lease lost"); }
+	}
+
+	@Override
 	public boolean reindexSearchIndexAclForObject(String repositoryId, String objectId) {
+		return reindexSearchIndexAclForObject(repositoryId, objectId, null);
+	}
+
+	@Override
+	public boolean reindexSearchIndexAclForObject(String repositoryId, String objectId,
+			java.util.function.BooleanSupplier leaseStillHeld) {
 		// EVICT FIRST, then read authoritatively. A stale JVM cache (e.g. an ACL
 		// change made on another replica) must not be re-indexed as if fresh: if we
 		// read before evicting, the already-fetched Java object still holds the OLD
@@ -522,8 +534,15 @@ public class AclServiceImpl implements AclService {
 		java.util.concurrent.atomic.AtomicInteger failures = new java.util.concurrent.atomic.AtomicInteger(0);
 		// syncConfirm=true: writes are forced synchronous so a Solr failure is counted
 		// (the task is only completed/deleted when the re-drive is genuinely clean).
-		updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,
-				new java.util.HashSet<>(), false, null, failures, true);
+		try {
+			updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,
+					new java.util.HashSet<>(), false, null, failures, true, leaseStillHeld);
+		} catch (LeaseLostException e) {
+			// Lost the lease to a reclaiming worker mid-flight — stop writing and let
+			// the reclaimer own it (not clean, so the task is not completed here).
+			log.info("Reconcile: lease lost for " + objectId + " — aborting re-drive (reclaimer owns it)");
+			return false;
+		}
 		return failures.get() == 0;
 	}
 
@@ -551,9 +570,18 @@ public class AclServiceImpl implements AclService {
 			jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil solrUtil,
 			java.util.Set<String> visitedIds, boolean isRoot,
 			jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconcile,
-			java.util.concurrent.atomic.AtomicInteger failureCounter, boolean syncConfirm) {
+			java.util.concurrent.atomic.AtomicInteger failureCounter, boolean syncConfirm,
+			java.util.function.BooleanSupplier leaseStillHeld) {
 		if (content == null || visitedIds.contains(content.getId())) {
 			return;
+		}
+		// Cooperative fencing: before writing this node, confirm we still hold the
+		// reconciliation lease (it also renews the lease when it is running low). If
+		// it has been reclaimed by another worker, abort the whole re-drive so we do
+		// not overwrite the reclaimer's fresher readers. Bounds a lease-lost worker to
+		// at most the writes it already started before this checkpoint.
+		if (leaseStillHeld != null && !leaseStillHeld.getAsBoolean()) {
+			throw new LeaseLostException();
 		}
 		visitedIds.add(content.getId());
 
@@ -643,7 +671,7 @@ public class AclServiceImpl implements AclService {
 					try {
 						if (contentService.getAclInheritedWithDefault(repositoryId, child)) {
 							updateSearchIndexACLRecursively(repositoryId, child, ragService, expander,
-									solrUtil, visitedIds, false, reconcile, failureCounter, syncConfirm);
+									solrUtil, visitedIds, false, reconcile, failureCounter, syncConfirm, leaseStillHeld);
 						}
 					} catch (Exception e) {
 						log.warn("Failed to refresh search-index ACL for child " + child.getId()

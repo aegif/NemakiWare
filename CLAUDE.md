@@ -804,6 +804,20 @@ v2 のキュー層 CAS は正しかったが、レビューで**再実行(re-dri
 - **検証**: `SearchIndexReconciliationSchedulerTest` 7件(境界 off-by-one 2件追加)。実 CouchDB で三値判定・
   claim 競合(active LEASED→409)・list status filter・metrics fail-soft・v1 cleanup patch を検証(下記)。
 
+**reconciliation キュー — 残余対応 (cooperative fencing + 実 CouchDB 統合テスト)**:
+- **索引側 fencing (残余1)**: 長 subtree × lease 超過で expired lease が再取得され旧 worker が stale 書込みを
+  続ける窓を、**cooperative fencing** で閉塞。scheduler は各ノード書込み前に `renewLeaseIfNeeded` guard を渡し、
+  (a) lease が半分を切ると CAS で延長(heartbeat、正当な長処理は lease を失わない)、(b) 別 worker に再取得され
+  rev が変わっていれば CAS 失敗で `false` を返す → re-drive は `LeaseLostException` で**中断**(not-clean、reclaimer が
+  所有)。lease を失った worker が書き続けない。索引ドキュメント自体への generation token 埋め込み(厳密拒否)は
+  過大なので不採用、cooperative 方式(レビュー提示の選択肢)を採用。
+- **実 CouchDB 統合テスト (残余2)**: `SearchIndexReconciliationServiceIT` を追加(未起動なら `assumeTrue` で skip、
+  各テストは一意 repo prefix で隔離+cleanup)。**8件**: deterministic-id dedupe、**8スレッド並行 enqueue→1 文書**、
+  CAS claim 排他、**6スレッド並行 claim→1勝者**、lease 喪失検知(stale rev→renew false)、処理中 enqueue 後の
+  complete CAS 失敗(新 PENDING 生存)、list status filter(Mango selector)、metrics。実行:
+  `mvn -o test -Dtest=SearchIndexReconciliationServiceIT -Dnemaki.test.couchdb.url=http://localhost:5984 ...`
+  (surefire 既定の `*Test` パターン外なので通常ビルドでは走らず、明示実行のみ = OData IT と同方式)。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度
