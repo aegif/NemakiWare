@@ -187,6 +187,30 @@ public class SearchIndexReconciliationService {
         return deleteCas(task);
     }
 
+    /**
+     * Heartbeat: extend a held lease when it is running low, so a legitimately long
+     * re-drive of a large subtree does not lose its lease mid-flight. CAS on the
+     * current rev — if another worker has reclaimed the (expired) lease the rev has
+     * changed and the renewal fails, returning {@code false} so the caller
+     * ({@link jp.aegif.nemaki.cmis.service.AclService#reindexSearchIndexAclForObject})
+     * STOPS writing (cooperative fencing: a worker that lost its lease must not keep
+     * overwriting the reclaiming worker's fresher readers). Returns {@code true}
+     * while still comfortably held (no write) or after a successful renewal.
+     */
+    public boolean renewLeaseIfNeeded(SearchIndexAclReindexTask task, long leaseMillis) {
+        if (task == null) {
+            return false;
+        }
+        long now = System.currentTimeMillis();
+        // Renew only when less than half the lease remains (cheap no-op otherwise).
+        if (task.getLeaseExpiresAt() - now > Math.max(1000L, leaseMillis) / 2) {
+            return true;
+        }
+        task.setLeaseExpiresAt(now + Math.max(1000L, leaseMillis));
+        task.setUpdatedAt(now);
+        return putCas(task) != null;
+    }
+
     /** Release the lease and reschedule with backoff (CAS on the claim rev). */
     public boolean retryLater(SearchIndexAclReindexTask task, long backoffMillis) {
         long now = System.currentTimeMillis();
