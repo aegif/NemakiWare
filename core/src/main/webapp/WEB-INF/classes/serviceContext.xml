@@ -418,6 +418,14 @@
         </property>
     </bean>
 
+    <!-- ACL-epoch counter (design acl-epoch-fencing.md §2.1/§8, increment 1).
+         Standalone: seeded by Patch_AclEpochCounter, NOT yet called from any ACL write
+         path (fail-closed staging until the ACL-UPDATE increment). -->
+    <bean id="aclEpochCounterService"
+          class="jp.aegif.nemaki.epoch.AclEpochCounterService">
+        <property name="connectorPool" ref="connectorPool" />
+    </bean>
+
     <!-- Search-index ACL reconciliation: durable CouchDB queue + leader-gated poller -->
     <bean id="searchIndexReconciliationService"
           class="jp.aegif.nemaki.reconcile.SearchIndexReconciliationService">
