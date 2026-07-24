@@ -102,4 +102,14 @@ public interface AclService {
 	boolean reindexSearchIndexAclForObject(String repositoryId, String objectId,
 			java.util.function.BooleanSupplier leaseStillHeld);
 
+	/**
+	 * Re-drive handler for a {@code RAG_PURGE} reconciliation task: remove the
+	 * object's RAG block (a Private Working Copy must never be RAG-indexed) and
+	 * VERIFY it is gone. Returns {@code true} only when the block is confirmed
+	 * absent; any delete failure, verification failure, or inability to verify
+	 * returns {@code false} so the task is retried (never completed on an
+	 * unverified delete).
+	 */
+	boolean purgeRagBlockForObject(String repositoryId, String objectId);
+
 }

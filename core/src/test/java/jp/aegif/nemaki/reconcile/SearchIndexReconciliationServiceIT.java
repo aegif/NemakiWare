@@ -140,6 +140,26 @@ public class SearchIndexReconciliationServiceIT {
         assertEquals(1, count, "concurrent enqueues for one object must not create duplicates");
     }
 
+    @Test
+    void operationMergePurgeWinsInBothDirections() {
+        // ACL first, then PURGE → task upgrades to RAG_PURGE.
+        svc.enqueue(repo, "objOp1", SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE);
+        svc.enqueue(repo, "objOp1", SearchIndexAclReindexTask.Reason.PWC_PURGE_FAILURE,
+                SearchIndexAclReindexTask.Operation.RAG_PURGE);
+        SearchIndexAclReindexTask t1 = svc.getByTaskId(taskIdFor("objOp1"));
+        assertEquals(SearchIndexAclReindexTask.Operation.RAG_PURGE, t1.getEffectiveOperation(),
+                "a purge request must upgrade a pending ACL task");
+
+        // PURGE first, then ACL → PURGE must NOT be downgraded (the block would
+        // survive an ACL reindex).
+        svc.enqueue(repo, "objOp2", SearchIndexAclReindexTask.Reason.PWC_PURGE_FAILURE,
+                SearchIndexAclReindexTask.Operation.RAG_PURGE);
+        svc.enqueue(repo, "objOp2", SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE);
+        SearchIndexAclReindexTask t2 = svc.getByTaskId(taskIdFor("objOp2"));
+        assertEquals(SearchIndexAclReindexTask.Operation.RAG_PURGE, t2.getEffectiveOperation(),
+                "a later ACL event must not downgrade a pending purge");
+    }
+
     // ── CAS claim exclusivity ──────────────────────────────────────
 
     @Test

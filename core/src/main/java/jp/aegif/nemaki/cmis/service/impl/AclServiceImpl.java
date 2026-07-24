@@ -469,6 +469,37 @@ public class AclServiceImpl implements AclService {
 		LeaseLostException() { super("reconciliation lease lost"); }
 	}
 
+	@Override
+	public boolean purgeRagBlockForObject(String repositoryId, String objectId) {
+		RAGIndexingService ragService = getRagIndexingService();
+		if (ragService == null) {
+			// Cannot even verify — unknown ≠ purged. Keep the task (retry / FAILED
+			// keeps it visible to operators).
+			log.warn("RAG purge: RAGIndexingService unavailable for " + objectId + " — cannot purge/verify");
+			return false;
+		}
+		try {
+			// deleteDocument silently no-ops when RAG is disabled — the verification
+			// below catches that (block still present -> false -> task retained).
+			ragService.deleteDocument(repositoryId, objectId);
+		} catch (Exception e) {
+			log.warn("RAG purge: delete failed for " + objectId + ": " + e.getMessage());
+			return false;
+		}
+		try {
+			boolean stillThere = ragService.isDocumentInRagIndex(repositoryId, objectId);
+			if (stillThere) {
+				log.warn("RAG purge: block still present after delete for " + objectId + " — will retry");
+				return false;
+			}
+			return true; // confirmed absent
+		} catch (Exception e) {
+			// Unknown ≠ absent — never complete an unverified purge.
+			log.warn("RAG purge: absence verification failed for " + objectId + ": " + e.getMessage());
+			return false;
+		}
+	}
+
 	/**
 	 * Cooperative-fencing checkpoint: poll the (latched) lease guard before an index
 	 * write. Throwing {@link LeaseLostException} aborts the whole re-drive so a worker

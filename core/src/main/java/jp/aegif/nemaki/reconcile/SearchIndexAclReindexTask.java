@@ -43,7 +43,26 @@ public class SearchIndexAclReindexTask {
         public static final String RELATIONSHIP_REFRESH_FAILURE = "RELATIONSHIP_REFRESH_FAILURE";
         public static final String INDEX_WRITE_FAILURE = "INDEX_WRITE_FAILURE";
         public static final String CACHE_EVICTION_FAILURE = "CACHE_EVICTION_FAILURE";
+        public static final String PWC_PURGE_FAILURE = "PWC_PURGE_FAILURE";
         private Reason() {}
+    }
+
+    /**
+     * What the re-drive must DO for this task. The scheduler and the admin manual
+     * retry DISPATCH on this (they must not blindly ACL-reindex: an ACL re-index of
+     * a PWC would leave — or even refresh — the very RAG block a purge task exists
+     * to remove).
+     */
+    public static final class Operation {
+        /** Recompute + rewrite the object's search-index ACL (the default). */
+        public static final String ACL_REINDEX = "ACL_REINDEX";
+        /**
+         * Remove the object's RAG block and verify it is gone (Private Working
+         * Copies must never be RAG-indexed; a failed best-effort delete becomes
+         * this durable task).
+         */
+        public static final String RAG_PURGE = "RAG_PURGE";
+        private Operation() {}
     }
 
     /** Opaque handle for the admin API (stable across updates); the CouchDB _id is deterministic. */
@@ -51,6 +70,14 @@ public class SearchIndexAclReindexTask {
     private String repositoryId;
     private String objectId;
     private String reason;
+    /**
+     * {@link Operation} for the re-drive. Absent on pre-existing documents →
+     * treated as {@link Operation#ACL_REINDEX} (backward compatible). On a merge
+     * (enqueue onto an existing task for the same object) {@code RAG_PURGE} takes
+     * precedence — a purge must not be downgraded back to an ACL reindex that
+     * would keep the block alive.
+     */
+    private String operation;
     private int attempts;
     private String status = Status.PENDING;
     /** Bumped on every new enqueue event; the ACK only succeeds if the rev (hence generation) is unchanged. */
@@ -82,6 +109,15 @@ public class SearchIndexAclReindexTask {
 
     public String getReason() { return reason; }
     public void setReason(String reason) { this.reason = reason; }
+
+    public String getOperation() { return operation; }
+    public void setOperation(String operation) { this.operation = operation; }
+
+    /** The effective operation: absent/unknown (pre-existing docs) = ACL_REINDEX. */
+    @JsonIgnore
+    public String getEffectiveOperation() {
+        return Operation.RAG_PURGE.equals(operation) ? Operation.RAG_PURGE : Operation.ACL_REINDEX;
+    }
 
     public int getAttempts() { return attempts; }
     public void setAttempts(int attempts) { this.attempts = attempts; }

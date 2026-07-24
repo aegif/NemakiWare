@@ -58,6 +58,20 @@ public interface RAGIndexingService {
     void deleteDocument(String repositoryId, String documentId) throws RAGIndexingException;
 
     /**
+     * Whether ANY RAG doc (block parent or chunk) still exists for this document.
+     * Used by the durable {@code RAG_PURGE} re-drive to VERIFY a delete actually
+     * removed the block — {@link #deleteDocument} silently no-ops when RAG is
+     * disabled, and a verify-less purge would complete its task with the block
+     * still present. Deliberately does NOT check {@code isEnabled()}: a leftover
+     * block must be detectable (and the purge retried/kept visible) even if RAG
+     * was disabled after the block was written.
+     *
+     * @throws RAGIndexingException if Solr cannot be queried (caller must treat as
+     *         "unknown" and retry, never as absent)
+     */
+    boolean isDocumentInRagIndex(String repositoryId, String documentId) throws RAGIndexingException;
+
+    /**
      * Update RAG index when document ACL changes.
      * Re-indexes the readers field without re-embedding.
      *

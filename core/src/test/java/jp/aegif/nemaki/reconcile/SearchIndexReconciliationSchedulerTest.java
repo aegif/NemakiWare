@@ -136,4 +136,52 @@ public class SearchIndexReconciliationSchedulerTest {
         String withColon = SearchIndexAclReindexTask.deterministicId("bedroom", "a:b");
         assertTrue(withColon.endsWith("::a%3Ab"), "colon in objectId must be percent-encoded");
     }
+
+    // ── operation dispatch (RAG_PURGE must never be handled as an ACL reindex) ──
+
+    @Test
+    public void ragPurgeTaskIsPurgedNotAclReindexed() {
+        SearchIndexAclReindexTask t = task("sir-p1", "pwc-1", 0);
+        t.setOperation(SearchIndexAclReindexTask.Operation.RAG_PURGE);
+        when(svc.claimDue(anyInt(), anyString(), anyLong())).thenReturn(List.of(t));
+        when(acl.purgeRagBlockForObject("bedroom", "pwc-1")).thenReturn(true);
+        when(svc.complete(t)).thenReturn(true);
+
+        scheduler.poll();
+
+        verify(acl).purgeRagBlockForObject("bedroom", "pwc-1");
+        // The scheduler must NOT run the ACL reindex for a purge task — that would
+        // leave (or even refresh) the very block the purge exists to remove.
+        verify(acl, never()).reindexSearchIndexAclForObject(anyString(), anyString(), any());
+        verify(svc).complete(t);
+    }
+
+    @Test
+    public void failedRagPurgeIsRetriedNotCompleted() {
+        SearchIndexAclReindexTask t = task("sir-p2", "pwc-2", 0);
+        t.setOperation(SearchIndexAclReindexTask.Operation.RAG_PURGE);
+        when(svc.claimDue(anyInt(), anyString(), anyLong())).thenReturn(List.of(t));
+        when(acl.purgeRagBlockForObject("bedroom", "pwc-2")).thenReturn(false);
+
+        scheduler.poll();
+
+        verify(svc, never()).complete(t);
+        verify(svc).retryLater(eq(t), anyLong());
+    }
+
+    @Test
+    public void absentOperationDefaultsToAclReindexBackwardCompatible() {
+        // Pre-existing queue documents have no operation field at all.
+        SearchIndexAclReindexTask t = task("sir-p3", "obj-old", 0);
+        assertEquals(SearchIndexAclReindexTask.Operation.ACL_REINDEX, t.getEffectiveOperation(),
+                "absent operation must mean ACL_REINDEX (backward compatibility)");
+        when(svc.claimDue(anyInt(), anyString(), anyLong())).thenReturn(List.of(t));
+        when(acl.reindexSearchIndexAclForObject(eq("bedroom"), eq("obj-old"), any())).thenReturn(true);
+        when(svc.complete(t)).thenReturn(true);
+
+        scheduler.poll();
+
+        verify(acl).reindexSearchIndexAclForObject(eq("bedroom"), eq("obj-old"), any());
+        verify(acl, never()).purgeRagBlockForObject(anyString(), anyString());
+    }
 }

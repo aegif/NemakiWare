@@ -81,6 +81,20 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
     private final ACLExpander aclExpander;
     private final SolrClientProvider solrClientProvider;
 
+    /**
+     * Durable reconciliation queue (XML-wired bean; optional so RAG-only test
+     * contexts without it still start). When present, a FAILED best-effort PWC
+     * block delete becomes a durable {@code RAG_PURGE} task instead of a swallowed
+     * WARN — a stale pre-existing PWC block must not silently survive.
+     */
+    @Autowired(required = false)
+    private jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconciliationService;
+
+    /** Test/DI hook. */
+    void setReconciliationService(jp.aegif.nemaki.reconcile.SearchIndexReconciliationService s) {
+        this.reconciliationService = s;
+    }
+
     @Autowired
     public RAGIndexingServiceImpl(
             RAGConfig ragConfig,
@@ -121,11 +135,31 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         if (Boolean.TRUE.equals(document.isPrivateWorkingCopy())) {
             log.debug("RAG indexDocument: skipping Private Working Copy {} (owner-only draft, excluded from RAG)",
                     document.getId());
+            // Best-effort immediate delete of any stale block a prior build indexed.
+            // A FAILURE here must NOT be treated as success (a WARN-and-return would
+            // leave the PWC block — the seed oracle — alive forever): it becomes a
+            // durable RAG_PURGE reconciliation task, whose handler deletes AND
+            // verifies absence, retrying until confirmed.
+            boolean purgeFailed;
             try {
                 deleteDocument(repositoryId, document.getId());
+                purgeFailed = false;
             } catch (Exception e) {
-                log.warn("RAG indexDocument: failed to remove stale RAG block for PWC {}: {}",
+                log.warn("RAG indexDocument: failed to remove stale RAG block for PWC {}: {} — enqueueing durable purge",
                         document.getId(), e.getMessage());
+                purgeFailed = true;
+            }
+            if (purgeFailed) {
+                if (reconciliationService != null) {
+                    reconciliationService.enqueue(repositoryId, document.getId(),
+                            jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.PWC_PURGE_FAILURE,
+                            jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Operation.RAG_PURGE);
+                } else {
+                    // No queue wired (minimal test context) — surface loudly; the block
+                    // survives until the next reindex attempt.
+                    log.error("RAG indexDocument: PWC block delete failed for {} and no reconciliation "
+                            + "queue is wired — stale PWC block persists", document.getId());
+                }
             }
             return;
         }
@@ -214,6 +248,25 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             log.info("RAG deleted document and chunks: {} (ragId={})", documentId, ragId);
         } catch (Exception e) {
             throw new RAGIndexingException("Failed to delete document from RAG index: " + documentId, e);
+        }
+    }
+
+    @Override
+    public boolean isDocumentInRagIndex(String repositoryId, String documentId) throws RAGIndexingException {
+        try {
+            SolrClient solrClient = solrClientProvider.getClient();
+            String ragId = toRagId(documentId);
+            String sanitizedRagId = SolrQuerySanitizer.escape(ragId);
+            SolrQuery q = new SolrQuery();
+            // _root_ matches the block parent AND every chunk (deleteDocument deletes
+            // by the same key), so a non-zero count means SOMETHING survived.
+            q.setQuery("_root_:" + sanitizedRagId);
+            q.setRows(0);
+            SolrDocumentList results = solrClient.query("nemaki", q).getResults();
+            return results != null && results.getNumFound() > 0;
+        } catch (Exception e) {
+            // Unknown ≠ absent: the caller must retry, not complete.
+            throw new RAGIndexingException("Failed to verify RAG block absence for: " + documentId, e);
         }
     }
 
