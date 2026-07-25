@@ -1450,6 +1450,36 @@ scheduler/init/cron なし・**書込みを一切行わない** read-only)。
   writer の empty/null 拒否は backstop であって主保証ではない(継承 grant を1つ落としても非空のまま)ことも明記。
 - **検証**: IT **20/20**、epoch unit+IT **175/175**。
 
+**増分4c: §5.2 の over-claim 訂正 + 配線ゲートの明文化 + readers 側計画(Option A)の確定**:
+- **虚偽記述の訂正**: §5.2 #3 に「不読祖先**/principal** は throw」と書いていたが、**祖先側しか成立していない**。
+  `ACLExpander.addReaderFromPrincipal` は user でも group でも解決できなければ**黙って return** し、principal DAO は
+  読取**障害**も削除と同じ `null` に潰す。つまり一時的な DAO 障害で readers が縮み、それが成功として書かれる。
+  性質は over-grant ではなく **under-grant(可用性)** で現行本番にも存在するが、**閉じていない事実**を文書が偽ってはならない。
+  **恒久残余にせず配線ゲート**として追跡する形に訂正。
+- **配線ゲートを5項目として明文化**: outbox ACK / migration(初期 `effective_acl_epoch`。無いと 4a により**全 ACL 更新が
+  fail-closed throw**) / `content_incarnation` + content writer fence / §5.1 quarantine 運用契約 / **principal tri-state**。
+- **readers 側は Option A を採用**(設計 §5.3)。`ReadersComputer` SPI は「authoritative walk が ACL を持たない」ことの帰結で、
+  cache-bypass を**強制不能な契約**に変えてしまう設計の匂い。**権威ある読取は1回・投影は2つ(epoch / readers)**に統一する。
+  Option B(cache 外で再読)は cache は直せても**走査が2本**残り、依存集合の乖離は増分3b と同型なので却下。
+  - **5R**: ACL semantics を純関数化(merge / relationship union / token 展開)し、既存3経路
+    (`calculateAclInternal` / `expandToReaders` / `SolrUtil.relationshipReaders`)を1実装へ。**挙動変更ゼロ**、
+    golden 差分で担保。5R-a(ハーネス+コーパス+3経路交差レポート) / 5R-b(抽出)に分割。
+    - **3経路が既に食い違っていた場合の権威は `calculateAclInternal`**(認可の本線)。差分は**明示の挙動収束コミット**として
+      5R-b の**前**に出す(抽出に紛れ込ませると「golden 不動」が自己矛盾する)。
+    - **relationship に新しい意味論を足さない**。現行は self の local ACL を使わず endpoint union のみ。`ownAces` を API に
+      残す場合は**常に空/無視**と明記する。
+    - **golden の範囲は「既知 principal・安定 DAO」に限定**。`UNAVAILABLE → throw` は **5T の挙動変更**として別 IT で固定し、
+      5R の golden に障害注入を混ぜない。
+    - `getAclInheritedWithDefault` の if/else が**両分岐同一**で `capability.extended.permission.inheritance.toplevel` が
+      **効いていない**件は、5R では**温存**(直すと挙動変更で golden が壊れる)。別起票。
+  - **5T**: `PrincipalResolver` tri-state。strict(索引/fenced writer)は UNAVAILABLE で throw・NOT_FOUND は omit、
+    非 strict(CMIS ランタイム)は現行どおり omit(祖先で採った切り分けと同型)。
+  - **5S**: Snapshot が**merge 前の生 local ACL**を保持し、readers を同一 chain・同一 `_rev` から算出。
+    **SPI と §5.2 を削除**(強制不能な契約が構造的保証に置き換わるため)。**共有 merge を分岐させると
+    `calculateAcl` と `Snapshot.readers` が食い違う** mutation IT を必須に。cache poisoning テストは**書かない**
+    (cache を一度も触らない設計なので、呼んでいないコードを検証する空振りになる)。
+- **本番配線は引き続き NO-GO**。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度
