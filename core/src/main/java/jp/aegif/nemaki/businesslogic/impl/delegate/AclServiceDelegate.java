@@ -70,8 +70,7 @@ public class AclServiceDelegate {
 			boolean isRootContent = contentService.isRoot(repositoryId, content);
 
 			if (!isRootContent && iht) {
-				List<Ace> aces = new ArrayList<Ace>();
-				List<Ace> result = calculateAclInternal(repositoryId, aces, content, strict);
+				List<Ace> result = calculateAclInternal(repositoryId, content, strict);
 
 				acl = new Acl();
 				for (Ace r : result) {
@@ -122,8 +121,7 @@ public class AclServiceDelegate {
 			boolean isRootContent = contentService.isRoot(repositoryId, content);
 
 			if (!isRootContent && iht) {
-				List<Ace> aces = new ArrayList<Ace>();
-				List<Ace> calcResult = calculateAclInternal(repositoryId, aces, content);
+				List<Ace> calcResult = calculateAclInternal(repositoryId, content);
 
 				acl = new Acl();
 				for (Ace r : calcResult) {
@@ -145,51 +143,60 @@ public class AclServiceDelegate {
 		return result;
 	}
 
-	private List<Ace> calculateAclInternal(String repositoryId, List<Ace> result, Content content) {
-		return calculateAclInternal(repositoryId, result, content, false);
+	private List<Ace> calculateAclInternal(String repositoryId, Content content) {
+		return calculateAclInternal(repositoryId, content, false);
 	}
 
-	private List<Ace> calculateAclInternal(String repositoryId, List<Ace> result, Content content, boolean strict) {
-		Acl contentAcl = content.getAcl();
-		List<Ace> aces = null;
-		if (contentAcl == null) {
-			log.error("Invalid Acl, content ACL is null! [ID=" + content.getId() + "]" + content.getName());
-			aces = new ArrayList<Ace>();
-		} else {
-			aces = contentAcl.getLocalAces();
+	private List<Ace> calculateAclInternal(String repositoryId, Content content, boolean strict) {
+		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
+		return AclSemantics.effectiveAces(new CmisChainNode(repositoryId, content), strict,
+				info.getPrincipalIdAnyone(), info.getPrincipalIdAnonymous());
+	}
+
+	/**
+	 * The CMIS-runtime view of one inheritance-chain node (design §5.3, increment 5S).
+	 *
+	 * <p>The TRAVERSAL stays here — a parent is resolved lazily through {@code getFolder}, which
+	 * goes via the CACHED content DAO, exactly as before — while the SHAPE of the recursion lives
+	 * in {@link AclSemantics}. The ACL-epoch side supplies the same interface over documents it
+	 * read authoritatively, so the two sides cannot disagree about when inheritance stops.
+	 *
+	 * <p>{@code getFolder} collapses a genuine 404 and a transient read error into null; that is
+	 * why {@link AclSemantics#effectiveAces} takes {@code strict}.
+	 */
+	private final class CmisChainNode implements AclSemantics.ChainNode {
+		private final String repositoryId;
+		private final Content content;
+
+		CmisChainNode(String repositoryId, Content content) {
+			this.repositoryId = repositoryId;
+			this.content = content;
 		}
 
-		if (contentService.isRoot(repositoryId, content) || !getAclInheritedWithDefault(repositoryId, content)) {
-			List<Ace> rootAces = new ArrayList<Ace>();
+		@Override public String id() { return content.getId(); }
 
-			for (Ace ace : aces) {
-				Ace rootAce = AclSemantics.deepCopy(ace);
-				rootAce.setDirect(true);
-				rootAces.add(rootAce);
+		@Override public List<Ace> localAces() {
+			Acl contentAcl = content.getAcl();
+			if (contentAcl == null) {
+				log.error("Invalid Acl, content ACL is null! [ID=" + content.getId() + "]" + content.getName());
+				return new ArrayList<Ace>();
 			}
-			return mergeAcl(repositoryId, result, rootAces);
-		} else {
-			if (content.getParentId() == null) {
-				return aces;
-			} else {
-				Folder parent = contentService.getFolder(repositoryId, content.getParentId());
-				if (parent == null) {
-					// getFolder collapses a genuine 404 AND a transient read error to null.
-					// Non-strict: keep the historical best-effort (local ACEs only). Strict
-					// (reconciliation re-drive): an inheriting object MUST have a readable
-					// parent — a null here is either a transient failure or a data
-					// inconsistency, and silently dropping the inherited grants would write
-					// under-visible readers and complete the task. Fail so it is retried.
-					if (strict) {
-						throw new IllegalStateException("Strict ACL: parent " + content.getParentId()
-								+ " of " + content.getId() + " is unreadable — cannot compute inherited ACL");
-					}
-					return aces;
-				} else {
-					return mergeAcl(repositoryId, aces,
-							calculateAclInternal(repositoryId, new ArrayList<Ace>(), parent, strict));
-				}
-			}
+			return contentAcl.getLocalAces();
+		}
+
+		@Override public Acl storedAcl() { return content.getAcl(); }
+
+		@Override public boolean root() { return contentService.isRoot(repositoryId, content); }
+
+		@Override public boolean inherited() {
+			return getAclInheritedWithDefault(repositoryId, content);
+		}
+
+		@Override public String parentId() { return content.getParentId(); }
+
+		@Override public AclSemantics.ChainNode parent() {
+			Folder parent = contentService.getFolder(repositoryId, content.getParentId());
+			return parent == null ? null : new CmisChainNode(repositoryId, parent);
 		}
 	}
 

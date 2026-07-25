@@ -375,7 +375,8 @@ The following are therefore **required of the production implementation, in the 
    </ul>
    <b>Security rating, stated plainly:</b> every principal-resolution failure shrinks the token set;
    there is NO over-grant path. 5T is an AVAILABILITY / index-health defect, NOT a confidentiality
-   leak. It stays on the wiring gate for that reason.
+   leak. It was a wiring gate for that reason; it is now CLOSED by increment 5T, and the rest of
+   this item is retained as the statement of the requirement 5T satisfies, not as outstanding work.
    <br>Consequently 5T has TWO halves, and shipping only the first would leave the same asymmetry as
    3b (closed under strict, open on the ordinary path): <b>(1)</b> tri-state the principal DAO and
    THROW on `UNAVAILABLE` under strict (`NOT_FOUND` keeps today's omit); <b>(2)</b> stop the
