@@ -2,6 +2,7 @@ package jp.aegif.nemaki.epoch;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -327,15 +328,20 @@ public class AclEpochIndexWriterIT {
     // ── fail-closed reads ──────────────────────────────────────────
 
     @Test
-    void aNonNumericStoredEpochFailsClosedRatherThanWritingUnfenced() throws Exception {
+    void anUnfencedDocumentFailsClosedInsteadOfBeingBootstrapped() throws Exception {
+        // §4.3: an ABSENT stored epoch means the document has never been fenced. A normal
+        // ACL-UPDATE must NOT bootstrap it — "no fence yet, so any writer wins" is exactly the
+        // property the fence removes. (The previous test asserted the OPPOSITE while being named
+        // "fails closed"; review 4a [P1] #3.)
         seedFolder("root", null, false, 3L);
         seedDocument(solrId, "root", true, 1L);
-        indexSolrDoc(solrId, "n", "/n", "b");
-        // Solr enforces the long type, so a non-numeric value cannot be indexed — the guard is
-        // pinned at unit level instead; here we pin the ABSENT case (never fenced yet → any epoch wins).
-        WriteOutcome o = writer.write(contentDb, solrId, solr, snap -> List.of("user:u1"));
-        assertEquals(WriteResult.UPDATED, o.result, "an absent stored epoch means 'never fenced'");
-        assertEquals(3L, num(get(solrId), "effective_acl_epoch"));
+        indexSolrDocUnfenced(solrId, "n", "/n", "b"); // NO effective_acl_epoch
+
+        assertThrows(IllegalStateException.class,
+                () -> writer.write(contentDb, solrId, solr, snap -> List.of("user:u1")));
+        SolrDocument after = get(solrId);
+        assertNull(after.getFieldValue("effective_acl_epoch"), "the ACL group is untouched");
+        assertTrue(after.getFieldValues("readers") == null || after.getFieldValues("readers").isEmpty());
     }
 
     @Test
@@ -360,9 +366,152 @@ public class AclEpochIndexWriterIT {
                 () -> writer.write(contentDb, solrId, solr, snap -> List.of("user:u1")));
     }
 
+    // ── review 4a: the fence is evaluated on EVERY attempt ─────────
+
+    @Test
+    void aNewerEpochLandingDuringTheRecomputeIsNotOverwritten() throws Exception {
+        // THE regression this closes: the recompute flag must not bypass `stored > mine`. Another
+        // writer lands epoch 9 between the divergence observation and the recompute's RTG; the
+        // recompute reads THAT document's _version_, so a bypassing CAS would succeed and roll the
+        // index back from 9 to 7.
+        seedFolder("root", null, false, 7L);
+        seedDocument(solrId, "root", true, 1L);
+        indexSolrDoc(solrId, "n", "/n", "b");
+        setAclGroup(solrId, List.of("user:stored-only"), 7L); // equal epoch, divergent readers
+
+        AtomicInteger rtgCalls = new AtomicInteger();
+        AclEpochIndexWriter racing = new AclEpochIndexWriter() {
+            @Override SolrDocument realtimeGet(SolrClient c, String repo, String id) throws Exception {
+                SolrDocument d = super.realtimeGet(c, repo, id);
+                if (rtgCalls.incrementAndGet() == 1) {
+                    // AFTER attempt 1's RTG (which observes epoch 7 + divergent readers and arms the
+                    // recompute), a competing writer lands epoch 9. Attempt 2 must SKIP, not CAS 7.
+                    setAclGroup(id, List.of("user:newer"), 9L);
+                }
+                return d;
+            }
+        };
+        racing.setEffectiveEpochService(epochService);
+
+        WriteOutcome o = racing.write(contentDb, solrId, solr, snap -> List.of("user:authoritative"));
+        assertEquals(WriteResult.SKIPPED_FRESHER, o.result,
+                "a strictly newer stored epoch must win even during an equal-epoch recompute");
+        SolrDocument after = get(solrId);
+        assertEquals(9L, num(after, "effective_acl_epoch"), "epoch 9 must NOT be rolled back to 7");
+        assertEquals(List.of("user:newer"), readers(after));
+    }
+
+    @Test
+    void aRecomputeThatAgreesWithTheStoredValueIsIdempotent() throws Exception {
+        // The equal-epoch identity check must ALSO be re-evaluated on the recompute attempt: if the
+        // authoritative recompute simply agrees with what is stored, that is idempotence, not a
+        // reason to write.
+        seedFolder("root", null, false, 7L);
+        seedDocument(solrId, "root", true, 1L);
+        indexSolrDoc(solrId, "n", "/n", "b");
+        setAclGroup(solrId, List.of("user:stored-only"), 7L);
+
+        AtomicInteger rtgCalls = new AtomicInteger();
+        AclEpochIndexWriter racing = new AclEpochIndexWriter() {
+            @Override SolrDocument realtimeGet(SolrClient c, String repo, String id) throws Exception {
+                SolrDocument d = super.realtimeGet(c, repo, id);
+                if (rtgCalls.incrementAndGet() == 1) {
+                    // AFTER attempt 1 observes the divergence, the stored readers become exactly
+                    // what the recompute will produce — attempt 2 must find it idempotent.
+                    setAclGroup(id, List.of("user:authoritative"), 7L);
+                }
+                return d;
+            }
+        };
+        racing.setEffectiveEpochService(epochService);
+
+        WriteOutcome o = racing.write(contentDb, solrId, solr, snap -> List.of("user:authoritative"));
+        assertEquals(WriteResult.SKIPPED_IDEMPOTENT, o.result);
+    }
+
+    // ── review 4a: strict _version_, stored epoch, repository_id, readers ──
+
+    @Test
+    void solrMagicVersionValuesAreRefusedSoNoUnconditionalWriteIsSent() throws Exception {
+        // _version_ 0 = no concurrency check, 1 = "any existing version", negative = must-not-exist,
+        // 1.5 = not a version at all. None of them is a real compare-and-set.
+        for (Object magic : new Object[] { 1L, 0L, -1L, 1.5d }) {
+            String id = "magic-" + UUID.randomUUID();
+            seedFolder("root-" + id, null, false, 3L);
+            seedDocument(id, "root-" + id, true, 1L);
+            indexSolrDoc(id, "n", "/n", "b");
+            setAclGroup(id, List.of("user:before"), 2L);
+
+            AclEpochIndexWriter spoofed = new AclEpochIndexWriter() {
+                @Override SolrDocument realtimeGet(SolrClient c, String repo, String oid) throws Exception {
+                    SolrDocument d = super.realtimeGet(c, repo, oid);
+                    d.setField("_version_", magic);
+                    return d;
+                }
+            };
+            spoofed.setEffectiveEpochService(epochService);
+
+            assertThrows(IllegalStateException.class,
+                    () -> spoofed.write(contentDb, id, solr, snap -> List.of("user:mine")),
+                    "_version_=" + magic + " must be refused");
+            assertEquals(List.of("user:before"), readers(get(id)), "no update was sent for " + magic);
+            assertEquals(2L, num(get(id), "effective_acl_epoch"));
+            solr.deleteById(id);
+            solr.commit();
+        }
+    }
+
+    @Test
+    void aMissingRepositoryIdIsRefusedSoNoUpdateIsSent() throws Exception {
+        seedFolder("root", null, false, 3L);
+        seedDocument(solrId, "root", true, 1L);
+        indexSolrDoc(solrId, "n", "/n", "b");
+        setAclGroup(solrId, List.of("user:before"), 2L);
+
+        AclEpochIndexWriter spoofed = new AclEpochIndexWriter() {
+            @Override SolrDocument realtimeGet(SolrClient c, String repo, String oid) throws Exception {
+                SolrDocument d = super.realtimeGet(c, repo, oid);
+                d.removeFields("repository_id"); // a restored / legacy / corrupt document
+                return d;
+            }
+        };
+        spoofed.setEffectiveEpochService(epochService);
+
+        assertThrows(IllegalStateException.class,
+                () -> spoofed.write(contentDb, solrId, solr, snap -> List.of("user:mine")));
+        assertEquals(List.of("user:before"), readers(get(solrId)), "no update was sent");
+    }
+
+    @Test
+    void nullOrBlankIncomingReaderTokensAreRefusedSoNoUpdateIsSent() throws Exception {
+        seedFolder("root", null, false, 3L);
+        seedDocument(solrId, "root", true, 1L);
+        indexSolrDoc(solrId, "n", "/n", "b");
+        setAclGroup(solrId, List.of("user:before"), 2L);
+
+        // A partial SPI failure must NOT be silently written as a SHORTER (under-granting) set.
+        List<String> withNull = new java.util.ArrayList<>();
+        withNull.add("user:ok");
+        withNull.add(null);
+        assertThrows(IllegalStateException.class,
+                () -> writer.write(contentDb, solrId, solr, snap -> withNull));
+        assertEquals(List.of("user:before"), readers(get(solrId)), "no update was sent (null token)");
+
+        assertThrows(IllegalStateException.class,
+                () -> writer.write(contentDb, solrId, solr, snap -> List.of("user:ok", "  ")));
+        assertEquals(List.of("user:before"), readers(get(solrId)), "no update was sent (blank token)");
+    }
+
     // ── fixtures / helpers ─────────────────────────────────────────
 
+    /** Index a document that has ALREADY been fenced (epoch 0 = the migration baseline). */
     private void indexSolrDoc(String id, String name, String path, String body) throws Exception {
+        indexSolrDoc(id, name, path, body, contentDb);
+        setAclGroup(id, List.of(), 0L); // a normal ACL-UPDATE never bootstraps the fence itself
+    }
+
+    /** Index a document that has NEVER been fenced (no effective_acl_epoch). */
+    private void indexSolrDocUnfenced(String id, String name, String path, String body) throws Exception {
         indexSolrDoc(id, name, path, body, contentDb);
     }
 

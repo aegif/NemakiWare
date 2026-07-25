@@ -820,3 +820,36 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
     Existing deployments must apply the updated `schema.xml` and RELOAD the core — the Solr data
     directory is a volume, so an image rebuild alone does NOT update the schema. The field is
     additive and optional, so an un-updated core keeps working until the writer is wired.
+  - **Increment 4a — five defects in the fenced writer (review).**
+    1. **(P1) The equal-epoch recompute could roll an epoch BACKWARDS.** With the recompute flag
+       set, the next attempt bypassed the WHOLE fence decision — including `stored > mine`. If
+       another writer landed epoch 9 between the divergence observation and the recompute's RTG,
+       the recompute read THAT document's `_version_` and CAS-ed epoch 7 over it successfully.
+       The flag now authorises exactly one thing — writing an equal-epoch value whose readers
+       diverge — while `stored > mine` and equal+identical are re-evaluated on EVERY attempt.
+    2. **(P1) `_version_` was not validated as a real compare-and-set.** Solr overloads it: `0` =
+       no concurrency check, `1` = "any existing version", negative = must-not-exist. A strict
+       integral conversion plus `> 1` is now required, so the documented CAS cannot silently
+       degrade into an unconditional write.
+    3. **(P1) An absent stored epoch was accepted as 0**, contradicting §4.3 — and the test that
+       claimed to pin this was named "non-numeric fails closed" while actually asserting that the
+       ABSENT case SUCCEEDS. An unfenced document now fails closed; stamping the initial epoch
+       belongs to the migration / full-reindex path, not to a normal ACL-UPDATE.
+    4. **(P2) A missing `repository_id` was accepted.** Absent / blank / non-String now fails
+       closed. The check also MOVED out of `realtimeGet` into the caller, so no alternate or
+       overridden fetch path can bypass the repository boundary.
+    5. **(P2) Invalid tokens in the AUTHORITATIVE readers were silently dropped.** A partial SPI
+       failure would have been persisted as a normal-looking SHORTER (under-granting) set. Incoming
+       readers now reject a null list and any null/blank token; normalization of ALREADY-STORED
+       readers stays lenient (it is a fact to compare, not a computation to validate — and
+       rejecting it would block the very write that repairs it).
+    <br>The `ReadersComputer` Javadoc now states the mandatory production contract: compute from
+    the AUTHORITATIVE, cache-bypassing strict walk for the object ITSELF as well as its ancestors,
+    never from a stale event payload or the ACL cache. The `Snapshot` pins epochs / revisions /
+    topology but deliberately does not carry the ACL entries, so the SPI boundary alone cannot
+    enforce this.
+    <br>Verification: 19 ITs (14 + the 6 required, one replacing the mis-named test); epoch unit+IT
+    174/174. All five fixes are mutation-bound. Note: the first version of the epoch-rollback test
+    did NOT bind — it injected the newer epoch BEFORE attempt 1's RTG, so attempt 1 skipped as
+    fresher and the divergence path was never entered; moving the injection to AFTER attempt 1's
+    RTG makes the mutation reproduce the rollback exactly (UPDATED instead of SKIPPED_FRESHER).

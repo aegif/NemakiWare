@@ -83,7 +83,16 @@ public class AclEpochIndexWriter {
      *
      * <p>It MUST fail (throw) rather than return an empty/partial list when it cannot compute the
      * readers: writing an empty {@code readers} would make the object invisible to every non-admin
-     * search, which is a silent availability failure, and writing a PARTIAL list is worse.
+     * search, which is a silent availability failure, and writing a PARTIAL list is worse. A
+     * {@code null} list, or any null/blank token, is refused by the writer for the same reason.
+     *
+     * <p><b>Contract for the PRODUCTION implementation (review 4a — mandatory at wiring time):</b>
+     * it MUST compute from the AUTHORITATIVE, cache-bypassing sources — the strict inherited-ACL
+     * walk — for the object ITSELF as well as its ancestors, and MUST NOT use a stale event payload
+     * or the ACL cache. The {@link AclEffectiveEpochService.Snapshot} passed in pins the epochs,
+     * revisions and topology of every dependency, but it deliberately does NOT carry the ACL
+     * entries themselves, so the SPI boundary alone cannot enforce this: a computer that read from
+     * the cache would pass revalidation while writing readers derived from a different ACL state.
      */
     @FunctionalInterface
     public interface ReadersComputer {
@@ -159,13 +168,7 @@ public class AclEpochIndexWriter {
             if (snapshot == null) {
                 return new WriteOutcome(WriteResult.SKIPPED_DELETED, 0L, null, attempt);
             }
-            List<String> readers = canonical(computer.compute(snapshot));
-            if (readers == null) {
-                // A computer that cannot produce readers must throw; a null return would otherwise
-                // become an empty `readers` and make the object invisible to every non-admin search.
-                throw new IllegalStateException("readers computer returned null for " + objectId
-                        + " — refusing to write an empty ACL group");
-            }
+            List<String> readers = strictIncomingReaders(computer.compute(snapshot), objectId);
             long myEpoch = snapshot.effectiveEpoch;
 
             // ── step 3: realtime GET (never a searcher query) ──
@@ -173,9 +176,10 @@ public class AclEpochIndexWriter {
             if (current == null) {
                 return new WriteOutcome(WriteResult.NOT_INDEXED, myEpoch, null, attempt);
             }
-            long version = requireLong(current, FIELD_VERSION, objectId);
-            Long storedEpoch = optionalLong(current, FIELD_EFFECTIVE_EPOCH, objectId);
-            List<String> storedReaders = canonical(stringList(current.getFieldValues(FIELD_READERS)));
+            requireSameRepository(current, repositoryId, objectId);
+            long version = requireCasVersion(current, objectId);
+            long storedEpoch = requireStoredEpoch(current, objectId);
+            List<String> storedReaders = normalizeStoredReaders(stringList(current.getFieldValues(FIELD_READERS)));
 
             // ── step 4: revalidate every recorded dependency; ANY change restarts ──
             if (!effectiveEpochService.revalidate(snapshot)) {
@@ -186,16 +190,23 @@ public class AclEpochIndexWriter {
                 continue;
             }
 
-            // ── §4.3 fence decision ──
-            if (!forceWriteAfterEqualEpochDivergence) {
-                long stored = storedEpoch == null ? 0L : storedEpoch;
-                if (stored > myEpoch) {
-                    return new WriteOutcome(WriteResult.SKIPPED_FRESHER, myEpoch, null, attempt);
+            // ── §4.3 fence decision — evaluated on EVERY attempt ──
+            // The recompute flag authorises exactly ONE thing: writing an equal-epoch value whose
+            // readers diverge. It must NEVER bypass the fence itself (review 4a [P1]): between the
+            // divergence observation and this attempt's RTG another writer may have landed a
+            // STRICTLY NEWER epoch, and skipping the check would CAS the older epoch over it —
+            // the CAS succeeds, because this attempt read that newer document's _version_.
+            long stored = storedEpoch;
+            if (stored > myEpoch) {
+                return new WriteOutcome(WriteResult.SKIPPED_FRESHER, myEpoch, null, attempt);
+            }
+            if (stored == myEpoch) {
+                if (storedReaders.equals(readers)) {
+                    // Also re-checked every attempt: the recompute may simply agree with what is
+                    // already stored, which is idempotence, not a reason to write.
+                    return new WriteOutcome(WriteResult.SKIPPED_IDEMPOTENT, myEpoch, null, attempt);
                 }
-                if (stored == myEpoch && storedEpoch != null) {
-                    if (storedReaders.equals(readers)) {
-                        return new WriteOutcome(WriteResult.SKIPPED_IDEMPOTENT, myEpoch, null, attempt);
-                    }
+                if (!forceWriteAfterEqualEpochDivergence) {
                     // EQUAL epoch, DIFFERENT readers: a transient read-skew artefact. Never "my
                     // payload wins by default" — recompute from the authoritative sources and write
                     // THAT (§4.3), so every conflicting writer converges on the last-finalized state.
@@ -204,6 +215,7 @@ public class AclEpochIndexWriter {
                     forceWriteAfterEqualEpochDivergence = true;
                     continue;
                 }
+                // Second observation: this payload IS the authoritative recompute — write it.
             }
 
             // ── step 5: atomic ACL-GROUP-ONLY update, CAS-guarded by the step-3 _version_ ──
@@ -260,18 +272,108 @@ public class AclEpochIndexWriter {
         if (doc == null) {
             return null;
         }
-        Object repo = doc.getFieldValue(FIELD_REPOSITORY_ID);
-        if (repo != null && !repositoryId.equals(repo.toString())) {
-            throw new IllegalStateException("Solr id collision: '" + objectId + "' belongs to repository '"
-                    + repo + "', not '" + repositoryId + "' — refusing to write");
-        }
         return doc;
     }
 
     /**
-     * Canonical reader form for the equal-epoch comparison: de-duplicated and sorted, so two
-     * writers that computed the SAME grants in a different order compare equal (an order-only
-     * difference must be idempotent, not an endless divergence).
+     * The CAS {@code _version_} of an EXISTING document, validated strictly (review 4a [P1]).
+     *
+     * <p>Solr overloads {@code _version_}: {@code 0} means "no concurrency check at all",
+     * {@code 1} means "any existing version" and a NEGATIVE value means "must not exist". Passing
+     * any of those through would silently turn the documented compare-and-set into an unconditional
+     * write, so only a real existing-document version ({@code > 1}, strictly integral) is accepted.
+     * Anything else — missing, non-numeric, fractional, or one of the magic values — fails closed
+     * (§4.3) so the caller retains and retries rather than writing unfenced.
+     */
+    private static long requireCasVersion(SolrDocument doc, String objectId) {
+        Object v = doc.getFieldValue(FIELD_VERSION);
+        long version = exactLong(v, FIELD_VERSION, objectId);
+        if (version <= 1L) {
+            throw new IllegalStateException("Solr document " + objectId + " reported " + FIELD_VERSION
+                    + "=" + version + ", which is a Solr magic value (0 = no check, 1 = any version, "
+                    + "negative = must-not-exist) rather than an existing document's version — "
+                    + "refusing to write the ACL group without a real compare-and-set");
+        }
+        return version;
+    }
+
+    /**
+     * The stored effective epoch, FAIL-CLOSED when absent (§4.3, review 4a [P1]).
+     *
+     * <p>An ABSENT epoch means the document has never been fenced. A normal ACL-UPDATE must NOT
+     * bootstrap it implicitly — "no fence yet, so any writer wins" is precisely the property the
+     * fence exists to remove, and it would let an arbitrarily stale writer claim an unfenced
+     * document. Stamping the initial epoch belongs to the migration / full-reindex path.
+     */
+    private static long requireStoredEpoch(SolrDocument doc, String objectId) {
+        Object v = doc.getFieldValue(FIELD_EFFECTIVE_EPOCH);
+        if (v == null) {
+            throw new IllegalStateException("Solr document " + objectId + " has no "
+                    + FIELD_EFFECTIVE_EPOCH + " — it has never been fenced. A normal ACL-UPDATE does "
+                    + "not bootstrap the fence implicitly; run the migration / full reindex first");
+        }
+        return exactLong(v, FIELD_EFFECTIVE_EPOCH, objectId);
+    }
+
+    /** Strictly integral numeric conversion (rejects non-Number, fractional and out-of-range). */
+    private static long exactLong(Object v, String field, String objectId) {
+        if (!(v instanceof Number)) {
+            throw new IllegalStateException("Solr document " + objectId + " has a missing / non-numeric "
+                    + field + " (" + v + ") — refusing to write the ACL group unfenced");
+        }
+        try {
+            return new java.math.BigDecimal(v.toString()).longValueExact();
+        } catch (ArithmeticException | NumberFormatException e) {
+            throw new IllegalStateException("Solr document " + objectId + " has a non-integral / "
+                    + "out-of-range " + field + " (" + v + ") — refusing to write the ACL group unfenced");
+        }
+    }
+
+    /**
+     * The readers to WRITE, validated strictly (review 4a [P2]): a {@code null} list, or ANY null /
+     * blank element, means the {@link ReadersComputer} failed partially. Dropping such an element
+     * would persist a SHORTER reader set that looks perfectly normal — a silent under-grant. The
+     * write is refused instead.
+     */
+    private static List<String> strictIncomingReaders(List<String> computed, String objectId) {
+        if (computed == null) {
+            throw new IllegalStateException("readers computer returned null for " + objectId
+                    + " — refusing to write an empty ACL group");
+        }
+        for (String r : computed) {
+            if (r == null || r.isBlank()) {
+                throw new IllegalStateException("readers computer returned a null / blank token for "
+                        + objectId + " — a partial computation must never be written as a shorter "
+                        + "reader set");
+            }
+        }
+        return canonical(computed);
+    }
+
+    /**
+     * The repository boundary, fail-closed (review 4a [P2]). Applied to the RESULT of the fetch by
+     * {@link #write} rather than inside {@link #realtimeGet}, so no alternate or overridden fetch
+     * path can bypass it. The Solr core is SHARED across repositories, so a restored / legacy /
+     * corrupt document with a missing, blank or non-String {@code repository_id} cannot be proven
+     * to belong to THIS repository and must not be written.
+     */
+    private static void requireSameRepository(SolrDocument doc, String repositoryId, String objectId) {
+        Object repo = doc.getFieldValue(FIELD_REPOSITORY_ID);
+        if (!(repo instanceof String) || ((String) repo).isBlank()) {
+            throw new IllegalStateException("Solr document '" + objectId + "' has a missing / blank / "
+                    + "non-String " + FIELD_REPOSITORY_ID + " (" + repo + ") — refusing to write "
+                    + "without a provable repository boundary");
+        }
+        if (!repositoryId.equals(repo)) {
+            throw new IllegalStateException("Solr id collision: '" + objectId + "' belongs to repository '"
+                    + repo + "', not '" + repositoryId + "' — refusing to write");
+        }
+    }
+
+    /**
+     * Canonical reader form for the equal-epoch comparison: de-duplicated and sorted, so two writers
+     * that computed the SAME grants in a different order compare equal (an order-only difference
+     * must be idempotent, not an endless divergence).
      */
     static List<String> canonical(List<String> readers) {
         if (readers == null) {
@@ -284,6 +386,15 @@ public class AclEpochIndexWriter {
         return new ArrayList<>(sorted);
     }
 
+    /**
+     * Normalize what is ALREADY stored, for comparison only. Deliberately lenient (unlike
+     * {@link #strictIncomingReaders}): whatever is in the index is a fact to be compared, not a
+     * computation to be validated, and rejecting it would block the very write that repairs it.
+     */
+    private static List<String> normalizeStoredReaders(List<String> stored) {
+        return canonical(stored);
+    }
+
     private static List<String> stringList(java.util.Collection<Object> values) {
         List<String> out = new ArrayList<>();
         if (values != null) {
@@ -292,35 +403,5 @@ public class AclEpochIndexWriter {
             }
         }
         return out;
-    }
-
-    /**
-     * A REQUIRED numeric field. Missing / unparsable on the fenced path is FAIL-CLOSED (§4.3): the
-     * write is abandoned with an exception so the caller retains and retries its task, rather than
-     * writing without a fence.
-     */
-    private static long requireLong(SolrDocument doc, String field, String objectId) {
-        Object v = doc.getFieldValue(field);
-        if (!(v instanceof Number)) {
-            throw new IllegalStateException("Solr document " + objectId + " has a missing / non-numeric "
-                    + field + " (" + v + ") — refusing to write the ACL group unfenced");
-        }
-        return ((Number) v).longValue();
-    }
-
-    /**
-     * An OPTIONAL numeric field: absent means "never fenced yet" ({@code null} → treated as 0 by the
-     * caller, so any epoch wins), but a PRESENT non-numeric value is corruption and fails closed.
-     */
-    private static Long optionalLong(SolrDocument doc, String field, String objectId) {
-        Object v = doc.getFieldValue(field);
-        if (v == null) {
-            return null;
-        }
-        if (!(v instanceof Number)) {
-            throw new IllegalStateException("Solr document " + objectId + " has a non-numeric " + field
-                    + " (" + v + ") — refusing to write the ACL group against an unparsable fence");
-        }
-        return ((Number) v).longValue();
     }
 }
