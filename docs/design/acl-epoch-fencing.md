@@ -332,6 +332,31 @@ ACL-UPDATE / queue increments; none of them exists yet):
 Until these exist, the walk is correct but the operational story is not, which is one
 reason increment 3/3a stays off the write path.
 
+### 5.2 `ReadersComputer`: obligations for the WIRING increment
+
+The fenced writer (increment 4) takes its readers from a `ReadersComputer` SPI. That boundary
+pins WHEN the readers are computed (between the walk and the RTG) and WHAT is rejected (a null
+list, an EMPTY list, or any null/blank token — increment 4b), but it can NOT pin HOW they are
+computed: the `Snapshot` deliberately carries epochs, revisions and topology, not the ACL entries
+themselves. A computer that read from the ACL cache, or from a stale event payload, would pass
+revalidation while writing readers derived from a DIFFERENT ACL state.
+
+The following are therefore **required of the production implementation, in the wiring increment**
+(they are contract-only today, stated on the SPI Javadoc):
+
+1. **Authoritative, cache-bypassing** — the strict inherited-ACL walk, never
+   `calculateAcl`'s cached result and never an event payload captured earlier.
+2. **Including the object ITSELF**, not only its ancestors: its own local ACEs are part of the
+   effective readers, and a computer that only re-walked ancestors would silently under- or
+   over-grant on a direct `applyAcl`.
+3. **Strict failure** — an unreadable ancestor / principal must THROW (as
+   `AclEffectiveEpochService` does), never degrade to a shorter set. The writer's empty/null/blank
+   rejection is a backstop, not the primary guarantee: a computation that drops ONE inherited grant
+   still returns a plausible non-empty list.
+4. **Tested at wiring time** — at minimum: a cache poisoned with a stale ACL must NOT change the
+   written readers; a direct `applyAcl` on the object itself must be reflected; an unreadable
+   ancestor must fail the write rather than shorten the readers.
+
 ## 6. Conflict table (v2)
 
 | A ↓ \ B → | ACL-UPDATE (higher e) | ACL-UPDATE (equal e) | ACL-UPDATE (lower e) | CONTENT-UPDATE | CREATE/batch | RAG block |
@@ -853,3 +878,14 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
     did NOT bind — it injected the newer epoch BEFORE attempt 1's RTG, so attempt 1 skipped as
     fresher and the divergence path was never entered; moving the injection to AFTER attempt 1's
     RTG makes the mutation reproduce the rollback exactly (UPDATED instead of SKIPPED_FRESHER).
+  - **Increment 4b — three P3 consistency fixes (review).** (1) `realtimeGet`'s Javadoc still read
+    as though IT performed the repository-mismatch check, which moved to `write()` in 4a — a future
+    override author could have assumed the boundary was enforced inside the method they were
+    replacing. It now says the opposite explicitly. (2) The SPI Javadoc forbade an empty readers
+    list but the writer only rejected null / null-or-blank TOKENS, so an empty list would have been
+    written: the writer now ENFORCES what the SPI promised (an authoritative expansion is itself
+    fail-closed and always emits at least the admin role token, so empty can only mean the
+    computation failed). (3) The `ReadersComputer` cache-bypass / self-inclusive / strict
+    requirements — which the SPI boundary cannot enforce — are recorded as §5.2, a pre-wiring
+    obligation with its own required tests, so they are not lost between increments.
+    <br>Verification: 20 ITs; the empty-list rejection is mutation-bound.

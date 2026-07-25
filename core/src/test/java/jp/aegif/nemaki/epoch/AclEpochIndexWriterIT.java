@@ -345,6 +345,23 @@ public class AclEpochIndexWriterIT {
     }
 
     @Test
+    void anEmptyReadersComputationIsRefusedSoNoUpdateIsSent() throws Exception {
+        // review 4b: the SPI already promised "never empty"; the writer now ENFORCES it. An
+        // authoritative expansion always emits at least the admin role token, so an empty result
+        // means the computation failed — persisting it would make the object invisible to every
+        // non-admin search.
+        seedFolder("root", null, false, 3L);
+        seedDocument(solrId, "root", true, 1L);
+        indexSolrDoc(solrId, "n", "/n", "b");
+        setAclGroup(solrId, List.of("user:before"), 2L);
+
+        assertThrows(IllegalStateException.class,
+                () -> writer.write(contentDb, solrId, solr, snap -> List.of()));
+        assertEquals(List.of("user:before"), readers(get(solrId)), "no update was sent");
+        assertEquals(2L, num(get(solrId), "effective_acl_epoch"));
+    }
+
+    @Test
     void aNullReadersComputationIsRefusedRatherThanWritingAnEmptyAclGroup() throws Exception {
         seedFolder("root", null, false, 3L);
         seedDocument(solrId, "root", true, 1L);
