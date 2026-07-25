@@ -140,10 +140,17 @@ public final class AclSemantics {
      * receives.
      */
     public interface PrincipalResolver {
-        /** True if the id resolves to a user. Tried FIRST. */
-        boolean isUser(String repositoryId, String principalId);
-        /** True if the id resolves to a group. Tried only when {@link #isUser} is false. */
-        boolean isGroup(String repositoryId, String principalId);
+        /**
+         * TRI-STATE user probe. Tried FIRST (the production order).
+         *
+         * <p>{@link PrincipalLookup#NOT_FOUND} means "served, genuinely absent" and falls through to
+         * the group probe; {@link PrincipalLookup#UNAVAILABLE} means "could not be served" and makes
+         * {@link AclSemantics#readerTokens} THROW rather than silently shorten the token set.
+         */
+        PrincipalLookup lookupUser(String repositoryId, String principalId);
+
+        /** TRI-STATE group probe. Tried only when {@link #lookupUser} is NOT_FOUND. */
+        PrincipalLookup lookupGroup(String repositoryId, String principalId);
     }
 
     /**
@@ -155,12 +162,14 @@ public final class AclSemantics {
      *       becomes ADMIN-ONLY. Never an empty token list, which would make the object invisible;</li>
      *   <li><b>principal resolution</b> — the literal {@code cmis:anyone}/{@code cmis:anonymous}
      *       ids map to the anyone token; otherwise USER then GROUP; an id that resolves to neither
-     *       is DROPPED. That drop is correct for a genuinely deleted principal, but the resolver
-     *       cannot currently distinguish it from "the lookup could not be served" (a missing design
-     *       document / view / database, which `queryView` also reports as null) — the tri-state that
-     *       5T introduces makes the second case throw under strict. A TRANSIENT fault does not reach
-     *       here at all: it propagates as `CmisRuntimeException`. Either way the effect is an
-     *       UNDER-grant; no failure mode of this rule can widen the token set.</li>
+     *       is DROPPED when the lookup was SERVED ({@link PrincipalLookup#NOT_FOUND}) — correct for
+     *       a genuinely deleted principal. When the lookup could NOT be served
+     *       ({@link PrincipalLookup#UNAVAILABLE}, i.e. a missing design document / view / database)
+     *       this THROWS {@link PrincipalUnavailableException} instead of dropping, because dropping
+     *       would degrade every principal to "absent" and hand rule 2 an admin-only set as if it had
+     *       been computed. A TRANSIENT fault never reaches here at all: it propagates out of the DAO
+     *       as {@code CmisRuntimeException}. No failure mode of this rule can WIDEN the token set —
+     *       5T is an availability / index-health guarantee, not a confidentiality one.</li>
      * </ol>
      *
      * <p>The anyone branch is preserved VERBATIM even though it is dead code in the shipped
@@ -184,6 +193,18 @@ public final class AclSemantics {
             return adminOnlyReaders(repositoryId);
         }
         return new ArrayList<String>(readers);
+    }
+
+    /**
+     * Increment 5T. A null outcome from a resolver is treated as UNAVAILABLE, not as absence: a
+     * resolver that cannot answer must never be read as "the principal does not exist".
+     */
+    private static PrincipalLookup require(PrincipalLookup outcome, String principalId, String kind) {
+        if (outcome == null || outcome == PrincipalLookup.UNAVAILABLE) {
+            throw new PrincipalUnavailableException("principal " + kind + " lookup could not be served for '"
+                    + principalId + "' — refusing to project an under-granted reader set");
+        }
+        return outcome;
     }
 
     /** Rule 1: {@code cmis:read} or {@code cmis:all}, case-insensitive (the original). */
@@ -210,11 +231,16 @@ public final class AclSemantics {
             readers.add(formatAnyoneReader(repositoryId));
             return;
         }
-        if (resolver != null && resolver.isUser(repositoryId, principalId)) {
+        if (resolver == null) {
+            return;
+        }
+        PrincipalLookup user = require(resolver.lookupUser(repositoryId, principalId), principalId, "user");
+        if (user == PrincipalLookup.FOUND) {
             readers.add(formatUserReader(repositoryId, principalId));
             return;
         }
-        if (resolver != null && resolver.isGroup(repositoryId, principalId)) {
+        PrincipalLookup group = require(resolver.lookupGroup(repositoryId, principalId), principalId, "group");
+        if (group == PrincipalLookup.FOUND) {
             readers.add(formatGroupReader(repositoryId, principalId));
         }
     }

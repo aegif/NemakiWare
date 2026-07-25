@@ -74,11 +74,33 @@ public class PrincipalDaoServiceImpl implements
 	}
 
 	private CouchUser getUserByIdInternal(String repositoryId, String userId) {
-		List<CouchUser> l = connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "userItemsById", userId, CouchUser.class);
+		List<CouchUser> l = queryUserById(repositoryId, userId);
 
 		if (CollectionUtils.isEmpty(l))
 			return null;
 		return l.get(0);
+	}
+
+	private List<CouchUser> queryUserById(String repositoryId, String userId) {
+		return connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "userItemsById", userId,
+				CouchUser.class);
+	}
+
+	/**
+	 * Increment 5T. This is the ONE place that still knows the difference {@code getUserById} throws
+	 * away: {@code queryView} returns {@code null} when the query could NOT BE SERVED (a missing
+	 * design document / view / database) and an EMPTY list when it was served and matched nothing.
+	 * {@code CollectionUtils.isEmpty} collapses the two; this method does not.
+	 *
+	 * <p>No new try/catch is needed or wanted here: a TRANSIENT fault is already rethrown by
+	 * {@code queryView} as a {@code CmisRuntimeException} and must keep propagating.
+	 */
+	@Override
+	public jp.aegif.nemaki.acl.PrincipalLookup lookupUserById(String repositoryId, String userId) {
+		List<CouchUser> l = queryUserById(repositoryId, userId);
+		if (l == null)
+			return jp.aegif.nemaki.acl.PrincipalLookup.UNAVAILABLE;
+		return l.isEmpty() ? jp.aegif.nemaki.acl.PrincipalLookup.NOT_FOUND : jp.aegif.nemaki.acl.PrincipalLookup.FOUND;
 	}
 
 	@Override
@@ -140,11 +162,25 @@ public class PrincipalDaoServiceImpl implements
 	}
 
 	private CouchGroup getGroupByIdInternal(String repositoryId, String groupId) {
-		List<CouchGroup> l = connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "groupItemsById", groupId, CouchGroup.class);
+		List<CouchGroup> l = queryGroupById(repositoryId, groupId);
 
 		if (CollectionUtils.isEmpty(l))
 			return null;
 		return l.get(0);
+	}
+
+	private List<CouchGroup> queryGroupById(String repositoryId, String groupId) {
+		return connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "groupItemsById", groupId,
+				CouchGroup.class);
+	}
+
+	/** Increment 5T. See {@link #lookupUserById} for why null and empty must not be collapsed. */
+	@Override
+	public jp.aegif.nemaki.acl.PrincipalLookup lookupGroupById(String repositoryId, String groupId) {
+		List<CouchGroup> l = queryGroupById(repositoryId, groupId);
+		if (l == null)
+			return jp.aegif.nemaki.acl.PrincipalLookup.UNAVAILABLE;
+		return l.isEmpty() ? jp.aegif.nemaki.acl.PrincipalLookup.NOT_FOUND : jp.aegif.nemaki.acl.PrincipalLookup.FOUND;
 	}
 
 	@Override

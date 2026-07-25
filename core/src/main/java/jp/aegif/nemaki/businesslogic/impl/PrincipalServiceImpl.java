@@ -124,9 +124,21 @@ public class PrincipalServiceImpl implements PrincipalService {
 		return principalDaoService.getGroupById(repositoryId, groupId);
 	}
 
+	/** Increment 5T. Delegated; the tri-state is decided in the couch DAO. */
+	@Override
+	public jp.aegif.nemaki.acl.PrincipalLookup lookupGroupById(String repositoryId, String groupId) {
+		return principalDaoService.lookupGroupById(repositoryId, groupId);
+	}
+
 	@Override
 	public User getUserById(String repositoryId, String id) {
 		return principalDaoService.getUserById(repositoryId, id);
+	}
+
+	/** Increment 5T. Delegated; the tri-state is decided in the couch DAO. */
+	@Override
+	public jp.aegif.nemaki.acl.PrincipalLookup lookupUserById(String repositoryId, String id) {
+		return principalDaoService.lookupUserById(repositoryId, id);
 	}
 
 	@Override

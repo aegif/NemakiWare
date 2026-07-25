@@ -102,6 +102,12 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 		return user;
 	}
 
+	/** Increment 5T. Delegated, exactly like {@link #getUserById}: these by-id reads are not cached. */
+	@Override
+	public jp.aegif.nemaki.acl.PrincipalLookup lookupUserById(String repositoryId, String userId) {
+		return nonCachedPrincipalDaoService.lookupUserById(repositoryId, userId);
+	}
+
 	@Override
 	public List<User> getUsers(String repositoryId) {
 		List<User> users = nonCachedPrincipalDaoService.getUsers(repositoryId);
@@ -119,6 +125,12 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	public Group getGroupById(String repositoryId, String groupId) {
 		Group group = nonCachedPrincipalDaoService.getGroupById(repositoryId, groupId);
 		return group;
+	}
+
+	/** Increment 5T. See {@link #lookupUserById}. */
+	@Override
+	public jp.aegif.nemaki.acl.PrincipalLookup lookupGroupById(String repositoryId, String groupId) {
+		return nonCachedPrincipalDaoService.lookupGroupById(repositoryId, groupId);
 	}
 
 	@Override
