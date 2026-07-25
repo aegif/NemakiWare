@@ -225,8 +225,11 @@ public class AclSemanticsCrossPathReportTest {
             if (!read) continue;                       // RULE A
             String pid = a.getPrincipalId();
             if (pid == null || pid.isEmpty()) continue;
-            // RULE C — resolve the (already system-converted) principal id exactly as production
-            // does: GROUP first, then USER, else drop. There is deliberately NO `anyone:` special
+            // RULE C — resolve the (already system-converted) principal id. NOTE: production
+            // resolves USER first, then GROUP (ACLExpander.addReaderFromPrincipal); this harness
+            // APPROXIMATES that by treating the shipped anyone id as a group and everything else as
+            // a user, which is how the corpus fixtures are wired. Do NOT read the branch order
+            // below as the production order. There is deliberately NO `anyone:` special
             // case: in the shipped configuration the anyone grant arrives here as the converted id
             // GROUP_EVERYONE and leaves as a GROUP token. Re-introducing an `anyone:` mapping would
             // re-assert the unification this report ruled out (it would need a full reindex).

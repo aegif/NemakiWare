@@ -511,6 +511,22 @@ token list plus the ABSENCE of any `anyone:` token. Both directions are mutation
 re-introducing the `anyone:` mapping fails layer 1, and removing the fixture's group resolution
 fails both the shipped pin and layer 1.
 
+**5R-b step 1 (DONE — merge + system-principal conversion extracted).** `AclSemantics` now holds
+`mergeAces` and `convertSystemPrincipalIds`, and `AclServiceDelegate` delegates to them.
+**The golden did not move by one byte.** Two non-obvious properties of the original are preserved
+DELIBERATELY and documented on the class: (a) the merge CONVERTS THE TARGET LIST IN PLACE, and the
+target is the node's own live `Acl.getLocalAces()`, so the conversion is visible on the (cached)
+Content afterwards — making the merge side-effect-free would be a behaviour change, not a cleanup;
+(b) the result is built through a `HashMap`, so its ORDER is not contractual. The traversal stays
+with each caller (that is the whole point: cached traversal for the CMIS runtime, authoritative raw
+traversal for the epoch side, ONE meaning of the ACEs).
+
+**Still to do in 5R-b:** rewire `ACLExpander.expandToReaders` (token layer: the three rules) and
+`SolrUtil.relationshipReaders` (endpoint union) onto the same class. Gating so far: golden + cross
+report 7/7, ACL/permission units 53/53, TCK Control+Basics 4/4, and a live smoke confirming the
+converted `CMIS_ANYONE` still yields `GROUP_EVERYONE cmis:read direct=true`. Playwright has NOT been
+run for this step.
+
 **Process correction:** any "verified live" claim in this document or in a test comment must carry
 the command and its raw output. This one did not, and the reviewer's independent Browser-Binding,
 CouchDB and REST checks all returned the opposite result.
