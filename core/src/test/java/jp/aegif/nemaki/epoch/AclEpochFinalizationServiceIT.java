@@ -108,6 +108,14 @@ public class AclEpochFinalizationServiceIT {
                         .build())
                 .name("idx_aclEpochState").type(PostIndexOptions.Type.JSON).ddoc("acl-epoch-indexes")
                 .build()).execute();
+        cloudant.postIndex(new PostIndexOptions.Builder()
+                .db(contentDb)
+                .index(new IndexDefinition.Builder()
+                        .fields(List.of(new IndexField.Builder()
+                                .add(AclEpochState.FIELD_MUTATION_ID, "asc").build()))
+                        .build())
+                .name("idx_aclEpochMutationId").type(PostIndexOptions.Type.JSON).ddoc("acl-epoch-indexes")
+                .build()).execute();
 
         ObjectMapper om = new ObjectMapper();
         CloudantClientWrapper confWrapper = new CloudantClientWrapper(cloudant, SystemConst.NEMAKI_CONF_DB, om);
@@ -423,6 +431,13 @@ public class AclEpochFinalizationServiceIT {
         assertIndexServed(withNotQ(Map.of(AclEpochState.FIELD_STATE, Map.of("$exists", true, "$nin", List.of(
                         AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE,
                         AclEpochState.RECONCILE_ENQUEUED)))), "unknown-state audit");
+        // review 3b [P1]: served by the (aclEpochMutationId) index — the (aclEpochState) index
+        // cannot serve an `aclEpochState $exists:false` condition (a JSON index only contains
+        // documents that HAVE the indexed field).
+        assertIndexServed(withNotQ(Map.of(
+                        AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true),
+                        AclEpochState.FIELD_STATE, Map.of("$exists", false))),
+                "state-less-with-mutation-id audit", "idx_aclEpochMutationId");
     }
 
     private Map<String, Object> withNotQ(Map<String, Object> stateAndFields) {
@@ -496,6 +511,11 @@ public class AclEpochFinalizationServiceIT {
     }
 
     private void assertIndexServed(Map<String, Object> selector, String label) throws Exception {
+        assertIndexServed(selector, label, "idx_aclEpochState");
+    }
+
+    private void assertIndexServed(Map<String, Object> selector, String label, String expectedIndex)
+            throws Exception {
         ObjectMapper om = new ObjectMapper();
         String body = om.writeValueAsString(Map.of("selector", selector));
         HttpRequest req = HttpRequest.newBuilder()
@@ -508,8 +528,8 @@ public class AclEpochFinalizationServiceIT {
         assertEquals(200, resp.statusCode(), label + " _explain failed: " + resp.body());
         JsonNode root = om.readTree(resp.body());
         String indexName = root.path("index").path("name").asText(null);
-        assertEquals("idx_aclEpochState", indexName,
-                label + " selector must be served by the (aclEpochState) index, not _all_docs");
+        assertEquals(expectedIndex, indexName,
+                label + " selector must be served by " + expectedIndex + ", not _all_docs");
     }
 
     // ── review 2d: quarantine race / bypass / terminal / failure ───
@@ -753,6 +773,46 @@ public class AclEpochFinalizationServiceIT {
                 budget, 30);
         assertTrue(scans <= 30, "the corrupt terminal doc must be quarantined in a FINITE number of scans "
                 + "via the resume cursor (took " + scans + ")");
+    }
+
+    // ── review 3b [P1]: state lost, mutation id survived ───────────
+
+    @Test
+    void stateLessDocumentWithALeftoverMutationIdIsQuarantinedInFiniteScans() throws Exception {
+        // Every OTHER selector keys on aclEpochState, so this shape is invisible to them and its
+        // aclSourceEpoch would be consumed as "settled" forever. The dedicated pass must find it
+        // AND the quarantine must actually stick — a quarantine that aborts (treating "state-less"
+        // as repaired) would make the pass select the same document on every scan for ever.
+        putRawJson("lost-marker", "{\"type\":\"epoch-it-fixture\",\"aclSourceEpoch\":900,"
+                + "\"aclEpochMutationId\":\"" + AclEpochState.newMutationId() + "\"}");
+
+        int scans = scanUntil(() -> Boolean.TRUE.equals(props("lost-marker").get(AclEpochState.FIELD_QUARANTINED)),
+                100, 5);
+        assertTrue(scans <= 5, "a state-less doc with a leftover mutation id must be quarantined "
+                + "in a FINITE number of scans (took " + scans + ")");
+        assertEquals(900L, ((Number) props("lost-marker").get(AclEpochState.FIELD_SOURCE_EPOCH)).longValue(),
+                "quarantine preserves the original fields for inspection / repair");
+    }
+
+    @Test
+    void aFullyStateLessDocumentIsStillNeverSelected() {
+        // The new pass must not widen the scanner's reach to ordinary content: only a LEFTOVER
+        // mutation id qualifies.
+        seedStateless("plain-nostate");
+        ScanSummary sum = svc.scan(contentDb, 100);
+        assertEquals(0, sum.scanned, "ordinary state-less content is still never selected");
+        assertFalse(props("plain-nostate").containsKey(AclEpochState.FIELD_QUARANTINED));
+    }
+
+    @Test
+    void repairingByClearingBothFieldsStopsTheQuarantine() {
+        // The repair contract: clearing state AND mutation id together makes the document ordinary
+        // settled content, and quarantine must then ABORT rather than isolate a repaired document.
+        seedStateless("repaired-both");
+        ScanSummary sum = new ScanSummary();
+        svc.quarantine(contentDb, "repaired-both", "stale leftover-mutation-id anomaly", sum);
+        assertEquals(0, sum.quarantined, "a document with NEITHER field is repaired, not anomalous");
+        assertFalse(props("repaired-both").containsKey(AclEpochState.FIELD_QUARANTINED));
     }
 
     // ── review 2g: terminal-audit resume cursor robustness ─────────

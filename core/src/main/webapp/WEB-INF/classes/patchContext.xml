@@ -311,6 +311,14 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- ACL-epoch: (aclEpochMutationId) index so the scanner can find a document that
+				     LOST its state but kept its mutation id (review 3b [P1]) — invisible to every
+				     aclEpochState-keyed selector otherwise. -->
+				<bean class="jp.aegif.nemaki.patch.Patch_AclEpochMutationIdMangoIndex">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 			</list>
 		</property>
 	</bean>
@@ -567,6 +575,11 @@
 		</property>
 	</bean>
 	<bean id="patch_AclEpochStateMangoIndex" class="jp.aegif.nemaki.patch.Patch_AclEpochStateMangoIndex">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+	<bean id="patch_AclEpochMutationIdMangoIndex" class="jp.aegif.nemaki.patch.Patch_AclEpochMutationIdMangoIndex">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

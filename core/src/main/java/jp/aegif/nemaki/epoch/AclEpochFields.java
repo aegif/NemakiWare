@@ -89,6 +89,16 @@ public final class AclEpochFields {
             if (stateRequired) {
                 throw new AclEpochAnomalyException("missing / non-String aclEpochState on " + docId);
             }
+            // STEADY STATE clears the state AND the mutation id together. A leftover mutation id
+            // with no state is corruption, not settled content (review 3b [P1]): treating it as
+            // settled would let a stale `aclSourceEpoch` — e.g. one left behind by a move whose
+            // marker was lost — be used as a fence value, and because every scanner selector keys
+            // on `aclEpochState`, nothing would ever notice. The scanner has a dedicated pass for
+            // exactly this shape.
+            if (props != null && props.containsKey(AclEpochState.FIELD_MUTATION_ID)) {
+                throw new AclEpochAnomalyException("aclEpochMutationId present without aclEpochState on "
+                        + docId + " (steady state clears both)");
+            }
             return new Values(null, null, optionalEpoch(docId, props));
         }
         if (!(rawState instanceof String)) {

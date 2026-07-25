@@ -593,12 +593,112 @@ public class AclEffectiveEpochServiceIT {
     }
 
     @Test
-    void contentWithoutATypeDiscriminatorIsWalkedAsOrdinaryContent() {
-        // Backward compatibility for any content predating the discriminator — safe because a
-        // document carrying endpoint fields is rejected by the rule above.
-        seedRaw("root", "{\"aclInherited\":false,\"aclSourceEpoch\":6}");
+    void contentWithoutATypeDiscriminatorIsRefusedNotGuessedAtRuntime() {
+        // INVERTED in review 3b [P1]: the previous test pinned the UNSAFE behaviour (guessing
+        // "ordinary content"). Guessing silently drops a relationship's endpoint chains, so a
+        // document with no type/objectType is now an anomaly — pre-discriminator data needs an
+        // explicit migration, not a runtime fallback.
+        seedRaw("root", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclSourceEpoch\":6}");
         seedRaw("leaf", "{\"parentId\":\"root\",\"aclInherited\":true,\"aclSourceEpoch\":1}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "leaf"));
+    }
+
+    @Test
+    void objectTypeAloneIsAcceptedAsTheDiscriminatorLikeTheContentDao() {
+        // ContentDaoServiceImpl.getContent falls back to objectType when type is absent; the walk
+        // must agree, or the two layers would disagree about what a document is.
+        seedRaw("root", "{\"objectType\":\"cmis:folder\",\"aclInherited\":false,\"aclSourceEpoch\":6}");
+        seedRaw("leaf", "{\"objectType\":\"cmis:document\",\"parentId\":\"root\","
+                + "\"aclInherited\":true,\"aclSourceEpoch\":1}");
         assertEquals(6L, svc.snapshot(contentDb, "leaf").effectiveEpoch);
+    }
+
+    @Test
+    void legacyShortTypeFormsAreAcceptedLikeTheContentDao() {
+        // The DAO accepts "folder"/"document" as well as the cmis: forms.
+        seedRaw("root", "{\"type\":\"folder\",\"aclInherited\":false,\"aclSourceEpoch\":9}");
+        seedRaw("leaf", "{\"type\":\"document\",\"parentId\":\"root\",\"aclInherited\":true}");
+        assertEquals(9L, svc.snapshot(contentDb, "leaf").effectiveEpoch);
+    }
+
+    @Test
+    void unrecognisedOrMalformedTypeIsRefused() {
+        seedRaw("weirdtype", "{\"type\":\"nemaki:notABaseType\",\"aclInherited\":false}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "weirdtype"));
+
+        seedRaw("nulltype", "{\"type\":null,\"aclInherited\":false}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "nulltype"));
+
+        seedRaw("numtype", "{\"type\":5,\"aclInherited\":false}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "numtype"));
+    }
+
+    @Test
+    void aNonFolderAncestorIsRefusedBecauseReadersResolveParentsViaGetFolder() {
+        // The readers computation resolves parents with getFolder(), which returns null for a
+        // non-folder and then fails closed under strict mode. If the epoch walk accepted a
+        // document as an ancestor the two would see DIFFERENT dependency sets (review 3b [P1]).
+        seedDocument("notAFolder", null, false, 50L); // a cmis:document acting as a "parent"
+        seedDocument("child", "notAFolder", true, 1L);
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "child"));
+    }
+
+    @Test
+    void anItemInheritsFromItsFolderAncestor() {
+        // cmis:item (nemaki:user / nemaki:group live under .system) is legal content with an ACL.
+        seedFolder("sys", null, false, 12L);
+        seedRaw("anItem", "{\"type\":\"cmis:item\",\"objectType\":\"nemaki:user\","
+                + "\"parentId\":\"sys\",\"aclInherited\":true,\"aclSourceEpoch\":2}");
+        assertEquals(12L, svc.snapshot(contentDb, "anItem").effectiveEpoch);
+    }
+
+    // ── review 3b [P2]: the hop cap is an exact boundary ──
+
+    @Test
+    void aChainOfExactlyMaxAncestorHopsSucceeds() {
+        // OFF-BY-ONE regression: the old loop bound rejected an exactly-at-the-limit chain,
+        // permanently blocking a legitimately deep subtree from ever being re-indexed.
+        int cap = 4;
+        svc.setMaxAncestorHops(cap);
+        seedFolder("n0", null, false, 7L);            // the non-inheriting top
+        for (int i = 1; i <= cap; i++) {
+            seedFolder("n" + i, "n" + (i - 1), true, i);
+        }
+        // n4 → n3 → n2 → n1 → n0 = EXACTLY cap ancestors above the leaf.
+        assertEquals(7L, svc.snapshot(contentDb, "n" + cap).effectiveEpoch,
+                "a chain of exactly maxAncestorHops ancestors must succeed");
+    }
+
+    @Test
+    void aChainOfMaxAncestorHopsPlusOneFails() {
+        int cap = 4;
+        svc.setMaxAncestorHops(cap);
+        seedFolder("m0", null, false, 7L);
+        for (int i = 1; i <= cap + 1; i++) {
+            seedFolder("m" + i, "m" + (i - 1), true, i);
+        }
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "m" + (cap + 1)),
+                "one hop past the cap must fail closed");
+    }
+
+    // ── review 3b [P1]: state lost but the mutation id survived ──
+
+    @Test
+    void mutationIdWithoutAStateIsRefusedAsSettledContent() {
+        // The steady state clears BOTH. A leftover mutation id with no state means the marker was
+        // lost (e.g. during a move), so the surviving aclSourceEpoch must NOT be used as settled —
+        // otherwise a stale, possibly-high epoch fences out later correct writers forever.
+        seedRaw("lost", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclSourceEpoch\":900,"
+                + "\"aclEpochMutationId\":\"" + AclEpochState.newMutationId() + "\"}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "lost"));
+    }
+
+    @Test
+    void mutationIdWithoutAStateOnAnANCESTORIsAlsoRefused() {
+        seedRaw("root", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclSourceEpoch\":900,"
+                + "\"aclEpochMutationId\":\"" + AclEpochState.newMutationId() + "\"}");
+        seedDocument("leaf", "root", true, 1L);
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "leaf"));
     }
 
     // ── fixtures / helpers ─────────────────────────────────────────
