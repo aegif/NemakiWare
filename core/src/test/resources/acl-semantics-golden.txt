@@ -36,6 +36,8 @@ folder-subject-not-document | strict=false => [u1:direct:cmis:read, u2:inherited
 folder-subject-not-document | strict=true => [u1:direct:cmis:read, u2:inherited:cmis:read]
 orphan-no-parent-but-inherits | strict=false => [u1:inherited:cmis:read]
 orphan-no-parent-but-inherits | strict=true => [u1:inherited:cmis:read]
+orphan-inherits-branch2-returns-RAW-aces | strict=false => [ANYONE_CONVERTED:direct:cmis:read, u1:direct:cmis:read]
+orphan-inherits-branch2-returns-RAW-aces | strict=true => [ANYONE_CONVERTED:direct:cmis:read, u1:direct:cmis:read]
 deep-chain-six-levels | strict=false => [u0:direct:cmis:read, u1:inherited:cmis:all, u2:inherited:cmis:read, u3:inherited:cmis:write, u4:inherited:cmis:read, ur:inherited:cmis:read]
 deep-chain-six-levels | strict=true => [u0:direct:cmis:read, u1:inherited:cmis:all, u2:inherited:cmis:read, u3:inherited:cmis:write, u4:inherited:cmis:read, ur:inherited:cmis:read]
 deep-chain-with-a-break-in-the-middle | strict=false => [u0:direct:cmis:read, u3:inherited:cmis:write, u4:inherited:cmis:read]
