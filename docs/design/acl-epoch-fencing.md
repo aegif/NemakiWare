@@ -417,6 +417,34 @@ defect class.
   the merge has exactly one implementation. Required test: a mutation that forks or disables the
   shared merge must make `calculateAcl` and `Snapshot.readers` DISAGREE.
 
+**5R-a findings (the golden is captured; extraction has NOT started).** Committed as
+`AclSemanticsCorpus` (data only), `AclSemanticsGoldenTest` and
+`src/test/resources/acl-semantics-golden.txt`. The golden is stable across runs and BINDS: flipping
+the absent-`aclInherited` default from TRUE to FALSE fails it. Two properties of the CURRENT
+semantics were surfaced while building it, and both must be carried into 5R-b unchanged:
+
+1. **A non-inheriting object's OWN local ACEs are labelled `inherited`, not `direct`.**
+   `calculateAcl` only runs the merge (which sets the direct flags) when `!isRoot && inherits`;
+   otherwise it returns `content.getAcl()` RAW, and a raw local ACE has `direct == false` by
+   default. So `leaf-does-not-inherit`, `the-ROOT-itself-is-the-subject` and
+   `orphan-no-parent-but-inherits` all render their own ACEs as `inherited`. This is almost
+   certainly not intended (the flag is surfaced to CMIS clients through `compileAcl`), but changing
+   it is a BEHAVIOUR change: it must not ride along in the extraction. Raised separately.
+2. **The strict/non-strict divergence is exactly one case**: an inheriting node whose parent does
+   not resolve. Non-strict degrades to the local ACEs; strict throws. Everything else in the corpus
+   is identical under both, which is what makes "strict = same semantics, stricter failure" a safe
+   thing to assert.
+
+Also confirmed while writing the corpus: the system-principal conversion is keyed on
+`PrincipalId.ANYONE_IN_DB` / `ANONYMOUS_IN_DB` (`"CMIS_ANYONE"` / `"CMIS_ANONYMOUS"`), and it
+rewrites BOTH direct and inherited ACEs.
+
+**Still to do in 5R-a before 5R-b starts:** the three-path cross-comparison report
+(`calculateAclInternal` vs `expandToReaders` vs `SolrUtil.relationshipReaders`) that decides where
+an explicit behaviour-convergence commit is needed. The token-projection layer is already known to
+add one rule the ACE layer does not have — an absent/empty ACL becomes ADMIN-ONLY readers — so at
+minimum that rule must land in the shared `readerTokens`, not be lost in the move.
+
 ## 6. Conflict table (v2)
 
 | A ↓ \ B → | ACL-UPDATE (higher e) | ACL-UPDATE (equal e) | ACL-UPDATE (lower e) | CONTENT-UPDATE | CREATE/batch | RAG block |
