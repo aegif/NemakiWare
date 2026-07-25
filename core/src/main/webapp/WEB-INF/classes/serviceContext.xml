@@ -447,6 +447,16 @@
         <property name="connectorPool" ref="connectorPool" />
     </bean>
 
+    <!-- Fenced ACL-group writer (design §4.2 steps 3/5/6 + §4.3 — increment 4).
+         Standalone: NO init-method, NO scheduler wiring, NO cron, and no production
+         caller — write() is driven only by tests until the wiring increment. It writes
+         ONLY the ACL group (readers + effective_acl_epoch) as an atomic {set} under a
+         _version_ CAS, and never touches content/path/body. Fail-closed staging. -->
+    <bean id="aclEpochIndexWriter"
+          class="jp.aegif.nemaki.epoch.AclEpochIndexWriter">
+        <property name="effectiveEpochService" ref="aclEffectiveEpochService" />
+    </bean>
+
     <!-- Search-index ACL reconciliation: durable CouchDB queue + leader-gated poller -->
     <bean id="searchIndexReconciliationService"
           class="jp.aegif.nemaki.reconcile.SearchIndexReconciliationService">

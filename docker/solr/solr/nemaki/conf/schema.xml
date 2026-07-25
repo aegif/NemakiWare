@@ -239,6 +239,16 @@
         fresher readers. -->
    <field name="acl_index_generation" type="long" indexed="true" stored="true" required="false" multiValued="false" />
 
+   <!-- ACL-epoch fence (acl-epoch-fencing.md §4.1/§4.4): the EFFECTIVE epoch of the
+        object = max(aclSourceEpoch over itself + its inheriting ancestors; for a
+        relationship also both endpoint chains). Unlike acl_index_generation (which is
+        the object's own CouchDB _rev and therefore cannot order a change made on an
+        ANCESTOR), every value here comes from ONE repository-wide monotonic counter, so
+        epochs are comparable across objects and a parent's ACL change orders correctly
+        against its descendants'. Written ONLY as part of the atomic ACL-group update
+        ({readers, effective_acl_epoch}) under a _version_ CAS. -->
+   <field name="effective_acl_epoch" type="long" indexed="true" stored="true" required="false" multiValued="false" />
+
    <!-- Block Join routing field (Solr 9 requires _root_ for nested documents) -->
    <field name="_root_" type="string" indexed="true" stored="false" docValues="false" />
 
