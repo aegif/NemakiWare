@@ -66,25 +66,7 @@ public class AclServiceDelegate {
 		Acl acl = strict ? null : aclCache.get(content.getId());
 
 		if (acl == null) {
-			boolean iht = getAclInheritedWithDefault(repositoryId, content);
-			boolean isRootContent = contentService.isRoot(repositoryId, content);
-
-			if (!isRootContent && iht) {
-				List<Ace> result = calculateAclInternal(repositoryId, content, strict);
-
-				acl = new Acl();
-				for (Ace r : result) {
-					if (r.isDirect()) {
-						acl.getLocalAces().add(r);
-					} else {
-						acl.getInheritedAces().add(r);
-					}
-				}
-			} else {
-				acl = content.getAcl();
-			}
-
-			convertSystemPrincipalId(repositoryId, acl.getAllAces());
+			acl = resolveAcl(repositoryId, content, strict);
 			if (!strict) {
 				aclCache.put(content.getId(), acl);
 			}
@@ -116,26 +98,7 @@ public class AclServiceDelegate {
 				continue;
 			}
 
-			Acl acl;
-			boolean iht = getAclInheritedWithDefault(repositoryId, content);
-			boolean isRootContent = contentService.isRoot(repositoryId, content);
-
-			if (!isRootContent && iht) {
-				List<Ace> calcResult = calculateAclInternal(repositoryId, content);
-
-				acl = new Acl();
-				for (Ace r : calcResult) {
-					if (r.isDirect()) {
-						acl.getLocalAces().add(r);
-					} else {
-						acl.getInheritedAces().add(r);
-					}
-				}
-			} else {
-				acl = content.getAcl();
-			}
-
-			convertSystemPrincipalId(repositoryId, acl.getAllAces());
+			Acl acl = resolveAcl(repositoryId, content, false);
 			aclCache.put(contentId, acl);
 			result.put(contentId, acl);
 		}
@@ -143,13 +106,16 @@ public class AclServiceDelegate {
 		return result;
 	}
 
-	private List<Ace> calculateAclInternal(String repositoryId, Content content) {
-		return calculateAclInternal(repositoryId, content, false);
-	}
-
-	private List<Ace> calculateAclInternal(String repositoryId, Content content, boolean strict) {
+	/**
+	 * The ONE place the CMIS runtime turns a Content into its effective {@code Acl} — including the
+	 * OUTER root/non-inheriting branch, which used to be duplicated between {@link #calculateAcl}
+	 * and {@link #calculateAcls} (increment 5S step 2). The ACL-epoch side calls the same
+	 * {@link AclSemantics#resolveAcl} over its authoritative chain, so neither the recursion NOR the
+	 * outer branch can drift between the two.
+	 */
+	private Acl resolveAcl(String repositoryId, Content content, boolean strict) {
 		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
-		return AclSemantics.effectiveAces(new CmisChainNode(repositoryId, content), strict,
+		return AclSemantics.resolveAcl(new CmisChainNode(repositoryId, content), strict,
 				info.getPrincipalIdAnyone(), info.getPrincipalIdAnonymous());
 	}
 
@@ -198,25 +164,6 @@ public class AclServiceDelegate {
 			Folder parent = contentService.getFolder(repositoryId, content.getParentId());
 			return parent == null ? null : new CmisChainNode(repositoryId, parent);
 		}
-	}
-
-	/**
-	 * Delegates to {@link AclSemantics#mergeAces} — the ONE implementation of the inheritance
-	 * merge, shared with the ACL-epoch (authoritative-traversal) side so the two cannot diverge
-	 * (design §5.3). Behaviour is unchanged, including the in-place system-principal conversion
-	 * of {@code target} and the non-contractual result ordering.
-	 */
-	private List<Ace> mergeAcl(String repositoryId, List<Ace> target, List<Ace> source) {
-		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
-		return AclSemantics.mergeAces(target, source,
-				info.getPrincipalIdAnyone(), info.getPrincipalIdAnonymous());
-	}
-
-	/** Delegates to {@link AclSemantics#convertSystemPrincipalIds} (shared semantics, §5.3). */
-	private void convertSystemPrincipalId(String repositoryId, List<Ace> aces) {
-		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
-		AclSemantics.convertSystemPrincipalIds(aces, info.getPrincipalIdAnyone(),
-				info.getPrincipalIdAnonymous());
 	}
 
 	public Boolean getAclInheritedWithDefault(String repositoryId, Content content) {

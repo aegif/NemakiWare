@@ -96,6 +96,20 @@ public final class AclSemanticsCorpus {
         return a;
     }
 
+    /**
+     * An ACE whose STORED {@code direct} flag is set explicitly.
+     *
+     * <p>{@link #ace} leaves {@code direct} at its default {@code false}, which is also what the
+     * merge produces for a source-side ACE — so a case built only from {@link #ace} cannot tell
+     * "returned RAW" from "returned merged". That blind spot hid one of the three branches of the
+     * inheritance recursion (increment 5S step 1 reported it; this closes it).
+     */
+    public static Ace aceDirect(String principalId, boolean direct, String... permissions) {
+        Ace a = ace(principalId, permissions);
+        a.setDirect(direct);
+        return a;
+    }
+
     private static Ace copy(Ace a) {
         Ace c = new Ace();
         c.setPrincipalId(a.getPrincipalId());
@@ -203,6 +217,21 @@ public final class AclSemanticsCorpus {
 
         out.add(new Case("orphan-no-parent-but-inherits",
                 List.of(doc("leaf", null, Boolean.TRUE, ace("u1", "cmis:read")))));
+
+        // BINDS BRANCH 2 of the recursion (inheriting, but no parent id): that branch returns the
+        // node's RAW local ACEs — no direct flags assigned, no system-principal conversion — while
+        // every other branch goes through the merge, which deep-copies and REASSIGNS `direct`.
+        // A stored `direct = true` is therefore preserved here and would be flipped to false by the
+        // merge, so this case fails the moment branch 2 stops returning raw.
+        //
+        // The CMIS_ANYONE entry does NOT bind the "no conversion" half: branch 2 skips the merge's
+        // in-place conversion, but calculateAcl converts acl.getAllAces() at the very end, so the
+        // golden shows the CONVERTED id either way. It is kept only to record that fact explicitly
+        // — the branch-local omission is invisible from outside calculateAcl.
+        out.add(new Case("orphan-inherits-branch2-returns-RAW-aces",
+                List.of(doc("leaf", null, Boolean.TRUE,
+                        aceDirect("u1", true, "cmis:read"),
+                        aceDirect(PrincipalId.ANYONE_IN_DB, true, "cmis:read")))));
 
         out.add(new Case("deep-chain-six-levels",
                 List.of(doc("leaf", "n4", Boolean.TRUE, ace("u0", "cmis:read")),
