@@ -119,6 +119,133 @@ public final class AclSemantics {
         }
     }
 
+    // ── traversal SHAPE (increment 5S) ─────────────────────────────
+
+    /**
+     * One node of an inheritance chain, as the ACL semantics need to see it. The TRAVERSAL stays
+     * with each caller — the CMIS delegate resolves a parent lazily through the cached
+     * {@code getFolder}, the ACL-epoch side hands over documents it already read authoritatively —
+     * but the SHAPE of the recursion below is shared, which is the whole point of 5S.
+     *
+     * <p>Sharing only {@link #mergeAces} was not enough: the shape has three branches (root /
+     * non-inheriting, inheriting-with-no-parent, and the ordinary merge), and a second
+     * implementation of THOSE is exactly the increment-3b defect class — two traversals that agree
+     * on the merge but disagree on when to stop.
+     */
+    public interface ChainNode {
+        /** Identity, used only for the strict failure message. */
+        String id();
+
+        /**
+         * The node's own LOCAL ACEs. Never null — a caller whose stored ACL is missing substitutes
+         * an empty list (and logs, as the delegate always has).
+         *
+         * <p>MUTATED IN PLACE by the system-principal conversion inside {@link #mergeAces}, exactly
+         * as before.
+         */
+        List<Ace> localAces();
+
+        /**
+         * The node's STORED {@code Acl}, returned as-is by {@link #resolveAcl}'s root /
+         * non-inheriting branch (the delegate's {@code content.getAcl()}).
+         */
+        jp.aegif.nemaki.model.Acl storedAcl();
+
+        /** {@code contentService.isRoot} for this node. */
+        boolean root();
+
+        /** {@code getAclInheritedWithDefault} for this node (an ABSENT flag means TRUE). */
+        boolean inherited();
+
+        /** The parent id, or {@code null}. */
+        String parentId();
+
+        /**
+         * The parent node, or {@code null} if it cannot be resolved. Note that the production
+         * {@code getFolder} collapses a genuine 404 AND a transient read failure into null, which
+         * is precisely why {@code strict} exists below.
+         */
+        ChainNode parent();
+    }
+
+    /**
+     * Resolve a node's effective {@code Acl} — the shape of
+     * {@code AclServiceDelegate.calculateAcl}, minus the caching, which stays with the delegate.
+     *
+     * <p>Behaviour-preserving: pinned by {@code AclSemanticsGoldenTest}.
+     *
+     * @param strict an inheriting node whose parent does not resolve THROWS instead of degrading to
+     *               local-ACEs-only (the search-index re-drive contract)
+     */
+    public static jp.aegif.nemaki.model.Acl resolveAcl(ChainNode node, boolean strict,
+                                                       String anyoneId, String anonymousId) {
+        jp.aegif.nemaki.model.Acl acl;
+        if (!node.root() && node.inherited()) {
+            List<Ace> result = effectiveAces(node, strict, anyoneId, anonymousId);
+            acl = new jp.aegif.nemaki.model.Acl();
+            for (Ace r : result) {
+                if (r.isDirect()) {
+                    acl.getLocalAces().add(r);
+                } else {
+                    acl.getInheritedAces().add(r);
+                }
+            }
+        } else {
+            acl = node.storedAcl();
+        }
+        convertSystemPrincipalIds(acl.getAllAces(), anyoneId, anonymousId);
+        return acl;
+    }
+
+    /**
+     * The inheritance recursion itself — byte-for-byte the shape of
+     * {@code AclServiceDelegate.calculateAclInternal}.
+     *
+     * <p>Three branches, all preserved deliberately:
+     * <ol>
+     *   <li><b>root or non-inheriting</b> — the node's ACEs become {@code direct = true} and are
+     *       merged as the SOURCE under everything accumulated below them;</li>
+     *   <li><b>inheriting but parentless</b> — the RAW local ACEs are returned, with no direct
+     *       flags and no conversion. This asymmetry is real behaviour (corpus case
+     *       {@code orphan-no-parent-but-inherits}), not an oversight to tidy up here;</li>
+     *   <li><b>otherwise</b> — {@code merge(target = own ACEs, source = the ancestors' result)}, so
+     *       the nearer node wins.</li>
+     * </ol>
+     */
+    public static List<Ace> effectiveAces(ChainNode node, boolean strict,
+                                          String anyoneId, String anonymousId) {
+        return effectiveAcesInternal(node, new ArrayList<Ace>(), strict, anyoneId, anonymousId);
+    }
+
+    private static List<Ace> effectiveAcesInternal(ChainNode node, List<Ace> result, boolean strict,
+                                                   String anyoneId, String anonymousId) {
+        List<Ace> aces = node.localAces();
+
+        if (node.root() || !node.inherited()) {
+            List<Ace> rootAces = new ArrayList<Ace>();
+            for (Ace ace : aces) {
+                Ace rootAce = deepCopy(ace);
+                rootAce.setDirect(true);
+                rootAces.add(rootAce);
+            }
+            return mergeAces(result, rootAces, anyoneId, anonymousId);
+        }
+        if (node.parentId() == null) {
+            return aces;
+        }
+        ChainNode parent = node.parent();
+        if (parent == null) {
+            if (strict) {
+                throw new IllegalStateException("Strict ACL: parent " + node.parentId()
+                        + " of " + node.id() + " is unreadable — cannot compute inherited ACL");
+            }
+            return aces;
+        }
+        return mergeAces(aces,
+                effectiveAcesInternal(parent, new ArrayList<Ace>(), strict, anyoneId, anonymousId),
+                anyoneId, anonymousId);
+    }
+
     /** Last-wins map keyed by principal id (the original {@code buildAceMap}). */
     private static HashMap<String, Ace> buildAceMap(List<Ace> aces) {
         HashMap<String, Ace> map = new HashMap<String, Ace>();
