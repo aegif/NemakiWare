@@ -521,11 +521,26 @@ Content afterwards — making the merge side-effect-free would be a behaviour ch
 with each caller (that is the whole point: cached traversal for the CMIS runtime, authoritative raw
 traversal for the epoch side, ONE meaning of the ACEs).
 
-**Still to do in 5R-b:** rewire `ACLExpander.expandToReaders` (token layer: the three rules) and
-`SolrUtil.relationshipReaders` (endpoint union) onto the same class. Gating so far: golden + cross
-report 7/7, ACL/permission units 53/53, TCK Control+Basics 4/4, and a live smoke confirming the
-converted `CMIS_ANYONE` still yields `GROUP_EVERYONE cmis:read direct=true`. Playwright has NOT been
-run for this step.
+**5R-b step 2 (DONE — token layer + relationship union).** `AclSemantics` now also holds
+`readerTokens(repo, aces, PrincipalResolver)` — the three rules the cross-path report pinned to this
+layer — and `relationshipReaders(source, target)` (the endpoint union). `ACLExpander.expandToReaders`
+and `SolrUtil.unionReaders` delegate to them. The `PrincipalResolver` SPI keeps the class free of
+I/O; its Javadoc records the PRODUCTION order explicitly (USER first, then GROUP), since that is the
+one thing a re-implementation would most easily invert.
+
+The `cmis:anyone` / `cmis:anonymous` literal branch is preserved VERBATIM even though it is dead
+code in the shipped configuration: removing it, or conversely routing the shipped anyone id to an
+`anyone:` token, would both be behaviour changes requiring a full reindex.
+
+**5R-b gating:** golden UNMOVED across both steps (git diff zero); golden + cross report 7/7;
+ACL/permission units 53/53 (`ACLExpanderTest` 33/33 covers the token rules directly); **TCK
+Control + Basics + Query 10/10** against a redeployed WAR, with Query exercising the readers `fq`
+path; and a live re-index of `bbc119345228953e3405c85bdb36b096` producing byte-identical readers
+`[group:bedroom:GROUP_EVERYONE, user:bedroom:admin, user:bedroom:system]`. **Playwright has NOT been
+run** — it remains outstanding for 5R-b.
+
+**Next:** 5T (tri-state `PrincipalResolver`) and 5S (snapshot carries the raw local ACLs; the
+`ReadersComputer` SPI and §5.2 are deleted).
 
 **Process correction:** any "verified live" claim in this document or in a test comment must carry
 the command and its raw output. This one did not, and the reviewer's independent Browser-Binding,

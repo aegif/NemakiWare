@@ -14,7 +14,6 @@ import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.cache.model.NemakiCache;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
-import org.apache.commons.collections4.CollectionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
