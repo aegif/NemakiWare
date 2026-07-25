@@ -498,6 +498,19 @@ needs only a STRING COMPARISON, whereas the index path additionally needs
 `getGroupById("GROUP_EVERYONE")` to RESOLVE — so a missing GroupItem or a transient DAO fault drops
 it silently. That is an instance of the already-pinned 5T gap, not a new anyone-specific defect.
 
+**Consistency follow-up (review).** The withdrawal above initially left the report's own
+specification helper contradicting it: `projectTokens` still mapped the converted anyone id to an
+`anyone:` token — the very unification just ruled out — and the layer-1 loop SKIPPED the
+`system-principal*` cases with a stale "known finding" comment, which was precisely what hid the
+contradiction. An implementer reading `projectTokens` as the spec would have extracted the opposite
+of the pinned behaviour. Fixed: the default fixture now uses the SHIPPED ids
+(`principal.anyone = GROUP_EVERYONE`, `principal.anonymous = anonymous`, as separate settings),
+`projectTokens` resolves the already-converted id as GROUP-then-USER with no `anyone:` special case,
+the `system-principal*` cases are back in the layer-1 loop, and the shipped pin asserts an EXACT
+token list plus the ABSENCE of any `anyone:` token. Both directions are mutation-bound:
+re-introducing the `anyone:` mapping fails layer 1, and removing the fixture's group resolution
+fails both the shipped pin and layer 1.
+
 **Process correction:** any "verified live" claim in this document or in a test comment must carry
 the command and its raw output. This one did not, and the reviewer's independent Browser-Binding,
 CouchDB and REST checks all returned the opposite result.

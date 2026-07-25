@@ -55,6 +55,9 @@ import jp.aegif.nemaki.util.cache.model.NemakiCache;
 public class AclSemanticsCrossPathReportTest {
 
     private static final String ADMIN_TOKEN = "admin:" + AclSemanticsCorpus.REPO;
+    /** repositories-default.yml: {@code principal.anyone} / {@code principal.anonymous}. */
+    private static final String SHIPPED_ANYONE_ID = "GROUP_EVERYONE";
+    private static final String SHIPPED_ANONYMOUS_ID = "anonymous";
 
     // ── layer 1: ACE ───────────────────────────────────────────────
 
@@ -72,9 +75,6 @@ public class AclSemanticsCrossPathReportTest {
                 authoritative = f.delegate.calculateAcl(AclSemanticsCorpus.REPO, f.subject, true);
             } catch (RuntimeException e) {
                 continue; // strict + unresolvable parent: no ACE set to compare (pinned by the golden)
-            }
-            if (c.name.startsWith("system-principal")) {
-                continue; // KNOWN + verified finding, pinned separately below
             }
             List<String> expected = projectTokens(authoritative);
             List<String> actual = sorted(f.expander.expandToReaders(AclSemanticsCorpus.REPO, f.subject, true));
@@ -141,11 +141,14 @@ public class AclSemanticsCrossPathReportTest {
         //
         // Unifying onto an `anyone:` token would be a BEHAVIOUR CHANGE requiring a full reindex,
         // so 5R-b must NOT do it.
-        Fixture f = new Fixture(named("system-principal-anyone-in-db-is-converted"), "GROUP_EVERYONE");
+        Fixture f = new Fixture(named("system-principal-anyone-in-db-is-converted"));
         List<String> tokens = sorted(f.expander.expandToReaders(AclSemanticsCorpus.REPO, f.subject, true));
-        assertTrue(tokens.contains("group:" + AclSemanticsCorpus.REPO + ":GROUP_EVERYONE"),
-                "the shipped configuration carries the anyone grant on the GROUP_EVERYONE channel, "
-                + "not on an anyone: token — got " + tokens);
+        assertEquals(List.of("group:" + AclSemanticsCorpus.REPO + ":" + SHIPPED_ANYONE_ID,
+                        "user:" + AclSemanticsCorpus.REPO + ":u2"), tokens,
+                "the shipped configuration carries the anyone grant on the GROUP_EVERYONE channel");
+        assertTrue(tokens.stream().noneMatch(t -> t.startsWith("anyone:")),
+                "no anyone: token is produced in the shipped configuration — unifying onto one "
+                + "would be a behaviour change requiring a full reindex");
     }
 
     @Test
@@ -222,11 +225,16 @@ public class AclSemanticsCrossPathReportTest {
             if (!read) continue;                       // RULE A
             String pid = a.getPrincipalId();
             if (pid == null || pid.isEmpty()) continue;
-            if ("ANYONE_CONVERTED".equals(pid) || "ANONYMOUS_CONVERTED".equals(pid)) {
-                out.add("anyone:" + AclSemanticsCorpus.REPO);
-                continue;
+            // RULE C — resolve the (already system-converted) principal id exactly as production
+            // does: GROUP first, then USER, else drop. There is deliberately NO `anyone:` special
+            // case: in the shipped configuration the anyone grant arrives here as the converted id
+            // GROUP_EVERYONE and leaves as a GROUP token. Re-introducing an `anyone:` mapping would
+            // re-assert the unification this report ruled out (it would need a full reindex).
+            if (SHIPPED_ANYONE_ID.equals(pid)) {
+                out.add("group:" + AclSemanticsCorpus.REPO + ":" + pid);
+            } else {
+                out.add("user:" + AclSemanticsCorpus.REPO + ":" + pid);
             }
-            out.add("user:" + AclSemanticsCorpus.REPO + ":" + pid); // RULE C (all principals resolve here)
         }
         if (out.isEmpty()) {
             return List.of(ADMIN_TOKEN); // RULE B again: nothing survived the filter
@@ -277,8 +285,9 @@ public class AclSemanticsCrossPathReportTest {
         final Content subject;
         final PrincipalService principalService;
 
+        /** Default = the SHIPPED configuration (repositories-default.yml principal.anyone). */
         Fixture(AclSemanticsCorpus.Case c) {
-            this(c, "ANYONE_CONVERTED");
+            this(c, SHIPPED_ANYONE_ID);
         }
 
         Fixture(AclSemanticsCorpus.Case c, String principalIdAnyone) {
@@ -300,7 +309,8 @@ public class AclSemanticsCrossPathReportTest {
             RepositoryInfo info = mock(RepositoryInfo.class);
             lenient().when(infoMap.get(anyString())).thenReturn(info);
             lenient().when(info.getRootFolderId()).thenReturn(AclSemanticsCorpus.ROOT_ID);
-            lenient().when(info.getPrincipalIdAnonymous()).thenReturn(principalIdAnyone);
+            // anonymous and anyone are SEPARATE settings (principal.anonymous / principal.anyone).
+            lenient().when(info.getPrincipalIdAnonymous()).thenReturn(SHIPPED_ANONYMOUS_ID);
             lenient().when(info.getPrincipalIdAnyone()).thenReturn(principalIdAnyone);
             lenient().when(propertyManager.readBoolean(any())).thenReturn(false);
 
@@ -327,12 +337,6 @@ public class AclSemanticsCrossPathReportTest {
                     .thenAnswer(inv -> delegate.calculateAcl(inv.getArgument(0), inv.getArgument(1),
                             (Boolean) inv.getArgument(2)));
 
-            // Every non-system principal resolves as a USER by default.
-            lenient().when(principalService.getUserById(anyString(), anyString())).thenAnswer(inv -> {
-                User u = new User();
-                u.setUserId(inv.getArgument(1));
-                return u;
-            });
             // GROUP_EVERYONE resolves as a real GroupItem in production; everything else is a user.
             lenient().when(principalService.getGroupById(anyString(), anyString())).thenAnswer(inv -> {
                 String id = inv.getArgument(1);
