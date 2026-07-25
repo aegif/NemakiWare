@@ -591,3 +591,38 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
     `_rev` + properties + inline attachment byte-unchanged) plus a positive control that
     `schemaVersion=1` is used normally. Mutation-tested: deleting the version check fails exactly
     those five ITs. Epoch IT 49/49, epoch unit+IT 82/82.
+  - **Increment 3 — effective epoch: authoritative walk + pending gate + revalidation**
+    (`AclEffectiveEpochService`, §4.1 and §4.2 steps 1/2/4). The READ half of the unified write
+    contract; the Solr realtime-GET, the `_version_` CAS and the fence decision (steps 3/5/6 +
+    §4.3) remain for the ACL-UPDATE increment. `snapshot(repo, id)` walks the authoritative
+    sources STRAIGHT from CouchDB (never the ACL/content caches, §4.6), recording every
+    dependency's `_rev`, `aclSourceEpoch`, `aclEpochState`, `parentId` and `aclInherited`;
+    `revalidate(snapshot)` re-reads them all and returns false on ANY difference so the caller
+    restarts. The inheritance rule mirrors `AclServiceDelegate.calculateAclInternal` exactly (stop
+    at `aclInherited == false` — which the root always has — or at a missing parent; an ABSENT
+    `aclInherited` defaults to TRUE). A relationship (a document carrying both `sourceId` and
+    `targetId`, i.e. what `CouchRelationship` persists) takes the max over BOTH endpoint chains
+    plus its own epoch, matching the read-permission rule `read(source) OR read(target)`.
+    Topology changes need no separate check: inserting / removing / re-parenting an ancestor
+    necessarily rewrites a recorded document, so its `_rev` differs.
+    <br>**Fail-closed rules** (each throws rather than guessing): PENDING gate on
+    `PENDING_EPOCH` *and* `FINALIZED_NEEDS_RECONCILE` (mid-CAS ambiguity) — `RECONCILE_ENQUEUED`
+    is settled and does NOT gate; ABSENT `aclSourceEpoch` = 0 (§4.1 pre-migration) but a PRESENT
+    null / non-integer / negative value is corruption (the 2e/2f presence contract); an unknown or
+    non-String state, or a QUARANTINED dependency, is untrustworthy; an inheriting object whose
+    parent cannot be read is RETRYABLE (`AclEpochUnavailableException`) rather than silently
+    degraded to local ACEs (the strict `calculateAcl` contract — dropping inherited grants would
+    compute an under-visible fence value); a cycle or a chain past the hop cap (default 128) fails
+    closed; a genuinely dangling relationship endpoint contributes nothing (the
+    `SolrUtil.relationshipReaders` precedent); a genuinely deleted TARGET returns `null` so the
+    caller completes instead of retrying.
+    <br>**Decision needing reviewer confirmation:** a QUARANTINED *ancestor* blocks its whole
+    subtree's ACL-index refresh until repaired. Chosen deliberately over deriving a fence value
+    from a document the epoch machine has already declared corrupt, but the blast radius is
+    subtree-wide, so say if the opposite trade-off is preferred.
+    <br>**Staging:** standalone bean, ZERO production callers, no scheduler/init/cron, and it
+    performs NO writes at all (read-only against CouchDB). 28 ITs against live CouchDB over the
+    real persisted document shape; mutation-tested three ways (removing the pending gate fails 5
+    ITs; ignoring `aclInherited=false` fails the walk-stop IT; a always-true `revalidate` fails 6
+    ITs). Epoch unit+IT 110/110. Live: atom 200, no bean-context error, nothing auto-runs, and
+    zero `aclEpochState` / `aclSourceEpoch` documents in real content.

@@ -1272,6 +1272,36 @@ STATE フィールドで漏らしていた同一クラス)。
   skip + `_rev`・properties・inline attachment が完全不変** / `schemaVersion=1` は正常使用の positive control)、epoch unit+IT 合計
   **82/82**、`git diff --check` clean。**mutation test で bind を証明**: 版検証を削除すると**当該 5 件だけが失敗**する。
 
+**増分3: effective-epoch(authoritative walk + pending gate + revalidation)**:
+新規 `AclEffectiveEpochService`(§4.1 + §4.2 step 1/2/4)。統一 write 契約の **read 側半分**で、Solr realtime-GET /
+`_version_` CAS / fence 判定(step 3/5/6 + §4.3)は次の ACL-UPDATE 増分。**ACL write path には未接続**(production caller ゼロ・
+scheduler/init/cron なし・**書込みを一切行わない** read-only)。
+- **authoritative walk**: `snapshot(repo, id)` が **CouchDB を直接読み**(ACL/content cache を経由しない、§4.6)、全依存
+  (self + 継承祖先、relationship は両 endpoint chain)の `_rev` / `aclSourceEpoch` / `aclEpochState` / `parentId` /
+  `aclInherited` を記録。継承規則は `AclServiceDelegate.calculateAclInternal` に完全準拠(`aclInherited==false`(root は常に
+  これ)か親なしで停止、**absent は TRUE 既定**)。
+- **pending gate**: 依存のいずれかが `PENDING_EPOCH` **または** `FINALIZED_NEEDS_RECONCILE`(mid-CAS 曖昧)なら
+  `AclEpochPendingException` で**書かせない**。`RECONCILE_ENQUEUED` は確定済みなので gate しない。
+- **effective epoch**: `max(aclSourceEpoch over self + 継承祖先)`。relationship(= `sourceId`+`targetId` を持つ文書 =
+  `CouchRelationship` の永続形)は **両 endpoint chain と自身の max**(read 権限 = read(source) OR read(target) と整合)。
+- **revalidate**: 記録した全依存を再読込し、**1つでも差があれば false**(caller は walk からやり直し)。祖先の挿入/削除/
+  付け替えは必ずどれかの記録済み文書を書き換える(`parentId` は子側)ため、**topology 変化も `_rev` 差分で捕捉**。
+- **fail-closed 群**: `aclSourceEpoch` は **absent=0**(§4.1 移行前)だが **present-null / 非整数 / 負値は corruption**
+  (2e/2f の presence 契約)/ 未知 state・**quarantine 済み依存**は信頼不能 / **継承中の親が読めない場合は retryable**
+  (`AclEpochUnavailableException`。strict `calculateAcl` と同契約で、継承 grant を黙って落として under-visible な fence 値を
+  書かない)/ 循環・hop cap 超過(既定128)は fail-closed / **dangling endpoint は寄与ゼロ**(`SolrUtil.relationshipReaders`
+  の前例)/ **target が実在しない場合のみ null 返却**(caller は retry でなく complete)。
+- **⚠ レビュー確認事項**: **quarantine された祖先はその subtree 全体の ACL 索引更新を修復まで停止**させる。「epoch machine が
+  corrupt と宣言済みの文書から fence 値を導く」よりは安全側と判断したが、影響範囲が subtree 全体なので逆の trade-off を
+  望む場合は指示ください。
+- **検証**: 実 CouchDB IT **28/28**(実際の永続形に対して: 継承 max / 非継承ノードで停止 / absent 既定 / 移行前 0 /
+  pending gate(self・祖先・relationship 祖先・FINALIZED gate と ENQUEUED 非gate) / quarantine・非整数・負・present-null・
+  未知 state 拒否 / 親不読 retryable / 循環 / hop cap / relationship の両 chain max・dangling・共有祖先を循環誤検知しない /
+  revalidate(不変=true、祖先 epoch bump・move・継承 flip・削除・無関係 touch=false、pending 再適用))、epoch unit+IT
+  **110/110**。**mutation test 3種で bind 証明**(pending gate 削除→5件失敗 / `aclInherited=false` 停止削除→walk-stop 失敗 /
+  revalidate 常時 true→6件失敗)。実機: atom 200・bean context エラーなし・**何も自動実行されない**・実 content に
+  `aclEpochState` / `aclSourceEpoch` 文書ゼロ・CMIS 正常。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度
