@@ -67,6 +67,8 @@ public class AclEpochFinalizationServiceIT {
 
     private String contentDb;
     private AclEpochFinalizationService svc;
+    private CloudantClientPool pool;      // reused by tests that build a second service instance
+    private AclEpochCounterService counter;
 
     @BeforeAll
     static void connect() {
@@ -111,11 +113,11 @@ public class AclEpochFinalizationServiceIT {
         ObjectMapper om = new ObjectMapper();
         CloudantClientWrapper confWrapper = new CloudantClientWrapper(cloudant, SystemConst.NEMAKI_CONF_DB, om);
         CloudantClientWrapper contentWrapper = new CloudantClientWrapper(cloudant, contentDb, om);
-        CloudantClientPool pool = mock(CloudantClientPool.class);
+        pool = mock(CloudantClientPool.class);
         lenient().when(pool.getClient(SystemConst.NEMAKI_CONF_DB)).thenReturn(confWrapper);
         lenient().when(pool.getClient(contentDb)).thenReturn(contentWrapper);
 
-        AclEpochCounterService counter = new AclEpochCounterService();
+        counter = new AclEpochCounterService();
         counter.setConnectorPool(pool);
         seedCounter(contentDb, 0L);
 
@@ -754,6 +756,167 @@ public class AclEpochFinalizationServiceIT {
                 + "via the resume cursor (took " + scans + ")");
     }
 
+    // ── review 2g: terminal-audit resume cursor robustness ─────────
+
+    /** Deterministic id of the per-content-DB terminal-audit resume cursor. */
+    private static final String CURSOR_ID = "acl-epoch-audit-cursor";
+
+    @Test
+    void invalidStoredBookmarkSelfHealsAndReachesRearTerminalAnomaly() {
+        // review 2g [P1]: a stored bookmark that is invalid (garbage / expired) must NOT
+        // permanently stall the terminal audit. On the invalid_bookmark 400 the cursor is
+        // CAS-cleared and the pass retries from the top ONCE, so a corrupt terminal doc behind a
+        // > budget valid backlog is still reached and quarantined in a FINITE number of scans.
+        int budget = 2;
+        for (int i = 0; i < 6; i++) seedFinalized("t-vf-" + i, AclEpochState.newMutationId(), 20 + i);
+        Map<String, Object> bad = baseFixture();
+        bad.put(AclEpochState.FIELD_STATE, AclEpochState.FINALIZED_NEEDS_RECONCILE);
+        bad.put(AclEpochState.FIELD_MUTATION_ID, AclEpochState.newMutationId());
+        bad.put(AclEpochState.FIELD_SOURCE_EPOCH, 0L); // invalid epoch (< 1) → must be quarantined
+        putContentRaw("t-zzz-bad", bad);               // sorts LAST → a true rear anomaly
+
+        seedAuditCursor("garbage-not-a-real-bookmark"); // CouchDB returns invalid_bookmark for this
+
+        int scans = scanUntil(() -> Boolean.TRUE.equals(props("t-zzz-bad").get(AclEpochState.FIELD_QUARANTINED)),
+                budget, 30);
+        assertTrue(scans <= 30, "an invalid stored bookmark must self-heal and the rear anomaly still reached");
+        // The cursor doc self-healed into a valid cursor (type preserved, not a foreign doc).
+        assertEquals("aclEpochAuditCursor", props(CURSOR_ID).get("type"));
+    }
+
+    @Test
+    void reindexAndInvalidatedBookmarkSelfHealReachesRearAnomaly() throws Exception {
+        // review 2g [P1]: after the cursor has advanced (a real bookmark persisted), an index
+        // rebuild + an invalidated bookmark must self-heal and still reach a rear terminal anomaly.
+        // NOTE: CouchDB 3.3.3 keeps bookmarks valid across an index rebuild, so the invalidity is
+        // induced by corrupting the persisted bookmark — the self-heal code path is identical.
+        int budget = 2;
+        for (int i = 0; i < 6; i++) seedFinalized("r-vf-" + i, AclEpochState.newMutationId(), 30 + i);
+        Map<String, Object> bad = baseFixture();
+        bad.put(AclEpochState.FIELD_STATE, AclEpochState.RECONCILE_ENQUEUED);
+        bad.put(AclEpochState.FIELD_MUTATION_ID, AclEpochState.newMutationId());
+        bad.put(AclEpochState.FIELD_SOURCE_EPOCH, -1L); // invalid epoch
+        putContentRaw("r-zzz-bad", bad);                // sorts LAST
+
+        // One scan advances the sweep and persists a REAL resume bookmark (7 terminal > budget).
+        svc.scan(contentDb, budget);
+        assertTrue(props(CURSOR_ID).get("terminalBookmark") instanceof String,
+                "a real bookmark is persisted after a partial terminal sweep");
+
+        recreateAclEpochStateIndex();   // simulate an index rebuild
+        corruptAuditCursorBookmark();   // the persisted bookmark has become invalid
+
+        int scans = scanUntil(() -> Boolean.TRUE.equals(props("r-zzz-bad").get(AclEpochState.FIELD_QUARANTINED)),
+                budget, 30);
+        assertTrue(scans <= 30, "a corrupted resume bookmark self-heals and the rear anomaly is still reached");
+    }
+
+    @Test
+    void foreignDocumentAtCursorIdIsLeftUntouchedAndAuditSkipped() {
+        // review 2g [P1]: if a NON-cursor document occupies the cursor id, the terminal audit is
+        // skipped fail-closed — the foreign document (and its attachment) is NEVER modified and a
+        // cursorFailure is reported.
+        Map<String, Object> foreign = new LinkedHashMap<>();
+        foreign.put("type", "some-other-document");
+        foreign.put("name", "not-a-cursor");
+        Document d = new Document();
+        d.setId(CURSOR_ID);
+        d.setProperties(foreign);
+        Attachment att = new Attachment.Builder().contentType("text/plain").data("keep".getBytes()).build();
+        Map<String, Attachment> atts = new LinkedHashMap<>();
+        atts.put("f.txt", att);
+        d.setAttachments(atts);
+        cloudant.putDocument(new PutDocumentOptions.Builder().db(contentDb).docId(CURSOR_ID).document(d).build()).execute();
+        String revBefore = getContent(CURSOR_ID).getRev();
+
+        seedFinalized("fa-ok", AclEpochState.newMutationId(), 5L); // a valid terminal doc that WOULD be audited
+
+        ScanSummary sum = svc.scan(contentDb, 100);
+        assertTrue(sum.cursorFailures >= 1, "a foreign cursor doc is reported as a cursor failure");
+        assertTrue(sum.errors.stream().anyMatch(e -> CURSOR_ID.equals(e.get("docId"))));
+        assertEquals(0, sum.awaitingReconcile, "the terminal audit is skipped when the cursor is unusable");
+
+        Document after = getContent(CURSOR_ID);
+        assertEquals(revBefore, after.getRev(), "the foreign document must NOT be modified");
+        assertEquals("some-other-document", after.getProperties().get("type"), "foreign type preserved");
+        assertTrue(after.getAttachments() != null && after.getAttachments().containsKey("f.txt"),
+                "the foreign document's inline attachment must be untouched");
+    }
+
+    @Test
+    void cursorSavePersistentConflictIsReportedNotSwallowed() {
+        // review 2g [P1]: a cursor save that never converges (every CAS conflicts) must surface in
+        // the summary (cursorFailures + more), never appear as silent success. Deterministic: a
+        // subclass forces every PUT of the cursor id to 409.
+        int budget = 2;
+        for (int i = 0; i < 6; i++) seedFinalized("cs-vf-" + i, AclEpochState.newMutationId(), 40 + i); // > budget → not exhausted → save a bookmark
+        AclEpochFinalizationService failing = new AclEpochFinalizationService() {
+            @Override String putBack(String repositoryId, Document doc) {
+                if (CURSOR_ID.equals(doc.getId())) return null; // every cursor CAS "conflicts"
+                return super.putBack(repositoryId, doc);
+            }
+        };
+        failing.setConnectorPool(pool);
+        failing.setCounterService(counter);
+
+        ScanSummary sum = failing.scan(contentDb, budget);
+        assertTrue(sum.cursorFailures >= 1, "a cursor save that never converges must be reported");
+        assertTrue(sum.more, "an unsaved cursor sets more so a driver re-scans");
+        assertTrue(sum.errors.stream().anyMatch(e -> CURSOR_ID.equals(e.get("docId"))),
+                "the cursor-save failure names the cursor id: " + sum.errors);
+    }
+
+    @Test
+    void terminalAuditProgressesEvenWhenServiceIsRecreatedEachScan() {
+        // review 2g [P1]: the resume cursor is DURABLE (a CouchDB document), so a brand-new
+        // service instance per scan still cycles through the terminal set to a rear anomaly. If the
+        // cursor were in-memory each fresh instance would restart from the top and never reach a
+        // last-sorted doc behind a > budget valid backlog.
+        int budget = 2;
+        for (int i = 0; i < 6; i++) seedFinalized("sr-vf-" + i, AclEpochState.newMutationId(), 50 + i);
+        Map<String, Object> bad = baseFixture();
+        bad.put(AclEpochState.FIELD_STATE, AclEpochState.FINALIZED_NEEDS_RECONCILE);
+        bad.put(AclEpochState.FIELD_MUTATION_ID, AclEpochState.newMutationId());
+        bad.put(AclEpochState.FIELD_SOURCE_EPOCH, 0L); // invalid → must be reached + quarantined
+        putContentRaw("sr-zzz-bad", bad);              // sorts LAST (7th of 7 terminal docs)
+
+        int reached = -1;
+        for (int i = 1; i <= 30 && reached < 0; i++) {
+            AclEpochFinalizationService fresh = new AclEpochFinalizationService(); // NEW instance each scan
+            fresh.setConnectorPool(pool);
+            fresh.setCounterService(counter);
+            fresh.scan(contentDb, budget);
+            if (Boolean.TRUE.equals(props("sr-zzz-bad").get(AclEpochState.FIELD_QUARANTINED))) reached = i;
+        }
+        assertTrue(reached > 0 && reached <= 30,
+                "a fresh service per scan still reaches the rear anomaly via the DURABLE cursor (took " + reached + ")");
+        assertTrue(reached > 1, "the rear anomaly is only reached after the cursor advances across scans");
+    }
+
+    @Test
+    void deterministicFinalizeContentionIsRecordedNotQuarantined() {
+        // review 2g [P2]: force a finalize CAS livelock (8 conflicts) deterministically — a
+        // subclass makes every PUT of the target doc conflict. The result is CONTENTION, not a
+        // data anomaly: contended==1, more==true, the doc stays a valid PENDING, never quarantined.
+        seedPending("cc-1", AclEpochState.newMutationId());
+        AclEpochFinalizationService neverCommits = new AclEpochFinalizationService() {
+            @Override String putBack(String repositoryId, Document doc) {
+                if ("cc-1".equals(doc.getId())) return null; // every finalize CAS "conflicts" (8×)
+                return super.putBack(repositoryId, doc);
+            }
+        };
+        neverCommits.setConnectorPool(pool);
+        neverCommits.setCounterService(counter);
+
+        ScanSummary sum = neverCommits.scan(contentDb, 100);
+        assertEquals(1, sum.contended, "the PENDING that never converges is counted as contended");
+        assertTrue(sum.more, "contention sets more so the driver re-scans");
+        assertFalse(props("cc-1").containsKey(AclEpochState.FIELD_QUARANTINED),
+                "a contended VALID PENDING must NEVER be quarantined");
+        assertEquals(AclEpochState.PENDING_EPOCH, props("cc-1").get(AclEpochState.FIELD_STATE),
+                "the contended doc stays PENDING for a later scan");
+    }
+
     // ── fixtures / helpers ─────────────────────────────────────────
 
     private Map<String, Object> baseFixture() {
@@ -868,6 +1031,51 @@ public class AclEpochFinalizationServiceIT {
                         .db(SystemConst.NEMAKI_CONF_DB).docId(id).rev(rev).build()).execute();
             } catch (Exception ignore) { /* best effort */ }
         }
+    }
+
+    /** Seed the terminal-audit resume cursor with a given (possibly-garbage) bookmark. */
+    private void seedAuditCursor(String bookmark) {
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("type", "aclEpochAuditCursor");
+        p.put("schemaVersion", 1);
+        p.put("terminalBookmark", bookmark);
+        putContentRaw(CURSOR_ID, p);
+    }
+
+    /** Overwrite the persisted resume bookmark with a garbage value (simulate an expired bookmark). */
+    private void corruptAuditCursorBookmark() {
+        Document c = getContent(CURSOR_ID);
+        Map<String, Object> p = c.getProperties();
+        p.put("terminalBookmark", "garbage-expired-bookmark");
+        c.setProperties(p);
+        putContent(c);
+    }
+
+    /** Drop and recreate the {@code (aclEpochState)} Mango index (simulate an index rebuild). */
+    private void recreateAclEpochStateIndex() throws Exception {
+        HttpResponse<String> g = rawRequest("GET", "/_design/acl-epoch-indexes", null);
+        if (g.statusCode() == 200) {
+            String rev = new ObjectMapper().readTree(g.body()).path("_rev").asText();
+            rawRequest("DELETE", "/_design/acl-epoch-indexes?rev=" + rev, null);
+        }
+        cloudant.postIndex(new PostIndexOptions.Builder()
+                .db(contentDb)
+                .index(new IndexDefinition.Builder()
+                        .fields(List.of(new IndexField.Builder().add(AclEpochState.FIELD_STATE, "asc").build()))
+                        .build())
+                .name("idx_aclEpochState").type(PostIndexOptions.Type.JSON).ddoc("acl-epoch-indexes")
+                .build()).execute();
+    }
+
+    private HttpResponse<String> rawRequest(String method, String path, String body) throws Exception {
+        HttpRequest.Builder b = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/" + contentDb + path))
+                .header("Authorization", basicAuth)
+                .header("Content-Type", "application/json");
+        if ("DELETE".equals(method)) b.DELETE();
+        else if (body != null) b.method(method, HttpRequest.BodyPublishers.ofString(body));
+        else b.method(method, HttpRequest.BodyPublishers.noBody());
+        return HttpClient.newHttpClient().send(b.build(), HttpResponse.BodyHandlers.ofString());
     }
 
     /** PUT a document with an EXACT raw JSON body (to guarantee explicit JSON null / shape). */

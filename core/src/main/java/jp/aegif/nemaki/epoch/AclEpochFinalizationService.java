@@ -5,6 +5,7 @@ import com.ibm.cloud.cloudant.v1.model.Document;
 import com.ibm.cloud.cloudant.v1.model.FindResult;
 import com.ibm.cloud.cloudant.v1.model.GetDocumentOptions;
 import com.ibm.cloud.cloudant.v1.model.PostFindOptions;
+import com.ibm.cloud.sdk.core.service.exception.BadRequestException;
 import com.ibm.cloud.cloudant.v1.model.PutDocumentOptions;
 import com.ibm.cloud.sdk.core.service.exception.ConflictException;
 import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
@@ -51,6 +52,10 @@ public class AclEpochFinalizationService {
     private static final String AUDIT_CURSOR_ID = "acl-epoch-audit-cursor";
     private static final String AUDIT_CURSOR_TYPE = "aclEpochAuditCursor";
     private static final String AUDIT_CURSOR_FIELD = "terminalBookmark";
+    private static final int AUDIT_CURSOR_SCHEMA_VERSION = 1;
+    private static final int CURSOR_CAS_RETRIES = 5;
+    /** Index (ddoc, then index name) the terminal query is pinned to via {@code use_index}. */
+    private static final List<String> TERMINAL_USE_INDEX = List.of("acl-epoch-indexes", "idx_aclEpochState");
     private static final int QUARANTINE_CAS_RETRIES = 4;
 
     private CloudantClientPool connectorPool;
@@ -85,7 +90,8 @@ public class AclEpochFinalizationService {
         public int quarantined;          // anomalous docs moved to durable quarantine this scan
         public int quarantineFailures;   // anomalies that could NOT be durably quarantined this scan
         public int contended;            // valid docs a finalize CAS could not converge on (not anomalies)
-        public boolean more;             // hit a pass's budget / quarantine write failed / contention → re-scan
+        public int cursorFailures;       // terminal-audit resume-cursor read/write failures this scan
+        public boolean more;             // a pass hit budget / quarantine or cursor write failed / contention → re-scan
         public final List<Map<String, String>> errors = new ArrayList<>();
     }
 
@@ -448,7 +454,7 @@ public class AclEpochFinalizationService {
                     // (the document is not corrupt). review 2f [P3].
                     summary.contended++;
                     summary.more = true;
-                    record(summary, d.getId(), ce.getMessage());
+                    recordContention(summary, d.getId(), ce.getMessage());
                 }
             }
             bookmark = r.getBookmark();
@@ -476,15 +482,34 @@ public class AclEpochFinalizationService {
         CloudantClientWrapper client = contentClient(repositoryId);
         Cloudant cloudant = client.getClient();
         String db = client.getDatabaseName();
-        String bookmark = readCursorBookmark(repositoryId);
+
+        CursorRead cr = readCursor(repositoryId, summary);
+        if (cr.foreignCollision) {
+            return; // a foreign doc occupies the cursor id — reported, do NOT touch it, skip the pass
+        }
+        String bookmark = cr.bookmark;
+        boolean usingStored = (bookmark != null); // a STORED (not this-scan) bookmark may be invalid
+        boolean triedReset = false;
         int processed = 0;
         boolean exhausted = false;
         while (processed < budget) {
             int limit = Math.min(PAGE_SIZE, budget - processed);
-            PostFindOptions.Builder b = new PostFindOptions.Builder()
-                    .db(db).selector(selector).limit(limit);
-            if (bookmark != null) b.bookmark(bookmark);
-            FindResult r = cloudant.postFind(b.build()).execute().getResult();
+            FindResult r;
+            try {
+                r = findTerminal(cloudant, db, selector, limit, bookmark);
+            } catch (BadRequestException e) {
+                // ONLY a stored bookmark being invalid/expired is self-healed: CAS-clear the
+                // cursor and retry from the top ONCE. A general 400 (e.g. missing pinned index)
+                // must NOT be mistaken for an invalid bookmark — it propagates.
+                if (usingStored && !triedReset && isInvalidBookmark(e)) {
+                    triedReset = true;
+                    usingStored = false;
+                    bookmark = null;
+                    clearCursor(repositoryId, summary); // CAS-clear the bad stored bookmark
+                    continue; // retry from the top with a null bookmark
+                }
+                throw e;
+            }
             List<Document> docs = r.getDocs();
             if (docs == null || docs.isEmpty()) {
                 exhausted = true;
@@ -501,10 +526,11 @@ public class AclEpochFinalizationService {
                 } catch (AclEpochContentionException ce) {
                     summary.contended++;
                     summary.more = true;
-                    record(summary, d.getId(), ce.getMessage());
+                    recordContention(summary, d.getId(), ce.getMessage());
                 }
             }
             bookmark = r.getBookmark();
+            usingStored = false; // subsequent bookmarks come from THIS scan's _find (valid)
             if (docs.size() < limit) {
                 exhausted = true;
                 break;
@@ -512,47 +538,141 @@ public class AclEpochFinalizationService {
         }
         // Exhausted → reset (wrap to the start next scan). Otherwise save the position and flag
         // that the terminal set is not fully swept yet, so a driver keeps scanning.
-        saveCursorBookmark(repositoryId, exhausted ? null : bookmark);
+        saveCursor(repositoryId, exhausted ? null : bookmark, summary);
         if (!exhausted) {
             summary.more = true;
         }
     }
 
-    /** Read the persistent terminal-audit bookmark for this content DB, or null (start / on error). */
-    private String readCursorBookmark(String repositoryId) {
-        try {
-            Document c = getDoc(repositoryId, AUDIT_CURSOR_ID);
-            Object v = (c != null && c.getProperties() != null) ? c.getProperties().get(AUDIT_CURSOR_FIELD) : null;
-            return (v instanceof String && !((String) v).isBlank()) ? (String) v : null;
-        } catch (RuntimeException e) {
-            logger.warn("ACL epoch audit cursor read failed for {} — restarting from the top: {}",
-                    repositoryId, e.getMessage());
-            return null;
+    /**
+     * The terminal query, PINNED to the {@code (aclEpochState)} index via {@code use_index}
+     * (review 2g [P1]). The terminal selector is provably served by that index (verified by
+     * {@code _explain} in the IT), so there is no {@code _all_docs} full-scan fallback in
+     * practice. NOTE: the belt-and-suspenders {@code allow_fallback=false} query parameter is a
+     * CouchDB 3.4+/Cloudant feature — CouchDB 3.3.x (this project's deployed version) rejects it
+     * with {@code invalid_key}, so the no-fallback guarantee here rests on the {@code use_index}
+     * pin plus the {@code _explain}-verified index-served selector, not on {@code allow_fallback}.
+     */
+    private FindResult findTerminal(Cloudant cloudant, String db, Map<String, Object> selector,
+                                    int limit, String bookmark) {
+        PostFindOptions.Builder b = new PostFindOptions.Builder()
+                .db(db).selector(selector).limit(limit)
+                .useIndex(TERMINAL_USE_INDEX);
+        if (bookmark != null) {
+            b.bookmark(bookmark);
         }
+        return cloudant.postFind(b.build()).execute().getResult();
     }
 
-    /** Persist (or clear, when {@code bookmark==null}) the terminal-audit resume position. Best-effort. */
-    private void saveCursorBookmark(String repositoryId, String bookmark) {
+    private static boolean isInvalidBookmark(BadRequestException e) {
+        String body = e.getResponseBody();
+        if (body != null && body.contains("invalid_bookmark")) return true;
+        return e.getMessage() != null && e.getMessage().contains("invalid_bookmark");
+    }
+
+    private static final class CursorRead {
+        String bookmark;
+        boolean foreignCollision;
+    }
+
+    /**
+     * Read the terminal-audit cursor. Fail-closed on a FOREIGN document occupying the cursor id
+     * (type != expected): reports a {@code cursorFailure} and signals the caller to skip the
+     * pass WITHOUT touching the foreign document (review 2g [P1]). A missing cursor → start
+     * (null bookmark); a read error → reported and treated as start.
+     */
+    private CursorRead readCursor(String repositoryId, ScanSummary summary) {
+        CursorRead cr = new CursorRead();
+        Document c;
         try {
-            Document c = getDoc(repositoryId, AUDIT_CURSOR_ID);
-            Map<String, Object> props = (c != null && c.getProperties() != null)
-                    ? c.getProperties() : new LinkedHashMap<>();
+            c = getDoc(repositoryId, AUDIT_CURSOR_ID);
+        } catch (RuntimeException e) {
+            recordCursorFailure(summary, "audit cursor read failed: " + e.getMessage());
+            return cr; // treat as start (bookmark null); not a foreign collision
+        }
+        if (c == null || c.getProperties() == null) {
+            return cr; // absent → start from the top
+        }
+        Object type = c.getProperties().get("type");
+        if (!AUDIT_CURSOR_TYPE.equals(type)) {
+            cr.foreignCollision = true;
+            recordCursorFailure(summary, "audit cursor id '" + AUDIT_CURSOR_ID
+                    + "' is occupied by a foreign document (type=" + type + ") — terminal audit skipped, "
+                    + "the document is left untouched");
+            return cr;
+        }
+        Object v = c.getProperties().get(AUDIT_CURSOR_FIELD);
+        cr.bookmark = (v instanceof String && !((String) v).isBlank()) ? (String) v : null;
+        return cr;
+    }
+
+    private void clearCursor(String repositoryId, ScanSummary summary) {
+        saveCursor(repositoryId, null, summary);
+    }
+
+    /**
+     * Persist (or clear, when {@code bookmark==null}) the terminal-audit resume position with a
+     * BOUNDED {@code _rev} CAS retry. A {@code putBack()==null} (409) is NOT success — it retries
+     * with a fresh read. A FOREIGN document at the id is never modified. On persistent failure it
+     * reports a {@code cursorFailure} + {@code more} (never a silent swallow — review 2g [P1]).
+     */
+    private void saveCursor(String repositoryId, String bookmark, ScanSummary summary) {
+        for (int attempt = 0; attempt < CURSOR_CAS_RETRIES; attempt++) {
+            Document c;
+            try {
+                c = getDoc(repositoryId, AUDIT_CURSOR_ID);
+            } catch (RuntimeException e) {
+                recordCursorFailure(summary, "audit cursor re-read failed: " + e.getMessage());
+                return;
+            }
+            if (c != null && c.getProperties() != null
+                    && !AUDIT_CURSOR_TYPE.equals(c.getProperties().get("type"))) {
+                recordCursorFailure(summary, "audit cursor id occupied by a foreign document — not saving");
+                return;
+            }
+            // Reuse the fetched Document so its _attachments stubs (if any) and _rev are preserved.
+            Document out = (c != null) ? c : new Document();
+            out.setId(AUDIT_CURSOR_ID);
+            Map<String, Object> props = (out.getProperties() != null) ? out.getProperties() : new LinkedHashMap<>();
             props.put("type", AUDIT_CURSOR_TYPE);
+            props.put("schemaVersion", AUDIT_CURSOR_SCHEMA_VERSION);
             if (bookmark == null) {
                 props.remove(AUDIT_CURSOR_FIELD);
             } else {
                 props.put(AUDIT_CURSOR_FIELD, bookmark);
             }
-            Document out = new Document();
-            out.setId(AUDIT_CURSOR_ID);
-            if (c != null) {
-                out.setRev(c.getRev());
-            }
             out.setProperties(props);
-            putBack(repositoryId, out); // 409 (a concurrent scanner won) is harmless — next scan re-reads
-        } catch (RuntimeException e) {
-            logger.warn("ACL epoch audit cursor save failed for {}: {}", repositoryId, e.getMessage());
+            try {
+                if (putBack(repositoryId, out) != null) {
+                    return; // durably saved
+                }
+            } catch (RuntimeException e) {
+                recordCursorFailure(summary, "audit cursor save failed: " + e.getMessage());
+                return;
+            }
+            // 409 → another writer changed the cursor; re-read + retry.
         }
+        recordCursorFailure(summary, "audit cursor save did not converge after "
+                + CURSOR_CAS_RETRIES + " CAS attempts");
+    }
+
+    private void recordCursorFailure(ScanSummary summary, String problem) {
+        summary.cursorFailures++;
+        summary.more = true;
+        Map<String, String> err = new LinkedHashMap<>();
+        err.put("docId", AUDIT_CURSOR_ID);
+        err.put("problem", problem);
+        summary.errors.add(err);
+        logger.warn("ACL epoch audit cursor failure: {}", problem);
+    }
+
+    private void recordContention(ScanSummary summary, String docId, String problem) {
+        Map<String, String> err = new LinkedHashMap<>();
+        err.put("docId", docId);
+        err.put("problem", problem);
+        summary.errors.add(err);
+        // NOT "quarantined": a contended document is a VALID PENDING left as-is for the next scan.
+        logger.info("ACL epoch finalize contention on {} (valid document, not quarantined): {}", docId, problem);
     }
 
     /**
@@ -648,8 +768,12 @@ public class AclEpochFinalizationService {
         }
     }
 
-    /** PUT the (in-place mutated) document with its captured rev (CAS). Returns new rev, or null on 409. */
-    private String putBack(String repositoryId, Document doc) {
+    /**
+     * PUT the (in-place mutated) document with its captured rev (CAS). Returns new rev, or null
+     * on 409. Package-private so an IT can override it to force a deterministic CAS livelock
+     * (review 2g contention test).
+     */
+    String putBack(String repositoryId, Document doc) {
         CloudantClientWrapper client = contentClient(repositoryId);
         try {
             var result = client.getClient().putDocument(new PutDocumentOptions.Builder()

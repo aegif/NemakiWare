@@ -1232,6 +1232,27 @@ STATE フィールドで漏らしていた同一クラス)。
   contention→非quarantine / **corrupt terminal を >budget valid backlog 背後で有限 scan quarantine**)、`AclEpochStateTest` 4/4、
   統合 unit 80/80。workflow: 14 agents、6視点レビュー→各 finding 独立検証。
 
+**増分2g: terminal-audit resume cursor の自己防衛(bookmark 回復 / CAS 保存 / type 検証 / contention 決定的検証)**:
+2f レビューで「cursor は terminal 飢餓を閉じたが cursor 自身の障害モードが未閉塞」と P1×3 + P2 + P3 群を指摘され是正。
+- **[P1] 不正/失効 stored bookmark で terminal audit が恒久停止**: `runCursoredPass` は保存 bookmark を無検証で使い、`invalid_bookmark`
+  で毎 scan 400 → terminal audit が永久に進まなかった。**自己回復**: `BadRequestException` の body/message が `invalid_bookmark` を含み、
+  かつ **STORED(当該 scan 由来でない)bookmark** の場合に限り、cursor を **CAS-clear して先頭から 1 回だけ再試行**。ピン索引欠落等の
+  **一般的な 400 は invalid_bookmark 扱いせず伝播**(scan を fail させ設定不備を surface)。
+- **[P1] terminal query を索引にピン**: `use_index=["acl-epoch-indexes","idx_aclEpochState"]` で固定。⚠ **`allow_fallback=false` は
+  CouchDB 3.4+/Cloudant のパラメータで CouchDB 3.3.x(本番採用版)が `invalid_key` で拒否**するため送らない。full-scan fallback を
+  起こさない保証は **use_index ピン + `_explain` 検証済みの索引 served selector** に依拠する(allow_fallback には依拠しない)。
+- **[P1] 固定 cursor ID の異種文書衝突**: cursor doc に `type=aclEpochAuditCursor` + `schemaVersion` を持たせ、cursor ID を **異種文書が
+  占有していれば `cursorFailure` を記録して当該文書を一切変更せず terminal audit を skip**(fail-closed。無関係文書を clobber しない)。
+- **[P1] cursor 保存の握り潰し**: cursor 保存を **bounded `_rev` CAS retry** にし、`putBack()==null`(409)を成功扱いせず再試行、
+  恒久失敗で `cursorFailures`++ / error 記録 / `more`=true(silent swallow しない)。
+- **[P2] contention の決定的検証**: `putBack` を package-private 化し、**target の PUT を必ず 409 にする subclass** で finalize CAS を
+  8 回確実に競合させ、`contended==1` / `more==true` / doc は valid `PENDING_EPOCH` 維持 / **非 quarantine** を assert。
+- **検証**: 実 CouchDB IT **43/43**(37 + 2g 6: 不正 stored bookmark 自己回復→後方 anomaly 到達 / rebuild+失効 bookmark 自己回復 /
+  異種 cursor 文書を attachment ごと不変で fail-closed / cursor 保存の恒久 conflict が summary に出現 / **service を scan 毎に再生成しても
+  durable cursor で前進** / 決定的 8-CAS contention)、epoch unit/IT 合計 **76/76**。fail-closed staging 継続(standalone bean・production
+  caller ゼロ・scheduler/init/cron なし)。実機: atom 200・両 patch success・scanner 非自動起動・実 content に epoch-state/cursor 文書
+  ゼロ・counter 存在・CMIS create/read 無影響。sign-off 判定は §9 決定的テスト全 16 + live-Solr 並行 IT が揃う段階で継続。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度
