@@ -126,32 +126,42 @@ public class AclSemanticsCrossPathReportTest {
     }
 
     @Test
-    public void layer1_FINDING_systemPrincipalGrantsAreLostBetweenTheAceAndTokenLayers() {
-        // VERIFIED AGAINST THE LIVE DEPLOYMENT, not inferred:
-        //   * bedroom's repositoryInfo reports principalAnyone = principalAnonymous = null
-        //   * two live documents carry a CMIS_ANYONE:cmis:read ACE
-        //   * their indexed readers are [group:bedroom:GROUP_EVERYONE, user:bedroom:admin,
-        //     user:bedroom:system] — there is NO anyone token
+    public void layer1_shippedConfiguration_anyoneIsCarriedOnTheGROUP_EVERYONE_channel() {
+        // THE SHIPPED PATH — this is the behaviour 5R-b's shared readerTokens must preserve.
         //
-        // Mechanism: the ACE layer rewrites CMIS_ANYONE to info.getPrincipalIdAnyone() (NULL here),
-        // so the ACE ends up with a null principalId; the token layer then drops null principals
-        // silently. And even with a NON-null value the anyone token is only emitted when that value
-        // is exactly ACLExpander's hardcoded "cmis:anyone" — the conversion TARGET and the
-        // recognition CONSTANT are independent and are not tied together anywhere.
+        //   repositories-default.yml: principal.anyone: GROUP_EVERYONE   (not overridden by
+        //   docker/core/repositories.yml, and overrideMap merges, so the default survives)
         //
-        // This is a BEHAVIOUR question, so it is pinned, not fixed: per §5.3 the authority is
-        // calculateAclInternal and any convergence needs its own explicit commit BEFORE 5R-b.
+        // So convertSystemPrincipalId rewrites a CMIS_ANYONE ACE to principalId=GROUP_EVERYONE,
+        // which IS a real GroupItem, so ACLExpander emits group:{repo}:GROUP_EVERYONE. On the query
+        // side PrincipalServiceImpl unconditionally adds the anyone group to every authenticated
+        // user's token set, so the token matches. The `anyone:{repo}` token is simply not the
+        // channel this deployment uses, and ACLExpander's PRINCIPAL_ANYONE = "cmis:anyone" constant
+        // is dead code in the shipped configuration — harmless, NOT a defect.
+        //
+        // Unifying onto an `anyone:` token would be a BEHAVIOUR CHANGE requiring a full reindex,
+        // so 5R-b must NOT do it.
+        Fixture f = new Fixture(named("system-principal-anyone-in-db-is-converted"), "GROUP_EVERYONE");
+        List<String> tokens = sorted(f.expander.expandToReaders(AclSemanticsCorpus.REPO, f.subject, true));
+        assertTrue(tokens.contains("group:" + AclSemanticsCorpus.REPO + ":GROUP_EVERYONE"),
+                "the shipped configuration carries the anyone grant on the GROUP_EVERYONE channel, "
+                + "not on an anyone: token — got " + tokens);
+    }
+
+    @Test
+    public void layer1_MISCONFIGURATION_anUnresolvableAnyoneIdSilentlyDropsTheGrant() {
+        // A MISCONFIGURATION PIN, not a live defect. If principal.anyone is removed or set to a
+        // value that resolves to no principal, convertSystemPrincipalId writes that value (or null)
+        // into the ACE and the token layer drops it silently — and PermissionServiceImpl's
+        // ace.getPrincipalId().equals(...) becomes an NPE path on null. There is no guard.
+        //
+        // This is worth hardening, but it belongs with the 5T principal tri-state work, not with
+        // the extraction. Pinned so 5R-b preserves it either way.
         Fixture f = new Fixture(named("system-principal-anyone-in-db-is-converted"), null);
         List<String> tokens = sorted(f.expander.expandToReaders(AclSemanticsCorpus.REPO, f.subject, true));
         assertEquals(List.of("user:" + AclSemanticsCorpus.REPO + ":u2"), tokens,
-                "with principalIdAnyone == null (the live configuration) the CMIS_ANYONE grant "
-                + "produces NO token at all — only the unrelated u2 grant survives");
-
-        // With the value the token layer actually recognises, the anyone token IS emitted.
-        Fixture ok = new Fixture(named("system-principal-anyone-in-db-is-converted"), "cmis:anyone");
-        assertTrue(sorted(ok.expander.expandToReaders(AclSemanticsCorpus.REPO, ok.subject, true))
-                        .contains("anyone:" + AclSemanticsCorpus.REPO),
-                "the anyone token is emitted ONLY when principalIdAnyone == \"cmis:anyone\"");
+                "with an unresolvable principal.anyone the converted ACE contributes NO token; "
+                + "only the unrelated u2 grant survives");
     }
 
     // ── layer 3: relationship ──────────────────────────────────────
@@ -323,7 +333,21 @@ public class AclSemanticsCrossPathReportTest {
                 u.setUserId(inv.getArgument(1));
                 return u;
             });
-            lenient().when(principalService.getGroupById(anyString(), anyString())).thenReturn((Group) null);
+            // GROUP_EVERYONE resolves as a real GroupItem in production; everything else is a user.
+            lenient().when(principalService.getGroupById(anyString(), anyString())).thenAnswer(inv -> {
+                String id = inv.getArgument(1);
+                if (!"GROUP_EVERYONE".equals(id)) return null;
+                Group g = new Group();
+                g.setGroupId(id);
+                return g;
+            });
+            lenient().when(principalService.getUserById(anyString(), anyString())).thenAnswer(inv -> {
+                String id = inv.getArgument(1);
+                if ("GROUP_EVERYONE".equals(id)) return null; // a group, not a user
+                User u = new User();
+                u.setUserId(id);
+                return u;
+            });
 
             expander = new ACLExpander(principalService, contentService);
 
