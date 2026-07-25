@@ -815,6 +815,70 @@ public class AclEpochFinalizationServiceIT {
         assertFalse(props("repaired-both").containsKey(AclEpochState.FIELD_QUARANTINED));
     }
 
+    // ── review 3c: direct finalizer + index pinning ────────────────
+
+    @Test
+    void directFinalizeOnStateLessWithLeftoverMutationIdIsAnomalyAndConsumesNoEpoch() throws Exception {
+        // The direct public entry point must enforce what the scanner does: "state absent BUT
+        // mutation id present" is corruption (the steady state clears both), NOT a clean skip.
+        putRawJson("direct-lost", "{\"type\":\"epoch-it-fixture\",\"aclSourceEpoch\":900,"
+                + "\"aclEpochMutationId\":\"" + AclEpochState.newMutationId() + "\"}");
+
+        assertThrows(AclEpochAnomalyException.class, () -> svc.finalizePending(contentDb, "direct-lost"));
+        assertEquals(0L, counterValue(contentDb), "a rejected finalize must not consume an epoch");
+        assertEquals(900L, ((Number) props("direct-lost").get(AclEpochState.FIELD_SOURCE_EPOCH)).longValue(),
+                "the document is left untouched");
+    }
+
+    @Test
+    void directFinalizeOnGenuinelyStateLessContentIsStillACleanSkip() {
+        // The other half of the contract: NEITHER field = ordinary content, not our business.
+        seedStateless("direct-plain");
+        FinalizeOutcome o = svc.finalizePending(contentDb, "direct-plain");
+        assertEquals(FinalizeResult.SKIPPED_NOT_PENDING, o.result);
+        assertNull(o.epoch);
+        assertEquals(0L, counterValue(contentDb));
+    }
+
+    @Test
+    void nullNumericAndBlankMutationIdsAreFoundViaTheRealIndexAndQuarantined() throws Exception {
+        // All three malformed shapes must be reachable through the (aclEpochMutationId) index —
+        // CouchDB indexes a null/numeric value, so $exists:true matches them.
+        putRawJson("mid-null",  "{\"type\":\"epoch-it-fixture\",\"aclEpochMutationId\":null}");
+        putRawJson("mid-num",   "{\"type\":\"epoch-it-fixture\",\"aclEpochMutationId\":12345}");
+        putRawJson("mid-blank", "{\"type\":\"epoch-it-fixture\",\"aclEpochMutationId\":\"  \"}");
+
+        for (int i = 0; i < 3; i++) svc.scan(contentDb, 100);
+        assertEquals(Boolean.TRUE, props("mid-null").get(AclEpochState.FIELD_QUARANTINED));
+        assertEquals(Boolean.TRUE, props("mid-num").get(AclEpochState.FIELD_QUARANTINED));
+        assertEquals(Boolean.TRUE, props("mid-blank").get(AclEpochState.FIELD_QUARANTINED));
+    }
+
+    @Test
+    void scanFailsRatherThanFullScanningWhenTheMutationIdIndexIsMissing() throws Exception {
+        // CouchDB 3.3.x does NOT reject a use_index naming a missing index — it SILENTLY falls back
+        // to _all_docs and returns 200 (only a `warning` field betrays it). Once the scanner is
+        // auto-started that would full-scan a large content DB on every tick, so the scan must fail
+        // loudly instead (review 3c [P2]).
+        dropIndex("idx_aclEpochMutationId");
+        putRawJson("needs-index", "{\"type\":\"epoch-it-fixture\",\"aclEpochMutationId\":\""
+                + AclEpochState.newMutationId() + "\"}");
+
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> svc.scan(contentDb, 100));
+        assertTrue(e.getMessage().contains("idx_aclEpochMutationId"),
+                "the failure must name the index to repair: " + e.getMessage());
+        assertFalse(props("needs-index").containsKey(AclEpochState.FIELD_QUARANTINED),
+                "nothing is processed from an unindexed scan");
+    }
+
+    @Test
+    void scanFailsWhenTheStateIndexIsMissingToo() throws Exception {
+        dropIndex("idx_aclEpochState");
+        seedPending("needs-state-index", AclEpochState.newMutationId());
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> svc.scan(contentDb, 100));
+        assertTrue(e.getMessage().contains("idx_aclEpochState"), e.getMessage());
+    }
+
     // ── review 2g: terminal-audit resume cursor robustness ─────────
 
     /** Deterministic id of the per-content-DB terminal-audit resume cursor. */
@@ -1199,7 +1263,11 @@ public class AclEpochFinalizationServiceIT {
         putContent(c);
     }
 
-    /** Drop and recreate the {@code (aclEpochState)} Mango index (simulate an index rebuild). */
+    /**
+     * Drop and recreate the epoch Mango indexes (simulate an index rebuild). Deleting the design
+     * document removes BOTH indexes (they share {@code acl-epoch-indexes}), so both are recreated —
+     * otherwise the scan's fail-closed index pre-flight would (correctly) refuse to run.
+     */
     private void recreateAclEpochStateIndex() throws Exception {
         HttpResponse<String> g = rawRequest("GET", "/_design/acl-epoch-indexes", null);
         if (g.statusCode() == 200) {
@@ -1213,6 +1281,14 @@ public class AclEpochFinalizationServiceIT {
                         .build())
                 .name("idx_aclEpochState").type(PostIndexOptions.Type.JSON).ddoc("acl-epoch-indexes")
                 .build()).execute();
+        cloudant.postIndex(new PostIndexOptions.Builder()
+                .db(contentDb)
+                .index(new IndexDefinition.Builder()
+                        .fields(List.of(new IndexField.Builder()
+                                .add(AclEpochState.FIELD_MUTATION_ID, "asc").build()))
+                        .build())
+                .name("idx_aclEpochMutationId").type(PostIndexOptions.Type.JSON).ddoc("acl-epoch-indexes")
+                .build()).execute();
     }
 
     private HttpResponse<String> rawRequest(String method, String path, String body) throws Exception {
@@ -1224,6 +1300,17 @@ public class AclEpochFinalizationServiceIT {
         else if (body != null) b.method(method, HttpRequest.BodyPublishers.ofString(body));
         else b.method(method, HttpRequest.BodyPublishers.noBody());
         return HttpClient.newHttpClient().send(b.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** Delete one Mango index from the shared design doc (to prove the fail-closed pinning). */
+    private void dropIndex(String indexName) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/" + contentDb + "/_index/_design/acl-epoch-indexes/json/" + indexName))
+                .header("Authorization", basicAuth)
+                .DELETE()
+                .build();
+        HttpResponse<String> resp = HttpClient.newHttpClient().send(req, HttpResponse.BodyHandlers.ofString());
+        if (resp.statusCode() >= 300) throw new IllegalStateException("drop index failed: " + resp.body());
     }
 
     /** PUT a document with an EXACT raw JSON body (to guarantee explicit JSON null / shape). */

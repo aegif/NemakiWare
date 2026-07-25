@@ -1352,6 +1352,30 @@ scheduler/init/cron なし・**書込みを一切行わない** read-only)。
   bedroom・canopy 両方に `(aclEpochMutationId)` を作成、atom 200、何も自動実行されない、実 content に mutation 保持文書ゼロ。
   ⚠ 永続フォーマット追加: content DB に 2 本目の Mango index `(aclEpochMutationId)`。
 
+**増分3c: direct finalizer の state 消失 + scan の index ピン留め (P1 + P2)**:
+- **[P1] direct finalizer が state 消失をまだ正常 skip していた**: `finalizePending(repo, docId)` は `aclEpochState` 欠落で
+  共通 validator を呼ばずに `SKIPPED_NOT_PENDING` を返していたため、3b で anomaly と定義した「state なし + mutationId あり」を
+  **public 経路では正常終了**として扱っていた(scanner は検出できるが、将来 Phase 2 がこの経路を直接使うと破損を見逃す)。
+  契約を明確化: **両方 absent → 通常 content として skip / state absent + mutationId present → anomaly / quarantine marker・
+  非UUID・不正 epoch → anomaly**。全検査は `counterService.allocate` の**前**なので **anomaly では counter 非消費**。
+- **[P2] scan pass が index にピン留めされていなかった**: `runPass` は `use_index` を指定しておらず、index 欠落・再作成途中で
+  `_all_docs` へ fallback し得た(scanner 自動起動後は大規模 content DB を tick 毎に全走査)。**4 pass すべてを
+  `idx_aclEpochState` / 新 pass は `idx_aclEpochMutationId` にピン留め**し、**index 不在なら scan を失敗**させる。
+  **実測した CouchDB 3.3.3 の挙動**: 存在しない index を `use_index` に指定しても**エラーにならず**、`_all_docs` に
+  silently fallback して **HTTP 200** を返す(唯一の手掛かりは `warning` フィールド。`allow_fallback=false` は 3.4+/Cloudant
+  専用で 3.3.x は拒否)。したがって保証は **`scan()` 冒頭での決定的な index 存在チェック**に置き、per-query warning は
+  多層防御として併用。ただし warning は **「was not used」/「no matching index found」の文言に限定**した — CouchDB は
+  index が効いている anomaly pass に対しても「documents examined is high」という**性能助言 warning** を出すため、
+  「warning があれば失敗」では誤検知になる(実際に 1 件誤検知して判明)。
+- **Javadoc 是正**: 「state-less document は全 pass に非マッチ」は 3b の専用 pass 追加後は不正確(leftover mutationId は選択
+  される)。「ContentDao と完全に同じ規則」も不正確(DAO は未知 type を generic `CouchContent` に fallback するが epoch 側は
+  anomaly)→「**優先順位と legacy 形式は DAO と同一、認識済み CMIS kind へは epoch 側が厳格**」に修正。
+- **検証**: finalization IT **57/57** + walk IT 52/52 + 新 patch IT 4/4、epoch unit+IT **146/146**。**mutation 2種が bind**
+  (direct finalizer の guard を戻す→当該 IT 失敗 / pre-flight と warning backstop を外す→index 欠落 IT 2件失敗)。新規 IT:
+  direct finalizer(anomaly + counter 非消費 / 通常 stateless は clean skip)、null・数値・blank mutationId を**実 index 経由**で
+  検出+quarantine、**両 index それぞれの欠落で scan 失敗**、patch の冪等性 + 失敗時に PatchHistory を残さない経路。
+  実機: 両 index 存在・atom 200・何も自動実行されない・CMIS 正常。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度
