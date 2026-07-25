@@ -1329,6 +1329,29 @@ scheduler/init/cron なし・**書込みを一切行わない** read-only)。
   削除→walk 4件+finalization 2件失敗 / endpoint-field ヒューリスティックへ戻す→2件失敗)。実機: atom 200・何も自動実行されない・
   実 content 無変更。
 
+**増分3b: state 消失 / 文書種別検証 / hop 上限境界 (レビュー P1×2 + P2)**:
+- **[P1] state 消失 + mutationId 残存を settled として受理していた**: `validate` は `aclEpochState` 欠落で即 return し
+  `aclEpochMutationId` を検査していなかったが、**steady state は両方を消す**契約。move 等で marker だけ失われると旧 chain 由来の
+  `aclSourceEpoch` が settled 扱いになり、しかも**全 scanner selector が `aclEpochState` を条件にするため恒久的に不可視**
+  (= 恒久 stale 化し、後続の正常 writer を fence し得る)。**state 欠落 + mutationId present(値不問)を anomaly** にし、
+  **scanner に専用 pass** を追加。新 Mango index **`(aclEpochMutationId)`**(`Patch_AclEpochMutationIdMangoIndex`)で serve
+  (JSON index は自分が索引する field の `$exists:false` を serve できない。この index は mutation 保持文書のみ=steady state では空)。
+  同時に **`quarantine()` の「修復済み」定義も是正**: state-less は **mutationId も消えている場合のみ**修復扱い(でないと
+  quarantine が abort し、新 pass が毎 scan 同じ文書を選び続ける恒久ループになる)。
+- **[P1] 生 CouchDB 文書の種別検証**: `type` 欠落/null/未知を通常 content として受理し、`parentId` の文書が folder でなくても
+  祖先に採用していた。実際の readers 計算は `getFolder()` 経由(非 folder は null → strict で fail-closed)なので、**両者が異なる
+  依存集合を見る**恐れがあった。`ContentDaoServiceImpl.getContent` と**完全に同じ規則**(`type` 優先、無ければ `objectType`、
+  legacy 短縮形 `"folder"`/`"document"` 等も受理)で `ContentKind` を解決し、**欠落/不正/未知は anomaly**(runtime 推測をしない。
+  discriminator 以前のデータは明示 migration が必要)、**祖先は `FOLDER` 必須**に。推測挙動を固定していた旧テストは**反転**。
+- **[P2] hop 上限の off-by-one**: 停止条件を次周回の先頭でしか評価していなかったため、**ちょうど `maxAncestorHops` 個**の祖先を
+  持つ chain が例外になり、正当な深さの subtree が恒久的に再索引不能だった。**次の祖先が実際に必要な時点でのみ cap を判定**する
+  形に変更し、「ちょうど上限=成功 / 上限+1=失敗」の境界テストを追加。
+- **検証**: effective-epoch IT **52/52**、finalization IT **52/52**、epoch unit+IT **137/137**。**mutation 5種**が各々自分の
+  テストだけを落とす(mutationId 残存受理→walk 2件 / quarantine「修復済み」定義を戻す→**6 scan 経ても quarantine されない**
+  =本件で閉じた飢餓 / 種別推測→反転テスト / folder 要件削除→1件 / off-by-one 復元→ちょうど上限テスト)。実機: 新 patch が
+  bedroom・canopy 両方に `(aclEpochMutationId)` を作成、atom 200、何も自動実行されない、実 content に mutation 保持文書ゼロ。
+  ⚠ 永続フォーマット追加: content DB に 2 本目の Mango index `(aclEpochMutationId)`。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度

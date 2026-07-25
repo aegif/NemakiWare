@@ -697,3 +697,38 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
     not recording absences fails 2 ITs; accepting a `false` marker fails 1 walk IT + 1 finalization
     IT; dropping the ENQUEUED invariants fails 4 walk ITs + 2 finalization ITs; reverting to the
     endpoint-field heuristic fails 2 ITs. Live: atom 200, nothing auto-runs, real content untouched.
+  - **Increment 3b — state loss, kind validation, hop-cap boundary (review).**
+    1. **(P1) State lost, mutation id survived.** `validate` returned immediately when
+       `aclEpochState` was absent, without checking `aclEpochMutationId` — but the steady state
+       clears BOTH. A move whose marker was dropped therefore left a document whose stale
+       `aclSourceEpoch` was consumed as "settled", and because EVERY scanner selector keys on
+       `aclEpochState` it was invisible to all of them: permanently stale, able to fence out later
+       correct writers. Now state-absent + mutation-id-present (any value) is an ANOMALY, AND the
+       scanner has a dedicated pass for that shape, served by a new `(aclEpochMutationId)` Mango
+       index (`Patch_AclEpochMutationIdMangoIndex` — a JSON index cannot serve `$exists:false` on
+       the field it indexes, and this one holds only mutation-bearing documents, i.e. nothing in
+       steady state). `quarantine()`'s "repaired" definition was corrected in the same change:
+       state-less counts as repaired ONLY if the mutation id is gone too — otherwise the quarantine
+       aborts and the new pass re-selects the same document on every scan for ever.
+    2. **(P1) Document-kind validation.** `type` absent / null / unrecognised was accepted as
+       ordinary content, and ANY document at `parentId` was accepted as an ancestor — while the
+       real readers computation resolves ancestors through `getFolder()`, which returns null for a
+       non-folder and then fails closed under strict mode. The two layers could therefore walk
+       DIFFERENT dependency sets. A `ContentKind` is now resolved exactly as
+       `ContentDaoServiceImpl.getContent` does (`type` else `objectType`; the legacy short forms
+       `"folder"` / `"document"` / … are accepted because the DAO accepts them), an absent /
+       malformed / unrecognised discriminator is an anomaly (no runtime guessing — pre-discriminator
+       data needs an explicit migration), and an ANCESTOR must be `FOLDER`. The old test that
+       pinned the guessing behaviour is inverted.
+    3. **(P2) Hop-cap off-by-one.** The stop condition was only evaluated at the top of the next
+       iteration, so a chain of EXACTLY `maxAncestorHops` ancestors threw — permanently blocking a
+       legitimately deep subtree from being re-indexed. The cap is now checked only when another
+       ancestor is actually required, with boundary ITs for exactly-at and one-past.
+    <br>Verification: 52 effective-epoch ITs + 52 finalization ITs; epoch unit+IT 137/137. Five
+    mutations, each failing only its own tests: accepting a leftover mutation id fails 2 walk ITs;
+    reverting the quarantine "repaired" definition leaves the document unquarantined after 6 scans
+    (the starvation this closes); guessing a kind fails the inverted IT; dropping the folder
+    requirement fails 1 IT; restoring the off-by-one fails the exactly-at-cap IT. Live: the new
+    patch registered `(aclEpochMutationId)` on both repositories, atom 200, nothing auto-runs, and
+    zero mutation-bearing documents exist in real content.
+    <br>⚠ Persistent-format addition: a second Mango index `(aclEpochMutationId)` per content DB.

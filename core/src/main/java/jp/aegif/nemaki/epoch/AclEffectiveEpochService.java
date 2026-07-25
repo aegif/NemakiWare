@@ -81,7 +81,7 @@ public class AclEffectiveEpochService {
     static final String FIELD_TARGET_ID = "targetId";
     /** Persisted BASE-type discriminator (set by the model constructors, independent of objectType). */
     static final String FIELD_TYPE = "type";
-    static final String TYPE_RELATIONSHIP = "cmis:relationship";
+    static final String FIELD_OBJECT_TYPE = "objectType";
 
     /** Bound on the inheriting-ancestor chain (cycle / runaway protection). */
     public static final int DEFAULT_MAX_ANCESTOR_HOPS = 128;
@@ -102,6 +102,15 @@ public class AclEffectiveEpochService {
 
     /** Why a dependency is part of the snapshot (diagnostics; not a correctness input). */
     public enum DependencyRole { SELF, ANCESTOR, RELATIONSHIP_SOURCE, RELATIONSHIP_TARGET }
+
+    /**
+     * The CMIS base kind of a raw content document. Resolved EXACTLY as
+     * {@code ContentDaoServiceImpl.getContent} does — {@code type} if present, else
+     * {@code objectType} — and accepting the same legacy short forms ({@code "folder"},
+     * {@code "document"}, …) that DAO accepts, so the epoch walk and the real content layer
+     * always agree on what a document IS (review 3b [P1]).
+     */
+    public enum ContentKind { FOLDER, DOCUMENT, ITEM, RELATIONSHIP, POLICY }
 
     /**
      * One authoritative dependency reading. Every field is compared verbatim by
@@ -125,21 +134,22 @@ public class AclEffectiveEpochService {
         public final Boolean aclInherited; // null = absent (defaults to TRUE, as in calculateAcl)
         public final String sourceId;     // relationship endpoint (null otherwise)
         public final String targetId;
-        public final boolean isRelationship;
+        /** The CMIS base kind; {@code null} only for a NEGATIVE (recorded-absent) dependency. */
+        public final ContentKind kind;
         public final DependencyRole role;
 
         Dependency(String id, String rev, boolean exists, long sourceEpoch, String state,
                    String parentId, Boolean aclInherited, String sourceId, String targetId,
-                   boolean isRelationship, DependencyRole role) {
+                   ContentKind kind, DependencyRole role) {
             this.id = id; this.rev = rev; this.exists = exists; this.sourceEpoch = sourceEpoch;
             this.state = state; this.parentId = parentId; this.aclInherited = aclInherited;
             this.sourceId = sourceId; this.targetId = targetId;
-            this.isRelationship = isRelationship; this.role = role;
+            this.kind = kind; this.role = role;
         }
 
         /** A recorded absence (a dangling relationship endpoint). */
         static Dependency absent(String id, DependencyRole role) {
-            return new Dependency(id, null, false, 0L, null, null, null, null, null, false, role);
+            return new Dependency(id, null, false, 0L, null, null, null, null, null, null, role);
         }
 
         /** Verbatim equality of everything the fence depends on (used by {@link #revalidate}). */
@@ -154,7 +164,7 @@ public class AclEffectiveEpochService {
                     && Objects.equals(aclInherited, o.aclInherited)
                     && Objects.equals(sourceId, o.sourceId)
                     && Objects.equals(targetId, o.targetId)
-                    && isRelationship == o.isRelationship;
+                    && kind == o.kind;
         }
 
         @Override public String toString() {
@@ -237,7 +247,7 @@ public class AclEffectiveEpochService {
         seen.add(self.id);
 
         long effective;
-        if (self.isRelationship) {
+        if (self.kind == ContentKind.RELATIONSHIP) {
             // A relationship has no ACL of its own in the inheritance sense: read permission is
             // read(source) OR read(target), so the fence value is the max over BOTH endpoint chains
             // and the relationship's own epoch. toDependency() has already guaranteed both endpoint
@@ -278,6 +288,9 @@ public class AclEffectiveEpochService {
             seen.add(endpointId);
             return 0L;
         }
+        // toDependency() resolves + validates the CMIS kind, so a non-content document at an
+        // endpoint id is already an anomaly there; any of the five content kinds is a legal
+        // relationship endpoint.
         Dependency d = toDependency(doc, role);
         deps.add(d);
         seen.add(d.id);
@@ -296,7 +309,8 @@ public class AclEffectiveEpochService {
                                List<Dependency> deps, Set<String> seen) {
         long max = 0L;
         Dependency node = start;
-        for (int hop = 0; hop < maxAncestorHops; hop++) {
+        int added = 0;
+        while (true) {
             // Absent aclInherited defaults to TRUE (calculateAcl's getAclInheritedWithDefault).
             if (Boolean.FALSE.equals(node.aclInherited)) {
                 return max; // top of the inheriting chain
@@ -315,6 +329,14 @@ public class AclEffectiveEpochService {
                 }
                 return max;
             }
+            // The cap is checked HERE — only when another ancestor is actually REQUIRED — so a
+            // chain of EXACTLY maxAncestorHops ancestors succeeds and only hops+1 fails (review
+            // 3b [P2]: the previous loop bound rejected an exactly-at-the-limit chain, permanently
+            // blocking a legitimately deep subtree from being re-indexed).
+            if (added >= maxAncestorHops) {
+                throw new AclEpochAnomalyException("ACL inheritance chain from " + start.id
+                        + " exceeds " + maxAncestorHops + " hops — refusing to compute an effective epoch");
+            }
             Document parentDoc = read(repositoryId, parentId, "inheriting parent");
             if (parentDoc == null) {
                 // An inheriting object MUST have a readable parent — dropping the inherited grants
@@ -324,13 +346,21 @@ public class AclEffectiveEpochService {
             }
             Dependency parent = toDependency(parentDoc, role == DependencyRole.SELF
                     ? DependencyRole.ANCESTOR : role);
+            // The real ACL computation resolves the parent through getFolder(), which returns null
+            // for a NON-folder and then fails closed under strict mode. Requiring FOLDER here keeps
+            // the epoch walk's dependency set identical to the readers computation's (review 3b [P1]).
+            if (parent.kind != ContentKind.FOLDER) {
+                throw new AclEpochAnomalyException("inheriting object " + node.id + " has a parent "
+                        + parentId + " that is not a folder (" + parent.kind + ") — the readers "
+                        + "computation resolves parents via getFolder(), so the dependency sets "
+                        + "would diverge");
+            }
             deps.add(parent);
             seen.add(parent.id);
             max = Math.max(max, parent.sourceEpoch);
             node = parent;
+            added++;
         }
-        throw new AclEpochAnomalyException("ACL inheritance chain from " + start.id + " exceeds "
-                + maxAncestorHops + " hops — refusing to compute an effective epoch");
     }
 
     /** True if {@code id} was recorded in THIS chain (a real cycle) rather than a sibling chain. */
@@ -446,8 +476,8 @@ public class AclEffectiveEpochService {
         String sourceId = strictOptionalId(id, p, FIELD_SOURCE_ID);
         String targetId = strictOptionalId(id, p, FIELD_TARGET_ID);
 
-        boolean isRelationship = isRelationship(id, p);
-        if (isRelationship) {
+        ContentKind kind = resolveKind(id, p);
+        if (kind == ContentKind.RELATIONSHIP) {
             // A relationship's fence value is the max over BOTH endpoint chains, so a missing
             // endpoint id is not "no endpoint" — it means we cannot compute the value at all.
             if (sourceId == null || targetId == null) {
@@ -462,24 +492,58 @@ public class AclEffectiveEpochService {
         }
 
         return new Dependency(id, doc.getRev(), true, v.epoch, v.state, parentId, aclInherited,
-                sourceId, targetId, isRelationship, role);
+                sourceId, targetId, kind, role);
     }
 
     /**
-     * Relationship detection by the PERSISTED base type ({@code type == "cmis:relationship"}), the
-     * value {@code Relationship}'s constructor writes — so a SUBTYPED relationship
-     * ({@code objectType = nemaki:hasAttachment}, …) is still detected (review 3a [P1]; the
-     * previous "has both endpoint fields" heuristic silently demoted a relationship whose endpoint
-     * field was malformed to ordinary content, dropping BOTH endpoint chains).
+     * Resolve the CMIS base kind of a raw content document, STRICTLY (review 3b [P1]).
      *
-     * <p>A {@code type} that is absent or non-String is treated as NOT a relationship for
-     * backward compatibility with any content that predates the discriminator — but the caller
-     * then rejects it if it carries endpoint fields, so an unrecognised relationship can never be
-     * silently walked as ordinary content.
+     * <p>Mirrors {@code ContentDaoServiceImpl.getContent} exactly — the effective discriminator is
+     * {@code type} if present, else {@code objectType}, and the legacy short forms
+     * ({@code "folder"}, {@code "document"}, …) that DAO accepts are accepted here too — so the
+     * epoch walk and the real content layer can never disagree about what a document IS. A
+     * SUBTYPED object keeps its base type in {@code type} ({@code Relationship}'s constructor
+     * writes {@code cmis:relationship} while {@code objectType} carries {@code
+     * nemaki:hasAttachment}), so subtypes resolve correctly.
+     *
+     * <p>An ABSENT / present-null / non-String / UNRECOGNISED discriminator is an ANOMALY: the
+     * walk must never GUESS a document's kind at runtime (a guess of "ordinary content" silently
+     * drops a relationship's endpoint chains from the fence value). Data predating the
+     * discriminator needs an explicit migration, not a runtime fallback.
      */
-    private static boolean isRelationship(String docId, Map<String, Object> p) {
-        Object rawType = p.get(FIELD_TYPE);
-        return rawType instanceof String && TYPE_RELATIONSHIP.equals(rawType);
+    private static ContentKind resolveKind(String docId, Map<String, Object> p) {
+        String effective = kindDiscriminator(docId, p, FIELD_TYPE);
+        if (effective == null) {
+            effective = kindDiscriminator(docId, p, FIELD_OBJECT_TYPE);
+        }
+        if (effective == null) {
+            throw new AclEpochAnomalyException("dependency " + docId + " has no type/objectType "
+                    + "discriminator — refusing to guess its CMIS kind (an explicit migration is "
+                    + "required for pre-discriminator data)");
+        }
+        switch (effective) {
+            case "cmis:folder":       case "folder":       return ContentKind.FOLDER;
+            case "cmis:document":     case "document":     return ContentKind.DOCUMENT;
+            case "cmis:relationship": case "relationship": return ContentKind.RELATIONSHIP;
+            case "cmis:policy":       case "policy":       return ContentKind.POLICY;
+            case "cmis:item":                              return ContentKind.ITEM;
+            default:
+                throw new AclEpochAnomalyException("dependency " + docId
+                        + " has an unrecognised CMIS base type '" + effective + "'");
+        }
+    }
+
+    /** A discriminator field: absent → {@code null}; present must be a non-blank String. */
+    private static String kindDiscriminator(String docId, Map<String, Object> p, String key) {
+        if (!p.containsKey(key)) {
+            return null;
+        }
+        Object v = p.get(key);
+        if (!(v instanceof String) || ((String) v).isBlank()) {
+            throw new AclEpochAnomalyException("dependency " + docId + " has a present-but-invalid "
+                    + key + " (null / non-String / blank): " + v);
+        }
+        return (String) v;
     }
 
     /**

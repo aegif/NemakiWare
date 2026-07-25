@@ -309,6 +309,18 @@ public class AclEpochFinalizationService {
                     throw new AclEpochAnomalyException("live state without aclEpochMutationId on " + d.getId());
                 });
 
+        // STATE LOST but the mutation id survived (review 3b [P1]): every OTHER selector keys on
+        // aclEpochState, so this shape is invisible to them and would stay stale forever while its
+        // `aclSourceEpoch` is consumed as "settled". Served by the (aclEpochMutationId) index,
+        // which only contains mutation-bearing documents (empty in steady state).
+        runPass(repositoryId, notQuarantined(Map.of(
+                        AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true),
+                        AclEpochState.FIELD_STATE, Map.of("$exists", false))),
+                budget, summary, d -> {
+                    throw new AclEpochAnomalyException("aclEpochMutationId without aclEpochState on "
+                            + d.getId() + " (steady state clears both)");
+                });
+
         runPass(repositoryId, notQuarantined(Map.of(
                         AclEpochState.FIELD_STATE, Map.of("$exists", true, "$nin", List.of(
                                 AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE,
@@ -722,8 +734,12 @@ public class AclEpochFinalizationService {
                 // string / …) is a marker anomaly to normalize to true.
                 boolean markerAnomalous = p.containsKey(AclEpochState.FIELD_QUARANTINED);
                 boolean epochAnomalous;
-                if (!p.containsKey(AclEpochState.FIELD_STATE)) {
-                    // ABSENT state = repaired to state-less normal content. Use containsKey,
+                if (!p.containsKey(AclEpochState.FIELD_STATE)
+                        && !p.containsKey(AclEpochState.FIELD_MUTATION_ID)) {
+                    // ABSENT state AND absent mutation id = repaired to state-less normal
+                    // content (steady state clears BOTH — review 3b [P1]; treating a leftover
+                    // mutation id as "repaired" would abort the quarantine and make the new
+                    // state-less pass select the same document forever). Use containsKey,
                     // NOT get()==null: the SDK stores an explicit-null state as PRESENT, and a
                     // present-null state is corruption (validateEpochFields rejects it), not
                     // "repaired" — the earlier review 2e containsKey fix was on the marker only,
