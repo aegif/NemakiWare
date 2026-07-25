@@ -352,15 +352,36 @@ The following are therefore **required of the production implementation, in the 
 3. **Strict failure** — a dependency that cannot be read must THROW, never degrade to a shorter
    set. The writer's empty/null/blank rejection is a backstop, not the primary guarantee: a
    computation that drops ONE inherited grant still returns a plausible non-empty list.
-   <br>**CORRECTION (increment 4c).** An earlier revision of this clause claimed this already held
-   for "an unreadable ancestor / principal". Only the ANCESTOR half is true:
-   `AclEffectiveEpochService` and `calculateAcl(..., strict)` throw on an unreadable inheriting
-   parent, but `ACLExpander.addReaderFromPrincipal` returns SILENTLY when a principal resolves to
-   neither a user nor a group — and the principal DAO collapses a read FAILURE to the same `null`
-   as a genuine deletion. A transient principal-DAO fault therefore shortens the reader set and is
-   written as a success. This is an UNDER-grant (availability), not an over-grant, and it exists in
-   the current production index path too — but it is NOT closed, and this document must not say it
-   is. It is tracked as a WIRING GATE (see below), not as a permanent residual.
+   <br>**CORRECTION (increment 4c, RE-CORRECTED before 5T — the 4c wording was itself wrong).**
+   An earlier revision claimed this already held for "an unreadable ancestor / principal". Only the
+   ANCESTOR half is true. 4c then replaced it with "a transient principal-DAO fault silently
+   shortens the reader set", which is ALSO wrong. Verified in code, the split is:
+   <ul>
+     <li><b>A TRANSIENT fault does NOT return null.</b>
+         `CloudantClientWrapper.queryView` rethrows it as `CmisRuntimeException`, and nothing on the
+         path (`PrincipalServiceImpl` → cached DAO → couch DAO) catches it. WHERE it lands differs by
+         caller, and that is the real defect: the strict/reconcile path and `AclServiceImpl`'s
+         ACL-refresh traversal propagate it (durable retry), but `SolrUtil.createSolrDocument`'s
+         NON-strict catch swallows it with a `log.warn`, INDEXES THE DOCUMENT WITH AN EMPTY
+         `readers` SET, and enqueues NOTHING. That is the most frequent path — every create/update —
+         so the stale-deny persists until the next ACL change or a full reindex.</li>
+     <li><b>What genuinely collapses is SYSTEMIC unavailability.</b> `queryView` maps a
+         `NotFoundException` (missing design document / view / database — i.e. "the query could not
+         be served", not "the principal is absent") to `null`, and `getUserByIdInternal` /
+         `getGroupByIdInternal` then treat that null identically to an empty result via
+         `CollectionUtils.isEmpty`. On the STRICT path this raises NO signal at all: every principal
+         resolves to nothing, rule 2 yields admin-only, the CAS write SUCCEEDS and the reconcile task
+         is deleted. Only a tri-state can close this — there is nothing else to observe.</li>
+   </ul>
+   <b>Security rating, stated plainly:</b> every principal-resolution failure shrinks the token set;
+   there is NO over-grant path. 5T is an AVAILABILITY / index-health defect, NOT a confidentiality
+   leak. It stays on the wiring gate for that reason.
+   <br>Consequently 5T has TWO halves, and shipping only the first would leave the same asymmetry as
+   3b (closed under strict, open on the ordinary path): <b>(1)</b> tri-state the principal DAO and
+   THROW on `UNAVAILABLE` under strict (`NOT_FOUND` keeps today's omit); <b>(2)</b> stop the
+   non-strict index path at `SolrUtil` from ending at a bare `log.warn` — keep the fail-closed empty
+   `readers` for visibility, but ENQUEUE the object for reconciliation so the deny is retried
+   durably instead of waiting for the next ACL change.
 4. **Tested at wiring time** — at minimum: a direct `applyAcl` on the object itself must be
    reflected; an unreadable ancestor must fail the write rather than shorten the readers.
    (A "poisoned ACL cache must not change the readers" test is deliberately NOT listed: under the
