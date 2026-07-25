@@ -437,6 +437,16 @@
         <property name="counterService" ref="aclEpochCounterService" />
     </bean>
 
+    <!-- ACL effective-epoch resolution (design §4.1 / §4.2 steps 1,2,4 — increment 3).
+         Standalone: NO init-method, NO scheduler wiring, NO cron. snapshot()/revalidate()
+         have no production callers, and this bean performs NO writes at all — it only
+         READS CouchDB authoritatively (never Solr, reconcile tasks, or the ACL cache).
+         Fail-closed staging until the ACL-UPDATE increment. -->
+    <bean id="aclEffectiveEpochService"
+          class="jp.aegif.nemaki.epoch.AclEffectiveEpochService">
+        <property name="connectorPool" ref="connectorPool" />
+    </bean>
+
     <!-- Search-index ACL reconciliation: durable CouchDB queue + leader-gated poller -->
     <bean id="searchIndexReconciliationService"
           class="jp.aegif.nemaki.reconcile.SearchIndexReconciliationService">

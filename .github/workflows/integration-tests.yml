@@ -324,7 +324,7 @@ jobs:
       - name: Run reconciliation + ACL-epoch counter IT (fail if CouchDB unreachable)
         run: |
           mvn test \
-            -Dtest='SearchIndexReconciliationServiceIT,AclEpochCounterServiceIT,Patch_AclEpochCounterIT,AclEpochFinalizationServiceIT' \
+            -Dtest='SearchIndexReconciliationServiceIT,AclEpochCounterServiceIT,Patch_AclEpochCounterIT,AclEpochFinalizationServiceIT,AclEffectiveEpochServiceIT' \
             -Dnemaki.test.couchdb.required=true \
             -Dnemaki.test.couchdb.url=http://localhost:5984 \
             -Dnemaki.test.couchdb.user=admin \
