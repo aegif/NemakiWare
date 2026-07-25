@@ -1437,6 +1437,19 @@ scheduler/init/cron なし・**書込みを一切行わない** read-only)。
   SKIPPED_FRESHER になり相違経路に入らなかった)。注入を attempt 1 の RTG **後**に移して、mutation が逆転を正確に再現
   (SKIPPED_FRESHER であるべきところ UPDATED)することを確認した。
 
+**増分4b: P3×3 の整合修正**:
+- **`realtimeGet` の Javadoc**: 4a で repository 検査を `write()` 側へ移したのに、Javadoc は「本メソッドで HARD failure」と
+  読めるままだった。将来 override する実装者が「置き換える側で境界が守られている」と誤解し得るため、**明示的に逆の記述**
+  (raw fetch のみ・境界は呼出元が `requireSameRepository` で適用・override 側は依拠してはならない)に修正。
+- **SPI と writer の不整合**: SPI Javadoc は empty を禁じていたのに writer は null と null/blank **要素**しか拒否せず、
+  **empty list は書けてしまった**。**writer 側で empty も拒否**して約束と実挙動を一致させた(authoritative な ACL 展開自体が
+  fail-closed で最低でも admin role token を出すため、empty は計算失敗以外にあり得ない)。mutation で bind 済み。
+- **配線時の必須要件を設計 §5.2 として明文化**: `ReadersComputer` の cache-bypass / **対象自身を含む** strict walk /
+  厳格失敗(不読祖先は throw)は SPI 境界では保証不能なので、§5.1(quarantine 運用契約)と同様に**配線増分の義務**として
+  必須テスト付きで記載(stale cache が書込み結果を変えない / 対象自身への applyAcl が反映される / 不読祖先で write が失敗する)。
+  writer の empty/null 拒否は backstop であって主保証ではない(継承 grant を1つ落としても非空のまま)ことも明記。
+- **検証**: IT **20/20**、epoch unit+IT **175/175**。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度

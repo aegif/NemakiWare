@@ -83,8 +83,11 @@ public class AclEpochIndexWriter {
      *
      * <p>It MUST fail (throw) rather than return an empty/partial list when it cannot compute the
      * readers: writing an empty {@code readers} would make the object invisible to every non-admin
-     * search, which is a silent availability failure, and writing a PARTIAL list is worse. A
-     * {@code null} list, or any null/blank token, is refused by the writer for the same reason.
+     * search, which is a silent availability failure, and writing a PARTIAL list is worse. The
+     * writer ENFORCES this (review 4b): a {@code null} list, an EMPTY list, or any null/blank token
+     * is refused. An authoritative computation never legitimately yields nothing — the ACL
+     * expansion is itself fail-closed and always emits at least the admin role token — so an empty
+     * result can only mean the computation failed.
      *
      * <p><b>Contract for the PRODUCTION implementation (review 4a — mandatory at wiring time):</b>
      * it MUST compute from the AUTHORITATIVE, cache-bypassing sources — the strict inherited-ACL
@@ -258,9 +261,10 @@ public class AclEpochIndexWriter {
      * interval, so a searcher-read {@code _version_} would be stale and the CAS would loop to
      * exhaustion whenever the document was written in the last second.
      *
-     * <p>Ids are globally-unique CMIS ids but the Solr core is SHARED across repositories, so a
-     * {@code repository_id} mismatch is a HARD failure: returning "absent" would let the caller
-     * create-if-absent or overwrite ANOTHER repository's document under the same unique key.
+     * <p>This method performs the RAW fetch ONLY. The repository-boundary check is deliberately
+     * NOT here: {@link #write} applies {@link #requireSameRepository} to the RESULT, so that an
+     * overridden or alternate fetch path cannot bypass it (review 4a [P2]). An override therefore
+     * does NOT need to — and must not be relied upon to — enforce the boundary itself.
      *
      * <p>Package-private so a concurrency IT can override it to inject a competing write (or a
      * dependency mutation) at EXACTLY the point between step 3 and step 5, making the 409 and
@@ -336,8 +340,13 @@ public class AclEpochIndexWriter {
      * write is refused instead.
      */
     private static List<String> strictIncomingReaders(List<String> computed, String objectId) {
-        if (computed == null) {
-            throw new IllegalStateException("readers computer returned null for " + objectId
+        if (computed == null || computed.isEmpty()) {
+            // EMPTY is refused as well as null (review 4b): an authoritative expansion is itself
+            // fail-closed and always emits at least the admin role token, so "no readers at all"
+            // can only mean the computation failed — and persisting it would make the object
+            // invisible to every non-admin search, silently.
+            throw new IllegalStateException("readers computer returned "
+                    + (computed == null ? "null" : "an empty list") + " for " + objectId
                     + " — refusing to write an empty ACL group");
         }
         for (String r : computed) {
