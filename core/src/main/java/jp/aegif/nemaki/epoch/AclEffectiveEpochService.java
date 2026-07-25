@@ -79,6 +79,9 @@ public class AclEffectiveEpochService {
     static final String FIELD_ACL_INHERITED = "aclInherited";
     static final String FIELD_SOURCE_ID = "sourceId";
     static final String FIELD_TARGET_ID = "targetId";
+    /** Persisted BASE-type discriminator (set by the model constructors, independent of objectType). */
+    static final String FIELD_TYPE = "type";
+    static final String TYPE_RELATIONSHIP = "cmis:relationship";
 
     /** Bound on the inheriting-ancestor chain (cycle / runaway protection). */
     public static final int DEFAULT_MAX_ANCESTOR_HOPS = 128;
@@ -107,38 +110,56 @@ public class AclEffectiveEpochService {
      */
     public static final class Dependency {
         public final String id;
-        public final String rev;
-        public final long sourceEpoch;
+        /**
+         * {@code false} = a NEGATIVE dependency: this id was resolved during the walk and did NOT
+         * exist (a dangling relationship endpoint). It is recorded so revalidation can prove it is
+         * STILL absent — otherwise an endpoint recreated under the same id would leave the
+         * relationship document untouched, revalidation would pass, and we would CAS a fence value
+         * computed without that endpoint's chain (review 3a [P1]).
+         */
+        public final boolean exists;
+        public final String rev;          // null for a negative dependency
+        public final long sourceEpoch;    // 0 for a negative dependency
         public final String state;        // null = not in the epoch machine (normal content)
         public final String parentId;     // null = none
         public final Boolean aclInherited; // null = absent (defaults to TRUE, as in calculateAcl)
         public final String sourceId;     // relationship endpoint (null otherwise)
         public final String targetId;
+        public final boolean isRelationship;
         public final DependencyRole role;
 
-        Dependency(String id, String rev, long sourceEpoch, String state, String parentId,
-                   Boolean aclInherited, String sourceId, String targetId, DependencyRole role) {
-            this.id = id; this.rev = rev; this.sourceEpoch = sourceEpoch; this.state = state;
-            this.parentId = parentId; this.aclInherited = aclInherited;
-            this.sourceId = sourceId; this.targetId = targetId; this.role = role;
+        Dependency(String id, String rev, boolean exists, long sourceEpoch, String state,
+                   String parentId, Boolean aclInherited, String sourceId, String targetId,
+                   boolean isRelationship, DependencyRole role) {
+            this.id = id; this.rev = rev; this.exists = exists; this.sourceEpoch = sourceEpoch;
+            this.state = state; this.parentId = parentId; this.aclInherited = aclInherited;
+            this.sourceId = sourceId; this.targetId = targetId;
+            this.isRelationship = isRelationship; this.role = role;
+        }
+
+        /** A recorded absence (a dangling relationship endpoint). */
+        static Dependency absent(String id, DependencyRole role) {
+            return new Dependency(id, null, false, 0L, null, null, null, null, null, false, role);
         }
 
         /** Verbatim equality of everything the fence depends on (used by {@link #revalidate}). */
         boolean sameAs(Dependency o) {
             return o != null
                     && Objects.equals(id, o.id)
+                    && exists == o.exists
                     && Objects.equals(rev, o.rev)
                     && sourceEpoch == o.sourceEpoch
                     && Objects.equals(state, o.state)
                     && Objects.equals(parentId, o.parentId)
                     && Objects.equals(aclInherited, o.aclInherited)
                     && Objects.equals(sourceId, o.sourceId)
-                    && Objects.equals(targetId, o.targetId);
+                    && Objects.equals(targetId, o.targetId)
+                    && isRelationship == o.isRelationship;
         }
 
         @Override public String toString() {
-            return "Dependency[" + id + "@" + rev + " epoch=" + sourceEpoch + " state=" + state
-                    + " role=" + role + "]";
+            return "Dependency[" + id + (exists ? "@" + rev : " ABSENT") + " epoch=" + sourceEpoch
+                    + " state=" + state + " role=" + role + "]";
         }
     }
 
@@ -184,11 +205,6 @@ public class AclEffectiveEpochService {
         public AclEpochUnavailableException(String message, Throwable cause) { super(message, cause); }
     }
 
-    /** Corrupt / untrustworthy epoch data — fail-closed, needs repair (never guessed around). */
-    public static final class AclEpochAnomalyException extends RuntimeException {
-        public AclEpochAnomalyException(String message) { super(message); }
-    }
-
     // ── step 1 + 2: authoritative walk, pending gate, effective epoch ──
 
     /**
@@ -221,15 +237,13 @@ public class AclEffectiveEpochService {
         seen.add(self.id);
 
         long effective;
-        Map<String, Object> p = target.getProperties();
-        String sourceId = str(p, FIELD_SOURCE_ID);
-        String targetId = str(p, FIELD_TARGET_ID);
-        if (sourceId != null && targetId != null) {
-            // A relationship (exactly the two fields CouchRelationship persists). It has no ACL of
-            // its own in the inheritance sense: read permission is read(source) OR read(target), so
-            // the fence value is the max over BOTH endpoint chains and the relationship's own epoch.
-            long src = walkChain(repositoryId, sourceId, DependencyRole.RELATIONSHIP_SOURCE, deps, seen);
-            long tgt = walkChain(repositoryId, targetId, DependencyRole.RELATIONSHIP_TARGET, deps, seen);
+        if (self.isRelationship) {
+            // A relationship has no ACL of its own in the inheritance sense: read permission is
+            // read(source) OR read(target), so the fence value is the max over BOTH endpoint chains
+            // and the relationship's own epoch. toDependency() has already guaranteed both endpoint
+            // ids are present and well-formed.
+            long src = walkChain(repositoryId, self.sourceId, DependencyRole.RELATIONSHIP_SOURCE, deps, seen);
+            long tgt = walkChain(repositoryId, self.targetId, DependencyRole.RELATIONSHIP_TARGET, deps, seen);
             effective = Math.max(self.sourceEpoch, Math.max(src, tgt));
         } else {
             effective = Math.max(self.sourceEpoch,
@@ -258,7 +272,11 @@ public class AclEffectiveEpochService {
         }
         Document doc = read(repositoryId, endpointId, "relationship endpoint");
         if (doc == null) {
-            return 0L; // dangling endpoint — contributes nothing
+            // DANGLING: contributes nothing to the epoch, but the absence is RECORDED so
+            // revalidation can prove it is still absent (review 3a [P1]).
+            deps.add(Dependency.absent(endpointId, role));
+            seen.add(endpointId);
+            return 0L;
         }
         Dependency d = toDependency(doc, role);
         deps.add(d);
@@ -349,10 +367,21 @@ public class AclEffectiveEpochService {
         for (Dependency recorded : snapshot.dependencies) {
             Document now = read(snapshot.repositoryId, recorded.id, "revalidated dependency");
             if (now == null) {
-                if (logger.isDebugEnabled()) {
-                    logger.debug("Revalidation: dependency {} vanished — restart", recorded.id);
+                if (recorded.exists) {
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("Revalidation: dependency {} vanished — restart", recorded.id);
+                    }
+                    return false; // deleted under us → restart
                 }
-                return false; // deleted under us → restart
+                continue; // a recorded ABSENCE that is still absent — unchanged
+            }
+            if (!recorded.exists) {
+                // A dangling endpoint was (re)created under the same id: the relationship document
+                // itself is untouched, so ONLY this negative dependency can catch it (review 3a [P1]).
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Revalidation: absent dependency {} now exists — restart", recorded.id);
+                }
+                return false;
             }
             // Re-applies the pending gate and every fail-closed rule to the CURRENT document.
             Dependency fresh = toDependency(now, recorded.role);
@@ -370,48 +399,29 @@ public class AclEffectiveEpochService {
 
     /**
      * Build a dependency reading from a raw CouchDB document, applying the PENDING GATE and every
-     * fail-closed field rule.
+     * fail-closed field rule. All epoch-field validation goes through the SHARED
+     * {@link AclEpochFields} validator (review 3a [P1]), so this consumer enforces exactly the
+     * invariants the state machine's owner does — in particular a {@code RECONCILE_ENQUEUED}
+     * dependency (which does NOT gate, and therefore feeds a fence value directly) must carry a
+     * canonical UUID mutation id AND a strictly positive epoch.
      */
     private Dependency toDependency(Document doc, DependencyRole role) {
         Map<String, Object> p = doc.getProperties() != null ? doc.getProperties() : new LinkedHashMap<>();
         String id = doc.getId();
 
-        // Quarantined = the epoch machine has already declared this document untrustworthy.
-        if (p.containsKey(AclEpochState.FIELD_QUARANTINED)
-                && !Boolean.FALSE.equals(p.get(AclEpochState.FIELD_QUARANTINED))) {
-            throw new AclEpochAnomalyException("dependency " + id + " is quarantined / carries a "
-                    + "malformed quarantine marker — refusing to derive an effective epoch from it");
-        }
+        // PRESENCE alone disqualifies: absent = usable, true = quarantined, ANY other present
+        // value = a malformed marker. Accepting `false` as normal (the pre-3a behaviour) would let
+        // a corrupt-but-false-marked document contribute a high epoch and fence out later correct
+        // writers (review 3a [P1]).
+        AclEpochFields.requireNotQuarantined(id, p);
 
-        String state = null;
-        if (p.containsKey(AclEpochState.FIELD_STATE)) { // PRESENT-null is corruption, not "absent"
-            Object raw = p.get(AclEpochState.FIELD_STATE);
-            if (!(raw instanceof String) || !AclEpochState.isKnown((String) raw)) {
-                throw new AclEpochAnomalyException("dependency " + id
-                        + " has an unknown / non-String aclEpochState: " + raw);
-            }
-            state = (String) raw;
+        // A state-less document is ordinary settled content, so a state is NOT required here.
+        AclEpochFields.Values v = AclEpochFields.validate(id, p, false);
+        if (AclEpochState.PENDING_EPOCH.equals(v.state)
+                || AclEpochState.FINALIZED_NEEDS_RECONCILE.equals(v.state)) {
             // PENDING GATE (§4.2 step 1): PENDING_EPOCH has no epoch yet; FINALIZED_NEEDS_RECONCILE
             // is mid-CAS-ambiguous. RECONCILE_ENQUEUED is settled and does NOT gate.
-            if (AclEpochState.PENDING_EPOCH.equals(state)
-                    || AclEpochState.FINALIZED_NEEDS_RECONCILE.equals(state)) {
-                throw new AclEpochPendingException(id, state);
-            }
-        }
-
-        long epoch = 0L;
-        if (p.containsKey(AclEpochState.FIELD_SOURCE_EPOCH)) { // absent = 0 (pre-migration, §4.1)
-            Object raw = p.get(AclEpochState.FIELD_SOURCE_EPOCH);
-            try {
-                epoch = AclEpochCounterService.parseExactLong(raw);
-            } catch (RuntimeException e) {
-                throw new AclEpochAnomalyException("dependency " + id
-                        + " has a non-integer aclSourceEpoch (value=" + raw + ")");
-            }
-            if (epoch < 0) {
-                throw new AclEpochAnomalyException("dependency " + id
-                        + " has a negative aclSourceEpoch " + epoch);
-            }
+            throw new AclEpochPendingException(id, v.state);
         }
 
         Object rawInherited = p.get(FIELD_ACL_INHERITED);
@@ -428,13 +438,65 @@ public class AclEffectiveEpochService {
         if (doc.getRev() == null || doc.getRev().isBlank()) {
             throw new AclEpochAnomalyException("dependency " + id + " has no _rev — cannot be revalidated");
         }
-        return new Dependency(id, doc.getRev(), epoch, state, str(p, FIELD_PARENT_ID), aclInherited,
-                str(p, FIELD_SOURCE_ID), str(p, FIELD_TARGET_ID), role);
+
+        // Topology fields are STRICT (review 3a [P1]): a present-null / non-String / blank value is
+        // corruption, never silently degraded to "absent" — degrading sourceId/targetId would drop
+        // an entire endpoint chain from the fence value.
+        String parentId = strictOptionalId(id, p, FIELD_PARENT_ID);
+        String sourceId = strictOptionalId(id, p, FIELD_SOURCE_ID);
+        String targetId = strictOptionalId(id, p, FIELD_TARGET_ID);
+
+        boolean isRelationship = isRelationship(id, p);
+        if (isRelationship) {
+            // A relationship's fence value is the max over BOTH endpoint chains, so a missing
+            // endpoint id is not "no endpoint" — it means we cannot compute the value at all.
+            if (sourceId == null || targetId == null) {
+                throw new AclEpochAnomalyException("relationship " + id
+                        + " is missing sourceId/targetId — cannot compute an effective epoch");
+            }
+        } else if (sourceId != null || targetId != null) {
+            // Relationship-only fields on a non-relationship: we cannot tell whether the endpoint
+            // chains belong in the fence value, so fail closed rather than silently ignore them.
+            throw new AclEpochAnomalyException("non-relationship " + id + " carries relationship "
+                    + "endpoint fields (sourceId/targetId) — refusing to guess its dependencies");
+        }
+
+        return new Dependency(id, doc.getRev(), true, v.epoch, v.state, parentId, aclInherited,
+                sourceId, targetId, isRelationship, role);
     }
 
-    private static String str(Map<String, Object> p, String key) {
+    /**
+     * Relationship detection by the PERSISTED base type ({@code type == "cmis:relationship"}), the
+     * value {@code Relationship}'s constructor writes — so a SUBTYPED relationship
+     * ({@code objectType = nemaki:hasAttachment}, …) is still detected (review 3a [P1]; the
+     * previous "has both endpoint fields" heuristic silently demoted a relationship whose endpoint
+     * field was malformed to ordinary content, dropping BOTH endpoint chains).
+     *
+     * <p>A {@code type} that is absent or non-String is treated as NOT a relationship for
+     * backward compatibility with any content that predates the discriminator — but the caller
+     * then rejects it if it carries endpoint fields, so an unrecognised relationship can never be
+     * silently walked as ordinary content.
+     */
+    private static boolean isRelationship(String docId, Map<String, Object> p) {
+        Object rawType = p.get(FIELD_TYPE);
+        return rawType instanceof String && TYPE_RELATIONSHIP.equals(rawType);
+    }
+
+    /**
+     * Read an optional id-valued topology field STRICTLY: absent is fine ({@code null}), but a
+     * PRESENT value must be a non-blank String (an explicit JSON null is PRESENT under the SDK
+     * contract). Never degrades corruption to "absent".
+     */
+    private static String strictOptionalId(String docId, Map<String, Object> p, String key) {
+        if (!p.containsKey(key)) {
+            return null;
+        }
         Object v = p.get(key);
-        return (v instanceof String && !((String) v).isBlank()) ? (String) v : null;
+        if (!(v instanceof String) || ((String) v).isBlank()) {
+            throw new AclEpochAnomalyException("dependency " + docId + " has a present-but-invalid "
+                    + key + " (null / non-String / blank): " + v);
+        }
+        return (String) v;
     }
 
     /**

@@ -102,11 +102,6 @@ public class AclEpochFinalizationService {
         public final List<Map<String, String>> errors = new ArrayList<>();
     }
 
-    /** Anomaly in the epoch outbox data — fail-closed (record + retain), never silently skipped. */
-    public static final class AclEpochAnomalyException extends RuntimeException {
-        public AclEpochAnomalyException(String message) { super(message); }
-    }
-
     /**
      * CONTENTION (a CAS livelock), NOT a data anomaly: a finalize could not converge because
      * another writer kept bumping the document's {@code _rev} while it stayed a valid PENDING.
@@ -117,39 +112,17 @@ public class AclEpochFinalizationService {
         public AclEpochContentionException(String message) { super(message); }
     }
 
-    /** Validated epoch fields of one document. */
-    private static final class EpochFields {
-        final String state;
-        final String mutationId;
-        final Long epoch; // non-null for FINALIZED / ENQUEUED
-        EpochFields(String state, String mutationId, Long epoch) {
-            this.state = state; this.mutationId = mutationId; this.epoch = epoch;
-        }
-    }
-
     /**
      * Validate a document as a live epoch doc: it must NOT be quarantined (or carry a
-     * malformed quarantine marker) AND its epoch fields must be valid. Shared by finalize,
-     * the 409 re-read, and the scan passes so "valid" has one definition, and so a
-     * quarantined document is fail-closed-rejected everywhere (a direct finalizer must never
-     * finalize a quarantined document — review 2d [P1]).
+     * malformed quarantine marker) AND its epoch fields must be valid. Delegates to the SHARED
+     * {@link AclEpochFields} validator (review 3a [P1]) so the state machine's owner and the
+     * effective-epoch consumer can never drift apart.
      *
      * @throws AclEpochAnomalyException if quarantined / the marker is malformed / the epoch
      *         fields are anomalous
      */
-    private static EpochFields validate(Document doc) {
-        // Marker CONTRACT is by PRESENCE, not by non-null value: the IBM Cloudant SDK stores
-        // an explicit JSON null as a present map entry (value null), so {@code get()!=null}
-        // would mistake an explicit-null marker for an absent one. Use containsKey (review 2e).
-        Map<String, Object> props = doc.getProperties();
-        if (props != null && props.containsKey(AclEpochState.FIELD_QUARANTINED)) {
-            Object marker = props.get(AclEpochState.FIELD_QUARANTINED);
-            if (Boolean.TRUE.equals(marker)) {
-                throw new AclEpochAnomalyException("document is quarantined on " + doc.getId());
-            }
-            throw new AclEpochAnomalyException("malformed aclEpochQuarantined marker (not Boolean true, "
-                    + "including explicit null) on " + doc.getId());
-        }
+    private static AclEpochFields.Values validate(Document doc) {
+        AclEpochFields.requireNotQuarantined(doc.getId(), doc.getProperties());
         return validateEpochFields(doc);
     }
 
@@ -157,47 +130,10 @@ public class AclEpochFinalizationService {
      * Strictly validate ONLY the epoch fields (state / mutationId / epoch), ignoring the
      * quarantine marker. Used by {@link #quarantine} to decide whether a document is STILL
      * anomalous on re-read (a repaired document must not be quarantined — review 2d [P1]).
-     *
-     * @throws AclEpochAnomalyException on a non-String / unknown state, a missing / non-UUID
-     *         mutation id, or (for FINALIZED / ENQUEUED) an invalid epoch
+     * The finalizer REQUIRES a state: a state-less document is not its business.
      */
-    private static EpochFields validateEpochFields(Document doc) {
-        Map<String, Object> props = doc.getProperties();
-        Object rawState = props != null ? props.get(AclEpochState.FIELD_STATE) : null;
-        if (!(rawState instanceof String)) {
-            throw new AclEpochAnomalyException("missing / non-String aclEpochState on " + doc.getId());
-        }
-        String state = (String) rawState;
-        if (!AclEpochState.isKnown(state)) {
-            throw new AclEpochAnomalyException("unknown aclEpochState '" + state + "' on " + doc.getId());
-        }
-        Object rawMut = props.get(AclEpochState.FIELD_MUTATION_ID);
-        String mutationId = (rawMut instanceof String && !((String) rawMut).isBlank())
-                ? (String) rawMut : null;
-        // All three states carry a mutation id (Phase 1 always writes it) and it MUST be a
-        // canonical UUID — reusing / malforming it would let an old finalizer believe it
-        // still owns a newer mutation (review 2b [P2]).
-        if (mutationId == null) {
-            throw new AclEpochAnomalyException(state + " without aclEpochMutationId on " + doc.getId());
-        }
-        if (!AclEpochState.isValidMutationId(mutationId)) {
-            throw new AclEpochAnomalyException(state + " with non-UUID aclEpochMutationId on " + doc.getId());
-        }
-        Long epoch = null;
-        if (AclEpochState.FINALIZED_NEEDS_RECONCILE.equals(state)
-                || AclEpochState.RECONCILE_ENQUEUED.equals(state)) {
-            try {
-                epoch = AclEpochCounterService.parseExactLong(props.get(AclEpochState.FIELD_SOURCE_EPOCH));
-            } catch (RuntimeException e) {
-                throw new AclEpochAnomalyException(state + " with invalid epoch on " + doc.getId()
-                        + ": " + e.getMessage());
-            }
-            if (epoch < 1) {
-                throw new AclEpochAnomalyException(state + " with non-positive epoch " + epoch
-                        + " on " + doc.getId());
-            }
-        }
-        return new EpochFields(state, mutationId, epoch);
+    private static AclEpochFields.Values validateEpochFields(Document doc) {
+        return AclEpochFields.validate(doc.getId(), doc.getProperties(), true);
     }
 
     // ── finalize (Phase 2) ─────────────────────────────────────────
@@ -242,7 +178,7 @@ public class AclEpochFinalizationService {
             throw new AclEpochAnomalyException("finalize target has no _rev (Phase 2 requires a "
                     + "committed Phase-1 document): " + hint.getId());
         }
-        EpochFields hintEf = validate(hint); // corrupt hint → anomaly (never a silent skip)
+        AclEpochFields.Values hintEf = validate(hint); // corrupt hint → anomaly (never a silent skip)
         if (!AclEpochState.PENDING_EPOCH.equals(hintEf.state)) {
             return new FinalizeOutcome(FinalizeResult.SKIPPED_NOT_PENDING, null); // already finalized/advanced
         }
@@ -305,7 +241,7 @@ public class AclEpochFinalizationService {
             throw new AclEpochAnomalyException("epoch marker disappeared from an existing document "
                     + current.getId() + " (marker loss — not a delete race)");
         }
-        EpochFields cur = validate(current); // corrupt → AclEpochAnomalyException
+        AclEpochFields.Values cur = validate(current); // corrupt → AclEpochAnomalyException
         if (!AclEpochState.PENDING_EPOCH.equals(cur.state)) {
             return new FinalizeOutcome(FinalizeResult.ABANDONED_SUPERSEDED, null); // validly finalized/enqueued
         }
@@ -392,7 +328,7 @@ public class AclEpochFinalizationService {
                         AclEpochState.FIELD_STATE, Map.of("$in", List.of(
                                 AclEpochState.FINALIZED_NEEDS_RECONCILE, AclEpochState.RECONCILE_ENQUEUED)))),
                 budget, summary, d -> {
-                    EpochFields ef = validate(d); // marker / UUID / epoch anomalies → quarantined
+                    AclEpochFields.Values ef = validate(d); // marker / UUID / epoch anomalies → quarantined
                     if (AclEpochState.FINALIZED_NEEDS_RECONCILE.equals(ef.state)) summary.awaitingReconcile++;
                     else summary.enqueued++;
                 });

@@ -38,7 +38,6 @@ import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
 
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
-import jp.aegif.nemaki.epoch.AclEffectiveEpochService.AclEpochAnomalyException;
 import jp.aegif.nemaki.epoch.AclEffectiveEpochService.AclEpochPendingException;
 import jp.aegif.nemaki.epoch.AclEffectiveEpochService.AclEpochUnavailableException;
 import jp.aegif.nemaki.epoch.AclEffectiveEpochService.DependencyRole;
@@ -145,7 +144,7 @@ public class AclEffectiveEpochServiceIT {
     void absentAclInheritedDefaultsToInheriting() {
         // calculateAcl's getAclInheritedWithDefault: a null aclInherited means TRUE.
         seedFolder("root", null, false, 7L);
-        seedRaw("leaf", "{\"parentId\":\"root\",\"aclSourceEpoch\":1}"); // no aclInherited at all
+        seedRaw("leaf", "{\"type\":\"cmis:document\",\"parentId\":\"root\",\"aclSourceEpoch\":1}"); // no aclInherited
 
         Snapshot s = svc.snapshot(contentDb, "leaf");
         assertEquals(7L, s.effectiveEpoch, "an absent aclInherited must inherit (default TRUE)");
@@ -153,8 +152,8 @@ public class AclEffectiveEpochServiceIT {
 
     @Test
     void absentAclSourceEpochCountsAsZeroForPreMigrationContent() {
-        seedRaw("root", "{\"aclInherited\":false}");                    // pre-migration: no epoch
-        seedRaw("leaf", "{\"parentId\":\"root\",\"aclInherited\":true}"); // pre-migration: no epoch
+        seedRaw("root", "{\"type\":\"cmis:folder\",\"aclInherited\":false}");            // pre-migration: no epoch
+        seedRaw("leaf", "{\"type\":\"cmis:document\",\"parentId\":\"root\",\"aclInherited\":true}"); // pre-migration
 
         Snapshot s = svc.snapshot(contentDb, "leaf");
         assertEquals(0L, s.effectiveEpoch, "absent aclSourceEpoch = 0 (§4.1 pre-migration)");
@@ -170,7 +169,7 @@ public class AclEffectiveEpochServiceIT {
 
     @Test
     void pendingSelfBlocksTheWalk() {
-        seedRaw("leaf", "{\"aclInherited\":false,\"aclEpochState\":\"PENDING_EPOCH\","
+        seedRaw("leaf", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclEpochState\":\"PENDING_EPOCH\","
                 + "\"aclEpochMutationId\":\"" + AclEpochState.newMutationId() + "\"}");
         AclEpochPendingException e = assertThrows(AclEpochPendingException.class,
                 () -> svc.snapshot(contentDb, "leaf"));
@@ -182,7 +181,7 @@ public class AclEffectiveEpochServiceIT {
     void pendingANCESTORBlocksTheWalk() {
         // The read-skew case the gate exists for: the target looks settled but an ancestor is
         // mid-mutation, so its epoch is not yet assigned.
-        seedRaw("root", "{\"aclInherited\":false,\"aclEpochState\":\"PENDING_EPOCH\","
+        seedRaw("root", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclEpochState\":\"PENDING_EPOCH\","
                 + "\"aclEpochMutationId\":\"" + AclEpochState.newMutationId() + "\"}");
         seedDocument("leaf", "root", true, 2L);
 
@@ -193,12 +192,12 @@ public class AclEffectiveEpochServiceIT {
 
     @Test
     void finalizedNeedsReconcileAlsoGatesButReconcileEnqueuedDoesNot() {
-        seedRaw("gated", "{\"aclInherited\":false,\"aclEpochState\":\"FINALIZED_NEEDS_RECONCILE\","
+        seedRaw("gated", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclEpochState\":\"FINALIZED_NEEDS_RECONCILE\","
                 + "\"aclEpochMutationId\":\"" + AclEpochState.newMutationId() + "\",\"aclSourceEpoch\":6}");
         assertThrows(AclEpochPendingException.class, () -> svc.snapshot(contentDb, "gated"),
                 "FINALIZED_NEEDS_RECONCILE is mid-CAS-ambiguous and must gate");
 
-        seedRaw("settled", "{\"aclInherited\":false,\"aclEpochState\":\"RECONCILE_ENQUEUED\","
+        seedRaw("settled", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclEpochState\":\"RECONCILE_ENQUEUED\","
                 + "\"aclEpochMutationId\":\"" + AclEpochState.newMutationId() + "\",\"aclSourceEpoch\":6}");
         Snapshot s = svc.snapshot(contentDb, "settled");
         assertEquals(6L, s.effectiveEpoch, "RECONCILE_ENQUEUED is settled and must NOT gate");
@@ -208,30 +207,30 @@ public class AclEffectiveEpochServiceIT {
 
     @Test
     void quarantinedDependencyIsRefused() {
-        seedRaw("q", "{\"aclInherited\":false,\"aclSourceEpoch\":4,\"aclEpochQuarantined\":true}");
+        seedRaw("q", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclSourceEpoch\":4,\"aclEpochQuarantined\":true}");
         assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "q"),
                 "a document the epoch machine quarantined must never feed a fence value");
     }
 
     @Test
     void nonIntegerAndNegativeEpochsAreRefused() throws Exception {
-        seedRaw("frac", "{\"aclInherited\":false,\"aclSourceEpoch\":1.5}");
+        seedRaw("frac", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclSourceEpoch\":1.5}");
         assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "frac"));
 
-        seedRaw("strv", "{\"aclInherited\":false,\"aclSourceEpoch\":\"3\"}");
+        seedRaw("strv", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclSourceEpoch\":\"3\"}");
         assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "strv"));
 
-        seedRaw("nullv", "{\"aclInherited\":false,\"aclSourceEpoch\":null}");
+        seedRaw("nullv", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclSourceEpoch\":null}");
         assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "nullv"),
                 "an explicit-null epoch is PRESENT (SDK contract) = corruption, not 'absent'");
 
-        seedRaw("neg", "{\"aclInherited\":false,\"aclSourceEpoch\":-2}");
+        seedRaw("neg", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclSourceEpoch\":-2}");
         assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "neg"));
     }
 
     @Test
     void unknownEpochStateIsRefused() {
-        seedRaw("weird", "{\"aclInherited\":false,\"aclEpochState\":\"MYSTERY\"}");
+        seedRaw("weird", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclEpochState\":\"MYSTERY\"}");
         assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "weird"));
     }
 
@@ -309,7 +308,7 @@ public class AclEffectiveEpochServiceIT {
 
     @Test
     void pendingRelationshipEndpointAncestorGatesToo() {
-        seedRaw("root", "{\"aclInherited\":false,\"aclEpochState\":\"PENDING_EPOCH\","
+        seedRaw("root", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclEpochState\":\"PENDING_EPOCH\","
                 + "\"aclEpochMutationId\":\"" + AclEpochState.newMutationId() + "\"}");
         seedDocument("src", "root", true, 1L);
         seedDocument("tgt", null, false, 1L);
@@ -395,7 +394,7 @@ public class AclEffectiveEpochServiceIT {
         Snapshot s = svc.snapshot(contentDb, "leaf");
 
         // A new ACL mutation commits its Phase-1 marker on the ancestor AFTER our walk.
-        seedRaw("root", "{\"aclInherited\":false,\"aclSourceEpoch\":3,"
+        seedRaw("root", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclSourceEpoch\":3,"
                 + "\"aclEpochState\":\"PENDING_EPOCH\",\"aclEpochMutationId\":\""
                 + AclEpochState.newMutationId() + "\"}");
 
@@ -414,10 +413,200 @@ public class AclEffectiveEpochServiceIT {
         assertThrows(IllegalArgumentException.class, () -> svc.snapshot(contentDb, " "));
     }
 
+    // ── review 3a [P1] #1: dangling endpoints are recorded as NEGATIVE dependencies ──
+
+    @Test
+    void danglingEndpointIsRecordedSoItsRecreationInvalidatesTheSnapshot() {
+        // THE bug this closes: the relationship document itself never changes when a missing
+        // endpoint is (re)created under the same id, so without a recorded ABSENCE the snapshot
+        // would still revalidate and we would CAS a fence value computed without that chain.
+        seedFolder("root", null, false, 1L);
+        seedDocument("tgt", "root", true, 8L);
+        seedRelationship("rel", "gone", "tgt", 2L); // source does not exist
+
+        Snapshot s = svc.snapshot(contentDb, "rel");
+        assertEquals(8L, s.effectiveEpoch);
+        assertTrue(s.dependencies.stream().anyMatch(d -> "gone".equals(d.id) && !d.exists),
+                "the absence must be RECORDED as a negative dependency: " + s.dependencies);
+        assertTrue(svc.revalidate(s), "still absent → still valid");
+
+        seedDocument("gone", "root", true, 99L); // the endpoint is created under the same id
+        assertFalse(svc.revalidate(s),
+                "a recreated endpoint must invalidate the snapshot (the relationship doc is untouched)");
+
+        Snapshot again = svc.snapshot(contentDb, "rel");
+        assertEquals(99L, again.effectiveEpoch, "the recomputed epoch now includes the endpoint");
+    }
+
+    @Test
+    void recordedAbsenceThatStaysAbsentDoesNotFalselyInvalidate() {
+        seedFolder("root", null, false, 1L);
+        seedDocument("src", "root", true, 3L);
+        seedRelationship("rel", "src", "missing-target", 1L);
+
+        Snapshot s = svc.snapshot(contentDb, "rel");
+        assertTrue(s.dependencies.stream().anyMatch(d -> "missing-target".equals(d.id) && !d.exists));
+        assertTrue(svc.revalidate(s), "an absence that is still an absence must revalidate");
+    }
+
+    // ── review 3a [P1] #2: quarantine PRESENCE (not just true) disqualifies ──
+
+    @Test
+    void falseQuarantineMarkerIsMalformedAndRefused() {
+        // The state machine's contract: absent = usable, true = quarantined, anything else present
+        // = malformed. Accepting `false` would let a corrupt document contribute a high epoch.
+        seedRaw("qfalse", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclSourceEpoch\":900,"
+                + "\"aclEpochQuarantined\":false}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "qfalse"));
+    }
+
+    @Test
+    void nullAndNonBooleanQuarantineMarkersAreRefused() {
+        seedRaw("qnull", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclEpochQuarantined\":null}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "qnull"));
+
+        seedRaw("qstr", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclEpochQuarantined\":\"no\"}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "qstr"));
+    }
+
+    @Test
+    void aQuarantinedAncestorBlocksTheWholeSubtree() {
+        // The accepted trade-off, pinned: a quarantined ancestor stops its subtree until repaired.
+        seedRaw("root", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclSourceEpoch\":5,"
+                + "\"aclEpochQuarantined\":true}");
+        seedDocument("leaf", "root", true, 1L);
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "leaf"));
+    }
+
+    // ── review 3a [P1] #3: state invariants (ENQUEUED does not gate → must be validated) ──
+
+    @Test
+    void reconcileEnqueuedWithoutAnEpochIsRefused() {
+        // ENQUEUED does NOT gate, so an unvalidated one becomes a fence value directly.
+        seedRaw("enq-noepoch", "{\"type\":\"cmis:folder\",\"aclInherited\":false,"
+                + "\"aclEpochState\":\"RECONCILE_ENQUEUED\",\"aclEpochMutationId\":\""
+                + AclEpochState.newMutationId() + "\"}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "enq-noepoch"));
+    }
+
+    @Test
+    void reconcileEnqueuedWithZeroOrNegativeEpochIsRefused() {
+        String m = AclEpochState.newMutationId();
+        seedRaw("enq-zero", "{\"type\":\"cmis:folder\",\"aclInherited\":false,"
+                + "\"aclEpochState\":\"RECONCILE_ENQUEUED\",\"aclEpochMutationId\":\"" + m
+                + "\",\"aclSourceEpoch\":0}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "enq-zero"));
+
+        seedRaw("enq-neg", "{\"type\":\"cmis:folder\",\"aclInherited\":false,"
+                + "\"aclEpochState\":\"RECONCILE_ENQUEUED\",\"aclEpochMutationId\":\"" + m
+                + "\",\"aclSourceEpoch\":-4}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "enq-neg"));
+    }
+
+    @Test
+    void reconcileEnqueuedWithMissingOrNonUuidMutationIdIsRefused() {
+        seedRaw("enq-nomut", "{\"type\":\"cmis:folder\",\"aclInherited\":false,"
+                + "\"aclEpochState\":\"RECONCILE_ENQUEUED\",\"aclSourceEpoch\":4}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "enq-nomut"));
+
+        seedRaw("enq-badmut", "{\"type\":\"cmis:folder\",\"aclInherited\":false,"
+                + "\"aclEpochState\":\"RECONCILE_ENQUEUED\",\"aclEpochMutationId\":\"not-a-uuid\","
+                + "\"aclSourceEpoch\":4}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "enq-badmut"));
+    }
+
+    @Test
+    void aValidReconcileEnqueuedAncestorStillContributesItsEpoch() {
+        // The positive control: the added strictness must not break the settled path.
+        seedRaw("root", "{\"type\":\"cmis:folder\",\"aclInherited\":false,"
+                + "\"aclEpochState\":\"RECONCILE_ENQUEUED\",\"aclEpochMutationId\":\""
+                + AclEpochState.newMutationId() + "\",\"aclSourceEpoch\":11}");
+        seedDocument("leaf", "root", true, 2L);
+        assertEquals(11L, svc.snapshot(contentDb, "leaf").effectiveEpoch);
+    }
+
+    // ── review 3a [P1] #4: relationship detection + strict topology fields ──
+
+    @Test
+    void aSubtypedRelationshipIsStillDetectedByItsBaseType() {
+        // Typed ingest relationships (nemaki:hasAttachment, …) keep type=cmis:relationship and
+        // only differ in objectType — both endpoint chains must still be walked.
+        seedFolder("root", null, false, 1L);
+        seedDocument("src", "root", true, 21L);
+        seedDocument("tgt", "root", true, 3L);
+        seedRelationship("rel", "src", "tgt", 1L, "nemaki:hasAttachment");
+
+        assertEquals(21L, svc.snapshot(contentDb, "rel").effectiveEpoch,
+                "a SUBTYPED relationship must still walk both endpoint chains");
+    }
+
+    @Test
+    void aRelationshipWithAMalformedEndpointFieldIsRefusedNotDemotedToContent() {
+        // The pre-3a heuristic ("has both endpoint fields") silently demoted these to ordinary
+        // content and dropped BOTH chains from the fence value.
+        seedFolder("root", null, false, 1L);
+        seedDocument("tgt", "root", true, 7L);
+
+        seedRaw("rel-null", "{\"type\":\"cmis:relationship\",\"sourceId\":null,\"targetId\":\"tgt\"}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "rel-null"));
+
+        seedRaw("rel-blank", "{\"type\":\"cmis:relationship\",\"sourceId\":\"  \",\"targetId\":\"tgt\"}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "rel-blank"));
+
+        seedRaw("rel-num", "{\"type\":\"cmis:relationship\",\"sourceId\":42,\"targetId\":\"tgt\"}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "rel-num"));
+
+        seedRaw("rel-missing", "{\"type\":\"cmis:relationship\",\"targetId\":\"tgt\"}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "rel-missing"));
+    }
+
+    @Test
+    void relationshipWithBothEndpointFieldsMissingIsRefusedNotWalkedAsOrdinaryContent() {
+        // The sharpest case for TYPE-based detection: with the old "has both endpoint fields"
+        // heuristic this is not recognised as a relationship at all, so it is walked as ordinary
+        // content and SILENTLY yields a fence value computed without either endpoint chain.
+        seedRaw("rel-none", "{\"type\":\"cmis:relationship\",\"aclInherited\":false,\"aclSourceEpoch\":2}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "rel-none"),
+                "a relationship with no endpoint ids cannot have an effective epoch computed");
+    }
+
+    @Test
+    void aNonRelationshipCarryingEndpointFieldsIsRefused() {
+        // We cannot tell whether those chains belong in the fence value → fail closed.
+        seedRaw("odd", "{\"type\":\"cmis:document\",\"aclInherited\":false,"
+                + "\"sourceId\":\"a\",\"targetId\":\"b\"}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "odd"));
+    }
+
+    @Test
+    void presentButInvalidParentIdIsAnomalyNotSilentlyAbsent() {
+        // Degrading a malformed parentId to "no parent" would silently drop the whole inherited
+        // chain from the fence value.
+        seedRaw("pnull", "{\"type\":\"cmis:document\",\"aclInherited\":true,\"parentId\":null}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "pnull"));
+
+        seedRaw("pblank", "{\"type\":\"cmis:document\",\"aclInherited\":true,\"parentId\":\"  \"}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "pblank"));
+
+        seedRaw("pnum", "{\"type\":\"cmis:document\",\"aclInherited\":true,\"parentId\":7}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "pnum"));
+    }
+
+    @Test
+    void contentWithoutATypeDiscriminatorIsWalkedAsOrdinaryContent() {
+        // Backward compatibility for any content predating the discriminator — safe because a
+        // document carrying endpoint fields is rejected by the rule above.
+        seedRaw("root", "{\"aclInherited\":false,\"aclSourceEpoch\":6}");
+        seedRaw("leaf", "{\"parentId\":\"root\",\"aclInherited\":true,\"aclSourceEpoch\":1}");
+        assertEquals(6L, svc.snapshot(contentDb, "leaf").effectiveEpoch);
+    }
+
     // ── fixtures / helpers ─────────────────────────────────────────
 
     private void seedFolder(String id, String parentId, boolean inherits, long epoch) {
         Map<String, Object> p = new LinkedHashMap<>();
+        p.put("type", "cmis:folder");   // the real persisted base-type discriminator
+        p.put("objectType", "cmis:folder");
         p.put("document", false);
         p.put("name", id);
         if (parentId != null) p.put(AclEffectiveEpochService.FIELD_PARENT_ID, parentId);
@@ -428,6 +617,8 @@ public class AclEffectiveEpochServiceIT {
 
     private void seedDocument(String id, String parentId, boolean inherits, long epoch) {
         Map<String, Object> p = new LinkedHashMap<>();
+        p.put("type", "cmis:document");
+        p.put("objectType", "cmis:document");
         p.put("document", true);
         p.put("name", id);
         if (parentId != null) p.put(AclEffectiveEpochService.FIELD_PARENT_ID, parentId);
@@ -437,7 +628,16 @@ public class AclEffectiveEpochServiceIT {
     }
 
     private void seedRelationship(String id, String sourceId, String targetId, long epoch) {
+        seedRelationship(id, sourceId, targetId, epoch, "cmis:relationship");
+    }
+
+    /** A relationship whose SUBTYPE differs (objectType), as the ingest typed relationships do. */
+    private void seedRelationship(String id, String sourceId, String targetId, long epoch,
+                                  String objectType) {
         Map<String, Object> p = new LinkedHashMap<>();
+        p.put("type", "cmis:relationship");   // base type — set by Relationship's constructor
+        p.put("objectType", objectType);
+        p.put("relationship", true);
         p.put("name", id);
         p.put(AclEffectiveEpochService.FIELD_SOURCE_ID, sourceId);
         p.put(AclEffectiveEpochService.FIELD_TARGET_ID, targetId);

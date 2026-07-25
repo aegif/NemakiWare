@@ -46,7 +46,6 @@ import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
 
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
-import jp.aegif.nemaki.epoch.AclEpochFinalizationService.AclEpochAnomalyException;
 import jp.aegif.nemaki.epoch.AclEpochFinalizationService.FinalizeOutcome;
 import jp.aegif.nemaki.epoch.AclEpochFinalizationService.FinalizeResult;
 import jp.aegif.nemaki.epoch.AclEpochFinalizationService.ScanSummary;
