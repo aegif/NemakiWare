@@ -765,3 +765,25 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
     the REAL index, scan failure with either index missing, and the patch's idempotency + its
     throw-so-PatchHistory-is-not-recorded failure paths. Live: both indexes present, atom 200,
     nothing auto-runs, CMIS unaffected.
+  - **Increment 3d — the last validator bypass, and index DEFINITION verification (review).**
+    1. **(P1) A short-circuit still sat ahead of the shared validator.** 3c kept a "NEITHER state
+       nor mutation id → ordinary content" fast path, which meant a leftover
+       `aclEpochQuarantined` (an INCOMPLETE repair: both fields cleared, marker forgotten) and a
+       corrupt `aclSourceEpoch` (`-1` / explicit null / `1.5`) were still reported as a CLEAN skip
+       by the direct finalizer. The order is now exactly: `requireNotQuarantined` →
+       `validate(…, stateRequired=false)` → clean skip iff the VALIDATED state is null → id/rev +
+       finalize. Ordinary content still skips, but on the validated result rather than a guess, so
+       the shared validator is genuinely the only definition of "usable".
+    2. **(P2) The index pre-flight matched names only.** A same-named index in a different design
+       document, of a different type, over a different field, with a different direction, with
+       extra fields, or carrying a partial-filter selector would pass — and then NOT serve the
+       query, so every scheduler tick would full-scan, permanently (the warning backstop only fires
+       AFTER a full scan has already happened). The pre-flight now exact-matches the reported
+       `IndexInformation`: `ddoc == _design/acl-epoch-indexes`, name, `type == json`, exactly one
+       field `{expected: "asc"}`, and no partial-filter selector / text-index knobs.
+    <br>Verification: 66 finalization ITs + 52 walk ITs + 4 patch ITs; epoch unit+IT 155/155.
+    Mutation-bound: restoring the fast path fails the two new direct-finalizer ITs; reverting to a
+    name-only pre-flight fails all FIVE mis-defined-index ITs (wrong ddoc / wrong field / wrong
+    direction / partial / extra fields), confirming that a permanently wrong definition would
+    otherwise full-scan on every tick. Positive controls pin that the steady state (marker cleared,
+    valid epoch, no state) is still a clean skip and that a correctly-defined database still scans.
