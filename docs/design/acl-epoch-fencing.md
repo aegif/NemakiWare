@@ -545,3 +545,30 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
     terminal set across scans — every corrupt terminal doc is reached and quarantined in a
     FINITE number of scans. (5) `FIELD_QUARANTINED` Javadoc corrected to the real `$or`
     exclusion form. Persistent-format addition: the audit-cursor document (release-note it).
+  - **Increment 2g — terminal-audit resume-cursor robustness.** The 2f cursor closed terminal
+    starvation but its OWN failure modes were open; all closed. (1, P1) An invalid / expired
+    STORED bookmark made the terminal audit stall permanently. The pass now self-heals: on a
+    `BadRequestException` whose body/message contains `invalid_bookmark` — and ONLY when it came
+    from a STORED (not this-scan) bookmark — it CAS-clears the cursor and retries from the top
+    ONCE; a general 400 (e.g. a missing pinned index) is NOT mistaken for an invalid bookmark and
+    propagates (fail the scan, surface the misconfiguration). (2, P1) The terminal query is PINNED
+    to the `(aclEpochState)` index via `use_index=["acl-epoch-indexes","idx_aclEpochState"]`. NOTE:
+    the belt-and-suspenders `allow_fallback=false` is a CouchDB 3.4+/Cloudant parameter that
+    CouchDB 3.3.x (this project's deployed version) rejects with `invalid_key`, so the
+    no-full-scan-fallback guarantee rests on the `use_index` pin plus the `_explain`-verified
+    index-served selector, not on `allow_fallback`. (3, P1) The cursor document carries a
+    `type=aclEpochAuditCursor` + `schemaVersion`; a FOREIGN document occupying the cursor id is
+    reported as a `cursorFailure` and left UNTOUCHED (fail-closed — the terminal audit is skipped
+    that scan rather than clobbering an unrelated document). (4, P1) The cursor save is a BOUNDED
+    `_rev` CAS retry; a `putBack()==null` (409) is NOT treated as success — it retries, and a
+    persistent failure increments `cursorFailures`, records an error, and sets `more` (never a
+    silent swallow). (5, P2) A finalize CAS livelock is now covered by a DETERMINISTIC test (a
+    subclass forces every target PUT to conflict): `contended==1`, `more==true`, the doc stays a
+    valid `PENDING_EPOCH`, never quarantined. Six deterministic ITs were added (invalid stored
+    bookmark self-heal reaching a rear anomaly; rebuild + invalidated bookmark self-heal;
+    foreign-doc-at-cursor-id untouched fail-closed with its attachment; persistent cursor-save
+    conflict surfaced in the summary; a fresh service instance PER scan still advances via the
+    durable cursor; deterministic 8-CAS contention). Epoch code remains fail-closed staging
+    (standalone bean, zero production callers, no scheduler/init/cron). Verified live: atom 200,
+    both patches success, scanner NOT auto-run, zero epoch-state / cursor docs in real content,
+    counter present, CMIS create/read unaffected.
