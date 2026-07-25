@@ -349,13 +349,73 @@ The following are therefore **required of the production implementation, in the 
 2. **Including the object ITSELF**, not only its ancestors: its own local ACEs are part of the
    effective readers, and a computer that only re-walked ancestors would silently under- or
    over-grant on a direct `applyAcl`.
-3. **Strict failure** — an unreadable ancestor / principal must THROW (as
-   `AclEffectiveEpochService` does), never degrade to a shorter set. The writer's empty/null/blank
-   rejection is a backstop, not the primary guarantee: a computation that drops ONE inherited grant
-   still returns a plausible non-empty list.
-4. **Tested at wiring time** — at minimum: a cache poisoned with a stale ACL must NOT change the
-   written readers; a direct `applyAcl` on the object itself must be reflected; an unreadable
-   ancestor must fail the write rather than shorten the readers.
+3. **Strict failure** — a dependency that cannot be read must THROW, never degrade to a shorter
+   set. The writer's empty/null/blank rejection is a backstop, not the primary guarantee: a
+   computation that drops ONE inherited grant still returns a plausible non-empty list.
+   <br>**CORRECTION (increment 4c).** An earlier revision of this clause claimed this already held
+   for "an unreadable ancestor / principal". Only the ANCESTOR half is true:
+   `AclEffectiveEpochService` and `calculateAcl(..., strict)` throw on an unreadable inheriting
+   parent, but `ACLExpander.addReaderFromPrincipal` returns SILENTLY when a principal resolves to
+   neither a user nor a group — and the principal DAO collapses a read FAILURE to the same `null`
+   as a genuine deletion. A transient principal-DAO fault therefore shortens the reader set and is
+   written as a success. This is an UNDER-grant (availability), not an over-grant, and it exists in
+   the current production index path too — but it is NOT closed, and this document must not say it
+   is. It is tracked as a WIRING GATE (see below), not as a permanent residual.
+4. **Tested at wiring time** — at minimum: a direct `applyAcl` on the object itself must be
+   reflected; an unreadable ancestor must fail the write rather than shorten the readers.
+   (A "poisoned ACL cache must not change the readers" test is deliberately NOT listed: under the
+   adopted Option A the readers are computed from the SAME raw documents as the epoch, so no cache
+   is consulted and such a test would only assert that code we do not call was not called.)
+
+**WIRING GATES (all five must be closed before `AclEpochIndexWriter.write()` is put on the ACL
+path):** outbox ACK / enqueue (invariant 5) · migration stamping the initial
+`effective_acl_epoch` (else EVERY ACL update fails closed, by design — increment 4a) ·
+`content_incarnation` + content-writer fence (else a full-doc add re-clobbers `readers`) · §5.1
+quarantine operational contract · **principal tri-state (this section, item 3)**.
+
+### 5.3 Adopted plan for the readers side (Option A) — increments 5R / 5T / 5S
+
+The `ReadersComputer` SPI introduced in increment 4 is itself the design smell: it exists only
+because the authoritative walk does not carry ACLs, and it turns cache-bypass into a contract that
+the boundary cannot enforce. **Option A is adopted: the authoritative read happens ONCE and is
+projected twice (epoch and readers).** Option B (re-read outside the cache) is rejected — it fixes
+the cache but leaves TWO traversals, and a divergent dependency set is exactly the increment-3b
+defect class.
+
+- **5R — extract the ACL semantics into pure functions (zero behaviour change).**
+  `effectiveAces(chain)` (inheritance merge, inherit-stop / root / `convertSystemPrincipalId` all
+  unified HERE), `relationshipReaders(sourceChain, targetChain)` (endpoint union) and
+  `readerTokens(aces, resolver)` (token projection, including the empty/absent-ACL → admin-only
+  fail-closed rule). The three existing callers — `AclServiceDelegate.calculateAclInternal`,
+  `ACLExpander.expandToReaders`, `SolrUtil.relationshipReaders` — are rewired onto that one
+  implementation. Split into 5R-a (differential harness + corpus + a cross-path report) and 5R-b
+  (the extraction itself, which must not move the golden by one byte).
+  - **AUTHORITY WHEN THE THREE PATHS ALREADY DISAGREE: `calculateAclInternal` wins.** It is the
+    authorization main line. Where `expandToReaders` / `relationshipReaders` differ from it, they
+    are converged onto it in an EXPLICIT behaviour-convergence commit that lands BEFORE 5R-b —
+    never folded silently into the extraction, which would make the "golden unchanged" claim
+    self-contradictory.
+  - **NO NEW RELATIONSHIP SEMANTICS.** Today a relationship's own local ACL is not consulted; the
+    readers are the endpoint union. 5R preserves exactly that. If an `ownAces` parameter survives
+    on the shared function it is documented as always-empty / ignored; inventing relationship-local
+    ACE meaning is out of scope for an extraction.
+  - **GOLDEN SCOPE vs 5T.** The 5R golden covers merge + token projection under KNOWN principals
+    and a STABLE principal DAO only. Fault injection is deliberately excluded: the
+    `UNAVAILABLE → throw` behaviour is a 5T CHANGE, pinned by its own ITs, and mixing it into the
+    5R corpus would blur "zero behaviour change".
+  - Preserved as-is (reported separately, NOT fixed here): `getAclInheritedWithDefault`'s two
+    branches are byte-identical, so `capability.extended.permission.inheritance.toplevel` currently
+    has no effect. Changing it would be a behaviour change and would invalidate the golden.
+- **5T — tri-state `PrincipalResolver`** (`EXISTS` / `NOT_FOUND` / `UNAVAILABLE`). The real work is
+  in the principal DAO, which collapses failures to `null` today. STRICT callers (the index /
+  fenced-writer path) throw on `UNAVAILABLE` and omit on `NOT_FOUND`; NON-strict callers (the CMIS
+  runtime) keep today's omit, so a transient fault does not fail a live request — the same
+  strict/non-strict split already used for ancestors.
+- **5S — the snapshot carries the RAW LOCAL (pre-merge) ACL of every dependency**, `readers` are
+  computed from that same chain at the same `_rev`, and the `ReadersComputer` SPI plus §5.2's
+  unenforceable contract are DELETED. Merged results are never carried — only raw local ACEs, so
+  the merge has exactly one implementation. Required test: a mutation that forks or disables the
+  shared merge must make `calculateAcl` and `Snapshot.readers` DISAGREE.
 
 ## 6. Conflict table (v2)
 
