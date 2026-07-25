@@ -1480,6 +1480,33 @@ scheduler/init/cron なし・**書込みを一切行わない** read-only)。
     (cache を一度も触らない設計なので、呼んでいないコードを検証する空振りになる)。
 - **本番配線は引き続き NO-GO**。
 
+**増分5R-a: ACL semantics golden + 3経路交差レポート(+ 誤った「実機検証済み」主張の撤回)**:
+- **golden 捕捉**: `AclSemanticsCorpus`(データのみ) + `AclSemanticsGoldenTest` + golden ファイル。run 間安定・bind 済み
+  (absent `aclInherited` の既定を反転すると落ちる)。CI unit-tests に登録。
+- **交差レポート(層別)**: **ACE 層**=2本目の ACE 計算は存在せず(`expandToReaders` は `calculateAcl` を呼ぶだけ)、
+  **merge の収束コミットは不要**。**token 層**=追加規則はちょうど3つ((A) read 権限フィルタ / (B) 空・不在 ACL および
+  「規則Aを1つも通らない」場合は **admin-only**(fail-closed) / (C) 未解決 principal は寄与ゼロ)で、すべて共有
+  `readerTokens` への**必須移送項**。**relationship 層**=relationship を通常 content として expand すると規則Bに落ちて
+  **admin-only** になり両 endpoint を失うことを再現(「self expand 禁止」の根拠を固定)。
+- **⚠ 撤回した誤りと原因**: 「実機 bedroom で `principalAnyone = null`、CMIS_ANYONE grant が層間で消える」と主張したが
+  **誤り**。Browser Binding の `aclCapabilities` には principal id が**含まれない**(キーは permissionMapping / permissions /
+  propagation / supportedPermissions のみ)のに、存在しないキー `principalAnyone` を読んで得た `None` を「値が null」と
+  解釈した。**キーの欠落を事実に変換し、それを 5R-b の仕様となるテストに書き込んだ**。
+- **再検証した正しい挙動(これが 5R-b で保存すべきもの)**: `repositories-default.yml` の `principal.anyone: GROUP_EVERYONE`
+  は上書きされておらず、`convertSystemPrincipalId` は CMIS_ANYONE → `GROUP_EVERYONE` に変換する。実文書
+  `bbc119345228953e3405c85bdb36b096` の計算済み ACL は `GROUP_EVERYONE cmis:read direct=true`(=変換された local ACE)と
+  `direct=false`(=root からの継承)の**両方**を持つ。`GROUP_EVERYONE` は実在の GroupItem なので
+  `group:{repo}:GROUP_EVERYONE` が emit され、query 側は `PrincipalServiceImpl` が全認証ユーザーに anyone group を
+  無条件付与するため一致する。**`anyone:` トークンは本構成が使わないチャネルというだけ**で、
+  `PRINCIPAL_ANYONE = "cmis:anyone"` は出荷構成では無害な dead code。**`anyone:` への統一は全再索引を伴う挙動変更なので
+  5R-b では行わない**。設定変更も収束コミットも不要。
+- **固定した2件**: 出荷構成の正しい経路 / 誤設定時(principal.anyone 未解決)は変換後 ACE がトークンを生まず、
+  `PermissionServiceImpl` の `ace.getPrincipalId().equals(...)` が NPE 経路になる(ガードなし)。後者の堅牢化は **5T の
+  principal tri-state と同じ束**で扱う。残る真の非対称は「CMIS ランタイムは文字列比較のみ／索引側は `getGroupById` の
+  解決成功に依存」で、これは既知の 5T ギャップの一事例。
+- **プロセス是正**: 「実機検証済み」と書く主張には**実行コマンドと生出力を必ず添える**。今回それを欠いたため、
+  レビュワー側の独立検証(Browser Binding / CouchDB 直接 / REST group)がすべて逆の結果を返すまで誤りが残った。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度

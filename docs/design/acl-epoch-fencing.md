@@ -460,28 +460,47 @@ adds a rule".
   and why §5.3 forbids `self expandToReaders`. The union (`read(source) OR read(target)`) and the
   dangling-endpoint-contributes-nothing rule are pinned alongside it.
 
-**LAYER 1 FINDING — system-principal grants are lost between the two layers (verified live, not
-inferred).** The ACE layer rewrites `CMIS_ANYONE` / `CMIS_ANONYMOUS` to
-`info.getPrincipalIdAnyone()` / `…Anonymous()`, while the token layer recognises the hardcoded
-literal `"cmis:anyone"` / `"cmis:anonymous"`. The conversion TARGET and the recognition CONSTANT are
-independent and nothing ties them together. In the live `bedroom` repository
-`principalAnyone`/`principalAnonymous` are **null**, so a `CMIS_ANYONE` ACE ends up with a NULL
-principal id and the token layer drops it silently.
+**LAYER 1 — system principals: a claimed "finding" that was WITHDRAWN after review.** An earlier
+revision of this section asserted that `CMIS_ANYONE` grants are lost between the ACE and token
+layers, "verified against the live deployment: `principalAnyone` is null". **That assertion was
+wrong, and so was the method that produced it.** The check read a key named `principalAnyone` out of
+the Browser Binding's `aclCapabilities`; that object exposes only
+`{permissionMapping, permissions, propagation, supportedPermissions}`, so the key was simply ABSENT
+and the resulting `None` was misread as "the value is null". A missing key was turned into a fact,
+and the fact was then written into a test that is meant to be the specification for 5R-b.
 
-Verified against the running system: two live documents carry `CMIS_ANYONE:cmis:read`, and their
-indexed readers are `[group:bedroom:GROUP_EVERYONE, user:bedroom:admin, user:bedroom:system]` — no
-anyone token at all. (The loss is currently MASKED because those documents also inherit a
-`GROUP_EVERYONE` grant; a document granted to anyone WITHOUT such an inherited grant would be
-invisible to non-admin search.) The same two documents also show rule C in the wild: three
-`cmis:all` ACEs for deleted test users produce no tokens — correct for genuinely deleted principals,
-indistinguishable from a DAO fault, which is exactly the 5T gap.
+The actual, re-verified behaviour — this IS what the shared `readerTokens` must preserve:
 
-**Decision required before 5R-b** (per §5.3 the authority is `calculateAclInternal`, so this cannot
-be folded into the extraction): is this a MISCONFIGURATION (the repository should define
-`principalAnyone = cmis:anyone`) or a CODE defect (the conversion should be a no-op when its target
-is null, and/or the two sides should share one constant)? Both current behaviours are pinned by
-`layer1_FINDING_systemPrincipalGrantsAreLostBetweenTheAceAndTokenLayers`, so 5R-b preserves whatever
-is decided until an explicit convergence commit changes it.
+- `repositories-default.yml` sets `principal.anyone: GROUP_EVERYONE` (and
+  `principal.anonymous: anonymous`); `docker/core/repositories.yml` does not override it and the
+  override map merges, so the default survives.
+- `convertSystemPrincipalId` therefore rewrites a `CMIS_ANYONE` ACE to
+  `principalId = GROUP_EVERYONE`. On the live document `bbc119345228953e3405c85bdb36b096` the
+  computed ACL shows BOTH `GROUP_EVERYONE cmis:read direct=true` (that IS the converted local ACE)
+  and `GROUP_EVERYONE cmis:read direct=false` (the inherited grant) — so the grant is NOT lost, and
+  the indexed `group:bedroom:GROUP_EVERYONE` token is not merely inherited.
+- `GROUP_EVERYONE` is a real GroupItem, so `ACLExpander` resolves it and emits
+  `group:{repo}:GROUP_EVERYONE`; on the query side `PrincipalServiceImpl` adds the anyone group to
+  EVERY authenticated user's token set unconditionally, so it matches.
+- **The `anyone:{repo}` token is simply not the channel this deployment uses**, and ACLExpander's
+  `PRINCIPAL_ANYONE = "cmis:anyone"` constant is dead code in the shipped configuration — harmless,
+  not a defect. Unifying onto an `anyone:` token would be a BEHAVIOUR CHANGE requiring a full
+  reindex, so **5R-b must not do it**.
+
+No convergence commit and no configuration change is required. Two things are pinned instead:
+`layer1_shippedConfiguration_anyoneIsCarriedOnTheGROUP_EVERYONE_channel` (the path above) and
+`layer1_MISCONFIGURATION_anUnresolvableAnyoneIdSilentlyDropsTheGrant` (if `principal.anyone` is
+removed or unresolvable the converted ACE contributes no token, and
+`PermissionServiceImpl`'s `ace.getPrincipalId().equals(...)` becomes an NPE path on null — there is
+no guard). The misconfiguration hardening belongs with the **5T principal tri-state**, not with the
+extraction. The genuine asymmetry that survives is narrow: the CMIS runtime's `calcAnyonePermission`
+needs only a STRING COMPARISON, whereas the index path additionally needs
+`getGroupById("GROUP_EVERYONE")` to RESOLVE — so a missing GroupItem or a transient DAO fault drops
+it silently. That is an instance of the already-pinned 5T gap, not a new anyone-specific defect.
+
+**Process correction:** any "verified live" claim in this document or in a test comment must carry
+the command and its raw output. This one did not, and the reviewer's independent Browser-Binding,
+CouchDB and REST checks all returned the opposite result.
 
 ## 6. Conflict table (v2)
 
