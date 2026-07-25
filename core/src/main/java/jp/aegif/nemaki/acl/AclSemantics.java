@@ -9,8 +9,14 @@ import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.util.constant.PrincipalId;
 
 /**
- * The ONE implementation of the ACL semantics: the inheritance MERGE and the system-principal
- * CONVERSION (design {@code docs/design/acl-epoch-fencing.md} §5.3 — increment 5R-b).
+ * The ONE implementation of the ACL semantics (design {@code docs/design/acl-epoch-fencing.md}
+ * §5.3 — increment 5R-b):
+ * <ul>
+ *   <li>the inheritance MERGE ({@link #mergeAces}) and the system-principal CONVERSION
+ *       ({@link #convertSystemPrincipalIds}) — step 1;</li>
+ *   <li>the TOKEN projection ({@link #readerTokens} with its {@link PrincipalResolver}) and the
+ *       relationship endpoint UNION ({@link #relationshipReaders}) — step 2.</li>
+ * </ul>
  *
  * <p>The point of this class is to separate SEMANTICS from FETCH. Until now the merge lived inside
  * {@code AclServiceDelegate.calculateAclInternal}, welded to a traversal that resolves ancestors
