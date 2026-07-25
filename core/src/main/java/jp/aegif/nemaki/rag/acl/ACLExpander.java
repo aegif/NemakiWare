@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
+import jp.aegif.nemaki.acl.AclSemantics;
 import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
@@ -122,33 +123,24 @@ public class ACLExpander {
             return getAdminOnlyReaders(repositoryId);
         }
 
-        // Get all ACEs (merged inherited and local)
-        List<Ace> allAces = acl.getAllAces();
-        if (allAces == null || allAces.isEmpty()) {
-            // No ACEs = default to admin only for security
-            log.warn(String.format("Empty ACL for content %s, defaulting to admin-only access", content.getId()));
-            return getAdminOnlyReaders(repositoryId);
-        }
-
-        // Process each ACE
-        for (Ace ace : allAces) {
-            if (hasReadPermission(ace)) {
-                String principalId = ace.getPrincipalId();
-                addReaderFromPrincipal(repositoryId, principalId, readers);
-            }
-        }
-
-        // If no readers found, default to admin only for security
-        if (readers.isEmpty()) {
-            return getAdminOnlyReaders(repositoryId);
-        }
-
+        // Project the effective ACEs to reader tokens through the SHARED semantics (design §5.3):
+        // the read filter, the fail-closed admin-only fallback and the USER-then-GROUP principal
+        // resolution all live in AclSemantics so the ACL-epoch side cannot re-implement them
+        // differently. Behaviour is unchanged.
+        List<String> tokens = AclSemantics.readerTokens(repositoryId, acl.getAllAces(),
+                new AclSemantics.PrincipalResolver() {
+                    @Override public boolean isUser(String repo, String principalId) {
+                        return principalService.getUserById(repo, principalId) != null;
+                    }
+                    @Override public boolean isGroup(String repo, String principalId) {
+                        return principalService.getGroupById(repo, principalId) != null;
+                    }
+                });
         if (log.isDebugEnabled()) {
             log.debug(String.format("Expanded ACL for %s to %d readers: %s",
-                    content.getId(), readers.size(), readers));
+                    content.getId(), tokens.size(), tokens));
         }
-
-        return new ArrayList<>(readers);
+        return tokens;
     }
 
     /**

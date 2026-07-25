@@ -760,14 +760,7 @@ public class SolrUtil implements ApplicationContextAware {
 	 * union / fail-closed contract is unit-testable without Spring.
 	 */
 	static List<String> unionReaders(List<String> sourceReaders, List<String> targetReaders) {
-		java.util.LinkedHashSet<String> union = new java.util.LinkedHashSet<String>();
-		if (sourceReaders != null) {
-			union.addAll(sourceReaders);
-		}
-		if (targetReaders != null) {
-			union.addAll(targetReaders);
-		}
-		return new ArrayList<String>(union);
+		return jp.aegif.nemaki.acl.AclSemantics.relationshipReaders(sourceReaders, targetReaders);
 	}
 
 	/** Tri-state document existence used by strict relationship-endpoint reads. */
