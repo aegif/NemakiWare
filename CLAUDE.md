@@ -1414,6 +1414,29 @@ scheduler/init/cron なし・**書込みを一切行わない** read-only)。
   reload する必要**あり(Solr data ディレクトリは volume なので image 再ビルドだけでは反映されない)。additive/optional なので
   writer を配線するまでは未更新の core でも動作する。
 
+**増分4a: fenced writer の欠陥5件 (P1×3 + P2×2)**:
+- **[P1] equal-epoch 再計算中に epoch を逆転上書きできた**: 再計算フラグが立つと**フェンス判定全体**(`stored > mine` を含む)を
+  迂回していた。ご指摘の系列(epoch 7 で相違観測 → 別 writer が epoch 9 → 再計算 writer が epoch 9 の `_version_` を RTG →
+  迂回して epoch 7 を CAS → **成功して 9 が 7 に後退**)がそのまま成立。フラグは**「再計算後の equal+different を書いてよい」の
+  一点だけ**に用い、`stored > mine` と equal+identical は**毎周回必ず評価**するよう修正。
+- **[P1] `_version_` の完全一致CAS未検証**: Solr の `0`=無条件 / `1`=存在すれば成功 / 負値=不存在条件 を受理していた。
+  **厳密整数変換 + `> 1` 必須**にし、CAS が無条件更新に劣化しないようにした。
+- **[P1] stored epoch 欠落を 0 として受理(設計§4.3 と矛盾)**: しかも当該テストは名前が「non-numeric fails closed」なのに
+  **欠落が成功することを assert** していた(出してはいけない類の不整合)。**未 fence 文書は fail-closed** にし、初期 epoch の
+  stamp は migration / full-reindex 経路の責務と明記。
+- **[P2] `repository_id` 欠落を受理**: 欠落・blank・非String も fail-closed に。あわせて検査を `realtimeGet` の**内側から
+  呼出元へ移動**し、代替/override された fetch 経路が repository 境界を迂回できないようにした。
+- **[P2] authoritative readers の不正要素を黙って削除**: SPI の部分失敗が「正常な短い readers」として書かれ得た。
+  **incoming は null リスト・null/blank 要素を拒否**、**stored 側の正規化は寛容のまま**(比較対象の事実であって検証対象の計算では
+  なく、厳格化すると修復書込み自体を塞ぐため)に分離。
+- **`ReadersComputer` の本番配線契約を Javadoc に明記**: 古いイベント payload や ACL キャッシュを使わず、**対象自身を含めて
+  strict/cache-bypass** で計算すること。`Snapshot` は epoch/rev/topology を固定するが **ACL 実体は保持しない**ので SPI 境界だけでは
+  保証できない、という理由も併記。
+- **検証**: IT **19/19**(14 + 必須6件。うち1件は誤名テストの置換)、epoch unit+IT **174/174**。**5件すべて mutation-bound**。
+  なお epoch 逆転テストの初版は **bind しなかった**(新 epoch を attempt 1 の RTG **前**に注入したため attempt 1 が
+  SKIPPED_FRESHER になり相違経路に入らなかった)。注入を attempt 1 の RTG **後**に移して、mutation が逆転を正確に再現
+  (SKIPPED_FRESHER であるべきところ UPDATED)することを確認した。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度
