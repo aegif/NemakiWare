@@ -102,10 +102,12 @@ public class ACLExpander {
      * search-index ACL reconciliation re-drive: the inherited-ACL walk THROWS on an
      * unreadable parent (rather than degrading to local ACEs only), so a transient
      * ancestor-read failure makes the reconcile retry instead of persisting under-visible
-     * readers and completing the task. NOTE: a null/deleted PRINCIPAL is still treated as
-     * a legitimate omission — distinguishing a transient principal-lookup failure from a
-     * genuinely-deleted principal needs tri-state on the principal DAO (a separate, larger
-     * change, tracked in CLAUDE.md as the remaining strict-ACL residual).
+     * readers and completing the task. NOTE: an unresolvable PRINCIPAL is still treated as
+     * a legitimate omission. A TRANSIENT lookup fault does NOT reach that omission — it
+     * propagates out of the DAO as `CmisRuntimeException` — but a SYSTEMIC one does: a missing
+     * design document / view / database is reported as null and is indistinguishable from a
+     * deleted principal, so strict silently degrades to admin-only and reports success.
+     * Closing that needs tri-state on the principal DAO (5T). The effect is an UNDER-grant.
      */
     public List<String> expandToReaders(String repositoryId, Content content, boolean strict) {
         // Use calculateAcl to get both local and inherited ACLs. Non-strict callers use

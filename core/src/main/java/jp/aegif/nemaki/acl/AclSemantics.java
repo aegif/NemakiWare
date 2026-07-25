@@ -155,8 +155,12 @@ public final class AclSemantics {
      *       becomes ADMIN-ONLY. Never an empty token list, which would make the object invisible;</li>
      *   <li><b>principal resolution</b> — the literal {@code cmis:anyone}/{@code cmis:anonymous}
      *       ids map to the anyone token; otherwise USER then GROUP; an id that resolves to neither
-     *       is DROPPED (the under-grant the principal tri-state work will convert to a
-     *       distinguishable failure).</li>
+     *       is DROPPED. That drop is correct for a genuinely deleted principal, but the resolver
+     *       cannot currently distinguish it from "the lookup could not be served" (a missing design
+     *       document / view / database, which `queryView` also reports as null) — the tri-state that
+     *       5T introduces makes the second case throw under strict. A TRANSIENT fault does not reach
+     *       here at all: it propagates as `CmisRuntimeException`. Either way the effect is an
+     *       UNDER-grant; no failure mode of this rule can widen the token set.</li>
      * </ol>
      *
      * <p>The anyone branch is preserved VERBATIM even though it is dead code in the shipped
