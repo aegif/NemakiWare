@@ -61,8 +61,13 @@ public class AclEpochFinalizationService {
      */
     private static final int AUDIT_CURSOR_SCHEMA_VERSION = 1;
     private static final int CURSOR_CAS_RETRIES = 5;
-    /** Index (ddoc, then index name) the terminal query is pinned to via {@code use_index}. */
-    private static final List<String> TERMINAL_USE_INDEX = List.of("acl-epoch-indexes", "idx_aclEpochState");
+    /** Index (ddoc, then index name) the aclEpochState-keyed queries are pinned to. */
+    private static final List<String> STATE_USE_INDEX = List.of("acl-epoch-indexes", "idx_aclEpochState");
+    /** Index the state-less-with-leftover-mutation-id pass is pinned to (review 3c [P2]). */
+    private static final List<String> MUTATION_ID_USE_INDEX =
+            List.of("acl-epoch-indexes", "idx_aclEpochMutationId");
+    /** Back-compat alias for the terminal query (same index as the other state-keyed passes). */
+    private static final List<String> TERMINAL_USE_INDEX = STATE_USE_INDEX;
     private static final int QUARANTINE_CAS_RETRIES = 4;
 
     private CloudantClientPool connectorPool;
@@ -162,13 +167,24 @@ public class AclEpochFinalizationService {
      */
     public FinalizeOutcome finalizePending(String repositoryId, Document hint) {
         Map<String, Object> hp = hint.getProperties();
-        // ABSENT state = not an epoch doc (skip). PRESENT-but-null state is corruption, NOT
-        // "not an epoch doc": use containsKey so a present-null state falls through to
-        // validate() and is raised as an anomaly rather than silently skipped (review 2f;
-        // the SDK stores an explicit JSON null as a present entry).
-        if (hp == null || !hp.containsKey(AclEpochState.FIELD_STATE)) {
+        if (hp == null) {
             return new FinalizeOutcome(FinalizeResult.SKIPPED_NOT_PENDING, null); // not an epoch doc
         }
+        // NEITHER field = ordinary content, not this finalizer's business. Anything else goes
+        // through the SHARED validator, so the direct entry point enforces exactly what the
+        // scanner does — in particular "state absent BUT mutation id present" is corruption (the
+        // steady state clears both) and must NOT be reported as a clean skip (review 3c [P1]).
+        // containsKey, not get()!=null: the SDK stores an explicit JSON null as a PRESENT entry.
+        if (!hp.containsKey(AclEpochState.FIELD_STATE)
+                && !hp.containsKey(AclEpochState.FIELD_MUTATION_ID)) {
+            return new FinalizeOutcome(FinalizeResult.SKIPPED_NOT_PENDING, null); // ordinary content
+        }
+        String hintId = (hint.getId() == null || hint.getId().isBlank()) ? "<no id>" : hint.getId();
+        AclEpochFields.requireNotQuarantined(hintId, hp);
+        // stateRequired=false: validate() itself raises the state-absent + mutation-id-present
+        // anomaly, so a non-null state is guaranteed below. Every anomaly is thrown BEFORE the
+        // counter is touched, so a rejected finalize never consumes an epoch.
+        AclEpochFields.Values hintEf = AclEpochFields.validate(hintId, hp, false);
         // Phase-2 precondition: a committed Phase-1 document (id + rev), checked BEFORE
         // allocate so a rev-less snapshot cannot mint an epoch and create a new document.
         if (hint.getId() == null || hint.getId().isBlank()) {
@@ -178,7 +194,6 @@ public class AclEpochFinalizationService {
             throw new AclEpochAnomalyException("finalize target has no _rev (Phase 2 requires a "
                     + "committed Phase-1 document): " + hint.getId());
         }
-        AclEpochFields.Values hintEf = validate(hint); // corrupt hint → anomaly (never a silent skip)
         if (!AclEpochState.PENDING_EPOCH.equals(hintEf.state)) {
             return new FinalizeOutcome(FinalizeResult.SKIPPED_NOT_PENDING, null); // already finalized/advanced
         }
@@ -283,20 +298,24 @@ public class AclEpochFinalizationService {
      * competing writer keeps bumping) is recorded as {@code contended} + {@code more}, never
      * quarantined.
      *
-     * <p><b>Scope:</b> the marker/epoch contract applies ONLY to EPOCH-STATE-BEARING documents
-     * (those carrying an {@code aclEpochState}); a state-less document is normal content, is
-     * matched by no pass, and a stray marker on it is irrelevant to the epoch machine. The
+     * <p><b>Scope (corrected in review 3c):</b> the passes select documents carrying an
+     * {@code aclEpochState} OR a leftover {@code aclEpochMutationId}. A document with NEITHER is
+     * ordinary content and is matched by no pass. (Before increment 3b every selector keyed on
+     * {@code aclEpochState} alone, which is precisely why a document that lost its state while
+     * keeping its mutation id was invisible; the dedicated pass now covers that shape, so the old
+     * blanket claim that "a state-less document is matched by no pass" no longer holds.) The
      * terminal-audit resume cursor is a per-content-DB document (id {@code acl-epoch-audit-cursor},
      * no {@code aclEpochState}) — a new persistent-format artefact, matched by no scan pass.
      */
     public ScanSummary scan(String repositoryId, int maxDocsPerPass) {
         int budget = maxDocsPerPass > 0 ? maxDocsPerPass : DEFAULT_SCAN_MAX_DOCS;
+        requireIndexes(repositoryId); // fail BEFORE touching a document if an index is missing
         ScanSummary summary = new ScanSummary();
 
         runPass(repositoryId, notQuarantined(Map.of(
                         AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH,
                         AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true))),
-                budget, summary, d -> {
+                budget, summary, STATE_USE_INDEX, d -> {
                     FinalizeOutcome o = finalizePending(repositoryId, d);
                     if (o.result == FinalizeResult.FINALIZED) summary.finalized++;
                 });
@@ -305,7 +324,7 @@ public class AclEpochFinalizationService {
                         AclEpochState.FIELD_STATE, Map.of("$in", List.of(
                                 AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE)),
                         AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", false))),
-                budget, summary, d -> {
+                budget, summary, STATE_USE_INDEX, d -> {
                     throw new AclEpochAnomalyException("live state without aclEpochMutationId on " + d.getId());
                 });
 
@@ -316,7 +335,7 @@ public class AclEpochFinalizationService {
         runPass(repositoryId, notQuarantined(Map.of(
                         AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true),
                         AclEpochState.FIELD_STATE, Map.of("$exists", false))),
-                budget, summary, d -> {
+                budget, summary, MUTATION_ID_USE_INDEX, d -> {
                     throw new AclEpochAnomalyException("aclEpochMutationId without aclEpochState on "
                             + d.getId() + " (steady state clears both)");
                 });
@@ -325,7 +344,7 @@ public class AclEpochFinalizationService {
                         AclEpochState.FIELD_STATE, Map.of("$exists", true, "$nin", List.of(
                                 AclEpochState.PENDING_EPOCH, AclEpochState.FINALIZED_NEEDS_RECONCILE,
                                 AclEpochState.RECONCILE_ENQUEUED)))),
-                budget, summary, d -> {
+                budget, summary, STATE_USE_INDEX, d -> {
                     throw new AclEpochAnomalyException("unknown / non-String aclEpochState on " + d.getId());
                 });
 
@@ -380,7 +399,7 @@ public class AclEpochFinalizationService {
      * set if this pass hit its budget with more possibly due.
      */
     private void runPass(String repositoryId, Map<String, Object> selector, int budget,
-                         ScanSummary summary, PassHandler handler) {
+                         ScanSummary summary, List<String> useIndex, PassHandler handler) {
         CloudantClientWrapper client = contentClient(repositoryId);
         Cloudant cloudant = client.getClient();
         String db = client.getDatabaseName();
@@ -389,9 +408,10 @@ public class AclEpochFinalizationService {
         while (processed < budget) {
             int limit = Math.min(PAGE_SIZE, budget - processed);
             PostFindOptions.Builder b = new PostFindOptions.Builder()
-                    .db(db).selector(selector).limit(limit);
+                    .db(db).selector(selector).limit(limit).useIndex(useIndex);
             if (bookmark != null) b.bookmark(bookmark);
             FindResult r = cloudant.postFind(b.build()).execute().getResult();
+            requireIndexServed(r, db, useIndex);
             List<Document> docs = r.getDocs();
             if (docs == null || docs.isEmpty()) {
                 break;
@@ -525,9 +545,75 @@ public class AclEpochFinalizationService {
         if (bookmark != null) {
             b.bookmark(bookmark);
         }
-        return cloudant.postFind(b.build()).execute().getResult();
+        FindResult r = cloudant.postFind(b.build()).execute().getResult();
+        requireIndexServed(r, db, TERMINAL_USE_INDEX);
+        return r;
     }
 
+    /**
+     * FAIL CLOSED when a pinned query was not actually served by its index (review 3c [P2]).
+     *
+     * <p>CouchDB 3.3.x does NOT reject a {@code use_index} naming a missing/unusable index: it
+     * SILENTLY falls back to {@code _all_docs} and returns HTTP 200 (verified against 3.3.3), and
+     * {@code allow_fallback=false} — which would make it an error — is a 3.4+/Cloudant parameter
+     * that 3.3.x rejects with {@code invalid_key}. The deterministic guard is therefore
+     * {@link #requireIndexes} (existence, checked once per scan); this is defence in depth on the
+     * per-query {@code warning}.
+     *
+     * <p>Only the "index was not used" phrases count. CouchDB ALSO emits a purely advisory warning
+     * ("The number of documents examined is high…") for a query that IS index-served but weakly
+     * selective — our anomaly passes are exactly that shape, so treating any warning as a failure
+     * would be a false positive.
+     */
+    private static void requireIndexServed(FindResult r, String db, List<String> useIndex) {
+        String warning = r != null ? r.getWarning() : null;
+        if (warning == null || warning.isBlank()) {
+            return;
+        }
+        String w = warning.toLowerCase(java.util.Locale.ROOT);
+        boolean notServed = w.contains("was not used") || w.contains("no matching index found");
+        if (notServed) {
+            throw new IllegalStateException("ACL epoch scan refused to run unindexed on '" + db
+                    + "': the pinned index " + useIndex + " did not serve the query (CouchDB fell back"
+                    + " to a full scan). Re-run the Mango index patch. CouchDB warning: " + warning);
+        }
+    }
+
+    /**
+     * Deterministic pre-flight: every index the scan pins MUST exist, else the scan fails without
+     * touching a document (review 3c [P2]). This is the version-independent half of the guarantee —
+     * CouchDB 3.3.x silently full-scans when a pinned index is missing, and a scanner that
+     * full-scans a large content database on every scheduler tick is exactly what must not happen
+     * once it is auto-started.
+     */
+    private void requireIndexes(String repositoryId) {
+        CloudantClientWrapper client = contentClient(repositoryId);
+        String db = client.getDatabaseName();
+        java.util.Set<String> present = new java.util.HashSet<>();
+        try {
+            for (com.ibm.cloud.cloudant.v1.model.IndexInformation i : client.getClient()
+                    .getIndexesInformation(new com.ibm.cloud.cloudant.v1.model.GetIndexesInformationOptions
+                            .Builder().db(db).build()).execute().getResult().getIndexes()) {
+                if (i.getName() != null) present.add(i.getName());
+            }
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("ACL epoch scan could not verify its Mango indexes on '"
+                    + db + "': " + e.getMessage(), e);
+        }
+        for (List<String> handle : List.of(STATE_USE_INDEX, MUTATION_ID_USE_INDEX)) {
+            String name = handle.get(1);
+            if (!present.contains(name)) {
+                throw new IllegalStateException("ACL epoch scan refused to run on '" + db
+                        + "': the required Mango index '" + name + "' is missing, and CouchDB would "
+                        + "SILENTLY full-scan instead of failing. Re-run the Mango index patch.");
+            }
+        }
+    }
+
+    /**
+     * True only for CouchDB's {@code invalid_bookmark} error. A general 400 (e.g. a missing pinned
+     * index) must NOT be mistaken for a stale bookmark — it propagates and fails the scan.
+     */
     private static boolean isInvalidBookmark(BadRequestException e) {
         String body = e.getResponseBody();
         if (body != null && body.contains("invalid_bookmark")) return true;

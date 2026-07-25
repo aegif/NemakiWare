@@ -732,3 +732,36 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
     patch registered `(aclEpochMutationId)` on both repositories, atom 200, nothing auto-runs, and
     zero mutation-bearing documents exist in real content.
     <br>⚠ Persistent-format addition: a second Mango index `(aclEpochMutationId)` per content DB.
+  - **Increment 3c — direct finalizer + index pinning (review).**
+    1. **(P1) The direct finalizer still skipped state loss.** `finalizePending(repo, docId)`
+       returned `SKIPPED_NOT_PENDING` whenever `aclEpochState` was absent, without consulting the
+       shared validator — so the "state absent + mutation id present" corruption that 3b defined
+       was reported as a CLEAN finish on the public entry point (the scanner caught it, but a
+       future Phase 2 calling this path directly would not). The contract is now: NEITHER field →
+       ordinary content, clean skip; state absent BUT mutation id present → anomaly; any other
+       violation (quarantine marker, non-UUID id, invalid epoch) → anomaly. Every check runs BEFORE
+       `counterService.allocate`, so a rejected finalize consumes no epoch.
+    2. **(P2) The scan passes were not pinned to their indexes.** `runPass` sent no `use_index`, so
+       a missing or half-rebuilt index let CouchDB fall back to `_all_docs` — a full scan of a
+       large content database on every scheduler tick once the scanner is auto-started. All four
+       passes are now pinned (`idx_aclEpochState`, and `idx_aclEpochMutationId` for the new one),
+       and the scan FAILS rather than full-scanning. **Measured CouchDB 3.3.3 behaviour:** a
+       `use_index` naming a missing index is NOT an error — it returns HTTP 200 having silently
+       used `_all_docs`, with only a `warning` field to show for it (and `allow_fallback=false`,
+       which would make it an error, is a 3.4+/Cloudant parameter 3.3.x rejects). The guarantee is
+       therefore a DETERMINISTIC pre-flight existence check on both indexes at the top of `scan()`,
+       with the per-query warning as defence in depth — narrowed to the genuine "was not used" /
+       "no matching index found" phrases, because CouchDB also emits a purely advisory
+       "documents examined is high" warning for the anomaly passes, which ARE index-served.
+    <br>**Javadoc corrections (also review 3c):** "a state-less document is matched by no pass" is
+    no longer true after 3b (a leftover mutation id IS selected), and "resolved EXACTLY as
+    `ContentDaoServiceImpl.getContent`" overstated it — the DAO falls back to a generic
+    `CouchContent` for an unknown type whereas the epoch side treats that as an anomaly. Both now
+    say what the code does.
+    <br>Verification: 57 finalization ITs + 52 walk ITs + 4 new patch ITs; epoch unit+IT 146/146.
+    Mutation-bound: reverting the direct-finalizer guard fails its IT; removing the pre-flight (and
+    the warning backstop) fails both missing-index ITs. New ITs cover the direct finalizer (anomaly
+    + no epoch consumed, and the clean-skip counterpart), null/numeric/blank mutation ids found via
+    the REAL index, scan failure with either index missing, and the patch's idempotency + its
+    throw-so-PatchHistory-is-not-recorded failure paths. Live: both indexes present, atom 200,
+    nothing auto-runs, CMIS unaffected.

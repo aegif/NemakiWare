@@ -21,8 +21,9 @@ import java.util.regex.Pattern;
  * {@code minRequiredEpoch >= finalized}), whose task-side fields are a later increment —
  * so a finalized document STOPS at {@code FINALIZED_NEEDS_RECONCILE}.
  *
- * <p>A state-less content document (all three fields absent — every normal document) is
- * NEVER selected by the scanner; only documents carrying one of these states are.
+ * <p>A content document with NEITHER a state NOR a mutation id (every normal document) is never
+ * selected by the scanner. A document carrying a LEFTOVER mutation id but no state is corruption —
+ * the steady state clears both — and IS selected, by a dedicated pass (increment 3b).
  */
 public final class AclEpochState {
 

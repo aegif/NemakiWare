@@ -104,11 +104,16 @@ public class AclEffectiveEpochService {
     public enum DependencyRole { SELF, ANCESTOR, RELATIONSHIP_SOURCE, RELATIONSHIP_TARGET }
 
     /**
-     * The CMIS base kind of a raw content document. Resolved EXACTLY as
-     * {@code ContentDaoServiceImpl.getContent} does — {@code type} if present, else
-     * {@code objectType} — and accepting the same legacy short forms ({@code "folder"},
-     * {@code "document"}, …) that DAO accepts, so the epoch walk and the real content layer
-     * always agree on what a document IS (review 3b [P1]).
+     * The CMIS base kind of a raw content document. The DISCRIMINATOR PRECEDENCE and the accepted
+     * spellings are taken from {@code ContentDaoServiceImpl.getContent} — {@code type} if present,
+     * else {@code objectType}, including the legacy short forms ({@code "folder"},
+     * {@code "document"}, …) — so the epoch walk and the real content layer agree on what a
+     * document IS (review 3b [P1]).
+     *
+     * <p>The epoch side is deliberately STRICTER in one respect (review 3c): the DAO falls back to
+     * a generic {@code CouchContent} for an unknown type, whereas an unrecognised / absent
+     * discriminator here is an ANOMALY. A fence value derived from a document whose kind we had to
+     * guess is worse than no fence value at all.
      */
     public enum ContentKind { FOLDER, DOCUMENT, ITEM, RELATIONSHIP, POLICY }
 
