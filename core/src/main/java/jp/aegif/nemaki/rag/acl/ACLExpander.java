@@ -50,7 +50,7 @@ import jp.aegif.nemaki.rag.util.SolrQuerySanitizer;
  * 3. Emit ONLY the principal token that the ACE names (user/group/anyone) — do
  *    NOT expand a group's current members into user tokens. Group (and admin)
  *    membership is resolved at QUERY time instead, which makes revocation take
- *    effect immediately without re-indexing (see {@link #addReaderFromPrincipal}
+ *    effect immediately without re-indexing (see {@link jp.aegif.nemaki.acl.AclSemantics#readerTokens}
  *    and {@link #buildReaderTokenSet}).
  * 4. Return the formatted list of readers
  */
@@ -108,8 +108,6 @@ public class ACLExpander {
      * change, tracked in CLAUDE.md as the remaining strict-ACL residual).
      */
     public List<String> expandToReaders(String repositoryId, Content content, boolean strict) {
-        Set<String> readers = new HashSet<>();
-
         // Use calculateAcl to get both local and inherited ACLs. Non-strict callers use
         // the original 2-arg method (behaviour + mockability unchanged); only the strict
         // reconcile path uses the 3-arg overload that throws on an unreadable inherited
@@ -120,14 +118,22 @@ public class ACLExpander {
         if (acl == null) {
             // No ACL = default to admin only for security
             log.warn(String.format("No ACL calculated for content %s, defaulting to admin-only access", content.getId()));
-            return getAdminOnlyReaders(repositoryId);
+            return AclSemantics.adminOnlyReaders(repositoryId);
+        }
+
+        // Preserve the observability the pre-extraction code had: an EMPTY ACE set still ends up
+        // admin-only via AclSemantics rule 2, but the operator-facing warning would otherwise be
+        // lost when the decision moved into the shared layer (review P3).
+        List<Ace> allAces = acl.getAllAces();
+        if (allAces == null || allAces.isEmpty()) {
+            log.warn(String.format("Empty ACL for content %s, defaulting to admin-only access", content.getId()));
         }
 
         // Project the effective ACEs to reader tokens through the SHARED semantics (design §5.3):
         // the read filter, the fail-closed admin-only fallback and the USER-then-GROUP principal
         // resolution all live in AclSemantics so the ACL-epoch side cannot re-implement them
         // differently. Behaviour is unchanged.
-        List<String> tokens = AclSemantics.readerTokens(repositoryId, acl.getAllAces(),
+        List<String> tokens = AclSemantics.readerTokens(repositoryId, allAces,
                 new AclSemantics.PrincipalResolver() {
                     @Override public boolean isUser(String repo, String principalId) {
                         return principalService.getUserById(repo, principalId) != null;
@@ -143,85 +149,6 @@ public class ACLExpander {
         return tokens;
     }
 
-    /**
-     * Get admin-only readers list for fallback security.
-     *
-     * <p>Stamps the single {@code admin:{repo}} ROLE token rather than expanding
-     * the current admins into individual {@code user:} tokens. Expanding admins
-     * had the same revocation hole as expanding group members: a demoted admin
-     * kept a stale {@code user:} token on every fallback document until it was
-     * re-indexed, so the CMIS numFound stayed inflated and the RAG seed/similar
-     * paths stayed matchable until reindex. The role token is resolved at query
-     * time to the CURRENT admins only (see {@link #buildReaderTokenSet}), so
-     * demotion takes effect immediately without re-indexing.
-     */
-    private List<String> getAdminOnlyReaders(String repositoryId) {
-        List<String> readers = new ArrayList<>();
-        readers.add(formatAdminReader(repositoryId));
-        return readers;
-    }
-
-    /**
-     * Check if an ACE grants read permission.
-     */
-    private boolean hasReadPermission(Ace ace) {
-        List<String> permissions = ace.getPermissions();
-        if (permissions == null || permissions.isEmpty()) {
-            return false;
-        }
-
-        for (String permission : permissions) {
-            if (PERMISSION_READ.equalsIgnoreCase(permission) ||
-                    PERMISSION_ALL.equalsIgnoreCase(permission)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Add reader from a principal ID.
-     * Handles users, groups, and special principals.
-     */
-    private void addReaderFromPrincipal(String repositoryId, String principalId, Set<String> readers) {
-        if (principalId == null || principalId.isEmpty()) {
-            return;
-        }
-
-        // Handle special principals
-        if (PRINCIPAL_ANYONE.equalsIgnoreCase(principalId) ||
-                PRINCIPAL_ANONYMOUS.equalsIgnoreCase(principalId)) {
-            readers.add(formatAnyoneReader(repositoryId));
-            return;
-        }
-
-        // Check if it's a user
-        User user = principalService.getUserById(repositoryId, principalId);
-        if (user != null) {
-            readers.add(formatUserReader(repositoryId, principalId));
-            return;
-        }
-
-        // Check if it's a group. Index ONLY the group token that the ACL names —
-        // do NOT expand the group's current members into user tokens.
-        //
-        // Expanding members at index time was a revocation hole: a removed member
-        // (or a removed nested-subgroup member, or a demoted admin) kept a stale
-        // `user:{repo}:{id}` token on every document until it was re-indexed, so
-        // the query — which always includes the caller's own user token —
-        // continued to match. On the CMIS path getFiltered removed the result but
-        // the stale tokens inflated numFound and could trip the ACL scan cap; on
-        // the RAG path this surfaced document names / paths / chunk text (the RAG
-        // result stage is authorized by PermissionService, but the numFound / seed
-        // exposure remained). Instead, index only `group:{repo}:{id}` and let the
-        // QUERY resolve the caller's groups at request time
-        // (getGroupIdsContainingUser is transitive over nested groups on both the
-        // CMIS and RAG paths), which is inherently revocation-safe.
-        Group group = principalService.getGroupById(repositoryId, principalId);
-        if (group != null) {
-            readers.add(formatGroupReader(repositoryId, principalId));
-        }
-    }
 
     /**
      * Format a user ID as a repository-scoped reader token
