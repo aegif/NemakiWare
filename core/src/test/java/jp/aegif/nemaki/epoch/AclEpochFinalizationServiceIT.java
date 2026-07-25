@@ -879,6 +879,99 @@ public class AclEpochFinalizationServiceIT {
         assertTrue(e.getMessage().contains("idx_aclEpochState"), e.getMessage());
     }
 
+    // ── review 3d: no short-circuit ahead of the shared validator ──
+
+    @Test
+    void directFinalizeOnStateLessWithOnlyALeftoverQuarantineMarkerIsAnomaly() throws Exception {
+        // An INCOMPLETE repair: state and mutation id were cleared but the quarantine marker was
+        // forgotten. The pre-3d fast path ("neither field → ordinary content") reported this as a
+        // clean skip; the marker must be surfaced instead.
+        putRawJson("q-only", "{\"type\":\"epoch-it-fixture\",\"aclEpochQuarantined\":true}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.finalizePending(contentDb, "q-only"));
+
+        putRawJson("q-only-false", "{\"type\":\"epoch-it-fixture\",\"aclEpochQuarantined\":false}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.finalizePending(contentDb, "q-only-false"));
+
+        putRawJson("q-only-null", "{\"type\":\"epoch-it-fixture\",\"aclEpochQuarantined\":null}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.finalizePending(contentDb, "q-only-null"));
+        assertEquals(0L, counterValue(contentDb), "no epoch is consumed by any of them");
+    }
+
+    @Test
+    void directFinalizeOnStateLessWithOnlyACorruptEpochIsAnomaly() throws Exception {
+        // Same class: no state, no mutation id, but a corrupt aclSourceEpoch. Previously a clean
+        // skip; the corruption must be raised (a negative/fractional epoch is not a valid fence).
+        putRawJson("e-neg",  "{\"type\":\"epoch-it-fixture\",\"aclSourceEpoch\":-1}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.finalizePending(contentDb, "e-neg"));
+
+        putRawJson("e-null", "{\"type\":\"epoch-it-fixture\",\"aclSourceEpoch\":null}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.finalizePending(contentDb, "e-null"));
+
+        putRawJson("e-frac", "{\"type\":\"epoch-it-fixture\",\"aclSourceEpoch\":1.5}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.finalizePending(contentDb, "e-frac"));
+        assertEquals(0L, counterValue(contentDb));
+    }
+
+    @Test
+    void directFinalizeOnSettledContentWithAValidEpochIsStillACleanSkip() throws Exception {
+        // The positive control for the stricter order: the STEADY STATE (marker cleared, a valid
+        // epoch retained, no state, no mutation id) must remain a clean skip.
+        putRawJson("settled-ok", "{\"type\":\"epoch-it-fixture\",\"aclSourceEpoch\":12}");
+        FinalizeOutcome o = svc.finalizePending(contentDb, "settled-ok");
+        assertEquals(FinalizeResult.SKIPPED_NOT_PENDING, o.result);
+        assertNull(o.epoch);
+        assertEquals(0L, counterValue(contentDb));
+    }
+
+    // ── review 3d: the index pre-flight matches the DEFINITION, not just the name ──
+
+    @Test
+    void scanFailsWhenASameNamedIndexLivesInAnotherDesignDocument() throws Exception {
+        dropIndex("idx_aclEpochMutationId");
+        createJsonIndex("other-ddoc", "idx_aclEpochMutationId", AclEpochState.FIELD_MUTATION_ID, "asc");
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> svc.scan(contentDb, 100));
+        assertTrue(e.getMessage().contains("idx_aclEpochMutationId"), e.getMessage());
+    }
+
+    @Test
+    void scanFailsWhenASameNamedIndexCoversTheWrongField() throws Exception {
+        dropIndex("idx_aclEpochMutationId");
+        createJsonIndex("acl-epoch-indexes", "idx_aclEpochMutationId", "someOtherField", "asc");
+        assertThrows(IllegalStateException.class, () -> svc.scan(contentDb, 100));
+    }
+
+    @Test
+    void scanFailsWhenASameNamedIndexUsesTheWrongDirection() throws Exception {
+        dropIndex("idx_aclEpochState");
+        createJsonIndex("acl-epoch-indexes", "idx_aclEpochState", AclEpochState.FIELD_STATE, "desc");
+        assertThrows(IllegalStateException.class, () -> svc.scan(contentDb, 100));
+    }
+
+    @Test
+    void scanFailsWhenASameNamedIndexIsPartial() throws Exception {
+        // A partial index silently OMITS documents, so it must never satisfy the pre-flight.
+        dropIndex("idx_aclEpochState");
+        createPartialJsonIndex("acl-epoch-indexes", "idx_aclEpochState", AclEpochState.FIELD_STATE);
+        assertThrows(IllegalStateException.class, () -> svc.scan(contentDb, 100));
+    }
+
+    @Test
+    void scanFailsWhenASameNamedIndexCoversExtraFields() throws Exception {
+        dropIndex("idx_aclEpochState");
+        createTwoFieldJsonIndex("acl-epoch-indexes", "idx_aclEpochState",
+                AclEpochState.FIELD_STATE, AclEpochState.FIELD_MUTATION_ID);
+        assertThrows(IllegalStateException.class, () -> svc.scan(contentDb, 100));
+    }
+
+    @Test
+    void scanSucceedsWithTheCorrectlyDefinedIndexes() {
+        // Positive control: the definitions this IT creates in setUp are exactly what is required,
+        // so the strict pre-flight must NOT reject a healthy database.
+        seedPending("healthy", AclEpochState.newMutationId());
+        ScanSummary sum = svc.scan(contentDb, 100);
+        assertEquals(1, sum.finalized);
+    }
+
     // ── review 2g: terminal-audit resume cursor robustness ─────────
 
     /** Deterministic id of the per-content-DB terminal-audit resume cursor. */
@@ -1300,6 +1393,30 @@ public class AclEpochFinalizationServiceIT {
         else if (body != null) b.method(method, HttpRequest.BodyPublishers.ofString(body));
         else b.method(method, HttpRequest.BodyPublishers.noBody());
         return HttpClient.newHttpClient().send(b.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** Create a single-field JSON index with an explicit ddoc / name / field / direction. */
+    private void createJsonIndex(String ddoc, String name, String field, String direction) throws Exception {
+        postIndexRaw("{\"index\":{\"fields\":[{\"" + field + "\":\"" + direction + "\"}]},"
+                + "\"name\":\"" + name + "\",\"type\":\"json\",\"ddoc\":\"" + ddoc + "\"}");
+    }
+
+    /** Create a PARTIAL JSON index (silently omits documents — must fail the pre-flight). */
+    private void createPartialJsonIndex(String ddoc, String name, String field) throws Exception {
+        postIndexRaw("{\"index\":{\"fields\":[{\"" + field + "\":\"asc\"}],"
+                + "\"partial_filter_selector\":{\"" + field + "\":{\"$exists\":true}}},"
+                + "\"name\":\"" + name + "\",\"type\":\"json\",\"ddoc\":\"" + ddoc + "\"}");
+    }
+
+    /** Create a TWO-field JSON index under the expected name (a different index than required). */
+    private void createTwoFieldJsonIndex(String ddoc, String name, String f1, String f2) throws Exception {
+        postIndexRaw("{\"index\":{\"fields\":[{\"" + f1 + "\":\"asc\"},{\"" + f2 + "\":\"asc\"}]},"
+                + "\"name\":\"" + name + "\",\"type\":\"json\",\"ddoc\":\"" + ddoc + "\"}");
+    }
+
+    private void postIndexRaw(String body) throws Exception {
+        HttpResponse<String> resp = rawRequest("POST", "/_index", body);
+        if (resp.statusCode() >= 300) throw new IllegalStateException("create index failed: " + resp.body());
     }
 
     /** Delete one Mango index from the shared design doc (to prove the fail-closed pinning). */

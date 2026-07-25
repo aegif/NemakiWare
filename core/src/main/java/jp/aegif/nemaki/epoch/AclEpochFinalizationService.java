@@ -170,21 +170,20 @@ public class AclEpochFinalizationService {
         if (hp == null) {
             return new FinalizeOutcome(FinalizeResult.SKIPPED_NOT_PENDING, null); // not an epoch doc
         }
-        // NEITHER field = ordinary content, not this finalizer's business. Anything else goes
-        // through the SHARED validator, so the direct entry point enforces exactly what the
-        // scanner does — in particular "state absent BUT mutation id present" is corruption (the
-        // steady state clears both) and must NOT be reported as a clean skip (review 3c [P1]).
-        // containsKey, not get()!=null: the SDK stores an explicit JSON null as a PRESENT entry.
-        if (!hp.containsKey(AclEpochState.FIELD_STATE)
-                && !hp.containsKey(AclEpochState.FIELD_MUTATION_ID)) {
-            return new FinalizeOutcome(FinalizeResult.SKIPPED_NOT_PENDING, null); // ordinary content
-        }
         String hintId = (hint.getId() == null || hint.getId().isBlank()) ? "<no id>" : hint.getId();
+        // The SHARED validator is the ONLY definition of "usable", with NOTHING short-circuiting
+        // ahead of it (review 3d [P1]): the previous "neither field → ordinary content" fast path
+        // let a leftover quarantine marker (an incomplete repair) and a corrupt aclSourceEpoch
+        // (-1 / null / 1.5) through as a CLEAN skip. Ordinary content still skips — it simply does
+        // so on the VALIDATED result (state == null) rather than by guessing beforehand. Every
+        // anomaly is raised BEFORE the counter is touched, so a rejected finalize consumes no epoch.
         AclEpochFields.requireNotQuarantined(hintId, hp);
-        // stateRequired=false: validate() itself raises the state-absent + mutation-id-present
-        // anomaly, so a non-null state is guaranteed below. Every anomaly is thrown BEFORE the
-        // counter is touched, so a rejected finalize never consumes an epoch.
         AclEpochFields.Values hintEf = AclEpochFields.validate(hintId, hp, false);
+        if (hintEf.state == null) {
+            // Validated ordinary content: no state, no leftover mutation id, no marker, and any
+            // epoch it carries is well-formed. Not this finalizer's business.
+            return new FinalizeOutcome(FinalizeResult.SKIPPED_NOT_PENDING, null);
+        }
         // Phase-2 precondition: a committed Phase-1 document (id + rev), checked BEFORE
         // allocate so a rev-less snapshot cannot mint an epoch and create a new document.
         if (hint.getId() == null || hint.getId().isBlank()) {
@@ -579,35 +578,79 @@ public class AclEpochFinalizationService {
         }
     }
 
+    /** The design document both epoch Mango indexes must live in (as reported by {@code _index}). */
+    private static final String INDEX_DDOC = "_design/acl-epoch-indexes";
+
     /**
-     * Deterministic pre-flight: every index the scan pins MUST exist, else the scan fails without
-     * touching a document (review 3c [P2]). This is the version-independent half of the guarantee —
-     * CouchDB 3.3.x silently full-scans when a pinned index is missing, and a scanner that
-     * full-scans a large content database on every scheduler tick is exactly what must not happen
-     * once it is auto-started.
+     * Deterministic pre-flight: every index the scan pins MUST exist AND have exactly the expected
+     * DEFINITION, else the scan fails without touching a document (review 3c/3d [P2]).
+     *
+     * <p>This is the version-independent half of the guarantee — CouchDB 3.3.x silently full-scans
+     * when a pinned index is missing, and a scanner that full-scans a large content database on
+     * every scheduler tick is exactly what must not happen once it is auto-started.
+     *
+     * <p>Checking the NAME alone is not enough (review 3d): a same-named index in a different
+     * design document, of a different type, over a different field, with a different direction, or
+     * carrying a partial-filter selector, would pass a name check and then NOT serve the query —
+     * so every tick would full-scan, permanently. The full definition is therefore matched.
      */
     private void requireIndexes(String repositoryId) {
         CloudantClientWrapper client = contentClient(repositoryId);
         String db = client.getDatabaseName();
-        java.util.Set<String> present = new java.util.HashSet<>();
+        List<com.ibm.cloud.cloudant.v1.model.IndexInformation> indexes;
         try {
-            for (com.ibm.cloud.cloudant.v1.model.IndexInformation i : client.getClient()
-                    .getIndexesInformation(new com.ibm.cloud.cloudant.v1.model.GetIndexesInformationOptions
-                            .Builder().db(db).build()).execute().getResult().getIndexes()) {
-                if (i.getName() != null) present.add(i.getName());
-            }
+            indexes = client.getClient().getIndexesInformation(
+                    new com.ibm.cloud.cloudant.v1.model.GetIndexesInformationOptions.Builder()
+                            .db(db).build()).execute().getResult().getIndexes();
         } catch (RuntimeException e) {
             throw new IllegalStateException("ACL epoch scan could not verify its Mango indexes on '"
                     + db + "': " + e.getMessage(), e);
         }
-        for (List<String> handle : List.of(STATE_USE_INDEX, MUTATION_ID_USE_INDEX)) {
-            String name = handle.get(1);
-            if (!present.contains(name)) {
-                throw new IllegalStateException("ACL epoch scan refused to run on '" + db
-                        + "': the required Mango index '" + name + "' is missing, and CouchDB would "
-                        + "SILENTLY full-scan instead of failing. Re-run the Mango index patch.");
+        requireIndex(db, indexes, STATE_USE_INDEX.get(1), AclEpochState.FIELD_STATE);
+        requireIndex(db, indexes, MUTATION_ID_USE_INDEX.get(1), AclEpochState.FIELD_MUTATION_ID);
+    }
+
+    private static void requireIndex(String db,
+                                     List<com.ibm.cloud.cloudant.v1.model.IndexInformation> indexes,
+                                     String indexName, String expectedField) {
+        if (indexes != null) {
+            for (com.ibm.cloud.cloudant.v1.model.IndexInformation i : indexes) {
+                if (i != null && indexName.equals(i.getName()) && matchesExpectedDefinition(i, expectedField)) {
+                    return;
+                }
             }
         }
+        throw new IllegalStateException("ACL epoch scan refused to run on '" + db + "': no index named '"
+                + indexName + "' with the required definition (ddoc " + INDEX_DDOC + ", type json, "
+                + "fields [{" + expectedField + ": asc}], no partial filter) exists. CouchDB would "
+                + "SILENTLY full-scan instead of failing. Re-run the Mango index patch.");
+    }
+
+    /** Exact-match the reported index definition (nothing extra, nothing different). */
+    private static boolean matchesExpectedDefinition(
+            com.ibm.cloud.cloudant.v1.model.IndexInformation info, String expectedField) {
+        if (!INDEX_DDOC.equals(info.getDdoc()) || !"json".equals(info.getType())) {
+            return false;
+        }
+        com.ibm.cloud.cloudant.v1.model.IndexDefinition def = info.getDef();
+        if (def == null) {
+            return false;
+        }
+        // Anything a JSON single-field index must NOT carry (a partial index would silently omit
+        // documents; the text-index knobs would mean it is not the index we think it is).
+        if ((def.partialFilterSelector() != null && !def.partialFilterSelector().isEmpty())
+                || def.defaultAnalyzer() != null
+                || def.defaultField() != null
+                || Boolean.TRUE.equals(def.indexArrayLengths())) {
+            return false;
+        }
+        List<com.ibm.cloud.cloudant.v1.model.IndexField> fields = def.fields();
+        if (fields == null || fields.size() != 1 || fields.get(0) == null) {
+            return false;
+        }
+        // A JSON index field is reported as the dynamic pair {"<field>": "asc"|"desc"}.
+        Map<String, String> pair = fields.get(0).getProperties();
+        return pair != null && pair.size() == 1 && "asc".equals(pair.get(expectedField));
     }
 
     /**

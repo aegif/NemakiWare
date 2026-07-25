@@ -1376,6 +1376,22 @@ scheduler/init/cron なし・**書込みを一切行わない** read-only)。
   検出+quarantine、**両 index それぞれの欠落で scan 失敗**、patch の冪等性 + 失敗時に PatchHistory を残さない経路。
   実機: 両 index 存在・atom 200・何も自動実行されない・CMIS 正常。
 
+**増分3d: 共通 validator 迂回の残り + index 定義検証 (P1 + P2)**:
+- **[P1] direct finalizer に共通 validator を迂回する短絡がまだ残っていた**: 3c で残した「state・mutationId 両方なし → 通常
+  content」の早期 return により、**quarantine marker だけ残存**(両フィールドを消したが marker 解除を忘れた**不完全修復**)や
+  **`aclSourceEpoch` だけ破損**(`-1` / 明示 null / `1.5`)が依然 clean skip になっていた。ご指示どおり順序を
+  **`requireNotQuarantined` → `validate(..., stateRequired=false)` → 検証済み `state == null` なら clean skip → state-bearing
+  なら id/rev 確認 + finalize** に単純化。通常 stateless は維持しつつ、**共通 validator が本当に唯一の定義**になった。
+- **[P2] index pre-flight が名前しか見ていなかった**: 同名でも「別 ddoc / 非 JSON type / 別フィールド / direction 違い /
+  フィールド追加 / partial selector 付き」は pre-flight を通過し、その後 query を serve できず **tick 毎に全走査が永続**する
+  (warning backstop は fallback 後なので既に1回全走査済み)。`IndexInformation` を**完全一致検証**するよう変更:
+  **`ddoc == _design/acl-epoch-indexes` / name / `type == json` / fields がちょうど 1 個で `{期待フィールド: "asc"}` /
+  partial selector・text index 用設定なし**。
+- **検証**: finalization IT **66/66** + walk IT 52/52 + patch IT 4/4、epoch unit+IT **155/155**。**mutation 2種が bind**
+  (短絡を戻す→新 direct-finalizer IT 2件失敗 / 名前のみ検証に戻す→**誤定義 index の IT 5件すべて失敗**= 誤定義が永続すると
+  毎 tick 全走査になることの実証)。positive control として「steady state(marker 解除済・有効 epoch・state なし)は clean skip」
+  「正しい定義の DB では通常どおり scan 成功」も固定。実機: atom 200・何も自動実行されない・CMIS 正常。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度
