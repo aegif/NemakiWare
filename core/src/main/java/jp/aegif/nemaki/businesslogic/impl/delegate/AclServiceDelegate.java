@@ -4,6 +4,7 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.dao.ContentDaoService;
+import jp.aegif.nemaki.acl.AclSemantics;
 import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
@@ -11,7 +12,6 @@ import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.cache.model.NemakiCache;
-import jp.aegif.nemaki.util.constant.PrincipalId;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import org.apache.commons.collections4.CollectionUtils;
@@ -164,7 +164,7 @@ public class AclServiceDelegate {
 			List<Ace> rootAces = new ArrayList<Ace>();
 
 			for (Ace ace : aces) {
-				Ace rootAce = deepCopy(ace);
+				Ace rootAce = AclSemantics.deepCopy(ace);
 				rootAce.setDirect(true);
 				rootAces.add(rootAce);
 			}
@@ -194,77 +194,23 @@ public class AclServiceDelegate {
 		}
 	}
 
+	/**
+	 * Delegates to {@link AclSemantics#mergeAces} — the ONE implementation of the inheritance
+	 * merge, shared with the ACL-epoch (authoritative-traversal) side so the two cannot diverge
+	 * (design §5.3). Behaviour is unchanged, including the in-place system-principal conversion
+	 * of {@code target} and the non-contractual result ordering.
+	 */
 	private List<Ace> mergeAcl(String repositoryId, List<Ace> target, List<Ace> source) {
-		HashMap<String, Ace> _result = new HashMap<String, Ace>();
-
-		convertSystemPrincipalId(repositoryId, target);
-
-		HashMap<String, Ace> targetMap = buildAceMap(target);
-		HashMap<String, Ace> sourceMap = buildAceMap(source);
-
-		for (Entry<String, Ace> t : targetMap.entrySet()) {
-			Ace ace = deepCopy(t.getValue());
-			ace.setDirect(true);
-			_result.put(t.getKey(), ace);
-		}
-
-		for (Entry<String, Ace> s : sourceMap.entrySet()) {
-			if (!targetMap.containsKey(s.getKey())) {
-				Ace ace = deepCopy(s.getValue());
-				ace.setDirect(false);
-				_result.put(s.getKey(), ace);
-			}
-		}
-
-		List<Ace> resultList = new ArrayList<Ace>();
-		for (Entry<String, Ace> r : _result.entrySet()) {
-			resultList.add(r.getValue());
-		}
-
-		return resultList;
+		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
+		return AclSemantics.mergeAces(target, source,
+				info.getPrincipalIdAnyone(), info.getPrincipalIdAnonymous());
 	}
 
-	private HashMap<String, Ace> buildAceMap(List<Ace> aces) {
-		HashMap<String, Ace> map = new HashMap<String, Ace>();
-
-		for (Ace ace : aces) {
-			map.put(ace.getPrincipalId(), ace);
-		}
-
-		return map;
-	}
-
-	private Ace deepCopy(Ace ace) {
-		Ace result = new Ace();
-
-		result.setPrincipalId(ace.getPrincipalId());
-		result.setDirect(ace.isDirect());
-		if (CollectionUtils.isEmpty(ace.getPermissions())) {
-			result.setPermissions(new ArrayList<String>());
-		} else {
-			List<String> l = new ArrayList<String>();
-			for (String p : ace.getPermissions()) {
-				l.add(p);
-			}
-			result.setPermissions(l);
-		}
-
-		return result;
-	}
-
+	/** Delegates to {@link AclSemantics#convertSystemPrincipalIds} (shared semantics, §5.3). */
 	private void convertSystemPrincipalId(String repositoryId, List<Ace> aces) {
 		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
-
-		for (Ace ace : aces) {
-			if (PrincipalId.ANONYMOUS_IN_DB.equals(ace.getPrincipalId())) {
-				String anonymous = info.getPrincipalIdAnonymous();
-				ace.setPrincipalId(anonymous);
-			}
-			if (PrincipalId.ANYONE_IN_DB.equals(ace.getPrincipalId())) {
-				String anyone = info.getPrincipalIdAnyone();
-				ace.setPrincipalId(anyone);
-			}
-		}
+		AclSemantics.convertSystemPrincipalIds(aces, info.getPrincipalIdAnyone(),
+				info.getPrincipalIdAnonymous());
 	}
 
 	public Boolean getAclInheritedWithDefault(String repositoryId, Content content) {
