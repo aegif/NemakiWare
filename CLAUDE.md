@@ -1253,6 +1253,25 @@ STATE フィールドで漏らしていた同一クラス)。
   caller ゼロ・scheduler/init/cron なし)。実機: atom 200・両 patch success・scanner 非自動起動・実 content に epoch-state/cursor 文書
   ゼロ・counter 存在・CMIS create/read 無影響。sign-off 判定は §9 決定的テスト全 16 + live-Solr 並行 IT が揃う段階で継続。
 
+**増分2h: cursor `schemaVersion` の厳密検証(配線前の必須条件として先行実施)**:
+2g は承認されたが「`schemaVersion` が書かれるだけで検証されていない」P2 が残り、**scanner 自動起動 / ACL write path 配線の前に必ず
+閉じる条件**とされたため先行対応。旧実装は type のみ確認していたので、**欠落 / null / 1.5 / `"1"` / 将来版 2 のいずれも現行 v1 として
+受理し、保存時に 1 で上書き**していた。
+- **read/save 共通 validator**: `cursorUnusableReason(Document)` を唯一の「この build がこの cursor を使ってよいか」の定義とし、
+  **read と save の両方が同一関数を使用**(両者が乖離し得ない)。save は **CAS 試行ごとに再チェック**(試行間に別 writer が異種 /
+  新版文書へ差し替える race に対応)。
+- **厳密整数**: `type` 完全一致 + `schemaVersion` が **present かつ厳密整数**(`parseExactLong`: 非 Number `"1"` / 非整数 1.5 /
+  範囲外 / 非有限を拒否)かつ **build の版と完全一致**。将来版 2 も拒否(新しい build の cursor を古い build が黙って降格しない)。
+- **明示的 migration 契約**: 使用不能 cursor は**黙示的な upgrade / downgrade / 上書きを一切しない**。`cursorFailure`(+`more`)を記録し
+  terminal audit を **skip**、**文書は一切変更しない**。運用者の対処は **cursor 文書の削除**(保持しているのは resume bookmark のみ
+  なので、削除しても sweep が先頭から再開するだけ=通常の wrap と同一で正当性の損失なし)をエラーメッセージに明記。2f 時代の cursor
+  (type あり・`schemaVersion` なし)は**黙って引き継がない**。
+- **Javadoc 是正**: `runCursoredPass` の「any cursor read/write failure は bookmark=null へ縮退」は現行契約と不一致だったので、
+  実際の三分岐(**使用不能な文書 → fail-closed skip / 一時的な read エラー → 報告して先頭から / save 失敗 → 報告 + `more`**)に修正。
+- **検証**: 実 CouchDB IT **49/49**(43 + 2h 6: absent / explicit-null / `1.5` / `"1"` / `2` の各々で **cursorFailure + terminal audit
+  skip + `_rev`・properties・inline attachment が完全不変** / `schemaVersion=1` は正常使用の positive control)、epoch unit+IT 合計
+  **82/82**、`git diff --check` clean。**mutation test で bind を証明**: 版検証を削除すると**当該 5 件だけが失敗**する。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度
