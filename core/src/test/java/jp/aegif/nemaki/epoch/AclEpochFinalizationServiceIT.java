@@ -917,6 +917,95 @@ public class AclEpochFinalizationServiceIT {
                 "the contended doc stays PENDING for a later scan");
     }
 
+    // ── review 2h: strict cursor schemaVersion validation ──────────
+
+    @Test
+    void cursorWithoutSchemaVersionIsUnusableAndLeftUntouched() throws Exception {
+        // A 2f-era cursor (type present, NO schemaVersion) is NOT adopted implicitly: it is
+        // reported and left byte-for-byte untouched (review 2h [P2]).
+        assertCursorUnusableAndUntouched(
+                "{\"type\":\"aclEpochAuditCursor\",\"terminalBookmark\":\"some-bookmark\"}",
+                "absent schemaVersion");
+    }
+
+    @Test
+    void cursorWithExplicitNullSchemaVersionIsUnusableAndLeftUntouched() throws Exception {
+        assertCursorUnusableAndUntouched(
+                "{\"type\":\"aclEpochAuditCursor\",\"schemaVersion\":null,\"terminalBookmark\":\"b\"}",
+                "explicit-null schemaVersion");
+    }
+
+    @Test
+    void cursorWithFractionalSchemaVersionIsUnusableAndLeftUntouched() throws Exception {
+        assertCursorUnusableAndUntouched(
+                "{\"type\":\"aclEpochAuditCursor\",\"schemaVersion\":1.5,\"terminalBookmark\":\"b\"}",
+                "non-integral schemaVersion 1.5");
+    }
+
+    @Test
+    void cursorWithStringSchemaVersionIsUnusableAndLeftUntouched() throws Exception {
+        assertCursorUnusableAndUntouched(
+                "{\"type\":\"aclEpochAuditCursor\",\"schemaVersion\":\"1\",\"terminalBookmark\":\"b\"}",
+                "string schemaVersion \"1\"");
+    }
+
+    @Test
+    void cursorWithFutureSchemaVersionIsUnusableAndLeftUntouched() throws Exception {
+        // A NEWER build's cursor must never be silently downgraded by this one.
+        assertCursorUnusableAndUntouched(
+                "{\"type\":\"aclEpochAuditCursor\",\"schemaVersion\":2,\"terminalBookmark\":\"b\"}",
+                "future schemaVersion 2");
+    }
+
+    @Test
+    void cursorWithCurrentSchemaVersionIsUsedNormally() {
+        // The positive control: schemaVersion == 1 IS accepted (the strict check does not
+        // fail-closed on a legitimate cursor), and the terminal audit runs.
+        seedFinalized("okv-1", AclEpochState.newMutationId(), 61L);
+        seedAuditCursor(null); // valid cursor doc, no bookmark yet
+
+        ScanSummary sum = svc.scan(contentDb, 100);
+        assertEquals(0, sum.cursorFailures, "a schemaVersion=1 cursor is usable: " + sum.errors);
+        assertTrue(sum.awaitingReconcile >= 1, "the terminal audit runs with a valid cursor");
+    }
+
+    /**
+     * Seed the cursor id with the given RAW JSON (plus an inline attachment), run a scan, and
+     * assert: a cursorFailure is reported, the terminal audit is SKIPPED, and the document is
+     * completely untouched (same _rev, same properties, attachment intact).
+     */
+    private void assertCursorUnusableAndUntouched(String cursorJson, String label) throws Exception {
+        seedFinalized("cv-terminal", AclEpochState.newMutationId(), 60L); // would be audited if the pass ran
+        putRawJson(CURSOR_ID, cursorJson);
+        // Add an inline attachment so a clobber would be visible beyond the properties.
+        Document withAtt = getContent(CURSOR_ID);
+        Attachment att = new Attachment.Builder().contentType("text/plain").data("cursor-att".getBytes()).build();
+        Map<String, Attachment> atts = new LinkedHashMap<>();
+        atts.put("c.txt", att);
+        withAtt.setAttachments(atts);
+        cloudant.putDocument(new PutDocumentOptions.Builder()
+                .db(contentDb).docId(CURSOR_ID).document(withAtt).build()).execute();
+
+        Document before = getContent(CURSOR_ID);
+        String revBefore = before.getRev();
+        Map<String, Object> propsBefore = new LinkedHashMap<>(before.getProperties());
+
+        ScanSummary sum = svc.scan(contentDb, 100);
+
+        assertTrue(sum.cursorFailures >= 1, label + " must be reported as a cursor failure: " + sum.errors);
+        assertTrue(sum.more, label + " must set more");
+        assertTrue(sum.errors.stream().anyMatch(e -> CURSOR_ID.equals(e.get("docId"))),
+                label + " must name the cursor id: " + sum.errors);
+        assertEquals(0, sum.awaitingReconcile, label + " must SKIP the terminal audit");
+
+        Document after = getContent(CURSOR_ID);
+        assertEquals(revBefore, after.getRev(), label + ": the cursor document must NOT be modified");
+        assertEquals(propsBefore, after.getProperties(), label + ": properties must be unchanged "
+                + "(no implicit schemaVersion upgrade)");
+        assertTrue(after.getAttachments() != null && after.getAttachments().containsKey("c.txt"),
+                label + ": the inline attachment must be untouched");
+    }
+
     // ── fixtures / helpers ─────────────────────────────────────────
 
     private Map<String, Object> baseFixture() {

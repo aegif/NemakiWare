@@ -52,6 +52,13 @@ public class AclEpochFinalizationService {
     private static final String AUDIT_CURSOR_ID = "acl-epoch-audit-cursor";
     private static final String AUDIT_CURSOR_TYPE = "aclEpochAuditCursor";
     private static final String AUDIT_CURSOR_FIELD = "terminalBookmark";
+    /** Cursor-document field naming the persisted format this build understands. */
+    private static final String FIELD_SCHEMA_VERSION = "schemaVersion";
+    /**
+     * The ONLY cursor {@code schemaVersion} this build may read or write. A cursor whose version is
+     * absent / non-integer / different (older OR newer) is unusable and is left untouched — see
+     * {@link #cursorUnusableReason}.
+     */
     private static final int AUDIT_CURSOR_SCHEMA_VERSION = 1;
     private static final int CURSOR_CAS_RETRIES = 5;
     /** Index (ddoc, then index name) the terminal query is pinned to via {@code use_index}. */
@@ -474,8 +481,17 @@ public class AclEpochFinalizationService {
      * would re-count the same {@code >budget} valid pile every scan and starve an anomalous
      * terminal doc behind it. By persisting the bookmark and wrapping when the selector is
      * exhausted, the pass cycles through the whole terminal set across scans, so every
-     * anomalous terminal doc is reached and quarantined within a FINITE number of scans. On any
-     * cursor read/write failure it degrades to a bookmark=null pass (no worse than {@link #runPass}).
+     * anomalous terminal doc is reached and quarantined within a FINITE number of scans.
+     *
+     * <p><b>Cursor failure contract (review 2g/2h):</b> an UNUSABLE cursor document — a foreign
+     * document occupying the cursor id, or one whose {@code schemaVersion} this build does not
+     * understand (absent / non-integer / a future version) — is reported as a {@code cursorFailure}
+     * and the terminal pass is SKIPPED fail-closed: the document is NEVER modified (no implicit
+     * upgrade, no clobber). A TRANSIENT cursor READ error (an infrastructure failure, not a
+     * document problem) is reported and degrades to a bookmark=null pass from the top of the
+     * terminal set (no worse than {@link #runPass}). A cursor SAVE failure is reported and sets
+     * {@code more}; the sweep simply restarts from the top next scan (the cursor is pure resume
+     * state, so losing it costs progress, never correctness).
      */
     private void runCursoredPass(String repositoryId, Map<String, Object> selector, int budget,
                                  ScanSummary summary, PassHandler handler) {
@@ -484,8 +500,8 @@ public class AclEpochFinalizationService {
         String db = client.getDatabaseName();
 
         CursorRead cr = readCursor(repositoryId, summary);
-        if (cr.foreignCollision) {
-            return; // a foreign doc occupies the cursor id — reported, do NOT touch it, skip the pass
+        if (cr.unusable) {
+            return; // unusable cursor doc (foreign / unsupported version) — reported, left untouched
         }
         String bookmark = cr.bookmark;
         boolean usingStored = (bookmark != null); // a STORED (not this-scan) bookmark may be invalid
@@ -572,14 +588,73 @@ public class AclEpochFinalizationService {
 
     private static final class CursorRead {
         String bookmark;
-        boolean foreignCollision;
+        /** The cursor DOCUMENT is unusable (foreign / unsupported version) — skip, never modify. */
+        boolean unusable;
     }
 
     /**
-     * Read the terminal-audit cursor. Fail-closed on a FOREIGN document occupying the cursor id
-     * (type != expected): reports a {@code cursorFailure} and signals the caller to skip the
-     * pass WITHOUT touching the foreign document (review 2g [P1]). A missing cursor → start
-     * (null bookmark); a read error → reported and treated as start.
+     * The SINGLE definition of "this build may use this cursor document", shared by the read and
+     * the save path so they can never disagree (review 2h [P2]). Returns {@code null} when the
+     * document is usable (including {@code null} = absent, i.e. a fresh cursor may be created), or
+     * a human-readable reason when it is NOT.
+     *
+     * <p>Strict, fail-closed checks:
+     * <ul>
+     *   <li>{@code type} must be exactly {@code aclEpochAuditCursor} (else a foreign document).</li>
+     *   <li>{@code schemaVersion} must be PRESENT and a STRICT integer equal to
+     *       {@link #AUDIT_CURSOR_SCHEMA_VERSION}. Absent (an increment-2f-era cursor), an explicit
+     *       null, a non-Number ({@code "1"}), a non-integral number ({@code 1.5}), or a FUTURE
+     *       version ({@code 2}, written by a newer build) are all unusable.</li>
+     * </ul>
+     *
+     * <p><b>Migration contract:</b> an unusable cursor is NEVER implicitly upgraded or overwritten
+     * — a newer build's cursor must not be silently downgraded by an older one, and a 2f-era
+     * cursor is not silently adopted. The cursor holds only a resume bookmark, so the documented
+     * operator remedy is simply to DELETE the document: the terminal sweep then restarts from the
+     * top (exactly the normal wrap behaviour) with no correctness loss.
+     */
+    private static String cursorUnusableReason(Document c) {
+        if (c == null || c.getProperties() == null) {
+            return null; // absent → a fresh cursor may be created
+        }
+        Map<String, Object> p = c.getProperties();
+        Object type = p.get("type");
+        if (!AUDIT_CURSOR_TYPE.equals(type)) {
+            return "audit cursor id '" + AUDIT_CURSOR_ID + "' is occupied by a foreign document (type="
+                    + type + ")";
+        }
+        if (!p.containsKey(FIELD_SCHEMA_VERSION)) {
+            return "audit cursor has no " + FIELD_SCHEMA_VERSION + " (a pre-" + AUDIT_CURSOR_SCHEMA_VERSION
+                    + " cursor is not adopted implicitly)";
+        }
+        Object rawVersion = p.get(FIELD_SCHEMA_VERSION);
+        long version;
+        try {
+            // Strict: rejects an explicit null, a non-Number ("1"), a non-integral number (1.5),
+            // an out-of-long-range or non-finite value. (The counter's own wording is not reused —
+            // it would misattribute the failure.)
+            version = AclEpochCounterService.parseExactLong(rawVersion);
+        } catch (RuntimeException e) {
+            return "audit cursor " + FIELD_SCHEMA_VERSION + " is not a strict integer (value=" + rawVersion + ")";
+        }
+        if (version != AUDIT_CURSOR_SCHEMA_VERSION) {
+            return "audit cursor " + FIELD_SCHEMA_VERSION + "=" + version + " is not understood by this "
+                    + "build (expects " + AUDIT_CURSOR_SCHEMA_VERSION + ")";
+        }
+        return null; // usable
+    }
+
+    /** Suffix appended to every unusable-cursor report: what happens and what the operator does. */
+    private static final String CURSOR_UNUSABLE_REMEDY =
+            " — terminal audit skipped, the document is left untouched; delete the document to restart "
+            + "the terminal sweep from the top";
+
+    /**
+     * Read the terminal-audit cursor. Fail-closed via {@link #cursorUnusableReason}: an unusable
+     * cursor DOCUMENT (foreign type / unsupported {@code schemaVersion}) reports a
+     * {@code cursorFailure} and signals the caller to skip the pass WITHOUT touching the document
+     * (review 2g/2h [P1/P2]). A missing cursor → start (null bookmark); a TRANSIENT read error →
+     * reported and treated as start (an infrastructure failure is not a document problem).
      */
     private CursorRead readCursor(String repositoryId, ScanSummary summary) {
         CursorRead cr = new CursorRead();
@@ -588,18 +663,16 @@ public class AclEpochFinalizationService {
             c = getDoc(repositoryId, AUDIT_CURSOR_ID);
         } catch (RuntimeException e) {
             recordCursorFailure(summary, "audit cursor read failed: " + e.getMessage());
-            return cr; // treat as start (bookmark null); not a foreign collision
+            return cr; // transient infrastructure failure → start from the top (document is fine)
+        }
+        String unusable = cursorUnusableReason(c);
+        if (unusable != null) {
+            cr.unusable = true;
+            recordCursorFailure(summary, unusable + CURSOR_UNUSABLE_REMEDY);
+            return cr;
         }
         if (c == null || c.getProperties() == null) {
             return cr; // absent → start from the top
-        }
-        Object type = c.getProperties().get("type");
-        if (!AUDIT_CURSOR_TYPE.equals(type)) {
-            cr.foreignCollision = true;
-            recordCursorFailure(summary, "audit cursor id '" + AUDIT_CURSOR_ID
-                    + "' is occupied by a foreign document (type=" + type + ") — terminal audit skipped, "
-                    + "the document is left untouched");
-            return cr;
         }
         Object v = c.getProperties().get(AUDIT_CURSOR_FIELD);
         cr.bookmark = (v instanceof String && !((String) v).isBlank()) ? (String) v : null;
@@ -613,7 +686,9 @@ public class AclEpochFinalizationService {
     /**
      * Persist (or clear, when {@code bookmark==null}) the terminal-audit resume position with a
      * BOUNDED {@code _rev} CAS retry. A {@code putBack()==null} (409) is NOT success — it retries
-     * with a fresh read. A FOREIGN document at the id is never modified. On persistent failure it
+     * with a fresh read. An UNUSABLE document at the id (foreign type / unsupported
+     * {@code schemaVersion}) is never modified — the SAME {@link #cursorUnusableReason} the read
+     * path uses, so read and save can never disagree (review 2h [P2]). On persistent failure it
      * reports a {@code cursorFailure} + {@code more} (never a silent swallow — review 2g [P1]).
      */
     private void saveCursor(String repositoryId, String bookmark, ScanSummary summary) {
@@ -625,9 +700,11 @@ public class AclEpochFinalizationService {
                 recordCursorFailure(summary, "audit cursor re-read failed: " + e.getMessage());
                 return;
             }
-            if (c != null && c.getProperties() != null
-                    && !AUDIT_CURSOR_TYPE.equals(c.getProperties().get("type"))) {
-                recordCursorFailure(summary, "audit cursor id occupied by a foreign document — not saving");
+            // Re-checked on EVERY attempt: a concurrent writer may have replaced the cursor with a
+            // foreign / newer-version document between attempts.
+            String unusable = cursorUnusableReason(c);
+            if (unusable != null) {
+                recordCursorFailure(summary, unusable + " — not saving, the document is left untouched");
                 return;
             }
             // Reuse the fetched Document so its _attachments stubs (if any) and _rev are preserved.
@@ -635,7 +712,7 @@ public class AclEpochFinalizationService {
             out.setId(AUDIT_CURSOR_ID);
             Map<String, Object> props = (out.getProperties() != null) ? out.getProperties() : new LinkedHashMap<>();
             props.put("type", AUDIT_CURSOR_TYPE);
-            props.put("schemaVersion", AUDIT_CURSOR_SCHEMA_VERSION);
+            props.put(FIELD_SCHEMA_VERSION, AUDIT_CURSOR_SCHEMA_VERSION);
             if (bookmark == null) {
                 props.remove(AUDIT_CURSOR_FIELD);
             } else {

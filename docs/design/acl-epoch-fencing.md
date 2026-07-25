@@ -572,3 +572,22 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
     (standalone bean, zero production callers, no scheduler/init/cron). Verified live: atom 200,
     both patches success, scanner NOT auto-run, zero epoch-state / cursor docs in real content,
     counter present, CMIS create/read unaffected.
+  - **Increment 2h — strict cursor `schemaVersion` (a pre-wiring condition).** 2g wrote a
+    `schemaVersion` but never validated it, so an absent / null / non-integral / string / FUTURE
+    version was accepted as the current format and OVERWRITTEN with `1` on save. A single
+    `cursorUnusableReason(Document)` is now the ONE definition of "this build may use this cursor",
+    shared by the read AND the save path (they can never disagree), and re-checked on every save
+    CAS attempt: `type` must match exactly, and `schemaVersion` must be PRESENT and a STRICT
+    integer (`parseExactLong`) EQUAL to the build's version. **Migration contract: an unusable
+    cursor is never implicitly upgraded, downgraded, or clobbered** — it is reported as a
+    `cursorFailure` (+ `more`), the terminal audit is SKIPPED, and the document is left untouched;
+    the documented operator remedy is to DELETE the cursor (it holds only a resume bookmark, so
+    the sweep restarts from the top — exactly the normal wrap — with no correctness loss). A 2f-era
+    cursor (type present, no `schemaVersion`) is therefore NOT adopted silently. The stale
+    `runCursoredPass` Javadoc ("any cursor read/write failure degrades to bookmark=null") was
+    corrected to the real three-way contract: unusable DOCUMENT → skip fail-closed; transient READ
+    error → reported + start from the top; SAVE failure → reported + `more`. Six ITs pin
+    absent / explicit-null / `1.5` / `"1"` / `2` (each: cursorFailure, terminal audit skipped, and
+    `_rev` + properties + inline attachment byte-unchanged) plus a positive control that
+    `schemaVersion=1` is used normally. Mutation-tested: deleting the version check fails exactly
+    those five ITs. Epoch IT 49/49, epoch unit+IT 82/82.
