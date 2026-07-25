@@ -388,11 +388,15 @@ The following are therefore **required of the production implementation, in the 
    adopted Option A the readers are computed from the SAME raw documents as the epoch, so no cache
    is consulted and such a test would only assert that code we do not call was not called.)
 
-**WIRING GATES (all five must be closed before `AclEpochIndexWriter.write()` is put on the ACL
+**WIRING GATES (all FOUR must be closed before `AclEpochIndexWriter.write()` is put on the ACL
 path):** outbox ACK / enqueue (invariant 5) · migration stamping the initial
 `effective_acl_epoch` (else EVERY ACL update fails closed, by design — increment 4a) ·
 `content_incarnation` + content-writer fence (else a full-doc add re-clobbers `readers`) · §5.1
-quarantine operational contract · **principal tri-state (this section, item 3)**.
+quarantine operational contract.
+
+*Principal tri-state (item 3 above) was the fifth gate; it is **CLOSED by increment 5T** and is no
+longer a gate. Item 3 is retained as the statement of the requirement 5T satisfies, not as
+outstanding work.*
 
 ### 5.3 Adopted plan for the readers side (Option A) — increments 5R / 5T / 5S
 
@@ -427,11 +431,29 @@ defect class.
   - Preserved as-is (reported separately, NOT fixed here): `getAclInheritedWithDefault`'s two
     branches are byte-identical, so `capability.extended.permission.inheritance.toplevel` currently
     has no effect. Changing it would be a behaviour change and would invalidate the golden.
-- **5T — tri-state `PrincipalResolver`** (`EXISTS` / `NOT_FOUND` / `UNAVAILABLE`). The real work is
-  in the principal DAO, which collapses failures to `null` today. STRICT callers (the index /
-  fenced-writer path) throw on `UNAVAILABLE` and omit on `NOT_FOUND`; NON-strict callers (the CMIS
-  runtime) keep today's omit, so a transient fault does not fail a live request — the same
-  strict/non-strict split already used for ancestors.
+- **5T — tri-state `PrincipalResolver`** (`FOUND` / `NOT_FOUND` / `UNAVAILABLE`): **DONE.** Two
+  halves, shipped together (per §5.2 item 3 — the corrected model; an earlier draft of this bullet
+  wrongly named the CMIS runtime as the non-strict consumer, which it is not: the CMIS runtime
+  compares principal ids as STRINGS and never resolves them here).
+  - **(1)** The real work is in the principal DAO, which collapsed BOTH "absent" and "the query
+    could not be served" to `null` via a single `CollectionUtils.isEmpty`. `lookupUserById` /
+    `lookupGroupById` now return the tri-state from that one collapse point — no new `try`/`catch`,
+    because `queryView` already separates `NotFoundException → null` from a 0-row empty list.
+    `UNAVAILABLE` throws `PrincipalUnavailableException`; `NOT_FOUND` keeps today's omit. The throw
+    is deliberately path-INDEPENDENT: both callers need the same fact and differ only in what they
+    do with it.
+  - **(2)** The real non-strict consumers are the ORDINARY INDEX WRITE and the RAG live gate. The
+    ordinary path in `SolrUtil` no longer ends at a bare `log.warn`: the strict/ordinary decision is
+    extracted into `onReadersComputationFailed`, which throws under strict and, on the ordinary
+    path, keeps the fail-closed empty `readers` for visibility **but ENQUEUES the object for
+    reconciliation** (`READERS_COMPUTATION_FAILURE`), so the stale-deny is retried durably instead
+    of waiting for the next ACL change or a full reindex.
+  - Verification: 4 ITs on a real CouchDB (unavailability produced by DELETING the design document,
+    not by a mock returning null) + 4 unit tests on the seam. Mutation-bound: collapsing the DAO
+    back to `null → NOT_FOUND` fails exactly the two `UNAVAILABLE` ITs and nothing else.
+  - Accepted residual (P3): the one-line `catch → seam` call inside `createSolrDocument` is not
+    itself mutation-covered; `SolrUtilReadersFailureTest` states in its own Javadoc what it does not
+    claim.
 - **5S — the snapshot carries the RAW LOCAL (pre-merge) ACL of every dependency**, `readers` are
   computed from that same chain at the same `_rev`, and the `ReadersComputer` SPI plus §5.2's
   unenforceable contract are DELETED. Merged results are never carried — only raw local ACEs, so
@@ -560,8 +582,9 @@ path; and a live re-index of `bbc119345228953e3405c85bdb36b096` producing byte-i
 `[group:bedroom:GROUP_EVERYONE, user:bedroom:admin, user:bedroom:system]`. **Playwright has NOT been
 run** — it remains outstanding for 5R-b.
 
-**Next:** 5T (tri-state `PrincipalResolver`) and 5S (snapshot carries the raw local ACLs; the
-`ReadersComputer` SPI and §5.2 are deleted).
+**Next:** 5S — the snapshot carries the raw local (pre-merge) ACLs, `readers` are computed from the
+same chain at the same `_rev`, and the `ReadersComputer` SPI plus §5.2's unenforceable contract are
+DELETED. (5R and 5T are done.) Production wiring remains NO-GO until the four gates above are closed.
 
 **Process correction:** any "verified live" claim in this document or in a test comment must carry
 the command and its raw output. This one did not, and the reviewer's independent Browser-Binding,
@@ -1099,3 +1122,12 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
     requirements — which the SPI boundary cannot enforce — are recorded as §5.2, a pre-wiring
     obligation with its own required tests, so they are not lost between increments.
     <br>Verification: 20 ITs; the empty-list rejection is mutation-bound.
+  - **Increment 4c — §5.2 over-claim withdrawn, wiring gates named, Option A adopted.** §5.2 item 3
+    had claimed unreadable ancestors AND principals both throw; only the ancestor half was true, so
+    the principal half was re-stated as an open gate (now closed by 5T). See §5.3.
+  - **Increment 5R — ACL semantics extracted into pure functions (zero behaviour change).** 5R-a
+    captured the golden + the cross-path report; 5R-b moved the inheritance merge, the token layer
+    and the relationship union into `AclSemantics`, leaving ONE implementation for all three former
+    paths. The golden did not move. See §5.3.
+  - **Increment 5T — principal tri-state + durable retry on the ordinary index path: DONE.**
+    Detail in §5.3; this closed the fifth wiring gate.
