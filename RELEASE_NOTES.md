@@ -1,8 +1,9 @@
 # NemakiWare Release Notes
 
 User-facing changelog. For per-commit detail see
-[`CLAUDE.md`](CLAUDE.md); for design rationale see
-[`docs/design/`](docs/design/).
+[`docs/history/development-log.md`](docs/history/development-log.md); for design
+rationale see [`docs/design/`](docs/design/). [`CLAUDE.md`](CLAUDE.md) now holds
+only repository gotchas.
 
 ---
 
@@ -4902,5 +4903,7 @@ is retained for traceability.
 
 ## Prior releases
 
-See the per-RC history block in [`CLAUDE.md`](CLAUDE.md#現在のバージョン)
-for RC1 through RC14 (and RC15/RC3 detail).
+See the per-RC history block in
+[`docs/history/development-log.md`](docs/history/development-log.md)
+for RC1 through RC14 (and RC15/RC3 detail). It was moved there verbatim from
+`CLAUDE.md` on 2026-07-26.

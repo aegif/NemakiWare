@@ -247,7 +247,7 @@ rm -rf tck-reports/
 - `README.md` (this file) - Docker environment setup and usage
 - `README-TCK.md` - TCK testing procedures and automation
 - `../TCK_TEST_GUIDE.md` - Step-by-step TCK testing guide
-- `../CLAUDE.md` - Complete project documentation
+- `../CLAUDE.md` - Repository gotchas (see `../docs/history/development-log.md` for full history)
 
 ## Recent Updates (2025-06-21)
 
