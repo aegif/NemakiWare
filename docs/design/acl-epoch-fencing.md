@@ -439,11 +439,49 @@ Also confirmed while writing the corpus: the system-principal conversion is keye
 `PrincipalId.ANYONE_IN_DB` / `ANONYMOUS_IN_DB` (`"CMIS_ANYONE"` / `"CMIS_ANONYMOUS"`), and it
 rewrites BOTH direct and inherited ACEs.
 
-**Still to do in 5R-a before 5R-b starts:** the three-path cross-comparison report
-(`calculateAclInternal` vs `expandToReaders` vs `SolrUtil.relationshipReaders`) that decides where
-an explicit behaviour-convergence commit is needed. The token-projection layer is already known to
-add one rule the ACE layer does not have — an absent/empty ACL becomes ADMIN-ONLY readers — so at
-minimum that rule must land in the shared `readerTokens`, not be lost in the move.
+**5R-a cross-path report (DONE — `AclSemanticsCrossPathReportTest`).** Reported in three separate
+layers so that "the paths disagree and one must win" is never confused with "this layer legitimately
+adds a rule".
+
+- **LAYER 1 (ACE) — no second ACE computation exists.** `expandToReaders` does not re-derive the
+  effective ACEs; it calls `calculateAcl`. Pinned for every corpus case by projecting
+  `calculateAcl`'s own output with the layer-2 rules and requiring it to equal the production
+  expander's output. **No behaviour-convergence commit is needed for the merge itself**, with ONE
+  exception, below.
+- **LAYER 2 (token) — the token layer adds exactly three rules, all MUST-CARRY into the shared
+  `readerTokens`.** (A) a read-permission filter: an ACE without `cmis:read`/`cmis:all` yields no
+  token; (B) an absent/empty ACL — and also "nothing survived rule A" — becomes ADMIN-ONLY
+  (fail-closed); (C) a principal that resolves to neither a user nor a group contributes nothing
+  (this is the under-grant 5T converts to a tri-state; here it is only PINNED). None of these is a
+  path disagreement; losing any of them in the move would be a fail-closed regression.
+- **LAYER 3 (relationship) — expanding a relationship as ordinary content collapses to admin-only**,
+  i.e. the readers of NEITHER endpoint, because a relationship persists an empty local ACL with
+  `aclInherited=true` and no parent, so it hits rule B. This is why the index path branches on kind
+  and why §5.3 forbids `self expandToReaders`. The union (`read(source) OR read(target)`) and the
+  dangling-endpoint-contributes-nothing rule are pinned alongside it.
+
+**LAYER 1 FINDING — system-principal grants are lost between the two layers (verified live, not
+inferred).** The ACE layer rewrites `CMIS_ANYONE` / `CMIS_ANONYMOUS` to
+`info.getPrincipalIdAnyone()` / `…Anonymous()`, while the token layer recognises the hardcoded
+literal `"cmis:anyone"` / `"cmis:anonymous"`. The conversion TARGET and the recognition CONSTANT are
+independent and nothing ties them together. In the live `bedroom` repository
+`principalAnyone`/`principalAnonymous` are **null**, so a `CMIS_ANYONE` ACE ends up with a NULL
+principal id and the token layer drops it silently.
+
+Verified against the running system: two live documents carry `CMIS_ANYONE:cmis:read`, and their
+indexed readers are `[group:bedroom:GROUP_EVERYONE, user:bedroom:admin, user:bedroom:system]` — no
+anyone token at all. (The loss is currently MASKED because those documents also inherit a
+`GROUP_EVERYONE` grant; a document granted to anyone WITHOUT such an inherited grant would be
+invisible to non-admin search.) The same two documents also show rule C in the wild: three
+`cmis:all` ACEs for deleted test users produce no tokens — correct for genuinely deleted principals,
+indistinguishable from a DAO fault, which is exactly the 5T gap.
+
+**Decision required before 5R-b** (per §5.3 the authority is `calculateAclInternal`, so this cannot
+be folded into the extraction): is this a MISCONFIGURATION (the repository should define
+`principalAnyone = cmis:anyone`) or a CODE defect (the conversion should be a no-op when its target
+is null, and/or the two sides should share one constant)? Both current behaviours are pinned by
+`layer1_FINDING_systemPrincipalGrantsAreLostBetweenTheAceAndTokenLayers`, so 5R-b preserves whatever
+is decided until an explicit convergence commit changes it.
 
 ## 6. Conflict table (v2)
 
