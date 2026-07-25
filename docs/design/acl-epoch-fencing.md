@@ -296,6 +296,42 @@ soon to be the durable outbox's obligation — is silently lost. Therefore:
 (The PWC purge fix is implemented AHEAD of the epoch work — approved as
 independent.)
 
+### 5.1 Quarantined dependency: operational contract (pre-wiring obligation)
+
+A QUARANTINED document is a declaration that its state/epoch may NOT be used as a
+correctness basis, so the effective-epoch walk refuses it (increment 3/3a). Accepted
+consequence, confirmed in review: **a quarantined ANCESTOR blocks its whole subtree's
+ACL-index refresh until repaired.** Reading "just the epoch" from a quarantined document
+was explicitly rejected — an exception like that dissolves what quarantine means.
+
+Because the blast radius is subtree-wide, the following are **required before the
+effective-epoch walk is wired into the production ACL write path** (they belong to the
+ACL-UPDATE / queue increments; none of them exists yet):
+
+1. **The task is RETAINED** — a walk that fails on a quarantined dependency must neither
+   delete the reconciliation task nor mark it terminal-FAILED. It stays PENDING so it
+   resumes automatically once the quarantine is cleared (the same posture as the
+   `RAG_PURGE` blocked-by-disabled-RAG case in §5).
+2. **The blocker is identifiable** — the failure must name the QUARANTINED ancestor id (not
+   only the blocked object), and expose a metric (e.g. `quarantineBlockedTasks` plus the
+   distinct blocking ancestor ids) so an operator can find the one document whose repair
+   unblocks an entire subtree. A log line per occurrence at WARN, deduplicated per
+   ancestor, so a large subtree does not flood.
+3. **Capped backoff** — retries use the queue's existing capped exponential backoff; a
+   quarantine is repaired on human timescales, so the retry rate must not be tied to the
+   normal poll interval.
+4. **Repair is a SINGLE CAS** — the documented repair normalizes the epoch fields AND clears
+   `aclEpochQuarantined` in ONE `_rev` CAS. Clearing the marker first would let a scanner
+   pass observe the still-anomalous document and immediately re-quarantine it (and the
+   direct-finalizer rejection of increment 2d assumes a repair clears the marker in the
+   same commit).
+5. **Automatic resumption** — after repair, no manual re-enqueue may be necessary: the
+   retained task's next attempt succeeds. An IT must prove quarantine → blocked → repair →
+   the SAME task completes.
+
+Until these exist, the walk is correct but the operational story is not, which is one
+reason increment 3/3a stays off the write path.
+
 ## 6. Conflict table (v2)
 
 | A ↓ \ B → | ACL-UPDATE (higher e) | ACL-UPDATE (equal e) | ACL-UPDATE (lower e) | CONTENT-UPDATE | CREATE/batch | RAG block |
@@ -616,13 +652,48 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
     closed; a genuinely dangling relationship endpoint contributes nothing (the
     `SolrUtil.relationshipReaders` precedent); a genuinely deleted TARGET returns `null` so the
     caller completes instead of retrying.
-    <br>**Decision needing reviewer confirmation:** a QUARANTINED *ancestor* blocks its whole
-    subtree's ACL-index refresh until repaired. Chosen deliberately over deriving a fence value
-    from a document the epoch machine has already declared corrupt, but the blast radius is
-    subtree-wide, so say if the opposite trade-off is preferred.
+    <br>**Quarantine decision — CONFIRMED in review:** a QUARANTINED *ancestor* blocks its whole
+    subtree's ACL-index refresh until repaired; reading "just the epoch" from a quarantined
+    document was explicitly rejected. The operational obligations that must accompany it before
+    production wiring are §5.1.
     <br>**Staging:** standalone bean, ZERO production callers, no scheduler/init/cron, and it
     performs NO writes at all (read-only against CouchDB). 28 ITs against live CouchDB over the
     real persisted document shape; mutation-tested three ways (removing the pending gate fails 5
     ITs; ignoring `aclInherited=false` fails the walk-stop IT; a always-true `revalidate` fails 6
     ITs). Epoch unit+IT 110/110. Live: atom 200, no bean-context error, nothing auto-runs, and
     zero `aclEpochState` / `aclSourceEpoch` documents in real content.
+  - **Increment 3a — four correctness defects in the increment-3 walk (review; 3 was rejected).**
+    1. **Dangling endpoints were not recorded.** `walkChain` returned 0 for a 404 endpoint without
+       recording anything, and `revalidate` only re-checks RECORDED dependencies — so an endpoint
+       recreated under the same id left the relationship document untouched, revalidation passed,
+       and a fence value computed WITHOUT that chain could be CAS-ed. Absences are now recorded as
+       NEGATIVE dependencies (`exists=false`) and revalidation fails if one has reappeared.
+    2. **Quarantine presence contract.** The walk accepted `aclEpochQuarantined=false` as normal,
+       contradicting the state machine (absent = usable, `true` = quarantined, ANY other present
+       value = malformed). A false-marked corrupt document could contribute a high epoch and fence
+       out later correct writers. PRESENCE alone now disqualifies.
+    3. **`RECONCILE_ENQUEUED` invariants were unchecked.** Because ENQUEUED deliberately does NOT
+       gate, an ENQUEUED document with a missing/non-UUID mutation id or a missing/zero/negative
+       epoch fed a wrong fence value directly. FINALIZED and ENQUEUED now both require a canonical
+       UUID and a strictly positive epoch.
+    4. **Relationship detection and topology extraction were fail-open.** Detection used "carries
+       both endpoint fields", so a relationship with one malformed endpoint field was demoted to
+       ordinary content and BOTH chains vanished from the fence value; and the id extractor
+       collapsed present-null / non-String / blank to "absent". Detection is now the PERSISTED base
+       type (`type == "cmis:relationship"` — the value `Relationship`'s constructor writes, so
+       SUBTYPED ingest relationships such as `nemaki:hasAttachment` are still detected); a
+       relationship MUST carry two present, non-blank endpoint ids; only a resolvable-id-but-404
+       referent is dangling; `parentId`/`sourceId`/`targetId` present-null / non-String / blank are
+       anomalies; and a NON-relationship carrying endpoint fields is refused rather than guessed
+       at. A document with no `type` at all is walked as ordinary content (backward compatibility)
+       — safe because the endpoint-field rule rejects it if it might be a relationship.
+    <br>**Shared validator (the structural fix):** the finalization service and the effective-epoch
+    service each had their own validation and their own nested `AclEpochAnomalyException`, which is
+    how #2 and #3 arose. There is now ONE top-level `AclEpochAnomalyException` and ONE
+    `AclEpochFields` validator (`requireNotQuarantined` + `validate(..., stateRequired)`) that both
+    sides call, so the state machine's owner and its consumer cannot diverge again.
+    <br>Verification: 43 effective-epoch ITs (+15) and 49 finalization ITs unchanged (the refactor
+    is behaviour-preserving); epoch unit+IT 125/125. Each of the four fixes is mutation-bound:
+    not recording absences fails 2 ITs; accepting a `false` marker fails 1 walk IT + 1 finalization
+    IT; dropping the ENQUEUED invariants fails 4 walk ITs + 2 finalization ITs; reverting to the
+    endpoint-field heuristic fails 2 ITs. Live: atom 200, nothing auto-runs, real content untouched.

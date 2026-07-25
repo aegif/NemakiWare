@@ -1291,9 +1291,10 @@ scheduler/init/cron なし・**書込みを一切行わない** read-only)。
   (`AclEpochUnavailableException`。strict `calculateAcl` と同契約で、継承 grant を黙って落として under-visible な fence 値を
   書かない)/ 循環・hop cap 超過(既定128)は fail-closed / **dangling endpoint は寄与ゼロ**(`SolrUtil.relationshipReaders`
   の前例)/ **target が実在しない場合のみ null 返却**(caller は retry でなく complete)。
-- **⚠ レビュー確認事項**: **quarantine された祖先はその subtree 全体の ACL 索引更新を修復まで停止**させる。「epoch machine が
-  corrupt と宣言済みの文書から fence 値を導く」よりは安全側と判断したが、影響範囲が subtree 全体なので逆の trade-off を
-  望む場合は指示ください。
+- **quarantine 方針(レビューで確認済)**: **quarantine された祖先はその subtree 全体の ACL 索引更新を修復まで停止**させる。
+  「epoch だけ読めるなら使う」例外は quarantine の意味を崩すため**却下**。ただし影響範囲が subtree 全体なので、**本番配線前の
+  必須義務**を設計 §5.1 に明文化(task を削除/terminal FAILED にせず保持 / 阻害している祖先 id を metric+WARN で特定可能 /
+  capped backoff / 修復は epoch state と quarantine marker を**同一 CAS** で正常化 / 修復後は同一 task が自動再開することを IT で証明)。
 - **検証**: 実 CouchDB IT **28/28**(実際の永続形に対して: 継承 max / 非継承ノードで停止 / absent 既定 / 移行前 0 /
   pending gate(self・祖先・relationship 祖先・FINALIZED gate と ENQUEUED 非gate) / quarantine・非整数・負・present-null・
   未知 state 拒否 / 親不読 retryable / 循環 / hop cap / relationship の両 chain max・dangling・共有祖先を循環誤検知しない /
@@ -1301,6 +1302,32 @@ scheduler/init/cron なし・**書込みを一切行わない** read-only)。
   **110/110**。**mutation test 3種で bind 証明**(pending gate 削除→5件失敗 / `aclInherited=false` 停止削除→walk-stop 失敗 /
   revalidate 常時 true→6件失敗)。実機: atom 200・bean context エラーなし・**何も自動実行されない**・実 content に
   `aclEpochState` / `aclSourceEpoch` 文書ゼロ・CMIS 正常。
+
+**増分3a: 増分3 の差し戻し理由 P1×4 を閉塞(effective-epoch の正当性)**:
+- **[P1] dangling endpoint の「不存在」を snapshot に記録していなかった**: `walkChain` は 404 で 0 を返すだけ、`revalidate` は
+  **記録済み依存しか再検査しない**。よって「source が 404 の状態で snapshot → 同一 ID で endpoint が復活 → **relationship 文書自体は
+  不変**なので revalidate が true → endpoint 抜きで計算した epoch を CAS」が成立していた。**negative dependency**(`exists=false`)を
+  記録し、revalidate で**再出現したら false** にした。
+- **[P1] quarantine presence 契約が state machine と不一致**: `aclEpochQuarantined=false` を正常受理していた(既存契約は absent のみ
+  処理可・true は quarantine 済・**その他の present 値は malformed**)。false marker の破損文書から高い epoch を取り込むと後続の
+  正常 writer を fence し得る。**containsKey で presence 判定**し、値に関わらず利用禁止に。
+- **[P1] `RECONCILE_ENQUEUED` の不変条件を未検証**: ENQUEUED は**意図的に gate しない**ため、mutationId 欠落/非UUID や epoch
+  欠落/0/負でも settled 依存として fence 値になっていた。**FINALIZED と ENQUEUED は canonical UUID + 正の epoch 必須**に。
+- **[P1] relationship 判定と topology 抽出が fail-open**: 「両 endpoint field を持つか」で判定していたため、**片方が欠落/null/
+  非String/blank だと通常 content に降格して両 endpoint chain が丸ごと消失**。`str()` も型不正を全て「欠落」に縮退していた。
+  判定を**永続化された基底型 `type=="cmis:relationship"`**(`Relationship` の ctor が書く値。**サブタイプ**
+  `nemaki:hasAttachment` 等も検出可)に変更し、relationship は **sourceId/targetId が present・非blank String 必須**、
+  **ID はあるが参照先 404 の場合だけ dangling**、`parentId`/`sourceId`/`targetId` の present-null・非String・blank は anomaly、
+  **非 relationship が endpoint field を持つ場合も anomaly**(安全側)。`type` 欠落は後方互換で通常 content 扱い(endpoint field
+  を持てば上記規則で弾かれるので安全)。IT fixture も実永続形どおり `type` を持たせた。
+- **構造的修正(再発防止)**: 上記 #2/#3 は「finalization と effective-epoch が別々の検証と別々の nested
+  `AclEpochAnomalyException` を持っていた」ことが原因。**top-level `AclEpochAnomalyException` + 共通
+  `AclEpochFields`**(`requireNotQuarantined` + `validate(..., stateRequired)`)に集約し、state machine の所有者と消費者が
+  二度と乖離しないようにした。
+- **検証**: effective-epoch IT **43/43**(+15)、finalization IT **49/49 据え置き**(共通化は挙動保存)、epoch unit+IT **125/125**。
+  **4修正すべて mutation-bound**(absence 未記録→2件失敗 / false marker 受理→walk 1件+finalization 1件失敗 / ENQUEUED 不変条件
+  削除→walk 4件+finalization 2件失敗 / endpoint-field ヒューリスティックへ戻す→2件失敗)。実機: atom 200・何も自動実行されない・
+  実 content 無変更。
 
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
