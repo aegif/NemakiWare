@@ -301,6 +301,19 @@ public class AclSemanticsCrossPathReportTest {
             RepositoryInfoMap infoMap = mock(RepositoryInfoMap.class);
             PropertyManager propertyManager = mock(PropertyManager.class);
             principalService = mock(PrincipalService.class);
+            // Increment 5T: the resolver uses the TRI-STATE probes. Derive them from the
+            // getXById stubs each test installs, so the report keeps testing PROJECTION rather
+            // than availability. A test that wants UNAVAILABLE stubs lookup* explicitly. A
+            // forgotten getXById stub yields NOT_FOUND (omit), NOT UNAVAILABLE — only removing
+            // this Answer would make the probe return null and fail closed.
+            lenient().when(principalService.lookupUserById(anyString(), anyString()))
+                    .thenAnswer(inv -> principalService.getUserById(inv.getArgument(0), inv.getArgument(1)) != null
+                            ? jp.aegif.nemaki.acl.PrincipalLookup.FOUND
+                            : jp.aegif.nemaki.acl.PrincipalLookup.NOT_FOUND);
+            lenient().when(principalService.lookupGroupById(anyString(), anyString()))
+                    .thenAnswer(inv -> principalService.getGroupById(inv.getArgument(0), inv.getArgument(1)) != null
+                            ? jp.aegif.nemaki.acl.PrincipalLookup.FOUND
+                            : jp.aegif.nemaki.acl.PrincipalLookup.NOT_FOUND);
 
             @SuppressWarnings("unchecked")
             NemakiCache<Acl> aclCache = mock(NemakiCache.class);

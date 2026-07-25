@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.acl.AclSemantics;
+import jp.aegif.nemaki.acl.PrincipalLookup;
 import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
@@ -137,11 +138,15 @@ public class ACLExpander {
         // differently. Behaviour is unchanged.
         List<String> tokens = AclSemantics.readerTokens(repositoryId, allAces,
                 new AclSemantics.PrincipalResolver() {
-                    @Override public boolean isUser(String repo, String principalId) {
-                        return principalService.getUserById(repo, principalId) != null;
+                    // Increment 5T: the TRI-STATE probes, not `getXById() != null`. The old form
+                    // could not tell a deleted principal from a lookup that could not be served,
+                    // so a missing design document / view / database silently produced an
+                    // admin-only reader set that was then written as a success.
+                    @Override public PrincipalLookup lookupUser(String repo, String principalId) {
+                        return principalService.lookupUserById(repo, principalId);
                     }
-                    @Override public boolean isGroup(String repo, String principalId) {
-                        return principalService.getGroupById(repo, principalId) != null;
+                    @Override public PrincipalLookup lookupGroup(String repo, String principalId) {
+                        return principalService.lookupGroupById(repo, principalId);
                     }
                 });
         if (log.isDebugEnabled()) {

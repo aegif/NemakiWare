@@ -56,6 +56,23 @@ public class ACLExpanderTest {
 
     @BeforeEach
     public void setUp() {
+
+        // Increment 5T: the resolver now uses the TRI-STATE probes. Derive them from the
+        // existing getXById stubs so every pre-5T case keeps its meaning (present -> FOUND,
+        // absent -> NOT_FOUND). A test that wants UNAVAILABLE stubs lookup* explicitly. Note what this Answer does
+        // NOT give you: a forgotten getXById stub yields NOT_FOUND (omit), not UNAVAILABLE —
+        // only removing the Answer itself would make the probe return null and fail closed.
+        // Availability is exercised by the ITs, not here.
+        org.mockito.Mockito.lenient().when(principalService.lookupUserById(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(inv -> principalService.getUserById(inv.getArgument(0), inv.getArgument(1)) != null
+                        ? jp.aegif.nemaki.acl.PrincipalLookup.FOUND
+                        : jp.aegif.nemaki.acl.PrincipalLookup.NOT_FOUND);
+        org.mockito.Mockito.lenient().when(principalService.lookupGroupById(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(inv -> principalService.getGroupById(inv.getArgument(0), inv.getArgument(1)) != null
+                        ? jp.aegif.nemaki.acl.PrincipalLookup.FOUND
+                        : jp.aegif.nemaki.acl.PrincipalLookup.NOT_FOUND);
         aclExpander = new ACLExpander(principalService, contentService);
         // Default: contentService.calculateAcl returns the content's ACL
         when(contentService.calculateAcl(eq(REPO_ID), any(Content.class))).thenAnswer(

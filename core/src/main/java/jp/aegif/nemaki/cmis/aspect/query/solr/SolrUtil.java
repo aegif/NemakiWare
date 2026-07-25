@@ -1058,6 +1058,71 @@ public class SolrUtil implements ApplicationContextAware {
 	 *       were clean. See SearchIndexReconciliationScheduler.</li>
 	 * </ul>
 	 */
+	/**
+	 * The ONE decision taken when readers cannot be computed. Extracted so it can be bound by a
+	 * test: it is the whole difference between the two paths.
+	 *
+	 * <ul>
+	 *   <li><b>strict</b> (reconciliation re-drive) — THROW. A swallowed failure would persist an
+	 *       EMPTY readers set (the doc becomes invisible to every non-admin) and then let the
+	 *       poller delete the task as if it had reconciled. Failing keeps the task counted and
+	 *       retried.</li>
+	 *   <li><b>ordinary</b> — return, so the caller leaves {@code readers} empty and the query-side
+	 *       fq excludes the doc for non-admin users (fail-closed, never a leak), AND enqueue it for
+	 *       reconciliation. Before increment 5T this was a bare {@code log.warn}: because this runs
+	 *       inside {@code createSolrDocument}, execution continued and the document was indexed
+	 *       with an empty readers set as a SUCCESS, on the most frequent path there is (every
+	 *       create and update), with no durable retry — so the stale-deny survived until the next
+	 *       ACL change or a full reindex.</li>
+	 * </ul>
+	 */
+	void onReadersComputationFailed(String repositoryId, String objectId, Exception cause, boolean strict) {
+		if (strict) {
+			throw new RuntimeException("Strict reindex: readers computation failed for "
+					+ objectId + ": " + (cause == null ? "unknown" : cause.getMessage()), cause);
+		}
+		log.warn("Failed to compute readers for content {}: {} — enqueueing for reconciliation",
+				objectId, cause == null ? "unknown" : cause.getMessage());
+		enqueueReadersReconcile(repositoryId, objectId, cause);
+	}
+
+	/**
+	 * Increment 5T. Records a readers-computation failure on the ORDINARY (non-strict) index path so
+	 * the fail-closed empty {@code readers} is retried durably instead of persisting silently.
+	 *
+	 * <p>Best-effort by construction: this runs inside the ordinary index write, which must not be
+	 * failed by a queue problem. {@code enqueue} never throws, and its own failures are already
+	 * surfaced through the reconciliation {@code enqueueFailureCount} metric. The strict path does
+	 * not come here at all — it rethrows so the task is counted and retried.
+	 */
+	private void enqueueReadersReconcile(String repositoryId, String objectId, Exception cause) {
+		try {
+			jp.aegif.nemaki.reconcile.SearchIndexReconciliationService queue = reconciliationQueue();
+			if (queue == null) {
+				log.warn("Readers-computation failure for {} could NOT be enqueued: reconciliation "
+						+ "queue is not wired; the empty readers set will persist until the next ACL "
+						+ "change or a full reindex", objectId);
+				return;
+			}
+			queue.enqueue(repositoryId, objectId,
+					"READERS_COMPUTATION_FAILURE: " + (cause == null ? "unknown" : cause.getMessage()));
+		} catch (Exception e) {
+			log.warn("Failed to enqueue readers-computation failure for {}: {}", objectId, e.getMessage());
+		}
+	}
+
+	/** Lazily resolved, like {@link #getACLExpander}, to avoid a startup dependency cycle. */
+	private jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconciliationQueue() {
+		if (applicationContext == null) {
+			return null;
+		}
+		try {
+			return applicationContext.getBean(jp.aegif.nemaki.reconcile.SearchIndexReconciliationService.class);
+		} catch (Exception e) {
+			return null;
+		}
+	}
+
 	private SolrInputDocument createSolrDocument(String repositoryId, Content content, boolean strict) {
 		if (log.isDebugEnabled()) {
 			log.debug("Creating Solr document for content: {} (type: {}) in repository: {}",
@@ -1359,17 +1424,7 @@ public class SolrUtil implements ApplicationContextAware {
 					}
 				}
 			} catch (Exception e) {
-				if (strict) {
-					// Reconciliation re-drive: a swallowed readers-computation failure
-					// would persist an EMPTY readers set (the doc becomes invisible to
-					// every non-admin) and then let the poller delete the task as if it
-					// had reconciled. Fail so the task is counted + retried instead.
-					throw new RuntimeException("Strict reindex: readers computation failed for "
-							+ content.getId() + ": " + e.getMessage(), e);
-				}
-				// Fail-closed: leave `readers` empty so the query-side fq excludes
-				// this doc for non-admin users until it is re-indexed. Never leaks.
-				log.warn("Failed to compute readers for content {}: {}", content.getId(), e.getMessage());
+				onReadersComputationFailed(repositoryId, content.getId(), e, strict);
 			}
 		}
 
