@@ -787,3 +787,36 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
     direction / partial / extra fields), confirming that a permanently wrong definition would
     otherwise full-scan on every tick. Positive controls pin that the steady state (marker cleared,
     valid epoch, no state) is still a clean skip and that a correctly-defined database still scans.
+  - **Increment 4 — the fenced ACL-group writer (`AclEpochIndexWriter`, §4.2 steps 3/5/6 + §4.3).**
+    Completes the unified write contract whose read half is increment 3. The order is fixed exactly
+    as specified: walk → compute → **RTG** → dependency **revalidate** → **CAS**. The realtime GET
+    precedes the revalidation so that ANY Solr write landing after it — including a correct
+    writer's — fails our CAS; a searcher query is never used (it lags by the soft-commit interval).
+    On **409 the payload is discarded and the whole walk restarts** — never a CAS retry with the
+    same readers. The §4.3 decision is implemented verbatim: stored epoch **>** mine → skip;
+    **<** → CAS; **==** with identical canonical readers → idempotent skip; **==** with divergent
+    readers → **authoritative recompute, then CAS the recomputed value** (never "my payload wins").
+    Only the ACL group (`readers` + `effective_acl_epoch`) is written, as an atomic `{set}` — name,
+    path, content and every other field are untouched (§4.4). Pending / quarantine / unavailable
+    propagate so the caller RETAINS its task (§5.1); exhausted restarts raise a retryable contention
+    exception rather than a silent success; a missing / non-numeric `_version_` fails closed; a
+    cross-repository id collision is refused.
+    <br>Readers are supplied through a `ReadersComputer` SPI rather than hard-wired to
+    `ACLExpander`, which is what keeps this increment unwired AND lets the concurrency ITs drive the
+    protocol deterministically.
+    <br>**Staging:** standalone bean, ZERO production callers, no scheduler / init / cron.
+    <br>**Verification:** 14 ITs against LIVE CouchDB + LIVE Solr; epoch unit+IT 169/169. The
+    determinism comes from overriding the package-private `realtimeGet` — exactly the point between
+    step 3 and step 5 — to inject a competing Solr write or a CouchDB dependency mutation, so the
+    race always happens instead of depending on timing. Covered: same-epoch collision (identical →
+    idempotent, divergent → authoritative recompute), 409 (restart + convergence, and a persistent
+    conflict → retryable contention), a dependency changed after the walk (restart, and the final
+    write carries the NEW epoch), pending and quarantine (NOTHING is written), ACL-group atomicity
+    (name / path / content / content_length survive), NOT_INDEXED, deleted, null-readers refusal and
+    cross-repository collision. Three mutations bind: skipping the revalidation fails the
+    dependency-change IT; letting the payload win on an equal epoch fails the divergence IT; caching
+    the snapshot + payload across retries (genuine payload reuse) fails three ITs.
+    <br>⚠ Persistent-format addition: a new Solr field `effective_acl_epoch` (long, optional).
+    Existing deployments must apply the updated `schema.xml` and RELOAD the core — the Solr data
+    directory is a volume, so an image rebuild alone does NOT update the schema. The field is
+    additive and optional, so an un-updated core keeps working until the writer is wired.

@@ -1392,6 +1392,28 @@ scheduler/init/cron なし・**書込みを一切行わない** read-only)。
   毎 tick 全走査になることの実証)。positive control として「steady state(marker 解除済・有効 epoch・state なし)は clean skip」
   「正しい定義の DB では通常どおり scan 成功」も固定。実機: atom 200・何も自動実行されない・CMIS 正常。
 
+**増分4: fenced ACL-group writer (`AclEpochIndexWriter`、§4.2 step 3/5/6 + §4.3)**:
+増分3 の read 側に対する **write 側**。ご指定の6条件をそのまま不変条件として実装(**ACL write path には未接続**、production caller
+ゼロ、scheduler/init/cron なし)。
+- **順序固定**: **walk → compute → RTG → dependency revalidate → CAS**。RTG を revalidate より**前**に置くことで、step 3 以降に
+  着地した Solr 書込み(正しい writer のものも含む)は必ず自分の CAS を失敗させる。searcher query は使わない(soft-commit 分だけ遅れる)。
+- **409 は payload を再利用せず walk から完全再実行**(同じ readers で CAS を retry しない)。
+- **§4.3 をそのまま実装**: stored > mine → skip / < → CAS / == かつ canonical readers 一致 → 冪等 skip /
+  **== かつ相違 → authoritative 再計算してその値を CAS**(「自分の payload が勝つ」は不採用)。
+- **ACL フィールドのみ atomic 更新**(`readers` + `effective_acl_epoch` の `{set}`)。name/path/content/content_length 等は不変(§4.4)。
+- **pending/quarantine/unavailable は伝播**して呼出元が task を保持(§5.1)。restart 枯渇は retryable な contention 例外(silent success
+  にしない)。`_version_` 欠落/非数値は fail-closed、repo 跨ぎ id 衝突は拒否。
+- readers は `ReadersComputer` SPI 経由(`ACLExpander` に直結しない)。これが未配線を保ちつつ IT で protocol を決定的に駆動できる理由。
+- **検証**: **実 CouchDB + 実 Solr** に対する IT **14/14**、epoch unit+IT **169/169**。決定性は package-private の `realtimeGet`
+  (= step 3 と step 5 のちょうど間)を override して競合書込み/依存変更を注入することで担保(タイミング依存にしない)。網羅:
+  同一 epoch 衝突(一致=冪等 / 相違=authoritative 再計算)、409(restart+収束 / 恒久衝突=retryable contention)、walk 後の依存変更
+  (restart し**新しい epoch** で書く)、pending・quarantine(**何も書かない**)、ACL-group の atomicity(name/path/content/content_length
+  が不変)、NOT_INDEXED、削除済み、null readers 拒否、repo 跨ぎ衝突。**mutation 3種が bind**(revalidate 削除→依存変更 IT 失敗 /
+  equal-epoch で payload 優先→相違 IT 失敗 / snapshot+payload を retry 跨ぎで cache= 真の payload 再利用→3件失敗)。
+- **⚠ 永続フォーマット追加**: Solr に新フィールド `effective_acl_epoch` (long・任意)。**既存環境は `schema.xml` を適用して core を
+  reload する必要**あり(Solr data ディレクトリは volume なので image 再ビルドだけでは反映されない)。additive/optional なので
+  writer を配線するまでは未更新の core でも動作する。
+
 ### 3.2.8 (2026-07-08) — マルチパートファイル名不正の 400 化
 
 ブランチ: `release/3.2.8` (off `master`)。ファズ波で最後まで残っていた低重要度
