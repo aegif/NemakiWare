@@ -28,7 +28,19 @@ services:
       # published on 0.0.0.0. Front it with TLS + a real IdP on any shared host.
       - "127.0.0.1:21000:21000"
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:21000/api/atlas/v2/types/typedefs/headers", "-u", "${ATLAS_USER:-admin}:${ATLAS_PASSWORD:-admin}"]
+      # wget, NOT curl: the Atlas image (ubuntu:20.04 + Atlas build) ships no curl, so the previous
+      # check could only ever fail — `exec: "curl": executable file not found in $PATH`. Atlas itself
+      # was healthy the whole time (the same URL answers 200 from the host), but the container stayed
+      # permanently `unhealthy`, and `depends_on: condition: service_healthy` then blocked `core` from
+      # starting on any stop/start cycle. A first `up` hid it: core starts during the 180s
+      # start_period, while health is still `starting`.
+      #
+      # `--auth-no-challenge` is required: Atlas answers the unauthenticated request in a way plain
+      # wget cannot negotiate (exit 6), so the credentials must be sent pre-emptively. Verified inside
+      # the running container — exit 0 on the real endpoint, exit 8 on a bad path.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "--auth-no-challenge",
+             "--user=${ATLAS_USER:-admin}", "--password=${ATLAS_PASSWORD:-admin}",
+             "http://localhost:21000/api/atlas/v2/types/typedefs/headers"]
       interval: 30s
       timeout: 10s
       retries: 10
