@@ -17,6 +17,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -699,6 +700,89 @@ public class AclEffectiveEpochServiceIT {
                 + "\"aclEpochMutationId\":\"" + AclEpochState.newMutationId() + "\"}");
         seedDocument("leaf", "root", true, 1L);
         assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "leaf"));
+    }
+
+    // ── the persisted ACL → raw local ACEs (increment 5S step 2/3) ──
+    //
+    // Added because a self-review found this branch had NO coverage at all: the projection unit test
+    // builds Dependencies directly, and every fixture above seeds documents WITHOUT an `acl` field,
+    // so only the ABSENT branch was ever executed. The code that will feed production readers was
+    // untested against a genuinely persisted ACL.
+
+    @Test
+    void parsesThePersistedAclIntoRawLocalAces() {
+        seedRaw("leaf", "{\"type\":\"cmis:document\",\"objectType\":\"cmis:document\","
+                + "\"aclInherited\":false,\"aclSourceEpoch\":3,"
+                + "\"acl\":{\"entries\":[{\"principal\":\"u1\",\"permissions\":[\"cmis:read\"]},"
+                + "{\"principal\":\"g1\",\"permissions\":[\"cmis:read\",\"cmis:write\"]}]}}");
+
+        List<jp.aegif.nemaki.model.Ace> aces = self("leaf").localAces;
+
+        assertEquals(2, aces.size(), "both persisted entries");
+        assertEquals("u1", aces.get(0).getPrincipalId());
+        assertEquals(List.of("cmis:read"), aces.get(0).getPermissions());
+        assertEquals("g1", aces.get(1).getPrincipalId());
+        assertEquals(List.of("cmis:read", "cmis:write"), aces.get(1).getPermissions());
+        assertTrue(aces.get(0).isDirect() && aces.get(1).isDirect(),
+                "CouchAcl.convertToNemakiAcl marks every STORED entry direct=true; the epoch parser "
+                        + "must agree or the merge would treat them as inherited");
+    }
+
+    @Test
+    void anAbsentAclYieldsNoAces() {
+        seedDocument("leaf", null, false, 1L);   // the helper writes no acl field at all
+        assertTrue(self("leaf").localAces.isEmpty());
+    }
+
+    @Test
+    void aPresentNullAclYieldsNoAces() {
+        // convertToNemakiAcl returns null for a null ACL, which the CMIS side turns into no ACEs.
+        seedRaw("leaf", "{\"type\":\"cmis:document\",\"aclInherited\":false,"
+                + "\"aclSourceEpoch\":1,\"acl\":null}");
+        assertTrue(self("leaf").localAces.isEmpty());
+    }
+
+    @Test
+    void anAclWithoutEntriesYieldsNoAces() {
+        seedRaw("leaf", "{\"type\":\"cmis:document\",\"aclInherited\":false,"
+                + "\"aclSourceEpoch\":1,\"acl\":{}}");
+        assertTrue(self("leaf").localAces.isEmpty());
+    }
+
+    @Test
+    void aNonObjectAclIsAnAnomaly() {
+        seedRaw("leaf", "{\"type\":\"cmis:document\",\"aclInherited\":false,"
+                + "\"aclSourceEpoch\":1,\"acl\":\"not-an-object\"}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "leaf"));
+    }
+
+    @Test
+    void nonListAclEntriesAreAnAnomaly() {
+        seedRaw("leaf", "{\"type\":\"cmis:document\",\"aclInherited\":false,"
+                + "\"aclSourceEpoch\":1,\"acl\":{\"entries\":\"nope\"}}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "leaf"));
+    }
+
+    @Test
+    void anAceWithoutAUsablePrincipalIsAnAnomaly() {
+        // Guessing here would silently DROP a grant and look like a successful computation.
+        seedRaw("leaf", "{\"type\":\"cmis:document\",\"aclInherited\":false,\"aclSourceEpoch\":1,"
+                + "\"acl\":{\"entries\":[{\"principal\":null,\"permissions\":[\"cmis:read\"]}]}}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "leaf"));
+    }
+
+    @Test
+    void aNonStringPermissionIsAnAnomaly() {
+        seedRaw("leaf", "{\"type\":\"cmis:document\",\"aclInherited\":false,\"aclSourceEpoch\":1,"
+                + "\"acl\":{\"entries\":[{\"principal\":\"u1\",\"permissions\":[42]}]}}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "leaf"));
+    }
+
+    /** The SELF dependency of a snapshot (recorded first by the walk). */
+    private AclEffectiveEpochService.Dependency self(String id) {
+        AclEffectiveEpochService.Snapshot snap = svc.snapshot(contentDb, id);
+        assertNotNull(snap, "the object must exist: " + id);
+        return snap.dependencies.get(0);
     }
 
     // ── fixtures / helpers ─────────────────────────────────────────

@@ -10,16 +10,19 @@ import jp.aegif.nemaki.util.constant.PrincipalId;
 
 /**
  * The ONE implementation of the ACL semantics (design {@code docs/design/acl-epoch-fencing.md}
- * §5.3 — increment 5R-b):
+ * §5.3 — increments 5R-b and 5S):
  * <ul>
  *   <li>the inheritance MERGE ({@link #mergeAces}) and the system-principal CONVERSION
- *       ({@link #convertSystemPrincipalIds}) — step 1;</li>
+ *       ({@link #convertSystemPrincipalIds}) — 5R-b step 1;</li>
  *   <li>the TOKEN projection ({@link #readerTokens} with its {@link PrincipalResolver}) and the
- *       relationship endpoint UNION ({@link #relationshipReaders}) — step 2.</li>
+ *       relationship endpoint UNION ({@link #relationshipReaders}) — 5R-b step 2;</li>
+ *   <li>the SHAPE of the traversal ({@link ChainNode}, {@link #effectiveAces}, {@link #resolveAcl})
+ *       — 5S. Sharing the merge alone was not enough: the recursion has three branches and a second
+ *       implementation of THOSE drifts just as easily.</li>
  * </ul>
  *
- * <p>The point of this class is to separate SEMANTICS from FETCH. Until now the merge lived inside
- * {@code AclServiceDelegate.calculateAclInternal}, welded to a traversal that resolves ancestors
+ * <p>The point of this class is to separate SEMANTICS from FETCH. The merge and the branch selection
+ * used to live inside {@code AclServiceDelegate}, welded to a traversal that resolves ancestors
  * through the CACHED content DAO. The ACL-epoch work needs the same semantics over an
  * AUTHORITATIVE (raw CouchDB) traversal, and re-implementing the merge there is precisely how the
  * two sides diverge — every defect found in increments 3a/3b/4b was a symptom of two traversals
@@ -96,8 +99,10 @@ public final class AclSemantics {
      * GROUP token for it rather than a dedicated {@code anyone:} token — see the cross-path report.
      *
      * <p>No guard on a null/unresolvable configured id: writing null through is the CURRENT
-     * behaviour, and hardening it belongs with the principal tri-state work (§5.2 wiring gate), not
-     * with a behaviour-preserving extraction.
+     * behaviour. Hardening it is a MISCONFIGURATION concern ({@code principal.anyone} unset or
+     * unresolvable) that 5R-a flagged and 5T did not cover — 5T tri-stated the principal DAO, not the
+     * configured system-principal ids. Recorded in design §10 as a known adjacent issue; the token
+     * layer is safe today (a null id short-circuits, an unresolvable one is NOT_FOUND and dropped).
      *
      * <p><b>The one deliberate deviation from the original</b> (review P3, stated plainly rather
      * than glossed): the original had no {@code aces == null} check and would have thrown an NPE.

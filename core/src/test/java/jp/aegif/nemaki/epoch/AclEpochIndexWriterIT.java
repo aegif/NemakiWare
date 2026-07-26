@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.impl.HttpJdkSolrClient;
@@ -37,6 +38,8 @@ import com.ibm.cloud.cloudant.v1.model.PutDocumentOptions;
 import com.ibm.cloud.sdk.core.security.BasicAuthenticator;
 import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
 
+import jp.aegif.nemaki.acl.AclSemantics;
+import jp.aegif.nemaki.acl.PrincipalLookup;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import jp.aegif.nemaki.epoch.AclEpochIndexWriter.WriteOutcome;
@@ -61,8 +64,70 @@ public class AclEpochIndexWriterIT {
 
     private String contentDb;
     private AclEffectiveEpochService epochService;
-    private AclEpochIndexWriter writer;
     private String solrId;
+
+    /**
+     * Resolves an explicit set of principals — "u1"/"u2" as users, "g1"/"g2" and the configured
+     * anyone group as groups. Everything else is genuinely absent.
+     *
+     * <p>Deliberately NOT prefix magic: an earlier {@code startsWith("g")} version failed to resolve
+     * {@code GROUP_EVERYONE} (capital G), the token was dropped, and the fail-closed fallback turned
+     * the whole set admin-only — the very stale-DENY these tests exist to catch, produced by the
+     * fixture rather than by the code under test.
+     *
+     * <p>Only the REAL-PATH tests consult it; the protocol tests inject their readers directly.
+     */
+    private static final AclSemantics.PrincipalResolver RESOLVER = new AclSemantics.PrincipalResolver() {
+        @Override public PrincipalLookup lookupUser(String repo, String id) {
+            return List.of("u1", "u2").contains(id) ? PrincipalLookup.FOUND : PrincipalLookup.NOT_FOUND;
+        }
+        @Override public PrincipalLookup lookupGroup(String repo, String id) {
+            return List.of("g1", "g2", "GROUP_EVERYONE").contains(id)
+                    ? PrincipalLookup.FOUND : PrincipalLookup.NOT_FOUND;
+        }
+    };
+
+    /**
+     * A writer whose readers are CHOSEN rather than projected (increment 5S step 3).
+     *
+     * <p>Most tests here pin the WRITE PROTOCOL — the fence decision, the 409 restart, the
+     * repository boundary — and those need a specific readers value at a specific moment, not one
+     * that happens to fall out of a CouchDB fixture. Overriding the package-private
+     * {@code computeReaders} is the same technique already used for {@code realtimeGet}.
+     *
+     * <p>The projection ITSELF is covered separately: {@code AclEffectiveEpochReadersProjectionTest}
+     * pins its semantics, and {@link #realPathProjectsTheReadersFromTheSeededAcl} +
+     * {@link #realPathInheritedSystemPrincipalSurvivesTheProjection} drive the UNOVERRIDDEN path so
+     * the seam cannot silently diverge from what production runs.
+     */
+    private class TestWriter extends AclEpochIndexWriter {
+        private final Function<AclEffectiveEpochService.Snapshot, List<String>> fn;
+
+        TestWriter(Function<AclEffectiveEpochService.Snapshot, List<String>> fn) {
+            this.fn = fn;
+            setEffectiveEpochService(epochService);
+        }
+
+        @Override List<String> computeReaders(AclEffectiveEpochService.Snapshot snapshot,
+                                              AclSemantics.PrincipalResolver resolver) {
+            return fn == null ? super.computeReaders(snapshot, resolver) : fn.apply(snapshot);
+        }
+    }
+
+    /** A wired writer that always returns {@code readers}. */
+    private TestWriter writerReturning(List<String> readers) {
+        return new TestWriter(snapshot -> readers);
+    }
+
+    /** A wired writer whose readers come from {@code fn} (for counting / null cases). */
+    private TestWriter writerComputing(Function<AclEffectiveEpochService.Snapshot, List<String>> fn) {
+        return new TestWriter(fn);
+    }
+
+    /** A wired writer that runs the REAL projection. */
+    private TestWriter realWriter() {
+        return new TestWriter(null);
+    }
 
     @BeforeAll
     static void connect() {
@@ -102,8 +167,18 @@ public class AclEpochIndexWriterIT {
 
         epochService = new AclEffectiveEpochService();
         epochService.setConnectorPool(pool);
-        writer = new AclEpochIndexWriter();
-        writer.setEffectiveEpochService(epochService);
+
+        // The REAL readers projection needs the root-folder id and the configured system principal
+        // ids; the fixtures below use "root" as the repository root.
+        jp.aegif.nemaki.cmis.factory.info.RepositoryInfo info =
+                mock(jp.aegif.nemaki.cmis.factory.info.RepositoryInfo.class);
+        lenient().when(info.getRootFolderId()).thenReturn("root");
+        lenient().when(info.getPrincipalIdAnyone()).thenReturn("GROUP_EVERYONE");
+        lenient().when(info.getPrincipalIdAnonymous()).thenReturn("anonymous");
+        jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap infoMap =
+                mock(jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap.class);
+        lenient().when(infoMap.get(contentDb)).thenReturn(info);
+        epochService.setRepositoryInfoMap(infoMap);
 
         solrId = "epoch-writer-it-" + UUID.randomUUID();
     }
@@ -128,7 +203,8 @@ public class AclEpochIndexWriterIT {
         seedDocument(solrId, "root", true, 2L);
         indexSolrDoc(solrId, "the original name", "/root/the original name", "the original body");
 
-        WriteOutcome o = writer.write(contentDb, solrId, solr, snap -> List.of("group:g1", "user:u1"));
+        WriteOutcome o = writerReturning(List.of("group:g1", "user:u1"))
+                .write(contentDb, solrId, solr, RESOLVER);
         assertEquals(WriteResult.UPDATED, o.result);
         assertEquals(5L, o.epoch, "max(self=2, root=5)");
 
@@ -148,14 +224,14 @@ public class AclEpochIndexWriterIT {
     void notIndexedWhenTheSolrDocumentDoesNotExist() throws Exception {
         seedFolder("root", null, false, 1L);
         seedDocument(solrId, "root", true, 1L); // in CouchDB but never indexed
-        WriteOutcome o = writer.write(contentDb, solrId, solr, snap -> List.of("user:u1"));
+        WriteOutcome o = writerReturning(List.of("user:u1")).write(contentDb, solrId, solr, RESOLVER);
         assertEquals(WriteResult.NOT_INDEXED, o.result);
     }
 
     @Test
     void deletedObjectIsSkippedSoTheCallerCompletesRatherThanRetries() throws Exception {
         indexSolrDoc(solrId, "orphan", "/orphan", "body"); // indexed, but absent from CouchDB
-        WriteOutcome o = writer.write(contentDb, solrId, solr, snap -> List.of("user:u1"));
+        WriteOutcome o = writerReturning(List.of("user:u1")).write(contentDb, solrId, solr, RESOLVER);
         assertEquals(WriteResult.SKIPPED_DELETED, o.result);
     }
 
@@ -168,7 +244,7 @@ public class AclEpochIndexWriterIT {
         indexSolrDoc(solrId, "n", "/n", "b");
         setAclGroup(solrId, List.of("user:fresh"), 99L); // a fresher ACL already landed
 
-        WriteOutcome o = writer.write(contentDb, solrId, solr, snap -> List.of("user:stale"));
+        WriteOutcome o = writerReturning(List.of("user:stale")).write(contentDb, solrId, solr, RESOLVER);
         assertEquals(WriteResult.SKIPPED_FRESHER, o.result);
         assertEquals(List.of("user:fresh"), readers(get(solrId)), "the fresher readers survive");
         assertEquals(99L, num(get(solrId), "effective_acl_epoch"));
@@ -181,7 +257,8 @@ public class AclEpochIndexWriterIT {
         indexSolrDoc(solrId, "n", "/n", "b");
         setAclGroup(solrId, List.of("group:g1", "user:u1"), 7L);
 
-        WriteOutcome o = writer.write(contentDb, solrId, solr, snap -> List.of("user:u1", "group:g1"));
+        WriteOutcome o = writerReturning(List.of("user:u1", "group:g1"))
+                .write(contentDb, solrId, solr, RESOLVER);
         assertEquals(WriteResult.SKIPPED_IDEMPOTENT, o.result,
                 "an order-only difference must be idempotent, not an endless divergence");
     }
@@ -196,15 +273,82 @@ public class AclEpochIndexWriterIT {
         setAclGroup(solrId, List.of("user:stored-only"), 7L);
 
         AtomicInteger computeCalls = new AtomicInteger();
-        WriteOutcome o = writer.write(contentDb, solrId, solr, snap -> {
+        WriteOutcome o = writerComputing(snapshot -> {
             computeCalls.incrementAndGet();
             return List.of("user:authoritative");
-        });
+        }).write(contentDb, solrId, solr, RESOLVER);
         assertEquals(WriteResult.UPDATED, o.result);
         assertTrue(computeCalls.get() >= 2, "the divergence forces an authoritative RECOMPUTE "
                 + "(walk again), not a reuse of the first payload: " + computeCalls.get());
         assertEquals(List.of("user:authoritative"), readers(get(solrId)));
         assertEquals(7L, num(get(solrId), "effective_acl_epoch"), "the epoch is unchanged");
+    }
+
+    // ── the REAL projection (no override) ──────────────────────────
+
+    /**
+     * Drives {@link AclEpochIndexWriter#write} with the projection UNOVERRIDDEN, so the seam the
+     * protocol tests above rely on cannot silently diverge from what production runs: the readers
+     * that land in Solr are the ones {@code Snapshot.readers} computes from the seeded ACLs.
+     */
+    @Test
+    void realPathProjectsTheReadersFromTheSeededAcl() throws Exception {
+        seedFolder("root", null, false, 3L, List.of(ace("g1", "cmis:read")));
+        seedDocument(solrId, "root", true, 1L, List.of(ace("u1", "cmis:read")));
+        indexSolrDoc(solrId, "n", "/n", "b");
+
+        WriteOutcome o = realWriter().write(contentDb, solrId, solr, RESOLVER);
+
+        assertEquals(WriteResult.UPDATED, o.result);
+        assertEquals(3L, o.epoch, "max(self=1, root=3)");
+        assertEquals(List.of(AclSemantics.formatGroupReader(contentDb, "g1"),
+                        AclSemantics.formatUserReader(contentDb, "u1")),
+                readers(get(solrId)),
+                "the object's own grant AND the inherited one, projected from the SAME snapshot");
+    }
+
+    /**
+     * The asymmetry found in 5S step 2a, pinned through the WRITER: an INHERITED system principal
+     * survives only because the projection applies the final conversion. Without it the id stays
+     * {@code CMIS_ANYONE}, matches neither the {@code "cmis:anyone"} literal nor any user/group, is
+     * dropped, and the whole set collapses to admin-only — a silent stale-DENY reaching Solr.
+     */
+    @Test
+    void realPathInheritedSystemPrincipalSurvivesTheProjection() throws Exception {
+        seedFolder("root", null, false, 4L,
+                List.of(ace(jp.aegif.nemaki.util.constant.PrincipalId.ANYONE_IN_DB, "cmis:read")));
+        seedDocument(solrId, "root", true, 1L);
+        indexSolrDoc(solrId, "n", "/n", "b");
+
+        WriteOutcome o = realWriter().write(contentDb, solrId, solr, RESOLVER);
+
+        assertEquals(WriteResult.UPDATED, o.result);
+        List<String> written = readers(get(solrId));
+        assertEquals(List.of(AclSemantics.formatGroupReader(contentDb, "GROUP_EVERYONE")), written,
+                "expected the CONVERTED anyone group token, got " + written);
+        assertTrue(!written.equals(AclSemantics.adminOnlyReaders(contentDb)),
+                "collapsed to ADMIN-ONLY — the silent stale-DENY this test exists to catch");
+    }
+
+    /**
+     * The one legitimate empty ACL group. A relationship's readers are the UNION of its endpoints'
+     * and never its own ACL, so when both endpoints are gone the authoritative answer IS empty —
+     * exactly what production persists ({@code SolrUtil.unionReaders}). Refusing it unconditionally
+     * (as the writer does for ordinary content, pinned above) would leave such a relationship's
+     * reconcile task failing and retrying for ever.
+     */
+    @Test
+    void aRelationshipWithBothEndpointsGoneWritesAnAuthoritativeEmptyAclGroup() throws Exception {
+        seedRelationship(solrId, "vanished-source", "vanished-target", 6L);
+        indexSolrDoc(solrId, "rel", "/rel", "b");
+        setAclGroup(solrId, List.of("user:stale-from-before"), 5L);
+
+        WriteOutcome o = realWriter().write(contentDb, solrId, solr, RESOLVER);
+
+        assertEquals(WriteResult.UPDATED, o.result);
+        assertEquals(6L, o.epoch);
+        assertEquals(List.of(), readers(get(solrId)),
+                "the stale one-sided readers must be REPLACED by the authoritative empty set");
     }
 
     // ── step 6: 409 → FULL restart, no payload reuse ───────────────
@@ -219,7 +363,10 @@ public class AclEpochIndexWriterIT {
         AtomicInteger computeCalls = new AtomicInteger();
         // Between step 3 (RTG) and step 5 (CAS) a competing writer bumps _version_ ONCE, so the
         // first CAS is guaranteed to 409.
-        AclEpochIndexWriter racing = new AclEpochIndexWriter() {
+        AclEpochIndexWriter racing = new TestWriter(snapshot -> {
+            computeCalls.incrementAndGet();
+            return List.of("user:mine");
+        }) {
             @Override SolrDocument realtimeGet(SolrClient c, String repo, String id) throws Exception {
                 SolrDocument d = super.realtimeGet(c, repo, id);
                 if (d != null && injected.compareAndSet(false, true)) {
@@ -228,12 +375,8 @@ public class AclEpochIndexWriterIT {
                 return d;
             }
         };
-        racing.setEffectiveEpochService(epochService);
 
-        WriteOutcome o = racing.write(contentDb, solrId, solr, snap -> {
-            computeCalls.incrementAndGet();
-            return List.of("user:mine");
-        });
+        WriteOutcome o = racing.write(contentDb, solrId, solr, RESOLVER);
         assertEquals(WriteResult.UPDATED, o.result);
         assertTrue(o.attempts >= 2, "the 409 must cause a restart: attempts=" + o.attempts);
         assertTrue(computeCalls.get() >= 2, "the restart RE-WALKS and RE-COMPUTES; the conflicted "
@@ -249,7 +392,7 @@ public class AclEpochIndexWriterIT {
 
         // EVERY attempt conflicts → the budget is exhausted → a retryable contention exception, so
         // the caller RETAINS its task (never a silent success).
-        AclEpochIndexWriter alwaysConflicts = new AclEpochIndexWriter() {
+        AclEpochIndexWriter alwaysConflicts = new TestWriter(snapshot -> List.of("user:mine")) {
             @Override SolrDocument realtimeGet(SolrClient c, String repo, String id) throws Exception {
                 SolrDocument d = super.realtimeGet(c, repo, id);
                 if (d != null) {
@@ -258,11 +401,10 @@ public class AclEpochIndexWriterIT {
                 return d;
             }
         };
-        alwaysConflicts.setEffectiveEpochService(epochService);
         alwaysConflicts.setMaxAttempts(3);
 
         assertThrows(AclEpochIndexWriter.AclEpochWriteContentionException.class,
-                () -> alwaysConflicts.write(contentDb, solrId, solr, snap -> List.of("user:mine")));
+                () -> alwaysConflicts.write(contentDb, solrId, solr, RESOLVER));
     }
 
     // ── step 4: a dependency change between RTG and CAS restarts ───
@@ -276,7 +418,7 @@ public class AclEpochIndexWriterIT {
         AtomicBoolean injected = new AtomicBoolean(false);
         // The ANCESTOR's epoch is bumped after the snapshot was taken: revalidation must catch it
         // and the final write must carry the NEW effective epoch, never the stale one.
-        AclEpochIndexWriter racing = new AclEpochIndexWriter() {
+        AclEpochIndexWriter racing = new TestWriter(snapshot -> List.of("user:u1")) {
             @Override SolrDocument realtimeGet(SolrClient c, String repo, String id) throws Exception {
                 SolrDocument d = super.realtimeGet(c, repo, id);
                 if (d != null && injected.compareAndSet(false, true)) {
@@ -285,9 +427,8 @@ public class AclEpochIndexWriterIT {
                 return d;
             }
         };
-        racing.setEffectiveEpochService(epochService);
 
-        WriteOutcome o = racing.write(contentDb, solrId, solr, snap -> List.of("user:u1"));
+        WriteOutcome o = racing.write(contentDb, solrId, solr, RESOLVER);
         assertEquals(WriteResult.UPDATED, o.result);
         assertEquals(42L, o.epoch, "the restart recomputed the effective epoch from the NEW ancestor");
         assertEquals(42L, num(get(solrId), "effective_acl_epoch"));
@@ -305,7 +446,7 @@ public class AclEpochIndexWriterIT {
         setAclGroup(solrId, List.of("user:before"), 3L);
 
         assertThrows(AclEffectiveEpochService.AclEpochPendingException.class,
-                () -> writer.write(contentDb, solrId, solr, snap -> List.of("user:mine")));
+                () -> writerReturning(List.of("user:mine")).write(contentDb, solrId, solr, RESOLVER));
 
         SolrDocument after = get(solrId);
         assertEquals(List.of("user:before"), readers(after), "the pending gate wrote NOTHING");
@@ -321,7 +462,7 @@ public class AclEpochIndexWriterIT {
         setAclGroup(solrId, List.of("user:before"), 3L);
 
         assertThrows(AclEpochAnomalyException.class,
-                () -> writer.write(contentDb, solrId, solr, snap -> List.of("user:mine")));
+                () -> writerReturning(List.of("user:mine")).write(contentDb, solrId, solr, RESOLVER));
         assertEquals(List.of("user:before"), readers(get(solrId)), "a quarantined ancestor wrote NOTHING");
     }
 
@@ -338,7 +479,7 @@ public class AclEpochIndexWriterIT {
         indexSolrDocUnfenced(solrId, "n", "/n", "b"); // NO effective_acl_epoch
 
         assertThrows(IllegalStateException.class,
-                () -> writer.write(contentDb, solrId, solr, snap -> List.of("user:u1")));
+                () -> writerReturning(List.of("user:u1")).write(contentDb, solrId, solr, RESOLVER));
         SolrDocument after = get(solrId);
         assertNull(after.getFieldValue("effective_acl_epoch"), "the ACL group is untouched");
         assertTrue(after.getFieldValues("readers") == null || after.getFieldValues("readers").isEmpty());
@@ -356,7 +497,7 @@ public class AclEpochIndexWriterIT {
         setAclGroup(solrId, List.of("user:before"), 2L);
 
         assertThrows(IllegalStateException.class,
-                () -> writer.write(contentDb, solrId, solr, snap -> List.of()));
+                () -> writerReturning(List.of()).write(contentDb, solrId, solr, RESOLVER));
         assertEquals(List.of("user:before"), readers(get(solrId)), "no update was sent");
         assertEquals(2L, num(get(solrId), "effective_acl_epoch"));
     }
@@ -369,7 +510,7 @@ public class AclEpochIndexWriterIT {
         setAclGroup(solrId, List.of("user:before"), 1L);
 
         assertThrows(IllegalStateException.class,
-                () -> writer.write(contentDb, solrId, solr, snap -> null));
+                () -> writerComputing(snapshot -> null).write(contentDb, solrId, solr, RESOLVER));
         assertEquals(List.of("user:before"), readers(get(solrId)),
                 "an empty readers list would make the object invisible — nothing is written");
     }
@@ -380,7 +521,7 @@ public class AclEpochIndexWriterIT {
         seedDocument(solrId, "root", true, 1L);
         indexSolrDocInRepository(solrId, "someone-elses-repository");
         assertThrows(IllegalStateException.class,
-                () -> writer.write(contentDb, solrId, solr, snap -> List.of("user:u1")));
+                () -> writerReturning(List.of("user:u1")).write(contentDb, solrId, solr, RESOLVER));
     }
 
     // ── review 4a: the fence is evaluated on EVERY attempt ─────────
@@ -397,7 +538,7 @@ public class AclEpochIndexWriterIT {
         setAclGroup(solrId, List.of("user:stored-only"), 7L); // equal epoch, divergent readers
 
         AtomicInteger rtgCalls = new AtomicInteger();
-        AclEpochIndexWriter racing = new AclEpochIndexWriter() {
+        AclEpochIndexWriter racing = new TestWriter(snapshot -> List.of("user:authoritative")) {
             @Override SolrDocument realtimeGet(SolrClient c, String repo, String id) throws Exception {
                 SolrDocument d = super.realtimeGet(c, repo, id);
                 if (rtgCalls.incrementAndGet() == 1) {
@@ -408,9 +549,8 @@ public class AclEpochIndexWriterIT {
                 return d;
             }
         };
-        racing.setEffectiveEpochService(epochService);
 
-        WriteOutcome o = racing.write(contentDb, solrId, solr, snap -> List.of("user:authoritative"));
+        WriteOutcome o = racing.write(contentDb, solrId, solr, RESOLVER);
         assertEquals(WriteResult.SKIPPED_FRESHER, o.result,
                 "a strictly newer stored epoch must win even during an equal-epoch recompute");
         SolrDocument after = get(solrId);
@@ -429,7 +569,7 @@ public class AclEpochIndexWriterIT {
         setAclGroup(solrId, List.of("user:stored-only"), 7L);
 
         AtomicInteger rtgCalls = new AtomicInteger();
-        AclEpochIndexWriter racing = new AclEpochIndexWriter() {
+        AclEpochIndexWriter racing = new TestWriter(snapshot -> List.of("user:authoritative")) {
             @Override SolrDocument realtimeGet(SolrClient c, String repo, String id) throws Exception {
                 SolrDocument d = super.realtimeGet(c, repo, id);
                 if (rtgCalls.incrementAndGet() == 1) {
@@ -440,9 +580,8 @@ public class AclEpochIndexWriterIT {
                 return d;
             }
         };
-        racing.setEffectiveEpochService(epochService);
 
-        WriteOutcome o = racing.write(contentDb, solrId, solr, snap -> List.of("user:authoritative"));
+        WriteOutcome o = racing.write(contentDb, solrId, solr, RESOLVER);
         assertEquals(WriteResult.SKIPPED_IDEMPOTENT, o.result);
     }
 
@@ -459,17 +598,16 @@ public class AclEpochIndexWriterIT {
             indexSolrDoc(id, "n", "/n", "b");
             setAclGroup(id, List.of("user:before"), 2L);
 
-            AclEpochIndexWriter spoofed = new AclEpochIndexWriter() {
+            AclEpochIndexWriter spoofed = new TestWriter(snapshot -> List.of("user:mine")) {
                 @Override SolrDocument realtimeGet(SolrClient c, String repo, String oid) throws Exception {
                     SolrDocument d = super.realtimeGet(c, repo, oid);
                     d.setField("_version_", magic);
                     return d;
                 }
             };
-            spoofed.setEffectiveEpochService(epochService);
 
             assertThrows(IllegalStateException.class,
-                    () -> spoofed.write(contentDb, id, solr, snap -> List.of("user:mine")),
+                    () -> spoofed.write(contentDb, id, solr, RESOLVER),
                     "_version_=" + magic + " must be refused");
             assertEquals(List.of("user:before"), readers(get(id)), "no update was sent for " + magic);
             assertEquals(2L, num(get(id), "effective_acl_epoch"));
@@ -485,17 +623,16 @@ public class AclEpochIndexWriterIT {
         indexSolrDoc(solrId, "n", "/n", "b");
         setAclGroup(solrId, List.of("user:before"), 2L);
 
-        AclEpochIndexWriter spoofed = new AclEpochIndexWriter() {
+        AclEpochIndexWriter spoofed = new TestWriter(snapshot -> List.of("user:mine")) {
             @Override SolrDocument realtimeGet(SolrClient c, String repo, String oid) throws Exception {
                 SolrDocument d = super.realtimeGet(c, repo, oid);
                 d.removeFields("repository_id"); // a restored / legacy / corrupt document
                 return d;
             }
         };
-        spoofed.setEffectiveEpochService(epochService);
 
         assertThrows(IllegalStateException.class,
-                () -> spoofed.write(contentDb, solrId, solr, snap -> List.of("user:mine")));
+                () -> spoofed.write(contentDb, solrId, solr, RESOLVER));
         assertEquals(List.of("user:before"), readers(get(solrId)), "no update was sent");
     }
 
@@ -511,11 +648,11 @@ public class AclEpochIndexWriterIT {
         withNull.add("user:ok");
         withNull.add(null);
         assertThrows(IllegalStateException.class,
-                () -> writer.write(contentDb, solrId, solr, snap -> withNull));
+                () -> writerReturning(withNull).write(contentDb, solrId, solr, RESOLVER));
         assertEquals(List.of("user:before"), readers(get(solrId)), "no update was sent (null token)");
 
         assertThrows(IllegalStateException.class,
-                () -> writer.write(contentDb, solrId, solr, snap -> List.of("user:ok", "  ")));
+                () -> writerReturning(List.of("user:ok", "  ")).write(contentDb, solrId, solr, RESOLVER));
         assertEquals(List.of("user:before"), readers(get(solrId)), "no update was sent (blank token)");
     }
 
@@ -583,22 +720,52 @@ public class AclEpochIndexWriterIT {
     }
 
     private void seedFolder(String id, String parentId, boolean inherits, long epoch) {
+        seedFolder(id, parentId, inherits, epoch, null);
+    }
+
+    /** As above, plus the persisted ACL in the real {@code CouchAcl} shape. */
+    private void seedFolder(String id, String parentId, boolean inherits, long epoch,
+                            List<Map<String, Object>> aclEntries) {
         Map<String, Object> p = new LinkedHashMap<>();
         p.put("type", "cmis:folder");
         p.put("name", id);
         if (parentId != null) p.put("parentId", parentId);
         p.put("aclInherited", inherits);
         p.put("aclSourceEpoch", epoch);
+        if (aclEntries != null) p.put("acl", Map.of("entries", aclEntries));
+        put(id, p);
+    }
+
+    /** A persisted ACE: {@code {"principal": …, "permissions": [...]}}. */
+    private static Map<String, Object> ace(String principal, String... permissions) {
+        return Map.of("principal", principal, "permissions", List.of(permissions));
+    }
+
+    /** A relationship whose endpoints may or may not exist. */
+    private void seedRelationship(String id, String sourceId, String targetId, long epoch) {
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("type", "cmis:relationship");
+        p.put("name", id);
+        p.put("sourceId", sourceId);
+        p.put("targetId", targetId);
+        p.put("aclInherited", false);
+        p.put("aclSourceEpoch", epoch);
         put(id, p);
     }
 
     private void seedDocument(String id, String parentId, boolean inherits, long epoch) {
+        seedDocument(id, parentId, inherits, epoch, null);
+    }
+
+    private void seedDocument(String id, String parentId, boolean inherits, long epoch,
+                              List<Map<String, Object>> aclEntries) {
         Map<String, Object> p = new LinkedHashMap<>();
         p.put("type", "cmis:document");
         p.put("name", id);
         if (parentId != null) p.put("parentId", parentId);
         p.put("aclInherited", inherits);
         p.put("aclSourceEpoch", epoch);
+        if (aclEntries != null) p.put("acl", Map.of("entries", aclEntries));
         put(id, p);
     }
 
