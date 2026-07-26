@@ -37,12 +37,27 @@ timeout 3600s mvn test -Dtest=ConnectionTestGroup,BasicsTestGroup,TypesTestGroup
 永続 volume を使い回した環境では、**回帰でないのに落ちる**既知パターンがあります。
 落ちたら疑ってください:
 
-- **`baseTypesTest` / Types** — E2E が残したカスタム型 (`queryName` が null の
-  `test:customFolderForE2E` 等) によるデータ汚染。type delete API で掃除すると green。
+- **`Type Query Name: null` / `Property nemaki:comment`** — E2E が残したカスタム型
+  (`queryName` が null の `test:*`) によるデータ汚染。**これが最大の偽陽性源**で、
+  2026-07 の実測では Basics / Control / Crud1 / Crud2 / Query / Types の
+  **23 failures 全てがこれ由来**でした (同一 WAR で clean stack は 38/38 green)。
+
+  掃除手順 — 型は 4 つの base type 配下に散らばるので `cmis:document` だけ見ると
+  取りこぼします:
+
+  ```bash
+  # 1. queryName 欠落の型を全て列挙 (CouchDB 直接が確実)
+  curl -s -u admin:password -X POST http://localhost:5984/bedroom/_find     -H 'Content-Type: application/json'     -d '{"selector":{"type":"typeDefinition"},"fields":["typeId","queryName"],"limit":100}'
+
+  # 2. インスタンス 0 件を確認してから削除 (0 でなければ orphan を作る)
+  curl -s -u admin:admin -X POST -H "X-Requested-With: XMLHttpRequest"     -F "cmisaction=deleteType" -F "typeId=test:xxx"     http://localhost:8080/core/browser/bedroom
+  ```
+
 - **Query 系** — Solr の非同期索引ラグ (create 直後に query するテスト)。
   失敗ケースが run ごとに入れ替わるのが特徴。索引キューをリセットすると
   新規 doc は数秒で索引されます。
-- **`contentChangesSmokeTest`** — 蓄積データ。
+- **`contentChangesSmokeTest`** — 蓄積データ。`type: "change"` の `cmistck*` が
+  数百件残ります。変更ログの意味論に関わるので削除は慎重に。
 
 権威的な判定はクリーン DB (CI の push ごとの fresh DB、またはローカルで
 `ci-complete-setup.sh`) で行ってください。テスト失敗時は CouchDB に
