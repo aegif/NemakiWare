@@ -226,6 +226,16 @@ public final class AclSemanticsCorpus {
                 List.of(folder("leaf", ROOT_ID, Boolean.TRUE, ace("u1", "cmis:read")),
                         root(ace("u2", "cmis:read")))));
 
+        // A CORRUPT root: it carries a parentId and an aclInherited that is not false. Both sides must
+        // still stop AT it, because isRoot / getAclInheritedWithDefault override the stored flag.
+        // Without this case the two implementations' stop rules can diverge undetected — the epoch
+        // walk used to climb past such a root while the projection stopped (review P1-1), and no
+        // corpus chain could observe it.
+        out.add(new Case("corrupt-root-carrying-a-parent-must-still-stop-inheritance",
+                List.of(doc("leaf", ROOT_ID, Boolean.TRUE, ace("u1", "cmis:read")),
+                        folder(ROOT_ID, "grandparent", Boolean.TRUE, ace("u2", "cmis:read")),
+                        folder("grandparent", null, Boolean.FALSE, ace("must-not-appear", "cmis:read")))));
+
         out.add(new Case("orphan-no-parent-but-inherits",
                 List.of(doc("leaf", null, Boolean.TRUE, ace("u1", "cmis:read")))));
 

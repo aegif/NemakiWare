@@ -99,10 +99,13 @@ public class AclEffectiveEpochService {
     public void setConnectorPool(CloudantClientPool connectorPool) { this.connectorPool = connectorPool; }
 
     /**
-     * Needed for the READERS projection only (increment 5S): the root-folder id (the walk's
-     * equivalent of {@code contentService.isRoot}) and the configured
-     * {@code principal.anyone} / {@code principal.anonymous} ids. The epoch computation itself does
-     * not use it, so a snapshot can still be taken without it.
+     * REQUIRED (increment 5S; tightened by review P1-1). Supplies the root-folder id — used by BOTH
+     * the walk's inheritance-stop rule and the readers projection — and the configured
+     * {@code principal.anyone} / {@code principal.anonymous} ids.
+     *
+     * <p>It was briefly documented as needed "for the readers projection only". That was wrong: the
+     * walk decided where inheritance stops WITHOUT it, so the dependency set and the projection could
+     * stop at different nodes on a corrupt root. {@link #snapshot} now fails fast if it is missing.
      */
     public void setRepositoryInfoMap(jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repositoryInfoMap) {
         this.repositoryInfoMap = repositoryInfoMap;
@@ -241,10 +244,21 @@ public class AclEffectiveEpochService {
          *
          * <p>This is the whole point of Option A. The epoch and the readers are computed from the
          * SAME dependency documents at the SAME {@code _rev}s, so they cannot describe different
-         * states of the repository, and there is no second traversal to drift (increments 3a/3b/4b
-         * were all two-traversal defects). The removed {@code ReadersComputer} SPI could not promise
-         * this: it handed the computation to an implementor who had to be trusted to bypass the
-         * cache and walk the same chain.
+         * states of the repository. The removed {@code ReadersComputer} SPI could not promise this:
+         * it handed the computation to an implementor who had to be trusted to bypass the cache and
+         * walk the same chain.
+         *
+         * <p><b>Precisely what is and is not unified</b> (review P1-1 corrected an overclaim here —
+         * this used to say "there is no second traversal to drift"):
+         * <ul>
+         *   <li>the READ is single: one authoritative pass produces both projections;</li>
+         *   <li>the SEMANTICS are single: both sides run {@link AclSemantics};</li>
+         *   <li>the inheritance-STOP RULE is single since P1-1: {@link #inheritsFromParent};</li>
+         *   <li>but the WALK — deciding the dependency SET — is still its own code
+         *       ({@code walkAncestors}), separate from the projection's parent chasing. They now
+         *       agree by construction on where to stop, and an under-collecting walk fails closed
+         *       (the projection cannot resolve a parent it needs), but they are not one implementation.</li>
+         * </ul>
          *
          * <p>Runs through {@link AclSemantics#resolveAcl} — NOT {@code effectiveAces} — because the
          * system-principal conversion that {@code resolveAcl} applies at the end is load-bearing:
@@ -377,9 +391,9 @@ public class AclEffectiveEpochService {
             return acl;
         }
 
-        /** {@code ContentServiceImpl.isRoot}: the root-folder id AND a folder. */
+        /** The SHARED root test (review P1-1). */
         @Override public boolean root() {
-            return dep.kind == ContentKind.FOLDER && rootFolderId.equals(dep.id);
+            return isRoot(dep, rootFolderId);
         }
 
         /**
@@ -390,10 +404,7 @@ public class AclEffectiveEpochService {
          * replicated here — see the 5R-a report.)
          */
         @Override public boolean inherited() {
-            if (root()) {
-                return false;
-            }
-            return !Boolean.FALSE.equals(dep.aclInherited);
+            return inheritsFromParent(dep, rootFolderId);
         }
 
         @Override public String parentId() { return dep.parentId; }
@@ -430,6 +441,31 @@ public class AclEffectiveEpochService {
         public AclEpochUnavailableException(String message, Throwable cause) { super(message, cause); }
     }
 
+    // ── the ONE inheritance-stop rule (increment 5S review P1-1) ───
+
+    /**
+     * Is this dependency the repository ROOT? Mirrors {@code ContentServiceImpl.isRoot}: the root
+     * folder id AND a folder.
+     */
+    static boolean isRoot(Dependency d, String rootFolderId) {
+        return d.kind == ContentKind.FOLDER && rootFolderId != null && rootFolderId.equals(d.id);
+    }
+
+    /**
+     * Does this dependency inherit from its parent? Mirrors
+     * {@code AclServiceDelegate.getAclInheritedWithDefault}: the ROOT never inherits whatever its
+     * stored flag says, and an ABSENT flag defaults to TRUE.
+     *
+     * <p><b>Shared by the WALK and the READERS PROJECTION on purpose (review P1-1).</b> They used to
+     * decide independently — the walk on {@code aclInherited} alone, the projection additionally on
+     * root — so a corrupt root (one carrying a {@code parentId} and an {@code aclInherited} that is
+     * not {@code false}) made the walk climb PAST the root and raise the effective epoch while the
+     * projection stopped at it. Both are now the same predicate over the same recorded fields.
+     */
+    static boolean inheritsFromParent(Dependency d, String rootFolderId) {
+        return !isRoot(d, rootFolderId) && !Boolean.FALSE.equals(d.aclInherited);
+    }
+
     // ── step 1 + 2: authoritative walk, pending gate, effective epoch ──
 
     /**
@@ -449,6 +485,11 @@ public class AclEffectiveEpochService {
         if (objectId == null || objectId.isBlank()) {
             throw new IllegalArgumentException("objectId is required");
         }
+        // The root-folder id is REQUIRED, not optional: the walk's inheritance-stop rule needs it
+        // (review P1-1), and so does the readers projection. Failing here rather than silently
+        // walking with a different stop rule than the projection.
+        String rootFolderId = requireRootFolderId(repositoryId);
+
         Document target = read(repositoryId, objectId, "target");
         if (target == null) {
             return null; // genuinely deleted
@@ -467,28 +508,24 @@ public class AclEffectiveEpochService {
             // read(source) OR read(target), so the fence value is the max over BOTH endpoint chains
             // and the relationship's own epoch. toDependency() has already guaranteed both endpoint
             // ids are present and well-formed.
-            long src = walkChain(repositoryId, self.sourceId, DependencyRole.RELATIONSHIP_SOURCE, deps, seen);
-            long tgt = walkChain(repositoryId, self.targetId, DependencyRole.RELATIONSHIP_TARGET, deps, seen);
+            long src = walkChain(repositoryId, self.sourceId, DependencyRole.RELATIONSHIP_SOURCE,
+                    deps, seen, rootFolderId);
+            long tgt = walkChain(repositoryId, self.targetId, DependencyRole.RELATIONSHIP_TARGET,
+                    deps, seen, rootFolderId);
             effective = Math.max(self.sourceEpoch, Math.max(src, tgt));
         } else {
             effective = Math.max(self.sourceEpoch,
-                    walkAncestors(repositoryId, self, DependencyRole.ANCESTOR, deps, seen));
+                    walkAncestors(repositoryId, self, DependencyRole.ANCESTOR, deps, seen, rootFolderId));
         }
 
         if (logger.isDebugEnabled()) {
             logger.debug("Effective epoch {} for {}/{} over {} dependencies",
                     effective, repositoryId, objectId, deps.size());
         }
-        String rootFolderId = null, anyoneId = null, anonymousId = null;
-        if (repositoryInfoMap != null) {
-            jp.aegif.nemaki.cmis.factory.info.RepositoryInfo info = repositoryInfoMap.get(repositoryId);
-            if (info != null) {
-                rootFolderId = info.getRootFolderId();
-                anyoneId = info.getPrincipalIdAnyone();
-                anonymousId = info.getPrincipalIdAnonymous();
-            }
-        }
-        return new Snapshot(repositoryId, objectId, deps, effective, rootFolderId, anyoneId, anonymousId);
+        // rootFolderId was already resolved (and required) at the top of this method.
+        jp.aegif.nemaki.cmis.factory.info.RepositoryInfo info = repositoryInfoMap.get(repositoryId);
+        return new Snapshot(repositoryId, objectId, deps, effective, rootFolderId,
+                info.getPrincipalIdAnyone(), info.getPrincipalIdAnonymous());
     }
 
     /**
@@ -497,7 +534,7 @@ public class AclEffectiveEpochService {
      * reader union in {@code SolrUtil.relationshipReaders}; a read failure throws.
      */
     private long walkChain(String repositoryId, String endpointId, DependencyRole role,
-                           List<Dependency> deps, Set<String> seen) {
+                           List<Dependency> deps, Set<String> seen, String rootFolderId) {
         if (endpointId == null || endpointId.isBlank()) {
             return 0L;
         }
@@ -518,7 +555,7 @@ public class AclEffectiveEpochService {
         Dependency d = toDependency(doc, role);
         deps.add(d);
         seen.add(d.id);
-        return Math.max(d.sourceEpoch, walkAncestors(repositoryId, d, role, deps, seen));
+        return Math.max(d.sourceEpoch, walkAncestors(repositoryId, d, role, deps, seen, rootFolderId));
     }
 
     /**
@@ -530,14 +567,15 @@ public class AclEffectiveEpochService {
      * fails closed instead of looping.
      */
     private long walkAncestors(String repositoryId, Dependency start, DependencyRole role,
-                               List<Dependency> deps, Set<String> seen) {
+                               List<Dependency> deps, Set<String> seen, String rootFolderId) {
         long max = 0L;
         Dependency node = start;
         int added = 0;
         while (true) {
-            // Absent aclInherited defaults to TRUE (calculateAcl's getAclInheritedWithDefault).
-            if (Boolean.FALSE.equals(node.aclInherited)) {
-                return max; // top of the inheriting chain
+            // The SHARED stop rule (review P1-1) — the same predicate the readers projection uses,
+            // so the dependency set and the projection can never stop at different nodes.
+            if (!inheritsFromParent(node, rootFolderId)) {
+                return max; // top of the inheriting chain (the root, or a non-inheriting node)
             }
             String parentId = node.parentId;
             if (parentId == null || parentId.isBlank()) {
@@ -720,15 +758,31 @@ public class AclEffectiveEpochService {
     }
 
     /**
-     * Parse the persisted ACL into RAW local ACEs (increment 5S), mirroring
+     * Parse the persisted ACL into RAW local ACEs (increment 5S), following
      * {@code CouchAcl.convertToNemakiAcl} — including its rule that every stored entry is a LOCAL
      * ace with {@code direct = true}.
      *
      * <p>An ABSENT {@code acl}, or an absent {@code entries}, yields an empty list: that is
      * {@code convertToNemakiAcl} returning null, which the CMIS side turns into an empty list (after
-     * logging). A PRESENT but malformed value is an ANOMALY instead — the same presence contract the
-     * rest of this class uses. Guessing here would produce an under-granted reader set and, unlike a
-     * throw, would look like a successful computation.
+     * logging).
+     *
+     * <p><b>Where this deliberately differs from CouchAcl, and where it deliberately does not</b>
+     * (review P2-5 — an earlier revision called this a "mirror" and was STRICTER than CouchAcl in
+     * two places, which would have permanently excluded from the index an object the CMIS layer
+     * serves perfectly well; §5.1 makes that a whole-subtree blast radius):
+     * <ul>
+     *   <li><b>principal coercion — MATCHED.</b> {@code CouchAcl} does {@code .toString()}, so a
+     *       non-String principal becomes its string form and a BLANK one is kept. Both are accepted
+     *       here too. Rejecting them bought nothing: neither can produce a reader token on either
+     *       side (a blank id short-circuits, an unknown id is NOT_FOUND and dropped), so the only
+     *       effect of throwing was to convert "no token" into "no index update at all".</li>
+     *   <li><b>a NULL principal — anomaly.</b> {@code CouchAcl} throws an NPE on it, so this is not
+     *       a case the CMIS layer tolerates either; a named anomaly is simply a better failure.</li>
+     *   <li><b>structural forms — anomaly.</b> A non-object {@code acl}, non-list {@code entries}, a
+     *       non-object entry, or a non-String permission all make the CMIS side fail too (an
+     *       unchecked cast that blows up at the first read). Guessing would produce an under-granted
+     *       reader set that looks like a successful computation.</li>
+     * </ul>
      */
     private static List<jp.aegif.nemaki.model.Ace> parseLocalAces(String docId, Map<String, Object> p) {
         List<jp.aegif.nemaki.model.Ace> aces = new ArrayList<>();
@@ -755,9 +809,10 @@ public class AclEffectiveEpochService {
             }
             Map<?, ?> entry = (Map<?, ?>) rawEntry;
             Object principal = entry.get(FIELD_ACE_PRINCIPAL);
-            if (!(principal instanceof String) || ((String) principal).isBlank()) {
+            if (principal == null) {
+                // CouchAcl NPEs here; a named anomaly is the same fail-closed outcome, said clearly.
                 throw new AclEpochAnomalyException("dependency " + docId
-                        + " has an ACL entry with a null / non-String / blank principal: " + principal);
+                        + " has an ACL entry with a null principal");
             }
             Object permissions = entry.get(FIELD_ACE_PERMISSIONS);
             List<String> perms = new ArrayList<>();
@@ -774,8 +829,8 @@ public class AclEffectiveEpochService {
                     perms.add((String) perm);
                 }
             }
-            // CouchAcl: a DB-stored ACE is a local ace, direct = true.
-            aces.add(new jp.aegif.nemaki.model.Ace((String) principal, perms, true));
+            // CouchAcl: `principal.toString()`, and a DB-stored ACE is a local ace, direct = true.
+            aces.add(new jp.aegif.nemaki.model.Ace(principal.toString(), perms, true));
         }
         return aces;
     }
@@ -864,6 +919,25 @@ public class AclEffectiveEpochService {
             throw new AclEpochUnavailableException("failed to read " + what + " " + docId
                     + " in '" + repositoryId + "': " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * The repository's root-folder id. REQUIRED (review P1-1 / P2-4): both the walk's stop rule and
+     * the readers projection depend on it, so a missing wiring must fail loudly rather than let the
+     * two sides diverge.
+     */
+    private String requireRootFolderId(String repositoryId) {
+        if (repositoryInfoMap == null) {
+            throw new IllegalStateException("repositoryInfoMap not wired on AclEffectiveEpochService "
+                    + "— it is REQUIRED: the inheritance-stop rule and the readers projection both "
+                    + "need the root-folder id");
+        }
+        jp.aegif.nemaki.cmis.factory.info.RepositoryInfo info = repositoryInfoMap.get(repositoryId);
+        if (info == null || info.getRootFolderId() == null || info.getRootFolderId().isBlank()) {
+            throw new IllegalStateException("no usable RepositoryInfo / root-folder id for repository '"
+                    + repositoryId + "'");
+        }
+        return info.getRootFolderId();
     }
 
     private CloudantClientWrapper contentClient(String repositoryId) {

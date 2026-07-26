@@ -103,6 +103,18 @@ public class AclEffectiveEpochServiceIT {
 
         svc = new AclEffectiveEpochService();
         svc.setConnectorPool(pool);
+
+        // REQUIRED since review P1-1: the walk's inheritance-stop rule needs the root-folder id, the
+        // same one the readers projection uses. The fixtures below use "root".
+        jp.aegif.nemaki.cmis.factory.info.RepositoryInfo info =
+                mock(jp.aegif.nemaki.cmis.factory.info.RepositoryInfo.class);
+        lenient().when(info.getRootFolderId()).thenReturn("root");
+        lenient().when(info.getPrincipalIdAnyone()).thenReturn("GROUP_EVERYONE");
+        lenient().when(info.getPrincipalIdAnonymous()).thenReturn("anonymous");
+        jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap infoMap =
+                mock(jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap.class);
+        lenient().when(infoMap.get(contentDb)).thenReturn(info);
+        svc.setRepositoryInfoMap(infoMap);
     }
 
     @AfterEach
@@ -764,11 +776,73 @@ public class AclEffectiveEpochServiceIT {
     }
 
     @Test
-    void anAceWithoutAUsablePrincipalIsAnAnomaly() {
-        // Guessing here would silently DROP a grant and look like a successful computation.
+    void aNullPrincipalIsAnAnomaly() {
+        // CouchAcl NPEs on this, so it is not a form the CMIS layer tolerates either.
         seedRaw("leaf", "{\"type\":\"cmis:document\",\"aclInherited\":false,\"aclSourceEpoch\":1,"
                 + "\"acl\":{\"entries\":[{\"principal\":null,\"permissions\":[\"cmis:read\"]}]}}");
         assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "leaf"));
+    }
+
+    /**
+     * Review P2-5: a NON-STRING principal must be COERCED exactly as {@code CouchAcl} coerces it
+     * ({@code .toString()}), not rejected. Rejecting it bought no safety — the id resolves to nothing
+     * on either side — while permanently excluding from the index an object CMIS serves normally.
+     */
+    @Test
+    void aNonStringPrincipalIsCoercedLikeCouchAclRatherThanRejected() {
+        seedRaw("leaf", "{\"type\":\"cmis:document\",\"aclInherited\":false,\"aclSourceEpoch\":1,"
+                + "\"acl\":{\"entries\":[{\"principal\":42,\"permissions\":[\"cmis:read\"]}]}}");
+
+        List<jp.aegif.nemaki.model.Ace> aces = self("leaf").localAces;
+        assertEquals(1, aces.size());
+        assertEquals("42", aces.get(0).getPrincipalId(), "CouchAcl does principal.toString()");
+    }
+
+    /** Review P2-5: a BLANK principal is likewise kept, as CouchAcl keeps it. */
+    @Test
+    void aBlankPrincipalIsKeptLikeCouchAclRatherThanRejected() {
+        seedRaw("leaf", "{\"type\":\"cmis:document\",\"aclInherited\":false,\"aclSourceEpoch\":1,"
+                + "\"acl\":{\"entries\":[{\"principal\":\"  \",\"permissions\":[\"cmis:read\"]}]}}");
+
+        List<jp.aegif.nemaki.model.Ace> aces = self("leaf").localAces;
+        assertEquals(1, aces.size());
+        assertEquals("  ", aces.get(0).getPrincipalId());
+    }
+
+    /** Review P3: a non-object ENTRY (the CMIS side blows up on the same cast). */
+    @Test
+    void aNonObjectAclEntryIsAnAnomaly() {
+        seedRaw("leaf", "{\"type\":\"cmis:document\",\"aclInherited\":false,\"aclSourceEpoch\":1,"
+                + "\"acl\":{\"entries\":[\"not-an-object\"]}}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "leaf"));
+    }
+
+    /** Review P3: non-list PERMISSIONS (distinct from the non-list `entries` case above). */
+    @Test
+    void nonListPermissionsAreAnAnomaly() {
+        seedRaw("leaf", "{\"type\":\"cmis:document\",\"aclInherited\":false,\"aclSourceEpoch\":1,"
+                + "\"acl\":{\"entries\":[{\"principal\":\"u1\",\"permissions\":\"cmis:read\"}]}}");
+        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "leaf"));
+    }
+
+    /**
+     * Review P1-1: the walk and the readers projection must stop inheriting at the SAME node. A
+     * corrupt ROOT — one carrying a parentId and an aclInherited that is not false — used to make the
+     * walk climb PAST it (raising the effective epoch from a node the projection never reads) while
+     * the projection stopped there. Both now use the shared predicate.
+     */
+    @Test
+    void aCorruptRootStopsTheWALKToo_notOnlyTheProjection() {
+        seedFolder("grandparent", null, false, 99L);      // must NOT contribute
+        seedFolder("root", "grandparent", true, 5L);      // the root, corrupted: inherits + has a parent
+        seedDocument("leaf", "root", true, 1L);
+
+        AclEffectiveEpochService.Snapshot snap = svc.snapshot(contentDb, "leaf");
+
+        assertEquals(5L, snap.effectiveEpoch, "the walk must stop AT the root, as the projection does; "
+                + "climbing past it would pick up the grandparent's epoch 99");
+        assertTrue(snap.dependencies.stream().noneMatch(d -> "grandparent".equals(d.id)),
+                "a node the projection never reads must not be a recorded dependency either");
     }
 
     @Test
