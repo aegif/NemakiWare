@@ -158,10 +158,14 @@ public class AclEpochIndexWriter {
     public WriteOutcome write(String repositoryId, String objectId, SolrClient solrClient,
                               AclSemantics.PrincipalResolver resolver) throws Exception {
         if (effectiveEpochService == null) {
-            throw new IllegalStateException("effectiveEpochService not wired on AclEpochIndexWriter");
+            throw new AclEpochWiringException("effectiveEpochService not wired on AclEpochIndexWriter");
         }
         if (solrClient == null) {
-            throw new IllegalStateException("Solr client unavailable for " + objectId);
+            // A missing Solr client is a WIRING fault, not this object's problem: every other
+            // IllegalStateException in this class describes the DOCUMENT (a magic _version_, an
+            // unfenced epoch, a repository mismatch) and is per-task fail-closed. A caller deciding
+            // "retry or terminal-fail?" must be able to tell those apart from "the bean is missing".
+            throw new AclEpochWiringException("Solr client unavailable for " + objectId);
         }
         if (resolver == null) {
             throw new IllegalArgumentException("principal resolver is required");

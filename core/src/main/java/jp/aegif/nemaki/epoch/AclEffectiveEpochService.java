@@ -191,13 +191,14 @@ public class AclEffectiveEpochService {
          */
         public final List<jp.aegif.nemaki.model.Ace> localAces;
 
-        Dependency(String id, String rev, boolean exists, long sourceEpoch, String state,
-                   String parentId, Boolean aclInherited, String sourceId, String targetId,
-                   ContentKind kind, DependencyRole role, List<jp.aegif.nemaki.model.Ace> localAces) {
-            this(id, rev, exists, sourceEpoch, state, parentId, aclInherited, sourceId, targetId,
-                    kind, kind == ContentKind.FOLDER, role, localAces);
-        }
-
+        /**
+          * Every construction site must state {@code cmisFolder} EXPLICITLY (review P2-4). A shorter
+          * overload used to derive it as {@code kind == FOLDER} — the exact expression review P1-2
+          * found to disagree with {@code NodeBase.isFolder()} on a legacy {@code {"type":"folder"}}
+          * document. It survived the fix because its remaining callers happened to be unaffected,
+          * which is precisely how a new construction site in the wiring increment would have
+          * reintroduced the divergence in silence.
+          */
         Dependency(String id, String rev, boolean exists, long sourceEpoch, String state,
                    String parentId, Boolean aclInherited, String sourceId, String targetId,
                    ContentKind kind, boolean cmisFolder, DependencyRole role,
@@ -213,7 +214,9 @@ public class AclEffectiveEpochService {
 
         /** A recorded absence (a dangling relationship endpoint). */
         static Dependency absent(String id, DependencyRole role) {
-            return new Dependency(id, null, false, 0L, null, null, null, null, null, null, role, null);
+                // A recorded ABSENCE: no document, so nothing is a folder and nothing is the root.
+            return new Dependency(id, null, false, 0L, null, null, null, null, null, null, false,
+                    role, null);
         }
 
         /** Verbatim equality of everything the fence depends on (used by {@link #revalidate}). */
@@ -295,8 +298,9 @@ public class AclEffectiveEpochService {
          * unreadable one threw {@link AclEpochUnavailableException} there), so a missing link here
          * is an internal inconsistency, not a cache miss to shrug off.
          *
-         * @throws IllegalStateException  the repository info was not wired (see
-         *                                {@link #setRepositoryInfoMap})
+         * @throws AclEpochWiringException  the repository info was not wired (see
+         *                                  {@link #setRepositoryInfoMap}). A WIRING fault, not a
+         *                                  per-task condition: no retry or quarantine will fix it
          */
         public List<String> readers(AclSemantics.PrincipalResolver resolver) {
             if (rootFolderId == null) {
@@ -636,6 +640,12 @@ public class AclEffectiveEpochService {
             }
             Dependency parent = toDependency(parentDoc, role == DependencyRole.SELF
                     ? DependencyRole.ANCESTOR : role);
+            // DELIBERATE ASYMMETRY, do not "make consistent" (review P3): the ROOT test uses
+            // `cmisFolder` (NodeBase.isFolder(), an exact cmis:folder match) because that is what
+            // ContentServiceImpl.isRoot uses, but the PARENT test below uses `kind` because that is
+            // what ContentDaoServiceImpl.getFolder effectively accepts — it returns a Folder for a
+            // legacy {"type":"folder"} document too, so calculateAcl keeps walking through it.
+            // Aligning either one to the other creates a NEW divergence in the opposite direction.
             // The real ACL computation resolves the parent through getFolder(), which returns null
             // for a NON-folder and then fails closed under strict mode. Requiring FOLDER here keeps
             // the epoch walk's dependency set identical to the readers computation's (review 3b [P1]).
@@ -797,18 +807,17 @@ public class AclEffectiveEpochService {
      *
      * <p>An ABSENT {@code acl}, or an absent / present-null {@code entries}, yields an empty list.
      *
-     * <p><b>The CMIS side is NOT uniformly equivalent here</b> (review P2-2 — an earlier revision
-     * claimed it "turns into an empty list", which is only half true). {@code convertToNemakiAcl}
-     * returns {@code null} for all three shapes, so {@code Content.getAcl()} is null, and what happens
-     * next depends on which branch reads it: {@code CmisChainNode.localAces()} logs and substitutes an
-     * empty list (the inheriting branch), but {@code resolveAcl}'s root / non-inheriting branch returns
-     * {@code storedAcl()} and then dereferences it — an NPE.
+     * <p><b>The CMIS side agrees</b> — traced through the real DAO rather than inferred (review
+     * P2-1). Two earlier revisions of this paragraph were both wrong: the first claimed
+     * {@code convertToNemakiAcl} "turns into an empty list" (it returns {@code null}), the second
+     * claimed the resulting null {@code Acl} makes {@code resolveAcl}'s root branch NPE. It does not,
+     * because the DAO never hands out a null {@code Acl}: {@code CouchContent}'s {@code @JsonCreator}
+     * only assigns {@code this.acl} when {@code entries instanceof List}, so all three shapes leave it
+     * null, and {@code CouchContent.convert()} then substitutes {@code new Acl()}.
      *
-     * <p>This side is therefore deliberately MORE ROBUST than the CMIS layer for those documents: it
-     * yields no ACEs, which rule 2 turns into admin-only — fail-closed — instead of crashing. Chosen
-     * over reproducing the NPE because a crash is not a safer outcome, and over treating it as an
-     * anomaly because §5.1 would then stall the whole subtree for a document CMIS mostly serves. The
-     * CMIS-side fragility is pre-existing and recorded in design §10.3.
+     * <p>So both sides end with ZERO ACEs, which rule 2 turns into admin-only. There is no divergence
+     * to document and nothing here is "more robust" than the CMIS layer — a claim this Javadoc made,
+     * and design §10.3 recorded as a known adjacent issue, until the DAO was actually read.
      *
      * <p><b>Where this deliberately differs from CouchAcl, and where it deliberately does not</b>
      * (review P2-5 — an earlier revision called this a "mirror" and was STRICTER than CouchAcl in
@@ -996,7 +1005,7 @@ public class AclEffectiveEpochService {
         }
         CloudantClientWrapper client = connectorPool.getClient(repositoryId);
         if (client == null) {
-            throw new IllegalStateException("content DB client not available for repository '"
+            throw new AclEpochWiringException("content DB client not available for repository '"
                     + repositoryId + "'");
         }
         return client;

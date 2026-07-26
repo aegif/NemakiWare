@@ -949,11 +949,11 @@ public class AclEpochFinalizationService {
 
     private CloudantClientWrapper contentClient(String repositoryId) {
         if (connectorPool == null) {
-            throw new IllegalStateException("connectorPool not wired on AclEpochFinalizationService");
+            throw new AclEpochWiringException("connectorPool not wired on AclEpochFinalizationService");
         }
         CloudantClientWrapper client = connectorPool.getClient(repositoryId);
         if (client == null) {
-            throw new IllegalStateException("content DB client not available for repository '" + repositoryId + "'");
+            throw new AclEpochWiringException("content DB client not available for repository '" + repositoryId + "'");
         }
         return client;
     }

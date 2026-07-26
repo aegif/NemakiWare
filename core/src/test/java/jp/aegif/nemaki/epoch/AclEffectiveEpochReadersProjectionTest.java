@@ -190,8 +190,17 @@ public class AclEffectiveEpochReadersProjectionTest {
                 List.of(dep("leaf", ContentKind.DOCUMENT, null, Boolean.FALSE, DependencyRole.SELF)),
                 1L, null, null, null);
 
-        IllegalStateException e = assertThrows(IllegalStateException.class, () -> unwired.readers(RESOLVER));
+        // Review P1-2: this asserted IllegalStateException while AclEpochWiringException still
+        // EXTENDED it, so it passed either way — which is exactly the complaint (the separation was
+        // opt-in, not enforced). Rebasing the exception on RuntimeException made this assertion stop
+        // matching, and that failure is the evidence the type now actually separates wiring faults
+        // from the per-task IllegalStateExceptions the writer throws about documents.
+        AclEpochWiringException e =
+                assertThrows(AclEpochWiringException.class, () -> unwired.readers(RESOLVER));
         assertTrue(e.getMessage().contains("repositoryInfoMap"), e.getMessage());
+        // No runtime assertion is possible for "and it is NOT an IllegalStateException": javac
+        // rejects `e instanceof IllegalStateException` outright now, because the types are provably
+        // disjoint. The separation is enforced by the compiler, which is stronger than a test.
     }
 
     // ── fixtures ───────────────────────────────────────────────────
@@ -208,12 +217,12 @@ public class AclEffectiveEpochReadersProjectionTest {
     private static Dependency dep(String id, ContentKind kind, String parentId, Boolean aclInherited,
                                   DependencyRole role, Ace... aces) {
         return new Dependency(id, "1-x", true, 1L, null, parentId, aclInherited, null, null,
-                kind, role, new ArrayList<>(Arrays.asList(aces)));
+                kind, kind == ContentKind.FOLDER, role, new ArrayList<>(Arrays.asList(aces)));
     }
 
     private static Dependency relDep(String id, String sourceId, String targetId) {
         return new Dependency(id, "1-x", true, 1L, null, null, Boolean.FALSE, sourceId, targetId,
-                ContentKind.RELATIONSHIP, DependencyRole.SELF, new ArrayList<>());
+                ContentKind.RELATIONSHIP, false, DependencyRole.SELF, new ArrayList<>());
     }
 
     private static Ace ace(String principalId, String... permissions) {
