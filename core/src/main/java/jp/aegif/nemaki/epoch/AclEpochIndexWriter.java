@@ -157,6 +157,42 @@ public class AclEpochIndexWriter {
      */
     public WriteOutcome write(String repositoryId, String objectId, SolrClient solrClient,
                               AclSemantics.PrincipalResolver resolver) throws Exception {
+        return run(repositoryId, objectId, solrClient, resolver, false);
+    }
+
+    /**
+     * MIGRATION (wiring gate 2): stamp the INITIAL {@code effective_acl_epoch} — and the readers
+     * computed from the same snapshot — onto a document that has never been fenced.
+     *
+     * <p>Identical to {@link #write} in every respect but one: an ABSENT stored epoch is treated as
+     * {@code 0} instead of throwing. Deliberately the same method rather than a parallel
+     * implementation — the RTG-before-revalidate order, the §4.3 fence decision, the CAS and the
+     * 409 restart are exactly the properties migration must also honour, and a second copy of them
+     * is the defect class increments 3a/3b/4b and review P1-1 were each an instance of.
+     *
+     * <p>The value stamped is {@code snapshot().effectiveEpoch}. For pre-migration content every
+     * {@code aclSourceEpoch} is absent, so that is {@code 0}; the counter's first allocation is
+     * {@code 1}, so any epoch a production writer later pays STRICTLY beats the stamp and the fence
+     * orders correctly from the start.
+     *
+     * <p><b>It writes SOLR ONLY.</b> The CouchDB {@code aclSourceEpoch} is NOT filled in: allocating
+     * that is the post-commit two-phase mutation's job (§2.2), and pre-seeding it would manufacture
+     * an epoch no mutation ever paid for.
+     *
+     * <p>An already-stamped document is left alone unless its readers disagree — the ordinary fence
+     * decision handles that — so the migration is idempotent and resumable.
+     *
+     * <p><b>Still no production caller</b> (sign-off invariant 9). Running the migration is an
+     * operational step, and the writer stays off the ACL path until all four gates close.
+     */
+    public WriteOutcome stampInitialEpoch(String repositoryId, String objectId, SolrClient solrClient,
+                                          AclSemantics.PrincipalResolver resolver) throws Exception {
+        return run(repositoryId, objectId, solrClient, resolver, true);
+    }
+
+    private WriteOutcome run(String repositoryId, String objectId, SolrClient solrClient,
+                             AclSemantics.PrincipalResolver resolver, boolean bootstrap)
+            throws Exception {
         if (effectiveEpochService == null) {
             throw new AclEpochWiringException("effectiveEpochService not wired on AclEpochIndexWriter");
         }
@@ -193,7 +229,11 @@ public class AclEpochIndexWriter {
             }
             requireSameRepository(current, repositoryId, objectId);
             long version = requireCasVersion(current, objectId);
-            long storedEpoch = requireStoredEpoch(current, objectId);
+            // Migration is the ONLY caller allowed to see an unfenced document; for everyone else
+            // this throws (§4.3).
+            boolean epochWasAbsent = current.getFieldValue(FIELD_EFFECTIVE_EPOCH) == null;
+            long storedEpoch = epochWasAbsent && bootstrap
+                    ? 0L : requireStoredEpoch(current, objectId);
             List<String> storedReaders = normalizeStoredReaders(stringList(current.getFieldValues(FIELD_READERS)));
 
             // ── step 4: revalidate every recorded dependency; ANY change restarts ──
@@ -216,12 +256,17 @@ public class AclEpochIndexWriter {
                 return new WriteOutcome(WriteResult.SKIPPED_FRESHER, myEpoch, null, attempt);
             }
             if (stored == myEpoch) {
-                if (storedReaders.equals(readers)) {
+                if (storedReaders.equals(readers) && !epochWasAbsent) {
                     // Also re-checked every attempt: the recompute may simply agree with what is
                     // already stored, which is idempotence, not a reason to write.
+                    //
+                    // NOT when the epoch field was ABSENT, even if the readers happen to match what
+                    // the ordinary index already wrote: the whole point of the migration is to CREATE
+                    // the field, and short-circuiting here would leave the document unfenced while
+                    // reporting success — the writer would then refuse every later ACL update on it.
                     return new WriteOutcome(WriteResult.SKIPPED_IDEMPOTENT, myEpoch, null, attempt);
                 }
-                if (!forceWriteAfterEqualEpochDivergence) {
+                if (!forceWriteAfterEqualEpochDivergence && !epochWasAbsent) {
                     // EQUAL epoch, DIFFERENT readers: a transient read-skew artefact. Never "my
                     // payload wins by default" — recompute from the authoritative sources and write
                     // THAT (§4.3), so every conflicting writer converges on the last-finalized state.

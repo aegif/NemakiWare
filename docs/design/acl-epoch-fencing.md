@@ -334,7 +334,7 @@ reason increment 3/3a stays off the write path.
 
 **WIRING GATES (all FOUR must be closed before `AclEpochIndexWriter.write()` is put on the ACL
 path):** outbox ACK / enqueue (invariant 5) · migration stamping the initial
-`effective_acl_epoch` (else EVERY ACL update fails closed, by design — increment 4a) ·
+`effective_acl_epoch` (**capability DONE — increment 6**: `AclEpochIndexWriter.stampInitialEpoch`; the gate now closes on RUNNING it, which is an operational step) ·
 `content_incarnation` + content-writer fence (else a full-doc add re-clobbers `readers`) · §5.1
 quarantine operational contract.
 
@@ -773,6 +773,28 @@ invariant 9) and is not enabled in a write path until its stage is complete. The
 purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5–7).
 
 ### Implementation progress
+
+- **Increment 6 — migration: stamping the initial `effective_acl_epoch` (gate 2 capability): DONE.**
+  `AclEpochIndexWriter.stampInitialEpoch` runs the SAME protocol as `write` — RTG before
+  revalidation, the §4.3 fence decision, the `_version_` CAS, the 409 full restart — differing in one
+  respect only: an ABSENT stored epoch is treated as `0` instead of throwing. Deliberately the same
+  method rather than a parallel implementation; a second copy of the concurrency protocol is the
+  defect class increments 3a/3b/4b and review P1-1 were each an instance of.
+  - The value stamped is `snapshot().effectiveEpoch`, projected together with the readers from that
+    one snapshot. Pre-migration content has every `aclSourceEpoch` absent, so it is `0`, and the
+    counter's first allocation is `1` — every epoch a production writer later pays strictly beats
+    the stamp, so the fence orders correctly from the start.
+  - **SOLR ONLY.** The CouchDB `aclSourceEpoch` is never filled in: allocating it is the post-commit
+    two-phase mutation's job (§2.2), and pre-seeding would manufacture an epoch no mutation paid for.
+  - An absent epoch field is ALWAYS written, even when the readers already match what the ordinary
+    index wrote. Short-circuiting there would report success while leaving the document unfenced, and
+    the writer would then refuse every later ACL update on it.
+  - Verification: 4 ITs against live CouchDB + Solr (refused-then-stamped, the zero-epoch stamp,
+    idempotent re-run, and CouchDB left untouched). Mutation-bound: allowing the idempotent
+    short-circuit for an absent field, refusing the bootstrap, or bootstrapping from the ORDINARY
+    write each fail those ITs and nothing else.
+  - **Still no production caller.** The writer stays off the ACL path until all four gates close;
+    running the migration is an operational step, not something startup does.
 
 - **Increment 1 — counter foundation (§2.1, §8): DONE.** Per-repository monotonic
   `acl-epoch-counter::{repo}` doc + `_rev`-CAS allocation (overflow-reject,
