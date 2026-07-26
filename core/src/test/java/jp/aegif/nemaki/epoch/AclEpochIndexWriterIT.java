@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.epoch;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -349,6 +350,94 @@ public class AclEpochIndexWriterIT {
         assertEquals(6L, o.epoch);
         assertEquals(List.of(), readers(get(solrId)),
                 "the stale one-sided readers must be REPLACED by the authoritative empty set");
+    }
+
+    // ── migration: stamping the initial epoch (wiring gate 2) ──────
+
+    /**
+     * The gate-2 contract: an UNFENCED document is refused by the ordinary write and stamped by the
+     * migration, with the value {@code snapshot().effectiveEpoch}.
+     *
+     * <p>The refusal half matters as much as the stamp: it is why the migration must run BEFORE the
+     * writer is wired. Without it every ACL update on pre-migration content would fail closed.
+     */
+    @Test
+    void anUnfencedDocumentIsREFUSEDByTheOrdinaryWriteAndSTAMPEDByTheMigration() throws Exception {
+        seedFolder("root", null, false, 3L, List.of(ace("g1", "cmis:read")));
+        seedDocument(solrId, "root", true, 1L, List.of(ace("u1", "cmis:read")));
+        indexSolrDocUnfenced(solrId, "n", "/n", "b");   // no effective_acl_epoch at all
+
+        IllegalStateException refused = assertThrows(IllegalStateException.class,
+                () -> realWriter().write(contentDb, solrId, solr, RESOLVER));
+        assertTrue(refused.getMessage().contains("never been fenced"), refused.getMessage());
+
+        WriteOutcome o = realWriter().stampInitialEpoch(contentDb, solrId, solr, RESOLVER);
+
+        assertEquals(WriteResult.UPDATED, o.result);
+        assertEquals(3L, o.epoch, "the stamp is snapshot().effectiveEpoch = max(self=1, root=3)");
+        assertEquals(3L, num(get(solrId), "effective_acl_epoch"));
+        assertEquals(List.of(AclSemantics.formatGroupReader(contentDb, "g1"),
+                        AclSemantics.formatUserReader(contentDb, "u1")),
+                readers(get(solrId)), "the readers are stamped from the SAME snapshot");
+
+        // ...and the ordinary write now works, which is the whole point of the gate.
+        assertEquals(WriteResult.SKIPPED_IDEMPOTENT,
+                realWriter().write(contentDb, solrId, solr, RESOLVER).result);
+    }
+
+    /**
+     * Pre-migration content has every {@code aclSourceEpoch} absent, so the stamp is 0 — and the
+     * field must still be CREATED. An earlier draft short-circuited on "readers already match" and
+     * would have reported success while leaving the document unfenced, so the writer would have
+     * refused every later ACL update on it.
+     */
+    @Test
+    void aZeroEpochStampIsStillWRITTEN_evenWhenTheReadersAlreadyMatch() throws Exception {
+        seedFolderNoEpoch("root", null, false);
+        seedDocumentNoEpoch(solrId, "root", true, List.of(ace("u1", "cmis:read")));
+        indexSolrDocUnfenced(solrId, "n", "/n", "b");
+        // Pre-set exactly the readers the projection will compute.
+        setReadersOnly(solrId, List.of(AclSemantics.formatUserReader(contentDb, "u1")));
+
+        WriteOutcome o = realWriter().stampInitialEpoch(contentDb, solrId, solr, RESOLVER);
+
+        assertEquals(WriteResult.UPDATED, o.result, "an absent epoch field must be created, not skipped");
+        assertEquals(0L, o.epoch, "pre-migration content: every aclSourceEpoch absent → 0");
+        assertEquals(0L, num(get(solrId), "effective_acl_epoch"));
+    }
+
+    /** Re-running the migration is a clean no-op: it must be resumable after an interruption. */
+    @Test
+    void stampingTwiceIsIdempotent() throws Exception {
+        seedFolder("root", null, false, 2L, List.of(ace("g1", "cmis:read")));
+        seedDocument(solrId, "root", true, 1L);
+        indexSolrDocUnfenced(solrId, "n", "/n", "b");
+
+        assertEquals(WriteResult.UPDATED,
+                realWriter().stampInitialEpoch(contentDb, solrId, solr, RESOLVER).result);
+        assertEquals(WriteResult.SKIPPED_IDEMPOTENT,
+                realWriter().stampInitialEpoch(contentDb, solrId, solr, RESOLVER).result);
+    }
+
+    /**
+     * The migration must NOT touch CouchDB. Allocating {@code aclSourceEpoch} is the post-commit
+     * two-phase mutation's job (§2.2); pre-seeding it here would manufacture an epoch no mutation
+     * ever paid for, and the counter would no longer bound what has been issued.
+     */
+    @Test
+    void stampingWritesSOLRONLY_neverTheCouchDBAclSourceEpoch() throws Exception {
+        seedFolderNoEpoch("root", null, false);
+        seedDocumentNoEpoch(solrId, "root", true, List.of(ace("u1", "cmis:read")));
+        indexSolrDocUnfenced(solrId, "n", "/n", "b");
+
+        realWriter().stampInitialEpoch(contentDb, solrId, solr, RESOLVER);
+
+        for (String id : List.of("root", solrId)) {
+            Document d = cloudant.getDocument(new GetDocumentOptions.Builder()
+                    .db(contentDb).docId(id).build()).execute().getResult();
+            assertFalse(d.getProperties().containsKey("aclSourceEpoch"),
+                    "the migration wrote aclSourceEpoch onto " + id + " — that is the mutation's job");
+        }
     }
 
     // ── step 6: 409 → FULL restart, no payload reuse ───────────────
@@ -734,6 +823,38 @@ public class AclEpochIndexWriterIT {
         p.put("aclSourceEpoch", epoch);
         if (aclEntries != null) p.put("acl", Map.of("entries", aclEntries));
         put(id, p);
+    }
+
+    /** Seed a folder with NO aclSourceEpoch — the pre-migration shape. */
+    private void seedFolderNoEpoch(String id, String parentId, boolean inherits) {
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("type", "cmis:folder");
+        p.put("name", id);
+        if (parentId != null) p.put("parentId", parentId);
+        p.put("aclInherited", inherits);
+        put(id, p);
+    }
+
+    private void seedDocumentNoEpoch(String id, String parentId, boolean inherits,
+                                     List<Map<String, Object>> aclEntries) {
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("type", "cmis:document");
+        p.put("name", id);
+        if (parentId != null) p.put("parentId", parentId);
+        p.put("aclInherited", inherits);
+        if (aclEntries != null) p.put("acl", Map.of("entries", aclEntries));
+        put(id, p);
+    }
+
+    /** Set readers WITHOUT creating effective_acl_epoch (the pre-migration index shape). */
+    private void setReadersOnly(String id, List<String> readers) throws Exception {
+        SolrInputDocument d = new SolrInputDocument();
+        d.addField("id", id);
+        d.setField("readers", Collections.singletonMap("set", readers));
+        UpdateRequest req = new UpdateRequest();
+        req.add(d);
+        req.process(solr);
+        solr.commit();
     }
 
     /** A persisted ACE: {@code {"principal": …, "permissions": [...]}}. */
