@@ -590,9 +590,12 @@ path; and a live re-index of `bbc119345228953e3405c85bdb36b096` producing byte-i
 `[group:bedroom:GROUP_EVERYONE, user:bedroom:admin, user:bedroom:system]`. **Playwright has NOT been
 run** — it remains outstanding for 5R-b.
 
-**Next:** the four remaining WIRING GATES (listed just above §5.2) — outbox ACK, migration stamping the
-initial `effective_acl_epoch`, `content_incarnation` + the content-writer fence, and the §5.1
-quarantine operational contract. 5R, 5T and 5S are done. Production wiring remains NO-GO.
+**Next:** increment 7 — **outbox ACK**. Then `content_incarnation` + the content-writer fence, and
+the §5.1 quarantine operational contract.
+
+Gate 2 (migration) has its CAPABILITY as of increment 6 (`stampInitialEpoch`); what remains for that
+gate is operational — a repository-wide runner (admin API / patch / script) and actually running it.
+That can be built alongside increment 7. 5R, 5T and 5S are done. Production wiring remains NO-GO.
 
 **Process correction:** any "verified live" claim in this document or in a test comment must carry
 the command and its raw output. This one did not, and the reviewer's independent Browser-Binding,
