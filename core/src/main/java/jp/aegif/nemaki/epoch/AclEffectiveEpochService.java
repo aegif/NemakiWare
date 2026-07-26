@@ -161,11 +161,25 @@ public class AclEffectiveEpochService {
         public final String targetId;
         /** The CMIS base kind; {@code null} only for a NEGATIVE (recorded-absent) dependency. */
         public final ContentKind kind;
+        /**
+         * Whether the CMIS runtime would call this a folder — {@code NodeBase.isFolder()}, i.e. the
+         * persisted {@code type} being EXACTLY {@code cmis:folder} (review P1-2).
+         *
+         * <p>Deliberately NOT {@code kind == FOLDER}. {@link #resolveKind} follows the DAO and also
+         * accepts the legacy short form {@code "folder"} and an {@code objectType} fallback, but
+         * {@code NodeBase.isFolder()} does neither and {@code new Folder(content)} does not normalise
+         * the type. A document stored as {@code {"type":"folder"}} is therefore a folder to the epoch
+         * walk and NOT a folder to the CMIS runtime; using {@code kind} for the root test would have
+         * reproduced P1-1 with the sides swapped — CMIS climbing past a corrupt root while the epoch
+         * walk stopped.
+         */
+        public final boolean cmisFolder;
         public final DependencyRole role;
         /**
          * The node's RAW LOCAL ACEs, exactly as persisted (increment 5S). This is what makes the
-         * readers a SECOND PROJECTION OF THE SAME READ rather than a second traversal: the epoch and
-         * the reader tokens are computed from this one snapshot, at this one {@code _rev}.
+         * readers a SECOND PROJECTION OF THE SAME READ: the epoch and the reader tokens are computed
+         * from this one snapshot, at this one {@code _rev}. (It does NOT eliminate the second
+         * TRAVERSAL — see {@code Snapshot.readers} for exactly what is and is not unified.)
          *
          * <p>Never merged and never converted here — merging and the system-principal conversion are
          * {@link jp.aegif.nemaki.acl.AclSemantics}' job, so that the CMIS runtime and this side run
@@ -180,10 +194,18 @@ public class AclEffectiveEpochService {
         Dependency(String id, String rev, boolean exists, long sourceEpoch, String state,
                    String parentId, Boolean aclInherited, String sourceId, String targetId,
                    ContentKind kind, DependencyRole role, List<jp.aegif.nemaki.model.Ace> localAces) {
+            this(id, rev, exists, sourceEpoch, state, parentId, aclInherited, sourceId, targetId,
+                    kind, kind == ContentKind.FOLDER, role, localAces);
+        }
+
+        Dependency(String id, String rev, boolean exists, long sourceEpoch, String state,
+                   String parentId, Boolean aclInherited, String sourceId, String targetId,
+                   ContentKind kind, boolean cmisFolder, DependencyRole role,
+                   List<jp.aegif.nemaki.model.Ace> localAces) {
             this.id = id; this.rev = rev; this.exists = exists; this.sourceEpoch = sourceEpoch;
             this.state = state; this.parentId = parentId; this.aclInherited = aclInherited;
             this.sourceId = sourceId; this.targetId = targetId;
-            this.kind = kind; this.role = role;
+            this.kind = kind; this.cmisFolder = cmisFolder; this.role = role;
             this.localAces = localAces == null
                     ? Collections.<jp.aegif.nemaki.model.Ace>emptyList()
                     : Collections.unmodifiableList(localAces);
@@ -206,7 +228,8 @@ public class AclEffectiveEpochService {
                     && Objects.equals(aclInherited, o.aclInherited)
                     && Objects.equals(sourceId, o.sourceId)
                     && Objects.equals(targetId, o.targetId)
-                    && kind == o.kind;
+                    && kind == o.kind
+                    && cmisFolder == o.cmisFolder;
         }
 
         @Override public String toString() {
@@ -277,9 +300,11 @@ public class AclEffectiveEpochService {
          */
         public List<String> readers(AclSemantics.PrincipalResolver resolver) {
             if (rootFolderId == null) {
-                throw new IllegalStateException("repositoryInfoMap not wired on AclEffectiveEpochService "
-                        + "— the readers projection needs the root-folder id and the configured "
-                        + "anyone/anonymous principal ids");
+                // Unreachable through snapshot(), which now requires the map up front; retained for a
+                // Snapshot constructed directly (the tests do) so the failure is still typed.
+                throw new AclEpochWiringException("repositoryInfoMap not wired on "
+                        + "AclEffectiveEpochService — the readers projection needs the root-folder id "
+                        + "and the configured anyone/anonymous principal ids");
             }
             Map<String, Dependency> byId = index();
             Dependency self = byId.get(objectId);
@@ -444,11 +469,14 @@ public class AclEffectiveEpochService {
     // ── the ONE inheritance-stop rule (increment 5S review P1-1) ───
 
     /**
-     * Is this dependency the repository ROOT? Mirrors {@code ContentServiceImpl.isRoot}: the root
-     * folder id AND a folder.
+     * Is this dependency the repository ROOT? Matches {@code ContentServiceImpl.isRoot} exactly: the
+     * root-folder id AND {@code NodeBase.isFolder()} — the persisted {@code type} being EXACTLY
+     * {@code cmis:folder} (see {@link Dependency#cmisFolder}; review P1-2 corrected an earlier
+     * version that used the DAO-compatible {@code kind} and so disagreed on a legacy
+     * {@code {"type":"folder"}} document).
      */
     static boolean isRoot(Dependency d, String rootFolderId) {
-        return d.kind == ContentKind.FOLDER && rootFolderId != null && rootFolderId.equals(d.id);
+        return d.cmisFolder && rootFolderId != null && rootFolderId.equals(d.id);
     }
 
     /**
@@ -753,8 +781,13 @@ public class AclEffectiveEpochService {
                     + "endpoint fields (sourceId/targetId) — refusing to guess its dependencies");
         }
 
+        // NodeBase.isFolder(): the persisted `type` EXACTLY equal to cmis:folder. Neither the legacy
+        // short form nor the objectType fallback counts, because the CMIS runtime does not accept
+        // them either (review P1-2).
+        boolean cmisFolder = jp.aegif.nemaki.util.constant.NodeType.CMIS_FOLDER.value()
+                .equals(p.get(FIELD_TYPE));
         return new Dependency(id, doc.getRev(), true, v.epoch, v.state, parentId, aclInherited,
-                sourceId, targetId, kind, role, parseLocalAces(id, p));
+                sourceId, targetId, kind, cmisFolder, role, parseLocalAces(id, p));
     }
 
     /**
@@ -762,20 +795,37 @@ public class AclEffectiveEpochService {
      * {@code CouchAcl.convertToNemakiAcl} — including its rule that every stored entry is a LOCAL
      * ace with {@code direct = true}.
      *
-     * <p>An ABSENT {@code acl}, or an absent {@code entries}, yields an empty list: that is
-     * {@code convertToNemakiAcl} returning null, which the CMIS side turns into an empty list (after
-     * logging).
+     * <p>An ABSENT {@code acl}, or an absent / present-null {@code entries}, yields an empty list.
+     *
+     * <p><b>The CMIS side is NOT uniformly equivalent here</b> (review P2-2 — an earlier revision
+     * claimed it "turns into an empty list", which is only half true). {@code convertToNemakiAcl}
+     * returns {@code null} for all three shapes, so {@code Content.getAcl()} is null, and what happens
+     * next depends on which branch reads it: {@code CmisChainNode.localAces()} logs and substitutes an
+     * empty list (the inheriting branch), but {@code resolveAcl}'s root / non-inheriting branch returns
+     * {@code storedAcl()} and then dereferences it — an NPE.
+     *
+     * <p>This side is therefore deliberately MORE ROBUST than the CMIS layer for those documents: it
+     * yields no ACEs, which rule 2 turns into admin-only — fail-closed — instead of crashing. Chosen
+     * over reproducing the NPE because a crash is not a safer outcome, and over treating it as an
+     * anomaly because §5.1 would then stall the whole subtree for a document CMIS mostly serves. The
+     * CMIS-side fragility is pre-existing and recorded in design §10.3.
      *
      * <p><b>Where this deliberately differs from CouchAcl, and where it deliberately does not</b>
      * (review P2-5 — an earlier revision called this a "mirror" and was STRICTER than CouchAcl in
      * two places, which would have permanently excluded from the index an object the CMIS layer
      * serves perfectly well; §5.1 makes that a whole-subtree blast radius):
      * <ul>
-     *   <li><b>principal coercion — MATCHED.</b> {@code CouchAcl} does {@code .toString()}, so a
-     *       non-String principal becomes its string form and a BLANK one is kept. Both are accepted
-     *       here too. Rejecting them bought nothing: neither can produce a reader token on either
-     *       side (a blank id short-circuits, an unknown id is NOT_FOUND and dropped), so the only
-     *       effect of throwing was to convert "no token" into "no index update at all".</li>
+     *   <li><b>principal coercion — MATCHED for the shapes that occur.</b> {@code CouchAcl} does
+     *       {@code .toString()}, so a non-String principal becomes its string form and a BLANK one is
+     *       kept. Both are accepted here too. The two sides can still differ on the STRING FORM of an
+     *       exotic JSON number ({@code 1e5}, {@code 1.50}), because each layer's deserializer chooses
+     *       its own numeric type before {@code toString()} runs. Canonical integers agree, and a
+     *       principal id is not a number in any real deployment, so this is recorded rather than
+     *       normalised — normalising would mean inventing a rule neither side has. Rejecting them bought nothing: neither can produce a reader token on either
+     *       side (an EMPTY id short-circuits in {@code addReaderFromPrincipal} — note that check is
+     *       {@code isEmpty()}, not {@code isBlank()}, so a whitespace-only id reaches the lookups and
+     *       is then NOT_FOUND and dropped), so the only effect of throwing was to convert "no token"
+     *       into "no index update at all".</li>
      *   <li><b>a NULL principal — anomaly.</b> {@code CouchAcl} throws an NPE on it, so this is not
      *       a case the CMIS layer tolerates either; a named anomaly is simply a better failure.</li>
      *   <li><b>structural forms — anomaly.</b> A non-object {@code acl}, non-list {@code entries}, a
@@ -928,13 +978,13 @@ public class AclEffectiveEpochService {
      */
     private String requireRootFolderId(String repositoryId) {
         if (repositoryInfoMap == null) {
-            throw new IllegalStateException("repositoryInfoMap not wired on AclEffectiveEpochService "
+            throw new AclEpochWiringException("repositoryInfoMap not wired on AclEffectiveEpochService "
                     + "— it is REQUIRED: the inheritance-stop rule and the readers projection both "
                     + "need the root-folder id");
         }
         jp.aegif.nemaki.cmis.factory.info.RepositoryInfo info = repositoryInfoMap.get(repositoryId);
         if (info == null || info.getRootFolderId() == null || info.getRootFolderId().isBlank()) {
-            throw new IllegalStateException("no usable RepositoryInfo / root-folder id for repository '"
+            throw new AclEpochWiringException("no usable RepositoryInfo / root-folder id for repository '"
                     + repositoryId + "'");
         }
         return info.getRootFolderId();
@@ -942,7 +992,7 @@ public class AclEffectiveEpochService {
 
     private CloudantClientWrapper contentClient(String repositoryId) {
         if (connectorPool == null) {
-            throw new IllegalStateException("connectorPool not wired on AclEffectiveEpochService");
+            throw new AclEpochWiringException("connectorPool not wired on AclEffectiveEpochService");
         }
         CloudantClientWrapper client = connectorPool.getClient(repositoryId);
         if (client == null) {
