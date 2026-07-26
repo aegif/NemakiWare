@@ -203,8 +203,12 @@ public class AclSemanticsCrossImplementationAgreementIT {
                     + "disagreement, not a shared limitation");
             assertNotNull(epochFailure, "corpus case '" + name + "' is exempted but the epoch side "
                     + "computes it fine");
-            assertTrue(cmisFailure instanceof IllegalStateException,
-                    "expected the CMIS strict-mode failure, got " + cmisFailure);
+            // Pin the MESSAGE too, not just IllegalStateException (review P3): a mock-setup slip
+            // throws ISE as well, and AclEpochWiringException used to BE an ISE — so the broad check
+            // would have accepted a wiring accident as a legitimate exemption.
+            assertTrue(cmisFailure instanceof IllegalStateException
+                            && String.valueOf(cmisFailure.getMessage()).startsWith("Strict ACL: parent "),
+                    "expected the CMIS strict-mode unreadable-parent failure, got " + cmisFailure);
             assertTrue(epochFailure instanceof AclEffectiveEpochService.AclEpochUnavailableException,
                     "expected the epoch walk's retryable failure, got " + epochFailure);
             wipe();
@@ -243,6 +247,34 @@ public class AclSemanticsCrossImplementationAgreementIT {
         assertTrue(viaCmis.contains(AclSemantics.formatUserReader(contentDb, "must-not-appear")),
                 "NodeBase.isFolder() rejects the legacy spelling, so this node is NOT the root to "
                         + "either side and the grandparent's grant is genuinely inherited: " + viaCmis);
+    }
+
+    /**
+     * Review P2-1: a root / non-inheriting node whose persisted ACL is unusable.
+     *
+     * <p>Two revisions of {@code parseLocalAces}' Javadoc described this wrongly — first as "the CMIS
+     * side turns it into an empty list", then as "the CMIS side NPEs and we are more robust" — and
+     * design §10.3 recorded the second as a known adjacent issue. Neither was true: the DAO never
+     * yields a null {@code Acl}, because {@code CouchContent}'s creator only assigns {@code acl} when
+     * {@code entries instanceof List} and {@code convert()} then substitutes {@code new Acl()}.
+     *
+     * <p>Both sides therefore reach ZERO ACEs and rule 2 turns that into admin-only. Pinned here so
+     * the claim is measured rather than argued, over all three shapes.
+     */
+    @Test
+    void aNodeWithNoUsableAclIsADMINONLYOnBOTHSides() {
+        for (String aclJson : List.of("", ",\"acl\":null", ",\"acl\":{}", ",\"acl\":{\"entries\":null}")) {
+            seedRaw("leaf", "{\"type\":\"cmis:document\",\"aclInherited\":false,"
+                    + "\"aclSourceEpoch\":1" + aclJson + "}");
+
+            List<String> viaCmis = cmisReadersOf("leaf", List.of("leaf"));
+            List<String> viaEpoch = epochService.snapshot(contentDb, "leaf").readers(resolver());
+
+            assertEquals(AclSemantics.adminOnlyReaders(contentDb), viaCmis,
+                    "CMIS side, acl shape '" + aclJson + "'");
+            assertEquals(viaCmis, viaEpoch, "the two sides disagree for acl shape '" + aclJson + "'");
+            wipe();
+        }
     }
 
     /**
@@ -369,7 +401,33 @@ public class AclSemanticsCrossImplementationAgreementIT {
      * the persisted ACL through the REAL {@code CouchAcl.convertToNemakiAcl}, so its coercion rules
      * are compared against {@code parseLocalAces} rather than assumed to match (review P2-4/P2-5).
      */
-    /** Rebuild ONE seeded document as the CMIS layer would, via the real {@code CouchAcl}. */
+    /**
+     * Rebuild ONE seeded document from CouchDB and run its ACL through the REAL
+     * {@code CouchAcl.convertToNemakiAcl}, so the CMIS side is not fed a hand-made fixture.
+     *
+     * <p><b>This is NOT the production DAO, and three limits follow</b> (review P2-2 / P2-3 / P3 —
+     * an earlier Javadoc claimed it compared the COERCION rules, which it cannot):
+     * <ul>
+     *   <li><b>Coercion is not compared.</b> Both sides read the SAME Cloudant SDK {@code Map}, so
+     *       {@code principal.toString()} runs on the same Java object on both. The divergence
+     *       {@code parseLocalAces} names ({@code 1e5} / {@code 1.50}, where each deserializer picks
+     *       its own numeric type) is unobservable here by construction: production reaches
+     *       {@code CouchAcl} through Jackson → {@code CouchContent}'s map creator → {@code JSONObject}.
+     *       What IS compared is {@code convertToNemakiAcl}'s body — the {@code direct = true} rule and
+     *       the permissions cast.</li>
+     *   <li><b>Structural anomalies are SWALLOWED here, not reproduced.</b> The
+     *       {@code instanceof List} guard below turns a non-list {@code entries} (and, further in, a
+     *       non-object entry or a null principal) into an empty ACL, whereas {@code parseLocalAces}
+     *       throws {@code AclEpochAnomalyException}. No corpus case seeds those shapes today, so it is
+     *       currently harmless — but a fault-injection IT that reuses this helper would report a FALSE
+     *       disagreement. Route such a test through {@code ContentDaoServiceImpl} instead.</li>
+     *   <li><b>The Java class differs for a legacy folder.</b> A {@code {"type":"folder"}} document
+     *       becomes a {@code Document} here while the real DAO builds a {@code CouchFolder} →
+     *       {@code Folder}. Behaviourally equivalent for this test — {@code isFolder()} is type-based
+     *       and the mocked {@code getFolder} wraps with {@code new Folder(ct)}, preserving the type —
+     *       but it is not the same object shape.</li>
+     * </ul>
+     */
     @SuppressWarnings("unchecked")
     private Content readBackOne(String id) {
         Document raw = cloudant.getDocument(new com.ibm.cloud.cloudant.v1.model.GetDocumentOptions

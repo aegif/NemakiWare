@@ -271,11 +271,11 @@ public class AclEpochCounterService {
 
     private CloudantClientWrapper getConfClient() {
         if (connectorPool == null) {
-            throw new IllegalStateException("connectorPool not wired on AclEpochCounterService");
+            throw new AclEpochWiringException("connectorPool not wired on AclEpochCounterService");
         }
         CloudantClientWrapper client = connectorPool.getClient(SystemConst.NEMAKI_CONF_DB);
         if (client == null) {
-            throw new IllegalStateException("nemaki_conf database client not available");
+            throw new AclEpochWiringException("nemaki_conf database client not available");
         }
         return client;
     }
