@@ -9,6 +9,8 @@ import org.apache.solr.common.SolrInputDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import jp.aegif.nemaki.acl.AclSemantics;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -73,33 +75,32 @@ public class AclEpochIndexWriter {
         this.maxAttempts = maxAttempts > 0 ? maxAttempts : DEFAULT_MAX_ATTEMPTS;
     }
 
-    // ── SPI ────────────────────────────────────────────────────────
+    // ── readers ────────────────────────────────────────────────────
 
     /**
-     * Computes the canonical reader tokens from an AUTHORITATIVE snapshot. Production supplies an
-     * {@code ACLExpander}-backed implementation in the wiring increment; keeping it an interface is
-     * what lets this increment stay unwired and lets the concurrency ITs drive the protocol
-     * deterministically.
+     * The reader tokens for this write, projected from the SAME snapshot that produced the effective
+     * epoch (increment 5S step 3).
      *
-     * <p>It MUST fail (throw) rather than return an empty/partial list when it cannot compute the
-     * readers: writing an empty {@code readers} would make the object invisible to every non-admin
-     * search, which is a silent availability failure, and writing a PARTIAL list is worse. The
-     * writer ENFORCES this (review 4b): a {@code null} list, an EMPTY list, or any null/blank token
-     * is refused. An authoritative computation never legitimately yields nothing — the ACL
-     * expansion is itself fail-closed and always emits at least the admin role token — so an empty
-     * result can only mean the computation failed.
+     * <p>This replaced a pluggable {@code ReadersComputer} SPI. The SPI's contract — "compute from
+     * the authoritative, cache-bypassing sources, for the object itself as well as its ancestors" —
+     * was <b>unenforceable at the boundary</b> (design §5.2, now deleted): the snapshot did not carry
+     * the ACL entries, so an implementation that read from the ACL cache would pass revalidation
+     * while writing readers derived from a different ACL state. Now the snapshot carries the raw
+     * local ACLs and the projection is structural, so there is nothing left to promise.
      *
-     * <p><b>Contract for the PRODUCTION implementation (review 4a — mandatory at wiring time):</b>
-     * it MUST compute from the AUTHORITATIVE, cache-bypassing sources — the strict inherited-ACL
-     * walk — for the object ITSELF as well as its ancestors, and MUST NOT use a stale event payload
-     * or the ACL cache. The {@link AclEffectiveEpochService.Snapshot} passed in pins the epochs,
-     * revisions and topology of every dependency, but it deliberately does NOT carry the ACL
-     * entries themselves, so the SPI boundary alone cannot enforce this: a computer that read from
-     * the cache would pass revalidation while writing readers derived from a different ACL state.
+     * <p>The {@code resolver} is NOT a replacement SPI. It answers one question — does this principal
+     * id exist as a user or a group — and cannot change the ACL semantics. Every one of its failure
+     * modes SHRINKS the token set ({@code UNAVAILABLE} throws rather than dropping, increment 5T), so
+     * it can cause a stale-deny but never an over-grant.
+     *
+     * <p>Package-private and overridable for the same reason as {@link #realtimeGet}: the protocol
+     * ITs pin the fence decision, the 409 restart and the repository boundary, and those need a
+     * chosen readers value rather than one that happens to fall out of a fixture. Production
+     * {@link #write} has NO parameter that can substitute a different computation.
      */
-    @FunctionalInterface
-    public interface ReadersComputer {
-        List<String> compute(AclEffectiveEpochService.Snapshot snapshot);
+    List<String> computeReaders(AclEffectiveEpochService.Snapshot snapshot,
+                                AclSemantics.PrincipalResolver resolver) {
+        return snapshot.readers(resolver);
     }
 
     // ── outcome ────────────────────────────────────────────────────
@@ -146,18 +147,24 @@ public class AclEpochIndexWriter {
      * @throws AclEpochAnomalyException                              corrupt epoch data (including a
      *         QUARANTINED dependency) — retain the task, repair required (design §5.1)
      * @throws AclEffectiveEpochService.AclEpochUnavailableException a dependency could not be read
+     * @throws jp.aegif.nemaki.acl.PrincipalUnavailableException     a principal lookup could NOT BE
+     *         SERVED (a missing design document / view / database — increment 5T). RETRYABLE, and
+     *         deliberately distinct from a principal that is genuinely absent, which is simply
+     *         omitted: dropping on an unservable lookup would degrade every principal to "absent"
+     *         and hand the fail-closed fallback an admin-only set as if it had been computed. The
+     *         caller RETAINS its task.
      * @throws AclEpochWriteContentionException                      restarts exhausted (retryable)
      */
     public WriteOutcome write(String repositoryId, String objectId, SolrClient solrClient,
-                              ReadersComputer computer) throws Exception {
+                              AclSemantics.PrincipalResolver resolver) throws Exception {
         if (effectiveEpochService == null) {
             throw new IllegalStateException("effectiveEpochService not wired on AclEpochIndexWriter");
         }
         if (solrClient == null) {
             throw new IllegalStateException("Solr client unavailable for " + objectId);
         }
-        if (computer == null) {
-            throw new IllegalArgumentException("readers computer is required");
+        if (resolver == null) {
+            throw new IllegalArgumentException("principal resolver is required");
         }
 
         // A single authoritative recompute is FORCED after an equal-epoch/different-readers
@@ -171,7 +178,8 @@ public class AclEpochIndexWriter {
             if (snapshot == null) {
                 return new WriteOutcome(WriteResult.SKIPPED_DELETED, 0L, null, attempt);
             }
-            List<String> readers = strictIncomingReaders(computer.compute(snapshot), objectId);
+            List<String> readers = strictComputedReaders(computeReaders(snapshot, resolver),
+                    objectId, snapshot);
             long myEpoch = snapshot.effectiveEpoch;
 
             // ── step 3: realtime GET (never a searcher query) ──
@@ -334,24 +342,40 @@ public class AclEpochIndexWriter {
     }
 
     /**
-     * The readers to WRITE, validated strictly (review 4a [P2]): a {@code null} list, or ANY null /
-     * blank element, means the {@link ReadersComputer} failed partially. Dropping such an element
-     * would persist a SHORTER reader set that looks perfectly normal — a silent under-grant. The
-     * write is refused instead.
+     * The readers to WRITE, validated as an INTERNAL INVARIANT (review 4a [P2]; re-scoped in 5S
+     * step 3). A {@code null} list, or ANY null / blank element, would persist a SHORTER reader set
+     * that looks perfectly normal — a silent under-grant — so the write is refused instead.
+     *
+     * <p>Since 5S step 3 these checks guard against a BUG in the shared projection rather than
+     * against a third-party plugin: {@link AclSemantics#readerTokens} cannot produce a null list,
+     * a null token or a blank token. They are kept as defence in depth, not as a boundary contract.
+     *
+     * <p><b>EMPTY is the one case that is not always a failure.</b> {@code readerTokens} never
+     * returns empty — its rule 2 falls back to admin-only — so the only legitimate empty result is a
+     * relationship whose source AND target are both genuinely gone, whose reader set production
+     * already persists as empty ({@code SolrUtil.unionReaders}: the query-side filter then hides it
+     * from every non-admin). Refusing that unconditionally would leave such a relationship's
+     * reconcile task failing and retrying for ever, so the SNAPSHOT is asked whether the emptiness is
+     * authoritative — a question only it can answer, because only it recorded the endpoints' absence.
      */
-    private static List<String> strictIncomingReaders(List<String> computed, String objectId) {
-        if (computed == null || computed.isEmpty()) {
-            // EMPTY is refused as well as null (review 4b): an authoritative expansion is itself
-            // fail-closed and always emits at least the admin role token, so "no readers at all"
-            // can only mean the computation failed — and persisting it would make the object
-            // invisible to every non-admin search, silently.
-            throw new IllegalStateException("readers computer returned "
-                    + (computed == null ? "null" : "an empty list") + " for " + objectId
+    private static List<String> strictComputedReaders(List<String> computed, String objectId,
+                                                      AclEffectiveEpochService.Snapshot snapshot) {
+        if (computed == null) {
+            throw new IllegalStateException("the readers projection returned null for " + objectId
                     + " — refusing to write an empty ACL group");
+        }
+        if (computed.isEmpty()) {
+            if (snapshot.emptyReadersIsAuthoritative()) {
+                // A relationship with both endpoints deleted: empty IS the fail-closed answer.
+                return Collections.emptyList();
+            }
+            throw new IllegalStateException("the readers projection returned an empty list for "
+                    + objectId + ", which is not an authoritative empty (only a relationship with "
+                    + "both endpoints absent may be empty) — refusing to write an empty ACL group");
         }
         for (String r : computed) {
             if (r == null || r.isBlank()) {
-                throw new IllegalStateException("readers computer returned a null / blank token for "
+                throw new IllegalStateException("the readers projection returned a null / blank token for "
                         + objectId + " — a partial computation must never be written as a shorter "
                         + "reader set");
             }

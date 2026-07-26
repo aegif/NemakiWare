@@ -170,6 +170,17 @@ public final class AclSemanticsCorpus {
                         folder("mid", ROOT_ID, Boolean.TRUE, ace("dup", "cmis:all")),
                         root(ace("u3", "cmis:read")))));
 
+        // The merge DIRECTION is invisible to the reader-token layer when both depths grant read
+        // (the token set is the same either way). It becomes observable only when the nearer node
+        // grants a NON-read permission and the further one grants read: correct = the nearer wins,
+        // so the principal has no read and is dropped; a forked merge = the ancestor wins and the
+        // token appears. Added for the cross-implementation agreement test, which could not
+        // otherwise prove that agreement is load-bearing.
+        out.add(new Case("nearer-node-REVOKES-read-that-the-ancestor-grants",
+                List.of(doc("leaf", "mid", Boolean.TRUE, ace("dup", "cmis:write")),
+                        folder("mid", ROOT_ID, Boolean.TRUE, ace("dup", "cmis:read")),
+                        root(ace("u3", "cmis:read")))));
+
         out.add(new Case("same-principal-at-three-depths",
                 List.of(doc("leaf", "mid", Boolean.TRUE, ace("dup", "cmis:read")),
                         folder("mid", "upper", Boolean.TRUE, ace("dup", "cmis:write")),

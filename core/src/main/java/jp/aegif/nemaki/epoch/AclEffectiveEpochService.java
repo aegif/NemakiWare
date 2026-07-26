@@ -267,10 +267,7 @@ public class AclEffectiveEpochService {
                         + "— the readers projection needs the root-folder id and the configured "
                         + "anyone/anonymous principal ids");
             }
-            Map<String, Dependency> byId = new LinkedHashMap<>();
-            for (Dependency d : dependencies) {
-                byId.put(d.id, d);
-            }
+            Map<String, Dependency> byId = index();
             Dependency self = byId.get(objectId);
             if (self == null) {
                 throw new IllegalStateException("snapshot of " + objectId + " does not contain itself");
@@ -287,11 +284,54 @@ public class AclEffectiveEpochService {
             return readersOf(byId, objectId, resolver);
         }
 
+        /**
+         * Whether an EMPTY reader set from {@link #readers} is the authoritative answer rather than
+         * a failed computation (increment 5S step 3).
+         *
+         * <p>{@link AclSemantics#readerTokens} never returns empty — rule 2 falls back to admin-only
+         * — so the ONLY way {@link #readers} yields nothing is a relationship whose source and target
+         * BOTH contribute nothing, i.e. both endpoints are genuinely absent. That is exactly the
+         * fail-closed value production already writes ({@code SolrUtil.unionReaders}): the query-side
+         * {@code readers} filter then excludes the relationship for every non-admin caller.
+         *
+         * <p>The writer needs this because it otherwise refuses an empty ACL group as a partial
+         * computation. Without the distinction, a relationship whose endpoints were both deleted
+         * could never be reconciled — its task would fail and retry for ever.
+         */
+        public boolean emptyReadersIsAuthoritative() {
+            Map<String, Dependency> byId = index();
+            Dependency self = byId.get(objectId);
+            if (self == null || self.kind != ContentKind.RELATIONSHIP) {
+                return false;
+            }
+            return endpoint(byId, self.sourceId) == null && endpoint(byId, self.targetId) == null;
+        }
+
+        /** id → dependency, in walk order. */
+        private Map<String, Dependency> index() {
+            Map<String, Dependency> byId = new LinkedHashMap<>();
+            for (Dependency d : dependencies) {
+                byId.put(d.id, d);
+            }
+            return byId;
+        }
+
+        /**
+         * The dependency an endpoint / chain root resolves to, or {@code null} when it contributes
+         * NOTHING — an absent id, an unrecorded id, or a recorded ABSENCE (a dangling endpoint).
+         * Shared by {@link #readersOf} and {@link #emptyReadersIsAuthoritative} so the two can never
+         * disagree about what "contributes nothing" means.
+         */
+        private static Dependency endpoint(Map<String, Dependency> byId, String id) {
+            Dependency d = id == null ? null : byId.get(id);
+            return (d == null || !d.exists) ? null : d;
+        }
+
         /** Readers of one recorded chain root, or {@code null} for a dangling / unrecorded id. */
         private List<String> readersOf(Map<String, Dependency> byId, String id,
                                        AclSemantics.PrincipalResolver resolver) {
-            Dependency d = id == null ? null : byId.get(id);
-            if (d == null || !d.exists) {
+            Dependency d = endpoint(byId, id);
+            if (d == null) {
                 return null;
             }
             jp.aegif.nemaki.model.Acl acl =

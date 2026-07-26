@@ -332,72 +332,44 @@ ACL-UPDATE / queue increments; none of them exists yet):
 Until these exist, the walk is correct but the operational story is not, which is one
 reason increment 3/3a stays off the write path.
 
-### 5.2 `ReadersComputer`: obligations for the WIRING increment
-
-The fenced writer (increment 4) takes its readers from a `ReadersComputer` SPI. That boundary
-pins WHEN the readers are computed (between the walk and the RTG) and WHAT is rejected (a null
-list, an EMPTY list, or any null/blank token — increment 4b), but it can NOT pin HOW they are
-computed: the `Snapshot` deliberately carries epochs, revisions and topology, not the ACL entries
-themselves. A computer that read from the ACL cache, or from a stale event payload, would pass
-revalidation while writing readers derived from a DIFFERENT ACL state.
-
-The following are therefore **required of the production implementation, in the wiring increment**
-(they are contract-only today, stated on the SPI Javadoc):
-
-1. **Authoritative, cache-bypassing** — the strict inherited-ACL walk, never
-   `calculateAcl`'s cached result and never an event payload captured earlier.
-2. **Including the object ITSELF**, not only its ancestors: its own local ACEs are part of the
-   effective readers, and a computer that only re-walked ancestors would silently under- or
-   over-grant on a direct `applyAcl`.
-3. **Strict failure** — a dependency that cannot be read must THROW, never degrade to a shorter
-   set. The writer's empty/null/blank rejection is a backstop, not the primary guarantee: a
-   computation that drops ONE inherited grant still returns a plausible non-empty list.
-   <br>**CORRECTION (increment 4c, RE-CORRECTED before 5T — the 4c wording was itself wrong).**
-   An earlier revision claimed this already held for "an unreadable ancestor / principal". Only the
-   ANCESTOR half is true. 4c then replaced it with "a transient principal-DAO fault silently
-   shortens the reader set", which is ALSO wrong. Verified in code, the split is:
-   <ul>
-     <li><b>A TRANSIENT fault does NOT return null.</b>
-         `CloudantClientWrapper.queryView` rethrows it as `CmisRuntimeException`, and nothing on the
-         path (`PrincipalServiceImpl` → cached DAO → couch DAO) catches it. WHERE it lands differs by
-         caller, and that is the real defect: the strict/reconcile path and `AclServiceImpl`'s
-         ACL-refresh traversal propagate it (durable retry), but `SolrUtil.createSolrDocument`'s
-         NON-strict catch swallows it with a `log.warn`, INDEXES THE DOCUMENT WITH AN EMPTY
-         `readers` SET, and enqueues NOTHING. That is the most frequent path — every create/update —
-         so the stale-deny persists until the next ACL change or a full reindex.</li>
-     <li><b>What genuinely collapses is SYSTEMIC unavailability.</b> `queryView` maps a
-         `NotFoundException` (missing design document / view / database — i.e. "the query could not
-         be served", not "the principal is absent") to `null`, and `getUserByIdInternal` /
-         `getGroupByIdInternal` then treat that null identically to an empty result via
-         `CollectionUtils.isEmpty`. On the STRICT path this raises NO signal at all: every principal
-         resolves to nothing, rule 2 yields admin-only, the CAS write SUCCEEDS and the reconcile task
-         is deleted. Only a tri-state can close this — there is nothing else to observe.</li>
-   </ul>
-   <b>Security rating, stated plainly:</b> every principal-resolution failure shrinks the token set;
-   there is NO over-grant path. 5T is an AVAILABILITY / index-health defect, NOT a confidentiality
-   leak. It was a wiring gate for that reason; it is now CLOSED by increment 5T, and the rest of
-   this item is retained as the statement of the requirement 5T satisfies, not as outstanding work.
-   <br>Consequently 5T has TWO halves, and shipping only the first would leave the same asymmetry as
-   3b (closed under strict, open on the ordinary path): <b>(1)</b> tri-state the principal DAO and
-   THROW on `UNAVAILABLE` under strict (`NOT_FOUND` keeps today's omit); <b>(2)</b> stop the
-   non-strict index path at `SolrUtil` from ending at a bare `log.warn` — keep the fail-closed empty
-   `readers` for visibility, but ENQUEUE the object for reconciliation so the deny is retried
-   durably instead of waiting for the next ACL change.
-4. **Tested at wiring time** — at minimum: a direct `applyAcl` on the object itself must be
-   reflected; an unreadable ancestor must fail the write rather than shorten the readers.
-   (A "poisoned ACL cache must not change the readers" test is deliberately NOT listed: under the
-   adopted Option A the readers are computed from the SAME raw documents as the epoch, so no cache
-   is consulted and such a test would only assert that code we do not call was not called.)
-
 **WIRING GATES (all FOUR must be closed before `AclEpochIndexWriter.write()` is put on the ACL
 path):** outbox ACK / enqueue (invariant 5) · migration stamping the initial
 `effective_acl_epoch` (else EVERY ACL update fails closed, by design — increment 4a) ·
 `content_incarnation` + content-writer fence (else a full-doc add re-clobbers `readers`) · §5.1
 quarantine operational contract.
 
-*Principal tri-state (item 3 above) was the fifth gate; it is **CLOSED by increment 5T** and is no
-longer a gate. Item 3 is retained as the statement of the requirement 5T satisfies, not as
-outstanding work.*
+*Principal tri-state was the fifth gate; it is **CLOSED by increment 5T**. The `ReadersComputer`
+obligations that §5.2 used to carry are not a gate either — they were **deleted** in 5S step 3
+because the boundary they guarded no longer exists (see §5.2).*
+
+### 5.2 `ReadersComputer`: DELETED (increment 5S step 3)
+
+This section recorded the obligations a production `ReadersComputer` had to honour — compute from
+the authoritative, cache-bypassing sources, for the object ITSELF as well as its ancestors, and
+fail rather than shorten the reader set. It existed because the SPI boundary could not enforce any
+of them: the snapshot pinned epochs, revisions and topology but not the ACL entries, so an
+implementation that read from the ACL cache would pass revalidation while writing readers derived
+from a different ACL state.
+
+**The SPI is gone.** Under Option A the snapshot carries the raw local ACLs and
+`Snapshot.readers(resolver)` projects them through the shared `AclSemantics`, from the same chain at
+the same `_rev`s that produced the epoch. There is no longer an implementation to place obligations
+on — the property is structural. The obligations are therefore deleted rather than carried forward;
+keeping them would imply a boundary that no longer exists.
+
+What replaced each of them:
+
+| Former obligation | Now |
+|---|---|
+| compute from authoritative, cache-bypassing sources | the snapshot IS the authoritative read; no cache is consulted at all |
+| include the object itself, not only its ancestors | `readers()` projects the recorded SELF dependency, which the walk always records first |
+| fail rather than return a short/empty set | `readerTokens` cannot return empty (rule 2 → admin-only); the writer additionally refuses null/blank as an internal invariant |
+| unreadable ancestor must fail the write | the walk throws `AclEpochUnavailableException` before a snapshot exists |
+| unresolvable principal must not silently shorten the set | increment 5T: `UNAVAILABLE` throws, `NOT_FOUND` omits |
+
+The one remaining injected collaborator is the `PrincipalResolver`, which answers only "does this
+principal id exist". It cannot change the ACL semantics, and every one of its failure modes SHRINKS
+the token set — a stale-deny is possible, an over-grant is not.
 
 ### 5.3 Adopted plan for the readers side (Option A) — increments 5R / 5T / 5S
 
@@ -455,11 +427,33 @@ defect class.
   - Accepted residual (P3): the one-line `catch → seam` call inside `createSolrDocument` is not
     itself mutation-covered; `SolrUtilReadersFailureTest` states in its own Javadoc what it does not
     claim.
-- **5S — the snapshot carries the RAW LOCAL (pre-merge) ACL of every dependency**, `readers` are
-  computed from that same chain at the same `_rev`, and the `ReadersComputer` SPI plus §5.2's
-  unenforceable contract are DELETED. Merged results are never carried — only raw local ACEs, so
-  the merge has exactly one implementation. Required test: a mutation that forks or disables the
-  shared merge must make `calculateAcl` and `Snapshot.readers` DISAGREE.
+- **5S — the snapshot carries the RAW LOCAL (pre-merge) ACL of every dependency: DONE.** `readers`
+  are computed from that same chain at the same `_rev`s, and the `ReadersComputer` SPI plus §5.2's
+  unenforceable contract are DELETED. Merged results are never carried — only raw local ACEs, so the
+  merge has exactly one implementation. Three steps:
+  - **step 1** — the traversal SHAPE moved to `AclSemantics.effectiveAces`/`resolveAcl`. Sharing only
+    `mergeAces` was not enough: the recursion has three branches (root/non-inheriting,
+    inheriting-but-parentless, ordinary merge) and a second implementation of THOSE is the
+    increment-3b defect class. The traversal itself stays with each caller via `ChainNode`, so the
+    CMIS runtime still resolves parents lazily through the cached DAO.
+  - **step 2a** — `calculateAcl` and `calculateAcls` consolidated on `resolveAcl`, removing a SECOND
+    duplicate (the outer root/non-inheriting branch was copy-pasted between them); dead delegates
+    removed. Established that the epoch side must call `resolveAcl`, NOT `effectiveAces`: `mergeAces`
+    converts only its TARGET, an ancestor is always the SOURCE, so an INHERITED `CMIS_ANYONE` leaves
+    `effectiveAces` unconverted, then misses `readerTokens`' `"cmis:anyone"` literal (different
+    spelling), misses USER, misses GROUP, is dropped, and collapses the set to admin-only — a silent
+    stale-DENY. Pinned by `AclSemanticsResolveAclIsRequiredTest`.
+  - **step 2b/3** — `Dependency.localAces` + `Snapshot.readers(resolver)`; the writer takes a
+    `PrincipalResolver` instead of a computer. An EMPTY reader set is refused EXCEPT for a
+    relationship whose endpoints are both genuinely absent, which is the fail-closed value production
+    already persists (`SolrUtil.unionReaders`) — refusing it unconditionally would leave such a
+    relationship's reconcile task retrying for ever.
+  - Required test: **`AclSemanticsCrossImplementationAgreementTest`** drives every corpus chain
+    through BOTH the real `AclServiceDelegate` and `Snapshot.readers` and requires identical tokens;
+    a forked merge (folded root-first, so the FURTHER node wins) makes them disagree.
+    <br>Note recorded while writing it: the merge DIRECTION is invisible to the token layer when both
+    depths grant read, so the corpus gained `nearer-node-REVOKES-read-that-the-ancestor-grants` —
+    without it the fork still agreed and the agreement test proved nothing.
 
 **5R-a findings (the golden is captured; extraction has NOT started).** Committed as
 `AclSemanticsCorpus` (data only), `AclSemanticsGoldenTest` and
@@ -583,9 +577,9 @@ path; and a live re-index of `bbc119345228953e3405c85bdb36b096` producing byte-i
 `[group:bedroom:GROUP_EVERYONE, user:bedroom:admin, user:bedroom:system]`. **Playwright has NOT been
 run** — it remains outstanding for 5R-b.
 
-**Next:** 5S — the snapshot carries the raw local (pre-merge) ACLs, `readers` are computed from the
-same chain at the same `_rev`, and the `ReadersComputer` SPI plus §5.2's unenforceable contract are
-DELETED. (5R and 5T are done.) Production wiring remains NO-GO until the four gates above are closed.
+**Next:** the four remaining WIRING GATES (listed just above §5.2) — outbox ACK, migration stamping the
+initial `effective_acl_epoch`, `content_incarnation` + the content-writer fence, and the §5.1
+quarantine operational contract. 5R, 5T and 5S are done. Production wiring remains NO-GO.
 
 **Process correction:** any "verified live" claim in this document or in a test comment must carry
 the command and its raw output. This one did not, and the reviewer's independent Browser-Binding,
@@ -726,6 +720,24 @@ new patch `Patch_ContentIncarnationBackfill`; the mandatory v3.3 full reindex st
     one); a writer that cannot persist the incarnation fails closed (no Solr-only stamp).
 
 ## 10. Known adjacent issue (out of scope, tracked)
+
+### 10.2 System-principal misconfiguration hardening (flagged 5R-a, still open)
+
+`convertSystemPrincipalIds` writes the configured `principal.anyone` / `principal.anonymous` through
+without a guard, so an UNSET or unresolvable configured id becomes a null principal id on the ACE.
+5R-a said this belonged "with the 5T tri-state"; it does not — 5T tri-stated the principal DAO
+(does an id EXIST), not the repository CONFIGURATION (is the configured id usable). It was therefore
+never in 5T's scope and is recorded here rather than left as an implied promise.
+
+Today the token layer is safe: `addReaderFromPrincipal` short-circuits on a null/empty id, and an
+unresolvable id is `NOT_FOUND` and dropped, so the effect is a stale-DENY (fail-closed), never an
+over-grant. The residual is in the CMIS runtime, where `PermissionServiceImpl` compares
+`ace.getPrincipalId().equals(...)` without a null guard — a pre-existing NPE path reachable only
+under this misconfiguration.
+
+**Not fixed here**: it is not an epoch-fencing concern, and the shipped configuration
+(`principal.anyone: GROUP_EVERYONE`) does not reach it.
+
 
 Descendant `path` staleness on ancestor rename/move is the same "own-`_rev` cannot
 order it" class, but is NOT authorization-relevant (display/IN_TREE correctness). It
@@ -1132,3 +1144,9 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
     paths. The golden did not move. See §5.3.
   - **Increment 5T — principal tri-state + durable retry on the ordinary index path: DONE.**
     Detail in §5.3; this closed the fifth wiring gate.
+  - **Increment 5S — the readers become a second projection of the SAME read: DONE.** Detail in §5.3.
+    `ReadersComputer` and §5.2 are deleted; `AclEpochIndexWriter.write` now takes a
+    `PrincipalResolver`. Coverage added after a self-review found the persisted-ACL parser had NO
+    test at all (every fixture seeded documents without an `acl` field, so only the ABSENT branch ran):
+    8 real-CouchDB cases for the present branch and its malformed forms, 3 real-path writer ITs that
+    run the projection UNOVERRIDDEN, and the cross-implementation agreement test.

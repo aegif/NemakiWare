@@ -12,6 +12,8 @@ mid-breaks-inheritance-root-must-not-contribute | strict=false => [u1:direct:cmi
 mid-breaks-inheritance-root-must-not-contribute | strict=true => [u1:direct:cmis:read, u2:inherited:cmis:write]
 same-principal-at-two-depths-direct-wins | strict=false => [dup:direct:cmis:read, u3:inherited:cmis:read]
 same-principal-at-two-depths-direct-wins | strict=true => [dup:direct:cmis:read, u3:inherited:cmis:read]
+nearer-node-REVOKES-read-that-the-ancestor-grants | strict=false => [dup:direct:cmis:write, u3:inherited:cmis:read]
+nearer-node-REVOKES-read-that-the-ancestor-grants | strict=true => [dup:direct:cmis:write, u3:inherited:cmis:read]
 same-principal-at-three-depths | strict=false => [dup:direct:cmis:read]
 same-principal-at-three-depths | strict=true => [dup:direct:cmis:read]
 leaf-with-EMPTY-local-acl | strict=false => [u2:inherited:cmis:read]
