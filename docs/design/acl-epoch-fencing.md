@@ -367,6 +367,13 @@ What replaced each of them:
 | unreadable ancestor must fail the write | the walk throws `AclEpochUnavailableException` before a snapshot exists |
 | unresolvable principal must not silently shorten the set | increment 5T: `UNAVAILABLE` throws, `NOT_FOUND` omits |
 
+**One NEW wiring requirement replaced them** (review P2-4): `AclEffectiveEpochService` must be given a
+`RepositoryInfoMap`. It supplies the root-folder id — used by BOTH the walk's inheritance-stop rule and
+the readers projection — and the configured `principal.anyone` / `principal.anonymous` ids.
+`snapshot()` fails fast with `IllegalStateException` when it is missing, so a mis-wired deployment
+cannot instead run with two different stop rules. A caller must treat that failure as a WIRING fault,
+not as a per-task anomaly to retry or terminal-fail.
+
 The one remaining injected collaborator is the `PrincipalResolver`, which answers only "does this
 principal id exist". It cannot change the ACL semantics, and every one of its failure modes SHRINKS
 the token set — a stale-deny is possible, an over-grant is not.
@@ -444,7 +451,13 @@ defect class.
     spelling), misses USER, misses GROUP, is dropped, and collapses the set to admin-only — a silent
     stale-DENY. Pinned by `AclSemanticsResolveAclIsRequiredTest`.
   - **step 2b/3** — `Dependency.localAces` + `Snapshot.readers(resolver)`; the writer takes a
-    `PrincipalResolver` instead of a computer. An EMPTY reader set is refused EXCEPT for a
+    `PrincipalResolver` instead of a computer. The persisted-ACL parser FOLLOWS `CouchAcl` rather
+    than being stricter than it (review P2-5): a non-String principal is coerced with `.toString()`
+    and a blank one is kept, exactly as `CouchAcl` does, because rejecting them bought no safety —
+    neither can yield a reader token on either side — while permanently excluding from the index an
+    object the CMIS layer serves normally, which §5.1 turns into a whole-subtree stall. Only forms
+    the CMIS side ALSO fails on (a null principal, non-object `acl`, non-list `entries`, a non-object
+    entry, a non-String permission) are anomalies. An EMPTY reader set is refused EXCEPT for a
     relationship whose endpoints are both genuinely absent, which is the fail-closed value production
     already persists (`SolrUtil.unionReaders`) — refusing it unconditionally would leave such a
     relationship's reconcile task retrying for ever.
@@ -719,7 +732,14 @@ new patch `Patch_ContentIncarnationBackfill`; the mandatory v3.3 full reindex st
     `Patch_ContentIncarnationBackfill` is idempotent (skips a Content that already has
     one); a writer that cannot persist the incarnation fails closed (no Solr-only stamp).
 
-## 10. Known adjacent issue (out of scope, tracked)
+## 10. Known adjacent issues (out of scope, tracked)
+
+### 10.1 Ancestor rename leaves descendant paths stale
+
+Renaming an ancestor does not rewrite its descendants' indexed `path`. Structurally the same
+stale-projection shape as the ACL problem, but it carries NO authorization meaning, so it is out of
+scope here. (This subsection existed only in prose; numbering it makes §10.2 stop looking like a
+typo.)
 
 ### 10.2 System-principal misconfiguration hardening (flagged 5R-a, still open)
 
@@ -1072,7 +1092,7 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
     propagate so the caller RETAINS its task (§5.1); exhausted restarts raise a retryable contention
     exception rather than a silent success; a missing / non-numeric `_version_` fails closed; a
     cross-repository id collision is refused.
-    <br>Readers are supplied through a `ReadersComputer` SPI rather than hard-wired to
+    <br>Readers were supplied through a `ReadersComputer` SPI (DELETED in 5S step 3) rather than hard-wired to
     `ACLExpander`, which is what keeps this increment unwired AND lets the concurrency ITs drive the
     protocol deterministically.
     <br>**Staging:** standalone bean, ZERO production callers, no scheduler / init / cron.
@@ -1114,7 +1134,7 @@ purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5�
        readers now reject a null list and any null/blank token; normalization of ALREADY-STORED
        readers stays lenient (it is a fact to compare, not a computation to validate — and
        rejecting it would block the very write that repairs it).
-    <br>The `ReadersComputer` Javadoc now states the mandatory production contract: compute from
+    <br>The `ReadersComputer` Javadoc stated the mandatory production contract (the SPI is gone since 5S step 3): compute from
     the AUTHORITATIVE, cache-bypassing strict walk for the object ITSELF as well as its ancestors,
     never from a stale event payload or the ACL cache. The `Snapshot` pins epochs / revisions /
     topology but deliberately does not carry the ACL entries, so the SPI boundary alone cannot

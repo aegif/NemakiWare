@@ -150,6 +150,31 @@ public class AclEffectiveEpochReadersProjectionTest {
         assertEquals(first, snap.readers(RESOLVER), "re-projection must be stable");
     }
 
+    /**
+     * Review P3: the FALSE side of {@code emptyReadersIsAuthoritative} was unbound. An empty reader
+     * set is only authoritative when BOTH endpoints are gone; one surviving endpoint, or ordinary
+     * content, must not be able to claim it (the writer would then persist an invisible object).
+     */
+    @Test
+    public void onlyARelationshipWithBOTHEndpointsGoneMayBeEmpty() {
+        Snapshot bothGone = snapshot("rel", relDep("rel", "gone-a", "gone-b"),
+                Dependency.absent("gone-a", DependencyRole.RELATIONSHIP_SOURCE),
+                Dependency.absent("gone-b", DependencyRole.RELATIONSHIP_TARGET));
+        assertTrue(bothGone.emptyReadersIsAuthoritative());
+
+        Snapshot oneAlive = snapshot("rel", relDep("rel", "src", "gone"),
+                dep("src", ContentKind.DOCUMENT, null, Boolean.FALSE, DependencyRole.RELATIONSHIP_SOURCE,
+                        ace("u1", "cmis:read")),
+                Dependency.absent("gone", DependencyRole.RELATIONSHIP_TARGET));
+        assertFalse(oneAlive.emptyReadersIsAuthoritative(),
+                "one surviving endpoint means an empty result would be a FAILED computation");
+
+        Snapshot ordinary = snapshot("leaf",
+                dep("leaf", ContentKind.DOCUMENT, null, Boolean.FALSE, DependencyRole.SELF));
+        assertFalse(ordinary.emptyReadersIsAuthoritative(),
+                "ordinary content can never legitimately have an empty reader set");
+    }
+
     @Test
     public void anEmptyAclFailsClosedToAdminOnly() {
         Snapshot snap = snapshot("leaf",

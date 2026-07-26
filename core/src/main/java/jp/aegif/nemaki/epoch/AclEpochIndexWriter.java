@@ -421,7 +421,7 @@ public class AclEpochIndexWriter {
 
     /**
      * Normalize what is ALREADY stored, for comparison only. Deliberately lenient (unlike
-     * {@link #strictIncomingReaders}): whatever is in the index is a fact to be compared, not a
+     * {@link #strictComputedReaders}): whatever is in the index is a fact to be compared, not a
      * computation to be validated, and rejecting it would block the very write that repairs it.
      */
     private static List<String> normalizeStoredReaders(List<String> stored) {
