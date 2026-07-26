@@ -741,6 +741,19 @@ stale-projection shape as the ACL problem, but it carries NO authorization meani
 scope here. (This subsection existed only in prose; numbering it makes §10.2 stop looking like a
 typo.)
 
+### 10.3 A root / non-inheriting node with no usable ACL makes the CMIS side NPE
+
+`CouchAcl.convertToNemakiAcl` returns `null` when the persisted `acl` is absent, or present with an
+absent / null `entries`. `Content.getAcl()` is then null, and `AclSemantics.resolveAcl`'s root /
+non-inheriting branch dereferences it. The inheriting branch is safe — `CmisChainNode.localAces()`
+logs `Invalid Acl, content ACL is null!` and substitutes an empty list, which suggests the situation
+was known — but the other branch was never given the same treatment.
+
+Pre-existing and independent of the epoch work; noted because the epoch side deliberately does NOT
+reproduce it (`parseLocalAces` yields no ACEs, which rule 2 turns into admin-only). That asymmetry is
+a robustness difference in the safe direction, not a semantic divergence, and it is recorded rather
+than silently relied upon (review P2-2).
+
 ### 10.2 System-principal misconfiguration hardening (flagged 5R-a, still open)
 
 `convertSystemPrincipalIds` writes the configured `principal.anyone` / `principal.anonymous` through

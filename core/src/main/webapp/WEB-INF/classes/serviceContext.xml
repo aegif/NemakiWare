@@ -445,6 +445,10 @@
     <bean id="aclEffectiveEpochService"
           class="jp.aegif.nemaki.epoch.AclEffectiveEpochService">
         <property name="connectorPool" ref="connectorPool" />
+        <!-- REQUIRED: supplies the root-folder id used by BOTH the inheritance-stop rule and the
+             readers projection, plus the configured anyone/anonymous principal ids. Without it
+             snapshot() throws AclEpochWiringException. -->
+        <property name="repositoryInfoMap" ref="repositoryInfoMap" />
     </bean>
 
     <!-- Fenced ACL-group writer (design §4.2 steps 3/5/6 + §4.3 — increment 4).

@@ -190,17 +190,59 @@ public class AclSemanticsCrossImplementationAgreementIT {
         for (String name : NOT_COMPARABLE) {
             AclSemanticsCorpus.Case c = caseNamed(name);   // also proves the name is not stale
             seed(c);
-            boolean threw = false;
-            try {
-                cmisReaders(c);
-                epochReaders(c);
-            } catch (RuntimeException e) {
-                threw = true;
-            }
-            assertTrue(threw, "corpus case '" + name + "' is on the NOT_COMPARABLE list but compares "
-                    + "perfectly well — an unnecessary exemption can hide a real disagreement");
+
+            // Review P2-1: requiring only "something threw" let a ONE-SIDED failure justify the
+            // exemption — precisely the "CMIS serves it, the epoch side calls it an anomaly" shape
+            // that §5.1 turns into a subtree stall. BOTH sides must fail, and with the expected type,
+            // so a transient CouchDB fault cannot certify an exemption either.
+            RuntimeException cmisFailure = captureFailure(() -> cmisReaders(c));
+            RuntimeException epochFailure = captureFailure(() -> epochReaders(c));
+
+            assertNotNull(cmisFailure, "corpus case '" + name + "' is exempted but the CMIS side "
+                    + "computes it fine — an exemption that only the epoch side needs is a real "
+                    + "disagreement, not a shared limitation");
+            assertNotNull(epochFailure, "corpus case '" + name + "' is exempted but the epoch side "
+                    + "computes it fine");
+            assertTrue(cmisFailure instanceof IllegalStateException,
+                    "expected the CMIS strict-mode failure, got " + cmisFailure);
+            assertTrue(epochFailure instanceof AclEffectiveEpochService.AclEpochUnavailableException,
+                    "expected the epoch walk's retryable failure, got " + epochFailure);
             wipe();
         }
+    }
+
+    /**
+     * Review P1-2: a root stored with the LEGACY discriminator {@code {"type":"folder"}}.
+     *
+     * <p>The corpus cannot express this — its nodes go through the {@code Folder} model, whose
+     * constructor forces {@code cmis:folder} — yet the DAO (and therefore {@code resolveKind})
+     * accepts the short form, so it is legal persisted data. {@code NodeBase.isFolder()} does NOT
+     * accept it, so if the epoch side identified the root by its DAO-compatible {@code kind} the two
+     * would disagree about what the root IS: the CMIS side would keep climbing while the epoch walk
+     * stopped — P1-1 with the sides swapped.
+     *
+     * <p>Seeded raw, and the CMIS side is rebuilt from the same documents, so both see the legacy
+     * spelling.
+     */
+    @Test
+    void aLegacyTypeRootIsTreatedTheSameByBOTHSides() {
+        seedRaw("grandparent", "{\"type\":\"cmis:folder\",\"aclSourceEpoch\":9,"
+                + "\"acl\":{\"entries\":[{\"principal\":\"must-not-appear\",\"permissions\":[\"cmis:read\"]}]}}");
+        // The ROOT, stored with the legacy short form AND corrupted (a parent + inheriting).
+        seedRaw(AclSemanticsCorpus.ROOT_ID, "{\"type\":\"folder\",\"parentId\":\"grandparent\","
+                + "\"aclInherited\":true,\"aclSourceEpoch\":5,"
+                + "\"acl\":{\"entries\":[{\"principal\":\"u2\",\"permissions\":[\"cmis:read\"]}]}}");
+        seedRaw("leaf", "{\"type\":\"cmis:document\",\"parentId\":\"" + AclSemanticsCorpus.ROOT_ID
+                + "\",\"aclInherited\":true,\"aclSourceEpoch\":1,"
+                + "\"acl\":{\"entries\":[{\"principal\":\"u1\",\"permissions\":[\"cmis:read\"]}]}}");
+
+        List<String> viaCmis = cmisReadersOf("leaf", List.of("leaf", AclSemanticsCorpus.ROOT_ID, "grandparent"));
+        List<String> viaEpoch = epochService.snapshot(contentDb, "leaf").readers(resolver());
+
+        assertEquals(viaCmis, viaEpoch, "a legacy-typed root must mean the same thing to both sides");
+        assertTrue(viaCmis.contains(AclSemantics.formatUserReader(contentDb, "must-not-appear")),
+                "NodeBase.isFolder() rejects the legacy spelling, so this node is NOT the root to "
+                        + "either side and the grandparent's grant is genuinely inherited: " + viaCmis);
     }
 
     /**
@@ -228,7 +270,26 @@ public class AclSemanticsCrossImplementationAgreementIT {
     // ── side A: the CMIS runtime (the real delegate over the same chain) ──
 
     private List<String> cmisReaders(AclSemanticsCorpus.Case c) {
-        Map<String, Content> byId = c.byId();
+        List<String> ids = new ArrayList<>();
+        for (AclSemanticsCorpus.Node n : c.chain) {
+            ids.add(n.id);
+        }
+        return cmisReadersOf(c.leaf().id, ids);
+    }
+
+    /**
+     * The CMIS runtime's readers for a seeded chain.
+     *
+     * <p>Review P2-4: this used to build its {@code Content} objects from the in-memory corpus, so
+     * {@code CouchAcl} and {@code parseLocalAces} were never compared — which is exactly the
+     * comparison P2-5 needed. Both sides now start from the SEEDED documents; this one goes through
+     * the real {@code CouchAcl.convertToNemakiAcl}, the epoch side through {@code parseLocalAces}.
+     */
+    private List<String> cmisReadersOf(String leafId, List<String> chainIds) {
+        Map<String, Content> byId = new LinkedHashMap<>();
+        for (String id : chainIds) {
+            byId.put(id, readBackOne(id));
+        }
 
         ContentService contentService = mock(ContentService.class);
         ContentDaoService contentDaoService = mock(ContentDaoService.class);
@@ -260,9 +321,10 @@ public class AclSemanticsCrossImplementationAgreementIT {
 
         AclServiceDelegate delegate = new AclServiceDelegate(contentService, contentDaoService,
                 cachePool, repositoryInfoMap(), propertyManager);
-        Acl acl = delegate.calculateAcl(contentDb, byId.get(c.leaf().id), true);
+        Acl acl = delegate.calculateAcl(contentDb, byId.get(leafId), true);
         return AclSemantics.readerTokens(contentDb, acl.getAllAces(), resolver());
     }
+
 
     // ── side B: seed → the REAL walk → project ─────────────────────
 
@@ -270,6 +332,67 @@ public class AclSemanticsCrossImplementationAgreementIT {
         AclEffectiveEpochService.Snapshot snap = epochService.snapshot(contentDb, c.leaf().id);
         assertNotNull(snap, "the seeded leaf must exist: " + c.leaf().id);
         return snap.readers(resolver());
+    }
+
+    /** PUT an EXACT raw JSON body, so legacy / malformed shapes survive the model layer. */
+    private void seedRaw(String id, String json) {
+        try {
+            java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(cfg("nemaki.test.couchdb.url", "NEMAKI_TEST_COUCHDB_URL",
+                            "http://localhost:5984") + "/" + contentDb + "/" + id))
+                    .header("Authorization", "Basic " + java.util.Base64.getEncoder().encodeToString(
+                            (cfg("nemaki.test.couchdb.user", "NEMAKI_TEST_COUCHDB_USER", "admin") + ":"
+                                    + cfg("nemaki.test.couchdb.password", "NEMAKI_TEST_COUCHDB_PASSWORD",
+                                    "password")).getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                    .header("Content-Type", "application/json")
+                    .PUT(java.net.http.HttpRequest.BodyPublishers.ofString(json))
+                    .build();
+            java.net.http.HttpResponse<String> resp = java.net.http.HttpClient.newHttpClient()
+                    .send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
+            assertTrue(resp.statusCode() < 300, "seedRaw " + id + " failed: " + resp.body());
+        } catch (Exception e) {
+            throw new IllegalStateException("seedRaw failed for " + id, e);
+        }
+    }
+
+    private static RuntimeException captureFailure(Runnable r) {
+        try {
+            r.run();
+            return null;
+        } catch (RuntimeException e) {
+            return e;
+        }
+    }
+
+    /**
+     * Read the seeded documents back and rebuild them as the CMIS layer would — in particular running
+     * the persisted ACL through the REAL {@code CouchAcl.convertToNemakiAcl}, so its coercion rules
+     * are compared against {@code parseLocalAces} rather than assumed to match (review P2-4/P2-5).
+     */
+    /** Rebuild ONE seeded document as the CMIS layer would, via the real {@code CouchAcl}. */
+    @SuppressWarnings("unchecked")
+    private Content readBackOne(String id) {
+        Document raw = cloudant.getDocument(new com.ibm.cloud.cloudant.v1.model.GetDocumentOptions
+                .Builder().db(contentDb).docId(id).build()).execute().getResult();
+        Map<String, Object> p = raw.getProperties();
+
+        Content ct = "cmis:folder".equals(p.get("type"))
+                ? new jp.aegif.nemaki.model.Folder() : new jp.aegif.nemaki.model.Document();
+        ct.setId(raw.getId());
+        ct.setType((String) p.get("type"));
+        ct.setName((String) p.get("name"));
+        ct.setParentId((String) p.get("parentId"));
+        ct.setAclInherited((Boolean) p.get("aclInherited"));
+
+        jp.aegif.nemaki.model.couch.CouchAcl couchAcl = new jp.aegif.nemaki.model.couch.CouchAcl();
+        Map<String, Object> aclMap = (Map<String, Object>) p.get("acl");
+        org.json.simple.JSONArray entries = new org.json.simple.JSONArray();
+        if (aclMap != null && aclMap.get("entries") instanceof List) {
+            entries.addAll((List<Object>) aclMap.get("entries"));
+        }
+        couchAcl.setEntries(entries);
+        ct.setAcl(couchAcl.convertToNemakiAcl());
+        return ct;
     }
 
     /** Write the corpus chain into CouchDB in the real persisted shape. */
