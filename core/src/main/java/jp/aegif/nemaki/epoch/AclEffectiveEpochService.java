@@ -4,6 +4,7 @@ import com.ibm.cloud.cloudant.v1.model.Document;
 import com.ibm.cloud.cloudant.v1.model.GetDocumentOptions;
 import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
 
+import jp.aegif.nemaki.acl.AclSemantics;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 
@@ -77,6 +78,11 @@ public class AclEffectiveEpochService {
     /** CouchDB content fields the authoritative walk reads. */
     static final String FIELD_PARENT_ID = "parentId";
     static final String FIELD_ACL_INHERITED = "aclInherited";
+    /** The persisted ACL: {@code {"entries":[{"principal":…,"permissions":[…]}]}} ({@code CouchAcl}). */
+    static final String FIELD_ACL = "acl";
+    static final String FIELD_ACL_ENTRIES = "entries";
+    static final String FIELD_ACE_PRINCIPAL = "principal";
+    static final String FIELD_ACE_PERMISSIONS = "permissions";
     static final String FIELD_SOURCE_ID = "sourceId";
     static final String FIELD_TARGET_ID = "targetId";
     /** Persisted BASE-type discriminator (set by the model constructors, independent of objectType). */
@@ -87,9 +93,20 @@ public class AclEffectiveEpochService {
     public static final int DEFAULT_MAX_ANCESTOR_HOPS = 128;
 
     private CloudantClientPool connectorPool;
+    private jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repositoryInfoMap;
     private int maxAncestorHops = DEFAULT_MAX_ANCESTOR_HOPS;
 
     public void setConnectorPool(CloudantClientPool connectorPool) { this.connectorPool = connectorPool; }
+
+    /**
+     * Needed for the READERS projection only (increment 5S): the root-folder id (the walk's
+     * equivalent of {@code contentService.isRoot}) and the configured
+     * {@code principal.anyone} / {@code principal.anonymous} ids. The epoch computation itself does
+     * not use it, so a snapshot can still be taken without it.
+     */
+    public void setRepositoryInfoMap(jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repositoryInfoMap) {
+        this.repositoryInfoMap = repositoryInfoMap;
+    }
 
     public int getMaxAncestorHops() { return maxAncestorHops; }
 
@@ -142,19 +159,36 @@ public class AclEffectiveEpochService {
         /** The CMIS base kind; {@code null} only for a NEGATIVE (recorded-absent) dependency. */
         public final ContentKind kind;
         public final DependencyRole role;
+        /**
+         * The node's RAW LOCAL ACEs, exactly as persisted (increment 5S). This is what makes the
+         * readers a SECOND PROJECTION OF THE SAME READ rather than a second traversal: the epoch and
+         * the reader tokens are computed from this one snapshot, at this one {@code _rev}.
+         *
+         * <p>Never merged and never converted here — merging and the system-principal conversion are
+         * {@link jp.aegif.nemaki.acl.AclSemantics}' job, so that the CMIS runtime and this side run
+         * the same code. Empty for a negative dependency.
+         *
+         * <p>Deliberately NOT part of {@link #sameAs}: any ACL edit rewrites the document and so
+         * changes {@code _rev}, which IS compared. Adding ACE-by-ACE equality would be redundant and
+         * would need an {@code equals} on {@code Ace} that does not exist.
+         */
+        public final List<jp.aegif.nemaki.model.Ace> localAces;
 
         Dependency(String id, String rev, boolean exists, long sourceEpoch, String state,
                    String parentId, Boolean aclInherited, String sourceId, String targetId,
-                   ContentKind kind, DependencyRole role) {
+                   ContentKind kind, DependencyRole role, List<jp.aegif.nemaki.model.Ace> localAces) {
             this.id = id; this.rev = rev; this.exists = exists; this.sourceEpoch = sourceEpoch;
             this.state = state; this.parentId = parentId; this.aclInherited = aclInherited;
             this.sourceId = sourceId; this.targetId = targetId;
             this.kind = kind; this.role = role;
+            this.localAces = localAces == null
+                    ? Collections.<jp.aegif.nemaki.model.Ace>emptyList()
+                    : Collections.unmodifiableList(localAces);
         }
 
         /** A recorded absence (a dangling relationship endpoint). */
         static Dependency absent(String id, DependencyRole role) {
-            return new Dependency(id, null, false, 0L, null, null, null, null, null, null, role);
+            return new Dependency(id, null, false, 0L, null, null, null, null, null, null, role, null);
         }
 
         /** Verbatim equality of everything the fence depends on (used by {@link #revalidate}). */
@@ -185,12 +219,148 @@ public class AclEffectiveEpochService {
         /** Every dependency, in deterministic walk order (self first). */
         public final List<Dependency> dependencies;
         public final long effectiveEpoch;
+        /** Repository configuration captured with the walk (null when not wired — see readers()). */
+        private final String rootFolderId;
+        private final String anyoneId;
+        private final String anonymousId;
 
-        Snapshot(String repositoryId, String objectId, List<Dependency> dependencies, long effectiveEpoch) {
+        Snapshot(String repositoryId, String objectId, List<Dependency> dependencies, long effectiveEpoch,
+                 String rootFolderId, String anyoneId, String anonymousId) {
             this.repositoryId = repositoryId;
             this.objectId = objectId;
             this.dependencies = Collections.unmodifiableList(dependencies);
             this.effectiveEpoch = effectiveEpoch;
+            this.rootFolderId = rootFolderId;
+            this.anyoneId = anyoneId;
+            this.anonymousId = anonymousId;
+        }
+
+        /**
+         * The reader tokens for this object — the SECOND PROJECTION of the walk that produced
+         * {@link #effectiveEpoch} (design §5.3, increment 5S).
+         *
+         * <p>This is the whole point of Option A. The epoch and the readers are computed from the
+         * SAME dependency documents at the SAME {@code _rev}s, so they cannot describe different
+         * states of the repository, and there is no second traversal to drift (increments 3a/3b/4b
+         * were all two-traversal defects). The removed {@code ReadersComputer} SPI could not promise
+         * this: it handed the computation to an implementor who had to be trusted to bypass the
+         * cache and walk the same chain.
+         *
+         * <p>Runs through {@link AclSemantics#resolveAcl} — NOT {@code effectiveAces} — because the
+         * system-principal conversion that {@code resolveAcl} applies at the end is load-bearing:
+         * {@code mergeAces} converts only its TARGET, and an ancestor's ACEs are always the SOURCE,
+         * so an INHERITED {@code CMIS_ANYONE} leaves {@code effectiveAces} unconverted. It would then
+         * miss {@code readerTokens}' {@code "cmis:anyone"} literal (different spelling), miss USER,
+         * miss GROUP, be dropped, and collapse the whole set to admin-only — a silent stale-DENY.
+         * Pinned by {@code AclSemanticsResolveAclIsRequiredTest}.
+         *
+         * <p>{@code strict = true}: every inheriting ancestor was already recorded by the walk (an
+         * unreadable one threw {@link AclEpochUnavailableException} there), so a missing link here
+         * is an internal inconsistency, not a cache miss to shrug off.
+         *
+         * @throws IllegalStateException  the repository info was not wired (see
+         *                                {@link #setRepositoryInfoMap})
+         */
+        public List<String> readers(AclSemantics.PrincipalResolver resolver) {
+            if (rootFolderId == null) {
+                throw new IllegalStateException("repositoryInfoMap not wired on AclEffectiveEpochService "
+                        + "— the readers projection needs the root-folder id and the configured "
+                        + "anyone/anonymous principal ids");
+            }
+            Map<String, Dependency> byId = new LinkedHashMap<>();
+            for (Dependency d : dependencies) {
+                byId.put(d.id, d);
+            }
+            Dependency self = byId.get(objectId);
+            if (self == null) {
+                throw new IllegalStateException("snapshot of " + objectId + " does not contain itself");
+            }
+            if (self.kind == ContentKind.RELATIONSHIP) {
+                // A relationship has no ACL of its own in the readers sense: read(source) OR
+                // read(target). Its own local ACEs are deliberately NOT an input (expanding a
+                // relationship as ordinary content collapses to admin-only and loses BOTH chains —
+                // the 5R-a cross-path report). A dangling endpoint contributes nothing.
+                return AclSemantics.relationshipReaders(
+                        readersOf(byId, self.sourceId, resolver),
+                        readersOf(byId, self.targetId, resolver));
+            }
+            return readersOf(byId, objectId, resolver);
+        }
+
+        /** Readers of one recorded chain root, or {@code null} for a dangling / unrecorded id. */
+        private List<String> readersOf(Map<String, Dependency> byId, String id,
+                                       AclSemantics.PrincipalResolver resolver) {
+            Dependency d = id == null ? null : byId.get(id);
+            if (d == null || !d.exists) {
+                return null;
+            }
+            jp.aegif.nemaki.model.Acl acl =
+                    AclSemantics.resolveAcl(new EpochChainNode(byId, d, rootFolderId), true,
+                            anyoneId, anonymousId);
+            return AclSemantics.readerTokens(repositoryId, acl.getAllAces(), resolver);
+        }
+    }
+
+    /**
+     * The ACL-epoch view of one inheritance-chain node: the SAME {@link AclSemantics.ChainNode} the
+     * CMIS runtime implements over live {@code Content}, but backed by documents this service
+     * already read authoritatively (increment 5S).
+     *
+     * <p>One deliberate difference from the CMIS adapter, in FETCH not in semantics: every call
+     * hands out FRESH copies of the ACEs. {@code mergeAces} converts its target IN PLACE — harmless
+     * for the CMIS side, whose target is the live Content's own list — but a {@link Snapshot} is a
+     * record that may be projected more than once (a CAS restart re-projects it), and mutating the
+     * record would make the second projection depend on the first.
+     */
+    private static final class EpochChainNode implements AclSemantics.ChainNode {
+        private final Map<String, Dependency> byId;
+        private final Dependency dep;
+        private final String rootFolderId;
+
+        EpochChainNode(Map<String, Dependency> byId, Dependency dep, String rootFolderId) {
+            this.byId = byId; this.dep = dep; this.rootFolderId = rootFolderId;
+        }
+
+        @Override public String id() { return dep.id; }
+
+        @Override public List<jp.aegif.nemaki.model.Ace> localAces() {
+            List<jp.aegif.nemaki.model.Ace> copies = new ArrayList<>(dep.localAces.size());
+            for (jp.aegif.nemaki.model.Ace a : dep.localAces) {
+                copies.add(AclSemantics.deepCopy(a));
+            }
+            return copies;
+        }
+
+        @Override public jp.aegif.nemaki.model.Acl storedAcl() {
+            jp.aegif.nemaki.model.Acl acl = new jp.aegif.nemaki.model.Acl();
+            acl.getLocalAces().addAll(localAces());
+            return acl;
+        }
+
+        /** {@code ContentServiceImpl.isRoot}: the root-folder id AND a folder. */
+        @Override public boolean root() {
+            return dep.kind == ContentKind.FOLDER && rootFolderId.equals(dep.id);
+        }
+
+        /**
+         * {@code AclServiceDelegate.getAclInheritedWithDefault}: the ROOT is never inheriting
+         * whatever its stored flag says, and an ABSENT flag defaults to TRUE. (That method's two
+         * remaining branches are byte-identical, so
+         * {@code capability.extended.permission.inheritance.toplevel} has no effect and is not
+         * replicated here — see the 5R-a report.)
+         */
+        @Override public boolean inherited() {
+            if (root()) {
+                return false;
+            }
+            return !Boolean.FALSE.equals(dep.aclInherited);
+        }
+
+        @Override public String parentId() { return dep.parentId; }
+
+        @Override public AclSemantics.ChainNode parent() {
+            Dependency parent = dep.parentId == null ? null : byId.get(dep.parentId);
+            return (parent == null || !parent.exists) ? null : new EpochChainNode(byId, parent, rootFolderId);
         }
     }
 
@@ -269,7 +439,16 @@ public class AclEffectiveEpochService {
             logger.debug("Effective epoch {} for {}/{} over {} dependencies",
                     effective, repositoryId, objectId, deps.size());
         }
-        return new Snapshot(repositoryId, objectId, deps, effective);
+        String rootFolderId = null, anyoneId = null, anonymousId = null;
+        if (repositoryInfoMap != null) {
+            jp.aegif.nemaki.cmis.factory.info.RepositoryInfo info = repositoryInfoMap.get(repositoryId);
+            if (info != null) {
+                rootFolderId = info.getRootFolderId();
+                anyoneId = info.getPrincipalIdAnyone();
+                anonymousId = info.getPrincipalIdAnonymous();
+            }
+        }
+        return new Snapshot(repositoryId, objectId, deps, effective, rootFolderId, anyoneId, anonymousId);
     }
 
     /**
@@ -497,7 +676,68 @@ public class AclEffectiveEpochService {
         }
 
         return new Dependency(id, doc.getRev(), true, v.epoch, v.state, parentId, aclInherited,
-                sourceId, targetId, kind, role);
+                sourceId, targetId, kind, role, parseLocalAces(id, p));
+    }
+
+    /**
+     * Parse the persisted ACL into RAW local ACEs (increment 5S), mirroring
+     * {@code CouchAcl.convertToNemakiAcl} — including its rule that every stored entry is a LOCAL
+     * ace with {@code direct = true}.
+     *
+     * <p>An ABSENT {@code acl}, or an absent {@code entries}, yields an empty list: that is
+     * {@code convertToNemakiAcl} returning null, which the CMIS side turns into an empty list (after
+     * logging). A PRESENT but malformed value is an ANOMALY instead — the same presence contract the
+     * rest of this class uses. Guessing here would produce an under-granted reader set and, unlike a
+     * throw, would look like a successful computation.
+     */
+    private static List<jp.aegif.nemaki.model.Ace> parseLocalAces(String docId, Map<String, Object> p) {
+        List<jp.aegif.nemaki.model.Ace> aces = new ArrayList<>();
+        if (!p.containsKey(FIELD_ACL)) {
+            return aces;
+        }
+        Object rawAcl = p.get(FIELD_ACL);
+        if (rawAcl == null) {
+            return aces; // present-null acl == convertToNemakiAcl's null == "no ACEs"
+        }
+        if (!(rawAcl instanceof Map)) {
+            throw new AclEpochAnomalyException("dependency " + docId + " has a non-object acl: " + rawAcl);
+        }
+        Object rawEntries = ((Map<?, ?>) rawAcl).get(FIELD_ACL_ENTRIES);
+        if (rawEntries == null) {
+            return aces;
+        }
+        if (!(rawEntries instanceof List)) {
+            throw new AclEpochAnomalyException("dependency " + docId + " has non-list acl.entries: " + rawEntries);
+        }
+        for (Object rawEntry : (List<?>) rawEntries) {
+            if (!(rawEntry instanceof Map)) {
+                throw new AclEpochAnomalyException("dependency " + docId + " has a non-object ACL entry: " + rawEntry);
+            }
+            Map<?, ?> entry = (Map<?, ?>) rawEntry;
+            Object principal = entry.get(FIELD_ACE_PRINCIPAL);
+            if (!(principal instanceof String) || ((String) principal).isBlank()) {
+                throw new AclEpochAnomalyException("dependency " + docId
+                        + " has an ACL entry with a null / non-String / blank principal: " + principal);
+            }
+            Object permissions = entry.get(FIELD_ACE_PERMISSIONS);
+            List<String> perms = new ArrayList<>();
+            if (permissions != null) {
+                if (!(permissions instanceof List)) {
+                    throw new AclEpochAnomalyException("dependency " + docId + " has non-list permissions for '"
+                            + principal + "': " + permissions);
+                }
+                for (Object perm : (List<?>) permissions) {
+                    if (!(perm instanceof String)) {
+                        throw new AclEpochAnomalyException("dependency " + docId
+                                + " has a non-String permission for '" + principal + "': " + perm);
+                    }
+                    perms.add((String) perm);
+                }
+            }
+            // CouchAcl: a DB-stored ACE is a local ace, direct = true.
+            aces.add(new jp.aegif.nemaki.model.Ace((String) principal, perms, true));
+        }
+        return aces;
     }
 
     /**
