@@ -733,9 +733,9 @@ Spring-wired beans.
 would have gone looking for a Solr problem that never happened. New reason `OUTBOX_ACK`; the field
 is free-form, so existing tasks keep their values.
 
-**Next:** all four wiring gates are now CLOSED (increments 7, 8, 9, 10; 5T earlier). Wiring
-`AclEpochIndexWriter.write()` into the ACL write path is its own increment and has NOT been started
-— **production wiring remains NO-GO** until it is designed, reviewed and explicitly approved. Note
+**Next:** all four wiring gates are CLOSED (increments 7, 8, 9, 10; 5T earlier) and the wiring
+increment is now DESIGNED — §11 (increment 12, PROPOSED) — but **NOT implemented: production wiring
+remains NO-GO until §11 is reviewed and its decision points (§11.10) explicitly approved.** Note
 also that gate 2 closes per DEPLOYMENT, not once: the runner must be executed against each real
 repository, AFTER that deployment's mandatory full reindex.
 
@@ -916,6 +916,206 @@ Implementation is UNBLOCKED as of the 2026-07-24 sign-off (baseline `f251e1c16`)
 proceeds in the staged report order; each increment must land fail-closed (§ sign-off
 invariant 9) and is not enabled in a write path until its stage is complete. The PWC
 purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5–7).
+
+## 11. Increment 12 — PRODUCTION WIRING (PROPOSED; awaiting review + explicit approval)
+
+**Status: design only. Nothing in this section is implemented, and `AclEpochIndexWriter.write()`
+remains NO-GO until this section is reviewed and explicitly approved.** All four gates are closed
+(increments 7/8/9/10, 5T) and the operator surfaces exist (9/10/10a/11); this section specifies how
+the machinery goes onto the ACL write path.
+
+### 11.0 The seam is narrower than it looks
+
+Everything the wiring touches funnels through THREE existing choke points, which is what the
+preparatory increments were for:
+
+1. **CouchDB ACL persistence** — `AclServiceImpl.applyAcl` calls
+   `ContentServiceImpl.updateInternal` → `ContentDaoServiceImpl.update` (one PUT);
+   `ContentServiceImpl.move` likewise. Phase 1 goes into that PUT.
+2. **The Solr ACL-group write** — `AclServiceImpl.writeContentReaders` is ALREADY the unified
+   writer for every path (async applyAcl/move refresh AND the reconcile re-drive route through it,
+   for every node including the root — review round 3 #1/#2). The cutover replaces the body of this
+   ONE method.
+3. **The re-drive completion** — `reindexSearchIndexAclForObject` returns clean → the scheduler
+   completes the task. The terminus (`clearMarkerAfterReconcile`) attaches here.
+
+### 11.1 Step 0 — epoch fields must survive the model round-trip (BLOCKING precondition)
+
+Found while writing this design, not by testing: `ContentDaoServiceImpl.update` builds a **fresh**
+`CouchDocument` from the model object, and the model (`Content`) does not carry the epoch fields —
+so any model-path update (rename, property edit, checkin) of a document holding
+`aclEpochState` / `aclEpochMutationId` / `aclSourceEpoch` / `aclEpochQuarantined` **silently erases
+them**. `CouchNodeBase`'s `@JsonAnySetter` map does not save this: it is populated on
+deserialization of the stored JSON, but the update path never sees the stored JSON — it serializes a
+new object built from the model. Increment 8 is the precedent and the proof: `contentIncarnation`
+needed exactly this explicit plumbing for exactly this reason.
+
+Today this is unreachable in production (nothing puts epoch state on real documents). Post-wiring
+it is fatal: a rename racing the window between Phase 1 and the terminus erases the pending marker
+— the mutation never finalizes, never ACKs, never reconciles. That is the Q0 loss this whole design
+exists to prevent, reintroduced through the side door.
+
+**Fix:** carry the four fields as explicit, VERBATIM round-trip fields on `Content` +
+`CouchContent`, following the `contentIncarnation` pattern precisely: read back verbatim
+(absent stays absent, never minted, never defaulted), written back untouched. The epoch services
+keep their raw-Document CAS writes; the model plumbing exists only so unrelated updates stop being
+destructive. Mutation binding: an IT that renames a document carrying `PENDING_EPOCH` and asserts
+all four fields survive; removing any one field's plumbing fails that IT alone.
+
+### 11.2 Step 1 — Phase 1 + Phase 2 at the mutation choke points
+
+Scope of "ACL-affecting mutation" (§2.2): `applyAcl` (including inheritance toggle — same method),
+`move` (the moved node's own PUT), relationship re-point. Creates are NOT in scope (§11.5).
+
+- **Phase 1**: inside the existing per-object lock, set `aclEpochState = PENDING_EPOCH` and a fresh
+  `aclEpochMutationId` on the model content **before** `updateInternal`, so the SAME
+  `contentDaoService.update` PUT persists the ACL change and the marker atomically (one `_rev`).
+  Requires step 0.
+- **Phase 2**: immediately after the PUT returns, call
+  `AclEpochFinalizationService.finalizePending(repositoryId, objectId)` (the direct finalizer,
+  hardened in 2/3c). Success yields epoch `E` for this request. Failure leaves the marker — the
+  scanner recovers (§11.6); the request does NOT fail (the ACL change is committed and
+  authoritative; the epoch is bookkeeping for the INDEX, not for authorization).
+- Cache-eviction ordering is unchanged (evict own → PUT → `clearCachesRecursively`); §4.2's walk
+  is cache-bypassing, so eviction order affects only the CMIS runtime as today.
+
+### 11.3 Step 2 — the Solr cutover: one dispatch inside `writeContentReaders`
+
+Replace the generation-fenced body (`updateReadersFenced`) with the epoch writer:
+
+- Call `AclEpochIndexWriter` in **bootstrap-tolerant mode** — `run(bootstrap=true)`, today's
+  `stampInitialEpoch` semantics: an ABSENT stored epoch is CAS-created from the authoritative walk;
+  a PRESENT one gets the full §4.3 fence rules unchanged. This **amends §4.3's "migration is the
+  only caller allowed to see an unfenced document"** to: *pre-wiring, migration-only; post-wiring,
+  every unified-path writer bootstraps an unfenced document*. Rationale: post-wiring, unfenced means
+  a fresh create or a reindex-without-restamp; the strict alternative (throw → enqueue → the
+  re-drive bootstraps anyway, because it must) adds a queue round-trip with zero safety gain — the
+  re-drive would perform the identical bootstrap.
+- `NOT_INDEXED` → existing fallback unchanged (strict full `indexDocument`, create-if-absent); the
+  document is then unfenced until its next ACL-group write (§11.5).
+- `SKIPPED_DELETED` → treat as the current deleted-object no-op.
+- A quarantine block (`AclEpochQuarantineBlockedException`) propagates — the §5.1 machinery
+  (retention, capped backoff, repair, resumption) is already live end-to-end and becomes REACHABLE
+  for the first time.
+- Failure→enqueue mapping unchanged, but call sites that know the mutation's finalized epoch pass
+  it: `enqueueOrThrow(..., minRequiredEpoch = E)` from the synchronous path;
+  per-node failures inside a refresh rooted at a mutation with epoch `E` carry `E`. Paths with no
+  epoch context keep best-effort `enqueue` (obligation 0), exactly the increment-7a semantics.
+- `updateReadersFenced` (generation fence) loses its last ACL-axis caller and is removed from that
+  path; `acl_index_generation` becomes inert legacy data (still preserved by the content writer's
+  ACL-group copy; field removal is a separate later increment).
+- Relationships flow through the same seam; the walk already computes endpoint-union readers.
+
+### 11.4 Step 3 — ACK and terminus
+
+Happy path per mutation, in order (each boundary crash-safe, §11.6):
+
+```
+PUT(ACL + PENDING marker)                       -- Phase 1, atomic
+finalizePending  → epoch E, FINALIZED           -- Phase 2, inline
+own-node fenced write via the §11.3 seam        -- synchronous
+ackFinalized     → durable task (obligation E), -- 7b invariant: marker advances
+                   marker → RECONCILE_ENQUEUED     only after the obligation is durable
+subtree + relationship refresh                  -- async, as today (per-node failures enqueue)
+inline settle (own node succeeded):
+    clearMarkerAfterReconcile(docId, mutationId)  -- terminus FIRST
+    claim + complete the own-node task            -- THEN consume the obligation
+```
+
+**The terminus order is `clear` → `complete`, never the reverse.** A crash between them leaves a
+PENDING task and a cleared marker: the re-drive runs, its write is `SKIPPED_IDEMPOTENT`, its clear
+is `ABANDONED`, the task completes — converged, no residue. The reverse order's crash leaves a
+`RECONCILE_ENQUEUED` marker with NO task: nothing ever clears it, and the scanner's terminal audit
+counts it forever. (Teaching the scanner to clear it would need the scanner to read Solr — a new
+coupling this design rejects.)
+
+The re-drive path gets the same terminus: after a clean re-drive, read the content document
+(the fresh read it already does — the raw epoch fields are visible via step 0's model plumbing);
+if `aclEpochState == RECONCILE_ENQUEUED` and the achieved epoch ≥ `aclSourceEpoch`, call
+`clearMarkerAfterReconcile(docId, that mutationId)`, then the scheduler completes as today. A newer
+in-flight mutation (different mutationId) makes the clear `ABANDONED` — correct, its own cycle owns
+the terminus. This is the LAST unwired capability getting its caller, and it is wiring — exactly as
+recorded in increment 11.
+
+### 11.5 Create policy
+
+Creates do NOT enter the epoch outbox and are NOT stamped at creation. The bootstrap index (content
+writer, `BOOTSTRAP_NOT_INDEXED`) writes correct readers computed from the create itself; a fresh id
+has no competing ACL-group writer to order against; the first real ACL-group write bootstraps the
+fence (§11.3). Cost of the alternative (inline stamp per create = one authoritative ancestor walk
+per created object) is unacceptable for bulk import.
+
+Consequence, stated honestly: post-wiring, `remainingUnfenced` counts never-mutated fresh creates,
+so the migration endpoint's `INCOMPLETE` stops meaning "gate 2 unmet" once wiring is live. The
+migration verdict is a PRE-FLIP tool; its post-flip role is diagnostics. The endpoint note will say
+so once wiring lands.
+
+### 11.6 Crash matrix
+
+| crash after | durable state | recovered by |
+|---|---|---|
+| Phase 1 PUT | ACL + PENDING marker | scanner finalize pass → ACK → queue |
+| finalize | FINALIZED, epoch E | scanner ACK pass → queue |
+| own-node write | FINALIZED + fresh Solr | scanner ACK → queue → re-drive idempotent |
+| ack | ENQUEUED + PENDING task | queue re-drive → terminus |
+| clear | task without marker | re-drive: write idempotent, clear ABANDONED, complete |
+| complete | nothing outstanding | — |
+
+Every row lands in a mechanism that already exists and is already tested; the wiring adds callers,
+not recovery logic.
+
+### 11.7 Automation
+
+A new `AclEpochScanScheduler` — leader-gated exactly like the reconcile poller, long period
+(default 300s), bounded budget per pass — runs `scan()` per repository **only when the wiring flag
+is ON**. Crash recovery must not depend on an operator noticing; the increment-11 admin endpoint
+remains for on-demand sweeps. The reconcile poller itself is unchanged (already live, already
+handles quarantine blocks).
+
+### 11.8 Flag, rollout, rollback
+
+- `nemakiware.acl.epoch.wiring.enabled`, **default `false`**. OFF means bit-identical current
+  behavior — mutation-bound: with the flag off, no epoch field is ever written and the generation
+  path runs (removing the flag check fails that test).
+- Flip procedure per deployment: deploy → mandatory full reindex → migration run
+  (`verdict` `COMPLETE`/`COMPLETE_EXCEPT_ORPHANS`) → flip → restart. Flipping without the migration
+  is degraded-but-convergent (every first ACL write bootstraps; a reconcile burst) — documented,
+  discouraged.
+- Rollback = flag off. Safe in both directions: the generation fence is conservative when the
+  stored generation is stale (preserved values are older than any live `_rev` generation), and the
+  epoch fields become inert data. Nothing needs cleaning to roll back.
+
+### 11.9 Verification plan (what "green" means for this increment)
+
+- **Mutation-bound (measured, per fix):** step-0 round-trip erasure; Phase-1 same-`_rev` atomicity
+  (marker and ACL change may not arrive in different revisions); flag-off bit-identity; the §11.3
+  dispatch (fenced doc must NOT bootstrap-overwrite; unfenced doc must bootstrap); terminus order
+  (swap `clear`/`complete` → the crash-window IT fails); obligation `E` on synchronous-path
+  enqueues. Anything not mutation-measured is reported as such.
+- **Crash-window ITs:** drive each §11.6 row by executing the sequence up to the boundary and
+  handing the rest to the scanner/queue against live CouchDB+Solr.
+- **Live dev drill:** applyAcl on a subtree root → descendants + relationships re-fenced, task
+  settled, marker cleared (raw output); `kill` core between Phase 1 and finalize → scanner
+  recovers; the §5.1 quarantine drill repeated THROUGH the production path.
+- **Full core suite + complete TCK** (the applyAcl/move latency delta lands on TCK's ACL tests —
+  the walk is depth-bounded and applyAcl-frequency, not query-frequency); Playwright ACL
+  scenarios.
+
+### 11.10 Decision points requiring sign-off
+
+| # | decision | recommendation |
+|---|---|---|
+| D1 | flag default | `false` in 3.3.x; the flip is a per-deployment operational step |
+| D2 | §4.3 amendment: unified path bootstraps unfenced docs | yes — the strict alternative is the same bootstrap after a pointless queue round-trip |
+| D3 | creates stay unfenced until first ACL-group write | yes — accept the `remainingUnfenced` semantic change post-flip |
+| D4 | leader-gated scan scheduler, on only with the flag | yes — recovery must not require an operator |
+| D5 | terminus order `clear` → `complete` | yes — the reverse strands ENQUEUED markers |
+| D6 | inline settle of the own-node task on the happy path | yes — otherwise every applyAcl costs one redundant re-drive |
+
+Implementation lands as reviewable commits (step 0 inert plumbing → the flag-gated body → the live
+drill) but flips as ONE flag; slicing that separated the outbox from the Solr cutover would let
+markers pile at `RECONCILE_ENQUEUED` with a re-drive that cannot satisfy them.
+
 
 ### Implementation progress
 
