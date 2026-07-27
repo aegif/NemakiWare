@@ -427,14 +427,21 @@
     </bean>
 
     <!-- ACL-epoch finalization + crash-recovery scanner (design §2.2/§3, increment 2).
-         Standalone: NO init-method, NO scheduler wiring, NO cron. finalize()/scan() have
-         no production callers (they are driven only by tests — there is no admin driver for
-         them either); it never touches Solr or the ACL cache. Fail-closed staging until the
-         ACL-UPDATE increment.
-         ONE method IS reachable in production: repairQuarantined(), via
-         AclEpochQuarantineController. That is deliberate — design §5.1 (wiring gate 4) requires
-         the quarantine EXIT to exist before the walk goes on any write path, and it only ever
-         touches a document an operator names that is already quarantined. -->
+         Still NO init-method, NO scheduler wiring, NO cron: nothing here runs by itself, and it
+         never touches Solr or the ACL cache.
+
+         Reachable in production, by EXPLICIT admin request only (increments 9 and 11):
+           - repairQuarantined()            <- AclEpochQuarantineController
+           - scan() / finalizePending()     <- AclEpochScanController
+         Both are deliberate. §5.1 (gate 4) requires the quarantine EXIT to exist before the walk
+         goes on any write path; the outbox's crash-recovery half likewise needs a driver before the
+         writer is wired on top of it. Neither is a step towards wiring: the repair only touches a
+         document an operator names that is already quarantined, and a sweep selects nothing at all
+         while no production path creates epoch state.
+
+         Still NOT reachable: clearMarkerAfterReconcile(), which stays a capability with no caller —
+         clearing a marker belongs to the reconcile COMPLETION path, and connecting it there is
+         wiring. AclEpochIndexWriter.write() remains NO-GO. -->
     <bean id="aclEpochFinalizationService"
           class="jp.aegif.nemaki.epoch.AclEpochFinalizationService">
         <property name="connectorPool" ref="connectorPool" />
