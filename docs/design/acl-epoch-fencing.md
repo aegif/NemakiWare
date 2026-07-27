@@ -350,14 +350,18 @@ obligation on the task; 7b: FINALIZED advances to RECONCILE_ENQUEUED only after 
 is durable — IT + mutation bound) · migration stamping the initial
 `effective_acl_epoch` (**capability DONE — increment 6**: `AclEpochIndexWriter.stampInitialEpoch`; the gate now closes on RUNNING it, which is an operational step) ·
 ~~`content_incarnation` + content-writer fence~~ **CLOSED by increment 8** (the content writer now PRESERVES the ACL group instead of re-emitting it; generations are scoped by incarnation) ·
-~~§5.1 quarantine operational contract~~ **CLOSED by increment 9**.
+~~§5.1 quarantine operational contract~~ **CLOSED by increment 9**. Migration is
+~~pending~~ **CLOSED by increment 10** (runner + dev run).
 
-**Remaining before wiring is therefore ONE item, and it is operational, not structural:** running
-the repository-wide initial-epoch stamp (gate 2). It needs a driver — an admin endpoint, patch or
-script — and then an actual run per repository. Increment 9 deliberately did NOT build that driver
-along with the quarantine one: a repository-wide stamping runner WRITES to every content document,
-so it is the first epoch surface with real blast radius and belongs in its own increment with its
-own review.
+~~**Remaining before wiring is therefore ONE item**~~ — **CLOSED by increment 10.** The
+repository-wide initial-epoch stamp has a driver (`POST /v1/admin/acl-epoch/migration/{repositoryId}`)
+and has been run against both dev repositories. Note the gate closes per DEPLOYMENT: the runner must
+be executed on each real repository, AFTER that deployment's mandatory full reindex, or the reindex
+discards the stamp.
+
+**All four gates are now closed. Wiring is still NOT done**: putting `AclEpochIndexWriter.write()`
+on the ACL write path is its own increment, unstarted, and NO-GO until designed, reviewed and
+explicitly approved.
 
 *Principal tri-state was the fifth gate; it is **CLOSED by increment 5T**. The `ReadersComputer`
 obligations that §5.2 used to carry are not a gate either — they were **deleted** in 5S step 3
@@ -637,10 +641,45 @@ reason both times: `Document.get("_id")` returns null, because the SDK maps `_id
 fields rather than the dynamic property map. Both now use `getId()`/`getRev()`, and a run leaks zero
 documents (verified by purge → run → count).
 
-**Next:** the repository-wide initial-epoch migration runner (gate 2's operational half) — the last
-item before wiring, and the first epoch surface that writes to every content document, so it gets
-its own increment and its own review. Increments 7 and 8 closed gates 1 and 3; 5R, 5T and 5S are
-done. Production wiring remains NO-GO.
+**Increment 10 (DONE — the repository-wide initial-epoch stamp, gate 2).** `AclEpochMigrationService`
+walks the Solr index per repository (cursorMark over `repository_id:{repo} AND -doc_type:[* TO *]`)
+and calls `stampInitialEpoch` for every CMIS object that has no epoch yet, driven by
+`POST /v1/admin/acl-epoch/migration/{repositoryId}`. It was RUN on the dev stack: `bedroom`
+304 scanned → 269 stamped / 35 content-less, `canopy` 1 → 1, both `failed: 0`.
+
+Three things it found that reasoning had not:
+
+1. **`canopy` could not be fenced at all** — its ROOT FOLDER is stored with an explicit-null
+   `parentId`, which the walk rejected as corruption. `bedroom`'s root omits the key instead; both
+   are the same state, and the CMIS side is structurally incapable of telling them apart
+   (`CouchContent` reads `(String) properties.get("parentId")`, so an absent key and an explicit null
+   both arrive as `null`). Since every walk climbs to the root, that ONE document would have failed
+   EVERY ACL update in that repository the moment the writer was wired. A test pinned the wrong
+   behaviour; it now pins agreement with CMIS, and the null case is mutation-bound. No unit test
+   could have caught this — model objects cannot express the distinction, and the IT's `seedFolder`
+   OMITS the key when the parent is null.
+2. **`remainingUnfenced == 0` is not a reachable criterion.** 35 of `bedroom`'s documents are
+   ORPHANS — Solr entries whose CouchDB content is authoritatively gone (a 404, not a read failure).
+   They can never be stamped, and they can never be the target of `write()` either, which is called
+   on an ACL mutation of an EXISTING object — so they do not block wiring. Reporting them as
+   outstanding work would have blocked the gate on something that cannot block it, so the status
+   endpoint returns a `verdict` (`COMPLETE` / `COMPLETE_EXCEPT_ORPHANS` / `INCOMPLETE` / …) rather
+   than a bare count. The orphans themselves are stale index entries worth cleaning up separately.
+3. **The status endpoint lied for three seconds.** `remainingUnfenced` is a SEARCHER query while the
+   stamps are atomic updates, and `autoSoftCommit` is 3s — so `canopy` read
+   `remainingUnfenced: 1, INCOMPLETE` 100ms after stamping its only document, and `0, COMPLETE`
+   twenty seconds later. A run now soft-commits once at the end.
+
+**Live cross-implementation check:** nine live documents (folder / document / item) had their epoch
+stripped and were re-stamped; the readers the epoch side computed came back BYTE-IDENTICAL to the
+ones the CMIS side had written. Relationships could not be compared this way — every relationship in
+`bedroom` is an orphan — so the endpoint union remains covered by the ITs only.
+
+**Next:** all four wiring gates are now CLOSED (increments 7, 8, 9, 10; 5T earlier). Wiring
+`AclEpochIndexWriter.write()` into the ACL write path is its own increment and has NOT been started
+— **production wiring remains NO-GO** until it is designed, reviewed and explicitly approved. Note
+also that gate 2 closes per DEPLOYMENT, not once: the runner must be executed against each real
+repository, AFTER that deployment's mandatory full reindex.
 
 **Process correction:** any "verified live" claim in this document or in a test comment must carry
 the command and its raw output. This one did not, and the reviewer's independent Browser-Binding,
@@ -821,6 +860,28 @@ invariant 9) and is not enabled in a write path until its stage is complete. The
 purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5–7).
 
 ### Implementation progress
+
+- **Increment 10 — the repository-wide initial-epoch stamp (gate 2): DONE.**
+  - **Scope is CMIS objects only.** The `nemaki` core holds three populations: CMIS objects, RAG
+    parent-document markers (`doc_type=document`, `rag:` ids) and RAG chunks (`doc_type=chunk`). On
+    the dev stack the RAG entries are the MAJORITY (1147 + 5 vs 305). All carry `readers`, but their
+    tokens belong to the RAG path — stamping them would have the epoch writer claim a field another
+    writer rewrites. The filter is a NEGATIVE test on the RAG discriminator, so the failure mode is
+    "visit one spare document" (reported as `SKIPPED_DELETED`) rather than "silently miss one".
+  - **Restartable without a persistent cursor.** The cursorMark iterates a set the run does not
+    change, and an already-stamped document is skipped from the query's own `fl` WITHOUT a walk —
+    a re-run over `bedroom` took 86ms against 7.3s for the first pass. "Run it again" is therefore
+    the entire recovery procedure: no cursor document to corrupt, resume from or validate.
+  - **The counters are separate on purpose.** `stamped` / `alreadyStamped` / `skippedDeleted` /
+    `notIndexed` / `quarantineBlocked` / `failed` mean different operator actions; a wiring fault
+    FAILS the run instead of counting one failure per document.
+  - **Findings from running it** — the root-`parentId` divergence, the orphan criterion and the
+    soft-commit lag: see the increment-10 note above.
+  - **Mutation-bound**: dropping the RAG filter, removing the already-stamped skip, folding
+    quarantine blocks into `failed`, swallowing a wiring fault, and restoring the strict
+    `parentId` rule each fail exactly their own test.
+  - **Not built here**: deleting the orphaned index entries. They do not block wiring, and a
+    migration that silently deletes index documents is not what an operator asked for.
 
 - **Increment 9 — the §5.1 quarantine operational contract (gate 4): DONE.**
   - **The blocker is carried structurally, not in a message.**

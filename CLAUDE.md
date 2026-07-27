@@ -35,6 +35,17 @@ CMIS 1.1 準拠のオープンソース ECM。
 
 - **`docker compose restart` は使用禁止。** WAR はイメージビルド時にコピーされるため、
   `restart` では古い WAR のまま動作します。必ず `--build --force-recreate`。
+- **WAR は `docker/core/core.war` からコピーされます。** `mvn package` しただけでは
+  反映されません。`cp core/target/core.war docker/core/core.war` を挟んでから
+  `--build --force-recreate`。忘れると「ビルドしたのに古い WAR が動いている」状態になり、
+  TCK が旧コードを叩いていることに気づけません。
+- **Solr の schema は名前付きボリューム側が正**です (`SOLR_HOME=/var/solr/data`,
+  `ClassicIndexSchemaFactory`)。イメージ内の `schema.xml` は**新規ボリュームの種にしか
+  ならず**、Schema API も `schema is not editable` で拒否します。既存ボリュームに
+  フィールドを足すには `{SOLR_HOME}/nemaki/conf/schema.xml` を直接編集して
+  `?action=RELOAD&core=nemaki`。足りないと全 document 書込みが
+  `400 unknown field ...` で落ち、**CMIS 操作は成功したまま索引だけ止まります**
+  (症状は「検索が 0 件」)。
 - **全 compose で `COUCHDB_USER` / `COUCHDB_PASSWORD` が必須** (RC13 以降 `${VAR:?}` で
   fail-fast)。LDAP / Keycloak profile では `LDAP_ADMIN_PASSWORD` / `LDAP_CONFIG_PASSWORD` も。
 
@@ -101,14 +112,23 @@ ACL-in-Solr の恒久収束のため、リポジトリ単位の単調増加 ACL 
 `AclEpochIndexWriter.write()` は**まだどの ACL write path にも接続していません**
 (standalone bean / production caller ゼロ / scheduler・init・cron なし)。
 
-**残ゲートは 1 項目** — 閉じるまで配線 NO-GO:
+**配線ゲート 4 項目はすべて閉鎖済み** (増分 7 / 8 / 9 / 10、principal tri-state は 5T)。
+**それでも配線自体は未着手・NO-GO** です。`write()` を ACL write path に載せる作業は
+独立した増分で、設計・レビュー・明示承認を経るまで着手しません。
 
-- **migration**: 初期 `effective_acl_epoch` の repository 横断 stamp。
-  `stampInitialEpoch` は増分 6 で実装済みだが、**横断ランナー (admin API / patch / script) が
-  未実装で、当然まだ実行もしていない**。
+**デプロイごとの運用義務** (ゲート 2 は「1 回閉じて終わり」ではありません):
+全再索引の**後で**、リポジトリごとに初期 epoch stamp を実行してください。順序が逆だと
+再索引が stamp を捨てます (content writer は既存 ACL group を preserve するので、
+作り直した索引には preserve するものが無い)。
 
-*(outbox ACK = 増分 7 / content-writer fence = 増分 8 / §5.1 quarantine 運用契約 = 増分 9 /
-principal tri-state = 増分 5T で、それぞれ閉鎖済み。)*
+```
+POST /api/v1/admin/acl-epoch/migration/{repositoryId}      # 実行
+GET  /api/v1/admin/acl-epoch/migration/{repositoryId}      # verdict を確認
+```
+
+`verdict` が `COMPLETE` か `COMPLETE_EXCEPT_ORPHANS` なら完了。後者の残数は
+CouchDB に実体が無い孤児 Solr 文書で、stamp 不能かつ ACL write の対象にもならないため
+配線を妨げません。
 
 設計と実装進捗の正典は
 [`docs/design/acl-epoch-fencing.md`](docs/design/acl-epoch-fencing.md)。

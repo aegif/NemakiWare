@@ -1,6 +1,6 @@
 ---
 name: acl-epoch
-description: 進行中の ACL-epoch fencing 作業のコンテキスト。本番配線 NO-GO の理由、残ゲート (migration 横断ランナー 1 項目)、増分の現在地、ブランチ運用と検証の作法。ACL-in-Solr / epoch / reconciliation キュー / fenced writer に触る、外部レビューに対応する、というときに読む。
+description: 進行中の ACL-epoch fencing 作業のコンテキスト。本番配線 NO-GO の理由 (ゲートは全閉だが配線自体が未着手)、増分の現在地、デプロイごとの epoch stamp 運用、ブランチ運用と検証の作法。ACL-in-Solr / epoch / reconciliation キュー / fenced writer に触る、外部レビューに対応する、というときに読む。
 ---
 
 # ACL-epoch fencing (進行中)
@@ -22,25 +22,39 @@ ACL-in-Solr (CMIS query の認可を Solr 索引に前倒し) で、**索引さ�
 standalone bean / production caller ゼロ / scheduler・init・cron なし。
 この fail-closed staging は、下記ゲートが全て閉じるまで維持します。
 
-### 残ゲート 1 項目
+### 配線ゲート: 全 4 項目 閉鎖済み
 
-**migration** — 初期 `effective_acl_epoch` の stamp。無いと未 fence 文書に対して
-全 ACL 更新が fail-closed で throw します。`stampInitialEpoch` 自体は増分 6 で
-実装済みですが、**repository 横断ランナー (admin API / patch / script) が未実装**で、
-当然まだ実行もしていません。全 content 文書に書く最初の epoch 面なので、独立した
-増分 + レビューで扱います。
-
-### 閉鎖済みゲート
-
-- **outbox ACK** (増分 7) — 別 DB 間の非原子性を、task 側の epoch 義務 +
-  「義務が durable になってから `RECONCILE_ENQUEUED` へ進める」で閉鎖
-- **`content_incarnation` + content-writer fence** (増分 8) — restore の `_id` 再利用
-  問題を incarnation で解決し、content writer は ACL group 3 フィールドを
-  *preserve* するようにした (再計算＝2 つ目の ACL 実装、はしない)
-- **§5.1 quarantine 運用契約** (増分 9) — task 保持 / 阻害祖先の構造的特定 /
-  capped backoff / 修復の単一 CAS / 自動再開。運用の入口は
+- **outbox ACK** (増分 7) — task 側の epoch 義務 + 「義務が durable になってから
+  `RECONCILE_ENQUEUED` へ進める」
+- **`content_incarnation` + content-writer fence** (増分 8) — restore の `_id` 再利用を
+  incarnation で解決し、content writer は ACL group 3 フィールドを *preserve* する
+- **§5.1 quarantine 運用契約** (増分 9) — task 保持 / 阻害祖先の構造的特定 / capped backoff /
+  修復の単一 CAS / 自動再開。入口は
   `POST /v1/admin/acl-epoch/quarantine/{repo}/{docId}/repair`
-- **principal tri-state** (増分 5T)
+- **migration** (増分 10) — 横断ランナー
+  `POST /v1/admin/acl-epoch/migration/{repositoryId}`。dev (bedroom / canopy) で実走済み
+- *(principal tri-state は 増分 5T)*
+
+### それでも配線は NO-GO
+
+ゲートが閉じたことは「配線してよい」ではなく「配線を設計してよい」です。
+`write()` を ACL write path に載せる作業は独立した増分で、未着手です。
+
+### デプロイごとの運用義務
+
+ゲート 2 は 1 回で終わりません。**全再索引の後で**リポジトリごとに stamp を実行します
+(逆順だと再索引が stamp を捨てます)。`verdict` が `COMPLETE` /
+`COMPLETE_EXCEPT_ORPHANS` なら完了。後者の残数は CouchDB に実体が無い孤児 Solr 文書で、
+stamp 不能かつ ACL write の対象にもならないため配線を妨げません。
+
+### 実走で判明した落とし穴 (推論では出なかったもの)
+
+- **root の `parentId` が explicit null** のリポジトリがある (canopy)。bedroom はキー自体が無い。
+  CMIS 側は `(String) properties.get("parentId")` なので両者を区別できず、epoch 側だけが
+  片方を corruption 扱いしていた。root は全 walk の終点なので、配線したらそのリポジトリの
+  ACL 更新が全滅する経路だった。
+- **孤児 Solr 文書**は stamp 不能なので `remainingUnfenced == 0` は判定条件にならない。
+- **`remainingUnfenced` は searcher 読み**なので実行直後は 3 秒ほど嘘をつく (末尾で soft commit)。
 
 ## 正典
 

@@ -812,7 +812,10 @@ public class AclEffectiveEpochService {
         // Topology fields are STRICT (review 3a [P1]): a present-null / non-String / blank value is
         // corruption, never silently degraded to "absent" — degrading sourceId/targetId would drop
         // an entire endpoint chain from the fence value.
-        String parentId = strictOptionalId(id, p, FIELD_PARENT_ID);
+        // parentId is NULLABLE-PRESENT: see parentId(). sourceId/targetId are not — a relationship
+        // endpoint that is explicitly null is corruption, since a relationship without an endpoint
+        // is not a thing the model can express.
+        String parentId = parentId(id, p);
         String sourceId = strictOptionalId(id, p, FIELD_SOURCE_ID);
         String targetId = strictOptionalId(id, p, FIELD_TARGET_ID);
 
@@ -981,6 +984,38 @@ public class AclEffectiveEpochService {
         if (!(v instanceof String) || ((String) v).isBlank()) {
             throw new AclEpochAnomalyException("dependency " + docId + " has a present-but-invalid "
                     + key + " (null / non-String / blank): " + v);
+        }
+        return (String) v;
+    }
+
+    /**
+     * {@code parentId}, where an explicit JSON null means NO PARENT — the same as absent.
+     *
+     * <p>The strict "present-null is corruption" rule (increment 2e) is right for the fields the
+     * epoch machinery writes ITSELF, where a null can only be damage. {@code parentId} is CMIS
+     * topology written by the DAO, and "no parent" is the normal, correct state of a ROOT FOLDER —
+     * whether it lands in CouchDB as an absent key or an explicit null is a serialization detail of
+     * whichever path created the repository.
+     *
+     * <p>Found by running the gate-2 migration on the dev stack: {@code bedroom}'s root has the key
+     * ABSENT and stamped fine, while {@code canopy}'s root — created by a different path — has it
+     * PRESENT-null and threw. Since every walk climbs to the root, that one document would have
+     * failed EVERY ACL update in that repository the moment the writer was wired. No unit test could
+     * see it: they build model objects, which cannot express the distinction.
+     *
+     * <p>The root/orphan question is not decided here. Absent and null are the same input to the
+     * inheritance-stop rule ({@code isRoot}) and to branch 2 of {@code effectiveAces} (inheriting
+     * with no parent → the raw local ACEs), which is where that distinction belongs. What stays
+     * strict is the part that really is corruption: a non-String or blank value.
+     */
+    private static String parentId(String docId, Map<String, Object> p) {
+        if (!p.containsKey(FIELD_PARENT_ID) || p.get(FIELD_PARENT_ID) == null) {
+            return null;
+        }
+        Object v = p.get(FIELD_PARENT_ID);
+        if (!(v instanceof String) || ((String) v).isBlank()) {
+            throw new AclEpochAnomalyException("dependency " + docId + " has a present-but-invalid "
+                    + FIELD_PARENT_ID + " (non-String / blank): " + v);
         }
         return (String) v;
     }

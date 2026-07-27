@@ -141,6 +141,52 @@ public class AclEffectiveEpochServiceIT {
         assertEquals(DependencyRole.SELF, s.dependencies.get(0).role);
     }
 
+    /**
+     * A root folder stored with an EXPLICIT-null {@code parentId} must walk, not throw.
+     *
+     * <p>The strict "present-null is corruption" rule (increment 2e) is right for the fields the
+     * epoch machinery writes itself. {@code parentId} is CMIS topology written by the DAO, and "no
+     * parent" is the normal state of a root — whether that lands as an absent key or an explicit
+     * null is a serialization detail of whichever path created the repository.
+     *
+     * <p>Found by RUNNING the gate-2 migration on the dev stack, not by reasoning: {@code bedroom}'s
+     * root has the key absent and stamped fine, while {@code canopy}'s root — created by the
+     * different, init-time path — has it present-null and threw
+     * {@code has a present-but-invalid parentId (null / non-String / blank): null}. Every walk
+     * climbs to the root, so that ONE document would have failed EVERY ACL update in that repository
+     * the moment the writer was wired. No existing test could see it: {@code seedFolder} OMITS the
+     * key when the parent is null, and the model objects the unit tests build cannot express the
+     * distinction at all.
+     */
+    @Test
+    void aRootStoredWithAnEXPLICITNullParentIdWalksLikeAnAbsentOne() {
+        seedFolderWithExplicitNullParent("root", false, 3L);
+        seedFolder("mid", "root", true, 9L);
+
+        Snapshot s = svc.snapshot(contentDb, "mid");
+        assertNotNull(s, "an explicit-null parentId on the ROOT must not fail the whole walk");
+        assertEquals(9L, s.effectiveEpoch, "max(mid=9, root=3) — the root still contributes");
+        assertEquals(2, s.dependencies.size());
+
+        // And the object itself is resolvable, which is what the migration needs.
+        Snapshot self = svc.snapshot(contentDb, "root");
+        assertNotNull(self);
+        assertEquals(3L, self.effectiveEpoch);
+    }
+
+    /** Seed a folder whose parentId key is PRESENT with a null value, as canopy's root is. */
+    private void seedFolderWithExplicitNullParent(String id, boolean inherits, long epoch) {
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("type", "cmis:folder");
+        p.put("objectType", "cmis:folder");
+        p.put("document", false);
+        p.put("name", id);
+        p.put(AclEffectiveEpochService.FIELD_PARENT_ID, null);   // the whole point
+        p.put(AclEffectiveEpochService.FIELD_ACL_INHERITED, inherits);
+        p.put(AclEpochState.FIELD_SOURCE_EPOCH, epoch);
+        put(id, p);
+    }
+
     @Test
     void walkStopsAtANonInheritingNodeSoHigherAncestorsDoNotCount() {
         seedFolder("root", null, false, 100L);  // a HIGH epoch that must NOT be counted
@@ -591,12 +637,35 @@ public class AclEffectiveEpochServiceIT {
         assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "odd"));
     }
 
+    /**
+     * A MALFORMED parentId is still an anomaly; an explicit-NULL one is not.
+     *
+     * <p>This test used to require the null case to throw as well, on the reasoning that degrading a
+     * malformed parentId to "no parent" would silently drop the inherited chain. That reasoning does
+     * not survive contact with the CMIS side: {@code CouchContent} reads the field as
+     * {@code (String) properties.get("parentId")}, which yields {@code null} for an ABSENT key and
+     * for an EXPLICIT null alike, and {@code ContentServiceImpl} then tests {@code getParentId() ==
+     * null}. The CMIS implementation is structurally incapable of telling the two apart — so making
+     * the epoch side throw on one and walk on the other is precisely the two-implementations
+     * divergence 5R/5S exists to eliminate.
+     *
+     * <p>It is not theoretical: {@code canopy}'s ROOT FOLDER is stored with an explicit-null
+     * parentId (its creation path differs from {@code bedroom}'s, whose root omits the key), and
+     * every walk climbs to the root — so this rule failed EVERY object in that repository. The
+     * gate-2 migration run surfaced it; no unit test could, because model objects cannot express the
+     * distinction at all.
+     *
+     * <p>Blank and non-String stay anomalies: those are values CMIS cannot use either (a blank id
+     * resolves to no folder; a number throws {@code ClassCastException} in the DAO), so refusing
+     * them keeps the two sides in agreement rather than breaking it.
+     */
     @Test
-    void presentButInvalidParentIdIsAnomalyNotSilentlyAbsent() {
-        // Degrading a malformed parentId to "no parent" would silently drop the whole inherited
-        // chain from the fence value.
-        seedRaw("pnull", "{\"type\":\"cmis:document\",\"aclInherited\":true,\"parentId\":null}");
-        assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "pnull"));
+    void aMalformedParentIdIsAnomaly_butAnExplicitNullIsJustNoParent() {
+        seedRaw("pnull", "{\"type\":\"cmis:document\",\"aclInherited\":true,\"parentId\":null,"
+                + "\"aclSourceEpoch\":4}");
+        Snapshot s = svc.snapshot(contentDb, "pnull");
+        assertNotNull(s, "explicit null == absent == no parent, exactly as CMIS reads it");
+        assertEquals(4L, s.effectiveEpoch);
 
         seedRaw("pblank", "{\"type\":\"cmis:document\",\"aclInherited\":true,\"parentId\":\"  \"}");
         assertThrows(AclEpochAnomalyException.class, () -> svc.snapshot(contentDb, "pblank"));

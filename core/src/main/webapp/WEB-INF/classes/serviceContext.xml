@@ -469,6 +469,21 @@
         <property name="effectiveEpochService" ref="aclEffectiveEpochService" />
     </bean>
 
+    <!-- Repository-wide initial effective_acl_epoch stamp (design §8 — wiring gate 2's operational
+         half, increment 10). Driven ONLY by an explicit admin request
+         (POST /v1/admin/acl-epoch/migration/{repositoryId}): NO init-method, NO scheduler, NO cron,
+         so nothing stamps anything on startup. It is the one production caller of
+         stampInitialEpoch, writes only the ACL group under a _version_ CAS, and must be run AFTER
+         the mandatory full reindex (a later reindex leaves the documents unfenced again). -->
+    <bean id="aclEpochMigrationService"
+          class="jp.aegif.nemaki.epoch.AclEpochMigrationService">
+        <property name="indexWriter" ref="aclEpochIndexWriter" />
+        <property name="solrUtil" ref="solrUtil" />
+        <!-- The principal resolver is built from this via ACLExpander.principalResolver, so the
+             migration and the RAG token layer share ONE binding of the tri-state lookups. -->
+        <property name="principalService" ref="principalService" />
+    </bean>
+
     <!-- Search-index ACL reconciliation: durable CouchDB queue + leader-gated poller -->
     <bean id="searchIndexReconciliationService"
           class="jp.aegif.nemaki.reconcile.SearchIndexReconciliationService">

@@ -26,6 +26,24 @@ and never reuses the archived one.
 `acl_index_generation` is RETAINED unchanged for compatibility and remains the ACL axis' fence input
 in 3.3.0. It is NOT an input to the content fence, which reads `content_generation` only.
 
+**Reusing an existing SOLR_HOME? Add the two fields by hand.** The schema shipped in the Solr image
+seeds a FRESH `SOLR_HOME` only; an existing one keeps its own `schema.xml` on the data volume, and
+the core uses `ClassicIndexSchemaFactory`, so the Schema API refuses to add them
+(`schema is not editable`). Without them EVERY document write fails with
+`400 unknown field 'content_incarnation'` — the CMIS operation still succeeds, but the index silently
+stops being updated, so queries return stale or missing results while `ERROR Solr indexing
+permanently failed for document …` accumulates in the log. Edit
+`{SOLR_HOME}/nemaki/conf/schema.xml` to add
+
+```xml
+<field name="content_incarnation" type="string" indexed="true" stored="true" required="false" multiValued="false" />
+<field name="content_generation" type="long" indexed="true" stored="true" required="false" multiValued="false" />
+```
+
+then `curl "http://{solr}/solr/admin/cores?action=RELOAD&core=nemaki"`. The normal 3.3.0 upgrade path
+(a Solr 10 migration onto a fresh core, which is why the full reindex is mandatory anyway) gets them
+from the image and needs no action; this applies to dev/staging stacks that kept their volume.
+
 **This fixes a real clobber**: a slow full-document rebuild (body re-extraction, rename, move) that
 finished after a fresh `applyAcl` used to overwrite the new reader tokens with the ones it had
 computed minutes earlier. The content writer now preserves whatever ACL group Solr already holds
@@ -49,6 +67,25 @@ addressed by CouchDB `_id` because resolving a `taskId` would mean deserializing
 will not deserialize; that route REFUSES a healthy document. After deleting one, re-index its
 `objectId` — deleting a task drops only the automatic retry. Earlier 3.3.0 pre-releases let a single
 corrupt entry stall the whole queue with no way to remove it through the API.
+
+### New admin API: initial ACL-epoch stamp (run it AFTER the full reindex)
+
+`POST /api/v1/admin/acl-epoch/migration/{repositoryId}` stamps the initial `effective_acl_epoch` on
+every CMIS object in a repository's Solr index; `GET` on the same path reports progress and a
+`verdict`. Both are admin-gated and CSRF-protected.
+
+**Order matters, and getting it wrong silently discards the work.** Run this AFTER the mandatory
+full reindex, never before: the reindex rebuilds every document through the content writer, whose
+fence preserves whatever ACL group Solr already holds — and on a freshly-rebuilt index there is
+nothing to preserve.
+
+The run is restartable by simply running it again: an already-stamped document is recognised from
+the query and skipped without recomputing anything. A `verdict` of `COMPLETE` or
+`COMPLETE_EXCEPT_ORPHANS` means done; the residual in the latter is index entries whose CouchDB
+content has been deleted, which can never be stamped.
+
+This does not enable anything by itself — the ACL-epoch writer is still not wired into any ACL write
+path in 3.3.0. Running it is what makes a later release able to be.
 
 ### New admin API: ACL-epoch quarantine
 
