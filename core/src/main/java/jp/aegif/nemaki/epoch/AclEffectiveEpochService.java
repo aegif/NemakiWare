@@ -511,6 +511,46 @@ public class AclEffectiveEpochService {
      * @throws AclEpochAnomalyException     corrupt epoch data / cycle / hop-cap exceeded (repair)
      */
     public Snapshot snapshot(String repositoryId, String objectId) {
+        try {
+            return snapshotInternal(repositoryId, objectId);
+        } catch (AclEpochQuarantineBlockedException e) {
+            // §5.1 item 2. Re-stated with the object it was serving, counted, and logged ONCE PER
+            // BLOCKING ANCESTOR — a quarantined folder can block thousands of descendants, and a log
+            // line each would bury the single id an operator actually needs.
+            AclEpochQuarantineBlockedException withObject = e.withBlockedObject(objectId);
+            quarantineBlockedCount.incrementAndGet();
+            String blocker = withObject.getQuarantinedId();
+            if (blocker != null && quarantineBlockersSeen.add(blocker)) {
+                logger.warn("ACL-index refresh BLOCKED by quarantined document {} in '{}' — repairing "
+                        + "that ONE document unblocks its whole subtree (first occurrence; further "
+                        + "blocks by the same document are counted, not logged)", blocker, repositoryId);
+            }
+            throw withObject;
+        }
+    }
+
+    /**
+     * Distinct QUARANTINED documents that have blocked at least one walk, and how many walks they
+     * blocked (design §5.1 item 2). Exposed so an operator can find the handful of ids whose repair
+     * unblocks everything, rather than reading a thousand identical failures.
+     */
+    public Map<String, Object> quarantineMetrics() {
+        return Map.of(
+                "quarantineBlockedTasks", quarantineBlockedCount.get(),
+                "quarantineBlockingIds", List.copyOf(quarantineBlockersSeen));
+    }
+
+    /** Forget a repaired blocker, so a LATER re-quarantine of the same document logs again. */
+    public void forgetQuarantineBlocker(String docId) {
+        quarantineBlockersSeen.remove(docId);
+    }
+
+    private final java.util.concurrent.atomic.AtomicLong quarantineBlockedCount =
+            new java.util.concurrent.atomic.AtomicLong();
+    private final Set<String> quarantineBlockersSeen =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private Snapshot snapshotInternal(String repositoryId, String objectId) {
         if (repositoryId == null || repositoryId.isBlank()) {
             throw new IllegalArgumentException("repositoryId is required");
         }

@@ -329,16 +329,35 @@ ACL-UPDATE / queue increments; none of them exists yet):
    retained task's next attempt succeeds. An IT must prove quarantine → blocked → repair →
    the SAME task completes.
 
-Until these exist, the walk is correct but the operational story is not, which is one
-reason increment 3/3a stays off the write path.
+**All five points are IMPLEMENTED as of increment 9** (`AclEpochQuarantineBlockedException`
+carries the blocker structurally; the scheduler retains the task at the capped delay via
+`retryLaterWithoutCountingAnAttempt`; `repairQuarantined` is one CAS;
+`POST .../quarantine/{repo}/{docId}/repair` is the operator's entry point). Each is mutation-bound:
+discarding the task, clearing the marker before the fields, omitting the ancestor id, keeping a
+corrupt epoch, and counting a blocked drive as an attempt each fail exactly the test that asserts
+them, and nothing else.
+
+Two things follow that are worth stating rather than leaving implicit. First, **the scheduler's
+quarantine branch cannot fire in production today** — `AclService` does not call the walk, so
+nothing throws it. That is the intended order, not an oversight: the operational contract is a
+PRE-condition for wiring, so it necessarily lands while still unreachable. Second, a repair
+normalizes ONE document; a subtree with several quarantined ancestors needs each repaired, which is
+why the blocker metric reports the distinct ids rather than a count alone.
 
 **WIRING GATES (all FOUR must be closed before `AclEpochIndexWriter.write()` is put on the ACL
 path):** ~~outbox ACK / enqueue (invariant 5)~~ **CLOSED by increment 7** (7a: the epoch
 obligation on the task; 7b: FINALIZED advances to RECONCILE_ENQUEUED only after that obligation
 is durable — IT + mutation bound) · migration stamping the initial
 `effective_acl_epoch` (**capability DONE — increment 6**: `AclEpochIndexWriter.stampInitialEpoch`; the gate now closes on RUNNING it, which is an operational step) ·
-~~`content_incarnation` + content-writer fence~~ **CLOSED by increment 8** (the content writer now PRESERVES the ACL group instead of re-emitting it; generations are scoped by incarnation) · §5.1
-quarantine operational contract.
+~~`content_incarnation` + content-writer fence~~ **CLOSED by increment 8** (the content writer now PRESERVES the ACL group instead of re-emitting it; generations are scoped by incarnation) ·
+~~§5.1 quarantine operational contract~~ **CLOSED by increment 9**.
+
+**Remaining before wiring is therefore ONE item, and it is operational, not structural:** running
+the repository-wide initial-epoch stamp (gate 2). It needs a driver — an admin endpoint, patch or
+script — and then an actual run per repository. Increment 9 deliberately did NOT build that driver
+along with the quarantine one: a repository-wide stamping runner WRITES to every content document,
+so it is the first epoch surface with real blast radius and belongs in its own increment with its
+own review.
 
 *Principal tri-state was the fifth gate; it is **CLOSED by increment 5T**. The `ReadersComputer`
 obligations that §5.2 used to carry are not a gate either — they were **deleted** in 5S step 3
@@ -592,16 +611,36 @@ path; and a live re-index of `bbc119345228953e3405c85bdb36b096` producing byte-i
 `[group:bedroom:GROUP_EVERYONE, user:bedroom:admin, user:bedroom:system]`. **Playwright has NOT been
 run** — it remains outstanding for 5R-b.
 
-**Next:** the §5.1 quarantine operational contract — the last gate, and it absorbs the operational
-residual from increment 7a (one corrupt task stalls the poller for everything else; both need an
-admin endpoint that reports and repairs). Increment 8 closed the content-writer fence; increment 7
-(outbox ACK) is done — 7a added the epoch obligation to the reconciliation
-task, 7b made the scanner advance `FINALIZED_NEEDS_RECONCILE` to `RECONCILE_ENQUEUED` only after that
-obligation is durable.
+**Increment 9 (DONE — the §5.1 quarantine operational contract, gate 4).** All five §5.1 points are
+implemented and mutation-bound; see §5.1 for the closure record and for the two honest caveats (the
+scheduler branch is unreachable until wiring, and a repair is per-document).
 
-Gate 2 (migration) has its CAPABILITY as of increment 6 (`stampInitialEpoch`); what remains for that
-gate is operational — a repository-wide runner (admin API / patch / script) and actually running it.
-That can be built alongside increment 7. 5R, 5T and 5S are done. Production wiring remains NO-GO.
+It also absorbed the operational residual from increment 7a, which turned out to be worse than
+recorded. 7a made a corrupt `minRequiredEpoch` THROW out of the shared deserializer so it could not
+be flattened into "no obligation" — correct, but every read path funnels through that deserializer,
+so ONE damaged document broke `list`, `claimDue` and `metrics` for every other task **and removed
+the only way to delete it** (addressing by `taskId` requires deserializing the document that will
+not deserialize). Unrecoverable through the API. Corruption is now CONTAINED rather than propagated:
+skipped for execution — never claimed, since an unknown obligation must not be ACKed — but reported
+by `listCorrupt`, counted in `metrics().corrupt`, and removable by `_id` through
+`DELETE .../reconcile/corrupt/{docId}`, which REFUSES a healthy document so it cannot become a
+second delete API without the LEASED protection. Both halves are mutation-bound; restoring
+propagation reproduces the stall exactly (one corrupt document failed 9 unrelated tests, including
+the teardown).
+
+A test-hygiene defect surfaced on the way: `AclEpochFinalizationServiceIT` enqueues into the SHARED
+`nemaki_conf` queue and its teardown dropped only the per-test content DB, so entries accumulated —
+1034 of them — until the total crossed the 1000-document `LIST_LIMIT_CAP` and pushed a sibling IT's
+own tasks off the end of `list()`, failing it with a symptom that pointed nowhere near the cause.
+The sibling's existing purge helper had been silently deleting nothing for the same underlying
+reason both times: `Document.get("_id")` returns null, because the SDK maps `_id`/`_rev` onto typed
+fields rather than the dynamic property map. Both now use `getId()`/`getRev()`, and a run leaks zero
+documents (verified by purge → run → count).
+
+**Next:** the repository-wide initial-epoch migration runner (gate 2's operational half) — the last
+item before wiring, and the first epoch surface that writes to every content document, so it gets
+its own increment and its own review. Increments 7 and 8 closed gates 1 and 3; 5R, 5T and 5S are
+done. Production wiring remains NO-GO.
 
 **Process correction:** any "verified live" claim in this document or in a test comment must carry
 the command and its raw output. This one did not, and the reviewer's independent Browser-Binding,
@@ -782,6 +821,40 @@ invariant 9) and is not enabled in a write path until its stage is complete. The
 purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5–7).
 
 ### Implementation progress
+
+- **Increment 9 — the §5.1 quarantine operational contract (gate 4): DONE.**
+  - **The blocker is carried structurally, not in a message.**
+    `AclEpochQuarantineBlockedException` (a subtype of `AclEpochAnomalyException`, so every existing
+    anomaly handler still catches it) holds the quarantined ancestor id and the blocked object id as
+    fields. A caller that has to parse a string to know which document to repair does not really
+    know it. `snapshot()` wraps the walk to attach the blocked object, count the block, and WARN
+    once per blocking ancestor — a subtree of a thousand descendants yields one log line and one id.
+  - **The task is retained, and the cap is the point.** The scheduler catches the quarantine block
+    BEFORE its generic failure catch, retries at the capped delay via
+    `retryLaterWithoutCountingAnAttempt`, and `continue`s so `markFailed` is unreachable on this
+    path. Without the cap, a repair on human timescales is retried at the normal poll interval.
+  - **`attempts` must not move, and the first implementation moved it.** It called `retryLater`,
+    which increments — so a subtree blocked for a day came out of the quarantine with `attempts` at
+    the cap, and the next ordinary failure marked it terminal-FAILED: the abandonment §5.1 item 1
+    exists to prevent, deferred by one step. The mocked scheduler test could not see this (it
+    verifies which method is called, not what the document says), and the comment asserting
+    "attempts is NOT advanced" was simply false. Found in self-review, fixed with a dedicated
+    non-counting re-open, and bound by an IT that reads the STORED attempt count back.
+  - **Repair removes the epoch machinery rather than guessing at it.** One CAS clears the marker,
+    the state and the mutation id together, and DROPS a corrupt `aclSourceEpoch` instead of
+    inventing a value — an absent epoch reads as 0 (pre-migration), which is safe, whereas a guess
+    could fence out a later correct writer. Marker-first would let a scanner re-quarantine the
+    document mid-repair; fields-first leaves a healthy-looking but still-marked document if the JVM
+    dies between the two.
+  - **`POST /v1/admin/acl-epoch/quarantine/{repositoryId}/{docId}/repair`** is the operator's entry
+    point, with `GET /v1/admin/acl-epoch/quarantine` naming the ids to repair. Without these the
+    contract would have been a capability with no operator in it.
+  - **Mutation-bound, seven ways**: discarding the task, clearing the marker before the fields,
+    omitting the ancestor id, retaining a corrupt epoch, counting a blocked drive as an attempt,
+    restoring the corrupt-task propagation, and letting the corrupt-delete route touch a healthy
+    document — each fails exactly its own test.
+  - **Not built here**: the scanner driver and the repository-wide migration runner. Both write
+    broadly; they belong with gate 2.
 
 - **Increment 8 — `content_incarnation` + the content-writer fence (gate 3): DONE.**
   - **The clobber it fixes is real and current**: `createSolrDocument` re-emitted `readers` as part

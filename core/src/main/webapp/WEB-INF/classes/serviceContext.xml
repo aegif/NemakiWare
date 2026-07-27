@@ -428,13 +428,21 @@
 
     <!-- ACL-epoch finalization + crash-recovery scanner (design §2.2/§3, increment 2).
          Standalone: NO init-method, NO scheduler wiring, NO cron. finalize()/scan() have
-         no production callers (driven only by tests / a default-disabled admin path);
-         it never touches Solr, reconcile tasks, or the ACL cache. Fail-closed staging
-         until the ACL-UPDATE increment. -->
+         no production callers (they are driven only by tests — there is no admin driver for
+         them either); it never touches Solr or the ACL cache. Fail-closed staging until the
+         ACL-UPDATE increment.
+         ONE method IS reachable in production: repairQuarantined(), via
+         AclEpochQuarantineController. That is deliberate — design §5.1 (wiring gate 4) requires
+         the quarantine EXIT to exist before the walk goes on any write path, and it only ever
+         touches a document an operator names that is already quarantined. -->
     <bean id="aclEpochFinalizationService"
           class="jp.aegif.nemaki.epoch.AclEpochFinalizationService">
         <property name="connectorPool" ref="connectorPool" />
         <property name="counterService" ref="aclEpochCounterService" />
+        <!-- reconciliationService is DELIBERATELY not wired: it is only needed by ackFinalized()
+             (increment 7b), which has no production caller, and an unwired collaborator is a second
+             fail-closed latch during the NO-GO period — the ACK throws AclEpochWiringException
+             rather than half-working. Wire it in the same change that gives it a caller. -->
     </bean>
 
     <!-- ACL effective-epoch resolution (design §4.1 / §4.2 steps 1,2,4 — increment 3).

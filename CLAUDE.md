@@ -101,14 +101,14 @@ ACL-in-Solr の恒久収束のため、リポジトリ単位の単調増加 ACL 
 `AclEpochIndexWriter.write()` は**まだどの ACL write path にも接続していません**
 (standalone bean / production caller ゼロ / scheduler・init・cron なし)。
 
-**残ゲート 4 項目** — 全て閉じるまで配線 NO-GO:
+**残ゲートは 1 項目** — 閉じるまで配線 NO-GO:
 
-1. outbox ACK
-2. migration (初期 `effective_acl_epoch` の stamp)
-3. `content_incarnation` + content-writer fence
-4. §5.1 quarantine 運用契約
+- **migration**: 初期 `effective_acl_epoch` の repository 横断 stamp。
+  `stampInitialEpoch` は増分 6 で実装済みだが、**横断ランナー (admin API / patch / script) が
+  未実装で、当然まだ実行もしていない**。
 
-*(principal tri-state は増分 5T で閉鎖済み。)*
+*(outbox ACK = 増分 7 / content-writer fence = 増分 8 / §5.1 quarantine 運用契約 = 増分 9 /
+principal tri-state = 増分 5T で、それぞれ閉鎖済み。)*
 
 設計と実装進捗の正典は
 [`docs/design/acl-epoch-fencing.md`](docs/design/acl-epoch-fencing.md)。
