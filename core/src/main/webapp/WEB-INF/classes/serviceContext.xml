@@ -476,9 +476,13 @@
          stampInitialEpoch, writes only the ACL group under a _version_ CAS, and must be run AFTER
          the mandatory full reindex (a later reindex leaves the documents unfenced again). -->
     <bean id="aclEpochMigrationService"
-          class="jp.aegif.nemaki.epoch.AclEpochMigrationService">
+          class="jp.aegif.nemaki.epoch.AclEpochMigrationService"
+          destroy-method="stop">
         <property name="indexWriter" ref="aclEpochIndexWriter" />
         <property name="solrUtil" ref="solrUtil" />
+        <!-- REQUIRED: without it an unknown repository id reports a COMPLETE migration it never
+             performed (a typo'd id simply matches no Solr document). -->
+        <property name="repositoryInfoMap" ref="repositoryInfoMap" />
         <!-- The principal resolver is built from this via ACLExpander.principalResolver, so the
              migration and the RAG token layer share ONE binding of the tri-state lookups. -->
         <property name="principalService" ref="principalService" />

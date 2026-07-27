@@ -50,7 +50,9 @@ public class AclEpochMigrationController {
         } catch (jp.aegif.nemaki.epoch.AclEpochWiringException e) {
             return error(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
         } catch (IllegalArgumentException e) {
-            return error(HttpStatus.BAD_REQUEST, e.getMessage());
+            // An unknown repository id is NOT_FOUND, not a completed migration — see
+            // AclEpochMigrationService#requireKnownRepository for why that distinction matters.
+            return error(HttpStatus.NOT_FOUND, e.getMessage());
         }
         if (!started) {
             return error(HttpStatus.CONFLICT,
@@ -78,26 +80,41 @@ public class AclEpochMigrationController {
         body.put("run", p == null ? null : p.toMap());
         try {
             long remaining = migrationService.remainingUnfenced(repositoryId);
+            long indexed = migrationService.indexedCmisObjects(repositoryId);
             body.put("remainingUnfenced", remaining);
+            body.put("indexedCmisObjects", indexed);
             // NOT `remaining == 0`: that is unreachable whenever the index holds an entry whose
             // CouchDB content has been deleted, and reporting such a repository as never-finished
             // would be wrong in the one direction that matters here.
-            AclEpochMigrationService.Verdict v = migrationService.verdict(repositoryId, remaining);
+            AclEpochMigrationService.Verdict v =
+                    migrationService.verdict(repositoryId, remaining, indexed);
             body.put("verdict", v.name());
             body.put("fenced", v == AclEpochMigrationService.Verdict.COMPLETE
                     || v == AclEpochMigrationService.Verdict.COMPLETE_EXCEPT_ORPHANS);
+            if (v == AclEpochMigrationService.Verdict.EMPTY_INDEX) {
+                body.put("note", "This repository has NO CMIS objects in the index. Nothing was "
+                        + "stamped because there was nothing to stamp — most likely the mandatory "
+                        + "full reindex has not been run yet. Reindex first, THEN run this.");
+            }
             if (v == AclEpochMigrationService.Verdict.COMPLETE_EXCEPT_ORPHANS) {
                 body.put("note", remaining + " index entries have no CouchDB content (deleted objects "
                         + "whose Solr documents were left behind). They can never be stamped and can "
                         + "never be the target of an ACL write, so they do not block wiring — clean "
                         + "them up separately.");
             }
+        } catch (IllegalArgumentException e) {
+            return error(HttpStatus.NOT_FOUND, e.getMessage());
         } catch (jp.aegif.nemaki.epoch.AclEpochWiringException e) {
             return error(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
         } catch (RuntimeException e) {
             // Fail SOFT on the live count: a Solr blip must not hide the run's own progress, which
-            // is in-memory and still accurate.
+            // is in-memory and still accurate. But fail CLOSED on the verdict — without the count
+            // there is no verdict, and leaving the key ABSENT would make a script's `if fenced`
+            // read as false only by accident, or throw. Say it.
             body.put("remainingUnfenced", null);
+            body.put("indexedCmisObjects", null);
+            body.put("verdict", "UNKNOWN");
+            body.put("fenced", false);
             body.put("remainingUnfencedError", e.getMessage());
         }
         return ResponseEntity.ok(body);
