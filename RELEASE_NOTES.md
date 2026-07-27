@@ -80,9 +80,19 @@ fence preserves whatever ACL group Solr already holds — and on a freshly-rebui
 nothing to preserve.
 
 The run is restartable by simply running it again: an already-stamped document is recognised from
-the query and skipped without recomputing anything. A `verdict` of `COMPLETE` or
-`COMPLETE_EXCEPT_ORPHANS` means done; the residual in the latter is index entries whose CouchDB
-content has been deleted, which can never be stamped.
+the query and skipped without recomputing anything.
+
+Read the `verdict`, not the raw count:
+
+| verdict | meaning |
+|---|---|
+| `COMPLETE` | every CMIS object in the index carries an epoch |
+| `COMPLETE_EXCEPT_ORPHANS` | done; the residual is index entries whose CouchDB content was deleted and which can never be stamped |
+| `EMPTY_INDEX` | the repository has NO CMIS objects indexed — almost always "the full reindex has not been run yet". **Not** done |
+| `INCOMPLETE` | documents remain that could have been fenced — repair any reported quarantine blockers, then re-run |
+| `NOT_RUN` / `RUNNING` / `FAILED` / `UNKNOWN` | no conclusion available |
+
+An unknown repository id is a 404 listing the configured ids — never a completed migration.
 
 This does not enable anything by itself — the ACL-epoch writer is still not wired into any ACL write
 path in 3.3.0. Running it is what makes a later release able to be.

@@ -2,6 +2,8 @@ package jp.aegif.nemaki.epoch;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -57,6 +59,12 @@ public class AclEpochMigrationServiceTest {
         svc.setIndexWriter(writer);
         svc.setSolrUtil(solrUtil);
         svc.setPrincipalService(mock(PrincipalService.class));
+        jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repos =
+                mock(jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap.class);
+        lenient().when(repos.contains("bedroom")).thenReturn(true);
+        lenient().when(repos.contains("canopy")).thenReturn(true);
+        lenient().when(repos.keys()).thenReturn(java.util.Set.of("bedroom", "canopy"));
+        svc.setRepositoryInfoMap(repos);
 
         lenient().when(solrClient.query(any(SolrQuery.class))).thenAnswer(inv -> {
             SolrQuery q = inv.getArgument(0);
@@ -280,6 +288,56 @@ public class AclEpochMigrationServiceTest {
     }
 
     /**
+     * An UNKNOWN repository id must be refused, not quietly reported as a finished migration.
+     *
+     * <p>Without the guard the runner is a trap rather than a verification: a typo matches no Solr
+     * document, so the run completes with {@code scanned: 0}, {@code remainingUnfenced} is 0, and the
+     * endpoint answers {@code verdict: COMPLETE, fenced: true} for a repository it never touched.
+     * Reproduced against the dev stack before the fix — an operator would have concluded gate 2 was
+     * closed while the repository was entirely unfenced. This is the one failure direction the whole
+     * endpoint exists to prevent.
+     */
+    @Test
+    public void anUNKNOWNRepositoryIsRefused_notReportedAsAFinishedMigration() {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> svc.start("bedr00m-typo"));
+        assertTrue(e.getMessage().contains("unknown repository"), e.getMessage());
+        assertTrue(e.getMessage().contains("bedroom"), "and it must say what IS configured: " + e.getMessage());
+
+        // The status path must refuse it too — otherwise a GET alone still answers "fenced".
+        assertThrows(IllegalArgumentException.class, () -> svc.remainingUnfenced("bedr00m-typo"));
+        assertNull(svc.status("bedr00m-typo"), "and no run may have been recorded for it");
+    }
+
+    /** Without the map the service must FAIL rather than accept every id as valid. */
+    @Test
+    public void aMissingRepositoryInfoMapIsAWiringFault_notAnOpenDoor() {
+        AclEpochMigrationService noMap = new AclEpochMigrationService();
+        noMap.setIndexWriter(writer);
+        noMap.setSolrUtil(mock(SolrUtil.class));
+        noMap.setPrincipalService(mock(PrincipalService.class));
+        AclEpochWiringException e = assertThrows(AclEpochWiringException.class,
+                () -> noMap.start("bedroom"));
+        assertTrue(e.getMessage().contains("repositoryInfoMap"), e.getMessage());
+    }
+
+    /**
+     * A rejected submission must not leave the entry RUNNING: {@code start} would then answer
+     * "already running" for ever, so the endpoint would be dead until a JVM restart with no run to
+     * observe — the worst of both (no work done, and no way to ask for it).
+     */
+    @Test
+    public void aRejectedSubmissionDoesNotWEDGETheRepositoryAtRUNNING() {
+        svc.stop(); // executor shut down; every submit is now rejected
+        assertThrows(RuntimeException.class, () -> svc.start("bedroom"));
+
+        AclEpochMigrationService.Progress p = svc.status("bedroom");
+        assertNotNull(p);
+        assertEquals("FAILED", p.status, "it must be observable as FAILED, not stuck RUNNING");
+        assertTrue(p.errorMessage.contains("could not start"), p.errorMessage);
+    }
+
+    /**
      * The gate criterion is NOT "remainingUnfenced == 0". A Solr entry whose CouchDB content has
      * been DELETED can never be stamped, so that count never reaches zero on any index that has
      * ever lost a document — and reporting such a repository as never-migrated would block the
@@ -300,11 +358,11 @@ public class AclEpochMigrationServiceTest {
         assertEquals(1, p.skippedDeleted);
 
         assertEquals(AclEpochMigrationService.Verdict.COMPLETE_EXCEPT_ORPHANS,
-                svc.verdict("bedroom", 1), "1 left, and exactly 1 was content-less: complete");
+                svc.verdict("bedroom", 1, 10), "1 left, and exactly 1 was content-less: complete");
         assertEquals(AclEpochMigrationService.Verdict.COMPLETE,
-                svc.verdict("bedroom", 0));
+                svc.verdict("bedroom", 0, 10));
         assertEquals(AclEpochMigrationService.Verdict.INCOMPLETE,
-                svc.verdict("bedroom", 2),
+                svc.verdict("bedroom", 2, 10),
                 "MORE left than were content-less means real work was missed — re-run");
     }
 
@@ -321,13 +379,38 @@ public class AclEpochMigrationServiceTest {
 
         AclEpochMigrationService.Progress p = runToCompletion("bedroom");
         assertEquals(1, p.quarantineBlocked);
-        assertEquals(AclEpochMigrationService.Verdict.INCOMPLETE, svc.verdict("bedroom", 1));
+        assertEquals(AclEpochMigrationService.Verdict.INCOMPLETE, svc.verdict("bedroom", 1, 10));
     }
 
     /** Before any run there is nothing to conclude — not "complete because Solr looks empty". */
     @Test
     public void aRepositoryNeverRunIsNOT_RUN_evenAtZeroRemaining() {
-        assertEquals(AclEpochMigrationService.Verdict.NOT_RUN, svc.verdict("never-touched", 0));
+        assertEquals(AclEpochMigrationService.Verdict.NOT_RUN, svc.verdict("never-touched", 0, 10));
+    }
+
+    /**
+     * An EMPTY index must not read as COMPLETE — this is the documented order mistake wearing a
+     * different hat.
+     *
+     * <p>"Run the stamp AFTER the full reindex" is the one ordering rule of this endpoint, because a
+     * later reindex discards the stamp. Get it backwards and the run visits an empty index:
+     * {@code scanned: 0}, nothing fails, {@code remainingUnfenced: 0} — which the first version of
+     * this logic reported as {@code COMPLETE, fenced: true}. The operator records the gate closed,
+     * then runs the reindex that unfences everything. Emptiness has to be reported as emptiness.
+     */
+    @Test
+    public void anEMPTYIndexIsNotCOMPLETE_evenAfterASuccessfulRun() throws Exception {
+        // A run over an index with no CMIS objects: completes cleanly, having done nothing.
+        assertTrue(svc.start("bedroom"));
+        AclEpochMigrationService.Progress p = svc.status("bedroom");
+        for (int i = 0; i < 200 && "RUNNING".equals(p.status); i++) Thread.sleep(25);
+        assertEquals("COMPLETED", p.status);
+        assertEquals(0, p.scanned);
+
+        assertEquals(AclEpochMigrationService.Verdict.EMPTY_INDEX, svc.verdict("bedroom", 0, 0),
+                "zero remaining out of zero indexed says nothing about the migration");
+        assertEquals(AclEpochMigrationService.Verdict.COMPLETE, svc.verdict("bedroom", 0, 10),
+                "zero remaining out of ten indexed is the real thing");
     }
 
     /**

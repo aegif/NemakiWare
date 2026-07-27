@@ -47,6 +47,19 @@ standalone bean / production caller ゼロ / scheduler・init・cron なし。
 `COMPLETE_EXCEPT_ORPHANS` なら完了。後者の残数は CouchDB に実体が無い孤児 Solr 文書で、
 stamp 不能かつ ACL write の対象にもならないため配線を妨げません。
 
+### migration の verdict を読むこと (生カウントではなく)
+
+`remainingUnfenced == 0` は完了条件ではありません。**「不在から完了を推論する」と 3 通りの
+偽 COMPLETE が出ます**:
+
+- リポジトリ ID の打ち間違い → Solr に 1 件もマッチせず 0 件 → 旧実装は COMPLETE
+  (現在は 404 で拒否)
+- **再索引前に stamp した** → 索引が空なので 0 件 → 旧実装は COMPLETE
+  (現在は `EMPTY_INDEX`)
+- 孤児 Solr 文書 → 永久に 0 にならない (`COMPLETE_EXCEPT_ORPHANS` で区別)
+
+`COMPLETE` / `COMPLETE_EXCEPT_ORPHANS` のみが完了です。
+
 ### 実走で判明した落とし穴 (推論では出なかったもの)
 
 - **root の `parentId` が explicit null** のリポジトリがある (canopy)。bedroom はキー自体が無い。

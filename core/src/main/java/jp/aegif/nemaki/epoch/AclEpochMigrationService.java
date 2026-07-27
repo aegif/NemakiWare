@@ -75,10 +75,14 @@ public class AclEpochMigrationService {
     private AclEpochIndexWriter indexWriter;
     private SolrUtil solrUtil;
     private PrincipalService principalService;
+    private jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repositoryInfoMap;
 
     public void setIndexWriter(AclEpochIndexWriter indexWriter) { this.indexWriter = indexWriter; }
     public void setSolrUtil(SolrUtil solrUtil) { this.solrUtil = solrUtil; }
     public void setPrincipalService(PrincipalService principalService) { this.principalService = principalService; }
+    public void setRepositoryInfoMap(jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap m) {
+        this.repositoryInfoMap = m;
+    }
 
     private final Map<String, Progress> runs = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newCachedThreadPool(
@@ -133,9 +137,7 @@ public class AclEpochMigrationService {
      * nonsense, and an operator reading them is the entire point of the endpoint.
      */
     public boolean start(String repositoryId) {
-        if (repositoryId == null || repositoryId.isBlank()) {
-            throw new IllegalArgumentException("repositoryId is required");
-        }
+        requireKnownRepository(repositoryId);
         requireWiring();
         Progress fresh = new Progress();
         fresh.repositoryId = repositoryId;
@@ -145,7 +147,8 @@ public class AclEpochMigrationService {
         if (prior != fresh) {
             return false; // already running
         }
-        executor.submit(() -> {
+        try {
+            executor.submit(() -> {
             try {
                 run(repositoryId, fresh);
                 fresh.status = "COMPLETED";
@@ -162,8 +165,46 @@ public class AclEpochMigrationService {
                         fresh.status, repositoryId, fresh.scanned, fresh.stamped, fresh.alreadyStamped,
                         fresh.skippedDeleted, fresh.notIndexed, fresh.quarantineBlocked, fresh.failed);
             }
-        });
+            });
+        } catch (RuntimeException e) {
+            // A rejected submission (the executor was shut down) must NOT leave the entry RUNNING:
+            // `start` would then answer "already running" for ever and the endpoint would be dead
+            // until a JVM restart, with no run to observe.
+            fresh.status = "FAILED";
+            fresh.errorMessage = "could not start: " + e;
+            fresh.finishedAt = System.currentTimeMillis();
+            throw e;
+        }
         return true;
+    }
+
+    /** Release the executor on undeploy; an in-flight run must not outlive the context. */
+    public void stop() {
+        executor.shutdownNow();
+    }
+
+    /**
+     * Reject a repository id that is not configured.
+     *
+     * <p>Without this the runner is a TRAP rather than a verification: a typo'd id matches no Solr
+     * document, so the run completes with {@code scanned: 0} and {@code remainingUnfenced: 0}, and
+     * the endpoint answers {@code verdict: COMPLETE, fenced: true} for a repository it never
+     * touched. Confirmed against the dev stack before this guard existed — an operator would have
+     * concluded gate 2 was closed for a repository still entirely unfenced.
+     */
+    private void requireKnownRepository(String repositoryId) {
+        if (repositoryId == null || repositoryId.isBlank()) {
+            throw new IllegalArgumentException("repositoryId is required");
+        }
+        if (repositoryInfoMap == null) {
+            throw new AclEpochWiringException("repositoryInfoMap not wired on AclEpochMigrationService "
+                    + "— it is REQUIRED: without it an unknown repository id reports a COMPLETE "
+                    + "migration it never performed");
+        }
+        if (!repositoryInfoMap.contains(repositoryId)) {
+            throw new IllegalArgumentException("unknown repository '" + repositoryId + "' — configured: "
+                    + repositoryInfoMap.keys());
+        }
     }
 
     /** The last run's progress for this repository, or {@code null} if it has never been started. */
@@ -192,7 +233,18 @@ public class AclEpochMigrationService {
          */
         COMPLETE_EXCEPT_ORPHANS,
         /** Documents remain that could have been fenced — re-run (after repairing any blockers). */
-        INCOMPLETE
+        INCOMPLETE,
+        /**
+         * The repository has NO CMIS objects in the index at all — so "nothing left to fence" says
+         * nothing about the migration.
+         *
+         * <p>This is the documented order mistake wearing a different hat. Running the stamp BEFORE
+         * the mandatory full reindex visits an empty index: {@code scanned: 0}, nothing fails, and
+         * {@code remainingUnfenced} is 0 — which the earlier verdict logic read as COMPLETE. The
+         * operator would record the gate as closed, then run the reindex that makes every document
+         * unfenced again. Reporting the emptiness is the only honest answer.
+         */
+        EMPTY_INDEX
     }
 
     /**
@@ -202,11 +254,14 @@ public class AclEpochMigrationService {
      * index holds an entry whose content has been deleted. The criterion is that every document with
      * content is fenced, nothing failed, and nothing is blocked by a quarantine.
      */
-    public Verdict verdict(String repositoryId, long remainingUnfenced) {
+    public Verdict verdict(String repositoryId, long remainingUnfenced, long indexedCmisObjects) {
         Progress p = runs.get(repositoryId);
         if (p == null) return Verdict.NOT_RUN;
         if ("RUNNING".equals(p.status)) return Verdict.RUNNING;
         if ("FAILED".equals(p.status)) return Verdict.FAILED;
+        // BEFORE the zero-remaining check: an empty index also has zero remaining, and calling that
+        // COMPLETE is how "stamp first, reindex second" gets recorded as a closed gate.
+        if (indexedCmisObjects == 0) return Verdict.EMPTY_INDEX;
         if (remainingUnfenced == 0) return Verdict.COMPLETE;
         if (p.failed == 0 && p.quarantineBlocked == 0 && remainingUnfenced == p.skippedDeleted) {
             return Verdict.COMPLETE_EXCEPT_ORPHANS;
@@ -221,16 +276,33 @@ public class AclEpochMigrationService {
      * for ever.
      */
     public long remainingUnfenced(String repositoryId) {
+        return count(repositoryId, "-" + AclEpochIndexWriter.FIELD_EFFECTIVE_EPOCH + ":[* TO *]");
+    }
+
+    /**
+     * How many CMIS objects this repository has in the index AT ALL.
+     *
+     * <p>Read alongside {@link #remainingUnfenced} because zero-remaining is ambiguous on its own:
+     * a repository that has not been reindexed yet also has nothing left to fence.
+     */
+    public long indexedCmisObjects(String repositoryId) {
+        return count(repositoryId, null);
+    }
+
+    private long count(String repositoryId, String extraFilter) {
+        requireKnownRepository(repositoryId);
         requireWiring();
         SolrClient client = solrClient();
         SolrQuery q = new SolrQuery("*:*");
         q.addFilterQuery(cmisObjectFilter(repositoryId));
-        q.addFilterQuery("-" + AclEpochIndexWriter.FIELD_EFFECTIVE_EPOCH + ":[* TO *]");
+        if (extraFilter != null) {
+            q.addFilterQuery(extraFilter);
+        }
         q.setRows(0);
         try {
             return client.query(q).getResults().getNumFound();
         } catch (Exception e) {
-            throw new IllegalStateException("could not count unfenced documents in '" + repositoryId
+            throw new IllegalStateException("could not count documents in '" + repositoryId
                     + "': " + e.getMessage(), e);
         }
     }

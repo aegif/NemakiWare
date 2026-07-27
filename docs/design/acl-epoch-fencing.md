@@ -675,6 +675,29 @@ stripped and were re-stamped; the readers the epoch side computed came back BYTE
 ones the CMIS side had written. Relationships could not be compared this way — every relationship in
 `bedroom` is an orphan — so the endpoint union remains covered by the ITs only.
 
+**Increment 10a (DONE — the verdict could be trusted less than it looked).** A self-review pass
+over increment 10, before wiring builds on it, found two ways to get `verdict: COMPLETE, fenced:
+true` for a repository that was never migrated. Both are the SAME shape: the endpoint inferred
+completeness from an absence, and there are several ways to be absent.
+
+- **A typo'd repository id.** It matches no Solr document, so the run completes with `scanned: 0`,
+  `remainingUnfenced` is 0, and the answer is COMPLETE. Reproduced live before the fix. The runner
+  now rejects an id that is not in `RepositoryInfoMap` (404, listing what IS configured), on BOTH
+  the start and the status path — a GET alone would otherwise still answer "fenced".
+- **An index that has not been reindexed yet.** Exactly the documented order mistake — "run the
+  stamp AFTER the full reindex" — wearing a different hat: an empty index also has zero remaining.
+  The verdict now reads the TOTAL indexed CMIS object count and returns `EMPTY_INDEX` before the
+  zero-remaining check. Demonstrated end to end on the dev stack: emptied canopy's index →
+  `EMPTY_INDEX`; reindexed the root from CouchDB → the rebuilt document came back WITHOUT
+  `effective_acl_epoch` (the ordering rule, live) → `INCOMPLETE`; re-ran the stamp → `COMPLETE`.
+
+Also fixed in the same pass: a rejected executor submission left the repository pinned at RUNNING
+for ever, so `start` answered "already running" until a JVM restart with no run to observe; the bean
+had no `destroy-method`, so an in-flight run outlived the context; and the Solr-unavailable branch
+returned a body with no `verdict`/`fenced` keys at all rather than saying UNKNOWN / false.
+
+All five are mutation-bound.
+
 **Next:** all four wiring gates are now CLOSED (increments 7, 8, 9, 10; 5T earlier). Wiring
 `AclEpochIndexWriter.write()` into the ACL write path is its own increment and has NOT been started
 — **production wiring remains NO-GO** until it is designed, reviewed and explicitly approved. Note

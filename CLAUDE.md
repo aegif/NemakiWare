@@ -126,9 +126,10 @@ POST /api/v1/admin/acl-epoch/migration/{repositoryId}      # 実行
 GET  /api/v1/admin/acl-epoch/migration/{repositoryId}      # verdict を確認
 ```
 
-`verdict` が `COMPLETE` か `COMPLETE_EXCEPT_ORPHANS` なら完了。後者の残数は
-CouchDB に実体が無い孤児 Solr 文書で、stamp 不能かつ ACL write の対象にもならないため
-配線を妨げません。
+**生カウントではなく `verdict` を読んでください。** `COMPLETE` か
+`COMPLETE_EXCEPT_ORPHANS` のみが完了です (後者の残数は CouchDB に実体が無い孤児 Solr 文書で、
+stamp 不能かつ ACL write の対象にもならないため配線を妨げません)。
+`EMPTY_INDEX` は**再索引がまだ**という意味で、完了ではありません。
 
 設計と実装進捗の正典は
 [`docs/design/acl-epoch-fencing.md`](docs/design/acl-epoch-fencing.md)。
