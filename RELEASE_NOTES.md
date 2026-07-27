@@ -9,6 +9,28 @@ only repository gotchas.
 
 ## 3.3.0 — Breaking-major dependency uplift + native ARM64 stack + OData repair (2026-07-22)
 
+### Persistent-format addition (content documents + Solr schema)
+
+Content documents gain a `content_incarnation` field, and the Solr schema gains
+`content_incarnation` (string) and `content_generation` (long). Together they fence the CONTENT axis:
+`content_generation` is the Content's own `_rev` generation, and because a restore reuses the id but
+restarts `_rev` at 1, generations are only compared WITHIN one incarnation — a different one means
+"new lifetime, write authoritatively" instead of "skip as older", which is what stops a restored
+document being refused for ever.
+
+New content is stamped in the same CouchDB commit that creates it; existing content is backfilled by
+`Patch_ContentIncarnationBackfill` at startup, or lazily by the first authoritative write, whichever
+wins the `_rev` CAS. No manual step is required. An archive restore always mints a FRESH incarnation
+and never reuses the archived one.
+
+`acl_index_generation` is RETAINED unchanged for compatibility and remains the ACL axis' fence input
+in 3.3.0. It is NOT an input to the content fence, which reads `content_generation` only.
+
+**This fixes a real clobber**: a slow full-document rebuild (body re-extraction, rename, move) that
+finished after a fresh `applyAcl` used to overwrite the new reader tokens with the ones it had
+computed minutes earlier. The content writer now preserves whatever ACL group Solr already holds
+rather than re-emitting its own.
+
 ### Persistent-format addition (reconciliation queue)
 
 Reconciliation task documents (`type: searchIndexAclReindexTask` in `nemaki_conf`) gain a
