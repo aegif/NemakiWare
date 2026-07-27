@@ -333,7 +333,9 @@ Until these exist, the walk is correct but the operational story is not, which i
 reason increment 3/3a stays off the write path.
 
 **WIRING GATES (all FOUR must be closed before `AclEpochIndexWriter.write()` is put on the ACL
-path):** outbox ACK / enqueue (invariant 5) · migration stamping the initial
+path):** ~~outbox ACK / enqueue (invariant 5)~~ **CLOSED by increment 7** (7a: the epoch
+obligation on the task; 7b: FINALIZED advances to RECONCILE_ENQUEUED only after that obligation
+is durable — IT + mutation bound) · migration stamping the initial
 `effective_acl_epoch` (**capability DONE — increment 6**: `AclEpochIndexWriter.stampInitialEpoch`; the gate now closes on RUNNING it, which is an operational step) ·
 `content_incarnation` + content-writer fence (else a full-doc add re-clobbers `readers`) · §5.1
 quarantine operational contract.
@@ -590,8 +592,10 @@ path; and a live re-index of `bbc119345228953e3405c85bdb36b096` producing byte-i
 `[group:bedroom:GROUP_EVERYONE, user:bedroom:admin, user:bedroom:system]`. **Playwright has NOT been
 run** — it remains outstanding for 5R-b.
 
-**Next:** increment 7 — **outbox ACK**. Then `content_incarnation` + the content-writer fence, and
-the §5.1 quarantine operational contract.
+**Next:** `content_incarnation` + the content-writer fence, then the §5.1 quarantine operational
+contract. Increment 7 (outbox ACK) is done — 7a added the epoch obligation to the reconciliation
+task, 7b made the scanner advance `FINALIZED_NEEDS_RECONCILE` to `RECONCILE_ENQUEUED` only after that
+obligation is durable.
 
 Gate 2 (migration) has its CAPABILITY as of increment 6 (`stampInitialEpoch`); what remains for that
 gate is operational — a repository-wide runner (admin API / patch / script) and actually running it.
@@ -776,6 +780,31 @@ invariant 9) and is not enabled in a write path until its stage is complete. The
 purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5–7).
 
 ### Implementation progress
+
+- **Increment 7 — the outbox ACK (gate 1): DONE.**
+  - **7a** — `SearchIndexAclReindexTask.minRequiredEpoch`, merged as a monotonic `max`, with
+    `enqueueOrThrow(..., requiredEpoch)` returning only after a fresh READ confirms the obligation.
+    Absent / null reads as `0` (a v1 task) which is fail-closed for the ACK: the counter's first
+    allocation is `1`, so a v1 task can never satisfy one. A PRESENT non-integer / negative value is
+    corruption and SURFACES — it is not flattened to `0`, and (found while writing the test) it is
+    not swallowed by the deserializer's catch-all into a phantom "no such task" either.
+  - **7b** — `ackFinalized`: establish the durable obligation FIRST, advance the marker ONLY then.
+    A crash between the two leaves `FINALIZED` + a durable task, which is the recoverable direction:
+    the next scan re-enqueues idempotently (deterministic id + monotonic max) and re-attempts the CAS.
+    The reverse order has no recovery. The reconciliation service is a REQUIRED collaborator — a
+    missing one is an `AclEpochWiringException`, never a silent skip.
+  - **The terminus** (`clearMarkerAfterReconcile`) removes `aclEpochState` and `aclEpochMutationId`
+    together in one CAS, scoped to the mutation whose task completed. **Capability only, NOT wired**:
+    the reconcile completion path runs in production, so calling it from there would be wiring. Gate 1
+    does not require it (as gate 2 does not require running the migration).
+  - Verification: 74 ITs against live CouchDB. Mutation-bound — reversing the order, turning the
+    missing-collaborator guard into a skip, removing the in-loop supersede check, and half-clearing
+    the marker each fail, and nothing else does.
+  - **Operational note (not a code defect).** One corrupt task now makes `list` / `claim` throw, so a
+    single damaged obligation stalls the poller for every other task. That is deliberate — the
+    alternative is an invisible obligation — but it needs an operator story (an admin endpoint that
+    reports and repairs corrupt tasks). Tracked with the §5.1 quarantine contract, which has the same
+    shape.
 
 - **Increment 6 — migration: stamping the initial `effective_acl_epoch` (gate 2 capability): DONE.**
   `AclEpochIndexWriter.stampInitialEpoch` runs the SAME protocol as `write` — RTG before

@@ -2,6 +2,7 @@ package jp.aegif.nemaki.epoch;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -66,6 +67,7 @@ public class AclEpochFinalizationServiceIT {
 
     private String contentDb;
     private AclEpochFinalizationService svc;
+    private jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconcileSvc;
     private CloudantClientPool pool;      // reused by tests that build a second service instance
     private AclEpochCounterService counter;
 
@@ -131,6 +133,10 @@ public class AclEpochFinalizationServiceIT {
         svc = new AclEpochFinalizationService();
         svc.setConnectorPool(pool);
         svc.setCounterService(counter);
+        // REQUIRED since increment 7b: the ACK turns a finalized epoch into a durable obligation.
+        reconcileSvc = new jp.aegif.nemaki.reconcile.SearchIndexReconciliationService();
+        reconcileSvc.setConnectorPool(pool);
+        svc.setReconciliationService(reconcileSvc);
     }
 
     @AfterEach
@@ -312,10 +318,14 @@ public class AclEpochFinalizationServiceIT {
 
         ScanSummary sum = svc.scan(contentDb, 100);
         assertEquals(1, sum.finalized, "only the PENDING doc is finalized this scan");
-        assertEquals(2, sum.awaitingReconcile, "pre-existing FINALIZED + the one just finalized");
+        // Since increment 7b the SAME scan also ACKs: both documents get a durable obligation and
+        // advance to RECONCILE_ENQUEUED. `finalized` still counts the finalize step, which is what
+        // this test is about; the terminal audit therefore sees nothing awaiting.
+        assertEquals(2, sum.acked, "pre-existing FINALIZED + the one just finalized are both ACKed");
+        assertEquals(0, sum.awaitingReconcile, "the ACK pass runs before the terminal audit");
         assertTrue(sum.errors.isEmpty());
-        assertEquals(AclEpochState.FINALIZED_NEEDS_RECONCILE, props("s-final").get(AclEpochState.FIELD_STATE));
-        assertEquals(AclEpochState.FINALIZED_NEEDS_RECONCILE, props("s-pending").get(AclEpochState.FIELD_STATE));
+        assertEquals(AclEpochState.RECONCILE_ENQUEUED, props("s-final").get(AclEpochState.FIELD_STATE));
+        assertEquals(AclEpochState.RECONCILE_ENQUEUED, props("s-pending").get(AclEpochState.FIELD_STATE));
     }
 
     @Test
@@ -330,7 +340,7 @@ public class AclEpochFinalizationServiceIT {
         seedPending("valid-pending", AclEpochState.newMutationId());
 
         ScanSummary sum = svc.scan(contentDb, cap);
-        assertEquals(AclEpochState.FINALIZED_NEEDS_RECONCILE,
+        assertEquals(AclEpochState.RECONCILE_ENQUEUED,
                 props("valid-pending").get(AclEpochState.FIELD_STATE),
                 "the valid PENDING is finalized despite the anomalous-PENDING backlog");
         assertEquals(1, sum.finalized);
@@ -365,7 +375,7 @@ public class AclEpochFinalizationServiceIT {
 
         ScanSummary sum = svc.scan(contentDb, 100);
         assertTrue(sum.finalized >= 1, "PENDING pass progressed");
-        assertTrue(sum.awaitingReconcile >= 1, "FINALIZED pass progressed");
+        assertTrue(sum.acked >= 1, "the ACK pass progressed (7b: FINALIZED no longer parks)");
         assertTrue(sum.errors.stream().anyMatch(e -> "mix-u".equals(e.get("docId"))), "audit pass progressed");
     }
 
@@ -458,7 +468,7 @@ public class AclEpochFinalizationServiceIT {
         }
         seedPending("valid-nu", AclEpochState.newMutationId());
 
-        int scans = scanUntil(() -> AclEpochState.FINALIZED_NEEDS_RECONCILE
+        int scans = scanUntil(() -> AclEpochState.RECONCILE_ENQUEUED
                 .equals(props("valid-nu").get(AclEpochState.FIELD_STATE)), budget, 20);
         assertTrue(scans <= 20, "the valid PENDING must be finalized in a FINITE number of scans");
         // The anomalous ones are durably quarantined (excluded from the live selectors).
@@ -474,7 +484,7 @@ public class AclEpochFinalizationServiceIT {
         for (int i = 0; i < budget + 2; i++) seedPendingRawMutationId("mblank-" + i, "  ");   // blank
         seedPending("valid-mixed", AclEpochState.newMutationId());
 
-        int scans = scanUntil(() -> AclEpochState.FINALIZED_NEEDS_RECONCILE
+        int scans = scanUntil(() -> AclEpochState.RECONCILE_ENQUEUED
                 .equals(props("valid-mixed").get(AclEpochState.FIELD_STATE)), budget, 40);
         assertTrue(scans <= 40, "the valid PENDING must be finalized past a null/non-String/blank backlog");
     }
@@ -496,7 +506,8 @@ public class AclEpochFinalizationServiceIT {
         for (int i = 0; i < 20; i++) svc.scan(contentDb, budget);
         assertFalse(props("valid-final").containsKey(AclEpochState.FIELD_QUARANTINED),
                 "a valid FINALIZED must never be quarantined");
-        assertEquals(AclEpochState.FINALIZED_NEEDS_RECONCILE, props("valid-final").get(AclEpochState.FIELD_STATE));
+        assertEquals(AclEpochState.RECONCILE_ENQUEUED, props("valid-final").get(AclEpochState.FIELD_STATE),
+                "a valid FINALIZED is ACKed forward, not parked (7b)");
         assertTrue(Boolean.TRUE.equals(props("badep-0").get(AclEpochState.FIELD_QUARANTINED)),
                 "an invalid-epoch FINALIZED is quarantined");
     }
@@ -1074,6 +1085,7 @@ public class AclEpochFinalizationServiceIT {
         };
         failing.setConnectorPool(pool);
         failing.setCounterService(counter);
+        failing.setReconciliationService(reconcileSvc);
 
         ScanSummary sum = failing.scan(contentDb, budget);
         assertTrue(sum.cursorFailures >= 1, "a cursor save that never converges must be reported");
@@ -1101,6 +1113,7 @@ public class AclEpochFinalizationServiceIT {
             AclEpochFinalizationService fresh = new AclEpochFinalizationService(); // NEW instance each scan
             fresh.setConnectorPool(pool);
             fresh.setCounterService(counter);
+            fresh.setReconciliationService(reconcileSvc);
             fresh.scan(contentDb, budget);
             if (Boolean.TRUE.equals(props("sr-zzz-bad").get(AclEpochState.FIELD_QUARANTINED))) reached = i;
         }
@@ -1123,6 +1136,7 @@ public class AclEpochFinalizationServiceIT {
         };
         neverCommits.setConnectorPool(pool);
         neverCommits.setCounterService(counter);
+        neverCommits.setReconciliationService(reconcileSvc);
 
         ScanSummary sum = neverCommits.scan(contentDb, 100);
         assertEquals(1, sum.contended, "the PENDING that never converges is counted as contended");
@@ -1182,7 +1196,8 @@ public class AclEpochFinalizationServiceIT {
 
         ScanSummary sum = svc.scan(contentDb, 100);
         assertEquals(0, sum.cursorFailures, "a schemaVersion=1 cursor is usable: " + sum.errors);
-        assertTrue(sum.awaitingReconcile >= 1, "the terminal audit runs with a valid cursor");
+        assertTrue(sum.acked + sum.awaitingReconcile >= 1,
+                "the terminal audit runs with a valid cursor (the doc may already be ACKed)");
     }
 
     /**
@@ -1229,6 +1244,187 @@ public class AclEpochFinalizationServiceIT {
         p.put("type", "epoch-it-fixture");
         p.put("name", "keep-me");
         return p;
+    }
+
+    // ── the outbox ACK (increment 7b — closes wiring gate 1) ───────
+
+    private jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask taskFor(String docId) {
+        return reconcileSvc.list(2000).stream()
+                .filter(t -> contentDb.equals(t.getRepositoryId()) && docId.equals(t.getObjectId()))
+                .findFirst().orElse(null);
+    }
+
+    /** The ACK's whole point: the obligation is DURABLE, and only then does the marker advance. */
+    @Test
+    void ackEstablishesTheObligationBEFOREAdvancingTheMarker() {
+        seedFinalized("ack-ok", AclEpochState.newMutationId(), 42L);
+
+        assertEquals(AclEpochFinalizationService.AckResult.ACKED,
+                svc.ackFinalized(contentDb, getContent("ack-ok")));
+
+        assertEquals(AclEpochState.RECONCILE_ENQUEUED, props("ack-ok").get(AclEpochState.FIELD_STATE));
+        var t = taskFor("ack-ok");
+        assertNotNull(t, "the ACK must leave a durable reconciliation task");
+        assertTrue(t.getMinRequiredEpoch() >= 42L,
+                "the task must carry the finalized epoch as its obligation, got " + t.getMinRequiredEpoch());
+    }
+
+    /**
+     * If the obligation cannot be established the marker must NOT advance. Otherwise the outbox is
+     * cleared for work nobody will do, and the scanner counts the document as enqueued for ever.
+     */
+    @Test
+    void aFailedObligationLEAVESTheMarkerAtFINALIZED() {
+        seedFinalized("ack-fail", AclEpochState.newMutationId(), 7L);
+
+        AclEpochFinalizationService failing = new AclEpochFinalizationService();
+        failing.setConnectorPool(pool);
+        failing.setCounterService(counter);
+        failing.setReconciliationService(new jp.aegif.nemaki.reconcile.SearchIndexReconciliationService() {
+            @Override public void enqueueOrThrow(String r, String o, String reason, String op, long epoch) {
+                throw new IllegalStateException("injected: queue unavailable");
+            }
+        });
+
+        assertThrows(IllegalStateException.class, () -> failing.ackFinalized(contentDb, getContent("ack-fail")));
+        assertEquals(AclEpochState.FINALIZED_NEEDS_RECONCILE, props("ack-fail").get(AclEpochState.FIELD_STATE),
+                "the marker must be RETAINED so the next scan retries");
+    }
+
+    /** A document re-mutated since it was read is not ours to advance. */
+    @Test
+    void aSupersededDocumentIsABANDONED_notClobbered() {
+        seedFinalized("ack-sup", AclEpochState.newMutationId(), 5L);
+        Document stale = getContent("ack-sup");
+        seedPending("ack-sup", AclEpochState.newMutationId());   // a NEW mutation lands
+
+        assertEquals(AclEpochFinalizationService.AckResult.ABANDONED,
+                svc.ackFinalized(contentDb, stale));
+        assertEquals(AclEpochState.PENDING_EPOCH, props("ack-sup").get(AclEpochState.FIELD_STATE),
+                "the new mutation's marker must survive");
+    }
+
+    /**
+     * THE CRASH WINDOW. A crash between "obligation durable" and "marker advanced" must be
+     * recoverable, and it must recover in the SAFE direction: the task is already there, so the next
+     * scan re-enqueues idempotently (deterministic id + monotonic max) and re-attempts the CAS.
+     *
+     * <p>Injected deterministically by failing the marker CAS exactly once.
+     */
+    @Test
+    void aCrashBetweenTheObligationAndTheMarkerRecoversOnTheNextScan() {
+        seedFinalized("ack-crash", AclEpochState.newMutationId(), 11L);
+
+        java.util.concurrent.atomic.AtomicBoolean crashed = new java.util.concurrent.atomic.AtomicBoolean(false);
+        AclEpochFinalizationService crashing = new AclEpochFinalizationService() {
+            @Override String putBack(String repositoryId, Document doc) {
+                if (crashed.compareAndSet(false, true)) {
+                    throw new IllegalStateException("injected crash after the obligation was durable");
+                }
+                return super.putBack(repositoryId, doc);
+            }
+        };
+        crashing.setConnectorPool(pool);
+        crashing.setCounterService(counter);
+        crashing.setReconciliationService(reconcileSvc);
+
+        assertThrows(IllegalStateException.class, () -> crashing.ackFinalized(contentDb, getContent("ack-crash")));
+
+        // The obligation IS durable, and the marker did NOT advance — the safe direction.
+        assertNotNull(taskFor("ack-crash"), "the obligation must survive the crash");
+        assertEquals(11L, taskFor("ack-crash").getMinRequiredEpoch());
+        assertEquals(AclEpochState.FINALIZED_NEEDS_RECONCILE, props("ack-crash").get(AclEpochState.FIELD_STATE));
+
+        // The next scan completes it. Re-enqueue is idempotent: the obligation cannot go down.
+        ScanSummary sum = svc.scan(contentDb, 100);
+        assertTrue(sum.acked >= 1, "the next scan must complete the ACK");
+        assertEquals(AclEpochState.RECONCILE_ENQUEUED, props("ack-crash").get(AclEpochState.FIELD_STATE));
+        assertEquals(11L, taskFor("ack-crash").getMinRequiredEpoch(), "re-enqueue must not LOWER it");
+    }
+
+    /**
+     * A mis-wired deployment must FAIL, not silently skip the ACK. Skipping would leave every
+     * FINALIZED document parked while the scan reported success — the exact invisibility wiring
+     * gate 1 exists to remove. (Added after a mutation showed that turning the guard into a skip
+     * left the whole suite green.)
+     */
+    @Test
+    void aMissingReconciliationServiceIsAWIRINGFAULT_notASilentSkip() {
+        seedFinalized("ack-unwired", AclEpochState.newMutationId(), 2L);
+
+        AclEpochFinalizationService unwired = new AclEpochFinalizationService();
+        unwired.setConnectorPool(pool);
+        unwired.setCounterService(counter);
+        // deliberately no setReconciliationService
+
+        assertThrows(AclEpochWiringException.class,
+                () -> unwired.ackFinalized(contentDb, getContent("ack-unwired")));
+        assertEquals(AclEpochState.FINALIZED_NEEDS_RECONCILE,
+                props("ack-unwired").get(AclEpochState.FIELD_STATE), "and the marker is untouched");
+    }
+
+    /**
+     * The CAS-loop's own supersede check, reached only when the document changes AFTER the
+     * obligation was established. The early check before the enqueue catches the common case, so a
+     * mutation removing the in-loop check stayed green until this test existed.
+     *
+     * <p>The re-mutation is injected between the enqueue and the CAS by overriding the enqueue.
+     */
+    @Test
+    void aReMutationBETWEENTheObligationAndTheCasIsABANDONED() {
+        String mid = AclEpochState.newMutationId();
+        seedFinalized("ack-race", mid, 8L);
+
+        AclEpochFinalizationService racing = new AclEpochFinalizationService();
+        racing.setConnectorPool(pool);
+        racing.setCounterService(counter);
+        racing.setReconciliationService(new jp.aegif.nemaki.reconcile.SearchIndexReconciliationService() {
+            @Override public void enqueueOrThrow(String r, String o, String reason, String op, long epoch) {
+                reconcileSvc.enqueueOrThrow(r, o, reason, op, epoch);   // do the real thing...
+                seedPending("ack-race", AclEpochState.newMutationId()); // ...then race a new mutation in
+            }
+        });
+
+        assertEquals(AclEpochFinalizationService.AckResult.ABANDONED,
+                racing.ackFinalized(contentDb, getContent("ack-race")));
+        assertEquals(AclEpochState.PENDING_EPOCH, props("ack-race").get(AclEpochState.FIELD_STATE),
+                "the NEW mutation's marker must survive — the ACK belonged to the old one");
+    }
+
+    // ── the outbox terminus (capability; NOT wired — gate 1 does not require it) ──
+
+    @Test
+    void theTerminusClearsBOTHMarkerFieldsInOneStep() {
+        String mid = AclEpochState.newMutationId();
+        seedFinalized("term-ok", mid, 3L);
+        svc.ackFinalized(contentDb, getContent("term-ok"));
+
+        assertEquals(AclEpochFinalizationService.ClearResult.CLEARED,
+                svc.clearMarkerAfterReconcile(contentDb, "term-ok", mid));
+
+        Map<String, Object> p = props("term-ok");
+        assertFalse(p.containsKey(AclEpochState.FIELD_STATE), "state must be gone");
+        assertFalse(p.containsKey(AclEpochState.FIELD_MUTATION_ID), "mutation id must be gone TOO — a "
+                + "half-cleared document is an anomaly to the scanner");
+        assertTrue(p.containsKey(AclEpochState.FIELD_SOURCE_EPOCH), "the settled epoch stays");
+
+        // And a scan sees ordinary settled content: no pass matches it, nothing is quarantined.
+        ScanSummary sum = svc.scan(contentDb, 100);
+        assertTrue(sum.errors.isEmpty(), "a cleared document must not look corrupt: " + sum.errors);
+        assertFalse(props("term-ok").containsKey(AclEpochState.FIELD_QUARANTINED));
+    }
+
+    /** The clear belongs to the obligation that completed, not to whatever marker is present now. */
+    @Test
+    void theTerminusRefusesWhenTheDocumentWasReMutated() {
+        String oldMid = AclEpochState.newMutationId();
+        seedFinalized("term-sup", oldMid, 3L);
+        svc.ackFinalized(contentDb, getContent("term-sup"));
+        seedPending("term-sup", AclEpochState.newMutationId());   // re-mutated
+
+        assertEquals(AclEpochFinalizationService.ClearResult.ABANDONED,
+                svc.clearMarkerAfterReconcile(contentDb, "term-sup", oldMid));
+        assertEquals(AclEpochState.PENDING_EPOCH, props("term-sup").get(AclEpochState.FIELD_STATE));
     }
 
     private void seedPending(String id, String mutationId) {
