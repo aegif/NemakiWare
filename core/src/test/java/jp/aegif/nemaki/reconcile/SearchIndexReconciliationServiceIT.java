@@ -1,6 +1,7 @@
 package jp.aegif.nemaki.reconcile;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -96,10 +97,146 @@ public class SearchIndexReconciliationServiceIT {
     @AfterEach
     void cleanUp() {
         if (svc == null || !available) return;
+        // A test that deliberately corrupts a stored obligation must not leave it behind: `list`
+        // now THROWS on corruption (by design — see aCorruptObligationIsREJECTEDAndSURFACES…), so a
+        // leftover would break every subsequent test in the class. Repair-then-drain.
+        try {
+            svc.list(2000);
+        } catch (SearchIndexReconciliationService.CorruptReconcileTaskException e) {
+            purgeCorruptTasks();
+        }
         for (SearchIndexAclReindexTask t : svc.list(2000)) {
             if (repo.equals(t.getRepositoryId())) {
                 svc.forceDeleteByTaskId(t.getTaskId());
             }
+        }
+    }
+
+    /** Delete every IT task straight from CouchDB, bypassing the (throwing) deserializer. */
+    private void purgeCorruptTasks() {
+        try {
+            var find = new com.ibm.cloud.cloudant.v1.model.PostFindOptions.Builder()
+                    .db(confWrapper.getDatabaseName())
+                    .selector(java.util.Map.of("type",
+                            java.util.Map.of("$eq", SearchIndexAclReindexTask.DOC_TYPE)))
+                    .fields(java.util.List.of("_id", "_rev")).limit(2000L).build();
+            for (var d : confWrapper.getClient().postFind(find).execute().getResult().getDocs()) {
+                String id = String.valueOf(d.get("_id"));
+                if (!id.contains("sir-it-")) continue;
+                confWrapper.getClient().deleteDocument(
+                        new com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions.Builder()
+                                .db(confWrapper.getDatabaseName()).docId(id)
+                                .rev(String.valueOf(d.get("_rev"))).build()).execute();
+            }
+        } catch (Exception ignore) { /* best effort */ }
+    }
+
+    // ── epoch obligation (increment 7a — the ACK primitive) ────────
+
+    private SearchIndexAclReindexTask onlyTaskFor(String objectId) {
+        List<SearchIndexAclReindexTask> found = svc.list(2000).stream()
+                .filter(t -> repo.equals(t.getRepositoryId()) && objectId.equals(t.getObjectId()))
+                .toList();
+        assertEquals(1, found.size(), "expected exactly one task for " + objectId);
+        return found.get(0);
+    }
+
+    /** A fresh enqueue records the obligation; a later, LOWER one must not lower it. */
+    @Test
+    void theEpochObligationMergesMONOTONICALLY() {
+        svc.enqueueOrThrow(repo, "objE", SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE,
+                SearchIndexAclReindexTask.Operation.ACL_REINDEX, 7L);
+        assertEquals(7L, onlyTaskFor("objE").getMinRequiredEpoch());
+
+        svc.enqueueOrThrow(repo, "objE", SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE,
+                SearchIndexAclReindexTask.Operation.ACL_REINDEX, 3L);
+        assertEquals(7L, onlyTaskFor("objE").getMinRequiredEpoch(),
+                "a LOWER obligation must never replace a higher one — the ACK would then pass for "
+                        + "an epoch nobody is going to reconcile");
+
+        svc.enqueueOrThrow(repo, "objE", SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE,
+                SearchIndexAclReindexTask.Operation.ACL_REINDEX, 9L);
+        assertEquals(9L, onlyTaskFor("objE").getMinRequiredEpoch(), "a HIGHER obligation raises it");
+    }
+
+    /** Best-effort refresh carries no obligation and must not disturb one already recorded. */
+    @Test
+    void aBestEffortEnqueueDoesNotLowerAnExistingObligation() {
+        svc.enqueueOrThrow(repo, "objB", SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE,
+                SearchIndexAclReindexTask.Operation.ACL_REINDEX, 5L);
+        svc.enqueue(repo, "objB", SearchIndexAclReindexTask.Reason.RELATIONSHIP_REFRESH_FAILURE);
+
+        SearchIndexAclReindexTask t = onlyTaskFor("objB");
+        assertEquals(5L, t.getMinRequiredEpoch(), "best-effort enqueue passes 0 and must merge as max");
+        assertEquals(2, t.getGeneration(), "it is still a real enqueue event");
+        assertEquals(SearchIndexAclReindexTask.Status.PENDING, t.getStatus());
+    }
+
+    /**
+     * A v1 task (no field at all) reads as 0 — deliberately fail-closed for the ACK, because the
+     * counter's first allocation is 1, so {@code 0 >= finalizedEpoch} is false for every real epoch
+     * and the outbox marker survives until a fresh enqueue raises it.
+     */
+    @Test
+    void aV1TaskWithoutTheFieldReadsAsZERO() {
+        svc.enqueue(repo, "objV1", SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE);
+        assertEquals(0L, onlyTaskFor("objV1").getMinRequiredEpoch());
+    }
+
+    /** RAG_PURGE is an unconditional deletion, not a point on the ACL timeline. */
+    @Test
+    void aPurgeMayNotCarryAnEpochObligation() {
+        assertThrows(IllegalArgumentException.class, () ->
+                svc.enqueueOrThrow(repo, "objP", SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE,
+                        SearchIndexAclReindexTask.Operation.RAG_PURGE, 4L));
+    }
+
+    /**
+     * A PRESENT but corrupt obligation must be REJECTED and must SURFACE — not flattened to 0, and
+     * not swallowed into "no such task".
+     *
+     * <p>Both halves were found by running mutations rather than by reasoning. Flattening makes a
+     * damaged task indistinguishable from a legitimately old v1 one. Swallowing is worse: the task
+     * vanishes from list / claim / metrics, so the obligation is neither honoured nor visible.
+     */
+    @Test
+    void aCorruptObligationIsREJECTEDAndSURFACES_notReadAsZeroAndNotSwallowed() {
+        svc.enqueue(repo, "objC", SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE);
+        String docId = SearchIndexAclReindexTask.deterministicId(
+                repo, "objC", SearchIndexAclReindexTask.Operation.ACL_REINDEX);
+
+        for (Object corrupt : new Object[] { "3", 1.5d, -1 }) {
+            forceStoredField(docId, corrupt);
+            SearchIndexReconciliationService.CorruptReconcileTaskException e = assertThrows(
+                    SearchIndexReconciliationService.CorruptReconcileTaskException.class,
+                    () -> svc.list(2000),
+                    "a stored minRequiredEpoch of " + corrupt + " must be rejected, not read as 0");
+            assertTrue(e.getMessage().contains("minRequiredEpoch"), e.getMessage());
+        }
+        forceStoredField(docId, 2);   // repair so cleanUp() can drain the task
+        assertEquals(2L, svc.list(2000).stream()
+                .filter(x -> repo.equals(x.getRepositoryId())).findFirst().orElseThrow()
+                .getMinRequiredEpoch());
+    }
+
+    /** Overwrite ONE field of the stored task document, behind the service's back. */
+    private void forceStoredField(String docId, Object minRequiredEpoch) {
+        try {
+            com.ibm.cloud.cloudant.v1.model.Document d = confWrapper.getClient()
+                    .getDocument(new com.ibm.cloud.cloudant.v1.model.GetDocumentOptions.Builder()
+                            .db(confWrapper.getDatabaseName()).docId(docId).build())
+                    .execute().getResult();
+            java.util.Map<String, Object> props = new java.util.HashMap<>(d.getProperties());
+            props.put("minRequiredEpoch", minRequiredEpoch);
+            com.ibm.cloud.cloudant.v1.model.Document upd = new com.ibm.cloud.cloudant.v1.model.Document();
+            upd.setId(d.getId());
+            upd.setRev(d.getRev());
+            upd.setProperties(props);
+            confWrapper.getClient().putDocument(new com.ibm.cloud.cloudant.v1.model.PutDocumentOptions
+                    .Builder().db(confWrapper.getDatabaseName()).docId(docId).document(upd).build())
+                    .execute();
+        } catch (Exception e) {
+            throw new IllegalStateException("forceStoredField failed for " + docId, e);
         }
     }
 
