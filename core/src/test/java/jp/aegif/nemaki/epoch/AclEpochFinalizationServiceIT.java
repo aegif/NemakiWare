@@ -187,6 +187,29 @@ public class AclEpochFinalizationServiceIT {
         } catch (Exception ignore) { /* best effort */ }
     }
 
+    /**
+     * An ACK-created task must be labelled for what it IS.
+     *
+     * <p>It used to be recorded as {@code INDEX_WRITE_FAILURE}, but the ACK runs for a mutation that
+     * SUCCEEDED — it is the outbox making the obligation durable, not a failure of anything. Anyone
+     * triaging the queue would have gone looking for a Solr problem that never happened. Observed on
+     * the dev stack while driving a real scan through the new admin endpoint.
+     */
+    @Test
+    void anAckCreatedTaskIsLabelledOUTBOX_ACK_notAFailure() {
+        String m = AclEpochState.newMutationId();
+        seedFinalized("ack-label", m, 5L);
+
+        assertEquals(AclEpochFinalizationService.AckResult.ACKED,
+                svc.ackFinalized(contentDb, getContent("ack-label")));
+
+        var t = taskFor("ack-label");
+        assertNotNull(t);
+        assertEquals(jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.OUTBOX_ACK,
+                t.getReason(), "the ACK is not an index-write failure");
+        assertEquals(5L, t.getMinRequiredEpoch());
+    }
+
     // ── finalize (Phase 2) ─────────────────────────────────────────
 
     @Test

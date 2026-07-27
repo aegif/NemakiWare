@@ -97,6 +97,23 @@ An unknown repository id is a 404 listing the configured ids — never a complet
 This does not enable anything by itself — the ACL-epoch writer is still not wired into any ACL write
 path in 3.3.0. Running it is what makes a later release able to be.
 
+### New admin API: ACL-epoch outbox scanner
+
+`POST /api/v1/admin/acl-epoch/scan/{repositoryId}` runs one bounded crash-recovery sweep of the
+ACL-epoch outbox and returns a summary; `GET` on the same path returns the last one. `POST
+/api/v1/admin/acl-epoch/finalize/{repositoryId}/{docId}` finalizes a single document. Admin-gated
+and CSRF-protected. `more: true` in the summary means the pass hit its budget — run it again;
+progress is durable.
+
+There is no scheduler, cron or startup hook: every sweep is an explicit request. On 3.3.0 the sweep
+finds nothing, because no production path creates ACL-epoch state yet — the operator surface is in
+place before the state it manages exists.
+
+Reconciliation tasks created by the outbox ACK are now recorded with reason `OUTBOX_ACK` instead of
+`INDEX_WRITE_FAILURE`. The ACK runs for a mutation that succeeded, so the old label sent anyone
+triaging the queue looking for a Solr failure that never happened. The field is free-form; existing
+tasks are unaffected.
+
 ### New admin API: ACL-epoch quarantine
 
 `GET /api/v1/admin/acl-epoch/quarantine` lists the quarantined documents that have blocked an

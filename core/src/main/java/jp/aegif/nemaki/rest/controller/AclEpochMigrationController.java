@@ -18,9 +18,15 @@ import java.util.Map;
  *
  * <p><b>Order matters.</b> Run this AFTER the mandatory v3.3.0 full reindex, never before: the
  * reindex rebuilds every document, and on a freshly-rebuilt index the content writer's fence has no
- * stored ACL group to preserve, so a stamp applied earlier is simply discarded. The
- * {@code remainingUnfenced} count in the status response is read straight from Solr and is the
- * check for both — it must reach zero, and it will jump back up if a reindex is run afterwards.
+ * stored ACL group to preserve, so a stamp applied earlier is simply discarded.
+ *
+ * <p><b>Read the {@code verdict}, not {@code remainingUnfenced}</b> (increment 10a). "The count
+ * reached zero" is NOT the completion criterion, because there are three ways to be at zero and only
+ * one of them means done: an unknown repository matches nothing (now a 404), an index that has not
+ * been reindexed yet is empty ({@code EMPTY_INDEX}), and a fully-stamped repository still holds
+ * ORPHANED entries whose CouchDB content was deleted, so its count never reaches zero at all
+ * ({@code COMPLETE_EXCEPT_ORPHANS}). Only {@code COMPLETE} and {@code COMPLETE_EXCEPT_ORPHANS} mean
+ * the gate is closed for this repository.
  *
  * <p>Under {@code /v1/admin/*} (Spring MVC), so admin-gated and CSRF-protected by the shared
  * {@code CsrfInterceptor}.
@@ -100,7 +106,10 @@ public class AclEpochMigrationController {
                 body.put("note", remaining + " index entries have no CouchDB content (deleted objects "
                         + "whose Solr documents were left behind). They can never be stamped and can "
                         + "never be the target of an ACL write, so they do not block wiring — clean "
-                        + "them up separately.");
+                        + "them up separately. This verdict is measured against the LAST run's "
+                        + "skippedDeleted count, so if you remove some of those entries by hand the "
+                        + "reading turns INCOMPLETE until you run the stamp again; that re-run is "
+                        + "cheap (already-stamped documents are skipped without recomputation).");
             }
         } catch (IllegalArgumentException e) {
             return error(HttpStatus.NOT_FOUND, e.getMessage());
