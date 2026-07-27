@@ -41,6 +41,13 @@ public class SearchIndexReconciliationScheduler {
     private static final long MAX_BACKOFF_SECONDS = 3600;
     /** Attempt number whose backoff (capped by MAX_BACKOFF_SECONDS) a never-failing RAG_PURGE settles at. */
     private static final int PURGE_BACKOFF_CAP_ATTEMPT = 10;
+    /**
+     * A quarantine block always retries at the CAP (design §5.1 item 3). A quarantine is repaired on
+     * human timescales, so polling it at the normal interval would be thousands of pointless
+     * re-drives per hour for a blocked subtree; and because the attempt count is not advanced, the
+     * usual "back off further each time" has nothing to grow from.
+     */
+    private static final int QUARANTINE_BACKOFF_ATTEMPT = PURGE_BACKOFF_CAP_ATTEMPT;
     private static final String LEADER_ROLE = "search-index-reconciliation";
 
     private SearchIndexReconciliationService reconciliationService;
@@ -133,7 +140,7 @@ public class SearchIndexReconciliationScheduler {
         if (claimed.isEmpty()) {
             return;
         }
-        int reconciled = 0, retried = 0, failed = 0;
+        int reconciled = 0, retried = 0, failed = 0, quarantineBlocked = 0;
         for (SearchIndexAclReindexTask task : claimed) {
             boolean clean;
             try {
@@ -154,6 +161,21 @@ public class SearchIndexReconciliationScheduler {
                             task.getRepositoryId(), task.getObjectId(),
                             reconciliationService.fenceGuard(task, leaseSeconds * 1000L));
                 }
+            } catch (jp.aegif.nemaki.epoch.AclEpochQuarantineBlockedException e) {
+                // Design §5.1 items 1 + 3. A quarantined dependency — usually an ANCESTOR — is not
+                // this task's fault and is not fixed by retrying: it needs a human. So the task is
+                // RETAINED (never markFailed, never deleted) and its attempt count is NOT advanced
+                // towards the cap, because a subtree blocked for a day would otherwise burn through
+                // maxAttempts and be abandoned exactly when the repair finally lands.
+                logger.warn("Reconcile blocked for {} / {} by quarantined document {} — task RETAINED "
+                        + "under capped backoff; repair that document to resume automatically",
+                        task.getRepositoryId(), task.getObjectId(), e.getQuarantinedId());
+                // retryLaterWithoutCountingAnAttempt, NOT retryLater: the latter increments
+                // `attempts`, and a blocked task never got to attempt anything.
+                reconciliationService.retryLaterWithoutCountingAnAttempt(
+                        task, backoffMillis(QUARANTINE_BACKOFF_ATTEMPT));
+                quarantineBlocked++;
+                continue;
             } catch (Exception e) {
                 logger.warn("Reconcile re-drive threw for {} / {}: {}",
                         task.getRepositoryId(), task.getObjectId(), e.getMessage());
@@ -180,6 +202,10 @@ public class SearchIndexReconciliationScheduler {
                 reconciliationService.retryLater(task, backoff);
                 retried++;
             }
+        }
+        if (quarantineBlocked > 0) {
+            logger.info("Search-index reconciliation poll: {} task(s) blocked by a quarantined "
+                    + "dependency — retained, not counted as failures", quarantineBlocked);
         }
         if (reconciled + retried + failed > 0) {
             logger.info("Search-index reconciliation poll: reconciled={}, retrying={}, failed={} (claimed={})",

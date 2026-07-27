@@ -1,6 +1,6 @@
 ---
 name: acl-epoch
-description: 進行中の ACL-epoch fencing 作業のコンテキスト。本番配線 NO-GO の理由、残ゲート 4 項目、増分の現在地、ブランチ運用と検証の作法。ACL-in-Solr / epoch / reconciliation キュー / fenced writer に触る、外部レビューに対応する、というときに読む。
+description: 進行中の ACL-epoch fencing 作業のコンテキスト。本番配線 NO-GO の理由、残ゲート (migration 横断ランナー 1 項目)、増分の現在地、ブランチ運用と検証の作法。ACL-in-Solr / epoch / reconciliation キュー / fenced writer に触る、外部レビューに対応する、というときに読む。
 ---
 
 # ACL-epoch fencing (進行中)
@@ -22,19 +22,25 @@ ACL-in-Solr (CMIS query の認可を Solr 索引に前倒し) で、**索引さ�
 standalone bean / production caller ゼロ / scheduler・init・cron なし。
 この fail-closed staging は、下記ゲートが全て閉じるまで維持します。
 
-### 残ゲート 4 項目
+### 残ゲート 1 項目
 
-1. **outbox ACK** — finalize と enqueue が別 DB で非原子なため、crash で task が
-   恒久喪失しないことの担保
-2. **migration** — 初期 `effective_acl_epoch` の stamp。無いと未 fence 文書に対して
-   全 ACL 更新が fail-closed で throw する
-3. **`content_incarnation` + content-writer fence** — restore が `_id` 再利用のまま
-   `_rev` を新規採番するため、数値 generation だけでは「復元内容が古い」と誤判定する
-4. **§5.1 quarantine 運用契約** — quarantine された祖先は subtree 全体の索引更新を
-   停止させるので、task 保持・阻害祖先の特定・capped backoff・修復の同一 CAS 化を
-   運用契約として明文化する
+**migration** — 初期 `effective_acl_epoch` の stamp。無いと未 fence 文書に対して
+全 ACL 更新が fail-closed で throw します。`stampInitialEpoch` 自体は増分 6 で
+実装済みですが、**repository 横断ランナー (admin API / patch / script) が未実装**で、
+当然まだ実行もしていません。全 content 文書に書く最初の epoch 面なので、独立した
+増分 + レビューで扱います。
 
-principal tri-state は**増分 5T で閉鎖済み**(ゲートから除外)。
+### 閉鎖済みゲート
+
+- **outbox ACK** (増分 7) — 別 DB 間の非原子性を、task 側の epoch 義務 +
+  「義務が durable になってから `RECONCILE_ENQUEUED` へ進める」で閉鎖
+- **`content_incarnation` + content-writer fence** (増分 8) — restore の `_id` 再利用
+  問題を incarnation で解決し、content writer は ACL group 3 フィールドを
+  *preserve* するようにした (再計算＝2 つ目の ACL 実装、はしない)
+- **§5.1 quarantine 運用契約** (増分 9) — task 保持 / 阻害祖先の構造的特定 /
+  capped backoff / 修復の単一 CAS / 自動再開。運用の入口は
+  `POST /v1/admin/acl-epoch/quarantine/{repo}/{docId}/repair`
+- **principal tri-state** (増分 5T)
 
 ## 正典
 

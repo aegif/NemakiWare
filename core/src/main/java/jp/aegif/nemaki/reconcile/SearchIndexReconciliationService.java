@@ -386,6 +386,31 @@ public class SearchIndexReconciliationService {
         return putCas(task) != null;
     }
 
+    /**
+     * Re-open a task that could not even be ATTEMPTED, leaving {@code attempts} untouched (design
+     * §5.1 item 1, wiring gate 4).
+     *
+     * <p>Used when a quarantined dependency blocks the re-drive. {@link #retryLater} counts the
+     * drive as a failed attempt, which is right for a re-drive that ran and failed — but a blocked
+     * task never ran. Counting it walks {@code attempts} up towards {@code maxAttempts} while
+     * nothing is wrong with the task itself, so a subtree blocked for a day comes out of the
+     * quarantine one ordinary failure away from terminal-FAILED: the abandonment §5.1 item 1 exists
+     * to prevent, merely deferred by a step. It also leaves a misleading attempt count for whoever
+     * reads the queue.
+     *
+     * <p>The scheduler still never lets this become terminal (its quarantine branch returns before
+     * the cap check); this keeps the recorded state honest as well.
+     */
+    public boolean retryLaterWithoutCountingAnAttempt(SearchIndexAclReindexTask task, long backoffMillis) {
+        long now = System.currentTimeMillis();
+        task.setStatus(SearchIndexAclReindexTask.Status.PENDING);
+        task.setNextAttemptAt(now + Math.max(0, backoffMillis));
+        task.setLeaseOwner(null);
+        task.setLeaseExpiresAt(0);
+        task.setUpdatedAt(now);
+        return putCas(task) != null;
+    }
+
     /** Mark permanently FAILED — kept for operator inspection (CAS on the claim rev). */
     public boolean markFailed(SearchIndexAclReindexTask task, String error) {
         long now = System.currentTimeMillis();
@@ -501,6 +526,11 @@ public class SearchIndexReconciliationService {
                     : Math.max(0L, now - mostOverdue.get(0).getNextAttemptAt());
             m.put("mostOverduePendingMs", overdue);
 
+            // Corrupt entries are EXCLUDED from claim/list, so without this they would be invisible
+            // — the queue would look healthy while a damaged obligation sat there forever. A
+            // non-zero value is an operator action: GET/DELETE .../reconcile/corrupt.
+            m.put("corrupt", listCorrupt(METRICS_CAP).size());
+
             m.put("queueMetricsAvailable", true);
         } catch (Exception e) {
             logger.warn("Reconcile metrics query failed (CouchDB unavailable?): {}", e.getMessage());
@@ -601,15 +631,166 @@ public class SearchIndexReconciliationService {
         }
     }
 
+    /**
+     * Deserialize a page, CONTAINING corruption instead of propagating it.
+     *
+     * <p>Increment 7a made {@link #toTask} throw on a corrupt {@code minRequiredEpoch} rather than
+     * return null, so a damaged obligation could not masquerade as a missing one. But every read
+     * path — {@code list}, {@code claimDue}, {@code metrics}, {@code getByTaskId} and therefore the
+     * admin retry/delete — funnels through here, so ONE corrupt document took the whole queue down
+     * AND removed the operator's only means of deleting it: an unrecoverable stall (wiring gate 4
+     * absorbed this residual).
+     *
+     * <p>The fix is containment, NOT silence. A corrupt document is skipped for EXECUTION (it must
+     * never be claimed: its obligation is unknown, so an ACK would be meaningless) but stays fully
+     * visible through {@link #listCorrupt} and the {@code corrupt} metric, and is removable via
+     * {@link #deleteCorruptByDocId}. Nothing vanishes — which was the whole point of 7a.
+     */
     private List<SearchIndexAclReindexTask> toTasks(FindResult r) {
         List<SearchIndexAclReindexTask> out = new ArrayList<>();
         if (r == null || r.getDocs() == null) return out;
         for (Document d : r.getDocs()) {
-            SearchIndexAclReindexTask t = toTask(d);
-            if (t != null) out.add(t);
+            SearchIndexAclReindexTask t;
+            try {
+                t = toTask(d);
+            } catch (CorruptReconcileTaskException e) {
+                if (corruptDocIdsSeen.add(d.getId())) {
+                    logger.warn("Reconcile task {} is CORRUPT and is being skipped: {} — it is listed "
+                            + "under GET /v1/admin/search-index/reconcile/corrupt and removable with "
+                            + "DELETE .../corrupt/{}; the rest of the queue keeps draining",
+                            d.getId(), e.getMessage(), d.getId());
+                }
+                continue;
+            }
+            if (t != null) {
+                // A document that deserializes again has been repaired behind our back (an operator
+                // editing CouchDB directly, not via the delete route) — forget it, so a LATER
+                // re-corruption of the same id WARNs instead of being deduped against the old one.
+                if (!corruptDocIdsSeen.isEmpty()) corruptDocIdsSeen.remove(d.getId());
+                out.add(t);
+            }
         }
         return out;
     }
+
+    /** One corrupt queue document, read RAW (Jackson is exactly what could not be trusted here). */
+    public static final class CorruptTaskRef {
+        private String docId;
+        private String taskId;
+        private String repositoryId;
+        private String objectId;
+        private String reason;
+
+        public String getDocId() { return docId; }
+        public String getTaskId() { return taskId; }
+        public String getRepositoryId() { return repositoryId; }
+        public String getObjectId() { return objectId; }
+        public String getReason() { return reason; }
+    }
+
+    /**
+     * The corrupt queue documents, with enough raw context to act on them: which object the task was
+     * for, and why it is corrupt. Read WITHOUT Jackson — a value that broke deserialization must not
+     * be run through the same deserializer to be reported.
+     *
+     * <p>Removing one is {@link #deleteCorruptByDocId}. Deleting a task only means "this refresh
+     * will not be retried automatically"; the object's readers are then brought up to date by an
+     * ordinary re-index of {@code objectId}, which is why that id is reported.
+     *
+     * <p><b>Bounded like {@link #list}:</b> it examines the first {@code limit} queue documents
+     * (capped at {@value #LIST_LIMIT_CAP}), so on a queue larger than that a corrupt entry past the
+     * cap is not reported here — the same caveat {@code countsCappedAt} already states for the
+     * status counts. A deep backlog is itself the thing to fix first.
+     */
+    public List<CorruptTaskRef> listCorrupt(int limit) {
+        int capped = Math.min(Math.max(1, limit), LIST_LIMIT_CAP);
+        CloudantClientWrapper client = getConfClient();
+        Cloudant cloudant = client.getClient();
+        String db = client.getDatabaseName();
+        FindResult r = cloudant.postFind(new PostFindOptions.Builder()
+                .db(db).selector(Map.of("type", SearchIndexAclReindexTask.DOC_TYPE))
+                .limit(capped).build()).execute().getResult();
+        List<CorruptTaskRef> out = new ArrayList<>();
+        if (r == null || r.getDocs() == null) return out;
+        for (Document d : r.getDocs()) {
+            try {
+                toTask(d);
+            } catch (CorruptReconcileTaskException e) {
+                CorruptTaskRef ref = new CorruptTaskRef();
+                ref.docId = d.getId();
+                Map<String, Object> p = d.getProperties();
+                ref.taskId = str(p, "taskId");
+                ref.repositoryId = str(p, "repositoryId");
+                ref.objectId = str(p, "objectId");
+                ref.reason = e.getMessage();
+                out.add(ref);
+            } catch (RuntimeException ignore) {
+                // Any OTHER deserialization failure is already handled (and logged) inside toTask,
+                // which returns null for it; nothing reaches here. Defensive only.
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Delete a CORRUPT queue document by its CouchDB {@code _id} — the escape hatch the ordinary
+     * {@code taskId}-addressed delete cannot provide, because addressing by {@code taskId} requires
+     * deserializing the very document that will not deserialize.
+     *
+     * <p>Refuses to delete a HEALTHY document: this is a repair tool, not a second delete API, and
+     * an operator pointing it at a live task would silently drop a pending obligation. Use the
+     * {@code taskId} delete for those (it has the LEASED protection this one cannot apply).
+     *
+     * @return true if a corrupt document was deleted; false if it is absent, or healthy (refused).
+     */
+    public boolean deleteCorruptByDocId(String docId) {
+        if (docId == null || docId.isBlank()) return false;
+        CloudantClientWrapper client = getConfClient();
+        Cloudant cloudant = client.getClient();
+        String db = client.getDatabaseName();
+        Document doc;
+        try {
+            doc = cloudant.getDocument(new GetDocumentOptions.Builder()
+                    .db(db).docId(docId).build()).execute().getResult();
+        } catch (NotFoundException e) {
+            return false;
+        }
+        if (doc == null || !SearchIndexAclReindexTask.DOC_TYPE.equals(
+                str(doc.getProperties(), "type"))) {
+            return false; // not a reconcile task — never delete an unrelated document
+        }
+        try {
+            toTask(doc);
+            return false; // healthy — refuse
+        } catch (CorruptReconcileTaskException expected) {
+            // corrupt, as claimed — proceed
+        } catch (RuntimeException other) {
+            return false;
+        }
+        try {
+            var result = cloudant.deleteDocument(new DeleteDocumentOptions.Builder()
+                    .db(db).docId(docId).rev(doc.getRev()).build()).execute().getResult();
+            boolean ok = result != null && result.isOk();
+            if (ok) {
+                corruptDocIdsSeen.remove(docId);
+                logger.info("Deleted CORRUPT reconcile task {} on admin request — re-index object {} "
+                        + "to bring its readers up to date", docId, str(doc.getProperties(), "objectId"));
+            }
+            return ok;
+        } catch (ConflictException e) {
+            return false;
+        }
+    }
+
+    private static String str(Map<String, Object> props, String key) {
+        if (props == null) return null;
+        Object v = props.get(key);
+        return v instanceof String ? (String) v : (v == null ? null : String.valueOf(v));
+    }
+
+    /** Corrupt ids already logged, so a stalled document WARNs once rather than every poll. */
+    private final java.util.Set<String> corruptDocIdsSeen =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     /**
      * The stored {@code minRequiredEpoch}, validated (increment 7a).
@@ -661,10 +842,13 @@ public class SearchIndexReconciliationService {
             t.setCouchRev(doc.getRev());
             return t;
         } catch (CorruptReconcileTaskException e) {
-            // NOT swallowed: a corrupt epoch obligation must surface. Returning null here would make
+            // NOT swallowed HERE: a corrupt epoch obligation must surface. Returning null would make
             // the task VANISH from list / claim / metrics — the damaged obligation would look like
             // "no task at all", which is strictly worse than the flattening this validation exists to
-            // prevent. Found while writing the test for it (increment 7a).
+            // prevent. Found while writing the test for it (increment 7a). {@link #toTasks} contains
+            // it for page reads (so one bad document cannot stall the queue) and re-surfaces it
+            // through listCorrupt / the corrupt metric; {@link #tryEnqueue} still lets it escape,
+            // because enqueuing OVER a damaged obligation for that same object is not containable.
             throw e;
         } catch (Exception e) {
             logger.warn("Failed to deserialize reconcile task {}: {}", doc.getId(), e.getMessage());

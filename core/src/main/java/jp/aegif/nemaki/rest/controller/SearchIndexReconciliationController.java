@@ -47,7 +47,48 @@ public class SearchIndexReconciliationController {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("count", tasks.size());
         body.put("tasks", tasks);
+        // Corrupt entries are skipped by the deserializer, so reporting them HERE (not only under
+        // /corrupt) is what keeps "nothing vanishes from the operator's view" true.
+        body.put("corruptCount", reconciliationService.listCorrupt(limit).size());
         return ResponseEntity.ok(body);
+    }
+
+    /**
+     * The queue entries that cannot be deserialized — a damaged {@code minRequiredEpoch}. They are
+     * excluded from claim and from {@code tasks} above (their obligation is unknown, so driving one
+     * could ACK an epoch it never reached), and are removable only through {@link #deleteCorrupt}.
+     */
+    @GetMapping("/corrupt")
+    public ResponseEntity<?> listCorrupt(@RequestParam(defaultValue = "200") int limit) {
+        if (!isAdmin()) return forbidden();
+        if (reconciliationService == null) return unavailable();
+        List<SearchIndexReconciliationService.CorruptTaskRef> corrupt =
+                reconciliationService.listCorrupt(limit);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("count", corrupt.size());
+        body.put("corrupt", corrupt);
+        body.put("hint", "DELETE /v1/admin/search-index/reconcile/corrupt/{docId} removes one; then "
+                + "re-index its objectId, since deleting the task drops the automatic retry");
+        return ResponseEntity.ok(body);
+    }
+
+    /**
+     * Delete ONE corrupt entry, addressed by its CouchDB {@code _id} (the {@code taskId} route
+     * cannot reach it — resolving a taskId means deserializing the document that will not
+     * deserialize). Refused for a healthy document: use the {@code taskId} delete, which has the
+     * LEASED protection this route cannot apply.
+     */
+    @DeleteMapping("/corrupt/{docId}")
+    public ResponseEntity<?> deleteCorrupt(@PathVariable String docId) {
+        if (!isAdmin()) return forbidden();
+        if (reconciliationService == null) return unavailable();
+        boolean deleted = reconciliationService.deleteCorruptByDocId(docId);
+        if (!deleted) {
+            return error(HttpStatus.NOT_FOUND, "No CORRUPT reconcile task with _id " + docId
+                    + " (absent, not a reconcile task, or healthy — a healthy task is deleted via "
+                    + "DELETE /v1/admin/search-index/reconcile/{taskId})");
+        }
+        return ResponseEntity.ok(Map.of("status", "success", "docId", docId));
     }
 
     /** Queue-health metrics for alerting (counts by status, oldest-pending age, enqueue-failure count). */

@@ -1079,6 +1079,81 @@ public class AclEpochFinalizationService {
                 + " after " + FINALIZE_CAS_RETRIES + " attempts — retryable, the marker is RETAINED");
     }
 
+    /** Why a repair attempt ended. */
+    public enum RepairResult {
+        /** The epoch fields were normalized and the quarantine marker cleared, in ONE CAS. */
+        REPAIRED,
+        /** The document is not quarantined (already repaired, or never was). */
+        NOT_QUARANTINED
+    }
+
+    /**
+     * Repair a QUARANTINED document: normalize its epoch fields AND clear the marker in ONE
+     * {@code _rev} CAS (design §5.1 item 4, wiring gate 4).
+     *
+     * <p><b>The single CAS is the requirement, not an optimisation.</b> Clearing the marker first
+     * would expose the still-anomalous document to a scanner pass, which would immediately
+     * re-quarantine it — a repair that undoes itself. Normalizing first and clearing second has the
+     * same hole in the other direction: a crash between the two leaves a document that looks healthy
+     * to the validator but is still marked, and the increment-2d rejection of a direct finalizer on a
+     * quarantined document assumes the marker and the fields move together.
+     *
+     * <p>Repair means REMOVING the epoch machinery's fields, not inventing values for them. The
+     * document returns to ordinary settled content — no state, no mutation id, no marker — keeping
+     * only {@code aclSourceEpoch} when it is valid. Any epoch a mutation legitimately paid for is
+     * preserved; a corrupt one is dropped rather than guessed at, and the next mutation allocates
+     * afresh.
+     *
+     * <p>After this, {@link #ackFinalized} and the walk see a normal document, so a RETAINED
+     * reconciliation task's next attempt simply succeeds — §5.1 item 5 requires no manual
+     * re-enqueue, and there is none.
+     */
+    public RepairResult repairQuarantined(String repositoryId, String docId) {
+        Document current = getDoc(repositoryId, docId);
+        for (int attempt = 0; attempt < FINALIZE_CAS_RETRIES; attempt++) {
+            if (current == null) {
+                return RepairResult.NOT_QUARANTINED; // deleted — nothing left to repair
+            }
+            Map<String, Object> p = current.getProperties();
+            if (!p.containsKey(AclEpochState.FIELD_QUARANTINED)) {
+                return RepairResult.NOT_QUARANTINED;
+            }
+            // ONE mutation of the properties, ONE CAS.
+            p.remove(AclEpochState.FIELD_QUARANTINED);
+            p.remove(AclEpochState.FIELD_STATE);
+            p.remove(AclEpochState.FIELD_MUTATION_ID);
+            Object epoch = p.get(AclEpochState.FIELD_SOURCE_EPOCH);
+            if (!isUsableEpoch(epoch)) {
+                // A corrupt epoch is DROPPED, never repaired to a made-up value: the walk treats an
+                // absent aclSourceEpoch as 0 (pre-migration), which is safe, whereas a guessed value
+                // could fence out a later correct writer.
+                p.remove(AclEpochState.FIELD_SOURCE_EPOCH);
+            }
+            current.setProperties(p);
+            if (putBack(repositoryId, current) != null) {
+                logger.info("Repaired quarantined document {}/{} — epoch fields normalized and the "
+                        + "marker cleared in one CAS; retained tasks resume automatically",
+                        repositoryId, docId);
+                return RepairResult.REPAIRED;
+            }
+            current = getDoc(repositoryId, docId);
+        }
+        throw new AclEpochContentionException("quarantine repair did not converge for " + docId
+                + " after " + FINALIZE_CAS_RETRIES + " attempts — retryable, the marker is RETAINED");
+    }
+
+    /** A stored epoch worth keeping: present, integral and non-negative. */
+    private static boolean isUsableEpoch(Object v) {
+        if (!(v instanceof Number)) {
+            return false;
+        }
+        try {
+            return new java.math.BigDecimal(v.toString()).longValueExact() >= 0;
+        } catch (ArithmeticException | NumberFormatException e) {
+            return false;
+        }
+    }
+
     // ── CouchDB primitives (content DB = repositoryId) ─────────────
 
     private Document getDoc(String repositoryId, String docId) {

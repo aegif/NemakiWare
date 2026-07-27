@@ -97,19 +97,20 @@ public class SearchIndexReconciliationServiceIT {
     @AfterEach
     void cleanUp() {
         if (svc == null || !available) return;
-        // A test that deliberately corrupts a stored obligation must not leave it behind: `list`
-        // now THROWS on corruption (by design — see aCorruptObligationIsREJECTEDAndSURFACES…), so a
-        // leftover would break every subsequent test in the class. Repair-then-drain.
-        try {
-            svc.list(2000);
-        } catch (SearchIndexReconciliationService.CorruptReconcileTaskException e) {
-            purgeCorruptTasks();
-        }
+        // A test that deliberately corrupts a stored obligation must not leave it behind. `list`
+        // skips corrupt entries (gate 4 containment), so draining by taskId cannot reach them —
+        // drain the healthy ones, then remove the corrupt ones through the escape hatch.
         for (SearchIndexAclReindexTask t : svc.list(2000)) {
             if (repo.equals(t.getRepositoryId())) {
                 svc.forceDeleteByTaskId(t.getTaskId());
             }
         }
+        for (SearchIndexReconciliationService.CorruptTaskRef c : svc.listCorrupt(2000)) {
+            if (repo.equals(c.getRepositoryId())) {
+                svc.deleteCorruptByDocId(c.getDocId());
+            }
+        }
+        purgeCorruptTasks(); // belt and braces for a doc whose repositoryId itself is unreadable
     }
 
     /** Delete every IT task straight from CouchDB, bypassing the (throwing) deserializer. */
@@ -119,14 +120,16 @@ public class SearchIndexReconciliationServiceIT {
                     .db(confWrapper.getDatabaseName())
                     .selector(java.util.Map.of("type",
                             java.util.Map.of("$eq", SearchIndexAclReindexTask.DOC_TYPE)))
-                    .fields(java.util.List.of("_id", "_rev")).limit(2000L).build();
+                    .limit(2000L).build();
             for (var d : confWrapper.getClient().postFind(find).execute().getResult().getDocs()) {
-                String id = String.valueOf(d.get("_id"));
-                if (!id.contains("sir-it-")) continue;
+                // getId()/getRev(), NOT get("_id"): the SDK maps _id/_rev onto the typed fields, so
+                // the dynamic accessor returns null and this loop silently deleted nothing.
+                String id = d.getId();
+                if (id == null || !id.contains("sir-it-")) continue;
                 confWrapper.getClient().deleteDocument(
                         new com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions.Builder()
                                 .db(confWrapper.getDatabaseName()).docId(id)
-                                .rev(String.valueOf(d.get("_rev"))).build()).execute();
+                                .rev(d.getRev()).build()).execute();
             }
         } catch (Exception ignore) { /* best effort */ }
     }
@@ -207,16 +210,110 @@ public class SearchIndexReconciliationServiceIT {
 
         for (Object corrupt : new Object[] { "3", 1.5d, -1 }) {
             forceStoredField(docId, corrupt);
-            SearchIndexReconciliationService.CorruptReconcileTaskException e = assertThrows(
-                    SearchIndexReconciliationService.CorruptReconcileTaskException.class,
-                    () -> svc.list(2000),
+            List<SearchIndexReconciliationService.CorruptTaskRef> reported = svc.listCorrupt(2000)
+                    .stream().filter(c -> docId.equals(c.getDocId())).toList();
+            assertEquals(1, reported.size(),
                     "a stored minRequiredEpoch of " + corrupt + " must be rejected, not read as 0");
-            assertTrue(e.getMessage().contains("minRequiredEpoch"), e.getMessage());
+            assertTrue(reported.get(0).getReason().contains("minRequiredEpoch"),
+                    reported.get(0).getReason());
+            assertTrue(svc.list(2000).stream().noneMatch(t -> "objC".equals(t.getObjectId())),
+                    "and it must NOT be handed out as if it were a healthy task");
         }
         forceStoredField(docId, 2);   // repair so cleanUp() can drain the task
         assertEquals(2L, svc.list(2000).stream()
                 .filter(x -> repo.equals(x.getRepositoryId())).findFirst().orElseThrow()
                 .getMinRequiredEpoch());
+    }
+
+    /**
+     * Gate 4 §5.1 item 1, against a REAL document — the half a mocked scheduler cannot see.
+     *
+     * <p>The scheduler's quarantine branch calls the service and the unit test verifies WHICH method,
+     * but only the stored document says whether {@code attempts} moved. It matters: a subtree blocked
+     * for a day would otherwise come out of the quarantine with {@code attempts} at the cap, so the
+     * first ordinary failure afterwards marks it terminal-FAILED — the abandonment §5.1 item 1 exists
+     * to prevent, deferred by exactly one step. (Written after the review found the first
+     * implementation calling {@code retryLater}, which counts.)
+     */
+    @Test
+    void aBlockedRetryDoesNotCONSUMEAnAttempt() {
+        svc.enqueue(repo, "objBlocked", SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE);
+        SearchIndexAclReindexTask claimed = svc.claimDue(50, "it-node", 60_000L).stream()
+                .filter(t -> repo.equals(t.getRepositoryId())).findFirst().orElseThrow();
+        int before = claimed.getAttempts();
+
+        assertTrue(svc.retryLaterWithoutCountingAnAttempt(claimed, 3600_000L));
+
+        SearchIndexAclReindexTask stored = onlyTaskFor("objBlocked");
+        assertEquals(before, stored.getAttempts(),
+                "a task that never got to run must not have the drive counted against it");
+        assertEquals(SearchIndexAclReindexTask.Status.PENDING, stored.getStatus(),
+                "and it must be re-opened, not left LEASED to a worker that gave up");
+        assertNull(stored.getLeaseOwner(), "the lease is released so any replica can pick it up");
+        assertTrue(stored.getNextAttemptAt() > System.currentTimeMillis() + 1_000_000L,
+                "under the capped backoff, not the normal poll interval");
+
+        // The contrast that gives the assertion its meaning: an ordinary retry DOES count.
+        SearchIndexAclReindexTask again = svc.claimDue(50, "it-node", 60_000L).stream()
+                .filter(t -> repo.equals(t.getRepositoryId())).findFirst().orElse(null);
+        if (again != null) { // (only claimable if the backoff has elapsed — it has not, so skip)
+            svc.retryLater(again, 0L);
+            assertEquals(before + 1, onlyTaskFor("objBlocked").getAttempts());
+        }
+    }
+
+    /**
+     * Gate 4, absorbed 7a residual: ONE corrupt entry must not stall the queue for everything else.
+     *
+     * <p>Rejecting corruption (above) originally meant THROWING out of the shared deserializer — and
+     * every read path goes through it, so a single damaged document broke {@code list},
+     * {@code claimDue} and {@code metrics} for every other task, AND removed the operator's only way
+     * to delete it (addressing by taskId requires deserializing the document that will not
+     * deserialize). Unrecoverable through the API. Containment replaces propagation: skipped for
+     * execution, still fully visible, and removable by {@code _id}.
+     */
+    @Test
+    void oneCorruptEntryDoesNotStallTheQueueAndIsRemovableByDocId() {
+        svc.enqueue(repo, "objHealthy", SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE);
+        svc.enqueue(repo, "objBroken", SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE);
+        String brokenId = SearchIndexAclReindexTask.deterministicId(
+                repo, "objBroken", SearchIndexAclReindexTask.Operation.ACL_REINDEX);
+        forceStoredField(brokenId, "not-a-number");
+
+        // 1. The healthy task is still listed and still CLAIMABLE — the queue keeps draining.
+        assertEquals(List.of("objHealthy"), svc.list(2000).stream()
+                .filter(t -> repo.equals(t.getRepositoryId())).map(SearchIndexAclReindexTask::getObjectId)
+                .toList(), "the corrupt entry must not take the healthy ones down with it");
+        List<SearchIndexAclReindexTask> claimed = svc.claimDue(50, "it-node", 60_000L).stream()
+                .filter(t -> repo.equals(t.getRepositoryId())).toList();
+        assertEquals(List.of("objHealthy"),
+                claimed.stream().map(SearchIndexAclReindexTask::getObjectId).toList(),
+                "and a corrupt entry must never be CLAIMED: its obligation is unknown, so completing "
+                        + "it would ACK an epoch it may never have reached");
+
+        // 2. It is visible, with the context needed to act: which object, and why.
+        SearchIndexReconciliationService.CorruptTaskRef ref = svc.listCorrupt(2000).stream()
+                .filter(c -> brokenId.equals(c.getDocId())).findFirst()
+                .orElseThrow(() -> new AssertionError("the corrupt entry VANISHED — containment must "
+                        + "not become silence; that is the 7a failure mode this test exists for"));
+        assertEquals("objBroken", ref.getObjectId(), "the operator needs the object id to re-index");
+        assertEquals(repo, ref.getRepositoryId());
+        assertTrue(svc.metrics().get("corrupt") instanceof Integer c && c >= 1,
+                "and it must be countable without listing: " + svc.metrics().get("corrupt"));
+
+        // 3. A healthy document is REFUSED by the escape hatch (it is a repair tool, not a second
+        //    delete API — the taskId route has the LEASED protection this one cannot apply).
+        String healthyId = SearchIndexAclReindexTask.deterministicId(
+                repo, "objHealthy", SearchIndexAclReindexTask.Operation.ACL_REINDEX);
+        assertFalse(svc.deleteCorruptByDocId(healthyId),
+                "deleting a HEALTHY task by _id would silently drop a live obligation");
+        assertEquals(1, svc.list(2000).stream()
+                .filter(t -> repo.equals(t.getRepositoryId())).count(), "so it is still there");
+
+        // 4. The corrupt one IS removable — the stall has an exit.
+        assertTrue(svc.deleteCorruptByDocId(brokenId));
+        assertTrue(svc.listCorrupt(2000).stream().noneMatch(c -> brokenId.equals(c.getDocId())));
+        assertFalse(svc.deleteCorruptByDocId(brokenId), "and the delete is idempotent");
     }
 
     /** Overwrite ONE field of the stored task document, behind the service's back. */

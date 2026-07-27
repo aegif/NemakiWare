@@ -65,7 +65,10 @@ public final class AclEpochFields {
         }
         Object marker = props.get(AclEpochState.FIELD_QUARANTINED);
         if (Boolean.TRUE.equals(marker)) {
-            throw new AclEpochAnomalyException("document is quarantined on " + docId);
+            // Typed, and carrying the id STRUCTURALLY (design §5.1 item 2): the blocker is usually
+            // an ANCESTOR, and an operator staring at a stalled subtree needs that one id — not a
+            // message to parse, and not the thousand blocked object ids.
+            throw new AclEpochQuarantineBlockedException("document is quarantined on " + docId, docId);
         }
         throw new AclEpochAnomalyException("malformed aclEpochQuarantined marker (not Boolean true, "
                 + "including explicit null / false) on " + docId);

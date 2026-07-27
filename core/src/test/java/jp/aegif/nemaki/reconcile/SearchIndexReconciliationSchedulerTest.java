@@ -52,6 +52,47 @@ public class SearchIndexReconciliationSchedulerTest {
         return t;
     }
 
+    /**
+     * §5.1 items 1 + 3 (wiring gate 4). A quarantined dependency — usually an ANCESTOR — is not this
+     * task's fault and is not fixed by retrying: it needs a human. So the task must be RETAINED and
+     * its attempt count must NOT advance towards the cap, or a subtree blocked for a day would burn
+     * through maxAttempts and be abandoned exactly when the repair finally lands.
+     */
+    @Test
+    public void aQuarantineBlockRETAINSTheTaskAndDoesNotCountAsAFailure() {
+        SearchIndexAclReindexTask t = task("sir-q", "obj-q", 9); // ONE below the default cap of 10
+        when(svc.claimDue(anyInt(), anyString(), anyLong())).thenReturn(List.of(t));
+        when(acl.reindexSearchIndexAclForObject(eq("bedroom"), eq("obj-q"),
+                org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new jp.aegif.nemaki.epoch.AclEpochQuarantineBlockedException(
+                        "document is quarantined on anc-1", "anc-1"));
+
+        scheduler.poll();
+
+        verify(svc, never()).markFailed(any(), any());   // never terminal, even at the cap
+        verify(svc, never()).complete(any());            // and never silently completed
+        verify(svc).retryLaterWithoutCountingAnAttempt(eq(t), anyLong()); // RETAINED, under backoff
+        verify(svc, never()).retryLater(any(), anyLong()); // which COUNTS an attempt — see the IT
+    }
+
+    /** A quarantine block retries at the CAPPED delay — a repair happens on human timescales. */
+    @Test
+    public void aQuarantineBlockBacksOffAtTheCAP_notTheNormalPollInterval() {
+        SearchIndexAclReindexTask blocked = task("sir-q2", "obj-q2", 0); // attempts=0
+        when(svc.claimDue(anyInt(), anyString(), anyLong())).thenReturn(List.of(blocked));
+        when(acl.reindexSearchIndexAclForObject(eq("bedroom"), eq("obj-q2"),
+                org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new jp.aegif.nemaki.epoch.AclEpochQuarantineBlockedException("q", "anc-2"));
+
+        scheduler.poll();
+
+        org.mockito.ArgumentCaptor<Long> backoff = org.mockito.ArgumentCaptor.forClass(Long.class);
+        verify(svc).retryLaterWithoutCountingAnAttempt(eq(blocked), backoff.capture());
+        assertTrue(backoff.getValue() >= 3600_000L,
+                "a first-attempt ordinary failure would back off ~60s; a quarantine block must go "
+                        + "straight to the cap, got " + backoff.getValue() + "ms");
+    }
+
     @Test
     public void cleanReDriveCompletesTask() {
         SearchIndexAclReindexTask t = task("sir-1", "obj-1", 0);

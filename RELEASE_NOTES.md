@@ -40,6 +40,26 @@ raised. Existing tasks have no such field and read as `0` — no migration is re
 enqueue fills it in. A field that is PRESENT but not a non-negative integer is treated as corruption
 and surfaces rather than being read as `0`.
 
+Such an entry is **contained, not propagated**: it is skipped for execution (never claimed — its
+obligation is unknown), while staying visible in `GET /api/v1/admin/search-index/reconcile`
+(`corruptCount`), in `GET /metrics` (`corrupt`), and in a new
+`GET /api/v1/admin/search-index/reconcile/corrupt` listing that reports each entry's `objectId` and
+the reason. It is removed with `DELETE /api/v1/admin/search-index/reconcile/corrupt/{docId}`,
+addressed by CouchDB `_id` because resolving a `taskId` would mean deserializing the document that
+will not deserialize; that route REFUSES a healthy document. After deleting one, re-index its
+`objectId` — deleting a task drops only the automatic retry. Earlier 3.3.0 pre-releases let a single
+corrupt entry stall the whole queue with no way to remove it through the API.
+
+### New admin API: ACL-epoch quarantine
+
+`GET /api/v1/admin/acl-epoch/quarantine` lists the quarantined documents that have blocked an
+ACL-index refresh (a quarantined ANCESTOR blocks its whole subtree), and
+`POST /api/v1/admin/acl-epoch/quarantine/{repositoryId}/{docId}/repair` repairs one — normalizing
+its epoch fields and clearing the marker in a single CAS. Blocked reconciliation tasks are retained
+under a capped backoff and resume on their own after the repair; no manual re-enqueue. Both are
+admin-gated and CSRF-protected. In 3.3.0 nothing in production drives the epoch walk, so a healthy
+deployment reports zeros here.
+
 Part of the ACL-epoch fencing work, which remains NOT wired into any ACL write path in 3.3.0.
 _On `deps/v3.3-breaking-majors` (off `master`). First minor with breaking-major
 dependency bumps. No CouchDB view / patch / schema / Mango changes — the 2.4

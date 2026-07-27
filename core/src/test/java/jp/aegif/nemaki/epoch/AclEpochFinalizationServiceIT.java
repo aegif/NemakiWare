@@ -67,6 +67,7 @@ public class AclEpochFinalizationServiceIT {
 
     private String contentDb;
     private AclEpochFinalizationService svc;
+    private AclEffectiveEpochService effectiveSvc;   // the walk that the quarantine blocks
     private jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconcileSvc;
     private CloudantClientPool pool;      // reused by tests that build a second service instance
     private AclEpochCounterService counter;
@@ -137,6 +138,19 @@ public class AclEpochFinalizationServiceIT {
         reconcileSvc = new jp.aegif.nemaki.reconcile.SearchIndexReconciliationService();
         reconcileSvc.setConnectorPool(pool);
         svc.setReconciliationService(reconcileSvc);
+
+        // The walk under test for §5.1 (wiring gate 4).
+        effectiveSvc = new AclEffectiveEpochService();
+        effectiveSvc.setConnectorPool(pool);
+        jp.aegif.nemaki.cmis.factory.info.RepositoryInfo qinfo =
+                mock(jp.aegif.nemaki.cmis.factory.info.RepositoryInfo.class);
+        lenient().when(qinfo.getRootFolderId()).thenReturn("q-root");
+        lenient().when(qinfo.getPrincipalIdAnyone()).thenReturn("GROUP_EVERYONE");
+        lenient().when(qinfo.getPrincipalIdAnonymous()).thenReturn("anonymous");
+        jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap qmap =
+                mock(jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap.class);
+        lenient().when(qmap.get(contentDb)).thenReturn(qinfo);
+        effectiveSvc.setRepositoryInfoMap(qmap);
     }
 
     @AfterEach
@@ -146,6 +160,31 @@ public class AclEpochFinalizationServiceIT {
             cloudant.deleteDatabase(new DeleteDatabaseOptions.Builder().db(contentDb).build()).execute();
         } catch (Exception ignore) { /* best effort */ }
         deleteConf(AclEpochCounterService.counterDocId(contentDb));
+        deleteEnqueuedReconcileTasks();
+    }
+
+    /**
+     * The ACK path enqueues into the SHARED nemaki_conf queue, and dropping the per-test content DB
+     * does not remove those. Left behind they accumulate — and once the total crosses
+     * {@code SearchIndexReconciliationService.LIST_LIMIT_CAP} (1000) they push a sibling IT's own
+     * tasks off the end of {@code list()}, failing it with a completely unrelated symptom. Found
+     * exactly that way: this class had left 1034 entries.
+     */
+    private void deleteEnqueuedReconcileTasks() {
+        try {
+            var find = new com.ibm.cloud.cloudant.v1.model.PostFindOptions.Builder()
+                    .db(SystemConst.NEMAKI_CONF_DB)
+                    .selector(Map.of("type", "searchIndexAclReindexTask",
+                            "repositoryId", contentDb))
+                    .limit(1000L).build();
+            for (var d : cloudant.postFind(find).execute().getResult().getDocs()) {
+                try {
+                    cloudant.deleteDocument(new com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions
+                            .Builder().db(SystemConst.NEMAKI_CONF_DB)
+                            .docId(d.getId()).rev(d.getRev()).build()).execute();
+                } catch (Exception ignore) { /* best effort */ }
+            }
+        } catch (Exception ignore) { /* best effort */ }
     }
 
     // ── finalize (Phase 2) ─────────────────────────────────────────
@@ -1391,6 +1430,133 @@ public class AclEpochFinalizationServiceIT {
                 "the NEW mutation's marker must survive — the ACK belonged to the old one");
     }
 
+    // ── §5.1 quarantine operational contract (wiring gate 4) ───────
+
+    /**
+     * The contract's core claim, end to end: quarantine → BLOCKED → repair → the SAME retained task
+     * completes, with no manual re-enqueue (§5.1 items 1, 4 and 5).
+     */
+    @Test
+    void quarantineBlocksThenRepairLetsTheSAMETaskComplete() {
+        seedFolder("q-root", null, false, 4L);
+        seedDocument("q-leaf", "q-root", true, 1L);
+        quarantine("q-root");   // the ANCESTOR is the blocker
+
+        // BLOCKED — and the failure names the ancestor, not just the object.
+        AclEpochQuarantineBlockedException blocked = assertThrows(
+                AclEpochQuarantineBlockedException.class, () -> effectiveSvc.snapshot(contentDb, "q-leaf"));
+        assertEquals("q-root", blocked.getQuarantinedId(), "the BLOCKER must be identified");
+        assertEquals("q-leaf", blocked.getBlockedObjectId());
+
+        // REPAIR — one CAS.
+        assertEquals(AclEpochFinalizationService.RepairResult.REPAIRED,
+                svc.repairQuarantined(contentDb, "q-root"));
+
+        // RESUMES on its own: the same walk now succeeds, so a retained task's next attempt does too.
+        AclEffectiveEpochService.Snapshot snap = effectiveSvc.snapshot(contentDb, "q-leaf");
+        assertNotNull(snap);
+        assertEquals(4L, snap.effectiveEpoch, "the repaired ancestor's epoch is usable again");
+    }
+
+    /**
+     * §5.1 item 4: the marker and the epoch fields move in ONE CAS. Clearing the marker first would
+     * expose the still-anomalous document to a scanner pass, which would re-quarantine it
+     * immediately — a repair that undoes itself.
+     */
+    @Test
+    void repairClearsTheMarkerANDNormalizesTheFieldsTogether() {
+        seedFinalized("q-one", AclEpochState.newMutationId(), 6L);
+        quarantine("q-one");
+
+        assertEquals(AclEpochFinalizationService.RepairResult.REPAIRED,
+                svc.repairQuarantined(contentDb, "q-one"));
+
+        Map<String, Object> p = props("q-one");
+        assertFalse(p.containsKey(AclEpochState.FIELD_QUARANTINED), "marker gone");
+        assertFalse(p.containsKey(AclEpochState.FIELD_STATE), "state gone in the SAME step");
+        assertFalse(p.containsKey(AclEpochState.FIELD_MUTATION_ID), "mutation id gone in the SAME step");
+        assertEquals(6L, ((Number) p.get(AclEpochState.FIELD_SOURCE_EPOCH)).longValue(),
+                "a VALID epoch a mutation paid for is preserved, not discarded");
+
+        // A scan now sees ordinary settled content — it must NOT re-quarantine it.
+        ScanSummary sum = svc.scan(contentDb, 100);
+        assertTrue(sum.errors.isEmpty(), "a repaired document must not look corrupt: " + sum.errors);
+        assertFalse(props("q-one").containsKey(AclEpochState.FIELD_QUARANTINED));
+    }
+
+    /** A CORRUPT epoch is dropped rather than guessed at; absent reads as 0 (pre-migration). */
+    @Test
+    void repairDROPSACorruptEpochRatherThanInventingOne() {
+        seedRaw("q-bad", "{\"type\":\"cmis:document\",\"aclInherited\":false,"
+                + "\"aclSourceEpoch\":\"not-a-number\",\"aclEpochQuarantined\":true}");
+
+        assertEquals(AclEpochFinalizationService.RepairResult.REPAIRED,
+                svc.repairQuarantined(contentDb, "q-bad"));
+        assertFalse(props("q-bad").containsKey(AclEpochState.FIELD_SOURCE_EPOCH),
+                "a corrupt epoch is REMOVED — the walk then treats it as 0, which is safe; a guessed "
+                        + "value could fence out a later correct writer");
+    }
+
+    /** §5.1 item 2: the blocking ancestor is counted and logged ONCE, not once per descendant. */
+    @Test
+    void theBlockingAncestorIsReportedOnceNotPerDescendant() {
+        seedFolder("q-root2", null, false, 3L);
+        for (int i = 0; i < 5; i++) {
+            seedDocument("q-child" + i, "q-root2", true, 1L);
+        }
+        quarantine("q-root2");
+
+        for (int i = 0; i < 5; i++) {
+            final int n = i;
+            assertThrows(AclEpochQuarantineBlockedException.class,
+                    () -> effectiveSvc.snapshot(contentDb, "q-child" + n));
+        }
+
+        Map<String, Object> m = effectiveSvc.quarantineMetrics();
+        assertEquals(5L, ((Number) m.get("quarantineBlockedTasks")).longValue(),
+                "every blocked walk is COUNTED");
+        assertEquals(List.of("q-root2"), m.get("quarantineBlockingIds"),
+                "but the operator sees ONE id — the document whose repair unblocks all five");
+    }
+
+    @Test
+    void repairingSomethingNotQuarantinedIsANoOp() {
+        seedFinalized("q-clean", AclEpochState.newMutationId(), 2L);
+        assertEquals(AclEpochFinalizationService.RepairResult.NOT_QUARANTINED,
+                svc.repairQuarantined(contentDb, "q-clean"));
+        assertEquals(AclEpochState.FINALIZED_NEEDS_RECONCILE, props("q-clean").get(AclEpochState.FIELD_STATE));
+    }
+
+    /** PUT an EXACT raw JSON body, so a malformed epoch survives the model layer. */
+    private void seedRaw(String id, String json) {
+        try {
+            java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(cfg("nemaki.test.couchdb.url", "NEMAKI_TEST_COUCHDB_URL",
+                            "http://localhost:5984") + "/" + contentDb + "/" + id))
+                    .header("Authorization", "Basic " + java.util.Base64.getEncoder().encodeToString(
+                            (cfg("nemaki.test.couchdb.user", "NEMAKI_TEST_COUCHDB_USER", "admin") + ":"
+                                    + cfg("nemaki.test.couchdb.password", "NEMAKI_TEST_COUCHDB_PASSWORD",
+                                    "password")).getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                    .header("Content-Type", "application/json")
+                    .PUT(java.net.http.HttpRequest.BodyPublishers.ofString(json)).build();
+            var resp = java.net.http.HttpClient.newHttpClient()
+                    .send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
+            assertTrue(resp.statusCode() < 300, "seedRaw " + id + " failed: " + resp.body());
+        } catch (Exception e) {
+            throw new IllegalStateException("seedRaw failed for " + id, e);
+        }
+    }
+
+    /** Mark a document quarantined, as the scanner's durable quarantine does. */
+    private void quarantine(String id) {
+        Document d = getContent(id);
+        Map<String, Object> p = d.getProperties();
+        p.put(AclEpochState.FIELD_QUARANTINED, Boolean.TRUE);
+        d.setProperties(p);
+        cloudant.putDocument(new com.ibm.cloud.cloudant.v1.model.PutDocumentOptions.Builder()
+                .db(contentDb).docId(id).document(d).build()).execute();
+    }
+
     // ── the outbox terminus (capability; NOT wired — gate 1 does not require it) ──
 
     @Test
@@ -1462,6 +1628,31 @@ public class AclEpochFinalizationServiceIT {
         p.put(AclEpochState.FIELD_STATE, AclEpochState.FINALIZED_NEEDS_RECONCILE);
         p.put(AclEpochState.FIELD_MUTATION_ID, mutationId);
         p.put(AclEpochState.FIELD_SOURCE_EPOCH, epoch);
+        putContentRaw(id, p);
+    }
+
+    /** A folder for the §5.1 walk tests: settled content carrying only its epoch. */
+    private void seedFolder(String id, String parentId, boolean inherits, long epoch) {
+        Map<String, Object> p = baseFixture();
+        p.put("type", "cmis:folder");
+        p.put("name", id);
+        if (parentId != null) p.put("parentId", parentId);
+        p.put("aclInherited", inherits);
+        p.put(AclEpochState.FIELD_SOURCE_EPOCH, epoch);
+        p.remove(AclEpochState.FIELD_STATE);
+        p.remove(AclEpochState.FIELD_MUTATION_ID);
+        putContentRaw(id, p);
+    }
+
+    private void seedDocument(String id, String parentId, boolean inherits, long epoch) {
+        Map<String, Object> p = baseFixture();
+        p.put("type", "cmis:document");
+        p.put("name", id);
+        if (parentId != null) p.put("parentId", parentId);
+        p.put("aclInherited", inherits);
+        p.put(AclEpochState.FIELD_SOURCE_EPOCH, epoch);
+        p.remove(AclEpochState.FIELD_STATE);
+        p.remove(AclEpochState.FIELD_MUTATION_ID);
         putContentRaw(id, p);
     }
 
