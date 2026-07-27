@@ -35,6 +35,17 @@ standalone bean / production caller ゼロ / scheduler・init・cron なし。
   `POST /v1/admin/acl-epoch/migration/{repositoryId}`。dev (bedroom / canopy) で実走済み
 - *(principal tri-state は 増分 5T)*
 
+### 運用エンドポイント (3 つ揃った)
+
+| 目的 | エンドポイント |
+|---|---|
+| quarantine の出口 | `POST /v1/admin/acl-epoch/quarantine/{repo}/{docId}/repair` |
+| 初期 epoch stamp | `POST /v1/admin/acl-epoch/migration/{repositoryId}` |
+| outbox の crash recovery | `POST /v1/admin/acl-epoch/scan/{repositoryId}` |
+
+scan は cron / init を持たず**明示実行のみ**。`clearMarkerAfterReconcile` は
+エンドポイントを持ちません (reconcile 完了経路への接続は配線扱いのため)。
+
 ### それでも配線は NO-GO
 
 ゲートが閉じたことは「配線してよい」ではなく「配線を設計してよい」です。

@@ -439,10 +439,14 @@
           class="jp.aegif.nemaki.epoch.AclEpochFinalizationService">
         <property name="connectorPool" ref="connectorPool" />
         <property name="counterService" ref="aclEpochCounterService" />
-        <!-- reconciliationService is DELIBERATELY not wired: it is only needed by ackFinalized()
-             (increment 7b), which has no production caller, and an unwired collaborator is a second
-             fail-closed latch during the NO-GO period — the ACK throws AclEpochWiringException
-             rather than half-working. Wire it in the same change that gives it a caller. -->
+        <!-- Increment 11: WIRED, reversing the earlier "second fail-closed latch" note. The ACK
+             pass of scan() needs it, and scan() now has a caller — the explicit admin endpoint
+             AclEpochScanController. Leaving it unwired would have made that endpoint half-working
+             (every FINALIZED document throwing AclEpochWiringException) rather than fail-closed.
+             This is NOT wiring the writer: the ACK enqueues a reconcile task, which is what the
+             outbox is FOR, and on today's system no production path creates epoch state, so the
+             pass selects nothing. -->
+        <property name="reconciliationService" ref="searchIndexReconciliationService" />
     </bean>
 
     <!-- ACL effective-epoch resolution (design §4.1 / §4.2 steps 1,2,4 — increment 3).

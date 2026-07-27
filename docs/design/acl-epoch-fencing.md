@@ -698,6 +698,41 @@ returned a body with no `verdict`/`fenced` keys at all rather than saying UNKNOW
 
 All five are mutation-bound.
 
+**Increment 11 (DONE — the scanner operator surface).** The outbox's recovery half had no driver:
+`finalizePending`, `scan` and `ackFinalized` all had zero callers, so a crash between an ACL
+mutation's commit and its epoch finalization would have left that state permanent. Wiring the writer
+on top of that would have shipped a mechanism whose recovery half has no operator in it — the same
+gap the quarantine repair (increment 9) and the migration runner (increment 10) already closed for
+theirs.
+
+`AclEpochScanController` drives it explicitly: `POST /v1/admin/acl-epoch/scan/{repositoryId}` runs
+ONE bounded sweep (the finalize pass, the state-lost pass, the ACK pass and the terminal audit —
+so `finalizePending` and `ackFinalized` are both exercised by it), `GET` returns the last summary,
+and `POST /v1/admin/acl-epoch/finalize/{repo}/{docId}` finalizes a single stuck document without
+sweeping a repository. `more=true` is surfaced as an instruction to run it again.
+
+**`reconciliationService` is now WIRED on `AclEpochFinalizationService`**, reversing the earlier
+"second fail-closed latch" note: the ACK pass needs it and the scan now has a caller, so leaving it
+unwired would have made the endpoint half-working rather than fail-closed. This is not wiring the
+writer — the ACK enqueues a reconcile task, which is what the outbox is FOR.
+
+**Deliberately not here:** no cron, no init-method, no scheduler (a background sweeper mutating
+content documents belongs with the wiring increment); and no endpoint for
+`clearMarkerAfterReconcile`, which stays a capability with no caller because clearing a marker
+belongs to the reconcile COMPLETION path, and connecting it there is wiring.
+
+**Verified live, end to end.** A scan of a real repository reports all zeros, which proves only that
+it ran — so a document was seeded with `PENDING_EPOCH` and the sweep driven again:
+`finalized: 1, acked: 1, enqueued: 1`, the document advanced to `RECONCILE_ENQUEUED` with
+`aclSourceEpoch: 1` from the counter, and a reconcile task with `minRequiredEpoch: 1` appeared and
+was then consumed by the live poller. That is the whole outbox contract executing through the
+Spring-wired beans.
+
+**One honesty fix found by reading that task:** the ACK recorded its task as
+`INDEX_WRITE_FAILURE`. The ACK runs for a mutation that SUCCEEDED, so anyone triaging the queue
+would have gone looking for a Solr problem that never happened. New reason `OUTBOX_ACK`; the field
+is free-form, so existing tasks keep their values.
+
 **Next:** all four wiring gates are now CLOSED (increments 7, 8, 9, 10; 5T earlier). Wiring
 `AclEpochIndexWriter.write()` into the ACL write path is its own increment and has NOT been started
 — **production wiring remains NO-GO** until it is designed, reviewed and explicitly approved. Note

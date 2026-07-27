@@ -990,7 +990,7 @@ public class AclEpochFinalizationService {
         //    is, so the next scan retries. A CorruptReconcileTaskException propagates with its own
         //    type (7a residual #1) so an operator can tell damage from unavailability.
         reconciliationService.enqueueOrThrow(repositoryId, docId,
-                jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.INDEX_WRITE_FAILURE,
+                jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.OUTBOX_ACK,
                 jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Operation.ACL_REINDEX,
                 finalizedEpoch);
 

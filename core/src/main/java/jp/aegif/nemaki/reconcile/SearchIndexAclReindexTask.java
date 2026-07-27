@@ -53,6 +53,13 @@ public class SearchIndexAclReindexTask {
         public static final String INDEX_WRITE_FAILURE = "INDEX_WRITE_FAILURE";
         public static final String CACHE_EVICTION_FAILURE = "CACHE_EVICTION_FAILURE";
         public static final String PWC_PURGE_FAILURE = "PWC_PURGE_FAILURE";
+        /**
+         * Not a failure at all: the ACL-epoch outbox ACK establishing a durable obligation for a
+         * mutation that SUCCEEDED (increment 7b). It used to be recorded as
+         * {@code INDEX_WRITE_FAILURE}, which sent anyone triaging the queue looking for a Solr
+         * problem that never happened. The field is free-form, so existing tasks keep their values.
+         */
+        public static final String OUTBOX_ACK = "OUTBOX_ACK";
         private Reason() {}
     }
 
