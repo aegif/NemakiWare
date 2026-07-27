@@ -249,6 +249,23 @@
         ({readers, effective_acl_epoch}) under a _version_ CAS. -->
    <field name="effective_acl_epoch" type="long" indexed="true" stored="true" required="false" multiValued="false" />
 
+   <!-- CONTENT-axis fence (acl-epoch-fencing.md §4.4/§8.1, wiring gate 3). The two axes
+        are fenced separately: the ACL group by the epoch above, the CONTENT group by
+        these. content_generation is the Content's own CouchDB _rev generation, and a
+        NUMBER only orders within one lifetime — a restore reuses the _id but restarts
+        _rev at 1, so a restored write would look "generation 1 < stored 50" and be
+        refused for ever. content_incarnation is what makes the comparison legal:
+        generations are compared ONLY within the same incarnation, and a DIFFERENT one
+        means "new lifetime — recompute and CAS authoritatively", never "skip as older".
+        The incarnation is ALWAYS persisted on the CouchDB Content first (by _rev CAS)
+        and only then stamped here; a Solr-only value would let two concurrent writers
+        pick different UUIDs and clobber each other for ever.
+        NOTE acl_index_generation above is RETAINED for compatibility and is still the
+        live ACL fence input until that axis moves to effective_acl_epoch. It is NOT an
+        input to the content fence, which reads content_generation only. -->
+   <field name="content_incarnation" type="string" indexed="true" stored="true" required="false" multiValued="false" />
+   <field name="content_generation" type="long" indexed="true" stored="true" required="false" multiValued="false" />
+
    <!-- Block Join routing field (Solr 9 requires _root_ for nested documents) -->
    <field name="_root_" type="string" indexed="true" stored="false" docValues="false" />
 

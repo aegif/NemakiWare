@@ -50,6 +50,19 @@ public class CouchContent extends CouchNodeBase{
 	private List<Aspect> aspects = new ArrayList<Aspect>();
 	private List<String> secondaryIds = new ArrayList<String>();
 	private String objectType;
+	/**
+	 * The CONTENT axis' identity (design §8.1, wiring gate 3). Declared HERE, on the shared Couch
+	 * content base, so every content type — document, folder, relationship, policy, item — persists
+	 * it in the SAME CouchDB commit that creates it. Assigning it per-DAO-create method would have
+	 * been five places to keep in step, and one missed would leave a whole type permanently
+	 * incarnation-less.
+	 *
+	 * <p>Persisted at creation and NEVER Solr-first: a Solr-only value would let two concurrent
+	 * writers pick different UUIDs and clobber each other for ever. Pre-migration content acquires
+	 * one via {@code Patch_ContentIncarnationBackfill} or lazily via
+	 * {@code ContentIncarnation.resolve}, whichever wins the _rev CAS.
+	 */
+	private String contentIncarnation;
 	private String changeToken;
 
 	public CouchContent(){
@@ -67,6 +80,10 @@ public class CouchContent extends CouchNodeBase{
 			this.description = (String) properties.get("description");
 			this.parentId = (String) properties.get("parentId");
 			this.objectType = (String) properties.get("objectType");
+			// Read back verbatim; the creator must never MINT one, or every read of a
+			// pre-migration document would look like an assignment that was never persisted.
+			Object ci = properties.get(jp.aegif.nemaki.epoch.ContentIncarnation.FIELD);
+			this.contentIncarnation = (ci instanceof String) ? (String) ci : null;
 			this.changeToken = (String) properties.get("changeToken");
 			
 			// Boolean型の処理
@@ -188,6 +205,13 @@ public class CouchContent extends CouchNodeBase{
 		setObjectType(c.getObjectType());
 		setChangeToken(c.getChangeToken());
 
+		// SAME COMMIT as the create (design §8.1). Only when absent: an update round-trips the
+		// existing value, and overwriting it would silently start a new "lifetime" for a Content
+		// that never left the old one.
+		if (this.contentIncarnation == null || this.contentIncarnation.isBlank()) {
+			this.contentIncarnation = jp.aegif.nemaki.epoch.ContentIncarnation.mint();
+		}
+
 		// COMPREHENSIVE REVISION MANAGEMENT: Preserve revision from Content layer
 		setRevision(c.getRevision());
 	}
@@ -258,6 +282,14 @@ public class CouchContent extends CouchNodeBase{
 
 	public void setSecondaryIds(List<String> secondaryIds) {
 		this.secondaryIds = secondaryIds;
+	}
+
+	@com.fasterxml.jackson.annotation.JsonProperty(jp.aegif.nemaki.epoch.ContentIncarnation.FIELD)
+	public String getContentIncarnation() { return contentIncarnation; }
+
+	@com.fasterxml.jackson.annotation.JsonProperty(jp.aegif.nemaki.epoch.ContentIncarnation.FIELD)
+	public void setContentIncarnation(String contentIncarnation) {
+		this.contentIncarnation = contentIncarnation;
 	}
 
 	public String getObjectType() {

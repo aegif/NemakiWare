@@ -502,23 +502,41 @@ public class SolrUtil implements ApplicationContextAware {
 			}
 
 			Long versionField = null; // null => plain add (no CAS), fail-open
+			SolrDocument cur = null;
+			String incarnation = null;
 			if (myGen > 0) {
-				SolrDocument cur = readVersionAndGeneration(repositoryId, content.getId());
+				cur = readVersionAndGeneration(repositoryId, content.getId());
+
+				// CONTENT FENCE (wiring gate 3, design §4.4/§8.1). The incarnation is resolved
+				// AUTHORITATIVELY first — ContentIncarnation.resolve persists it by _rev CAS and
+				// throws rather than handing back a value CouchDB does not hold, so this writer can
+				// never stamp an identity two concurrent writers would disagree about.
+				jp.aegif.nemaki.epoch.ContentIncarnation.ContentStore store = contentStore();
+				if (store != null) {
+					incarnation = jp.aegif.nemaki.epoch.ContentIncarnation.resolve(
+							repositoryId, content.getId(), store);
+				}
+				jp.aegif.nemaki.epoch.ContentWriterFence.Decision decision =
+						jp.aegif.nemaki.epoch.ContentWriterFence.decide(cur, incarnation, myGen);
+				if (decision == jp.aegif.nemaki.epoch.ContentWriterFence.Decision.FAIL_CLOSED) {
+					throw new RuntimeException("Content fence: no authoritative content_incarnation for "
+							+ content.getId() + " — refusing to stamp Solr (retry)");
+				}
+				if (decision == jp.aegif.nemaki.epoch.ContentWriterFence.Decision.SKIP_STALE) {
+					log.info("Content fence: skipping write for {} — Solr holds a newer generation in "
+							+ "the same incarnation", content.getId());
+					return; // clean: a strictly-fresher content write already landed
+				}
 				if (cur == null) {
 					versionField = -1L; // create-if-absent
 				} else {
-					long storedGen = toLongOrDefault(cur.getFieldValue("acl_index_generation"), -1L);
-					if (storedGen > myGen) {
-						log.info("Index fence: skipping write for {} — Solr holds newer generation ({} > {})",
-								content.getId(), storedGen, myGen);
-						return; // clean: a strictly-fresher write already landed
-					}
 					long version = toLongOrDefault(cur.getFieldValue("_version_"), 0L);
 					versionField = (version != 0L) ? Long.valueOf(version) : null;
 				}
 			}
 
 			SolrInputDocument doc = createSolrDocument(repositoryId, content, strict);
+			applyContentFence(doc, cur, incarnation, myGen, repositoryId, content.getId());
 			if (versionField != null) {
 				doc.addField("_version_", versionField);
 			}
@@ -802,6 +820,47 @@ public class SolrUtil implements ApplicationContextAware {
 
 	private volatile jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool connectorPoolCache;
 
+	/**
+	 * CouchDB access for {@link jp.aegif.nemaki.epoch.ContentIncarnation#resolve} (wiring gate 3).
+	 * Straight to CouchDB, never through the content cache: the incarnation is an IDENTITY that must
+	 * be established authoritatively, and a cached read could hand back a value a competing writer
+	 * has already superseded.
+	 */
+	private jp.aegif.nemaki.epoch.ContentIncarnation.ContentStore contentStore() {
+		jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool pool = getConnectorPoolSafely();
+		if (pool == null) {
+			return null;
+		}
+		return new jp.aegif.nemaki.epoch.ContentIncarnation.ContentStore() {
+			@Override public com.ibm.cloud.cloudant.v1.model.Document read(String repositoryId, String docId) {
+				var client = pool.getClient(repositoryId);
+				if (client == null) {
+					throw new jp.aegif.nemaki.epoch.ContentIncarnation.IncarnationUnavailableException(
+							"no content DB client for repository '" + repositoryId + "'");
+				}
+				try {
+					return client.getClient().getDocument(
+							new com.ibm.cloud.cloudant.v1.model.GetDocumentOptions.Builder()
+									.db(client.getDatabaseName()).docId(docId).build()).execute().getResult();
+				} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
+					return null; // genuinely deleted — the caller decides, never a guess
+				}
+			}
+			@Override public String write(String repositoryId, com.ibm.cloud.cloudant.v1.model.Document doc) {
+				var client = pool.getClient(repositoryId);
+				try {
+					var r = client.getClient().putDocument(
+							new com.ibm.cloud.cloudant.v1.model.PutDocumentOptions.Builder()
+									.db(client.getDatabaseName()).docId(doc.getId()).document(doc).build())
+							.execute().getResult();
+					return (r != null && r.isOk()) ? r.getRev() : null;
+				} catch (com.ibm.cloud.sdk.core.service.exception.ConflictException e) {
+					return null; // 409 — the caller re-reads and adopts the winner's value
+				}
+			}
+		};
+	}
+
 	/** Lazily resolve the CouchDB connector pool from Spring (mirrors {@link #getContentServiceSafely()}). */
 	private jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool getConnectorPoolSafely() {
 		jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool cached = connectorPoolCache;
@@ -1002,6 +1061,55 @@ public class SolrUtil implements ApplicationContextAware {
 	 * nemaki core has {@code <updateLog>} + a {@code _version_} field, so realtime get and
 	 * optimistic concurrency are both available.
 	 */
+	/**
+	 * Apply the content fence to a rebuilt document (wiring gate 3).
+	 *
+	 * <p>Stamps this axis' own fields ({@code content_incarnation} + {@code content_generation}) and
+	 * then hands the ACL group back to whatever Solr already holds. The content writer's own
+	 * expansion is DISCARDED: the ACL axis has its own writer, fence and CAS, and a body
+	 * re-extraction finishing after a fresh applyAcl must not be a second opinion on it.
+	 *
+	 * <p>All THREE ACL-group fields move together — including {@code acl_index_generation}, which is
+	 * still the live ACL fence input. Restoring only the readers while this writer stamped a fresh
+	 * generation would produce "old readers, new generation" and make {@code updateReadersFenced}
+	 * skip for ever, freezing the stale readers with the very mechanism meant to protect them.
+	 */
+	private void applyContentFence(SolrInputDocument doc, SolrDocument stored, String incarnation,
+			long myGen, String repositoryId, String objectId) {
+		if (incarnation != null) {
+			doc.setField(jp.aegif.nemaki.epoch.ContentIncarnation.SOLR_FIELD, incarnation);
+			doc.setField(jp.aegif.nemaki.epoch.ContentIncarnation.SOLR_GENERATION_FIELD, myGen);
+		}
+		java.util.Map<String, Object> rebuilt = new java.util.LinkedHashMap<>();
+		jp.aegif.nemaki.epoch.ContentWriterFence.AclGroupOutcome outcome =
+				jp.aegif.nemaki.epoch.ContentWriterFence.preserveAclGroup(stored, rebuilt);
+		switch (outcome) {
+			case PRESERVED:
+				// Replace, never accumulate: createSolrDocument used addField for readers and
+				// acl_index_generation, so setField here is what actually drops its values. This is
+				// also the ONLY place acl_index_generation is written on the preserve path — the
+				// stamp inside createSolrDocument is overwritten here, deliberately.
+				doc.removeField("readers");
+				for (java.util.Map.Entry<String, Object> e : rebuilt.entrySet()) {
+					doc.setField(e.getKey(), e.getValue());
+				}
+				break;
+			case MISSING_ON_EXISTING:
+				// An existing document with no ACL group: this writer's expansion is not an
+				// authoritative answer for it, so it is dropped and the object is handed to
+				// reconciliation (design §4.4) rather than stamped as if settled.
+				doc.removeField("readers");
+				doc.removeField("acl_index_generation");
+				log.warn("Content fence: {} is indexed without an ACL group — enqueueing for "
+						+ "reconciliation rather than stamping this writer's expansion", objectId);
+				enqueueReadersReconcile(repositoryId, objectId, null);
+				break;
+			case BOOTSTRAP_NOT_INDEXED:
+			default:
+				break; // first index: this writer's own values stand
+		}
+	}
+
 	private SolrDocument readVersionAndGeneration(String repositoryId, String objectId) throws Exception {
 		SolrClient solrClient = getSolrClient();
 		if (solrClient == null) {

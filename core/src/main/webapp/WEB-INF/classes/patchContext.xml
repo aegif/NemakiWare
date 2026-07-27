@@ -306,6 +306,9 @@
 				</bean>
 				<!-- ACL-epoch outbox scanner index (acl-epoch-fencing.md §3, increment 2):
 				     (aclEpochState) Mango index on each content DB. -->
+				<bean class="jp.aegif.nemaki.patch.Patch_ContentIncarnationBackfill">
+					<property name="patchUtil" ref="patchUtil" />
+				</bean>
 				<bean class="jp.aegif.nemaki.patch.Patch_AclEpochStateMangoIndex">
 					<property name="patchUtil">
 						<ref bean="patchUtil" />

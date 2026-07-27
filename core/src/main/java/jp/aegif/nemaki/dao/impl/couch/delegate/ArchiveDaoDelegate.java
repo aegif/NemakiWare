@@ -537,7 +537,14 @@ public class ArchiveDaoDelegate {
 							!"archivedBy".equals(key) && !"coldArchivedAt".equals(key) &&
 							!"coldMoveMode".equals(key) && !"contentRef".equals(key) &&
 							!"aclSnapshot".equals(key) && !"propsSnapshot".equals(key) &&
-							!"deletedWithParent".equals(key) && !"lastRevision".equals(key)) {
+							!"deletedWithParent".equals(key) && !"lastRevision".equals(key) &&
+							// content_incarnation belongs to the PRE-DELETE lifetime (design §8.1).
+							// Copying it would restore a Content whose _rev restarts at 1 while Solr
+							// still holds "same incarnation, generation 50" — the content fence would
+							// then read "generation 1 < 50" and refuse the restored write FOR EVER.
+							// A fresh one forces the §4.4 mismatch path, which correctly overwrites
+							// the pre-delete Solr document. Minted below, never copied.
+							!jp.aegif.nemaki.epoch.ContentIncarnation.FIELD.equals(key)) {
 							docMap.put(key, entry.getValue());
 						}
 					}
@@ -545,6 +552,13 @@ public class ArchiveDaoDelegate {
 			} catch (Exception e) {
 				log.warn("CLOUDANT FIX: Error accessing getProperties() during restore: " + e.getMessage());
 			}
+
+			// A RESTORE IS A NEW LIFETIME (design §8.1, wiring gate 3). Always mint — never carry the
+			// archived value over, and never leave the field absent either: an incarnation-less
+			// restored Content would be indistinguishable from pre-migration content, and the fence
+			// would compare its restarted generation against the pre-delete one.
+			docMap.put(jp.aegif.nemaki.epoch.ContentIncarnation.FIELD,
+					jp.aegif.nemaki.epoch.ContentIncarnation.mint());
 
 			// FIX (2026-02-11): CouchArchive does not store 'objectType' field.
 			// Normal documents have 'objectType' (e.g. "cmis:document") which is required

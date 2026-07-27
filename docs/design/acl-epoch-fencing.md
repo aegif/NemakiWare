@@ -337,7 +337,7 @@ path):** ~~outbox ACK / enqueue (invariant 5)~~ **CLOSED by increment 7** (7a: t
 obligation on the task; 7b: FINALIZED advances to RECONCILE_ENQUEUED only after that obligation
 is durable — IT + mutation bound) · migration stamping the initial
 `effective_acl_epoch` (**capability DONE — increment 6**: `AclEpochIndexWriter.stampInitialEpoch`; the gate now closes on RUNNING it, which is an operational step) ·
-`content_incarnation` + content-writer fence (else a full-doc add re-clobbers `readers`) · §5.1
+~~`content_incarnation` + content-writer fence~~ **CLOSED by increment 8** (the content writer now PRESERVES the ACL group instead of re-emitting it; generations are scoped by incarnation) · §5.1
 quarantine operational contract.
 
 *Principal tri-state was the fifth gate; it is **CLOSED by increment 5T**. The `ReadersComputer`
@@ -592,8 +592,10 @@ path; and a live re-index of `bbc119345228953e3405c85bdb36b096` producing byte-i
 `[group:bedroom:GROUP_EVERYONE, user:bedroom:admin, user:bedroom:system]`. **Playwright has NOT been
 run** — it remains outstanding for 5R-b.
 
-**Next:** `content_incarnation` + the content-writer fence, then the §5.1 quarantine operational
-contract. Increment 7 (outbox ACK) is done — 7a added the epoch obligation to the reconciliation
+**Next:** the §5.1 quarantine operational contract — the last gate, and it absorbs the operational
+residual from increment 7a (one corrupt task stalls the poller for everything else; both need an
+admin endpoint that reports and repairs). Increment 8 closed the content-writer fence; increment 7
+(outbox ACK) is done — 7a added the epoch obligation to the reconciliation
 task, 7b made the scanner advance `FINALIZED_NEEDS_RECONCILE` to `RECONCILE_ENQUEUED` only after that
 obligation is durable.
 
@@ -780,6 +782,37 @@ invariant 9) and is not enabled in a write path until its stage is complete. The
 purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5–7).
 
 ### Implementation progress
+
+- **Increment 8 — `content_incarnation` + the content-writer fence (gate 3): DONE.**
+  - **The clobber it fixes is real and current**: `createSolrDocument` re-emitted `readers` as part
+    of every full-document rebuild, so a slow body re-extraction landing after a fresh `applyAcl`
+    overwrote the new tokens with ones computed minutes earlier — the ACL writer's CAS undone by a
+    write that was never about ACLs. The content writer now PRESERVES whatever ACL group Solr holds;
+    recomputing would be a second ACL implementation racing the first.
+  - **All THREE ACL-group fields move together** — `readers`, `effective_acl_epoch` AND
+    `acl_index_generation`. Preserving only the readers while the content writer stamped a fresh
+    generation would give "old readers, new generation", and `updateReadersFenced` (which still reads
+    that field) would then SKIP FOR EVER, freezing the stale readers with the mechanism meant to
+    protect them. Caught in review before it shipped; mutation-bound now.
+  - **`ContentIncarnation.resolve` makes the §8.1 rule structural rather than a convention**: it
+    persists by `_rev` CAS and throws rather than returning a value CouchDB does not hold, so a
+    Solr-only incarnation — two writers picking different UUIDs and clobbering each other for ever —
+    is not something a caller can do by mistake. A 409 adopts the winner's value.
+  - New content is stamped in the same commit (on `CouchContent`, so every content type is covered
+    by one place); pre-migration content converges via `Patch_ContentIncarnationBackfill` or the lazy
+    path; a restore always MINTS and never copies the archived value, which is what stops a restored
+    document being refused for ever.
+  - An EXISTING document with no ACL group is handed to reconciliation rather than stamped with the
+    content writer's expansion (§4.4). `AclGroupOutcome` is a three-valued return so the caller
+    cannot overlook it.
+  - Verification: 11 unit tests + the ACL/epoch suite. Mutation-bound: dropping
+    `acl_index_generation` from the preserve set, ignoring the incarnation, keeping the writer's
+    expansion on `MISSING_ON_EXISTING`, and not failing closed on a missing incoming incarnation each
+    fail, and nothing else does.
+  - **Persistent-format addition** (release-noted): the Content field `content_incarnation`, the Solr
+    fields `content_incarnation` / `content_generation`, and `Patch_ContentIncarnationBackfill`.
+    `acl_index_generation` is RETAINED and remains the ACL axis' live fence input; it is NOT an input
+    to the content fence, which reads `content_generation` only.
 
 - **Increment 7 — the outbox ACK (gate 1): DONE.**
   - **7a** — `SearchIndexAclReindexTask.minRequiredEpoch`, merged as a monotonic `max`, with
