@@ -191,7 +191,12 @@ public class AclEpochIndexWriterIT {
             cloudant.deleteDatabase(new DeleteDatabaseOptions.Builder().db(contentDb).build()).execute();
         } catch (Exception ignore) { /* best effort */ }
         try {
-            solr.deleteById(solrId);
+            // deleteByQuery on the per-test repository id, NOT deleteById(solrId): several tests
+            // index documents under OTHER ids (the CAS-magic doc, extra endpoints), and those were
+            // being left behind in the shared live core — one was still there carrying an
+            // effective_acl_epoch, which is exactly the field the gate-2 migration counts. The
+            // repository id is a per-test UUID, so this can never reach real data.
+            solr.deleteByQuery("repository_id:\"" + contentDb + "\"");
             solr.commit();
         } catch (Exception ignore) { /* best effort */ }
     }

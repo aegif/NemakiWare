@@ -86,6 +86,30 @@ public class ACLExpander {
     }
 
     /**
+     * THE production {@link AclSemantics.PrincipalResolver} — the one binding of the principal
+     * lookups to {@link PrincipalService}, shared by the RAG token layer and the ACL-epoch side.
+     *
+     * <p>Extracted from the anonymous class it used to be so the epoch migration runner cannot
+     * acquire a second, subtly different one: two resolvers means two answers to "does this
+     * principal exist", and that is the difference between a stale-DENY and an over-grant.
+     *
+     * <p>Increment 5T: these are the TRI-STATE probes, not {@code getXById() != null}. The old form
+     * could not tell a deleted principal from a lookup that could not be SERVED, so a missing design
+     * document / view / database silently produced an admin-only reader set that was then written as
+     * a success.
+     */
+    public static AclSemantics.PrincipalResolver principalResolver(PrincipalService principalService) {
+        return new AclSemantics.PrincipalResolver() {
+            @Override public PrincipalLookup lookupUser(String repo, String principalId) {
+                return principalService.lookupUserById(repo, principalId);
+            }
+            @Override public PrincipalLookup lookupGroup(String repo, String principalId) {
+                return principalService.lookupGroupById(repo, principalId);
+            }
+        };
+    }
+
+    /**
      * Expand content ACL to a list of readers.
      *
      * Uses ContentService.calculateAcl() to properly include inherited ACLs from parent folders.
@@ -137,18 +161,7 @@ public class ACLExpander {
         // resolution all live in AclSemantics so the ACL-epoch side cannot re-implement them
         // differently. Behaviour is unchanged.
         List<String> tokens = AclSemantics.readerTokens(repositoryId, allAces,
-                new AclSemantics.PrincipalResolver() {
-                    // Increment 5T: the TRI-STATE probes, not `getXById() != null`. The old form
-                    // could not tell a deleted principal from a lookup that could not be served,
-                    // so a missing design document / view / database silently produced an
-                    // admin-only reader set that was then written as a success.
-                    @Override public PrincipalLookup lookupUser(String repo, String principalId) {
-                        return principalService.lookupUserById(repo, principalId);
-                    }
-                    @Override public PrincipalLookup lookupGroup(String repo, String principalId) {
-                        return principalService.lookupGroupById(repo, principalId);
-                    }
-                });
+                principalResolver(principalService));
         if (log.isDebugEnabled()) {
             log.debug(String.format("Expanded ACL for %s to %d readers: %s",
                     content.getId(), tokens.size(), tokens));
