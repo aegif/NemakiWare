@@ -63,6 +63,34 @@ public class CouchContent extends CouchNodeBase{
 	 * {@code ContentIncarnation.resolve}, whichever wins the _rev CAS.
 	 */
 	private String contentIncarnation;
+
+	/**
+	 * Verbatim carrier for the ACL-epoch outbox fields (§11.1). NOT a bean property — it must
+	 * never serialize as a nested {@code aclEpochFields} object; emission goes through the
+	 * {@code @JsonAnyGetter} map so each key lands at the TOP LEVEL of the stored document,
+	 * presence-faithfully (an explicit null is emitted as an explicit null).
+	 */
+	@com.fasterxml.jackson.annotation.JsonIgnore
+	private java.util.Map<String, Object> aclEpochFields;
+
+	private static final String[] ACL_EPOCH_CARRIER_KEYS = {
+			jp.aegif.nemaki.epoch.AclEpochState.FIELD_STATE,
+			jp.aegif.nemaki.epoch.AclEpochState.FIELD_MUTATION_ID,
+			jp.aegif.nemaki.epoch.AclEpochState.FIELD_SOURCE_EPOCH,
+			jp.aegif.nemaki.epoch.AclEpochState.FIELD_QUARANTINED };
+
+	private static java.util.Map<String, Object> readAclEpochFieldsVerbatim(java.util.Map<String, Object> properties) {
+		java.util.Map<String, Object> out = null;
+		for (String key : ACL_EPOCH_CARRIER_KEYS) {
+			if (properties.containsKey(key)) {
+				if (out == null) {
+					out = new java.util.LinkedHashMap<>();
+				}
+				out.put(key, properties.get(key)); // verbatim: whatever shape is stored, including null
+			}
+		}
+		return out;
+	}
 	private String changeToken;
 
 	public CouchContent(){
@@ -84,6 +112,10 @@ public class CouchContent extends CouchNodeBase{
 			// pre-migration document would look like an assignment that was never persisted.
 			Object ci = properties.get(jp.aegif.nemaki.epoch.ContentIncarnation.FIELD);
 			this.contentIncarnation = (ci instanceof String) ? (String) ci : null;
+			// ACL-epoch outbox fields (§11.1): captured PRESENCE-FAITHFULLY and verbatim —
+			// an explicit null is PRESENT (the 2e containsKey contract) and must survive the
+			// round-trip as an explicit null, not degrade to absent.
+			this.aclEpochFields = readAclEpochFieldsVerbatim(properties);
 			this.changeToken = (String) properties.get("changeToken");
 			
 			// Boolean型の処理
@@ -205,11 +237,22 @@ public class CouchContent extends CouchNodeBase{
 		setObjectType(c.getObjectType());
 		setChangeToken(c.getChangeToken());
 
-		// SAME COMMIT as the create (design §8.1). Only when absent: an update round-trips the
-		// existing value, and overwriting it would silently start a new "lifetime" for a Content
-		// that never left the old one.
+		// §11.1: the model round-trip used to LOSE contentIncarnation (convert() never copied it
+		// and the model had no field), so the mint below fired on EVERY update — each ordinary
+		// rename silently started a new "lifetime" and the content fence treated it as a restore.
+		// Copy the model's value FIRST; the mint then fires only when the model genuinely has
+		// none: a CREATE (same commit, design §8.1) or the legacy lazy fill.
+		this.contentIncarnation = c.getContentIncarnation();
 		if (this.contentIncarnation == null || this.contentIncarnation.isBlank()) {
 			this.contentIncarnation = jp.aegif.nemaki.epoch.ContentIncarnation.mint();
+		}
+
+		// ACL-epoch outbox fields (§11.1): verbatim, and NEVER minted — absent stays absent.
+		// Emission is routed through the @JsonAnyGetter map so presence (including an explicit
+		// null marker) survives; a bean property could not express present-null.
+		if (c.getAclEpochFields() != null && !c.getAclEpochFields().isEmpty()) {
+			this.aclEpochFields = new java.util.LinkedHashMap<>(c.getAclEpochFields());
+			getAdditionalProperties().putAll(this.aclEpochFields);
 		}
 
 		// COMPREHENSIVE REVISION MANAGEMENT: Preserve revision from Content layer
@@ -341,6 +384,13 @@ public class CouchContent extends CouchNodeBase{
 		} else {
 			// Set default ACL if none exists
 			c.setAcl(new jp.aegif.nemaki.model.Acl());
+		}
+
+		// §11.1 carriers: without these two copies the model is blind to the stored values and
+		// the next update erases them (epoch fields) or re-mints them (contentIncarnation).
+		c.setContentIncarnation(getContentIncarnation());
+		if (aclEpochFields != null) {
+			c.setAclEpochFields(new java.util.LinkedHashMap<>(aclEpochFields));
 		}
 
 		return c;
