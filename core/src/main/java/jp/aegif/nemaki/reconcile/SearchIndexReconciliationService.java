@@ -214,6 +214,14 @@ public class SearchIndexReconciliationService {
                     return true; // durably persisted
                 }
                 // CAS conflict — another writer changed the doc; retry the loop.
+            } catch (CorruptReconcileTaskException e) {
+                // Review 7a residual #1: do NOT flatten corruption into a generic enqueue failure.
+                // `enqueueOrThrow` would otherwise report a plain IllegalStateException and the ACK
+                // audit could not tell "CouchDB was unavailable" from "the stored obligation is
+                // damaged" — which need different operator responses. The outbox marker survives
+                // either way (fail-closed), but only one of them is repairable by retrying.
+                enqueueFailureCount.incrementAndGet();
+                throw e;
             } catch (Exception e) {
                 logger.warn("Failed to enqueue reconcile for {} / {} (attempt {}): {}",
                         repositoryId, objectId, attempt + 1, e.getMessage());

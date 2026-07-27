@@ -76,6 +76,17 @@ public class AclEpochFinalizationService {
     public void setConnectorPool(CloudantClientPool connectorPool) { this.connectorPool = connectorPool; }
     public void setCounterService(AclEpochCounterService counterService) { this.counterService = counterService; }
 
+    /**
+     * REQUIRED for the outbox ACK (increment 7b). The ACK is the step that turns a finalized epoch
+     * into a durable reconciliation obligation, so a scan without it would advance nothing and
+     * quietly leave every FINALIZED document parked for ever.
+     */
+    public void setReconciliationService(jp.aegif.nemaki.reconcile.SearchIndexReconciliationService s) {
+        this.reconciliationService = s;
+    }
+
+    private jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconciliationService;
+
     // ── outcome types ──────────────────────────────────────────────
 
     public enum FinalizeResult {
@@ -102,6 +113,7 @@ public class AclEpochFinalizationService {
         public int quarantined;          // anomalous docs moved to durable quarantine this scan
         public int quarantineFailures;   // anomalies that could NOT be durably quarantined this scan
         public int contended;            // valid docs a finalize CAS could not converge on (not anomalies)
+        public int acked;                // FINALIZED docs whose obligation became durable + marker advanced
         public int cursorFailures;       // terminal-audit resume-cursor read/write failures this scan
         public boolean more;             // a pass hit budget / quarantine or cursor write failed / contention → re-scan
         public final List<Map<String, String>> errors = new ArrayList<>();
@@ -345,6 +357,16 @@ public class AclEpochFinalizationService {
                                 AclEpochState.RECONCILE_ENQUEUED)))),
                 budget, summary, STATE_USE_INDEX, d -> {
                     throw new AclEpochAnomalyException("unknown / non-String aclEpochState on " + d.getId());
+                });
+
+        // ACK pass (increment 7b): FINALIZED → durable obligation → CAS to RECONCILE_ENQUEUED.
+        // Placed BEFORE the terminal audit so a document acked in this scan is counted in its new
+        // state rather than as still-awaiting.
+        runPass(repositoryId, notQuarantined(Map.of(
+                        AclEpochState.FIELD_STATE, AclEpochState.FINALIZED_NEEDS_RECONCILE,
+                        AclEpochState.FIELD_MUTATION_ID, Map.of("$exists", true))),
+                budget, summary, STATE_USE_INDEX, d -> {
+                    if (ackFinalized(repositoryId, d) == AckResult.ACKED) summary.acked++;
                 });
 
         // TERMINAL audit (review 2f [P1]): FINALIZED_NEEDS_RECONCILE + RECONCILE_ENQUEUED. These
@@ -912,6 +934,149 @@ public class AclEpochFinalizationService {
         summary.quarantineFailures++;
         summary.more = true; // signal the driver to re-scan (the anomaly is not yet contained)
         record(summary, docId, problem);
+    }
+
+    // ── the outbox ACK (design §3, increment 7b) ───────────────────
+
+    /** Why an ACK attempt ended. */
+    public enum AckResult {
+        /** The obligation is durable AND the marker advanced to RECONCILE_ENQUEUED. */
+        ACKED,
+        /** The document is no longer a FINALIZED one we own (superseded / already acked). */
+        ABANDONED
+    }
+
+    /**
+     * ACK one {@code FINALIZED_NEEDS_RECONCILE} document: make the reconciliation obligation DURABLE,
+     * then — and only then — advance the outbox marker to {@code RECONCILE_ENQUEUED}.
+     *
+     * <p><b>The order is the whole point.</b> The obligation is established FIRST, by
+     * {@code enqueueOrThrow(..., finalizedEpoch)}, which returns only after a fresh read confirms
+     * {@code minRequiredEpoch >= finalizedEpoch} (increment 7a). Advancing the marker first — or on
+     * the strength of a task merely existing — would clear the outbox for work nobody is going to do,
+     * and the miss would be INVISIBLE: the scanner counts an enqueued document and never revisits it.
+     *
+     * <p>A crash between the two leaves the document {@code FINALIZED_NEEDS_RECONCILE} with the task
+     * already durable. That is the safe direction: the next scan re-enqueues (the deterministic id
+     * and the monotonic max merge make it idempotent — the obligation cannot go down) and re-attempts
+     * the CAS. The opposite order has no such recovery.
+     *
+     * <p>The CAS requires the document to still be the SAME mutation in the SAME state, so a
+     * supersede or a concurrent ACK yields {@link AckResult#ABANDONED} rather than clobbering.
+     *
+     * @throws AclEpochWiringException      the reconciliation service was not wired
+     * @throws IllegalStateException        the obligation could not be made durable (the marker is
+     *                                      LEFT — fail-closed, retried by the next scan)
+     * @throws AclEpochContentionException  the CAS did not converge (valid doc, competing writer)
+     */
+    public AckResult ackFinalized(String repositoryId, Document hint) {
+        if (reconciliationService == null) {
+            throw new AclEpochWiringException("reconciliationService not wired on "
+                    + "AclEpochFinalizationService — the outbox ACK cannot establish an obligation");
+        }
+        String docId = hint.getId();
+        Document current = getDoc(repositoryId, docId);
+        if (current == null) {
+            return AckResult.ABANDONED; // deleted under us
+        }
+        AclEpochFields.Values v = validate(current);
+        if (!AclEpochState.FINALIZED_NEEDS_RECONCILE.equals(v.state)) {
+            return AckResult.ABANDONED; // superseded, or already acked by a concurrent scan
+        }
+        String ownedMutation = v.mutationId;
+        long finalizedEpoch = v.epoch;
+
+        // 1) DURABLE OBLIGATION FIRST. Throws if it cannot be established; the marker is left as it
+        //    is, so the next scan retries. A CorruptReconcileTaskException propagates with its own
+        //    type (7a residual #1) so an operator can tell damage from unavailability.
+        reconciliationService.enqueueOrThrow(repositoryId, docId,
+                jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.INDEX_WRITE_FAILURE,
+                jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Operation.ACL_REINDEX,
+                finalizedEpoch);
+
+        // 2) ONLY THEN advance the marker.
+        for (int attempt = 0; attempt < FINALIZE_CAS_RETRIES; attempt++) {
+            AclEpochFields.Values now = validate(current);
+            if (!AclEpochState.FINALIZED_NEEDS_RECONCILE.equals(now.state)
+                    || !ownedMutation.equals(now.mutationId)) {
+                return AckResult.ABANDONED;
+            }
+            Map<String, Object> p = current.getProperties();
+            p.put(AclEpochState.FIELD_STATE, AclEpochState.RECONCILE_ENQUEUED);
+            current.setProperties(p);
+            if (putBack(repositoryId, current) != null) {
+                if (logger.isDebugEnabled()) {
+                    logger.debug("ACKed epoch {} for {}/{}", finalizedEpoch, repositoryId, docId);
+                }
+                return AckResult.ACKED;
+            }
+            current = getDoc(repositoryId, docId);
+            if (current == null) {
+                return AckResult.ABANDONED;
+            }
+        }
+        throw new AclEpochContentionException("outbox ACK did not converge for " + docId
+                + " after " + FINALIZE_CAS_RETRIES + " attempts — retryable, the marker is RETAINED");
+    }
+
+    /** Why a marker-clear attempt ended. */
+    public enum ClearResult {
+        /** The marker fields were removed; the document is back to ordinary settled content. */
+        CLEARED,
+        /** The document is no longer the RECONCILE_ENQUEUED one we own (superseded / already clear). */
+        ABANDONED
+    }
+
+    /**
+     * The outbox TERMINUS (design §3): once a reconciliation task has completed, remove
+     * {@code aclEpochState} and {@code aclEpochMutationId} so the document returns to ordinary
+     * settled content carrying only its {@code aclSourceEpoch}.
+     *
+     * <p>Without this the outbox is write-only: every mutated document accumulates a permanent
+     * {@code RECONCILE_ENQUEUED} marker, the terminal audit's cursored pass grows without bound, and
+     * "has this object settled?" stops being answerable.
+     *
+     * <p><b>Why a delayed finalizer cannot mistake this for corruption.</b> Clearing removes BOTH
+     * fields together in one CAS. The scanner's anomaly passes fire on a HALF-cleared shape — a state
+     * without a mutation id, or a mutation id without a state — never on the absence of both, which
+     * is matched by no pass at all (increment 3c). A finalizer arriving after the clear sees a
+     * document that is not {@code PENDING_EPOCH} and abandons, which is its normal supersede path.
+     *
+     * <p>The CAS requires the SAME mutation in {@code RECONCILE_ENQUEUED}, so a document that was
+     * re-mutated since the task was enqueued keeps its NEW marker — the clear belongs to the
+     * obligation that completed, not to whatever is outstanding now.
+     *
+     * <p><b>NOT WIRED</b> (sign-off invariant 9; wiring gate 1 does not require it). The reconcile
+     * completion path runs in production today, so calling this from there would be production
+     * wiring. It is a tested capability that the wiring increment will connect, exactly as increment
+     * 6's {@code stampInitialEpoch} is.
+     */
+    public ClearResult clearMarkerAfterReconcile(String repositoryId, String docId, String mutationId) {
+        if (mutationId == null || mutationId.isBlank()) {
+            throw new IllegalArgumentException("mutationId is required — the clear must be scoped to "
+                    + "the obligation that completed, not to whatever marker is present now");
+        }
+        Document current = getDoc(repositoryId, docId);
+        for (int attempt = 0; attempt < FINALIZE_CAS_RETRIES; attempt++) {
+            if (current == null) {
+                return ClearResult.ABANDONED; // deleted under us
+            }
+            AclEpochFields.Values v = validate(current);
+            if (!AclEpochState.RECONCILE_ENQUEUED.equals(v.state) || !mutationId.equals(v.mutationId)) {
+                return ClearResult.ABANDONED; // superseded, re-mutated, or already cleared
+            }
+            Map<String, Object> p = current.getProperties();
+            // BOTH, in ONE CAS — a half-cleared document is an anomaly to the scanner.
+            p.remove(AclEpochState.FIELD_STATE);
+            p.remove(AclEpochState.FIELD_MUTATION_ID);
+            current.setProperties(p);
+            if (putBack(repositoryId, current) != null) {
+                return ClearResult.CLEARED;
+            }
+            current = getDoc(repositoryId, docId);
+        }
+        throw new AclEpochContentionException("outbox terminus did not converge for " + docId
+                + " after " + FINALIZE_CAS_RETRIES + " attempts — retryable, the marker is RETAINED");
     }
 
     // ── CouchDB primitives (content DB = repositoryId) ─────────────
