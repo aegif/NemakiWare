@@ -8,6 +8,17 @@ only repository gotchas.
 ---
 
 ## 3.3.0 — Breaking-major dependency uplift + native ARM64 stack + OData repair (2026-07-22)
+
+### Persistent-format addition (reconciliation queue)
+
+Reconciliation task documents (`type: searchIndexAclReindexTask` in `nemaki_conf`) gain a
+`minRequiredEpoch` field. It records the highest ACL epoch a task is obliged to reconcile, and is
+merged monotonically so a later best-effort refresh cannot lower an obligation a finalized epoch
+raised. Existing tasks have no such field and read as `0` — no migration is required, and the next
+enqueue fills it in. A field that is PRESENT but not a non-negative integer is treated as corruption
+and surfaces rather than being read as `0`.
+
+Part of the ACL-epoch fencing work, which remains NOT wired into any ACL write path in 3.3.0.
 _On `deps/v3.3-breaking-majors` (off `master`). First minor with breaking-major
 dependency bumps. No CouchDB view / patch / schema / Mango changes — the 2.4
 data carry-over path is untouched; all changes are dependency, container, and

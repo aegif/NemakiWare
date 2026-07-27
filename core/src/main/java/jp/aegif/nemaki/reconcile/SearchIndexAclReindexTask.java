@@ -91,6 +91,32 @@ public class SearchIndexAclReindexTask {
     private String status = Status.PENDING;
     /** Bumped on every new enqueue event; the ACK only succeeds if the rev (hence generation) is unchanged. */
     private long generation;
+    /**
+     * The HIGHEST ACL epoch this task is obliged to reconcile (design §3, increment 7a).
+     *
+     * <p>The epoch outbox ACK is <b>not</b> "a task exists" — it is
+     * {@code minRequiredEpoch >= finalizedEpoch}. Without this field an ACK could mark a document
+     * {@code RECONCILE_ENQUEUED} while the queued obligation predates the epoch just finalized, and
+     * the miss would then be invisible: the scanner counts the document as enqueued and never looks
+     * again. That is the exact failure wiring gate 1 exists to prevent.
+     *
+     * <p>Merged MONOTONICALLY on every enqueue ({@code max(existing, requested)}), so a later
+     * best-effort refresh can never LOWER an obligation a finalized epoch already raised.
+     *
+     * <p><b>Absent / null reads as 0</b> — v1 tasks predate the field and carry best-effort
+     * obligations only. That is deliberately fail-closed for the ACK: {@code 0 >= finalizedEpoch} is
+     * false for every real epoch (the counter's first allocation is 1), so a v1 task can never
+     * satisfy an ACK, and the outbox marker stays until a fresh enqueue raises it.
+     *
+     * <p>A PRESENT but non-integral / negative value is NOT flattened to 0 — that would confuse
+     * corruption with absence. It is rejected on read.
+     *
+     * <p><b>{@code ACL_REINDEX} only.</b> A {@code RAG_PURGE} task carries no epoch obligation: a
+     * purge is an unconditional deletion of a RAG block, not a reconciliation to a point in the ACL
+     * timeline, and the two live under separate deterministic ids with no cross-operation merge. The
+     * field is never written for a purge and never compared for one.
+     */
+    private long minRequiredEpoch;
     /** Epoch millis the entry is next eligible for a retry (backoff). */
     private long nextAttemptAt;
     /** Lease holder node id and expiry (epoch millis) while {@code LEASED}; a crashed holder's lease expires and is reclaimable. */
@@ -136,6 +162,9 @@ public class SearchIndexAclReindexTask {
 
     public long getGeneration() { return generation; }
     public void setGeneration(long generation) { this.generation = generation; }
+
+    public long getMinRequiredEpoch() { return minRequiredEpoch; }
+    public void setMinRequiredEpoch(long minRequiredEpoch) { this.minRequiredEpoch = minRequiredEpoch; }
 
     public long getNextAttemptAt() { return nextAttemptAt; }
     public void setNextAttemptAt(long nextAttemptAt) { this.nextAttemptAt = nextAttemptAt; }

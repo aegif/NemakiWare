@@ -55,6 +55,18 @@ public class SearchIndexReconciliationService {
 
     private static final Logger logger = LoggerFactory.getLogger(SearchIndexReconciliationService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    /**
+     * A stored task whose epoch obligation is CORRUPT (increment 7a). Deliberately its own type so
+     * {@link #toTask}'s catch-all cannot swallow it into a phantom "no such task".
+     */
+    public static final class CorruptReconcileTaskException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        public CorruptReconcileTaskException(String message) { super(message); }
+    }
+
+    /** The persisted field name (increment 7a). */
+    static final String FIELD_MIN_REQUIRED_EPOCH = "minRequiredEpoch";
+
     private static final int ENQUEUE_CONFLICT_RETRIES = 5;
     private static final int METRICS_CAP = 1000;
 
@@ -93,7 +105,9 @@ public class SearchIndexReconciliationService {
      * an unfinished ACL obligation. The same object may hold both tasks.
      */
     public void enqueue(String repositoryId, String objectId, String reason, String operation) {
-        tryEnqueue(repositoryId, objectId, reason, operation);
+        // Best-effort refresh carries NO epoch obligation (0). A monotonic merge means this can only
+        // ever raise the task's PENDING status, never lower an obligation a finalized epoch set.
+        tryEnqueue(repositoryId, objectId, reason, operation, 0L);
     }
 
     /**
@@ -106,14 +120,53 @@ public class SearchIndexReconciliationService {
      * @throws IllegalStateException when the task could not be durably persisted
      */
     public void enqueueOrThrow(String repositoryId, String objectId, String reason, String operation) {
-        if (!tryEnqueue(repositoryId, objectId, reason, operation)) {
+        enqueueOrThrow(repositoryId, objectId, reason, operation, 0L);
+    }
+
+    /**
+     * DURABLE enqueue carrying an EPOCH OBLIGATION (design §3, increment 7a) — the primitive the
+     * epoch outbox ACK is built on.
+     *
+     * <p>Returns only after the task durably records {@code minRequiredEpoch >= requiredEpoch}. That
+     * is a stronger contract than "the task exists": the ACK condition is the obligation, not the
+     * document. Marking a document {@code RECONCILE_ENQUEUED} against a task whose obligation
+     * predates the epoch just finalized would clear the outbox for work nobody is going to do, and
+     * the scanner would then count that document as enqueued and never look at it again.
+     *
+     * <p>The post-write verification is a fresh READ, not a trust of the write: a CAS that lost, a
+     * concurrent writer, or a v1 task whose field is absent must all fail the check rather than pass
+     * on the strength of what we intended to store.
+     *
+     * <p>{@code requiredEpoch} must be {@code >= 1} for a real obligation — the counter's first
+     * allocation is 1, so 0 means "no epoch obligation" and is what the best-effort path passes.
+     *
+     * @throws IllegalStateException when the obligation could not be durably established
+     */
+    public void enqueueOrThrow(String repositoryId, String objectId, String reason, String operation,
+                               long requiredEpoch) {
+        if (requiredEpoch > 0 && SearchIndexAclReindexTask.Operation.RAG_PURGE.equals(operation)) {
+            throw new IllegalArgumentException("RAG_PURGE carries no epoch obligation — a purge is an "
+                    + "unconditional deletion, not a reconciliation to a point in the ACL timeline");
+        }
+        if (!tryEnqueue(repositoryId, objectId, reason, operation, requiredEpoch)) {
             throw new IllegalStateException("Failed to durably enqueue " + operation
                     + " reconciliation task for " + repositoryId + " / " + objectId);
+        }
+        if (requiredEpoch > 0) {
+            String docId = SearchIndexAclReindexTask.deterministicId(repositoryId, objectId, operation);
+            SearchIndexAclReindexTask stored = getByCouchId(docId);
+            if (stored == null || stored.getMinRequiredEpoch() < requiredEpoch) {
+                throw new IllegalStateException("Reconciliation task for " + repositoryId + " / "
+                        + objectId + " does not durably record minRequiredEpoch >= " + requiredEpoch
+                        + " (stored=" + (stored == null ? "absent" : stored.getMinRequiredEpoch())
+                        + ") — refusing to report the obligation as enqueued");
+            }
         }
     }
 
     /** @return true iff the task durably exists after this call. Never throws. */
-    private boolean tryEnqueue(String repositoryId, String objectId, String reason, String operation) {
+    private boolean tryEnqueue(String repositoryId, String objectId, String reason, String operation,
+                               long requiredEpoch) {
         if (repositoryId == null || objectId == null) {
             return false;
         }
@@ -132,10 +185,15 @@ public class SearchIndexReconciliationService {
                     task.setCouchRev(null); // create
                     task.setAttempts(0);
                     task.setGeneration(1);
+                    task.setMinRequiredEpoch(requiredEpoch);
                     task.setCreatedAt(now);
                 } else {
                     task = existing;
                     task.setGeneration(task.getGeneration() + 1);
+                    // MONOTONIC max (increment 7a): a later best-effort refresh must never LOWER an
+                    // obligation that a finalized epoch already raised. Same-operation only — the id
+                    // encodes the operation, so a merge never meets a RAG_PURGE here.
+                    task.setMinRequiredEpoch(Math.max(task.getMinRequiredEpoch(), requiredEpoch));
                     // A fresh failure event deserves a fresh retry budget — reset the
                     // attempt count so re-opening a FAILED entry (or any new event) does
                     // not inherit a nearly-exhausted count from the previous episode.
@@ -545,6 +603,40 @@ public class SearchIndexReconciliationService {
         return out;
     }
 
+    /**
+     * The stored {@code minRequiredEpoch}, validated (increment 7a).
+     *
+     * <p>ABSENT or explicit null is {@code 0} — a v1 task, whose obligation is best-effort. PRESENT
+     * but non-numeric, fractional, out of range or negative is CORRUPTION and is rejected: flattening
+     * it to 0 would confuse a damaged obligation with a missing one, and the ACK would then treat a
+     * corrupt task exactly like a legitimately old one.
+     */
+    private static void requireValidMinRequiredEpoch(String docId, Map<String, Object> props) {
+        if (!props.containsKey(FIELD_MIN_REQUIRED_EPOCH)) {
+            return; // v1 task
+        }
+        Object v = props.get(FIELD_MIN_REQUIRED_EPOCH);
+        if (v == null) {
+            props.remove(FIELD_MIN_REQUIRED_EPOCH); // explicit null == absent == 0
+            return;
+        }
+        if (!(v instanceof Number)) {
+            throw new CorruptReconcileTaskException("reconcile task " + docId + " has a non-numeric "
+                    + FIELD_MIN_REQUIRED_EPOCH + ": " + v);
+        }
+        long epoch;
+        try {
+            epoch = new java.math.BigDecimal(v.toString()).longValueExact();
+        } catch (ArithmeticException | NumberFormatException e) {
+            throw new CorruptReconcileTaskException("reconcile task " + docId + " has a non-integral / "
+                    + "out-of-range " + FIELD_MIN_REQUIRED_EPOCH + ": " + v);
+        }
+        if (epoch < 0) {
+            throw new CorruptReconcileTaskException("reconcile task " + docId + " has a negative "
+                    + FIELD_MIN_REQUIRED_EPOCH + ": " + epoch);
+        }
+    }
+
     private SearchIndexAclReindexTask toTask(Document doc) {
         if (doc == null) return null;
         try {
@@ -552,10 +644,20 @@ public class SearchIndexReconciliationService {
             props.remove("_id");
             props.remove("_rev");
             props.remove("type");
+            // Increment 7a: validate BEFORE Jackson, which would happily coerce 1.5 or "3" and hide
+            // corruption as a plausible obligation. Absent / null is 0 (a v1 task); anything present
+            // must be a non-negative integer.
+            requireValidMinRequiredEpoch(doc.getId(), props);
             SearchIndexAclReindexTask t = MAPPER.convertValue(props, SearchIndexAclReindexTask.class);
             t.setCouchId(doc.getId());
             t.setCouchRev(doc.getRev());
             return t;
+        } catch (CorruptReconcileTaskException e) {
+            // NOT swallowed: a corrupt epoch obligation must surface. Returning null here would make
+            // the task VANISH from list / claim / metrics — the damaged obligation would look like
+            // "no task at all", which is strictly worse than the flattening this validation exists to
+            // prevent. Found while writing the test for it (increment 7a).
+            throw e;
         } catch (Exception e) {
             logger.warn("Failed to deserialize reconcile task {}: {}", doc.getId(), e.getMessage());
             return null;
