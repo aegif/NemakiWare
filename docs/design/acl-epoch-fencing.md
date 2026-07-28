@@ -1187,6 +1187,43 @@ by the live move drill instead), the finalize→ACK→write ORDER itself (bound 
 and the live drill; a mutation swapping it passes the unit mocks, which do not implement the
 pending gate), the Spring XML, and the scheduler's absence-of-cron property.
 
+### 11.12 Increment 13 — orphan cleanup + the generation retirement plan (stages A–E)
+
+**The orphan endpoint** (`GET`/`DELETE /v1/admin/acl-epoch/migration/{repo}/orphans`, DELETE gated
+on `?confirm=true`): verified orphans are UNFENCED CMIS-population entries whose CouchDB read is a
+definitive 404 — a read ERROR is `unverifiable` and is never deleted on that evidence (fail-closed:
+deleting on an outage would purge the index the moment CouchDB blinked), and each delete is a Solr
+`_version_` CAS against the version read at verification, so an archive RESTORE reusing the `_id`
+is never deleted over. Live drill: bedroom's 35 real orphans → dry-run 35/0/0 → confirm-less DELETE
+= 400 untouched → `confirm=true` deleted 35/skipped 0 → migration re-run 269 scanned / 269 already
+stamped → **verdict `COMPLETE`, remainingUnfenced 0** — the first clean bedroom verdict.
+
+**`poll()` re-checks the flag** (defence in depth): PropertyManager resolves system properties and
+ENV per read, so a runtime flip to OFF stops the sweep even though `start()` gated at boot.
+
+**Generation retirement, per the staged plan (rollback preserved through stage D):**
+
+| site | classification | stage |
+|---|---|---|
+| `SolrUtil.createSolrDocument` legacy stamp | ~~shared~~ → **OFF-only** (ON: fresh docs carry no `acl_index_generation`) | **C done** |
+| `SolrUtil.applyContentFence` PRESERVED copy | shared — preserve-only, both modes (rollback safety) | E |
+| `SolrUtil.applyContentFence` MISSING_ON_EXISTING removal | shared — never invents a value | E |
+| `SolrUtil.updateReadersFenced` (fence read + `{set}` write) | **OFF-only** — `@Deprecated`, ON-never-calls bound by `dispatch_flagONUsesTheEpochWriter…` | **B done** |
+| `SolrUtil.readVersionAndGeneration` @1018 | OFF-only (inside `updateReadersFenced`) | E |
+| `SolrUtil.readVersionAndGeneration` @518 | shared — the CONTENT writer's RTG; its ACL-group use is preserve-only | E |
+| `SolrUtil.readIndexedGeneration` | **zero external callers** — dead public reader | E (first to go) |
+| `ContentWriterFence` field list | shared — preserve-only | E |
+| Solr schema field | storage | E |
+
+**Stage D (done): the dev compose soaks with the wiring ON** (`ACL_EPOCH_WIRING_ENABLED=true` in
+`docker-compose-simple.yml`, overridable). Production composes are untouched; the per-deployment
+flip procedure stands.
+
+**Stage E criteria (NOT met — do not remove yet):** the flag has run ON in production long enough
+that the OFF rollback window is DECLARED closed by the operator; then delete `updateReadersFenced`
++ `readIndexedGeneration` + the OFF branch of the dispatch + the create-stamp else-branch, collapse
+the preserve to two fields, and drop the schema field with the next reindex-requiring release.
+
 ### Implementation progress
 
 - **Increment 10 — the repository-wide initial-epoch stamp (gate 2): DONE.**

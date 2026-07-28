@@ -81,6 +81,16 @@ public class SolrUtil implements ApplicationContextAware {
 	private final HashMap<String, String> map;
 
 	private PropertyManager propertyManager;
+
+	/** §11.8 flag, read per call (PropertyManager resolves sysprop → ENV → classpath each read). */
+	boolean epochWiringEnabled() {
+		try {
+			return propertyManager != null
+					&& propertyManager.readBoolean(PropertyKey.ACL_EPOCH_WIRING_ENABLED);
+		} catch (Exception e) {
+			return false; // unreadable configuration = OFF (the pre-epoch path)
+		}
+	}
 	private TypeService typeService;
 	private TextExtractionService textExtractionService;
 
@@ -979,6 +989,18 @@ public class SolrUtil implements ApplicationContextAware {
 	 * decides — a content doc absent from Solr needs a full index, where there is no
 	 * good value to clobber). Throws on a genuine Solr/ACL failure.
 	 */
+	/**
+	 * @deprecated OFF-ONLY since increment 12: with {@code acl.epoch.wiring.enabled=true} the ACL
+	 *             group is written exclusively by
+	 *             {@link jp.aegif.nemaki.epoch.AclEpochIndexWriter#writeAllowingBootstrap} and this
+	 *             generation fence is NEVER called — bound by
+	 *             {@code AclServiceImplEpochWiringTest.dispatch_flagONUsesTheEpochWriter_flagOFFUsesTheGenerationFence}
+	 *             ({@code verify(solrUtil, never()).updateReadersFenced(...)} under the flag).
+	 *             Kept verbatim for the OFF rollback path; scheduled for stage-E removal once the
+	 *             flag has soaked in production and the OFF rollback window is declared closed
+	 *             (design §11.12).
+	 */
+	@Deprecated
 	public ReadersUpdateResult updateReadersFenced(String repositoryId, Content content) throws Exception {
 		SolrClient solrClient = getSolrClient();
 		if (solrClient == null) {
@@ -1542,9 +1564,17 @@ public class SolrUtil implements ApplicationContextAware {
 		// move). The reconciliation re-drive reads this back before writing and skips
 		// its write when Solr already holds a STRICTLY-NEWER generation, so a slow
 		// stale re-drive cannot overwrite a concurrent applyAcl's fresher readers.
-		long aclGen = parseRevGeneration(content.getRevision());
-		if (aclGen > 0) {
-			doc.addField("acl_index_generation", aclGen);
+		// Stage C of the generation retirement (increment 13): with the epoch wiring ON, the ACL
+		// axis is ordered by effective_acl_epoch and this legacy stamp is never READ — so a fresh
+		// document simply does not get one. With the flag OFF everything is as before. Mixed
+		// period: the preserve path (applyContentFence) still COPIES an existing stored value in
+		// both modes, so rolling back to OFF finds either the old value (fence works as always) or
+		// no value (toLongOrDefault(...,0) → the next write proceeds) — both safe.
+		if (!epochWiringEnabled()) {
+			long aclGen = parseRevGeneration(content.getRevision());
+			if (aclGen > 0) {
+				doc.addField("acl_index_generation", aclGen);
+			}
 		}
 
 		if (log.isDebugEnabled()) {
