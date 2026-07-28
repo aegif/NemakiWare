@@ -1,6 +1,6 @@
 ---
 name: acl-epoch
-description: ACL-epoch fencing のコンテキスト。増分 14 で常時有効化 (flag 廃止・旧 pre-epoch 経路は削除済み)、増分の現在地、デプロイごとの reindex→migration→flip 手順、ブランチ運用と検証の作法。ACL-in-Solr / epoch / reconciliation キュー / fenced writer に触る、外部レビューに対応する、というときに読む。
+description: ACL-epoch fencing のコンテキスト。増分 14 で常時有効化 (flag 廃止・旧 pre-epoch 経路は削除済み)、増分の現在地、デプロイごとの reindex→migration 手順、ブランチ運用と検証の作法。ACL-in-Solr / epoch / reconciliation キュー / fenced writer に触る、外部レビューに対応する、というときに読む。
 ---
 
 # ACL-epoch fencing (進行中)

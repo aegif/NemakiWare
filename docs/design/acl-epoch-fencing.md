@@ -1049,10 +1049,10 @@ has no competing ACL-group writer to order against; the first real ACL-group wri
 fence (§11.3). Cost of the alternative (inline stamp per create = one authoritative ancestor walk
 per created object) is unacceptable for bulk import.
 
-Consequence, stated honestly: post-wiring, `remainingUnfenced` counts never-mutated fresh creates,
-so the migration endpoint's `INCOMPLETE` stops meaning "gate 2 unmet" once wiring is live. The
-migration verdict is a PRE-FLIP tool; its post-flip role is diagnostics. The endpoint note will say
-so once wiring lands.
+Consequence, stated honestly: with the wiring live, `remainingUnfenced` counts never-mutated fresh
+creates, so the migration endpoint's `INCOMPLETE` stops meaning "gate 2 unmet". The migration
+verdict is a DEPLOYMENT-TIME tool (run it right after the reindex, before the repository takes
+traffic); afterwards its role is diagnostics. Said so in the endpoint's own note.
 
 ### 11.6 Crash matrix
 
@@ -1076,18 +1076,18 @@ is ON**. Crash recovery must not depend on an operator noticing; the increment-1
 remains for on-demand sweeps. The reconcile poller itself is unchanged (already live, already
 handles quarantine blocks).
 
-### 11.8 Flag, rollout, rollback
+### 11.8 Rollout (the flag and rollback are GONE — §11.13)
 
 - ~~`acl.epoch.wiring.enabled`, default `false`~~ — the flag existed for increments 12–13 and was
   REMOVED in increment 14 (§11.13) along with the OFF path it guarded. ACL-epoch fencing is always
   on.
-- Flip procedure per deployment: deploy → mandatory full reindex → migration run
-  (`verdict` `COMPLETE`/`COMPLETE_EXCEPT_ORPHANS`) → flip → restart. Flipping without the migration
-  is degraded-but-convergent (every first ACL write bootstraps; a reconcile burst) — documented,
-  discouraged.
-- Rollback = flag off. Safe in both directions: the generation fence is conservative when the
-  stored generation is stale (preserved values are older than any live `_rev` generation), and the
-  epoch fields become inert data. Nothing needs cleaning to roll back.
+- Procedure per deployment: deploy → mandatory full reindex → migration run
+  (`verdict` `COMPLETE`/`COMPLETE_EXCEPT_ORPHANS`). Skipping the migration is
+  degraded-but-convergent (every first ACL write bootstraps; a reconcile burst) — documented,
+  discouraged. There is no third step: the fencing is on the moment the WAR is deployed.
+- ~~Rollback = flag off.~~ **There is no rollback path since increment 14** — the pre-epoch writer
+  was deleted. What remains true is that the epoch fields are inert data to anything that does not
+  read them, so downgrading to a pre-3.3 WAR needs no cleaning.
 
 ### 11.9 Verification plan (what "green" means for this increment)
 
@@ -1107,6 +1107,11 @@ handles quarantine blocks).
 
 ### 11.10 Decision points requiring sign-off
 
+> **SUPERSEDED BY INCREMENT 14 (§11.13) where the flag is concerned.** D1 and D4 below describe a
+> `acl.epoch.wiring.enabled` default and a flag-gated scheduler that no longer exist: the flag and
+> the pre-epoch path it selected were deleted, so the wiring is unconditional and the recovery
+> sweep always runs. D2/D3/D5/D6 stand as signed off. Kept as the increment-12 record.
+
 | # | decision | recommendation |
 |---|---|---|
 | D1 | flag default | `false` in 3.3.x; the flip is a per-deployment operational step |
@@ -1122,6 +1127,12 @@ markers pile at `RECONCILE_ENQUEUED` with a re-drive that cannot satisfy them.
 
 
 ### 11.11 As-built deviations and the live drill (increment 12 closure)
+
+> **SUPERSEDED BY INCREMENT 14 (§11.13) where the flag is concerned.** Everything below about
+> "the flip", "flag ON/OFF" and the `ACL_EPOCH_WIRING_ENABLED` ENV is the increment-12/13 record,
+> not current procedure. There is no flag and no flip: ACL-epoch fencing is always on, and the only
+> per-deployment step is full reindex → initial-epoch migration. The canonical current statements
+> are §11.13, `RELEASE_NOTES.md` and `CLAUDE.md`.
 
 Deviations from the proposal — each found by RUNNING it, and each recorded because the proposal's
 version was wrong in a way reasoning had not caught:
@@ -1152,7 +1163,11 @@ version was wrong in a way reasoning had not caught:
    `docker/core/nemakiware.properties` OVER the WAR's copy, and `PropertyManager.readValue` resolves
    system property → ENV VAR (`ACL_EPOCH_WIRING_ENABLED`) → classpath files. The per-deployment
    flip on Docker is therefore the ENV VAR (or the docker-side properties file), not the WAR's
-   defaults. Recorded in the flip runbook.
+   defaults. Recorded in the flip runbook. *(Increment 14: there is no flip; the ENV was removed
+   from the dev compose. The layering fact itself still holds for the other `acl.epoch.*` keys —
+   with the caveat found in the increment-14 drill that Spring's `propertyConfigurer` reads
+   `classpath:nemakiware.properties`, so editing `/usr/local/tomcat/conf/nemakiware.properties`
+   does NOT take effect for keys resolved through it.)*
 
 **Live drill (dev stack, flag ON, raw outputs in the session):**
 
@@ -1198,8 +1213,9 @@ is never deleted over. Live drill: bedroom's 35 real orphans → dry-run 35/0/0 
 = 400 untouched → `confirm=true` deleted 35/skipped 0 → migration re-run 269 scanned / 269 already
 stamped → **verdict `COMPLETE`, remainingUnfenced 0** — the first clean bedroom verdict.
 
-**`poll()` re-checks the flag** (defence in depth): PropertyManager resolves system properties and
-ENV per read, so a runtime flip to OFF stops the sweep even though `start()` gated at boot.
+~~**`poll()` re-checks the flag** (defence in depth): PropertyManager resolves system properties
+and ENV per read, so a runtime flip to OFF stops the sweep even though `start()` gated at boot.~~
+*(Increment 14: both gates are gone with the flag — the sweep always runs.)*
 
 **Generation retirement, per the staged plan (rollback preserved through stage D):**
 
@@ -1217,7 +1233,8 @@ ENV per read, so a runtime flip to OFF stops the sweep even though `start()` gat
 
 **Stage D (done): the dev compose soaks with the wiring ON** (`ACL_EPOCH_WIRING_ENABLED=true` in
 `docker-compose-simple.yml`, overridable). Production composes are untouched; the per-deployment
-flip procedure stands.
+flip procedure stands. *(Superseded by increment 14: the ENV is gone from the dev compose and there
+is no flip procedure left.)*
 
 ~~**Stage E criteria (NOT met — do not remove yet)**~~ — **DONE in increment 14** (§11.13). The
 criteria were met differently than anticipated: rather than a production soak declaring the window
