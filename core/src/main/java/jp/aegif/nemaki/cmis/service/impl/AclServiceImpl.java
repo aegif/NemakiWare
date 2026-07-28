@@ -791,6 +791,7 @@ public class AclServiceImpl implements AclService {
 		// async writer (gen=1) could overwrite a fresher reconcile write (gen=2) with no
 		// subsequent convergence event, leaving Solr permanently stale. Routing every
 		// ACL-only writer through updateReadersFenced makes the highest generation win.
+		@SuppressWarnings("deprecation") // the ONE legitimate caller: the flag-OFF rollback path
 		jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.ReadersUpdateResult result =
 				solrUtil.updateReadersFenced(repositoryId, content);
 		if (result == jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.ReadersUpdateResult.NOT_INDEXED) {

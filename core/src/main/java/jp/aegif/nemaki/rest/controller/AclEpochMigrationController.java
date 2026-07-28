@@ -41,6 +41,10 @@ public class AclEpochMigrationController {
     @Autowired
     private HttpServletRequest httpRequest;
 
+    // Setters so the confirm gate can be unit-tested without a Spring context.
+    public void setMigrationService(AclEpochMigrationService s) { this.migrationService = s; }
+    public void setHttpRequest(HttpServletRequest r) { this.httpRequest = r; }
+
     /**
      * Start the stamp for one repository (asynchronous). 409 if a run is already in flight for it —
      * concurrent runs are safe (every write is a {@code _version_} CAS) but would make the progress
@@ -105,8 +109,8 @@ public class AclEpochMigrationController {
             if (v == AclEpochMigrationService.Verdict.COMPLETE_EXCEPT_ORPHANS) {
                 body.put("note", remaining + " index entries have no CouchDB content (deleted objects "
                         + "whose Solr documents were left behind). They can never be stamped and can "
-                        + "never be the target of an ACL write, so they do not block wiring — clean "
-                        + "them up separately. This verdict is measured against the LAST run's "
+                        + "never be the target of an ACL write, so they do not block wiring — remove them with "
+                        + "DELETE .../migration/{repo}/orphans?confirm=true. This verdict is measured against the LAST run's "
                         + "skippedDeleted count, so if you remove some of those entries by hand the "
                         + "reading turns INCOMPLETE until you run the stamp again; that re-run is "
                         + "cheap (already-stamped documents are skipped without recomputation).");
@@ -127,6 +131,70 @@ public class AclEpochMigrationController {
             body.put("remainingUnfencedError", e.getMessage());
         }
         return ResponseEntity.ok(body);
+    }
+
+    /**
+     * DRY RUN: the orphaned index entries (unfenced Solr documents whose CouchDB content is a
+     * definitive 404) — the residual behind {@code COMPLETE_EXCEPT_ORPHANS}. Read-only.
+     */
+    @GetMapping("/{repositoryId}/orphans")
+    public ResponseEntity<?> orphans(@PathVariable String repositoryId,
+            @RequestParam(defaultValue = "1000") int limit) {
+        if (!isAdmin()) return forbidden();
+        if (migrationService == null) return unavailable();
+        try {
+            AclEpochMigrationService.OrphanScan scan = migrationService.scanOrphans(repositoryId, limit);
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("repositoryId", repositoryId);
+            body.put("verifiedOrphans", scan.verifiedOrphans.size());
+            body.put("unverifiable", scan.unverifiable);
+            body.put("liveUnfenced", scan.liveUnfenced);
+            body.put("orphanIds", scan.verifiedOrphans.stream()
+                    .map(AclEpochMigrationService.OrphanRef::getId).limit(50).toList());
+            body.put("hint", "DELETE /v1/admin/acl-epoch/migration/" + repositoryId
+                    + "/orphans?confirm=true removes the VERIFIED ones (each delete is a Solr "
+                    + "_version_ CAS, so a concurrently restored object is never deleted over)");
+            return ResponseEntity.ok(body);
+        } catch (IllegalArgumentException e) {
+            return error(HttpStatus.NOT_FOUND, e.getMessage());
+        } catch (jp.aegif.nemaki.epoch.AclEpochWiringException e) {
+            return error(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
+        }
+    }
+
+    /**
+     * DESTRUCTIVE: delete the verified orphans. Requires the EXPLICIT {@code ?confirm=true} —
+     * this endpoint removes index documents, and a URL an operator can paste by accident must not
+     * be able to do that. Without it, nothing is touched and the response says exactly what to
+     * run. Fail-closed per entry: only a definitive CouchDB 404 qualifies, and each delete is
+     * conditional on the {@code _version_} read during verification.
+     */
+    @DeleteMapping("/{repositoryId}/orphans")
+    public ResponseEntity<?> deleteOrphans(@PathVariable String repositoryId,
+            @RequestParam(defaultValue = "false") boolean confirm,
+            @RequestParam(defaultValue = "1000") int limit) {
+        if (!isAdmin()) return forbidden();
+        if (migrationService == null) return unavailable();
+        if (!confirm) {
+            return error(HttpStatus.BAD_REQUEST, "This DELETES index documents. Re-run with "
+                    + "?confirm=true after reviewing GET /v1/admin/acl-epoch/migration/"
+                    + repositoryId + "/orphans");
+        }
+        try {
+            AclEpochMigrationService.OrphanDeleteResult r =
+                    migrationService.deleteOrphans(repositoryId, limit);
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("repositoryId", repositoryId);
+            body.put("deleted", r.deleted);
+            body.put("skippedConcurrentlyChanged", r.skippedConcurrentlyChanged);
+            body.put("unverifiable", r.unverifiable);
+            body.put("liveUnfenced", r.liveUnfenced);
+            return ResponseEntity.ok(body);
+        } catch (IllegalArgumentException e) {
+            return error(HttpStatus.NOT_FOUND, e.getMessage());
+        } catch (jp.aegif.nemaki.epoch.AclEpochWiringException e) {
+            return error(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
+        }
     }
 
     // ── Internal ───────────────────────────────────────────────────

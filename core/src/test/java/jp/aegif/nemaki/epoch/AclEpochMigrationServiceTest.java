@@ -413,6 +413,111 @@ public class AclEpochMigrationServiceTest {
                 "zero remaining out of ten indexed is the real thing");
     }
 
+    // ── Increment 13: orphan verification is FAIL-CLOSED ───────────
+
+    private com.ibm.cloud.cloudant.v1.Cloudant couchFor(String... goneIds) {
+        var cloudant = mock(com.ibm.cloud.cloudant.v1.Cloudant.class,
+                org.mockito.Answers.RETURNS_DEEP_STUBS);
+        java.util.Set<String> gone = java.util.Set.of(goneIds);
+        lenient().when(cloudant.getDocument(any(
+                com.ibm.cloud.cloudant.v1.model.GetDocumentOptions.class)))
+            .thenAnswer(inv -> {
+                com.ibm.cloud.cloudant.v1.model.GetDocumentOptions o = inv.getArgument(0);
+                var call = mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+                if ("READ-ERROR".equals(o.docId())) {
+                    when(call.execute()).thenThrow(new RuntimeException("couch view timeout"));
+                } else if (gone.contains(o.docId())) {
+                    when(call.execute()).thenThrow(new com.ibm.cloud.sdk.core.service.exception
+                            .NotFoundException(mockResponse404()));
+                } else {
+                    when(call.execute()).thenReturn(mock(com.ibm.cloud.sdk.core.http.Response.class));
+                }
+                return call;
+            });
+        return cloudant;
+    }
+
+    private static okhttp3.Response mockResponse404() {
+        return new okhttp3.Response.Builder()
+                .request(new okhttp3.Request.Builder().url("http://x/").build())
+                .protocol(okhttp3.Protocol.HTTP_1_1).code(404).message("nf")
+                .body(okhttp3.ResponseBody.create("{}", okhttp3.MediaType.parse("application/json")))
+                .build();
+    }
+
+    private void wireCouch(com.ibm.cloud.cloudant.v1.Cloudant cloudant) {
+        var wrapper = mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        lenient().when(wrapper.getClient()).thenReturn(cloudant);
+        lenient().when(wrapper.getDatabaseName()).thenReturn("bedroom");
+        var pool = mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
+        lenient().when(pool.getClient("bedroom")).thenReturn(wrapper);
+        svc.setConnectorPool(pool);
+    }
+
+    private static SolrDocument unfencedDoc(String id, long version) {
+        SolrDocument d = new SolrDocument();
+        d.setField("id", id);
+        d.setField("_version_", version);
+        return d;
+    }
+
+    /**
+     * Only a DEFINITIVE CouchDB 404 qualifies an entry for deletion. A read ERROR is
+     * "unverifiable" and a live document is "liveUnfenced" — neither may ever be deleted on that
+     * evidence: deleting on an outage would purge the index of every object the moment CouchDB
+     * blinked.
+     */
+    @Test
+    public void orphanVerificationIsFAILCLOSED() {
+        wireCouch(couchFor("gone-1"));
+        pages.add(page(unfencedDoc("gone-1", 111L), unfencedDoc("live-1", 222L),
+                unfencedDoc("READ-ERROR", 333L)));
+
+        AclEpochMigrationService.OrphanScan scan = svc.scanOrphans("bedroom", 100);
+        assertEquals(1, scan.verifiedOrphans.size());
+        assertEquals("gone-1", scan.verifiedOrphans.get(0).getId());
+        assertEquals(1, scan.unverifiable, "a read ERROR is NOT absence");
+        assertEquals(1, scan.liveUnfenced, "existing content is NOT an orphan");
+    }
+
+    /** The scan only ever looks at UNFENCED entries — the fenced ones are not its business. */
+    @Test
+    public void theOrphanScanTargetsOnlyTheUnfencedPopulation() {
+        wireCouch(couchFor());
+        pages.add(page());
+        svc.scanOrphans("bedroom", 100);
+        String fq = String.join(" ", issued.get(0).getFilterQueries());
+        assertTrue(fq.contains("-effective_acl_epoch:[* TO *]"), fq);
+        assertTrue(fq.contains("-doc_type:[* TO *]"), "and never the RAG populations: " + fq);
+    }
+
+    /**
+     * Every delete is CONDITIONAL on the {@code _version_} read at verification: an entry that
+     * changed since (an archive RESTORE reusing the _id re-indexed it) must fail its CAS instead of
+     * being deleted over fresh content.
+     */
+    @Test
+    public void deletesCarryTheVerificationVersionAsACAS() throws Exception {
+        wireCouch(couchFor("gone-2"));
+        pages.add(page(unfencedDoc("gone-2", 777L)));
+        java.util.List<org.apache.solr.client.solrj.request.UpdateRequest> sent = new ArrayList<>();
+        when(solrClient.request(any(), any())).thenAnswer(inv -> {
+            Object r = inv.getArgument(0);
+            if (r instanceof org.apache.solr.client.solrj.request.UpdateRequest u) sent.add(u);
+            return new org.apache.solr.common.util.NamedList<>();
+        });
+
+        AclEpochMigrationService.OrphanDeleteResult r = svc.deleteOrphans("bedroom", 100);
+        assertEquals(1, r.deleted);
+        assertEquals(1, sent.size());
+        var byId = sent.get(0).getDeleteByIdMap();
+        assertNotNull(byId);
+        var params = byId.get("gone-2");
+        assertNotNull(params, "the delete must address gone-2");
+        assertEquals(777L, ((Number) params.get("ver")).longValue(),
+                "the delete must be a _version_ CAS, not an unconditional delete");
+    }
+
     /**
      * The remaining-unfenced count is an INDEPENDENT check read from Solr, not a restatement of the
      * run's counters — a run that reported COMPLETED while skipping documents must still show a

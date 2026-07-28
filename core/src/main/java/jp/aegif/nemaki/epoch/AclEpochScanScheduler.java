@@ -98,6 +98,12 @@ public class AclEpochScanScheduler {
 
     /** Package-private for the unit test. */
     void poll() {
+        if (!wiringEnabled()) {
+            // Defence in depth on top of start()'s gate: PropertyManager resolves system
+            // properties and ENV on every read, so a deployment that flips the flag OFF at
+            // runtime (or a future caller invoking poll() directly) must not keep sweeping.
+            return;
+        }
         if (leaderElection != null && leaderElection.isEnabled() && !leaderElection.isLeader(LEADER_ROLE)) {
             return; // only the leader sweeps the shared outbox
         }

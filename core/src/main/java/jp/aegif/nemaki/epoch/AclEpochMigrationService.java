@@ -76,12 +76,17 @@ public class AclEpochMigrationService {
     private SolrUtil solrUtil;
     private PrincipalService principalService;
     private jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repositoryInfoMap;
+    private jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool connectorPool;
 
     public void setIndexWriter(AclEpochIndexWriter indexWriter) { this.indexWriter = indexWriter; }
     public void setSolrUtil(SolrUtil solrUtil) { this.solrUtil = solrUtil; }
     public void setPrincipalService(PrincipalService principalService) { this.principalService = principalService; }
     public void setRepositoryInfoMap(jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap m) {
         this.repositoryInfoMap = m;
+    }
+
+    public void setConnectorPool(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool p) {
+        this.connectorPool = p;
     }
 
     private final Map<String, Progress> runs = new ConcurrentHashMap<>();
@@ -415,6 +420,155 @@ public class AclEpochMigrationService {
             }
             logger.warn("ACL-epoch stamp failed for {}/{}: {}", repositoryId, objectId, e.getMessage());
         }
+    }
+
+    /** One orphan candidate: an unfenced index entry whose CouchDB content is definitively gone. */
+    public static final class OrphanRef {
+        public final String id;
+        public final Long solrVersion;
+        OrphanRef(String id, Long solrVersion) { this.id = id; this.solrVersion = solrVersion; }
+        public String getId() { return id; }
+    }
+
+    /** Dry-run result of an orphan scan. */
+    public static final class OrphanScan {
+        public final java.util.List<OrphanRef> verifiedOrphans;
+        /** Entries whose CouchDB read ERRORED (not 404) — NEVER deletable on this evidence. */
+        public final int unverifiable;
+        /** Unfenced entries whose content EXISTS (not orphans — the migration simply has not covered them). */
+        public final int liveUnfenced;
+        OrphanScan(java.util.List<OrphanRef> v, int u, int l) {
+            this.verifiedOrphans = java.util.Collections.unmodifiableList(v);
+            this.unverifiable = u;
+            this.liveUnfenced = l;
+        }
+    }
+
+    /**
+     * Find the ORPHANED index entries: UNFENCED CMIS-population Solr documents whose CouchDB
+     * content is a definitive 404 (increment 13; the residual behind
+     * {@code COMPLETE_EXCEPT_ORPHANS}).
+     *
+     * <p>Scoped to the UNFENCED set on purpose: that is the population that keeps
+     * {@code remainingUnfenced} above zero for ever, and probing every document in a large
+     * repository would be one CouchDB GET per indexed object. FAIL-CLOSED per entry: only a
+     * {@code NotFoundException} counts as gone — any other read outcome is {@code unverifiable}
+     * and is never deleted on that evidence.
+     */
+    public OrphanScan scanOrphans(String repositoryId, int limit) {
+        requireKnownRepository(repositoryId);
+        requireWiring();
+        if (connectorPool == null) {
+            throw new AclEpochWiringException("connectorPool not wired on AclEpochMigrationService "
+                    + "— orphan verification needs an authoritative CouchDB read");
+        }
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper couch =
+                connectorPool.getClient(repositoryId);
+        if (couch == null) {
+            throw new AclEpochWiringException("content DB client not available for '" + repositoryId + "'");
+        }
+        SolrClient client = solrClient();
+        int capped = Math.min(Math.max(1, limit), 5000);
+        java.util.List<OrphanRef> verified = new ArrayList<>();
+        int unverifiable = 0, live = 0;
+        String cursor = org.apache.solr.common.params.CursorMarkParams.CURSOR_MARK_START;
+        int examined = 0;
+        while (examined < capped) {
+            SolrQuery q = new SolrQuery("*:*");
+            q.addFilterQuery(cmisObjectFilter(repositoryId));
+            q.addFilterQuery("-" + AclEpochIndexWriter.FIELD_EFFECTIVE_EPOCH + ":[* TO *]");
+            q.setSort("id", SolrQuery.ORDER.asc);
+            q.setFields("id", "_version_");
+            q.setRows(Math.min(PAGE_SIZE, capped - examined));
+            q.set(org.apache.solr.common.params.CursorMarkParams.CURSOR_MARK_PARAM, cursor);
+            QueryResponse resp;
+            try {
+                resp = client.query(q);
+            } catch (Exception e) {
+                throw new IllegalStateException("orphan scan query failed for '" + repositoryId
+                        + "': " + e.getMessage(), e);
+            }
+            for (SolrDocument d : resp.getResults()) {
+                examined++;
+                String id = String.valueOf(d.getFieldValue("id"));
+                Object v = d.getFieldValue("_version_");
+                Long version = (v instanceof Number) ? ((Number) v).longValue() : null;
+                try {
+                    couch.getClient().getDocument(
+                            new com.ibm.cloud.cloudant.v1.model.GetDocumentOptions.Builder()
+                                    .db(couch.getDatabaseName()).docId(id).build()).execute();
+                    live++; // content exists — NOT an orphan
+                } catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException nf) {
+                    verified.add(new OrphanRef(id, version)); // definitively gone
+                } catch (RuntimeException e) {
+                    unverifiable++; // read ERROR ≠ absence — fail closed
+                }
+                if (examined >= capped) {
+                    break;
+                }
+            }
+            String next = resp.getNextCursorMark();
+            if (next == null || next.equals(cursor) || resp.getResults().isEmpty()) {
+                break;
+            }
+            cursor = next;
+        }
+        return new OrphanScan(verified, unverifiable, live);
+    }
+
+    /** Result of an orphan deletion pass. */
+    public static final class OrphanDeleteResult {
+        public final int deleted;
+        public final int skippedConcurrentlyChanged;
+        public final int unverifiable;
+        public final int liveUnfenced;
+        OrphanDeleteResult(int d, int s, int u, int l) {
+            this.deleted = d; this.skippedConcurrentlyChanged = s;
+            this.unverifiable = u; this.liveUnfenced = l;
+        }
+    }
+
+    /**
+     * DELETE the verified orphans (increment 13). DESTRUCTIVE — the controller demands
+     * {@code ?confirm=true}; this method assumes that gate has been passed.
+     *
+     * <p>Each delete is conditional on the {@code _version_} read during the scan: an entry that
+     * changed since (e.g. an archive RESTORE reusing the {@code _id} re-indexed it) fails its CAS
+     * and is skipped, never deleted over fresh content. Deleting an index entry has no
+     * authorization effect in either direction — absence from the index is fail-closed — so the
+     * worst outcome of any residual race is a missing search hit until the object's next write.
+     */
+    public OrphanDeleteResult deleteOrphans(String repositoryId, int limit) {
+        OrphanScan scan = scanOrphans(repositoryId, limit);
+        SolrClient client = solrClient();
+        int deleted = 0, skipped = 0;
+        for (OrphanRef ref : scan.verifiedOrphans) {
+            try {
+                org.apache.solr.client.solrj.request.UpdateRequest req =
+                        new org.apache.solr.client.solrj.request.UpdateRequest();
+                if (ref.solrVersion != null) {
+                    req.deleteById(ref.id, ref.solrVersion);
+                } else {
+                    req.deleteById(ref.id);
+                }
+                req.process(client);
+                deleted++;
+            } catch (Exception e) {
+                // A version conflict (concurrent re-index) or a transient failure — skipped, not
+                // retried here: re-running the endpoint is the retry.
+                skipped++;
+                logger.info("orphan delete skipped for {} ({})", ref.id, e.getMessage());
+            }
+        }
+        if (deleted > 0) {
+            try {
+                client.commit(false, false, true); // soft commit: the status counts tell the truth
+            } catch (Exception e) {
+                logger.warn("orphan delete soft commit failed ({}); autoSoftCommit will catch up",
+                        e.getMessage());
+            }
+        }
+        return new OrphanDeleteResult(deleted, skipped, scan.unverifiable, scan.liveUnfenced);
     }
 
     /**

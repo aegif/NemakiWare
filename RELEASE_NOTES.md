@@ -87,6 +87,14 @@ Also fixed while plumbing this: an ordinary update (rename, property edit) used 
 `content_incarnation` on every write because the model never carried it — each update silently
 started a new content "lifetime" for the content fence. Updates now round-trip it verbatim.
 
+### New admin API: orphaned index entries (dry-run + confirmed delete)
+
+`GET /api/v1/admin/acl-epoch/migration/{repo}/orphans` lists index entries whose CouchDB content is
+definitively gone (the residual behind `COMPLETE_EXCEPT_ORPHANS`); `DELETE` on the same path with
+the **mandatory `?confirm=true`** removes the verified ones. Verification is fail-closed — only a
+definitive 404 qualifies, a read error never does — and every delete is a Solr `_version_` CAS, so
+a concurrently restored object is never deleted over. Admin-gated and CSRF-protected.
+
 ### New admin API: initial ACL-epoch stamp (run it AFTER the full reindex)
 
 `POST /api/v1/admin/acl-epoch/migration/{repositoryId}` stamps the initial `effective_acl_epoch` on

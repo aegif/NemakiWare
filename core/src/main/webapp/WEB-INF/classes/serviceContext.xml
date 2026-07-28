@@ -503,6 +503,9 @@
         <!-- The principal resolver is built from this via ACLExpander.principalResolver, so the
              migration and the RAG token layer share ONE binding of the tri-state lookups. -->
         <property name="principalService" ref="principalService" />
+        <!-- Orphan verification (increment 13): only a definitive CouchDB 404 qualifies an index
+             entry for deletion, which needs an authoritative read. -->
+        <property name="connectorPool" ref="connectorPool" />
     </bean>
 
     <!-- ACL-epoch crash-recovery sweep (design §11.7, increment 12). Leader-gated like the

@@ -59,8 +59,22 @@ public class AclEpochScanSchedulerTest {
         scheduler.stop();
     }
 
+    /**
+     * Increment 13 defence-in-depth: poll() re-checks the flag on EVERY cycle. PropertyManager
+     * resolves system properties and ENV per read, so a runtime flip to OFF must stop the sweep —
+     * start()'s gate alone would keep a booted scheduler sweeping for ever.
+     */
+    @Test
+    public void pollItselfReChecksTheFlag() {
+        when(pm.readBoolean(PropertyKey.ACL_EPOCH_WIRING_ENABLED)).thenReturn(false);
+        when(leader.isEnabled()).thenReturn(false);
+        scheduler.poll();
+        verify(fin, never()).scan(anyString(), anyInt());
+    }
+
     @Test
     public void aNonLeaderNeverSweeps() {
+        when(pm.readBoolean(PropertyKey.ACL_EPOCH_WIRING_ENABLED)).thenReturn(true);
         when(leader.isEnabled()).thenReturn(true);
         when(leader.isLeader(anyString())).thenReturn(false);
         scheduler.poll();
@@ -69,6 +83,7 @@ public class AclEpochScanSchedulerTest {
 
     @Test
     public void theLeaderSweepsEveryMainRepository() {
+        when(pm.readBoolean(PropertyKey.ACL_EPOCH_WIRING_ENABLED)).thenReturn(true);
         when(leader.isEnabled()).thenReturn(true);
         when(leader.isLeader(anyString())).thenReturn(true);
         scheduler.poll();
@@ -79,6 +94,7 @@ public class AclEpochScanSchedulerTest {
     /** One broken repository must not stop the sweep of the others. */
     @Test
     public void perRepositoryIsolation() {
+        when(pm.readBoolean(PropertyKey.ACL_EPOCH_WIRING_ENABLED)).thenReturn(true);
         when(leader.isEnabled()).thenReturn(false);
         when(fin.scan("bedroom", 500)).thenThrow(new AclEpochWiringException("db gone"));
         scheduler.poll();
@@ -87,6 +103,7 @@ public class AclEpochScanSchedulerTest {
 
     @Test
     public void sweepCountsAreReadFromTheSummary() {
+        when(pm.readBoolean(PropertyKey.ACL_EPOCH_WIRING_ENABLED)).thenReturn(true);
         when(leader.isEnabled()).thenReturn(false);
         AclEpochFinalizationService.ScanSummary s = new AclEpochFinalizationService.ScanSummary();
         s.scanned = 3; s.finalized = 1; s.acked = 1;
