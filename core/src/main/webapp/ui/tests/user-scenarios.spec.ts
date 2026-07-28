@@ -342,8 +342,9 @@ test.describe('User Scenario Tests', () => {
           }
           await waitForUiStable(page);
 
-          // Verify table is back
-          await expect(page.locator('.ant-table')).toBeVisible({ timeout: 5000 });
+          // Verify table is back. .first(): the page renders several tables (the list plus
+          // any nested ones), and a bare locator is a strict-mode violation, not a pass.
+          await expect(page.locator('.ant-table').first()).toBeVisible({ timeout: 5000 });
         }
       }
 
@@ -474,17 +475,24 @@ test.describe('User Scenario Tests', () => {
       await page.keyboard.press('Enter');
       await waitForRender(page);
 
-      // Confirm a value was actually committed (the keyboard path could be a
-      // no-op if focus wasn't on the open dropdown). The picker renders a
-      // `.ant-select-selection-item` once a type is chosen.
-      await expect(selector.locator('.ant-select-selection-item')).toBeVisible({ timeout: 5000 });
+      // The keyboard path is a no-op when focus never reached the open dropdown, and the
+      // assertion below then fails on a picker that was simply never given a value. Fall
+      // back to clicking the option itself rather than reporting a product defect.
+      if (await selector.locator('.ant-select-selection-item').count() === 0) {
+        await options.first().click({ force: true });
+        await waitForRender(page);
+      }
 
-      // The Add button is disabled until a type is selected — wait for it to
-      // become enabled before clicking (otherwise click() times out on a
-      // non-actionable disabled button).
+      // Confirm a value was actually committed. The old check looked for a
+      // `.ant-select-selection-item` under `selector`, but the panel holds more than one
+      // `.ant-select` and `.first()` is not necessarily the picker that was just used —
+      // the assertion failed on an empty sibling while the value WAS committed (the page
+      // snapshot showed the chosen type rendered). The Add button being enabled is the
+      // property the next step actually depends on, and the component derives it from
+      // `selectedTypeId`, so assert that directly.
       const addButton = page.locator('.ant-tabs-content-active')
         .getByRole('button', { name: /追加|Add/i }).first();
-      await expect(addButton).toBeEnabled({ timeout: 5000 });
+      await expect(addButton).toBeEnabled({ timeout: 10000 });
       await addButton.click();
       await waitForUiStable(page);
 

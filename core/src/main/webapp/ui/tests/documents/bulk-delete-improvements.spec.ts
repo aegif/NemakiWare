@@ -469,12 +469,10 @@ test.describe('Bulk Delete Improvements', () => {
     }
 
     // Look for bulk delete button
-    const bulkDeleteButton = page.locator('button').filter({
-      or: [
-        { hasText: '一括削除' },
-        { has: page.locator('.anticon-delete, [aria-label="delete"]') }
-      ]
-    });
+    // filter({or: [...]}) is not a Playwright option — it was ignored, so this matched
+    // every button on the page.
+    const bulkDeleteButton = page.locator('button').filter({ hasText: '一括削除' })
+      .or(page.locator('button').filter({ has: page.locator('.anticon-delete, [aria-label="delete"]') }));
 
     if (await bulkDeleteButton.count() === 0) {
       test.skip(true, 'ENV: Bulk delete button not found');

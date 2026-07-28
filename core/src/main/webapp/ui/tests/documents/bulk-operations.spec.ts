@@ -324,16 +324,10 @@ test.describe('Bulk Operations', () => {
     }
 
     // Verify action buttons are enabled (delete, move, copy)
-    const bulkActionButtons = page.locator('button').filter({
-      or: [
-        { hasText: '削除' },
-        { hasText: '移動' },
-        { hasText: 'コピー' },
-        { hasText: 'Delete' },
-        { hasText: 'Move' },
-        { hasText: 'Copy' }
-      ]
-    });
+    // filter({or: [...]}) is not a Playwright option — it was ignored, so this matched
+    // every button on the page and asserted nothing about bulk actions.
+    const bulkActionButtons = page.locator('button')
+      .filter({ hasText: /削除|移動|コピー|Delete|Move|Copy/ });
 
     if (await bulkActionButtons.count() > 0) {
       const firstActionButton = bulkActionButtons.first();

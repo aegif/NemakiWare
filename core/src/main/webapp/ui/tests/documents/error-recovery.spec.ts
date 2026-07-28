@@ -377,13 +377,9 @@ test.describe('Error Recovery Tests', () => {
     await expect(errorMessage.first()).toBeVisible({ timeout: 10000 });
 
     // Look for retry button or option
-    const retryButton = page.locator('button').filter({
-      or: [
-        { hasText: '再試行' },
-        { hasText: 'Retry' },
-        { hasText: 'もう一度' }
-      ]
-    });
+    // Playwright's filter() has no `or` option — an unknown key is silently ignored, so
+    // the old form matched EVERY button on the page and `count() > 0` was always true.
+    const retryButton = page.getByRole('button', { name: /再試行|Retry|もう一度/ });
 
     if (await retryButton.count() > 0) {
       // If retry button exists, click it
@@ -510,12 +506,9 @@ test.describe('Error Recovery Tests', () => {
 
       if (await documentRow.count() > 0) {
         // Look for delete button
-        const deleteButton = documentRow.locator('button, a').filter({
-          or: [
-            { hasText: '削除' },
-            { hasText: 'Delete' }
-          ]
-        });
+        // filter({or: [...]}) is not a Playwright option; it matched every control in the
+        // row, so `.first()` clicked whatever came first — usually the name link.
+        const deleteButton = documentRow.locator('button, a').filter({ hasText: /削除|Delete/ });
 
         if (await deleteButton.count() > 0) {
           await deleteButton.first().click(isMobile ? { force: true } : {});

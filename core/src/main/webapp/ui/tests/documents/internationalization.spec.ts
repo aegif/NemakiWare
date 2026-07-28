@@ -468,6 +468,12 @@ test.describe('Internationalization Tests', () => {
           page.waitForSelector('.ant-message-success', { timeout: 15000 }),
           page.waitForTimeout(5000),
         ]);
+        // The race above can win on the 5s timer while the dialog still says
+        // "アップロード中...". Everything after this looks for a properties modal, and an
+        // upload dialog still on screen is both the wrong container and a mask over the
+        // row the test wants to click. Wait for it to actually go away.
+        await page.locator('.ant-modal-wrap:visible').first()
+          .waitFor({ state: 'hidden', timeout: 30000 }).catch(() => undefined);
         uploadSuccess = true;
       }
     } catch {
@@ -511,25 +517,21 @@ test.describe('Internationalization Tests', () => {
     }
     await expect(documentRow).toBeVisible({ timeout: 10000 });
 
-    // Look for properties/info button
-    const propertiesButton = documentRow.locator('button, a').filter({
-      or: [
-        { hasText: 'プロパティ' },
-        { hasText: '詳細' },
-        { hasText: 'Properties' }
-      ]
-    });
+    // Open the document's detail view. The row's action controls are icon-only, so there
+    // is no "プロパティ"/"詳細" text to match; the name itself is the link that opens the
+    // viewer. (The previous locator used filter({or: [...]}), which is not a Playwright
+    // option: the key was ignored, the filter matched all eight controls in the row, and
+    // .first() clicked the name link anyway — while the assertion still looked for a modal
+    // that this path never opens.)
+    const detailLink = documentRow.locator('button.ant-btn-link').first();
 
-    if (await propertiesButton.count() > 0) {
-      await propertiesButton.first().click(isMobile ? { force: true } : {});
-      await waitForRender(page);
+    if (await detailLink.count() > 0) {
+      await detailLink.click(isMobile ? { force: true } : {});
+      await waitForUiStable(page);
 
-      // Verify Unicode characters in properties modal/drawer
-      const propertiesContainer = page.locator('.ant-modal, .ant-drawer');
-      if (await propertiesContainer.count() > 0) {
-        // Check cmis:name property contains correct Unicode characters
-        await expect(propertiesContainer).toContainText('特殊文字テスト');
-      }
+      // The detail view must render the name with its multibyte characters intact.
+      await expect(page.getByText('特殊文字テスト', { exact: false }).first())
+        .toBeVisible({ timeout: 15000 });
     } else {
       // If properties button not found, verify via CMIS API directly
       const queryResponse = await page.request.get(
@@ -779,7 +781,9 @@ test.describe('Internationalization Tests', () => {
       return;
     }
 
-    const nameInput = page.locator('.ant-modal input[type="text"], .ant-modal input[id*="name"]');
+    // .first(): the upload modal has more than one text input, and a bare locator here
+    // is a strict-mode violation rather than a passing test.
+    const nameInput = page.locator('.ant-modal input[type="text"], .ant-modal input[id*="name"]').first();
     if (await nameInput.count() > 0) {
       await nameInput.fill(veryLongName);
 

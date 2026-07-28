@@ -188,21 +188,11 @@ test.describe('CMIS API 404 Error Handling', () => {
     const doc404Name = `cmis-404-test-${Date.now()}.txt`;
     const doc404Id = await apiHelper.createDocument({ name: doc404Name, content: 'content for the 404 handling test' });
 
-    // NOTE: Route interception is set up AFTER login to avoid intercepting folder requests
-    // Navigate to login page FIRST
-    await page.goto('http://localhost:8080/core/ui/index.html');
-    await waitForRender(page);
-
-    // Login as admin
-    const repositorySelect = page.locator('.ant-select-selector').first();
-    await repositorySelect.click();
-    await waitForRender(page);
-    await page.locator('.ant-select-item-option:has-text("bedroom")').click();
-    await waitForRender(page);
-
-    await page.locator('input[placeholder*="ユーザー名"]').fill('admin');
-    await page.locator('input[placeholder*="パスワード"]').fill('admin');
-    await page.locator('button[type="submit"]').click();
+    // NOTE: Route interception is set up AFTER login to avoid intercepting folder requests.
+    // AuthHelper, not an inline copy of the login form: a worker that already holds a
+    // session is redirected straight to /documents, so there is no .ant-select-selector
+    // to click and the test burns 30s before failing on something it is not about.
+    await new AuthHelper(page).login();
 
     // Wait for navigation and UI initialization (longer timeout for webkit/tablet)
     await waitForUiStable(page, { timeout: 15000 });

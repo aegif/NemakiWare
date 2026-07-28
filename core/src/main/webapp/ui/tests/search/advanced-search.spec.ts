@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { gotoSearchPage, searchPageSubmitButton, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 
 // NOTE: no afterAll cleanup here. The PDFs this spec ensures exist
 // (CMIS-v1.1-Specification-Sample.pdf / 日本語ドキュメント.pdf) are SHARED search
@@ -296,13 +296,10 @@ test.describe('Advanced Search', () => {
     testHelper = new TestHelper(page);
     await authHelper.login();
 
-    // Navigate to search page - wait for menu to be ready first
-    await page.waitForSelector('.ant-menu-item:has-text("検索")', { timeout: 15000 });
-    const searchMenu = page.locator('.ant-menu-item:has-text("検索")');
-    await searchMenu.click();
-
-    // Wait for search page to load with search input visible
-    await page.waitForSelector('input[placeholder*="検索"], input[placeholder*="search"], .ant-input-search input', { timeout: 15000 });
+    // The old wait was for a search INPUT, which both the document list and the search
+    // page have — it was satisfied before the navigation finished. gotoSearchPage waits
+    // for the search page's own submit button and for the document list's to be detached.
+    await gotoSearchPage(page);
 
     await testHelper.closeMobileSidebar(browserName);
   });
@@ -336,7 +333,7 @@ test.describe('Advanced Search', () => {
       await searchInput.first().fill('test');
 
       // Look for search button
-      const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search"), .ant-input-search-button');
+      const searchButton = searchPageSubmitButton(page);
 
       if (await searchButton.count() > 0) {
         await searchButton.first().click(isMobile ? { force: true } : {});
@@ -390,7 +387,7 @@ test.describe('Advanced Search', () => {
     if (await searchInput.count() > 0) {
       await searchInput.first().fill('test-search-query');
 
-      const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+      const searchButton = searchPageSubmitButton(page);
       if (await searchButton.count() > 0) {
         await searchButton.first().click(isMobile ? { force: true } : {});
       } else {
@@ -431,7 +428,7 @@ test.describe('Advanced Search', () => {
     if (await searchInput.count() > 0) {
       await searchInput.first().fill('test');
 
-      const searchButton = page.locator('button:has-text("検索")');
+      const searchButton = searchPageSubmitButton(page);
       if (await searchButton.count() > 0) {
         await searchButton.first().click();
         await waitForUiStable(page);
@@ -502,7 +499,7 @@ test.describe('Advanced Search', () => {
     console.log(`✅ Search keyword entered: "${inputValueBefore}"`);
 
     // Execute search
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.first().click(isMobile ? { force: true } : {});
     } else {
@@ -576,7 +573,7 @@ test.describe('Advanced Search', () => {
 
     await searchInput.first().fill('Specification'); // Matches PDF filename
 
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.first().click(isMobile ? { force: true } : {});
     } else {
@@ -647,7 +644,7 @@ test.describe('Advanced Search', () => {
 
     await searchInput.first().fill('xyznonexistentkeywordxyz');
 
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.first().click(isMobile ? { force: true } : {});
     } else {
@@ -696,7 +693,7 @@ test.describe('Advanced Search', () => {
 
     await searchInput.first().fill('CMIS-v1.1-Specification');
 
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.first().click(isMobile ? { force: true } : {});
     } else {
@@ -840,7 +837,7 @@ test.describe('Advanced Search', () => {
     // Test filename search without extension
     await searchInput.first().fill('CMIS-v1.1-Specification-Sample');
 
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.first().click(isMobile ? { force: true } : {});
     } else {
@@ -992,7 +989,7 @@ test.describe('Advanced Search', () => {
     // "CMIS" or "Specification" should match the CMIS-v1.1-Specification-Sample.pdf filename
     await searchInput.first().fill('Specification');
 
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.first().click(isMobile ? { force: true } : {});
     } else {
@@ -1059,7 +1056,7 @@ test.describe('Advanced Search', () => {
     // Search for a keyword
     await searchInput.first().fill('repository');
 
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.first().click(isMobile ? { force: true } : {});
     } else {
@@ -1104,7 +1101,7 @@ test.describe('Advanced Search', () => {
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
     await expect(searchInput.first()).toBeVisible({ timeout: 10000 });
 
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    const searchButton = searchPageSubmitButton(page);
 
     // Look for any Japanese PDF in results (filename pattern: contains Japanese characters)
     // This regex matches common Japanese characters (Hiragana, Katakana, Kanji) followed by .pdf

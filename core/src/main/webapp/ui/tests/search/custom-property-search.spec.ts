@@ -16,7 +16,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { gotoSearchPage, searchPageSubmitButton, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 
@@ -37,16 +37,9 @@ test.describe('Custom Property Search Functionality', () => {
     // Mobile sidebar close logic (if needed)
     await testHelper.closeMobileSidebar(browserName);
 
-    // Navigate to search page
-    const searchMenu = page.locator('.ant-menu-item:has-text("検索")');
-    if (await searchMenu.count() > 0) {
-      await searchMenu.click();
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
-    } else {
-      // Fallback: Navigate directly to search page
-      await page.goto('http://localhost:8080/core/ui/#/search');
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
-    }
+    // Navigate to search page and wait for it to own the DOM (the document list's own
+    // search button lingers for a few dozen ms and used to be what these tests clicked).
+    await gotoSearchPage(page);
   });
 
   test('should display type selector dropdown', async ({ page }) => {
@@ -189,7 +182,7 @@ test.describe('Custom Property Search Functionality', () => {
     }
 
     // Click search button
-    const searchButton = page.locator('button.search-button').first();
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
       await waitForUiStable(page);
@@ -227,7 +220,7 @@ test.describe('Custom Property Search Functionality', () => {
     }
 
     // Click search button
-    const searchButton = page.locator('button.search-button').first();
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
       await waitForUiStable(page);
@@ -371,7 +364,7 @@ test.describe('Custom Property Search Functionality', () => {
     }
 
     // Click search button
-    const searchButton = page.locator('button.search-button').first();
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
       await waitForUiStable(page);
@@ -412,7 +405,7 @@ test.describe('Custom Property Search Functionality', () => {
     }
 
     // Click search button
-    const searchButton = page.locator('button.search-button').first();
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
       await waitForUiStable(page);
@@ -458,15 +451,7 @@ test.describe('Custom Property Range Search', () => {
     // Mobile sidebar handling
     await testHelper.closeMobileSidebar(browserName);
 
-    // Navigate to search page
-    const searchMenu = page.locator('.ant-menu-item:has-text("検索")');
-    if (await searchMenu.count() > 0) {
-      await searchMenu.click();
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
-    } else {
-      await page.goto('http://localhost:8080/core/ui/#/search');
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
-    }
+    await gotoSearchPage(page);
   });
 
   test('should verify creationDate property exists in search results', async ({ page, browserName }) => {
@@ -479,7 +464,7 @@ test.describe('Custom Property Range Search', () => {
       await searchInput.fill('CMIS');
     }
 
-    const searchButton = page.locator('button.search-button').first();
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
       await waitForUiStable(page);
@@ -509,7 +494,7 @@ test.describe('Custom Property Range Search', () => {
       await searchInput.fill('Sites');
     }
 
-    const searchButton = page.locator('button.search-button').first();
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
       await waitForUiStable(page);
@@ -678,7 +663,7 @@ test.describe('Custom Property Range Search', () => {
       await searchInput.fill('CMIS Specification');
     }
 
-    const searchButton = page.locator('button.search-button').first();
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
       await waitForUiStable(page);
@@ -717,15 +702,7 @@ test.describe('Custom Property Input Types', () => {
     // Mobile sidebar handling
     await testHelper.closeMobileSidebar(browserName);
 
-    // Navigate to search page
-    const searchMenu = page.locator('.ant-menu-item:has-text("検索")');
-    if (await searchMenu.count() > 0) {
-      await searchMenu.click();
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
-    } else {
-      await page.goto('http://localhost:8080/core/ui/#/search');
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
-    }
+    await gotoSearchPage(page);
   });
 
   test('should identify Input component for string properties', async ({ page }) => {

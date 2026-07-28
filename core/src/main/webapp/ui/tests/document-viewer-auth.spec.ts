@@ -171,20 +171,11 @@ test.describe('Document Viewer Authentication', () => {
       console.log('PAGE ERROR:', error.message);
     });
 
-    // Navigate to login page
-    await page.goto('http://localhost:8080/core/ui/index.html');
-    await waitForRender(page);
-
-    // Login as admin
-    const repositorySelect = page.locator('.ant-select-selector').first();
-    await repositorySelect.click();
-    await waitForRender(page);
-    await page.locator('.ant-select-item-option:has-text("bedroom")').click();
-    await waitForRender(page);
-
-    await page.locator('input[placeholder*="ユーザー名"]').fill('admin');
-    await page.locator('input[placeholder*="パスワード"]').fill('admin');
-    await page.locator('button[type="submit"]').click();
+    // AuthHelper, not an inline copy of the login form. The inline version assumed the
+    // login page would render, but a worker that already holds a session is redirected
+    // straight to /documents — there is no .ant-select-selector to click, and the test
+    // spends 30s waiting for one before failing on something unrelated to its subject.
+    await new AuthHelper(page).login();
 
     // Wait for navigation and UI initialization
     await waitForUiStable(page, { timeout: 15000 });
