@@ -35,9 +35,9 @@ import java.util.concurrent.Executors;
  *
  * <p><b>Run it AFTER the mandatory v3.3.0 full reindex.</b> The reindex rebuilds documents through
  * the content writer, whose fence PRESERVES whatever ACL group Solr already holds — and on a
- * freshly-rebuilt index there is nothing to preserve, so {@code readers} and
- * {@code acl_index_generation} are stamped by that writer while {@code effective_acl_epoch}, which
- * only ever comes from {@link AclEpochIndexWriter}, is left absent. Running the stamp first and
+ * freshly-rebuilt index there is nothing to preserve, so {@code readers} is stamped by that writer
+ * while {@code effective_acl_epoch}, which only ever comes from {@link AclEpochIndexWriter}, is
+ * left absent. Running the stamp first and
  * reindexing after would therefore discard the whole migration.
  *
  * <h3>Scope: CMIS objects only</h3>

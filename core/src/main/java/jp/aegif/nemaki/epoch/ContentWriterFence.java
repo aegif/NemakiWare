@@ -100,12 +100,15 @@ public final class ContentWriterFence {
      * ACL axis has its own writer, its own fence and its own CAS, and a content write must not be a
      * second opinion on it.
      *
-     * <p><b>The group is THREE fields, not one.</b> {@code readers}, {@code effective_acl_epoch} AND
-     * {@code acl_index_generation} move together. Preserving only the readers while the content
-     * writer stamps a FRESH {@code acl_index_generation} produces "old readers, new generation", and
-     * {@code updateReadersFenced} — which still reads that field as its fence input until the ACL
-     * axis moves to the epoch — then sees a strictly-newer generation and SKIPS FOR EVER. The stale
-     * readers would be frozen in place by the very mechanism meant to protect them.
+     * <p><b>The group is TWO fields, and they move together.</b> {@code readers} and
+     * {@code effective_acl_epoch}. Preserving only the readers while leaving a stale epoch beside
+     * them would hand the ACL fence a value that does not describe what it sits next to — the fence
+     * would then order writes against a number it did not produce.
+     *
+     * <p>Until increment 14 there was a THIRD field, {@code acl_index_generation}: the pre-epoch
+     * ACL fence input, preserved here so that "old readers, new generation" could not freeze stale
+     * readers in place with the very mechanism meant to protect them. That fence is gone (the ACL
+     * axis is fenced by the epoch), so the field is gone with it.
      *
      * @return what was found; the caller MUST act on {@link AclGroupOutcome#MISSING_ON_EXISTING}
      */
@@ -123,16 +126,8 @@ public final class ContentWriterFence {
         }
         rebuilt.put(AclEpochIndexWriter.FIELD_READERS, List.copyOf(storedReaders));
         copyIfPresent(stored, rebuilt, AclEpochIndexWriter.FIELD_EFFECTIVE_EPOCH);
-        copyIfPresent(stored, rebuilt, ACL_INDEX_GENERATION);
         return AclGroupOutcome.PRESERVED;
     }
-
-    /**
-     * The legacy ACL fence input. RETAINED for compatibility and still LIVE for
-     * {@code updateReadersFenced} until the ACL axis moves to {@code effective_acl_epoch}; it is
-     * NOT an input to the content fence, which reads {@code content_generation} only.
-     */
-    static final String ACL_INDEX_GENERATION = "acl_index_generation";
 
     private static void copyIfPresent(SolrDocument stored, Map<String, Object> rebuilt, String field) {
         Object v = stored.getFieldValue(field);

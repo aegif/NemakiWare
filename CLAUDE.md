@@ -106,23 +106,17 @@ requests.post(url, auth=(user, pw), headers={"X-Requested-With": "XMLHttpRequest
 
 ---
 
-## ACL-epoch fencing (増分 12 で配線実装済み・**flag は default OFF**)
+## ACL-epoch fencing (常時有効・flag なし)
 
-ACL-in-Solr の恒久収束のためのリポジトリ単位の単調増加 ACL epoch。**増分 12 で
-applyAcl / move / reconcile re-drive が epoch fence 経由になりました** — ただし
-`acl.epoch.wiring.enabled` (default **false**) の配下で、OFF は従来とビット同一です
-(mutation 拘束済み)。flip はデプロイごとの運用判断であり、以下の順序が必須です:
-全再索引 → migration (verdict 確認) → flag ON → 再起動。
+ACL-in-Solr の恒久収束のためのリポジトリ単位の単調増加 ACL epoch。**applyAcl / move /
+reconcile re-drive は必ず epoch fence を通ります**。増分 12–13 にあった
+`acl.epoch.wiring.enabled` は増分 14 で**廃止**しました (3.x に本番実績が無く、
+OFF 経路を残す理由が無いため)。旧設定が残っていると起動時に WARN が出て無視されます。
 
-**Docker では flag は ENV 変数 `ACL_EPOCH_WIRING_ENABLED=true` で入れてください。**
-イメージが `docker/core/nemakiware.properties` を WAR 側に上書きコピーし、
-`PropertyManager` は system property → ENV → classpath の順で解決します
-(WAR 内の properties を編集しても届きません)。
-
-**デプロイごとの運用義務** (ゲート 2 は「1 回閉じて終わり」ではありません):
-全再索引の**後で**、リポジトリごとに初期 epoch stamp を実行してください。順序が逆だと
-再索引が stamp を捨てます (content writer は既存 ACL group を preserve するので、
-作り直した索引には preserve するものが無い)。
+**デプロイごとの運用義務**: 全再索引の**後で**、リポジトリごとに初期 epoch stamp を
+実行してください。順序が逆だと再索引が stamp を捨てます (content writer は既存 ACL group を
+preserve するので、作り直した索引には preserve するものが無い)。未 stamp でも
+**壊れはしません** — 各文書の初回 ACL 書込みが bootstrap します (reconcile が一時的に増えるだけ)。
 
 ```
 POST /api/v1/admin/acl-epoch/migration/{repositoryId}      # 実行
@@ -130,9 +124,9 @@ GET  /api/v1/admin/acl-epoch/migration/{repositoryId}      # verdict を確認
 ```
 
 **生カウントではなく `verdict` を読んでください。** `COMPLETE` か
-`COMPLETE_EXCEPT_ORPHANS` のみが完了です (後者の残数は CouchDB に実体が無い孤児 Solr 文書で、
-stamp 不能かつ ACL write の対象にもならないため配線を妨げません)。
-`EMPTY_INDEX` は**再索引がまだ**という意味で、完了ではありません。
+`COMPLETE_EXCEPT_ORPHANS` のみが完了です。`EMPTY_INDEX` は**再索引がまだ**という意味で、
+完了ではありません。孤児 (CouchDB に実体が無い Solr 文書) は
+`DELETE /api/v1/admin/acl-epoch/migration/{repo}/orphans?confirm=true` で掃除できます。
 
 設計と実装進捗の正典は
 [`docs/design/acl-epoch-fencing.md`](docs/design/acl-epoch-fencing.md)。

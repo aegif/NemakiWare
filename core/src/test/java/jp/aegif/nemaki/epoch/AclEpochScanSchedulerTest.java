@@ -44,37 +44,71 @@ public class AclEpochScanSchedulerTest {
                 .thenReturn(new AclEpochFinalizationService.ScanSummary());
     }
 
-    /** With the flag off, start() must schedule NOTHING — the §11.8 bit-identical posture. */
+    /** Increment 14: the sweep is not optional any more — start() always schedules it. */
     @Test
-    public void flagOffStartsNothing_flagOnStarts() {
-        when(pm.readBoolean(PropertyKey.ACL_EPOCH_WIRING_ENABLED)).thenReturn(false);
-        scheduler.start();
-        org.junit.jupiter.api.Assertions.assertFalse(scheduler.isRunning(),
-                "flag off = no sweep thread exists at all");
-
-        when(pm.readBoolean(PropertyKey.ACL_EPOCH_WIRING_ENABLED)).thenReturn(true);
+    public void startAlwaysSchedulesTheSweep() {
         scheduler.start();
         org.junit.jupiter.api.Assertions.assertTrue(scheduler.isRunning(),
-                "flag on = the unattended recovery floor is scheduled");
+                "ACL-epoch fencing is the only ACL write path, so its recovery half is not optional");
         scheduler.stop();
+        org.junit.jupiter.api.Assertions.assertFalse(scheduler.isRunning());
     }
 
     /**
-     * Increment 13 defence-in-depth: poll() re-checks the flag on EVERY cycle. PropertyManager
-     * resolves system properties and ENV per read, so a runtime flip to OFF must stop the sweep —
-     * start()'s gate alone would keep a booted scheduler sweeping for ever.
+     * A leftover {@code acl.epoch.wiring.enabled=false} must not be silently ignored — an operator
+     * who set it believes they are on a path that no longer exists. Startup WARNS (asserted on the
+     * emitted event, not merely on "nothing broke"); the sweep still runs.
      */
     @Test
-    public void pollItselfReChecksTheFlag() {
-        when(pm.readBoolean(PropertyKey.ACL_EPOCH_WIRING_ENABLED)).thenReturn(false);
-        when(leader.isEnabled()).thenReturn(false);
-        scheduler.poll();
-        verify(fin, never()).scan(anyString(), anyInt());
+    public void anObsoleteFalseFlagIsWarnedAboutAndIgnored() {
+        when(pm.readValue(PropertyKey.ACL_EPOCH_WIRING_ENABLED)).thenReturn("false");
+
+        ch.qos.logback.classic.Logger log = (ch.qos.logback.classic.Logger)
+                org.slf4j.LoggerFactory.getLogger(AclEpochScanScheduler.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        log.addAppender(appender);
+        try {
+            scheduler.start();
+            org.junit.jupiter.api.Assertions.assertTrue(scheduler.isRunning(),
+                    "the obsolete flag must NOT disable anything");
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    appender.list.stream().anyMatch(e ->
+                            e.getLevel() == ch.qos.logback.classic.Level.WARN
+                                    && e.getFormattedMessage().contains("acl.epoch.wiring.enabled")
+                                    && e.getFormattedMessage().contains("OBSOLETE")),
+                    "an obsolete flag that is silently ignored leaves the operator believing in a "
+                            + "rollback path that no longer exists");
+        } finally {
+            log.detachAppender(appender);
+            scheduler.stop();
+        }
+    }
+
+    /** ...and a deployment WITHOUT the obsolete setting must not be warned (no false alarm). */
+    @Test
+    public void anAbsentFlagProducesNoWarning() {
+        when(pm.readValue(PropertyKey.ACL_EPOCH_WIRING_ENABLED)).thenReturn(null);
+
+        ch.qos.logback.classic.Logger log = (ch.qos.logback.classic.Logger)
+                org.slf4j.LoggerFactory.getLogger(AclEpochScanScheduler.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        log.addAppender(appender);
+        try {
+            scheduler.start();
+            org.junit.jupiter.api.Assertions.assertTrue(appender.list.stream().noneMatch(e ->
+                    e.getFormattedMessage().contains("OBSOLETE")));
+        } finally {
+            log.detachAppender(appender);
+            scheduler.stop();
+        }
     }
 
     @Test
     public void aNonLeaderNeverSweeps() {
-        when(pm.readBoolean(PropertyKey.ACL_EPOCH_WIRING_ENABLED)).thenReturn(true);
         when(leader.isEnabled()).thenReturn(true);
         when(leader.isLeader(anyString())).thenReturn(false);
         scheduler.poll();
@@ -83,7 +117,6 @@ public class AclEpochScanSchedulerTest {
 
     @Test
     public void theLeaderSweepsEveryMainRepository() {
-        when(pm.readBoolean(PropertyKey.ACL_EPOCH_WIRING_ENABLED)).thenReturn(true);
         when(leader.isEnabled()).thenReturn(true);
         when(leader.isLeader(anyString())).thenReturn(true);
         scheduler.poll();
@@ -94,7 +127,6 @@ public class AclEpochScanSchedulerTest {
     /** One broken repository must not stop the sweep of the others. */
     @Test
     public void perRepositoryIsolation() {
-        when(pm.readBoolean(PropertyKey.ACL_EPOCH_WIRING_ENABLED)).thenReturn(true);
         when(leader.isEnabled()).thenReturn(false);
         when(fin.scan("bedroom", 500)).thenThrow(new AclEpochWiringException("db gone"));
         scheduler.poll();
@@ -103,7 +135,6 @@ public class AclEpochScanSchedulerTest {
 
     @Test
     public void sweepCountsAreReadFromTheSummary() {
-        when(pm.readBoolean(PropertyKey.ACL_EPOCH_WIRING_ENABLED)).thenReturn(true);
         when(leader.isEnabled()).thenReturn(false);
         AclEpochFinalizationService.ScanSummary s = new AclEpochFinalizationService.ScanSummary();
         s.scanned = 3; s.finalized = 1; s.acked = 1;

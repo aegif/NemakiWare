@@ -23,8 +23,8 @@ New content is stamped in the same CouchDB commit that creates it; existing cont
 wins the `_rev` CAS. No manual step is required. An archive restore always mints a FRESH incarnation
 and never reuses the archived one.
 
-`acl_index_generation` is RETAINED unchanged for compatibility and remains the ACL axis' fence input
-in 3.3.0. It is NOT an input to the content fence, which reads `content_generation` only.
+The content fence reads `content_generation` only. (The ACL axis is fenced by
+`effective_acl_epoch` — see the ACL-epoch section below.)
 
 **Reusing an existing SOLR_HOME? Add the two fields by hand.** The schema shipped in the Solr image
 seeds a FRESH `SOLR_HOME` only; an existing one keeps its own `schema.xml` on the data volume, and
@@ -68,20 +68,26 @@ will not deserialize; that route REFUSES a healthy document. After deleting one,
 `objectId` — deleting a task drops only the automatic retry. Earlier 3.3.0 pre-releases let a single
 corrupt entry stall the whole queue with no way to remove it through the API.
 
-### ACL-epoch fencing wired (opt-in, default OFF)
+### ACL-epoch fencing is now the ACL write path (no switch)
 
-`acl.epoch.wiring.enabled=false` (the default) keeps 3.3.0 bit-identical to the pre-epoch
-behavior. When flipped ON, ACL mutations (applyAcl, move) run the two-phase outbox — the pending
-marker rides the SAME CouchDB write as the ACL change, an epoch is finalized post-commit, the Solr
-ACL group is written under the epoch fence (`readers` + `effective_acl_epoch`, `_version_` CAS),
-and a durable reconciliation obligation guarantees convergence across crashes. A leader-gated
-recovery sweep runs every 5 minutes (only while the flag is on).
+ACL mutations (applyAcl, move) run a two-phase outbox: the pending marker rides the SAME CouchDB
+write as the ACL change, an epoch is finalized post-commit, the Solr ACL group is written under the
+epoch fence (`readers` + `effective_acl_epoch`, `_version_` CAS), and a durable reconciliation
+obligation guarantees convergence across crashes. A leader-gated recovery sweep runs every 5
+minutes. This replaces the previous `acl_index_generation` fence, which could not order a change
+made on an ANCESTOR — the reason inherited-ACL and move revocations could go stale in the index.
 
-Flip ONLY in this order, per deployment: full reindex → initial-epoch migration
-(`verdict` COMPLETE / COMPLETE_EXCEPT_ORPHANS) → enable the flag → restart. On Docker set the
-environment variable `ACL_EPOCH_WIRING_ENABLED=true` (the container's property files are layered;
-the env var always wins). Rollback is simply turning the flag off — the generation-fenced path is
-retained and both directions are safe.
+There is no enable/disable setting: the pre-epoch path has been removed. A pre-release
+`acl.epoch.wiring.enabled` briefly existed; a leftover `false` is ignored and warned about at
+startup.
+
+**Per deployment, in this order:** full reindex → initial-epoch migration
+(`verdict` COMPLETE / COMPLETE_EXCEPT_ORPHANS). Skipping the migration is not fatal — each
+document's first ACL write fences it — but it produces a reconciliation burst instead of a quiet
+upgrade.
+
+The Solr field `acl_index_generation` is gone from the shipped schema. Existing `SOLR_HOME`s keep
+an unused definition (inert); a fresh one simply never has it.
 
 Also fixed while plumbing this: an ordinary update (rename, property edit) used to RE-MINT
 `content_incarnation` on every write because the model never carried it — each update silently
