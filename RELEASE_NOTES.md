@@ -127,8 +127,9 @@ Read the `verdict`, not the raw count:
 
 An unknown repository id is a 404 listing the configured ids — never a completed migration.
 
-This does not enable anything by itself — the ACL-epoch writer is still not wired into any ACL write
-path in 3.3.0. Running it is what makes a later release able to be.
+Running it does not switch anything ON — the epoch writer is already the ACL write path in 3.3.0.
+What the stamp buys is a QUIET upgrade: without it, every document's first ACL mutation has to
+bootstrap its own fence and the reconciliation queue absorbs the burst.
 
 ### New admin API: ACL-epoch outbox scanner
 
@@ -138,9 +139,10 @@ ACL-epoch outbox and returns a summary; `GET` on the same path returns the last 
 and CSRF-protected. `more: true` in the summary means the pass hit its budget — run it again;
 progress is durable.
 
-There is no scheduler, cron or startup hook: every sweep is an explicit request. On 3.3.0 the sweep
-finds nothing, because no production path creates ACL-epoch state yet — the operator surface is in
-place before the state it manages exists.
+The same sweep also runs automatically every 5 minutes on the leader (see the ACL-epoch section
+above); this endpoint is the on-demand version, for when you do not want to wait for the next tick.
+A healthy deployment reports zeros: the sweep exists for state left behind by a crash between an
+ACL mutation's commit and its finalize, which is rare by construction.
 
 Reconciliation tasks created by the outbox ACK are now recorded with reason `OUTBOX_ACK` instead of
 `INDEX_WRITE_FAILURE`. The ACK runs for a mutation that succeeded, so the old label sent anyone
@@ -154,10 +156,11 @@ ACL-index refresh (a quarantined ANCESTOR blocks its whole subtree), and
 `POST /api/v1/admin/acl-epoch/quarantine/{repositoryId}/{docId}/repair` repairs one — normalizing
 its epoch fields and clearing the marker in a single CAS. Blocked reconciliation tasks are retained
 under a capped backoff and resume on their own after the repair; no manual re-enqueue. Both are
-admin-gated and CSRF-protected. In 3.3.0 nothing in production drives the epoch walk, so a healthy
-deployment reports zeros here.
+admin-gated and CSRF-protected.
 
-Part of the ACL-epoch fencing work, which remains NOT wired into any ACL write path in 3.3.0.
+A quarantine is how the fence refuses to guess: a document whose epoch fields are corrupt cannot be
+used as a source for anyone's effective epoch, so it is isolated rather than read optimistically.
+A healthy deployment reports zeros; a non-zero list is an operator action, not a self-healing wait.
 _On `deps/v3.3-breaking-majors` (off `master`). First minor with breaking-major
 dependency bumps. No CouchDB view / patch / schema / Mango changes — the 2.4
 data carry-over path is untouched; all changes are dependency, container, and
