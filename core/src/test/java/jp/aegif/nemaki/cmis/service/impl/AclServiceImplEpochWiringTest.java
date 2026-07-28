@@ -43,7 +43,6 @@ import jp.aegif.nemaki.rag.acl.ACLExpander;
 import jp.aegif.nemaki.reconcile.SearchIndexReconciliationService;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
-import jp.aegif.nemaki.util.constant.PropertyKey;
 
 /**
  * Increment 12 wiring contracts on {@link AclServiceImpl} (design §11.2–§11.4), pinned with mocks:
@@ -103,10 +102,6 @@ public class AclServiceImplEpochWiringTest {
                 jp.aegif.nemaki.acl.AclSemantics.PrincipalResolver.class));
     }
 
-    private void flag(boolean on) {
-        lenient().when(propertyManager.readBoolean(PropertyKey.ACL_EPOCH_WIRING_ENABLED)).thenReturn(on);
-    }
-
     private Document doc(String id) {
         Document d = new Document();
         d.setId(id);
@@ -145,28 +140,10 @@ public class AclServiceImplEpochWiringTest {
                 org.apache.chemistry.opencmis.commons.enums.AclPropagation.PROPAGATE);
     }
 
-    // ── §11.8: flag OFF is bit-identical pre-epoch behavior ────────
-
-    @Test
-    public void flagOFF_noEpochFieldIsWrittenAndNoEpochBeanIsTouched() {
-        flag(false);
-        Document content = doc("obj-1");
-        applyAclOn(content);
-
-        ArgumentCaptor<jp.aegif.nemaki.model.Content> put =
-                ArgumentCaptor.forClass(jp.aegif.nemaki.model.Content.class);
-        verify(contentService).updateInternal(eq("bedroom"), put.capture(), eq(true));
-        assertNull(put.getValue().getAclEpochFields(),
-                "flag off must stay BIT-IDENTICAL: no epoch field may enter the PUT");
-        verify(finalization, never()).finalizePending(anyString(), anyString());
-        verify(finalization, never()).ackFinalized(anyString(), anyString());
-    }
-
     // ── §11.2: Phase-1 atomicity — the marker rides the SAME PUT ───
 
     @Test
-    public void flagON_theSAMEPutCarriesPENDINGAndAFreshMutationId() throws Exception {
-        flag(true);
+    public void theSAMEPutCarriesPENDINGAndAFreshMutationId() throws Exception {
         when(finalization.finalizePending(anyString(), anyString())).thenReturn(finalized(7L));
         when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any()))
                 .thenReturn(outcome(AclEpochIndexWriter.WriteResult.UPDATED));
@@ -217,7 +194,6 @@ public class AclServiceImplEpochWiringTest {
      */
     @Test
     public void anUnclearedMarkerKeepsTheTask() throws Exception {
-        flag(true);
         when(finalization.finalizePending(anyString(), anyString())).thenReturn(finalized(7L));
         when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any()))
                 .thenThrow(new RuntimeException("pending gate"));
@@ -231,8 +207,7 @@ public class AclServiceImplEpochWiringTest {
 
     /** An epoch-cycle failure must NEVER fail the mutation request (§11.4: the ACL is committed). */
     @Test
-    public void flagON_aFinalizeFailureDoesNotFailApplyAcl() {
-        flag(true);
+    public void aFinalizeFailureDoesNotFailApplyAcl() {
         when(finalization.finalizePending(anyString(), anyString()))
                 .thenThrow(new RuntimeException("couch down"));
         Document content = doc("obj-3");
@@ -243,26 +218,20 @@ public class AclServiceImplEpochWiringTest {
     // ── §11.3: the Solr cutover dispatch ───────────────────────────
 
     @Test
-    public void dispatch_flagONUsesTheEpochWriter_flagOFFUsesTheGenerationFence() throws Exception {
+    public void everyAclGroupWriteGoesThroughTheEpochWriter() throws Exception {
         Document content = doc("obj-4");
-
-        flag(true);
         when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any()))
                 .thenReturn(outcome(AclEpochIndexWriter.WriteResult.UPDATED));
-        svc.writeContentReaders(solrUtil, "bedroom", content, null);
-        verify(writer).writeAllowingBootstrap(eq("bedroom"), eq("obj-4"), any(), any());
-        verify(solrUtil, never()).updateReadersFenced(anyString(), any());
 
-        flag(false);
-        when(solrUtil.updateReadersFenced(anyString(), any()))
-                .thenReturn(SolrUtil.ReadersUpdateResult.UPDATED);
         svc.writeContentReaders(solrUtil, "bedroom", content, null);
-        verify(solrUtil).updateReadersFenced(eq("bedroom"), any());
+
+        verify(writer).writeAllowingBootstrap(eq("bedroom"), eq("obj-4"), any(), any());
+        // Increment 14: the pre-epoch generation fence is GONE — there is no second ACL writer to
+        // fall back to, so this is the only path an ACL group can be written through.
     }
 
     @Test
     public void dispatch_NOT_INDEXEDFallsBackToTheStrictFullIndex() throws Exception {
-        flag(true);
         Document content = doc("obj-5");
         when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any()))
                 .thenReturn(outcome(AclEpochIndexWriter.WriteResult.NOT_INDEXED));
@@ -279,7 +248,6 @@ public class AclServiceImplEpochWiringTest {
      */
     @Test
     public void theAsyncSettleConsumesTheTaskAndNeverTouchesTheMarker() {
-        flag(true);
         svc.settleEpochObligationAfterRefresh("bedroom", "obj-6", 7L, "mid-1");
 
         verify(reconcile).settleIfCovered("bedroom", "obj-6", 7L);
@@ -300,7 +268,6 @@ public class AclServiceImplEpochWiringTest {
 
     @Test
     public void aCleanReDriveClearsTheMarkerScopedToThePreReadMutationId() throws Exception {
-        flag(true);
         reDriveContent(AclEpochState.RECONCILE_ENQUEUED);
         when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any()))
                 .thenReturn(outcome(AclEpochIndexWriter.WriteResult.UPDATED));
@@ -316,7 +283,6 @@ public class AclServiceImplEpochWiringTest {
      */
     @Test
     public void aFailedClearKeepsTheTask() throws Exception {
-        flag(true);
         reDriveContent(AclEpochState.RECONCILE_ENQUEUED);
         when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any()))
                 .thenReturn(outcome(AclEpochIndexWriter.WriteResult.UPDATED));
@@ -331,7 +297,6 @@ public class AclServiceImplEpochWiringTest {
 
     @Test
     public void aQuarantineBlockPropagatesToTheSchedulerInsteadOfBurningAttempts() throws Exception {
-        flag(true);
         reDriveContent(AclEpochState.RECONCILE_ENQUEUED);
         when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any()))
                 .thenThrow(new AclEpochQuarantineBlockedException("blocked", "anc-1"));

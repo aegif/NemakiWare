@@ -82,15 +82,6 @@ public class SolrUtil implements ApplicationContextAware {
 
 	private PropertyManager propertyManager;
 
-	/** §11.8 flag, read per call (PropertyManager resolves sysprop → ENV → classpath each read). */
-	boolean epochWiringEnabled() {
-		try {
-			return propertyManager != null
-					&& propertyManager.readBoolean(PropertyKey.ACL_EPOCH_WIRING_ENABLED);
-		} catch (Exception e) {
-			return false; // unreadable configuration = OFF (the pre-epoch path)
-		}
-	}
 	private TypeService typeService;
 	private TextExtractionService textExtractionService;
 
@@ -486,10 +477,10 @@ public class SolrUtil implements ApplicationContextAware {
 
 	private void indexDocumentInternal(String repositoryId, Content content, boolean skipRAGIndexing, boolean strict) {
 		SolrClient solrClient = null;
-		// Generation-fenced write (single-doc). Every ACL/content write of an object
-		// carries acl_index_generation = the CouchDB _rev leading integer (monotonic per
-		// object). To make ALL writers converge on the latest state — not just the
-		// reconciliation re-drive — a single-doc index does an OPTIMISTIC-CONCURRENCY add:
+		// Generation-fenced write (single-doc). Every CONTENT write of an object carries
+		// content_generation = the CouchDB _rev leading integer (monotonic per object,
+		// scoped by content_incarnation). To make ALL content writers converge on the
+		// latest state, a single-doc index does an OPTIMISTIC-CONCURRENCY add:
 		//   1. realtime-GET the current _version_ + stored generation,
 		//   2. SKIP if a strictly-newer generation already landed (a late stale writer,
 		//      e.g. a delayed applyAcl-refresh or move add, must not overwrite it),
@@ -917,171 +908,22 @@ public class SolrUtil implements ApplicationContextAware {
 		}
 	}
 
-	/**
-	 * Read the {@code acl_index_generation} currently stored in Solr for an object,
-	 * or {@code -1} if the doc is absent / has no generation field / Solr is
-	 * unavailable (in which case the caller must NOT skip its write). Used by the
-	 * reconciliation re-drive to avoid overwriting a strictly-newer indexed
-	 * generation with a stale one (#1).
-	 */
-	public long readIndexedGeneration(String repositoryId, String objectId) {
-		try {
-			SolrClient solrClient = getSolrClient();
-			if (solrClient == null) {
-				return -1L;
-			}
-			SolrQuery q = new SolrQuery();
-			q.setQuery("id:" + org.apache.solr.client.solrj.util.ClientUtils.escapeQueryChars(objectId));
-			q.addFilterQuery("repository_id:"
-					+ org.apache.solr.client.solrj.util.ClientUtils.escapeQueryChars(repositoryId));
-			q.setFields("acl_index_generation");
-			q.setRows(1);
-			SolrDocumentList results = solrClient.query(q).getResults();
-			if (results == null || results.isEmpty()) {
-				return -1L;
-			}
-			Object v = results.get(0).getFieldValue("acl_index_generation");
-			if (v instanceof Number) {
-				return ((Number) v).longValue();
-			}
-			if (v != null) {
-				try {
-					return Long.parseLong(v.toString());
-				} catch (NumberFormatException ignore) {
-					return -1L;
-				}
-			}
-			return -1L;
-		} catch (Exception e) {
-			log.debug("readIndexedGeneration failed for {}: {}", objectId, e.getMessage());
-			return -1L;
-		}
-	}
-
-	/** Outcome of a fenced atomic readers-only reconciliation write. */
-	public enum ReadersUpdateResult { UPDATED, SKIPPED_NEWER_GENERATION, NOT_INDEXED }
 
 	/** Bounded retry for the {@code _version_} optimistic-concurrency loop. */
 	private static final int READERS_CAS_MAX_ATTEMPTS = 6;
 
 	/**
-	 * Reconciliation write: ATOMICALLY set ONLY the {@code readers} (and
-	 * {@code acl_index_generation}) of an already-indexed content/relationship doc,
-	 * fenced by the CouchDB {@code _rev} generation AND Solr {@code _version_}
-	 * optimistic concurrency. This closes three review findings structurally:
-	 *
-	 * <ul>
-	 *   <li><b>No clobber (#3/#6)</b>: a readers-only atomic update never touches the
-	 *       body / path / content_length / name fields, so a transient text-extraction
-	 *       or path-calculation failure cannot replace a good indexed value with an
-	 *       empty one. (The prior full-document re-add did, because its inner helpers
-	 *       swallow read failures into null/0 sentinels BEFORE the strict catch.)</li>
-	 *   <li><b>No TOCTOU (#1)</b>: the generation check and the write are made atomic by
-	 *       the {@code _version_} CAS. If a concurrent applyAcl bumps the doc between our
-	 *       read and write, the CAS returns 409 and we RE-READ and re-evaluate the
-	 *       generation — so a stale re-drive (lower generation) is either skipped or
-	 *       loses the CAS, never overwriting fresher readers with a later add.</li>
-	 * </ul>
-	 *
-	 * <p>Readers are computed strictly (a genuine ACL/endpoint read failure THROWS so
-	 * the reconcile counts it and retries, rather than persisting an empty readers set).
-	 * Returns {@link ReadersUpdateResult#NOT_INDEXED} when the doc is absent (the caller
-	 * decides — a content doc absent from Solr needs a full index, where there is no
-	 * good value to clobber). Throws on a genuine Solr/ACL failure.
-	 */
-	/**
-	 * @deprecated OFF-ONLY since increment 12: with {@code acl.epoch.wiring.enabled=true} the ACL
-	 *             group is written exclusively by
-	 *             {@link jp.aegif.nemaki.epoch.AclEpochIndexWriter#writeAllowingBootstrap} and this
-	 *             generation fence is NEVER called — bound by
-	 *             {@code AclServiceImplEpochWiringTest.dispatch_flagONUsesTheEpochWriter_flagOFFUsesTheGenerationFence}
-	 *             ({@code verify(solrUtil, never()).updateReadersFenced(...)} under the flag).
-	 *             Kept verbatim for the OFF rollback path; scheduled for stage-E removal once the
-	 *             flag has soaked in production and the OFF rollback window is declared closed
-	 *             (design §11.12).
-	 */
-	@Deprecated
-	public ReadersUpdateResult updateReadersFenced(String repositoryId, Content content) throws Exception {
-		SolrClient solrClient = getSolrClient();
-		if (solrClient == null) {
-			throw new RuntimeException("Reconcile: Solr client unavailable for " + content.getId());
-		}
-		jp.aegif.nemaki.rag.acl.ACLExpander expander = getAclExpanderSafely();
-		if (expander == null) {
-			// Cannot compute readers → never persist an empty (invisible) doc as success.
-			throw new RuntimeException("Reconcile: ACLExpander unavailable — cannot compute readers for "
-					+ content.getId());
-		}
-		long myGen = parseRevGeneration(content.getRevision());
-		for (int attempt = 0; attempt < READERS_CAS_MAX_ATTEMPTS; attempt++) {
-			// 1. Read the current _version_ + stored generation (single atomic snapshot).
-			SolrDocument cur = readVersionAndGeneration(repositoryId, content.getId());
-			if (cur == null) {
-				return ReadersUpdateResult.NOT_INDEXED;
-			}
-			long storedGen = toLongOrDefault(cur.getFieldValue("acl_index_generation"), 0L);
-			// 2. Generation fence: a strictly-newer indexed generation means a concurrent
-			//    applyAcl already wrote fresher readers — do NOT overwrite them.
-			if (myGen > 0 && storedGen > myGen) {
-				return ReadersUpdateResult.SKIPPED_NEWER_GENERATION;
-			}
-			long version = toLongOrDefault(cur.getFieldValue("_version_"), 0L);
-			// 3. Compute readers strictly: a relationship uses tri-state endpoint reads,
-			//    and a regular object uses the strict inherited-ACL walk (an unreadable
-			//    ancestor THROWS rather than degrading to local-ACEs-only). A genuine
-			//    failure propagates so the reconcile retries instead of writing under-
-			//    visible readers and completing the task.
-			List<String> readers = (content instanceof Relationship)
-					? relationshipReaders(repositoryId, (Relationship) content, expander, true)
-					: expander.expandToReaders(repositoryId, content, true);
-			// 4. Atomic readers-only update, CAS-guarded by the read _version_.
-			SolrInputDocument upd = new SolrInputDocument();
-			upd.addField("id", content.getId());
-			upd.setField("readers", java.util.Collections.singletonMap("set",
-					readers != null ? readers : java.util.Collections.emptyList()));
-			if (myGen > 0) {
-				upd.setField("acl_index_generation", java.util.Collections.singletonMap("set", myGen));
-			}
-			if (version != 0L) {
-				// Optimistic concurrency: apply only if the doc still has this version.
-				upd.addField("_version_", version);
-			}
-			try {
-				UpdateRequest req = new UpdateRequest();
-				req.add(upd);
-				req.setCommitWithin(1000);
-				UpdateResponse resp = req.process(solrClient);
-				if (resp.getStatus() != 0) {
-					throw new RuntimeException("Solr atomic readers update failed status "
-							+ resp.getStatus() + " for " + content.getId());
-				}
-				return ReadersUpdateResult.UPDATED;
-			} catch (org.apache.solr.client.solrj.RemoteSolrException e) {
-				if (e.code() == 409) {
-					// A concurrent write changed the doc — re-read and re-evaluate the
-					// generation (which may now be newer → skip, or same → retry).
-					log.debug("Reconcile readers CAS conflict for {} (attempt {}), re-reading",
-							content.getId(), attempt + 1);
-					continue;
-				}
-				throw e;
-			}
-		}
-		// Persistent contention: report as a failure so the task is retried later rather
-		// than silently completed.
-		throw new RuntimeException("Reconcile: readers CAS exhausted " + READERS_CAS_MAX_ATTEMPTS
-				+ " attempts for " + content.getId());
-	}
-
-	/**
-	 * Read the current {@code _version_} + {@code acl_index_generation} for an object, or
+	 * Read the current {@code _version_} + {@code content_generation} for an object, or
 	 * {@code null} if it is not indexed. Uses Solr REALTIME GET ({@code /get}) — NOT a
 	 * searcher query — so it returns the latest (possibly uncommitted) {@code _version_}.
-	 * A searcher query would lag behind by the soft-commit window (commitWithin=1s), so the
-	 * {@code _version_} CAS in {@link #updateReadersFenced} would keep reading a stale
-	 * version and loop to exhaustion whenever the doc was written in the last second. The
-	 * nemaki core has {@code <updateLog>} + a {@code _version_} field, so realtime get and
-	 * optimistic concurrency are both available.
+	 * A searcher query would lag behind by the soft-commit window (commitWithin=1s), so a
+	 * {@code _version_} CAS would keep reading a stale version and loop to exhaustion whenever
+	 * the doc was written in the last second. The nemaki core has {@code <updateLog>} + a
+	 * {@code _version_} field, so realtime get and optimistic concurrency are both available.
+	 *
+	 * <p>The name is historical: since increment 14 it reads the {@code _version_} and the
+	 * CONTENT generation ({@code content_generation}); the ACL generation it was named for no
+	 * longer exists.
 	 */
 	/**
 	 * Apply the content fence to a rebuilt document (wiring gate 3).
@@ -1091,10 +933,9 @@ public class SolrUtil implements ApplicationContextAware {
 	 * expansion is DISCARDED: the ACL axis has its own writer, fence and CAS, and a body
 	 * re-extraction finishing after a fresh applyAcl must not be a second opinion on it.
 	 *
-	 * <p>All THREE ACL-group fields move together — including {@code acl_index_generation}, which is
-	 * still the live ACL fence input. Restoring only the readers while this writer stamped a fresh
-	 * generation would produce "old readers, new generation" and make {@code updateReadersFenced}
-	 * skip for ever, freezing the stale readers with the very mechanism meant to protect them.
+	 * <p>BOTH ACL-group fields move together ({@code readers} + {@code effective_acl_epoch}):
+	 * restoring the readers while leaving a mismatched epoch beside them would hand the ACL fence a
+	 * value that does not describe what it sits next to.
 	 */
 	private void applyContentFence(SolrInputDocument doc, SolrDocument stored, String incarnation,
 			long myGen, String repositoryId, String objectId) {
@@ -1107,10 +948,8 @@ public class SolrUtil implements ApplicationContextAware {
 				jp.aegif.nemaki.epoch.ContentWriterFence.preserveAclGroup(stored, rebuilt);
 		switch (outcome) {
 			case PRESERVED:
-				// Replace, never accumulate: createSolrDocument used addField for readers and
-				// acl_index_generation, so setField here is what actually drops its values. This is
-				// also the ONLY place acl_index_generation is written on the preserve path — the
-				// stamp inside createSolrDocument is overwritten here, deliberately.
+				// Replace, never accumulate: createSolrDocument used addField for readers, so
+				// setField here is what actually drops its value.
 				doc.removeField("readers");
 				for (java.util.Map.Entry<String, Object> e : rebuilt.entrySet()) {
 					doc.setField(e.getKey(), e.getValue());
@@ -1121,7 +960,6 @@ public class SolrUtil implements ApplicationContextAware {
 				// authoritative answer for it, so it is dropped and the object is handed to
 				// reconciliation (design §4.4) rather than stamped as if settled.
 				doc.removeField("readers");
-				doc.removeField("acl_index_generation");
 				log.warn("Content fence: {} is indexed without an ACL group — enqueueing for "
 						+ "reconciliation rather than stamping this writer's expansion", objectId);
 				enqueueReadersReconcile(repositoryId, objectId, null);
@@ -1564,18 +1402,6 @@ public class SolrUtil implements ApplicationContextAware {
 		// move). The reconciliation re-drive reads this back before writing and skips
 		// its write when Solr already holds a STRICTLY-NEWER generation, so a slow
 		// stale re-drive cannot overwrite a concurrent applyAcl's fresher readers.
-		// Stage C of the generation retirement (increment 13): with the epoch wiring ON, the ACL
-		// axis is ordered by effective_acl_epoch and this legacy stamp is never READ — so a fresh
-		// document simply does not get one. With the flag OFF everything is as before. Mixed
-		// period: the preserve path (applyContentFence) still COPIES an existing stored value in
-		// both modes, so rolling back to OFF finds either the old value (fence works as always) or
-		// no value (toLongOrDefault(...,0) → the next write proceeds) — both safe.
-		if (!epochWiringEnabled()) {
-			long aclGen = parseRevGeneration(content.getRevision());
-			if (aclGen > 0) {
-				doc.addField("acl_index_generation", aclGen);
-			}
-		}
 
 		if (log.isDebugEnabled()) {
 			log.debug("Created Solr document for content: {} with {} fields", content.getId(), doc.size());

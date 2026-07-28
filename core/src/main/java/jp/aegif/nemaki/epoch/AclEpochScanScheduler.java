@@ -49,12 +49,26 @@ public class AclEpochScanScheduler {
     public void setLeaderElection(LeaderElection l) { this.leaderElection = l; }
     public void setRepositoryInfoMap(RepositoryInfoMap m) { this.repositoryInfoMap = m; }
 
-    boolean wiringEnabled() {
+    /**
+     * The wiring flag was REMOVED in increment 14: the OFF rollback path no longer exists, so a
+     * switch with one reachable value would be a lie about a choice that is not there. A leftover
+     * {@code false} in someone's configuration must not be silently ignored — say so at startup
+     * rather than let an operator believe they are on a path that is gone.
+     */
+    private void warnIfObsoleteFlagIsSet() {
         try {
-            return propertyManager != null
-                    && propertyManager.readBoolean(PropertyKey.ACL_EPOCH_WIRING_ENABLED);
-        } catch (Exception e) {
-            return false;
+            if (propertyManager == null) {
+                return;
+            }
+            String v = propertyManager.readValue(PropertyKey.ACL_EPOCH_WIRING_ENABLED);
+            if (v != null && !v.isBlank() && !Boolean.parseBoolean(v.trim())) {
+                logger.warn("{}={} is OBSOLETE and IGNORED since 3.3.0: the pre-epoch ACL write path "
+                        + "was removed, so there is nothing to disable. ACL-epoch fencing is always "
+                        + "on. Remove the setting to stop this warning.",
+                        PropertyKey.ACL_EPOCH_WIRING_ENABLED, v);
+            }
+        } catch (Exception ignore) {
+            // absent / unreadable is the normal case
         }
     }
 
@@ -62,10 +76,7 @@ public class AclEpochScanScheduler {
         if (scheduler != null) {
             return;
         }
-        if (!wiringEnabled()) {
-            logger.info("ACL-epoch scan scheduler NOT started — wiring flag is off (§11.8 default)");
-            return;
-        }
+        warnIfObsoleteFlagIsSet();
         if (finalizationService == null || repositoryInfoMap == null) {
             logger.warn("ACL-epoch scan scheduler NOT started — finalizationService/repositoryInfoMap unwired");
             return;
@@ -98,12 +109,6 @@ public class AclEpochScanScheduler {
 
     /** Package-private for the unit test. */
     void poll() {
-        if (!wiringEnabled()) {
-            // Defence in depth on top of start()'s gate: PropertyManager resolves system
-            // properties and ENV on every read, so a deployment that flips the flag OFF at
-            // runtime (or a future caller invoking poll() directly) must not keep sweeping.
-            return;
-        }
         if (leaderElection != null && leaderElection.isEnabled() && !leaderElection.isLeader(LEADER_ROLE)) {
             return; // only the leader sweeps the shared outbox
         }

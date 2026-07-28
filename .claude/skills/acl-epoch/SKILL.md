@@ -1,6 +1,6 @@
 ---
 name: acl-epoch
-description: ACL-epoch fencing のコンテキスト。増分 12 で配線実装済み (flag default OFF・flip はデプロイ運用)、増分の現在地、デプロイごとの reindex→migration→flip 手順、ブランチ運用と検証の作法。ACL-in-Solr / epoch / reconciliation キュー / fenced writer に触る、外部レビューに対応する、というときに読む。
+description: ACL-epoch fencing のコンテキスト。増分 14 で常時有効化 (flag 廃止・旧 pre-epoch 経路は削除済み)、増分の現在地、デプロイごとの reindex→migration→flip 手順、ブランチ運用と検証の作法。ACL-in-Solr / epoch / reconciliation キュー / fenced writer に触る、外部レビューに対応する、というときに読む。
 ---
 
 # ACL-epoch fencing (進行中)
@@ -46,14 +46,13 @@ standalone bean / production caller ゼロ / scheduler・init・cron なし。
 scan は cron / init を持たず**明示実行のみ**。`clearMarkerAfterReconcile` は
 エンドポイントを持ちません (reconcile 完了経路への接続は配線扱いのため)。
 
-### 配線は増分 12 で実装済み — flag default OFF
+### 配線は常時有効 (増分 14 で flag 廃止)
 
-applyAcl / move / reconcile re-drive は `acl.epoch.wiring.enabled` が true のとき
-epoch fence 経由 (Phase1 同一 PUT → inline finalize → fenced write → ACK →
-async 完了時 settle)。OFF は従来とビット同一 (mutation 拘束)。
-**Docker での flip は ENV `ACL_EPOCH_WIRING_ENABLED=true`** (WAR 内 properties は
-イメージの docker/core/nemakiware.properties に上書きされるので編集しても無駄)。
-flip 前提: 全再索引 → migration verdict → ON → 再起動。rollback = flag OFF。
+applyAcl / move / reconcile re-drive は必ず epoch fence 経由
+(Phase1 同一 PUT → finalize → ACK → fenced write → clear → async で task 消化)。
+増分 12–13 の `acl.epoch.wiring.enabled` と pre-epoch の generation fence
+(`updateReadersFenced` / `acl_index_generation`) は**削除済み**。
+旧設定が残っていれば起動時に WARN。ロールバック経路はありません。
 
 ### デプロイごとの運用義務
 

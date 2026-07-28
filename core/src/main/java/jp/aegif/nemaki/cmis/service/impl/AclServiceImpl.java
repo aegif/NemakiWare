@@ -108,19 +108,6 @@ public class AclServiceImpl implements AclService {
 		this.aclEpochIndexWriter = w;
 	}
 
-	/**
-	 * §11.8: the ONE wiring flag, default {@code false}. OFF must stay bit-identical to the
-	 * pre-epoch behavior — unreadable configuration reads as OFF for the same reason.
-	 */
-	boolean epochWiringEnabled() {
-		try {
-			return propertyManager != null && propertyManager
-					.readBoolean(jp.aegif.nemaki.util.constant.PropertyKey.ACL_EPOCH_WIRING_ENABLED);
-		} catch (Exception e) {
-			return false;
-		}
-	}
-
 	public void setConnectorPool(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool connectorPool) {
 		this.connectorPool = connectorPool;
 	}
@@ -302,13 +289,10 @@ public class AclServiceImpl implements AclService {
 			// the DB update below, so they re-read the new parent ACL.
 			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(content.getId());
 
-			// ── ACL-epoch Phase 1 (§11.2, flag-gated): mark the model so the SAME PUT that
-			// persists the ACL change persists PENDING_EPOCH + a fresh mutation id — one _rev,
-			// atomic by construction (the carrier plumbing of step 0 makes this non-destructive).
-			String epochMutationId = null;
-			if (epochWiringEnabled()) {
-				epochMutationId = jp.aegif.nemaki.epoch.AclEpochPhase1.markPending(content);
-			}
+			// ── ACL-epoch Phase 1 (§11.2): mark the model so the SAME PUT that persists the ACL
+			// change persists PENDING_EPOCH + a fresh mutation id — one _rev, atomic by
+			// construction (the carrier plumbing of step 0 makes this non-destructive).
+			String epochMutationId = jp.aegif.nemaki.epoch.AclEpochPhase1.markPending(content);
 
 			// skipRAGIndexing=true: ACL change does not alter document content,
 			// so TEI re-embedding is unnecessary. RAG ACL is updated separately below.
@@ -447,9 +431,8 @@ public class AclServiceImpl implements AclService {
 		// this path — the recursion below refreshes the root too (review round 3 #2) — so the
 		// settle happens at the async completion, keeping the root task alive until the subtree
 		// is actually covered (a crash before that leaves the task, and the queue re-drives).
-		final String epochMutationId = epochWiringEnabled()
-				? content.aclEpochFieldAsString(jp.aegif.nemaki.epoch.AclEpochState.FIELD_MUTATION_ID)
-				: null;
+		final String epochMutationId =
+				content.aclEpochFieldAsString(jp.aegif.nemaki.epoch.AclEpochState.FIELD_MUTATION_ID);
 		final Long epochE = (epochMutationId != null) ? finalizeAndAck(repositoryId, content.getId()) : null;
 
 		ragAclExecutor.submit(() -> {
@@ -591,12 +574,12 @@ public class AclServiceImpl implements AclService {
 	 * Write a node's search-index readers, choosing the write strategy by path:
 	 * <ul>
 	 *   <li><b>Reconciliation re-drive ({@code syncConfirm=true})</b>: an ATOMIC
-	 *       readers-only, {@code _version_}-CAS + generation-fenced update
-	 *       ({@link jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil#updateReadersFenced}).
-	 *       This closes the TOCTOU (the generation check and the write are atomic) and
-	 *       cannot clobber body/path (it only sets {@code readers}). If the doc is not
-	 *       yet indexed there is nothing to clobber, so it falls back to a strict full
-	 *       index (a genuine build failure then propagates and is counted).</li>
+	 *       ACL-group-only, {@code _version_}-CAS + EPOCH-fenced update
+	 *       ({@link #writeContentReadersEpochFenced}). This closes the TOCTOU (the fence
+	 *       comparison and the write are atomic) and cannot clobber body/path (it only
+	 *       sets the ACL group). If the doc is not yet indexed there is nothing to
+	 *       clobber, so it falls back to a strict full index (a genuine build failure
+	 *       then propagates and is counted).</li>
 	 *   <li><b>Async applyAcl/move refresh ({@code syncConfirm=false})</b>: the
 	 *       pre-existing best-effort full re-index (last-writer-wins; a transient failure
 	 *       is enqueued via {@code onWriteFailed}). Concurrent async writers reordering
@@ -742,7 +725,7 @@ public class AclServiceImpl implements AclService {
 		try {
 			// TERMINUS half 2: consume the TASK only. The marker was cleared SYNCHRONOUSLY inside
 			// the mutation request (see finalizeWriteOwnNodeAndAck) — clearing here raced the next
-			// mutation's Phase-1 PUT on the content document, which the flag-ON TCK caught as a
+			// mutation's Phase-1 PUT on the content document, which the live TCK caught as a
 			// CouchDB update conflict. The D5 order (clear BEFORE complete) is preserved across the
 			// two halves; a crash between them is §11.6 row 5 and converges via the re-drive.
 			if (reconciliationService != null) {
@@ -755,8 +738,9 @@ public class AclServiceImpl implements AclService {
 	}
 
 	/**
-	 * §11.3 cutover: with the wiring flag ON, the ACL group is written by the epoch writer in
-	 * bootstrap-tolerant mode (approved D2); OFF keeps the generation-fenced path bit-identical.
+	 * §11.3: the ACL group is written by the epoch writer in bootstrap-tolerant mode (approved D2).
+	 * Since increment 14 this is the ONLY ACL-group write path — there is no second implementation
+	 * and no flag selecting between them.
 	 */
 	private void writeContentReadersEpochFenced(jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil solrUtil,
 			String repositoryId, Content content, Runnable onWriteFailed) throws Exception {
@@ -780,29 +764,11 @@ public class AclServiceImpl implements AclService {
 
 	void writeContentReaders(jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil solrUtil,
 			String repositoryId, Content content, Runnable onWriteFailed) throws Exception {
-		if (epochWiringEnabled()) {
-			writeContentReadersEpochFenced(solrUtil, repositoryId, content, onWriteFailed);
-			return;
-		}
-		// UNIFIED write path (review round 3, #1): BOTH the async applyAcl/move refresh
-		// AND the reconciliation re-drive write ACL readers through the SAME
-		// generation-fenced atomic readers-only CAS. Previously only the reconcile used
-		// the CAS while the async refresh did an un-fenced full-doc add — so a late stale
-		// async writer (gen=1) could overwrite a fresher reconcile write (gen=2) with no
-		// subsequent convergence event, leaving Solr permanently stale. Routing every
-		// ACL-only writer through updateReadersFenced makes the highest generation win.
-		@SuppressWarnings("deprecation") // the ONE legitimate caller: the flag-OFF rollback path
-		jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.ReadersUpdateResult result =
-				solrUtil.updateReadersFenced(repositoryId, content);
-		if (result == jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.ReadersUpdateResult.NOT_INDEXED) {
-			// Not in Solr yet — nothing to clobber. Full index (itself generation-fenced
-			// + create-if-absent via indexDocumentInternal, so a concurrent create cannot
-			// be overwritten). strict=true: a genuine readers/body/path failure throws so
-			// the node is recorded/retried instead of persisting a degraded doc as clean.
-			solrUtil.indexDocument(repositoryId, content, true, true, onWriteFailed, true);
-		}
-		// UPDATED / SKIPPED_NEWER_GENERATION → done (skip is a clean no-op: a fresher
-		// generation already landed and must not be overwritten).
+		// UNIFIED write path: BOTH the async applyAcl/move refresh AND the reconciliation
+		// re-drive write the ACL group through the SAME epoch-fenced atomic CAS. Two writers
+		// with two fences would be two answers to "which ACL state is newer", and the older
+		// one would eventually win a race with no convergence event behind it.
+		writeContentReadersEpochFenced(solrUtil, repositoryId, content, onWriteFailed);
 	}
 
 	@Override
@@ -895,9 +861,6 @@ public class AclServiceImpl implements AclService {
 
 	/** Returns true when the terminus is settled (cleared / abandoned / nothing to do). */
 	private boolean epochTerminusAfterCleanReDrive(String repositoryId, String objectId, Content preRead) {
-		if (!epochWiringEnabled()) {
-			return true;
-		}
 		String mutationId = preRead.aclEpochFieldAsString(
 				jp.aegif.nemaki.epoch.AclEpochState.FIELD_MUTATION_ID);
 		if (mutationId == null) {

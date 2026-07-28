@@ -89,27 +89,25 @@ public class ContentWriterFenceTest {
     // ── preserve ───────────────────────────────────────────────────
 
     /**
-     * ALL THREE fields move together. Preserving only `readers` while the content writer stamps a
-     * fresh `acl_index_generation` yields "old readers, new generation", and `updateReadersFenced` —
-     * which still reads that field — then SKIPS FOR EVER, freezing the stale readers with the very
-     * mechanism meant to protect them.
+     * BOTH ACL-group fields come back together. Preserving the readers while leaving a mismatched
+     * epoch beside them would hand the ACL fence a value that does not describe what it sits next
+     * to. (Until increment 14 a THIRD field, acl_index_generation, moved with them; the pre-epoch
+     * fence that read it no longer exists.)
      */
     @Test
-    public void preserveCarriesALLTHREEAclGroupFields() {
-        SolrDocument s = stored(INC_A, 5L,
-                "readers", List.of("user:r:alice", "group:r:g1"),
-                "effective_acl_epoch", 42L,
-                "acl_index_generation", 9L);
+    public void preserveRestoresBOTHAclGroupFieldsTogether() {
+        SolrDocument storedDoc = stored(INC_A, 5L,
+                "readers", List.of("user:a"), "effective_acl_epoch", 7L);
         Map<String, Object> rebuilt = new LinkedHashMap<>();
-        rebuilt.put("readers", List.of("user:r:STALE"));
-        rebuilt.put("acl_index_generation", 99L);   // what the content writer just stamped
+        rebuilt.put("readers", List.of("user:STALE"));
 
-        assertEquals(AclGroupOutcome.PRESERVED, ContentWriterFence.preserveAclGroup(s, rebuilt));
-
-        assertEquals(List.of("user:r:alice", "group:r:g1"), rebuilt.get("readers"));
-        assertEquals(42L, rebuilt.get("effective_acl_epoch"));
-        assertEquals(9L, rebuilt.get("acl_index_generation"),
-                "the generation must come back too, or updateReadersFenced skips for ever");
+        assertEquals(AclGroupOutcome.PRESERVED,
+                ContentWriterFence.preserveAclGroup(storedDoc, rebuilt));
+        assertEquals(List.of("user:a"), rebuilt.get("readers"));
+        assertEquals(7L, rebuilt.get("effective_acl_epoch"),
+                "the epoch must come back with the readers it describes");
+        assertFalse(rebuilt.containsKey("acl_index_generation"),
+                "the retired legacy field must not reappear");
     }
 
     /** An EXISTING document with no ACL group: the content writer's expansion is not an answer. */

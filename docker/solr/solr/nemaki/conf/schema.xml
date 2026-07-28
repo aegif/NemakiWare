@@ -232,18 +232,11 @@
    <!-- Format: "user:username" or "group:groupname" or "anyone" -->
    <field name="readers" type="string" indexed="true" stored="true" required="false" multiValued="true" />
 
-   <!-- ACL-in-Solr generation fence: the leading integer of the object's CouchDB
-        _rev (bumps on every applyAcl / move / update). The reconciliation re-drive
-        reads this back and skips its write when Solr already holds a strictly-newer
-        generation, so a slow stale re-drive cannot overwrite a concurrent applyAcl's
-        fresher readers. -->
-   <field name="acl_index_generation" type="long" indexed="true" stored="true" required="false" multiValued="false" />
-
    <!-- ACL-epoch fence (acl-epoch-fencing.md §4.1/§4.4): the EFFECTIVE epoch of the
         object = max(aclSourceEpoch over itself + its inheriting ancestors; for a
-        relationship also both endpoint chains). Unlike acl_index_generation (which is
-        the object's own CouchDB _rev and therefore cannot order a change made on an
-        ANCESTOR), every value here comes from ONE repository-wide monotonic counter, so
+        relationship also both endpoint chains). Unlike an object's own CouchDB _rev
+        (which cannot order a change made on an ANCESTOR), every value here comes from
+        ONE repository-wide monotonic counter, so
         epochs are comparable across objects and a parent's ACL change orders correctly
         against its descendants'. Written ONLY as part of the atomic ACL-group update
         ({readers, effective_acl_epoch}) under a _version_ CAS. -->
@@ -260,9 +253,7 @@
         The incarnation is ALWAYS persisted on the CouchDB Content first (by _rev CAS)
         and only then stamped here; a Solr-only value would let two concurrent writers
         pick different UUIDs and clobber each other for ever.
-        NOTE acl_index_generation above is RETAINED for compatibility and is still the
-        live ACL fence input until that axis moves to effective_acl_epoch. It is NOT an
-        input to the content fence, which reads content_generation only. -->
+        The ACL axis is fenced by effective_acl_epoch above and does not read these. -->
    <field name="content_incarnation" type="string" indexed="true" stored="true" required="false" multiValued="false" />
    <field name="content_generation" type="long" indexed="true" stored="true" required="false" multiValued="false" />
 

@@ -127,11 +127,6 @@ services:
       # Other ${VAR:-} fallbacks remain only for optional features (cloud auth,
       # OIDC, SAML, LDAP) where empty / disabled is the safe default.
       # When DIRECTORY_SYNC_ENABLED=true, LDAP_BIND_PASSWORD must be supplied.
-      # Stage D (increment 13): the DEV stack soaks with the ACL-epoch wiring ON.
-      # PropertyManager resolves ENV before the classpath files, so this wins over the
-      # shipped default (false). Production composes do NOT set it — the flip there stays
-      # the documented per-deployment step (reindex → migration verdict → enable).
-      - ACL_EPOCH_WIRING_ENABLED=${ACL_EPOCH_WIRING_ENABLED:-true}
       - CATALINA_OPTS=-Xms1g -Xmx3g -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Ddb.couchdb.auth.enabled=true -Ddb.couchdb.auth.username=${COUCHDB_USER:?COUCHDB_USER must be set} -Ddb.couchdb.auth.password=${COUCHDB_PASSWORD:?COUCHDB_PASSWORD must be set} -Dsolr.host=solr -Dsolr.port=8983 -Dsolr.protocol=http -Dcloud.auth.google.enabled=${CLOUD_AUTH_GOOGLE_ENABLED:-false} -Dcloud.auth.google.clientId=${CLOUD_AUTH_GOOGLE_CLIENT_ID:-} -Dcloud.auth.microsoft.enabled=${CLOUD_AUTH_MICROSOFT_ENABLED:-false} -Dcloud.auth.microsoft.clientId=${CLOUD_AUTH_MICROSOFT_CLIENT_ID:-} -Dcloud.auth.microsoft.tenantId=${CLOUD_AUTH_MICROSOFT_TENANT_ID:-} -Dcloud.drive.google.enabled=${CLOUD_DRIVE_GOOGLE_ENABLED:-false} -Dcloud.drive.microsoft.enabled=${CLOUD_DRIVE_MICROSOFT_ENABLED:-false} -Dsso.oidc.enabled=${SSO_OIDC_ENABLED:-false} -Dsso.saml.enabled=${SSO_SAML_ENABLED:-false} -Doidc.enabled=${OIDC_ENABLED:-false} -Doidc.issuer=${OIDC_ISSUER:-http://keycloak:8080/realms/nemakiware} -Doidc.clientId=${OIDC_CLIENT_ID:-nemakiware-ui} -Ddirectory.sync.enabled=${DIRECTORY_SYNC_ENABLED:-false} -Ddirectory.sync.ldap.url=${LDAP_URL:-ldap://openldap:389} -Ddirectory.sync.ldap.base.dn=${LDAP_BASE_DN:-dc=nemakiware,dc=example,dc=com} -Ddirectory.sync.ldap.bind.dn=${LDAP_BIND_DN:-cn=admin,dc=nemakiware,dc=example,dc=com} -Ddirectory.sync.ldap.bind.password=${LDAP_BIND_PASSWORD:-} -Djdk.httpclient.allowRestrictedHeaders=host
     env_file:
       - path: ./secrets/microsoft-entra.env

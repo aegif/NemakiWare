@@ -733,12 +733,10 @@ Spring-wired beans.
 would have gone looking for a Solr problem that never happened. New reason `OUTBOX_ACK`; the field
 is free-form, so existing tasks keep their values.
 
-**Next:** increment 12 is IMPLEMENTED (§11.11) behind `acl.epoch.wiring.enabled=false`. What
-remains is OPERATIONAL: per deployment — full reindex → migration (verdict COMPLETE /
-COMPLETE_EXCEPT_ORPHANS) → flip the flag (ENV `ACL_EPOCH_WIRING_ENABLED=true` on Docker) → restart.
-The generation-fence code path still exists behind the flag for rollback; removing it and the
-legacy `acl_index_generation` field is a later cleanup increment, as is the orphan-index-entry
-delete endpoint (deferred by decision).
+**Next:** increment 12 is IMPLEMENTED (§11.11); increments 13–14 removed the flag and the
+generation fence entirely (§11.12/§11.13). What remains is OPERATIONAL: per deployment — full
+reindex → migration (verdict COMPLETE / COMPLETE_EXCEPT_ORPHANS). There is no flag to flip and no
+rollback path.
 
 **Process correction:** any "verified live" claim in this document or in a test comment must carry
 the command and its raw output. This one did not, and the reviewer's independent Browser-Binding,
@@ -918,14 +916,15 @@ proceeds in the staged report order; each increment must land fail-closed (§ si
 invariant 9) and is not enabled in a write path until its stage is complete. The PWC
 purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5–7).
 
-## 11. Increment 12 — PRODUCTION WIRING (IMPLEMENTED behind a default-OFF flag)
+## 11. Increment 12 — PRODUCTION WIRING (IMPLEMENTED; ALWAYS ON since increment 14)
 
 **Status: IMPLEMENTED as approved (D1–D6 signed off, with the reviewer's step-0 clarification:
-contentIncarnation mints at create; the four epoch fields NEVER mint). The wiring exists in the
-code and is governed by `acl.epoch.wiring.enabled` — default `false`, which is bit-identical
-pre-epoch behavior (mutation-bound). "NO-GO" is now an OPERATIONAL statement: the flag stays off
-until a deployment has run the full reindex + migration (§11.8), and flipping it is that
-deployment's explicit decision.** All four gates are closed
+contentIncarnation mints at create; the four epoch fields NEVER mint). Increment 12 shipped behind
+`acl.epoch.wiring.enabled=false`; increment 14 (§11.13) deleted the flag AND the pre-epoch path, so
+the wiring is unconditional. The remaining per-deployment obligation is the full reindex +
+migration (§11.8) — not fatal if skipped (each document's first ACL write fences it), but skipping
+it trades a quiet upgrade for a reconciliation burst.** Text below that speaks of "the flag" is the
+increment-12 record; read it with §11.13. All four gates are closed
 (increments 7/8/9/10, 5T) and the operator surfaces exist (9/10/10a/11); this section specifies how
 the machinery goes onto the ACL write path.
 
@@ -1007,8 +1006,8 @@ Replace the generation-fenced body (`updateReadersFenced`) with the epoch writer
   per-node failures inside a refresh rooted at a mutation with epoch `E` carry `E`. Paths with no
   epoch context keep best-effort `enqueue` (obligation 0), exactly the increment-7a semantics.
 - `updateReadersFenced` (generation fence) loses its last ACL-axis caller and is removed from that
-  path; `acl_index_generation` becomes inert legacy data (still preserved by the content writer's
-  ACL-group copy; field removal is a separate later increment).
+  path; `acl_index_generation` becomes inert legacy data. (Both were DELETED outright in increment
+  14, §11.13.)
 - Relationships flow through the same seam; the walk already computes endpoint-union readers.
 
 ### 11.4 Step 3 — ACK and terminus
@@ -1079,9 +1078,9 @@ handles quarantine blocks).
 
 ### 11.8 Flag, rollout, rollback
 
-- `nemakiware.acl.epoch.wiring.enabled`, **default `false`**. OFF means bit-identical current
-  behavior — mutation-bound: with the flag off, no epoch field is ever written and the generation
-  path runs (removing the flag check fails that test).
+- ~~`acl.epoch.wiring.enabled`, default `false`~~ — the flag existed for increments 12–13 and was
+  REMOVED in increment 14 (§11.13) along with the OFF path it guarded. ACL-epoch fencing is always
+  on.
 - Flip procedure per deployment: deploy → mandatory full reindex → migration run
   (`verdict` `COMPLETE`/`COMPLETE_EXCEPT_ORPHANS`) → flip → restart. Flipping without the migration
   is degraded-but-convergent (every first ACL write bootstraps; a reconcile burst) — documented,
@@ -1146,7 +1145,8 @@ version was wrong in a way reasoning had not caught:
      inline either: one retained task per move, whose re-drive performs the terminus (accepted).
    - D5's order (clear before complete) is preserved ACROSS the two halves; a crash between them is
      §11.6 row 5 and converges via the idempotent re-drive.
-2. **Property keys are `acl.epoch.*`** (`acl.epoch.wiring.enabled`, `acl.epoch.scan.*`), matching
+2. **Property keys are `acl.epoch.*`** (`acl.epoch.scan.*`; `acl.epoch.wiring.enabled` existed
+   until increment 14), matching
    the file's unprefixed idiom rather than the `nemakiware.`-prefixed name the proposal used.
 3. **Docker property layering discovered during the drill:** the image COPIES
    `docker/core/nemakiware.properties` OVER the WAR's copy, and `PropertyManager.readValue` resolves
@@ -1219,10 +1219,58 @@ ENV per read, so a runtime flip to OFF stops the sweep even though `start()` gat
 `docker-compose-simple.yml`, overridable). Production composes are untouched; the per-deployment
 flip procedure stands.
 
-**Stage E criteria (NOT met — do not remove yet):** the flag has run ON in production long enough
-that the OFF rollback window is DECLARED closed by the operator; then delete `updateReadersFenced`
-+ `readIndexedGeneration` + the OFF branch of the dispatch + the create-stamp else-branch, collapse
-the preserve to two fields, and drop the schema field with the next reindex-requiring release.
+~~**Stage E criteria (NOT met — do not remove yet)**~~ — **DONE in increment 14** (§11.13). The
+criteria were met differently than anticipated: rather than a production soak declaring the window
+closed, 3.x turned out to have NO production deployments at all, so there was never a rollback to
+preserve.
+
+### 11.13 Increment 14 — stage E: the pre-epoch path is GONE (and so is the flag)
+
+Authorised on the premise that **3.x has no production track record**, so there is nobody to roll
+back FOR. With the OFF path deleted, a flag with one reachable value would be a lie about a choice
+that does not exist — so the flag went too.
+
+Deleted:
+
+- `SolrUtil.updateReadersFenced` + `ReadersUpdateResult` — the pre-epoch ACL fence.
+- `SolrUtil.readIndexedGeneration` — the dead public reader stage A found.
+- The create-time `acl_index_generation` stamp (its OFF branch and the field with it).
+- `ContentWriterFence`'s third preserved field: the ACL group is now **two** fields,
+  `readers` + `effective_acl_epoch`.
+- `acl_index_generation` from the shipped `schema.xml` (the seed for FRESH `SOLR_HOME`s; an
+  existing volume keeps an unused definition, which is inert).
+- `acl.epoch.wiring.enabled` and every check of it (`AclServiceImpl`, `SolrUtil`,
+  `ContentServiceImpl.move`, `AclEpochScanScheduler`), plus the dev compose ENV.
+
+Kept deliberately: the property KEY, read at startup for ONE purpose — if someone's configuration
+still says `acl.epoch.wiring.enabled=false`, a WARN says it is obsolete and ignored. Silently
+ignoring it would leave an operator believing they are on a path that no longer exists.
+
+`readVersionAndGeneration` keeps its name but now reads the CONTENT generation only; its Javadoc
+says so rather than leaving the name to mislead.
+
+**What this closes.** ACL-epoch fencing is no longer *a* way to write the ACL group — it is the
+only way. There is one implementation of "what may write the fence", one field group, one recovery
+sweep, and no configuration that can produce a second answer.
+
+**Mutation binding (MEASURED — each mutation applied alone, whole affected suite run):**
+
+| mutation | what fails |
+|---|---|
+| restore `acl_index_generation` to the preserve set | `ContentWriterFenceTest.preserveRestoresBOTHAclGroupFieldsTogether` (only) |
+| delete the obsolete-flag WARN from `start()` | `AclEpochScanSchedulerTest.anObsoleteFalseFlagIsWarnedAboutAndIgnored` (only) |
+| bypass the epoch fence in `writeContentReaders` | 4 × `AclServiceImplEpochWiringTest` (only) |
+| delete `markPending` from `ContentServiceImpl.move` | 3 × `ContentServiceImplMovePhase1Test` (only) |
+
+**A gap this measurement found.** The last row did NOT hold when stage E began: deleting the move's
+Phase-1 call broke NOTHING — 352 tests green with the marker gone. `AclEpochPhase1` had its own
+test, so the HELPER was covered while the CALL SITE was not, and the move half of the wiring had
+been unbound since increment 12. `ContentServiceImplMovePhase1Test` closes it, asserting on a
+snapshot taken INSIDE the DAO stub (the DAO receives the live model reference, so a marker written
+after the move would still look like it had ridden along — the same trap as the applyAcl test).
+
+The obsolete-flag test needed the same treatment: as first written it asserted only "the sweep
+still runs", which a deleted warning also satisfies. It now captures the logback event.
 
 ### Implementation progress
 
@@ -1290,9 +1338,10 @@ the preserve to two fields, and drop the schema field with the next reindex-requ
     recomputing would be a second ACL implementation racing the first.
   - **All THREE ACL-group fields move together** — `readers`, `effective_acl_epoch` AND
     `acl_index_generation`. Preserving only the readers while the content writer stamped a fresh
-    generation would give "old readers, new generation", and `updateReadersFenced` (which still reads
+    generation would give "old readers, new generation", and `updateReadersFenced` (which still read
     that field) would then SKIP FOR EVER, freezing the stale readers with the mechanism meant to
-    protect them. Caught in review before it shipped; mutation-bound now.
+    protect them. Caught in review before it shipped; mutation-bound now. *(Increment 14: the group
+    is TWO fields — the third and its reader are gone.)*
   - **`ContentIncarnation.resolve` makes the §8.1 rule structural rather than a convention**: it
     persists by `_rev` CAS and throws rather than returning a value CouchDB does not hold, so a
     Solr-only incarnation — two writers picking different UUIDs and clobbering each other for ever —
@@ -1310,8 +1359,9 @@ the preserve to two fields, and drop the schema field with the next reindex-requ
     fail, and nothing else does.
   - **Persistent-format addition** (release-noted): the Content field `content_incarnation`, the Solr
     fields `content_incarnation` / `content_generation`, and `Patch_ContentIncarnationBackfill`.
-    `acl_index_generation` is RETAINED and remains the ACL axis' live fence input; it is NOT an input
-    to the content fence, which reads `content_generation` only.
+    `acl_index_generation` was RETAINED at this point as the ACL axis' live fence input; it was
+    never an input to the content fence, which reads `content_generation` only. Increment 14 removed
+    it from the code and the shipped schema.
 
 - **Increment 7 — the outbox ACK (gate 1): DONE.**
   - **7a** — `SearchIndexAclReindexTask.minRequiredEpoch`, merged as a monotonic `max`, with
