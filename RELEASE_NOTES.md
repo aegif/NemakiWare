@@ -68,6 +68,25 @@ will not deserialize; that route REFUSES a healthy document. After deleting one,
 `objectId` — deleting a task drops only the automatic retry. Earlier 3.3.0 pre-releases let a single
 corrupt entry stall the whole queue with no way to remove it through the API.
 
+### ACL-epoch fencing wired (opt-in, default OFF)
+
+`acl.epoch.wiring.enabled=false` (the default) keeps 3.3.0 bit-identical to the pre-epoch
+behavior. When flipped ON, ACL mutations (applyAcl, move) run the two-phase outbox — the pending
+marker rides the SAME CouchDB write as the ACL change, an epoch is finalized post-commit, the Solr
+ACL group is written under the epoch fence (`readers` + `effective_acl_epoch`, `_version_` CAS),
+and a durable reconciliation obligation guarantees convergence across crashes. A leader-gated
+recovery sweep runs every 5 minutes (only while the flag is on).
+
+Flip ONLY in this order, per deployment: full reindex → initial-epoch migration
+(`verdict` COMPLETE / COMPLETE_EXCEPT_ORPHANS) → enable the flag → restart. On Docker set the
+environment variable `ACL_EPOCH_WIRING_ENABLED=true` (the container's property files are layered;
+the env var always wins). Rollback is simply turning the flag off — the generation-fenced path is
+retained and both directions are safe.
+
+Also fixed while plumbing this: an ordinary update (rename, property edit) used to RE-MINT
+`content_incarnation` on every write because the model never carried it — each update silently
+started a new content "lifetime" for the content fence. Updates now round-trip it verbatim.
+
 ### New admin API: initial ACL-epoch stamp (run it AFTER the full reindex)
 
 `POST /api/v1/admin/acl-epoch/migration/{repositoryId}` stamps the initial `effective_acl_epoch` on

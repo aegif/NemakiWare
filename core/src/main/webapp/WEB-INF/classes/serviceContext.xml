@@ -387,6 +387,12 @@
     </bean>
 
     <bean id="aclService" class="jp.aegif.nemaki.cmis.service.impl.AclServiceImpl" destroy-method="destroy">
+        <!-- ACL-epoch production wiring (design §11, increment 12). The FLAG
+             (acl.epoch.wiring.enabled, default false) decides whether any of it runs; with the
+             flag off these collaborators sit idle and behavior is bit-identical pre-epoch. -->
+        <property name="propertyManager"><ref bean="propertyManager" /></property>
+        <property name="aclEpochFinalizationService"><ref bean="aclEpochFinalizationService" /></property>
+        <property name="aclEpochIndexWriter"><ref bean="aclEpochIndexWriter" /></property>
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
@@ -497,6 +503,17 @@
         <!-- The principal resolver is built from this via ACLExpander.principalResolver, so the
              migration and the RAG token layer share ONE binding of the tri-state lookups. -->
         <property name="principalService" ref="principalService" />
+    </bean>
+
+    <!-- ACL-epoch crash-recovery sweep (design §11.7, increment 12). Leader-gated like the
+         reconciliation poller; starts ONLY when acl.epoch.wiring.enabled=true — with the flag
+         off, start() logs and returns without scheduling anything. -->
+    <bean id="aclEpochScanScheduler" class="jp.aegif.nemaki.epoch.AclEpochScanScheduler"
+          init-method="start" destroy-method="stop">
+        <property name="finalizationService" ref="aclEpochFinalizationService" />
+        <property name="propertyManager" ref="propertyManager" />
+        <property name="leaderElection" ref="leaderElection" />
+        <property name="repositoryInfoMap" ref="repositoryInfoMap" />
     </bean>
 
     <!-- Search-index ACL reconciliation: durable CouchDB queue + leader-gated poller -->

@@ -2883,6 +2883,19 @@ public class ContentServiceImpl implements ContentService {
 
 		content.setParentId(target.getId());
 
+		// ── ACL-epoch Phase 1 for MOVE (design §11.2, flag-gated, default OFF): the parent change
+		// IS an ACL mutation (the inherited chain changes), so the marker must ride the SAME PUT as
+		// the parentId change — one _rev, atomic by construction. Phase 2 (finalize + ACK) runs in
+		// AclServiceImpl.refreshMovedSubtreeSearchIndexAcl, which the move caller invokes next.
+		try {
+			if (propertyManager != null && propertyManager.readBoolean(
+					jp.aegif.nemaki.util.constant.PropertyKey.ACL_EPOCH_WIRING_ENABLED)) {
+				jp.aegif.nemaki.epoch.AclEpochPhase1.markPending(content);
+			}
+		} catch (Exception e) {
+			// Unreadable configuration reads as OFF — bit-identical pre-epoch behavior (§11.8).
+		}
+
 		Content result = move(repositoryId, content, sourceId);
 
 		Folder source = getFolder(repositoryId, sourceId);

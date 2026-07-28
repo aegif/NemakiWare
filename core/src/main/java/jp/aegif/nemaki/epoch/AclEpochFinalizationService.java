@@ -969,6 +969,15 @@ public class AclEpochFinalizationService {
      *                                      LEFT — fail-closed, retried by the next scan)
      * @throws AclEpochContentionException  the CAS did not converge (valid doc, competing writer)
      */
+    /** {@link #ackFinalized(String, Document)} addressed by id — the §11.4 inline-ACK entry point. */
+    public AckResult ackFinalized(String repositoryId, String docId) {
+        Document d = getDoc(repositoryId, docId);
+        if (d == null) {
+            return AckResult.ABANDONED; // deleted — nothing to ack
+        }
+        return ackFinalized(repositoryId, d);
+    }
+
     public AckResult ackFinalized(String repositoryId, Document hint) {
         if (reconciliationService == null) {
             throw new AclEpochWiringException("reconciliationService not wired on "

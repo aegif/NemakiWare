@@ -97,7 +97,13 @@ public class ACLExpander {
      * could not tell a deleted principal from a lookup that could not be SERVED, so a missing design
      * document / view / database silently produced an admin-only reader set that was then written as
      * a success.
+     *
+     * <p>The instance form binds THIS expander's PrincipalService (§11.3 call sites).
      */
+    public AclSemantics.PrincipalResolver principalResolver() {
+        return principalResolver(this.principalService);
+    }
+
     public static AclSemantics.PrincipalResolver principalResolver(PrincipalService principalService) {
         return new AclSemantics.PrincipalResolver() {
             @Override public PrincipalLookup lookupUser(String repo, String principalId) {
