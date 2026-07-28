@@ -263,6 +263,31 @@ public class SearchIndexReconciliationServiceIT {
     }
 
     /**
+     * §11.4 inline settle (approved D6): consume the own-node obligation ONLY when this write
+     * actually covered it — a concurrent newer mutation may have merged a HIGHER obligation, and a
+     * poller mid-re-drive owns its own terminus.
+     */
+    @Test
+    void settleIfCoveredConsumesOnlyACoveredUnleasedObligation() {
+        svc.enqueueOrThrow(repo, "objS", SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE,
+                SearchIndexAclReindexTask.Operation.ACL_REINDEX, 5L);
+
+        assertFalse(svc.settleIfCovered(repo, "objS", 4L),
+                "a HIGHER obligation (5) must not be consumed by a write that satisfied only 4");
+        assertNotNull(onlyTaskFor("objS"), "and the task must still exist");
+
+        // A poller holding a live lease owns the terminus — hands off.
+        SearchIndexAclReindexTask claimed = svc.claimDue(50, "it-node", 60_000L).stream()
+                .filter(t -> repo.equals(t.getRepositoryId())).findFirst().orElseThrow();
+        assertFalse(svc.settleIfCovered(repo, "objS", 9L), "LEASED with a live lease → poller owns it");
+        assertTrue(svc.retryLaterWithoutCountingAnAttempt(claimed, 0L)); // release the lease
+
+        assertTrue(svc.settleIfCovered(repo, "objS", 5L), "covered + unleased → consumed");
+        assertTrue(svc.list(2000).stream().noneMatch(t -> "objS".equals(t.getObjectId())));
+        assertTrue(svc.settleIfCovered(repo, "objS", 5L), "nothing outstanding → trivially settled");
+    }
+
+    /**
      * Gate 4, absorbed 7a residual: ONE corrupt entry must not stall the queue for everything else.
      *
      * <p>Rejecting corruption (above) originally meant THROWING out of the shared deserializer — and

@@ -733,11 +733,12 @@ Spring-wired beans.
 would have gone looking for a Solr problem that never happened. New reason `OUTBOX_ACK`; the field
 is free-form, so existing tasks keep their values.
 
-**Next:** all four wiring gates are CLOSED (increments 7, 8, 9, 10; 5T earlier) and the wiring
-increment is now DESIGNED — §11 (increment 12, PROPOSED) — but **NOT implemented: production wiring
-remains NO-GO until §11 is reviewed and its decision points (§11.10) explicitly approved.** Note
-also that gate 2 closes per DEPLOYMENT, not once: the runner must be executed against each real
-repository, AFTER that deployment's mandatory full reindex.
+**Next:** increment 12 is IMPLEMENTED (§11.11) behind `acl.epoch.wiring.enabled=false`. What
+remains is OPERATIONAL: per deployment — full reindex → migration (verdict COMPLETE /
+COMPLETE_EXCEPT_ORPHANS) → flip the flag (ENV `ACL_EPOCH_WIRING_ENABLED=true` on Docker) → restart.
+The generation-fence code path still exists behind the flag for rollback; removing it and the
+legacy `acl_index_generation` field is a later cleanup increment, as is the orphan-index-entry
+delete endpoint (deferred by decision).
 
 **Process correction:** any "verified live" claim in this document or in a test comment must carry
 the command and its raw output. This one did not, and the reviewer's independent Browser-Binding,
@@ -917,10 +918,14 @@ proceeds in the staged report order; each increment must land fail-closed (§ si
 invariant 9) and is not enabled in a write path until its stage is complete. The PWC
 purge fix (§5) was approved and implemented ahead of the epoch work (rounds 5–7).
 
-## 11. Increment 12 — PRODUCTION WIRING (PROPOSED; awaiting review + explicit approval)
+## 11. Increment 12 — PRODUCTION WIRING (IMPLEMENTED behind a default-OFF flag)
 
-**Status: design only. Nothing in this section is implemented, and `AclEpochIndexWriter.write()`
-remains NO-GO until this section is reviewed and explicitly approved.** All four gates are closed
+**Status: IMPLEMENTED as approved (D1–D6 signed off, with the reviewer's step-0 clarification:
+contentIncarnation mints at create; the four epoch fields NEVER mint). The wiring exists in the
+code and is governed by `acl.epoch.wiring.enabled` — default `false`, which is bit-identical
+pre-epoch behavior (mutation-bound). "NO-GO" is now an OPERATIONAL statement: the flag stays off
+until a deployment has run the full reindex + migration (§11.8), and flipping it is that
+deployment's explicit decision.** All four gates are closed
 (increments 7/8/9/10, 5T) and the operator surfaces exist (9/10/10a/11); this section specifies how
 the machinery goes onto the ACL write path.
 
@@ -1116,6 +1121,71 @@ Implementation lands as reviewable commits (step 0 inert plumbing → the flag-g
 drill) but flips as ONE flag; slicing that separated the outbox from the Solr cutover would let
 markers pile at `RECONCILE_ENQUEUED` with a re-drive that cannot satisfy them.
 
+
+### 11.11 As-built deviations and the live drill (increment 12 closure)
+
+Deviations from the proposal — each found by RUNNING it, and each recorded because the proposal's
+version was wrong in a way reasoning had not caught:
+
+1. **The §11.4 order is wrong twice, and the as-built order is
+   `finalize → ACK → own-node write → clear` (sync) then `complete` (async tail).**
+   - *Write-before-ACK cannot work at all*: the §4.2 pending gate refuses
+     `FINALIZED_NEEDS_RECONCILE` as a mid-mutation source, so the own-node write attempted between
+     finalize and ack NEVER passes the walk. Found on the dev stack — every own-node write failed
+     with the pending-gate message. `RECONCILE_ENQUEUED` is settled and does not gate, so the ACK
+     must come first.
+   - *A fully-async clear races the next mutation*: the flag-ON TCK's rapid apply→remove cycle hit
+     "CouchDB Document update conflict" — the deferred clear was CAS-bumping the content document
+     while the next applyAcl's Phase-1 PUT was in flight, and every raw epoch CAS also left the
+     model CACHE stale. The clear now runs synchronously inside the request (every content-doc rev
+     bump completes before applyAcl returns) and every raw-write burst evicts the object's cache.
+   - *The async half consumes the TASK only, and only when the sync half actually CLEARED.*
+     Consuming the task with the marker still standing strands a `RECONCILE_ENQUEUED` document
+     nothing can ever clear — observed live while the gate bug made every own-node write fail. The
+     move path never clears inline (it has no synchronous own-node write), so it never settles
+     inline either: one retained task per move, whose re-drive performs the terminus (accepted).
+   - D5's order (clear before complete) is preserved ACROSS the two halves; a crash between them is
+     §11.6 row 5 and converges via the idempotent re-drive.
+2. **Property keys are `acl.epoch.*`** (`acl.epoch.wiring.enabled`, `acl.epoch.scan.*`), matching
+   the file's unprefixed idiom rather than the `nemakiware.`-prefixed name the proposal used.
+3. **Docker property layering discovered during the drill:** the image COPIES
+   `docker/core/nemakiware.properties` OVER the WAR's copy, and `PropertyManager.readValue` resolves
+   system property → ENV VAR (`ACL_EPOCH_WIRING_ENABLED`) → classpath files. The per-deployment
+   flip on Docker is therefore the ENV VAR (or the docker-side properties file), not the WAR's
+   defaults. Recorded in the flip runbook.
+
+**Live drill (dev stack, flag ON, raw outputs in the session):**
+
+- **applyAcl** on a fresh folder+child: Phase 1 rode the ACL PUT; finalize allocated epoch 2 from
+  the counter; the own-node fenced write, ACK and deferred settle all ran — end state
+  `aclSourceEpoch: 2` with state/mutationId ABSENT (terminus), Solr root AND child carrying
+  `effective_acl_epoch: 2` with the granted `user:bedroom:testuser`, queue EMPTY, scan all-zero.
+  The child was a fresh create (unfenced at birth, §11.5) bootstrap-fenced by the subtree refresh —
+  D2+D3 working together.
+- **move** of the child to the repository root: Phase 1 rode the parentId PUT; epoch 3; Solr shows
+  `testuser` REMOVED at `effective_acl_epoch: 3`; terminus reached. This is the original
+  unorderable-move-revoke problem, closing through the fence on the production path.
+- **Crash equivalence**: raw `PENDING_EPOCH` injected (= crash after Phase 1) → one admin scan
+  finalized+ACKed it (epoch 4) → the manual re-drive (the WIRED fenced path) reported `reconciled`
+  and the terminus cleared the marker. Every §11.6 row's recovery machinery exercised through the
+  production beans.
+
+**Second drill after the order fix:** three back-to-back applyAcls on one folder — all HTTP 200
+(the TCK's conflict shape gone), end state marker ABSENT at `aclSourceEpoch: 11`, Solr
+`effective_acl_epoch: 11` with the granted token, queue EMPTY. The first drill's happy path
+(epoch 2 / move epoch 3 / crash-recovery epoch 4) ran on the pre-fix build whose async clear
+happened to win its races; the numbers remain valid as evidence of the outbox mechanics.
+
+**Verification:** unit+IT 3435/3435 with the flag off (bit-identity); the wiring contracts
+MUTATION-MEASURED eight ways (M1 Phase-1 same-PUT atomicity — after fixing the test to snapshot the
+carrier AT PUT TIME, since a captor holds the live reference; M2 flag-off bit-identity; M3 the
+§11.3 dispatch; M4' the terminus split — moving the clear back into the async racer fails the
+async-half guard; M5 settle coverage check; M6 a failed re-drive clear keeps the task; M7
+quarantine rethrow; M8 the uncleared-marker guard — an own-node write failure must leave the task
+unconsumed, the live-observed stranding shape). NOT mutation-measured: the move-path Phase 1 (bound
+by the live move drill instead), the finalize→ACK→write ORDER itself (bound by InOrder verification
+and the live drill; a mutation swapping it passes the unit mocks, which do not implement the
+pending gate), the Spring XML, and the scheduler's absence-of-cron property.
 
 ### Implementation progress
 

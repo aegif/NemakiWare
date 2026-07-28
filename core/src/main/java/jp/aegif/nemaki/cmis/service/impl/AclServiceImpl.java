@@ -91,6 +91,36 @@ public class AclServiceImpl implements AclService {
 	 */
 	private jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool connectorPool;
 
+	// ── ACL-epoch production wiring (design §11, increment 12; flag-gated, default OFF) ──
+	private jp.aegif.nemaki.util.PropertyManager propertyManager;
+	private jp.aegif.nemaki.epoch.AclEpochFinalizationService aclEpochFinalizationService;
+	private jp.aegif.nemaki.epoch.AclEpochIndexWriter aclEpochIndexWriter;
+
+	public void setPropertyManager(jp.aegif.nemaki.util.PropertyManager propertyManager) {
+		this.propertyManager = propertyManager;
+	}
+
+	public void setAclEpochFinalizationService(jp.aegif.nemaki.epoch.AclEpochFinalizationService s) {
+		this.aclEpochFinalizationService = s;
+	}
+
+	public void setAclEpochIndexWriter(jp.aegif.nemaki.epoch.AclEpochIndexWriter w) {
+		this.aclEpochIndexWriter = w;
+	}
+
+	/**
+	 * §11.8: the ONE wiring flag, default {@code false}. OFF must stay bit-identical to the
+	 * pre-epoch behavior — unreadable configuration reads as OFF for the same reason.
+	 */
+	boolean epochWiringEnabled() {
+		try {
+			return propertyManager != null && propertyManager
+					.readBoolean(jp.aegif.nemaki.util.constant.PropertyKey.ACL_EPOCH_WIRING_ENABLED);
+		} catch (Exception e) {
+			return false;
+		}
+	}
+
 	public void setConnectorPool(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool connectorPool) {
 		this.connectorPool = connectorPool;
 	}
@@ -272,6 +302,14 @@ public class AclServiceImpl implements AclService {
 			// the DB update below, so they re-read the new parent ACL.
 			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(content.getId());
 
+			// ── ACL-epoch Phase 1 (§11.2, flag-gated): mark the model so the SAME PUT that
+			// persists the ACL change persists PENDING_EPOCH + a fresh mutation id — one _rev,
+			// atomic by construction (the carrier plumbing of step 0 makes this non-destructive).
+			String epochMutationId = null;
+			if (epochWiringEnabled()) {
+				epochMutationId = jp.aegif.nemaki.epoch.AclEpochPhase1.markPending(content);
+			}
+
 			// skipRAGIndexing=true: ACL change does not alter document content,
 			// so TEI re-embedding is unnecessary. RAG ACL is updated separately below.
 			contentService.updateInternal(repositoryId, content, true);
@@ -281,8 +319,18 @@ public class AclServiceImpl implements AclService {
 			// that inherit ACL. This prevents race conditions where child documents show stale permissions.
 			clearCachesRecursively(repositoryId, content);
 
-			// Async update RAG index ACL for this object and descendants
-			updateRAGIndexACLAsync(repositoryId, content);
+			// ── ACL-epoch Phase 2 + own-node fenced write + ACK (§11.4). Never fails the
+			// request: the ACL change is committed and authoritative; every early stop lands in
+			// a state the scanner or the queue already recovers (§11.6).
+			EpochCycleResult epochCycle = (epochMutationId != null)
+					? finalizeWriteOwnNodeAndAck(repositoryId, content, epochMutationId) : null;
+			Long epochE = (epochCycle == null) ? null : epochCycle.epoch;
+
+			// Async update RAG index ACL for this object and descendants. The async tail consumes
+			// the TASK only, and ONLY when the sync half actually cleared the marker — otherwise
+			// the task must survive for the re-drive, whose terminus clears and completes.
+			updateRAGIndexACLAsync(repositoryId, content, epochE,
+					(epochCycle != null && epochCycle.cleared) ? epochMutationId : null);
 
 			return getAcl(callContext, repositoryId, objectId, false, null);
 		}finally{
@@ -294,7 +342,7 @@ public class AclServiceImpl implements AclService {
 	/**
 	 * Get RAGIndexingService from Spring context (lazy loading, optional dependency).
 	 */
-	private RAGIndexingService getRagIndexingService() {
+	RAGIndexingService getRagIndexingService() {
 		if (ragIndexingService != null) {
 			return ragIndexingService;
 		}
@@ -309,7 +357,7 @@ public class AclServiceImpl implements AclService {
 	/**
 	 * Get ACLExpander from Spring context (lazy loading, optional dependency).
 	 */
-	private ACLExpander getAclExpander() {
+	ACLExpander getAclExpander() {
 		if (aclExpander != null) {
 			return aclExpander;
 		}
@@ -326,7 +374,7 @@ public class AclServiceImpl implements AclService {
 	 * content `readers` field (ACL-in-Solr) on inheriting descendants after an
 	 * ACL change — the changed object itself is re-indexed by updateInternal.
 	 */
-	private jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil getSolrUtil() {
+	jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil getSolrUtil() {
 		try {
 			return SpringContext.getApplicationContext()
 					.getBean(jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.class);
@@ -393,20 +441,36 @@ public class AclServiceImpl implements AclService {
 			return;
 		}
 		final RAGIndexingService ragRef = ragEnabled ? ragService : null;
+
+		// ── ACL-epoch Phase 2 for MOVE (§11.2/§11.4): ContentServiceImpl.move wrote the Phase-1
+		// marker in the parent-change PUT; finalize + ACK here. No synchronous own-node write on
+		// this path — the recursion below refreshes the root too (review round 3 #2) — so the
+		// settle happens at the async completion, keeping the root task alive until the subtree
+		// is actually covered (a crash before that leaves the task, and the queue re-drives).
+		final String epochMutationId = epochWiringEnabled()
+				? content.aclEpochFieldAsString(jp.aegif.nemaki.epoch.AclEpochState.FIELD_MUTATION_ID)
+				: null;
+		final Long epochE = (epochMutationId != null) ? finalizeAndAck(repositoryId, content.getId()) : null;
+
 		ragAclExecutor.submit(() -> {
 			try {
 				// isRoot=true: the moved object itself was already re-indexed by
 				// ContentServiceImpl.move; re-index only the inheriting descendants.
 				// syncConfirm=false: async best-effort with enqueue-on-failure.
 				updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,
-						new java.util.HashSet<>(), true, reconcile, null, false, null);
+						new java.util.HashSet<>(), true, reconcile, null, false, null, epochE);
 				log.info("Moved-subtree search index ACL refresh triggered for: " + content.getId());
+				// NO inline settle on the move path: no synchronous own-node write ran here, so the
+				// marker was never cleared — consuming the task would strand RECONCILE_ENQUEUED.
+				// The retained task's re-drive performs the terminus (one re-drive per move,
+				// accepted in the design).
 			} catch (Exception e) {
 				log.warn("Failed to refresh moved-subtree search index ACL for " + content.getId()
 						+ ": " + e.getMessage());
 				if (reconcile != null) {
 					reconcile.enqueue(repositoryId, content.getId(),
-							jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.TRAVERSAL_FAILURE);
+							jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.TRAVERSAL_FAILURE,
+							epochE);
 				}
 			}
 		});
@@ -418,6 +482,11 @@ public class AclServiceImpl implements AclService {
 	 * Uses the shared ragAclExecutor to prevent thread leak.
 	 */
 	private void updateRAGIndexACLAsync(String repositoryId, Content content) {
+		updateRAGIndexACLAsync(repositoryId, content, null, null);
+	}
+
+	private void updateRAGIndexACLAsync(String repositoryId, Content content, Long epochE,
+			String epochMutationId) {
 		// Get search services from the Spring context (optional dependencies).
 		RAGIndexingService ragService = getRagIndexingService();
 		ACLExpander expander = getAclExpander();
@@ -438,13 +507,19 @@ public class AclServiceImpl implements AclService {
 			try {
 				// syncConfirm=false: async best-effort with enqueue-on-failure.
 				updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,
-						new java.util.HashSet<>(), true, reconcile, null, false, null);
+						new java.util.HashSet<>(), true, reconcile, null, false, null, epochE);
 				log.info("Search index ACL update triggered for: " + content.getId());
+				// §11.4 inline settle, deferred to SUBTREE COMPLETION (not the sync request):
+				// settling before the async refresh finished would let a crash in the window
+				// lose the descendants with no task left to recover them. Per-node failures
+				// above enqueued their own tasks, so settling the root here is safe.
+				settleEpochObligationAfterRefresh(repositoryId, content.getId(), epochE, epochMutationId);
 			} catch (Exception e) {
 				log.warn("Failed to update search index ACL for " + content.getId() + ": " + e.getMessage());
 				if (reconcile != null) {
 					reconcile.enqueue(repositoryId, content.getId(),
-							jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.TRAVERSAL_FAILURE);
+							jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.TRAVERSAL_FAILURE,
+							epochE);
 				}
 			}
 		});
@@ -530,8 +605,185 @@ public class AclServiceImpl implements AclService {
 	 * </ul>
 	 * Throws on a genuine failure so the caller records/retries it.
 	 */
-	private void writeContentReaders(jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil solrUtil,
+	/**
+	 * §11.4 for the applyAcl path: Phase 2 (finalize), the SYNCHRONOUS own-node fenced write, and
+	 * the ACK. Returns the finalized epoch {@code E}, or {@code null} when the cycle stopped early
+	 * (superseded / failure) — every early stop leaves a state the scanner or the queue already
+	 * recovers (§11.6 crash matrix), so this must NEVER fail the mutation request.
+	 */
+	/** Outcome of the synchronous epoch cycle: the finalized epoch, and whether the marker was cleared. */
+	static final class EpochCycleResult {
+		final Long epoch;
+		final boolean cleared;
+		EpochCycleResult(Long epoch, boolean cleared) { this.epoch = epoch; this.cleared = cleared; }
+	}
+
+	private EpochCycleResult finalizeWriteOwnNodeAndAck(String repositoryId, Content content, String mutationId) {
+		final String objectId = content.getId();
+		Long epochE = finalizeAndAckPrepare(repositoryId, objectId);
+		if (epochE == null) {
+			evictAfterRawEpochWrite(repositoryId, objectId); // finalize may still have CAS-bumped
+			return new EpochCycleResult(null, false);
+		}
+		// ACK BEFORE the own-node write — found live, not by reasoning: the §4.2 pending gate
+		// refuses FINALIZED_NEEDS_RECONCILE as a mid-mutation source, so a write attempted between
+		// finalize and ack can NEVER pass the walk. RECONCILE_ENQUEUED is settled and does not gate
+		// (the obligation is durable), so the order here is finalize → ACK → write → clear. The
+		// proposal's write-before-ack order (§11.4) was wrong on exactly this point.
+		Long acked = ackAfterFinalize(repositoryId, objectId, epochE);
+		if (acked == null) {
+			evictAfterRawEpochWrite(repositoryId, objectId);
+			return new EpochCycleResult(epochE, false);
+		}
+		// Own-node fenced write — synchronous so search reflects the mutated object itself
+		// immediately. A failure is NOT terminal: the ACK above already recorded the durable
+		// obligation, and the queue re-drives.
+		boolean ownNodeWritten = false;
+		try {
+			writeContentReaders(getSolrUtil(), repositoryId, content, null);
+			ownNodeWritten = true;
+		} catch (Exception e) {
+			log.warn("ACL-epoch own-node write failed for " + objectId
+					+ " — the obligation stays queued for the re-drive: " + e.getMessage());
+		}
+		// TERMINUS half 1, SYNCHRONOUS (flag-ON TCK finding): every content-doc rev bump must
+		// happen inside the request — a deferred async clear raced the next mutation's Phase-1 PUT
+		// ("Document update conflict"). Cleared ONLY after a successful own-node write, and the
+		// async half consumes the task ONLY when this cleared: consuming the task with the marker
+		// still standing would strand a RECONCILE_ENQUEUED document nothing can ever clear (the
+		// exact shape D5 exists to prevent — observed live when the gate bug made the write fail).
+		boolean cleared = false;
+		if (ownNodeWritten && mutationId != null) {
+			try {
+				jp.aegif.nemaki.epoch.AclEpochFinalizationService.ClearResult cr =
+						aclEpochFinalizationService.clearMarkerAfterReconcile(repositoryId, objectId, mutationId);
+				cleared = (cr == jp.aegif.nemaki.epoch.AclEpochFinalizationService.ClearResult.CLEARED
+						|| cr == jp.aegif.nemaki.epoch.AclEpochFinalizationService.ClearResult.ABANDONED);
+			} catch (Exception e) {
+				log.warn("ACL-epoch inline clear skipped for " + objectId
+						+ " (re-drive terminus converges): " + e.getMessage());
+			}
+		}
+		evictAfterRawEpochWrite(repositoryId, objectId);
+		return new EpochCycleResult(epochE, cleared);
+	}
+
+	/**
+	 * The raw epoch CAS writes bump the content document's {@code _rev} BEHIND the model cache; a
+	 * later mutation reading the stale cached model would 409 on its PUT. Evict after every burst
+	 * of raw writes so the next reader re-loads the current revision.
+	 */
+	private void evictAfterRawEpochWrite(String repositoryId, String objectId) {
+		try {
+			if (nemakiCachePool != null) {
+				nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId);
+			}
+		} catch (Exception e) {
+			log.warn("post-epoch cache eviction failed for " + objectId + ": " + e.getMessage());
+		}
+	}
+
+	/** §11.4 for the move path: finalize + ACK only (the recursion writes the root). */
+	private Long finalizeAndAck(String repositoryId, String objectId) {
+		Long epochE = finalizeAndAckPrepare(repositoryId, objectId);
+		Long acked = (epochE == null) ? null : ackAfterFinalize(repositoryId, objectId, epochE);
+		evictAfterRawEpochWrite(repositoryId, objectId);
+		return acked;
+	}
+
+	private Long finalizeAndAckPrepare(String repositoryId, String objectId) {
+		try {
+			jp.aegif.nemaki.epoch.AclEpochFinalizationService fin = aclEpochFinalizationService;
+			if (fin == null) {
+				log.warn("ACL-epoch wiring is ON but the finalization service is not wired — Phase 2 "
+						+ "left to the scanner for " + objectId);
+				return null;
+			}
+			jp.aegif.nemaki.epoch.AclEpochFinalizationService.FinalizeOutcome fo =
+					fin.finalizePending(repositoryId, objectId);
+			if (fo.result != jp.aegif.nemaki.epoch.AclEpochFinalizationService.FinalizeResult.FINALIZED
+					|| fo.epoch == null) {
+				// Superseded / vanished / not pending — the newer mutation's own cycle owns it.
+				return null;
+			}
+			return fo.epoch;
+		} catch (Exception e) {
+			log.warn("ACL-epoch finalize failed for " + objectId
+					+ " (the crash-recovery scanner converges): " + e.getMessage());
+			return null;
+		}
+	}
+
+	private Long ackAfterFinalize(String repositoryId, String objectId, Long epochE) {
+		try {
+			// Durable obligation FIRST, marker second — the 7b invariant lives inside ackFinalized.
+			aclEpochFinalizationService.ackFinalized(repositoryId, objectId);
+			return epochE;
+		} catch (Exception e) {
+			log.warn("ACL-epoch ACK failed for " + objectId
+					+ " (the scanner's ACK pass converges): " + e.getMessage());
+			// The epoch IS finalized; returning it lets per-node enqueues carry the obligation
+			// even though the root task does not exist yet (the scanner will create it).
+			return epochE;
+		}
+	}
+
+	/**
+	 * §11.4 terminus for the HAPPY path, run at ASYNC-REFRESH COMPLETION: clear the outbox marker
+	 * (scoped to OUR mutation id — a newer in-flight mutation makes it ABANDONED and owns its own
+	 * terminus), THEN consume the task. The order is load-bearing (approved D5): the reverse
+	 * strands a RECONCILE_ENQUEUED marker with no task, which nothing can ever clear.
+	 */
+	void settleEpochObligationAfterRefresh(String repositoryId, String objectId, Long epochE,
+			String epochMutationId) {
+		if (epochE == null || epochMutationId == null) {
+			return;
+		}
+		try {
+			// TERMINUS half 2: consume the TASK only. The marker was cleared SYNCHRONOUSLY inside
+			// the mutation request (see finalizeWriteOwnNodeAndAck) — clearing here raced the next
+			// mutation's Phase-1 PUT on the content document, which the flag-ON TCK caught as a
+			// CouchDB update conflict. The D5 order (clear BEFORE complete) is preserved across the
+			// two halves; a crash between them is §11.6 row 5 and converges via the re-drive.
+			if (reconciliationService != null) {
+				reconciliationService.settleIfCovered(repositoryId, objectId, epochE);
+			}
+		} catch (Exception e) {
+			// The task survives — the queue owns convergence.
+			log.warn("ACL-epoch inline settle skipped for " + objectId + ": " + e.getMessage());
+		}
+	}
+
+	/**
+	 * §11.3 cutover: with the wiring flag ON, the ACL group is written by the epoch writer in
+	 * bootstrap-tolerant mode (approved D2); OFF keeps the generation-fenced path bit-identical.
+	 */
+	private void writeContentReadersEpochFenced(jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil solrUtil,
 			String repositoryId, Content content, Runnable onWriteFailed) throws Exception {
+		jp.aegif.nemaki.epoch.AclEpochIndexWriter writer = aclEpochIndexWriter;
+		ACLExpander expander = getAclExpander();
+		if (writer == null || expander == null || solrUtil == null) {
+			// Fail the WRITE, not silently fall back: a generation-fenced write slipping through
+			// while the rest of the system speaks epochs would be a second ACL implementation.
+			throw new IllegalStateException("ACL-epoch wiring is ON but writer/expander/solr are unavailable");
+		}
+		jp.aegif.nemaki.epoch.AclEpochIndexWriter.WriteOutcome outcome = writer.writeAllowingBootstrap(
+				repositoryId, content.getId(), solrUtil.getSolrClient(), expander.principalResolver());
+		if (outcome.result == jp.aegif.nemaki.epoch.AclEpochIndexWriter.WriteResult.NOT_INDEXED) {
+			// Not in Solr at all — same fallback as the generation path: strict full index
+			// (create-if-absent). The fresh document is then unfenced until its next ACL-group
+			// write bootstraps it (§11.5).
+			solrUtil.indexDocument(repositoryId, content, true, true, onWriteFailed, true);
+		}
+		// UPDATED / SKIPPED_FRESHER / SKIPPED_IDEMPOTENT / SKIPPED_DELETED → done (§11.3).
+	}
+
+	void writeContentReaders(jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil solrUtil,
+			String repositoryId, Content content, Runnable onWriteFailed) throws Exception {
+		if (epochWiringEnabled()) {
+			writeContentReadersEpochFenced(solrUtil, repositoryId, content, onWriteFailed);
+			return;
+		}
 		// UNIFIED write path (review round 3, #1): BOTH the async applyAcl/move refresh
 		// AND the reconciliation re-drive write ACL readers through the SAME
 		// generation-fenced atomic readers-only CAS. Previously only the reconcile used
@@ -619,14 +871,52 @@ public class AclServiceImpl implements AclService {
 		// (the task is only completed/deleted when the re-drive is genuinely clean).
 		try {
 			updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,
-					new java.util.HashSet<>(), false, null, failures, true, leaseStillHeld);
+					new java.util.HashSet<>(), false, null, failures, true, leaseStillHeld, null);
 		} catch (LeaseLostException e) {
 			// Lost the lease to a reclaiming worker mid-flight — stop writing and let
 			// the reclaimer own it (not clean, so the task is not completed here).
 			log.info("Reconcile: lease lost for " + objectId + " — aborting re-drive (reclaimer owns it)");
 			return false;
 		}
-		return failures.get() == 0;
+		// NOTE: an AclEpochQuarantineBlockedException deliberately PROPAGATES out of this method —
+		// the scheduler's §5.1 branch retains the task under capped backoff without consuming an
+		// attempt; catching it here would flatten it into an ordinary failure and burn attempts.
+		if (failures.get() != 0) {
+			return false;
+		}
+		// §11.4 re-drive terminus: this clean re-drive satisfied whatever obligation the PRE-read
+		// document carried, so clear its marker — scoped to the PRE-read mutation id, which makes a
+		// newer in-flight mutation ABANDON the clear (its own cycle owns its terminus). A clear
+		// FAILURE makes the re-drive NOT clean: completing the task while the marker survives would
+		// strand a RECONCILE_ENQUEUED document with no task (§11.6 row 5's inverse).
+		return epochTerminusAfterCleanReDrive(repositoryId, objectId, content);
+	}
+
+	/** Returns true when the terminus is settled (cleared / abandoned / nothing to do). */
+	private boolean epochTerminusAfterCleanReDrive(String repositoryId, String objectId, Content preRead) {
+		if (!epochWiringEnabled()) {
+			return true;
+		}
+		String mutationId = preRead.aclEpochFieldAsString(
+				jp.aegif.nemaki.epoch.AclEpochState.FIELD_MUTATION_ID);
+		if (mutationId == null) {
+			return true; // no outbox cycle on this document
+		}
+		try {
+			jp.aegif.nemaki.epoch.AclEpochFinalizationService fin = aclEpochFinalizationService;
+			if (fin == null) {
+				return false; // wiring ON but bean missing — keep the task, fail loudly in logs
+			}
+			// CLEARED or ABANDONED are both settled: abandoned means a newer mutation (or the
+			// scanner) owns the marker now. Only an EXCEPTION (contention / unavailability) keeps
+			// the task for a retry.
+			fin.clearMarkerAfterReconcile(repositoryId, objectId, mutationId);
+			evictAfterRawEpochWrite(repositoryId, objectId);
+			return true;
+		} catch (Exception e) {
+			log.warn("Reconcile: epoch terminus failed for " + objectId + " — task retained: " + e.getMessage());
+			return false;
+		}
 	}
 
 	/**
@@ -654,7 +944,7 @@ public class AclServiceImpl implements AclService {
 			java.util.Set<String> visitedIds, boolean isRoot,
 			jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconcile,
 			java.util.concurrent.atomic.AtomicInteger failureCounter, boolean syncConfirm,
-			java.util.function.BooleanSupplier leaseStillHeld) {
+			java.util.function.BooleanSupplier leaseStillHeld, Long epochObligation) {
 		if (content == null || visitedIds.contains(content.getId())) {
 			return;
 		}
@@ -672,7 +962,8 @@ public class AclServiceImpl implements AclService {
 		// bounded retries — record the object so the reconciliation poll re-drives it.
 		final Runnable onWriteFailed = (reconcile == null) ? null : () -> {
 			reconcile.enqueue(repositoryId, content.getId(),
-					jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.INDEX_WRITE_FAILURE);
+					jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.INDEX_WRITE_FAILURE,
+					epochObligation);
 			if (failureCounter != null) failureCounter.incrementAndGet();
 		};
 
@@ -691,10 +982,16 @@ public class AclServiceImpl implements AclService {
 				writeContentReaders(solrUtil, repositoryId, content, onWriteFailed);
 			} catch (LeaseLostException lle) {
 				throw lle;
+			} catch (jp.aegif.nemaki.epoch.AclEpochQuarantineBlockedException qbe) {
+				// §5.1 via §11.3: a quarantine block must reach the scheduler's retention branch
+				// (re-drive) or the async root-enqueue (refresh) — NEVER be flattened into a counted
+				// per-node failure, which would burn attempts toward terminal-FAILED.
+				throw qbe;
 			} catch (Exception e) {
 				log.warn("Failed to refresh content readers for " + content.getId() + ": " + e.getMessage());
 				recordNodeFailure(reconcile, failureCounter, repositoryId, content.getId(),
-						jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE);
+						jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE,
+						epochObligation);
 			}
 		}
 
@@ -711,7 +1008,8 @@ public class AclServiceImpl implements AclService {
 			} catch (Exception e) {
 				log.warn("Failed to update RAG ACL for document " + content.getId() + ": " + e.getMessage());
 				recordNodeFailure(reconcile, failureCounter, repositoryId, content.getId(),
-						jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE);
+						jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE,
+						epochObligation);
 			}
 		}
 
@@ -740,10 +1038,13 @@ public class AclServiceImpl implements AclService {
 				}
 			} catch (LeaseLostException lle) {
 				throw lle;
+			} catch (jp.aegif.nemaki.epoch.AclEpochQuarantineBlockedException qbe) {
+				throw qbe; // §5.1: reach the scheduler's retention branch, never a counted failure
 			} catch (Exception e) {
 				log.warn("Failed to refresh relationship readers for " + content.getId() + ": " + e.getMessage());
 				recordNodeFailure(reconcile, failureCounter, repositoryId, content.getId(),
-						jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.RELATIONSHIP_REFRESH_FAILURE);
+						jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.RELATIONSHIP_REFRESH_FAILURE,
+						epochObligation);
 			}
 		}
 
@@ -763,14 +1064,16 @@ public class AclServiceImpl implements AclService {
 				log.warn("Failed to list children of " + content.getId()
 						+ " during search-index ACL refresh (subtree skipped): " + e.getMessage());
 				recordNodeFailure(reconcile, failureCounter, repositoryId, content.getId(),
-						jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.TRAVERSAL_FAILURE);
+						jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.TRAVERSAL_FAILURE,
+						epochObligation);
 			}
 			if (!CollectionUtils.isEmpty(children)) {
 				for (Content child : children) {
 					try {
 						if (contentService.getAclInheritedWithDefault(repositoryId, child)) {
 							updateSearchIndexACLRecursively(repositoryId, child, ragService, expander,
-									solrUtil, visitedIds, false, reconcile, failureCounter, syncConfirm, leaseStillHeld);
+									solrUtil, visitedIds, false, reconcile, failureCounter, syncConfirm,
+									leaseStillHeld, epochObligation);
 						}
 					} catch (LeaseLostException lle) {
 						// A descendant lost the reconciliation lease — propagate so the
@@ -778,11 +1081,14 @@ public class AclServiceImpl implements AclService {
 						// otherwise the traversal would swallow it and keep writing after
 						// the lease was reclaimed (defeats cooperative fencing).
 						throw lle;
+					} catch (jp.aegif.nemaki.epoch.AclEpochQuarantineBlockedException qbe) {
+						throw qbe; // §5.1: the whole traversal is blocked by ONE ancestor — propagate
 					} catch (Exception e) {
 						log.warn("Failed to refresh search-index ACL for child " + child.getId()
 								+ " (continuing with siblings): " + e.getMessage());
 						recordNodeFailure(reconcile, failureCounter, repositoryId, child.getId(),
-								jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE);
+								jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE,
+								epochObligation);
 					}
 				}
 			}
@@ -792,9 +1098,9 @@ public class AclServiceImpl implements AclService {
 	/** Record a per-node ACL-refresh failure: enqueue for reconciliation and/or count it. */
 	private void recordNodeFailure(jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconcile,
 			java.util.concurrent.atomic.AtomicInteger failureCounter, String repositoryId, String objectId,
-			String reason) {
+			String reason, Long epochObligation) {
 		if (reconcile != null) {
-			reconcile.enqueue(repositoryId, objectId, reason);
+			reconcile.enqueue(repositoryId, objectId, reason, epochObligation);
 		}
 		if (failureCounter != null) {
 			failureCounter.incrementAndGet();

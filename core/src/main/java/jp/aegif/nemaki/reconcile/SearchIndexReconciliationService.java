@@ -96,6 +96,17 @@ public class SearchIndexReconciliationService {
     }
 
     /**
+     * Best-effort enqueue CARRYING an epoch obligation (§11.3): used by refresh paths that know the
+     * mutation's finalized epoch {@code E}, so a per-node failure's task records what it owes. Merge
+     * is monotonic-max as everywhere else; {@code null} means "no obligation known" (0).
+     */
+    public void enqueue(String repositoryId, String objectId, String reason, Long minRequiredEpoch) {
+        tryEnqueue(repositoryId, objectId, reason,
+                SearchIndexAclReindexTask.Operation.ACL_REINDEX,
+                minRequiredEpoch == null ? 0L : minRequiredEpoch);
+    }
+
+    /**
      * As {@link #enqueue(String, String, String)} with an explicit
      * {@link SearchIndexAclReindexTask.Operation}. ACL_REINDEX and RAG_PURGE are
      * INDEPENDENT obligations living under SEPARATE deterministic ids (an ACL
@@ -479,6 +490,43 @@ public class SearchIndexReconciliationService {
         t.setLeaseExpiresAt(now + Math.max(1000L, leaseMillis));
         t.setUpdatedAt(now);
         return putCas(t) != null ? t : null;
+    }
+
+    /**
+     * Inline settlement of the own-node obligation (§11.4, decision D6): after the synchronous
+     * fenced write of a mutation succeeded, consume the task the ACK just created — otherwise every
+     * applyAcl costs one redundant queue re-drive.
+     *
+     * <p>Consumes ONLY when it is safe to: the task must exist, must not be LEASED with a live
+     * lease (a poller owns it; its re-drive is idempotent and performs the terminus itself), and its
+     * obligation must be COVERED ({@code minRequiredEpoch <= satisfiedEpoch} — a concurrent newer
+     * mutation may have merged a higher obligation, which this write did not satisfy). The delete is
+     * the same {@code _rev} CAS as {@link #complete}; losing it means a newer event superseded us
+     * and the queue owns convergence.
+     *
+     * @return true if the obligation was consumed (or none existed); false if it must be left to
+     *         the poller.
+     */
+    public boolean settleIfCovered(String repositoryId, String objectId, long satisfiedEpoch) {
+        String docId = SearchIndexAclReindexTask.deterministicId(
+                repositoryId, objectId, SearchIndexAclReindexTask.Operation.ACL_REINDEX);
+        SearchIndexAclReindexTask t;
+        try {
+            t = getByCouchId(docId);
+        } catch (CorruptReconcileTaskException e) {
+            return false; // contained elsewhere; never consume what cannot be read
+        }
+        if (t == null) {
+            return true; // nothing outstanding
+        }
+        if (SearchIndexAclReindexTask.Status.LEASED.equals(t.getStatus())
+                && t.getLeaseExpiresAt() > System.currentTimeMillis()) {
+            return false; // a poller is mid-re-drive — its terminus wins
+        }
+        if (t.getMinRequiredEpoch() > satisfiedEpoch) {
+            return false; // a HIGHER obligation is pending — this write did not cover it
+        }
+        return deleteCas(t);
     }
 
     /** True if the task addressed by taskId is currently LEASED with an unexpired lease. */

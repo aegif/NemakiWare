@@ -106,15 +106,18 @@ requests.post(url, auth=(user, pw), headers={"X-Requested-With": "XMLHttpRequest
 
 ---
 
-## 進行中: ACL-epoch fencing (本番配線 NO-GO)
+## ACL-epoch fencing (増分 12 で配線実装済み・**flag は default OFF**)
 
-ACL-in-Solr の恒久収束のため、リポジトリ単位の単調増加 ACL epoch を実装中。
-`AclEpochIndexWriter.write()` は**まだどの ACL write path にも接続していません**
-(standalone bean / production caller ゼロ / scheduler・init・cron なし)。
+ACL-in-Solr の恒久収束のためのリポジトリ単位の単調増加 ACL epoch。**増分 12 で
+applyAcl / move / reconcile re-drive が epoch fence 経由になりました** — ただし
+`acl.epoch.wiring.enabled` (default **false**) の配下で、OFF は従来とビット同一です
+(mutation 拘束済み)。flip はデプロイごとの運用判断であり、以下の順序が必須です:
+全再索引 → migration (verdict 確認) → flag ON → 再起動。
 
-**配線ゲート 4 項目はすべて閉鎖済み** (増分 7 / 8 / 9 / 10、principal tri-state は 5T)。
-**それでも配線自体は未着手・NO-GO** です。`write()` を ACL write path に載せる作業は
-独立した増分で、設計・レビュー・明示承認を経るまで着手しません。
+**Docker では flag は ENV 変数 `ACL_EPOCH_WIRING_ENABLED=true` で入れてください。**
+イメージが `docker/core/nemakiware.properties` を WAR 側に上書きコピーし、
+`PropertyManager` は system property → ENV → classpath の順で解決します
+(WAR 内の properties を編集しても届きません)。
 
 **デプロイごとの運用義務** (ゲート 2 は「1 回閉じて終わり」ではありません):
 全再索引の**後で**、リポジトリごとに初期 epoch stamp を実行してください。順序が逆だと

@@ -190,6 +190,24 @@ public class AclEpochIndexWriter {
         return run(repositoryId, objectId, solrClient, resolver, true);
     }
 
+    /**
+     * The UNIFIED production ACL-group write (design §11.3, approved decision D2): identical to
+     * {@link #write} for a FENCED document — the full §4.3 rules, no exceptions — and identical to
+     * {@link #stampInitialEpoch} for an UNFENCED one, which it CAS-creates from the authoritative
+     * walk instead of throwing.
+     *
+     * <p>This AMENDS §4.3's "migration is the only caller allowed to see an unfenced document":
+     * that restriction belonged to the pre-wiring period. Post-wiring, unfenced means a fresh
+     * create (§11.5) or a reindex whose per-deployment re-stamp has not run yet, and the strict
+     * alternative — throw, enqueue, and have the re-drive perform the IDENTICAL bootstrap — adds a
+     * queue round-trip with zero safety gain. Same method as the migration on purpose: one
+     * implementation of "what may write the fence", not two.
+     */
+    public WriteOutcome writeAllowingBootstrap(String repositoryId, String objectId, SolrClient solrClient,
+                                               AclSemantics.PrincipalResolver resolver) throws Exception {
+        return run(repositoryId, objectId, solrClient, resolver, true);
+    }
+
     private WriteOutcome run(String repositoryId, String objectId, SolrClient solrClient,
                              AclSemantics.PrincipalResolver resolver, boolean bootstrap)
             throws Exception {
