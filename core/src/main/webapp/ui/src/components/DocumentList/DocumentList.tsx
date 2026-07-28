@@ -231,6 +231,7 @@ import {
   notification,
   Dropdown
 } from 'antd';
+import { RowActionTooltip } from '../common/RowActionTooltip';
 import {
   FileOutlined,
   FolderOutlined,
@@ -1643,7 +1644,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
         return (
           <Space>
-            <Tooltip title={t('documentList.actions.viewDetails')}>
+            <RowActionTooltip title={t('documentList.actions.viewDetails')}>
               <Button
                 icon={<EyeOutlined />}
                 size="small"
@@ -1656,64 +1657,64 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   navigate(targetUrl);
                 }}
               />
-            </Tooltip>
+            </RowActionTooltip>
             {record.allowableActions?.canUpdateProperties && (
-              <Tooltip title={t('documentList.actions.rename')}>
+              <RowActionTooltip title={t('documentList.actions.rename')}>
                 <Button
                   icon={<FormOutlined />}
                   size="small"
                   onClick={() => handleRenameClick(record.id, record.name)}
                 />
-              </Tooltip>
+              </RowActionTooltip>
             )}
             {record.baseType === 'cmis:document' && (
-              <Tooltip title={t('common.download')}>
+              <RowActionTooltip title={t('common.download')}>
                 <Button
                   icon={<DownloadOutlined />}
                   size="small"
                   onClick={() => handleDownload(record.id)}
                 />
-              </Tooltip>
+              </RowActionTooltip>
             )}
             {record.allowableActions?.canCheckOut && (
-              <Tooltip title={t('documentList.actions.checkout')}>
+              <RowActionTooltip title={t('documentList.actions.checkout')}>
                 <Button
                   icon={<EditOutlined />}
                   size="small"
                   onClick={() => handleCheckOut(record.id)}
                 />
-              </Tooltip>
+              </RowActionTooltip>
             )}
             {(record.allowableActions?.canCheckIn || showCheckInFallback) && (
-              <Tooltip title={t('documentList.actions.checkin')}>
+              <RowActionTooltip title={t('documentList.actions.checkin')}>
                 <Button
                   icon={<CheckOutlined />}
                   size="small"
                   type="primary"
                   onClick={() => handleCheckInClick(record.id, record)}
                 />
-              </Tooltip>
+              </RowActionTooltip>
             )}
             {(record.allowableActions?.canCancelCheckOut || showCheckInFallback) && (
-              <Tooltip title={t('documentList.actions.cancelCheckout')}>
+              <RowActionTooltip title={t('documentList.actions.cancelCheckout')}>
                 <Button
                   icon={<CloseOutlined />}
                   size="small"
                   onClick={() => handleCancelCheckOut(record.id, record)}
                 />
-              </Tooltip>
+              </RowActionTooltip>
             )}
             {isVersionable && (
-              <Tooltip title={t('documentList.actions.versionHistory')}>
+              <RowActionTooltip title={t('documentList.actions.versionHistory')}>
                 <Button
                   icon={<HistoryOutlined />}
                   size="small"
                   onClick={() => handleViewVersionHistory(record.id)}
                 />
-              </Tooltip>
+              </RowActionTooltip>
             )}
             {record.allowableActions?.canGetACL && (
-              <Tooltip title={t('documentList.actions.permissionManagement')}>
+              <RowActionTooltip title={t('documentList.actions.permissionManagement')}>
                 <Button
                   icon={<LockOutlined />}
                   size="small"
@@ -1725,17 +1726,17 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 >
                   {t('documentList.actions.permissionManagement')}
                 </Button>
-              </Tooltip>
+              </RowActionTooltip>
             )}
             {record.allowableActions?.canDeleteObject && (
-              <Tooltip title={t('common.delete')}>
+              <RowActionTooltip title={t('common.delete')}>
                 <Button
                   icon={<DeleteOutlined />}
                   size="small"
                   danger
                   onClick={() => handleDeleteClick(record.id, record.name, record.baseType)}
                 />
-              </Tooltip>
+              </RowActionTooltip>
             )}
           </Space>
         );
