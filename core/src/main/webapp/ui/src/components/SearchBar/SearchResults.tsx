@@ -1010,7 +1010,11 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
 
           <Form.Item>
             <Space>
-              <Button type="primary" htmlType="submit" loading={loading}>
+              {/* search-submit-button: a hook that belongs to THIS page only. The document
+                  list has its own .search-button, and during the route transition to /search
+                  both are briefly in the DOM — a selector matching either one can grab the
+                  outgoing list's button microseconds before React unmounts it. */}
+              <Button type="primary" htmlType="submit" loading={loading} className="search-submit-button">
                 {t('common.search')}
               </Button>
               <Button onClick={() => {

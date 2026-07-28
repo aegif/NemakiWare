@@ -123,3 +123,54 @@ export async function waitForVisible(
   const timeout = options?.timeout ?? 10000;
   await page.locator(selector).first().waitFor({ state: 'visible', timeout });
 }
+
+/**
+ * Navigate to the full-text search page and wait until it OWNS the DOM.
+ *
+ * The two pages both offer a "search" control, and for a few dozen milliseconds
+ * after the route changes BOTH are mounted: React has rendered `SearchResults`
+ * while the outgoing `DocumentList` has not been torn down yet. A selector such as
+ * `button.search-button, button:has-text("検索")` matches the document list's button
+ * during that window, so `.click()` lands on an element React is about to remove and
+ * fails with "element was detached from the DOM, retrying" until the test times out.
+ * The button never comes back, so retrying cannot help.
+ *
+ * Waiting for the search page's OWN hook (`.search-submit-button`, which the document
+ * list does not have) makes the handover observable instead of assumed.
+ */
+export async function gotoSearchPage(page: Page, options?: { timeout?: number }): Promise<void> {
+  const timeout = options?.timeout ?? 30000;
+
+  // A modal left open by the previous step swallows the menu click: Ant Design's mask
+  // covers the sider, the SPA never navigates, and every later wait fails on a page that
+  // is still the document list. Clear it first rather than discover it 30 seconds later.
+  for (let i = 0; i < 3; i++) {
+    if (await page.locator('.ant-modal-wrap:visible, .ant-drawer-open').count() === 0) break;
+    await page.keyboard.press('Escape');
+    await waitForRender(page, { timeout: 1000 });
+  }
+
+  if (!page.url().includes('#/search')) {
+    const menuItem = page.locator('.ant-menu-item').filter({ hasText: '検索' });
+    if (await menuItem.count() === 1) {
+      await menuItem.click().catch(() => undefined);
+    }
+    // In-app hash navigation as the fallback. A full page.goto() reload would drop the
+    // in-memory auth token and land on the login screen, where nothing this function
+    // waits for can ever appear — a 30s timeout that says nothing about the search page.
+    if (!page.url().includes('#/search')) {
+      await page.evaluate(() => { window.location.hash = '#/search'; });
+    }
+  }
+
+  await page.waitForFunction(() => window.location.hash.includes('/search'), undefined, { timeout });
+  await page.locator('button.search-submit-button').waitFor({ state: 'visible', timeout });
+  // The document list's own button must be GONE, not merely overlapped.
+  await page.locator('button.search-button').waitFor({ state: 'detached', timeout }).catch(() => undefined);
+  await waitForUiStable(page);
+}
+
+/** The search page's submit control. Never matches the document list's inline search. */
+export function searchPageSubmitButton(page: Page) {
+  return page.locator('button.search-submit-button');
+}
