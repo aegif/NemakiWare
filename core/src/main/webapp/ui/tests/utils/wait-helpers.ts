@@ -145,10 +145,17 @@ export async function gotoSearchPage(page: Page, options?: { timeout?: number })
   // covers the sider, the SPA never navigates, and every later wait fails on a page that
   // is still the document list. Clear it first rather than discover it 30 seconds later.
   for (let i = 0; i < 3; i++) {
-    if (await page.locator('.ant-modal-wrap:visible, .ant-drawer-open').count() === 0) break;
+    const open = page.locator('.ant-modal-wrap:visible, .ant-drawer-open');
+    if (await open.count() === 0) break;
     await page.keyboard.press('Escape');
-    await waitForRender(page, { timeout: 1000 });
+    // Wait for the dialog to be GONE, not merely for a render tick. Changing the route
+    // while Ant Design is still tearing a portal down makes React unmount a node the
+    // portal has already detached, which surfaces as
+    // "Failed to execute 'removeChild' on 'Node'" in the app's error boundary.
+    await open.first().waitFor({ state: 'detached', timeout: 5000 }).catch(() => undefined);
   }
+  await page.locator('.ant-modal-mask').first()
+    .waitFor({ state: 'detached', timeout: 5000 }).catch(() => undefined);
 
   if (!page.url().includes('#/search')) {
     const menuItem = page.locator('.ant-menu-item').filter({ hasText: '検索' });
@@ -164,7 +171,33 @@ export async function gotoSearchPage(page: Page, options?: { timeout?: number })
   }
 
   await page.waitForFunction(() => window.location.hash.includes('/search'), undefined, { timeout });
-  await page.locator('button.search-submit-button').waitFor({ state: 'visible', timeout });
+
+  // One forced re-navigation before giving up. A route change that lands on /search while
+  // the previous view is still tearing down can leave the search form unmounted, and the
+  // wait below would then burn its whole timeout on a page that is never coming.
+  try {
+    await page.locator('button.search-submit-button').waitFor({ state: 'visible', timeout: 10000 });
+  } catch {
+    await page.evaluate(() => {
+      window.location.hash = '#/documents';
+    });
+    await waitForRender(page, { timeout: 3000 });
+    await page.evaluate(() => {
+      window.location.hash = '#/search';
+    });
+    // Report what IS on screen instead of a bare timeout on a locator name.
+    try {
+      await page.locator('button.search-submit-button').waitFor({ state: 'visible', timeout });
+    } catch (e) {
+      const state = await page.evaluate(() => ({
+        url: location.href,
+        modals: Array.from(document.querySelectorAll('.ant-modal-wrap:not([style*="display: none"])'))
+          .map((m) => (m.textContent || '').trim().slice(0, 80)),
+        buttons: Array.from(document.querySelectorAll('button')).length,
+      }));
+      throw new Error(`gotoSearchPage: search page never rendered. ${JSON.stringify(state)}`);
+    }
+  }
   // The document list's own button must be GONE, not merely overlapped.
   await page.locator('button.search-button').waitFor({ state: 'detached', timeout }).catch(() => undefined);
   await waitForUiStable(page);

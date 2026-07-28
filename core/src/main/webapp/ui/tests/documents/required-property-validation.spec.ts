@@ -381,8 +381,12 @@ test.describe('Required Property Validation Tests', () => {
         await expect(modal).toBeVisible({ timeout: 3000 });
         console.log('Modal still visible after type selection');
 
-        // Verify selection was applied (re-locate after retry loop)
-        const selectedValue = await modal.locator('.ant-select').first().locator('.ant-select-selection-item').textContent();
+        // Verify selection was applied. This is a log line, and it used to be a 30-second
+        // blocking read: the modal holds more than one .ant-select and .first() is not
+        // necessarily the type picker, so textContent() waited out its whole timeout on an
+        // element that never gets a selection item. Report what is there; do not block.
+        const selectedValue = await modal.locator('.ant-select-selection-item').first()
+          .textContent({ timeout: 5000 }).catch(() => '(not reported)');
         console.log(`Selected type display: ${selectedValue}`);
       } else {
         await page.keyboard.press('Escape');

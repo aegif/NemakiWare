@@ -606,8 +606,12 @@ test.describe('Advanced Search', () => {
       await waitForUiStable(page);
     }
 
-    // Assert PDF is found in search results
-    await expect(pdfResult.first()).toBeVisible({ timeout: 5000 });
+    // Assert PDF is found in search results. 30s, not 5s: the count()-driven retry above
+    // is a snapshot at one instant, so under a loaded stack all of its attempts can look
+    // at a table the query has not filled in yet. A retrying assertion covers that without
+    // the extra round trips. (Measured directly against the running UI: the same search
+    // returns the PDF — the test was reading the table too early, not searching wrong.)
+    await expect(pdfResult.first()).toBeVisible({ timeout: 30000 });
     console.log('✅ PDF found in search results');
 
     // Verify result contains PDF indicator (file extension or MIME type)
@@ -724,8 +728,9 @@ test.describe('Advanced Search', () => {
       await waitForUiStable(page);
     }
 
-    // Assert PDF is found
-    await expect(pdfResult.first()).toBeVisible({ timeout: 5000 });
+    // Assert PDF is found. 30s for the same reason as above: the retry loop's count()
+    // check does not retry, so it can miss a result table that simply had not arrived.
+    await expect(pdfResult.first()).toBeVisible({ timeout: 30000 });
 
     // Verify PDF is found in search results
     if (await pdfResult.count() > 0) {
