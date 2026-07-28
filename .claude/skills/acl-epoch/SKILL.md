@@ -16,18 +16,20 @@ ACL-in-Solr (CMIS query の認可を Solr 索引に前倒し) で、**索引さ�
 ことが判明し撤回。現在は**リポジトリ単位の永続・単調増加 ACL epoch** (CAS 払い出し) に
 再設計しています。
 
-## 状態: 本番配線 NO-GO
+## 状態: 配線済み・常時有効 (増分 14 で確定)
 
-`AclEpochIndexWriter.write()` は**どの ACL write path にも接続していません**。
-standalone bean / production caller ゼロ / scheduler・init・cron なし。
-この fail-closed staging は、下記ゲートが全て閉じるまで維持します。
+`AclEpochIndexWriter.write()` は **ACL write path そのもの**です。applyAcl / move /
+reconcile re-drive は必ず epoch fence を通り、切替スイッチはありません
+(増分 12 で配線 → 13 で運用面整備 → 14 で flag と pre-epoch 経路を削除)。
+leader-gated の crash-recovery sweep が 5 分ごとに走ります。
 
-### 配線ゲート: 全 4 項目 閉鎖済み
+### 配線ゲート: 全 4 項目 閉鎖済み (配線前に満たすべきだった条件の記録)
 
 - **outbox ACK** (増分 7) — task 側の epoch 義務 + 「義務が durable になってから
   `RECONCILE_ENQUEUED` へ進める」
 - **`content_incarnation` + content-writer fence** (増分 8) — restore の `_id` 再利用を
-  incarnation で解決し、content writer は ACL group 3 フィールドを *preserve* する
+  incarnation で解決し、content writer は ACL group を *preserve* する
+  (当時 3 フィールド、増分 14 以降は `readers` + `effective_acl_epoch` の 2 つ)
 - **§5.1 quarantine 運用契約** (増分 9) — task 保持 / 阻害祖先の構造的特定 / capped backoff /
   修復の単一 CAS / 自動再開。入口は
   `POST /v1/admin/acl-epoch/quarantine/{repo}/{docId}/repair`

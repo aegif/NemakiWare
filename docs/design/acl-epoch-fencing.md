@@ -359,9 +359,9 @@ and has been run against both dev repositories. Note the gate closes per DEPLOYM
 be executed on each real repository, AFTER that deployment's mandatory full reindex, or the reindex
 discards the stamp.
 
-**All four gates are now closed. Wiring is still NOT done**: putting `AclEpochIndexWriter.write()`
-on the ACL write path is its own increment, unstarted, and NO-GO until designed, reviewed and
-explicitly approved.
+~~**All four gates are now closed. Wiring is still NOT done**~~ — **the wiring landed in increment
+12 (§11) and became unconditional in increment 14 (§11.13).** `AclEpochIndexWriter.write()` IS the
+ACL write path. The four gates below are the record of what had to be true first.
 
 *Principal tri-state was the fifth gate; it is **CLOSED by increment 5T**. The `ReadersComputer`
 obligations that §5.2 used to carry are not a gate either — they were **deleted** in 5S step 3
