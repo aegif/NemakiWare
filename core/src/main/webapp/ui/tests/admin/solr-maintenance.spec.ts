@@ -108,10 +108,10 @@ test.describe('Solr Index Maintenance', () => {
         hasText: /Solrインデックスメンテナンス|Solr Index Maintenance/i
       });
 
-      const hasTitle = await pageTitle.count() > 0;
-      const hasTabs = await page.locator('.ant-tabs').count() > 0;
-
-      expect(hasTitle || hasTabs).toBe(true);
+      // count() is a snapshot: it does not retry, so this used to assert on whatever had
+      // rendered at that instant. Use a retrying assertion on the page's own content.
+      await expect(pageTitle.or(page.locator('.ant-tabs')).first())
+        .toBeVisible({ timeout: 15000 });
       console.log('Solr maintenance page loaded successfully');
     } else {
       console.log('Solr maintenance menu item not found - trying direct navigation');

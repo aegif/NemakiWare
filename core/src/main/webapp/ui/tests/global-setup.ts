@@ -138,6 +138,11 @@ async function ensureTestUser(baseURL: string, userId: string, password: string)
  */
 function saveTestState(state: { keycloakAvailable: boolean; keycloakUrl: string }) {
   try {
+    // test-results/ is Playwright's to own: it wipes the directory when a run starts,
+    // and global setup runs BEFORE the first worker recreates it. Writing blind fails
+    // with ENOENT on every fresh run, and the tests then read the default state — which
+    // silently says "Keycloak unavailable" whether or not it is.
+    fs.mkdirSync(require('path').dirname(STATE_FILE), { recursive: true });
     fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
   } catch (error) {
     console.log('⚠️ Could not save test state:', error);
