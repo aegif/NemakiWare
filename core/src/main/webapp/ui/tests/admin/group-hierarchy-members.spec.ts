@@ -90,7 +90,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
         // Close modal
         await page.locator('.ant-modal-container button:has-text("キャンセル")').click();
       } else {
-        test.skip('ENV: No groups available to edit');
+        test.skip(true, 'ENV: No groups available to edit');
       }
     });
   });
@@ -191,7 +191,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       const groupCount = await existingGroups.count();
 
       if (groupCount === 0) {
-        test.skip('ENV: No existing groups to add as members');
+        test.skip(true, 'ENV: No existing groups to add as members');
         return;
       }
 
@@ -218,7 +218,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
 
         if (optionCount === 0) {
           await page.locator('.ant-modal-container button:has-text("キャンセル")').click();
-          test.skip('ENV: No group options available in dropdown');
+          test.skip(true, 'ENV: No group options available in dropdown');
           return;
         }
 
@@ -326,7 +326,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       const editButton = firstRow.locator('button:has-text("編集")');
 
       if (await editButton.count() === 0) {
-        test.skip('ENV: No groups available to edit');
+        test.skip(true, 'ENV: No groups available to edit');
         return;
       }
 

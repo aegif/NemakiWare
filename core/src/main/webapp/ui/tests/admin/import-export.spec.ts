@@ -144,7 +144,7 @@ test.describe.serial('Import/Export Feature', () => {
 
     test('should import a ZIP file into a folder', async ({ page }) => {
       if (!exportTestFolderId) {
-        test.skip('ENV: Test folder not created in beforeAll');
+        test.skip(true, 'ENV: Test folder not created in beforeAll');
         return;
       }
 
@@ -185,7 +185,7 @@ test.describe.serial('Import/Export Feature', () => {
 
     test('should reject import without authentication', async ({ page }) => {
       if (!exportTestFolderId) {
-        test.skip('ENV: Test folder not created in beforeAll');
+        test.skip(true, 'ENV: Test folder not created in beforeAll');
         return;
       }
 
@@ -344,7 +344,7 @@ test.describe.serial('Import/Export Feature', () => {
 
     test('should export folder and re-import preserving content', async ({ page }) => {
       if (!roundTripFolderId || !importTargetFolderId) {
-        test.skip('ENV: Round-trip folders not created in beforeAll');
+        test.skip(true, 'ENV: Round-trip folders not created in beforeAll');
         return;
       }
 
@@ -741,7 +741,7 @@ test.describe.serial('Import/Export Feature', () => {
       );
 
       if (folders.length === 0) {
-        test.skip('ENV: No subfolders found in repository');
+        test.skip(true, 'ENV: No subfolders found in repository');
         return;
       }
 
@@ -893,7 +893,7 @@ test.describe.serial('Import/Export Feature', () => {
 
     test('should import from filesystem into a target folder', async ({ page }) => {
       if (!importTargetFolderId || !sourceFolderId) {
-        test.skip('ENV: Test folders not created in beforeAll');
+        test.skip(true, 'ENV: Test folders not created in beforeAll');
         return;
       }
 
@@ -913,7 +913,7 @@ test.describe.serial('Import/Export Feature', () => {
 
     test('should verify imported documents exist in target folder', async ({ page }) => {
       if (!importTargetFolderId) {
-        test.skip('ENV: Target folder not created in beforeAll');
+        test.skip(true, 'ENV: Target folder not created in beforeAll');
         return;
       }
 
@@ -932,7 +932,7 @@ test.describe.serial('Import/Export Feature', () => {
 
     test('should reject import from non-existent filesystem path', async ({ page }) => {
       if (!importTargetFolderId) {
-        test.skip('ENV: Target folder not created in beforeAll');
+        test.skip(true, 'ENV: Target folder not created in beforeAll');
         return;
       }
 

@@ -428,7 +428,7 @@ test.describe('Office Document Preview', () => {
     }).first();
 
     if (await excelRow.count() === 0) {
-      test.skip('ENV: No existing Excel file found');
+      test.skip(true, 'ENV: No existing Excel file found');
       return;
     }
 

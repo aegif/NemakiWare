@@ -74,6 +74,22 @@ flaky が出た場合、原因は多くが **client-side metadata XHR の hang**
 (データ蓄積ではありません)。`CmisHttpClient` の 60s timeout と reload-retry で
 収束済み。詳細は自動メモリ `test-infra-hang-rootcause`。
 
+## E2E を変更したら型チェック
+
+```bash
+cd core/src/main/webapp/ui
+npm run type-check:all
+```
+
+**`npm run type-check` (= `tsconfig.json`) は `tests/` を見ません** — `include` が `src` のみ
+だからです。テスト変更に対する「tsc clean」はアプリを検査しているだけで、テストについては
+何も言っていません。この盲点で、一括置換が 71 ファイル・522 箇所の構文エラーを作っても
+tsc は無言でした。テストを触ったら `type-check:tests` (= `tsconfig.tests.json`) を必ず。
+
+`strict` は意図的に off です。spec 群は strict 前提で書かれておらず、有効にすると
+「引数の形が違う」「存在しないメソッドを呼んでいる」といった本命の誤りが、数百件の
+nullability 指摘に埋もれます。
+
 ## UI 単体
 
 ```bash

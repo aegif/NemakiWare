@@ -391,7 +391,7 @@ test.describe('Required Property Validation Tests', () => {
       } else {
         await page.keyboard.press('Escape');
         console.log('Test document type not found even after search. Skipping test.');
-        test.skip('ENV: Test document type not found in selector');
+        test.skip(true, 'ENV: Test document type not found in selector');
         return;
       }
 
@@ -418,7 +418,7 @@ test.describe('Required Property Validation Tests', () => {
         const formItems = modal.locator('.ant-form-item');
         console.log(`  Total form items in modal: ${await formItems.count()}`);
 
-        test.skip('ENV: Custom properties section not appearing - type definition incomplete');
+        test.skip(true, 'ENV: Custom properties section not appearing - type definition incomplete');
         return;
       }
 
@@ -570,7 +570,7 @@ test.describe('Required Property Validation Tests', () => {
 
       if (await testTypeOption.count() === 0) {
         await page.keyboard.press('Escape');
-        test.skip('ENV: Test folder type not found in selector - type may not have been created');
+        test.skip(true, 'ENV: Test folder type not found in selector - type may not have been created');
         return;
       }
 
@@ -704,7 +704,7 @@ test.describe('Required Property Validation Tests', () => {
 
       if (await testTypeOption.count() === 0) {
         await page.keyboard.press('Escape');
-        test.skip('ENV: Test document type not found even after search');
+        test.skip(true, 'ENV: Test document type not found even after search');
         return;
       }
 

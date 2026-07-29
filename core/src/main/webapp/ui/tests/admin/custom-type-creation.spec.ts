@@ -41,10 +41,10 @@
  *    - Implementation: generateTestId() for concise uniqueness
  *
  * 4. Smart Conditional Skipping with Informative Messages (Lines 158-160, 185-187, 252-261, 353-361):
- *    - Skip if create button not found: test.skip('ENV: Create type button not found - UI may not be implemented')
- *    - Skip if edit button missing: test.skip('ENV: Edit button not found')
- *    - Skip if property tab unavailable: test.skip('ENV: Property tab not available')
- *    - Skip if type selector missing: test.skip('ENV: Type selector not visible - implemented in DocumentList.tsx lines 1236-1254')
+ *    - Skip if create button not found: test.skip(true, 'ENV: Create type button not found - UI may not be implemented')
+ *    - Skip if edit button missing: test.skip(true, 'ENV: Edit button not found')
+ *    - Skip if property tab unavailable: test.skip(true, 'ENV: Property tab not available')
+ *    - Skip if type selector missing: test.skip(true, 'ENV: Type selector not visible - implemented in DocumentList.tsx lines 1236-1254')
  *    - Rationale: Tests adapt to UI implementation state with clear diagnostic messages
  *    - Self-healing: Tests pass automatically when features become available
  *
@@ -516,7 +516,7 @@ test.describe('Custom Type Creation and Property Management', () => {
           }
         } else {
           console.log('ℹ️ JSON TextArea not found');
-          test.skip('ENV: JSON editor TextArea not found in modal');
+          test.skip(true, 'ENV: JSON editor TextArea not found in modal');
         }
       } else {
         // Not JSON edit modal - might be form-based (unexpected)
@@ -525,11 +525,11 @@ test.describe('Custom Type Creation and Property Management', () => {
         if (await cancelButton.count() > 0) {
           await cancelButton.click();
         }
-        test.skip('ENV: JSON editor modal not found');
+        test.skip(true, 'ENV: JSON editor modal not found');
       }
     } else {
       console.log('ℹ️ No editable custom types found in table');
-      test.skip('ENV: No editable custom types available');
+      test.skip(true, 'ENV: No editable custom types available');
     }
   });
 

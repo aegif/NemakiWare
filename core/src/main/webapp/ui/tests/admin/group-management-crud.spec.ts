@@ -52,7 +52,7 @@ const TEST_GROUP_DESCRIPTION = 'Test group for automated testing';
  *
  * 3. Smart Conditional Skipping Pattern (Lines 154, 222, 235, 282, 339, 377):
  *    - Tests check for UI elements before performing actions: `if (await element.count() > 0)`
- *    - Skip gracefully if features not available: `test.skip('ENV: reason')`
+ *    - Skip gracefully if features not available: `test.skip(true, 'ENV: reason')`
  *    - Better than hard `test.describe.skip()` - self-healing when features become available
  *    - Maintains test suite flexibility across different UI implementation states
  *    - Rationale: Group management UI may evolve with different interaction patterns

@@ -185,7 +185,7 @@ async function apiRequestWithAuth(
   }
 
   const responseHeaders: { [key: string]: string } = {};
-  const respHeaders = response.headers();
+  const respHeaders: Record<string, string> = response.headers();
   for (const [key, value] of Object.entries(respHeaders)) {
     responseHeaders[key] = value;
   }

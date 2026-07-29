@@ -361,7 +361,7 @@ test.describe('Large File Upload', () => {
         }
       } else {
         console.log('Test: Cancel button not found - upload cancellation may not be supported or upload was too fast');
-        test.skip('ENV: Upload cancellation UI not available or upload completed before cancel');
+        test.skip(true, 'ENV: Upload cancellation UI not available or upload completed before cancel');
 
         // Try to find and delete the file if it was uploaded
         const uploadedFile = page.locator('.ant-table-tbody tr').filter({ hasText: cancelTestFileName });

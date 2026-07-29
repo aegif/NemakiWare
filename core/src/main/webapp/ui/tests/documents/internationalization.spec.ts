@@ -171,7 +171,7 @@ test.describe('Internationalization Tests', () => {
     try {
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
     } catch {
-      test.skip('ENV: Upload modal did not open - timing issue');
+      test.skip(true, 'ENV: Upload modal did not open - timing issue');
       return;
     }
 
@@ -188,7 +188,7 @@ test.describe('Internationalization Tests', () => {
     try {
       await submitButton.click({ timeout: 5000 });
     } catch {
-      test.skip('ENV: Submit button click failed - UI state issue');
+      test.skip(true, 'ENV: Submit button click failed - UI state issue');
       return;
     }
 
@@ -207,7 +207,7 @@ test.describe('Internationalization Tests', () => {
     const isVisible = await documentRow.isVisible().catch(() => false);
     if (!isVisible) {
       // Document may take time to appear - skip test gracefully
-      test.skip('ENV: Japanese filename not visible in table - timing issue');
+      test.skip(true, 'ENV: Japanese filename not visible in table - timing issue');
       return;
     }
     await expect(documentRow).toBeVisible({ timeout: 10000 });
@@ -283,7 +283,7 @@ test.describe('Internationalization Tests', () => {
 
     // Skip test if no files were uploaded successfully
     if (filesUploaded === 0) {
-      test.skip('ENV: Could not upload any special character files - UI timing issue');
+      test.skip(true, 'ENV: Could not upload any special character files - UI timing issue');
       return;
     }
 
@@ -298,7 +298,7 @@ test.describe('Internationalization Tests', () => {
       }
     }
     if (!allVisible) {
-      test.skip('ENV: Special character filenames not visible - timing issue');
+      test.skip(true, 'ENV: Special character filenames not visible - timing issue');
       return;
     }
   });
@@ -512,7 +512,7 @@ test.describe('Internationalization Tests', () => {
     const documentRow = page.locator(`.ant-table-tbody tr:has-text("${unicodeFilename}")`);
     const isVisible = await documentRow.isVisible().catch(() => false);
     if (!isVisible) {
-      test.skip('ENV: Unicode filename not visible in table - timing issue');
+      test.skip(true, 'ENV: Unicode filename not visible in table - timing issue');
       return;
     }
     await expect(documentRow).toBeVisible({ timeout: 10000 });
@@ -594,7 +594,7 @@ test.describe('Internationalization Tests', () => {
                    rootData.properties?.['cmis:objectId']?.value;
 
     if (!rootId) {
-      test.skip('ENV: Could not determine root folder ID for API upload');
+      test.skip(true, 'ENV: Could not determine root folder ID for API upload');
       return;
     }
 
@@ -630,7 +630,7 @@ test.describe('Internationalization Tests', () => {
 
     // Skip if no files were uploaded successfully
     if (filesUploaded === 0) {
-      test.skip('ENV: Could not upload any international character files');
+      test.skip(true, 'ENV: Could not upload any international character files');
       return;
     }
 
@@ -723,7 +723,7 @@ test.describe('Internationalization Tests', () => {
     try {
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
     } catch {
-      test.skip('ENV: Upload modal did not open - timing issue');
+      test.skip(true, 'ENV: Upload modal did not open - timing issue');
       return;
     }
 
@@ -734,21 +734,21 @@ test.describe('Internationalization Tests', () => {
         'Content for long Japanese filename'
       );
     } catch {
-      test.skip('ENV: File input not accessible in upload modal - timing issue');
+      test.skip(true, 'ENV: File input not accessible in upload modal - timing issue');
       return;
     }
 
     const submitButton = page.locator('.ant-modal button[type="submit"], .ant-modal .ant-btn-primary').first();
     const submitVisible = await submitButton.isVisible().catch(() => false);
     if (!submitVisible) {
-      test.skip('ENV: Submit button not visible in upload modal');
+      test.skip(true, 'ENV: Submit button not visible in upload modal');
       return;
     }
     // FIX 2025-12-24: Handle click failure gracefully
     try {
       await submitButton.click({ timeout: 5000 });
     } catch {
-      test.skip('ENV: Submit button click failed - UI state issue');
+      test.skip(true, 'ENV: Submit button click failed - UI state issue');
       return;
     }
 
@@ -777,7 +777,7 @@ test.describe('Internationalization Tests', () => {
     try {
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
     } catch {
-      test.skip('ENV: Upload modal did not open for second upload - timing issue');
+      test.skip(true, 'ENV: Upload modal did not open for second upload - timing issue');
       return;
     }
 

@@ -355,7 +355,7 @@ test.describe('Advanced ACL Management', () => {
         }
       }
     } else {
-      test.skip('ENV: Parent folder creation failed');
+      test.skip(true, 'ENV: Parent folder creation failed');
     }
 
     // Cleanup: Delete test folder via CMIS API for reliability

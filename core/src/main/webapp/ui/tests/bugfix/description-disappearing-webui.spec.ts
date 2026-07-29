@@ -173,7 +173,7 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
     // Find the test document row
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 
@@ -237,7 +237,7 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
     // Find and click on the test document
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 
@@ -305,7 +305,7 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
     // Find and open the test document
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('ENV: Test document not found after navigation');
+      test.skip(true, 'ENV: Test document not found after navigation');
       return;
     }
 

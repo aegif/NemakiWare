@@ -35,7 +35,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "type-check": "tsc --noEmit",
+    "type-check": "tsc --noEmit -p tsconfig.json",
     "test": "SKIP_KEYCLOAK=true playwright test --project=chromium",
     "test:all": "playwright test --project=chromium",
     "test:standard": "SKIP_KEYCLOAK=true playwright test --project=chromium",
@@ -47,7 +47,9 @@
     "test:headed": "SKIP_KEYCLOAK=true playwright test --headed --project=chromium",
     "test:docker": "DOCKER_ENV=1 playwright test --reporter=list",
     "playwright:install": "playwright install",
-    "playwright:install-deps": "playwright install-deps"
+    "playwright:install-deps": "playwright install-deps",
+    "type-check:tests": "tsc --noEmit -p tsconfig.tests.json",
+    "type-check:all": "npm run type-check && npm run type-check:tests"
   },
   "devDependencies": {
     "@playwright/test": "^1.45.0",

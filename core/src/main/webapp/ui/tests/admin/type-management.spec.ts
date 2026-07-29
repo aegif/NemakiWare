@@ -207,7 +207,7 @@ test.describe('Type Management - Custom Types Display', () => {
 
       console.log('Test: nemaki:parentChildRelationship details verified');
     } else {
-      test.skip('ENV: nemaki:parentChildRelationship type not found - may need to verify API response');
+      test.skip(true, 'ENV: nemaki:parentChildRelationship type not found - may need to verify API response');
     }
   });
 
@@ -333,7 +333,7 @@ test.describe('Type Management - Custom Types Display', () => {
     const jsonEditButton = typeRow.locator('button:has-text("JSON")');
     if (await jsonEditButton.count() === 0) {
       // UPDATED (2025-12-26): JSON edit IS implemented in TypeManagement.tsx lines 256-313
-      test.skip('ENV: JSON edit button not visible');
+      test.skip(true, 'ENV: JSON edit button not visible');
       return;
     }
     await expect(jsonEditButton).toBeVisible({ timeout: 5000 });
@@ -361,7 +361,7 @@ test.describe('Type Management - Custom Types Display', () => {
 
     if (!modalFound) {
       // UPDATED (2025-12-26): JSON edit modal IS implemented in TypeManagement.tsx lines 774-798
-      test.skip('ENV: JSON edit modal not visible');
+      test.skip(true, 'ENV: JSON edit modal not visible');
       return;
     }
     console.log('✅ JSON edit modal opened');

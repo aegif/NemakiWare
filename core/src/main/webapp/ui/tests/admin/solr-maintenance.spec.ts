@@ -121,7 +121,7 @@ test.describe('Solr Index Maintenance', () => {
 
       const hasContent = await page.locator('.ant-tabs, .ant-card').count() > 0;
       if (!hasContent) {
-        test.skip('ENV: Solr maintenance page not accessible');
+        test.skip(true, 'ENV: Solr maintenance page not accessible');
       }
     }
   });
@@ -148,7 +148,7 @@ test.describe('Solr Index Maintenance', () => {
     }
 
     if (await healthCard.count() === 0) {
-      test.skip('ENV: Solr health API may be unavailable');
+      test.skip(true, 'ENV: Solr health API may be unavailable');
       return;
     }
 
@@ -268,7 +268,7 @@ test.describe('Solr Index Maintenance', () => {
     });
 
     if (await queryTab.count() === 0) {
-      test.skip('ENV: Solr query tab not found - Solr may not be enabled');
+      test.skip(true, 'ENV: Solr query tab not found - Solr may not be enabled');
       return;
     }
 
@@ -312,7 +312,7 @@ test.describe('Solr Index Maintenance', () => {
     }).first();
 
     if (await reindexTab.count() === 0) {
-      test.skip('ENV: Reindexing tab not found - Solr may not be enabled');
+      test.skip(true, 'ENV: Reindexing tab not found - Solr may not be enabled');
       return;
     }
 
@@ -363,7 +363,7 @@ test.describe('Solr Index Maintenance', () => {
     }).first();
 
     if (await reindexTab.count() === 0) {
-      test.skip('ENV: Reindexing tab not found - Solr may not be enabled');
+      test.skip(true, 'ENV: Reindexing tab not found - Solr may not be enabled');
       return;
     }
 
@@ -431,7 +431,7 @@ test.describe('Solr Index Maintenance', () => {
         await iconButton.click(isMobile ? { force: true } : {});
         console.log('Clicked refresh button (icon)');
       } else {
-        test.skip('ENV: Refresh button not found - Solr maintenance UI may differ');
+        test.skip(true, 'ENV: Refresh button not found - Solr maintenance UI may differ');
         return;
       }
     } else {
@@ -483,7 +483,7 @@ test.describe('Solr Index Maintenance', () => {
     }).first();
 
     if (await reindexTab.count() === 0) {
-      test.skip('ENV: Reindexing tab not found - Solr may not be enabled');
+      test.skip(true, 'ENV: Reindexing tab not found - Solr may not be enabled');
       return;
     }
 

@@ -98,7 +98,7 @@ test.describe('Error Recovery Tests', () => {
     // Use TestHelper's getUploadButton for consistent button detection
     const uploadButton = await testHelper.getUploadButton();
     if (!uploadButton) {
-      test.skip('ENV: Upload button not visible');
+      test.skip(true, 'ENV: Upload button not visible');
       return;
     }
 
@@ -296,7 +296,7 @@ test.describe('Error Recovery Tests', () => {
           expect(bodyText).toBeTruthy();
         }
       } else {
-        test.skip('ENV: No folders available for testing');
+        test.skip(true, 'ENV: No folders available for testing');
       }
     } finally {
       // Always cleanup route
@@ -527,10 +527,10 @@ test.describe('Error Recovery Tests', () => {
           }
         } else {
           // UPDATED (2025-12-26): Delete IS implemented in DocumentList.tsx lines 550-595
-          test.skip('ENV: Delete button not visible');
+          test.skip(true, 'ENV: Delete button not visible');
         }
       } else {
-        test.skip('ENV: No documents available for testing');
+        test.skip(true, 'ENV: No documents available for testing');
       }
     } finally {
       // Always cleanup route

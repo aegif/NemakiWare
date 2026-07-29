@@ -188,7 +188,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     // Find and click on the test document
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 
@@ -314,7 +314,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     // Find and open the test document
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('ENV: Test document not found after navigation');
+      test.skip(true, 'ENV: Test document not found after navigation');
       return;
     }
 
@@ -390,7 +390,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     // Click on the test document
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 
@@ -608,7 +608,7 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
 
     // Enter search term
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]').first();
-    if (await searchInput.count() === 0) { test.skip('ENV: Search input not found'); return; }
+    if (await searchInput.count() === 0) { test.skip(true, 'ENV: Search input not found'); return; }
 
     await searchInput.fill(EXACT_PHRASE);
 

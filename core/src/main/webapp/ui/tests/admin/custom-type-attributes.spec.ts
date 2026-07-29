@@ -381,7 +381,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
       console.log('✅ Custom type created successfully');
     } else {
       // UPDATED (2025-12-26): Type management IS implemented in TypeManagement.tsx
-      test.skip('ENV: Type management menu not visible');
+      test.skip(true, 'ENV: Type management menu not visible');
     }
   });
 
@@ -503,7 +503,7 @@ test.describe.serial('Custom Type and Custom Attributes', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     if (!testDocumentId) {
-      test.skip('ENV: Test document not created in previous test');
+      test.skip(true, 'ENV: Test document not created in previous test');
       return;
     }
 

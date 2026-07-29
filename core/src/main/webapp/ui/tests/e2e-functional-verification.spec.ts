@@ -345,7 +345,7 @@ test.describe('Relationship Feature Verification', () => {
       await login(page);
       const navResult = await navigateToDocument(page, sourceName);
       if (navResult === null) {
-        test.skip('ENV: Document not found in table');
+        test.skip(true, 'ENV: Document not found in table');
         return;
       }
 
@@ -546,7 +546,7 @@ test.describe('Secondary Type Feature Verification', () => {
       await login(page);
       const navResult = await navigateToDocument(page, docName);
       if (navResult === null) {
-        test.skip('ENV: Document not found in table');
+        test.skip(true, 'ENV: Document not found in table');
         return;
       }
 
@@ -565,7 +565,7 @@ test.describe('Secondary Type Feature Verification', () => {
         tabsVisible = await page.locator('.ant-tabs').isVisible().catch(() => false);
       }
       if (!tabsVisible) {
-        test.skip('ENV: Document Viewer tabs not visible after retries');
+        test.skip(true, 'ENV: Document Viewer tabs not visible after retries');
         return;
       }
 
@@ -573,7 +573,7 @@ test.describe('Secondary Type Feature Verification', () => {
       const secondaryTypeTab = page.getByRole('tab', { name: 'セカンダリタイプ' });
       const isSecondaryTypeTabVisible = await secondaryTypeTab.isVisible({ timeout: 10000 }).catch(() => false);
       if (!isSecondaryTypeTabVisible) {
-        test.skip('ENV: Secondary type tab not visible after extended wait');
+        test.skip(true, 'ENV: Secondary type tab not visible after extended wait');
         return;
       }
       await secondaryTypeTab.click();

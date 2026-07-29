@@ -92,7 +92,7 @@ test.describe('Archive Management Enhanced', () => {
       // Click on pending archives tab — must show Japanese label
       const pendingTab = page.locator('.ant-tabs-tab').filter({ hasText: '期限切れ未アーカイブ' });
       if (await pendingTab.count() === 0) {
-        test.skip('ENV: Pending archives tab not available — feature may not be deployed');
+        test.skip(true, 'ENV: Pending archives tab not available — feature may not be deployed');
         return;
       }
       // Verify Japanese tab label

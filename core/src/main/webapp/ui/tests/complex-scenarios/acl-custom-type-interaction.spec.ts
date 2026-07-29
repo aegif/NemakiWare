@@ -66,7 +66,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     // Click folder creation button
     const folderButton = page.locator('button').filter({ hasText: /フォルダ作成|新規フォルダ|Create Folder/ }).first();
     if (await folderButton.count() === 0) {
-      test.skip('ENV: Folder creation button not found');
+      test.skip(true, 'ENV: Folder creation button not found');
       return;
     }
 
@@ -154,7 +154,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     // Find and select the test folder
     const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: testFolderName }).first();
     if (await folderRow.count() === 0) {
-      test.skip('ENV: Test folder not found');
+      test.skip(true, 'ENV: Test folder not found');
       return;
     }
 
@@ -235,7 +235,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     // Find and select the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 
@@ -286,7 +286,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     // Find and select the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 
