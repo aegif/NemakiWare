@@ -224,6 +224,11 @@ export function searchPageSubmitButton(page: Page) {
  */
 export async function waitForAppReady(page: Page, options?: { timeout?: number }): Promise<void> {
   const timeout = options?.timeout ?? 30000;
-  await page.waitForSelector('.ant-menu-item', { timeout });
-  await waitForUiStable(page, { timeout: Math.min(timeout, 15000) });
+  // Keep the ORIGINAL match: either the sider or a table. Narrowing this to `.ant-menu-item`
+  // alone looked stricter and was simply wrong — the sider is not visible when it is
+  // collapsed, and specs that ran with it collapsed then timed out on a shell that was up.
+  await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout });
+  // The part that was missing: actually let the page settle. Capped low on purpose — this
+  // runs ~90 times across the suite and a generous cap here spends the tests' own budget.
+  await waitForUiStable(page, { timeout: 5000 });
 }
