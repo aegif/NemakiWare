@@ -187,13 +187,17 @@ test.describe('User Management CRUD Operations', () => {
   // the default 120s and took the rest of the chain with it. The work is real (a
   // login, a six-field form, a modal round trip, a reload and a search per test), so
   // the budget was what was wrong, not the test.
-  test.describe.configure({ mode: 'serial', timeout: 240000 });
+  test.describe.configure({ mode: 'serial' });
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   const testUsername = `testuser_${generateTestId()}`;
   const testUserEmail = `${testUsername}@test.local`;
 
   test.beforeEach(async ({ page, browserName }) => {
+    // 240s, set here rather than on describe.configure — the configure form left the
+    // budget at the 120s default (verified: the failures still reported "Test timeout of
+    // 120000ms exceeded" after it was added). setTimeout applies to the running test.
+    test.setTimeout(240000);
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
     await authHelper.login();
