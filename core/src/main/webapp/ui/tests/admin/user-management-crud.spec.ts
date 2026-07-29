@@ -182,7 +182,12 @@ test.describe.configure({ mode: 'serial' });
  */
 test.describe('User Management CRUD Operations', () => {
   // Run tests serially to avoid conflicts
-  test.describe.configure({ mode: 'serial' });
+  // Serial: create → edit → verify → delete, each depending on the last. Measured
+  // alone the four take 45s together; under the full suite the first alone exceeded
+  // the default 120s and took the rest of the chain with it. The work is real (a
+  // login, a six-field form, a modal round trip, a reload and a search per test), so
+  // the budget was what was wrong, not the test.
+  test.describe.configure({ mode: 'serial', timeout: 240000 });
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
   const testUsername = `testuser_${generateTestId()}`;

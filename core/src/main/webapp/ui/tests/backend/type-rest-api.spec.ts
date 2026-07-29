@@ -167,6 +167,8 @@ test.describe('Type REST API - CRUD Operations', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(typeDefinition)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     expect(response.status()).toBe(200);
@@ -197,6 +199,8 @@ test.describe('Type REST API - CRUD Operations', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(typeDefinition)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     // Only proceed if creation succeeded
@@ -219,6 +223,8 @@ test.describe('Type REST API - CRUD Operations', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(updatedDefinition)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     expect(updateResponse.status()).toBe(200);
@@ -255,6 +261,8 @@ test.describe('Type REST API - CRUD Operations', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(typeDefinition)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     expect(createResponse.status()).toBe(200);
@@ -325,6 +333,8 @@ test.describe('Type REST API - Base Type Protection', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(modifiedBaseType)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     // Should return 400 Bad Request for base type modification, or 404 (not found in TypeService)
@@ -397,6 +407,8 @@ test.describe('Type REST API - Input Validation', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(invalidType)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     // Server may accept without ID (200) or reject (400/500)
@@ -421,6 +433,8 @@ test.describe('Type REST API - Input Validation', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(duplicateType)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     // Server may handle duplicates by updating or returning error
@@ -536,6 +550,8 @@ test.describe('Type REST API - Custom Type with Properties', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(typeWithProps)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     expect(response.status()).toBe(200);
@@ -632,6 +648,8 @@ test.describe('Type REST API - NemakiWare Custom Types', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(updatedType)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     // nemaki:parentChildRelationship may be a protected system type
@@ -714,6 +732,8 @@ test.describe('Type REST API - Secondary Types', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(secondaryType)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     expect(response.status()).toBe(200);
@@ -781,6 +801,8 @@ test.describe('Type REST API - Folder Types', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(folderType)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     expect(response.status()).toBe(200);
@@ -995,6 +1017,8 @@ test.describe('Type REST API - All Property Types', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(typeWithMultiProps)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     expect(response.status()).toBe(200);
@@ -1044,6 +1068,8 @@ test.describe('Type REST API - Full CRUD Lifecycle', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(typeDefinition)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     expect(createResponse.status()).toBe(200);
@@ -1079,6 +1105,8 @@ test.describe('Type REST API - Full CRUD Lifecycle', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(updatedType)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     expect(updateResponse.status()).toBe(200);
@@ -1159,6 +1187,8 @@ test.describe('Type REST API - Edge Cases', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(typeWithSpecialChars)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     expect(response.status()).toBe(200);
@@ -1218,6 +1248,8 @@ test.describe('Type REST API - Edge Cases', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(typeWithLongDesc)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     // Should either accept the long description or return a validation error
@@ -1262,6 +1294,8 @@ test.describe('Type REST API - Edge Cases', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(typeWithEmptyProps)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     expect(response.status()).toBe(200);
@@ -1308,6 +1342,8 @@ test.describe('Type REST API - Edge Cases', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(initialType)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     if (createResponse.status() !== 200) {
@@ -1340,6 +1376,8 @@ test.describe('Type REST API - Edge Cases', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(updatedType)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     expect(updateResponse.status()).toBe(200);
@@ -1503,6 +1541,8 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(customType)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     expect(createResponse.status()).toBe(200);
@@ -1587,6 +1627,8 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(customType)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     expect(createResponse.status()).toBe(200);
@@ -1678,6 +1720,8 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(folderType)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     expect(createResponse.status()).toBe(200);
@@ -1756,6 +1800,8 @@ test.describe('Type REST API - Type Inheritance Verification', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(relationshipType)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     expect(createResponse.status()).toBe(200);
@@ -1894,6 +1940,8 @@ test.describe('Type REST API - Property Constraints', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(typeWithRequiredProp)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     expect(response.status()).toBe(200);
@@ -1949,6 +1997,8 @@ test.describe('Type REST API - Property Constraints', () => {
         'Accept': 'application/json'
       },
       data: JSON.stringify(typeWithDefaultValue)
+    ,
+      timeout: 90000  // the suite's own 30s default is not enough when the stack is loaded; the test budget is 120s
     });
 
     expect(response.status()).toBe(200);
