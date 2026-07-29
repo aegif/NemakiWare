@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 
 /**
  * Type Management E2E Tests
@@ -94,7 +94,7 @@ test.describe('Type Management - Custom Types Display', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     // MOBILE FIX: Close sidebar
     await testHelper.closeMobileSidebar(browserName);
@@ -111,7 +111,11 @@ test.describe('Type Management - Custom Types Display', () => {
     const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
     if (await typeManagementItem.count() > 0) {
       await typeManagementItem.click();
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+      // The old wait was '.ant-menu-item, .ant-table-tbody' — and .ant-menu-item is the
+      // sider, which is on screen before the click. It therefore returned immediately and
+      // every test started against an empty table, failing or not depending on how fast
+      // the type list happened to arrive. Wait for a row that MUST exist instead.
+      await page.waitForSelector('tr[data-row-key="cmis:document"]', { timeout: 30000 });
     }
   });
 

@@ -6,7 +6,6 @@ import {
   message,
   Popconfirm,
   Card,
-  Tooltip,
   Tabs,
   Descriptions,
   Badge,
@@ -16,6 +15,7 @@ import {
   Empty,
   Drawer
 } from 'antd';
+import { RowActionTooltip } from '../common/RowActionTooltip';
 import {
   InboxOutlined,
   ReloadOutlined,
@@ -249,22 +249,22 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
       width: 150,
       render: (_: any, record: CMISObject) => (
         <Space>
-          <Tooltip title={t('archiveManagement.viewDetails')}>
+          <RowActionTooltip title={t('archiveManagement.viewDetails')}>
             <Button
               icon={<EyeOutlined />}
               size="small"
               onClick={() => setSelectedArchive(record)}
             />
-          </Tooltip>
+          </RowActionTooltip>
           {record.baseType === 'cmis:document' &&
             record.archiveState !== 'ARCHIVED_COLD' && (
-            <Tooltip title={t('common.download')}>
+            <RowActionTooltip title={t('common.download')}>
               <Button
                 icon={<DownloadOutlined />}
                 size="small"
                 onClick={() => handleDownload(record.id)}
               />
-            </Tooltip>
+            </RowActionTooltip>
           )}
           {record.archiveState !== 'ARCHIVED_COLD' && (
             <Popconfirm
@@ -273,7 +273,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
               okText={t('common.yes')}
               cancelText={t('common.no')}
             >
-              <Tooltip title={t('archiveManagement.restore')}>
+              <RowActionTooltip title={t('archiveManagement.restore')}>
                 <Button
                   icon={<ReloadOutlined />}
                   size="small"
@@ -281,7 +281,7 @@ export const ArchiveManagement: React.FC<ArchiveManagementProps> = ({ repository
                 >
                   {t('archiveManagement.restore')}
                 </Button>
-              </Tooltip>
+              </RowActionTooltip>
             </Popconfirm>
           )}
         </Space>

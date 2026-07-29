@@ -1,4 +1,4 @@
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { generateTestId, TestHelper } from '../utils/test-helper';
@@ -182,6 +182,11 @@ test.describe.configure({ mode: 'serial' });
  */
 test.describe('User Management CRUD Operations', () => {
   // Run tests serially to avoid conflicts
+  // Serial: create → edit → verify → delete, each depending on the last. Measured
+  // alone the four take 45s together; under the full suite the first alone exceeded
+  // the default 120s and took the rest of the chain with it. The work is real (a
+  // login, a six-field form, a modal round trip, a reload and a search per test), so
+  // the budget was what was wrong, not the test.
   test.describe.configure({ mode: 'serial' });
   let authHelper: AuthHelper;
   let testHelper: TestHelper;
@@ -189,14 +194,18 @@ test.describe('User Management CRUD Operations', () => {
   const testUserEmail = `${testUsername}@test.local`;
 
   test.beforeEach(async ({ page, browserName }) => {
+    // 240s, set here rather than on describe.configure — the configure form left the
+    // budget at the 120s default (verified: the failures still reported "Test timeout of
+    // 120000ms exceeded" after it was added). setTimeout applies to the running test.
+    test.setTimeout(240000);
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
     await authHelper.login();
 
     // Navigate directly to user management page via URL
     await page.goto('http://localhost:8080/core/ui/index.html#/users');
-    await page.waitForLoadState('networkidle');
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForRender(page);
+    await waitForAppReady(page, { timeout: 30000 });
   });
 
   test('should create new user with full details', async ({ page, browserName }) => {

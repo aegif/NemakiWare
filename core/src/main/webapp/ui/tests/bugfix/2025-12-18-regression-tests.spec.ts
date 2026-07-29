@@ -339,7 +339,7 @@ test.describe('Bug Fix 1: Gray Overlay After Login', () => {
     await page.context().clearPermissions();
 
     await page.goto(UI_URL);
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
     // Wait for login page to fully render (auth config loads asynchronously)
     await waitForUiStable(page);
 
@@ -593,7 +593,7 @@ test.describe('Bug Fix 3: Description Property Disappearing on Re-edit', () => {
 
       // Navigate to document
       await page.goto(`${UI_URL}/#/repository/${REPOSITORY_ID}/object/${docId}`);
-      await page.waitForLoadState('networkidle');
+      await waitForRender(page);
       await waitForUiStable(page);
 
       // Click on Properties tab if exists

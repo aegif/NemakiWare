@@ -254,8 +254,11 @@ class ErrorBoundary extends React.Component<
     return { hasError: true, isAuthError, errorMessage: error.message };
   }
 
-  componentDidCatch(error: Error, _errorInfo: React.ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error);
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    // Log the component stack, not just the message. Without it, an error caught here
+    // says WHAT went wrong and nothing about WHERE, which is the difference between a
+    // report someone can act on and one they cannot.
+    console.error('ErrorBoundary caught an error:', error, '\ncomponentStack:', errorInfo?.componentStack);
     // Only redirect to login for authentication errors
     if (error.message.includes('401') || error.message.includes('Unauthorized')) {
       localStorage.removeItem('nemakiware_auth');

@@ -22,10 +22,10 @@ import {
   Select,
   Button,
   Space,
-  Tooltip,
   Table,
   Typography
 } from 'antd';
+import { RowActionTooltip } from '../common/RowActionTooltip';
 import { InfoCircleOutlined, EditOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { getSafeBooleanValue } from '../../utils/cmisPropertyUtils';
@@ -272,19 +272,19 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
               {record.required && <span style={{ color: 'red', marginLeft: 4 }}>*</span>}
             </Text>
             {record.description && (
-              <Tooltip title={record.description}>
+              <RowActionTooltip title={record.description}>
                 <InfoCircleOutlined style={{ color: '#1890ff' }} />
-              </Tooltip>
+              </RowActionTooltip>
             )}
             {!record.updatable && (
-              <Tooltip title={t('propertyEditor.readOnlyTooltip')}>
+              <RowActionTooltip title={t('propertyEditor.readOnlyTooltip')}>
                 <Text type="secondary" style={{ fontSize: 12 }}>({t('propertyEditor.readOnly')})</Text>
-              </Tooltip>
+              </RowActionTooltip>
             )}
             {record.propId === 'cmis:secondaryObjectTypeIds' && (
-              <Tooltip title={t('propertyEditor.secondaryTypeTooltip')}>
+              <RowActionTooltip title={t('propertyEditor.secondaryTypeTooltip')}>
                 <Text type="secondary" style={{ fontSize: 12 }}>({t('propertyEditor.dedicatedUI')})</Text>
-              </Tooltip>
+              </RowActionTooltip>
             )}
           </Space>
         ),
@@ -350,9 +350,9 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
               <Space>
                 {propDef.displayName}
                 {propDef.description && (
-                  <Tooltip title={propDef.description}>
+                  <RowActionTooltip title={propDef.description}>
                     <InfoCircleOutlined style={{ color: '#1890ff' }} />
-                  </Tooltip>
+                  </RowActionTooltip>
                 )}
               </Space>
             }

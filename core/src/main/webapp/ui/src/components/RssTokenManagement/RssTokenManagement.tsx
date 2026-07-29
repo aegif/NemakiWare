@@ -16,6 +16,7 @@ import {
   Tooltip,
   Divider,
 } from 'antd';
+import { RowActionTooltip } from '../common/RowActionTooltip';
 import { PlusOutlined, DeleteOutlined, CopyOutlined, ReloadOutlined, FolderOutlined, LinkOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
@@ -330,12 +331,12 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
           const resolved = folderCacheRef.current[fid];
           const label = resolved ? (resolved.path || resolved.name) : fid;
           return (
-            <Tooltip key={fid} title={fid}>
+            <RowActionTooltip key={fid} title={fid}>
               <a href={`#/documents/${fid}`} style={{ fontSize: '12px' }}>
                 <FolderOutlined style={{ marginRight: 2 }} />
                 {label}
               </a>
-            </Tooltip>
+            </RowActionTooltip>
           );
         })}
       </Space>
@@ -430,14 +431,14 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
       render: (_: unknown, record: RssTokenData) => (
         <Space>
           {record.enabled && !record.expired && (
-            <Tooltip title={t('rssManagement.refresh')}>
+            <RowActionTooltip title={t('rssManagement.refresh')}>
               <Button
                 type="text"
                 icon={<ReloadOutlined />}
                 onClick={() => handleRefresh(record.id)}
                 size="small"
               />
-            </Tooltip>
+            </RowActionTooltip>
           )}
           {record.enabled && (
             <Button

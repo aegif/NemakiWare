@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Table, Button, Modal, Form, Input, InputNumber, Select, Switch, Space, Tag, App, Popconfirm, Alert, Tooltip } from 'antd';
+import { RowActionTooltip } from '../common/RowActionTooltip';
 import { PlusOutlined, EditOutlined, DeleteOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
@@ -339,11 +340,11 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
               tooltip shows the reason (e.g. CREATOR_USER_INACTIVE) so
               they know whether re-enabling is safe. */}
           {!record.enabled && record.lastAutoDisabledAt && (
-            <Tooltip title={record.lastAutoDisabledReason || t('importProfileManagement.autoDisabledHint')}>
+            <RowActionTooltip title={record.lastAutoDisabledReason || t('importProfileManagement.autoDisabledHint')}>
               <Tag color="orange" style={{ fontSize: 10 }}>
                 {t('importProfileManagement.autoDisabledBadge')}
               </Tag>
-            </Tooltip>
+            </RowActionTooltip>
           )}
         </Space>
       ),

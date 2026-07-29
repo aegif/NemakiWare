@@ -20,7 +20,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { gotoSearchPage, searchPageSubmitButton, waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 
@@ -49,7 +49,7 @@ test.describe('Secondary Type with Custom Properties', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     await testHelper.closeMobileSidebar(browserName);
 
@@ -290,14 +290,10 @@ test.describe('Secondary Type with Custom Properties', () => {
     await waitForUiStable(page);
 
     // Navigate to search page
-    const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
-    if (await searchMenu.count() > 0) {
-      await searchMenu.click(isMobile ? { force: true } : {});
-      await waitForUiStable(page);
-    } else {
-      await page.goto('http://localhost:8080/core/ui/#/search');
-      await waitForUiStable(page);
-    }
+    // gotoSearchPage waits for the search page's OWN submit hook before returning; the
+    // document list's inline search button lingers for a few dozen ms after the route
+    // change and a selector that can match it clicks an element React is removing.
+    await gotoSearchPage(page);
 
     // Enter search text
     const searchInput = page.locator('input[placeholder*="検索"]').first();
@@ -306,7 +302,7 @@ test.describe('Secondary Type with Custom Properties', () => {
     }
 
     // Click search button
-    const searchButton = page.locator('button.search-button, button:has-text("検索")').first();
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
       await waitForUiStable(page);
@@ -365,17 +361,15 @@ test.describe('Secondary Type with Custom Properties', () => {
     await waitForUiStable(page);
 
     // Search again and verify document is not found by aspect property
-    const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
-    if (await searchMenu.count() > 0) {
-      await searchMenu.click(isMobile ? { force: true } : {});
-      await waitForUiStable(page);
+    await gotoSearchPage(page);
+    {
 
       const searchInput = page.locator('input[placeholder*="検索"]').first();
       if (await searchInput.count() > 0) {
         await searchInput.fill(aspectPropValue);
       }
 
-      const searchButton = page.locator('button.search-button, button:has-text("検索")').first();
+      const searchButton = searchPageSubmitButton(page);
       if (await searchButton.count() > 0) {
         await searchButton.click(isMobile ? { force: true } : {});
         await waitForUiStable(page);

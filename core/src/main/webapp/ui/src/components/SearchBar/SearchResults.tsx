@@ -244,10 +244,10 @@ import {
   Select,
   DatePicker,
   message,
-  Tooltip,
   Checkbox,
   Tabs
 } from 'antd';
+import { RowActionTooltip } from '../common/RowActionTooltip';
 import {
   SearchOutlined,
   FileOutlined,
@@ -614,11 +614,11 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
           return <span style={{ color: '#999' }}>-</span>;
         }
         return sourceId ? (
-          <Tooltip title={sourceId}>
+          <RowActionTooltip title={sourceId}>
             <Button type="link" size="small" onClick={() => navigate(`/documents/${sourceId}`)}>
               {sourceId.substring(0, 12)}...
             </Button>
-          </Tooltip>
+          </RowActionTooltip>
         ) : '-';
       },
     },
@@ -633,11 +633,11 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
           return <span style={{ color: '#999' }}>-</span>;
         }
         return targetId ? (
-          <Tooltip title={targetId}>
+          <RowActionTooltip title={targetId}>
             <Button type="link" size="small" onClick={() => navigate(`/documents/${targetId}`)}>
               {targetId.substring(0, 12)}...
             </Button>
-          </Tooltip>
+          </RowActionTooltip>
         ) : '-';
       },
     },
@@ -657,13 +657,13 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
           return <span style={{ color: '#999' }}>-</span>;
         }
         return (
-          <Tooltip title={secondaryTypeIds.join(', ')}>
+          <RowActionTooltip title={secondaryTypeIds.join(', ')}>
             <span style={{ color: '#1890ff' }}>
               {secondaryTypeIds.length === 1
                 ? secondaryTypeIds[0].replace(/^.*:/, '')
                 : t('common.items', { count: secondaryTypeIds.length })}
             </span>
-          </Tooltip>
+          </RowActionTooltip>
         );
       },
     },
@@ -699,21 +699,21 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
       width: 120,
       render: (_: any, record: CMISObject) => (
         <Space>
-          <Tooltip title={t('searchResults.tooltips.viewDetails')}>
+          <RowActionTooltip title={t('searchResults.tooltips.viewDetails')}>
             <Button 
               icon={<EyeOutlined />} 
               size="small"
               onClick={() => navigate(`/documents/${record.id}`)}
             />
-          </Tooltip>
+          </RowActionTooltip>
           {record.baseType === 'cmis:document' && (
-            <Tooltip title={t('common.download')}>
+            <RowActionTooltip title={t('common.download')}>
               <Button 
                 icon={<DownloadOutlined />} 
                 size="small"
                 onClick={() => handleDownload(record.id)}
               />
-            </Tooltip>
+            </RowActionTooltip>
           )}
         </Space>
       ),
@@ -1010,7 +1010,11 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
 
           <Form.Item>
             <Space>
-              <Button type="primary" htmlType="submit" loading={loading}>
+              {/* search-submit-button: a hook that belongs to THIS page only. The document
+                  list has its own .search-button, and during the route transition to /search
+                  both are briefly in the DOM — a selector matching either one can grab the
+                  outgoing list's button microseconds before React unmounts it. */}
+              <Button type="primary" htmlType="submit" loading={loading} className="search-submit-button">
                 {t('common.search')}
               </Button>
               <Button onClick={() => {

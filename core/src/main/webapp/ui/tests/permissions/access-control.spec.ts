@@ -1,4 +1,4 @@
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, ApiHelper, generateTestId } from '../utils/test-helper';
@@ -280,14 +280,14 @@ test.describe('Access Control and Permissions', () => {
 
       await page.context().clearCookies();
       await authHelper.login(); // Login as admin
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 }); // Wait for UI initialization after login
+      await waitForAppReady(page, { timeout: 30000 }); // Wait for UI initialization after login
       await testHelper.waitForAntdLoad();
 
       // Navigate to documents
       const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
       if (await documentsMenuItem.count() > 0) {
         await documentsMenuItem.click();
-        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+        await waitForAppReady(page, { timeout: 30000 });
       }
 
       await testHelper.closeMobileSidebar(browserName);
@@ -447,13 +447,13 @@ test.describe('Access Control and Permissions', () => {
     test('should upload document to restricted folder', async ({ page, browserName }) => {
       const isMobile = testHelper.isMobile(browserName);
 
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+      await waitForAppReady(page, { timeout: 30000 });
 
       // Navigate into restricted folder
       const folderLink = page.locator('a, span').filter({ hasText: restrictedFolderName });
       if (await folderLink.count() > 0) {
         await folderLink.first().click();
-        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+        await waitForAppReady(page, { timeout: 30000 });
 
         // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
         let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
@@ -476,7 +476,7 @@ test.describe('Access Control and Permissions', () => {
           await submitBtn.click();
 
           await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-          await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+          await waitForAppReady(page, { timeout: 30000 });
         }
       }
     });
@@ -489,14 +489,14 @@ test.describe('Access Control and Permissions', () => {
 
       await page.context().clearCookies();
       await authHelper.login(); // Login as admin
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 }); // Wait for UI initialization after login
+      await waitForAppReady(page, { timeout: 30000 }); // Wait for UI initialization after login
       await testHelper.waitForAntdLoad();
 
       // Navigate to documents
       const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
       if (await documentsMenuItem.count() > 0) {
         await documentsMenuItem.click();
-        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+        await waitForAppReady(page, { timeout: 30000 });
       }
 
       // CRITICAL FIX: Create restricted folder if it doesn't exist
@@ -517,7 +517,7 @@ test.describe('Access Control and Permissions', () => {
           await submitButton.click();
 
           await page.waitForSelector('.ant-message-success', { timeout: 10000 });
-          await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+          await waitForAppReady(page, { timeout: 30000 });
           console.log(`BeforeEach: Successfully created ${restrictedFolderName}`);
         }
       }
@@ -906,7 +906,7 @@ test.describe('Access Control and Permissions', () => {
       const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
       if (await documentsMenuItem.count() > 0) {
         await documentsMenuItem.click();
-        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+        await waitForAppReady(page, { timeout: 30000 });
       }
 
       await testHelper.closeMobileSidebar(browserName);
@@ -1040,14 +1040,14 @@ test.describe('Access Control and Permissions', () => {
     test('should NOT be able to delete document (read-only)', async ({ page, browserName }) => {
       const isMobile = testHelper.isMobile(browserName);
 
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+      await waitForAppReady(page, { timeout: 30000 });
 
       // Navigate to restricted folder
       // Bug fix: Use specific selector for table button to avoid ambiguity with tree view
       const folderLink = page.locator(`.ant-table-tbody button:has-text("${restrictedFolderName}")`);
       if (await folderLink.count() > 0) {
         await folderLink.click();
-        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+        await waitForAppReady(page, { timeout: 30000 });
 
         // Find document row
         const docRow = page.locator('tr').filter({ hasText: testDocName });
@@ -1098,14 +1098,14 @@ test.describe('Access Control and Permissions', () => {
     test('should NOT be able to upload to restricted folder', async ({ page, browserName }) => {
       const isMobile = testHelper.isMobile(browserName);
 
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+      await waitForAppReady(page, { timeout: 30000 });
 
       // Navigate to restricted folder
       // Bug fix: Use specific selector for table button to avoid ambiguity with tree view
       const folderLink = page.locator(`.ant-table-tbody button:has-text("${restrictedFolderName}")`);
       if (await folderLink.count() > 0) {
         await folderLink.click();
-        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+        await waitForAppReady(page, { timeout: 30000 });
 
         // CRITICAL FIX (2025-12-15): Use flexible selector for upload button
         let uploadButton = page.locator('button').filter({ hasText: 'アップロード' }).first();
@@ -1144,12 +1144,12 @@ test.describe('Access Control and Permissions', () => {
     test.beforeEach(async ({ page }) => {
       authHelper = new AuthHelper(page);
       await authHelper.login(); // Login as admin again
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+      await waitForAppReady(page, { timeout: 30000 });
 
       const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
       if (await documentsMenuItem.count() > 0) {
         await documentsMenuItem.click();
-        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+        await waitForAppReady(page, { timeout: 30000 });
       }
     });
 

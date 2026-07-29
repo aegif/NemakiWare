@@ -30,7 +30,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { gotoSearchPage, searchPageSubmitButton, waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 import { cleanupTestData } from '../utils/cleanup-helper';
@@ -75,7 +75,7 @@ test.describe('Solr Indexing Regression Tests', () => {
     testHelper = new TestHelper(page);
     await authHelper.login();
     // Wait for UI to fully load instead of fixed timeout
-    await page.waitForSelector('.ant-table-tbody, .ant-menu-item', { timeout: 15000 });
+    await waitForAppReady(page, { timeout: 15000 });
 
     // Mobile sidebar close logic
     const isMobile = testHelper.isMobile(browserName);
@@ -199,13 +199,12 @@ test.describe('Solr Indexing Regression Tests', () => {
     }
 
     // Also verify via UI search
-    await page.goto('http://localhost:8080/core/ui/#/search');
-    await waitForUiStable(page);
+    await gotoSearchPage(page);
 
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"], input[placeholder*="Search"], .ant-input').first();
     if (await searchInput.count() > 0) {
       await searchInput.fill(uniqueDescription);
-      const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")').first();
+      const searchButton = searchPageSubmitButton(page);
       if (await searchButton.count() > 0) {
         await searchButton.click();
       } else {
@@ -294,9 +293,7 @@ test.describe('Solr Indexing Regression Tests', () => {
     }
 
     // Navigate to search page
-    const searchMenu = page.locator('.ant-menu-item:has-text("検索")');
-    await searchMenu.click();
-    await waitForUiStable(page);
+    await gotoSearchPage(page);
 
     // Search for the unique content or filename
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]').first();
@@ -310,7 +307,7 @@ test.describe('Solr Indexing Regression Tests', () => {
     // Search by filename (should be indexed in cmis:name)
     await searchInput.fill(uniqueFileName.replace('.txt', ''));
 
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")').first();
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
     } else {
@@ -427,14 +424,12 @@ test.describe('Solr Indexing Regression Tests', () => {
     }
 
     // Verify document is searchable before deletion
-    const searchMenu = page.locator('.ant-menu-item:has-text("検索")');
-    await searchMenu.click();
-    await waitForUiStable(page);
+    await gotoSearchPage(page);
 
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]').first();
     await searchInput.fill(uniqueFileName.replace('.txt', ''));
 
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")').first();
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
     } else {
@@ -484,8 +479,7 @@ test.describe('Solr Indexing Regression Tests', () => {
     }
 
     // Verify document is NOT searchable after deletion
-    await searchMenu.click();
-    await waitForUiStable(page);
+    await gotoSearchPage(page);
 
     await searchInput.fill(uniqueFileName.replace('.txt', ''));
     if (await searchButton.count() > 0) {
@@ -543,15 +537,7 @@ test.describe('Solr Indexing Regression Tests', () => {
     console.log(`Testing move operation with document: ${documentName}`);
 
     // Verify document is searchable before move
-    const searchMenu = page.locator('.ant-menu-item:has-text("検索")');
-    if (await searchMenu.count() > 0) {
-      await searchMenu.click();
-      await waitForUiStable(page);
-    } else {
-      // Try direct navigation to search page
-      await page.goto('http://localhost:8080/core/ui/#/search');
-      await waitForUiStable(page);
-    }
+    await gotoSearchPage(page);
 
     // Try multiple search input selectors
     let searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"], input[placeholder*="Search"]').first();
@@ -578,7 +564,7 @@ test.describe('Solr Indexing Regression Tests', () => {
 
     await searchInput.fill(documentName.trim());
 
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")').first();
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
     } else {

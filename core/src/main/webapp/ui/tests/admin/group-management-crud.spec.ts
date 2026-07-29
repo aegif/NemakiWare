@@ -220,6 +220,12 @@ test.describe('Group Management CRUD Operations', () => {
   let testHelper: TestHelper;
 
   test.beforeEach(async ({ page, browserName }) => {
+    // 240s: this is a serial admin CRUD chain (create → member → edit → verify → delete),
+    // each test doing a login, a modal round trip and several API round trips. Under the
+    // full suite the default 120s was exceeded and the whole chain went with it. Same
+    // reason, and same fix, as user-management-crud.
+    test.setTimeout(240000);
+
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
     await authHelper.login();
@@ -227,7 +233,7 @@ test.describe('Group Management CRUD Operations', () => {
     // Navigate directly to group management page and wait for API response
     const groupListPromise = page.waitForResponse(
       resp => resp.url().includes('/group/list') && resp.status() === 200,
-      { timeout: 20000 }
+      { timeout: 60000 }
     );
     await page.goto('http://localhost:8080/core/ui/index.html#/groups');
     await groupListPromise;
@@ -273,7 +279,7 @@ test.describe('Group Management CRUD Operations', () => {
       // handleSubmit calls loadGroups() after creation - listen for it
       const groupListRefreshPromise = page.waitForResponse(
         resp => resp.url().includes('/group/list') && resp.status() === 200,
-        { timeout: 20000 }
+        { timeout: 60000 }
       );
 
       await okButton.click();

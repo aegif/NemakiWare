@@ -1,4 +1,4 @@
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { test, expect, Page, APIRequestContext } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
@@ -573,7 +573,7 @@ test.describe('Group 3: Governance Tab', () => {
 
     const authHelper = new AuthHelper(page);
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     // Navigate to the folder's document viewer
     // Use direct URL navigation to the object
@@ -796,7 +796,7 @@ test.describe('Group 6: Lineage Journal UI', () => {
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
   });
 
   test.afterAll(async () => {

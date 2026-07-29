@@ -13,9 +13,9 @@ import {
   message,
   Table,
   Select,
-  Tooltip,
   Typography
 } from 'antd';
+import { RowActionTooltip } from '../common/RowActionTooltip';
 import type { ColumnsType } from 'antd/es/table';
 import {
   CheckCircleOutlined,
@@ -164,7 +164,7 @@ export const AuditDashboard: React.FC = () => {
       key: 'objectName',
       width: 200,
       ellipsis: true,
-      render: (val: string) => val ? <Tooltip title={val}>{val}</Tooltip> : '-',
+      render: (val: string) => val ? <RowActionTooltip title={val}>{val}</RowActionTooltip> : '-',
     },
     {
       title: t('auditDashboard.result', 'Result'),

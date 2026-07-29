@@ -16,6 +16,7 @@ import {
   Descriptions,
   Tabs
 } from 'antd';
+import { RowActionTooltip } from '../common/RowActionTooltip';
 import {
   ReloadOutlined,
   SendOutlined,
@@ -320,11 +321,11 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
   const renderObjectLink = (objectId: string, displayPath: string | null) => {
     const label = displayPath || objectId;
     return (
-      <Tooltip title={objectId}>
+      <RowActionTooltip title={objectId}>
         <a href={`#/documents/${objectId}`} style={{ fontSize: '12px' }}>
           {label}
         </a>
-      </Tooltip>
+      </RowActionTooltip>
     );
   };
 
@@ -343,13 +344,13 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
       width: 250,
       ellipsis: true,
       render: (_: unknown, row: ConfigRow) => (
-        <Tooltip title={row.config.url}>
+        <RowActionTooltip title={row.config.url}>
           <span style={{ fontSize: '12px' }}>
             {row.config.url && row.config.url.length > 40
               ? row.config.url.substring(0, 40) + '...'
               : row.config.url || '-'}
           </span>
-        </Tooltip>
+        </RowActionTooltip>
       ),
     },
     {
@@ -401,11 +402,11 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
       width: 200,
       ellipsis: true,
       render: (text: string) => (
-        <Tooltip title={text}>
+        <RowActionTooltip title={text}>
           <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>
             {text?.substring(0, 8)}...
           </span>
-        </Tooltip>
+        </RowActionTooltip>
       )
     },
     {
@@ -423,11 +424,11 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
       width: 200,
       ellipsis: true,
       render: (text: string) => (
-        <Tooltip title={text}>
+        <RowActionTooltip title={text}>
           <span style={{ fontSize: '12px' }}>
             {text ? (text.length > 30 ? text.substring(0, 30) + '...' : text) : '-'}
           </span>
-        </Tooltip>
+        </RowActionTooltip>
       )
     },
     {
@@ -510,13 +511,13 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
       render: (_: unknown, record: DeliveryLog) => (
         <Space>
           {!record.success && (
-            <Tooltip title={t('webhookManagement.actions.retry')}>
+            <RowActionTooltip title={t('webhookManagement.actions.retry')}>
               <Button
                 type="link"
                 icon={<ReloadOutlined />}
                 onClick={() => handleRetry(record.deliveryId)}
               />
-            </Tooltip>
+            </RowActionTooltip>
           )}
         </Space>
       )

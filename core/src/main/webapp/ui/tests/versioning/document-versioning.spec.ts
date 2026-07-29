@@ -1,4 +1,4 @@
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, ApiHelper, generateTestId } from '../utils/test-helper';
@@ -166,7 +166,7 @@ test.describe('Document Versioning', () => {
     await authHelper.login();
 
     // Wait for UI to fully load
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     await testHelper.closeMobileSidebar(browserName);
 
@@ -429,14 +429,20 @@ test.describe('Document Versioning', () => {
     await documentRow.click(isMobile ? { force: true } : {});
     await waitForRender(page);
 
-    const checkoutButton = page.locator('button, .ant-btn').filter({ hasText: /チェックアウト|Check.*Out/i }).first();
+    // /チェックアウト/ also matches the CANCEL controls ("チェックアウトキャンセル" and
+    // "チェックアウト取消"), so .first() could click cancel before anything was checked out
+    // — after which the cancel button this test then looks for is gone. Anchor the name.
+    const checkoutButton = page.getByRole('button', { name: /^(チェックアウト|Check ?Out)$/i }).first();
     if (await checkoutButton.count() > 0) {
       await checkoutButton.click(isMobile ? { force: true } : {});
       await waitForUiStable(page);
 
-      // Cancel check-out
-      const cancelCheckoutButton = page.locator('button, .ant-btn').filter({ hasText: /チェックアウト.*キャンセル|Cancel.*Check.*Out/i }).first();
+      // Cancel check-out. Both label variants ship: the toolbar says 取消, the row action
+      // menu says キャンセル; the old regex only matched the second.
+      const cancelCheckoutButton = page.locator('button, .ant-btn')
+        .filter({ hasText: /チェックアウト(キャンセル|取消)|Cancel.*Check.*Out/i }).first();
       if (await cancelCheckoutButton.count() > 0) {
+        await expect(cancelCheckoutButton).toBeEnabled({ timeout: 10000 });
         await cancelCheckoutButton.click(isMobile ? { force: true } : {});
         await waitForRender(page);
 

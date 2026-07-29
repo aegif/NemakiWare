@@ -39,7 +39,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 import * as path from 'path';
@@ -59,7 +59,7 @@ test.describe('PreviewComponent File Type Routing', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile
@@ -216,7 +216,7 @@ test.describe('PreviewComponent Image Preview', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile
@@ -323,7 +323,7 @@ test.describe('PreviewComponent Text Preview', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile
@@ -419,7 +419,7 @@ test.describe('PreviewComponent Error Handling', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile
@@ -592,7 +592,7 @@ test.describe('PreviewComponent PDF Preview', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile
@@ -708,7 +708,7 @@ test.describe('PreviewComponent Video Preview', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile

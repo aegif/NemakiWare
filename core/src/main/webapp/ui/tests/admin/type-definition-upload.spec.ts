@@ -1,4 +1,4 @@
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
@@ -286,18 +286,18 @@ test.describe('Type Definition Upload and JSON Editing', () => {
 
     // Login first
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     // Navigate directly to Type Management page via URL (more reliable than menu clicks)
     await page.goto('/core/ui/#/types');
     // Retry navigation if auth state race redirects away
     for (let retry = 0; retry < 3; retry++) {
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+      await waitForAppReady(page, { timeout: 30000 });
       if (page.url().includes('/types')) break;
       console.log(`type-upload: Retrying navigation to /types (attempt ${retry + 2})`);
       await page.goto('/core/ui/#/types');
     }
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
 
     await page.waitForSelector('.ant-table', { timeout: 30000 });
   });

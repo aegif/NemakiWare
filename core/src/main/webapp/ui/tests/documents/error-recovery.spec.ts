@@ -1,4 +1,4 @@
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, ApiHelper, generateTestId } from '../utils/test-helper';
@@ -43,7 +43,7 @@ test.describe('Error Recovery Tests', () => {
 
     // Login - AuthHelper.login() already navigates to documents page
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });  // Wait for page stabilization
+    await waitForAppReady(page, { timeout: 30000 });  // Wait for page stabilization
     await testHelper.waitForAntdLoad();
 
     // Use TestHelper's mobile sidebar handling
@@ -191,7 +191,7 @@ test.describe('Error Recovery Tests', () => {
     // Attempt upload (should timeout or show loading indicator)
     await uploadButton.click(isMobile ? { force: true } : {});
     await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 10000 });
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
     await waitForRender(page); // Wait for modal to fully stabilize
 
     // Set file using Ant Design Upload.Dragger file input
@@ -345,7 +345,7 @@ test.describe('Error Recovery Tests', () => {
     // First attempt (should fail with 500)
     await uploadButton.click(isMobile ? { force: true } : {});
     await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 10000 });
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
     await waitForRender(page);
 
     // Set file using Ant Design Upload.Dragger
@@ -377,13 +377,9 @@ test.describe('Error Recovery Tests', () => {
     await expect(errorMessage.first()).toBeVisible({ timeout: 10000 });
 
     // Look for retry button or option
-    const retryButton = page.locator('button').filter({
-      or: [
-        { hasText: '再試行' },
-        { hasText: 'Retry' },
-        { hasText: 'もう一度' }
-      ]
-    });
+    // Playwright's filter() has no `or` option — an unknown key is silently ignored, so
+    // the old form matched EVERY button on the page and `count() > 0` was always true.
+    const retryButton = page.getByRole('button', { name: /再試行|Retry|もう一度/ });
 
     if (await retryButton.count() > 0) {
       // If retry button exists, click it
@@ -400,7 +396,7 @@ test.describe('Error Recovery Tests', () => {
       // Retry manually
       await uploadButton.click(isMobile ? { force: true } : {});
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 10000 });
-      await page.waitForLoadState('networkidle');
+      await waitForRender(page);
       await waitForRender(page);
 
       // Set file again
@@ -510,12 +506,9 @@ test.describe('Error Recovery Tests', () => {
 
       if (await documentRow.count() > 0) {
         // Look for delete button
-        const deleteButton = documentRow.locator('button, a').filter({
-          or: [
-            { hasText: '削除' },
-            { hasText: 'Delete' }
-          ]
-        });
+        // filter({or: [...]}) is not a Playwright option; it matched every control in the
+        // row, so `.first()` clicked whatever came first — usually the name link.
+        const deleteButton = documentRow.locator('button, a').filter({ hasText: /削除|Delete/ });
 
         if (await deleteButton.count() > 0) {
           await deleteButton.first().click(isMobile ? { force: true } : {});
@@ -577,7 +570,7 @@ test.describe('Error Recovery Tests', () => {
     // Attempt upload (should fail with parsing error)
     await uploadButton.click(isMobile ? { force: true } : {});
     await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 10000 });
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
     await waitForRender(page);
 
     // Set file using Ant Design Upload.Dragger

@@ -92,7 +92,7 @@ test.describe.serial('Passkey (WebAuthn) Management', () => {
       console.log(`passkey: Retrying navigation to /account (attempt ${retry + 2})`);
       await page.goto(`${UI_URL}/#/account`);
     }
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
 
     // Click on the passkey tab (default tab is 'profile')
     const passkeyTab = page.locator('.ant-tabs-tab').filter({ hasText: /パスキー|Passkey/i });
@@ -107,7 +107,7 @@ test.describe.serial('Passkey (WebAuthn) Management', () => {
 
   test('Login page shows passkey button', async ({ page }) => {
     await page.goto(`${UI_URL}/#/login`);
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
 
     // Should show passkey login button (if WebAuthn is supported in browser)
     await expect(page.getByRole('button', { name: /パスキーでログイン|Sign in with Passkey/ })).toBeVisible({ timeout: 10000 });
@@ -127,7 +127,7 @@ test.describe.serial('Passkey (WebAuthn) Management', () => {
       console.log(`passkey-registration: Retrying navigation to /account (attempt ${retry + 2})`);
       await page.goto(`${UI_URL}/#/account`);
     }
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
 
     // Click on the passkey tab (default tab is 'profile')
     const passkeyTab = page.locator('.ant-tabs-tab').filter({ hasText: /パスキー|Passkey/i });
@@ -189,7 +189,7 @@ test.describe.serial('Passkey (WebAuthn) Management', () => {
         );
         await page.reload();
         await credResPromise;
-        await page.waitForLoadState('networkidle');
+        await waitForRender(page);
         const passkeyTabAfter = page.locator('.ant-tabs-tab').filter({ hasText: /パスキー|Passkey/i });
         await expect(passkeyTabAfter).toBeVisible({ timeout: 10000 });
         await passkeyTabAfter.click();

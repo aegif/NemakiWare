@@ -35,7 +35,7 @@ test.describe('Cloud Drive Import', () => {
 
 		// Navigate to document list
 		await page.goto('/core/ui/');
-		await page.waitForLoadState('networkidle');
+		await waitForRender(page);
 	});
 
 	test('cloud import buttons should be hidden for basic auth users', async ({ page }) => {
