@@ -297,7 +297,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
       console.log(`type-upload: Retrying navigation to /types (attempt ${retry + 2})`);
       await page.goto('/core/ui/#/types');
     }
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
 
     await page.waitForSelector('.ant-table', { timeout: 30000 });
   });

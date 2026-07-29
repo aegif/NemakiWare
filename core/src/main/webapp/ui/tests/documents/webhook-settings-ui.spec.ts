@@ -13,7 +13,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { waitForUiStable } from '../utils/wait-helpers';
+import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { ApiHelper, generateTestId } from '../utils/test-helper';
 import { AuthHelper } from '../utils/auth-helper';
 
@@ -57,7 +57,7 @@ test.describe('Webhook Settings UI Tests', () => {
     // Navigate to the folder detail view using the correct app route
     // App routes: /documents/:objectId (DocumentViewer)
     await page.goto(`${BASE_URL}/core/ui/#/documents/${testFolderId}`);
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
 
     // Wait for tabs to render
     const webhookTab = page.locator('.ant-tabs-tab').filter({ hasText: /Webhook|ウェブフック/ });
@@ -498,7 +498,7 @@ test.describe('Webhook Settings UI Tests', () => {
     // Login and navigate to folder detail view
     await authHelper.login();
     await page.goto(`${BASE_URL}/core/ui/#/documents/${testFolderId}`);
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
 
     // Click Webhook tab
     const webhookTab = page.locator('.ant-tabs-tab').filter({ hasText: /Webhook|ウェブフック/ });

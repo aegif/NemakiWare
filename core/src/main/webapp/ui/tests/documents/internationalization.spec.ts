@@ -54,7 +54,7 @@ test.describe('Internationalization Tests', () => {
     // Navigate to Documents section
     const documentsLink = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
     await documentsLink.click();
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
 
     // Mobile browser handling: close sidebar to prevent overlay blocking
     await testHelper.closeMobileSidebar(browserName);

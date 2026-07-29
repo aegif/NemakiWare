@@ -204,7 +204,7 @@ test.describe('User Management CRUD Operations', () => {
 
     // Navigate directly to user management page via URL
     await page.goto('http://localhost:8080/core/ui/index.html#/users');
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
     await waitForAppReady(page, { timeout: 30000 });
   });
 

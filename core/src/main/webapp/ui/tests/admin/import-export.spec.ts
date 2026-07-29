@@ -422,7 +422,7 @@ test.describe.serial('Import/Export Feature', () => {
     test('should navigate to filesystem import/export page from admin menu', async ({ page }) => {
       await authHelper.login();
       await page.goto(`${BASE_URL}/core/ui/index.html#/filesystem-import-export`);
-      await page.waitForLoadState('networkidle');
+      await waitForRender(page);
 
       // Verify page loaded - check for title text
       const pageTitle = page.locator('h2, h3, .ant-card-head-title').filter({

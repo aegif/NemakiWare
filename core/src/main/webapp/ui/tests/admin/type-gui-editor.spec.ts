@@ -40,7 +40,7 @@ test.describe('Type GUI Editor', () => {
 
     // Navigate directly to type management page via URL
     await page.goto('http://localhost:8080/core/ui/index.html#/types');
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
   });
 
   test('should display GUI create button', async ({ page }) => {

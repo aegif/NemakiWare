@@ -21,13 +21,19 @@ test.describe('Group Hierarchy and Large Member Display', () => {
   let authHelper: AuthHelper;
 
   test.beforeEach(async ({ page }) => {
+    // 240s: this is a serial admin CRUD chain (create → member → edit → verify → delete),
+    // each test doing a login, a modal round trip and several API round trips. Under the
+    // full suite the default 120s was exceeded and the whole chain went with it. Same
+    // reason, and same fix, as user-management-crud.
+    test.setTimeout(240000);
+
     authHelper = new AuthHelper(page);
     await authHelper.login();
 
     // Navigate directly to group management page and wait for API response
     const groupListPromise = page.waitForResponse(
       resp => resp.url().includes('/group/list') && resp.status() === 200,
-      { timeout: 20000 }
+      { timeout: 60000 }
     );
     await page.goto('http://localhost:8080/core/ui/index.html#/groups');
     await groupListPromise;
@@ -625,7 +631,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
     test('should navigate to user management and verify page loads', async ({ page }) => {
       // Navigate directly to user management via URL
       await page.goto('http://localhost:8080/core/ui/index.html#/users');
-      await page.waitForLoadState('networkidle');
+      await waitForRender(page);
 
       // Verify we're on user management page
       expect(page.url()).toContain('/users');

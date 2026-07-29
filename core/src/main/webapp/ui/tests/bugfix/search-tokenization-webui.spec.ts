@@ -287,7 +287,7 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
 
     // Navigate directly to search page via URL
     await page.goto('http://localhost:8080/core/ui/index.html#/search');
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
     await waitForUiStable(page);
 
     // Find search input

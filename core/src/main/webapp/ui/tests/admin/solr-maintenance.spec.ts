@@ -131,7 +131,7 @@ test.describe('Solr Index Maintenance', () => {
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
 
     // Wait for health check card to appear (API loads healthStatus asynchronously)
     const healthCard = page.locator('.ant-card').filter({
@@ -406,7 +406,7 @@ test.describe('Solr Index Maintenance', () => {
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
 
     // Wait for health check card to load (API is async)
     const healthCardLocator = page.locator('.ant-card').filter({

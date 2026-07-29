@@ -191,7 +191,7 @@ test.describe('Error Recovery Tests', () => {
     // Attempt upload (should timeout or show loading indicator)
     await uploadButton.click(isMobile ? { force: true } : {});
     await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 10000 });
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
     await waitForRender(page); // Wait for modal to fully stabilize
 
     // Set file using Ant Design Upload.Dragger file input
@@ -345,7 +345,7 @@ test.describe('Error Recovery Tests', () => {
     // First attempt (should fail with 500)
     await uploadButton.click(isMobile ? { force: true } : {});
     await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 10000 });
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
     await waitForRender(page);
 
     // Set file using Ant Design Upload.Dragger
@@ -396,7 +396,7 @@ test.describe('Error Recovery Tests', () => {
       // Retry manually
       await uploadButton.click(isMobile ? { force: true } : {});
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 10000 });
-      await page.waitForLoadState('networkidle');
+      await waitForRender(page);
       await waitForRender(page);
 
       // Set file again
@@ -570,7 +570,7 @@ test.describe('Error Recovery Tests', () => {
     // Attempt upload (should fail with parsing error)
     await uploadButton.click(isMobile ? { force: true } : {});
     await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 10000 });
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
     await waitForRender(page);
 
     // Set file using Ant Design Upload.Dragger
