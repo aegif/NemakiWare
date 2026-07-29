@@ -20,7 +20,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { gotoSearchPage, searchPageSubmitButton, waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { gotoSearchPage, searchPageSubmitButton, waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 
@@ -49,7 +49,7 @@ test.describe('Secondary Type with Custom Properties', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     await testHelper.closeMobileSidebar(browserName);
 

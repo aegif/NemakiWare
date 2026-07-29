@@ -13,7 +13,7 @@
  */
 
 import { test, expect, Page, BrowserContext } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 
@@ -47,7 +47,7 @@ test.describe('Layout Navigation', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
     await testHelper.waitForAntdLoad();
 
     // MOBILE FIX: Close sidebar on mobile browsers to prevent overlay issues
@@ -418,7 +418,7 @@ test.describe('Layout Sidebar Collapse', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
     await testHelper.waitForAntdLoad();
   });
 

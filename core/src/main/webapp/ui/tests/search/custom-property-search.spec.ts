@@ -16,7 +16,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { gotoSearchPage, searchPageSubmitButton, waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { gotoSearchPage, searchPageSubmitButton, waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 
@@ -32,7 +32,7 @@ test.describe('Custom Property Search Functionality', () => {
     await authHelper.login();
 
     // Wait for UI initialization
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     // Mobile sidebar close logic (if needed)
     await testHelper.closeMobileSidebar(browserName);
@@ -446,7 +446,7 @@ test.describe('Custom Property Range Search', () => {
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     // Mobile sidebar handling
     await testHelper.closeMobileSidebar(browserName);
@@ -697,7 +697,7 @@ test.describe('Custom Property Input Types', () => {
     authHelper = new AuthHelper(page);
     testHelper = new TestHelper(page);
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     // Mobile sidebar handling
     await testHelper.closeMobileSidebar(browserName);

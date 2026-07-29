@@ -20,7 +20,7 @@
  */
 
 import { test, expect, Page } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 
@@ -198,7 +198,7 @@ test.describe('Parent Folder Navigation', () => {
 
     // Login and navigate to document management
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
     await testHelper.waitForAntdLoad();
 
     // Close sidebar if mobile browser
@@ -223,7 +223,7 @@ test.describe('Parent Folder Navigation', () => {
     const documentsLink = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsLink.count() > 0) {
       await documentsLink.click();
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+      await waitForAppReady(page, { timeout: 30000 });
 
       // CRITICAL FIX (2025-11-26): Wait for UI to stabilize after navigation
       // Ensures header and toolbar are fully rendered before test operations
@@ -288,7 +288,7 @@ test.describe('Parent Folder Navigation', () => {
             // Reload page to refresh the table
             console.log('[CLEANUP DEBUG] Reloading page to refresh table...');
             await page.reload();
-            await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+            await waitForAppReady(page, { timeout: 30000 });
             await testHelper.waitForAntdLoad();
 
             // Verify TestParent is gone

@@ -1,4 +1,4 @@
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { generateTestId } from '../utils/test-helper';
@@ -64,7 +64,7 @@ test.describe('Bulk Delete Improvements', () => {
     rootFolderId = await fetchRootFolderId();
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
   });
 
   test.afterEach(async ({ request }) => {

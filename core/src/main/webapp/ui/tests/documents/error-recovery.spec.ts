@@ -1,4 +1,4 @@
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, ApiHelper, generateTestId } from '../utils/test-helper';
@@ -43,7 +43,7 @@ test.describe('Error Recovery Tests', () => {
 
     // Login - AuthHelper.login() already navigates to documents page
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });  // Wait for page stabilization
+    await waitForAppReady(page, { timeout: 30000 });  // Wait for page stabilization
     await testHelper.waitForAntdLoad();
 
     // Use TestHelper's mobile sidebar handling

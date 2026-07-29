@@ -134,7 +134,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 import * as fs from 'fs';
@@ -151,7 +151,7 @@ test.describe('Large File Upload', () => {
 
     // Login as admin
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     // MOBILE FIX: Close sidebar
     await testHelper.closeMobileSidebar(browserName);
@@ -161,7 +161,7 @@ test.describe('Large File Upload', () => {
     // Navigate to documents
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     await documentsMenuItem.click();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
   });
 
   test('should upload a large file (>100MB) with progress tracking', async ({ page, browserName }) => {

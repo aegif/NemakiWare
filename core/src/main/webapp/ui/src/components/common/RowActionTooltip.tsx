@@ -31,9 +31,14 @@ import type { TooltipProps } from 'antd';
  * exists for controls inside rows that can vanish while the pointer is on them.
  */
 export const RowActionTooltip: React.FC<TooltipProps> = ({ title, children }) => {
-  const label = typeof title === 'string' ? title : undefined;
-  if (!React.isValidElement(children) || label === undefined) {
+  const label = typeof title === 'string' && title !== '' ? title : undefined;
+  if (label === undefined) {
     return <>{children}</>;
+  }
+  // A cell often renders plain text rather than an element (`<Tooltip title={v}>{v}</Tooltip>`).
+  // Wrap it, rather than dropping the label on the floor.
+  if (!React.isValidElement(children)) {
+    return <span title={label}>{children}</span>;
   }
   return React.cloneElement(children as React.ReactElement<{ title?: string }>, { title: label });
 };

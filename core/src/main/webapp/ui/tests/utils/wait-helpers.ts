@@ -207,3 +207,23 @@ export async function gotoSearchPage(page: Page, options?: { timeout?: number })
 export function searchPageSubmitButton(page: Page) {
   return page.locator('button.search-submit-button');
 }
+
+/**
+ * Wait until the authenticated app shell is up AND has stopped working.
+ *
+ * Replaces `waitForSelector('.ant-menu-item, .ant-table-tbody')`, which was used in ~90
+ * places as "the app has loaded". It never waited for anything: `.ant-menu-item` is the
+ * sider, which is on screen from the moment the user is authenticated, so the OR matched
+ * immediately and whatever the caller actually wanted — usually a table — had not
+ * arrived. type-management's beforeEach failed exactly that way, starting every test in
+ * the file against an empty table.
+ *
+ * This waits for the shell and then for the spinner and network to settle, which is what
+ * the callers meant. Where a test needs a specific row or table, it should say so rather
+ * than rely on this.
+ */
+export async function waitForAppReady(page: Page, options?: { timeout?: number }): Promise<void> {
+  const timeout = options?.timeout ?? 30000;
+  await page.waitForSelector('.ant-menu-item', { timeout });
+  await waitForUiStable(page, { timeout: Math.min(timeout, 15000) });
+}

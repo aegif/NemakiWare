@@ -1,4 +1,4 @@
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId, ApiHelper } from '../utils/test-helper';
@@ -129,7 +129,7 @@ test.describe('Bulk Operations', () => {
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+      await waitForAppReady(page, { timeout: 30000 });
     }
   });
 

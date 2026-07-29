@@ -218,7 +218,6 @@ import {
   Input,
   Select,
   message,
-  Tooltip,
   Popconfirm,
   Row,
   Col,
@@ -2423,13 +2422,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   .sort((a, b) => parseFloat(b.versionLabel || '0') - parseFloat(a.versionLabel || '0'))[0];
                 return (
                   <Space>
-                    <Tooltip title={t('common.download')}>
+                    <RowActionTooltip title={t('common.download')}>
                       <Button
                         icon={<DownloadOutlined />}
                         size="small"
                         onClick={() => handleDownload(record.id)}
                       />
-                    </Tooltip>
+                    </RowActionTooltip>
                     {canDelete && previousVersion && (
                       <Popconfirm
                         title={t('documentList.versionHistoryModal.deleteVersionConfirmTitle')}
@@ -2442,13 +2441,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                         cancelText={t('common.cancel')}
                         okButtonProps={{ danger: true }}
                       >
-                        <Tooltip title={t('documentList.versionHistoryModal.deleteVersion')}>
+                        <RowActionTooltip title={t('documentList.versionHistoryModal.deleteVersion')}>
                           <Button
                             icon={<DeleteOutlined />}
                             size="small"
                             danger
                           />
-                        </Tooltip>
+                        </RowActionTooltip>
                       </Popconfirm>
                     )}
                   </Space>

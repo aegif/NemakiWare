@@ -22,7 +22,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { searchPageSubmitButton, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 
@@ -303,7 +303,9 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
     console.log(`[TEST] Search term entered: ${UNIQUE_SEARCH_TERM}`);
 
     // Execute search
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    // The page-specific hook: `button:has-text("検索")` also matches link-styled buttons in
+    // the result rows, which React replaces as rows re-render.
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.first().click(isMobile ? { force: true } : {});
     } else {

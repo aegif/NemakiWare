@@ -1,4 +1,4 @@
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
@@ -28,7 +28,7 @@ test.describe('System Folders (/.system)', () => {
     await authHelper.login();
 
     // Wait for UI to load
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     // Close mobile sidebar if needed
     const isMobile = testHelper.isMobile(browserName);

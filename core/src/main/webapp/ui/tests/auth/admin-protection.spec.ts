@@ -13,7 +13,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { generateTestId } from '../utils/test-helper';
 import { cleanupTestData } from '../utils/cleanup-helper';
 
@@ -103,7 +103,7 @@ test.describe('Admin Route Protection', () => {
 
     test('should be able to access /archive (open to all users)', async ({ page }) => {
       // Wait for feature toggles to load before navigating to archive
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+      await waitForAppReady(page, { timeout: 30000 });
       await page.goto(`${BASE_URL}/#/archive`);
       // Archive is accessible to all authenticated users (not admin-only)
       // Retry navigation if redirected (feature toggles may not have loaded yet)
@@ -141,7 +141,7 @@ test.describe('Admin Route Protection', () => {
       // Re-navigate if redirected (session timing issue)
       if (!page.url().includes('/users')) {
         await page.goto(`${BASE_URL}/#/users`);
-        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+        await waitForAppReady(page, { timeout: 30000 });
       }
       expect(page.url()).toContain('/users');
 
@@ -156,7 +156,7 @@ test.describe('Admin Route Protection', () => {
       // Re-navigate if redirected (session timing issue)
       if (!page.url().includes('/groups')) {
         await page.goto(`${BASE_URL}/#/groups`);
-        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+        await waitForAppReady(page, { timeout: 30000 });
       }
       expect(page.url()).toContain('/groups');
     });
@@ -168,7 +168,7 @@ test.describe('Admin Route Protection', () => {
       // Re-navigate if redirected (session timing issue)
       if (!page.url().includes('/types')) {
         await page.goto(`${BASE_URL}/#/types`);
-        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+        await waitForAppReady(page, { timeout: 30000 });
       }
       expect(page.url()).toContain('/types');
     });
@@ -180,7 +180,7 @@ test.describe('Admin Route Protection', () => {
       // Re-navigate if redirected (session timing issue)
       if (!page.url().includes('/archive')) {
         await page.goto(`${BASE_URL}/#/archive`);
-        await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+        await waitForAppReady(page, { timeout: 30000 });
       }
       expect(page.url()).toContain('/archive');
     });

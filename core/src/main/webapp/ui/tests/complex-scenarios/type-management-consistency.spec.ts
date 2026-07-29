@@ -21,7 +21,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 
@@ -51,7 +51,7 @@ test.describe('Type Management Consistency with Document Operations', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     await testHelper.closeMobileSidebar(browserName);
 

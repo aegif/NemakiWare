@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 
 /**
  * Type Management E2E Tests
@@ -94,7 +94,7 @@ test.describe('Type Management - Custom Types Display', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     // MOBILE FIX: Close sidebar
     await testHelper.closeMobileSidebar(browserName);

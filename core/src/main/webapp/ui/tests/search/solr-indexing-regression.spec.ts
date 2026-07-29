@@ -30,7 +30,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { gotoSearchPage, searchPageSubmitButton, waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { gotoSearchPage, searchPageSubmitButton, waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 import { cleanupTestData } from '../utils/cleanup-helper';
@@ -75,7 +75,7 @@ test.describe('Solr Indexing Regression Tests', () => {
     testHelper = new TestHelper(page);
     await authHelper.login();
     // Wait for UI to fully load instead of fixed timeout
-    await page.waitForSelector('.ant-table-tbody, .ant-menu-item', { timeout: 15000 });
+    await waitForAppReady(page, { timeout: 15000 });
 
     // Mobile sidebar close logic
     const isMobile = testHelper.isMobile(browserName);

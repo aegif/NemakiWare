@@ -24,7 +24,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { gotoSearchPage, searchPageSubmitButton, waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { gotoSearchPage, searchPageSubmitButton, waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 
@@ -151,7 +151,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     // Mobile browser fix
     await testHelper.closeMobileSidebar(browserName);
