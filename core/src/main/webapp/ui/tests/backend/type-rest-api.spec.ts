@@ -60,7 +60,8 @@ test.describe('Type REST API - Basic Health', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
 
     expect(response.status()).toBe(200);
@@ -78,7 +79,8 @@ test.describe('Type REST API - List Operations', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
 
     expect(response.status()).toBe(200);
@@ -106,7 +108,8 @@ test.describe('Type REST API - List Operations', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
 
     expect(response.status()).toBe(200);
@@ -126,7 +129,8 @@ test.describe('Type REST API - List Operations', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
 
     // Base types return 404 from show endpoint (expected behavior)
@@ -143,7 +147,8 @@ test.describe('Type REST API - List Operations', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
 
     expect(response.status()).toBe(404);
@@ -182,7 +187,8 @@ test.describe('Type REST API - CRUD Operations', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
   });
 
@@ -238,7 +244,8 @@ test.describe('Type REST API - CRUD Operations', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
   });
 
@@ -277,7 +284,8 @@ test.describe('Type REST API - CRUD Operations', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
     expect(verifyBeforeResponse.status()).toBe(200);
     const listBody = await verifyBeforeResponse.json();
@@ -290,7 +298,8 @@ test.describe('Type REST API - CRUD Operations', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
 
     expect(deleteResponse.status()).toBe(200);
@@ -307,7 +316,8 @@ test.describe('Type REST API - CRUD Operations', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
     expect(verifyAfterResponse.status()).toBe(200);
     const listAfter = await verifyAfterResponse.json();
@@ -350,7 +360,8 @@ test.describe('Type REST API - Base Type Protection', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
 
     // Should return 400 Bad Request for base type deletion, or 404 (not found in TypeService)
@@ -366,7 +377,8 @@ test.describe('Type REST API - Base Type Protection', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
 
     // Should return 400 or 404 for base type
@@ -450,7 +462,8 @@ test.describe('Type REST API - Authentication', () => {
       headers: {
         'Accept': 'application/json'
         // No Authorization header
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
 
     // Server may allow unauthenticated access for read operations (200)
@@ -482,7 +495,8 @@ test.describe('Type REST API - Authentication', () => {
       headers: {
         'Accept': 'application/json'
         // No Authorization header
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
 
     // Server may allow unauthenticated access (200/404) or require auth (401/403)
@@ -565,7 +579,8 @@ test.describe('Type REST API - Custom Type with Properties', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
   });
 });
@@ -584,7 +599,8 @@ test.describe('Type REST API - NemakiWare Custom Types', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
 
     expect(listResponse.status()).toBe(200);
@@ -619,7 +635,8 @@ test.describe('Type REST API - NemakiWare Custom Types', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
 
     expect(listResponse.status()).toBe(200);
@@ -747,7 +764,8 @@ test.describe('Type REST API - Secondary Types', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
     expect(verifyResponse.status()).toBe(200);
 
@@ -757,7 +775,8 @@ test.describe('Type REST API - Secondary Types', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
   });
 });
@@ -816,7 +835,8 @@ test.describe('Type REST API - Folder Types', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
   });
 });
@@ -1032,7 +1052,8 @@ test.describe('Type REST API - All Property Types', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
   });
 });
@@ -1081,7 +1102,8 @@ test.describe('Type REST API - Full CRUD Lifecycle', () => {
         'Authorization': authHeader,
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
 
     expect(readResponse.status()).toBe(200);
@@ -1123,7 +1145,8 @@ test.describe('Type REST API - Full CRUD Lifecycle', () => {
         'Authorization': authHeader,
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
 
     expect(verifyUpdateResponse.status()).toBe(200);
@@ -1138,7 +1161,8 @@ test.describe('Type REST API - Full CRUD Lifecycle', () => {
         'Authorization': authHeader,
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
 
     expect(deleteResponse.status()).toBe(200);
@@ -1150,7 +1174,8 @@ test.describe('Type REST API - Full CRUD Lifecycle', () => {
         'Authorization': authHeader,
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
 
     expect(verifyDeleteResponse.status()).toBe(404);
@@ -1202,7 +1227,8 @@ test.describe('Type REST API - Edge Cases', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
 
     if (verifyResponse.status() === 200) {
@@ -1216,7 +1242,8 @@ test.describe('Type REST API - Edge Cases', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
   });
 
@@ -1309,7 +1336,8 @@ test.describe('Type REST API - Edge Cases', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
   });
 
@@ -1389,7 +1417,8 @@ test.describe('Type REST API - Edge Cases', () => {
         'Authorization': authHeader,
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
 
     if (verifyResponse.status() === 200) {
@@ -1405,7 +1434,8 @@ test.describe('Type REST API - Edge Cases', () => {
         'Authorization': authHeader,
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
   });
 });
@@ -1955,7 +1985,8 @@ test.describe('Type REST API - Property Constraints', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
   });
 
@@ -2012,7 +2043,8 @@ test.describe('Type REST API - Property Constraints', () => {
         'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json'
-      }
+      },
+      timeout: 90000  // Playwright's 30s request default is not enough when the whole suite is queued behind this call; the test budget is 120s
     });
   });
 });
