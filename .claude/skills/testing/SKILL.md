@@ -74,6 +74,26 @@ flaky が出た場合、原因は多くが **client-side metadata XHR の hang**
 (データ蓄積ではありません)。`CmisHttpClient` の 60s timeout と reload-retry で
 収束済み。詳細は自動メモリ `test-infra-hang-rootcause`。
 
+## skip を減らす: Keycloak を上げる
+
+97 件前後の skip のうち **30 件は Keycloak が居ないだけ**でした
+(`tests/auth/*` と `tests/api/{keycloak-oidc-auth,session-management}`)。
+`idp` profile に Keycloak + OpenLDAP があります。
+
+```bash
+cd docker
+export COUCHDB_USER=admin COUCHDB_PASSWORD=password
+export LDAP_ADMIN_PASSWORD=admin LDAP_CONFIG_PASSWORD=config
+docker compose -f docker-compose-simple.yml --profile idp up -d openldap keycloak
+```
+
+global setup は `http://localhost:8088/realms/nemakiware/.well-known/openid-configuration`
+を見て可否を決めます。起動していれば `Keycloak: http://localhost:8088 ✅` と出て、
+これらは skip されず実走します (実測: 30 passed / 1 skipped)。
+
+**LDAP パスワードは必須** — `${LDAP_ADMIN_PASSWORD:-}` が空だと openldap の
+healthcheck が通らず、Keycloak は `depends_on: service_healthy` で起動しません。
+
 ## E2E を変更したら型チェック
 
 ```bash
