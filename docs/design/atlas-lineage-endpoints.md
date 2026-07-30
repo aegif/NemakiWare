@@ -1,6 +1,6 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3 draft / 実装着手 sign-off 待ち**
+status: **v2.3.1 draft / 実装着手 sign-off 待ち**
 revision:
 - v2 — §4 §6 §8 §9 を全面改訂。v1 の採番一体化案・caller 例外案・raw URI QN 案・
   `upload://` 空 input 案・`REPLAYED` 上書き案は**撤回**。撤回理由は各節に残す。
@@ -17,6 +17,10 @@ revision:
   書込み直前再確認 (§8)、catalog obligation を `WAITING_FOR_CATALOG` として projector に接続 (§8)、
   **`DIRECT` を legacy best-effort と明記して release gate を `JOURNALED` に限定** (§8)、
   E-17 の kind 別必須属性と bulk 取得 (§10)、`base64url` が保護ではないことを明記 (§4)。
+- v2.3.1 — ID 契約の曖昧さと旧仕様の残存を除去。`deliveryId` を tagged union 化して
+  multi-target ORIGINAL を定義 (§3)、v2 経路から `eventKey` を全廃 (§3 §8 §10)、
+  lease 欠落時の acquire 禁止と復旧手順 (§8)、typed endpoint は全 mode 共通・
+  耐久機構のみ `JOURNALED` 限定 (§8)、状態表と kind 表の残存修正 (§2 §4 §8 §10)。
 scope: v3.3 内で Atlas 連携を完成させるための設計。実装は sign-off 後に A〜E の独立コミットで行う。
 関連: [`docs/design/acl-epoch-fencing.md`](acl-epoch-fencing.md) (同じ outbox/cursor の考え方を使う)
 
@@ -220,7 +224,8 @@ WAITING_FOR_CATALOG → DISCARDED            (管理操作のみ)
 | retry 消費 | `WAITING_FOR_CATALOG` は **publish retry を消費しない**。`VERIFYING` と同じ扱い |
 | 滞留上限 | `lineage.catalog-wait.max-age` (既定 24h)。超過で `UNRESOLVED` へ。metric `lineage.waiting-catalog.oldest.age` |
 | cursor | `WAITING_FOR_CATALOG` の間は **cursor を進めない** (順序保証のため)。terminal 化したときだけ進める |
-| 再開 | obligation が `RESOLVED` になったら、scanner が対応する event を `PENDING` に戻す |
+| 再開 | event は `waitingTaskKeys` (複数可) を持つ。**全件が `RESOLVED` になって初めて** `PENDING` へ戻す。1 件解決しただけでは戻さない |
+| 滞留計測 | `waitingSince` は最初に `WAITING_FOR_CATALOG` へ入った時刻。`PENDING` へ戻って再び待機に入っても**リセットしない** (往復で待機上限を回避できないようにする) |
 | 複数 event が同一 task を待つ | task は 1 つ。**ACK は task 側で 1 回**。`RESOLVED` 後に task key から待機 event を逆引きして全件戻す (逆引き用の index を張る) |
 | task の GC | 待機 event が 0 件かつ `RESOLVED` から `lineage.catalog-task.retention` 経過で削除 |
 
@@ -347,16 +352,71 @@ v2.2 は `eventKey` 一つで論理的な業務同一性と journal の配送同
 二軸に分ける。
 
 ```
-processKey  = "v2:" + SHA-256(repositoryId, processType, canonical(inputs), canonical(outputs),
-                              operationId, schemaVersion, chunkIndex, chunkCount)
+processKey = "v2:" + H("PROCESS", repositoryId, processType, canonical(inputs), canonical(outputs),
+                       operationId, schemaVersion, chunkIndex, chunkCount)
   → Atlas Process の qualifiedName に使う論理的業務 ID
   → chunk を別 Process として部分 publish するため chunkIndex/chunkCount を含む
 
-deliveryId  = SHA-256(processKey, deliveryKind, target, replayGeneration, chunkIndex)
-  deliveryKind = ORIGINAL | REPLAY | REPAIR
+deliveryId は deliveryKind ごとの tagged union とする (v2.3.1):
+
+  ORIGINAL = H("ORIGINAL", processKey, canonicalTargetSet)
+  REPLAY   = H("REPLAY",   originalDeliveryId, target, replayGeneration)
+  REPAIR   = H("REPAIR",   deadLetterId, repairGeneration)
+
   → journal document の _id、spool の file 名、冪等判定に使う
-  → original / replay / repair / chunk がそれぞれ別 ID になる
 ```
+
+v2.3 の式は単数の `target` を含んでいたが、ORIGINAL は `publishStatusByTarget` を持つ
+**multi-target 文書**であり、そこに渡す `target` が定義できなかった。ORIGINAL は
+`canonicalTargetSet` (target 名を辞書順に正規化した集合) を使い、target 単位の同一性が要るのは
+REPLAY だけ、と分ける。
+
+### hash 入力の直列化 (v2.3.1)
+
+`H(...)` は SHA-256 だが、**単純連結にしない**。連結は
+`("ab","c")` と `("a","bc")` を区別できず、ID 衝突を作れてしまう。
+
+- 各要素を **長さ prefix 付き UTF-8** (`len:bytes`) で直列化するか、canonical JSON を使う。
+  どちらかを実装時に固定し、golden test で凍結する。
+- `null` と空文字は**別の表現**にする (`null` は専用マーカー)。
+
+### endpoint 集合の正規化 (v2.3.1)
+
+`canonical(inputs)` / `canonical(outputs)` / `canonicalTargetSet` の規則を固定する。
+
+| 論点 | 規則 |
+|---|---|
+| 重複 endpoint | **許容しない**。同一 `catalogQualifiedName` が 2 度現れたら `build()` で拒否 |
+| 順序 | `catalogQualifiedName` の**辞書順**に並べる。producer の指定順は同一性に影響しない |
+| null | 要素の null は拒否。空リストは「空」を表す専用マーカーで直列化する |
+| target 集合 | target 名を辞書順、重複除去 |
+
+### event-level `operationId` (v2.3.1)
+
+**全 v2 event に event-level の `operationId` を必須**とする。
+§3 の artifact 用 `operationId` (endpoint 側) とは**別契約**である。
+
+- event-level: 業務操作 1 回を識別する。`processKey` に入る。
+- endpoint-level: artifact entity の QN に入る (`imports/{operationId}` / `exports/{operationId}`)。
+- artifact を持たない processType (`ARCHIVE_LOCAL` など) でも event-level は必須。
+  これにより**同じ endpoint 集合で繰り返す非 artifact 操作も別 process になる**。
+
+### `creationPayloadDigest` の対象 (v2.3.1)
+
+create-if-absent の 409 で「同一かどうか」を判定する digest の対象を固定する。
+
+| 含める | 除外する |
+|---|---|
+| `processKey` / `deliveryId` / `schemaVersion` / `repositoryId` / `processType` | `sequence` / `state` / `sequencerGeneration` |
+| `operationId` / `occurredAt` / `inputs` / `outputs` (endpoint 属性込み) | `publishStatusByTarget` / `claimToken` / `replayRequestsByTarget` |
+| `chunkIndex` / `chunkCount` | `_rev` / `_id` 以外の CouchDB メタ |
+
+**digest 不一致時の扱い (v2.3.1)**
+
+| 経路 | 挙動 |
+|---|---|
+| 通常 emit | 業務 caller に 500 を返さない (fail-open 契約)。**integrity 例外として spool へ落とし、metric `lineage.digest.mismatch` を出す** |
+| 管理 replay / repair | 500 を返す。運用者が異常を認識すべき経路だから |
 
 - 冪等判定 (`append` の重複検出) は **`deliveryId`** で行う。`eventKey` では行わない。
 - `idempotencyKeyVersion` は `processKey` の版として持つ (§3 v2.1 の記述をここに集約)。
@@ -365,7 +425,7 @@ deliveryId  = SHA-256(processKey, deliveryKind, target, replayGeneration, chunkI
   不一致は ID 衝突という異常であり、`FAILED` にして 500 を返す。
 - 補償 event は元の `processKey` を保つ (同一業務操作だから)。区別は `deliveryId` が担う。
 
-### eventKey を SHA-256 にする (v2)
+### processKey の直列化 (v2 / v2.3.1 で `deliveryId` に分離)
 
 現行は 32bit Java hash 2つの連結で、衝突すると別操作が同一イベント扱いになる。
 
@@ -379,10 +439,11 @@ legacyEventKey = (v1 からの写像・repair 時のみ保持。v1 の 32bit has
 `canonical(...)` は §4 の canonical QN を辞書順に連結したもの。`operationId` を含めることで、
 同一 endpoint 集合の反復操作が別 event になる。
 
-- **`idempotencyKeyVersion` を明示的に永続化する。** v1 と v2 の eventKey を暗黙に同一視しない。
-  冪等判定は `(idempotencyKeyVersion, eventKey)` の対で行う。
+- **`idempotencyKeyVersion` を明示的に永続化する。** v1 と v2 を暗黙に同一視しない。
+  **v2 経路の冪等判定は `deliveryId` のみで行い、`eventKey` は使わない (v2.3.1)。**
+  `legacyEventKey` は **v1 読取と監査専用**であり、v2 の判定・ID 生成には一切関与しない。
 - **v1 の replay / repair は既存 Process を更新しない。** v2 の補償 event を新設し、
-  その Process QN は v2 の eventKey 由来になる。v1 の Process はそのまま残る (監査事実)。
+  その Process QN は v2 の `processKey` 由来になる。v1 の Process はそのまま残る (監査事実)。
   結果として同一業務操作に v1/v2 二つの Process が並ぶことを許容する
   (`replayOf` / `legacyEventKey` で対応関係を追える)。
 - **補償 event は元の `operationId` を維持する。** 業務操作は同一だから。
@@ -421,7 +482,7 @@ qualifiedName = nemaki://{repositoryId}/external-assets/{base64url(stableKey)}
 | `EXTERNAL_ASSET` (ingest) | `ExternalSourceUri.build(...)` の出力 |
 | `CLOUD_OBJECT` | `cloud://{provider}/{fileId}` |
 | `COLD_STORAGE` | `cold://{storageRef}` |
-| `FILESYSTEM_PATH` | `file://{正規化パス}` |
+| `EXTERNAL_ASSET` (filesystem, `sourceSystem=filesystem`) | `file://{正規化パス}` |
 
 #### `base64url` は保護ではない (v2.3)
 
@@ -537,8 +598,16 @@ v1 は「`UNKNOWN` を含む v1 event は `SKIPPED` にして cursor を進め�
 | `DIRECT` | **legacy best-effort**。at-most-once、順序保証なし、verify なし、catalog obligation なし、spool なし。障害時は失われる。新規導入では選ばない |
 | `DISABLED` | event を作らない |
 
-- `DIRECT` は既存利用者のために残すが、**本増分の新機能 (typed endpoint、artifact、verify、
-  obligation、replay、repair) は `DIRECT` には実装しない**。
+**共通と限定の線引き (v2.3.1)。** producer と builder を typed endpoint に全面変更する以上、
+`DIRECT` が同じ event schema と payload factory を通らなければコンパイルも publish も成立しない。
+v2.3 の「新機能を `DIRECT` に実装しない」は不正確だった。
+
+| 全 mode 共通 | `JOURNALED` のみ |
+|---|---|
+| typed `LineageEndpoint`、canonical QN、artifact 表現、endpoint-local snapshot、cross-repo 検証、`processKey` | journal、spool、ordering (sequence/cursor)、`VERIFYING`、catalog obligation、replay、repair |
+
+- **spool の設定検査は `JOURNALED` のみ**で行う。§8 の「`journaled` / `direct` かつ spool 未設定」は
+  `journaled` のみに訂正する (下表)。
 - `DIRECT` で起動したときは起動ログと health に
   `lineage.mode=DIRECT (best-effort, unsupported for governance)` を明示する。
 - §10 の E-1〜E-17 は全て `JOURNALED` 前提。`DIRECT` は E-18 (下記) のみ。
@@ -576,7 +645,7 @@ v1 は「採番と event 作成を1つの CouchDB 書込みにする」として
 ### 8-a v2: event-first UNSEQUENCED + fenced finalizer
 
 ```
-1. eventKey 由来の決定的 _id で、完全な payload を state=UNSEQUENCED として1書込みで作成
+1. **`deliveryId` 由来**の決定的 _id で、完全な payload を state=UNSEQUENCED として1書込みで作成
    (409 = 既存 → 冪等に成功)
 2. per-repository の fenced sequencer が UNSEQUENCED を occurredAt 順に1件ずつ claim
    (claim token = fencing token。ACL-epoch の lease/fencing と同じ形)
@@ -596,7 +665,7 @@ expiresAt  : ISO8601
 
 | 操作 | 条件 | 効果 |
 |---|---|---|
-| acquire | lease 不在 または `expiresAt < now` | `generation+1` で CAS 取得。失敗は他ノードに譲る |
+| acquire | **lease が存在し**、かつ `owner=null` または `expiresAt < now` | `generation+1` で CAS 取得。失敗は他ノードに譲る。**lease 不在では絶対に取得しない (作らない)** |
 | renew | `owner` 一致 かつ `generation` 一致 | `expiresAt` 延長を CAS。**失敗したら fence latch を落とし、以後この世代では一切書かない** |
 | release | `owner` 一致 かつ `generation` 一致 かつ `_rev` 一致 | `owner=null` / `expiresAt=過去` に CAS。**`generation` は維持し、document は削除しない** |
 
@@ -611,7 +680,21 @@ expiresAt  : ISO8601
 |---|---|
 | 初回導入 | bootstrap patch が `generation=0` で作成する |
 | 運用中に document が消えた | **自動再作成しない。fail-closed** で sequencer を停止し、health を `LEASE_MISSING` にする |
-| 復旧 | 全 event 中の `sequencerGeneration` の最大値を調査し、**それより大きい値**で管理復旧する。§8 の counter 復旧と同じ手順で行う |
+| 復旧 | 下記の手順で管理復旧する。**event 中の最大 generation だけを見るのは不十分** |
+
+**lease 復旧手順 (v2.3.1)。** event を claim する前に停止した old leader は、その generation を
+どの event にも書いていない。`max(event の sequencerGeneration) + 1` で復旧すると、
+**その old leader の generation を再利用してしまう**。
+
+1. **全 AP で sequencer acquire を禁止する durable な管理 flag** を立てる
+   (CouchDB の管理 document。起動時と acquire 前に必ず読む)
+2. 全 old sequencer worker の停止を確認する (health / metric で無音を確認)
+3. その状態でのみ `max(event の sequencerGeneration) + 1` で lease を復旧する
+4. flag を解除する
+
+**あるいは** — generation とは別に**ランダムな `leaseToken`** を lease 取得のたびに発行し、
+event にも stamp する。generation が再利用されても `leaseToken` が一致しないため、
+old leader は書けない。実装時にどちらを採るか決める (後者の方が手順への依存が少ない)。
 
 **書込み直前の再確認 (v2.3)。** lease の期限切れは時間経過で起きるため、acquire 時の確認だけでは
 「期限切れ後・new leader の reclaim 前」に old leader が復帰して finalize できてしまう。
@@ -723,8 +806,8 @@ CouchDB store への保存は `// Store persistence is best-effort; log file is 
 「scanner + repair で回収」は**現状のままでは成立しない**。v2.1 では専用 spool を設計する。
 
 ```
-{lineage.spool.dir}/{repositoryId}/{yyyyMMdd}/{eventKey}.json     ← payload (完全)
-{lineage.spool.dir}/{repositoryId}/{yyyyMMdd}/{eventKey}.ack      ← ACK marker
+{lineage.spool.dir}/{repositoryId}/{yyyyMMdd}/{deliveryId}.json    ← payload (完全)
+{lineage.spool.dir}/{repositoryId}/{yyyyMMdd}/{deliveryId}.ack    ← ACK marker
 ```
 
 #### 起動時の扱い (v2.2) — Core 全体は落とさない
@@ -734,8 +817,8 @@ CouchDB store への保存は `// Store persistence is best-effort; log file is 
 
 | 構成 | 挙動 |
 |---|---|
-| `lineage.mode=disabled` | spool 不要。何も検査しない |
-| `journaled` / `direct` かつ spool 未設定・書込み不能 | **lineage subsystem を `NOT_READY` にして無効化**。Core / CMIS 本体は起動を継続する。health と metric に出す |
+| `lineage.mode=disabled` / `direct` | spool 不要。何も検査しない (`direct` は spool を使わない) |
+| **`journaled`** かつ spool 未設定・書込み不能 | **lineage subsystem を `NOT_READY` にして無効化**。Core / CMIS 本体は起動を継続する。health と metric に出す |
 | `lineage.spool.strict=true` (明示設定時のみ) | Core の起動を拒否する。strict 運用を望む環境向け |
 
 #### file 安全性契約 (v2.2)
@@ -755,7 +838,7 @@ CouchDB store への保存は `// Store persistence is best-effort; log file is 
 |---|---|
 | 内容 | repair 可能な**完全 payload**。`externalStableKey` を含む |
 | 権限 | spool ディレクトリは運用者のみ読める権限に置く。通常ログには**出さない** |
-| 通常ログ | `eventKey` と endpoint hash (SHA-256 先頭12桁) と reason のみ。raw URI・パスは出さない |
+| 通常ログ | `deliveryId` と endpoint hash (SHA-256 先頭12桁) と reason のみ。raw URI・パスは出さない |
 | scanner | spool を走査し、CouchDB 復旧後に §8-a の event-first append を再実行。成功で `.ack` を書く |
 | ACK 済み | `lineage.spool.retention.days` 経過で削除 |
 | 列挙 | **node-local の admin API のみ**。集約 endpoint は v3.3 では**実装しない** (node discovery と routing が未設計のため) |
@@ -789,7 +872,7 @@ PENDING     → PROJECTING  (claim token 発行 + lease 期限)
 PROJECTING  → VERIFYING   (Atlas POST 成功。同一 claim token)
 VERIFYING   → PUBLISHED   (verify 成功。同一 claim token)
 VERIFYING   → VERIFYING   (retryable read lag。同一 claim token + lease renew)
-VERIFYING   → FAILED      (semantic mismatch、または verifyMaxAge 超過。同一 claim token)
+VERIFYING   → FAILED      (verifyMaxAge 超過。同一 claim token) ※ semantic mismatch は下の UNPROJECTABLE
 PROJECTING  → FAILED      (POST 自体の失敗。同一 claim token)
 FAILED      → PROJECTING  (claim token 再発行)
 PENDING     → DISCARDED   (管理操作のみ)
@@ -962,7 +1045,15 @@ POST /api/v1/admin/lineage-journal/repair
 | IT-29 | `WAITING_FOR_CATALOG` を obligation 解決まで放置 | publish retry 回数が**増えない**。`RESOLVED` 後に `PENDING` へ戻り publish される |
 | IT-30 | 別 repository の external QN を持つ event を CouchDB へ直接注入 | builder / store / legacy reader / **sink 直前**の 4 層すべてで拒否される |
 | IT-31 | 1,000 endpoint の verify | 逐次 GET にならない (bulk か上限付き並列)。全体 deadline 内に終わる。集合比較で過不足を検出 |
-| IT-32 | `DIRECT` mode で emit | journal / cursor / verify / obligation を通らないことを確認し、保証境界の文書と一致する |
+| IT-32 | `DIRECT` mode で emit | typed payload を best-effort で 1 回 publish できる。journal / cursor / verify / obligation は通らない |
+| IT-33 | multi-target ORIGINAL の `deliveryId` | target 集合が同じなら決定的に同一。target 集合が違えば別 ID |
+| IT-34 | 同一 ORIGINAL に対する target 別 REPLAY | ORIGINAL とも互いとも `deliveryId` が衝突しない |
+| IT-35 | event-level `operationId` を欠いた v2 event | `build()` で拒否される。artifact を持たない processType でも必須 |
+| IT-36 | lease document を消した状態で通常 acquire | **lease を作らない**。取得も失敗する |
+| IT-37 | 復旧手順の途中 (管理 flag 立ち) で old AP が書き込む | 拒否される |
+| IT-38 | 2 つの catalog task を待つ event の片方だけ `RESOLVED` | `WAITING_FOR_CATALOG` のまま。両方解決で `PENDING` へ戻る。`waitingSince` はリセットされない |
+| IT-39 | hash 直列化の golden | `("ab","c")` と `("a","bc")` が別 ID。`null` と空文字が別 ID |
+| IT-40 | 重複 endpoint / 順序違い | 重複は `build()` で拒否。順序違いは同一 `processKey` |
 
 ### Atlas-enabled E2E 受入表 (v3.3 release gate)
 
@@ -991,12 +1082,12 @@ E2E のためだけに実装しない。
 | E-10 | replay | 新 sequence の補償 event が publish され、Atlas に Process が現れる |
 | E-11 | mutation | §5 の QN 規則を1つ壊すと E-2 が落ちる |
 | E-12 | cleanup | 中間テストを故意に失敗させても CMIS / Atlas / CouchDB の fixture が残らない |
-| E-13 | 同一 folder への import を 2 回 | 別 event になる (eventKey が operationId を含む)。1回目が握り潰されない |
+| E-13 | 同一 folder への import を 2 回 | 別 event になる (`processKey` が event-level `operationId` を含む)。1回目が握り潰されない |
 | E-14 | folder backfill | 既存全 folder に proxy がある。orphan reconciliation が 0 を報告 |
 | E-15 | folder delete → restore | proxy が `active=false` → `true`。過去 Process の参照が壊れない |
 | E-16 | bulk partial response | 片方欠落を検出し reconcile される |
 | E-17 | production sink の成功条件 | 下記 verify 契約を満たした場合のみ success |
-| E-18 | `DIRECT` mode | best-effort であることの確認のみ。E-1〜E-17 の対象外 |
+| E-18 | `DIRECT` mode | **positive control**: typed event が best-effort で 1 回 publish できる。加えて journal / cursor / verify / obligation を通らないこと。E-1〜E-17 の耐久保証は対象外 |
 
 ### E-17 verify 契約 (v2.1)
 
@@ -1012,7 +1103,7 @@ E2E のためだけに実装しない。
   - 比較は 1 件ずつではなく **endpoint 集合の完全比較** (期待集合と実際の集合が等しいこと)。
     過不足のどちらも検出する。
 - **verify 待ちは publish retry を消費しない。** target 状態に `VERIFYING` を追加し、
-  `PROJECTING → VERIFYING → PUBLISHED | FAILED` とする。`VERIFYING` からの再試行は
+  `PROJECTING → VERIFYING → PUBLISHED | FAILED | UNPROJECTABLE` とする。`VERIFYING` からの再試行は
   **同じ Process QN への冪等 upsert** であり、新しい Process を作らない。
 - GUID 一致だけでは不十分。Atlas は dangling reference に対して疎な shell entity を自動生成しうるため、
   **shell を掴んで合格してしまう**。次を全て検証する:
@@ -1054,6 +1145,20 @@ E-12 の「故意に失敗させる」テストは、cleanup が file-scope で�
 | **E** | v1 legacy reader + durable unresolved (§6)、repair API + opaque confirmation token + DLQ bundle upload (§9)、`VERIFYING` と E-17 verify 契約 (§10)、Atlas-enabled E2E 受入表 E-1〜E-17 | E2E |
 
 依存: A → B → C、D は A と独立に着手可、E は A〜D 完了後。
+
+---
+
+## v2.3.1 で閉じた点
+
+| # | 指摘 | 反映 |
+|---|---|---|
+| 1 | `deliveryId` が multi-target で定義できない | §3 — **tagged union** 化 (`ORIGINAL` は `canonicalTargetSet`、`REPLAY` は `originalDeliveryId`+`target`+`replayGeneration`、`REPAIR` は `deadLetterId`+`repairGeneration`)。event-level `operationId` を全 v2 event で必須化 (endpoint 側とは別契約)。hash は長さ prefix 付き UTF-8 か canonical JSON、`null` と空文字を区別。endpoint は重複拒否・辞書順・null 拒否。`creationPayloadDigest` の対象を表で固定し可変フィールドを除外。**digest 不一致は通常 emit では 500 を返さず integrity 例外→spool+metric、管理 replay/repair のみ 500**。IT-33〜35 / IT-39 / IT-40 |
+| 2 | 旧 `eventKey` 契約の残存 | §3 §8 §10 — 冪等判定を `deliveryId` のみに、event-first `_id` を `deliveryId` 由来に、**spool を `{deliveryId}.json` / `.ack`** に、E-13 を `processKey` 表記に修正。`legacyEventKey` は v1 読取・監査専用と明記 |
+| 3 | lease 欠落時の acquire が旧仕様 | §8 — acquire は **lease が存在する場合のみ**。不在では作らない。復旧は「durable 管理 flag で全 AP の acquire 禁止 → old worker 停止確認 → `max(event generation)+1`」。**あるいはランダム `leaseToken` を event に stamp** して generation 再利用を無効化。IT-36 / IT-37 |
+| 4 | `DIRECT` の線引き | §8 — typed endpoint / canonical QN / artifact / snapshot / cross-repo 検証 / `processKey` は**全 mode 共通**。`JOURNALED` 限定は journal・spool・ordering・verify・obligation・replay・repair。**spool 検査は `JOURNALED` のみ**に訂正。E-18 に positive control を追加。IT-32 |
+| 5 | 状態表・kind 表の残存 | §8 — `VERIFYING → FAILED` から semantic mismatch を削除 (`UNPROJECTABLE` と重複)。§10 — `PUBLISHED \| FAILED \| UNPROJECTABLE` に更新。§4 — stableKey 表の `FILESYSTEM_PATH` を `EXTERNAL_ASSET (filesystem)` に。§2 — `waitingTaskKeys` 全件解決を再開条件とし `waitingSince` は往復でリセットしない。IT-38 |
+
+IT は 40 件になった。
 
 ---
 
