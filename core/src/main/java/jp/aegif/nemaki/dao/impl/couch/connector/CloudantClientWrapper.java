@@ -2,6 +2,7 @@ package jp.aegif.nemaki.dao.impl.couch.connector;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -2225,19 +2226,11 @@ public class CloudantClientWrapper {
 			}
 		}
 
-				// Convert immutable Document to mutable Map first, then to target class
-				@SuppressWarnings("unchecked")
-				Map<String, Object> docMap = mapper.convertValue(doc, Map.class);
-				
-				// CRITICAL FIX: Ensure _id and _rev fields are always present in the map
-				// This is essential for Cloudant SDK deletion operations
-				if (doc.getId() != null) {
-					docMap.put("_id", doc.getId());
-				}
-				if (doc.getRev() != null) {
-					docMap.put("_rev", doc.getRev());
-					log.debug("CloudantClientWrapper.get(): Ensured _rev field is present: " + doc.getRev() + " for document: " + doc.getId());
-				} else {
+				// Same shape as the revision overload — see toDocumentMap. This used to overlay
+				// _id/_rev onto the SDK's bean map, which left the document's own fields buried
+				// under a nested `properties` key and the SDK's internals at the top level.
+				Map<String, Object> docMap = toDocumentMap(doc);
+				if (doc.getRev() == null) {
 					log.warn("CloudantClientWrapper.get(): Document " + doc.getId() + " has no _rev field - this may cause deletion issues");
 				}
 				
@@ -2593,6 +2586,43 @@ public class CloudantClientWrapper {
 	}
 
 	/**
+	 * A CouchDB document as a plain map: the document's own fields plus {@code _id}/{@code _rev},
+	 * and nothing else.
+	 *
+	 * <p>The SDK's {@code Document} is a dynamic model serialized by Gson, not Jackson. Converting
+	 * it with Jackson yields the SDK's own bean shape — {@code id}, {@code rev}, a nested
+	 * {@code properties} map, {@code propertyNames} — and NOT the document's fields at the top
+	 * level. Two things went wrong with that map:
+	 *
+	 * <ul>
+	 *   <li>It has no {@code _id}, so {@link #update(Map)} rejects it outright:
+	 *       {@code IllegalArgumentException: Document must have '_id' field for update}. Every
+	 *       read-modify-write in the purview/lineage stores reads through the revision overload,
+	 *       so none of them could write back. {@code LineageProjectionLoop} could not claim a
+	 *       single event — no lineage event was ever projected to the catalog, and it retried the
+	 *       same one every 10 seconds indefinitely.</li>
+	 *   <li>Handing it to {@code update} would persist the SDK's internal keys into the document,
+	 *       and the next read-modify-write would nest {@code properties} inside {@code properties}
+	 *       again. Overlaying the real fields on top of that map is not enough; the map has to be
+	 *       built from the fields alone.</li>
+	 * </ul>
+	 */
+	private Map<String, Object> toDocumentMap(com.ibm.cloud.cloudant.v1.model.Document doc) {
+		Map<String, Object> map = new LinkedHashMap<>();
+		Map<String, Object> properties = doc.getProperties();
+		if (properties != null) {
+			map.putAll(properties);
+		}
+		if (doc.getId() != null) {
+			map.put("_id", doc.getId());
+		}
+		if (doc.getRev() != null) {
+			map.put("_rev", doc.getRev());
+		}
+		return map;
+	}
+
+	/**
 	 * Get document with revision using Cloudant SDK
 	 */
 	public <T> T get(Class<T> clazz, String id, String revision) {
@@ -2610,9 +2640,7 @@ public class CloudantClientWrapper {
 			
 			if (doc != null) {
 				ObjectMapper mapper = getObjectMapper();
-				// Convert immutable Document to mutable Map first, then to target class
-				@SuppressWarnings("unchecked")
-				Map<String, Object> docMap = mapper.convertValue(doc, Map.class);
+				Map<String, Object> docMap = toDocumentMap(doc);
 				log.debug("Retrieved document with ID: " + id + " (revision: " + revision + ")");
 				return mapper.convertValue(docMap, clazz);
 			}

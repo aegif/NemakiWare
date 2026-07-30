@@ -1394,15 +1394,17 @@ public class TypeResource extends ResourceBase {
 		
 		// Basic properties
 		tdf.setTypeId(typeId);
-		tdf.setLocalName((String) typeJson.get("localName"));
+		// localName and queryName are both REQUIRED by CMIS, and a caller that omits them
+		// from the JSON used to get a type stored with nulls. The TCK says so in as many
+		// words — "Local name is not set!" and "Type Query Name: null" — for every type the
+		// E2E suite creates through this endpoint, and a null query name also makes the type
+		// unusable in a FROM clause. Default both to the typeId, which is what every built-in
+		// type in this repository does; the XML import path already did.
+		String localName = (String) typeJson.get("localName");
+		tdf.setLocalName(StringUtils.isBlank(localName) ? typeId : localName);
 		tdf.setLocalNameSpace((String) typeJson.get("localNamespace"));
 		tdf.setDisplayName((String) typeJson.get("displayName"));
 		tdf.setDescription((String) typeJson.get("description"));
-		// queryName was never read here, so every type created through this endpoint was
-		// stored with a null one — including the ones the E2E suite creates. CMIS needs a
-		// query name to resolve a type in a FROM clause, and a null one is what surfaces as
-		// "Type Query Name: null" in the TCK. Default to the typeId, which is what every
-		// built-in type in this repository uses.
 		String queryName = (String) typeJson.get("queryName");
 		tdf.setQueryName(StringUtils.isBlank(queryName) ? typeId : queryName);
 		
