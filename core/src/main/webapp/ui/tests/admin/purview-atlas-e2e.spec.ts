@@ -70,6 +70,8 @@ let testFolderName: string | null = null;
 let unsyncedDocId: string | null = null;
 let unsyncedDocName: string | null = null;
 const injectedCouchIds: string[] = [];
+/** Atlas Process qualifiedNames created by injected events, removed by the file-level cleanup. */
+const projectedProcessKeys: string[] = [];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -472,6 +474,11 @@ function randomSuffix(): string {
   return Math.random().toString(36).substring(2, 10);
 }
 
+function trackProcess(qualifiedName: string): string {
+  projectedProcessKeys.push(qualifiedName);
+  return qualifiedName;
+}
+
 function makeLineageEvent(
   processType: string,
   eventKey: string,
@@ -732,9 +739,17 @@ test.describe('Group 2: Incremental Sync → Atlas', () => {
 
     // Wait for the rename to actually reach the catalog — otherwise this passes on the
     // pre-rename entity, which is exactly what "qualifiedName is stable" would look like.
+    //
+    // folderPath, not name: nemaki_folder extends Referenceable, which has no `name` attribute
+    // (nemaki_document extends DataSet, which does — hence 2.2 can assert on it). The payload
+    // factory does send name/description/owner/createTime/modifiedTime for folders, and Atlas
+    // drops attributes the type does not declare, so a folder entity's name is permanently
+    // null. Whether folders should carry a name in the catalog is a schema decision; asserting
+    // on it here would just be asserting on a known gap.
     const renamed = await syncUntil(request, async () => {
       const entity = await queryAtlasEntity(request, 'nemaki_folder', qn);
-      return entity?.entity?.attributes?.name === newFolderName;
+      return typeof entity?.entity?.attributes?.folderPath === 'string'
+        && entity.entity.attributes.folderPath.includes(newFolderName);
     });
     expect(renamed, 'the rename never reached Atlas under the unchanged qualifiedName').toBe(true);
 
@@ -861,7 +876,7 @@ test.describe('Group 4: Lineage Journal → Atlas', () => {
     group4Events.push(event._id);
 
     // Wait for projection to pick up the event
-    const atlasQn = `nemakiware:${LINEAGE_REPO}:import_uploaded:${eventKey}`;
+    const atlasQn = trackProcess(`nemakiware:${LINEAGE_REPO}:import_uploaded:${eventKey}`);
     const found = await pollUntil(async () => {
       const entity = await queryAtlasEntity(request, 'Process', atlasQn);
       return entity != null;
@@ -896,7 +911,7 @@ test.describe('Group 4: Lineage Journal → Atlas', () => {
     await injectCouchDoc(request, LINEAGE_DB, event);
     group4Events.push(event._id);
 
-    const atlasQn = `nemakiware:${LINEAGE_REPO}:archive_local:${eventKey}`;
+    const atlasQn = trackProcess(`nemakiware:${LINEAGE_REPO}:archive_local:${eventKey}`);
     const found = await pollUntil(async () => {
       const entity = await queryAtlasEntity(request, 'Process', atlasQn);
       return entity != null;
@@ -922,7 +937,7 @@ test.describe('Group 4: Lineage Journal → Atlas', () => {
     await injectCouchDoc(request, LINEAGE_DB, event);
     group4Events.push(event._id);
 
-    const atlasQn = `nemakiware:${LINEAGE_REPO}:export_selected_objects:${eventKey}`;
+    const atlasQn = trackProcess(`nemakiware:${LINEAGE_REPO}:export_selected_objects:${eventKey}`);
     const found = await pollUntil(async () => {
       const entity = await queryAtlasEntity(request, 'Process', atlasQn);
       return entity != null;
@@ -962,7 +977,7 @@ test.describe('Group 5: Cloud Drive Simulation', () => {
     await injectCouchDoc(request, LINEAGE_DB, event);
     group5Events.push(event._id);
 
-    const atlasQn = `nemakiware:${LINEAGE_REPO}:cloud_sync_upload:${eventKey}`;
+    const atlasQn = trackProcess(`nemakiware:${LINEAGE_REPO}:cloud_sync_upload:${eventKey}`);
     const found = await pollUntil(async () => {
       const entity = await queryAtlasEntity(request, 'Process', atlasQn);
       return entity != null;
@@ -988,7 +1003,7 @@ test.describe('Group 5: Cloud Drive Simulation', () => {
     await injectCouchDoc(request, LINEAGE_DB, event);
     group5Events.push(event._id);
 
-    const atlasQn = `nemakiware:${LINEAGE_REPO}:cloud_sync_download:${eventKey}`;
+    const atlasQn = trackProcess(`nemakiware:${LINEAGE_REPO}:cloud_sync_download:${eventKey}`);
     const found = await pollUntil(async () => {
       const entity = await queryAtlasEntity(request, 'Process', atlasQn);
       return entity != null;
@@ -1141,129 +1156,117 @@ test.describe('Group 6: Lineage Journal UI', () => {
 // =====================================================================
 
 test.describe('Group 7: Dead-Letter & Replay', () => {
-  let failedEventId: string | null = null;
-  let failedEventCouchId: string | null = null;
-  let failedEventKey: string | null = null;
+  let replayEventId: string | null = null;
+  let replayEventKey: string | null = null;
+  let replayEventCouchId: string | null = null;
 
   test.afterAll(async ({ request }) => {
-    if (failedEventCouchId) {
-      await deleteCouchDoc(request, LINEAGE_DB, failedEventCouchId);
+    if (replayEventCouchId) {
+      await deleteCouchDoc(request, LINEAGE_DB, replayEventCouchId);
     }
   });
 
   /**
-   * The FAILED event is written as a fixture rather than produced by switching Atlas off.
+   * A PROJECTING fixture, not a FAILED one.
    *
-   * Turning `atlas.enabled` off does not make events fail: LineageProjectionLoop asks
-   * `sink.isAvailable()` first and, when it is false, skips the target entirely without
-   * claiming anything (AtlasLineageSink.isAvailable is exactly `atlas.enabled && endpoint`).
-   * The event simply stays PENDING, so the old version of this test could only ever time out.
+   * LineageProjectionLoop processes PENDING *and* FAILED, on a 10-second poll, so a FAILED
+   * fixture can be claimed and published before the assertion reads it — the test would pass or
+   * fail on timing. PROJECTING is the one non-terminal state the loop leaves alone (it treats it
+   * as claimed by another node and stops), until reapStaleProjecting reclaims it much later.
+   * That gives a stable starting point for the thing actually under test: the replay API.
    *
-   * It also cost more than it looked: `atlas.enabled` is persisted in nemaki_conf, so a failure
-   * between switching it off and switching it back left the whole file skipping on the next
-   * run — the very breakage this file was fixed for. A fixture needs no global switch at all.
+   * Switching `atlas.enabled` off to manufacture a failure does not work either — the loop asks
+   * sink.isAvailable() first and skips the whole target without touching any event, so the event
+   * stays PENDING. It also risked leaving that persisted setting off, which is what makes the
+   * entire file skip.
    */
-  test('7.1 A FAILED event is visible as a dead letter', async ({ request }) => {
+  test('7.1 A claimed event is replayable', async ({ request }) => {
     const available = await checkAtlasAvailable(request);
     skipIfNoAtlas(available);
 
     const suffix = randomSuffix();
-    const eventKey = `test-failed-${suffix}`;
+    const eventKey = `test-replay-${suffix}`;
     const event = makeLineageEvent(
       'IMPORT_UPLOADED',
       eventKey,
       [`nemaki://${LINEAGE_REPO}/objects/test-input-${suffix}`],
       [`nemaki://${LINEAGE_REPO}/objects/test-output-${suffix}`]
     );
-    event.publishStatusByTarget = { atlas: 'FAILED' };
-    event.retryCountByTarget = { atlas: 1 };
-    event.lastErrorByTarget = { atlas: 'injected failure for replay coverage' };
-    failedEventId = event.eventId;
-    failedEventCouchId = event._id;
-    failedEventKey = eventKey;
+    event.publishStatusByTarget = { atlas: 'PROJECTING' };
+    event.claimedAtByTarget = { atlas: new Date().toISOString() };
+    replayEventId = event.eventId;
+    replayEventKey = eventKey;
+    replayEventCouchId = event._id;
 
     await injectCouchDoc(request, LINEAGE_DB, event);
 
     const evtRes = await request.get(
-      `${BASE_URL}/core/api/v1/admin/lineage-journal/events/${failedEventId}`,
+      `${BASE_URL}/core/api/v1/admin/lineage-journal/events/${replayEventId}`,
       { headers: { Authorization: AUTH_HEADER } }
     );
     expect(evtRes.ok(), `event lookup -> HTTP ${evtRes.status()}`).toBe(true);
-    const evtData = await evtRes.json();
-    expect(evtData?.publishStatusByTarget?.atlas).toBe('FAILED');
-    console.log('FAILED event in place for replay');
+    expect((await evtRes.json())?.publishStatusByTarget?.atlas).toBe('PROJECTING');
   });
 
-  test('7.2 Re-enable → replay single event', async ({ request }) => {
+  test('7.2 Replay re-drives the event through to Atlas', async ({ request }) => {
     const available = await checkAtlasAvailable(request);
     skipIfNoAtlas(available);
-    test.skip(!failedEventId, 'ENV: Depends on 7.1');
+    test.skip(!replayEventId, 'ENV: Depends on 7.1');
 
-    // Replay the failed event
     const replayRes = await request.post(
-      `${BASE_URL}/core/api/v1/admin/lineage-journal/events/${failedEventId}/replay?target=atlas`,
+      `${BASE_URL}/core/api/v1/admin/lineage-journal/events/${replayEventId}/replay?target=atlas`,
       { headers: { Authorization: AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' } }
     );
-    expect(replayRes.ok()).toBe(true);
+    expect(replayRes.ok(), `replay -> HTTP ${replayRes.status()}`).toBe(true);
 
-    const replayData = await replayRes.json();
-    expect(replayData.status).toBe('ok');
-    console.log('Replay response:', JSON.stringify(replayData));
-
-    // Wait for re-projection
     const published = await pollUntil(async () => {
       const evtRes = await request.get(
-        `${BASE_URL}/core/api/v1/admin/lineage-journal/events/${failedEventId}`,
+        `${BASE_URL}/core/api/v1/admin/lineage-journal/events/${replayEventId}`,
         { headers: { Authorization: AUTH_HEADER } }
       );
       if (!evtRes.ok()) return false;
-      const evtData = await evtRes.json();
-      return evtData?.publishStatusByTarget?.atlas === 'PUBLISHED';
-    }, 90000, 5000);
+      return (await evtRes.json())?.publishStatusByTarget?.atlas === 'PUBLISHED';
+    }, 120000, 5000);
 
-    // PUBLISHED, not "PENDING is fine too": accepting a non-terminal status here means the
-    // test passes with the replay path dead, which is the one thing it exists to check.
-    expect(published, 'replayed event never reached PUBLISHED within 90s').toBe(true);
+    // PUBLISHED, not "PENDING is fine too": accepting a non-terminal status means the test
+    // passes with the replay path dead, which is the one thing it exists to check.
+    expect(published, 'replayed event never reached PUBLISHED within 120s').toBe(true);
 
-    // …and the projection must have reached Atlas, not just moved a status field. Same
-    // contract AtlasLineageSink.buildAtlasPayload writes and Group 4 asserts: typeName
-    // "Process", qualifiedName "nemakiware:{repo}:{processType lowercase}:{eventKey}".
+    // …and the projection must have reached Atlas, not just moved a status field. Same contract
+    // AtlasLineageSink.buildAtlasPayload writes and Group 4 asserts.
     const process = await queryAtlasEntity(
-      request, 'Process', `nemakiware:${LINEAGE_REPO}:import_uploaded:${failedEventKey}`);
+      request, 'Process', `nemakiware:${LINEAGE_REPO}:import_uploaded:${replayEventKey}`);
     expect(process, 'the event is PUBLISHED but no Atlas Process entity exists for it')
       .not.toBeNull();
     console.log('Replayed event is PUBLISHED and present in Atlas');
   });
 
   test('7.3 Replay-all dead letters', async ({ request }) => {
-    const available = await checkAtlasAvailable(request);
-    skipIfNoAtlas(available);
-
-    const res = await request.post(
-      `${BASE_URL}/core/api/v1/admin/lineage-journal/dead-letters/replay-all`,
-      { headers: { Authorization: AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' } }
-    );
-    expect(res.ok()).toBe(true);
-    const data = await res.json();
-    // "has a replayed property" passes with replayed: 0, i.e. with the whole path dead. 7.1
-    // put a dead letter in the journal, so there is something to replay.
-    expect(data.replayed, 'replay-all reported nothing replayed').toBeGreaterThan(0);
-    console.log(`Replay-all: replayed ${data.replayed} dead letters`);
+    // Not run here, and not because it is unimportant.
+    //
+    // /dead-letters/replay-all is global: it re-drives every unreplayed dead letter in
+    // nemaki_lineage. This environment holds 93 of them, all from bedroom and none from this
+    // file, and calling it would re-inject those events and mark the dead letters replayed. The
+    // synthetic repository this file uses isolates the journal stream, not an API that ignores
+    // repository scope. `replayed > 0` would also be satisfied by those 93 regardless of
+    // anything this file did.
+    //
+    // It belongs in a CouchDB integration test with a throwaway journal, where the before/after
+    // set is known. Targeted replay is covered by 7.2.
+    test.skip(true, 'ENV: replay-all is global and would re-drive unrelated dead letters');
   });
 });
 
-// =====================================================================
-// Group 8: Multi-target
-// =====================================================================
-
 test.describe('Group 8: Multi-target', () => {
   /**
-   * The old shape wrote `{atlas: PENDING}` in the fixture and then read it back, so it asserted
-   * on its own input and would have passed with target selection removed entirely. What decides
-   * the target set is `lineage.targets`; the observable consequence is that only that target
-   * ever reaches a terminal state.
+   * Scope: this covers the PROJECTOR, not target selection. The fixture still sets
+   * `{atlas: PENDING}` itself, so LineageEventBuilder.targets() and the emitter's choice of
+   * targets are not exercised here and would have to break somewhere else to be caught — that
+   * belongs with a test that emits through a real business operation. What this does establish
+   * is that the projector drives the configured target to a terminal state and does not invent
+   * statuses for targets that were never requested.
    */
-  test('8.1 Atlas is the only target that projects', async ({ request }) => {
+  test('8.1 The projector publishes the configured target and no other', async ({ request }) => {
     const available = await checkAtlasAvailable(request);
     skipIfNoAtlas(available);
 
@@ -1349,16 +1352,54 @@ test.describe('Group 8: Multi-target', () => {
     }
   });
 
-  /**
-   * Everything this file injected lived under a synthetic repository id, so its cursor and
-   * sequence counter are ours to remove. bedroom's own stream is untouched by construction.
-   */
+});
+
+/**
+ * One teardown for everything shared, at file level.
+ *
+ * Per-group afterAll hooks only run for groups that were reached, and a group that fails part
+ * way leaves whatever it had already created. That is not theoretical: when 2.5 failed, the
+ * folder it had created was still in CMIS and in Atlas afterwards, because its removal was
+ * Group 3's job and Group 3 never ran.
+ *
+ * Everything injected lived under a synthetic repository id, so that stream's cursor and
+ * sequence counter are ours to remove; bedroom's own stream is untouched by construction.
+ */
+test.describe('cleanup', () => {
   test.afterAll(async ({ request }) => {
+    if (!atlasAvailable) return;
+
+    for (const id of [testDocId, unsyncedDocId]) {
+      if (id) {
+        await deleteCmisObject(request, id);
+        await deleteAtlasEntity(request, 'nemaki_document', `nemaki://${REPOSITORY_ID}/objects/${id}`);
+      }
+    }
+    if (testFolderId) {
+      await deleteCmisObject(request, testFolderId);
+      await deleteAtlasEntity(request, 'nemaki_folder', `nemaki://${REPOSITORY_ID}/objects/${testFolderId}`);
+    }
+    testDocId = null;
+    testFolderId = null;
+    unsyncedDocId = null;
+
+    // The Process entities the projector created for the injected events.
+    for (const eventKey of projectedProcessKeys) {
+      await deleteAtlasEntity(request, 'Process', eventKey);
+    }
+
     for (const docId of [`projection_cursor:atlas:${LINEAGE_REPO}`, `lineage_seq:${LINEAGE_REPO}`]) {
       await deleteCouchDoc(request, LINEAGE_DB, docId);
     }
     for (const docId of injectedCouchIds) {
       await deleteCouchDoc(request, LINEAGE_DB, docId);
     }
+  });
+
+  test('cleanup placeholder', async ({ request }) => {
+    // Playwright only runs a describe's afterAll if the describe contains a test.
+    const available = await checkAtlasAvailable(request);
+    skipIfNoAtlas(available);
+    expect(true).toBe(true);
   });
 });

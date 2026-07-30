@@ -92,29 +92,39 @@ public class AtlasLineageSink implements LineageTargetSink {
         processAttrs.put("description", "NemakiWare lineage event: " + event.eventKey());
         processEntity.put("attributes", processAttrs);
 
-        // Input entities
-        List<Map<String, Object>> inputs = new ArrayList<>();
-        if (event.inputs() != null) {
-            for (String input : event.inputs()) {
-                inputs.add(Map.of("typeName", "DataSet", "uniqueAttributes",
-                        Map.of("qualifiedName", "nemakiware:" + event.repositoryId() + ":" + input)));
-            }
-        }
-        processAttrs.put("inputs", inputs);
-
-        // Output entities
-        List<Map<String, Object>> outputs = new ArrayList<>();
-        if (event.outputs() != null) {
-            for (String output : event.outputs()) {
-                outputs.add(Map.of("typeName", "DataSet", "uniqueAttributes",
-                        Map.of("qualifiedName", "nemakiware:" + event.repositoryId() + ":" + output)));
-            }
-        }
-        processAttrs.put("outputs", outputs);
+        // Input and output entities.
+        //
+        // These reference objects that the catalog sync has already published, and it publishes
+        // them under the qualifiedName the event carries verbatim — "nemaki://{repo}/objects/{id}".
+        // Prefixing it again produced "nemakiware:{repo}:nemaki://{repo}/objects/{id}", which
+        // matches no entity in Atlas, so every Process was linked to nothing. The prefix belongs
+        // to the Process's OWN qualifiedName (above), which has no other source; an input already
+        // is a qualifiedName.
+        processAttrs.put("inputs", entityReferences(event.inputs()));
+        processAttrs.put("outputs", entityReferences(event.outputs()));
 
         entities.add(processEntity);
 
         return Map.of("entities", entities);
+    }
+
+    /**
+     * References to already-published catalog entities, by their own qualifiedName.
+     *
+     * <p>typeName is {@code DataSet} because that is what {@code nemaki_document} extends. Note
+     * that {@code nemaki_folder} extends {@code Referenceable}, not {@code DataSet}, so an event
+     * whose input is a folder (EXPORT_ZIP_FOLDER, for one) cannot be expressed as a Process input
+     * under the current schema — see PurviewSchemaPayloadFactory.
+     */
+    private static List<Map<String, Object>> entityReferences(List<String> qualifiedNames) {
+        List<Map<String, Object>> refs = new ArrayList<>();
+        if (qualifiedNames != null) {
+            for (String qualifiedName : qualifiedNames) {
+                refs.add(Map.of("typeName", "DataSet", "uniqueAttributes",
+                        Map.of("qualifiedName", qualifiedName)));
+            }
+        }
+        return refs;
     }
 
     private static void validateEndpoint(String endpoint) {
