@@ -1,0 +1,247 @@
+/**
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ */
+package jp.aegif.nemaki.rest.purview.journal;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.junit.jupiter.api.Test;
+
+/**
+ * Freezes the serialization every lineage identity is built from.
+ *
+ * <p>The hex constants below were produced by this encoding and are checked in deliberately. They
+ * are not documentation: a change to the encoding makes every {@code processKey} and
+ * {@code deliveryId} already written to CouchDB unreachable, so it may only happen together with a
+ * bump of {@link LineageIdentity#IDEMPOTENCY_KEY_VERSION} and a migration. A red test here is that
+ * decision being made by accident.
+ */
+public class LineageCanonicalHashTest {
+
+    // ------------------------------------------------------------------
+    // The property the encoding exists for
+    // ------------------------------------------------------------------
+
+    /**
+     * The collision that a delimiter cannot avoid.
+     *
+     * <p>With {@code join(":")} both of these are {@code "ab:c"} against {@code "a:bc"} only while
+     * the delimiter is absent from the data — and ":" occurs in CMIS names, paths and URIs. Under
+     * length prefixes the two are different byte strings regardless of content.
+     */
+    @Test
+    public void differentSplitsOfTheSameCharactersDoNotCollide() {
+        assertNotEquals(LineageCanonicalHash.hash("ab", "c"),
+                LineageCanonicalHash.hash("a", "bc"));
+    }
+
+    /** {@code operationId} absent and {@code operationId} empty are not the same fact. */
+    @Test
+    public void nullAndEmptyStringAreDistinct() {
+        assertNotEquals(LineageCanonicalHash.hash((Object) null), LineageCanonicalHash.hash(""));
+    }
+
+    /** An absent list and an empty one are likewise distinct. */
+    @Test
+    public void nullAndEmptyListAreDistinct() {
+        assertNotEquals(LineageCanonicalHash.hash((Object) null),
+                LineageCanonicalHash.hash(List.of()));
+    }
+
+    /** A one-element list is not its element — otherwise nesting would be invisible. */
+    @Test
+    public void listOfOneIsNotItsElement() {
+        assertNotEquals(LineageCanonicalHash.hash(List.of("a")), LineageCanonicalHash.hash("a"));
+    }
+
+    /** Map iteration order is not part of the identity; keys are sorted before encoding. */
+    @Test
+    public void mapKeyOrderDoesNotChangeTheHash() {
+        Map<String, Object> ab = new LinkedHashMap<>();
+        ab.put("a", "1");
+        ab.put("b", "2");
+        Map<String, Object> ba = new LinkedHashMap<>();
+        ba.put("b", "2");
+        ba.put("a", "1");
+        assertEquals(LineageCanonicalHash.hash(ab), LineageCanonicalHash.hash(ba));
+    }
+
+    /** Widening is deliberate: a chunk index of 0 must hash the same whether int or long. */
+    @Test
+    public void integerAndLongOfTheSameValueAgree() {
+        assertEquals(LineageCanonicalHash.hash(1L), LineageCanonicalHash.hash(1));
+    }
+
+    /**
+     * Anything else is rejected rather than stringified. A hash whose input depends on
+     * {@code toString()} silently changes identity the day someone edits a {@code toString}.
+     */
+    @Test
+    public void unhashableTypesAreRejected() {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> LineageCanonicalHash.hash(new java.util.Date(0L)));
+        assertTrue(e.getMessage().contains("unhashable type"), e.getMessage());
+
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageCanonicalHash.hash(Map.of(1, "int key")));
+    }
+
+    // ------------------------------------------------------------------
+    // Golden vectors — the encoding itself
+    // ------------------------------------------------------------------
+
+    /**
+     * Each of these pins one rule of the encoding. Together they catch a changed type tag, a
+     * changed length width, a flipped byte order and a dropped UTF-8 step, which a
+     * self-consistency test comparing two calls to the same method would all miss.
+     */
+    @Test
+    public void goldenVectors() {
+        // no parts: LIST(0)
+        assertEquals("a665e6b115dd56fd3e0c89be631e6eda8e9666b822e0bd7026bf0822c4bbc68f",
+                LineageCanonicalHash.hash());
+        // string length prefix
+        assertEquals("14bacf0c3af5f2736b210f0edb9e7e12caabdb4c763bab2754209e1fc20d4a02",
+                LineageCanonicalHash.hash("ab", "c"));
+        assertEquals("6e7c1d9fe517528d9a880ae855040033a961e483bffb67edf7572d07f43a9fa2",
+                LineageCanonicalHash.hash("a", "bc"));
+        // null tag
+        assertEquals("9d0689e46d7c710571256af5b8e8638f0dbc6b008f5ea4688c1c70f3005943e4",
+                LineageCanonicalHash.hash((Object) null));
+        assertEquals("ca28a8559e1114f44c49b1aa3f956ed12e1a4be970e5aa43cde5ca59792f35e7",
+                LineageCanonicalHash.hash(""));
+        // list count prefix
+        assertEquals("27d8a154dde600ce538d04a901471b5ec6652c3881a9a418cf3d63234e02feae",
+                LineageCanonicalHash.hash(List.of()));
+        assertEquals("e74231b56629413037452b5f8435820d98db459a48043e89d5e0a1b760514df5",
+                LineageCanonicalHash.hash(List.of("a")));
+        // integer width and byte order
+        assertEquals("46cb5d92d64dfd94961c89587d55ebaf54bee80d4db929a45e5566d452382917",
+                LineageCanonicalHash.hash(1L));
+        assertEquals("b8fa50c6a012291fb71c66a059be4c34eb1d78388aae4726c132b18157439356",
+                LineageCanonicalHash.hash(Long.MAX_VALUE));
+        assertEquals("d2db404374a9874c647ee397c625f3715bcc4ecf0af9f196daa9beff144d3ab8",
+                LineageCanonicalHash.hash(Long.MIN_VALUE));
+        assertEquals("fc29b622875162bd06a8f5a531337346378c966c53a730a32a614aa2ededeb64",
+                LineageCanonicalHash.hash(-1L));
+        // bool tag
+        assertEquals("6c614b295f14d90080516a9007bc0f473fcc8cb5f860354b6cc6c9f2ca7ab521",
+                LineageCanonicalHash.hash(Boolean.TRUE));
+        // UTF-8, not the platform charset and not UTF-16
+        assertEquals("880b823ac4e0231efaa5ec90885bdf7ef3306e81ae9a42c4e964cd9f9913c2b3",
+                LineageCanonicalHash.hash("契約書"));
+        // map, keys sorted
+        assertEquals("7ac485b14cd2a455f161023678fa408ae2c27319bebdb9bd4f8e510a78abb592",
+                LineageCanonicalHash.hash(Map.of("a", "1", "b", "2")));
+    }
+
+    /**
+     * The upper bytes of the 4-byte length prefix.
+     *
+     * <p>Every other vector here uses inputs under 256 bytes, where the top three length bytes are
+     * all zero — so a shift by the wrong amount would leave them all green. 300 bytes exercises
+     * the second byte, 70,000 the third, and 16 MiB the most significant one. The last costs
+     * about 40 ms and is the only way to reach that byte at all, since {@code (n << 24) & 0xFF}
+     * and {@code (n >>> 24) & 0xFF} agree for every value below it.
+     */
+    @Test
+    public void goldenVectorsForLongValues() {
+        assertEquals("419cc03152cac8e49eccc392b034049468c2f300039f3d2dbaa40c1ab9abc1be",
+                LineageCanonicalHash.hash("a".repeat(300)));
+        assertEquals("e5d26b5415e396a4bebc6e9ab84e6c0c6e4e19d1a41449e4aea62cbbb1309e1f",
+                LineageCanonicalHash.hash("a".repeat(70000)));
+        assertEquals("4b4cd84bbb9d603f281bc01b44544b0770404f489e22a1c501fc296d4509de8f",
+                LineageCanonicalHash.hash("a".repeat(16 * 1024 * 1024)));
+    }
+
+    /** A null map key cannot be encoded, and the rejection must say so rather than throw NPE. */
+    @Test
+    public void aNullMapKeyIsRejected() {
+        Map<String, Object> withNullKey = new HashMap<>();
+        withNullKey.put(null, "v");
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> LineageCanonicalHash.hash(withNullKey));
+        assertTrue(e.getMessage().contains("null"), e.getMessage());
+    }
+
+    // ------------------------------------------------------------------
+    // Canonical orderings
+    // ------------------------------------------------------------------
+
+    @Test
+    public void qualifiedNamesAreSortedSoProducerOrderDoesNotMatter() {
+        LineageEndpoint a = LineageEndpoint.document("bedroom", "a", "n");
+        LineageEndpoint b = LineageEndpoint.document("bedroom", "b", "n");
+        assertEquals(LineageCanonicalHash.canonicalQualifiedNames(List.of(a, b)),
+                LineageCanonicalHash.canonicalQualifiedNames(List.of(b, a)));
+    }
+
+    /**
+     * A repeated endpoint is a producer bug, not something to collapse: silently deduplicating it
+     * would change the arity the catalog sees without anyone noticing.
+     */
+    @Test
+    public void duplicateQualifiedNamesAreRejectedRatherThanDeduplicated() {
+        LineageEndpoint a = LineageEndpoint.document("bedroom", "a", "n");
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> LineageCanonicalHash.canonicalQualifiedNames(List.of(a, a)));
+        assertTrue(e.getMessage().contains("duplicate endpoint"), e.getMessage());
+    }
+
+    @Test
+    public void nullEndpointIsRejected() {
+        List<LineageEndpoint> withNull = new ArrayList<>();
+        withNull.add(null);
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageCanonicalHash.canonicalQualifiedNames(withNull));
+    }
+
+    /**
+     * Targets are deduplicated, unlike endpoints: {@code ["atlas","atlas"]} is one delivery
+     * obligation, and configuration listing a target twice is not a data error.
+     */
+    @Test
+    public void targetSetIsSortedTrimmedAndDeduplicated() {
+        assertEquals(List.of("atlas", "purview"),
+                LineageCanonicalHash.canonicalTargetSet(List.of("purview", " atlas ", "atlas")));
+    }
+
+    /**
+     * A blank target is rejected rather than dropped. Dropping it would produce a deliveryId for a
+     * smaller target set than the one actually being delivered to, and the record would then
+     * disagree with its own {@code publishStatusByTarget}.
+     */
+    @Test
+    public void blankTargetIsRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageCanonicalHash.canonicalTargetSet(List.of("atlas", " ")));
+
+        List<String> withNull = new ArrayList<>();
+        withNull.add("atlas");
+        withNull.add(null);
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageCanonicalHash.canonicalTargetSet(withNull));
+    }
+}
