@@ -1,12 +1,17 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.1 draft / 実装着手 sign-off 待ち**
+status: **v2.2 draft / 実装着手 sign-off 待ち**
 revision:
 - v2 — §4 §6 §8 §9 を全面改訂。v1 の採番一体化案・caller 例外案・raw URI QN 案・
   `upload://` 空 input 案・`REPLAYED` 上書き案は**撤回**。撤回理由は各節に残す。
 - v2.1 — 7 判断の条件を反映し、endpoint-local snapshot と shell 排除 (§2 §10)、
   file dead letter の durable spool (§8 §9)、sequencer lease/fencing 状態表 (§8)、
   replay generation の CAS 状態機械 (§8)、endpoint 件数・payload size 上限 (§2) を追加。
+- v2.2 — 状態機械の内部矛盾を訂正。lease は削除せず generation high-watermark を保持、
+  stale `SEQUENCING` の世代付き reclaim 遷移を追加、`VERIFYING` を状態表に完全記載、
+  spool の起動影響と file 安全性契約、chunk の sequence 連番要件を**撤回**、
+  oversize 時の silent attribute drop を**禁止**、catalog obligation を lineage 専用 service に確定。
+  **`sequence` を「sequencer finalization order」と再定義**した (§8 冒頭)。
 scope: v3.3 内で Atlas 連携を完成させるための設計。実装は sign-off 後に A〜E の独立コミットで行う。
 関連: [`docs/design/acl-epoch-fencing.md`](acl-epoch-fencing.md) (同じ outbox/cursor の考え方を使う)
 
@@ -137,9 +142,33 @@ event-level の `snapshotAttributes` は**複数 endpoint に対応できない*
 
 document と archive は catalog sync が publish する。lineage が同一 bulk で作り直すと
 catalog sync と二重管理になるため、**同一 bulk には含めない**。代わりに publish 前に
-authoritative な catalog entity の存在を確認し、無ければ
-**catalog reconciliation obligation** (既存 `SearchIndexReconciliationService` と同型の durable queue) を作る。
-obligation が解消するまで当該 event は `PENDING` のままにし、cursor は進めない。
+authoritative な catalog entity の存在を確認し、無ければ obligation を作る。
+
+**`LineageCatalogReconciliationService` を lineage 専用に新設する (v2.2 確定)。**
+既存 `SearchIndexReconciliationService` は Solr / ACL / RAG の再索引が責務で、
+Atlas/Purview の entity 存在確認・target 別状態・historical entity 復元とは**完了条件が違う**。
+汎用化すると既存の security reconciliation に影響が及ぶため、共有しない。
+
+```
+task key : target + repositoryId + endpointKind + hash(catalogQualifiedName)
+
+state    : PENDING
+           CLAIMED(owner, token, lease)
+           RESOLVED
+           UNRESOLVED
+
+outcome  : SOURCE_EXISTS       → 既存の authoritative publisher で同期させる
+           SOURCE_PURGED       → endpoint snapshot (§2) から historical / tombstone entity を作る
+           SOURCE_ERROR        → capped backoff で再試行
+           SNAPSHOT_INCOMPLETE → durable UNRESOLVED。event を terminal 化して cursor を進める
+```
+
+- `SOURCE_PURGED` を扱えるのがこの service を分ける理由の一つ。削除済み source の
+  historical entity は endpoint snapshot からしか作れない (§2)。
+- `SearchIndexReconciliationService` と共有するのは **CAS task / lease / backoff の低レベル部品だけ**。
+  service と operation namespace は共有しない。
+- obligation が `PENDING` / `CLAIMED` の間、当該 event は `PENDING` のままにし cursor は進めない。
+  `UNRESOLVED` で terminal 化したときだけ cursor を進める。
 
 ### 件数・サイズ上限 (v2.1)
 
@@ -149,8 +178,25 @@ CouchDB document の双方を壊す。
 | 制限 | 既定 | 超過時 |
 |---|---|---|
 | 1 event あたりの endpoint 数 | 1,000 | **chunk する**。`operationId` を共有し `chunkIndex` / `chunkCount` を持つ複数 event に分割 |
-| 1 event の payload size | 1 MiB | 同上。分割後も超えるなら endpoint 属性を最小 allowlist に落とす |
-| chunk 間の順序 | — | 同一 `operationId` の chunk は sequence 連番で並ぶ。部分適用を許容する (chunk 単位で PUBLISHED) |
+| 1 event の payload size | 1 MiB | 同上 |
+| chunk 間の順序 | — | **sequence の連番は要求しない** (下記) |
+| 1 endpoint が単独で上限超過 | — | durable `UNRESOLVED_OVERSIZE`。**属性を黙って落とさない** (下記) |
+
+**chunk の sequence 連番要件は撤回する (v2.2)。** repository 内では他の event と並行して
+finalize されるため、batch reservation なしに連番にはならない。§8 の定義どおり
+`sequence` は finalization order でしかない。再構成は `operationId` / `chunkIndex` / `chunkCount`
+の 3 つで行い、部分適用 (chunk 単位の PUBLISHED) を許容する。
+
+**oversize 時の silent attribute drop を禁止する (v2.2)。**
+必須属性を黙って落とすと E-17 の shell 判定と矛盾し、「shell ではない」ことを検証できなくなる。
+
+| 規則 | 内容 |
+|---|---|
+| 事前上限 | endpoint 属性ごとに最大長を**事前に固定**する (allowlist と同じ表に持つ) |
+| optional 表示値 | 上限超過は truncate + 元値の SHA-256 を併記する (`nameTruncated=true`) |
+| 必須値 | `externalStableKey` などの protected stable key と kind 別必須属性は**落とさない** |
+| 単独超過 | 1 endpoint だけで上限を超えるなら、その event を durable `UNRESOLVED_OVERSIZE` (terminal) にし、reason と endpoint hash を残す。cursor は進める |
+| 禁止 | silent attribute dropping は**いかなる場合も行わない** |
 
 上限値は `lineage.endpoint.max-per-event` / `lineage.event.max-payload-bytes` で設定可能にする。
 
@@ -375,7 +421,20 @@ v1 は「`UNKNOWN` を含む v1 event は `SKIPPED` にして cursor を進め�
 
 ---
 
-## 8. sequence / status / cursor / replay の多重AP状態遷移 (v2)
+## 8. sequence / status / cursor / replay の多重AP状態遷移 (v2.2)
+
+### `sequence` の定義 (v2.2)
+
+**`sequence` は sequencer finalization order を表す。** それ以上のことは保証しない。
+
+- domain commit の全順序は**保証しない**。spool へ落ちた event は、後から別 AP が作った event より
+  遅く finalize されうる。
+- spool を跨ぐ厳密な因果順序も**保証しない**。
+- `occurredAt` は AP ローカル時計であり、**表示・監査用**。fencing や順序判定の根拠にしない。
+- 厳密な domain commit 順序が要るなら、各業務 DB と同一トランザクションの outbox が必要になり、
+  本増分の範囲を超える。
+
+読み手 (projector / cursor / UI) はこの定義にのみ依存する。
 
 ### 現在の欠陥 (実装で確認済み)
 
@@ -419,13 +478,27 @@ expiresAt  : ISO8601
 |---|---|---|
 | acquire | lease 不在 または `expiresAt < now` | `generation+1` で CAS 取得。失敗は他ノードに譲る |
 | renew | `owner` 一致 かつ `generation` 一致 | `expiresAt` 延長を CAS。**失敗したら fence latch を落とし、以後この世代では一切書かない** |
-| release | `owner` 一致 | 削除 |
+| release | `owner` 一致 かつ `generation` 一致 かつ `_rev` 一致 | `owner=null` / `expiresAt=過去` に CAS。**`generation` は維持し、document は削除しない** |
+
+**lease document を削除してはならない。** 削除すると generation の high-watermark も消え、
+次の acquire が古い generation を再利用できてしまう。そうなると old leader の
+`sequencerGeneration` と一致してしまい、fencing が成立しない。
+削除操作は API・管理経路のいずれからも**拒否**する (存在チェックを伴う CAS のみ許す)。
 
 event の claim / 確定は必ず `(generation, owner)` を伴う CAS:
 
 ```
-claim   : expected state=UNSEQUENCED, _rev 一致 → state=SEQUENCING, sequencerGeneration=G
-finalize: expected state=SEQUENCING, sequencerGeneration=G, _rev 一致 → state=SEQUENCED, sequence=N
+claim   : expected state=UNSEQUENCED, _rev 一致
+          → state=SEQUENCING, sequencerGeneration=G
+
+reclaim : expected state=SEQUENCING, sequencerGeneration=G_old, _rev 一致
+          かつ G_old < 現 lease の generation (= old lease は期限切れ)
+          → state=SEQUENCING, sequencerGeneration=G_new
+          ※ old leader が停止した event はこの遷移でしか回収できない。
+            claim (UNSEQUENCED からのみ) では拾えない
+
+finalize: expected state=SEQUENCING, sequencerGeneration=G, _rev 一致
+          → state=SEQUENCED, sequence=N
 ```
 
 **old leader 復活系列の証明**
@@ -443,8 +516,8 @@ finalize: expected state=SEQUENCING, sequencerGeneration=G, _rev 一致 → stat
 |---|---|
 | event 作成前 | 何も起きていない。file spool (§8-a) に payload が残るのみ |
 | `UNSEQUENCED` 作成後 | scanner が拾い、通常経路で claim される |
-| counter 払い出し後・`SEQUENCING` 確定前 | 番号は捨てられる (gap)。event は `UNSEQUENCED` のまま次 leader が再処理 |
-| `SEQUENCING` 中に crash | lease 期限切れ後、new leader が `sequencerGeneration` を上書きして再 claim |
+| counter 払い出し後・`SEQUENCED` 確定前 | event は **`SEQUENCING(G_old)`** で残る。番号は捨てられる (gap)。new leader が **reclaim 遷移**で `SEQUENCING(G_new)` にしてから再度払い出す |
+| `SEQUENCING` 中に crash | lease 期限切れ後、new leader が **reclaim 遷移**で `sequencerGeneration` を上書き |
 | `SEQUENCED` 確定後 | 通常の projection 経路へ |
 
 **per-repository ordering と公平性**
@@ -517,16 +590,52 @@ CouchDB store への保存は `// Store persistence is best-effort; log file is 
 {lineage.spool.dir}/{repositoryId}/{yyyyMMdd}/{eventKey}.ack      ← ACK marker
 ```
 
+#### 起動時の扱い (v2.2) — Core 全体は落とさない
+
+「volume 未設定なら起動時 fail-closed」を Core 全体の起動失敗と読むと、
+`LineageEmitter` の fail-open 契約と矛盾する。範囲を限定する。
+
+| 構成 | 挙動 |
+|---|---|
+| `lineage.mode=disabled` | spool 不要。何も検査しない |
+| `journaled` / `direct` かつ spool 未設定・書込み不能 | **lineage subsystem を `NOT_READY` にして無効化**。Core / CMIS 本体は起動を継続する。health と metric に出す |
+| `lineage.spool.strict=true` (明示設定時のみ) | Core の起動を拒否する。strict 運用を望む環境向け |
+
+#### file 安全性契約 (v2.2)
+
 | 項目 | 設計 |
 |---|---|
-| 書込み | temp file へ書いて `fsync` → atomic rename。**永続 volume を必須**とし、未設定なら起動時に fail-closed |
+| path | `repositoryId` を**そのまま path に使わない**。safe encode (URL-safe base64) + hash を使う |
+| 権限 | directory `0700` / file `0600` |
+| symlink | **追わない** (`NOFOLLOW`)。spool 配下に symlink があれば異常として拒否 |
+| temp file | **同一 directory 内**に作る (rename が atomic であることを保証するため) |
+| 書込み | file を `fsync` → atomic rename → **parent directory も `fsync`** |
+| 冪等 | 既存 spool file があるときは、payload digest が一致する場合のみ成功扱い。不一致は異常として別名で退避 |
+| サイズ上限 | `lineage.spool.max-file-bytes` / `lineage.spool.max-bundle-bytes` |
+| ACK | `.ack` も `fsync`、または `pending` → `acked` の atomic rename |
+
+| 項目 | 設計 |
+|---|---|
 | 内容 | repair 可能な**完全 payload**。`externalStableKey` を含む |
 | 権限 | spool ディレクトリは運用者のみ読める権限に置く。通常ログには**出さない** |
 | 通常ログ | `eventKey` と endpoint hash (SHA-256 先頭12桁) と reason のみ。raw URI・パスは出さない |
 | scanner | spool を走査し、CouchDB 復旧後に §8-a の event-first append を再実行。成功で `.ack` を書く |
 | ACK 済み | `lineage.spool.retention.days` 経過で削除 |
-| 列挙 | §9 の repair API が spool を列挙対象に含める (node ごとの spool を集約する必要があるため、**API は node local + 集約 endpoint** の 2 段) |
-| 代替経路 | spool volume を持てない構成向けに、**署名付き DLQ bundle の upload repair API** を用意する。運用者がログ基盤から抽出した bundle を投入できる |
+| 列挙 | **node-local の admin API のみ**。集約 endpoint は v3.3 では**実装しない** (node discovery と routing が未設計のため) |
+| node 可視化 | `nodeId` を health / inventory に公開し、各 node の永続 volume を運用対象として明示する |
+| node 間移送 | **署名付き DLQ bundle の upload repair API** を移送手段とする。別 node の spool を運用者が bundle 化して投入する |
+
+#### 署名付き bundle の契約 (v2.2)
+
+| 項目 | 要件 |
+|---|---|
+| 署名 | HMAC-SHA256。`lineage.repair.bundle.hmac-key` |
+| key ID | bundle header に `keyId`。鍵ローテーションに対応する |
+| 期限 | bundle header の `expiresAt` を超えたものは拒否 |
+| nonce | 一度使った nonce は再利用不可 (CouchDB に短期記録し CAS) |
+| 上限 | 最大件数 `max-entries` / 最大サイズ `max-bundle-bytes` |
+| 展開 | **zip bomb 拒否** (展開後サイズ上限と圧縮比上限)、**path traversal 拒否** (`..` / 絶対 path / symlink) |
+| 監査 | 誰が・どの keyId で・何件を投入したかを audit log に記録 |
 
 既存 `LineageDeadLetterSink` は**残す** (メトリクスと可観測性のため) が、
 repair の入力源としては spool を正とする。
@@ -537,16 +646,34 @@ repair の入力源としては spool を正とする。
 
 ```
 PENDING     → PROJECTING  (claim token 発行 + lease 期限)
-PROJECTING  → PUBLISHED   (同一 claim token のみ)
-PROJECTING  → FAILED      (同一 claim token のみ)
+PROJECTING  → VERIFYING   (Atlas POST 成功。同一 claim token)
+VERIFYING   → PUBLISHED   (verify 成功。同一 claim token)
+VERIFYING   → VERIFYING   (retryable read lag。同一 claim token + lease renew)
+VERIFYING   → FAILED      (semantic mismatch、または verifyMaxAge 超過。同一 claim token)
+PROJECTING  → FAILED      (POST 自体の失敗。同一 claim token)
 FAILED      → PROJECTING  (claim token 再発行)
 PENDING     → DISCARDED   (管理操作のみ)
 FAILED      → DISCARDED   (管理操作のみ)
 PROJECTING  → FAILED      (reaper: lease 期限切れ かつ 同一 claim token のみ)
+VERIFYING   → FAILED      (reaper: lease 期限切れ かつ 同一 claim token のみ)
 (v1 legacy)  → UNRESOLVED  (§6)
 (cross-repo) → REJECTED    (§7)
 PUBLISHED / DISCARDED / UNRESOLVED / REJECTED = terminal。**いかなる遷移も出ない**
 ```
+
+### `VERIFYING` の滞留防止 (v2.2)
+
+`VERIFYING` は publish retry 回数を消費しない。だからこそ**永遠に残らない別の上限**が要る。
+
+| 設定 | 既定 | 意味 |
+|---|---|---|
+| `lineage.verify.timeout` | 30s | 1 回の verify poll の総 deadline |
+| `lineage.verify.interval` | 2s | poll 間隔 |
+| `lineage.verify.max-age` | 10m | **`VERIFYING` に入ってからの絶対上限**。超えたら `FAILED` |
+
+- `VERIFYING` 中も lease を renew する。renew に失敗したら fence latch が落ち、以後書かない。
+- stale `VERIFYING` (lease 期限切れ) は reaper が**同一 claim token でのみ** `FAILED` にする。
+- metric: `lineage.verifying.count{repo,target}` と `lineage.verifying.oldest.age`。
 
 v1 の `* → DISCARDED` / `* → SKIPPED` は広すぎたので撤回。terminal からの逆行を禁止し、
 reaper は**期限切れかつ同一 claim token** のものだけを操作する。
@@ -668,6 +795,14 @@ POST /api/v1/admin/lineage-journal/repair
 | IT-14 | 2 AP が同時 replay | 片方が 409。generation は 1 つだけ払い出される |
 | IT-15 | 補償 event 作成後・ACK 前に kill → scanner 再開 | 同じ決定的 ID で create-if-absent。payload reread が一致し ACK される |
 | IT-16 | CouchDB 停止中に emit → 復旧 | 業務レスポンスは成功。spool に完全 payload。復旧後 spool scanner が append し `.ack` を書く |
+| IT-17 | release 後に再 acquire | `generation` が**必ず増える** (high-watermark が保持されている) |
+| IT-18 | lease document の削除を試みる | 拒否される |
+| IT-19 | stale `SEQUENCING(G_old)` を new leader が回収 | reclaim 遷移で `SEQUENCING(G_new)` になり finalize される |
+| IT-20 | reclaim 後に old generation が finalize を試みる | CAS 失敗。二重確定しない |
+| IT-21 | `VERIFYING` を `verifyMaxAge` 超過まで放置 | `FAILED` へ落ちる。publish retry 回数は消費していない |
+| IT-22 | spool 未設定で `journaled` 起動 | Core は起動する。lineage subsystem が `NOT_READY` |
+| IT-23 | 1 endpoint が単独で size 上限超過 | `UNRESOLVED_OVERSIZE` (terminal)。属性は落ちていない |
+| IT-24 | catalog obligation の 4 outcome | 各 outcome へ決定的に遷移する。`SOURCE_PURGED` は snapshot から historical entity を作る |
 
 ### Atlas-enabled E2E 受入表 (v3.3 release gate)
 
@@ -714,13 +849,25 @@ E2E のためだけに実装しない。
 - GUID 一致だけでは不十分。Atlas は dangling reference に対して疎な shell entity を自動生成しうるため、
   **shell を掴んで合格してしまう**。次を全て検証する:
 
+全 kind 共通:
+
 | 検証項目 | 内容 |
 |---|---|
-| 具体型 | `nemaki_document` / `nemaki_folder_dataset` / `nemaki_archive` / `nemaki_external_asset` / `nemaki_import_artifact` / `nemaki_export_artifact` のいずれか。`DataSet` そのものは不可 |
+| 具体型 | 期待する具体型と一致。`DataSet` そのものは不可 |
 | status | `ACTIVE` (tombstone でない) |
-| 同一性 | `repositoryId` / `objectId` が期待と一致 |
-| 必須属性 | kind ごとの必須属性が非 null (shell は空になる) |
 | shell 判定 | `qualifiedName` 以外の属性が全て空なら shell とみなし**失敗** |
+
+kind 別 (external / import / export artifact は `objectId` を持たないため、
+全 kind に `repositoryId`/`objectId` 一致を課すことはできない):
+
+| kind | 期待具体型 | 同一性 | 必須属性 |
+|---|---|---|---|
+| `CMIS_DOCUMENT` | `nemaki_document` | `repositoryId` + `objectId` | `name` |
+| `CMIS_FOLDER` | `nemaki_folder_dataset` | `repositoryId` + `objectId` | `name` |
+| `ARCHIVE` | `nemaki_archive` | `repositoryId` + `originalId` | `archivedAt` |
+| `EXTERNAL_ASSET` / `CLOUD_OBJECT` / `COLD_STORAGE` | `nemaki_external_asset` | `repositoryId` + `externalStableKey` の hash | `sourceSystem` |
+| `IMPORT_ARTIFACT` | `nemaki_import_artifact` | `repositoryId` + `operationId` | `importMode` |
+| `EXPORT_ARTIFACT` | `nemaki_export_artifact` | `repositoryId` + `operationId` | `artifactKind` |
 
 E-12 の「故意に失敗させる」テストは、cleanup が file-scope で動くことの決定的証拠として必須。
 
@@ -731,12 +878,32 @@ E-12 の「故意に失敗させる」テストは、cleanup が file-scope で�
 | 増分 | 内容 | 独立に検証できるか |
 |---|---|---|
 | **A** | typed `LineageEndpoint` + endpoint-local snapshot allowlist + kind 明示 builder + producer 全書き換え + サーバー発行 `operationId` + eventKey SHA-256 と `idempotencyKeyVersion` + endpoint 件数/payload 上限と chunking + `FILE_SHARE_SYNC_UPLOAD` 生成拒否 + cross-repo 検証 4層 (§2 §3 §7) | 単体。Atlas 不要 |
-| **B** | schema additive 拡張 (`nemaki_folder_dataset` / `nemaki_import_artifact` / `nemaki_export_artifact`) + catalog sync の同一 bulk 作成と **partial response の reconcile** + **既存 folder の authoritative backfill** + lifecycle (rename/move/delete/restore/orphan) (§3) | schema apply + backfill + orphan reconciliation |
+| **B** | schema additive 拡張 (`nemaki_folder_dataset` / `nemaki_import_artifact` / `nemaki_export_artifact`) + catalog sync の同一 bulk 作成と **partial response の reconcile** + **既存 folder の authoritative backfill** + lifecycle (rename/move/delete/restore/`sourceState`) + **`LineageCatalogReconciliationService`** (§2 §3) | schema apply + backfill + orphan reconciliation + obligation IT |
 | **C** | `CatalogPayloadFactory` へ payload 生成を集約、canonical QN を1箇所化 (既存 `buildExternalAssetQualifiedName` を移設)、`AtlasLineageSink` から payload を剥がす、**POST 後 GUID 完全一致を production の成功条件に** (§4 §5) | 単体 (payload golden) + sink IT |
 | **D** | event-first UNSEQUENCED + fenced sequencer (lease/generation/crash 再開) + 状態遷移 CAS / claim lease + cursor 単調 CAS + counter 復旧手順 + durable spool と spool scanner + replay generation CAS (§8) + IT-1〜IT-16 | 実 CouchDB IT |
 | **E** | v1 legacy reader + durable unresolved (§6)、repair API + opaque confirmation token + DLQ bundle upload (§9)、`VERIFYING` と E-17 verify 契約 (§10)、Atlas-enabled E2E 受入表 E-1〜E-17 | E2E |
 
 依存: A → B → C、D は A と独立に着手可、E は A〜D 完了後。
+
+---
+
+## v2.2 で閉じた 6 点
+
+| # | 指摘 | 反映 |
+|---|---|---|
+| 1 | lease 削除で generation high-watermark が消える | §8 — release は `owner=null` / `expiresAt=過去` の CAS。`generation` 維持。**削除は拒否**。IT-17 / IT-18 |
+| 2 | stale `SEQUENCING` を回収する遷移がない | §8 — `SEQUENCING(G_old) → SEQUENCING(G_new)` の reclaim 遷移を明記。crash 表の「`UNSEQUENCED` のまま」も `SEQUENCING(G_old)` に訂正。IT-19 / IT-20 |
+| 3 | `VERIFYING` が状態表にない | §8 — 5 遷移を状態表に追加。lease renew、`verifyMaxAge` (既定 10m)、reaper の条件、metric。verify 項目は **kind 別**に分離 (artifact 系に `objectId` は無いため)。IT-21 |
+| 4 | spool の起動影響・fsync・path・node 運用・bundle 署名 | §8 — Core は落とさず lineage subsystem を `NOT_READY`。strict は明示設定時のみ。path safe encode / `0700`・`0600` / NOFOLLOW / 同一 dir temp / file+parent fsync / digest 冪等 / サイズ上限 / ACK fsync。**集約 endpoint は v3.3 では実装しない**。bundle は HMAC + keyId + 期限 + nonce + 上限 + zip bomb/traversal 拒否 + 監査。IT-22 |
+| 5 | chunk 連番要件と silent attribute drop | §2 — **連番要件を撤回**。再構成は `operationId`/`chunkIndex`/`chunkCount`。属性の事前上限、optional は truncate+hash、必須値は落とさない、単独超過は `UNRESOLVED_OVERSIZE`。**silent drop 禁止**。IT-23 |
+| 6 | catalog obligation の実装形態 | §2 — **`LineageCatalogReconciliationService` を lineage 専用に新設**。task key / 4 state / 4 outcome (`SOURCE_EXISTS` / `SOURCE_PURGED` / `SOURCE_ERROR` / `SNAPSHOT_INCOMPLETE`)。既存 service とは CAS task/lease/backoff の低レベル部品のみ共有。IT-24 |
+
+併せて **`sequence` を「sequencer finalization order」と再定義**した (§8 冒頭)。
+domain commit の全順序も spool を跨ぐ因果順序も保証せず、`occurredAt` は表示・監査用で
+fencing の根拠にしない。厳密な domain commit 順序は業務 DB と同一トランザクションの
+outbox が要るため本増分の範囲外、と明記した。
+
+IT は 24 件になった。
 
 ---
 
@@ -763,8 +930,5 @@ E-17 の bounded poll と `VERIFYING` 状態 (§10)、`FILE_SHARE_SYNC_UPLOAD` �
 
 この文書の内容で A〜E に着手してよいか。着手後も各増分の完了時にレビューを受ける。
 
-未確定として残しているのは次の 1 点のみ:
-
-- **§2 catalog reconciliation obligation の実装形態** — 既存
-  `SearchIndexReconciliationService` を汎用化して再利用するか、lineage 専用に別実装するか。
-  前者は変更範囲が広く、後者は同型のコードが 2 つになる。B 増分の着手時に決めたい。
+未確定点は残っていない。v2.1 で残していた catalog reconciliation obligation の実装形態は
+lineage 専用 service に確定した (§2)。
