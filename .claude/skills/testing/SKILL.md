@@ -151,6 +151,57 @@ LDAP グループの 1 件は `directory.sync.enabled=true` と bind password �
 `tests/auth/{oidc-login,saml-login,ldap-oidc-integration}` +
 `tests/api/{keycloak-oidc-auth,session-management}` = **57 passed / 0 failed**。
 
+## 残る skip 44 件の内訳 (2026-07-30 実測)
+
+フル走行の内訳は `playwright-report/results.json` から取れます
+(`--reporter=line` で上書きすると **json が出ません** — 既定の reporter で回すこと)。
+skip 理由は各 test の `annotations[].description` に入ります。
+
+| 件数 | 場所 | 理由 |
+|---|---|---|
+| 25 | `admin/purview-atlas-e2e.spec.ts` | Atlas 未設定 (下記) |
+| 19 | 15 ファイルに散在 | `ENV: …` 前提物が見つからない (作成した文書が一覧に出ない等) |
+
+### Atlas の 25 件
+
+`checkAtlasAvailable` は ① Atlas に到達できる ② NemakiWare 側 `atlas.enabled=true`
+の両方を見ます。②が既定で空なので全 25 件が skip します。有効化の順序:
+
+```bash
+curl -u admin:admin -X PUT -H 'Content-Type: application/json' -H 'X-Requested-With: XMLHttpRequest' \
+  http://localhost:8080/core/api/v1/admin/integration-settings/atlas \
+  -d '{"atlas.enabled":"true","atlas.endpoint":"http://atlas:21000","atlas.username":"admin","atlas.password":"admin","atlas.collection":"e2e-collection"}'
+curl -u admin:admin -X PUT -H 'Content-Type: application/json' -H 'X-Requested-With: XMLHttpRequest' \
+  http://localhost:8080/core/api/v1/admin/integration-settings/lineage \
+  -d '{"lineage.mode":"journaled","lineage.targets":"atlas"}'
+curl -u admin:admin -X POST -H 'X-Requested-With: XMLHttpRequest' \
+  http://localhost:8080/core/api/v1/admin/purview/type-definitions/apply     # applied:true を確認
+curl -u admin:admin -X POST -H 'X-Requested-With: XMLHttpRequest' \
+  http://localhost:8080/core/api/v1/admin/purview/full-sync/bedroom          # checkpoint を現在に寄せる
+```
+
+ハマりどころ:
+
+- **`docker-compose-atlas.yml` の overlay は使わないでください。** overlay は
+  `purview.enabled=true` も渡します。すると catalog backend が Purview 側に切り替わり、
+  `type-definitions/apply` が `Failed to acquire Purview access token: HTTP 404` で落ちます
+  (`purview.auth.type=basic` を渡しても、接続テストは tenantId/clientId/clientSecret を
+  必須として扱う)。Atlas だけ有効にするのが正解です。
+- **full-sync を先に一度回すこと。** incremental-sync は checkpoint からの差分を
+  1 回 100 件で追うので、checkpoint が数日前だと新規文書に永遠に追いつきません
+  (これで `2.1 Document creation → sync` が落ちていました)。
+- **`sburn/apache-atlas:2.3.0` の型ロックは詰まります。** 一度
+  `ATLAS-500-00-005 Failed to get the lock` が出ると、Atlas を restart しても直りません
+  (直の typedef POST でも同じエラー = Atlas 側の状態)。このイメージは volume を持たない
+  ので、`up -d --no-deps --force-recreate atlas` で作り直せば消えます (約 100 秒)。
+- 到達状況 (2026-07-30): Group 1 の 3 件 + `2.1`/`2.2`/`2.3` = **6 passed**、
+  `2.4 Delete → Delete Resolution` で止まり、serial なので残り 18 件は未実行。
+  `delete-resolution` 自体は `COMPLETED processedCount:1` を返すので、
+  test 側の「消えたら `queryAtlasEntity` が null」という判定が Atlas の soft-delete と
+  合っていない可能性が高い (未確認)。
+- **緑を保つため、確認が済むまで `atlas.enabled` は `false` に戻してあります。**
+  true のままだと 25 件が skip ではなく fail/未実行になり、フルスイートが赤になります。
+
 ## E2E を変更したら型チェック
 
 ```bash
