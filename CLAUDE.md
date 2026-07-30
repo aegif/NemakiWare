@@ -67,6 +67,13 @@ CMIS 1.1 準拠のオープンソース ECM。
 - cmislib 等は `/atom` にリポジトリ ID 未指定でサービス文書を取りに来ます。
   `nemakiware.properties` に **`cmis.server.default.repository=bedroom`** が必要
   (未設定なら `repositories.yml` の定義順で先頭、無効値は WARN + フォールバック)。
+- **`sso.` / `oidc.` / `saml.` / `cloud.auth.` / `cloud.drive.` は `-D` も ENV も効きません。**
+  admin-managed dynamic key で、CouchDB `nemaki_conf` の保存値が system property より
+  **先に**読まれます (`PropertyManager.isAdminManagedDynamicKey`)。setup ウィザードが
+  書いた `config_sso_oidc_enabled = "false"` が残っていると、`-Dsso.oidc.enabled=true` を
+  渡しても `/core/rest/auth/config` は false のままです。保存値は JSON のプロパティ名では
+  なく `key` フィールドに入るので grep でも見落とします。手順は
+  [`.claude/skills/testing/SKILL.md`](.claude/skills/testing/SKILL.md)。
 
 ### v3.3.0 へのアップグレード
 

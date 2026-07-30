@@ -115,7 +115,7 @@ async function oidcLogin(request: any, username: string, password: string): Prom
   const response = await request.post(
     `${BASE_URL}/api/v1/cmis/auth/repositories/${REPOSITORY_ID}/oidc`,
     {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
       data: {
         access_token: kcToken,
         userinfo_endpoint: userinfoEndpoint,

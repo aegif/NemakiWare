@@ -89,10 +89,67 @@ docker compose -f docker-compose-simple.yml --profile idp up -d openldap keycloa
 
 global setup は `http://localhost:8088/realms/nemakiware/.well-known/openid-configuration`
 を見て可否を決めます。起動していれば `Keycloak: http://localhost:8088 ✅` と出て、
-これらは skip されず実走します (実測: 30 passed / 1 skipped)。
+これらは skip されず実走します。
 
 **LDAP パスワードは必須** — `${LDAP_ADMIN_PASSWORD:-}` が空だと openldap の
 healthcheck が通らず、Keycloak は `depends_on: service_healthy` で起動しません。
+
+### Keycloak を上げただけでは通らない 6 件
+
+Keycloak が居るだけでは、**ログイン画面の SSO ボタン**を見る 2 件
+(`auth/{oidc,saml}-login.spec.ts:41` とその serial 後続) と
+**LDAP グループ**を見る 1 件 (`auth/ldap-oidc-integration.spec.ts:267`) は落ちます。
+core 側の設定が要ります。
+
+```bash
+cd docker
+# core の CATALINA_OPTS に流れる (docker/.env に置くのが楽)
+export SSO_OIDC_ENABLED=true SSO_SAML_ENABLED=true OIDC_ENABLED=true
+export DIRECTORY_SYNC_ENABLED=true LDAP_BIND_PASSWORD=admin
+docker compose -f docker-compose-simple.yml --profile idp up -d --no-deps --force-recreate core
+```
+
+**ただし `-D` だけでは効きません。** `sso.` / `oidc.` / `saml.` /
+`cloud.auth.` / `cloud.drive.` は admin-managed dynamic key で、
+`PropertyManager.readValue` は **CouchDB `nemaki_conf` に保存済みの値を
+system property より先に読みます** ([`PropertyManager.java`](../../../core/src/main/java/jp/aegif/nemaki/util/PropertyManager.java) の
+`isAdminManagedDynamicKey`)。setup ウィザードを一度でも通していると
+`config_sso_oidc_enabled` = `"false"` が残っていて、`-Dsso.oidc.enabled=true` を
+渡しても `/core/rest/auth/config` は `oidcEnabled:false` を返し続けます。
+`sso.oidc.enabled` を grep しても JSON の**プロパティ名ではなく `key` フィールド**に
+入っているので見つかりません。
+
+```bash
+# 保存値を true に (id は config_<key の . を _ にしたもの>)
+REV=$(curl -s -u admin:password http://localhost:5984/nemaki_conf/config_sso_oidc_enabled | python3 -c 'import sys,json;print(json.load(sys.stdin)["_rev"])')
+curl -s -u admin:password -X PUT http://localhost:5984/nemaki_conf/config_sso_oidc_enabled \
+  -H 'Content-Type: application/json' \
+  -d "{\"_rev\":\"$REV\",\"type\":\"configuration\",\"key\":\"sso.oidc.enabled\",\"value\":\"true\"}"
+# sso.saml.enabled も同様。SAML ボタンの遷移先はブラウザから届く URL であること:
+curl -s -u admin:password -X PUT http://localhost:5984/nemaki_conf/config_saml_idp_sso_url \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"configuration","key":"saml.idp.sso.url","value":"http://localhost:8088/realms/nemakiware/protocol/saml"}'
+docker restart docker-core-1   # Configuration は configCache に載るので再起動が要る
+```
+
+`docker restart` で構いません。CLAUDE.md が禁じている `docker compose restart` は
+「WAR を差し替えたのに古いまま動く」ケースの話で、ここは WAR を変えていません。
+
+確認 (両方 true、`samlSsoUrl` が空でないこと):
+
+```bash
+curl -s "http://localhost:8080/core/rest/auth/config?repositoryId=bedroom"
+```
+
+LDAP グループの 1 件は `directory.sync.enabled=true` と bind password が要ります
+(`directory.` は admin-managed ではないので `-D` がそのまま効きます)。
+`POST /core/rest/repo/{repo}/sync/trigger` は sync 無効でも**トップレベルは
+`status:"success"` を返し**、無効であることは `syncResult.status = "FAILED"` 側にしか
+出ません。緑/赤の判断は `syncResult` を見てください。
+
+実測 (2026-07-30, 上記を全て適用後):
+`tests/auth/{oidc-login,saml-login,ldap-oidc-integration}` +
+`tests/api/{keycloak-oidc-auth,session-management}` = **57 passed / 0 failed**。
 
 ## E2E を変更したら型チェック
 
