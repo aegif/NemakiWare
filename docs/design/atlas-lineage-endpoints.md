@@ -1,6 +1,6 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.2 draft / 実装着手 sign-off 待ち**
+status: **v2.3 draft / 実装着手 sign-off 待ち**
 revision:
 - v2 — §4 §6 §8 §9 を全面改訂。v1 の採番一体化案・caller 例外案・raw URI QN 案・
   `upload://` 空 input 案・`REPLAYED` 上書き案は**撤回**。撤回理由は各節に残す。
@@ -12,6 +12,11 @@ revision:
   spool の起動影響と file 安全性契約、chunk の sequence 連番要件を**撤回**、
   oversize 時の silent attribute drop を**禁止**、catalog obligation を lineage 専用 service に確定。
   **`sequence` を「sequencer finalization order」と再定義**した (§8 冒頭)。
+- v2.3 — external endpoint の repository 境界を閉じ (§2 §7)、
+  **logical `processKey` と journal `deliveryId` を分離** (§3)、lease を bootstrap 専用作成 +
+  書込み直前再確認 (§8)、catalog obligation を `WAITING_FOR_CATALOG` として projector に接続 (§8)、
+  **`DIRECT` を legacy best-effort と明記して release gate を `JOURNALED` に限定** (§8)、
+  E-17 の kind 別必須属性と bulk 取得 (§10)、`base64url` が保護ではないことを明記 (§4)。
 scope: v3.3 内で Atlas 連携を完成させるための設計。実装は sign-off 後に A〜E の独立コミットで行う。
 関連: [`docs/design/acl-epoch-fencing.md`](acl-epoch-fencing.md) (同じ outbox/cursor の考え方を使う)
 
@@ -108,15 +113,44 @@ sink 側は文字列から型を推測できず、`AtlasLineageSink` は全部 `
 
 ```java
 public record LineageEndpoint(
-        EndpointKind kind,             // CMIS_DOCUMENT / CMIS_FOLDER / ARCHIVE / EXTERNAL_ASSET
-                                       // / IMPORT_ARTIFACT / EXPORT_ARTIFACT / CLOUD_OBJECT / COLD_STORAGE
+        EndpointKind kind,             // CMIS_DOCUMENT / CMIS_FOLDER / ARCHIVE
+                                       // / EXTERNAL_ASSET / CLOUD_OBJECT / COLD_STORAGE
+                                       // / IMPORT_ARTIFACT / EXPORT_ARTIFACT
         String catalogQualifiedName,   // canonical。§4 の規則で生成
-        String repositoryId,           // repo 内 endpoint のみ。外部は null
-        String objectId,               // 同上
-        String operationId,            // artifact 系。§3
+        String repositoryId,           // 【必須】所有 Nemaki repository。external でも null 不可
+        String objectId,               // kind により nullable (下表)
+        String operationId,            // artifact 系のみ。§3
         Map<String, Object> attributes // kind 別 allowlist。immutable
 ) {}
 ```
+
+### repositoryId は全 kind で必須 (v2.3)
+
+v2.2 は external endpoint の `repositoryId` を null としていた。**撤回する。**
+external QN も E-17 も `repositoryId` を同一性の一部にしているのに、null かつ §7 の検査対象外では、
+直接注入された event が**別 repository の external asset QN を参照しても 4 層検査で拒否できない**。
+
+- `repositoryId` は**全 kind で必須**。外部資源であっても「どの Nemaki repository が
+  その関係を主張しているか」は常に存在する。
+- §7 の cross-repository 検査は **external / cloud / cold を含む全 endpoint** を対象にする。
+- 検査は 2 段: `endpoint.repositoryId == event.repositoryId`、かつ
+  **`catalogQualifiedName` に埋め込まれた `{repositoryId}` 部分とも一致**すること。
+- **nullable なのは `objectId` だけ**で、それも kind による。
+
+| kind | `objectId` | 同一性を担うもの |
+|---|---|---|
+| `CMIS_DOCUMENT` / `CMIS_FOLDER` | 必須 | `repositoryId` + `objectId` |
+| `ARCHIVE` | 必須 | `repositoryId` + `objectId` (archive id) |
+| `EXTERNAL_ASSET` / `CLOUD_OBJECT` / `COLD_STORAGE` | **null** | `repositoryId` + `externalStableKey` |
+| `IMPORT_ARTIFACT` / `EXPORT_ARTIFACT` | **null** | `repositoryId` + `operationId` |
+
+### `FILESYSTEM_PATH` の解決 (v2.3)
+
+v2.2 は `FILESYSTEM_PATH` を §4 の stableKey 表にだけ書き、`EndpointKind` にも E-17 にも
+入れていなかった。**独立 kind にはせず `EXTERNAL_ASSET` に統合する。**
+`file://` は Nemaki の外にある資源であって cloud / cold と同種であり、§4 の canonical QN 規則
+(`external-assets/{base64url(stableKey)}`) にそのまま乗る。`stableKey` が
+`file://{正規化パス}` になるだけの違いとして扱う。
 
 ### endpoint-local snapshot (v2.1)
 
@@ -167,8 +201,28 @@ outcome  : SOURCE_EXISTS       → 既存の authoritative publisher で同期�
   historical entity は endpoint snapshot からしか作れない (§2)。
 - `SearchIndexReconciliationService` と共有するのは **CAS task / lease / backoff の低レベル部品だけ**。
   service と operation namespace は共有しない。
-- obligation が `PENDING` / `CLAIMED` の間、当該 event は `PENDING` のままにし cursor は進めない。
-  `UNRESOLVED` で terminal 化したときだけ cursor を進める。
+#### projector との接続 (v2.3)
+
+v2.2 の「event を `PENDING` のままにする」だけでは足りない。既存 projector は `PENDING` を
+毎 poll 再 claim するため、retry 消費や `DISCARDED` 化が起きる。
+**`WAITING_FOR_CATALOG` を独立した target 状態として追加する。**
+
+```
+PENDING             → WAITING_FOR_CATALOG  (publish 前検査で obligation を作った / 既存を見つけた)
+WAITING_FOR_CATALOG → PENDING              (obligation が RESOLVED。再開)
+WAITING_FOR_CATALOG → UNRESOLVED           (obligation が SNAPSHOT_INCOMPLETE。terminal)
+WAITING_FOR_CATALOG → DISCARDED            (管理操作のみ)
+```
+
+| 論点 | 契約 |
+|---|---|
+| target との関係 | obligation task key に `target` を含む。**target ごとに独立**して待つ |
+| retry 消費 | `WAITING_FOR_CATALOG` は **publish retry を消費しない**。`VERIFYING` と同じ扱い |
+| 滞留上限 | `lineage.catalog-wait.max-age` (既定 24h)。超過で `UNRESOLVED` へ。metric `lineage.waiting-catalog.oldest.age` |
+| cursor | `WAITING_FOR_CATALOG` の間は **cursor を進めない** (順序保証のため)。terminal 化したときだけ進める |
+| 再開 | obligation が `RESOLVED` になったら、scanner が対応する event を `PENDING` に戻す |
+| 複数 event が同一 task を待つ | task は 1 つ。**ACK は task 側で 1 回**。`RESOLVED` 後に task key から待機 event を逆引きして全件戻す (逆引き用の index を張る) |
+| task の GC | 待機 event が 0 件かつ `RESOLVED` から `lineage.catalog-task.retention` 経過で削除 |
 
 ### 件数・サイズ上限 (v2.1)
 
@@ -180,7 +234,7 @@ CouchDB document の双方を壊す。
 | 1 event あたりの endpoint 数 | 1,000 | **chunk する**。`operationId` を共有し `chunkIndex` / `chunkCount` を持つ複数 event に分割 |
 | 1 event の payload size | 1 MiB | 同上 |
 | chunk 間の順序 | — | **sequence の連番は要求しない** (下記) |
-| 1 endpoint が単独で上限超過 | — | durable `UNRESOLVED_OVERSIZE`。**属性を黙って落とさない** (下記) |
+| 1 endpoint が単独で上限超過 | — | durable `UNRESOLVED(reason=OVERSIZE)`。**属性を黙って落とさない** (下記) |
 
 **chunk の sequence 連番要件は撤回する (v2.2)。** repository 内では他の event と並行して
 finalize されるため、batch reservation なしに連番にはならない。§8 の定義どおり
@@ -195,7 +249,7 @@ finalize されるため、batch reservation なしに連番にはならない�
 | 事前上限 | endpoint 属性ごとに最大長を**事前に固定**する (allowlist と同じ表に持つ) |
 | optional 表示値 | 上限超過は truncate + 元値の SHA-256 を併記する (`nameTruncated=true`) |
 | 必須値 | `externalStableKey` などの protected stable key と kind 別必須属性は**落とさない** |
-| 単独超過 | 1 endpoint だけで上限を超えるなら、その event を durable `UNRESOLVED_OVERSIZE` (terminal) にし、reason と endpoint hash を残す。cursor は進める |
+| 単独超過 | 1 endpoint だけで上限を超えるなら、その event を `UNRESOLVED(reason=OVERSIZE)` (terminal) にし、endpoint hash を残す。cursor は進める |
 | 禁止 | silent attribute dropping は**いかなる場合も行わない** |
 
 上限値は `lineage.endpoint.max-per-event` / `lineage.event.max-payload-bytes` で設定可能にする。
@@ -280,15 +334,45 @@ nemaki_export_artifact   superTypes: [DataSet]
   - client 供給の `Idempotency-Key` は**将来の任意機能**とし、本増分では実装しない。
 - artifact entity は lineage publish と同一 bulk で作る (CMIS オブジェクトではないため catalog sync 対象外)。
 
+### processKey と deliveryId の分離 (v2.3)
+
+v2.2 は `eventKey` 一つで論理的な業務同一性と journal の配送同一性を兼ねていた。**成立しない。**
+
+- `eventKey` には `replayGeneration` も chunk 座標も入っていないのに、補償 event は別 `_id` で作る設計だった。
+- 現実装は
+  [eventKey が既存なら append を捨てる](../../core/src/main/java/jp/aegif/nemaki/rest/purview/journal/CouchLineageJournalStore.java#L257)。
+  補償や chunk が同一 `eventKey` を持てば**握り潰される**。
+- spool の file 名も `eventKey` なので、補償と chunk が**同じファイルに衝突する**。
+
+二軸に分ける。
+
+```
+processKey  = "v2:" + SHA-256(repositoryId, processType, canonical(inputs), canonical(outputs),
+                              operationId, schemaVersion, chunkIndex, chunkCount)
+  → Atlas Process の qualifiedName に使う論理的業務 ID
+  → chunk を別 Process として部分 publish するため chunkIndex/chunkCount を含む
+
+deliveryId  = SHA-256(processKey, deliveryKind, target, replayGeneration, chunkIndex)
+  deliveryKind = ORIGINAL | REPLAY | REPAIR
+  → journal document の _id、spool の file 名、冪等判定に使う
+  → original / replay / repair / chunk がそれぞれ別 ID になる
+```
+
+- 冪等判定 (`append` の重複検出) は **`deliveryId`** で行う。`eventKey` では行わない。
+- `idempotencyKeyVersion` は `processKey` の版として持つ (§3 v2.1 の記述をここに集約)。
+- **create-if-absent の 409 は「成功」ではない。** 既存文書を読み直し、
+  **immutable payload の digest が完全一致した場合のみ**成功として扱う。
+  不一致は ID 衝突という異常であり、`FAILED` にして 500 を返す。
+- 補償 event は元の `processKey` を保つ (同一業務操作だから)。区別は `deliveryId` が担う。
+
 ### eventKey を SHA-256 にする (v2)
 
 現行は 32bit Java hash 2つの連結で、衝突すると別操作が同一イベント扱いになる。
 
 ```
-idempotencyKeyVersion = 2
-eventKey       = "v2:" + SHA-256(repositoryId + "\u0000" + processType + "\u0000" +
-                                 canonical(inputs) + "\u0000" + canonical(outputs) + "\u0000" +
-                                 operationId + "\u0000" + schemaVersion)
+idempotencyKeyVersion = 2   // processKey の版
+processKey     = 上記 (v2.3)
+deliveryId     = 上記 (v2.3)  // 冪等判定はこちら
 legacyEventKey = (v1 からの写像・repair 時のみ保持。v1 の 32bit hash 形式)
 ```
 
@@ -338,6 +422,20 @@ qualifiedName = nemaki://{repositoryId}/external-assets/{base64url(stableKey)}
 | `CLOUD_OBJECT` | `cloud://{provider}/{fileId}` |
 | `COLD_STORAGE` | `cold://{storageRef}` |
 | `FILESYSTEM_PATH` | `file://{正規化パス}` |
+
+#### `base64url` は保護ではない (v2.3)
+
+`base64url(stableKey)` は**可逆**である。既存 QN 互換のため方式は維持するが、
+これは「raw URI や絶対パスを事実上 Atlas の QN に格納している」ことを意味する。
+HMAC 付き bundle (§9) も**完全性の保証であって暗号化ではない**。明示的に契約を置く。
+
+| 項目 | 契約 |
+|---|---|
+| stableKey に入れないもの | **認証情報、署名付き URL、query string、fragment**。producer 側で除去してから canonical 化する |
+| Atlas 閲覧権限 | QN からホスト構成・外部識別子が読めるため、**Atlas の閲覧権限は catalog 管理者に限定**する運用前提を明記する |
+| spool / bundle | **encryption at rest を要件**とする (volume 暗号化 or アプリ層暗号化)。完全 payload を含むため |
+| 「protected」の意味 | **ログに出さない**ことのみを指す。**秘匿化ではない** |
+| 秘匿性が必要な場合 | HMAC / SHA-256 ベースの QN へ移行する設計が別途必要。**本増分では扱わない** (既存 QN 互換を優先) |
 
 - raw URI は QN にはせず、`externalStableKey` 属性として entity に保持する。
 - **`externalStableKey` は protected 扱い**とし、ログ・エラーメッセージ・dead letter reason に
@@ -409,7 +507,9 @@ v1 は「`UNKNOWN` を含む v1 event は `SKIPPED` にして cursor を進め�
 
 - `LineageEvent.repositoryId` と全 endpoint の `repositoryId` が一致することを
   `LineageEventBuilder.build()` で検証し、違反は `IllegalArgumentException`。
-- 外部 endpoint (external / cloud / cold / file) は repositoryId を持たないので対象外。
+- **外部 endpoint も対象**。v2.2 の「repositoryId を持たないので対象外」は §2 (v2.3) で撤回した。
+  `endpoint.repositoryId == event.repositoryId` と、canonical QN 内の `{repositoryId}` の
+  両方を検査する。
 - 検証は builder だけでは足りない。**store・legacy reader・sink の3箇所でも再検証**する。
   CouchDB に直接注入された event や v1 からの写像が builder を通らないため、
   **sink の直前 (publish 呼び出しの手前) が最後の関門**になる。違反は publish せず
@@ -422,6 +522,26 @@ v1 は「`UNKNOWN` を含む v1 event は `SKIPPED` にして cursor を進め�
 ---
 
 ## 8. sequence / status / cursor / replay の多重AP状態遷移 (v2.2)
+
+### mode 別の保証境界 (v2.3)
+
+[DirectLineageEmitter](../../core/src/main/java/jp/aegif/nemaki/rest/purview/journal/DirectLineageEmitter.java)
+は sink へ直接非同期 dispatch するだけで、journal / cursor / `VERIFYING` / catalog obligation の
+**いずれも通らない**。v2.2 は `direct` にも spool 要件を書いていたが、整合しない。
+
+**`JOURNALED` を唯一の reliable / supported mode とする。**
+
+| mode | 保証 |
+|---|---|
+| `JOURNALED` | 本文書の全保証が適用される。**Atlas-enabled release gate はこの mode のみを対象とする** |
+| `DIRECT` | **legacy best-effort**。at-most-once、順序保証なし、verify なし、catalog obligation なし、spool なし。障害時は失われる。新規導入では選ばない |
+| `DISABLED` | event を作らない |
+
+- `DIRECT` は既存利用者のために残すが、**本増分の新機能 (typed endpoint、artifact、verify、
+  obligation、replay、repair) は `DIRECT` には実装しない**。
+- `DIRECT` で起動したときは起動ログと health に
+  `lineage.mode=DIRECT (best-effort, unsupported for governance)` を明示する。
+- §10 の E-1〜E-17 は全て `JOURNALED` 前提。`DIRECT` は E-18 (下記) のみ。
 
 ### `sequence` の定義 (v2.2)
 
@@ -484,6 +604,23 @@ expiresAt  : ISO8601
 次の acquire が古い generation を再利用できてしまう。そうなると old leader の
 `sequencerGeneration` と一致してしまい、fencing が成立しない。
 削除操作は API・管理経路のいずれからも**拒否**する (存在チェックを伴う CAS のみ許す)。
+
+**lease は bootstrap patch でのみ新規作成する (v2.3)。**
+
+| 状況 | 挙動 |
+|---|---|
+| 初回導入 | bootstrap patch が `generation=0` で作成する |
+| 運用中に document が消えた | **自動再作成しない。fail-closed** で sequencer を停止し、health を `LEASE_MISSING` にする |
+| 復旧 | 全 event 中の `sequencerGeneration` の最大値を調査し、**それより大きい値**で管理復旧する。§8 の counter 復旧と同じ手順で行う |
+
+**書込み直前の再確認 (v2.3)。** lease の期限切れは時間経過で起きるため、acquire 時の確認だけでは
+「期限切れ後・new leader の reclaim 前」に old leader が復帰して finalize できてしまう。
+`claim` / `reclaim` / counter allocate / `finalize` の**直前ごとに**、
+`owner` 一致・`generation` 一致・**未期限切れ**を再確認する。
+
+**一方向 latch (v2.3)。** renew 失敗、または再確認で期限切れを検出した worker は
+その場で latch を落とし、**以後この世代では一切書かない**。latch は解除できない
+(新しい世代を acquire した別インスタンスとして再開する)。
 
 event の claim / 確定は必ず `(generation, owner)` を伴う CAS:
 
@@ -645,6 +782,9 @@ repair の入力源としては spool を正とする。
 `updatePublishStatus(eventId, target, expected, next, claimToken)`。許可する遷移だけを持つ:
 
 ```
+PENDING     → WAITING_FOR_CATALOG (§2 obligation あり。retry 非消費)
+WAITING_FOR_CATALOG → PENDING     (obligation RESOLVED)
+WAITING_FOR_CATALOG → UNRESOLVED  (obligation SNAPSHOT_INCOMPLETE / 待機上限超過)
 PENDING     → PROJECTING  (claim token 発行 + lease 期限)
 PROJECTING  → VERIFYING   (Atlas POST 成功。同一 claim token)
 VERIFYING   → PUBLISHED   (verify 成功。同一 claim token)
@@ -656,10 +796,22 @@ PENDING     → DISCARDED   (管理操作のみ)
 FAILED      → DISCARDED   (管理操作のみ)
 PROJECTING  → FAILED      (reaper: lease 期限切れ かつ 同一 claim token のみ)
 VERIFYING   → FAILED      (reaper: lease 期限切れ かつ 同一 claim token のみ)
-(v1 legacy)  → UNRESOLVED  (§6)
+VERIFYING   → UNPROJECTABLE (semantic mismatch。**再試行しない**。下記)
+(v1 legacy)  → UNRESOLVED  (reason=LEGACY_ENDPOINT。§6)
+(oversize)   → UNRESOLVED  (reason=OVERSIZE。§2)
 (cross-repo) → REJECTED    (§7)
-PUBLISHED / DISCARDED / UNRESOLVED / REJECTED = terminal。**いかなる遷移も出ない**
+PUBLISHED / DISCARDED / UNRESOLVED / REJECTED / UNPROJECTABLE = terminal。
+**いかなる遷移も出ない**
 ```
+
+**`UNRESOLVED` は reason 付きの単一状態に統一する (v2.3)。** v2.2 は `UNRESOLVED_OVERSIZE` を
+本文で使いながら terminal 一覧に入れていなかった。独立状態は作らず
+`UNRESOLVED(reason = LEGACY_ENDPOINT | OVERSIZE | SNAPSHOT_INCOMPLETE | CATALOG_WAIT_EXPIRED)` とする。
+
+**決定的な semantic mismatch は再試行しない (v2.3)。** verify で「型が違う」「repositoryId が違う」
+「shell である」を検出した場合、同じ payload を何度送っても結果は変わらない。
+通常の `FAILED` (再試行対象) ではなく **`UNPROJECTABLE` (terminal)** にし、
+reason と検出内容を durable に残す。read lag による不一致だけが `VERIFYING` 内で再試行される。
 
 ### `VERIFYING` の滞留防止 (v2.2)
 
@@ -801,8 +953,16 @@ POST /api/v1/admin/lineage-journal/repair
 | IT-20 | reclaim 後に old generation が finalize を試みる | CAS 失敗。二重確定しない |
 | IT-21 | `VERIFYING` を `verifyMaxAge` 超過まで放置 | `FAILED` へ落ちる。publish retry 回数は消費していない |
 | IT-22 | spool 未設定で `journaled` 起動 | Core は起動する。lineage subsystem が `NOT_READY` |
-| IT-23 | 1 endpoint が単独で size 上限超過 | `UNRESOLVED_OVERSIZE` (terminal)。属性は落ちていない |
+| IT-23 | 1 endpoint が単独で size 上限超過 | `UNRESOLVED(reason=OVERSIZE)` (terminal)。属性は落ちていない |
 | IT-24 | catalog obligation の 4 outcome | 各 outcome へ決定的に遷移する。`SOURCE_PURGED` は snapshot から historical entity を作る |
+| IT-25 | lease document を消して sequencer を回す | **自動再作成しない**。fail-closed で停止し health が `LEASE_MISSING` |
+| IT-26 | old leader が期限切れ後・new leader の reclaim **前**に復帰 | 書込み直前の再確認で期限切れを検出し、latch が落ちて一切書かない |
+| IT-27 | 同一 `processKey` を original / replay / repair で発行 | `deliveryId` が 3 つとも異なり、3 件とも journal に存在する |
+| IT-28 | 同一 endpoint 集合を持つ chunk を複数作成 | `deliveryId` が異なり衝突しない。spool file 名も衝突しない |
+| IT-29 | `WAITING_FOR_CATALOG` を obligation 解決まで放置 | publish retry 回数が**増えない**。`RESOLVED` 後に `PENDING` へ戻り publish される |
+| IT-30 | 別 repository の external QN を持つ event を CouchDB へ直接注入 | builder / store / legacy reader / **sink 直前**の 4 層すべてで拒否される |
+| IT-31 | 1,000 endpoint の verify | 逐次 GET にならない (bulk か上限付き並列)。全体 deadline 内に終わる。集合比較で過不足を検出 |
+| IT-32 | `DIRECT` mode で emit | journal / cursor / verify / obligation を通らないことを確認し、保証境界の文書と一致する |
 
 ### Atlas-enabled E2E 受入表 (v3.3 release gate)
 
@@ -836,6 +996,7 @@ E2E のためだけに実装しない。
 | E-15 | folder delete → restore | proxy が `active=false` → `true`。過去 Process の参照が壊れない |
 | E-16 | bulk partial response | 片方欠落を検出し reconcile される |
 | E-17 | production sink の成功条件 | 下記 verify 契約を満たした場合のみ success |
+| E-18 | `DIRECT` mode | best-effort であることの確認のみ。E-1〜E-17 の対象外 |
 
 ### E-17 verify 契約 (v2.1)
 
@@ -843,6 +1004,13 @@ E2E のためだけに実装しない。
 
 - **bounded poll**: `lineage.verify.timeout` (既定 30s) / `lineage.verify.interval` (既定 2s)。
   総 deadline を超えたら verify 失敗。
+- **endpoint を 1 件ずつ GET しない (v2.3)。** 最大 1,000 endpoint を逐次 GET すると、
+  差し戻した fail-closed preflight と同じ長時間停止を再現する。
+  - Atlas の **bulk 取得** (`/entity/bulk?guid=...` または `search/basic` の一括問い合わせ) を使う。
+  - bulk が使えない場合のみ、`lineage.verify.parallelism` (既定 8) の**上限付き並列**にする。
+  - 個別の GET timeout とは別に**全体 deadline** を持つ。
+  - 比較は 1 件ずつではなく **endpoint 集合の完全比較** (期待集合と実際の集合が等しいこと)。
+    過不足のどちらも検出する。
 - **verify 待ちは publish retry を消費しない。** target 状態に `VERIFYING` を追加し、
   `PROJECTING → VERIFYING → PUBLISHED | FAILED` とする。`VERIFYING` からの再試行は
   **同じ Process QN への冪等 upsert** であり、新しい Process を作らない。
@@ -865,7 +1033,9 @@ kind 別 (external / import / export artifact は `objectId` を持たないた�
 | `CMIS_DOCUMENT` | `nemaki_document` | `repositoryId` + `objectId` | `name` |
 | `CMIS_FOLDER` | `nemaki_folder_dataset` | `repositoryId` + `objectId` | `name` |
 | `ARCHIVE` | `nemaki_archive` | `repositoryId` + `originalId` | `archivedAt` |
-| `EXTERNAL_ASSET` / `CLOUD_OBJECT` / `COLD_STORAGE` | `nemaki_external_asset` | `repositoryId` + `externalStableKey` の hash | `sourceSystem` |
+| `EXTERNAL_ASSET` | `nemaki_external_asset` | `repositoryId` + `externalStableKey` の hash | `sourceSystem` |
+| `CLOUD_OBJECT` | `nemaki_external_asset` | 同上 | **`provider`** |
+| `COLD_STORAGE` | `nemaki_external_asset` | 同上 | **`storageClass`** |
 | `IMPORT_ARTIFACT` | `nemaki_import_artifact` | `repositoryId` + `operationId` | `importMode` |
 | `EXPORT_ARTIFACT` | `nemaki_export_artifact` | `repositoryId` + `operationId` | `artifactKind` |
 
@@ -877,13 +1047,29 @@ E-12 の「故意に失敗させる」テストは、cleanup が file-scope で�
 
 | 増分 | 内容 | 独立に検証できるか |
 |---|---|---|
-| **A** | typed `LineageEndpoint` + endpoint-local snapshot allowlist + kind 明示 builder + producer 全書き換え + サーバー発行 `operationId` + eventKey SHA-256 と `idempotencyKeyVersion` + endpoint 件数/payload 上限と chunking + `FILE_SHARE_SYNC_UPLOAD` 生成拒否 + cross-repo 検証 4層 (§2 §3 §7) | 単体。Atlas 不要 |
+| **A** | typed `LineageEndpoint` (全 kind で `repositoryId` 必須) + endpoint-local snapshot allowlist + kind 明示 builder + producer 全書き換え + サーバー発行 `operationId` + **`processKey` / `deliveryId` 分離** + endpoint 件数/payload 上限と chunking + `FILE_SHARE_SYNC_UPLOAD` 生成拒否 + cross-repo 検証 4層 (external 含む) (§2 §3 §7) | 単体。Atlas 不要 |
 | **B** | schema additive 拡張 (`nemaki_folder_dataset` / `nemaki_import_artifact` / `nemaki_export_artifact`) + catalog sync の同一 bulk 作成と **partial response の reconcile** + **既存 folder の authoritative backfill** + lifecycle (rename/move/delete/restore/`sourceState`) + **`LineageCatalogReconciliationService`** (§2 §3) | schema apply + backfill + orphan reconciliation + obligation IT |
 | **C** | `CatalogPayloadFactory` へ payload 生成を集約、canonical QN を1箇所化 (既存 `buildExternalAssetQualifiedName` を移設)、`AtlasLineageSink` から payload を剥がす、**POST 後 GUID 完全一致を production の成功条件に** (§4 §5) | 単体 (payload golden) + sink IT |
-| **D** | event-first UNSEQUENCED + fenced sequencer (lease/generation/crash 再開) + 状態遷移 CAS / claim lease + cursor 単調 CAS + counter 復旧手順 + durable spool と spool scanner + replay generation CAS (§8) + IT-1〜IT-16 | 実 CouchDB IT |
+| **D** | event-first UNSEQUENCED + fenced sequencer (bootstrap 専用 lease / 書込み直前再確認 / 一方向 latch / crash 再開) + 状態遷移 CAS (`VERIFYING` / `WAITING_FOR_CATALOG` 含む) + cursor 単調 CAS + counter・lease 復旧手順 + durable spool と spool scanner + replay generation CAS (§8) + IT-1〜IT-32 | 実 CouchDB IT |
 | **E** | v1 legacy reader + durable unresolved (§6)、repair API + opaque confirmation token + DLQ bundle upload (§9)、`VERIFYING` と E-17 verify 契約 (§10)、Atlas-enabled E2E 受入表 E-1〜E-17 | E2E |
 
 依存: A → B → C、D は A と独立に着手可、E は A〜D 完了後。
+
+---
+
+## v2.3 で閉じた 7 点
+
+| # | 指摘 | 反映 |
+|---|---|---|
+| 1 | external endpoint の repository 境界の矛盾 | §2 — `repositoryId` を**全 kind で必須**に。§7 の検査対象に external / cloud / cold を含め、`endpoint.repositoryId` と canonical QN 内の `{repositoryId}` の**両方**を検査。nullable は `objectId` のみ。`FILESYSTEM_PATH` は独立 kind にせず `EXTERNAL_ASSET` に統合。IT-30 |
+| 2 | logical identity と delivery identity の混同 | §3 — **`processKey` (Atlas Process QN 用、chunk 座標含む) と `deliveryId` (journal `_id` / spool file 名、`deliveryKind`+`target`+`replayGeneration`+`chunkIndex` 含む) を分離**。冪等判定は `deliveryId`。409 は payload digest 完全一致のときのみ成功扱い。IT-27 / IT-28 |
+| 3 | lease fencing が期限切れ直後の old leader を止めない | §8 — lease は **bootstrap patch でのみ作成**、運用中の欠落は fail-closed (`LEASE_MISSING`)、復旧は既存 event 中の最大 generation より大きい値で管理復旧。**claim / reclaim / counter allocate / finalize の直前ごとに** owner・generation・未期限切れを再確認。renew 失敗と期限切れ検出は**一方向 latch**。IT-25 / IT-26 |
+| 4 | catalog obligation と projector が未接続 | §2 — **`WAITING_FOR_CATALOG`** を独立 target 状態として追加し §8 の状態表にも記載。target 別 task、retry 非消費、`RESOLVED` 後の再開、`SNAPSHOT_INCOMPLETE` の terminal 化、複数 event が同一 task を待つ場合の ACK 契約 (task 側 1 回 + 逆引き index) を明記。IT-29 |
+| 5 | `DIRECT` mode に新保証が適用されない | §8 — **`JOURNALED` を唯一の reliable / supported mode** と宣言。`DIRECT` は legacy best-effort と明記し、本増分の新機能を実装しない。**Atlas-enabled release gate は `JOURNALED` のみ**を対象とし、`DIRECT` は E-18 のみ。IT-32 |
+| 6 | E-17 と terminal 状態の不整合 | §10 — `CLOUD_OBJECT` は `provider`、`COLD_STORAGE` は `storageClass` に**必須属性を分離**。**bulk 取得か上限付き並列 + 全体 deadline + endpoint 集合の完全比較**を必須契約に。`UNRESOLVED_OVERSIZE` は `UNRESOLVED(reason=OVERSIZE)` に統一。決定的 semantic mismatch は再試行せず **`UNPROJECTABLE` (terminal)**。IT-31 |
+| 7 | `base64url` は保護ではない | §4 — 可逆であることを明記。stableKey に認証情報・署名 URL・query・fragment を入れない、Atlas 閲覧権限の限定、spool / bundle の encryption at rest、「protected」= ログ非出力であって秘匿化ではない、秘匿性が要るなら HMAC/SHA-256 QN への移行が別途必要 (本増分では扱わない) |
+
+IT は 32 件、E2E 受入は 18 件になった。
 
 ---
 
