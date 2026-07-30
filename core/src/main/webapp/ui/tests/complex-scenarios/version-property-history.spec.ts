@@ -100,7 +100,7 @@ test.describe('Version and Property History Consistency', () => {
     // Find the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 
@@ -175,7 +175,7 @@ test.describe('Version and Property History Consistency', () => {
     // Find the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 
@@ -236,7 +236,7 @@ test.describe('Version and Property History Consistency', () => {
     // Find and click on the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 
@@ -278,7 +278,7 @@ test.describe('Version and Property History Consistency', () => {
     // Find and click on the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 
@@ -329,7 +329,7 @@ test.describe('Version and Property History Consistency', () => {
     // Find the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 

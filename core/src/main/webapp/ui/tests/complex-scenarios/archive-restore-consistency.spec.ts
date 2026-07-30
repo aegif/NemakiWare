@@ -183,7 +183,7 @@ test.describe('Archive and Restore Consistency', () => {
     // Find the document row
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 

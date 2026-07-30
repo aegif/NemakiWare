@@ -272,7 +272,7 @@ test.describe('Bulk Operations', () => {
     // Create 3 test documents in a dedicated folder
     const { names: createdDocs, folderId: testFolderId } = await createTestDocuments(page, 3, uuid);
     if (createdDocs.length === 0) {
-      test.skip('ENV: Failed to create test documents via API');
+      test.skip(true, 'ENV: Failed to create test documents via API');
       return;
     }
 
@@ -345,7 +345,7 @@ test.describe('Bulk Operations', () => {
     // Create 5 test documents in a dedicated folder
     const { names: createdDocs } = await createTestDocuments(page, 5, uuid);
     if (createdDocs.length === 0) {
-      test.skip('ENV: Failed to create test documents via API');
+      test.skip(true, 'ENV: Failed to create test documents via API');
       return;
     }
 
@@ -551,7 +551,7 @@ test.describe('Bulk Operations', () => {
     // Create 3 test documents in a dedicated folder
     const { names: createdDocs } = await createTestDocuments(page, 3, uuid);
     if (createdDocs.length === 0) {
-      test.skip('ENV: Failed to create test documents via API');
+      test.skip(true, 'ENV: Failed to create test documents via API');
       return;
     }
 

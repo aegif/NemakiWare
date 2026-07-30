@@ -248,7 +248,7 @@ test.describe('Document Properties Edit and Persistence', () => {
     // Find the test document row
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('ENV: Test document not found in table');
+      test.skip(true, 'ENV: Test document not found in table');
       return;
     }
 
@@ -265,7 +265,7 @@ test.describe('Document Properties Edit and Persistence', () => {
     const editButtonVisible = await editButton.isVisible({ timeout: 5000 }).catch(() => false);
 
     if (!editButtonVisible) {
-      test.skip('ENV: Edit button not visible - PropertyEditor may not be loaded');
+      test.skip(true, 'ENV: Edit button not visible - PropertyEditor may not be loaded');
       return;
     }
 
@@ -279,7 +279,7 @@ test.describe('Document Properties Edit and Persistence', () => {
     const fieldCount = await formFields.count();
 
     if (fieldCount === 0) {
-      test.skip('ENV: No editable form fields found - document may have no updatable properties');
+      test.skip(true, 'ENV: No editable form fields found - document may have no updatable properties');
       return;
     }
 
@@ -361,7 +361,7 @@ test.describe('Document Properties Edit and Persistence', () => {
         }
       }
     } else {
-      test.skip('ENV: Test document not found after reload');
+      test.skip(true, 'ENV: Test document not found after reload');
     }
   });
 

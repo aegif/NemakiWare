@@ -204,7 +204,7 @@ test.describe('Type Specification Features', () => {
       }
 
       if (!found) {
-        test.skip('ENV: No document with file extension found in repository');
+        test.skip(true, 'ENV: No document with file extension found in repository');
         return;
       }
 
@@ -241,7 +241,7 @@ test.describe('Type Specification Features', () => {
       });
 
       if (!createResp.ok()) {
-        test.skip('ENV: Could not create test document via API');
+        test.skip(true, 'ENV: Could not create test document via API');
         return;
       }
 

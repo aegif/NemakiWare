@@ -453,7 +453,7 @@ test.describe('User Scenario Tests', () => {
       // Add button stays disabled.
       const selector = page.locator('.ant-tabs-content-active .ant-select').first();
       if (await selector.count() === 0 || !(await selector.isVisible())) {
-        test.skip('ENV: All secondary types already assigned — no add operation possible');
+        test.skip(true, 'ENV: All secondary types already assigned — no add operation possible');
         return;
       }
 
@@ -462,7 +462,7 @@ test.describe('User Scenario Tests', () => {
 
       const options = page.locator('.ant-select-dropdown:visible .ant-select-item-option');
       if (await options.count() === 0) {
-        test.skip('ENV: No unassigned secondary types available in dropdown');
+        test.skip(true, 'ENV: No unassigned secondary types available in dropdown');
         return;
       }
 

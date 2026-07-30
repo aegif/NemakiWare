@@ -803,7 +803,7 @@ test.describe('Advanced Search', () => {
       console.log('✅ Search result details and navigation verification complete');
     } else {
       // If PDF still not found after retry, skip test (PDF may not be uploaded yet)
-      test.skip('ENV: CMIS specification PDF not found - may not be uploaded or indexed yet');
+      test.skip(true, 'ENV: CMIS specification PDF not found - may not be uploaded or indexed yet');
     }
   });
 
@@ -914,7 +914,7 @@ test.describe('Advanced Search', () => {
       console.log('✅ Filename search verification complete');
     } else {
       // If PDF still not found, skip test (PDF may not be uploaded yet)
-      test.skip('ENV: CMIS specification PDF not found by filename search - may not be uploaded or indexed yet');
+      test.skip(true, 'ENV: CMIS specification PDF not found by filename search - may not be uploaded or indexed yet');
     }
   });
 

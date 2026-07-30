@@ -513,7 +513,7 @@ test.describe('Office Document Preview', () => {
     const result = await executeCmisQuery(request, query);
 
     if (result.numItems === 0) {
-      test.skip('ENV: No Office/PDF documents found for rendition test');
+      test.skip(true, 'ENV: No Office/PDF documents found for rendition test');
       return;
     }
 

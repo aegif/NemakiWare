@@ -232,22 +232,51 @@ async function deleteCmisObject(request: APIRequestContext, objectId: string): P
   } catch { /* best-effort */ }
 }
 
+/**
+ * This server requires a change token on updateProperties — without one it answers
+ *
+ *   409 {"exception":"updateConflict","message":"Change token is required to update"}
+ *
+ * and the object is left untouched. The old version of this helper sent no token and
+ * ignored the response, so the update silently did nothing and the caller then waited
+ * out its full 60-second Atlas poll for a value that was never written. Read the token
+ * first, and fail loudly on a rejected update rather than as a timeout somewhere else.
+ */
 async function updateCmisProperties(
   request: APIRequestContext,
   objectId: string,
   props: Record<string, string>
 ): Promise<void> {
+  // `/browser/{repo}` serves repository-level selectors only (repositoryInfo, typeChildren…);
+  // an object GET there answers 405. Object selectors live under `/browser/{repo}/root`.
+  const objRes = await request.get(
+    `${BASE_URL}/core/browser/${REPOSITORY_ID}/root?cmisselector=object&objectId=${encodeURIComponent(objectId)}`,
+    { headers: { Authorization: AUTH_HEADER } }
+  );
+  if (!objRes.ok()) {
+    throw new Error(`updateCmisProperties: cannot read ${objectId} (HTTP ${objRes.status()})`);
+  }
+  const changeToken = (await objRes.json())?.properties?.['cmis:changeToken']?.value;
+
   const form: Record<string, string> = { cmisaction: 'updateProperties', objectId };
+  if (changeToken) {
+    form.changeToken = String(changeToken);
+  }
   let idx = 0;
   for (const [key, value] of Object.entries(props)) {
     form[`propertyId[${idx}]`] = key;
     form[`propertyValue[${idx}]`] = value;
     idx++;
   }
-  await request.post(
+  const res = await request.post(
     `${BASE_URL}/core/browser/${REPOSITORY_ID}`,
     { headers: { Authorization: AUTH_HEADER }, form }
   );
+  if (!res.ok()) {
+    throw new Error(
+      `updateCmisProperties: HTTP ${res.status()} for ${objectId}: ${(await res.text()).substring(0, 200)}`
+    );
+  }
 }
 
 async function injectCouchDoc(request: APIRequestContext, db: string, doc: any): Promise<string> {
@@ -393,8 +422,14 @@ test.describe('Group 1: Prerequisites & Schema Setup', () => {
     const available = await checkAtlasAvailable(request);
     skipIfNoAtlas(available);
 
+    // Atlas, not Purview. Purview and Atlas are two separate catalog backends with
+    // separate settings and separate probes: `/purview/test-connection` reads
+    // purview.enabled and needs an Azure tenant/client/secret, so against a local
+    // Atlas it answers "Purview integration is currently disabled" no matter how
+    // healthy Atlas is. Everything else in this file gates on atlas.enabled
+    // (checkAtlasAvailable), so this is the probe that matches the gate.
     const res = await request.post(
-      `${BASE_URL}/core/api/v1/admin/integration-settings/purview/test-connection`,
+      `${BASE_URL}/core/api/v1/admin/integration-settings/atlas/test-connection`,
       { headers: { Authorization: AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' } }
     );
     expect(res.ok()).toBe(true);

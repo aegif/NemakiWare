@@ -117,7 +117,7 @@ test.describe('Property Display Tests', () => {
 
   test.beforeEach(async ({ page }) => {
     if (setupFailed || !testDocumentId || !testDocumentName) {
-      test.skip('ENV: Test document setup failed');
+      test.skip(true, 'ENV: Test document setup failed');
     }
 
     authHelper = new AuthHelper(page);

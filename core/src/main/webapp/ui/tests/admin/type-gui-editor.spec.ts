@@ -218,7 +218,7 @@ test.describe('Type GUI Editor', () => {
     } else {
       // UPDATED (2025-12-26): GUI editor IS implemented in TypeGUIEditor.tsx
       console.log('Create button not found - skipping validation test');
-      test.skip('ENV: Create button not visible');
+      test.skip(true, 'ENV: Create button not visible');
     }
   });
 

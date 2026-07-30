@@ -1,0 +1,25 @@
+{
+  // The app's tsconfig has `include: ["src"]`, so `tsc -p tsconfig.json` says nothing at
+  // all about the E2E tests — a "tsc clean" on a test change checked the app and reported
+  // success regardless. That gap let a sweep insert 522 syntax errors across 71 files
+  // without a word of complaint; the only thing validating this tree was running it.
+  //
+  // Not `strict`: the specs were written without it and turning it on here would report
+  // hundreds of nullability findings that have nothing to do with the mistakes this is
+  // meant to catch (wrong argument shapes, methods that do not exist, broken syntax).
+  // Raising it is worthwhile later, once those are triaged.
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": false,
+    "types": ["node"]
+  },
+  "include": ["tests"]
+}

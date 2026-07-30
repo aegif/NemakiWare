@@ -178,7 +178,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
       await typeManagementItem.click(isMobile ? { force: true } : {});
       await waitForUiStable(page);
     } else {
-      test.skip('ENV: Type Management menu not available');
+      test.skip(true, 'ENV: Type Management menu not available');
       return;
     }
 
@@ -188,7 +188,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     // Click "新規タイプ" button
     const newTypeButton = page.locator('button').filter({ hasText: /新規タイプ|新規.*作成|Create.*Type/ });
     if (await newTypeButton.count() === 0) {
-      test.skip('ENV: Create type button not found - Type Management UI may not be fully implemented');
+      test.skip(true, 'ENV: Create type button not found - Type Management UI may not be fully implemented');
       return;
     }
 
@@ -385,7 +385,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     // Click upload button
     const uploadButton = page.locator('button').filter({ hasText: /アップロード|Upload/ }).first();
     if (await uploadButton.count() === 0) {
-      test.skip('ENV: Upload button not found');
+      test.skip(true, 'ENV: Upload button not found');
       return;
     }
 
@@ -544,7 +544,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     // Find and click on the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
-      test.skip('ENV: Test document not found - previous test may have failed');
+      test.skip(true, 'ENV: Test document not found - previous test may have failed');
       return;
     }
 
@@ -612,7 +612,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     // Find the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 
@@ -737,7 +737,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     // Find the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 

@@ -80,7 +80,9 @@ async function uploadFile(folderId: string, fileName: string, content: Buffer | 
   formData.append('propertyValue[1]', fileName);
   formData.append('succinct', 'true');
 
-  const blob = new Blob([content], { type: mimeType });
+  // Buffer is not a BlobPart; hand Blob the bytes it accepts.
+  const blob = new Blob([typeof content === 'string' ? content : new Uint8Array(content)],
+    { type: mimeType });
   formData.append('content', blob, fileName);
 
   const response = await cmisRequest(`${BASE_URL}?objectId=${folderId}`, {

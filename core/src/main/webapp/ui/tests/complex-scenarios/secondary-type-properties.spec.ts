@@ -74,7 +74,7 @@ test.describe('Secondary Type with Custom Properties', () => {
       await typeManagementItem.click(isMobile ? { force: true } : {});
       await waitForUiStable(page);
     } else {
-      test.skip('ENV: Type Management menu not available');
+      test.skip(true, 'ENV: Type Management menu not available');
       return;
     }
 
@@ -83,7 +83,7 @@ test.describe('Secondary Type with Custom Properties', () => {
     // Click create type button
     const newTypeButton = page.locator('button').filter({ hasText: /新規タイプ|新規.*作成|Create.*Type/ });
     if (await newTypeButton.count() === 0) {
-      test.skip('ENV: Create type button not found');
+      test.skip(true, 'ENV: Create type button not found');
       return;
     }
 
@@ -237,7 +237,7 @@ test.describe('Secondary Type with Custom Properties', () => {
     // Find and click on the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 
@@ -327,7 +327,7 @@ test.describe('Secondary Type with Custom Properties', () => {
     // Find and click on the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 

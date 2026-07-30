@@ -330,7 +330,7 @@ test.describe('Bug Fix 1: Gray Overlay After Login', () => {
     // Skip if Keycloak is not running
     const keycloakResponse = await page.request.get(`${KEYCLOAK_URL}/realms/nemakiware/.well-known/openid-configuration`).catch(() => null);
     if (!keycloakResponse || keycloakResponse.status() !== 200) {
-      test.skip(`ENV: Keycloak not running at ${KEYCLOAK_URL}`);
+      test.skip(true, `ENV: Keycloak not running at ${KEYCLOAK_URL}`);
       return;
     }
 
@@ -348,7 +348,7 @@ test.describe('Bug Fix 1: Gray Overlay After Login', () => {
     // Wait up to 10 seconds for the button to appear (auth config determines visibility)
     await expect(oidcButton).toBeVisible({ timeout: 10000 }).catch(() => {});
     if (await oidcButton.count() === 0) {
-      test.skip('ENV: OIDC button not found on login page');
+      test.skip(true, 'ENV: OIDC button not found on login page');
       return;
     }
 
@@ -359,7 +359,7 @@ test.describe('Bug Fix 1: Gray Overlay After Login', () => {
       const keycloakHost = new URL(KEYCLOAK_URL).host;
       await page.waitForURL(new RegExp(`.*${keycloakHost.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*`), { timeout: 10000 });
     } catch {
-      test.skip('ENV: Did not redirect to Keycloak');
+      test.skip(true, 'ENV: Did not redirect to Keycloak');
       return;
     }
 

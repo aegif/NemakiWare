@@ -129,7 +129,7 @@ test.describe('FolderTree Navigation', () => {
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
-      test.skip('BROWSER: Folder tree hidden on mobile (responsive design)');
+      test.skip(true, 'BROWSER: Folder tree hidden on mobile (responsive design)');
       return;
     }
 
@@ -159,7 +159,7 @@ test.describe('FolderTree Navigation', () => {
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
-      test.skip('BROWSER: Folder tree hidden on mobile (responsive design)');
+      test.skip(true, 'BROWSER: Folder tree hidden on mobile (responsive design)');
       return;
     }
 
@@ -215,7 +215,7 @@ test.describe('FolderTree Navigation', () => {
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
-      test.skip('BROWSER: Folder tree hidden on mobile (responsive design)');
+      test.skip(true, 'BROWSER: Folder tree hidden on mobile (responsive design)');
       return;
     }
 
@@ -265,7 +265,7 @@ test.describe('FolderTree Navigation', () => {
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
-      test.skip('BROWSER: Folder tree hidden on mobile (responsive design)');
+      test.skip(true, 'BROWSER: Folder tree hidden on mobile (responsive design)');
       return;
     }
 
@@ -329,7 +329,7 @@ test.describe('FolderTree Navigation', () => {
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
-      test.skip('BROWSER: Folder tree hidden on mobile (responsive design)');
+      test.skip(true, 'BROWSER: Folder tree hidden on mobile (responsive design)');
       return;
     }
 
@@ -408,7 +408,7 @@ test.describe('FolderTree Navigation', () => {
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
-      test.skip('BROWSER: Folder tree hidden on mobile (responsive design)');
+      test.skip(true, 'BROWSER: Folder tree hidden on mobile (responsive design)');
       return;
     }
 
@@ -518,7 +518,7 @@ test.describe('FolderTree Navigation', () => {
 
     if (isMobile) {
       // UPDATED (2025-12-26): FolderTree IS implemented in FolderTree.tsx but hidden on mobile viewports
-      test.skip('BROWSER: Folder tree hidden on mobile (responsive design)');
+      test.skip(true, 'BROWSER: Folder tree hidden on mobile (responsive design)');
       return;
     }
 

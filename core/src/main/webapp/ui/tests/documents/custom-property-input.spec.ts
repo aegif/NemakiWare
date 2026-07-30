@@ -142,14 +142,14 @@ test.describe('Custom Property Input Feature', () => {
       }
 
       if (!typesResponse!.ok()) {
-        test.skip('ENV: Type API request failed after retries');
+        test.skip(true, 'ENV: Type API request failed after retries');
         return;
       }
 
       const typesData = await typesResponse.json();
       const types = typesData.types || typesData;
       if (!Array.isArray(types)) {
-        test.skip('ENV: Types response is not an array');
+        test.skip(true, 'ENV: Types response is not an array');
         return;
       }
       const customDocType = types.find((t: any) =>
@@ -161,7 +161,7 @@ test.describe('Custom Property Input Feature', () => {
       );
 
       if (!customDocType) {
-        test.skip('ENV: No custom document type with custom properties found');
+        test.skip(true, 'ENV: No custom document type with custom properties found');
         return;
       }
 
@@ -284,14 +284,14 @@ test.describe('Custom Property Input Feature', () => {
       }
 
       if (!typesResponse!.ok()) {
-        test.skip('ENV: Type API request failed after retries');
+        test.skip(true, 'ENV: Type API request failed after retries');
         return;
       }
 
       const typesData = await typesResponse.json();
       const types = typesData.types || typesData;
       if (!Array.isArray(types)) {
-        test.skip('ENV: Types response is not an array');
+        test.skip(true, 'ENV: Types response is not an array');
         return;
       }
       const customDocType = types.find((t: any) =>
@@ -303,7 +303,7 @@ test.describe('Custom Property Input Feature', () => {
       );
 
       if (!customDocType) {
-        test.skip('ENV: No custom document type with custom properties found');
+        test.skip(true, 'ENV: No custom document type with custom properties found');
         return;
       }
 
@@ -439,14 +439,14 @@ test.describe('Custom Property Input Feature', () => {
       }
 
       if (!typesResponse!.ok()) {
-        test.skip('ENV: Type API request failed after retries');
+        test.skip(true, 'ENV: Type API request failed after retries');
         return;
       }
 
       const typesData = await typesResponse.json();
       const types = typesData.types || typesData;
       if (!Array.isArray(types)) {
-        test.skip('ENV: Types response is not an array');
+        test.skip(true, 'ENV: Types response is not an array');
         return;
       }
       const customFolderType = types.find((t: any) =>
@@ -458,7 +458,7 @@ test.describe('Custom Property Input Feature', () => {
       );
 
       if (!customFolderType) {
-        test.skip('ENV: No custom folder type with custom properties found');
+        test.skip(true, 'ENV: No custom folder type with custom properties found');
         return;
       }
 
@@ -587,7 +587,7 @@ test.describe('Custom Property Input Feature', () => {
       const documentLink = page.locator('.ant-table-row:has(.anticon-file) .ant-btn-link').first();
 
       if (await documentLink.count() === 0) {
-        test.skip('ENV: No documents found in list');
+        test.skip(true, 'ENV: No documents found in list');
         return;
       }
 
@@ -606,7 +606,7 @@ test.describe('Custom Property Input Feature', () => {
       const documentLink = page.locator('.ant-table-row:has(.anticon-file) .ant-btn-link').first();
 
       if (await documentLink.count() === 0) {
-        test.skip('ENV: No documents found in list');
+        test.skip(true, 'ENV: No documents found in list');
         return;
       }
 
@@ -651,14 +651,14 @@ test.describe('Custom Property Input Feature', () => {
       );
 
       if (!typesResponse.ok()) {
-        test.skip('ENV: Type API request failed');
+        test.skip(true, 'ENV: Type API request failed');
         return;
       }
 
       const typesData = await typesResponse.json();
       const types = typesData.types || typesData;
       if (!Array.isArray(types)) {
-        test.skip('ENV: Types response is not an array');
+        test.skip(true, 'ENV: Types response is not an array');
         return;
       }
       const customRelType = types.find((t: any) =>
@@ -670,14 +670,14 @@ test.describe('Custom Property Input Feature', () => {
       );
 
       if (!customRelType) {
-        test.skip('ENV: No custom relationship type with custom properties found');
+        test.skip(true, 'ENV: No custom relationship type with custom properties found');
         return;
       }
 
       // Find a document
       const documentLink = page.locator('.ant-table-row:has(.anticon-file) .ant-btn-link').first();
       if (await documentLink.count() === 0) {
-        test.skip('ENV: No documents found in list');
+        test.skip(true, 'ENV: No documents found in list');
         return;
       }
 
@@ -733,7 +733,7 @@ test.describe('Custom Property Input Feature', () => {
       // Find a document
       const documentLink = page.locator('.ant-table-row:has(.anticon-file) .ant-btn-link').first();
       if (await documentLink.count() === 0) {
-        test.skip('ENV: No documents found in list');
+        test.skip(true, 'ENV: No documents found in list');
         return;
       }
 
@@ -793,14 +793,14 @@ test.describe('Custom Property Input Feature', () => {
       );
 
       if (!typesResponse.ok()) {
-        test.skip('ENV: Type API request failed');
+        test.skip(true, 'ENV: Type API request failed');
         return;
       }
 
       const typesData = await typesResponse.json();
       const types = typesData.types || typesData;
       if (!Array.isArray(types)) {
-        test.skip('ENV: Types response is not an array');
+        test.skip(true, 'ENV: Types response is not an array');
         return;
       }
 

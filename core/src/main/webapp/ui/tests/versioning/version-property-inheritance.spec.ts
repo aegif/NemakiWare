@@ -560,7 +560,7 @@ test.describe('Version Property Inheritance', () => {
 
   test('Step 3: Verify property inheritance via setContentStream (same-name upload)', async ({ request }) => {
     if (!testDocumentId) {
-      test.skip('ENV: Document not created in previous step');
+      test.skip(true, 'ENV: Document not created in previous step');
       return;
     }
 
@@ -617,7 +617,7 @@ test.describe('Version Property Inheritance', () => {
 
   test('Step 4: Verify property inheritance via check-out/check-in', async ({ request }) => {
     if (!testDocumentId) {
-      test.skip('ENV: Document not created in previous step');
+      test.skip(true, 'ENV: Document not created in previous step');
       return;
     }
 
@@ -678,7 +678,7 @@ test.describe('Version Property Inheritance', () => {
 
   test('Step 5: Verify all versions maintain property consistency', async ({ request }) => {
     if (!testDocumentId) {
-      test.skip('ENV: Document not created in previous steps');
+      test.skip(true, 'ENV: Document not created in previous steps');
       return;
     }
 
