@@ -474,9 +474,14 @@ function randomSuffix(): string {
   return Math.random().toString(36).substring(2, 10);
 }
 
-function trackProcess(qualifiedName: string): string {
-  projectedProcessKeys.push(qualifiedName);
-  return qualifiedName;
+/**
+ * The Process qualifiedName AtlasLineageSink will mint for an event —
+ * "nemakiware:{repo}:{processType lowercase}:{eventKey}". Derived here, from the event, so that
+ * every injected event is registered for teardown; registering per test missed Groups 7 and 8
+ * and left their Process entities in Atlas even on a fully successful run.
+ */
+function processQualifiedName(event: any): string {
+  return `nemakiware:${event.repositoryId}:${String(event.processType).toLowerCase()}:${event.eventKey}`;
 }
 
 function makeLineageEvent(
@@ -503,6 +508,11 @@ function makeLineageEvent(
     publishStatusByTarget: { atlas: 'PENDING' },
     version: 1,
   };
+}
+
+function registerForTeardown(event: any): any {
+  projectedProcessKeys.push(processQualifiedName(event));
+  return event;
 }
 
 // ---------------------------------------------------------------------------
@@ -872,11 +882,11 @@ test.describe('Group 4: Lineage Journal → Atlas', () => {
       [`nemaki://${REPOSITORY_ID}/objects/test-output-${suffix}`]
     );
 
-    await injectCouchDoc(request, LINEAGE_DB, event);
+    await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(event));
     group4Events.push(event._id);
 
     // Wait for projection to pick up the event
-    const atlasQn = trackProcess(`nemakiware:${LINEAGE_REPO}:import_uploaded:${eventKey}`);
+    const atlasQn = (`nemakiware:${LINEAGE_REPO}:import_uploaded:${eventKey}`);
     const found = await pollUntil(async () => {
       const entity = await queryAtlasEntity(request, 'Process', atlasQn);
       return entity != null;
@@ -908,10 +918,10 @@ test.describe('Group 4: Lineage Journal → Atlas', () => {
       [`nemaki://${REPOSITORY_ID}/objects/test-output-${suffix}`]
     );
 
-    await injectCouchDoc(request, LINEAGE_DB, event);
+    await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(event));
     group4Events.push(event._id);
 
-    const atlasQn = trackProcess(`nemakiware:${LINEAGE_REPO}:archive_local:${eventKey}`);
+    const atlasQn = (`nemakiware:${LINEAGE_REPO}:archive_local:${eventKey}`);
     const found = await pollUntil(async () => {
       const entity = await queryAtlasEntity(request, 'Process', atlasQn);
       return entity != null;
@@ -934,10 +944,10 @@ test.describe('Group 4: Lineage Journal → Atlas', () => {
       [`nemaki://${REPOSITORY_ID}/objects/test-output-${suffix}`]
     );
 
-    await injectCouchDoc(request, LINEAGE_DB, event);
+    await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(event));
     group4Events.push(event._id);
 
-    const atlasQn = trackProcess(`nemakiware:${LINEAGE_REPO}:export_selected_objects:${eventKey}`);
+    const atlasQn = (`nemakiware:${LINEAGE_REPO}:export_selected_objects:${eventKey}`);
     const found = await pollUntil(async () => {
       const entity = await queryAtlasEntity(request, 'Process', atlasQn);
       return entity != null;
@@ -974,10 +984,10 @@ test.describe('Group 5: Cloud Drive Simulation', () => {
       [`cloud://google/test-file-${suffix}`]
     );
 
-    await injectCouchDoc(request, LINEAGE_DB, event);
+    await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(event));
     group5Events.push(event._id);
 
-    const atlasQn = trackProcess(`nemakiware:${LINEAGE_REPO}:cloud_sync_upload:${eventKey}`);
+    const atlasQn = (`nemakiware:${LINEAGE_REPO}:cloud_sync_upload:${eventKey}`);
     const found = await pollUntil(async () => {
       const entity = await queryAtlasEntity(request, 'Process', atlasQn);
       return entity != null;
@@ -1000,10 +1010,10 @@ test.describe('Group 5: Cloud Drive Simulation', () => {
       [`nemaki://${REPOSITORY_ID}/objects/test-local-${suffix}`]
     );
 
-    await injectCouchDoc(request, LINEAGE_DB, event);
+    await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(event));
     group5Events.push(event._id);
 
-    const atlasQn = trackProcess(`nemakiware:${LINEAGE_REPO}:cloud_sync_download:${eventKey}`);
+    const atlasQn = (`nemakiware:${LINEAGE_REPO}:cloud_sync_download:${eventKey}`);
     const found = await pollUntil(async () => {
       const entity = await queryAtlasEntity(request, 'Process', atlasQn);
       return entity != null;
@@ -1198,7 +1208,7 @@ test.describe('Group 7: Dead-Letter & Replay', () => {
     replayEventKey = eventKey;
     replayEventCouchId = event._id;
 
-    await injectCouchDoc(request, LINEAGE_DB, event);
+    await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(event));
 
     const evtRes = await request.get(
       `${BASE_URL}/core/api/v1/admin/lineage-journal/events/${replayEventId}`,
@@ -1286,7 +1296,7 @@ test.describe('Group 8: Multi-target', () => {
       [`nemaki://${LINEAGE_REPO}/objects/test-input-${suffix}`],
       [`nemaki://${LINEAGE_REPO}/objects/test-output-${suffix}`]
     );
-    await injectCouchDoc(request, LINEAGE_DB, event);
+    await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(event));
 
     try {
       // Atlas must actually publish it…
@@ -1330,8 +1340,8 @@ test.describe('Group 8: Multi-target', () => {
       [`nemaki://${LINEAGE_REPO}/objects/in-${b}`], [`nemaki://${LINEAGE_REPO}/objects/out-${b}`]);
     expect(second.sequenceNumber).toBe(first.sequenceNumber + 1);
 
-    await injectCouchDoc(request, LINEAGE_DB, first);
-    await injectCouchDoc(request, LINEAGE_DB, second);
+    await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(first));
+    await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(second));
 
     try {
       for (const event of [first, second]) {
@@ -1365,41 +1375,60 @@ test.describe('Group 8: Multi-target', () => {
  * Everything injected lived under a synthetic repository id, so that stream's cursor and
  * sequence counter are ours to remove; bedroom's own stream is untouched by construction.
  */
-test.describe('cleanup', () => {
-  test.afterAll(async ({ request }) => {
-    if (!atlasAvailable) return;
+/**
+ * File-scope teardown: registered outside every describe, so Playwright runs it even when a
+ * serial group fails and skips everything after it.
+ *
+ * The previous attempt put this in a trailing describe with a placeholder test. That does not
+ * work here — the whole file is serial, so a failure in, say, 2.5 skips every later test
+ * INCLUDING that placeholder, and the describe's afterAll never runs. Which is exactly how the
+ * folder from a failed 2.5 was left behind in CMIS and in Atlas.
+ */
+test.afterAll(async ({ request }) => {
+  if (!atlasAvailable) return;
+  const failures: string[] = [];
 
-    for (const id of [testDocId, unsyncedDocId]) {
-      if (id) {
-        await deleteCmisObject(request, id);
-        await deleteAtlasEntity(request, 'nemaki_document', `nemaki://${REPOSITORY_ID}/objects/${id}`);
-      }
+  const dropAtlas = async (typeName: string, qualifiedName: string) => {
+    const res = await request.delete(
+      `${ATLAS_URL}/api/atlas/v2/entity/uniqueAttribute/type/${typeName}?attr:qualifiedName=${encodeURIComponent(qualifiedName)}`,
+      { headers: { Authorization: ATLAS_AUTH_HEADER }, timeout: 20000 }
+    );
+    // 404 means it was never created or is already gone; anything else non-2xx is a cleanup
+    // that ran but did not clean, which is worth knowing about.
+    if (!res.ok() && res.status() !== 404) {
+      failures.push(`atlas ${typeName}/${qualifiedName} -> HTTP ${res.status()}`);
     }
-    if (testFolderId) {
-      await deleteCmisObject(request, testFolderId);
-      await deleteAtlasEntity(request, 'nemaki_folder', `nemaki://${REPOSITORY_ID}/objects/${testFolderId}`);
-    }
-    testDocId = null;
-    testFolderId = null;
-    unsyncedDocId = null;
+  };
 
-    // The Process entities the projector created for the injected events.
-    for (const eventKey of projectedProcessKeys) {
-      await deleteAtlasEntity(request, 'Process', eventKey);
+  for (const id of [testDocId, unsyncedDocId]) {
+    if (id) {
+      await deleteCmisObject(request, id);
+      await dropAtlas('nemaki_document', `nemaki://${REPOSITORY_ID}/objects/${id}`);
     }
+  }
+  if (testFolderId) {
+    await deleteCmisObject(request, testFolderId);
+    await dropAtlas('nemaki_folder', `nemaki://${REPOSITORY_ID}/objects/${testFolderId}`);
+  }
+  testDocId = null;
+  testFolderId = null;
+  unsyncedDocId = null;
 
-    for (const docId of [`projection_cursor:atlas:${LINEAGE_REPO}`, `lineage_seq:${LINEAGE_REPO}`]) {
-      await deleteCouchDoc(request, LINEAGE_DB, docId);
-    }
-    for (const docId of injectedCouchIds) {
-      await deleteCouchDoc(request, LINEAGE_DB, docId);
-    }
-  });
+  // Every Process the projector could have created from an injected event, derived from the
+  // events themselves rather than remembered test by test — Groups 7 and 8 were not registering
+  // theirs, so those entities survived even a fully successful run.
+  for (const qualifiedName of projectedProcessKeys) {
+    await dropAtlas('Process', qualifiedName);
+  }
 
-  test('cleanup placeholder', async ({ request }) => {
-    // Playwright only runs a describe's afterAll if the describe contains a test.
-    const available = await checkAtlasAvailable(request);
-    skipIfNoAtlas(available);
-    expect(true).toBe(true);
-  });
+  for (const docId of [`projection_cursor:atlas:${LINEAGE_REPO}`, `lineage_seq:${LINEAGE_REPO}`]) {
+    await deleteCouchDoc(request, LINEAGE_DB, docId);
+  }
+  for (const docId of injectedCouchIds) {
+    await deleteCouchDoc(request, LINEAGE_DB, docId);
+  }
+
+  if (failures.length > 0) {
+    console.warn(`cleanup left ${failures.length} entities behind:\n  ${failures.join('\n  ')}`);
+  }
 });
