@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
+import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.Map;
 
@@ -151,5 +152,72 @@ class AtlasLineageSinkTest {
 
         assertEquals("nemakiware:bedroom:import_uploaded:" + event.eventKey(),
                 attrs.get("qualifiedName"));
+    }
+
+    /**
+     * Fail closed: an event whose endpoints Atlas will not resolve as a DataSet must not be
+     * published. Atlas accepts a bulk write with a dangling reference — it either links the
+     * Process to nothing or invents a shell entity — so "it returned 2xx" is not evidence the
+     * lineage graph is right. Folders (Referenceable, not DataSet) and the upload:// file://
+     * cloud:// cold:// endpoints real producers emit are all in this category.
+     */
+    @Test
+    void publish_failsClosedWhenAnEndpointIsNotADataSet() throws Exception {
+        when(mockConfig.isEnabled()).thenReturn(true);
+        when(mockConfig.getEndpoint()).thenReturn("http://atlas:21000");
+
+        LineageEvent event = new LineageEventBuilder()
+                .repositoryId("bedroom")
+                .processType(LineageProcessType.EXPORT_ZIP_FOLDER)
+                .addInputObject("bedroom", "folder-not-a-dataset")
+                .targets(List.of("atlas"))
+                .build();
+
+        // A sink whose Atlas answers 404 for the endpoint lookup and 200 for anything else.
+        SimpleHttpClient client = mock(SimpleHttpClient.class);
+        when(client.withBasicAuth(any(), any())).thenReturn(client);
+        HttpResponse<String> notFound = mock(HttpResponse.class);
+        when(notFound.statusCode()).thenReturn(404);
+        when(client.getJson(anyString())).thenReturn(notFound);
+        Field hc = AtlasLineageSink.class.getDeclaredField("httpClient");
+        hc.setAccessible(true);
+        hc.set(sink, client);
+
+        LineageTargetSinkResult result = sink.publish(event);
+
+        assertFalse(result.success(), "an unrepresentable endpoint must not publish as success");
+        assertTrue(result.message().contains("folder-not-a-dataset"),
+                "the failure must name the endpoint that could not be resolved: " + result.message());
+        verify(client, never()).postJson(anyString(), any());
+    }
+
+    /** Resolvable endpoints still publish. */
+    @Test
+    void publish_proceedsWhenEveryEndpointResolves() throws Exception {
+        when(mockConfig.isEnabled()).thenReturn(true);
+        when(mockConfig.getEndpoint()).thenReturn("http://atlas:21000");
+
+        LineageEvent event = new LineageEventBuilder()
+                .repositoryId("bedroom")
+                .processType(LineageProcessType.IMPORT_UPLOADED)
+                .addInputObject("bedroom", "doc-input")
+                .targets(List.of("atlas"))
+                .build();
+
+        SimpleHttpClient client = mock(SimpleHttpClient.class);
+        when(client.withBasicAuth(any(), any())).thenReturn(client);
+        HttpResponse<String> ok = mock(HttpResponse.class);
+        when(ok.statusCode()).thenReturn(200);
+        when(ok.body()).thenReturn("{}");
+        when(client.getJson(anyString())).thenReturn(ok);
+        when(client.postJson(anyString(), any())).thenReturn(ok);
+        Field hc = AtlasLineageSink.class.getDeclaredField("httpClient");
+        hc.setAccessible(true);
+        hc.set(sink, client);
+
+        LineageTargetSinkResult result = sink.publish(event);
+
+        assertTrue(result.success(), "a fully resolvable event must still publish: " + result.message());
+        verify(client).postJson(anyString(), any());
     }
 }

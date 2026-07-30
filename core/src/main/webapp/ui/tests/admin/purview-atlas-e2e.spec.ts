@@ -10,7 +10,7 @@ import { TestHelper } from '../utils/test-helper';
  * - Incremental sync pushes CMIS objects to Atlas
  * - Governance API returns Atlas entity metadata
  * - Lineage Journal events are projected to Atlas
- * - Dead-letter replay works
+ * - Replaying a claimed event re-drives it to Atlas
  * - UI components render correctly
  *
  * Prerequisites:
@@ -54,6 +54,10 @@ const LINEAGE_DB = 'nemaki_lineage';
  */
 const LINEAGE_REPO = `atlas-e2e-${Math.random().toString(36).slice(2, 10)}`;
 let lineageSeq = 0;
+/** A real CMIS document, synced to Atlas, used as the endpoint of every injected event. */
+let endpointDocId: string | null = null;
+let endpointDocGuid: string | null = null;
+let endpointQn: string | null = null;
 const AUTH_HEADER = 'Basic ' + Buffer.from('admin:admin').toString('base64');
 const ATLAS_AUTH_HEADER = 'Basic ' + Buffer.from('admin:admin').toString('base64');
 const COUCHDB_AUTH_HEADER = 'Basic ' + Buffer.from('admin:password').toString('base64');
@@ -510,6 +514,47 @@ function makeLineageEvent(
   };
 }
 
+/**
+ * Create a document, sync it, and remember the GUID Atlas gave it.
+ *
+ * Injected events used to reference `test-input-<suffix>` — names no entity ever had. With the
+ * sink failing closed on unresolvable endpoints those events cannot publish at all, and even
+ * before that the assertions could not tell a correctly linked Process from one linked to
+ * nothing: they only checked that a Process existed.
+ */
+async function ensureEndpointDocument(request: APIRequestContext): Promise<void> {
+  if (endpointDocGuid) return;
+
+  const name = `atlas-e2e-endpoint-${randomSuffix()}`;
+  endpointDocId = await createCmisDocument(request, name);
+  expect(endpointDocId, 'could not create the lineage endpoint document').toBeTruthy();
+  endpointQn = `nemaki://${REPOSITORY_ID}/objects/${endpointDocId}`;
+
+  const synced = await syncUntil(request, async () =>
+    (await queryAtlasEntity(request, 'nemaki_document', endpointQn!)) != null);
+  expect(synced, 'the lineage endpoint document never reached Atlas').toBe(true);
+
+  const entity = await queryAtlasEntity(request, 'nemaki_document', endpointQn!);
+  endpointDocGuid = entity.entity.guid;
+  expect(endpointDocGuid, 'the synced endpoint document has no Atlas guid').toBeTruthy();
+}
+
+/**
+ * The GUIDs a published Process actually points at. Atlas returns them under
+ * relationshipAttributes for the resolved ends, and repeats the entities themselves under
+ * referredEntities; a Process linked to nothing has neither.
+ */
+function processEndpointGuids(process: any): string[] {
+  const attrs = process?.entity?.relationshipAttributes ?? {};
+  const guids: string[] = [];
+  for (const key of ['inputs', 'outputs']) {
+    for (const ref of attrs[key] ?? []) {
+      if (ref?.guid) guids.push(ref.guid);
+    }
+  }
+  return guids;
+}
+
 function registerForTeardown(event: any): any {
   projectedProcessKeys.push(processQualifiedName(event));
   return event;
@@ -860,6 +905,11 @@ test.describe('Group 3: Governance Tab', () => {
 // =====================================================================
 
 test.describe('Group 4: Lineage Journal → Atlas', () => {
+  test.beforeAll(async ({ request }) => {
+    if (!(await checkAtlasAvailable(request))) return;
+    await ensureEndpointDocument(request);
+  });
+
   const group4Events: string[] = [];
 
   test.afterAll(async ({ request }) => {
@@ -878,31 +928,26 @@ test.describe('Group 4: Lineage Journal → Atlas', () => {
     const event = makeLineageEvent(
       'IMPORT_UPLOADED',
       eventKey,
-      [`nemaki://${REPOSITORY_ID}/objects/test-input-${suffix}`],
-      [`nemaki://${REPOSITORY_ID}/objects/test-output-${suffix}`]
+      [endpointQn!],
+      [endpointQn!]
     );
 
     await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(event));
     group4Events.push(event._id);
 
-    // Wait for projection to pick up the event
-    const atlasQn = (`nemakiware:${LINEAGE_REPO}:import_uploaded:${eventKey}`);
-    const found = await pollUntil(async () => {
-      const entity = await queryAtlasEntity(request, 'Process', atlasQn);
-      return entity != null;
-    }, 90000, 5000);
+    // The Process must exist AND point at the real document. Checking only that a Process
+    // exists would pass with empty inputs, with a shell entity Atlas invented for a dangling
+    // reference, or with the wrong GUID — which is what the double-prefixed qualifiedName
+    // produced before it was fixed.
+    const atlasQn = `nemakiware:${LINEAGE_REPO}:import_uploaded:${eventKey}`;
+    const linked = await pollUntil(async () => {
+      const process = await queryAtlasEntity(request, 'Process', atlasQn);
+      return processEndpointGuids(process).includes(endpointDocGuid!);
+    }, 120000, 5000);
 
-    if (!found) {
-      // Projection may not have run yet — check event status
-      const evtRes = await request.get(
-        `${BASE_URL}/core/api/v1/admin/lineage-journal/events/${event.eventId}`,
-        { headers: { Authorization: AUTH_HEADER } }
-      );
-      const evtData = evtRes.ok() ? await evtRes.json() : null;
-      console.log('Event status:', JSON.stringify(evtData?.publishStatusByTarget));
-    }
-    expect(found).toBe(true);
-    console.log('Import event projected to Atlas');
+    expect(linked,
+      `the Process was not linked to the endpoint document (guid ${endpointDocGuid})`).toBe(true);
+    console.log(`Process ${atlasQn} is linked to document guid ${endpointDocGuid}`);
   });
 
   test('4.2 Archive event → Atlas process', async ({ request }) => {
@@ -914,8 +959,8 @@ test.describe('Group 4: Lineage Journal → Atlas', () => {
     const event = makeLineageEvent(
       'ARCHIVE_LOCAL',
       eventKey,
-      [`nemaki://${REPOSITORY_ID}/objects/test-input-${suffix}`],
-      [`nemaki://${REPOSITORY_ID}/objects/test-output-${suffix}`]
+      [endpointQn!],
+      [endpointQn!]
     );
 
     await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(event));
@@ -940,8 +985,8 @@ test.describe('Group 4: Lineage Journal → Atlas', () => {
     const event = makeLineageEvent(
       'EXPORT_SELECTED_OBJECTS',
       eventKey,
-      [`nemaki://${REPOSITORY_ID}/objects/test-input-${suffix}`],
-      [`nemaki://${REPOSITORY_ID}/objects/test-output-${suffix}`]
+      [endpointQn!],
+      [endpointQn!]
     );
 
     await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(event));
@@ -963,6 +1008,11 @@ test.describe('Group 4: Lineage Journal → Atlas', () => {
 // =====================================================================
 
 test.describe('Group 5: Cloud Drive Simulation', () => {
+  test.beforeAll(async ({ request }) => {
+    if (!(await checkAtlasAvailable(request))) return;
+    await ensureEndpointDocument(request);
+  });
+
   const group5Events: string[] = [];
 
   test.afterAll(async ({ request }) => {
@@ -1165,7 +1215,12 @@ test.describe('Group 6: Lineage Journal UI', () => {
 // Group 7: Dead-Letter & Replay
 // =====================================================================
 
-test.describe('Group 7: Dead-Letter & Replay', () => {
+test.describe('Group 7: Event replay', () => {
+  test.beforeAll(async ({ request }) => {
+    if (!(await checkAtlasAvailable(request))) return;
+    await ensureEndpointDocument(request);
+  });
+
   let replayEventId: string | null = null;
   let replayEventKey: string | null = null;
   let replayEventCouchId: string | null = null;
@@ -1199,8 +1254,8 @@ test.describe('Group 7: Dead-Letter & Replay', () => {
     const event = makeLineageEvent(
       'IMPORT_UPLOADED',
       eventKey,
-      [`nemaki://${LINEAGE_REPO}/objects/test-input-${suffix}`],
-      [`nemaki://${LINEAGE_REPO}/objects/test-output-${suffix}`]
+      [endpointQn!],
+      [endpointQn!]
     );
     event.publishStatusByTarget = { atlas: 'PROJECTING' };
     event.claimedAtByTarget = { atlas: new Date().toISOString() };
@@ -1268,6 +1323,11 @@ test.describe('Group 7: Dead-Letter & Replay', () => {
 });
 
 test.describe('Group 8: Multi-target', () => {
+  test.beforeAll(async ({ request }) => {
+    if (!(await checkAtlasAvailable(request))) return;
+    await ensureEndpointDocument(request);
+  });
+
   /**
    * Scope: this covers the PROJECTOR, not target selection. The fixture still sets
    * `{atlas: PENDING}` itself, so LineageEventBuilder.targets() and the emitter's choice of
@@ -1293,8 +1353,8 @@ test.describe('Group 8: Multi-target', () => {
     const event = makeLineageEvent(
       'IMPORT_UPLOADED',
       eventKey,
-      [`nemaki://${LINEAGE_REPO}/objects/test-input-${suffix}`],
-      [`nemaki://${LINEAGE_REPO}/objects/test-output-${suffix}`]
+      [endpointQn!],
+      [endpointQn!]
     );
     await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(event));
 
@@ -1335,9 +1395,9 @@ test.describe('Group 8: Multi-target', () => {
     const a = randomSuffix();
     const b = randomSuffix();
     const first = makeLineageEvent('IMPORT_UPLOADED', `test-seq-a-${a}`,
-      [`nemaki://${LINEAGE_REPO}/objects/in-${a}`], [`nemaki://${LINEAGE_REPO}/objects/out-${a}`]);
+      [endpointQn!], [endpointQn!]);
     const second = makeLineageEvent('IMPORT_UPLOADED', `test-seq-b-${b}`,
-      [`nemaki://${LINEAGE_REPO}/objects/in-${b}`], [`nemaki://${LINEAGE_REPO}/objects/out-${b}`]);
+      [endpointQn!], [endpointQn!]);
     expect(second.sequenceNumber).toBe(first.sequenceNumber + 1);
 
     await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(first));
@@ -1400,7 +1460,7 @@ test.afterAll(async ({ request }) => {
     }
   };
 
-  for (const id of [testDocId, unsyncedDocId]) {
+  for (const id of [testDocId, unsyncedDocId, endpointDocId]) {
     if (id) {
       await deleteCmisObject(request, id);
       await dropAtlas('nemaki_document', `nemaki://${REPOSITORY_ID}/objects/${id}`);
@@ -1413,6 +1473,9 @@ test.afterAll(async ({ request }) => {
   testDocId = null;
   testFolderId = null;
   unsyncedDocId = null;
+  endpointDocId = null;
+  endpointDocGuid = null;
+  endpointQn = null;
 
   // Every Process the projector could have created from an injected event, derived from the
   // events themselves rather than remembered test by test — Groups 7 and 8 were not registering
