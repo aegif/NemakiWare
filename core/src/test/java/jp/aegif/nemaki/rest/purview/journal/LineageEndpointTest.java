@@ -106,6 +106,23 @@ public class LineageEndpointTest {
     }
 
     /**
+     * The three external kinds are three ways of describing the same thing, and they resolve to
+     * one Atlas type. A cloud object reached through the cloud-drive factory and the same object
+     * described as a generic external asset must therefore be one entity, not two.
+     */
+    @Test
+    public void theExternalKindsAgreeOnTheNameOfTheSameAsset() {
+        String stableKey = "cloud://gdrive/file-1";
+        assertEquals(
+                LineageEndpoint.externalAsset(REPO, stableKey, "gdrive", null)
+                        .catalogQualifiedName(),
+                LineageEndpoint.cloudObject(REPO, "gdrive", "file-1").catalogQualifiedName());
+        assertEquals("nemaki_external_asset", EndpointKind.CLOUD_OBJECT.atlasTypeName());
+        assertEquals("nemaki_external_asset", EndpointKind.COLD_STORAGE.atlasTypeName());
+        assertEquals("nemaki_external_asset", EndpointKind.EXTERNAL_ASSET.atlasTypeName());
+    }
+
+    /**
      * The lineage path and the catalog sync path must name the same external asset identically, or
      * one asset becomes two entities and the lineage attaches to the wrong one.
      */
@@ -340,6 +357,24 @@ public class LineageEndpointTest {
                         kind + " reports an allowlist that omits its own required '" + required
                                 + "'");
             }
+        }
+    }
+
+    /**
+     * The kinds occupy disjoint name spaces. If two kinds could produce one name for the same id,
+     * a document could be published under a folder's identity, and the exact-name check in
+     * {@link LineageRepositoryScope} would have nothing to catch it with.
+     */
+    @Test
+    public void theKindsCannotProduceTheSameQualifiedName() {
+        Map<String, EndpointKind> seen = new HashMap<>();
+        for (EndpointKind kind : EndpointKind.values()) {
+            String name = LineageEndpoint.expectedQualifiedName(kind, REPO, "same-id", "same-id");
+            if (name == null) {
+                continue; // external kinds share one name space by design; see the test above
+            }
+            EndpointKind clash = seen.put(name, kind);
+            assertEquals(null, clash, kind + " and " + clash + " both name '" + name + "'");
         }
     }
 

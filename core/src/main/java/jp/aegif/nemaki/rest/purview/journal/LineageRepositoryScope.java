@@ -30,8 +30,14 @@ package jp.aegif.nemaki.rest.purview.journal;
  *
  * <p>The field and the name are checked separately. {@code repositoryId} could be set correctly
  * while the qualified name points somewhere else — that is exactly the shape a hand-crafted
- * document would take — so the {@code {repositoryId}} embedded in the canonical name has to
- * agree as well.
+ * document would take — so the canonical name has to agree as well.
+ *
+ * <p>The name check is not a prefix match. For every CMIS and artifact kind the name is a pure
+ * function of the repository and the identity field, so it is recomputed and compared exactly;
+ * a prefix match would accept {@code nemaki://bedroom/archives/a} on an endpoint declaring
+ * itself a document, and the sink would then create a {@code nemaki_document} at an archive's
+ * name. Only the external kinds fall back to a prefix, because their name encodes a stable key
+ * the endpoint does not carry as a field.
  */
 public final class LineageRepositoryScope {
 
@@ -65,12 +71,26 @@ public final class LineageRepositoryScope {
                             + eventRepositoryId + "' but " + side + " endpoint belongs to '"
                             + endpoint.repositoryId() + "'");
         }
-        String expectedPrefix = "nemaki://" + eventRepositoryId + "/";
+        String expected = LineageEndpoint.expectedQualifiedName(endpoint.kind(), eventRepositoryId,
+                endpoint.objectId(), endpoint.operationId());
+        if (expected != null) {
+            if (!expected.equals(endpoint.catalogQualifiedName())) {
+                throw new IllegalArgumentException(side + " endpoint qualified name does not match"
+                        + " its own kind and identity: expected '" + expected + "' for kind="
+                        + endpoint.kind() + ", got '" + endpoint.catalogQualifiedName() + "'");
+            }
+            return;
+        }
+        String expectedPrefix = LineageEndpoint.externalAssetQualifiedNamePrefix(eventRepositoryId);
         if (!endpoint.catalogQualifiedName().startsWith(expectedPrefix)) {
             throw new IllegalArgumentException(
                     "cross-repository lineage is not permitted: " + side
                             + " endpoint qualified name is not scoped to '" + eventRepositoryId
                             + "' (" + endpoint.catalogQualifiedName() + ")");
+        }
+        if (endpoint.catalogQualifiedName().length() == expectedPrefix.length()) {
+            throw new IllegalArgumentException(side + " external endpoint carries no stable key ("
+                    + endpoint.catalogQualifiedName() + ")");
         }
     }
 

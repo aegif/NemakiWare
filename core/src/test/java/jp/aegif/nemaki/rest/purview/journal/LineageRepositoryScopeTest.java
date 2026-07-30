@@ -77,6 +77,74 @@ public class LineageRepositoryScopeTest {
     }
 
     /**
+     * Right repository, wrong kind. A prefix match would pass this: the endpoint declares itself a
+     * document while its name is an archive's, and the sink would create a {@code nemaki_document}
+     * under an archive's qualified name.
+     */
+    @Test
+    public void aQualifiedNameDisagreeingWithItsOwnKindIsRejected() {
+        LineageEndpoint forged = new LineageEndpoint(EndpointKind.CMIS_DOCUMENT,
+                LineageEndpoint.archiveQualifiedName(BEDROOM, "a"), BEDROOM, "a", null,
+                Map.of("name", "n"));
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> LineageRepositoryScope.validate(BEDROOM, List.of(forged), List.of()));
+        assertTrue(e.getMessage().contains("does not match"), e.getMessage());
+    }
+
+    /** Same trick with the object id: the name must be the one this endpoint's fields imply. */
+    @Test
+    public void aQualifiedNameNamingAnotherObjectIsRejected() {
+        LineageEndpoint forged = new LineageEndpoint(EndpointKind.CMIS_DOCUMENT,
+                LineageEndpoint.objectQualifiedName(BEDROOM, "someone-elses-id"), BEDROOM, "a",
+                null, Map.of("name", "n"));
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageRepositoryScope.validate(BEDROOM, List.of(forged), List.of()));
+    }
+
+    /** And with the operation an artifact belongs to. */
+    @Test
+    public void anArtifactQualifiedNameNamingAnotherOperationIsRejected() {
+        LineageEndpoint forged = new LineageEndpoint(EndpointKind.EXPORT_ARTIFACT,
+                LineageEndpoint.exportArtifactQualifiedName(BEDROOM, "op-2"), BEDROOM, null,
+                "op-1", Map.of("artifactKind", "ZIP"));
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageRepositoryScope.validate(BEDROOM, List.of(), List.of(forged)));
+    }
+
+    /** Every factory-built endpoint must satisfy the check its own kind implies. */
+    @Test
+    public void everyFactoryProducesAConsistentQualifiedName() {
+        List<LineageEndpoint> all = List.of(
+                LineageEndpoint.document(BEDROOM, "d-1", "n"),
+                LineageEndpoint.folder(BEDROOM, "f-1", "n"),
+                LineageEndpoint.archive(BEDROOM, "a-1", "d-1", "2026-01-01T00:00:00Z"),
+                LineageEndpoint.externalAsset(BEDROOM, "https://ext/1", "confluence", null),
+                LineageEndpoint.cloudObject(BEDROOM, "gdrive", "file-1"),
+                LineageEndpoint.coldStorage(BEDROOM, "s3://b/k", "GLACIER"),
+                LineageEndpoint.filesystemPath(BEDROOM, "/srv/in/a.pdf"),
+                LineageEndpoint.importArtifact(BEDROOM, "op-1", "MANAGED", null),
+                LineageEndpoint.exportArtifact(BEDROOM, "op-1", "ZIP", "e.zip", 1));
+        assertDoesNotThrow(() -> LineageRepositoryScope.validate(BEDROOM, all, List.of()));
+        assertDoesNotThrow(() -> LineageRepositoryScope.validateArtifactOperation("op-1", all,
+                List.of()));
+    }
+
+    /**
+     * The external kinds are the one case where the name cannot be recomputed — it encodes a
+     * stable key the endpoint does not keep — so the prefix is all there is to check, and a name
+     * that is only the prefix carries no asset at all.
+     */
+    @Test
+    public void anExternalEndpointWithoutAStableKeyIsRejected() {
+        LineageEndpoint empty = new LineageEndpoint(EndpointKind.EXTERNAL_ASSET,
+                LineageEndpoint.externalAssetQualifiedNamePrefix(BEDROOM), BEDROOM, null, null,
+                Map.of("sourceSystem", "confluence"));
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> LineageRepositoryScope.validate(BEDROOM, List.of(empty), List.of()));
+        assertTrue(e.getMessage().contains("stable key"), e.getMessage());
+    }
+
+    /**
      * A repository whose name merely starts with the event's must not satisfy the name check —
      * this is what the trailing slash in the expected prefix is for.
      */

@@ -48,9 +48,20 @@ import java.util.TreeMap;
  *   STRING  0x01  len:int32be  utf8bytes
  *   LONG    0x02  value:int64be
  *   LIST    0x03  count:int32be  element...
- *   MAP     0x04  count:int32be  (key:STRING value)...   keys sorted, byte-order of UTF-8
+ *   MAP     0x04  count:int32be  (key:STRING value)...   keys sorted, see below
  *   BOOL    0x05  0x00 | 0x01
  * </pre>
+ *
+ * <h2>What "sorted" means</h2>
+ *
+ * <p>Java's natural {@code String} order, which compares UTF-16 code units — not UTF-8 byte
+ * order. The two agree for every code point below U+E000 and disagree above it, so today the
+ * distinction is invisible: map keys come from {@link EndpointKind}'s ASCII allowlists, and the
+ * qualified names being sorted are {@code nemaki://} plus a repository id, a CMIS object id or
+ * base64url, all of which are ASCII in practice. It is stated because that is an observation
+ * about the data, not a guarantee, and because a reimplementation in another language would have
+ * to match it: JavaScript's default sort agrees, Python's {@code sorted()} does not (it orders by
+ * code point).</p>
  *
  * <p>{@code null} and the empty string are therefore different encodings, as are an absent list
  * and an empty one. That distinction is deliberate: {@code operationId=null} and
@@ -190,8 +201,21 @@ public final class LineageCanonicalHash {
         return List.copyOf(names);
     }
 
-    /** Target names in the canonical order identity uses: sorted, non-blank, deduplicated. */
+    /**
+     * Target names in the canonical order identity uses: trimmed, non-blank, deduplicated, sorted.
+     *
+     * <p>Trimming matters because the set comes from configuration: {@code "atlas, purview"} split
+     * on the comma yields a leading space that must not fork the identity of the same delivery.
+     *
+     * <p>An empty set is accepted here and produces a well-formed id. Whether a journal record
+     * with no delivery obligation should exist at all is the emitter's call, and is decided in
+     * increment A-2 — this function has no way to tell "no targets configured" from "the caller
+     * meant to pass none".
+     */
     public static List<String> canonicalTargetSet(Iterable<String> targets) {
+        if (targets == null) {
+            throw new IllegalArgumentException("target set must not be null");
+        }
         List<String> canonical = new ArrayList<>();
         for (String target : targets) {
             if (target == null || target.isBlank()) {

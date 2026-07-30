@@ -161,6 +161,28 @@ public class LineageIdentityTest {
                 "delivering to two targets is a different obligation from delivering to one");
     }
 
+    /**
+     * Target names come from configuration, where {@code "atlas, purview"} split on the comma
+     * leaves a space. Whitespace must not fork the identity of the same delivery — including
+     * between an ORIGINAL and the replay that compensates it.
+     */
+    @Test
+    public void whitespaceInATargetNameDoesNotForkIdentity() {
+        String fact = processKey(OP, List.of(doc("a")), List.of(), 0, 1);
+        String tidy = LineageIdentity.originalDeliveryId(fact, List.of("atlas", "purview"));
+        assertEquals(tidy, LineageIdentity.originalDeliveryId(fact, List.of(" atlas", "purview ")));
+        assertEquals(LineageIdentity.replayDeliveryId(tidy, "atlas", 1),
+                LineageIdentity.replayDeliveryId(tidy, " atlas ", 1));
+    }
+
+    /** A target listed twice in configuration is one delivery obligation, not two. */
+    @Test
+    public void aRepeatedTargetIsOneObligation() {
+        String fact = processKey(OP, List.of(doc("a")), List.of(), 0, 1);
+        assertEquals(LineageIdentity.originalDeliveryId(fact, List.of("atlas")),
+                LineageIdentity.originalDeliveryId(fact, List.of("atlas", "atlas")));
+    }
+
     /** Same targets, different fact: different record. */
     @Test
     public void originalDeliveryIdDependsOnTheFact() {

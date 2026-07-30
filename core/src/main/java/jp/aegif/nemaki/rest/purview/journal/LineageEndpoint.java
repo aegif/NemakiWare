@@ -223,6 +223,35 @@ public record LineageEndpoint(
     // Qualified names — every one is repository-scoped
     // ------------------------------------------------------------------
 
+    /**
+     * The qualified name a well-formed endpoint of this shape must carry, or {@code null} when the
+     * name cannot be derived from the endpoint's own fields.
+     *
+     * <p>For every CMIS and artifact kind the name is a pure function of the repository and the
+     * identity field, so a verifier can recompute it and compare. The external kinds are the
+     * exception: their name encodes a {@code stableKey} that the endpoint does not keep as a
+     * field, so only the prefix is derivable — see {@link #externalAssetQualifiedNamePrefix}.
+     *
+     * <p>The switch has no {@code default} on purpose: a new kind should fail to compile here
+     * rather than silently fall through to "cannot be derived" and lose the check.
+     */
+    public static String expectedQualifiedName(EndpointKind kind, String repositoryId,
+                                               String objectId, String operationId) {
+        return switch (kind) {
+            case CMIS_DOCUMENT -> objectQualifiedName(repositoryId, objectId);
+            case CMIS_FOLDER -> folderProxyQualifiedName(repositoryId, objectId);
+            case ARCHIVE -> archiveQualifiedName(repositoryId, objectId);
+            case IMPORT_ARTIFACT -> importArtifactQualifiedName(repositoryId, operationId);
+            case EXPORT_ARTIFACT -> exportArtifactQualifiedName(repositoryId, operationId);
+            case EXTERNAL_ASSET, CLOUD_OBJECT, COLD_STORAGE -> null;
+        };
+    }
+
+    /** The derivable part of an external asset's name; the rest is the encoded stable key. */
+    public static String externalAssetQualifiedNamePrefix(String repositoryId) {
+        return "nemaki://" + repositoryId + "/external-assets/";
+    }
+
     public static String objectQualifiedName(String repositoryId, String objectId) {
         return "nemaki://" + repositoryId + "/objects/" + objectId;
     }
@@ -254,7 +283,7 @@ public record LineageEndpoint(
      * must never contain credentials, signed URLs, query strings or fragments.
      */
     public static String externalAssetQualifiedName(String repositoryId, String stableKey) {
-        return "nemaki://" + repositoryId + "/external-assets/"
+        return externalAssetQualifiedNamePrefix(repositoryId)
                 + Base64.getUrlEncoder().withoutPadding()
                         .encodeToString(stableKey.getBytes(StandardCharsets.UTF_8));
     }

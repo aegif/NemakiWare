@@ -244,4 +244,25 @@ public class LineageCanonicalHashTest {
         assertThrows(IllegalArgumentException.class,
                 () -> LineageCanonicalHash.canonicalTargetSet(withNull));
     }
+
+    /** A null set is a caller bug, and should say so rather than surface as a NullPointerException. */
+    @Test
+    public void aNullTargetSetIsRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageCanonicalHash.canonicalTargetSet(null));
+    }
+
+    /**
+     * Sorting is by Java's natural String order — UTF-16 code units, not UTF-8 bytes. The two
+     * disagree above U+E000, and this pins which one identity uses so that a reimplementation
+     * elsewhere cannot quietly choose the other.
+     */
+    @Test
+    public void sortingIsByUtf16CodeUnitOrder() {
+        // U+FF21 (fullwidth A) sorts before U+1D400 (mathematical bold A) by code point, and the
+        // UTF-8 encodings agree; the surrogate pair for U+1D400 begins 0xD835, which is below
+        // 0xFF21, so UTF-16 code units put them the other way round.
+        assertEquals(List.of("𝐀", "Ａ"),
+                LineageCanonicalHash.canonicalTargetSet(List.of("Ａ", "𝐀")));
+    }
 }
