@@ -58,6 +58,10 @@ let lineageSeq = 0;
 let endpointDocId: string | null = null;
 let endpointDocGuid: string | null = null;
 let endpointQn: string | null = null;
+/** A second one, so inputs and outputs can be told apart. */
+let endpointDocId2: string | null = null;
+let endpointDocGuid2: string | null = null;
+let endpointQn2: string | null = null;
 const AUTH_HEADER = 'Basic ' + Buffer.from('admin:admin').toString('base64');
 const ATLAS_AUTH_HEADER = 'Basic ' + Buffer.from('admin:admin').toString('base64');
 const COUCHDB_AUTH_HEADER = 'Basic ' + Buffer.from('admin:password').toString('base64');
@@ -537,6 +541,17 @@ async function ensureEndpointDocument(request: APIRequestContext): Promise<void>
   const entity = await queryAtlasEntity(request, 'nemaki_document', endpointQn!);
   endpointDocGuid = entity.entity.guid;
   expect(endpointDocGuid, 'the synced endpoint document has no Atlas guid').toBeTruthy();
+
+  const name2 = `atlas-e2e-endpoint-${randomSuffix()}`;
+  endpointDocId2 = await createCmisDocument(request, name2);
+  expect(endpointDocId2, 'could not create the second lineage endpoint document').toBeTruthy();
+  endpointQn2 = `nemaki://${REPOSITORY_ID}/objects/${endpointDocId2}`;
+
+  const synced2 = await syncUntil(request, async () =>
+    (await queryAtlasEntity(request, 'nemaki_document', endpointQn2!)) != null);
+  expect(synced2, 'the second lineage endpoint document never reached Atlas').toBe(true);
+  endpointDocGuid2 = (await queryAtlasEntity(request, 'nemaki_document', endpointQn2!)).entity.guid;
+  expect(endpointDocGuid2).toBeTruthy();
 }
 
 /**
@@ -544,15 +559,9 @@ async function ensureEndpointDocument(request: APIRequestContext): Promise<void>
  * relationshipAttributes for the resolved ends, and repeats the entities themselves under
  * referredEntities; a Process linked to nothing has neither.
  */
-function processEndpointGuids(process: any): string[] {
+function processEndpointGuids(process: any, side: 'inputs' | 'outputs'): string[] {
   const attrs = process?.entity?.relationshipAttributes ?? {};
-  const guids: string[] = [];
-  for (const key of ['inputs', 'outputs']) {
-    for (const ref of attrs[key] ?? []) {
-      if (ref?.guid) guids.push(ref.guid);
-    }
-  }
-  return guids;
+  return (attrs[side] ?? []).map((ref: any) => ref?.guid).filter(Boolean);
 }
 
 function registerForTeardown(event: any): any {
@@ -929,7 +938,7 @@ test.describe('Group 4: Lineage Journal → Atlas', () => {
       'IMPORT_UPLOADED',
       eventKey,
       [endpointQn!],
-      [endpointQn!]
+      [endpointQn2!]
     );
 
     await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(event));
@@ -940,14 +949,21 @@ test.describe('Group 4: Lineage Journal → Atlas', () => {
     // reference, or with the wrong GUID — which is what the double-prefixed qualifiedName
     // produced before it was fixed.
     const atlasQn = `nemakiware:${LINEAGE_REPO}:import_uploaded:${eventKey}`;
+    // Two DIFFERENT documents, checked side by side. With the same document on both ends and
+    // the arrays merged, a missing side or a reversed direction would still pass.
     const linked = await pollUntil(async () => {
       const process = await queryAtlasEntity(request, 'Process', atlasQn);
-      return processEndpointGuids(process).includes(endpointDocGuid!);
+      return processEndpointGuids(process, 'inputs').includes(endpointDocGuid!)
+        && processEndpointGuids(process, 'outputs').includes(endpointDocGuid2!);
     }, 120000, 5000);
 
-    expect(linked,
-      `the Process was not linked to the endpoint document (guid ${endpointDocGuid})`).toBe(true);
-    console.log(`Process ${atlasQn} is linked to document guid ${endpointDocGuid}`);
+    const process = await queryAtlasEntity(request, 'Process', atlasQn);
+    expect(processEndpointGuids(process, 'inputs'),
+      'Process.inputs must be exactly the input document').toEqual([endpointDocGuid]);
+    expect(processEndpointGuids(process, 'outputs'),
+      'Process.outputs must be exactly the output document').toEqual([endpointDocGuid2]);
+    expect(linked).toBe(true);
+    console.log(`Process ${atlasQn}: inputs=${endpointDocGuid} outputs=${endpointDocGuid2}`);
   });
 
   test('4.2 Archive event → Atlas process', async ({ request }) => {
@@ -960,7 +976,7 @@ test.describe('Group 4: Lineage Journal → Atlas', () => {
       'ARCHIVE_LOCAL',
       eventKey,
       [endpointQn!],
-      [endpointQn!]
+      [endpointQn2!]
     );
 
     await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(event));
@@ -986,7 +1002,7 @@ test.describe('Group 4: Lineage Journal → Atlas', () => {
       'EXPORT_SELECTED_OBJECTS',
       eventKey,
       [endpointQn!],
-      [endpointQn!]
+      [endpointQn2!]
     );
 
     await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(event));
@@ -1255,7 +1271,7 @@ test.describe('Group 7: Event replay', () => {
       'IMPORT_UPLOADED',
       eventKey,
       [endpointQn!],
-      [endpointQn!]
+      [endpointQn2!]
     );
     event.publishStatusByTarget = { atlas: 'PROJECTING' };
     event.claimedAtByTarget = { atlas: new Date().toISOString() };
@@ -1354,7 +1370,7 @@ test.describe('Group 8: Multi-target', () => {
       'IMPORT_UPLOADED',
       eventKey,
       [endpointQn!],
-      [endpointQn!]
+      [endpointQn2!]
     );
     await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(event));
 
@@ -1395,9 +1411,9 @@ test.describe('Group 8: Multi-target', () => {
     const a = randomSuffix();
     const b = randomSuffix();
     const first = makeLineageEvent('IMPORT_UPLOADED', `test-seq-a-${a}`,
-      [endpointQn!], [endpointQn!]);
+      [endpointQn!], [endpointQn2!]);
     const second = makeLineageEvent('IMPORT_UPLOADED', `test-seq-b-${b}`,
-      [endpointQn!], [endpointQn!]);
+      [endpointQn!], [endpointQn2!]);
     expect(second.sequenceNumber).toBe(first.sequenceNumber + 1);
 
     await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(first));
@@ -1460,7 +1476,7 @@ test.afterAll(async ({ request }) => {
     }
   };
 
-  for (const id of [testDocId, unsyncedDocId, endpointDocId]) {
+  for (const id of [testDocId, unsyncedDocId, endpointDocId, endpointDocId2]) {
     if (id) {
       await deleteCmisObject(request, id);
       await dropAtlas('nemaki_document', `nemaki://${REPOSITORY_ID}/objects/${id}`);
@@ -1476,6 +1492,9 @@ test.afterAll(async ({ request }) => {
   endpointDocId = null;
   endpointDocGuid = null;
   endpointQn = null;
+  endpointDocId2 = null;
+  endpointDocGuid2 = null;
+  endpointQn2 = null;
 
   // Every Process the projector could have created from an injected event, derived from the
   // events themselves rather than remembered test by test — Groups 7 and 8 were not registering

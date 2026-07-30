@@ -8,8 +8,6 @@ import org.springframework.stereotype.Component;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.net.URI;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.*;
@@ -57,24 +55,6 @@ public class AtlasLineageSink implements LineageTargetSink {
         String endpoint = atlasConfig.getEndpoint().replaceAll("/+$", "");
         validateEndpoint(endpoint);
         String url = endpoint + "/api/atlas/v2/entity/bulk";
-
-        // Fail closed on endpoints the catalog cannot represent.
-        //
-        // Process.inputs/outputs is array<DataSet> in Atlas. Of what lineage events actually
-        // carry, only documents are DataSets: nemaki_document extends DataSet, nemaki_folder
-        // extends Referenceable, and upload:// / file:// / cloud:// / cold:// have no entity at
-        // all. Publishing anyway does not fail — Atlas accepts the bulk write and the Process
-        // ends up linked to nothing, or to a shell entity it invents for the dangling reference.
-        // A lineage graph that is silently wrong is worse than one that visibly stopped, so an
-        // event whose endpoints do not resolve becomes a failure the operator can see and the
-        // dead-letter queue can hold.
-        List<String> unresolved = unresolvableEndpoints(client, endpoint, event);
-        if (!unresolved.isEmpty()) {
-            String message = "Atlas cannot represent " + unresolved.size() + " endpoint(s) of "
-                    + event.eventKey() + " as DataSet: " + String.join(", ", unresolved);
-            logger.warn("{}", message);
-            return LineageTargetSinkResult.failure(message);
-        }
 
         // Build Atlas entity payload
         Map<String, Object> payload = buildAtlasPayload(event);
@@ -126,41 +106,6 @@ public class AtlasLineageSink implements LineageTargetSink {
         entities.add(processEntity);
 
         return Map.of("entities", entities);
-    }
-
-    /**
-     * The event endpoints that Atlas would not resolve as a DataSet, in the order they appear.
-     *
-     * <p>Checked by asking Atlas, rather than by guessing from the URI scheme: whether a given
-     * {@code nemaki://} object is a document (a DataSet) or a folder (a Referenceable) is not
-     * visible in the string, and the catalog sync may simply not have published it yet.
-     */
-    private List<String> unresolvableEndpoints(SimpleHttpClient client, String endpoint,
-                                               LineageEvent event) {
-        List<String> unresolved = new ArrayList<>();
-        List<String> all = new ArrayList<>();
-        if (event.inputs() != null) all.addAll(event.inputs());
-        if (event.outputs() != null) all.addAll(event.outputs());
-        for (String qualifiedName : all) {
-            if (!resolvesAsDataSet(client, endpoint, qualifiedName)) {
-                unresolved.add(qualifiedName);
-            }
-        }
-        return unresolved;
-    }
-
-    private boolean resolvesAsDataSet(SimpleHttpClient client, String endpoint, String qualifiedName) {
-        try {
-            String url = endpoint + "/api/atlas/v2/entity/uniqueAttribute/type/DataSet?attr:qualifiedName="
-                    + URLEncoder.encode(qualifiedName, StandardCharsets.UTF_8);
-            HttpResponse<String> response = client.getJson(url);
-            return response.statusCode() >= 200 && response.statusCode() < 300;
-        } catch (Exception e) {
-            // Unreachable is not "absent" — treat it as unresolved so the event is retried
-            // rather than published against a catalog we could not read.
-            logger.warn("Could not check Atlas endpoint {}: {}", qualifiedName, e.getMessage());
-            return false;
-        }
     }
 
     /**
