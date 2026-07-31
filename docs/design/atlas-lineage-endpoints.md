@@ -1,6 +1,6 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.1 draft / 実装着手 sign-off 待ち**
+status: **v2.3.2 — increment A sign-off 済み (条件付き)。A-1〜A-1f 実装済み、A-2 着手承認待ち**
 revision:
 - v2 — §4 §6 §8 §9 を全面改訂。v1 の採番一体化案・caller 例外案・raw URI QN 案・
   `upload://` 空 input 案・`REPLAYED` 上書き案は**撤回**。撤回理由は各節に残す。
@@ -21,10 +21,18 @@ revision:
   multi-target ORIGINAL を定義 (§3)、v2 経路から `eventKey` を全廃 (§3 §8 §10)、
   lease 欠落時の acquire 禁止と復旧手順 (§8)、typed endpoint は全 mode 共通・
   耐久機構のみ `JOURNALED` 限定 (§8)、状態表と kind 表の残存修正 (§2 §4 §8 §10)。
+- v2.3.2 — **実装 (A-1〜A-1f) で確定した訂正を反映**。external stableKey の書式を既存 catalog
+  sync に統一し `ExternalAssetIdentity` へ集約 (独自 scheme `cloud://` 等は撤回、§4)、
+  snapshot allowlist を実 Atlas schema と機械的に整合 (§2)、ARCHIVE の同一性を `archiveId` に
+  訂正 (§10)、D の依存を「A-2 に依存」に訂正、並び順を符号なし UTF-8 バイト辞書順に固定 (§3)、
+  表示 URL (`cloudFileUrl`) を stableKey とは**別契約**として sanitize (§4)。
 scope: v3.3 内で Atlas 連携を完成させるための設計。実装は sign-off 後に A〜E の独立コミットで行う。
 関連: [`docs/design/acl-epoch-fencing.md`](acl-epoch-fencing.md) (同じ outbox/cursor の考え方を使う)
 
-この文書は**設計のみ**である。ここに書かれた変更はまだ1行も入っていない。
+実装状況: **A-1〜A-1f が `deps/v3.3-breaking-majors` に実装済み** (型体系・identity 符号化・
+`ExternalAssetIdentity` への命名集約・schema 整合・identity CI)。**A-2 (event 移行) 以降は
+未実装**で、着手は承認待ち。本文の規範記述は実装と同期させており、乖離を見つけたら
+どちらかが誤りである — A-1 を再実装しないこと。
 
 ---
 
@@ -492,7 +500,7 @@ v1 は `cloud://` `file://` `cold://` を**そのまま qualifiedName**にする
 
 raw URI を QN にすると、**同一の external asset が Purview 既存経路と journal 経路で別 entity に割れる**。
 さらに raw QN は repository namespace を持たないため §7 の cross-repository 禁止とも矛盾する。
-`file://` の絶対パスをそのまま QN にすると、ホスト構成が catalog の主キーとして永続化される。
+filesystem の絶対パスをそのまま QN にすると、ホスト構成が catalog の主キーとして永続化される。
 
 ### v2 規則
 
@@ -531,6 +539,7 @@ HMAC 付き bundle (§9) も**完全性の保証であって暗号化ではな�
 | 各規則の適用範囲 | `?` `#` は **filesystem path 以外の全 key** で拒否する (URI 形状かどうかを問わない)。opaque な connector ID にこれらが入っている場合、剥がし忘れた URL である可能性の方が高く、fail-closed 側を採る。filesystem path だけは例外で、`?` `#` はファイル名に使える普通の文字であり、拒否すると正当なファイルが lineage に載らなくなる。userinfo は authority が存在する key (`://` を含むもの) でのみ検査する — `@` 単体は mailbox path 等で正当 |
 | 検査の限界 | 区切り文字を伴わない token が opaque ID に埋まっている場合は通常の ID と区別できず、そこは producer の責任として残る。この検査は「producer が剥がしたことの確認」であって代替ではない |
 | stableKey の書式 | **既存 catalog sync が正典**。cloud = `{provider}:{externalFileId}`、filesystem = `filesystem:{絶対正規化パス}`、cold = archive の `contentRef.ref` をそのまま。`ExternalAssetIdentity` が唯一の実装で、lineage と catalog sync の両方がそこを通る。独自 scheme (`cloud://` 等) を作ると同一資産が Atlas 上で 2 entity に割れ、A-2 以降は `processKey` まで変わるので後から直せない |
+| 表示 URL (`cloudFileUrl` / cloud の `externalPath`) | stableKey の規則は表示 URL に流用**できない** — drive は query で正当にファイルを指す (Google の `?id=` 等) ため、拒否すると正当な URL まで落ちる。一方 query は共有トークン (`?authkey=` 等) の置き場でもある。**別契約**とする: cloud の lineage endpoint は `externalPath` を**持たない** (allowlist 外・表現不能)。sync の external asset `externalPath` は `externalFileId`。document entity の `cloudFileUrl` は `SafeDisplayUrl` (http(s)+host 必須、userinfo は null、query/fragment 除去) を通す。provider 別 canonical URL の再構成は増分 B |
 | stableKey の保持 | external / cloud / cold は `attributes.externalStableKey` に**必須**で持つ。QN はそこから再計算でき、§7 の検証は prefix 一致ではなく**完全一致**で行う (QN が key A、attribute が key B という endpoint は、catalog が名前で解決する実体と snapshot が attribute で解決する実体が食い違う) |
 | filesystem path | 正規化済み絶対パス。`/srv/in/./a.pdf` と `/srv/in/b/../a.pdf` が 2 資産にならないこと |
 | Atlas 閲覧権限 | QN からホスト構成・外部識別子が読めるため、**Atlas の閲覧権限は catalog 管理者に限定**する運用前提を明記する |

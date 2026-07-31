@@ -87,9 +87,18 @@ public enum EndpointKind {
     EXTERNAL_ASSET("nemaki_external_asset", Identity.STABLE_KEY, "externalStableKey",
             requiredText("sourceSystem"), requiredText("externalStableKey"), text("externalPath")),
 
-    /** An object in a cloud drive; {@code sourceSystem} carries the provider. */
+    /**
+     * An object in a cloud drive; {@code sourceSystem} carries the provider.
+     *
+     * <p>No {@code externalPath}. For a cloud object the natural value would be the drive URL,
+     * and a drive URL legitimately carries query parameters — which is also where sharing tokens
+     * live ({@code ?authkey=…}). Until increment B defines a provider-canonical URL rebuilt from
+     * the file id, there is nothing safe to put here, so the attribute is unrepresentable rather
+     * than merely unused. Identity does not need it: the stable key is already
+     * {@code {provider}:{fileId}}.
+     */
     CLOUD_OBJECT("nemaki_external_asset", Identity.STABLE_KEY, "externalStableKey",
-            requiredText("sourceSystem"), requiredText("externalStableKey"), text("externalPath")),
+            requiredText("sourceSystem"), requiredText("externalStableKey")),
 
     /**
      * An object moved to cold storage.

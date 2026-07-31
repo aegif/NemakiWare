@@ -17,6 +17,7 @@
 package jp.aegif.nemaki.rest.purview.journal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -323,13 +324,76 @@ public class ExternalAssetNamingCrossPathTest {
                 rebuilt.catalogQualifiedName());
     }
 
+    /**
+     * A sharing token in a stored cloud URL must reach no Atlas payload and no endpoint.
+     *
+     * <p>The stable key was already guarded; the token travelled in the attributes beside it —
+     * the external asset's {@code externalPath}, the document entity's {@code cloudFileUrl}, the
+     * process entity's {@code targetDescription}. The drive API accepting a query-addressed URL
+     * is exactly why the identity rule could not simply be reused here: Google's {@code ?id=…} is
+     * legitimate, so the URL is stripped by {@code SafeDisplayUrl} rather than rejected.
+     *
+     * <p>Event, digest and spool coverage arrives with A-2; a cloud endpoint cannot carry the URL
+     * at all (the attribute is outside its allowlist), so those surfaces are closed by
+     * construction.
+     */
+    @Test
+    public void aSharingTokenInAStoredUrlReachesNoPayloadAndNoEndpoint() {
+        String tampered =
+                "https://tenant.sharepoint.com/personal/u/Documents/plan.docx?authkey=SECRET-TOKEN";
+        Document document = cloudDocument("onedrive", "file-9", tampered);
+
+        String externalAsset = String.valueOf(sync.buildExternalAssetEntity(REPO, document));
+        assertFalse(externalAsset.contains("SECRET-TOKEN"), externalAsset);
+        assertTrue(externalAsset.contains("externalPath=file-9"),
+                "externalPath is the file id, the secret-free spelling of the same fact: "
+                        + externalAsset);
+
+        String documentEntity = String.valueOf(sync.buildDocumentEntity(REPO, document));
+        assertFalse(documentEntity.contains("SECRET-TOKEN"), documentEntity);
+        assertTrue(documentEntity.contains(
+                        "cloudFileUrl=https://tenant.sharepoint.com/personal/u/Documents/plan.docx"),
+                "the stripped URL survives so the link is still useful: " + documentEntity);
+
+        String processEntity = String.valueOf(sync.buildCloudSyncProcessEntity(REPO, document));
+        assertFalse(processEntity.contains("SECRET-TOKEN"), processEntity);
+
+        LineageEndpoint endpoint = LineageEndpoint.cloudObject(REPO, "onedrive", "file-9");
+        assertFalse(endpoint.attributes().containsKey("externalPath"),
+                "a cloud endpoint has no externalPath to carry a URL in");
+        assertFalse(endpoint.toString().contains("SECRET-TOKEN"));
+    }
+
+    /** The URL cannot be smuggled into a cloud endpoint directly, and the rejection stays clean. */
+    @Test
+    public void aCloudEndpointCannotCarryTheUrlAndTheRejectionCarriesNoSecret() {
+        String tampered = "https://tenant.sharepoint.com/x.docx?authkey=SECRET-TOKEN";
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> new LineageEndpoint(EndpointKind.CLOUD_OBJECT,
+                        LineageEndpoint.externalAssetQualifiedName(REPO, "onedrive:file-9"),
+                        REPO, null, null,
+                        Map.of("sourceSystem", "onedrive",
+                                LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY, "onedrive:file-9",
+                                "externalPath", tampered)));
+        assertFalse(e.getMessage().contains("SECRET-TOKEN"), e.getMessage());
+        assertTrue(e.getMessage().contains("allowlist"), e.getMessage());
+    }
+
     private static Document cloudDocument(String provider, String fileId) {
+        return cloudDocument(provider, fileId, null);
+    }
+
+    private static Document cloudDocument(String provider, String fileId, String cloudFileUrl) {
         Document document = new Document();
         document.setId("d-1");
         document.setName("contract.pdf");
-        document.setSubTypeProperties(List.of(
+        List<Property> properties = new java.util.ArrayList<>(List.of(
                 new Property("nemaki:cloudProvider", provider),
                 new Property("nemaki:cloudFileId", fileId)));
+        if (cloudFileUrl != null) {
+            properties.add(new Property("nemaki:cloudFileUrl", cloudFileUrl));
+        }
+        document.setSubTypeProperties(properties);
         return document;
     }
 

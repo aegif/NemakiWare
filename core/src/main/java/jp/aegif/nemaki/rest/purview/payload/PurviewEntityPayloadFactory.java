@@ -154,7 +154,11 @@ public class PurviewEntityPayloadFactory {
         attributes.put("archivedAt", null);
         attributes.put("cloudProvider", PurviewCloudMetadataSupport.getCloudProvider(content));
         attributes.put("externalFileId", PurviewCloudMetadataSupport.getExternalFileId(content));
-        attributes.put("cloudFileUrl", PurviewCloudMetadataSupport.getCloudFileUrl(content));
+        // Through SafeDisplayUrl, never raw: a drive legitimately addresses files through query
+        // parameters, which is also where sharing tokens live (SharePoint's ?authkey=...), and
+        // this value is persisted in a catalog entity. Identity never contained the URL.
+        attributes.put("cloudFileUrl", jp.aegif.nemaki.rest.purview.SafeDisplayUrl.of(
+                PurviewCloudMetadataSupport.getCloudFileUrl(content)));
         attributes.put("cloudLastSyncedAt", PurviewCloudMetadataSupport.getCloudLastSyncedAt(content));
 
         // Inject custom property values based on mapping configuration
@@ -502,9 +506,10 @@ public class PurviewEntityPayloadFactory {
         attributes.put("modifiedTime", toEpochMillis(content.getModified()));
         attributes.put("externalStableKey", stableKey);
         attributes.put("sourceSystem", PurviewCloudMetadataSupport.getCloudProvider(content));
-        attributes.put("externalPath", firstNonBlank(
-                PurviewCloudMetadataSupport.getCloudFileUrl(content),
-                PurviewCloudMetadataSupport.getExternalFileId(content)));
+        // The file id, not the stored URL: a URL the drive API accepts can carry a sharing
+        // token in its query string, and externalPath is persisted in the catalog. The id is the
+        // same fact with nothing secret in it — it is already half of the stable key.
+        attributes.put("externalPath", PurviewCloudMetadataSupport.getExternalFileId(content));
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", EXTERNAL_ASSET_TYPE_NAME);
@@ -530,7 +535,8 @@ public class PurviewEntityPayloadFactory {
         attributes.put("cloudProvider", PurviewCloudMetadataSupport.getCloudProvider(content));
         attributes.put("externalStableKey", stableKey);
         attributes.put("targetDescription", firstNonBlank(
-                PurviewCloudMetadataSupport.getCloudFileUrl(content),
+                jp.aegif.nemaki.rest.purview.SafeDisplayUrl.of(
+                        PurviewCloudMetadataSupport.getCloudFileUrl(content)),
                 PurviewCloudMetadataSupport.getExternalFileId(content)));
 
         Map<String, Object> relationshipAttributes = new LinkedHashMap<>();
