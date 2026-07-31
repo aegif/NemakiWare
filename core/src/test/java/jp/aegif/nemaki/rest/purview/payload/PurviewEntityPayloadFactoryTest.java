@@ -160,7 +160,10 @@ public class PurviewEntityPayloadFactoryTest {
         assertEquals("ACTIVE", attributes.get("lifecycleState"));
         assertEquals("google", attributes.get("cloudProvider"));
         assertEquals("cloud-001", attributes.get("externalFileId"));
-        assertEquals("https://drive.example/doc-001", attributes.get("cloudFileUrl"));
+        // no stored URL reaches the catalog: SharePoint-style sharing tokens live in the path,
+        // so no transformation of a stored URL is secret-free (A-1g); null also clears any raw
+        // URL published before this rule, on the next republish
+        assertNull(attributes.get("cloudFileUrl"));
         assertEquals("2026-03-20T03:00:00.000+0000", attributes.get("cloudLastSyncedAt"));
         assertTrue(((Number) attributes.get("createTime")).longValue() > 0);
         assertTrue(((Number) attributes.get("modifiedTime")).longValue() > 0);
