@@ -32,6 +32,9 @@ on:
       - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/PurviewSchemaPayloadFactory.java'
       - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/PurviewEntityPayloadFactory.java'
       - 'core/src/main/java/jp/aegif/nemaki/rest/purview/PurviewCloudMetadataSupport.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/SafeDisplayUrl.java'
+      - 'core/src/test/java/jp/aegif/nemaki/rest/purview/SafeDisplayUrlTest.java'
+      - 'core/src/test/java/jp/aegif/nemaki/rest/purview/payload/PurviewEntityPayloadFactoryTest.java'
       - 'core/src/test/java/jp/aegif/nemaki/rest/purview/journal/**'
       - 'core/src/test/java/jp/aegif/nemaki/rest/purview/ExternalAssetIdentityTest.java'
       - 'core/src/test/resources/lineage/**'
@@ -44,6 +47,9 @@ on:
       - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/PurviewSchemaPayloadFactory.java'
       - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/PurviewEntityPayloadFactory.java'
       - 'core/src/main/java/jp/aegif/nemaki/rest/purview/PurviewCloudMetadataSupport.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/SafeDisplayUrl.java'
+      - 'core/src/test/java/jp/aegif/nemaki/rest/purview/SafeDisplayUrlTest.java'
+      - 'core/src/test/java/jp/aegif/nemaki/rest/purview/payload/PurviewEntityPayloadFactoryTest.java'
       - 'core/src/test/java/jp/aegif/nemaki/rest/purview/journal/**'
       - 'core/src/test/java/jp/aegif/nemaki/rest/purview/ExternalAssetIdentityTest.java'
       - 'core/src/test/resources/lineage/**'
@@ -99,5 +105,5 @@ jobs:
       - name: Java identity, endpoint and schema-alignment tests
         run: >
           mvn -B -f core/pom.xml -Pdevelopment,opencmis-github-packages test
-          -Dtest='LineageCanonicalHashTest,LineageIdentityTest,LineageEndpointTest,LineageEndpointBypassTest,LineageRepositoryScopeTest,EndpointAttributeTest,EndpointKindSchemaAlignmentTest,ExternalAssetNamingCrossPathTest,ExternalAssetIdentityTest'
+          -Dtest='LineageCanonicalHashTest,LineageIdentityTest,LineageEndpointTest,LineageEndpointBypassTest,LineageRepositoryScopeTest,EndpointAttributeTest,EndpointKindSchemaAlignmentTest,ExternalAssetNamingCrossPathTest,ExternalAssetIdentityTest,SafeDisplayUrlTest,PurviewEntityPayloadFactoryTest'
           -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false

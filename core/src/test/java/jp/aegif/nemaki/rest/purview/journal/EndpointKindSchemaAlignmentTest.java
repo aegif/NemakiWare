@@ -175,7 +175,9 @@ public class EndpointKindSchemaAlignmentTest {
                 "archiveState"), EndpointKind.ARCHIVE.allowedAttributes());
         assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath"),
                 EndpointKind.EXTERNAL_ASSET.allowedAttributes());
-        assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath"),
+        // no externalPath: the natural value is the drive URL, whose query string is where
+        // sharing tokens live — unrepresentable until B defines a provider-canonical URL
+        assertEquals(List.of("sourceSystem", "externalStableKey"),
                 EndpointKind.CLOUD_OBJECT.allowedAttributes());
         assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath"),
                 EndpointKind.COLD_STORAGE.allowedAttributes());

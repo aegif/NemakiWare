@@ -408,7 +408,9 @@ public class PurviewEntityPayloadFactoryTest {
         assertEquals("nemaki_external_asset", externalAsset.get("typeName"));
         assertEquals("google:cloud-001", externalAttributes.get("externalStableKey"));
         assertEquals("google", externalAttributes.get("sourceSystem"));
-        assertEquals("https://drive.example/doc-001", externalAttributes.get("externalPath"));
+        // the file id, not the stored URL: a drive URL's query string can carry a sharing
+        // token, and externalPath is persisted in the catalog (A-1f)
+        assertEquals("cloud-001", externalAttributes.get("externalPath"));
 
         Map<String, Object> processAttributes = (Map<String, Object>) syncProcess.get("attributes");
         Map<String, Object> relationshipAttributes = (Map<String, Object>) syncProcess.get("relationshipAttributes");
