@@ -114,17 +114,61 @@ class CatalogPropertyMappingResolverTest {
             assertEquals(0, r.getRejectedMappingCount());
         }
 
+        /**
+         * The output name is innocuous; the input property is the secret carrier.
+         *
+         * <p>{@code nemaki:cloudFileUrl -> legacyCloudUrl} passes the reserved-name rule (nothing
+         * is called legacyCloudUrl) and the payload boundary (no such attribute exists yet), and
+         * would put in Atlas exactly the URL increment A-1g removed. The property is real on older
+         * documents — {@code CloudDriveResource} still reads cloud metadata from
+         * {@code subTypeProperties} as a legacy fallback.
+         */
+        @Test
+        void testAForbiddenSourcePropertyIsDroppedWhateverTheOutputNameIs() {
+            for (String outputName : List.of("legacyCloudUrl", "myUrl", "department")) {
+                CatalogPropertyMappingResolver r = withStoredJson("""
+                        { "nemaki:document": {
+                            "nemaki:cloudFileUrl": { "enabled": true, "catalogName": "%s" } } }
+                        """.formatted(outputName));
+                assertTrue(r.getEnabledMappings("bedroom", "nemaki:document").isEmpty(),
+                        "nemaki:cloudFileUrl projected as '" + outputName + "'");
+                assertEquals(1, r.getRejectedMappingCount());
+            }
+        }
+
+        /** And it must not take the rest of the configuration down with it. */
+        @Test
+        void testOtherMappingsSurviveAForbiddenSourceProperty() {
+            CatalogPropertyMappingResolver r = withStoredJson("""
+                    { "nemaki:document": {
+                        "nemaki:cloudFileUrl": { "enabled": true, "catalogName": "legacyCloudUrl" },
+                        "nemaki:dept":         { "enabled": true, "catalogName": "department" } } }
+                    """);
+            assertEquals(Map.of("nemaki:dept", "department"),
+                    r.getEnabledMappings("bedroom", "nemaki:document"));
+        }
+
         /** Save and load must agree, or one of them is the hole. */
         @Test
         void testSaveRejectsWhatLoadRejects() {
             for (String name : List.of("cloudFileUrl", "qualifiedName", "externalFileId", " ")) {
-                assertTrue(CatalogPropertyMappingResolver.isUnusableCatalogName(name), name);
+                assertTrue(CatalogPropertyMappingResolver.isUnusableMapping("nemaki:x", name), name);
                 assertFalse(CatalogPropertyMappingResolver.validateMappings(Map.of(
                                 "nemaki:document", Map.of("nemaki:x",
                                         new CatalogPropertyMappingResolver.PropertyMapping(true, name))))
                         .isEmpty(), name + " passed validateMappings");
             }
-            assertFalse(CatalogPropertyMappingResolver.isUnusableCatalogName("department"));
+            // the input side, through the same predicate and the same validator
+            assertTrue(CatalogPropertyMappingResolver.isUnusableMapping(
+                    "nemaki:cloudFileUrl", "legacyCloudUrl"));
+            assertFalse(CatalogPropertyMappingResolver.validateMappings(Map.of(
+                            "nemaki:document", Map.of("nemaki:cloudFileUrl",
+                                    new CatalogPropertyMappingResolver.PropertyMapping(
+                                            true, "legacyCloudUrl"))))
+                    .isEmpty(), "a forbidden source property passed validateMappings");
+
+            assertFalse(CatalogPropertyMappingResolver.isUnusableMapping("nemaki:dept",
+                    "department"));
         }
     }
 

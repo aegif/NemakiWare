@@ -41,6 +41,22 @@ public class CatalogPropertyMappingResolver {
      * Core entity attribute names used by nemaki_document and nemaki_folder.
      * Custom catalogName values must not collide with these.
      */
+    /**
+     * CMIS properties that may never be projected, whatever the mapping calls the output.
+     *
+     * <p>The reserved-name rule guards the <em>output</em> side: it stops a mapping from writing
+     * over {@code cloudFileUrl}. It says nothing about a mapping that reads
+     * {@code nemaki:cloudFileUrl} and writes it somewhere innocuous —
+     * {@code nemaki:cloudFileUrl -> legacyCloudUrl} passes the output check, passes the payload
+     * boundary because no such attribute exists yet, and puts the raw URL in Atlas anyway.
+     *
+     * <p>That property really is present on documents: {@code CloudDriveResource} still reads
+     * cloud metadata out of {@code subTypeProperties} as a legacy fallback, so it is stored there
+     * on older documents. The URL is the value increment A-1g removed from the catalog entirely;
+     * a custom mapping must not be a second door to it.
+     */
+    static final Set<String> FORBIDDEN_SOURCE_PROPERTY_IDS = Set.of("nemaki:cloudFileUrl");
+
     static final Set<String> RESERVED_ATTRIBUTE_NAMES = Set.of(
             "qualifiedName", "name", "description", "owner",
             "createTime", "modifiedTime",
@@ -226,7 +242,7 @@ public class CatalogPropertyMappingResolver {
                     // A reserved catalogName lets a custom property overwrite a core attribute
                     // — including cloudFileUrl, which increment A-1g sets to null precisely so
                     // that no stored URL reaches the catalog.
-                    if (enabled && isUnusableCatalogName(catalogName)) {
+                    if (enabled && isUnusableMapping(propEntry.getKey(), catalogName)) {
                         warnOnceAboutRejectedMapping(typeEntry.getKey(), propEntry.getKey(),
                                 catalogName);
                         // this mapping only; the rest of the projection is unaffected
@@ -332,6 +348,22 @@ public class CatalogPropertyMappingResolver {
         return RESERVED_ATTRIBUTE_NAMES.contains(catalogName.trim());
     }
 
+    /** A source property that must not be projected under any output name. */
+    static boolean isForbiddenSourceProperty(String cmisPropertyId) {
+        return cmisPropertyId != null
+                && FORBIDDEN_SOURCE_PROPERTY_IDS.contains(cmisPropertyId.trim());
+    }
+
+    /**
+     * The whole predicate: both ends of the mapping.
+     *
+     * <p>One method so that save and load cannot check different things — the previous split was
+     * how the output rule ended up enforced in two places and the input rule in none.
+     */
+    static boolean isUnusableMapping(String cmisPropertyId, String catalogName) {
+        return isForbiddenSourceProperty(cmisPropertyId) || isUnusableCatalogName(catalogName);
+    }
+
     /**
      * One WARN per (type, property, name), because this runs on every parse of every repository's
      * configuration and an operator needs to see it without it drowning the log.
@@ -372,6 +404,11 @@ public class CatalogPropertyMappingResolver {
                     continue;
                 }
                 // same predicate the load path uses, so save and load cannot disagree
+                if (isForbiddenSourceProperty(propEntry.getKey())) {
+                    errors.add("Property " + loc + " may not be projected to the catalog under any"
+                            + " name: '" + propEntry.getKey() + "' is a forbidden source property");
+                    continue;
+                }
                 if (isUnusableCatalogName(m.catalogName())) {
                     errors.add("Property " + loc
                             + " uses reserved catalog attribute name '" + m.catalogName() + "'");

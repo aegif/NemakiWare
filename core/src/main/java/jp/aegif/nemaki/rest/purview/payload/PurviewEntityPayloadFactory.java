@@ -241,6 +241,16 @@ public class PurviewEntityPayloadFactory {
                     || localEntry.cardinality() != schemaEntry.cardinality()) {
                 continue;
             }
+            // Both ends, at the boundary as well as at load. The output-name check below stops a
+            // mapping from replacing a core attribute; this stops one from carrying a forbidden
+            // property out under a name nobody reserved — nemaki:cloudFileUrl -> legacyCloudUrl
+            // passes every output-side rule and puts the raw URL in Atlas regardless.
+            if (CatalogPropertyMappingResolver.isForbiddenSourceProperty(cmisPropertyId)) {
+                logger.warn("Ignoring custom property mapping '{}' -> '{}': that CMIS property is"
+                        + " not projected to the catalog under any name.",
+                        cmisPropertyId, catalogName);
+                continue;
+            }
             Object value = propertyValues.get(cmisPropertyId);
             if (value == null) {
                 continue;

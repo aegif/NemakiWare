@@ -1,6 +1,6 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.4 — increment A sign-off 済み (条件付き)。A-1〜A-1h 実装済み、A-2 着手承認待ち**
+status: **v2.3.5 — increment A sign-off 済み (条件付き)。A-1〜A-1i 実装済み、A-2 着手承認待ち**
 revision:
 - v2 — §4 §6 §8 §9 を全面改訂。v1 の採番一体化案・caller 例外案・raw URI QN 案・
   `upload://` 空 input 案・`REPLAYED` 上書き案は**撤回**。撤回理由は各節に残す。
@@ -26,6 +26,10 @@ revision:
   snapshot allowlist を実 Atlas schema と機械的に整合 (§2)、ARCHIVE の同一性を `archiveId` に
   訂正 (§10)、D の依存を「A-2 に依存」に訂正、並び順を符号なし UTF-8 バイト辞書順に固定 (§3)、
   表示 URL (`cloudFileUrl`) を stableKey とは**別契約**として sanitize (§4)。
+- v2.3.5 — custom property mapping の**入力側**も禁止集合で塞ぐ (§4)。v2.3.4 は出力名しか見て
+  おらず、`nemaki:cloudFileUrl → legacyCloudUrl` は出力名が予約でも既存属性でもないため両ガードを
+  通過し、生 URL が別名で Atlas に載った。`FORBIDDEN_SOURCE_PROPERTY_IDS` を新設し、
+  save / load / payload 境界の 3 箇所が同一述語 `isUnusableMapping(入力ID, 出力名)` を使う。
 - v2.3.4 — custom property mapping からの復活経路を閉鎖 (§4)。予約名・空白名を **load 時**にも
   拒否 (従来は `saveMappings` のみ = 旧設定 / restore / CouchDB 直接編集 / 破損設定に無効)、
   payload 最終境界で `containsKey` 検査 (`putIfAbsent` は null を上書きするため不可)。
@@ -39,7 +43,7 @@ revision:
 scope: v3.3 内で Atlas 連携を完成させるための設計。実装は sign-off 後に A〜E の独立コミットで行う。
 関連: [`docs/design/acl-epoch-fencing.md`](acl-epoch-fencing.md) (同じ outbox/cursor の考え方を使う)
 
-実装状況: **A-1〜A-1f が `deps/v3.3-breaking-majors` に実装済み** (型体系・identity 符号化・
+実装状況: **A-1〜A-1i が `deps/v3.3-breaking-majors` に実装済み** (型体系・identity 符号化・
 `ExternalAssetIdentity` への命名集約・schema 整合・identity CI)。**A-2 (event 移行) 以降は
 未実装**で、着手は承認待ち。本文の規範記述は実装と同期させており、乖離を見つけたら
 どちらかが誤りである — A-1 を再実装しないこと。
@@ -549,6 +553,7 @@ HMAC 付き bundle (§9) も**完全性の保証であって暗号化ではな�
 | 各規則の適用範囲 | `?` `#` は **filesystem path 以外の全 key** で拒否する (URI 形状かどうかを問わない)。opaque な connector ID にこれらが入っている場合、剥がし忘れた URL である可能性の方が高く、fail-closed 側を採る。filesystem path だけは例外で、`?` `#` はファイル名に使える普通の文字であり、拒否すると正当なファイルが lineage に載らなくなる。userinfo は authority が存在する key (`://` を含むもの) でのみ検査する — `@` 単体は mailbox path 等で正当 |
 | 検査の限界 | 区切り文字を伴わない token が opaque ID に埋まっている場合は通常の ID と区別できず、そこは producer の責任として残る。この検査は「producer が剥がしたことの確認」であって代替ではない |
 | stableKey の書式 | **既存 catalog sync が正典**。cloud = `{provider}:{externalFileId}`、filesystem = `filesystem:{絶対正規化パス}`、cold = archive の `contentRef.ref` をそのまま。`ExternalAssetIdentity` が唯一の実装で、lineage と catalog sync の両方がそこを通る。独自 scheme (`cloud://` 等) を作ると同一資産が Atlas 上で 2 entity に割れ、A-2 以降は `processKey` まで変わるので後から直せない |
+| custom property mapping | 出力名 (`catalogName`) が予約名・空白の mapping に加え、**入力 (`cmisPropertyId`) が禁止集合のものも拒否**する。`nemaki:cloudFileUrl` は禁止 — 出力名を無害なものにすれば (`legacyCloudUrl` 等) 出力側の検査を全部通り、A-1g が取り除いた生 URL が別名で載るため。旧文書は cloud metadata を `subTypeProperties` に持つので、この保存形は仮定ではない。検査は save / load / payload 最終境界の 3 箇所で、述語は 1 つ (`isUnusableMapping`) |
 | 既発行値の除去 | **本増分が保証するのは新規発行の停止のみ。** null は payload に載る (client の ObjectMapper は Jackson 既定の inclusion) が、backend が既存 property を削除するか null を無視するかは Atlas OSS と Purview で異なり、**どちらも未検証**。A-1g 以前に発行済みの raw URL の除去は別作業とし、release gate の live Atlas E2E で「republish 後に旧 URL が実際に消えているか」を確認する。消えない backend なら明示的な purge / entity 再作成手順を用意する |
 | 表示 URL (`cloudFileUrl` / cloud の `externalPath`) | **Atlas 永続化境界は保存 URL を一切運ばない**。query 剥離では足りない — SharePoint の modern sharing link は token を **path** に置き (`/:x:/g/…TOKEN`、`CloudDriveResource` が受理する形)、`%3Ftoken` や `;auth=` のような path 内表現もあるため、保存 URL のいかなる変形も secret-free を保証できない (v2.3.2 の sanitize 案は撤回)。現契約: cloud の lineage endpoint は `externalPath` を持たない (allowlist 外・表現不能)、sync external asset の `externalPath` と process の `targetDescription` は `externalFileId`、document の `cloudFileUrl` は **null**。表示 URL が要るなら増分 B で `{provider, fileId}` から provider 別 canonical URL を**再構成**する — 保存値の変形ではなく |
 | stableKey の保持 | external / cloud / cold は `attributes.externalStableKey` に**必須**で持つ。QN はそこから再計算でき、§7 の検証は prefix 一致ではなく**完全一致**で行う (QN が key A、attribute が key B という endpoint は、catalog が名前で解決する実体と snapshot が attribute で解決する実体が食い違う) |
