@@ -20,6 +20,9 @@ import jp.aegif.nemaki.model.NemakiTypeDefinition;
 @Component
 public class PurviewEntityPayloadFactory {
 
+    private static final org.slf4j.Logger logger =
+            org.slf4j.LoggerFactory.getLogger(PurviewEntityPayloadFactory.class);
+
     private static final String REPOSITORY_TYPE_NAME = "nemaki_repository";
     private static final String FOLDER_TYPE_NAME = "nemaki_folder";
     private static final String DOCUMENT_TYPE_NAME = "nemaki_document";
@@ -158,8 +161,13 @@ public class PurviewEntityPayloadFactory {
         // enough: SharePoint's modern sharing links put the token in the PATH (/:x:/g/...TOKEN),
         // a shape CloudDriveResource itself accepts as valid, so no transformation of a stored
         // URL can promise it is secret-free. Until increment B rebuilds a provider-canonical URL
-        // from {provider, fileId}, the catalog carries no URL — and the null actively clears any
-        // raw URL published before this rule existed, on the next republish.
+        // from {provider, fileId}, the catalog carries no URL.
+        //
+        // What this does NOT claim: that a null clears a URL published before this rule existed.
+        // The null is serialized (the client's ObjectMapper uses Jackson's default inclusion), but
+        // whether the backend deletes the property or ignores the null differs between Atlas OSS
+        // and Purview, and neither has been verified here. Removing already-published values is a
+        // separate remediation — see the design's §4 and the live-Atlas release gate.
         attributes.put("cloudFileUrl", null);
         attributes.put("cloudLastSyncedAt", PurviewCloudMetadataSupport.getCloudLastSyncedAt(content));
 
@@ -234,9 +242,22 @@ public class PurviewEntityPayloadFactory {
                 continue;
             }
             Object value = propertyValues.get(cmisPropertyId);
-            if (value != null) {
-                attributes.put(catalogName, convertPropertyValue(value));
+            if (value == null) {
+                continue;
             }
+            // The last gate: a custom property may add an attribute, never replace one this
+            // factory already decided. containsKey, not putIfAbsent — the value we are
+            // protecting is often null (cloudFileUrl is deliberately null so that no stored URL
+            // reaches the catalog), and putIfAbsent treats a null mapping as absent and
+            // overwrites it. The resolver rejects reserved names on load; this holds even if a
+            // future core attribute is added without being listed there.
+            if (attributes.containsKey(catalogName)) {
+                logger.warn("Ignoring custom property '{}' -> catalog attribute '{}': the name is"
+                        + " already set by a core attribute of this entity. A custom mapping may"
+                        + " add attributes, not replace them.", cmisPropertyId, catalogName);
+                continue;
+            }
+            attributes.put(catalogName, convertPropertyValue(value));
         }
     }
 
