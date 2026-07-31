@@ -378,7 +378,13 @@ REPLAY だけ、と分ける。
 
 - 各要素を **長さ prefix 付き UTF-8** (`len:bytes`) で直列化するか、canonical JSON を使う。
   どちらかを実装時に固定し、golden test で凍結する。
+  → **実装時に前者を採用**。型 tag 1 byte + 長さ/整数は big-endian 固定幅
+  (`LineageCanonicalHash` の javadoc が正典)。
 - `null` と空文字は**別の表現**にする (`null` は専用マーカー)。
+- **並び順は符号なし UTF-8 バイト辞書順**とする。Java の自然順 (UTF-16 code unit) では
+  Python / Go の実装と U+E000 以上で食い違い、外部の repair / DLQ ツールが別 ID を作る。
+  `core/src/test/resources/lineage/reference_hash.py` が仕様のみから書いた別実装で、
+  golden vector が一致することを確認済み。
 
 ### endpoint 集合の正規化 (v2.3.1)
 
@@ -387,9 +393,9 @@ REPLAY だけ、と分ける。
 | 論点 | 規則 |
 |---|---|
 | 重複 endpoint | **許容しない**。同一 `catalogQualifiedName` が 2 度現れたら `build()` で拒否 |
-| 順序 | `catalogQualifiedName` の**辞書順**に並べる。producer の指定順は同一性に影響しない |
+| 順序 | `catalogQualifiedName` の**符号なし UTF-8 バイト辞書順**に並べる。producer の指定順は同一性に影響しない |
 | null | 要素の null は拒否。空リストは「空」を表す専用マーカーで直列化する |
-| target 集合 | target 名を辞書順、重複除去 |
+| target 集合 | target 名を**符号なし UTF-8 バイト辞書順**、trim、重複除去 |
 
 ### event-level `operationId` (v2.3.1)
 
@@ -492,7 +498,9 @@ HMAC 付き bundle (§9) も**完全性の保証であって暗号化ではな�
 
 | 項目 | 契約 |
 |---|---|
-| stableKey に入れないもの | **認証情報、署名付き URL、query string、fragment**。producer 側で除去してから canonical 化する |
+| stableKey に入れないもの | **認証情報 (userinfo)、署名付き URL、query string、fragment、制御文字**。producer 側で除去する。`LineageEndpoint.canonicalStableKey` が除去漏れを**拒否**する (QN は可逆 base64 なので、漏れると catalog entity から復元できてしまう) |
+| stableKey の保持 | external / cloud / cold は `attributes.externalStableKey` に**必須**で持つ。QN はそこから再計算でき、§7 の検証は prefix 一致ではなく**完全一致**で行う (QN が key A、attribute が key B という endpoint は、catalog が名前で解決する実体と snapshot が attribute で解決する実体が食い違う) |
+| filesystem path | 正規化済み絶対パス。`/srv/in/./a.pdf` と `/srv/in/b/../a.pdf` が 2 資産にならないこと |
 | Atlas 閲覧権限 | QN からホスト構成・外部識別子が読めるため、**Atlas の閲覧権限は catalog 管理者に限定**する運用前提を明記する |
 | spool / bundle | **encryption at rest を要件**とする (volume 暗号化 or アプリ層暗号化)。完全 payload を含むため |
 | 「protected」の意味 | **ログに出さない**ことのみを指す。**秘匿化ではない** |
@@ -1144,7 +1152,22 @@ E-12 の「故意に失敗させる」テストは、cleanup が file-scope で�
 | **D** | event-first UNSEQUENCED + fenced sequencer (bootstrap 専用 lease / 書込み直前再確認 / 一方向 latch / crash 再開) + 状態遷移 CAS (`VERIFYING` / `WAITING_FOR_CATALOG` 含む) + cursor 単調 CAS + counter・lease 復旧手順 + durable spool と spool scanner + replay generation CAS (§8) + IT-1〜IT-32 | 実 CouchDB IT |
 | **E** | v1 legacy reader + durable unresolved (§6)、repair API + opaque confirmation token + DLQ bundle upload (§9)、`VERIFYING` と E-17 verify 契約 (§10)、Atlas-enabled E2E 受入表 E-1〜E-17 | E2E |
 
-依存: A → B → C、D は A と独立に着手可、E は A〜D 完了後。
+依存: A → B → C、**D は A-2 に依存**、E は A〜D 完了後。
+
+D の内部部品 (fenced sequencer、cursor CAS、counter/lease 復旧) は A と並行に書けるが、
+spool file 名・journal `_id`・冪等判定はいずれも `deliveryId` であり、`deliveryId` は v2 event
+から作られる。したがって**統合は A-2 完了後**。v2.3.1 までの「D は A と独立」は §3 の
+identity 分離を入れる前の記述で、成立しない。
+
+### A の分割 (実装時)
+
+| | 内容 | 状態 |
+|---|---|---|
+| **A-1** | `EndpointKind` / `EndpointAttribute` / `LineageEndpoint` / `LineageIdentity` / `LineageCanonicalHash` / `LineageRepositoryScope`。型・属性契約・identity 符号化 | 完了 (producer 未配線) |
+| **A-2** | `LineageEvent` を v2 形状へ移行 (14 ファイル)、`creationPayloadDigest` と `LineageIntegrityException`、cross-repo 検証 4層の**配線**、producer 全書き換え、chunking、`FILE_SHARE_SYNC_UPLOAD` 生成拒否 | 未着手 |
+
+A-1 を分けたのは `LineageEvent` の移行対象が 14 ファイル・`inputs()/outputs()` 参照 79 箇所に
+及び、片方だけ入った木が壊れるため。A-1 単体で型と identity は閉じている。
 
 ---
 

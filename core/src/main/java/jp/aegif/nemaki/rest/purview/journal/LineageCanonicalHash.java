@@ -54,14 +54,15 @@ import java.util.TreeMap;
  *
  * <h2>What "sorted" means</h2>
  *
- * <p>Java's natural {@code String} order, which compares UTF-16 code units — not UTF-8 byte
- * order. The two agree for every code point below U+E000 and disagree above it, so today the
- * distinction is invisible: map keys come from {@link EndpointKind}'s ASCII allowlists, and the
- * qualified names being sorted are {@code nemaki://} plus a repository id, a CMIS object id or
- * base64url, all of which are ASCII in practice. It is stated because that is an observation
- * about the data, not a guarantee, and because a reimplementation in another language would have
- * to match it: JavaScript's default sort agrees, Python's {@code sorted()} does not (it orders by
- * code point).</p>
+ * <p>Unsigned lexicographic order over the UTF-8 bytes — the same rule in every language, and
+ * deliberately not Java's natural {@code String} order, which compares UTF-16 code units and
+ * disagrees above U+E000. Java and JavaScript sort strings one way, Python and Go another; a
+ * repair or DLQ tool written outside this codebase would have produced different ids for the
+ * same event.
+ *
+ * <p>Today's inputs are ASCII, where all of these coincide, so this costs nothing and is worth
+ * fixing while no v2 event has been persisted. Nothing in the code constrains a repository id or
+ * a target name to ASCII, so "it is ASCII in practice" was an observation and not a contract.</p>
  *
  * <p>{@code null} and the empty string are therefore different encodings, as are an absent list
  * and an empty one. That distinction is deliberate: {@code operationId=null} and
@@ -70,6 +71,11 @@ import java.util.TreeMap;
  * <p>This encoding is frozen by {@code LineageCanonicalHashTest}'s golden vectors. Changing it
  * changes every processKey and deliveryId ever computed, so it may only change together with an
  * {@code idempotencyKeyVersion} bump.
+ *
+ * <p>{@code core/src/test/resources/lineage/reference_hash.py} implements the same spec
+ * independently and produces the same vectors. It is what a repair or DLQ tool outside the JVM
+ * would be written from, and it is checked in so that "another language gets the same ids" is
+ * something anyone can re-run rather than something this javadoc asserts.
  */
 public final class LineageCanonicalHash {
 
@@ -147,7 +153,7 @@ public final class LineageCanonicalHash {
 
     /** Keys are sorted so that map iteration order cannot change the identity. */
     private static void writeMap(ByteArrayOutputStream out, Map<?, ?> map) {
-        Map<String, Object> sorted = new TreeMap<>();
+        Map<String, Object> sorted = new TreeMap<>(UTF8_ORDER);
         for (Map.Entry<?, ?> e : map.entrySet()) {
             if (!(e.getKey() instanceof String key)) {
                 throw new IllegalArgumentException("map keys must be String, got "
@@ -162,6 +168,27 @@ public final class LineageCanonicalHash {
             write(out, e.getValue());
         }
     }
+
+    /**
+     * Unsigned lexicographic order over UTF-8 bytes.
+     *
+     * <p>{@code String.compareTo} would order by UTF-16 code unit instead, which puts a
+     * supplementary character before U+E000..U+FFFF because its surrogates start at 0xD800. The
+     * bytes are compared unsigned because a Java {@code byte} is signed and every UTF-8
+     * continuation byte has the high bit set.
+     */
+    static final java.util.Comparator<String> UTF8_ORDER = (left, right) -> {
+        byte[] a = left.getBytes(StandardCharsets.UTF_8);
+        byte[] b = right.getBytes(StandardCharsets.UTF_8);
+        int shared = Math.min(a.length, b.length);
+        for (int i = 0; i < shared; i++) {
+            int diff = (a[i] & 0xFF) - (b[i] & 0xFF);
+            if (diff != 0) {
+                return diff;
+            }
+        }
+        return a.length - b.length;
+    };
 
     private static void writeInt32(ByteArrayOutputStream out, int value) {
         out.write((value >>> 24) & 0xFF);
@@ -184,6 +211,9 @@ public final class LineageCanonicalHash {
      * silently collapse, because collapsing it would change the arity the catalog sees.
      */
     public static List<String> canonicalQualifiedNames(List<LineageEndpoint> endpoints) {
+        if (endpoints == null) {
+            throw new IllegalArgumentException("endpoint list must not be null");
+        }
         List<String> names = new ArrayList<>();
         for (LineageEndpoint endpoint : endpoints) {
             if (endpoint == null) {
@@ -191,7 +221,7 @@ public final class LineageCanonicalHash {
             }
             names.add(endpoint.catalogQualifiedName());
         }
-        names.sort(null);
+        names.sort(UTF8_ORDER);
         for (int i = 1; i < names.size(); i++) {
             if (names.get(i).equals(names.get(i - 1))) {
                 throw new IllegalArgumentException(
@@ -226,7 +256,7 @@ public final class LineageCanonicalHash {
                 canonical.add(trimmed);
             }
         }
-        canonical.sort(null);
+        canonical.sort(UTF8_ORDER);
         return List.copyOf(canonical);
     }
 }

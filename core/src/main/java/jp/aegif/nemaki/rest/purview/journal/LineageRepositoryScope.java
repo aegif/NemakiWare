@@ -32,12 +32,21 @@ package jp.aegif.nemaki.rest.purview.journal;
  * while the qualified name points somewhere else — that is exactly the shape a hand-crafted
  * document would take — so the canonical name has to agree as well.
  *
- * <p>The name check is not a prefix match. For every CMIS and artifact kind the name is a pure
- * function of the repository and the identity field, so it is recomputed and compared exactly;
- * a prefix match would accept {@code nemaki://bedroom/archives/a} on an endpoint declaring
- * itself a document, and the sink would then create a {@code nemaki_document} at an archive's
- * name. Only the external kinds fall back to a prefix, because their name encodes a stable key
- * the endpoint does not carry as a field.
+ * <p>The name check is not a prefix match. Every kind's name is a pure function of the repository
+ * plus one identity value the endpoint carries, so it is recomputed and compared exactly. A
+ * prefix match would accept {@code nemaki://bedroom/archives/a} on an endpoint declaring itself a
+ * document, and the sink would then create a {@code nemaki_document} at an archive's name. For
+ * the external kinds it would accept a name built from one stable key while the attribute held
+ * another — and that is worse than it sounds, because the catalog resolves the entity by name
+ * while a snapshot reader resolves it by attribute, so the two would silently describe different
+ * things.
+ *
+ * <h2>What goes in the message</h2>
+ *
+ * <p>An external qualified name is reversible base64 of the stable key, so it is not repeated in
+ * an exception. The design forbids credentials and signed URLs in a stable key and
+ * {@link LineageEndpoint#canonicalStableKey} enforces it, but an exception message travelling to
+ * a log file is exactly where that defence being wrong would hurt most.
  */
 public final class LineageRepositoryScope {
 
@@ -71,26 +80,36 @@ public final class LineageRepositoryScope {
                             + eventRepositoryId + "' but " + side + " endpoint belongs to '"
                             + endpoint.repositoryId() + "'");
         }
-        String expected = LineageEndpoint.expectedQualifiedName(endpoint.kind(), eventRepositoryId,
-                endpoint.objectId(), endpoint.operationId());
-        if (expected != null) {
-            if (!expected.equals(endpoint.catalogQualifiedName())) {
-                throw new IllegalArgumentException(side + " endpoint qualified name does not match"
-                        + " its own kind and identity: expected '" + expected + "' for kind="
-                        + endpoint.kind() + ", got '" + endpoint.catalogQualifiedName() + "'");
-            }
-            return;
+        String expected = LineageEndpoint.expectedQualifiedName(endpoint, eventRepositoryId);
+        if (!expected.equals(endpoint.catalogQualifiedName())) {
+            throw new IllegalArgumentException(side + " endpoint qualified name does not match its"
+                    + " own kind and identity (kind=" + endpoint.kind() + "): expected "
+                    + describe(expected) + ", got " + describe(endpoint.catalogQualifiedName()));
         }
-        String expectedPrefix = LineageEndpoint.externalAssetQualifiedNamePrefix(eventRepositoryId);
-        if (!endpoint.catalogQualifiedName().startsWith(expectedPrefix)) {
-            throw new IllegalArgumentException(
-                    "cross-repository lineage is not permitted: " + side
-                            + " endpoint qualified name is not scoped to '" + eventRepositoryId
-                            + "' (" + endpoint.catalogQualifiedName() + ")");
+    }
+
+    /**
+     * A qualified name safe to put in a message.
+     *
+     * <p>External names decode back to the stable key, so they are reduced to their repository
+     * scope and a digest — enough to tell two names apart in a log without reproducing either.
+     */
+    private static String describe(String qualifiedName) {
+        int externalMarker = qualifiedName.indexOf("/external-assets/");
+        if (externalMarker < 0) {
+            return "'" + qualifiedName + "'";
         }
-        if (endpoint.catalogQualifiedName().length() == expectedPrefix.length()) {
-            throw new IllegalArgumentException(side + " external endpoint carries no stable key ("
-                    + endpoint.catalogQualifiedName() + ")");
+        return "'" + qualifiedName.substring(0, externalMarker + "/external-assets/".length())
+                + "<redacted:" + shortDigest(qualifiedName) + ">'";
+    }
+
+    private static String shortDigest(String value) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest).substring(0, 12);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new AssertionError("SHA-256 not available", e);
         }
     }
 
@@ -117,7 +136,12 @@ public final class LineageRepositoryScope {
 
     public static void validateArtifactOperation(String eventOperationId, LineageEndpoint endpoint,
                                                  String side) {
-        if (endpoint == null || !endpoint.kind().isOperationIdRequired()) {
+        if (endpoint == null) {
+            // Not "nothing to check". A null here is the same mapping error validateEndpoint
+            // rejects, and returning quietly would report a clean check over a broken list.
+            throw new IllegalArgumentException(side + " endpoint must not be null");
+        }
+        if (!endpoint.kind().isOperationIdRequired()) {
             return;
         }
         if (eventOperationId == null || eventOperationId.isBlank()) {
