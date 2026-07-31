@@ -119,13 +119,13 @@ public class LineageRepositoryScopeTest {
         List<LineageEndpoint> all = List.of(
                 LineageEndpoint.document(BEDROOM, "d-1", "n"),
                 LineageEndpoint.folder(BEDROOM, "f-1", "n"),
-                LineageEndpoint.archive(BEDROOM, "a-1", "d-1", "2026-01-01T00:00:00Z"),
-                LineageEndpoint.externalAsset(BEDROOM, "https://ext/1", "confluence", null),
+                LineageEndpoint.archive(BEDROOM, "a-1", "d-1", 1767225600000L),
+                LineageEndpoint.externalAsset(BEDROOM, "https://ext/1", "confluence"),
                 LineageEndpoint.cloudObject(BEDROOM, "gdrive", "file-1"),
                 LineageEndpoint.coldStorage(BEDROOM, "s3://b/k", "GLACIER"),
                 LineageEndpoint.filesystemPath(BEDROOM, "/srv/in/a.pdf"),
                 LineageEndpoint.importArtifact(BEDROOM, "op-1", "MANAGED", null),
-                LineageEndpoint.exportArtifact(BEDROOM, "op-1", "ZIP", "e.zip", 1));
+                LineageEndpoint.exportArtifact(BEDROOM, "op-1", "ZIP", "e.zip", 1L));
         // every factory-built name must also survive the exact recomputation
         for (LineageEndpoint endpoint : all) {
             assertDoesNotThrow(() -> LineageRepositoryScope.validateEndpoint(BEDROOM, endpoint,
@@ -165,7 +165,7 @@ public class LineageRepositoryScopeTest {
         LineageEndpoint forged = new LineageEndpoint(EndpointKind.CLOUD_OBJECT,
                 LineageEndpoint.externalAssetQualifiedName(BEDROOM, "cloud://gdrive/SECRET-A"),
                 BEDROOM, null, null,
-                Map.of("provider", "gdrive",
+                Map.of("sourceSystem", "gdrive",
                         LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY, "cloud://gdrive/SECRET-B"));
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> LineageRepositoryScope.validate(BEDROOM, List.of(forged), List.of()));
@@ -176,8 +176,8 @@ public class LineageRepositoryScopeTest {
         assertFalse(e.getMessage().contains(encodedA),
                 "the encoded stable key reached the message: " + e.getMessage());
         assertTrue(e.getMessage().contains("redacted"), e.getMessage());
-        assertTrue(e.getMessage().contains("external-assets/"),
-                "the repository scope is still useful and safe to show: " + e.getMessage());
+        assertTrue(e.getMessage().contains("kind=CLOUD_OBJECT"),
+                "the kind is what the message identifies instead: " + e.getMessage());
     }
 
     /** The redaction still has to identify which name it stood for, or a log cannot be read. */
@@ -189,7 +189,7 @@ public class LineageRepositoryScopeTest {
     private static String messageFor(String stableKey) {
         LineageEndpoint forged = new LineageEndpoint(EndpointKind.CLOUD_OBJECT,
                 LineageEndpoint.externalAssetQualifiedName(BEDROOM, stableKey), BEDROOM, null,
-                null, Map.of("provider", "gdrive",
+                null, Map.of("sourceSystem", "gdrive",
                         LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY, "cloud://gdrive/OTHER"));
         return assertThrows(IllegalArgumentException.class,
                 () -> LineageRepositoryScope.validate(BEDROOM, List.of(forged), List.of()))
@@ -221,6 +221,29 @@ public class LineageRepositoryScopeTest {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> LineageRepositoryScope.validate(BEDROOM, List.of(forged), List.of()));
         assertTrue(e.getMessage().contains("nemaki://bedroom/objects/a"), e.getMessage());
+    }
+
+    /**
+     * The null endpoint itself, not just the null list.
+     *
+     * <p>This branch used to {@code return} rather than throw, which made a broken list report a
+     * clean check — and a negated-conditional mutant is killed by the non-null path alone, so
+     * mutation coverage did not stand in for asserting it.
+     */
+    @Test
+    public void aNullEndpointIsRejectedByTheArtifactCheckToo() {
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageRepositoryScope.validateArtifactOperation("op-1",
+                        (LineageEndpoint) null, "input"));
+
+        List<LineageEndpoint> withNull = new ArrayList<>();
+        withNull.add(null);
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageRepositoryScope.validateArtifactOperation("op-1", withNull,
+                        List.of()));
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageRepositoryScope.validateArtifactOperation("op-1", List.of(),
+                        withNull));
     }
 
     /** Treating a null list as empty would let a mapping error skip the check and report success. */
@@ -269,7 +292,7 @@ public class LineageRepositoryScopeTest {
     @Test
     public void anExportArtifactIsCheckedOnTheOutputSideToo() {
         LineageEndpoint artifact = LineageEndpoint.exportArtifact(BEDROOM, "op-2", "ZIP", "e.zip",
-                3);
+                3L);
         assertThrows(IllegalArgumentException.class,
                 () -> LineageRepositoryScope.validateArtifactOperation("op-1", List.of(),
                         List.of(artifact)));

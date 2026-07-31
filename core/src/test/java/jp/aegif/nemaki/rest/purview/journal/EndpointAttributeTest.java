@@ -46,10 +46,15 @@ public class EndpointAttributeTest {
         assertEquals(EndpointAttribute.Type.TEXT, optional.type());
         assertFalse(optional.required());
 
-        EndpointAttribute count = EndpointAttribute.count("contentLength");
-        assertEquals("contentLength", count.name());
+        EndpointAttribute count = EndpointAttribute.count("byteLength");
+        assertEquals("byteLength", count.name());
         assertEquals(EndpointAttribute.Type.COUNT, count.type());
         assertFalse(count.required());
+
+        EndpointAttribute requiredCount = EndpointAttribute.requiredCount("archivedAt");
+        assertEquals("archivedAt", requiredCount.name());
+        assertEquals(EndpointAttribute.Type.COUNT, requiredCount.type());
+        assertTrue(requiredCount.required());
     }
 
     @Test

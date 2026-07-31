@@ -63,6 +63,10 @@ public record EndpointAttribute(String name, Type type, boolean required) {
         return new EndpointAttribute(name, Type.COUNT, false);
     }
 
+    public static EndpointAttribute requiredCount(String name) {
+        return new EndpointAttribute(name, Type.COUNT, true);
+    }
+
     /** @throws IllegalArgumentException if {@code value} is not a valid value for this attribute. */
     public void validate(Object value, EndpointKind kind) {
         if (value == null) {

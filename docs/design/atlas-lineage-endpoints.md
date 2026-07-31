@@ -402,6 +402,13 @@ REPLAY だけ、と分ける。
 **全 v2 event に event-level の `operationId` を必須**とする。
 §3 の artifact 用 `operationId` (endpoint 側) とは**別契約**である。
 
+契約は「サーバー発行・非 blank」であって、**canonical UUID 形式ではない**。
+`LineageIdentity` は非 blank だけを検査する。値域検査をそこに置いたのは
+chunk 3/2 や generation 0 のような**業務状態として存在し得ない**値を弾くためで、
+UUID でない `operationId` は存在し得ない値ではなく「うちの producer が出さない値」に過ぎない。
+形式まで縛ると v1 由来の record を legacy reader が読めなくなる。
+producer 側で UUID を発行することは §3 の責務のままとする。
+
 - event-level: 業務操作 1 回を識別する。`processKey` に入る。
 - endpoint-level: artifact entity の QN に入る (`imports/{operationId}` / `exports/{operationId}`)。
 - artifact を持たない processType (`ARCHIVE_LOCAL` など) でも event-level は必須。
@@ -1131,12 +1138,28 @@ kind 別 (external / import / export artifact は `objectId` を持たないた�
 |---|---|---|---|
 | `CMIS_DOCUMENT` | `nemaki_document` | `repositoryId` + `objectId` | `name` |
 | `CMIS_FOLDER` | `nemaki_folder_dataset` | `repositoryId` + `objectId` | `name` |
-| `ARCHIVE` | `nemaki_archive` | `repositoryId` + `originalId` | `archivedAt` |
-| `EXTERNAL_ASSET` | `nemaki_external_asset` | `repositoryId` + `externalStableKey` の hash | `sourceSystem` |
-| `CLOUD_OBJECT` | `nemaki_external_asset` | 同上 | **`provider`** |
-| `COLD_STORAGE` | `nemaki_external_asset` | 同上 | **`storageClass`** |
+| `ARCHIVE` | `nemaki_archive` | `repositoryId` + **`archiveId`** | `archivedAt` (epoch millis) + `originalObjectId` |
+| `EXTERNAL_ASSET` | `nemaki_external_asset` | `repositoryId` + `externalStableKey` の hash | `sourceSystem` + `externalStableKey` |
+| `CLOUD_OBJECT` | `nemaki_external_asset` | 同上 | 同上 (provider は `sourceSystem` に載せる) |
+| `COLD_STORAGE` | `nemaki_external_asset` | 同上 | 同上 (storageClass は `sourceSystem` に載せる) |
 | `IMPORT_ARTIFACT` | `nemaki_import_artifact` | `repositoryId` + `operationId` | `importMode` |
 | `EXPORT_ARTIFACT` | `nemaki_export_artifact` | `repositoryId` + `operationId` | `artifactKind` |
+
+**v2.3.2 訂正 (実装時に既存 schema と突き合わせて判明)**
+
+| 旧記述 | 実際 | 理由 |
+|---|---|---|
+| `ARCHIVE` の同一性は `repositoryId` + `originalId` | `repositoryId` + **`archiveId`** | 既存 catalog sync が既に `nemaki://{repo}/archives/{archiveId}` を書いている。1 文書を 2 回アーカイブすれば archive は 2 つで、original では区別できない |
+| `originalId` | **`originalObjectId`** | `nemaki_archive` の属性名。`originalId` という属性はどの型にも無い |
+| `archivedAt` は文字列 | **`long` (epoch millis)** | `nemaki_archive.archivedAt` は `long`。書式化した時刻は落ちる |
+| `CLOUD_OBJECT` 必須 = `provider` / `COLD_STORAGE` 必須 = `storageClass` | どちらも `sourceSystem` + `externalStableKey` | `nemaki_external_asset` に `provider` / `storageClass` / `tenantId` は**無い**。宣言しても Atlas が捨てるだけで、allowlist が防ぐはずの失敗を allowlist 自身が作る |
+| — | `CMIS_DOCUMENT` から `mimeType` / `contentLength` を削除 | 同上。`nemaki_document` にどちらも無い |
+
+`provider` / `storageClass` / `tenantId` / `mimeType` / `contentLength` を属性として持たせたい場合は、
+**増分 B の additive schema 変更**として `nemaki_external_asset` / `nemaki_document` に足したうえで
+`EndpointKind` に戻す。順序を逆にしてはいけない。
+`EndpointKindSchemaAlignmentTest` が両者を機械的に突き合わせており、型が増えれば
+`AWAITING_SCHEMA` を縮める必要があるので、B の作業から漏れない。
 
 E-12 の「故意に失敗させる」テストは、cleanup が file-scope で動くことの決定的証拠として必須。
 
@@ -1147,7 +1170,7 @@ E-12 の「故意に失敗させる」テストは、cleanup が file-scope で�
 | 増分 | 内容 | 独立に検証できるか |
 |---|---|---|
 | **A** | typed `LineageEndpoint` (全 kind で `repositoryId` 必須) + endpoint-local snapshot allowlist + kind 明示 builder + producer 全書き換え + サーバー発行 `operationId` + **`processKey` / `deliveryId` 分離** + endpoint 件数/payload 上限と chunking + `FILE_SHARE_SYNC_UPLOAD` 生成拒否 + cross-repo 検証 4層 (external 含む) (§2 §3 §7) | 単体。Atlas 不要 |
-| **B** | schema additive 拡張 (`nemaki_folder_dataset` / `nemaki_import_artifact` / `nemaki_export_artifact`) + catalog sync の同一 bulk 作成と **partial response の reconcile** + **既存 folder の authoritative backfill** + lifecycle (rename/move/delete/restore/`sourceState`) + **`LineageCatalogReconciliationService`** (§2 §3) | schema apply + backfill + orphan reconciliation + obligation IT |
+| **B** | schema additive 拡張 (`nemaki_folder_dataset` / `nemaki_import_artifact` / `nemaki_export_artifact`、および `nemaki_external_asset` への `provider`/`storageClass`/`tenantId`、`nemaki_document` への `mimeType`/`contentLength`) + catalog sync の同一 bulk 作成と **partial response の reconcile** + **既存 folder の authoritative backfill** + lifecycle (rename/move/delete/restore/`sourceState`) + **`LineageCatalogReconciliationService`** (§2 §3) | schema apply + backfill + orphan reconciliation + obligation IT |
 | **C** | `CatalogPayloadFactory` へ payload 生成を集約、canonical QN を1箇所化 (既存 `buildExternalAssetQualifiedName` を移設)、`AtlasLineageSink` から payload を剥がす、**POST 後 GUID 完全一致を production の成功条件に** (§4 §5) | 単体 (payload golden) + sink IT |
 | **D** | event-first UNSEQUENCED + fenced sequencer (bootstrap 専用 lease / 書込み直前再確認 / 一方向 latch / crash 再開) + 状態遷移 CAS (`VERIFYING` / `WAITING_FOR_CATALOG` 含む) + cursor 単調 CAS + counter・lease 復旧手順 + durable spool と spool scanner + replay generation CAS (§8) + IT-1〜IT-32 | 実 CouchDB IT |
 | **E** | v1 legacy reader + durable unresolved (§6)、repair API + opaque confirmation token + DLQ bundle upload (§9)、`VERIFYING` と E-17 verify 契約 (§10)、Atlas-enabled E2E 受入表 E-1〜E-17 | E2E |

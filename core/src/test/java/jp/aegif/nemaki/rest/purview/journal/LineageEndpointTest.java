@@ -124,7 +124,7 @@ public class LineageEndpointTest {
     public void theExternalKindsAgreeOnTheNameOfTheSameAsset() {
         String stableKey = "cloud://gdrive/file-1";
         assertEquals(
-                LineageEndpoint.externalAsset(REPO, stableKey, "gdrive", null)
+                LineageEndpoint.externalAsset(REPO, stableKey, "gdrive")
                         .catalogQualifiedName(),
                 LineageEndpoint.cloudObject(REPO, "gdrive", "file-1").catalogQualifiedName());
         assertEquals("nemaki_external_asset", EndpointKind.CLOUD_OBJECT.atlasTypeName());
@@ -168,7 +168,7 @@ public class LineageEndpointTest {
                 EndpointKind.IMPORT_ARTIFACT, "nemaki://bedroom/imports/x", REPO, null, " ",
                 Map.of("importMode", "MANAGED")));
         assertThrows(IllegalArgumentException.class,
-                () -> LineageEndpoint.exportArtifact(REPO, " ", "ZIP", "e.zip", 3));
+                () -> LineageEndpoint.exportArtifact(REPO, " ", "ZIP", "e.zip", 3L));
     }
 
     @Test
@@ -177,7 +177,7 @@ public class LineageEndpointTest {
                 LineageEndpoint.importArtifact(REPO, "op-9", "MANAGED", null)
                         .catalogQualifiedName());
         assertEquals("nemaki://bedroom/exports/op-9",
-                LineageEndpoint.exportArtifact(REPO, "op-9", "ZIP", "e.zip", 3)
+                LineageEndpoint.exportArtifact(REPO, "op-9", "ZIP", "e.zip", 3L)
                         .catalogQualifiedName());
     }
 
@@ -262,6 +262,7 @@ public class LineageEndpointTest {
         LineageEndpoint endpoint = LineageEndpoint.filesystemPath(REPO, "/srv/in/a.pdf");
         assertEquals(EndpointKind.EXTERNAL_ASSET, endpoint.kind());
         assertEquals("filesystem", endpoint.attributes().get("sourceSystem"));
+        assertEquals("/srv/in/a.pdf", endpoint.attributes().get("externalPath"));
         assertEquals("file:///srv/in/a.pdf",
                 endpoint.attributes().get(LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY));
     }
@@ -274,53 +275,66 @@ public class LineageEndpointTest {
      * {@code originalId} is what ties an archive back to the document it came from, and it is
      * absent for an archive whose original is already gone. Both shapes have to be constructible.
      */
+    /**
+     * The archive is identified by its own id, and it must name the document it came from.
+     *
+     * <p>{@code originalObjectId} is mandatory on {@code nemaki_archive}, so it is required here
+     * rather than optional — and it is spelled the way the Atlas type spells it, not
+     * {@code originalId}, which no type has.
+     */
     @Test
-    public void anArchiveCarriesItsOriginalWhenThereIsOne() {
-        LineageEndpoint withOriginal = LineageEndpoint.archive(REPO, "a-1", "d-1",
-                "2026-01-01T00:00:00Z");
-        assertEquals("nemaki://bedroom/archives/a-1", withOriginal.catalogQualifiedName());
-        assertEquals("nemaki_archive", withOriginal.kind().atlasTypeName());
-        assertEquals("d-1", withOriginal.attributes().get("originalId"));
-        assertEquals("2026-01-01T00:00:00Z", withOriginal.attributes().get("archivedAt"));
+    public void anArchiveIsIdentifiedByItsArchiveIdAndNamesItsOriginal() {
+        LineageEndpoint archive = LineageEndpoint.archive(REPO, "a-1", "d-1", 1767225600000L);
+        assertEquals("nemaki://bedroom/archives/a-1", archive.catalogQualifiedName());
+        assertEquals("nemaki_archive", archive.kind().atlasTypeName());
+        assertEquals("d-1", archive.attributes().get("originalObjectId"));
+        assertEquals(1767225600000L, archive.attributes().get("archivedAt"));
 
-        LineageEndpoint withoutOriginal = LineageEndpoint.archive(REPO, "a-1", null,
-                "2026-01-01T00:00:00Z");
-        assertFalse(withoutOriginal.attributes().containsKey("originalId"),
-                "an absent original must be absent, not an empty string");
-        assertFalse(LineageEndpoint.archive(REPO, "a-1", " ", "2026-01-01T00:00:00Z")
-                .attributes().containsKey("originalId"));
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageEndpoint.archive(REPO, "a-1", null, 1767225600000L));
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageEndpoint.archive(REPO, "a-1", " ", 1767225600000L));
     }
 
     /** {@code archivedAt} is the required one: without it the entity is an undated shell. */
     @Test
     public void anArchiveWithoutATimestampIsRejected() {
         assertThrows(IllegalArgumentException.class,
-                () -> LineageEndpoint.archive(REPO, "a-1", "d-1", null));
+                () -> LineageEndpoint.archive(REPO, "a-1", null, 1L));
         assertThrows(IllegalArgumentException.class,
-                () -> LineageEndpoint.archive(REPO, "a-1", "d-1", " "));
+                () -> LineageEndpoint.archive(REPO, "a-1", " ", 1L));
     }
 
+    /**
+     * Both of {@code nemaki_external_asset}'s mandatory attributes, and nothing the type lacks.
+     *
+     * <p>{@code tenantId} used to be declared here and does not exist in the schema; Atlas drops
+     * such an attribute on arrival, which is the failure the allowlist exists to prevent.
+     */
     @Test
-    public void anExternalAssetCarriesItsTenantWhenThereIsOne() {
-        LineageEndpoint multiTenant = LineageEndpoint.externalAsset(REPO, "https://ext/1",
-                "confluence", "tenant-9");
-        assertEquals("confluence", multiTenant.attributes().get("sourceSystem"));
+    public void anExternalAssetCarriesTheTwoAttributesItsTypeRequires() {
+        LineageEndpoint asset = LineageEndpoint.externalAsset(REPO, "https://ext/1", "confluence");
+        assertEquals("confluence", asset.attributes().get("sourceSystem"));
         assertEquals("https://ext/1",
-                multiTenant.attributes().get(LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY));
-        assertEquals("tenant-9", multiTenant.attributes().get("tenantId"));
+                asset.attributes().get(LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY));
+        assertFalse(asset.attributes().containsKey("tenantId"));
 
-        assertFalse(LineageEndpoint.externalAsset(REPO, "https://ext/1", "confluence", null)
-                .attributes().containsKey("tenantId"));
-        assertFalse(LineageEndpoint.externalAsset(REPO, "https://ext/1", "confluence", " ")
-                .attributes().containsKey("tenantId"));
+        assertEquals("gdrive", LineageEndpoint.cloudObject(REPO, "gdrive", "f-1")
+                .attributes().get("sourceSystem"));
+        assertEquals("GLACIER", LineageEndpoint.coldStorage(REPO, "s3://b/k", "GLACIER")
+                .attributes().get("sourceSystem"));
     }
 
     @Test
     public void anExternalAssetNeedsBothASourceSystemAndAStableKey() {
         assertThrows(IllegalArgumentException.class,
-                () -> LineageEndpoint.externalAsset(REPO, "https://ext/1", null, null));
+                () -> LineageEndpoint.externalAsset(REPO, "https://ext/1", null));
         assertThrows(IllegalArgumentException.class,
-                () -> LineageEndpoint.externalAsset(REPO, " ", "confluence", null));
+                () -> LineageEndpoint.externalAsset(REPO, " ", "confluence"));
+        assertThrows(IllegalArgumentException.class, () -> new LineageEndpoint(
+                EndpointKind.EXTERNAL_ASSET,
+                LineageEndpoint.externalAssetQualifiedName(REPO, "k"), REPO, null, null,
+                Map.of(LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY, "k")));
     }
 
     /** The connector's own attributes ride along; they are still subject to the allowlist. */
@@ -341,13 +355,12 @@ public class LineageEndpointTest {
 
     @Test
     public void anExportArtifactsNameAndCountAreOptional() {
-        LineageEndpoint full = LineageEndpoint.exportArtifact(REPO, "op-9", "ZIP", "e.zip", 3);
+        LineageEndpoint full = LineageEndpoint.exportArtifact(REPO, "op-9", "ZIP", "e.zip", 3L);
         assertEquals("ZIP", full.attributes().get("artifactKind"));
         assertEquals("e.zip", full.attributes().get("name"));
-        assertEquals(3, full.attributes().get("objectCount"));
+        assertEquals(3L, full.attributes().get("objectCount"));
 
-        LineageEndpoint bare = LineageEndpoint.exportArtifact(REPO, "op-9", "DIRECTORY", null,
-                null);
+        LineageEndpoint bare = LineageEndpoint.exportArtifact(REPO, "op-9", "DIRECTORY", null, null);
         assertFalse(bare.attributes().containsKey("name"));
         assertFalse(bare.attributes().containsKey("objectCount"));
         assertFalse(LineageEndpoint.exportArtifact(REPO, "op-9", "ZIP", " ", null)
@@ -365,16 +378,18 @@ public class LineageEndpointTest {
     @Test
     public void eachKindDeclaresTheAttributesItsCatalogTypeNeeds() {
         assertEquals(List.of("name"), EndpointKind.CMIS_DOCUMENT.requiredAttributes());
-        assertEquals(List.of("name", "mimeType", "contentLength", "versionLabel"),
+        assertEquals(List.of("name", "versionLabel", "folderPath"),
                 EndpointKind.CMIS_DOCUMENT.allowedAttributes());
         assertEquals(List.of("name"), EndpointKind.CMIS_FOLDER.requiredAttributes());
-        assertEquals(List.of("archivedAt"), EndpointKind.ARCHIVE.requiredAttributes());
-        assertEquals(List.of("sourceSystem", "externalStableKey"),
-                EndpointKind.EXTERNAL_ASSET.requiredAttributes());
-        assertEquals(List.of("provider", "externalStableKey"),
-                EndpointKind.CLOUD_OBJECT.requiredAttributes());
-        assertEquals(List.of("storageClass", "externalStableKey"),
-                EndpointKind.COLD_STORAGE.requiredAttributes());
+        assertEquals(List.of("archivedAt", "originalObjectId"),
+                EndpointKind.ARCHIVE.requiredAttributes());
+        for (EndpointKind external : List.of(EndpointKind.EXTERNAL_ASSET,
+                EndpointKind.CLOUD_OBJECT, EndpointKind.COLD_STORAGE)) {
+            assertEquals(List.of("sourceSystem", "externalStableKey"),
+                    external.requiredAttributes(), external.toString());
+            assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath"),
+                    external.allowedAttributes(), external.toString());
+        }
         assertEquals(List.of("importMode"), EndpointKind.IMPORT_ARTIFACT.requiredAttributes());
         assertEquals(List.of("artifactKind"), EndpointKind.EXPORT_ARTIFACT.requiredAttributes());
 
@@ -425,31 +440,34 @@ public class LineageEndpointTest {
     /** And a count must be a whole number, not a numeric-looking String. */
     @Test
     public void aCountAttributeMustBeAWholeNumber() {
-        assertThrows(IllegalArgumentException.class, () -> LineageEndpoint.document(REPO, "d-1",
-                Map.of("name", "n", "contentLength", "1024")));
-        assertThrows(IllegalArgumentException.class, () -> LineageEndpoint.document(REPO, "d-1",
-                Map.of("name", "n", "contentLength", 1024.5d)));
+        assertThrows(IllegalArgumentException.class, () -> new LineageEndpoint(
+                EndpointKind.ARCHIVE, LineageEndpoint.archiveQualifiedName(REPO, "a-1"), REPO,
+                "a-1", null, Map.of("archivedAt", "2026-01-01T00:00:00Z",
+                        "originalObjectId", "d-1")));
+        assertThrows(IllegalArgumentException.class, () -> new LineageEndpoint(
+                EndpointKind.ARCHIVE, LineageEndpoint.archiveQualifiedName(REPO, "a-1"), REPO,
+                "a-1", null, Map.of("archivedAt", 1.5d, "originalObjectId", "d-1")));
 
-        assertEquals(1024L, LineageEndpoint.document(REPO, "d-1",
-                Map.of("name", "n", "contentLength", 1024L)).attributes().get("contentLength"));
-        assertEquals(1024, LineageEndpoint.document(REPO, "d-1",
-                Map.of("name", "n", "contentLength", 1024)).attributes().get("contentLength"));
+        assertEquals(1767225600000L,
+                LineageEndpoint.archive(REPO, "a-1", "d-1", 1767225600000L)
+                        .attributes().get("archivedAt"));
+        assertEquals(3, LineageEndpoint.importArtifact(REPO, "op-1", "MANAGED",
+                Map.of("byteLength", 3)).attributes().get("byteLength"));
     }
 
     /** A negative byte count or object count is not a smaller number; it is a broken producer. */
     @Test
     public void aCountAttributeMustNotBeNegative() {
-        assertThrows(IllegalArgumentException.class, () -> LineageEndpoint.document(REPO, "d-1",
-                Map.of("name", "n", "contentLength", -1L)));
         assertThrows(IllegalArgumentException.class,
-                () -> LineageEndpoint.exportArtifact(REPO, "op-1", "ZIP", "e.zip", -1));
+                () -> LineageEndpoint.archive(REPO, "a-1", "d-1", -1L));
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageEndpoint.exportArtifact(REPO, "op-1", "ZIP", "e.zip", -1L));
         assertThrows(IllegalArgumentException.class, () -> LineageEndpoint.importArtifact(REPO,
                 "op-1", "MANAGED", Map.of("byteLength", -1L)));
 
         // zero is a real value: an empty file and an export of nothing both happen
-        assertDoesNotThrow(() -> LineageEndpoint.document(REPO, "d-1",
-                Map.of("name", "n", "contentLength", 0L)));
-        assertDoesNotThrow(() -> LineageEndpoint.exportArtifact(REPO, "op-1", "ZIP", null, 0));
+        assertDoesNotThrow(() -> LineageEndpoint.archive(REPO, "a-1", "d-1", 0L));
+        assertDoesNotThrow(() -> LineageEndpoint.exportArtifact(REPO, "op-1", "ZIP", null, 0L));
     }
 
     /**
@@ -513,17 +531,17 @@ public class LineageEndpointTest {
     @Test
     public void aStableKeyCarryingCredentialsOrQueryIsRejected() {
         assertThrows(IllegalArgumentException.class, () -> LineageEndpoint.externalAsset(REPO,
-                "https://blob.example/doc?sig=SECRET&se=2026", "azure", null));
+                "https://blob.example/doc?sig=SECRET&se=2026", "azure"));
         assertThrows(IllegalArgumentException.class, () -> LineageEndpoint.externalAsset(REPO,
-                "https://ext/doc#section-2", "confluence", null));
+                "https://ext/doc#section-2", "confluence"));
         assertThrows(IllegalArgumentException.class, () -> LineageEndpoint.externalAsset(REPO,
-                "https://user:pass@ext/doc", "confluence", null));
-        // Embedded, not trailing: trim() already removes anything at the ends.
+                "https://user:pass@ext/doc", "confluence"));
+        // Embedded as well as at the ends: nothing is stripped any more.
         assertThrows(IllegalArgumentException.class, () -> LineageEndpoint.externalAsset(REPO,
-                "https://ext/do" + (char) 7 + "c", "confluence", null));
+                "https://ext/do" + (char) 7 + "c", "confluence"));
 
         assertDoesNotThrow(() -> LineageEndpoint.externalAsset(REPO,
-                "https://ext/spaces/ENG/pages/12345", "confluence", null));
+                "https://ext/spaces/ENG/pages/12345", "confluence"));
     }
 
     /**
@@ -533,20 +551,20 @@ public class LineageEndpointTest {
     @Test
     public void anAtSignInThePathIsNotCredentials() {
         assertDoesNotThrow(() -> LineageEndpoint.externalAsset(REPO,
-                "https://ext/users/a@b.example/items/9", "exchange", null));
+                "https://ext/users/a@b.example/items/9", "exchange"));
         assertDoesNotThrow(() -> LineageEndpoint.externalAsset(REPO,
-                "mailbox://host/a@b.example/9", "exchange", null));
+                "mailbox://host/a@b.example/9", "exchange"));
     }
 
     /** A stable key need not be a URI at all, and one with no path is still a whole key. */
     @Test
     public void aStableKeyWithoutASchemeOrPathIsAccepted() {
         assertDoesNotThrow(() -> LineageEndpoint.externalAsset(REPO, "opaque-connector-key-123",
-                "confluence", null));
+                "confluence"));
         assertDoesNotThrow(() -> LineageEndpoint.externalAsset(REPO, "cloud://gdrive",
-                "gdrive", null));
+                "gdrive"));
         assertThrows(IllegalArgumentException.class, () -> LineageEndpoint.externalAsset(REPO,
-                "cloud://user:pw@gdrive", "gdrive", null));
+                "cloud://user:pw@gdrive", "gdrive"));
     }
 
     /**
@@ -557,37 +575,37 @@ public class LineageEndpointTest {
     public void theStableKeyParserHandlesTheEdgesOfItsOwnScan() {
         // the forbidden character at index 0, where a "> 0" test would miss it
         assertThrows(IllegalArgumentException.class,
-                () -> LineageEndpoint.externalAsset(REPO, "?everything", "x", null));
+                () -> LineageEndpoint.externalAsset(REPO, "?everything", "x"));
         assertThrows(IllegalArgumentException.class,
-                () -> LineageEndpoint.externalAsset(REPO, "#everything", "x", null));
+                () -> LineageEndpoint.externalAsset(REPO, "#everything", "x"));
 
         // a scheme separator at index 0: there is no scheme, but there is still an authority
         assertThrows(IllegalArgumentException.class,
-                () -> LineageEndpoint.externalAsset(REPO, "://user:pw@host/x", "x", null));
+                () -> LineageEndpoint.externalAsset(REPO, "://user:pw@host/x", "x"));
 
         // empty userinfo is still userinfo
         assertThrows(IllegalArgumentException.class,
-                () -> LineageEndpoint.externalAsset(REPO, "https://@host/x", "x", null));
+                () -> LineageEndpoint.externalAsset(REPO, "https://@host/x", "x"));
 
         // a two-character scheme, where a shifted window would run off the front of the string
         assertDoesNotThrow(
-                () -> LineageEndpoint.externalAsset(REPO, "s3://bucket/a@b", "s3", null));
+                () -> LineageEndpoint.externalAsset(REPO, "s3://bucket/a@b", "s3"));
 
         // whatever precedes the scheme separator is not the authority — a stable key need not be
         // a URI, and an "@" outside the authority is not a credential
         assertDoesNotThrow(
-                () -> LineageEndpoint.externalAsset(REPO, "a@b://host", "connector", null));
+                () -> LineageEndpoint.externalAsset(REPO, "a@b://host", "connector"));
         assertDoesNotThrow(
-                () -> LineageEndpoint.externalAsset(REPO, "user@tenant/item-9", "x", null));
+                () -> LineageEndpoint.externalAsset(REPO, "user@tenant/item-9", "x"));
     }
 
     /** {@code trim} removes only the ends, so a control character elsewhere must be caught. */
     @Test
     public void aControlCharacterAnywhereIsRejected() {
         assertThrows(IllegalArgumentException.class, () -> LineageEndpoint.externalAsset(REPO,
-                (char) 127 + "https://ext/doc", "confluence", null));
+                (char) 127 + "https://ext/doc", "confluence"));
         assertThrows(IllegalArgumentException.class, () -> LineageEndpoint.externalAsset(REPO,
-                "https://ext/doc" + (char) 127, "confluence", null));
+                "https://ext/doc" + (char) 127, "confluence"));
     }
 
     /**
@@ -635,8 +653,8 @@ public class LineageEndpointTest {
         return List.of(
                 LineageEndpoint.document(REPO, "same-id", "n"),
                 LineageEndpoint.folder(REPO, "same-id", "n"),
-                LineageEndpoint.archive(REPO, "same-id", null, "2026-01-01T00:00:00Z"),
-                LineageEndpoint.externalAsset(REPO, "https://ext/1", "confluence", null),
+                LineageEndpoint.archive(REPO, "same-id", "d-1", 1767225600000L),
+                LineageEndpoint.externalAsset(REPO, "https://ext/1", "confluence"),
                 LineageEndpoint.cloudObject(REPO, "gdrive", "file-1"),
                 LineageEndpoint.coldStorage(REPO, "s3://b/k", "GLACIER"),
                 LineageEndpoint.importArtifact(REPO, "same-id", "MANAGED", null),

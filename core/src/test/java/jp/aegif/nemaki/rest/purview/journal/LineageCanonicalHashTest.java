@@ -113,6 +113,77 @@ public class LineageCanonicalHashTest {
     // ------------------------------------------------------------------
 
     /**
+     * The vectors, read from the file the Python reference implementation also reads.
+     *
+     * <p>Sharing the fixture is what makes the cross-language claim hold over time. Constants
+     * inlined here would agree with {@code reference_hash.py} only until one of the two was edited
+     * — and the script, running nowhere, would not have noticed.
+     *
+     * <pre>
+     *   python3 core/src/test/resources/lineage/reference_hash.py
+     * </pre>
+     *
+     * <p>exits non-zero on any disagreement with the same file.
+     */
+    @Test
+    public void goldenVectorsMatchTheSharedFixture() throws Exception {
+        Map<String, String> fixture = sharedFixture();
+        Map<String, String> computed = new LinkedHashMap<>();
+        computed.put("hash_empty", LineageCanonicalHash.hash());
+        computed.put("hash_ab_c", LineageCanonicalHash.hash("ab", "c"));
+        computed.put("hash_a_bc", LineageCanonicalHash.hash("a", "bc"));
+        computed.put("hash_null", LineageCanonicalHash.hash((Object) null));
+        computed.put("hash_emptystring", LineageCanonicalHash.hash(""));
+        computed.put("hash_list_empty", LineageCanonicalHash.hash(List.of()));
+        computed.put("hash_list_a", LineageCanonicalHash.hash(List.of("a")));
+        computed.put("hash_long_1", LineageCanonicalHash.hash(1L));
+        computed.put("hash_long_max", LineageCanonicalHash.hash(Long.MAX_VALUE));
+        computed.put("hash_long_min", LineageCanonicalHash.hash(Long.MIN_VALUE));
+        computed.put("hash_long_neg1", LineageCanonicalHash.hash(-1L));
+        computed.put("hash_bool_true", LineageCanonicalHash.hash(Boolean.TRUE));
+        computed.put("hash_unicode", LineageCanonicalHash.hash("契約書"));
+        computed.put("hash_map_ab", LineageCanonicalHash.hash(Map.of("a", "1", "b", "2")));
+        computed.put("len300", LineageCanonicalHash.hash("a".repeat(300)));
+        computed.put("len70000", LineageCanonicalHash.hash("a".repeat(70000)));
+        computed.put("len16MiB", LineageCanonicalHash.hash("a".repeat(16 * 1024 * 1024)));
+
+        String processKey = LineageIdentity.processKey("bedroom",
+                LineageProcessType.IMPORT_UPLOADED, "op-fixed",
+                List.of(LineageEndpoint.document("bedroom", "in-1", "n")),
+                List.of(LineageEndpoint.document("bedroom", "out-1", "n")), 2, 0, 1);
+        computed.put("processKey", processKey);
+        String original = LineageIdentity.originalDeliveryId(processKey, List.of("atlas"));
+        computed.put("originalDeliveryId", original);
+        computed.put("replayDeliveryId",
+                LineageIdentity.replayDeliveryId(original, "atlas", 1));
+        computed.put("repairDeliveryId",
+                LineageIdentity.repairDeliveryId("lineage_dl:fixed", 1));
+
+        assertEquals(fixture.keySet(), computed.keySet(),
+                "the fixture and this test cover different vectors");
+        for (Map.Entry<String, String> entry : computed.entrySet()) {
+            assertEquals(fixture.get(entry.getKey()), entry.getValue(),
+                    entry.getKey() + " no longer matches the shared fixture — every processKey and"
+                            + " deliveryId already written is now unreachable");
+        }
+    }
+
+    /** Minimal reader: the fixture is a flat object of string values, checked in beside the script. */
+    private static Map<String, String> sharedFixture() throws Exception {
+        String json = java.nio.file.Files.readString(java.nio.file.Path.of(
+                "src/test/resources/lineage/identity-golden-vectors.json"),
+                java.nio.charset.StandardCharsets.UTF_8);
+        Map<String, String> vectors = new LinkedHashMap<>();
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("\"([^\"]+)\"\\s*:\\s*\"([^\"]+)\"").matcher(json);
+        while (matcher.find()) {
+            vectors.put(matcher.group(1), matcher.group(2));
+        }
+        assertEquals(21, vectors.size(), "unexpected fixture size: " + vectors.size());
+        return vectors;
+    }
+
+    /**
      * Each of these pins one rule of the encoding. Together they catch a changed type tag, a
      * changed length width, a flipped byte order and a dropped UTF-8 step, which a
      * self-consistency test comparing two calls to the same method would all miss.

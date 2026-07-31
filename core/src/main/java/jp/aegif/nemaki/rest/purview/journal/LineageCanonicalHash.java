@@ -214,19 +214,26 @@ public final class LineageCanonicalHash {
         if (endpoints == null) {
             throw new IllegalArgumentException("endpoint list must not be null");
         }
-        List<String> names = new ArrayList<>();
+        List<LineageEndpoint> sorted = new ArrayList<>();
         for (LineageEndpoint endpoint : endpoints) {
             if (endpoint == null) {
                 throw new IllegalArgumentException("endpoint must not be null");
             }
-            names.add(endpoint.catalogQualifiedName());
+            sorted.add(endpoint);
         }
-        names.sort(UTF8_ORDER);
-        for (int i = 1; i < names.size(); i++) {
-            if (names.get(i).equals(names.get(i - 1))) {
-                throw new IllegalArgumentException(
-                        "duplicate endpoint in one event: " + names.get(i));
+        // sorted as endpoints rather than as names, so the duplicate can be reported through the
+        // kind-aware descriptor — an external name is reversible base64 of its stable key
+        sorted.sort((a, b) -> UTF8_ORDER.compare(a.catalogQualifiedName(),
+                b.catalogQualifiedName()));
+        List<String> names = new ArrayList<>();
+        for (int i = 0; i < sorted.size(); i++) {
+            LineageEndpoint endpoint = sorted.get(i);
+            if (i > 0 && endpoint.catalogQualifiedName()
+                    .equals(sorted.get(i - 1).catalogQualifiedName())) {
+                throw new IllegalArgumentException("duplicate endpoint in one event: "
+                        + endpoint.describeQualifiedName());
             }
+            names.add(endpoint.catalogQualifiedName());
         }
         return List.copyOf(names);
     }
