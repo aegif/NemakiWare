@@ -1,6 +1,6 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.7 — increment A sign-off 済み。A-1〜A-1k 実装済み、A-2 実装中 (B 以降・master merge・tag は保留)**
+status: **v2.3.8 — increment A sign-off 済み。A-1〜A-1k 実装済み、A-2 Slice 1〜3 着手可・Slice 4 は §6-a の再 sign-off 待ち**
 revision:
 - v2 — §4 §6 §8 §9 を全面改訂。v1 の採番一体化案・caller 例外案・raw URI QN 案・
   `upload://` 空 input 案・`REPLAYED` 上書き案は**撤回**。撤回理由は各節に残す。
@@ -26,6 +26,12 @@ revision:
   snapshot allowlist を実 Atlas schema と機械的に整合 (§2)、ARCHIVE の同一性を `archiveId` に
   訂正 (§10)、D の依存を「A-2 に依存」に訂正、並び順を符号なし UTF-8 バイト辞書順に固定 (§3)、
   表示 URL (`cloudFileUrl`) を stableKey とは**別契約**として sanitize (§4)。
+- v2.3.8 — **§6-a を新設**。A-2 Slice 4 の停止条件が「新 reader が v1/v2 を読めるか」だけで
+  片方向だった。危険なのは**旧 AP が v2 を読む**方で、全コードを 1 コミットで変えても
+  デプロイが同時でない以上消えない。Slice 4 を 4a (dual reader を全 AP へ配布、writer は v1) と
+  4b (全 AP の read capability を確認してから write-version flag を CAS で v2 へ) に分割し、
+  v1-only AP の再参加拒否 / stale leader の claim 禁止 / rollback 手順 / 双方向の混在テスト /
+  切替窓の欠落回収を契約として固定した。
 - v2.3.7 — 壊れた `catalogName` の扱いを確定 (§4)。JSON null / 数値 / object / array / boolean /
   フィールド欠落は、従来 CMIS property ID を出力名に**流用**していた (誰も設定していない名前で
   投影される) が、互換契約が無いので**設定エラー**として当該 1 件のみ除外し WARN + counter。
@@ -645,6 +651,78 @@ v1 は「`UNKNOWN` を含む v1 event は `SKIPPED` にして cursor を進め�
 
 新規 event は必ず v2。v1 は retention で自然に消える。migration patch は書かない。
 
+## 6-a. v2 書込みの rollout fence (v2.3.8)
+
+### 撤回する前提
+
+A-2 の分割案は停止条件を「新 projector が v1 と v2 を両方読めるか」と書いていた。**片方向で
+不十分**である。危険なのは逆向き — **旧 AP が v2 を読む**方であり、これは全コードを 1 コミットで
+変えても消えない。コードは同時に変わるが、**デプロイは同時ではない**からである。
+
+成立する系列:
+
+1. 先に更新された AP が v2 event を書き始める
+2. 旧 AP がまだ projector leader、あるいは lease reclaim 後に leader になる
+3. 旧 AP は v2 decoder を持たない
+4. その v2 event を誤処理する — `FAILED` 化、あるいは `UNRESOLVED` 扱いで **cursor を通過**させて
+   静かに欠落させる、あるいは例外で **repository ごと投影停止**させる
+
+3 のうち最悪は「cursor 通過」で、旧 AP が正常終了したように見えたまま lineage が消える。
+
+### Slice 4 を 4a / 4b に割る
+
+| | 内容 | writer | 完了条件 |
+|---|---|---|---|
+| **4a** | dual reader / projector / replay / spool を**全 AP に配布**する。v2 を読めるが**書かない** | v1 のまま | 全 AP が v2-read-capable であることを**観測**できる |
+| **4b** | durable な write-version flag を **CAS で v2 へ切替**。以後 producer は v2 を書く | v2 | v2 event が 1 件でも書かれたら不可逆 (下記 rollback 参照) |
+
+4a と 4b は**別デプロイ**である。4b は再デプロイではなく**運用操作** (flag の CAS) にする。
+そうしないと「切替の瞬間」がデプロイの進行に依存し、混在窓を制御できない。
+
+### AP capability の登録と観測
+
+`nemaki_lineage` に AP ごとの capability 文書を置く。既存の `LeaderElection` が
+node 単位の文書を持つので、そこに相乗りする。
+
+```
+_id: lineage_ap_capability:{nodeId}
+  readSchemaVersions : [1, 2]        // このバイナリが decode できる版
+  writeSchemaVersion : 1             // 現在書いている版
+  heartbeatAt        : epoch millis
+```
+
+- 各 AP は起動時と heartbeat ごとに自分の値を書く。
+- 4b の CAS は、**heartbeat が生きている全 AP が `readSchemaVersions` に 2 を含む**ことを
+  確認してからでなければ成功しない。確認は flag 切替と同一 CAS の前提条件として行い、
+  管理 API は満たさない場合 `409` と**不足している nodeId 一覧**を返す。
+- heartbeat が切れている AP は「いない」とみなす。**それが再参加したときに弾く**のが次項。
+
+### v2 activation 後の契約
+
+| # | 契約 | 実装 |
+|---|---|---|
+| 1 | **v1-only AP の再参加を拒否** | 起動時に write-version flag を読み、`2` かつ自分が 2 を読めないなら **lineage subsystem を fail-closed で無効化**して WARN + metric。CMIS 本体は起動させる (lineage の都合で ECM を止めない) |
+| 2 | **stale な旧 projector leader が v2 event に触れない** | projector は event を claim する前に `schemaVersion` を見て、自分が読めない版なら **claim せず・finalize せず・cursor を進めず**、`lineage.projection.blocked{reason=unreadable_schema}` を上げて停止する。§8-b の CAS claim に version 条件を足すので、旧 AP が claim を取っても write が通らない |
+| 3 | **v2 を 1 件でも書いた後の通常 rollback は禁止** | write-version flag が 2 になった時刻と最初の v2 `deliveryId` を flag 文書に記録する。v1-only binary は契約 1 で自ら無効化するため、rollback は「動くが lineage が壊れる」ではなく「lineage が止まる」になる |
+| 4 | **rollback 手順** | ① producer 側 writer を停止 (mode を `DIRECT` ではなく **emit 停止**) → ② v2 backlog を drain (未 publish の v2 event が 0 になるまで待つ、または spool へ退避) → ③ write-version flag を CAS で 1 へ戻す → ④ v2-capable な版へ戻す。**②を省いた rollback は禁止**: v1-only AP は v2 backlog を投影できず、契約 2 で停止するだけになる |
+| 5 | **混在テストの双方向** | 「新 reader が v1/v2 を読む」だけでなく「**旧 reader が v2 を触れない**」を決定的テストにする。旧 reader は `readSchemaVersions=[1]` を宣言した projector として構成し、v2 event に対して claim も cursor 前進も**起きない**ことを assert する |
+
+### 4a / 4b 切替中の欠落回収
+
+spool が実効化するのは Slice 4 である。切替窓で lineage を落とさないために:
+
+- **4a では spool を先に有効化する** (writer は v1 のまま)。spool 自体は書込み版に依存しないので、
+  4a の時点で durable 化しておけば 4b の窓は spool に守られる。
+- 4b の CAS 直後の窓で v2 を書いた AP と、まだ flag を読み込んでいない AP が同居し得る。
+  flag はキャッシュせず **emit ごとに読む** (CouchDB の 1 read。emit は既に I/O を伴う)。
+- それでも取りこぼした場合の回収は §9 の repair API を使う。**新規手順は作らない** —
+  spool + repair で回収できないケースがあるなら、それは 4b の完了条件が甘いということなので、
+  手順を足すのではなく完了条件を厳しくする。
+
+### この節が閉じるまで Slice 4 は着手しない
+
+Slice 1〜3 (additive、production writer は v1 のまま) は本節と独立に進められる。
+
 ## 7. cross-repository 方針
 
 **cross-repository lineage は認めない。**
@@ -1239,6 +1317,7 @@ E-12 の「故意に失敗させる」テストは、cleanup が file-scope で�
 
 | 増分 | 内容 | 独立に検証できるか |
 |---|---|---|
+| **A-2 Slice 4** | v2 write への切替。**§6-a の rollout fence (4a/4b) が前提**。Slice 1〜3 は additive で本節に依存しない |
 | **A** | typed `LineageEndpoint` (全 kind で `repositoryId` 必須) + endpoint-local snapshot allowlist + kind 明示 builder + producer 全書き換え + サーバー発行 `operationId` + **`processKey` / `deliveryId` 分離** + endpoint 件数/payload 上限と chunking + `FILE_SHARE_SYNC_UPLOAD` 生成拒否 + cross-repo 検証 4層 (external 含む) (§2 §3 §7) | 単体。Atlas 不要 |
 | **B** | schema additive 拡張 (`nemaki_folder_dataset` / `nemaki_import_artifact` / `nemaki_export_artifact`、および `nemaki_external_asset` への `provider`/`storageClass`/`tenantId`、`nemaki_document` への `mimeType`/`contentLength`) + catalog sync の同一 bulk 作成と **partial response の reconcile** + **既存 folder の authoritative backfill** + lifecycle (rename/move/delete/restore/`sourceState`) + **`LineageCatalogReconciliationService`** (§2 §3) | schema apply + backfill + orphan reconciliation + obligation IT |
 | **C** | `CatalogPayloadFactory` へ payload 生成を集約、canonical QN を1箇所化 (既存 `buildExternalAssetQualifiedName` を移設)、`AtlasLineageSink` から payload を剥がす、**POST 後 GUID 完全一致を production の成功条件に** (§4 §5) | 単体 (payload golden) + sink IT |
