@@ -31,6 +31,7 @@ on:
       - 'core/src/main/java/jp/aegif/nemaki/rest/purview/ExternalAssetIdentity.java'
       - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/PurviewSchemaPayloadFactory.java'
       - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/PurviewEntityPayloadFactory.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/CatalogPropertyMappingResolver.java'
       - 'core/src/main/java/jp/aegif/nemaki/rest/purview/PurviewCloudMetadataSupport.java'
       - 'core/src/test/java/jp/aegif/nemaki/rest/purview/payload/PurviewEntityPayloadFactoryTest.java'
       - 'core/src/test/java/jp/aegif/nemaki/rest/purview/journal/**'
@@ -44,6 +45,7 @@ on:
       - 'core/src/main/java/jp/aegif/nemaki/rest/purview/ExternalAssetIdentity.java'
       - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/PurviewSchemaPayloadFactory.java'
       - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/PurviewEntityPayloadFactory.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/CatalogPropertyMappingResolver.java'
       - 'core/src/main/java/jp/aegif/nemaki/rest/purview/PurviewCloudMetadataSupport.java'
       - 'core/src/test/java/jp/aegif/nemaki/rest/purview/payload/PurviewEntityPayloadFactoryTest.java'
       - 'core/src/test/java/jp/aegif/nemaki/rest/purview/journal/**'
@@ -101,5 +103,5 @@ jobs:
       - name: Java identity, endpoint and schema-alignment tests
         run: >
           mvn -B -f core/pom.xml -Pdevelopment,opencmis-github-packages test
-          -Dtest='LineageCanonicalHashTest,LineageIdentityTest,LineageEndpointTest,LineageEndpointBypassTest,LineageRepositoryScopeTest,EndpointAttributeTest,EndpointKindSchemaAlignmentTest,ExternalAssetNamingCrossPathTest,ExternalAssetIdentityTest,PurviewEntityPayloadFactoryTest'
+          -Dtest='LineageCanonicalHashTest,LineageIdentityTest,LineageEndpointTest,LineageEndpointBypassTest,LineageRepositoryScopeTest,EndpointAttributeTest,EndpointKindSchemaAlignmentTest,ExternalAssetNamingCrossPathTest,ExternalAssetIdentityTest,PurviewEntityPayloadFactoryTest,CatalogPropertyMappingResolverTest'
           -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false

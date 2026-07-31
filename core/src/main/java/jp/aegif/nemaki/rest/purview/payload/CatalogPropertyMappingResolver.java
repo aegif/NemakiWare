@@ -58,6 +58,13 @@ public class CatalogPropertyMappingResolver {
     private volatile Map<String, Map<String, ResolvedMapping>> cachedPerRepo = new LinkedHashMap<>();
     private volatile Map<String, Map<String, Map<String, PropertyMapping>>> cachedLoadedMappings = new LinkedHashMap<>();
 
+    /** (type, property, name) triples already logged, so the WARN is not repeated per parse. */
+    private final Set<String> warnedRejectedMappings =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private final java.util.concurrent.atomic.AtomicLong rejectedMappingCount =
+            new java.util.concurrent.atomic.AtomicLong();
+
     public CatalogPropertyMappingResolver(IntegrationSettingsService settingsService,
                                           TypeService typeService,
                                           RepositoryInfoMap repositoryInfoMap) {
@@ -212,6 +219,19 @@ public class CatalogPropertyMappingResolver {
                     Map<String, Object> fields = propEntry.getValue();
                     boolean enabled = Boolean.TRUE.equals(fields.get("enabled"));
                     String catalogName = fields.get("catalogName") instanceof String s ? s : propEntry.getKey();
+                    // Enforced on read, not only in saveMappings. saveMappings is one way a
+                    // mapping arrives; a configuration written before this rule existed, a
+                    // restore, a hand-edited CouchDB document and a corrupted value are the
+                    // others, and every one of them reaches the payload through this parse.
+                    // A reserved catalogName lets a custom property overwrite a core attribute
+                    // — including cloudFileUrl, which increment A-1g sets to null precisely so
+                    // that no stored URL reaches the catalog.
+                    if (enabled && isUnusableCatalogName(catalogName)) {
+                        warnOnceAboutRejectedMapping(typeEntry.getKey(), propEntry.getKey(),
+                                catalogName);
+                        // this mapping only; the rest of the projection is unaffected
+                        continue;
+                    }
                     typeMappings.put(propEntry.getKey(), new PropertyMapping(enabled, catalogName));
                 }
                 result.put(typeEntry.getKey(), typeMappings);
@@ -299,6 +319,41 @@ public class CatalogPropertyMappingResolver {
     // ── Write mappings ───────────────────────────────────────────────
 
     /**
+     * A catalogName no mapping may use: blank, or one of a core entity attribute's.
+     *
+     * <p>Trimmed before comparison because {@code appendCustomPropertyValues} uses the raw value
+     * as the map key — {@code " cloudFileUrl"} would not collide, but a configuration containing
+     * it is a mistake either way, and {@link #validateMappings} has always trimmed.
+     */
+    static boolean isUnusableCatalogName(String catalogName) {
+        if (catalogName == null || catalogName.trim().isEmpty()) {
+            return true;
+        }
+        return RESERVED_ATTRIBUTE_NAMES.contains(catalogName.trim());
+    }
+
+    /**
+     * One WARN per (type, property, name), because this runs on every parse of every repository's
+     * configuration and an operator needs to see it without it drowning the log.
+     */
+    private void warnOnceAboutRejectedMapping(String typeId, String cmisPropertyId,
+                                              String catalogName) {
+        String key = typeId + "\u0000" + cmisPropertyId + "\u0000" + catalogName;
+        if (warnedRejectedMappings.add(key)) {
+            logger.warn("Ignoring property mapping '{}.{}' -> catalog attribute '{}': the name is"
+                    + " blank or reserved for a core entity attribute. The mapping is skipped;"
+                    + " other mappings still project. Remove it via the admin UI.",
+                    typeId, cmisPropertyId, catalogName);
+        }
+        rejectedMappingCount.incrementAndGet();
+    }
+
+    /** How many mappings have been rejected on load, for operator visibility. */
+    public long getRejectedMappingCount() {
+        return rejectedMappingCount.get();
+    }
+
+    /**
      * Validates that no enabled mapping uses a reserved or blank attribute name.
      *
      * @return list of validation error messages (empty if valid)
@@ -316,7 +371,8 @@ public class CatalogPropertyMappingResolver {
                     errors.add("Property " + loc + " has an empty catalog attribute name");
                     continue;
                 }
-                if (RESERVED_ATTRIBUTE_NAMES.contains(m.catalogName().trim())) {
+                // same predicate the load path uses, so save and load cannot disagree
+                if (isUnusableCatalogName(m.catalogName())) {
                     errors.add("Property " + loc
                             + " uses reserved catalog attribute name '" + m.catalogName() + "'");
                 }
