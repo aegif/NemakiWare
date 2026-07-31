@@ -528,7 +528,8 @@ HMAC 付き bundle (§9) も**完全性の保証であって暗号化ではな�
 | 項目 | 契約 |
 |---|---|
 | stableKey に入れないもの | **認証情報 (userinfo)、署名付き URL、query string、fragment、制御文字、前後空白**。producer 側で除去する。`ExternalAssetIdentity.parse` が除去漏れを**両経路で拒否**する (QN は可逆 base64 なので、漏れると catalog entity から復元できてしまう) |
-| 検査の限界 | URI 形状の key にしか query / fragment / userinfo は見えない。opaque な connector ID に token が埋まっていても区別できず、そこは producer の責任として残る。**filesystem key の path 部分では `?` `#` は普通の文字**であり (ファイル名に使える)、URI 規則は適用しない — 適用すると正当なファイルが lineage に載らなくなる |
+| 各規則の適用範囲 | `?` `#` は **filesystem path 以外の全 key** で拒否する (URI 形状かどうかを問わない)。opaque な connector ID にこれらが入っている場合、剥がし忘れた URL である可能性の方が高く、fail-closed 側を採る。filesystem path だけは例外で、`?` `#` はファイル名に使える普通の文字であり、拒否すると正当なファイルが lineage に載らなくなる。userinfo は authority が存在する key (`://` を含むもの) でのみ検査する — `@` 単体は mailbox path 等で正当 |
+| 検査の限界 | 区切り文字を伴わない token が opaque ID に埋まっている場合は通常の ID と区別できず、そこは producer の責任として残る。この検査は「producer が剥がしたことの確認」であって代替ではない |
 | stableKey の書式 | **既存 catalog sync が正典**。cloud = `{provider}:{externalFileId}`、filesystem = `filesystem:{絶対正規化パス}`、cold = archive の `contentRef.ref` をそのまま。`ExternalAssetIdentity` が唯一の実装で、lineage と catalog sync の両方がそこを通る。独自 scheme (`cloud://` 等) を作ると同一資産が Atlas 上で 2 entity に割れ、A-2 以降は `processKey` まで変わるので後から直せない |
 | stableKey の保持 | external / cloud / cold は `attributes.externalStableKey` に**必須**で持つ。QN はそこから再計算でき、§7 の検証は prefix 一致ではなく**完全一致**で行う (QN が key A、attribute が key B という endpoint は、catalog が名前で解決する実体と snapshot が attribute で解決する実体が食い違う) |
 | filesystem path | 正規化済み絶対パス。`/srv/in/./a.pdf` と `/srv/in/b/../a.pdf` が 2 資産にならないこと |
@@ -538,10 +539,17 @@ HMAC 付き bundle (§9) も**完全性の保証であって暗号化ではな�
 | 秘匿性が必要な場合 | HMAC / SHA-256 ベースの QN へ移行する設計が別途必要。**本増分では扱わない** (既存 QN 互換を優先) |
 
 - raw URI は QN にはせず、`externalStableKey` 属性として entity に保持する。
+- **ログ・例外に出さない対象は「external kind の QN と stableKey」**である (v2.3.1 までは `file://`
+  と書いていたが、その scheme 自体を撤回した)。判定は文字列の形ではなく
+  `EndpointKind.Identity.STABLE_KEY` で行う。`LineageEndpoint.toString()` も redact 済み。
+- `externalPath` は stableKey から**導出**する。入力値をそのまま保存すると、正規化された key と
+  食い違い、同一 entity が 2 通りのパス表記を主張する (A-2 の `creationPayloadDigest` は
+  endpoint 属性を含むため、再試行で digest 不一致になり得る)。
 - **`externalStableKey` は protected 扱い**とし、ログ・エラーメッセージ・dead letter reason に
   そのまま出さない。出力する場合は SHA-256 の先頭 12 桁のみ。`file://` の絶対パスと
   cloud の識別子が対象。
-- canonical 化は `LineageEndpointCatalog` (新規) の1箇所。既存 `PurviewEntityPayloadFactory` の
+- canonical 化は `ExternalAssetIdentity` の1箇所 (v2.3.2: 新設ではなく**集約**。既に本番 entity を
+  書いている実装があるため置き換えではない)。既存 `PurviewEntityPayloadFactory` の
   メソッドをそこへ移し、catalog sync と journal の両方が同じ実装を通る (§5)。
 
 ### `upload://` の扱いは §4 から §3 へ移した

@@ -560,16 +560,22 @@ public class PurviewEntityPayloadFactory {
             String username,
             long occurredAtMillis) {
         String stableKey = buildFilesystemExternalStableKey(path);
+        // From the key, not from the argument: the key is normalised and the argument may not be,
+        // and an externalPath that disagrees with its own key describes a second file. It also
+        // makes the entity impossible to reconstruct as a LineageEndpoint, whose kind-consistency
+        // check requires the two to agree.
+        String normalisedPath = jp.aegif.nemaki.rest.purview.ExternalAssetIdentity
+                .filesystemPathOf(stableKey);
         Map<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("qualifiedName", buildExternalAssetQualifiedName(repositoryId, stableKey));
-        attributes.put("name", firstNonBlank(path, stableKey));
+        attributes.put("name", firstNonBlank(normalisedPath, stableKey));
         attributes.put("description", null);
         attributes.put("owner", firstNonBlank(username, "system"));
         attributes.put("createTime", occurredAtMillis);
         attributes.put("modifiedTime", occurredAtMillis);
         attributes.put("externalStableKey", stableKey);
         attributes.put("sourceSystem", FILESYSTEM_SOURCE_SYSTEM);
-        attributes.put("externalPath", path);
+        attributes.put("externalPath", normalisedPath);
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", EXTERNAL_ASSET_TYPE_NAME);
