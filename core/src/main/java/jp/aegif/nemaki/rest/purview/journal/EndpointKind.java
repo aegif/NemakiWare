@@ -91,7 +91,13 @@ public enum EndpointKind {
     CLOUD_OBJECT("nemaki_external_asset", Identity.STABLE_KEY, "externalStableKey",
             requiredText("sourceSystem"), requiredText("externalStableKey"), text("externalPath")),
 
-    /** An object moved to cold storage; {@code sourceSystem} carries the storage class. */
+    /**
+     * An object moved to cold storage.
+     *
+     * <p>{@code sourceSystem} carries the <em>storage adapter type</em> — the same value the
+     * catalog sync takes from {@code archive.getContentRef().get("type")} — not the storage class.
+     * A storage class such as {@code GLACIER} is a different fact and is an increment-B attribute.
+     */
     COLD_STORAGE("nemaki_external_asset", Identity.STABLE_KEY, "externalStableKey",
             requiredText("sourceSystem"), requiredText("externalStableKey"), text("externalPath")),
 

@@ -131,10 +131,7 @@ public record LineageEndpoint(
                 throw new IllegalArgumentException("a filesystem endpoint's stableKey must be "
                         + FILESYSTEM_SOURCE_SYSTEM + ":{absolute path}");
             }
-            if (!canonicalFilesystemPath(path).equals(path)) {
-                throw new IllegalArgumentException("a filesystem endpoint's path must be absolute"
-                        + " and normalised");
-            }
+            // the absolute/normalised rule is enforced by ExternalAssetIdentity.parse above
             // externalPath is the same value in another spelling, so it is derived rather than
             // trusted: two spellings of one path are two assets to whatever reads the attribute.
             if (externalPath != null && !path.equals(externalPath)) {
@@ -307,8 +304,9 @@ public record LineageEndpoint(
      */
     public static LineageEndpoint cloudObject(String repositoryId, String provider,
                                               String cloudFileId) {
-        String stableKey = canonicalStableKey(ExternalAssetIdentity.cloud(
-                nonBlank(provider, "provider"), nonBlank(cloudFileId, "cloudFileId")));
+        String stableKey = ExternalAssetIdentity
+                .cloud(nonBlank(provider, "provider"), nonBlank(cloudFileId, "cloudFileId"))
+                .value();
         return new LineageEndpoint(EndpointKind.CLOUD_OBJECT,
                 externalAssetQualifiedName(repositoryId, stableKey), repositoryId, null, null,
                 Map.of("sourceSystem", provider, ATTR_EXTERNAL_STABLE_KEY, stableKey));
@@ -326,7 +324,7 @@ public record LineageEndpoint(
      */
     public static LineageEndpoint coldStorage(String repositoryId, String contentRef,
                                               String sourceSystem) {
-        String stableKey = canonicalStableKey(nonBlank(contentRef, "contentRef"));
+        String stableKey = ExternalAssetIdentity.opaque(nonBlank(contentRef, "contentRef")).value();
         return new LineageEndpoint(EndpointKind.COLD_STORAGE,
                 externalAssetQualifiedName(repositoryId, stableKey), repositoryId, null, null,
                 Map.of("sourceSystem", nonBlank(sourceSystem, "sourceSystem"),
@@ -346,10 +344,8 @@ public record LineageEndpoint(
      * directory of whichever process emitted it.
      */
     public static LineageEndpoint filesystemPath(String repositoryId, String path) {
-        String normalised = canonicalFilesystemPath(nonBlank(path, "path"));
-        // through canonicalStableKey like every other external key: a path can carry "?" or "#"
-        // as ordinary characters, and this factory used to be the one way past that check
-        String stableKey = canonicalStableKey(ExternalAssetIdentity.filesystem(normalised));
+        String stableKey = ExternalAssetIdentity.filesystem(nonBlank(path, "path")).value();
+        String normalised = ExternalAssetIdentity.filesystemPathOf(stableKey);
         return new LineageEndpoint(EndpointKind.EXTERNAL_ASSET,
                 externalAssetQualifiedName(repositoryId, stableKey), repositoryId, null, null,
                 Map.of("sourceSystem", FILESYSTEM_SOURCE_SYSTEM,
@@ -432,79 +428,9 @@ public record LineageEndpoint(
         };
     }
 
-    /**
-     * A stable key with the parts the design forbids, rejected rather than encoded.
-     *
-     * <p>The qualified name is reversible base64, so anything in the key is recoverable by anyone
-     * who can read a catalog entity or a log line. A signed URL puts a working credential there,
-     * and a query string or fragment puts a value that is not part of the resource's identity —
-     * the same object fetched twice with different query parameters would become two assets.
-     *
-     * <p>The design makes stripping these the producer's job. This is the check that a producer
-     * did it, placed here because it is the one place every stable key passes through.
-     */
-    public static String canonicalStableKey(String stableKey) {
-        String key = nonBlank(stableKey, "stableKey");
-        // Not trimmed. A stable key may be an opaque connector id, where a leading space is part
-        // of the id or it is not — and quietly removing it would merge two different assets into
-        // one. Rejecting says which of the two the producer meant to send.
-        if (!key.equals(key.strip())) {
-            throw new IllegalArgumentException(
-                    "stableKey must not begin or end with whitespace");
-        }
-        for (int i = 0; i < key.length(); i++) {
-            if (Character.isISOControl(key.charAt(i))) {
-                throw new IllegalArgumentException(
-                        "stableKey must not contain control characters");
-            }
-        }
-        if (key.indexOf('?') >= 0) {
-            throw new IllegalArgumentException("stableKey must not contain a query string —"
-                    + " strip it in the producer; it is not part of the resource's identity");
-        }
-        if (key.indexOf('#') >= 0) {
-            throw new IllegalArgumentException("stableKey must not contain a fragment —"
-                    + " strip it in the producer; it is not part of the resource's identity");
-        }
-        int schemeEnd = key.indexOf("://");
-        if (schemeEnd >= 0) {
-            int authorityEnd = key.indexOf('/', schemeEnd + 3);
-            // == -1 rather than < 0: indexOf returns exactly -1, and "< 0" invites a boundary
-            // question that cannot arise, since the search starts at schemeEnd + 3.
-            String authority = authorityEnd == -1 ? key.substring(schemeEnd + 3)
-                    : key.substring(schemeEnd + 3, authorityEnd);
-            if (authority.indexOf('@') >= 0) {
-                throw new IllegalArgumentException("stableKey must not carry userinfo —"
-                        + " credentials must never reach a qualified name");
-            }
-        }
-        return key;
-    }
-
-    /**
-     * An absolute, normalised filesystem path.
-     *
-     * @throws IllegalArgumentException if the path is relative or cannot be parsed.
-     */
-    public static String canonicalFilesystemPath(String path) {
-        java.nio.file.Path parsed;
-        try {
-            parsed = java.nio.file.Path.of(path);
-        } catch (java.nio.file.InvalidPathException e) {
-            throw new IllegalArgumentException("filesystem path is not a valid path: "
-                    + e.getReason(), e);
-        }
-        if (!parsed.isAbsolute()) {
-            throw new IllegalArgumentException("filesystem path must be absolute: a relative path"
-                    + " names a different file depending on who emitted it");
-        }
-        return parsed.normalize().toString();
-    }
-
-    /** The derivable part of an external asset's name; the rest is the encoded stable key. */
-    public static String externalAssetQualifiedNamePrefix(String repositoryId) {
-        return ExternalAssetIdentity.qualifiedNamePrefix(repositoryId);
-    }
+    // ------------------------------------------------------------------
+    // Qualified names — every one is repository-scoped
+    // ------------------------------------------------------------------
 
     public static String objectQualifiedName(String repositoryId, String objectId) {
         return "nemaki://" + repositoryId + "/objects/" + objectId;
@@ -526,18 +452,39 @@ public record LineageEndpoint(
         return "nemaki://" + repositoryId + "/exports/" + operationId;
     }
 
+    /** The derivable part of an external asset's name; the rest is the encoded stable key. */
+    public static String externalAssetQualifiedNamePrefix(String repositoryId) {
+        return ExternalAssetIdentity.qualifiedNamePrefix(repositoryId);
+    }
+
     /**
      * The repository-scoped name for anything outside the repository.
      *
-     * <p>Matches {@code PurviewEntityPayloadFactory.buildExternalAssetQualifiedName} so that the
-     * catalog sync path and the lineage path name the same asset the same way; a raw URI here
-     * would have split one asset into two entities.
-     *
-     * <p>The encoding is reversible. It is not protection — see the design's §4: the stable key
-     * must never contain credentials, signed URLs, query strings or fragments.
+     * <p>Matches what the catalog sync writes because both go through
+     * {@link ExternalAssetIdentity}: the key is validated on the way in, so an unchecked String
+     * cannot become a name on either path.
      */
     public static String externalAssetQualifiedName(String repositoryId, String stableKey) {
-        return ExternalAssetIdentity.qualifiedName(repositoryId, stableKey);
+        return ExternalAssetIdentity.qualifiedName(repositoryId,
+                ExternalAssetIdentity.parse(stableKey));
+    }
+
+    /**
+     * A stable key validated by the one rule both this and the catalog sync use.
+     *
+     * @see ExternalAssetIdentity#parse
+     */
+    public static String canonicalStableKey(String stableKey) {
+        return ExternalAssetIdentity.parse(stableKey).value();
+    }
+
+    /**
+     * An absolute, normalised filesystem path.
+     *
+     * @see ExternalAssetIdentity#normalisedAbsolutePath
+     */
+    public static String canonicalFilesystemPath(String path) {
+        return ExternalAssetIdentity.normalisedAbsolutePath(path);
     }
 
     private static boolean isBlank(String s) {

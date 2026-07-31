@@ -152,9 +152,9 @@ external QN も E-17 も `repositoryId` を同一性の一部にしているの�
 
 v2.2 は `FILESYSTEM_PATH` を §4 の stableKey 表にだけ書き、`EndpointKind` にも E-17 にも
 入れていなかった。**独立 kind にはせず `EXTERNAL_ASSET` に統合する。**
-`file://` は Nemaki の外にある資源であって cloud / cold と同種であり、§4 の canonical QN 規則
+filesystem path は Nemaki の外にある資源であって cloud / cold と同種であり、§4 の canonical QN 規則
 (`external-assets/{base64url(stableKey)}`) にそのまま乗る。`stableKey` が
-`file://{正規化パス}` になるだけの違いとして扱う。
+`filesystem:{絶対正規化パス}` (既存 catalog sync と同一書式、§4) になるだけの違いとして扱う。
 
 ### endpoint-local snapshot (v2.1)
 
@@ -172,14 +172,15 @@ Atlas が受信時に捨て、allowlist が防ぐはずの失敗を allowlist �
 | `CMIS_FOLDER` | **`name`** | string |
 | `ARCHIVE` | **`archivedAt`**, **`originalObjectId`**, `name`, `versionLabel`, `archiveState` | `archivedAt` は **long (epoch millis)**、他は string |
 | `EXTERNAL_ASSET` | **`sourceSystem`**, **`externalStableKey`** (protected), `externalPath` | すべて string |
-| `CLOUD_OBJECT` | 同上 (provider は `sourceSystem` に載せる) | 同上 |
-| `COLD_STORAGE` | 同上 (storage class は `sourceSystem` に載せる) | 同上 |
+| `CLOUD_OBJECT` | 同上 (provider を `sourceSystem` に載せる) | 同上 |
+| `COLD_STORAGE` | 同上 (**storage adapter type** を `sourceSystem` に載せる。既存 sync が `contentRef.type` を入れているのと同じ値。storage class (`GLACIER` 等) は別物で、増分 B の独立属性) | 同上 |
 | `IMPORT_ARTIFACT` | **`importMode`**, `byteLength`, `contentHash`, `originalFileName` | `byteLength` は long |
 | `EXPORT_ARTIFACT` | **`artifactKind`**, `objectCount`, `name` | `objectCount` は long |
 
 **増分 B で schema と allowlist の両方に足すもの** (片方だけでは値が届かない):
 `nemaki_document` に `mimeType` / `contentLength`、`nemaki_external_asset` に
-`tenantId` (EXTERNAL_ASSET) / `provider` (CLOUD_OBJECT) / `storageClass` (COLD_STORAGE)。
+`tenantId` (EXTERNAL_ASSET) / `provider` (CLOUD_OBJECT) / `storageClass` (COLD_STORAGE — storage
+class は `sourceSystem` とは別の値であり、B で独立属性として足すまでは運ばない)。
 同じ Atlas 型を共有する kind でも allowlist が同一である必要はない
 (B 後の external 3 kind がまさにそれ)。
 
@@ -501,14 +502,22 @@ raw URI を QN にすると、**同一の external asset が Purview 既存経�
 qualifiedName = nemaki://{repositoryId}/external-assets/{base64url(stableKey)}
 ```
 
-`stableKey` は endpoint kind ごとに決める。
+`stableKey` は endpoint kind ごとに決める。**既存 catalog sync が書いている書式が正典**であり、
+下表はそれと一致している (v2.3.2 で `cloud://` / `cold://` / `file://` を撤回。あれは
+実装時に新設した独自 scheme で、既存 entity と別 QN になっていた)。
 
-| kind | stableKey |
-|---|---|
-| `EXTERNAL_ASSET` (ingest) | `ExternalSourceUri.build(...)` の出力 |
-| `CLOUD_OBJECT` | `cloud://{provider}/{fileId}` |
-| `COLD_STORAGE` | `cold://{storageRef}` |
-| `EXTERNAL_ASSET` (filesystem, `sourceSystem=filesystem`) | `file://{正規化パス}` |
+| kind | stableKey | 生成 |
+|---|---|---|
+| `EXTERNAL_ASSET` (ingest) | connector が持つ安定 ID をそのまま | `ExternalAssetIdentity.opaque` |
+| `CLOUD_OBJECT` | `{provider}:{externalFileId}` | `ExternalAssetIdentity.cloud` |
+| `COLD_STORAGE` | archive の `contentRef.ref` をそのまま | `ExternalAssetIdentity.opaque` |
+| `EXTERNAL_ASSET` (filesystem, `sourceSystem=filesystem`) | `filesystem:{絶対正規化パス}` | `ExternalAssetIdentity.filesystem` |
+
+**`ExternalAssetIdentity` が唯一の実装**である。key の生成・正規化・安全検査・QN 符号化が
+すべてそこにあり、lineage と catalog sync の両方が通る。`qualifiedName` は検証済みの
+`StableKey` しか受け取らないので、未検査の String が QN になる経路が型として存在しない。
+(v2.3.1 の「`LineageEndpointCatalog` (新規) の1箇所」は、この既存 factory を置き換える別クラスを
+作る想定だった。既に本番 entity を書いている実装がある以上、新設ではなく**集約**が正しい。)
 
 #### `base64url` は保護ではない (v2.3)
 
@@ -518,7 +527,8 @@ HMAC 付き bundle (§9) も**完全性の保証であって暗号化ではな�
 
 | 項目 | 契約 |
 |---|---|
-| stableKey に入れないもの | **認証情報 (userinfo)、署名付き URL、query string、fragment、制御文字**。producer 側で除去する。`LineageEndpoint.canonicalStableKey` が除去漏れを**拒否**する (QN は可逆 base64 なので、漏れると catalog entity から復元できてしまう) |
+| stableKey に入れないもの | **認証情報 (userinfo)、署名付き URL、query string、fragment、制御文字、前後空白**。producer 側で除去する。`ExternalAssetIdentity.parse` が除去漏れを**両経路で拒否**する (QN は可逆 base64 なので、漏れると catalog entity から復元できてしまう) |
+| 検査の限界 | URI 形状の key にしか query / fragment / userinfo は見えない。opaque な connector ID に token が埋まっていても区別できず、そこは producer の責任として残る。**filesystem key の path 部分では `?` `#` は普通の文字**であり (ファイル名に使える)、URI 規則は適用しない — 適用すると正当なファイルが lineage に載らなくなる |
 | stableKey の書式 | **既存 catalog sync が正典**。cloud = `{provider}:{externalFileId}`、filesystem = `filesystem:{絶対正規化パス}`、cold = archive の `contentRef.ref` をそのまま。`ExternalAssetIdentity` が唯一の実装で、lineage と catalog sync の両方がそこを通る。独自 scheme (`cloud://` 等) を作ると同一資産が Atlas 上で 2 entity に割れ、A-2 以降は `processKey` まで変わるので後から直せない |
 | stableKey の保持 | external / cloud / cold は `attributes.externalStableKey` に**必須**で持つ。QN はそこから再計算でき、§7 の検証は prefix 一致ではなく**完全一致**で行う (QN が key A、attribute が key B という endpoint は、catalog が名前で解決する実体と snapshot が attribute で解決する実体が食い違う) |
 | filesystem path | 正規化済み絶対パス。`/srv/in/./a.pdf` と `/srv/in/b/../a.pdf` が 2 資産にならないこと |
