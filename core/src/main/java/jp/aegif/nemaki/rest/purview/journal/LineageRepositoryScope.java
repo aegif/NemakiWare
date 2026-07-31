@@ -47,6 +47,11 @@ package jp.aegif.nemaki.rest.purview.journal;
  * an exception. The design forbids credentials and signed URLs in a stable key and
  * {@link LineageEndpoint#canonicalStableKey} enforces it, but an exception message travelling to
  * a log file is exactly where that defence being wrong would hurt most.
+ *
+ * <p>Whether to redact is decided by {@link EndpointKind.Identity}, not by what the string looks
+ * like. Keying off a {@code /external-assets/} substring meant a hand-crafted name of
+ * {@code RAW_SECRET} — which contains no such marker — was printed in full, and a hand-crafted
+ * name is precisely the one that needs hiding.
  */
 public final class LineageRepositoryScope {
 
@@ -83,33 +88,9 @@ public final class LineageRepositoryScope {
         String expected = LineageEndpoint.expectedQualifiedName(endpoint, eventRepositoryId);
         if (!expected.equals(endpoint.catalogQualifiedName())) {
             throw new IllegalArgumentException(side + " endpoint qualified name does not match its"
-                    + " own kind and identity (kind=" + endpoint.kind() + "): expected "
-                    + describe(expected) + ", got " + describe(endpoint.catalogQualifiedName()));
-        }
-    }
-
-    /**
-     * A qualified name safe to put in a message.
-     *
-     * <p>External names decode back to the stable key, so they are reduced to their repository
-     * scope and a digest — enough to tell two names apart in a log without reproducing either.
-     */
-    private static String describe(String qualifiedName) {
-        int externalMarker = qualifiedName.indexOf("/external-assets/");
-        if (externalMarker < 0) {
-            return "'" + qualifiedName + "'";
-        }
-        return "'" + qualifiedName.substring(0, externalMarker + "/external-assets/".length())
-                + "<redacted:" + shortDigest(qualifiedName) + ">'";
-    }
-
-    private static String shortDigest(String value) {
-        try {
-            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            return java.util.HexFormat.of().formatHex(digest).substring(0, 12);
-        } catch (java.security.NoSuchAlgorithmException e) {
-            throw new AssertionError("SHA-256 not available", e);
+                    + " own kind and identity (kind=" + endpoint.kind() + "): expected '"
+                    + LineageEndpoint.describeQualifiedName(endpoint.kind(), expected)
+                    + "', got '" + endpoint.describeQualifiedName() + "'");
         }
     }
 

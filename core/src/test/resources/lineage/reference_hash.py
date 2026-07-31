@@ -4,6 +4,13 @@ Written against LineageCanonicalHash's javadoc — typed tags, big-endian length
 UTF-8 bytes, map keys and canonical lists in unsigned UTF-8 byte order — not by transcribing
 the Java. If the two agree on these vectors, a repair or DLQ tool written outside the JVM
 computes the same ids.
+
+Both this file and LineageCanonicalHashTest read identity-golden-vectors.json, so neither can
+be updated to match a changed encoding without the other going red:
+
+    python3 core/src/test/resources/lineage/reference_hash.py
+
+exits non-zero on any disagreement.
 """
 import hashlib, struct
 
@@ -62,5 +69,33 @@ vectors["originalDeliveryId"] = orig
 vectors["replayDeliveryId"] = h("REPLAY", orig, "atlas", 1)
 vectors["repairDeliveryId"] = h("REPAIR", "lineage_dl:fixed", 1)
 
-for name, value in vectors.items():
-    print(f"{name} = {value}")
+def main():
+    """Compare against the fixture the Java golden test also reads, and exit non-zero on drift."""
+    import json, os, sys
+    fixture = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "identity-golden-vectors.json")
+    with open(fixture, encoding="utf-8") as f:
+        expected = json.load(f)
+
+    failures = []
+    for name, value in vectors.items():
+        if name not in expected:
+            failures.append(f"{name}: not in the fixture")
+        elif expected[name] != value:
+            failures.append(f"{name}: fixture {expected[name]} but this implementation {value}")
+    for name in expected:
+        if name not in vectors:
+            failures.append(f"{name}: in the fixture but not produced here")
+
+    for name, value in vectors.items():
+        print(f"{name} = {value}")
+    if failures:
+        print("\nFAIL: the reference implementation and the fixture disagree", file=sys.stderr)
+        for failure in failures:
+            print("  " + failure, file=sys.stderr)
+        sys.exit(1)
+    print(f"\nOK: {len(vectors)} vectors match identity-golden-vectors.json")
+
+
+if __name__ == "__main__":
+    main()

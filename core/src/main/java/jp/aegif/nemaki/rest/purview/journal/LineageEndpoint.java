@@ -54,6 +54,11 @@ public record LineageEndpoint(
     /** Attribute key holding the raw external URI. Never logged; see the design's §4. */
     public static final String ATTR_EXTERNAL_STABLE_KEY = "externalStableKey";
 
+    /** {@code sourceSystem} value that marks a stable key as a local filesystem path. */
+    public static final String FILESYSTEM_SOURCE_SYSTEM = "filesystem";
+
+    private static final String FILE_SCHEME = "file://";
+
     public LineageEndpoint {
         if (kind == null) {
             throw new IllegalArgumentException("endpoint kind must not be null");
@@ -90,6 +95,107 @@ public record LineageEndpoint(
         }
         attributes = attributes == null ? Map.of() : Map.copyOf(attributes);
         kind.validateAttributes(attributes);
+        requireCanonicalStableKey(kind, attributes);
+    }
+
+    /**
+     * The stable-key contract, enforced here rather than only in the factories.
+     *
+     * <p>The factories are not the only way an endpoint appears. A record mapped from CouchDB, a
+     * v1 legacy reader and the repair path all call the canonical constructor, and
+     * {@link LineageRepositoryScope} rebuilds the qualified name <em>from this attribute</em> — so
+     * a dangerous key present in both the name and the attribute is self-consistent and passes
+     * every later check. The contract has to hold at construction or it does not hold at all.
+     *
+     * <p>Rejected rather than rewritten. Silently canonicalising would mean the endpoint's key no
+     * longer equals what the caller stored elsewhere, and two records that should share an
+     * identity would stop matching.
+     */
+    private static void requireCanonicalStableKey(EndpointKind kind,
+                                                  Map<String, Object> attributes) {
+        if (kind.identity() != EndpointKind.Identity.STABLE_KEY) {
+            return;
+        }
+        String stored = (String) attributes.get(kind.identityAttribute());
+        String canonical = canonicalStableKey(stored);
+        if (!canonical.equals(stored)) {
+            throw new IllegalArgumentException("stableKey is not canonical for kind=" + kind
+                    + "; it must be stored exactly as canonicalStableKey would return it");
+        }
+        if (FILESYSTEM_SOURCE_SYSTEM.equals(attributes.get("sourceSystem"))) {
+            if (!canonical.startsWith(FILE_SCHEME)) {
+                throw new IllegalArgumentException(
+                        "a filesystem endpoint's stableKey must begin with " + FILE_SCHEME);
+            }
+            String path = canonical.substring(FILE_SCHEME.length());
+            if (!canonicalFilesystemPath(path).equals(path)) {
+                throw new IllegalArgumentException("a filesystem endpoint's path must be absolute"
+                        + " and normalised");
+            }
+        }
+    }
+
+    /**
+     * A description safe to put in a log line or an exception.
+     *
+     * <p>The record's generated {@code toString} prints every component, and for an external
+     * endpoint two of those — the stable key and the qualified name that base64-encodes it —
+     * are the value the design forbids storing in plain sight. One stray log statement is enough.
+     */
+    @Override
+    public String toString() {
+        return "LineageEndpoint[kind=" + kind + ", repositoryId=" + repositoryId
+                + ", qualifiedName=" + describeQualifiedName(kind, catalogQualifiedName)
+                + (objectId == null ? "" : ", objectId=" + objectId)
+                + (operationId == null ? "" : ", operationId=" + operationId)
+                + ", attributes=" + describeAttributes(kind, attributes) + "]";
+    }
+
+    /** {@link #toString()}'s view of this endpoint's name, for callers that only hold the name. */
+    public String describeQualifiedName() {
+        return describeQualifiedName(kind, catalogQualifiedName);
+    }
+
+    /**
+     * Redaction decided by the kind, not by the shape of the string.
+     *
+     * <p>A hand-crafted name need not contain {@code /external-assets/} at all, and keying off
+     * that substring meant a name of {@code RAW_SECRET} was printed in full — exactly the input
+     * that most needs hiding.
+     */
+    public static String describeQualifiedName(EndpointKind kind, String qualifiedName) {
+        if (kind == null || kind.identity() != EndpointKind.Identity.STABLE_KEY) {
+            return qualifiedName;
+        }
+        return "external:<redacted:" + shortDigest(qualifiedName) + ">";
+    }
+
+    private static Map<String, Object> describeAttributes(EndpointKind kind,
+                                                          Map<String, Object> attributes) {
+        if (kind == null || kind.identity() != EndpointKind.Identity.STABLE_KEY) {
+            return attributes;
+        }
+        Map<String, Object> safe = new LinkedHashMap<>(attributes);
+        // required on every STABLE_KEY kind, so there is no absent case to guard
+        safe.put(kind.identityAttribute(),
+                "<redacted:" + shortDigest(String.valueOf(safe.get(kind.identityAttribute()))) + ">");
+        // externalPath is the same value in another spelling
+        if (safe.containsKey("externalPath")) {
+            safe.put("externalPath",
+                    "<redacted:" + shortDigest(String.valueOf(safe.get("externalPath"))) + ">");
+        }
+        return safe;
+    }
+
+    /** Enough to tell two values apart in a log without reproducing either. */
+    public static String shortDigest(String value) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest).substring(0, 12);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new AssertionError("SHA-256 not available", e);
+        }
     }
 
     /** Identity fields are required exactly when the kind uses them, and forbidden otherwise. */
@@ -133,47 +239,61 @@ public record LineageEndpoint(
                 Map.of("name", nonBlank(name, "name")));
     }
 
+    /**
+     * An archived object, identified by the archive's own id.
+     *
+     * <p>Not by the original's: {@code nemaki://{repo}/archives/{archiveId}} is what the existing
+     * catalog sync already writes, and one document archived twice has two archives.
+     * {@code originalObjectId} is mandatory on {@code nemaki_archive}, so it is required here
+     * rather than optional — an archive without it cannot be created in Atlas at all.
+     *
+     * @param archivedAt epoch milliseconds; {@code nemaki_archive.archivedAt} is a {@code long}.
+     */
     public static LineageEndpoint archive(String repositoryId, String archiveId,
-                                          String originalId, String archivedAt) {
+                                          String originalObjectId, long archivedAt) {
         Map<String, Object> attributes = new LinkedHashMap<>();
-        attributes.put("archivedAt", nonBlank(archivedAt, "archivedAt"));
-        if (originalId != null && !originalId.isBlank()) {
-            attributes.put("originalId", originalId);
-        }
+        attributes.put("archivedAt", archivedAt);
+        attributes.put("originalObjectId", nonBlank(originalObjectId, "originalObjectId"));
         return new LineageEndpoint(EndpointKind.ARCHIVE,
                 archiveQualifiedName(repositoryId, archiveId), repositoryId, archiveId, null,
                 attributes);
     }
 
     public static LineageEndpoint externalAsset(String repositoryId, String stableKey,
-                                                String sourceSystem, String tenantId) {
-        Map<String, Object> attributes = new LinkedHashMap<>();
+                                                String sourceSystem) {
         String key = canonicalStableKey(stableKey);
+        Map<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("sourceSystem", nonBlank(sourceSystem, "sourceSystem"));
         attributes.put(ATTR_EXTERNAL_STABLE_KEY, key);
-        if (tenantId != null && !tenantId.isBlank()) {
-            attributes.put("tenantId", tenantId);
-        }
         return new LineageEndpoint(EndpointKind.EXTERNAL_ASSET,
                 externalAssetQualifiedName(repositoryId, key), repositoryId, null, null,
                 attributes);
     }
 
+    /**
+     * An object in a cloud drive.
+     *
+     * <p>The provider travels as {@code sourceSystem}, which is what
+     * {@code nemaki_external_asset} declares. A separate {@code provider} attribute is an
+     * increment-B schema addition; declaring it before the type has it would send a value Atlas
+     * drops on arrival, which is the exact failure the allowlist exists to prevent.
+     */
     public static LineageEndpoint cloudObject(String repositoryId, String provider,
                                               String cloudFileId) {
         String stableKey = canonicalStableKey("cloud://" + nonBlank(provider, "provider") + "/"
                 + nonBlank(cloudFileId, "cloudFileId"));
         return new LineageEndpoint(EndpointKind.CLOUD_OBJECT,
                 externalAssetQualifiedName(repositoryId, stableKey), repositoryId, null, null,
-                Map.of("provider", provider, ATTR_EXTERNAL_STABLE_KEY, stableKey));
+                Map.of("sourceSystem", provider, ATTR_EXTERNAL_STABLE_KEY, stableKey));
     }
 
+    /** As {@link #cloudObject}: the storage class travels as {@code sourceSystem} until B. */
     public static LineageEndpoint coldStorage(String repositoryId, String storageRef,
                                               String storageClass) {
         String stableKey = canonicalStableKey("cold://" + nonBlank(storageRef, "storageRef"));
         return new LineageEndpoint(EndpointKind.COLD_STORAGE,
                 externalAssetQualifiedName(repositoryId, stableKey), repositoryId, null, null,
-                Map.of("storageClass", nonBlank(storageClass, "storageClass"),
+                Map.of("sourceSystem", nonBlank(storageClass, "storageClass"),
                         ATTR_EXTERNAL_STABLE_KEY, stableKey));
     }
 
@@ -189,10 +309,15 @@ public record LineageEndpoint(
      * directory of whichever process emitted it.
      */
     public static LineageEndpoint filesystemPath(String repositoryId, String path) {
-        String stableKey = "file://" + canonicalFilesystemPath(nonBlank(path, "path"));
+        String normalised = canonicalFilesystemPath(nonBlank(path, "path"));
+        // through canonicalStableKey like every other external key: a path can carry "?" or "#"
+        // as ordinary characters, and this factory used to be the one way past that check
+        String stableKey = canonicalStableKey(FILE_SCHEME + normalised);
         return new LineageEndpoint(EndpointKind.EXTERNAL_ASSET,
                 externalAssetQualifiedName(repositoryId, stableKey), repositoryId, null, null,
-                Map.of("sourceSystem", "filesystem", ATTR_EXTERNAL_STABLE_KEY, stableKey));
+                Map.of("sourceSystem", FILESYSTEM_SOURCE_SYSTEM,
+                        ATTR_EXTERNAL_STABLE_KEY, stableKey,
+                        "externalPath", normalised));
     }
 
     public static LineageEndpoint importArtifact(String repositoryId, String operationId,
@@ -218,7 +343,7 @@ public record LineageEndpoint(
 
     public static LineageEndpoint exportArtifact(String repositoryId, String operationId,
                                                  String artifactKind, String name,
-                                                 Integer objectCount) {
+                                                 Long objectCount) {
         Map<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("artifactKind", nonBlank(artifactKind, "artifactKind"));
         if (name != null && !name.isBlank()) {
@@ -282,7 +407,14 @@ public record LineageEndpoint(
      * did it, placed here because it is the one place every stable key passes through.
      */
     public static String canonicalStableKey(String stableKey) {
-        String key = nonBlank(stableKey, "stableKey").trim();
+        String key = nonBlank(stableKey, "stableKey");
+        // Not trimmed. A stable key may be an opaque connector id, where a leading space is part
+        // of the id or it is not — and quietly removing it would merge two different assets into
+        // one. Rejecting says which of the two the producer meant to send.
+        if (!key.equals(key.strip())) {
+            throw new IllegalArgumentException(
+                    "stableKey must not begin or end with whitespace");
+        }
         for (int i = 0; i < key.length(); i++) {
             if (Character.isISOControl(key.charAt(i))) {
                 throw new IllegalArgumentException(

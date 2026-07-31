@@ -17,6 +17,7 @@
 package jp.aegif.nemaki.rest.purview.journal;
 
 import static jp.aegif.nemaki.rest.purview.journal.EndpointAttribute.count;
+import static jp.aegif.nemaki.rest.purview.journal.EndpointAttribute.requiredCount;
 import static jp.aegif.nemaki.rest.purview.journal.EndpointAttribute.requiredText;
 import static jp.aegif.nemaki.rest.purview.journal.EndpointAttribute.text;
 
@@ -50,7 +51,7 @@ public enum EndpointKind {
 
     /** A CMIS document. {@code nemaki_document} extends {@code DataSet}. */
     CMIS_DOCUMENT("nemaki_document", Identity.OBJECT_ID, null,
-            requiredText("name"), text("mimeType"), count("contentLength"), text("versionLabel")),
+            requiredText("name"), text("versionLabel"), text("folderPath")),
 
     /**
      * A CMIS folder, referenced through its DataSet proxy.
@@ -60,23 +61,39 @@ public enum EndpointKind {
      * folder endpoint is well-formed here but will not resolve in Atlas.
      */
     CMIS_FOLDER("nemaki_folder_dataset", Identity.OBJECT_ID, null,
-            requiredText("name"), text("path")),
+            requiredText("name")),
 
-    /** An archived object. {@code nemaki_archive} extends {@code DataSet}. */
+    /**
+     * An archived object. {@code nemaki_archive} extends {@code DataSet}.
+     *
+     * <p>{@code archivedAt} is epoch milliseconds because the Atlas type declares it {@code long};
+     * a formatted timestamp would be dropped. {@code originalObjectId} — not {@code originalId} —
+     * is the attribute the type actually has, and it is mandatory there.
+     */
     ARCHIVE("nemaki_archive", Identity.OBJECT_ID, null,
-            requiredText("archivedAt"), text("name"), text("originalId")),
+            requiredCount("archivedAt"), requiredText("originalObjectId"), text("name"),
+            text("versionLabel"), text("archiveState")),
 
-    /** Something outside the repository reached through an ingest connector. */
+    /**
+     * Something outside the repository reached through an ingest connector.
+     *
+     * <p>All three external kinds declare exactly what {@code nemaki_external_asset} has:
+     * {@code externalStableKey} and {@code sourceSystem}, both mandatory on the type, plus the
+     * optional {@code externalPath}. {@code provider}, {@code storageClass} and {@code tenantId}
+     * are increment-B schema additions and are not declared here — an attribute the type does not
+     * have is dropped on arrival, which is the failure the allowlist exists to prevent, and
+     * declaring it would have made the allowlist the source of the problem it solves.
+     */
     EXTERNAL_ASSET("nemaki_external_asset", Identity.STABLE_KEY, "externalStableKey",
-            requiredText("sourceSystem"), requiredText("externalStableKey"), text("tenantId")),
+            requiredText("sourceSystem"), requiredText("externalStableKey"), text("externalPath")),
 
-    /** An object in a cloud drive. */
+    /** An object in a cloud drive; {@code sourceSystem} carries the provider. */
     CLOUD_OBJECT("nemaki_external_asset", Identity.STABLE_KEY, "externalStableKey",
-            requiredText("provider"), requiredText("externalStableKey")),
+            requiredText("sourceSystem"), requiredText("externalStableKey"), text("externalPath")),
 
-    /** An object moved to cold storage. */
+    /** An object moved to cold storage; {@code sourceSystem} carries the storage class. */
     COLD_STORAGE("nemaki_external_asset", Identity.STABLE_KEY, "externalStableKey",
-            requiredText("storageClass"), requiredText("externalStableKey")),
+            requiredText("sourceSystem"), requiredText("externalStableKey"), text("externalPath")),
 
     /** What was fed into an import — the upload or the source directory. */
     IMPORT_ARTIFACT("nemaki_import_artifact", Identity.OPERATION_ID, null,
