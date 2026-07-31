@@ -151,8 +151,8 @@ public final class ExternalAssetIdentity {
                 throw new IllegalArgumentException(
                         "a filesystem stableKey must be an absolute, normalised path");
             }
-            // "?" and "#" are ordinary characters in a filename, so the URI rules below do not
-            // apply to the path: rejecting them would make a legitimately named file untrackable.
+            // "?" and "#" are ordinary characters in a filename, so the rules below do not apply
+            // to a path: rejecting them would make a legitimately named file untrackable.
             return new StableKey(key);
         }
 
@@ -161,15 +161,28 @@ public final class ExternalAssetIdentity {
     }
 
     /**
-     * The parts of a URI that must never reach a qualified name.
+     * What must never reach a qualified name.
      *
      * <p>The name is reversible base64, so a signed URL here is a working credential recoverable
      * from any catalog entity, and a query string is a value that is not part of the resource's
      * identity — the same object fetched with different parameters would become two assets.
      *
-     * <p>This is a check that the producer stripped them, not a substitute for doing so. It can
-     * only see what a URI makes visible: an opaque connector id that happens to embed a token is
-     * indistinguishable from one that does not, and remains the producer's responsibility.
+     * <h2>Exactly which keys each rule applies to</h2>
+     *
+     * <ul>
+     *   <li>{@code ?} and {@code #} — <b>every key except a filesystem path</b>, whether or not it
+     *       looks like a URI. An opaque connector id containing one of these is far more likely to
+     *       be a URL somebody forgot to strip than an id that genuinely needs the character, and
+     *       this is the fail-closed reading. A filesystem path is exempt because both are ordinary
+     *       characters in a filename.</li>
+     *   <li>userinfo — only where there is an authority to have it, which means a key containing
+     *       {@code ://}. A bare {@code @} is legitimate elsewhere: a mailbox path is
+     *       {@code host/a@b.example/9}.</li>
+     * </ul>
+     *
+     * <p>This is a check that the producer stripped them, not a substitute for doing so. A token
+     * embedded in an opaque id with no punctuation to give it away is indistinguishable from an
+     * ordinary id, and remains the producer's responsibility.
      */
     private static void requireNoUriBorneSecrets(String key) {
         if (key.indexOf('?') >= 0) {

@@ -20,10 +20,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
+import jp.aegif.nemaki.model.Archive;
+import jp.aegif.nemaki.model.Document;
+import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.rest.purview.ExternalAssetIdentity;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
 
@@ -231,5 +236,112 @@ public class ExternalAssetNamingCrossPathTest {
                             && !key.startsWith("cold://"),
                     "a stable key went back to an invented scheme: " + key);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // From the domain objects the sync actually receives
+    // ------------------------------------------------------------------
+
+    /**
+     * Everything above hands the sync a key built by a helper, so it compares two spellings of one
+     * rule and leaves the resolvers untested. These start from a {@code Document} and an
+     * {@code Archive} — what the sync is really given — so that a change to how the provider, the
+     * file id, the content reference or the adapter type is extracted is caught here too.
+     */
+    @Test
+    public void aCloudDocumentGetsTheSameNameAsItsLineageEndpoint() {
+        Document document = cloudDocument("gdrive", "file-1");
+
+        String resolvedKey = sync.resolveCloudExternalStableKey(document);
+        assertEquals("gdrive:file-1", resolvedKey,
+                "the resolver, not a helper, decides what the key is");
+        assertTrue(sync.hasCloudSyncLineageTarget(document));
+
+        Map<String, Object> entity = sync.buildExternalAssetEntity(REPO, document);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> attributes = (Map<String, Object>) entity.get("attributes");
+
+        LineageEndpoint endpoint = LineageEndpoint.cloudObject(REPO, "gdrive", "file-1");
+        assertEquals(attributes.get("qualifiedName"), endpoint.catalogQualifiedName());
+        assertEquals(attributes.get("externalStableKey"),
+                endpoint.attributes().get(LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY));
+        assertEquals(attributes.get("sourceSystem"), endpoint.attributes().get("sourceSystem"));
+    }
+
+    /**
+     * The archive path resolves both halves from {@code contentRef}: {@code ref} becomes the key
+     * and {@code type} becomes the {@code sourceSystem} — the storage adapter, not the class.
+     */
+    @Test
+    public void anArchivedObjectGetsTheSameNameAsItsLineageEndpoint() {
+        Archive archive = coldArchive("s3://bucket/key", "s3");
+
+        String resolvedKey = sync.resolveArchiveExternalStableKey(archive);
+        assertEquals("s3://bucket/key", resolvedKey, "the ref is used unchanged");
+        assertTrue(sync.hasArchiveLineageTarget(archive));
+
+        Map<String, Object> entity = sync.buildExternalAssetEntity(REPO, archive);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> attributes = (Map<String, Object>) entity.get("attributes");
+        assertEquals("s3", attributes.get("sourceSystem"),
+                "contentRef.type is the adapter, and it is what sourceSystem carries");
+
+        LineageEndpoint endpoint = LineageEndpoint.coldStorage(REPO, resolvedKey,
+                (String) attributes.get("sourceSystem"));
+        assertEquals(attributes.get("qualifiedName"), endpoint.catalogQualifiedName());
+        assertEquals(attributes.get("externalStableKey"),
+                endpoint.attributes().get(LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY));
+        assertEquals(attributes.get("externalPath"), endpoint.attributes().get("externalPath"));
+    }
+
+    /**
+     * The whole filesystem entity, not just its key.
+     *
+     * <p>{@code externalPath} used to be the caller's argument while the key was normalised, so
+     * one entity claimed two spellings of one path — and could not be rebuilt as an endpoint,
+     * because the kind-consistency check requires them to agree.
+     */
+    @Test
+    public void aFilesystemEntityIsInternallyConsistentAndRebuildable() {
+        Map<String, Object> entity = sync.buildFilesystemExternalAssetEntity(
+                REPO, "/srv/in/./a.pdf", "alice", 1767225600000L);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> attributes = (Map<String, Object>) entity.get("attributes");
+
+        assertEquals("filesystem:/srv/in/a.pdf", attributes.get("externalStableKey"));
+        assertEquals("/srv/in/a.pdf", attributes.get("externalPath"),
+                "the path attribute must be the one the key names");
+
+        LineageEndpoint rebuilt = new LineageEndpoint(EndpointKind.EXTERNAL_ASSET,
+                (String) attributes.get("qualifiedName"), REPO, null, null,
+                Map.of("sourceSystem", attributes.get("sourceSystem"),
+                        LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY,
+                        attributes.get("externalStableKey"),
+                        "externalPath", attributes.get("externalPath")));
+        LineageRepositoryScope.validateEndpoint(REPO, rebuilt, "input");
+        assertEquals(LineageEndpoint.filesystemPath(REPO, "/srv/in/a.pdf").catalogQualifiedName(),
+                rebuilt.catalogQualifiedName());
+    }
+
+    private static Document cloudDocument(String provider, String fileId) {
+        Document document = new Document();
+        document.setId("d-1");
+        document.setName("contract.pdf");
+        document.setSubTypeProperties(List.of(
+                new Property("nemaki:cloudProvider", provider),
+                new Property("nemaki:cloudFileId", fileId)));
+        return document;
+    }
+
+    private static Archive coldArchive(String ref, String type) {
+        Archive archive = new Archive();
+        archive.setId("a-1");
+        archive.setName("contract.pdf");
+        archive.setOriginalId("d-1");
+        Map<String, String> contentRef = new LinkedHashMap<>();
+        contentRef.put("ref", ref);
+        contentRef.put("type", type);
+        archive.setContentRef(contentRef);
+        return archive;
     }
 }
