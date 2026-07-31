@@ -69,10 +69,29 @@ public final class LineageIdentity {
                                     int schemaVersion,
                                     int chunkIndex,
                                     int chunkCount) {
+        if (processType == null) {
+            throw new IllegalArgumentException("processType must not be null");
+        }
+        // The design makes event-level operationId mandatory on every v2 event: without it, two
+        // imports of the same file into the same folder are one fact and the second is discarded.
+        if (operationId == null || operationId.isBlank()) {
+            throw new IllegalArgumentException("event operationId is required on every v2 event");
+        }
+        if (schemaVersion < 1) {
+            throw new IllegalArgumentException("schemaVersion must be positive, got "
+                    + schemaVersion);
+        }
+        if (chunkCount < 1) {
+            throw new IllegalArgumentException("chunkCount must be at least 1, got " + chunkCount);
+        }
+        if (chunkIndex < 0 || chunkIndex >= chunkCount) {
+            throw new IllegalArgumentException("chunkIndex must be within [0, " + chunkCount
+                    + "), got " + chunkIndex);
+        }
         return PROCESS_KEY_PREFIX + LineageCanonicalHash.hash(
                 "PROCESS",
-                repositoryId,
-                processType == null ? null : processType.name(),
+                requireText(repositoryId, "repositoryId"),
+                processType.name(),
                 LineageCanonicalHash.canonicalQualifiedNames(inputs),
                 LineageCanonicalHash.canonicalQualifiedNames(outputs),
                 operationId,
@@ -83,6 +102,7 @@ public final class LineageIdentity {
 
     /** The journal record identity of a first-time emission. */
     public static String originalDeliveryId(String processKey, Iterable<String> targets) {
+        requireText(processKey, "processKey");
         return LineageCanonicalHash.hash(DeliveryKind.ORIGINAL.name(), processKey,
                 LineageCanonicalHash.canonicalTargetSet(targets));
     }
@@ -99,6 +119,8 @@ public final class LineageIdentity {
         if (target == null || target.isBlank()) {
             throw new IllegalArgumentException("replay target must not be null or blank");
         }
+        requireText(originalDeliveryId, "originalDeliveryId");
+        requireGeneration(replayGeneration, "replayGeneration");
         return LineageCanonicalHash.hash(DeliveryKind.REPLAY.name(), originalDeliveryId,
                 target.trim(), replayGeneration);
     }
@@ -108,7 +130,31 @@ public final class LineageIdentity {
         if (deadLetterId == null || deadLetterId.isBlank()) {
             throw new IllegalArgumentException("deadLetterId must not be null or blank");
         }
+        requireGeneration(repairGeneration, "repairGeneration");
         return LineageCanonicalHash.hash(DeliveryKind.REPAIR.name(), deadLetterId,
                 repairGeneration);
+    }
+
+    /**
+     * Range checks live here and not only in the A-2 builder.
+     *
+     * <p>These functions are reachable from the legacy reader, the store and the repair path as
+     * well as from the builder, and every one of them can be handed a record that was written
+     * before the rule existed. An identity function that mints a well-formed id for an impossible
+     * business state — chunk 3 of 2, generation 0, no operation — makes that record look
+     * legitimate everywhere downstream.
+     */
+    private static String requireText(String value, String what) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(what + " must not be null or blank");
+        }
+        return value;
+    }
+
+    /** Generations count from 1; generation 0 would be the original, which is not a replay. */
+    private static void requireGeneration(long generation, String what) {
+        if (generation < 1) {
+            throw new IllegalArgumentException(what + " must be at least 1, got " + generation);
+        }
     }
 }

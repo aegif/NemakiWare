@@ -17,6 +17,8 @@
 package jp.aegif.nemaki.rest.purview.journal;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -124,50 +126,101 @@ public class LineageRepositoryScopeTest {
                 LineageEndpoint.filesystemPath(BEDROOM, "/srv/in/a.pdf"),
                 LineageEndpoint.importArtifact(BEDROOM, "op-1", "MANAGED", null),
                 LineageEndpoint.exportArtifact(BEDROOM, "op-1", "ZIP", "e.zip", 1));
+        // every factory-built name must also survive the exact recomputation
+        for (LineageEndpoint endpoint : all) {
+            assertDoesNotThrow(() -> LineageRepositoryScope.validateEndpoint(BEDROOM, endpoint,
+                    "input"), endpoint.kind().toString());
+        }
         assertDoesNotThrow(() -> LineageRepositoryScope.validate(BEDROOM, all, List.of()));
         assertDoesNotThrow(() -> LineageRepositoryScope.validateArtifactOperation("op-1", all,
                 List.of()));
     }
 
     /**
-     * The external kinds are the one case where the name cannot be recomputed — it encodes a
-     * stable key the endpoint does not keep — so the prefix is all there is to check, and a name
-     * that is only the prefix carries no asset at all.
+     * The external case, which a prefix match could never catch: the name is built from one stable
+     * key while the attribute holds another.
+     *
+     * <p>Both halves are used, by different readers. Atlas resolves the entity by qualified name;
+     * a snapshot reader — and increment A-2's digest — reads the attribute. An endpoint like this
+     * describes two different assets at once and looks well-formed from either side alone.
      */
     @Test
-    public void anExternalEndpointWithoutAStableKeyIsRejected() {
-        LineageEndpoint empty = new LineageEndpoint(EndpointKind.EXTERNAL_ASSET,
-                LineageEndpoint.externalAssetQualifiedNamePrefix(BEDROOM), BEDROOM, null, null,
-                Map.of("sourceSystem", "confluence"));
+    public void anExternalNameBuiltFromADifferentStableKeyIsRejected() {
+        LineageEndpoint forged = new LineageEndpoint(EndpointKind.EXTERNAL_ASSET,
+                LineageEndpoint.externalAssetQualifiedName(BEDROOM, "https://ext/A"), BEDROOM,
+                null, null,
+                Map.of("sourceSystem", "confluence",
+                        LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY, "https://ext/B"));
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> LineageRepositoryScope.validate(BEDROOM, List.of(empty), List.of()));
-        assertTrue(e.getMessage().contains("stable key"), e.getMessage());
+                () -> LineageRepositoryScope.validate(BEDROOM, List.of(forged), List.of()));
+        assertTrue(e.getMessage().contains("does not match"), e.getMessage());
     }
 
     /**
-     * A repository whose name merely starts with the event's must not satisfy the name check —
-     * this is what the trailing slash in the expected prefix is for.
+     * And the message must not carry either name. The qualified name is reversible base64 of the
+     * stable key, so repeating it in an exception puts the key in every log that catches it.
      */
     @Test
-    public void aRepositoryNameThatOnlyStartsWithTheEventsIsNotIt() {
-        LineageEndpoint forged = new LineageEndpoint(EndpointKind.CMIS_DOCUMENT,
-                "nemaki://bedroom-archive/objects/a", BEDROOM, "a", null, Map.of("name", "n"));
-        assertThrows(IllegalArgumentException.class,
+    public void anExternalNameIsNotReproducedInTheMessage() {
+        LineageEndpoint forged = new LineageEndpoint(EndpointKind.CLOUD_OBJECT,
+                LineageEndpoint.externalAssetQualifiedName(BEDROOM, "cloud://gdrive/SECRET-A"),
+                BEDROOM, null, null,
+                Map.of("provider", "gdrive",
+                        LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY, "cloud://gdrive/SECRET-B"));
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> LineageRepositoryScope.validate(BEDROOM, List.of(forged), List.of()));
 
-        assertThrows(IllegalArgumentException.class,
-                () -> LineageRepositoryScope.validate(BEDROOM,
-                        List.of(LineageEndpoint.document("bedroom-archive", "a", "n")),
-                        List.of()));
+        String encodedA = LineageEndpoint.externalAssetQualifiedName(BEDROOM,
+                "cloud://gdrive/SECRET-A").substring(
+                        LineageEndpoint.externalAssetQualifiedNamePrefix(BEDROOM).length());
+        assertFalse(e.getMessage().contains(encodedA),
+                "the encoded stable key reached the message: " + e.getMessage());
+        assertTrue(e.getMessage().contains("redacted"), e.getMessage());
+        assertTrue(e.getMessage().contains("external-assets/"),
+                "the repository scope is still useful and safe to show: " + e.getMessage());
     }
 
+    /** The redaction still has to identify which name it stood for, or a log cannot be read. */
     @Test
-    public void aBlankEventRepositoryIsRejected() {
-        List<LineageEndpoint> inputs = List.of(LineageEndpoint.document(BEDROOM, "a", "n"));
-        assertThrows(IllegalArgumentException.class,
-                () -> LineageRepositoryScope.validate(null, inputs, List.of()));
-        assertThrows(IllegalArgumentException.class,
-                () -> LineageRepositoryScope.validate(" ", inputs, List.of()));
+    public void theRedactionDistinguishesDifferentNames() {
+        assertNotEquals(messageFor("cloud://gdrive/A"), messageFor("cloud://gdrive/B"));
+    }
+
+    private static String messageFor(String stableKey) {
+        LineageEndpoint forged = new LineageEndpoint(EndpointKind.CLOUD_OBJECT,
+                LineageEndpoint.externalAssetQualifiedName(BEDROOM, stableKey), BEDROOM, null,
+                null, Map.of("provider", "gdrive",
+                        LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY, "cloud://gdrive/OTHER"));
+        return assertThrows(IllegalArgumentException.class,
+                () -> LineageRepositoryScope.validate(BEDROOM, List.of(forged), List.of()))
+                .getMessage();
+    }
+
+    /**
+     * The redaction must not assume the name is well-formed. A hand-crafted document is exactly
+     * where a name would not start with {@code nemaki://}, and it is exactly the case where
+     * echoing it back into a log is worst.
+     */
+    @Test
+    public void aMalformedExternalNameIsStillRedacted() {
+        LineageEndpoint forged = new LineageEndpoint(EndpointKind.EXTERNAL_ASSET,
+                "/external-assets/SECRETVALUE", BEDROOM, null, null,
+                Map.of("sourceSystem", "confluence",
+                        LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY, "https://ext/1"));
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> LineageRepositoryScope.validate(BEDROOM, List.of(forged), List.of()));
+        assertFalse(e.getMessage().contains("SECRETVALUE"), e.getMessage());
+    }
+
+    /** A CMIS name carries an object id, not a secret, so it stays legible in the message. */
+    @Test
+    public void aCmisNameIsShownInFullBecauseItCarriesNoSecret() {
+        LineageEndpoint forged = new LineageEndpoint(EndpointKind.CMIS_DOCUMENT,
+                LineageEndpoint.objectQualifiedName(BEDROOM, "other-id"), BEDROOM, "a", null,
+                Map.of("name", "n"));
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> LineageRepositoryScope.validate(BEDROOM, List.of(forged), List.of()));
+        assertTrue(e.getMessage().contains("nemaki://bedroom/objects/a"), e.getMessage());
     }
 
     /** Treating a null list as empty would let a mapping error skip the check and report success. */

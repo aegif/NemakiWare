@@ -66,22 +66,22 @@ public record LineageEndpoint(
             throw new IllegalArgumentException(
                     "endpoint catalogQualifiedName must not be blank (kind=" + kind + ")");
         }
-        if (kind.isObjectIdRequired() && isBlank(objectId)) {
-            throw new IllegalArgumentException(
-                    "endpoint objectId is required for kind=" + kind);
-        }
-        if (kind.isOperationIdRequired() && isBlank(operationId)) {
-            throw new IllegalArgumentException(
-                    "endpoint operationId is required for kind=" + kind);
-        }
+        // Present iff the kind is identified that way. A stray objectId on an external endpoint
+        // is not harmless spare data: nothing reads it, so it would sit in the journal looking
+        // like identity while the qualified name was built from something else.
+        requireIdentityField(kind, "objectId", objectId,
+                kind.identity() == EndpointKind.Identity.OBJECT_ID);
+        requireIdentityField(kind, "operationId", operationId,
+                kind.identity() == EndpointKind.Identity.OPERATION_ID);
+
+        // Before Map.copyOf, which rejects nulls with a bare NullPointerException — that reads
+        // as an internal fault rather than as the producer bug it is.
         if (attributes != null) {
             for (Map.Entry<String, Object> entry : attributes.entrySet()) {
                 if (entry.getKey() == null) {
                     throw new IllegalArgumentException(
                             "attribute key must not be null (kind=" + kind + ")");
                 }
-                // Map.copyOf would raise a bare NullPointerException here, which reads as an
-                // internal fault rather than as the producer bug it is.
                 if (entry.getValue() == null) {
                     throw new IllegalArgumentException("attribute '" + entry.getKey()
                             + "' must not be null (kind=" + kind + ")");
@@ -89,20 +89,19 @@ public record LineageEndpoint(
             }
         }
         attributes = attributes == null ? Map.of() : Map.copyOf(attributes);
-        for (String key : attributes.keySet()) {
-            if (!kind.isAllowedAttribute(key)) {
-                throw new IllegalArgumentException(
-                        "attribute '" + key + "' is not in the allowlist for kind=" + kind
-                                + " (allowed: " + kind.allowedAttributes() + ")");
-            }
+        kind.validateAttributes(attributes);
+    }
+
+    /** Identity fields are required exactly when the kind uses them, and forbidden otherwise. */
+    private static void requireIdentityField(EndpointKind kind, String what, String value,
+                                             boolean required) {
+        if (required && isBlank(value)) {
+            throw new IllegalArgumentException(
+                    "endpoint " + what + " is required for kind=" + kind);
         }
-        for (String required : kind.requiredAttributes()) {
-            Object value = attributes.get(required);
-            if (value == null || (value instanceof String s && s.isBlank())) {
-                throw new IllegalArgumentException(
-                        "attribute '" + required + "' is required for kind=" + kind
-                                + " — without it the entity is indistinguishable from a shell");
-            }
+        if (!required && value != null) {
+            throw new IllegalArgumentException("endpoint " + what + " must not be set for kind="
+                    + kind + ", which is identified by " + kind.identity());
         }
     }
 
@@ -149,20 +148,21 @@ public record LineageEndpoint(
     public static LineageEndpoint externalAsset(String repositoryId, String stableKey,
                                                 String sourceSystem, String tenantId) {
         Map<String, Object> attributes = new LinkedHashMap<>();
+        String key = canonicalStableKey(stableKey);
         attributes.put("sourceSystem", nonBlank(sourceSystem, "sourceSystem"));
-        attributes.put(ATTR_EXTERNAL_STABLE_KEY, nonBlank(stableKey, "stableKey"));
+        attributes.put(ATTR_EXTERNAL_STABLE_KEY, key);
         if (tenantId != null && !tenantId.isBlank()) {
             attributes.put("tenantId", tenantId);
         }
         return new LineageEndpoint(EndpointKind.EXTERNAL_ASSET,
-                externalAssetQualifiedName(repositoryId, stableKey), repositoryId, null, null,
+                externalAssetQualifiedName(repositoryId, key), repositoryId, null, null,
                 attributes);
     }
 
     public static LineageEndpoint cloudObject(String repositoryId, String provider,
                                               String cloudFileId) {
-        String stableKey = "cloud://" + nonBlank(provider, "provider") + "/"
-                + nonBlank(cloudFileId, "cloudFileId");
+        String stableKey = canonicalStableKey("cloud://" + nonBlank(provider, "provider") + "/"
+                + nonBlank(cloudFileId, "cloudFileId"));
         return new LineageEndpoint(EndpointKind.CLOUD_OBJECT,
                 externalAssetQualifiedName(repositoryId, stableKey), repositoryId, null, null,
                 Map.of("provider", provider, ATTR_EXTERNAL_STABLE_KEY, stableKey));
@@ -170,7 +170,7 @@ public record LineageEndpoint(
 
     public static LineageEndpoint coldStorage(String repositoryId, String storageRef,
                                               String storageClass) {
-        String stableKey = "cold://" + nonBlank(storageRef, "storageRef");
+        String stableKey = canonicalStableKey("cold://" + nonBlank(storageRef, "storageRef"));
         return new LineageEndpoint(EndpointKind.COLD_STORAGE,
                 externalAssetQualifiedName(repositoryId, stableKey), repositoryId, null, null,
                 Map.of("storageClass", nonBlank(storageClass, "storageClass"),
@@ -182,9 +182,14 @@ public record LineageEndpoint(
      *
      * <p>Not its own kind: {@code file://} is a resource outside the repository exactly as
      * {@code cloud://} and {@code cold://} are, and it takes the same qualified name rule.
+     *
+     * <p>The path is normalised and must be absolute. {@code /srv/in/./a.pdf} and
+     * {@code /srv/in/b/../a.pdf} are the same file and must not become two assets, and a relative
+     * path is not an identity at all — it means a different file depending on the working
+     * directory of whichever process emitted it.
      */
     public static LineageEndpoint filesystemPath(String repositoryId, String path) {
-        String stableKey = "file://" + nonBlank(path, "path");
+        String stableKey = "file://" + canonicalFilesystemPath(nonBlank(path, "path"));
         return new LineageEndpoint(EndpointKind.EXTERNAL_ASSET,
                 externalAssetQualifiedName(repositoryId, stableKey), repositoryId, null, null,
                 Map.of("sourceSystem", "filesystem", ATTR_EXTERNAL_STABLE_KEY, stableKey));
@@ -196,7 +201,15 @@ public record LineageEndpoint(
         Map<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("importMode", nonBlank(importMode, "importMode"));
         if (extraAttributes != null) {
-            attributes.putAll(extraAttributes);
+            // Merged, not overlaid: an extras map carrying "importMode" would silently replace
+            // the argument the caller passed alongside it, and only one of the two is the truth.
+            for (Map.Entry<String, Object> extra : extraAttributes.entrySet()) {
+                if (attributes.containsKey(extra.getKey())) {
+                    throw new IllegalArgumentException("attribute '" + extra.getKey()
+                            + "' is set by this factory and must not be passed in extras");
+                }
+                attributes.put(extra.getKey(), extra.getValue());
+            }
         }
         return new LineageEndpoint(EndpointKind.IMPORT_ARTIFACT,
                 importArtifactQualifiedName(repositoryId, operationId), repositoryId, null,
@@ -224,27 +237,99 @@ public record LineageEndpoint(
     // ------------------------------------------------------------------
 
     /**
-     * The qualified name a well-formed endpoint of this shape must carry, or {@code null} when the
-     * name cannot be derived from the endpoint's own fields.
+     * The qualified name a well-formed endpoint must carry, recomputed from its own contents.
      *
-     * <p>For every CMIS and artifact kind the name is a pure function of the repository and the
-     * identity field, so a verifier can recompute it and compare. The external kinds are the
-     * exception: their name encodes a {@code stableKey} that the endpoint does not keep as a
-     * field, so only the prefix is derivable — see {@link #externalAssetQualifiedNamePrefix}.
+     * <p>Every kind's name is a pure function of the repository plus one identity value, so a
+     * verifier can rebuild it and compare exactly. The external kinds are not an exception: their
+     * name encodes a stable key, and the endpoint keeps that key in
+     * {@value #ATTR_EXTERNAL_STABLE_KEY} — so a name built from one key while the attribute holds
+     * another is detectable, and it matters, because the catalog resolves the entity by name
+     * while a snapshot reader resolves it by attribute.
      *
      * <p>The switch has no {@code default} on purpose: a new kind should fail to compile here
-     * rather than silently fall through to "cannot be derived" and lose the check.
+     * rather than fall through and lose the check.
      */
-    public static String expectedQualifiedName(EndpointKind kind, String repositoryId,
-                                               String objectId, String operationId) {
-        return switch (kind) {
-            case CMIS_DOCUMENT -> objectQualifiedName(repositoryId, objectId);
-            case CMIS_FOLDER -> folderProxyQualifiedName(repositoryId, objectId);
-            case ARCHIVE -> archiveQualifiedName(repositoryId, objectId);
-            case IMPORT_ARTIFACT -> importArtifactQualifiedName(repositoryId, operationId);
-            case EXPORT_ARTIFACT -> exportArtifactQualifiedName(repositoryId, operationId);
-            case EXTERNAL_ASSET, CLOUD_OBJECT, COLD_STORAGE -> null;
+    public static String expectedQualifiedName(LineageEndpoint endpoint, String repositoryId) {
+        EndpointKind kind = endpoint.kind();
+        return switch (kind.identity()) {
+            case OBJECT_ID -> switch (kind) {
+                case CMIS_DOCUMENT -> objectQualifiedName(repositoryId, endpoint.objectId());
+                case CMIS_FOLDER -> folderProxyQualifiedName(repositoryId, endpoint.objectId());
+                case ARCHIVE -> archiveQualifiedName(repositoryId, endpoint.objectId());
+                default -> throw new IllegalStateException("unmapped object kind " + kind);
+            };
+            case OPERATION_ID -> switch (kind) {
+                case IMPORT_ARTIFACT ->
+                        importArtifactQualifiedName(repositoryId, endpoint.operationId());
+                case EXPORT_ARTIFACT ->
+                        exportArtifactQualifiedName(repositoryId, endpoint.operationId());
+                default -> throw new IllegalStateException("unmapped artifact kind " + kind);
+            };
+            case STABLE_KEY -> externalAssetQualifiedName(repositoryId,
+                    (String) endpoint.attributes().get(kind.identityAttribute()));
         };
+    }
+
+    /**
+     * A stable key with the parts the design forbids, rejected rather than encoded.
+     *
+     * <p>The qualified name is reversible base64, so anything in the key is recoverable by anyone
+     * who can read a catalog entity or a log line. A signed URL puts a working credential there,
+     * and a query string or fragment puts a value that is not part of the resource's identity —
+     * the same object fetched twice with different query parameters would become two assets.
+     *
+     * <p>The design makes stripping these the producer's job. This is the check that a producer
+     * did it, placed here because it is the one place every stable key passes through.
+     */
+    public static String canonicalStableKey(String stableKey) {
+        String key = nonBlank(stableKey, "stableKey").trim();
+        for (int i = 0; i < key.length(); i++) {
+            if (Character.isISOControl(key.charAt(i))) {
+                throw new IllegalArgumentException(
+                        "stableKey must not contain control characters");
+            }
+        }
+        if (key.indexOf('?') >= 0) {
+            throw new IllegalArgumentException("stableKey must not contain a query string —"
+                    + " strip it in the producer; it is not part of the resource's identity");
+        }
+        if (key.indexOf('#') >= 0) {
+            throw new IllegalArgumentException("stableKey must not contain a fragment —"
+                    + " strip it in the producer; it is not part of the resource's identity");
+        }
+        int schemeEnd = key.indexOf("://");
+        if (schemeEnd >= 0) {
+            int authorityEnd = key.indexOf('/', schemeEnd + 3);
+            // == -1 rather than < 0: indexOf returns exactly -1, and "< 0" invites a boundary
+            // question that cannot arise, since the search starts at schemeEnd + 3.
+            String authority = authorityEnd == -1 ? key.substring(schemeEnd + 3)
+                    : key.substring(schemeEnd + 3, authorityEnd);
+            if (authority.indexOf('@') >= 0) {
+                throw new IllegalArgumentException("stableKey must not carry userinfo —"
+                        + " credentials must never reach a qualified name");
+            }
+        }
+        return key;
+    }
+
+    /**
+     * An absolute, normalised filesystem path.
+     *
+     * @throws IllegalArgumentException if the path is relative or cannot be parsed.
+     */
+    public static String canonicalFilesystemPath(String path) {
+        java.nio.file.Path parsed;
+        try {
+            parsed = java.nio.file.Path.of(path);
+        } catch (java.nio.file.InvalidPathException e) {
+            throw new IllegalArgumentException("filesystem path is not a valid path: "
+                    + e.getReason(), e);
+        }
+        if (!parsed.isAbsolute()) {
+            throw new IllegalArgumentException("filesystem path must be absolute: a relative path"
+                    + " names a different file depending on who emitted it");
+        }
+        return parsed.normalize().toString();
     }
 
     /** The derivable part of an external asset's name; the rest is the encoded stable key. */

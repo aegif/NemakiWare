@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.rest.purview.journal;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -292,5 +293,87 @@ public class LineageIdentityTest {
                 LineageIdentity.replayDeliveryId(original, "atlas", 1));
         assertEquals("1510a3f32e8cdda507d877cf86e87a2958f5551c811fffd7e316823813c9deb6",
                 LineageIdentity.repairDeliveryId("lineage_dl:fixed", 1));
+    }
+
+    // ------------------------------------------------------------------
+    // Impossible business states do not get well-formed identities
+    // ------------------------------------------------------------------
+
+    /**
+     * These checks are not only in the A-2 builder because these functions are also reachable from
+     * the legacy reader, the store and the repair path — each of which can be handed a record
+     * written before the rule existed. Minting a valid-looking id for chunk 3 of 2 makes that
+     * record look legitimate everywhere downstream.
+     */
+    @Test
+    public void impossibleChunkCoordinatesAreRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> processKey(OP, List.of(doc("a")), List.of(), 0, 0));
+        assertThrows(IllegalArgumentException.class,
+                () -> processKey(OP, List.of(doc("a")), List.of(), -1, 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> processKey(OP, List.of(doc("a")), List.of(), 2, 2));
+        assertThrows(IllegalArgumentException.class,
+                () -> processKey(OP, List.of(doc("a")), List.of(), 3, 2));
+
+        assertDoesNotThrow(() -> processKey(OP, List.of(doc("a")), List.of(), 1, 2));
+    }
+
+    /** The design makes event-level operationId mandatory on every v2 event. */
+    @Test
+    public void aMissingOperationIdIsRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> processKey(null, List.of(doc("a")), List.of(), 0, 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> processKey(" ", List.of(doc("a")), List.of(), 0, 1));
+    }
+
+    @Test
+    public void aMissingProcessTypeOrRepositoryIsRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageIdentity.processKey(REPO, null, OP, List.of(doc("a")), List.of(),
+                        2, 0, 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageIdentity.processKey(" ", LineageProcessType.IMPORT_UPLOADED, OP,
+                        List.of(), List.of(), 2, 0, 1));
+    }
+
+    @Test
+    public void anImpossibleSchemaVersionIsRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageIdentity.processKey(REPO, LineageProcessType.IMPORT_UPLOADED, OP,
+                        List.of(doc("a")), List.of(), 0, 0, 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageIdentity.processKey(REPO, LineageProcessType.IMPORT_UPLOADED, OP,
+                        List.of(doc("a")), List.of(), -1, 0, 1));
+        // v1 is a real schema version: the legacy reader recomputes identities for v1 records
+        assertDoesNotThrow(() -> LineageIdentity.processKey(REPO,
+                LineageProcessType.IMPORT_UPLOADED, OP, List.of(doc("a")), List.of(), 1, 0, 1));
+    }
+
+    /** Generation 1 is the first replay, so the boundary must accept it. */
+    @Test
+    public void theFirstGenerationIsAccepted() {
+        assertDoesNotThrow(() -> LineageIdentity.replayDeliveryId("d", "atlas", 1));
+        assertDoesNotThrow(() -> LineageIdentity.repairDeliveryId("lineage_dl:x", 1));
+    }
+
+    /** Generations count from 1: generation 0 would be the original, which is not a replay. */
+    @Test
+    public void aNonPositiveGenerationIsRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageIdentity.replayDeliveryId("d", "atlas", 0));
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageIdentity.replayDeliveryId("d", "atlas", -1));
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageIdentity.repairDeliveryId("lineage_dl:x", 0));
+    }
+
+    @Test
+    public void aBlankProcessKeyOrOriginalIdIsRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageIdentity.originalDeliveryId(" ", List.of("atlas")));
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageIdentity.replayDeliveryId(" ", "atlas", 1));
     }
 }

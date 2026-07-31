@@ -253,16 +253,38 @@ public class LineageCanonicalHashTest {
     }
 
     /**
-     * Sorting is by Java's natural String order — UTF-16 code units, not UTF-8 bytes. The two
-     * disagree above U+E000, and this pins which one identity uses so that a reimplementation
-     * elsewhere cannot quietly choose the other.
+     * Sorting is by unsigned UTF-8 byte order, which is the same rule in every language.
+     *
+     * <p>Java's natural String order would put these the other way round: U+1D400 is encoded in
+     * UTF-16 as a surrogate pair starting 0xD835, which compares below U+FF21, while in UTF-8 it
+     * starts 0xF0 and U+FF21 starts 0xEF. A repair tool written in Python or Go sorts by code
+     * point and would agree with the UTF-8 answer, not the UTF-16 one.
      */
     @Test
-    public void sortingIsByUtf16CodeUnitOrder() {
-        // U+FF21 (fullwidth A) sorts before U+1D400 (mathematical bold A) by code point, and the
-        // UTF-8 encodings agree; the surrogate pair for U+1D400 begins 0xD835, which is below
-        // 0xFF21, so UTF-16 code units put them the other way round.
-        assertEquals(List.of("𝐀", "Ａ"),
+    public void sortingIsByUnsignedUtf8ByteOrder() {
+        assertEquals(List.of("Ａ", "𝐀"),
+                LineageCanonicalHash.canonicalTargetSet(List.of("𝐀", "Ａ")));
+        assertEquals(List.of("Ａ", "𝐀"),
                 LineageCanonicalHash.canonicalTargetSet(List.of("Ａ", "𝐀")));
+    }
+
+    /** A prefix sorts before what extends it; length is the tie-break after the shared bytes. */
+    @Test
+    public void aPrefixSortsBeforeTheLongerString() {
+        assertEquals(List.of("a", "ab", "abc"),
+                LineageCanonicalHash.canonicalTargetSet(List.of("abc", "a", "ab")));
+    }
+
+    /** ASCII is where every ordering rule agrees, which is why no golden vector moved. */
+    @Test
+    public void asciiOrderingIsUnaffected() {
+        assertEquals(List.of("atlas", "dataplex", "purview"),
+                LineageCanonicalHash.canonicalTargetSet(List.of("purview", "atlas", "dataplex")));
+    }
+
+    @Test
+    public void aNullEndpointListIsRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageCanonicalHash.canonicalQualifiedNames(null));
     }
 }
