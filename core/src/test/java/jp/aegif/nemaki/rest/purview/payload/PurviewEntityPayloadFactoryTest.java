@@ -161,8 +161,9 @@ public class PurviewEntityPayloadFactoryTest {
         assertEquals("google", attributes.get("cloudProvider"));
         assertEquals("cloud-001", attributes.get("externalFileId"));
         // no stored URL reaches the catalog: SharePoint-style sharing tokens live in the path,
-        // so no transformation of a stored URL is secret-free (A-1g); null also clears any raw
-        // URL published before this rule, on the next republish
+        // so no transformation of a stored URL is secret-free (A-1g). Whether this null also
+        // removes a URL published before that rule is backend-dependent and unverified — see
+        // E-20 in the design's release gate.
         assertNull(attributes.get("cloudFileUrl"));
         assertEquals("2026-03-20T03:00:00.000+0000", attributes.get("cloudLastSyncedAt"));
         assertTrue(((Number) attributes.get("createTime")).longValue() > 0);
@@ -203,6 +204,40 @@ public class PurviewEntityPayloadFactoryTest {
                     reserved + " was overwritten: " + attributes);
             assertTrue(attributes.containsKey("cloudFileUrl"), "the null key must remain present");
             assertNull(attributes.get("cloudFileUrl"));
+        }
+    }
+
+    /**
+     * A forbidden source property does not project under a name nobody reserved.
+     *
+     * <p>The output-name guard cannot see this: {@code legacyCloudUrl} is not reserved and is not
+     * already on the entity. The property is on the document because older documents really do
+     * carry cloud metadata in {@code subTypeProperties}, and its value is the URL A-1g removed
+     * from the catalog. The resolver is stubbed so that the load-time rule is out of the way —
+     * this is the boundary's own responsibility.
+     */
+    @Test
+    public void aForbiddenSourcePropertyDoesNotProjectUnderAnInnocuousName() {
+        for (String outputName : List.of("legacyCloudUrl", "myUrl")) {
+            Map<String, Object> attributes = new java.util.LinkedHashMap<>();
+            attributes.put("qualifiedName", "nemaki://bedroom/objects/doc-001");
+            attributes.put("cloudFileUrl", null);
+
+            PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+            factory.setPropertyMappingResolver(
+                    resolverForcing("nemaki:cloudFileUrl", outputName, PropertyType.STRING));
+
+            Document document = new Document();
+            document.setId("doc-001");
+            document.setObjectType("nemaki:document");
+            document.setSubTypeProperties(List.of(new Property("nemaki:cloudFileUrl",
+                    "https://tenant.sharepoint.com/:x:/g/team/SECRET-PATH-TOKEN")));
+
+            factory.appendCustomPropertyValues(attributes, "bedroom", document);
+
+            assertFalse(String.valueOf(attributes).contains("SECRET-PATH-TOKEN"),
+                    "projected as " + outputName + ": " + attributes);
+            assertFalse(attributes.containsKey(outputName), attributes.toString());
         }
     }
 
