@@ -28,8 +28,6 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
-import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
-
 /**
  * What an endpoint must carry before it is allowed to become a catalog reference.
  *
@@ -122,7 +120,8 @@ public class LineageEndpointTest {
      */
     @Test
     public void theExternalKindsAgreeOnTheNameOfTheSameAsset() {
-        String stableKey = "cloud://gdrive/file-1";
+        String stableKey = jp.aegif.nemaki.rest.purview.ExternalAssetIdentity
+                .cloud("gdrive", "file-1");
         assertEquals(
                 LineageEndpoint.externalAsset(REPO, stableKey, "gdrive")
                         .catalogQualifiedName(),
@@ -130,18 +129,6 @@ public class LineageEndpointTest {
         assertEquals("nemaki_external_asset", EndpointKind.CLOUD_OBJECT.atlasTypeName());
         assertEquals("nemaki_external_asset", EndpointKind.COLD_STORAGE.atlasTypeName());
         assertEquals("nemaki_external_asset", EndpointKind.EXTERNAL_ASSET.atlasTypeName());
-    }
-
-    /**
-     * The lineage path and the catalog sync path must name the same external asset identically, or
-     * one asset becomes two entities and the lineage attaches to the wrong one.
-     */
-    @Test
-    public void externalAssetNamingMatchesThePurviewSyncPath() {
-        String stableKey = "cloud://gdrive/file-1";
-        assertEquals(
-                new PurviewEntityPayloadFactory().buildExternalAssetQualifiedName(REPO, stableKey),
-                LineageEndpoint.externalAssetQualifiedName(REPO, stableKey));
     }
 
     // ------------------------------------------------------------------
@@ -263,8 +250,9 @@ public class LineageEndpointTest {
         assertEquals(EndpointKind.EXTERNAL_ASSET, endpoint.kind());
         assertEquals("filesystem", endpoint.attributes().get("sourceSystem"));
         assertEquals("/srv/in/a.pdf", endpoint.attributes().get("externalPath"));
-        assertEquals("file:///srv/in/a.pdf",
-                endpoint.attributes().get(LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY));
+        assertEquals("filesystem:/srv/in/a.pdf",
+                endpoint.attributes().get(LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY),
+                "the shape the catalog sync already writes; see ExternalAssetNamingCrossPathTest");
     }
 
     // ------------------------------------------------------------------
@@ -372,14 +360,12 @@ public class LineageEndpointTest {
      * required check demands it and the allowlist check rejects it.
      */
     /**
-     * The declared contract, spelled out. A loop that only walks whatever the enum happens to
-     * declare cannot notice an attribute being dropped from a kind — the loop just gets shorter.
+     * The required half of each kind's contract; the allowed half is pinned against the real Atlas
+     * schema in {@link EndpointKindSchemaAlignmentTest}.
      */
     @Test
-    public void eachKindDeclaresTheAttributesItsCatalogTypeNeeds() {
+    public void eachKindRequiresWhatItsCatalogTypeCannotDoWithout() {
         assertEquals(List.of("name"), EndpointKind.CMIS_DOCUMENT.requiredAttributes());
-        assertEquals(List.of("name", "versionLabel", "folderPath"),
-                EndpointKind.CMIS_DOCUMENT.allowedAttributes());
         assertEquals(List.of("name"), EndpointKind.CMIS_FOLDER.requiredAttributes());
         assertEquals(List.of("archivedAt", "originalObjectId"),
                 EndpointKind.ARCHIVE.requiredAttributes());
@@ -387,18 +373,13 @@ public class LineageEndpointTest {
                 EndpointKind.CLOUD_OBJECT, EndpointKind.COLD_STORAGE)) {
             assertEquals(List.of("sourceSystem", "externalStableKey"),
                     external.requiredAttributes(), external.toString());
-            assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath"),
-                    external.allowedAttributes(), external.toString());
+            assertTrue(external.requiredAttributes().contains(external.identityAttribute()),
+                    external + " names itself by an attribute it does not require");
         }
         assertEquals(List.of("importMode"), EndpointKind.IMPORT_ARTIFACT.requiredAttributes());
         assertEquals(List.of("artifactKind"), EndpointKind.EXPORT_ARTIFACT.requiredAttributes());
 
-        // the stable key is required, not merely allowed: it is what the name is rebuilt from
         for (EndpointKind kind : EndpointKind.values()) {
-            if (kind.identity() == EndpointKind.Identity.STABLE_KEY) {
-                assertTrue(kind.requiredAttributes().contains(kind.identityAttribute()),
-                        kind + " names itself by an attribute it does not require");
-            }
             assertFalse(kind.isAllowedAttribute("notDeclaredAnywhere"),
                     kind + " allows an undeclared attribute");
         }

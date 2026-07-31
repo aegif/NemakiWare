@@ -17,9 +17,10 @@
 package jp.aegif.nemaki.rest.purview.journal;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
+
+import jp.aegif.nemaki.rest.purview.ExternalAssetIdentity;
 
 /**
  * One end of a lineage relationship, with the type and identity the catalog needs.
@@ -55,9 +56,8 @@ public record LineageEndpoint(
     public static final String ATTR_EXTERNAL_STABLE_KEY = "externalStableKey";
 
     /** {@code sourceSystem} value that marks a stable key as a local filesystem path. */
-    public static final String FILESYSTEM_SOURCE_SYSTEM = "filesystem";
-
-    private static final String FILE_SCHEME = "file://";
+    public static final String FILESYSTEM_SOURCE_SYSTEM =
+            ExternalAssetIdentity.FILESYSTEM_SOURCE_SYSTEM;
 
     public LineageEndpoint {
         if (kind == null) {
@@ -122,15 +122,38 @@ public record LineageEndpoint(
             throw new IllegalArgumentException("stableKey is not canonical for kind=" + kind
                     + "; it must be stored exactly as canonicalStableKey would return it");
         }
-        if (FILESYSTEM_SOURCE_SYSTEM.equals(attributes.get("sourceSystem"))) {
-            if (!canonical.startsWith(FILE_SCHEME)) {
-                throw new IllegalArgumentException(
-                        "a filesystem endpoint's stableKey must begin with " + FILE_SCHEME);
+        String sourceSystem = (String) attributes.get("sourceSystem");
+        Object externalPath = attributes.get("externalPath");
+
+        if (FILESYSTEM_SOURCE_SYSTEM.equals(sourceSystem)) {
+            String path = ExternalAssetIdentity.filesystemPathOf(canonical);
+            if (path == null) {
+                throw new IllegalArgumentException("a filesystem endpoint's stableKey must be "
+                        + FILESYSTEM_SOURCE_SYSTEM + ":{absolute path}");
             }
-            String path = canonical.substring(FILE_SCHEME.length());
             if (!canonicalFilesystemPath(path).equals(path)) {
                 throw new IllegalArgumentException("a filesystem endpoint's path must be absolute"
                         + " and normalised");
+            }
+            // externalPath is the same value in another spelling, so it is derived rather than
+            // trusted: two spellings of one path are two assets to whatever reads the attribute.
+            if (externalPath != null && !path.equals(externalPath)) {
+                throw new IllegalArgumentException("a filesystem endpoint's externalPath must be"
+                        + " the path its stableKey names");
+            }
+        } else if (kind == EndpointKind.CLOUD_OBJECT) {
+            // the key is {provider}:{fileId} and the provider is the sourceSystem, so the two
+            // cannot describe different providers
+            if (!canonical.startsWith(sourceSystem + ":")
+                    || canonical.length() <= sourceSystem.length() + 1) {
+                throw new IllegalArgumentException("a cloud endpoint's stableKey must be"
+                        + " {sourceSystem}:{externalFileId}");
+            }
+        } else if (kind == EndpointKind.COLD_STORAGE) {
+            // the sync writes externalPath = the reference itself
+            if (externalPath != null && !canonical.equals(externalPath)) {
+                throw new IllegalArgumentException("a cold-storage endpoint's externalPath must be"
+                        + " its stableKey");
             }
         }
     }
@@ -273,6 +296,10 @@ public record LineageEndpoint(
     /**
      * An object in a cloud drive.
      *
+     * <p>The stable key is {@link ExternalAssetIdentity#cloud}, which is what the catalog sync has
+     * already written entities under. A different spelling here would name a second Atlas entity
+     * for the same file, and the Process would point at whichever of the two nothing else uses.
+     *
      * <p>The provider travels as {@code sourceSystem}, which is what
      * {@code nemaki_external_asset} declares. A separate {@code provider} attribute is an
      * increment-B schema addition; declaring it before the type has it would send a value Atlas
@@ -280,21 +307,31 @@ public record LineageEndpoint(
      */
     public static LineageEndpoint cloudObject(String repositoryId, String provider,
                                               String cloudFileId) {
-        String stableKey = canonicalStableKey("cloud://" + nonBlank(provider, "provider") + "/"
-                + nonBlank(cloudFileId, "cloudFileId"));
+        String stableKey = canonicalStableKey(ExternalAssetIdentity.cloud(
+                nonBlank(provider, "provider"), nonBlank(cloudFileId, "cloudFileId")));
         return new LineageEndpoint(EndpointKind.CLOUD_OBJECT,
                 externalAssetQualifiedName(repositoryId, stableKey), repositoryId, null, null,
                 Map.of("sourceSystem", provider, ATTR_EXTERNAL_STABLE_KEY, stableKey));
     }
 
-    /** As {@link #cloudObject}: the storage class travels as {@code sourceSystem} until B. */
-    public static LineageEndpoint coldStorage(String repositoryId, String storageRef,
-                                              String storageClass) {
-        String stableKey = canonicalStableKey("cold://" + nonBlank(storageRef, "storageRef"));
+    /**
+     * An object moved to cold storage, named by the archive's own content reference.
+     *
+     * <p>The reference is opaque and is used as-is — {@code PurviewEntityPayloadFactory} takes
+     * {@code archive.getContentRef().get("ref")} unchanged, so wrapping it in a scheme here would
+     * name a different entity from the one the sync created.
+     *
+     * @param sourceSystem what {@code resolveArchiveSourceSystem} returned for this archive, or
+     *                     {@link ExternalAssetIdentity#COLD_STORAGE_SOURCE_SYSTEM} when unknown.
+     */
+    public static LineageEndpoint coldStorage(String repositoryId, String contentRef,
+                                              String sourceSystem) {
+        String stableKey = canonicalStableKey(nonBlank(contentRef, "contentRef"));
         return new LineageEndpoint(EndpointKind.COLD_STORAGE,
                 externalAssetQualifiedName(repositoryId, stableKey), repositoryId, null, null,
-                Map.of("sourceSystem", nonBlank(storageClass, "storageClass"),
-                        ATTR_EXTERNAL_STABLE_KEY, stableKey));
+                Map.of("sourceSystem", nonBlank(sourceSystem, "sourceSystem"),
+                        ATTR_EXTERNAL_STABLE_KEY, stableKey,
+                        "externalPath", stableKey));
     }
 
     /**
@@ -312,7 +349,7 @@ public record LineageEndpoint(
         String normalised = canonicalFilesystemPath(nonBlank(path, "path"));
         // through canonicalStableKey like every other external key: a path can carry "?" or "#"
         // as ordinary characters, and this factory used to be the one way past that check
-        String stableKey = canonicalStableKey(FILE_SCHEME + normalised);
+        String stableKey = canonicalStableKey(ExternalAssetIdentity.filesystem(normalised));
         return new LineageEndpoint(EndpointKind.EXTERNAL_ASSET,
                 externalAssetQualifiedName(repositoryId, stableKey), repositoryId, null, null,
                 Map.of("sourceSystem", FILESYSTEM_SOURCE_SYSTEM,
@@ -466,7 +503,7 @@ public record LineageEndpoint(
 
     /** The derivable part of an external asset's name; the rest is the encoded stable key. */
     public static String externalAssetQualifiedNamePrefix(String repositoryId) {
-        return "nemaki://" + repositoryId + "/external-assets/";
+        return ExternalAssetIdentity.qualifiedNamePrefix(repositoryId);
     }
 
     public static String objectQualifiedName(String repositoryId, String objectId) {
@@ -500,9 +537,7 @@ public record LineageEndpoint(
      * must never contain credentials, signed URLs, query strings or fragments.
      */
     public static String externalAssetQualifiedName(String repositoryId, String stableKey) {
-        return externalAssetQualifiedNamePrefix(repositoryId)
-                + Base64.getUrlEncoder().withoutPadding()
-                        .encodeToString(stableKey.getBytes(StandardCharsets.UTF_8));
+        return ExternalAssetIdentity.qualifiedName(repositoryId, stableKey);
     }
 
     private static boolean isBlank(String s) {

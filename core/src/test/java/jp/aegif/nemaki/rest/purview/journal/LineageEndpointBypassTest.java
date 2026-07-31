@@ -16,6 +16,8 @@
  */
 package jp.aegif.nemaki.rest.purview.journal;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -107,6 +109,80 @@ public class LineageEndpointBypassTest {
     public void aCanonicalKeyPassesThroughTheConstructor() {
         LineageEndpoint endpoint = externalWith("https://ext/spaces/ENG/pages/1");
         LineageRepositoryScope.validateEndpoint(REPO, endpoint, "input");
+    }
+
+    // ------------------------------------------------------------------
+    // The kind, the sourceSystem and the key have to describe one asset
+    // ------------------------------------------------------------------
+
+    /**
+     * A cloud key is {@code {provider}:{fileId}} and the provider is the {@code sourceSystem}, so
+     * the two cannot name different providers — nor can the key be a URL from somewhere else.
+     */
+    @Test
+    public void aCloudEndpointsKeyMustAgreeWithItsSourceSystem() {
+        assertThrows(IllegalArgumentException.class,
+                () -> cloudWith("gdrive", "https://confluence/item"));
+        assertThrows(IllegalArgumentException.class,
+                () -> cloudWith("gdrive", "onedrive:file-1"));
+        // the provider with no file after it names a provider, not a file
+        assertThrows(IllegalArgumentException.class, () -> cloudWith("gdrive", "gdrive:"));
+
+        assertDoesNotThrow(() -> cloudWith("gdrive", "gdrive:file-1"));
+    }
+
+    /**
+     * {@code externalPath} is the same value in another spelling. Two spellings of one path are
+     * two assets to whatever resolves by attribute rather than by name.
+     */
+    @Test
+    public void aFilesystemEndpointsPathMustBeTheOneItsKeyNames() {
+        Map<String, Object> contradictory = new LinkedHashMap<>();
+        contradictory.put("sourceSystem", LineageEndpoint.FILESYSTEM_SOURCE_SYSTEM);
+        contradictory.put(LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY, "filesystem:/srv/in/a.pdf");
+        contradictory.put("externalPath", "/different/file.pdf");
+        assertThrows(IllegalArgumentException.class, () -> new LineageEndpoint(
+                EndpointKind.EXTERNAL_ASSET,
+                LineageEndpoint.externalAssetQualifiedName(REPO, "filesystem:/srv/in/a.pdf"),
+                REPO, null, null, contradictory));
+
+        Map<String, Object> agreeing = new LinkedHashMap<>(contradictory);
+        agreeing.put("externalPath", "/srv/in/a.pdf");
+        assertDoesNotThrow(() -> new LineageEndpoint(EndpointKind.EXTERNAL_ASSET,
+                LineageEndpoint.externalAssetQualifiedName(REPO, "filesystem:/srv/in/a.pdf"),
+                REPO, null, null, agreeing));
+    }
+
+    /** The catalog sync writes a cold asset's externalPath as the reference itself. */
+    @Test
+    public void aColdStorageEndpointsPathMustBeItsKey() {
+        Map<String, Object> contradictory = new LinkedHashMap<>();
+        contradictory.put("sourceSystem", "GLACIER");
+        contradictory.put(LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY, "s3://bucket/key");
+        contradictory.put("externalPath", "s3://bucket/other");
+        assertThrows(IllegalArgumentException.class, () -> new LineageEndpoint(
+                EndpointKind.COLD_STORAGE,
+                LineageEndpoint.externalAssetQualifiedName(REPO, "s3://bucket/key"),
+                REPO, null, null, contradictory));
+
+        assertDoesNotThrow(
+                () -> LineageEndpoint.coldStorage(REPO, "s3://bucket/key", "GLACIER"));
+    }
+
+    /** The prefix is repository-scoped, and everything downstream compares against it. */
+    @Test
+    public void theExternalPrefixIsTheRepositoryScopedOne() {
+        assertEquals("nemaki://bedroom/external-assets/",
+                LineageEndpoint.externalAssetQualifiedNamePrefix(REPO));
+    }
+
+    private static LineageEndpoint cloudWith(String sourceSystem, String stableKey) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("sourceSystem", sourceSystem);
+        attributes.put(LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY, stableKey);
+        return new LineageEndpoint(EndpointKind.CLOUD_OBJECT,
+                LineageEndpoint.externalAssetQualifiedName(REPO, stableKey), REPO, null, null,
+                attributes);
     }
 
     // ------------------------------------------------------------------

@@ -161,18 +161,31 @@ v2.2 は `FILESYSTEM_PATH` を §4 の stableKey 表にだけ書き、`EndpointK
 event-level の `snapshotAttributes` は**複数 endpoint に対応できない**。
 同一 bulk で entity を完全生成するには endpoint ごとの属性が要る。
 
-| kind | allowlist |
-|---|---|
-| `CMIS_DOCUMENT` | `name`, `mimeType`, `contentLength`, `versionLabel` |
-| `CMIS_FOLDER` | `name`, `path` |
-| `ARCHIVE` | `name`, `originalId`, `archivedAt` |
-| `EXTERNAL_ASSET` | `sourceSystem`, `externalStableKey` (protected), `tenantId` |
-| `IMPORT_ARTIFACT` | `importMode`, `byteLength`, `contentHash`, `originalFileName` |
-| `EXPORT_ARTIFACT` | `artifactKind`, `objectCount`, `name` |
-| `CLOUD_OBJECT` | `provider`, `externalStableKey` (protected) |
-| `COLD_STORAGE` | `storageClass`, `externalStableKey` (protected) |
+**allowlist は既存 Atlas schema と一致していなければならない。** 型に無い属性を宣言すると
+Atlas が受信時に捨て、allowlist が防ぐはずの失敗を allowlist 自身が作る。
+下表は `PurviewSchemaPayloadFactory` の現行定義に一致しており、
+`EndpointKindSchemaAlignmentTest` が名前・型・mandatory を機械的に突き合わせる。
 
-- allowlist 外のキーは `build()` で拒否する (schema にない属性が黙って捨てられる §5 の問題の再発防止)。
+| kind | allowlist (必須は **太字**) | 型 |
+|---|---|---|
+| `CMIS_DOCUMENT` | **`name`**, `versionLabel`, `folderPath` | すべて string |
+| `CMIS_FOLDER` | **`name`** | string |
+| `ARCHIVE` | **`archivedAt`**, **`originalObjectId`**, `name`, `versionLabel`, `archiveState` | `archivedAt` は **long (epoch millis)**、他は string |
+| `EXTERNAL_ASSET` | **`sourceSystem`**, **`externalStableKey`** (protected), `externalPath` | すべて string |
+| `CLOUD_OBJECT` | 同上 (provider は `sourceSystem` に載せる) | 同上 |
+| `COLD_STORAGE` | 同上 (storage class は `sourceSystem` に載せる) | 同上 |
+| `IMPORT_ARTIFACT` | **`importMode`**, `byteLength`, `contentHash`, `originalFileName` | `byteLength` は long |
+| `EXPORT_ARTIFACT` | **`artifactKind`**, `objectCount`, `name` | `objectCount` は long |
+
+**増分 B で schema と allowlist の両方に足すもの** (片方だけでは値が届かない):
+`nemaki_document` に `mimeType` / `contentLength`、`nemaki_external_asset` に
+`tenantId` (EXTERNAL_ASSET) / `provider` (CLOUD_OBJECT) / `storageClass` (COLD_STORAGE)。
+同じ Atlas 型を共有する kind でも allowlist が同一である必要はない
+(B 後の external 3 kind がまさにそれ)。
+
+- allowlist 外のキーは構築時に拒否する (schema にない属性が黙って捨てられる §5 の問題の再発防止)。
+- 値は **scalar (string / 非負整数) のみ**。`Map.copyOf` は浅いコピーなので、List/Map を許すと
+  発行済み event の下で snapshot が変わる。
 - `attributes` は immutable。**point-in-time 記録**であり、後から更新しない。
 - 削除済み document を replay するときも、この snapshot があれば entity を再構成できる。
 
@@ -506,6 +519,7 @@ HMAC 付き bundle (§9) も**完全性の保証であって暗号化ではな�
 | 項目 | 契約 |
 |---|---|
 | stableKey に入れないもの | **認証情報 (userinfo)、署名付き URL、query string、fragment、制御文字**。producer 側で除去する。`LineageEndpoint.canonicalStableKey` が除去漏れを**拒否**する (QN は可逆 base64 なので、漏れると catalog entity から復元できてしまう) |
+| stableKey の書式 | **既存 catalog sync が正典**。cloud = `{provider}:{externalFileId}`、filesystem = `filesystem:{絶対正規化パス}`、cold = archive の `contentRef.ref` をそのまま。`ExternalAssetIdentity` が唯一の実装で、lineage と catalog sync の両方がそこを通る。独自 scheme (`cloud://` 等) を作ると同一資産が Atlas 上で 2 entity に割れ、A-2 以降は `processKey` まで変わるので後から直せない |
 | stableKey の保持 | external / cloud / cold は `attributes.externalStableKey` に**必須**で持つ。QN はそこから再計算でき、§7 の検証は prefix 一致ではなく**完全一致**で行う (QN が key A、attribute が key B という endpoint は、catalog が名前で解決する実体と snapshot が attribute で解決する実体が食い違う) |
 | filesystem path | 正規化済み絶対パス。`/srv/in/./a.pdf` と `/srv/in/b/../a.pdf` が 2 資産にならないこと |
 | Atlas 閲覧権限 | QN からホスト構成・外部識別子が読めるため、**Atlas の閲覧権限は catalog 管理者に限定**する運用前提を明記する |

@@ -155,16 +155,64 @@ public class EndpointKindSchemaAlignmentTest {
                         + " created one, shorten AWAITING_SCHEMA so the alignment checks apply");
     }
 
-    /** The external kinds all resolve to one type, so they must declare one attribute set. */
+    /**
+     * The exact attribute set each kind declares.
+     *
+     * <p>Not "kinds sharing an Atlas type declare the same attributes", which was the earlier rule
+     * and is wrong: after increment B the three external kinds keep one type and diverge —
+     * {@code provider} on cloud, {@code storageClass} on cold, {@code tenantId} on the generic one.
+     * Sharing a type constrains what may be declared, not what must be.
+     *
+     * <p>Spelled out rather than derived, because a loop over whatever the enum happens to declare
+     * cannot notice an attribute disappearing; the loop just gets shorter.
+     */
     @Test
-    public void kindsSharingAnAtlasTypeDeclareTheSameAttributes() {
-        Map<String, List<String>> byType = new LinkedHashMap<>();
-        for (EndpointKind kind : EndpointKind.values()) {
-            List<String> previous = byType.put(kind.atlasTypeName(), kind.allowedAttributes());
-            if (previous != null) {
-                assertEquals(previous, kind.allowedAttributes(),
-                        kind + " shares " + kind.atlasTypeName() + " with another kind but"
-                                + " declares different attributes");
+    public void eachKindDeclaresExactlyTheseAttributes() {
+        assertEquals(List.of("name", "versionLabel", "folderPath"),
+                EndpointKind.CMIS_DOCUMENT.allowedAttributes());
+        assertEquals(List.of("name"), EndpointKind.CMIS_FOLDER.allowedAttributes());
+        assertEquals(List.of("archivedAt", "originalObjectId", "name", "versionLabel",
+                "archiveState"), EndpointKind.ARCHIVE.allowedAttributes());
+        assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath"),
+                EndpointKind.EXTERNAL_ASSET.allowedAttributes());
+        assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath"),
+                EndpointKind.CLOUD_OBJECT.allowedAttributes());
+        assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath"),
+                EndpointKind.COLD_STORAGE.allowedAttributes());
+        assertEquals(List.of("importMode", "byteLength", "contentHash", "originalFileName"),
+                EndpointKind.IMPORT_ARTIFACT.allowedAttributes());
+        assertEquals(List.of("artifactKind", "objectCount", "name"),
+                EndpointKind.EXPORT_ARTIFACT.allowedAttributes());
+    }
+
+    /**
+     * Attributes increment B is to add to the schema, and to the kind that should then carry them.
+     *
+     * <p>The other direction of the alignment check. {@code everyDeclaredAttributeExistsInTheAtlasType}
+     * catches an attribute declared here and missing from Atlas; nothing caught the reverse, so B
+     * could add {@code provider} to {@code nemaki_external_asset}, forget {@code EndpointKind},
+     * and leave every test green while the value never travels.
+     */
+    private static final Map<EndpointKind, List<String>> AWAITING_INCREMENT_B = Map.of(
+            EndpointKind.CMIS_DOCUMENT, List.of("mimeType", "contentLength"),
+            EndpointKind.EXTERNAL_ASSET, List.of("tenantId"),
+            EndpointKind.CLOUD_OBJECT, List.of("provider"),
+            EndpointKind.COLD_STORAGE, List.of("storageClass"));
+
+    @Test
+    public void theAttributesIncrementBOwesAreAbsentFromBothSidesOrPresentInBoth() {
+        Map<String, Map<String, String>> schema = atlasTypes();
+        for (Map.Entry<EndpointKind, List<String>> owed : AWAITING_INCREMENT_B.entrySet()) {
+            EndpointKind kind = owed.getKey();
+            Map<String, String> type = schema.get(kind.atlasTypeName());
+            for (String attribute : owed.getValue()) {
+                boolean inSchema = type != null && type.containsKey(attribute);
+                boolean inKind = kind.isAllowedAttribute(attribute);
+                assertEquals(inSchema, inKind,
+                        kind + "." + attribute + " is in " + (inSchema ? "the Atlas type" : "the"
+                                + " kind") + " but not the other. Increment B adds these to both,"
+                                + " or to neither: adding only to the schema means the value never"
+                                + " travels, and adding only here means Atlas drops it.");
             }
         }
     }
