@@ -487,7 +487,8 @@ public class PurviewEntityPayloadFactory {
         if (provider == null || provider.isBlank() || externalFileId == null || externalFileId.isBlank()) {
             return null;
         }
-        return jp.aegif.nemaki.rest.purview.ExternalAssetIdentity.cloud(provider, externalFileId);
+        return jp.aegif.nemaki.rest.purview.ExternalAssetIdentity
+                .cloud(provider, externalFileId).value();
     }
 
     public Map<String, Object> buildExternalAssetEntity(String repositoryId, Content content) {
@@ -550,7 +551,7 @@ public class PurviewEntityPayloadFactory {
     }
 
     public String buildFilesystemExternalStableKey(String path) {
-        return jp.aegif.nemaki.rest.purview.ExternalAssetIdentity.filesystem(path);
+        return jp.aegif.nemaki.rest.purview.ExternalAssetIdentity.filesystem(path).value();
     }
 
     public Map<String, Object> buildFilesystemExternalAssetEntity(
@@ -823,8 +824,8 @@ public class PurviewEntityPayloadFactory {
     }
 
     public String buildExternalAssetQualifiedName(String repositoryId, String stableKey) {
-        return jp.aegif.nemaki.rest.purview.ExternalAssetIdentity
-                .qualifiedName(repositoryId, stableKey);
+        return jp.aegif.nemaki.rest.purview.ExternalAssetIdentity.qualifiedName(repositoryId,
+                jp.aegif.nemaki.rest.purview.ExternalAssetIdentity.parse(stableKey));
     }
 
     private String buildArchiveProcessQualifiedName(String repositoryId, String archiveId) {

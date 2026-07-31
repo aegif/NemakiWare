@@ -17,6 +17,7 @@
 package jp.aegif.nemaki.rest.purview.journal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
@@ -54,12 +55,12 @@ public class ExternalAssetNamingCrossPathTest {
         String fileId = "file-1";
 
         String fromSync = sync.buildExternalAssetQualifiedName(REPO,
-                ExternalAssetIdentity.cloud(provider, fileId));
+                ExternalAssetIdentity.cloud(provider, fileId).value());
         String fromLineage = LineageEndpoint.cloudObject(REPO, provider, fileId)
                 .catalogQualifiedName();
 
         assertEquals(fromSync, fromLineage);
-        assertEquals("gdrive:file-1", ExternalAssetIdentity.cloud(provider, fileId),
+        assertEquals("gdrive:file-1", ExternalAssetIdentity.cloud(provider, fileId).value(),
                 "the shape the catalog already has entities under");
     }
 
@@ -98,7 +99,7 @@ public class ExternalAssetNamingCrossPathTest {
      */
     @Test
     public void theStableKeyAttributeMatchesWhatTheSyncStores() {
-        assertEquals(ExternalAssetIdentity.cloud("gdrive", "file-1"),
+        assertEquals(ExternalAssetIdentity.cloud("gdrive", "file-1").value(),
                 LineageEndpoint.cloudObject(REPO, "gdrive", "file-1").attributes()
                         .get(LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY));
         assertEquals(sync.buildFilesystemExternalStableKey("/srv/in/a.pdf"),
@@ -124,6 +125,92 @@ public class ExternalAssetNamingCrossPathTest {
                 .attributes().get("sourceSystem"), "the sync writes the cloud provider here");
     }
 
+    // ------------------------------------------------------------------
+    // The two paths must agree on more than the encoding
+    // ------------------------------------------------------------------
+
+    /**
+     * Normalisation is part of the name, so it has to happen in the shared rule.
+     *
+     * <p>It did not: {@code ExternalAssetIdentity.filesystem} only prefixed, and the endpoint
+     * factory normalised before calling it. The sync therefore produced
+     * {@code filesystem:/srv/in/./a.pdf} where the endpoint produced
+     * {@code filesystem:/srv/in/a.pdf} — one file, two Atlas entities, from paths that are the
+     * same path.
+     */
+    @Test
+    public void anUnnormalisedPathGetsTheSameNameFromBothPaths() {
+        String canonical = LineageEndpoint.filesystemPath(REPO, "/srv/in/a.pdf")
+                .catalogQualifiedName();
+        for (String spelling : new String[] {
+                "/srv/in/./a.pdf", "/srv/in/b/../a.pdf", "/srv/in//a.pdf" }) {
+            assertEquals(canonical,
+                    sync.buildExternalAssetQualifiedName(REPO,
+                            sync.buildFilesystemExternalStableKey(spelling)),
+                    "the sync named " + spelling + " differently");
+            assertEquals(canonical,
+                    LineageEndpoint.filesystemPath(REPO, spelling).catalogQualifiedName(),
+                    "the endpoint named " + spelling + " differently");
+        }
+    }
+
+    /** A relative path is not an identity, on either path. */
+    @Test
+    public void aRelativePathIsRejectedOnBothPaths() {
+        assertThrows(IllegalArgumentException.class,
+                () -> sync.buildFilesystemExternalStableKey("in/a.pdf"));
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageEndpoint.filesystemPath(REPO, "in/a.pdf"));
+    }
+
+    /**
+     * The safety rules are part of what a key may be, so they have to be shared too.
+     *
+     * <p>They were not: the sync reached {@code qualifiedName} directly and would encode a key the
+     * endpoint rejected. A caller now has to hold a {@code StableKey}, and the only way to get one
+     * is through the validation.
+     */
+    @Test
+    public void anUnsafeKeyIsRejectedOnBothPaths() {
+        for (String unsafe : new String[] {
+                "https://blob.example/doc?sig=SECRET",
+                "https://ext/doc#fragment",
+                "https://user:pass@ext/doc",
+                " gdrive:file-1" }) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> sync.buildExternalAssetQualifiedName(REPO, unsafe),
+                    "the sync accepted " + unsafe);
+            assertThrows(IllegalArgumentException.class,
+                    () -> LineageEndpoint.externalAsset(REPO, unsafe, "confluence"),
+                    "the endpoint accepted " + unsafe);
+        }
+    }
+
+    /**
+     * A cold-storage reference with a version query is the same hazard as a signed URL: the same
+     * object at two versions would be two assets.
+     */
+    @Test
+    public void aVersionedColdReferenceIsRejectedOnBothPaths() {
+        String versioned = "s3://bucket/key?versionId=1";
+        assertThrows(IllegalArgumentException.class,
+                () -> sync.buildExternalAssetQualifiedName(REPO, versioned));
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageEndpoint.coldStorage(REPO, versioned, "s3"));
+    }
+
+    /**
+     * "?" and "#" are ordinary characters in a filename, and the rule must not make a legitimately
+     * named file untrackable — the URI rules apply to URIs.
+     */
+    @Test
+    public void aQuestionMarkInAFilenameIsNotAQueryString() {
+        String path = "/srv/in/what? (draft#2).pdf";
+        assertEquals(sync.buildExternalAssetQualifiedName(REPO,
+                        sync.buildFilesystemExternalStableKey(path)),
+                LineageEndpoint.filesystemPath(REPO, path).catalogQualifiedName());
+    }
+
     /**
      * Nothing in either path invents a scheme.
      *
@@ -134,7 +221,7 @@ public class ExternalAssetNamingCrossPathTest {
     @Test
     public void noPathInventsASchemeTheOtherDoesNotKnow() {
         for (String key : new String[] {
-                ExternalAssetIdentity.cloud("gdrive", "file-1"),
+                ExternalAssetIdentity.cloud("gdrive", "file-1").value(),
                 sync.buildFilesystemExternalStableKey("/srv/in/a.pdf"),
                 (String) LineageEndpoint.cloudObject(REPO, "gdrive", "file-1").attributes()
                         .get(LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY),

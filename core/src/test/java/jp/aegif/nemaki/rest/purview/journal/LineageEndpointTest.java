@@ -121,7 +121,7 @@ public class LineageEndpointTest {
     @Test
     public void theExternalKindsAgreeOnTheNameOfTheSameAsset() {
         String stableKey = jp.aegif.nemaki.rest.purview.ExternalAssetIdentity
-                .cloud("gdrive", "file-1");
+                .cloud("gdrive", "file-1").value();
         assertEquals(
                 LineageEndpoint.externalAsset(REPO, stableKey, "gdrive")
                         .catalogQualifiedName(),
@@ -608,6 +608,10 @@ public class LineageEndpointTest {
     public void aRelativeFilesystemPathIsRejected() {
         assertThrows(IllegalArgumentException.class,
                 () -> LineageEndpoint.filesystemPath(REPO, "in/a.pdf"));
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageEndpoint.canonicalFilesystemPath("in/a.pdf"));
+        assertEquals("/srv/in/a.pdf",
+                LineageEndpoint.canonicalFilesystemPath("/srv/in/./a.pdf"));
     }
 
     /**
