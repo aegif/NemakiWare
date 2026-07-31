@@ -108,6 +108,11 @@ public class CatalogPropertyMappingResolver {
     /**
      * Persisted mapping entry. Only {@code enabled} and {@code catalogName} are stored.
      */
+    /**
+     * @param catalogName null only on a <em>disabled</em> mapping whose stored value was absent or
+     *                    not a string. An enabled mapping in that shape is dropped at parse, so
+     *                    nothing that projects ever carries a null here.
+     */
     public record PropertyMapping(boolean enabled, String catalogName) {}
 
     /**
@@ -238,7 +243,15 @@ public class CatalogPropertyMappingResolver {
                 for (Map.Entry<String, Map<String, Object>> propEntry : typeEntry.getValue().entrySet()) {
                     Map<String, Object> fields = propEntry.getValue();
                     boolean enabled = Boolean.TRUE.equals(fields.get("enabled"));
-                    String catalogName = fields.get("catalogName") instanceof String s ? s : propEntry.getKey();
+                    // Null when the stored value is absent or not a string. It used to fall back
+                    // to the CMIS property id, which invented an output name nobody configured —
+                    // "nemaki:dept" as an Atlas attribute — and did it silently. There is no
+                    // compatibility contract for that fallback, so a malformed value is now a
+                    // configuration error like any other: this one mapping is dropped, the rest
+                    // still project.
+                    boolean catalogNamePresent = fields.containsKey("catalogName");
+                    Object rawCatalogName = fields.get("catalogName");
+                    String catalogName = rawCatalogName instanceof String text ? text : null;
                     // Enforced on read, not only in saveMappings. saveMappings is one way a
                     // mapping arrives; a configuration written before this rule existed, a
                     // restore, a hand-edited CouchDB document and a corrupted value are the
@@ -246,8 +259,13 @@ public class CatalogPropertyMappingResolver {
                     // A reserved catalogName lets a custom property overwrite a core attribute
                     // — including cloudFileUrl, which increment A-1g sets to null precisely so
                     // that no stored URL reaches the catalog.
+                    // A disabled mapping projects nothing, so it is kept verbatim as the
+                    // operator's configuration — the admin UI still has to show and fix it — and
+                    // is never counted as rejected.
                     Rejection rejection = enabled
-                            ? rejectionFor(propEntry.getKey(), catalogName) : null;
+                            ? rejectionForStored(propEntry.getKey(), catalogName,
+                                    catalogNamePresent, rawCatalogName)
+                            : null;
                     if (rejection != null) {
                         warnOnceAboutRejectedMapping(typeEntry.getKey(), propEntry.getKey(),
                                 catalogName, rejection);
@@ -372,6 +390,25 @@ public class CatalogPropertyMappingResolver {
         return null;
     }
 
+    /**
+     * {@link #rejectionFor} plus the two shapes only stored JSON can produce.
+     *
+     * <p>{@code rejectionFor} takes a {@code String} and so cannot distinguish "the field was
+     * absent" from "the field held a number". The parse can, and an operator fixing a
+     * hand-edited document needs to be told which.
+     */
+    private static Rejection rejectionForStored(String cmisPropertyId, String catalogName,
+                                                boolean present, Object raw) {
+        Rejection rejection = rejectionFor(cmisPropertyId, catalogName);
+        if (rejection != Rejection.BLANK_CATALOG_NAME) {
+            return rejection;   // a forbidden input outranks the shape of the output name
+        }
+        if (!present || raw == null) {
+            return Rejection.MISSING_CATALOG_NAME;
+        }
+        return catalogName == null ? Rejection.MALFORMED_CATALOG_NAME : rejection;
+    }
+
     /** Why {@link #rejectionFor} refused a mapping; each spells its own operator message. */
     public enum Rejection {
 
@@ -380,6 +417,12 @@ public class CatalogPropertyMappingResolver {
                 "that CMIS property is not projected to the catalog under any name"),
 
         BLANK_CATALOG_NAME("the catalog attribute name is empty"),
+
+        /** The stored configuration has no {@code catalogName} field, or it is JSON null. */
+        MISSING_CATALOG_NAME("the stored configuration has no catalog attribute name"),
+
+        /** The stored {@code catalogName} is a number, object, array or boolean. */
+        MALFORMED_CATALOG_NAME("the stored catalog attribute name is not a string"),
 
         /** The name belongs to a core entity attribute, which a custom value must not replace. */
         RESERVED_CATALOG_NAME(
