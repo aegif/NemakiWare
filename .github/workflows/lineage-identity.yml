@@ -17,9 +17,20 @@ name: Lineage Identity Contract
 
 on:
   push:
-    branches: [ master, main, develop, 'release/**' ]
+    branches:
+      - master
+      - main
+      - develop
+      - 'release/**'
+      # the branches this work actually lands on; without these the cross-language
+      # check would not run until the change reached a release branch
+      - 'deps/**'
+      - 'test/**'
     paths:
       - 'core/src/main/java/jp/aegif/nemaki/rest/purview/journal/**'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/ExternalAssetIdentity.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/PurviewSchemaPayloadFactory.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/PurviewEntityPayloadFactory.java'
       - 'core/src/test/java/jp/aegif/nemaki/rest/purview/journal/**'
       - 'core/src/test/resources/lineage/**'
       - '.github/workflows/lineage-identity.yml'
@@ -27,6 +38,9 @@ on:
     branches: [ master, main, develop ]
     paths:
       - 'core/src/main/java/jp/aegif/nemaki/rest/purview/journal/**'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/ExternalAssetIdentity.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/PurviewSchemaPayloadFactory.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/PurviewEntityPayloadFactory.java'
       - 'core/src/test/java/jp/aegif/nemaki/rest/purview/journal/**'
       - 'core/src/test/resources/lineage/**'
       - '.github/workflows/lineage-identity.yml'
@@ -38,20 +52,20 @@ jobs:
   identity:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Actions are pinned to commit SHAs, as everywhere else in this repository:
+      # a mutable tag is a supply-chain hole, and this workflow guards an identity
+      # contract.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      # No dependencies: hashlib and struct are enough, deliberately, so that a
-      # reader in any language can follow the spec without a library.
+      # No setup-python step and no dependencies: the runner has python3, and the
+      # script uses only hashlib and struct — deliberately, so a reader in any
+      # language can follow the spec without a library, and so this job adds no
+      # third-party action.
       - name: Reference implementation agrees with the shared fixture
         run: python3 core/src/test/resources/lineage/reference_hash.py
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -60,5 +74,5 @@ jobs:
       - name: Java identity, endpoint and schema-alignment tests
         run: >
           mvn -B -pl core -am test
-          -Dtest='LineageCanonicalHashTest,LineageIdentityTest,LineageEndpointTest,LineageEndpointBypassTest,LineageRepositoryScopeTest,EndpointAttributeTest,EndpointKindSchemaAlignmentTest'
+          -Dtest='LineageCanonicalHashTest,LineageIdentityTest,LineageEndpointTest,LineageEndpointBypassTest,LineageRepositoryScopeTest,EndpointAttributeTest,EndpointKindSchemaAlignmentTest,ExternalAssetNamingCrossPathTest'
           -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false

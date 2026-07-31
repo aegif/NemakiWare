@@ -33,7 +33,8 @@ public class PurviewEntityPayloadFactory {
     private static final String DOCUMENT_HAS_TYPE_DEFINITION_RELATIONSHIP = "nemaki_document_has_type_definition";
     private static final String LIFECYCLE_ACTIVE = "ACTIVE";
     private static final String LIFECYCLE_ARCHIVED = "ARCHIVED";
-    private static final String FILESYSTEM_SOURCE_SYSTEM = "filesystem";
+    private static final String FILESYSTEM_SOURCE_SYSTEM =
+            jp.aegif.nemaki.rest.purview.ExternalAssetIdentity.FILESYSTEM_SOURCE_SYSTEM;
     private static final String ZIP_FOLDER_EXPORT_MODE = "zip-folder";
     private static final String ZIP_SELECTION_EXPORT_MODE = "zip-selection";
 
@@ -462,7 +463,8 @@ public class PurviewEntityPayloadFactory {
                 toEpochMillis(archive.getModified()),
                 toEpochMillis(archive.getCreated())));
         attributes.put("externalStableKey", stableKey);
-        attributes.put("sourceSystem", firstNonBlank(resolveArchiveSourceSystem(archive), "cold-storage"));
+        attributes.put("sourceSystem", firstNonBlank(resolveArchiveSourceSystem(archive),
+                jp.aegif.nemaki.rest.purview.ExternalAssetIdentity.COLD_STORAGE_SOURCE_SYSTEM));
         attributes.put("externalPath", firstNonBlank(stableKey, archive.getPath()));
 
         Map<String, Object> entity = new LinkedHashMap<>();
@@ -485,7 +487,7 @@ public class PurviewEntityPayloadFactory {
         if (provider == null || provider.isBlank() || externalFileId == null || externalFileId.isBlank()) {
             return null;
         }
-        return provider + ":" + externalFileId;
+        return jp.aegif.nemaki.rest.purview.ExternalAssetIdentity.cloud(provider, externalFileId);
     }
 
     public Map<String, Object> buildExternalAssetEntity(String repositoryId, Content content) {
@@ -548,7 +550,7 @@ public class PurviewEntityPayloadFactory {
     }
 
     public String buildFilesystemExternalStableKey(String path) {
-        return "filesystem:" + path;
+        return jp.aegif.nemaki.rest.purview.ExternalAssetIdentity.filesystem(path);
     }
 
     public Map<String, Object> buildFilesystemExternalAssetEntity(
@@ -821,8 +823,8 @@ public class PurviewEntityPayloadFactory {
     }
 
     public String buildExternalAssetQualifiedName(String repositoryId, String stableKey) {
-        return "nemaki://" + repositoryId + "/external-assets/"
-                + Base64.getUrlEncoder().withoutPadding().encodeToString(stableKey.getBytes(StandardCharsets.UTF_8));
+        return jp.aegif.nemaki.rest.purview.ExternalAssetIdentity
+                .qualifiedName(repositoryId, stableKey);
     }
 
     private String buildArchiveProcessQualifiedName(String repositoryId, String archiveId) {

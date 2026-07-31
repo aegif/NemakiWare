@@ -163,15 +163,15 @@ public class LineageRepositoryScopeTest {
     @Test
     public void anExternalNameIsNotReproducedInTheMessage() {
         LineageEndpoint forged = new LineageEndpoint(EndpointKind.CLOUD_OBJECT,
-                LineageEndpoint.externalAssetQualifiedName(BEDROOM, "cloud://gdrive/SECRET-A"),
+                LineageEndpoint.externalAssetQualifiedName(BEDROOM, "gdrive:SECRET-A"),
                 BEDROOM, null, null,
                 Map.of("sourceSystem", "gdrive",
-                        LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY, "cloud://gdrive/SECRET-B"));
+                        LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY, "gdrive:SECRET-B"));
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> LineageRepositoryScope.validate(BEDROOM, List.of(forged), List.of()));
 
         String encodedA = LineageEndpoint.externalAssetQualifiedName(BEDROOM,
-                "cloud://gdrive/SECRET-A").substring(
+                "gdrive:SECRET-A").substring(
                         LineageEndpoint.externalAssetQualifiedNamePrefix(BEDROOM).length());
         assertFalse(e.getMessage().contains(encodedA),
                 "the encoded stable key reached the message: " + e.getMessage());
@@ -183,14 +183,14 @@ public class LineageRepositoryScopeTest {
     /** The redaction still has to identify which name it stood for, or a log cannot be read. */
     @Test
     public void theRedactionDistinguishesDifferentNames() {
-        assertNotEquals(messageFor("cloud://gdrive/A"), messageFor("cloud://gdrive/B"));
+        assertNotEquals(messageFor("gdrive:A"), messageFor("gdrive:B"));
     }
 
     private static String messageFor(String stableKey) {
         LineageEndpoint forged = new LineageEndpoint(EndpointKind.CLOUD_OBJECT,
                 LineageEndpoint.externalAssetQualifiedName(BEDROOM, stableKey), BEDROOM, null,
                 null, Map.of("sourceSystem", "gdrive",
-                        LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY, "cloud://gdrive/OTHER"));
+                        LineageEndpoint.ATTR_EXTERNAL_STABLE_KEY, "gdrive:OTHER"));
         return assertThrows(IllegalArgumentException.class,
                 () -> LineageRepositoryScope.validate(BEDROOM, List.of(forged), List.of()))
                 .getMessage();
