@@ -325,43 +325,43 @@ public class ExternalAssetNamingCrossPathTest {
     }
 
     /**
-     * A sharing token in a stored cloud URL must reach no Atlas payload and no endpoint.
+     * A stored cloud URL — any stored cloud URL — must reach no Atlas payload and no endpoint.
      *
-     * <p>The stable key was already guarded; the token travelled in the attributes beside it —
-     * the external asset's {@code externalPath}, the document entity's {@code cloudFileUrl}, the
-     * process entity's {@code targetDescription}. The drive API accepting a query-addressed URL
-     * is exactly why the identity rule could not simply be reused here: Google's {@code ?id=…} is
-     * legitimate, so the URL is stripped by {@code SafeDisplayUrl} rather than rejected.
+     * <p>Not "must be sanitized first": stripping the query is not enough, because SharePoint's
+     * modern sharing links carry the token in the <em>path</em> ({@code /:x:/g/…TOKEN}), a shape
+     * {@code CloudDriveResource} itself accepts as a valid cloud URL. No transformation of a
+     * stored URL can promise it is secret-free, so the catalog carries none; a provider-canonical
+     * URL rebuilt from {@code {provider, fileId}} is increment B.
      *
-     * <p>Event, digest and spool coverage arrives with A-2; a cloud endpoint cannot carry the URL
-     * at all (the attribute is outside its allowlist), so those surfaces are closed by
-     * construction.
+     * <p>The vectors are the token placements that defeated query-stripping: the SharePoint path
+     * token, a percent-encoded {@code %3Ftoken} inside the path, a {@code ;auth=} path parameter —
+     * and the plain query token that A-1f did catch, kept so the old case cannot regress either.
      */
     @Test
-    public void aSharingTokenInAStoredUrlReachesNoPayloadAndNoEndpoint() {
-        String tampered =
-                "https://tenant.sharepoint.com/personal/u/Documents/plan.docx?authkey=SECRET-TOKEN";
-        Document document = cloudDocument("onedrive", "file-9", tampered);
+    public void aStoredCloudUrlReachesNoPayloadAndNoEndpointWhereverTheTokenHides() {
+        String[] tampered = {
+                "https://tenant.sharepoint.com/:x:/g/team/SECRET-PATH-TOKEN?e=abc",
+                "https://tenant.sharepoint.com/sites/f/file%3Ftoken=SECRET-PATH-TOKEN",
+                "https://tenant.example.com/docs/plan.docx;auth=SECRET-PATH-TOKEN",
+                "https://tenant.sharepoint.com/personal/u/plan.docx?authkey=SECRET-PATH-TOKEN" };
+        for (String url : tampered) {
+            Document document = cloudDocument("onedrive", "file-9", url);
 
-        String externalAsset = String.valueOf(sync.buildExternalAssetEntity(REPO, document));
-        assertFalse(externalAsset.contains("SECRET-TOKEN"), externalAsset);
-        assertTrue(externalAsset.contains("externalPath=file-9"),
-                "externalPath is the file id, the secret-free spelling of the same fact: "
-                        + externalAsset);
+            String externalAsset = String.valueOf(sync.buildExternalAssetEntity(REPO, document));
+            assertFalse(externalAsset.contains("SECRET-PATH-TOKEN"), externalAsset);
 
-        String documentEntity = String.valueOf(sync.buildDocumentEntity(REPO, document));
-        assertFalse(documentEntity.contains("SECRET-TOKEN"), documentEntity);
-        assertTrue(documentEntity.contains(
-                        "cloudFileUrl=https://tenant.sharepoint.com/personal/u/Documents/plan.docx"),
-                "the stripped URL survives so the link is still useful: " + documentEntity);
+            String documentEntity = String.valueOf(sync.buildDocumentEntity(REPO, document));
+            assertFalse(documentEntity.contains("SECRET-PATH-TOKEN"), documentEntity);
+            assertFalse(documentEntity.contains("sharepoint"),
+                    "no spelling of the stored URL survives at all: " + documentEntity);
 
-        String processEntity = String.valueOf(sync.buildCloudSyncProcessEntity(REPO, document));
-        assertFalse(processEntity.contains("SECRET-TOKEN"), processEntity);
+            String processEntity = String.valueOf(sync.buildCloudSyncProcessEntity(REPO, document));
+            assertFalse(processEntity.contains("SECRET-PATH-TOKEN"), processEntity);
 
-        LineageEndpoint endpoint = LineageEndpoint.cloudObject(REPO, "onedrive", "file-9");
-        assertFalse(endpoint.attributes().containsKey("externalPath"),
-                "a cloud endpoint has no externalPath to carry a URL in");
-        assertFalse(endpoint.toString().contains("SECRET-TOKEN"));
+            LineageEndpoint endpoint = LineageEndpoint.cloudObject(REPO, "onedrive", "file-9");
+            assertFalse(endpoint.attributes().containsKey("externalPath"));
+            assertFalse(endpoint.toString().contains("SECRET-PATH-TOKEN"));
+        }
     }
 
     /** The URL cannot be smuggled into a cloud endpoint directly, and the rejection stays clean. */

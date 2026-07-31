@@ -154,11 +154,13 @@ public class PurviewEntityPayloadFactory {
         attributes.put("archivedAt", null);
         attributes.put("cloudProvider", PurviewCloudMetadataSupport.getCloudProvider(content));
         attributes.put("externalFileId", PurviewCloudMetadataSupport.getExternalFileId(content));
-        // Through SafeDisplayUrl, never raw: a drive legitimately addresses files through query
-        // parameters, which is also where sharing tokens live (SharePoint's ?authkey=...), and
-        // this value is persisted in a catalog entity. Identity never contained the URL.
-        attributes.put("cloudFileUrl", jp.aegif.nemaki.rest.purview.SafeDisplayUrl.of(
-                PurviewCloudMetadataSupport.getCloudFileUrl(content)));
+        // Null, not the stored URL and not a stripped version of it. Stripping the query is not
+        // enough: SharePoint's modern sharing links put the token in the PATH (/:x:/g/...TOKEN),
+        // a shape CloudDriveResource itself accepts as valid, so no transformation of a stored
+        // URL can promise it is secret-free. Until increment B rebuilds a provider-canonical URL
+        // from {provider, fileId}, the catalog carries no URL — and the null actively clears any
+        // raw URL published before this rule existed, on the next republish.
+        attributes.put("cloudFileUrl", null);
         attributes.put("cloudLastSyncedAt", PurviewCloudMetadataSupport.getCloudLastSyncedAt(content));
 
         // Inject custom property values based on mapping configuration
@@ -534,10 +536,10 @@ public class PurviewEntityPayloadFactory {
         attributes.put("objectId", content.getId());
         attributes.put("cloudProvider", PurviewCloudMetadataSupport.getCloudProvider(content));
         attributes.put("externalStableKey", stableKey);
-        attributes.put("targetDescription", firstNonBlank(
-                jp.aegif.nemaki.rest.purview.SafeDisplayUrl.of(
-                        PurviewCloudMetadataSupport.getCloudFileUrl(content)),
-                PurviewCloudMetadataSupport.getExternalFileId(content)));
+        // The file id, never a stored URL — same reason as cloudFileUrl above: SharePoint-style
+        // sharing tokens live in the path, so a "sanitized" URL is not a secret-free one.
+        attributes.put("targetDescription",
+                PurviewCloudMetadataSupport.getExternalFileId(content));
 
         Map<String, Object> relationshipAttributes = new LinkedHashMap<>();
         relationshipAttributes.put("inputs", List.of(
