@@ -241,26 +241,26 @@ public class PurviewEntityPayloadFactory {
                     || localEntry.cardinality() != schemaEntry.cardinality()) {
                 continue;
             }
-            // Both ends, at the boundary as well as at load. The output-name check below stops a
-            // mapping from replacing a core attribute; this stops one from carrying a forbidden
-            // property out under a name nobody reserved — nemaki:cloudFileUrl -> legacyCloudUrl
-            // passes every output-side rule and puts the raw URL in Atlas regardless.
-            if (CatalogPropertyMappingResolver.isForbiddenSourceProperty(cmisPropertyId)) {
-                logger.warn("Ignoring custom property mapping '{}' -> '{}': that CMIS property is"
-                        + " not projected to the catalog under any name.",
-                        cmisPropertyId, catalogName);
+            // The same entry point save and load use — both ends of the mapping, one rule. A
+            // resolver that hands back a mapping this rejects has been bypassed, which is the
+            // case this layer exists for.
+            CatalogPropertyMappingResolver.Rejection rejection =
+                    CatalogPropertyMappingResolver.rejectionFor(cmisPropertyId, catalogName);
+            if (rejection != null) {
+                logger.warn("Ignoring custom property mapping '{}' -> '{}': {}.",
+                        cmisPropertyId, catalogName, rejection.reason());
                 continue;
             }
             Object value = propertyValues.get(cmisPropertyId);
             if (value == null) {
                 continue;
             }
-            // The last gate: a custom property may add an attribute, never replace one this
-            // factory already decided. containsKey, not putIfAbsent — the value we are
-            // protecting is often null (cloudFileUrl is deliberately null so that no stored URL
-            // reaches the catalog), and putIfAbsent treats a null mapping as absent and
-            // overwrites it. The resolver rejects reserved names on load; this holds even if a
-            // future core attribute is added without being listed there.
+            // A separate rule, deliberately: rejectionFor judges the mapping, this judges the
+            // entity being built. A custom property may add an attribute, never replace one this
+            // factory already decided — which holds even for a core attribute nobody remembered
+            // to add to RESERVED_ATTRIBUTE_NAMES. containsKey, not putIfAbsent: the value being
+            // protected is often null (cloudFileUrl is deliberately null so that no stored URL
+            // reaches the catalog), and putIfAbsent treats a null mapping as absent.
             if (attributes.containsKey(catalogName)) {
                 logger.warn("Ignoring custom property '{}' -> catalog attribute '{}': the name is"
                         + " already set by a core attribute of this entity. A custom mapping may"
