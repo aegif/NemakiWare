@@ -1,6 +1,6 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.9 — increment A sign-off 済み。A-1〜A-1k 実装済み、A-2 Slice 1〜3 着手可・Slice 4 は §6-a の再 sign-off 待ち**
+status: **v2.3.10 — increment A sign-off 済み。A-1〜A-1k 実装済み、A-2 Slice 1〜3 着手可・Slice 4 は §6-a の再 sign-off 待ち**
 revision:
 - v2 — §4 §6 §8 §9 を全面改訂。v1 の採番一体化案・caller 例外案・raw URI QN 案・
   `upload://` 空 input 案・`REPLAYED` 上書き案は**撤回**。撤回理由は各節に残す。
@@ -26,6 +26,15 @@ revision:
   snapshot allowlist を実 Atlas schema と機械的に整合 (§2)、ARCHIVE の同一性を `archiveId` に
   訂正 (§10)、D の依存を「A-2 に依存」に訂正、並び順を符号なし UTF-8 バイト辞書順に固定 (§3)、
   表示 URL (`cloudFileUrl`) を stableKey とは**別契約**として sanitize (§4)。
+- v2.3.10 — §6-a の barrier に**鮮度と原子性**を入れ、spool を**版非依存**にし、**D の依存順**を
+  解いた。ACK を別文書から barrier 文書内へ移し (`bootId` / `binaryDigest` / `expiresAt` 付き)、
+  `ACTIVE` への CAS が同一 `_rev` で全条件を検査し `writeSchemaVersion=2` と
+  `minReaderSchemaVersion=2` を**同時に**設定する (従来は別書込みで、その間に v1-only reader が
+  参加できる窓があった)。membership revision を activation 要求時に**再提示**して bind
+  (でないと「確認後・CAS 前の membership 変更」テストが発火しない)。flag 読取不能時は event では
+  なく**版非依存 business fact** を spool し、scanner が復旧後に一度だけ materialize して
+  `deliveryId` を計算する — これに伴い §8-d の「spool file 名は常に `deliveryId`」を訂正。
+  D を **D-spool / D-rest** に割り、A-2 Slice 4a との循環を解消。
 - v2.3.9 — §6-a の**前提を撤回して書き直し**。v2.3.8 の契約 1・2 は「旧バイナリが新しい規約を
   守る」ことを前提にしていたが、旧バイナリは既にデプロイ済みでその guard を持たない
   (projector の view は `doc.type === 'lineage_event'` だけで選択し、schema version で分離
@@ -662,119 +671,160 @@ v1 は「`UNKNOWN` を含む v1 event は `SKIPPED` にして cursor を進め�
 
 新規 event は必ず v2。v1 は retention で自然に消える。migration patch は書かない。
 
-## 6-a. v2 書込みの rollout fence (v2.3.9)
+## 6-a. v2 書込みの rollout fence (v2.3.10)
 
-### 撤回 1: 停止条件が片方向だった (v2.3.8 で訂正済み)
+### 撤回 1: 停止条件が片方向だった (v2.3.8)
 
-A-2 Slice 4 の停止条件を「新 projector が v1 と v2 を両方読めるか」と書いていた。危険なのは
-逆向き — **旧 AP が v2 を読む**方であり、コードを 1 コミットで変えてもデプロイは同時でないため
-消えない。旧 AP が leader のまま v2 event を掴み、`FAILED` 化するか、最悪は **cursor を通過**
-させて静かに欠落させる。
+停止条件を「新 projector が v1 と v2 を両方読めるか」と書いていた。危険なのは逆向き —
+**旧 AP が v2 を読む**方であり、コードを 1 コミットで変えてもデプロイは同時でないため消えない。
+旧 AP が leader のまま v2 event を掴み、`FAILED` 化するか、最悪は **cursor を通過**させて静かに
+欠落させる。
 
 ### 撤回 2: 旧バイナリに新契約を守らせようとしていた (v2.3.9)
 
-v2.3.8 は「v1-only AP は自分で fail-closed になる」「stale leader は読めない版を claim しない」
-と書いた。**成立しない。** 旧バイナリは既にデプロイ済みで、その guard を持っていない。実際、
-projector の view 選択は `doc.type === 'lineage_event'` **だけ**で、schema version で分離して
-いない。したがって:
+「v1-only AP は自分で fail-closed になる」「stale leader は読めない版を claim しない」と書いた。
+**成立しない。** 旧バイナリは既にデプロイ済みで、その guard を持たない。projector の view 選択は
+`doc.type === 'lineage_event'` **だけ**で、schema version で分離していない。新バイナリに書いた
+fail-closed は *次に起動する新バイナリ* にしか効かない。
 
-- 「旧 AP が自分を無効化する」は**保証に使えない**。新バイナリに書いた fail-closed は、
-  *次に* 起動する新バイナリにしか効かない。
-- 「旧 reader を模した新実装テスト」も**不十分**。`readSchemaVersions=[1]` を設定した新 reader
-  には新しい claim guard が入っており、本物の旧バイナリとは別物である。
+「`readSchemaVersions=[1]` を設定した新 reader」のテストも旧バイナリの証拠にはならない
+(新しい claim guard を持っているため)。残すが、**新版どうしの混在保証**であることを
+テスト名と javadoc に明記する。
 
-**旧バイナリの排除はアプリ内では達成できない。アプリ外の完了条件にする。**
+**旧バイナリの排除はアプリ外の完了条件**とする — 旧 ReplicaSet / Deployment revision 削除、
+LB / Service target からの除外、旧 Pod の消滅。アプリは検証できない。
 
-### 4a / 4b と、その間の barrier
+### 撤回 3: barrier に鮮度が無く、昇格が原子的でなかった (v2.3.10)
 
-| | 内容 | writer | 完了条件 |
-|---|---|---|---|
-| **4a** | dual reader / projector / replay / **spool** を全 AP へ配布 | v1 | 下記 barrier が `ACTIVE` に到達できる状態 |
-| **4b** | write-version flag を `ACTIVE` へ CAS | v2 | v2 を 1 件でも書いたら `minReaderSchemaVersion` は不可逆 |
+v2.3.9 は ACK を別文書に置き、`minReaderSchemaVersion` は「v2 を最初に永続化した時点で 2 になる」
+と書いた。**二つとも穴がある。**
 
-#### authoritative membership は外から与える
+- ACK に `bootId` も期限も無いので、**同じ nodeId が再起動して旧バイナリになっても過去の ACK が
+  残る**。ACK は「今この node が新版で動いている」証拠であるべきなのに、そうなっていない。
+- 昇格が別書込みなので、`writeSchemaVersion=2` と `minReaderSchemaVersion=2` の間に窓ができる。
+  その窓で v1-only reader が正当に参加できてしまう。
 
-capability 文書の**存在から全 AP を推測しない**。capability を 1 つも登録しない旧 node は、
-推測ベースでは「いない」ことになり、それがまさに危険な node である。
+**ACK を barrier 文書そのものへ CAS で追加する。** そうすれば `ACTIVE` への CAS が同一 `_rev`
+に対して全条件の検査と両 flag の更新を**一度に**行える。
 
-activation を要求する側が **`expectedNodeIds`** (Kubernetes ReplicaSet / Pod UID、あるいは
-運用が把握している node 集合) を渡し、その digest を activation token に封じる。
+### barrier 文書
 
 ```
 _id: lineage_write_version
-  state                     : IDLE | PREPARING | ACTIVE
-  generation                : 単調増加
-  expectedMembershipDigest  : SHA-256(sorted expectedNodeIds)
-  ackedNodeIds              : [...]        // PREPARING 中に埋まる
-  writeSchemaVersion        : 1 | 2
-  minReaderSchemaVersion    : 1 | 2        // 単調増加。下げない
-  firstV2DeliveryId         : ...          // 最初に v2 を書いた記録
-  activatedAt               : ...
+  state                      : IDLE | PREPARING | ACTIVE
+  generation                 : 単調増加
+  expectedMembershipDigest   : SHA-256(sorted expectedNodes)
+  expectedMembershipRevision : 外部 control-plane が返した membership revision
+  expectedNodes              : [ { nodeId, bootId } ]
+  acks:
+    {nodeId}:
+      bootId                 : この boot の識別子。再起動で変わる
+      binaryDigest           : 動作中バイナリの識別子
+      readSchemaVersions     : [1, 2]
+      spoolSchemaVersions    : [1, 2]   // spool record を materialize できる版
+      spoolReady             : true     // 永続 volume + write + fsync 検証済み
+      ackedAt / expiresAt    : 鮮度。期限切れ ACK は無効
+  writeSchemaVersion         : 1 | 2
+  minReaderSchemaVersion     : 1 | 2    // 単調増加のみ
 ```
 
-**最小構成の代替**: 4b の瞬間だけ全 AP を停止し、新版 1 台へ scale-down して切り替えてから
-scale-up する。membership の推測が要らないので、これが最も単純かつ安全であり、
-**単一 AP 構成ではこちらを既定とする**。
+#### `ACTIVE` への CAS が同一 `_rev` で検査すること
 
-#### 二段階 barrier
+1. `state == PREPARING` かつ `generation` が要求と一致
+2. 要求が再提示した `expectedMembershipRevision` と `expectedMembershipDigest` が文書と一致
+3. `expectedNodes` の**全 node**に ACK がある
+4. 各 ACK の `nodeId` / `bootId` が `expectedNodes` の値と一致
+5. 各 ACK が**未期限切れ**
+6. 各 ACK の `readSchemaVersions` が 2 を含む
+7. 各 ACK の `spoolReady == true` かつ `spoolSchemaVersions` が 2 を含む
+8. **同じ書込みで** `writeSchemaVersion = 2` と `minReaderSchemaVersion = 2` を設定
 
-1. `PREPARING(generation, expectedMembershipDigest)` を CAS で作成する。
-2. **各 AP が自分で generation に ACK する。** 新バイナリだけが ACK のコードを持つので、
-   ACK の存在そのものが「この node は新版である」証拠になる。capability 文書の事前読取
-   (誰かが以前書いた値) では、その node が *今* 新版で動いている保証にならない。
-3. `ackedNodeIds ⊇ expectedNodeIds` かつ digest 一致を確認して `ACTIVE` へ CAS。
-4. **generation が変われば過去の ACK は無効**。ACK は `(nodeId, generation)` で記録し、
-   古い generation の ACK を再利用できないようにする。
+8 が同一 CAS に入ることで、`writeSchemaVersion=2` だが `minReaderSchemaVersion=1` という状態は
+**存在し得なくなる**。
 
-#### アプリ外の完了条件 (4a → 4b の前提)
+`generation` が変われば過去の ACK は無効 — ACK は `(nodeId, bootId, generation)` に紐づく。
 
-以下は**運用手順として明記し、activation の前提条件**とする。アプリはこれを検証できない。
+#### membership revision は activation 要求時に再提示する
 
-- 旧 ReplicaSet / Deployment revision が削除されている
-- LB / Service の target から旧 Pod が外れている
-- 旧 Pod が停止している (Terminating ではなく消滅)
+`PREPARING` 作成時の digest だけでは、テスト #2 (確認後・CAS 前の membership 変更) が
+**発火しない**。要求側が外部 control-plane から取得した `expectedMembershipRevision` を
+`ACTIVE` 要求時に**もう一度**渡し、barrier 文書の値および `_rev` に bind する。
+control-plane 側で node が増減すれば revision が変わり、CAS が落ちる。
 
-`expectedNodeIds` はこの確認後の実際の node 集合であり、確認前の値を使ってはならない。
+#### 最小構成の代替
+
+単一 AP 構成では、4b の瞬間だけ全 AP を停止し新版 1 台へ scale-down して切り替える方式を
+**既定**とする。membership の推測も再提示も要らない。
 
 ### 版を二軸にする
 
 | flag | 可変性 | 意味 |
 |---|---|---|
 | `writeSchemaVersion` | 1 ⇄ 2 | producer が今書く版。rollback で 1 に戻せる |
-| `minReaderSchemaVersion` | **単調増加のみ** | v2 を最初に永続化した時点で 2 になり、二度と下がらない |
+| `minReaderSchemaVersion` | **単調増加のみ** | `ACTIVE` 昇格と同一 CAS で 2 になり、二度と下がらない |
 
-v1 書込みへ戻しても、**v2 を読めないバイナリは参加できない**。journal / dead letter / spool に
-v2 が 1 件でも残っている限り、それを読めない reader は不正だからである。
-rollback で writer を 1 に戻すことと、v1-only バイナリへ戻すことは**別物**であり、後者は
-`minReaderSchemaVersion=2` の下では許されない。
+writer を 1 に戻すことと、v1-only バイナリへ戻すことは**別物**。journal / dead letter / spool に
+v2 が 1 件でも残る限り後者は許されない。
 
-### spool readiness を capability に入れる
+### 版非依存 spool (v2.3.10)
 
-spool は 4a で有効化する。4a の完了条件に以下を含める:
+flag が読めないとき、**event を spool してはならない** — どちらの版で符号化するか決められない
+からである。保存するのは**版に依存しない business fact** とする。
 
-- `spoolReady=true` — spool ディレクトリが**永続 volume** 上にあり、書込みと **fsync** が
-  実際に成功することを起動時に検証済み
-- この検証に失敗した AP は ACK しない (= barrier が `ACTIVE` に到達しない)
+```
+{lineage.spool.dir}/{repositoryId}/{yyyyMMdd}/fact-{spoolRecordId}.json
+  spoolSchemaVersion   // この spool record 自身の版
+  spoolRecordId        // 版非依存の一意 ID。ファイル名に使う
+  operationId / repositoryId / processType
+  inputs / outputs     // typed LineageEndpoint (A-1 の型。版に依存しない)
+  snapshot
+  canonicalTargetSet
+  occurredAt
+  payloadDigest        // この fact の digest。materialize 後の digest とは別
+```
 
-**flag 読取に失敗したときは版を推測しない。** producer は emit をあきらめず、
-**spool へ送る**。読取不能の状態で v1 とも v2 とも決めないための規則である。
+scanner は flag が読めるようになってから、**一度だけ** v1 または v2 event へ materialize し、
+**その時点で `deliveryId` を計算する**。materialize が一度きりであることは
+`spoolRecordId` → `deliveryId` の対応を spool 側に記録して保証する。
 
-**残余として明記する**: spool 書込みにも失敗した場合、その lineage は失われる。
-§9 の repair は「journal か spool に記録が残っていること」を前提としており、
-どちらにも無いものは復元できない。したがって「repair で回収できる」とは**言えない**。
-`lineage.emit.dropped{reason=flag_unreadable_and_spool_failed}` を出し、alert 対象とする。
+**§8-d の「spool file 名は常に `deliveryId`」という契約を訂正する。** spool には 2 種類ある:
+
+| 種別 | ファイル名 | いつ |
+|---|---|---|
+| materialized event | `{deliveryId}.json` / `.ack` | 版が確定している通常経路 |
+| unmaterialized fact | `fact-{spoolRecordId}.json` | flag 読取不能時。scanner が後で materialize |
+
+**残余**: fact の spool 書込みにも失敗した場合、その lineage は失われる。§9 の repair は
+「journal か spool に記録がある」ことを前提とするので、**repair で回収できるとは言えない**。
+`lineage.emit.dropped{reason=flag_unreadable_and_spool_failed}` を出し alert 対象とする。
+
+### D との依存順 (v2.3.10)
+
+spool は増分 D の担当だが、Slice 4a の完了条件に spool readiness が入るため、
+**そのままでは D → A-2 Slice 4 → D の循環になる**。D を割って解く。
+
+| | 内容 | 依存 |
+|---|---|---|
+| **D-spool** | 版非依存 fact spool + scanner + fsync 検証。`deliveryId` を要さないので v2 event 形状に依存しない | A-1 のみ (typed endpoint があれば足りる) |
+| **D-rest** | event-first sequencer / cursor CAS / replay generation CAS。`deliveryId` を使うので v2 event が要る | A-2 Slice 4 完了後 |
+
+順序: **A-2 Slice 1〜3 → D-spool → A-2 Slice 4a → 4b → D-rest → E**。
 
 ### 決定的テスト (Slice 4a の完了条件)
 
 | # | 系列 | 期待 |
 |---|---|---|
-| 1 | capability を一切登録しない legacy node が `expectedNodeIds` に居る | `ACTIVE` への CAS が失敗し、不足 nodeId を返す |
-| 2 | capability 確認後・`ACTIVE` CAS 前に node が失効 / membership 変更 | CAS が digest 不一致で失敗する |
-| 3 | 古い `generation` の ACK が残っている | 新 generation では再利用されない |
-| 4 | stale な旧 leader 相当が v2 view を読む | (新 reader では) claim も cursor 前進も起きない。**ただしこれは旧バイナリの保証ではなく、新バイナリ同士の混在保証である**ことをテスト名と javadoc に明記する |
+| 1 | capability を一切登録しない legacy node が `expectedNodes` に居る | `ACTIVE` CAS が失敗し、ACK 欠落の nodeId を返す |
+| 2 | ACK 収集後・`ACTIVE` CAS 前に membership が変わる | 再提示された `expectedMembershipRevision` が不一致で CAS 失敗 |
+| 3 | 古い `generation` の ACK が残っている | 新 generation では無効 |
+| 3b | 同じ `nodeId` が再起動し `bootId` が変わった | 旧 `bootId` の ACK は無効 |
+| 3c | ACK が `expiresAt` を過ぎている | 無効 |
+| 4 | stale な旧 leader 相当が v2 view を読む | 新 reader では claim も cursor 前進も起きない。**旧バイナリの保証ではない**とテスト名に明記 |
 | 5 | `writeSchemaVersion` を 1 へ戻す | `minReaderSchemaVersion` は 2 のまま |
-| 6 | terminal / dead letter / spool に v2 が残る状態で v1-only rollback | 拒否される |
-| 7 | flag 読取不能 | v1 とも v2 とも書かず spool へ。spool も失敗したら metric が上がる |
+| 5b | `ACTIVE` CAS 後の任意の瞬間 | `writeSchemaVersion=2 && minReaderSchemaVersion=1` が観測されない |
+| 6 | terminal / dead letter / spool に v2 が残る状態で v1-only rollback | 拒否 |
+| 7 | flag 読取不能 | event ではなく **fact** を spool。scanner が復旧後に一度だけ materialize し、そこで `deliveryId` を計算 |
+| 7b | fact spool 書込みも失敗 | `lineage.emit.dropped{reason=flag_unreadable_and_spool_failed}` が上がる。repair 可能とは主張しない |
 
 ### この節が閉じるまで Slice 4 は着手しない
 
@@ -1026,7 +1076,12 @@ CouchDB store への保存は `// Store persistence is best-effort; log file is 
 ```
 {lineage.spool.dir}/{repositoryId}/{yyyyMMdd}/{deliveryId}.json    ← payload (完全)
 {lineage.spool.dir}/{repositoryId}/{yyyyMMdd}/{deliveryId}.ack    ← ACK marker
+{lineage.spool.dir}/{repositoryId}/{yyyyMMdd}/fact-{spoolRecordId}.json  ← 版非依存 fact
 ```
+
+**`deliveryId` を名前に使えるのは版が確定している場合だけ**である。write-version flag が
+読めないときは版を決められないので、§6-a の**版非依存 fact** として `fact-{spoolRecordId}` に
+書き、scanner が flag 復旧後に一度だけ event へ materialize して `deliveryId` を計算する。
 
 #### 起動時の扱い (v2.2) — Core 全体は落とさない
 
@@ -1381,10 +1436,18 @@ E-12 の「故意に失敗させる」テストは、cleanup が file-scope で�
 | **D** | event-first UNSEQUENCED + fenced sequencer (bootstrap 専用 lease / 書込み直前再確認 / 一方向 latch / crash 再開) + 状態遷移 CAS (`VERIFYING` / `WAITING_FOR_CATALOG` 含む) + cursor 単調 CAS + counter・lease 復旧手順 + durable spool と spool scanner + replay generation CAS (§8) + IT-1〜IT-32 | 実 CouchDB IT |
 | **E** | v1 legacy reader + durable unresolved (§6)、repair API + opaque confirmation token + DLQ bundle upload (§9)、`VERIFYING` と E-17 verify 契約 (§10)、Atlas-enabled E2E 受入表 E-1〜E-17 | E2E |
 
-依存: A → B → C、**D は A-2 に依存**、E は A〜D 完了後。
+依存: A → B → C、**D は分割** (下記)、E は A〜D 完了後。
+
+D を 1 つの増分にすると **D → A-2 Slice 4a → D** の循環になる (Slice 4a の完了条件に
+spool readiness が入るため)。§6-a のとおり割る:
+
+- **D-spool** — 版非依存 fact spool + scanner + fsync 検証。`deliveryId` を要さないので A-1 のみに依存
+- **D-rest** — sequencer / cursor CAS / replay generation CAS。`deliveryId` を使うので A-2 Slice 4 の後
+
+順序: **A-2 Slice 1〜3 → D-spool → A-2 Slice 4a → 4b → D-rest → E**。
 
 D の内部部品 (fenced sequencer、cursor CAS、counter/lease 復旧) は A と並行に書けるが、
-spool file 名・journal `_id`・冪等判定はいずれも `deliveryId` であり、`deliveryId` は v2 event
+spool file 名 (materialize 済みのもの)・journal `_id`・冪等判定はいずれも `deliveryId` であり、`deliveryId` は v2 event
 から作られる。したがって**統合は A-2 完了後**。v2.3.1 までの「D は A と独立」は §3 の
 identity 分離を入れる前の記述で、成立しない。
 
@@ -1405,7 +1468,7 @@ A-1 を分けたのは `LineageEvent` の移行対象が 14 ファイル・`inpu
 | # | 指摘 | 反映 |
 |---|---|---|
 | 1 | `deliveryId` が multi-target で定義できない | §3 — **tagged union** 化 (`ORIGINAL` は `canonicalTargetSet`、`REPLAY` は `originalDeliveryId`+`target`+`replayGeneration`、`REPAIR` は `deadLetterId`+`repairGeneration`)。event-level `operationId` を全 v2 event で必須化 (endpoint 側とは別契約)。hash は長さ prefix 付き UTF-8 か canonical JSON、`null` と空文字を区別。endpoint は重複拒否・辞書順・null 拒否。`creationPayloadDigest` の対象を表で固定し可変フィールドを除外。**digest 不一致は通常 emit では 500 を返さず integrity 例外→spool+metric、管理 replay/repair のみ 500**。IT-33〜35 / IT-39 / IT-40 |
-| 2 | 旧 `eventKey` 契約の残存 | §3 §8 §10 — 冪等判定を `deliveryId` のみに、event-first `_id` を `deliveryId` 由来に、**spool を `{deliveryId}.json` / `.ack`** に、E-13 を `processKey` 表記に修正。`legacyEventKey` は v1 読取・監査専用と明記 |
+| 2 | 旧 `eventKey` 契約の残存 | §3 §8 §10 — 冪等判定を `deliveryId` のみに、event-first `_id` を `deliveryId` 由来に、**spool を `{deliveryId}.json` / `.ack`** に (v2.3.10 で一部訂正: 版が確定していない fact は `fact-{spoolRecordId}.json`、§6-a)、E-13 を `processKey` 表記に修正。`legacyEventKey` は v1 読取・監査専用と明記 |
 | 3 | lease 欠落時の acquire が旧仕様 | §8 — acquire は **lease が存在する場合のみ**。不在では作らない。復旧は「durable 管理 flag で全 AP の acquire 禁止 → old worker 停止確認 → `max(event generation)+1`」。**あるいはランダム `leaseToken` を event に stamp** して generation 再利用を無効化。IT-36 / IT-37 |
 | 4 | `DIRECT` の線引き | §8 — typed endpoint / canonical QN / artifact / snapshot / cross-repo 検証 / `processKey` は**全 mode 共通**。`JOURNALED` 限定は journal・spool・ordering・verify・obligation・replay・repair。**spool 検査は `JOURNALED` のみ**に訂正。E-18 に positive control を追加。IT-32 |
 | 5 | 状態表・kind 表の残存 | §8 — `VERIFYING → FAILED` から semantic mismatch を削除 (`UNPROJECTABLE` と重複)。§10 — `PUBLISHED \| FAILED \| UNPROJECTABLE` に更新。§4 — stableKey 表の `FILESYSTEM_PATH` を `EXTERNAL_ASSET (filesystem)` に。§2 — `waitingTaskKeys` 全件解決を再開条件とし `waitingSince` は往復でリセットしない。IT-38 |
