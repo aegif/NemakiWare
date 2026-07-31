@@ -38,18 +38,11 @@ public class CatalogPropertyMappingResolver {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /**
-     * Core entity attribute names used by {@code nemaki_document} and {@code nemaki_folder}.
+     * The <em>input</em> half of {@link #rejectionFor}: CMIS properties that may never be
+     * projected, whatever the mapping calls the output.
      *
-     * <p>The <em>output</em> half of {@link #rejectionFor}: a mapping may not write over one of
-     * these. The <em>input</em> half is {@link #FORBIDDEN_SOURCE_PROPERTY_IDS}, and both are
-     * needed — a mapping can carry a forbidden property out under a name that is not on this
-     * list at all.
-     */
-    /**
-     * CMIS properties that may never be projected, whatever the mapping calls the output.
-     *
-     * <p>The reserved-name rule guards the <em>output</em> side: it stops a mapping from writing
-     * over {@code cloudFileUrl}. It says nothing about a mapping that reads
+     * <p>The reserved-name rule guards the output side: it stops a mapping from writing over
+     * {@code cloudFileUrl}. It says nothing about a mapping that reads
      * {@code nemaki:cloudFileUrl} and writes it somewhere innocuous —
      * {@code nemaki:cloudFileUrl -> legacyCloudUrl} passes the output check, passes the payload
      * boundary because no such attribute exists yet, and puts the raw URL in Atlas anyway.
@@ -61,6 +54,14 @@ public class CatalogPropertyMappingResolver {
      */
     static final Set<String> FORBIDDEN_SOURCE_PROPERTY_IDS = Set.of("nemaki:cloudFileUrl");
 
+    /**
+     * The <em>output</em> half of {@link #rejectionFor}: core entity attribute names used by
+     * {@code nemaki_document} and {@code nemaki_folder}, which a custom mapping may not write
+     * over.
+     *
+     * <p>Both halves are needed. A mapping can carry a forbidden property out under a name that
+     * is not on this list at all, which is what {@link #FORBIDDEN_SOURCE_PROPERTY_IDS} catches.
+     */
     static final Set<String> RESERVED_ATTRIBUTE_NAMES = Set.of(
             "qualifiedName", "name", "description", "owner",
             "createTime", "modifiedTime",
@@ -107,8 +108,7 @@ public class CatalogPropertyMappingResolver {
 
     /**
      * Persisted mapping entry. Only {@code enabled} and {@code catalogName} are stored.
-     */
-    /**
+     *
      * @param catalogName null only on a <em>disabled</em> mapping whose stored value was absent or
      *                    not a string. An enabled mapping in that shape is dropped at parse, so
      *                    nothing that projects ever carries a null here.
@@ -359,13 +359,6 @@ public class CatalogPropertyMappingResolver {
     // ── Write mappings ───────────────────────────────────────────────
 
     /**
-     * A catalogName no mapping may use: blank, or one of a core entity attribute's.
-     *
-     * <p>Trimmed before comparison because {@code appendCustomPropertyValues} uses the raw value
-     * as the map key — {@code " cloudFileUrl"} would not collide, but a configuration containing
-     * it is a mistake either way, and {@link #validateMappings} has always trimmed.
-     */
-    /**
      * Why a mapping may not be projected, or {@code null} if it may.
      *
      * <p><b>The one entry point.</b> Save, load and the payload boundary all call this and nothing
@@ -375,6 +368,10 @@ public class CatalogPropertyMappingResolver {
      *
      * <p>It returns a reason rather than a boolean so that {@link #validateMappings} can still
      * tell an operator which end of the mapping is wrong without re-deriving it.
+     *
+     * <p>Names are trimmed before comparison because {@code appendCustomPropertyValues} uses the
+     * raw value as the map key: {@code " cloudFileUrl"} would not collide, but a configuration
+     * containing it is a mistake either way.
      */
     static Rejection rejectionFor(String cmisPropertyId, String catalogName) {
         if (cmisPropertyId != null
