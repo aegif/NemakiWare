@@ -1,6 +1,6 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.8 — increment A sign-off 済み。A-1〜A-1k 実装済み、A-2 Slice 1〜3 着手可・Slice 4 は §6-a の再 sign-off 待ち**
+status: **v2.3.9 — increment A sign-off 済み。A-1〜A-1k 実装済み、A-2 Slice 1〜3 着手可・Slice 4 は §6-a の再 sign-off 待ち**
 revision:
 - v2 — §4 §6 §8 §9 を全面改訂。v1 の採番一体化案・caller 例外案・raw URI QN 案・
   `upload://` 空 input 案・`REPLAYED` 上書き案は**撤回**。撤回理由は各節に残す。
@@ -26,6 +26,15 @@ revision:
   snapshot allowlist を実 Atlas schema と機械的に整合 (§2)、ARCHIVE の同一性を `archiveId` に
   訂正 (§10)、D の依存を「A-2 に依存」に訂正、並び順を符号なし UTF-8 バイト辞書順に固定 (§3)、
   表示 URL (`cloudFileUrl`) を stableKey とは**別契約**として sanitize (§4)。
+- v2.3.9 — §6-a の**前提を撤回して書き直し**。v2.3.8 の契約 1・2 は「旧バイナリが新しい規約を
+  守る」ことを前提にしていたが、旧バイナリは既にデプロイ済みでその guard を持たない
+  (projector の view は `doc.type === 'lineage_event'` だけで選択し、schema version で分離
+  していない)。旧バイナリの排除は**アプリ外の完了条件**とし、membership は推測せず
+  `expectedNodeIds` を外から与え、`PREPARING(generation, digest)` → 各新版 AP の ACK →
+  `ACTIVE` の二段階 barrier にする。版を `writeSchemaVersion` (可逆) と
+  `minReaderSchemaVersion` (単調増加) の二軸に分離。spool readiness (永続 volume + fsync 検証) を
+  4a の完了条件に含め、flag 読取不能時は版を推測せず spool へ送る。spool も失敗した場合は
+  **repair 不能な残余**として明記。
 - v2.3.8 — **§6-a を新設**。A-2 Slice 4 の停止条件が「新 reader が v1/v2 を読めるか」だけで
   片方向だった。危険なのは**旧 AP が v2 を読む**方で、全コードを 1 コミットで変えても
   デプロイが同時でない以上消えない。Slice 4 を 4a (dual reader を全 AP へ配布、writer は v1) と
@@ -60,9 +69,11 @@ scope: v3.3 内で Atlas 連携を完成させるための設計。実装は sig
 関連: [`docs/design/acl-epoch-fencing.md`](acl-epoch-fencing.md) (同じ outbox/cursor の考え方を使う)
 
 実装状況: **A-1〜A-1k が `deps/v3.3-breaking-majors` に実装済み** (型体系・identity 符号化・
-`ExternalAssetIdentity` への命名集約・schema 整合・identity CI)。**A-2 (event 移行) 以降は
-未実装**で、着手は承認待ち。本文の規範記述は実装と同期させており、乖離を見つけたら
-どちらかが誤りである — A-1 を再実装しないこと。
+`ExternalAssetIdentity` への命名集約・schema 整合・identity CI)。**A-2 (event 移行) は未実装**。
+Slice 1〜3 (additive、production writer は v1 のまま) は**着手承認済み**、
+Slice 4 (v2 書込みへの切替) は **§6-a の再 sign-off 待ち**。
+本文の規範記述は実装と同期させており、乖離を見つけたらどちらかが誤りである —
+A-1 を再実装しないこと。
 
 ---
 
@@ -651,73 +662,119 @@ v1 は「`UNKNOWN` を含む v1 event は `SKIPPED` にして cursor を進め�
 
 新規 event は必ず v2。v1 は retention で自然に消える。migration patch は書かない。
 
-## 6-a. v2 書込みの rollout fence (v2.3.8)
+## 6-a. v2 書込みの rollout fence (v2.3.9)
 
-### 撤回する前提
+### 撤回 1: 停止条件が片方向だった (v2.3.8 で訂正済み)
 
-A-2 の分割案は停止条件を「新 projector が v1 と v2 を両方読めるか」と書いていた。**片方向で
-不十分**である。危険なのは逆向き — **旧 AP が v2 を読む**方であり、これは全コードを 1 コミットで
-変えても消えない。コードは同時に変わるが、**デプロイは同時ではない**からである。
+A-2 Slice 4 の停止条件を「新 projector が v1 と v2 を両方読めるか」と書いていた。危険なのは
+逆向き — **旧 AP が v2 を読む**方であり、コードを 1 コミットで変えてもデプロイは同時でないため
+消えない。旧 AP が leader のまま v2 event を掴み、`FAILED` 化するか、最悪は **cursor を通過**
+させて静かに欠落させる。
 
-成立する系列:
+### 撤回 2: 旧バイナリに新契約を守らせようとしていた (v2.3.9)
 
-1. 先に更新された AP が v2 event を書き始める
-2. 旧 AP がまだ projector leader、あるいは lease reclaim 後に leader になる
-3. 旧 AP は v2 decoder を持たない
-4. その v2 event を誤処理する — `FAILED` 化、あるいは `UNRESOLVED` 扱いで **cursor を通過**させて
-   静かに欠落させる、あるいは例外で **repository ごと投影停止**させる
+v2.3.8 は「v1-only AP は自分で fail-closed になる」「stale leader は読めない版を claim しない」
+と書いた。**成立しない。** 旧バイナリは既にデプロイ済みで、その guard を持っていない。実際、
+projector の view 選択は `doc.type === 'lineage_event'` **だけ**で、schema version で分離して
+いない。したがって:
 
-3 のうち最悪は「cursor 通過」で、旧 AP が正常終了したように見えたまま lineage が消える。
+- 「旧 AP が自分を無効化する」は**保証に使えない**。新バイナリに書いた fail-closed は、
+  *次に* 起動する新バイナリにしか効かない。
+- 「旧 reader を模した新実装テスト」も**不十分**。`readSchemaVersions=[1]` を設定した新 reader
+  には新しい claim guard が入っており、本物の旧バイナリとは別物である。
 
-### Slice 4 を 4a / 4b に割る
+**旧バイナリの排除はアプリ内では達成できない。アプリ外の完了条件にする。**
+
+### 4a / 4b と、その間の barrier
 
 | | 内容 | writer | 完了条件 |
 |---|---|---|---|
-| **4a** | dual reader / projector / replay / spool を**全 AP に配布**する。v2 を読めるが**書かない** | v1 のまま | 全 AP が v2-read-capable であることを**観測**できる |
-| **4b** | durable な write-version flag を **CAS で v2 へ切替**。以後 producer は v2 を書く | v2 | v2 event が 1 件でも書かれたら不可逆 (下記 rollback 参照) |
+| **4a** | dual reader / projector / replay / **spool** を全 AP へ配布 | v1 | 下記 barrier が `ACTIVE` に到達できる状態 |
+| **4b** | write-version flag を `ACTIVE` へ CAS | v2 | v2 を 1 件でも書いたら `minReaderSchemaVersion` は不可逆 |
 
-4a と 4b は**別デプロイ**である。4b は再デプロイではなく**運用操作** (flag の CAS) にする。
-そうしないと「切替の瞬間」がデプロイの進行に依存し、混在窓を制御できない。
+#### authoritative membership は外から与える
 
-### AP capability の登録と観測
+capability 文書の**存在から全 AP を推測しない**。capability を 1 つも登録しない旧 node は、
+推測ベースでは「いない」ことになり、それがまさに危険な node である。
 
-`nemaki_lineage` に AP ごとの capability 文書を置く。既存の `LeaderElection` が
-node 単位の文書を持つので、そこに相乗りする。
+activation を要求する側が **`expectedNodeIds`** (Kubernetes ReplicaSet / Pod UID、あるいは
+運用が把握している node 集合) を渡し、その digest を activation token に封じる。
 
 ```
-_id: lineage_ap_capability:{nodeId}
-  readSchemaVersions : [1, 2]        // このバイナリが decode できる版
-  writeSchemaVersion : 1             // 現在書いている版
-  heartbeatAt        : epoch millis
+_id: lineage_write_version
+  state                     : IDLE | PREPARING | ACTIVE
+  generation                : 単調増加
+  expectedMembershipDigest  : SHA-256(sorted expectedNodeIds)
+  ackedNodeIds              : [...]        // PREPARING 中に埋まる
+  writeSchemaVersion        : 1 | 2
+  minReaderSchemaVersion    : 1 | 2        // 単調増加。下げない
+  firstV2DeliveryId         : ...          // 最初に v2 を書いた記録
+  activatedAt               : ...
 ```
 
-- 各 AP は起動時と heartbeat ごとに自分の値を書く。
-- 4b の CAS は、**heartbeat が生きている全 AP が `readSchemaVersions` に 2 を含む**ことを
-  確認してからでなければ成功しない。確認は flag 切替と同一 CAS の前提条件として行い、
-  管理 API は満たさない場合 `409` と**不足している nodeId 一覧**を返す。
-- heartbeat が切れている AP は「いない」とみなす。**それが再参加したときに弾く**のが次項。
+**最小構成の代替**: 4b の瞬間だけ全 AP を停止し、新版 1 台へ scale-down して切り替えてから
+scale-up する。membership の推測が要らないので、これが最も単純かつ安全であり、
+**単一 AP 構成ではこちらを既定とする**。
 
-### v2 activation 後の契約
+#### 二段階 barrier
 
-| # | 契約 | 実装 |
+1. `PREPARING(generation, expectedMembershipDigest)` を CAS で作成する。
+2. **各 AP が自分で generation に ACK する。** 新バイナリだけが ACK のコードを持つので、
+   ACK の存在そのものが「この node は新版である」証拠になる。capability 文書の事前読取
+   (誰かが以前書いた値) では、その node が *今* 新版で動いている保証にならない。
+3. `ackedNodeIds ⊇ expectedNodeIds` かつ digest 一致を確認して `ACTIVE` へ CAS。
+4. **generation が変われば過去の ACK は無効**。ACK は `(nodeId, generation)` で記録し、
+   古い generation の ACK を再利用できないようにする。
+
+#### アプリ外の完了条件 (4a → 4b の前提)
+
+以下は**運用手順として明記し、activation の前提条件**とする。アプリはこれを検証できない。
+
+- 旧 ReplicaSet / Deployment revision が削除されている
+- LB / Service の target から旧 Pod が外れている
+- 旧 Pod が停止している (Terminating ではなく消滅)
+
+`expectedNodeIds` はこの確認後の実際の node 集合であり、確認前の値を使ってはならない。
+
+### 版を二軸にする
+
+| flag | 可変性 | 意味 |
 |---|---|---|
-| 1 | **v1-only AP の再参加を拒否** | 起動時に write-version flag を読み、`2` かつ自分が 2 を読めないなら **lineage subsystem を fail-closed で無効化**して WARN + metric。CMIS 本体は起動させる (lineage の都合で ECM を止めない) |
-| 2 | **stale な旧 projector leader が v2 event に触れない** | projector は event を claim する前に `schemaVersion` を見て、自分が読めない版なら **claim せず・finalize せず・cursor を進めず**、`lineage.projection.blocked{reason=unreadable_schema}` を上げて停止する。§8-b の CAS claim に version 条件を足すので、旧 AP が claim を取っても write が通らない |
-| 3 | **v2 を 1 件でも書いた後の通常 rollback は禁止** | write-version flag が 2 になった時刻と最初の v2 `deliveryId` を flag 文書に記録する。v1-only binary は契約 1 で自ら無効化するため、rollback は「動くが lineage が壊れる」ではなく「lineage が止まる」になる |
-| 4 | **rollback 手順** | ① producer 側 writer を停止 (mode を `DIRECT` ではなく **emit 停止**) → ② v2 backlog を drain (未 publish の v2 event が 0 になるまで待つ、または spool へ退避) → ③ write-version flag を CAS で 1 へ戻す → ④ v2-capable な版へ戻す。**②を省いた rollback は禁止**: v1-only AP は v2 backlog を投影できず、契約 2 で停止するだけになる |
-| 5 | **混在テストの双方向** | 「新 reader が v1/v2 を読む」だけでなく「**旧 reader が v2 を触れない**」を決定的テストにする。旧 reader は `readSchemaVersions=[1]` を宣言した projector として構成し、v2 event に対して claim も cursor 前進も**起きない**ことを assert する |
+| `writeSchemaVersion` | 1 ⇄ 2 | producer が今書く版。rollback で 1 に戻せる |
+| `minReaderSchemaVersion` | **単調増加のみ** | v2 を最初に永続化した時点で 2 になり、二度と下がらない |
 
-### 4a / 4b 切替中の欠落回収
+v1 書込みへ戻しても、**v2 を読めないバイナリは参加できない**。journal / dead letter / spool に
+v2 が 1 件でも残っている限り、それを読めない reader は不正だからである。
+rollback で writer を 1 に戻すことと、v1-only バイナリへ戻すことは**別物**であり、後者は
+`minReaderSchemaVersion=2` の下では許されない。
 
-spool が実効化するのは Slice 4 である。切替窓で lineage を落とさないために:
+### spool readiness を capability に入れる
 
-- **4a では spool を先に有効化する** (writer は v1 のまま)。spool 自体は書込み版に依存しないので、
-  4a の時点で durable 化しておけば 4b の窓は spool に守られる。
-- 4b の CAS 直後の窓で v2 を書いた AP と、まだ flag を読み込んでいない AP が同居し得る。
-  flag はキャッシュせず **emit ごとに読む** (CouchDB の 1 read。emit は既に I/O を伴う)。
-- それでも取りこぼした場合の回収は §9 の repair API を使う。**新規手順は作らない** —
-  spool + repair で回収できないケースがあるなら、それは 4b の完了条件が甘いということなので、
-  手順を足すのではなく完了条件を厳しくする。
+spool は 4a で有効化する。4a の完了条件に以下を含める:
+
+- `spoolReady=true` — spool ディレクトリが**永続 volume** 上にあり、書込みと **fsync** が
+  実際に成功することを起動時に検証済み
+- この検証に失敗した AP は ACK しない (= barrier が `ACTIVE` に到達しない)
+
+**flag 読取に失敗したときは版を推測しない。** producer は emit をあきらめず、
+**spool へ送る**。読取不能の状態で v1 とも v2 とも決めないための規則である。
+
+**残余として明記する**: spool 書込みにも失敗した場合、その lineage は失われる。
+§9 の repair は「journal か spool に記録が残っていること」を前提としており、
+どちらにも無いものは復元できない。したがって「repair で回収できる」とは**言えない**。
+`lineage.emit.dropped{reason=flag_unreadable_and_spool_failed}` を出し、alert 対象とする。
+
+### 決定的テスト (Slice 4a の完了条件)
+
+| # | 系列 | 期待 |
+|---|---|---|
+| 1 | capability を一切登録しない legacy node が `expectedNodeIds` に居る | `ACTIVE` への CAS が失敗し、不足 nodeId を返す |
+| 2 | capability 確認後・`ACTIVE` CAS 前に node が失効 / membership 変更 | CAS が digest 不一致で失敗する |
+| 3 | 古い `generation` の ACK が残っている | 新 generation では再利用されない |
+| 4 | stale な旧 leader 相当が v2 view を読む | (新 reader では) claim も cursor 前進も起きない。**ただしこれは旧バイナリの保証ではなく、新バイナリ同士の混在保証である**ことをテスト名と javadoc に明記する |
+| 5 | `writeSchemaVersion` を 1 へ戻す | `minReaderSchemaVersion` は 2 のまま |
+| 6 | terminal / dead letter / spool に v2 が残る状態で v1-only rollback | 拒否される |
+| 7 | flag 読取不能 | v1 とも v2 とも書かず spool へ。spool も失敗したら metric が上がる |
 
 ### この節が閉じるまで Slice 4 は着手しない
 
