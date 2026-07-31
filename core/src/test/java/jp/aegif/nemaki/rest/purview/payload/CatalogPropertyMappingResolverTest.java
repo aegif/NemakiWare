@@ -152,23 +152,60 @@ class CatalogPropertyMappingResolverTest {
         @Test
         void testSaveRejectsWhatLoadRejects() {
             for (String name : List.of("cloudFileUrl", "qualifiedName", "externalFileId", " ")) {
-                assertTrue(CatalogPropertyMappingResolver.isUnusableMapping("nemaki:x", name), name);
+                assertNotNull(CatalogPropertyMappingResolver.rejectionFor("nemaki:x", name), name);
                 assertFalse(CatalogPropertyMappingResolver.validateMappings(Map.of(
                                 "nemaki:document", Map.of("nemaki:x",
                                         new CatalogPropertyMappingResolver.PropertyMapping(true, name))))
                         .isEmpty(), name + " passed validateMappings");
             }
-            // the input side, through the same predicate and the same validator
-            assertTrue(CatalogPropertyMappingResolver.isUnusableMapping(
-                    "nemaki:cloudFileUrl", "legacyCloudUrl"));
+            // the input side, through the same entry point and the same validator
+            assertEquals(CatalogPropertyMappingResolver.Rejection.FORBIDDEN_SOURCE_PROPERTY,
+                    CatalogPropertyMappingResolver.rejectionFor(
+                            "nemaki:cloudFileUrl", "legacyCloudUrl"));
             assertFalse(CatalogPropertyMappingResolver.validateMappings(Map.of(
                             "nemaki:document", Map.of("nemaki:cloudFileUrl",
                                     new CatalogPropertyMappingResolver.PropertyMapping(
                                             true, "legacyCloudUrl"))))
                     .isEmpty(), "a forbidden source property passed validateMappings");
 
-            assertFalse(CatalogPropertyMappingResolver.isUnusableMapping("nemaki:dept",
-                    "department"));
+            assertNull(CatalogPropertyMappingResolver.rejectionFor("nemaki:dept", "department"));
+        }
+
+        /**
+         * The rejection names the rule that fired, so an operator is not told a forbidden source
+         * property has a blank or reserved name.
+         */
+        @Test
+        void testTheRejectionSaysWhichRuleFired() {
+            assertEquals(CatalogPropertyMappingResolver.Rejection.FORBIDDEN_SOURCE_PROPERTY,
+                    CatalogPropertyMappingResolver.rejectionFor("nemaki:cloudFileUrl", "anything"));
+            assertEquals(CatalogPropertyMappingResolver.Rejection.BLANK_CATALOG_NAME,
+                    CatalogPropertyMappingResolver.rejectionFor("nemaki:dept", "  "));
+            assertEquals(CatalogPropertyMappingResolver.Rejection.RESERVED_CATALOG_NAME,
+                    CatalogPropertyMappingResolver.rejectionFor("nemaki:dept", "cloudFileUrl"));
+
+            for (CatalogPropertyMappingResolver.Rejection r
+                    : CatalogPropertyMappingResolver.Rejection.values()) {
+                assertFalse(r.reason().isBlank(), r + " has no operator message");
+            }
+        }
+
+        /** validateMappings reports the specific reason, not one message for every case. */
+        @Test
+        void testSaveErrorsNameTheRuleThatFired() {
+            List<String> forbidden = CatalogPropertyMappingResolver.validateMappings(Map.of(
+                    "nemaki:document", Map.of("nemaki:cloudFileUrl",
+                            new CatalogPropertyMappingResolver.PropertyMapping(
+                                    true, "legacyCloudUrl"))));
+            assertEquals(1, forbidden.size());
+            assertTrue(forbidden.get(0).contains("under any name"), forbidden.get(0));
+
+            List<String> reserved = CatalogPropertyMappingResolver.validateMappings(Map.of(
+                    "nemaki:document", Map.of("nemaki:dept",
+                            new CatalogPropertyMappingResolver.PropertyMapping(
+                                    true, "cloudFileUrl"))));
+            assertEquals(1, reserved.size());
+            assertTrue(reserved.get(0).contains("reserved"), reserved.get(0));
         }
     }
 

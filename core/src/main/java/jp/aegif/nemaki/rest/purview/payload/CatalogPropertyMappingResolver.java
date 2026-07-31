@@ -38,8 +38,12 @@ public class CatalogPropertyMappingResolver {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /**
-     * Core entity attribute names used by nemaki_document and nemaki_folder.
-     * Custom catalogName values must not collide with these.
+     * Core entity attribute names used by {@code nemaki_document} and {@code nemaki_folder}.
+     *
+     * <p>The <em>output</em> half of {@link #rejectionFor}: a mapping may not write over one of
+     * these. The <em>input</em> half is {@link #FORBIDDEN_SOURCE_PROPERTY_IDS}, and both are
+     * needed — a mapping can carry a forbidden property out under a name that is not on this
+     * list at all.
      */
     /**
      * CMIS properties that may never be projected, whatever the mapping calls the output.
@@ -242,9 +246,11 @@ public class CatalogPropertyMappingResolver {
                     // A reserved catalogName lets a custom property overwrite a core attribute
                     // — including cloudFileUrl, which increment A-1g sets to null precisely so
                     // that no stored URL reaches the catalog.
-                    if (enabled && isUnusableMapping(propEntry.getKey(), catalogName)) {
+                    Rejection rejection = enabled
+                            ? rejectionFor(propEntry.getKey(), catalogName) : null;
+                    if (rejection != null) {
                         warnOnceAboutRejectedMapping(typeEntry.getKey(), propEntry.getKey(),
-                                catalogName);
+                                catalogName, rejection);
                         // this mapping only; the rest of the projection is unaffected
                         continue;
                     }
@@ -341,27 +347,53 @@ public class CatalogPropertyMappingResolver {
      * as the map key — {@code " cloudFileUrl"} would not collide, but a configuration containing
      * it is a mistake either way, and {@link #validateMappings} has always trimmed.
      */
-    static boolean isUnusableCatalogName(String catalogName) {
-        if (catalogName == null || catalogName.trim().isEmpty()) {
-            return true;
-        }
-        return RESERVED_ATTRIBUTE_NAMES.contains(catalogName.trim());
-    }
-
-    /** A source property that must not be projected under any output name. */
-    static boolean isForbiddenSourceProperty(String cmisPropertyId) {
-        return cmisPropertyId != null
-                && FORBIDDEN_SOURCE_PROPERTY_IDS.contains(cmisPropertyId.trim());
-    }
-
     /**
-     * The whole predicate: both ends of the mapping.
+     * Why a mapping may not be projected, or {@code null} if it may.
      *
-     * <p>One method so that save and load cannot check different things — the previous split was
-     * how the output rule ended up enforced in two places and the input rule in none.
+     * <p><b>The one entry point.</b> Save, load and the payload boundary all call this and nothing
+     * else, because the previous arrangement — a boolean for load, two separate booleans for save,
+     * one of the two for the payload — is exactly the split that let the output-name rule be
+     * enforced in two places while the input rule was enforced in none.
+     *
+     * <p>It returns a reason rather than a boolean so that {@link #validateMappings} can still
+     * tell an operator which end of the mapping is wrong without re-deriving it.
      */
-    static boolean isUnusableMapping(String cmisPropertyId, String catalogName) {
-        return isForbiddenSourceProperty(cmisPropertyId) || isUnusableCatalogName(catalogName);
+    static Rejection rejectionFor(String cmisPropertyId, String catalogName) {
+        if (cmisPropertyId != null
+                && FORBIDDEN_SOURCE_PROPERTY_IDS.contains(cmisPropertyId.trim())) {
+            return Rejection.FORBIDDEN_SOURCE_PROPERTY;
+        }
+        if (catalogName == null || catalogName.trim().isEmpty()) {
+            return Rejection.BLANK_CATALOG_NAME;
+        }
+        if (RESERVED_ATTRIBUTE_NAMES.contains(catalogName.trim())) {
+            return Rejection.RESERVED_CATALOG_NAME;
+        }
+        return null;
+    }
+
+    /** Why {@link #rejectionFor} refused a mapping; each spells its own operator message. */
+    public enum Rejection {
+
+        /** The CMIS property may not leave the repository under any name. */
+        FORBIDDEN_SOURCE_PROPERTY(
+                "that CMIS property is not projected to the catalog under any name"),
+
+        BLANK_CATALOG_NAME("the catalog attribute name is empty"),
+
+        /** The name belongs to a core entity attribute, which a custom value must not replace. */
+        RESERVED_CATALOG_NAME(
+                "the catalog attribute name is reserved for a core entity attribute");
+
+        private final String reason;
+
+        Rejection(String reason) {
+            this.reason = reason;
+        }
+
+        public String reason() {
+            return reason;
+        }
     }
 
     /**
@@ -369,13 +401,15 @@ public class CatalogPropertyMappingResolver {
      * configuration and an operator needs to see it without it drowning the log.
      */
     private void warnOnceAboutRejectedMapping(String typeId, String cmisPropertyId,
-                                              String catalogName) {
+                                              String catalogName, Rejection rejection) {
         String key = typeId + "\u0000" + cmisPropertyId + "\u0000" + catalogName;
         if (warnedRejectedMappings.add(key)) {
-            logger.warn("Ignoring property mapping '{}.{}' -> catalog attribute '{}': the name is"
-                    + " blank or reserved for a core entity attribute. The mapping is skipped;"
-                    + " other mappings still project. Remove it via the admin UI.",
-                    typeId, cmisPropertyId, catalogName);
+            // the reason comes from the rejection, so a forbidden source property is not
+            // reported as a blank or reserved name
+            logger.warn("Ignoring property mapping '{}.{}' -> catalog attribute '{}': {}."
+                    + " The mapping is skipped; other mappings still project."
+                    + " Remove it via the admin UI.",
+                    typeId, cmisPropertyId, catalogName, rejection.reason());
         }
         rejectedMappingCount.incrementAndGet();
     }
@@ -399,19 +433,12 @@ public class CatalogPropertyMappingResolver {
                     continue;
                 }
                 String loc = typeEntry.getKey() + "." + propEntry.getKey();
-                if (m.catalogName() == null || m.catalogName().trim().isEmpty()) {
-                    errors.add("Property " + loc + " has an empty catalog attribute name");
-                    continue;
-                }
-                // same predicate the load path uses, so save and load cannot disagree
-                if (isForbiddenSourceProperty(propEntry.getKey())) {
-                    errors.add("Property " + loc + " may not be projected to the catalog under any"
-                            + " name: '" + propEntry.getKey() + "' is a forbidden source property");
-                    continue;
-                }
-                if (isUnusableCatalogName(m.catalogName())) {
-                    errors.add("Property " + loc
-                            + " uses reserved catalog attribute name '" + m.catalogName() + "'");
+                // the same entry point load and the payload boundary use, so the three cannot
+                // drift apart; the reason is what makes the message specific
+                Rejection rejection = rejectionFor(propEntry.getKey(), m.catalogName());
+                if (rejection != null) {
+                    errors.add("Property " + loc + " -> '" + m.catalogName() + "': "
+                            + rejection.reason());
                 }
             }
         }
