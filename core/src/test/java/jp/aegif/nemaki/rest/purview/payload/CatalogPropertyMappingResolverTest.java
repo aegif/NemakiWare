@@ -148,6 +148,81 @@ class CatalogPropertyMappingResolverTest {
                     r.getEnabledMappings("bedroom", "nemaki:document"));
         }
 
+        /**
+         * Every shape a hand-edited or corrupted {@code catalogName} can take.
+         *
+         * <p>These used to fall back to the CMIS property id, so a mapping nobody configured
+         * projected under a name nobody chose. There is no compatibility contract for that, so
+         * each is now a configuration error: the one mapping is dropped, counted and warned about.
+         */
+        @Test
+        void testAMalformedCatalogNameDropsOnlyThatMapping() {
+            String[] malformed = {
+                    "\"catalogName\": null",
+                    "\"catalogName\": 1",
+                    "\"catalogName\": {}",
+                    "\"catalogName\": []",
+                    "\"catalogName\": true",
+                    "\"unrelated\": \"x\"" };   // the field missing entirely
+            for (String field : malformed) {
+                CatalogPropertyMappingResolver r = withStoredJson("""
+                        { "nemaki:document": {
+                            "nemaki:dept": { "enabled": true, %s },
+                            "nemaki:team": { "enabled": true, "catalogName": "team" } } }
+                        """.formatted(field));
+
+                assertEquals(Map.of("nemaki:team", "team"),
+                        r.getEnabledMappings("bedroom", "nemaki:document"),
+                        "with " + field);
+                assertEquals(1, r.getRejectedMappingCount(), "with " + field);
+            }
+        }
+
+        /** And the reason names the shape, so an operator knows what to edit. */
+        @Test
+        void testAMalformedCatalogNameIsDistinguishedFromAnAbsentOne() {
+            CatalogPropertyMappingResolver missing = withStoredJson("""
+                    { "nemaki:document": { "nemaki:dept": { "enabled": true } } }
+                    """);
+            assertTrue(missing.getEnabledMappings("bedroom", "nemaki:document").isEmpty());
+
+            CatalogPropertyMappingResolver malformed = withStoredJson("""
+                    { "nemaki:document": {
+                        "nemaki:dept": { "enabled": true, "catalogName": 1 } } }
+                    """);
+            assertTrue(malformed.getEnabledMappings("bedroom", "nemaki:document").isEmpty());
+
+            assertEquals("the stored configuration has no catalog attribute name",
+                    CatalogPropertyMappingResolver.Rejection.MISSING_CATALOG_NAME.reason());
+            assertEquals("the stored catalog attribute name is not a string",
+                    CatalogPropertyMappingResolver.Rejection.MALFORMED_CATALOG_NAME.reason());
+        }
+
+        /**
+         * A disabled mapping projects nothing, so it is kept as configuration whatever shape it
+         * is in — the admin UI still has to show it — and never counted as rejected.
+         */
+        @Test
+        void testADisabledMappingIsKeptVerbatimWhateverItsShape() {
+            CatalogPropertyMappingResolver r = withStoredJson("""
+                    { "nemaki:document": {
+                        "nemaki:a": { "enabled": false, "catalogName": "cloudFileUrl" },
+                        "nemaki:b": { "enabled": false, "catalogName": 1 },
+                        "nemaki:c": { "enabled": false },
+                        "nemaki:cloudFileUrl": { "enabled": false, "catalogName": "legacyUrl" } } }
+                    """);
+
+            Map<String, CatalogPropertyMappingResolver.PropertyMapping> loaded =
+                    r.loadMappings("bedroom").get("nemaki:document");
+            assertEquals(4, loaded.size(), "a disabled mapping is configuration, not a rejection");
+            assertEquals("cloudFileUrl", loaded.get("nemaki:a").catalogName());
+            assertNull(loaded.get("nemaki:b").catalogName(), "not a string, so not invented");
+            assertNull(loaded.get("nemaki:c").catalogName());
+
+            assertTrue(r.getEnabledMappings("bedroom", "nemaki:document").isEmpty());
+            assertEquals(0, r.getRejectedMappingCount());
+        }
+
         /** Save and load must agree, or one of them is the hole. */
         @Test
         void testSaveRejectsWhatLoadRejects() {
