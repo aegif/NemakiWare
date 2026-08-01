@@ -44,9 +44,13 @@ public class AtlasLineageSink implements LineageTargetSink {
     }
 
     @Override
-    public LineageTargetSinkResult publish(LineageEvent event) throws Exception {
+    public LineageTargetSinkResult publish(LineageRecord record) throws Exception {
         if (!isAvailable()) {
             return LineageTargetSinkResult.failure("Atlas sink not available");
+        }
+        String unresolved = LineageSinkAssets.firstUnresolvedReason(record);
+        if (unresolved != null) {
+            return LineageTargetSinkResult.failure(unresolved);
         }
 
         SimpleHttpClient client = this.httpClient
@@ -57,12 +61,12 @@ public class AtlasLineageSink implements LineageTargetSink {
         String url = endpoint + "/api/atlas/v2/entity/bulk";
 
         // Build Atlas entity payload
-        Map<String, Object> payload = buildAtlasPayload(event);
+        Map<String, Object> payload = buildAtlasPayload(record);
         HttpResponse<String> response = client.postJson(url, payload);
 
         if (response.statusCode() >= 200 && response.statusCode() < 300) {
-            logger.debug("Published lineage event to Atlas: eventKey={}, status={}",
-                    event.eventKey(), response.statusCode());
+            logger.debug("Published lineage record to Atlas: processIdentity={}, status={}",
+                    record.processIdentity(), response.statusCode());
             return LineageTargetSinkResult.success(1, "Atlas OK");
         } else {
             String body = response.body();
@@ -78,18 +82,22 @@ public class AtlasLineageSink implements LineageTargetSink {
                 && !atlasConfig.getEndpoint().isBlank();
     }
 
-    Map<String, Object> buildAtlasPayload(LineageEvent event) {
+    Map<String, Object> buildAtlasPayload(LineageRecord record) {
         List<Map<String, Object>> entities = new ArrayList<>();
 
         // Process entity
         Map<String, Object> processEntity = new LinkedHashMap<>();
         processEntity.put("typeName", "Process");
         Map<String, Object> processAttrs = new LinkedHashMap<>();
-        processAttrs.put("qualifiedName", "nemakiware:" + event.repositoryId() + ":" +
-                (event.processType() != null ? event.processType().name().toLowerCase() : "unknown") +
-                ":" + event.eventKey());
-        processAttrs.put("name", event.processType() != null ? event.processType().name() : "UNKNOWN");
-        processAttrs.put("description", "NemakiWare lineage event: " + event.eventKey());
+        // processIdentity is the eventKey on a v1 record and the processKey on a v2 one, which is
+        // what the design's §3 says the Process qualifiedName is built from in each case. The two
+        // rules produce different names for one business operation, and §3 accepts that: the v1
+        // Process stays as an audit fact and the v2 compensation gets its own.
+        processAttrs.put("qualifiedName", "nemakiware:" + record.repositoryId() + ":" +
+                (record.processType() != null ? record.processType().name().toLowerCase() : "unknown") +
+                ":" + record.processIdentity());
+        processAttrs.put("name", record.processType() != null ? record.processType().name() : "UNKNOWN");
+        processAttrs.put("description", "NemakiWare lineage event: " + record.processIdentity());
         processEntity.put("attributes", processAttrs);
 
         // Input and output entities.
@@ -100,8 +108,8 @@ public class AtlasLineageSink implements LineageTargetSink {
         // matches no entity in Atlas, so every Process was linked to nothing. The prefix belongs
         // to the Process's OWN qualifiedName (above), which has no other source; an input already
         // is a qualifiedName.
-        processAttrs.put("inputs", entityReferences(event.inputs()));
-        processAttrs.put("outputs", entityReferences(event.outputs()));
+        processAttrs.put("inputs", entityReferences(record.inputs()));
+        processAttrs.put("outputs", entityReferences(record.outputs()));
 
         entities.add(processEntity);
 
@@ -111,20 +119,27 @@ public class AtlasLineageSink implements LineageTargetSink {
     /**
      * References to already-published catalog entities, by their own qualifiedName.
      *
-     * <p>typeName is {@code DataSet} because that is what {@code nemaki_document} extends. Note
-     * that {@code nemaki_folder} extends {@code Referenceable}, not {@code DataSet}, so an event
-     * whose input is a folder (EXPORT_ZIP_FOLDER, for one) cannot be expressed as a Process input
-     * under the current schema — see PurviewSchemaPayloadFactory.
+     * <p>A legacy (v1) reference has no kind, so it can only be referenced as {@code DataSet} —
+     * which is what {@code nemaki_document} extends, and is why a v1 event whose input is a folder
+     * links to nothing ({@code nemaki_folder} extends {@code Referenceable}). A typed reference
+     * knows its own Atlas type and says so, which is how that stops being true after A-2.
      */
-    private static List<Map<String, Object>> entityReferences(List<String> qualifiedNames) {
-        List<Map<String, Object>> refs = new ArrayList<>();
-        if (qualifiedNames != null) {
-            for (String qualifiedName : qualifiedNames) {
-                refs.add(Map.of("typeName", "DataSet", "uniqueAttributes",
-                        Map.of("qualifiedName", qualifiedName)));
-            }
+    private static List<Map<String, Object>> entityReferences(List<LineageAssetRef> refs) {
+        List<Map<String, Object>> references = new ArrayList<>();
+        for (LineageAssetRef ref : refs) {
+            String typeName = switch (ref) {
+                case LineageAssetRef.Typed typed -> typed.kind().atlasTypeName();
+                case LineageAssetRef.LegacyName ignored -> "DataSet";
+                // Unreachable: publish() returns before building a payload when any reference is
+                // unresolved. Enumerated rather than defaulted so that a fourth case is a compile
+                // error here instead of a silent DataSet.
+                case LineageAssetRef.Unresolved unresolved -> throw new IllegalStateException(
+                        "unresolved asset must not reach the payload: " + unresolved);
+            };
+            references.add(Map.of("typeName", typeName, "uniqueAttributes",
+                    Map.of("qualifiedName", ref.qualifiedName())));
         }
-        return refs;
+        return references;
     }
 
     private static void validateEndpoint(String endpoint) {

@@ -62,7 +62,7 @@ class DataplexLineageSinkTest {
                 .targets(List.of("dataplex"))
                 .build();
 
-        LineageTargetSinkResult result = sink.publish(event);
+        LineageTargetSinkResult result = sink.publish(LineageRecord.fromV1(event));
         assertFalse(result.success());
     }
 
@@ -76,7 +76,7 @@ class DataplexLineageSinkTest {
                 .targets(List.of("dataplex"))
                 .build();
 
-        Map<String, Object> payload = sink.buildProcessPayload(event, "test-process");
+        Map<String, Object> payload = sink.buildProcessPayload(LineageRecord.fromV1(event), "test-process");
         assertEquals("test-process", payload.get("name"));
         assertNotNull(payload.get("displayName"));
         assertNotNull(payload.get("origin"));
@@ -93,7 +93,7 @@ class DataplexLineageSinkTest {
                 .targets(List.of("dataplex"))
                 .build();
 
-        Map<String, Object> payload = sink.buildEventPayload(event);
+        Map<String, Object> payload = sink.buildEventPayload(LineageRecord.fromV1(event));
         assertNotNull(payload.get("startTime"));
         assertNotNull(payload.get("endTime"));
 

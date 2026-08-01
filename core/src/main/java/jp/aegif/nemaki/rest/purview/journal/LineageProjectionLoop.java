@@ -174,7 +174,7 @@ public class LineageProjectionLoop {
                 }
 
                 // Publish to the target
-                LineageTargetSinkResult result = sink.publish(event);
+                LineageTargetSinkResult result = sink.publish(LineageRecord.fromV1(event));
 
                 if (result.success()) {
                     journalStore.updatePublishStatus(event.eventId(), targetName, LineagePublishStatus.PUBLISHED);
@@ -265,7 +265,7 @@ public class LineageProjectionLoop {
                     break;
                 }
 
-                LineageTargetSinkResult result = sink.publish(event);
+                LineageTargetSinkResult result = sink.publish(LineageRecord.fromV1(event));
 
                 if (result.success()) {
                     journalStore.updatePublishStatus(event.eventId(), targetName, LineagePublishStatus.PUBLISHED);

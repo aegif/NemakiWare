@@ -38,46 +38,53 @@ public class PurviewLineageSink implements LineageTargetSink {
     }
 
     @Override
-    public LineageTargetSinkResult publish(LineageEvent event) throws Exception {
-        if (event == null) {
-            return LineageTargetSinkResult.skipped("null event");
+    public LineageTargetSinkResult publish(LineageRecord record) throws Exception {
+        if (record == null) {
+            return LineageTargetSinkResult.skipped("null record");
+        }
+        String unresolved = LineageSinkAssets.firstUnresolvedReason(record);
+        if (unresolved != null) {
+            return LineageTargetSinkResult.failure(unresolved);
         }
 
         PurviewConnectionRequest connReq = buildConnectionRequest();
 
         // Build process entity payload
-        String processTypeName = mapProcessTypeName(event.processType());
-        String processQualifiedName = buildProcessQualifiedName(event);
+        String processTypeName = mapProcessTypeName(record.processType());
+        String processQualifiedName = buildProcessQualifiedName(record);
 
         Map<String, Object> processEntity = new LinkedHashMap<>();
         processEntity.put("typeName", processTypeName);
         Map<String, Object> processAttrs = new LinkedHashMap<>();
         processAttrs.put("qualifiedName", processQualifiedName);
-        processAttrs.put("name", processTypeName + ":" + event.eventKey());
+        processAttrs.put("name", processTypeName + ":" + record.processIdentity());
 
-        // Add snapshot attributes as custom attributes
-        if (!event.snapshotAttributes().isEmpty()) {
-            for (Map.Entry<String, String> entry : event.snapshotAttributes().entrySet()) {
+        // v1's event-level snapshot as custom attributes on the Process. These are event-level
+        // facts (requestedBy, reason, objectCount), so the Process is where they belong; the
+        // defect §2 fixed was copying them onto every *asset* as well, which is handled below.
+        // A v2 record has none: its attributes travel on the endpoints.
+        if (!record.legacyEventAttributes().isEmpty()) {
+            for (Map.Entry<String, String> entry : record.legacyEventAttributes().entrySet()) {
                 processAttrs.put(entry.getKey(), entry.getValue());
             }
         }
 
         // Build inputs
         List<Map<String, Object>> inputRefs = new ArrayList<>();
-        for (String uri : event.inputs()) {
-            inputRefs.add(buildEntityRef(uri));
+        for (LineageAssetRef ref : record.inputs()) {
+            inputRefs.add(buildEntityRef(ref.qualifiedName()));
         }
         processAttrs.put("inputs", inputRefs);
 
         // Build outputs
         List<Map<String, Object>> outputRefs = new ArrayList<>();
-        for (String uri : event.outputs()) {
-            outputRefs.add(buildEntityRef(uri));
+        for (LineageAssetRef ref : record.outputs()) {
+            outputRefs.add(buildEntityRef(ref.qualifiedName()));
         }
         processAttrs.put("outputs", outputRefs);
 
         // Add process-type-specific required fields
-        addProcessTypeAttributes(processAttrs, event);
+        addProcessTypeAttributes(processAttrs, record);
 
         processEntity.put("attributes", processAttrs);
 
@@ -85,11 +92,8 @@ public class PurviewLineageSink implements LineageTargetSink {
         List<Map<String, Object>> entities = new ArrayList<>();
         entities.add(processEntity);
 
-        for (String uri : event.inputs()) {
-            entities.add(buildAssetEntity(uri, event.snapshotAttributes()));
-        }
-        for (String uri : event.outputs()) {
-            entities.add(buildAssetEntity(uri, event.snapshotAttributes()));
+        for (LineageAssetRef ref : record.allAssets()) {
+            entities.add(buildAssetEntity(ref, record.legacyEventAttributes()));
         }
 
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -98,14 +102,14 @@ public class PurviewLineageSink implements LineageTargetSink {
         PurviewEntityPublishResult result = registryClient.bulkCreateOrUpdateEntities(connReq, payload);
 
         if (result.isSuccess()) {
-            logger.debug("Published lineage to Purview: eventKey={}, entities={}",
-                    event.eventKey(), result.getPublishedCount());
+            logger.debug("Published lineage to Purview: processIdentity={}, entities={}",
+                    record.processIdentity(), result.getPublishedCount());
             return LineageTargetSinkResult.success(result.getPublishedCount(),
                     "Published " + result.getPublishedCount() + " entities");
         } else {
             String msg = "Purview publish failed: " + result.getMessage();
-            logger.warn("Failed to publish lineage to Purview: eventKey={}, error={}",
-                    event.eventKey(), result.getMessage());
+            logger.warn("Failed to publish lineage to Purview: processIdentity={}, error={}",
+                    record.processIdentity(), result.getMessage());
             return LineageTargetSinkResult.failure(msg);
         }
     }
@@ -205,11 +209,21 @@ public class PurviewLineageSink implements LineageTargetSink {
     /**
      * Builds a process qualifiedName.
      *
-     * <p>Format: {@code nemaki://{repositoryId}/{process-segment}/{eventKey}}
+     * <p>Format: {@code nemaki://{repositoryId}/{process-segment}/{processIdentity}}, where the
+     * identity is the v1 {@code eventKey} or the v2 {@code processKey} (§3).
      */
-    static String buildProcessQualifiedName(LineageEvent event) {
-        String segment = processTypeToSegment(event.processType());
-        return "nemaki://" + event.repositoryId() + "/" + segment + "/" + event.eventKey();
+    static String buildProcessQualifiedName(LineageRecord record) {
+        String segment = processTypeToSegment(record.processType());
+        return "nemaki://" + record.repositoryId() + "/" + segment + "/" + record.processIdentity();
+    }
+
+    /** The names only, for the scheme-sniffing branches below that predate typed endpoints. */
+    private static List<String> qualifiedNames(List<LineageAssetRef> refs) {
+        List<String> names = new ArrayList<>(refs.size());
+        for (LineageAssetRef ref : refs) {
+            names.add(ref.qualifiedName());
+        }
+        return names;
     }
 
     private static String processTypeToSegment(LineageProcessType pt) {
@@ -239,7 +253,39 @@ public class PurviewLineageSink implements LineageTargetSink {
     /**
      * Builds a full asset entity for the bulk payload with type-specific required fields.
      */
-    private static Map<String, Object> buildAssetEntity(String uri, Map<String, String> snapshotAttributes) {
+    private static Map<String, Object> buildAssetEntity(LineageAssetRef ref,
+                                                        Map<String, String> legacyEventAttributes) {
+        return switch (ref) {
+            // A typed reference carries its own kind and its own attributes, so neither has to be
+            // guessed from the name and neither comes from an event-level map. This is the whole
+            // point of §2's endpoint-local snapshot: the v1 branch below applies one map to every
+            // asset, so a two-document event gave both documents the same name.
+            case LineageAssetRef.Typed typed -> typedAssetEntity(typed);
+            case LineageAssetRef.LegacyName legacy ->
+                    legacyAssetEntity(legacy.qualifiedName(), legacyEventAttributes);
+            case LineageAssetRef.Unresolved unresolved -> throw new IllegalStateException(
+                    "unresolved asset must not reach the payload: " + unresolved);
+        };
+    }
+
+    /** An asset whose kind and attributes the event itself carries (v2). */
+    private static Map<String, Object> typedAssetEntity(LineageAssetRef.Typed typed) {
+        LineageEndpoint endpoint = typed.endpoint();
+        Map<String, Object> entity = new LinkedHashMap<>();
+        entity.put("typeName", endpoint.kind().atlasTypeName());
+
+        Map<String, Object> attrs = new LinkedHashMap<>();
+        attrs.put("qualifiedName", endpoint.catalogQualifiedName());
+        // The allowlist in EndpointKind is already checked against the real Atlas schema by
+        // EndpointKindSchemaAlignmentTest, so everything here is an attribute the type has.
+        attrs.putAll(endpoint.attributes());
+        entity.put("attributes", attrs);
+        return entity;
+    }
+
+    /** A v1 asset: kind inferred from the name, attributes from the event-level snapshot. */
+    private static Map<String, Object> legacyAssetEntity(String uri,
+                                                         Map<String, String> snapshotAttributes) {
         Map<String, Object> entity = new LinkedHashMap<>();
         String typeName = inferAssetTypeName(uri);
         entity.put("typeName", typeName);
@@ -280,53 +326,56 @@ public class PurviewLineageSink implements LineageTargetSink {
      * Adds process-type-specific required fields to the process entity attributes.
      */
     private static void addProcessTypeAttributes(Map<String, Object> processAttrs,
-                                                  LineageEvent event) {
-        if (event.processType() == null) return;
-        Map<String, String> snap = event.snapshotAttributes();
+                                                  LineageRecord record) {
+        if (record.processType() == null) return;
+        Map<String, String> snap = record.legacyEventAttributes();
 
-        switch (event.processType()) {
+        switch (record.processType()) {
             case IMPORT_FILESYSTEM, IMPORT_UPLOADED -> {
-                processAttrs.putIfAbsent("repositoryId", event.repositoryId());
-                if (!event.outputs().isEmpty()) {
-                    processAttrs.putIfAbsent("folderId", extractLastSegment(event.outputs().get(0)));
+                processAttrs.putIfAbsent("repositoryId", record.repositoryId());
+                if (!record.outputs().isEmpty()) {
+                    processAttrs.putIfAbsent("folderId",
+                            extractLastSegment(record.outputs().get(0).qualifiedName()));
                 }
                 processAttrs.putIfAbsent("importMode", snap.getOrDefault("importMode", "uploaded"));
             }
             case EXPORT_FILESYSTEM, EXPORT_ZIP_FOLDER, EXPORT_SELECTED_OBJECTS -> {
-                processAttrs.putIfAbsent("repositoryId", event.repositoryId());
-                processAttrs.putIfAbsent("exportMode", event.processType().name().toLowerCase());
+                processAttrs.putIfAbsent("repositoryId", record.repositoryId());
+                processAttrs.putIfAbsent("exportMode", record.processType().name().toLowerCase());
             }
             case CLOUD_SYNC_UPLOAD, CLOUD_SYNC_DOWNLOAD -> {
-                processAttrs.putIfAbsent("repositoryId", event.repositoryId());
-                if (!event.outputs().isEmpty()) {
-                    processAttrs.putIfAbsent("objectId", extractLastSegment(event.outputs().get(0)));
+                processAttrs.putIfAbsent("repositoryId", record.repositoryId());
+                if (!record.outputs().isEmpty()) {
+                    processAttrs.putIfAbsent("objectId",
+                            extractLastSegment(record.outputs().get(0).qualifiedName()));
                 }
                 processAttrs.putIfAbsent("cloudProvider", snap.getOrDefault("provider", "unknown"));
                 // Find cloud:// URI in inputs or outputs for externalStableKey
-                for (String uri : event.inputs()) {
+                for (String uri : qualifiedNames(record.inputs())) {
                     if (uri.startsWith("cloud://")) { processAttrs.putIfAbsent("externalStableKey", uri); break; }
                 }
-                for (String uri : event.outputs()) {
+                for (String uri : qualifiedNames(record.outputs())) {
                     if (uri.startsWith("cloud://")) { processAttrs.putIfAbsent("externalStableKey", uri); break; }
                 }
             }
             case ARCHIVE_COLD, ARCHIVE_LOCAL -> {
-                processAttrs.putIfAbsent("repositoryId", event.repositoryId());
-                if (!event.outputs().isEmpty()) {
-                    String outputUri = event.outputs().get(0);
+                processAttrs.putIfAbsent("repositoryId", record.repositoryId());
+                if (!record.outputs().isEmpty()) {
+                    String outputUri = record.outputs().get(0).qualifiedName();
                     processAttrs.putIfAbsent("archiveId", extractLastSegment(outputUri));
                     processAttrs.putIfAbsent("externalStableKey", outputUri);
                 }
             }
             case FILE_SHARE_SYNC_UPLOAD, FILE_SHARE_SYNC_DOWNLOAD -> {
-                processAttrs.putIfAbsent("repositoryId", event.repositoryId());
-                if (!event.outputs().isEmpty()) {
-                    processAttrs.putIfAbsent("objectId", extractLastSegment(event.outputs().get(0)));
+                processAttrs.putIfAbsent("repositoryId", record.repositoryId());
+                if (!record.outputs().isEmpty()) {
+                    processAttrs.putIfAbsent("objectId",
+                            extractLastSegment(record.outputs().get(0).qualifiedName()));
                 }
                 processAttrs.putIfAbsent("cloudProvider",
                         snap.getOrDefault("sourceSystem", snap.getOrDefault("provider", "unknown")));
                 // Find external source URI in inputs for externalStableKey
-                for (String uri : event.inputs()) {
+                for (String uri : qualifiedNames(record.inputs())) {
                     if (uri.contains("://") && !uri.startsWith("nemaki://")) {
                         processAttrs.putIfAbsent("externalStableKey", uri);
                         break;
@@ -336,7 +385,7 @@ public class PurviewLineageSink implements LineageTargetSink {
             case EXTERNAL_NOTE_IMPORT, EXTERNAL_ATTACHMENT_IMPORT,
                  BUSINESS_RECORD_IMPORT, CHAT_ATTACHMENT_IMPORT,
                  MAIL_MESSAGE_IMPORT, MAIL_ATTACHMENT_IMPORT -> {
-                processAttrs.putIfAbsent("repositoryId", event.repositoryId());
+                processAttrs.putIfAbsent("repositoryId", record.repositoryId());
                 // Use targetFolderId from snapshot (set by CanonicalImportService),
                 // NOT from outputs which contains the created document objectId.
                 processAttrs.putIfAbsent("folderId",
@@ -347,7 +396,7 @@ public class PurviewLineageSink implements LineageTargetSink {
                         snap.getOrDefault("sourceSystem", "") + ":"
                         + snap.getOrDefault("sourceObjectId", ""));
                 // External source URI as stableKey
-                for (String uri : event.inputs()) {
+                for (String uri : qualifiedNames(record.inputs())) {
                     if (uri.contains("://") && !uri.startsWith("nemaki://")) {
                         processAttrs.putIfAbsent("externalStableKey", uri);
                         break;

@@ -61,7 +61,7 @@ class AtlasLineageSinkTest {
                 .targets(List.of("atlas"))
                 .build();
 
-        LineageTargetSinkResult result = sink.publish(event);
+        LineageTargetSinkResult result = sink.publish(LineageRecord.fromV1(event));
         assertFalse(result.success());
     }
 
@@ -76,7 +76,7 @@ class AtlasLineageSinkTest {
                 .targets(List.of("atlas"))
                 .build();
 
-        Map<String, Object> payload = sink.buildAtlasPayload(event);
+        Map<String, Object> payload = sink.buildAtlasPayload(LineageRecord.fromV1(event));
         assertNotNull(payload);
         assertTrue(payload.containsKey("entities"));
 
@@ -113,7 +113,7 @@ class AtlasLineageSinkTest {
                 .targets(List.of("atlas"))
                 .build();
 
-        Map<String, Object> payload = sink.buildAtlasPayload(event);
+        Map<String, Object> payload = sink.buildAtlasPayload(LineageRecord.fromV1(event));
         List<Map<String, Object>> entities = (List<Map<String, Object>>) payload.get("entities");
         Map<String, Object> attrs = (Map<String, Object>) entities.get(0).get("attributes");
 
@@ -145,7 +145,7 @@ class AtlasLineageSinkTest {
                 .targets(List.of("atlas"))
                 .build();
 
-        Map<String, Object> payload = sink.buildAtlasPayload(event);
+        Map<String, Object> payload = sink.buildAtlasPayload(LineageRecord.fromV1(event));
         List<Map<String, Object>> entities = (List<Map<String, Object>>) payload.get("entities");
         Map<String, Object> attrs = (Map<String, Object>) entities.get(0).get("attributes");
 

@@ -157,7 +157,7 @@ class PurviewLineageSinkTest {
                 .addInputObject("bedroom", "doc-1")
                 .build();
 
-        String qn = PurviewLineageSink.buildProcessQualifiedName(event);
+        String qn = PurviewLineageSink.buildProcessQualifiedName(LineageRecord.fromV1(event));
         assertTrue(qn.startsWith("nemaki://bedroom/import-processes/"));
         assertTrue(qn.contains(event.eventKey()));
     }
@@ -190,7 +190,7 @@ class PurviewLineageSinkTest {
                 .targets(List.of("purview"))
                 .build();
 
-        LineageTargetSinkResult result = sink.publish(event);
+        LineageTargetSinkResult result = sink.publish(LineageRecord.fromV1(event));
 
         assertTrue(result.success());
         assertEquals(3, result.entityCount());
@@ -208,7 +208,7 @@ class PurviewLineageSinkTest {
                 .addInputObject("bedroom", "doc-1")
                 .build();
 
-        LineageTargetSinkResult result = sink.publish(event);
+        LineageTargetSinkResult result = sink.publish(LineageRecord.fromV1(event));
 
         assertFalse(result.success());
         assertTrue(result.message().contains("Auth error"));

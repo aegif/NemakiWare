@@ -818,7 +818,7 @@ capability を明示的な語彙にして、ACK と barrier の両方に持た�
 
 | capability | 意味 | 由来 |
 |---|---|---|
-| `read:v2` | v2 event を復号し projector へ流せる | A-2 Slice 1 |
+| `read:v2` | v2 event を復号し projector へ流せる | **A-2 Slice 2 の最終 commit** — 型が在るだけの Slice 1 ではない |
 | `spool:v2` | 版非依存 fact を materialize できる | D-spool |
 | `sequencer:event-first` | 8-a v2 (event-first UNSEQUENCED + fenced finalizer) | D-rest |
 | `cursor:cas` | 8-c (単調 CAS。publish 永続化を確認してから前進) | D-rest |
@@ -1917,9 +1917,34 @@ dead letter・3 sink をまとめて書き換えることになる。それは�
 | slice | 内容 | この時点で production は |
 |---|---|---|
 | **1** | v2 型・delivery の tagged union・identity 束縛・**`occurredAt` を要求する純関数 builder** (§3)・processType ごとの shape 表・**正規化 read model** (v1 からも v2 からも作れる)。配線なし | v1 を書き、v1 を読む |
-| **2** | codec (CouchDB JSON ⇄ v2) と consumer の read model 移行 (controller / projector / dead letter / 3 sink)。**供給するのは v1 だけ**で振る舞いは変えない | v1 を書き、**版非依存の経路で** v1 を読む |
+| **2** | codec (CouchDB JSON ⇄ v2) と consumer の read model 移行。**供給するのは v1 だけ**で振る舞いは変えない | v1 を書き、**版非依存の経路で** v1 を読む |
 | **3** | `creationPayloadDigest` + 409 完全一致 + integrity 例外 → spool + metric、`operationId` 検査 (store・sink 直前) | v1 を書く |
 | **4a / 4b** | §6-a の rollout fence と writer 切替 | — |
+
+Slice 2 の内訳 (各 commit が単独で green・v1 のまま):
+
+| | 内容 | なぜここで切れるか |
+|---|---|---|
+| **2a** | sink 契約を `publish(LineageRecord)` に。3 sink を移行 | 呼び出し側が envelope を**まだ持っている**ので、失敗時の dead letter は現行のまま渡せる |
+| **2b** | admin API の表示経路を projection 経由に | store の署名を変えない |
+| **2c** | projector の claim / cursor / status 判断を `LineageRecord` に。**envelope は失敗時のために保持する** | 同上 |
+| **2d-1** | 版タグ付き**無損失 journal entry** 抽象と v2 codec を足す。**store の公開戻り値は変えない** | 追加のみ |
+| **2d-2** | store の read 署名を `LineageRecord` へ**一斉に**切替。`NoopLineageJournalStore`・Couch の内部 helper・purge/reaper・controller/projector の呼び出し・`CouchLineageDeadLetterStore.replay` の lookup を同時に | 部分適用できない (下記) |
+
+`append` / `appendAll` は Slice 2 の全期間で **v1 のまま**である。
+
+**2d を 1 commit にできない理由。** store の read が `LineageRecord` だけを返すようになると、
+失敗時に dead letter へ渡す envelope が**どこからも得られなくなる**。`LineageRecord` は復旧
+payload ではない (上記) ので、そこから envelope を作ることは意図的にできない。
+`CouchLineageDeadLetterStore.replay` も `findByEventId` の戻りを `LineageEvent` に代入している。
+したがって**無損失 entry 抽象が先**で、署名の切替はその後の一斉適用になる。
+
+**`recordId` と `eventId` は v2 で別物になる。** `updatePublishStatus` / `discardEvent` /
+`getRetryCount` は現在いずれも引数を eventId とみなし、Couch の `_id` を
+`lineage:` + その値で作る。v2 では journal `_id` は `deliveryId` 由来なので、この 3 つは
+**`recordId` を受け取る**ように再定義し、`recordId → _id` の変換を 1 箇所に集約する。
+`findByEventId` (監査上の eventId で引く) と `findByRecordId` (journal 文書を引く) も分ける —
+v2 では前者で引いて後者の値で更新すると**別の文書を叩く**。
 
 **`read:v2` capability (§6-a) を名乗ってよいのは Slice 2 の完了後**である。decoder クラスが
 存在することと「v2 を復号して projector へ流せる」ことは別で、前者だけで capability を
