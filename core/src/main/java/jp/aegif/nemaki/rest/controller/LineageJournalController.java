@@ -250,6 +250,16 @@ public class LineageJournalController {
         // exactly why the refusal has to live here.
         jp.aegif.nemaki.rest.purview.journal.LineageJournalRow existing =
                 journalStore.findByRecordId(recordId);
+        if (existing == null) {
+            // Null is "absent" OR "the read failed" — findByRecordId cannot say which. Proceeding
+            // on null would let a transient read error bypass the undecodable guard above and
+            // discard the very row the guard protects. Fail closed; a real absence gets its 404,
+            // a transient error gets retried by the operator.
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("status", "error");
+            response.put("message", "Event not found (or not readable right now): " + recordId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+        }
         if (existing instanceof jp.aegif.nemaki.rest.purview.journal.LineageJournalRow.Undecodable u) {
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("status", "error");

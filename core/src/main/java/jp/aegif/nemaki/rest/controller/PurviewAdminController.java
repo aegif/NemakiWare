@@ -483,7 +483,11 @@ public class PurviewAdminController {
         response.put("endedAt", jobState.getEndedAt());
         response.put("processedCount", jobState.getProcessedCount());
         response.put("failedCount", jobState.getFailedCount());
-        response.put("checkpoint", jobState.getCheckpoint());
+        // A job checkpoint has no streamKind to gate on, so the sanitiser is applied by shape:
+        // normalize() rewrites only five-field snapshot lines and passes everything else
+        // (change tokens, timestamps) through untouched.
+        response.put("checkpoint", jp.aegif.nemaki.rest.purview.publish
+                .CloudMetadataSnapshotFormat.normalize(jobState.getCheckpoint()));
         response.put("errorSummary", jobState.getErrorSummary());
         return response;
     }
@@ -492,7 +496,12 @@ public class PurviewAdminController {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("repositoryId", cursorState.getRepositoryId());
         response.put("streamKind", cursorState.getStreamKind());
-        response.put("cursor", cursorState.getCursor());
+        // The overview is what the admin UI renders in full, so it is the response that matters
+        // most — and the one this sanitisation was missing from while the single-cursor endpoint
+        // had it. Every path that emits a stored cursor goes through sanitizeCursorForResponse,
+        // or the cloud-metadata snapshot's raw drive URLs (sharing tokens included) ride along.
+        response.put("cursor", sanitizeCursorForResponse(
+                cursorState.getStreamKind(), cursorState.getCursor()));
         response.put("cursorKind", cursorState.getCursorKind());
         response.put("lastRunAt", cursorState.getLastRunAt());
         response.put("lastSuccessAt", cursorState.getLastSuccessAt());

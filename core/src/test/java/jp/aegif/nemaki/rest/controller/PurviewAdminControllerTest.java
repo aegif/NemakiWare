@@ -529,6 +529,44 @@ public class PurviewAdminControllerTest {
         assertFalse(String.valueOf(response.getBody().get("cursor")).contains("SECRET"));
     }
 
+    /**
+     * GET /state is the response the admin UI renders in full — the single-cursor endpoint was
+     * sanitized while this one leaked, twice. Every SECRET below must be gone from the overview.
+     */
+    @Test
+    void getState_sanitizesCloudMetadataCursorsInTheOverview() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        CallContext callContext = mock(CallContext.class);
+        when(callContext.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(request.getAttribute("CallContext")).thenReturn(callContext);
+        controller.setHttpRequest(request);
+
+        PurviewStateOverview overview = new PurviewStateOverview(
+                "NemakiWare",
+                new PurviewSchemaState("NemakiWare", "", "", "", "", ""),
+                java.util.List.of(),
+                java.util.List.of(new PurviewCursorState(
+                        "bedroom", "cloud-metadata-snapshot",
+                        "doc-1|google|file-1|https://drive.example/d?authkey=SECRET|2026-03-20",
+                        "snapshot", "2026-03-20T04:00:00Z", "2026-03-20T04:00:00Z", "", "", 0, 0)),
+                java.util.List.of(),
+                java.util.List.of(),
+                java.util.List.of());
+        when(schemaPlannerService.getCurrentSchemaState())
+                .thenReturn(new PurviewSchemaState("NemakiWare", "", "", "", "", ""));
+        when(stateOverviewService.getStateOverview("NemakiWare")).thenReturn(overview);
+
+        ResponseEntity<Map<String, Object>> response = controller.getState();
+
+        String body = String.valueOf(response.getBody());
+        assertFalse(body.contains("SECRET"), body);
+        assertFalse(body.contains("authkey"), body);
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> cursors =
+                (java.util.List<Map<String, Object>>) response.getBody().get("cursors");
+        assertEquals("doc-1|google|file-1||2026-03-20", cursors.get(0).get("cursor"));
+    }
+
     /** Other streams' cursors (change tokens, timestamps) pass through untouched. */
     @Test
     void getCursorState_leavesOtherStreamCursorsAlone() {
