@@ -258,6 +258,28 @@ public interface LineageEmitter {
     void emit(LineageEvent event);
 
     /**
+     * Emit a version-free business fact.
+     *
+     * <p>This is the seam the A-2 Slice-4 write flip turns on: today it projects the fact to v1
+     * — unconditionally, via {@link LineageFact#toV1Event()}, whose strings the producer supplied
+     * verbatim — and hands it to {@link #emit(LineageEvent)}. After the flip the implementation
+     * chooses the v2 mapping instead; the producers do not change again. The default is
+     * deliberately final-in-spirit: no implementation overrides it before the fenced flip, and
+     * the test suite pins that journaled mode reaches only the v1 append.
+     *
+     * <p>Same failure contract as {@link #emit(LineageEvent)}: never throws, never blocks the
+     * business operation.
+     *
+     * @param fact the business fact (must not be null)
+     */
+    default void emit(LineageFact fact) {
+        if (fact == null) {
+            return;
+        }
+        emit(fact.toV1Event());
+    }
+
+    /**
      * Returns {@code true} if this emitter will actually process events
      * (i.e. mode is not {@code disabled}).
      */

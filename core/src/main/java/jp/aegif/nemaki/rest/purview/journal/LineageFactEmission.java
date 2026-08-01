@@ -1,0 +1,83 @@
+/**
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ */
+package jp.aegif.nemaki.rest.purview.journal;
+
+import java.util.function.Supplier;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * The fail-open boundary for fact construction — the one place a producer touches lineage from a
+ * business method.
+ *
+ * <h2>Why construction needs its own boundary</h2>
+ *
+ * <p>{@code emit()} already never throws, but {@link LineageFact} is <em>constructed</em> before
+ * it is emitted, and construction is deliberately strict: typed endpoint factories validate
+ * stable keys, the shape table rejects malformed connections, A-1's scope rules run. The old v1
+ * builder accepted nearly anything, so producers grew up building events inside the same broad
+ * {@code try} that owns the business response — with the new strictness, a lineage validation
+ * bug there would report failure for an import that in fact succeeded. ECM availability takes
+ * strict priority over lineage capture, including over lineage's own input validation.
+ *
+ * <p>So the supplier runs inside this boundary, and nothing escapes it. A construction failure
+ * is logged with the operation coordinates — never rethrown, and there is nothing durable to
+ * write yet (no event exists; the file dead-letter records events). The loss is bounded to the
+ * one fact, and the log line names it.
+ */
+public final class LineageFactEmission {
+
+    private static final Logger logger = LoggerFactory.getLogger(LineageFactEmission.class);
+
+    private LineageFactEmission() {
+    }
+
+    /**
+     * Builds the fact and emits it; never throws.
+     *
+     * @param emitter       the active emitter; null is treated as lineage-off
+     * @param factSupplier  runs entirely inside the fail-open boundary
+     * @param whatHappened  operation coordinates for the failure log (repository, operation id,
+     *                      process type — never payload values)
+     */
+    public static void emitSafely(LineageEmitter emitter, Supplier<LineageFact> factSupplier,
+                                  String whatHappened) {
+        if (emitter == null || !emitter.isActive()) {
+            return;
+        }
+        LineageFact fact;
+        try {
+            fact = factSupplier.get();
+        } catch (RuntimeException e) {
+            logger.warn("Lineage fact could not be constructed (business operation unaffected):"
+                    + " {} — {}", whatHappened, e.getMessage());
+            return;
+        }
+        if (fact == null) {
+            return;
+        }
+        try {
+            emitter.emit(fact);
+        } catch (RuntimeException e) {
+            // emit() contracts to never throw; this catch is the boundary keeping that contract
+            // even against an implementation that breaks it.
+            logger.warn("Lineage emission failed (business operation unaffected): {} — {}",
+                    whatHappened, e.getMessage());
+        }
+    }
+}

@@ -65,7 +65,7 @@ class DirectLineageEmitterTest {
     @Test
     void emit_nullEventIsIgnored() throws Exception {
         DirectLineageEmitter emitter = new DirectLineageEmitter(mockConfig, List.of(mockSink));
-        emitter.emit(null);
+        emitter.emit((LineageEvent) null);
         verify(mockSink, never()).publish(any());
     }
 

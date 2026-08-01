@@ -2012,7 +2012,7 @@ identity 分離を入れる前の記述で、成立しない。
 | | 内容 | 状態 |
 |---|---|---|
 | **A-1** | `EndpointKind` / `EndpointAttribute` / `LineageEndpoint` / `LineageIdentity` / `LineageCanonicalHash` / `LineageRepositoryScope`。型・属性契約・identity 符号化 | 完了 (producer 未配線) |
-| **A-2** | `LineageEvent` を v2 形状へ移行、`creationPayloadDigest` と integrity 検査、cross-repo 検証 4層の**配線**、producer 全書き換え、chunking、`FILE_SHARE_SYNC_UPLOAD` 生成拒否 | **Slice 1a/1b/2a/2b/2c/2d-1 完了** (下表)。writer は v1 のまま。残: 2d-2、Slice 3、producer 書き換え、chunking、4a/4b |
+| **A-2** | `LineageEvent` を v2 形状へ移行、`creationPayloadDigest` と integrity 検査、cross-repo 検証 4層の**配線**、producer 全書き換え、chunking、`FILE_SHARE_SYNC_UPLOAD` 生成拒否 | **Slice 1a〜3 完了** (下表)。writer は v1 のまま。残: producer 書き換え・chunking (設計固定済み)・4a/4b |
 
 | A-2 slice | 実装状態 |
 |---|---|
@@ -2025,6 +2025,7 @@ identity 分離を入れる前の記述で、成立しない。
 | 2d-2a (view 両 type 化 + Rhino 実行検証、型付き行結果、recordId helper) | 完了 |
 | 2d-2b (store read の一斉切替、recordId 分離、Undecodable の無変異、v2 の DISCARD 禁止) | 完了 |
 | 3 (appendV2 の 409 完全一致・`LineageIntegrityException`・§7 pre-sink gate・`REJECTED`) | 完了 (writer は v1 のまま — appendV2 は production 未呼出) |
+| P-1 (`LineageFact` + LegacyV1Projection・emitter seam・fail-open facade) | 完了 (producer 未変換 — seam は無条件で v1 射影) |
 
 A-1 を分けたのは `LineageEvent` の移行対象が 14 ファイル・`inputs()/outputs()` 参照 79 箇所に
 及び、片方だけ入った木が壊れるため。A-1 単体で型と identity は閉じている。
