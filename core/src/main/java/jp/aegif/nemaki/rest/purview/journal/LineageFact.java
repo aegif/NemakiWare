@@ -79,7 +79,8 @@ public record LineageFact(
             LineageProcessType processType,
             List<String> inputs,
             List<String> outputs,
-            Map<String, String> snapshotAttributes
+            Map<String, String> snapshotAttributes,
+            String presetEventId
     ) {
         public LegacyV1Projection {
             if (processType == null) {
@@ -90,6 +91,22 @@ public record LineageFact(
             outputs = outputs == null ? List.of() : List.copyOf(outputs);
             snapshotAttributes = snapshotAttributes == null ? Map.of()
                     : Map.copyOf(snapshotAttributes);
+            presetEventId = presetEventId == null || presetEventId.isBlank()
+                    ? null : presetEventId;
+        }
+
+        /**
+         * The common form: the eventId is generated at emission (audit-only, as v1 always
+         * treated it).
+         *
+         * <p>Preset it only when the producer must hand its caller an id that resolves to the
+         * stored v1 event — ingest returns {@code lineageEventId} in its API response, and
+         * returning an id the journal does not contain would break that contract. The preset
+         * dies with the projection at the v2 flip.
+         */
+        public LegacyV1Projection(LineageProcessType processType, List<String> inputs,
+                                  List<String> outputs, Map<String, String> snapshotAttributes) {
+            this(processType, inputs, outputs, snapshotAttributes, null);
         }
     }
 
@@ -127,7 +144,8 @@ public record LineageFact(
      * <p>{@code occurredAt} is the fact's — allocated at fact establishment, per §3 — where the
      * old builder stamped it inside {@code build()}. It is not part of {@code eventKey}, so the
      * change is invisible to identity. {@code eventId} is generated here (audit-only, as v1
-     * always had it). {@code runId} stays empty: populating it would change the persisted v1
+     * always had it) unless the projection preset one so the producer could return a
+     * resolvable id. {@code runId} stays empty: populating it would change the persisted v1
      * envelope for no flip-relevant gain.
      */
     public LineageEvent toV1Event() {
@@ -137,7 +155,9 @@ public record LineageFact(
         }
         return new LineageEvent(
                 LineageEvent.CURRENT_SCHEMA_VERSION,
-                UUID.randomUUID().toString(),
+                legacyProjection.presetEventId() != null
+                        ? legacyProjection.presetEventId()
+                        : UUID.randomUUID().toString(),
                 LineageEvent.computeEventKey(repositoryId, legacyProjection.processType(),
                         legacyProjection.inputs(), legacyProjection.outputs()),
                 0L,

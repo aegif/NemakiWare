@@ -752,11 +752,19 @@ public class ArchiveResource extends ResourceBase {
 			CallContext systemContext = new SystemCallContext(repositoryId);
 			// The typed ARCHIVE endpoint needs the document's name, readable only before the
 			// deletion that archives it; the operation id is issued at operation start (§3).
+			// The read is lineage-only, so it must not be able to fail the archive: a lost name
+			// loses one fact inside the facade (loudly), never the deletion.
 			String lineageOperationId = java.util.UUID.randomUUID().toString();
-			jp.aegif.nemaki.model.Document documentBeforeArchive =
-					getContentService().getDocument(repositoryId, objectId);
-			String documentName = documentBeforeArchive != null
-					? documentBeforeArchive.getName() : null;
+			String documentName = null;
+			try {
+				jp.aegif.nemaki.model.Document documentBeforeArchive =
+						getContentService().getDocument(repositoryId, objectId);
+				documentName = documentBeforeArchive != null
+						? documentBeforeArchive.getName() : null;
+			} catch (Exception e) {
+				log.warn("Could not read document name for lineage (archive continues): "
+						+ e.getMessage());
+			}
 			// Use deleteDocument to properly handle attachments, renditions, and version series
 			getContentService().deleteDocument(systemContext, repositoryId, objectId, true, false);
 			if (cachePool != null) {

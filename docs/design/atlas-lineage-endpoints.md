@@ -1,7 +1,49 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.14 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜3 実装済み (writer は v1 のまま)・Slice 4 は §6-a の再 sign-off 待ち**
+status: **v2.3.15 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-2c 実装済み (writer は v1 のまま)・Slice 4 は §6-a の再 sign-off 待ち**
 revision:
+- v2.3.15 — producer P-2c (CloudDriveResource ×3・IngestLineageEmitter) 変換と、その Codex
+  レビュー (do-not-commit 7 件) への対応で確定した設計決定。
+  ① **GENERIC_EXTERNAL_INGEST を新設 (18 種目)** — v2.3.13 ⑤ の予告を実装。shape は
+  external ×1 → document ×1 (ingest family)。fact の分類は GENERIC_EXTERNAL_INGEST、
+  LegacyV1Projection.processType は IMPORT_UPLOADED のまま (v1 eventKey にはラベルが
+  hash されているため、flip まで両建てで運ぶ)。
+  ② **LegacyV1Projection に optional な presetEventId** — ingest API 応答の
+  `lineageEventId` は journal を引ける id でなければならない (operationId を返す案は
+  互換破壊としてレビューで却下)。producer が preset した id を toV1Event が使い、
+  無ければ従来どおり emission ごとに採番。preset は projection と共に flip で消える。
+  ③ **emitSafely は boolean (emitter へ引き渡したか) を返す** — id を返す契約の producer
+  が「emit されなかったのに解決不能な id を返す」ことを防ぐ。真 = 引き渡しであって
+  durable ではない (emit 自身が fail-open で、journal 失敗は dead-letter が id を保存
+  したまま replay する)。
+  ④ **敵対的 external id の方針を確定 — 剥離しない**。`?` / `#` を含む id は
+  ExternalAssetIdentity.parse が拒否し、facade が吸収する (capture 1 件の損失は意図的
+  — qualified name は可逆 base64 なので署名付き URL は動く credential になる。v1 が
+  平文で永続化していた方が欠陥)。OneDrive 様式の `!` は verbatim に通る。両方を
+  テストで固定。
+  ⑤ **fail-open の全面化** — 変換済み producer の業務経路に残る lineage コードは
+  UUID 採番と emitSafely 呼出しのみ。名前読取り (Archive/Retention の削除前
+  getDocument、cloud/ingest の最終名 read-back) と targets 解決は全て guard 済み
+  または supplier 内。operationId は業務 mutation の前に採番 (§3)。
+  ⑥ **ingest の documentName は最終 object の実名** — version-update 分岐では要求
+  fileName と実名が異なりうる。実名は typed v2 endpoint にのみ載り、v1 文字列には
+  参加しないので eventKey は不変。
+  ⑦ (再レビュー指摘) **`isActive()` も fail-open 境界の内側** — emitter 実装への
+  interface call なので、activity 検査が throw しても業務応答を壊せない。
+  ⑧ (再レビュー指摘) **ingest の percent-encoding は検証の後** — ExternalSourceUri は
+  encode する id segment (objectId / tenantId / messageStableId) の生値に
+  `?` / `#` / `%3F` / `%23` (大文字小文字不問) があれば encode 前に拒否する。encode が
+  先だと `?` が `%3F` になり ExternalAssetIdentity.parse の literal 検査を素通りして、
+  署名付き URL が可逆に qualified name へ入る。非 encode segment の literal は下流の
+  parse が拒否する。剥離ではなく拒否 (④ と同方針)。
+  例外 (三・四巡目レビュー指摘): **mailbox 名は別ポリシー** — IMAP mailbox 名は任意の
+  astring (RFC 9051 §9) であり、`#news.…` (§5.1.2.1 の namespace 慣行) も
+  `Questions?` も合法名。文法が許す文字の一律拒否は、正規 mailbox の lineage を
+  「import は成功し続けたまま」全損させる。mailbox segment の URL 判定は URL だけが
+  持つ特徴 = scheme (`://`) のみとし (署名付き URL は query 持ちでも fragment 借用の
+  OAuth token 持ちでも scheme を必ず持つ)、他は全て percent-encode して通す。
+  scheme 無しの query 風 suffix は合法 mailbox 名と区別不能なので通す (encode 済みで
+  不活性)。messageStableId / objectId / tenantId は厳格ポリシーのまま。
 - v2.3.14 — Slice 2d-1 (無損失 journal entry + v2 codec) の設計決定 2 点。
   ① **v2 文書は `type=lineage_event_v2`** — 旧バイナリの view は `doc.type==='lineage_event'`
   でしか選択しない (撤回 2) ので、v2 行は旧バイナリから**構造的に不可視**になる。手順で
@@ -197,7 +239,11 @@ fail-closed preflight (`e4b430584`) は差し戻した (`a37187861`)。ordered p
 
 ## 1. 全 LineageProcessType の producer 実態と input/output kind 対応表
 
-実装から採取 (推測なし)。`E` = external URI、`O` = `nemaki://{repo}/objects/{id}`、
+実装から採取 (推測なし)。**P-2 変換前の v1 実装の棚卸し** (行番号は当時のもの) —
+変換済み producer (Retention / Archive / CloudDrive / Ingest) は現在 `LineageFact` 経由で
+emit し、v1 文字列は LegacyV1Projection が verbatim に運ぶ (v2.3.15)。archetype null の
+IngestLineageEmitter 行は fact 側 `GENERIC_EXTERNAL_INGEST` / v1 側 `IMPORT_UPLOADED` の
+両建てになった。`E` = external URI、`O` = `nemaki://{repo}/objects/{id}`、
 `A` = `nemaki://{repo}/archives/{id}`。
 
 | processType | producer | inputs | outputs |
@@ -1887,9 +1933,11 @@ POST /api/v1/admin/lineage-journal/repair
 E2E のためだけに実装しない。
 
 - enum は legacy deserialization 互換のため**残す**。javadoc に `RESERVED / producer なし` と明記する。
-- business API E2E の分母は **producer のある 16 種**。v2.3.12 まで「17 種」と書いていたが、
-  同じ節が FILE_SHARE_SYNC_UPLOAD を synthetic のみと定めており、**分母と除外が矛盾**していた。
-  正しくは **16 positive + 1 生成拒否 (negative)**。
+- business API E2E の分母は **producer のある 17 種**。v2.3.12 まで「17 種 (全数)」→ v2.3.13 で
+  「16 + 1 拒否」に訂正 → v2.3.15 で GENERIC_EXTERNAL_INGEST (producer あり: archetype null の
+  connector 取込) が加わり **17 positive + 1 生成拒否 (negative)** が現在の受入条件。
+  注: GENERIC_EXTERNAL_INGEST の v2 event が現れるのは writer flip 後 — flip 前の E2E では
+  同経路の v1 event は IMPORT_UPLOADED として観測される (LegacyV1Projection)。
 - synthetic payload の単体テストのみ行う。
 - **`LineageEventBuilder` からの新規生成は拒否する** (`IllegalArgumentException`)。
   正式な producer を実装するまで、この値の event が新規に生まれない。
@@ -1897,7 +1945,7 @@ E2E のためだけに実装しない。
 | # | 受入項目 | 判定 |
 |---|---|---|
 | E-1 | schema apply が `applied:true` で完了 | `nemaki_folder_dataset` / `nemaki_import_artifact` / `nemaki_export_artifact` を含む |
-| E-2 | **producer のある 16** `LineageProcessType` の producer-shape matrix **+ RESERVED 1 種の生成拒否** | 実 business API から発火し、各 Process の inputs/outputs が期待 entity と E-17 の条件で**完全一致**。`FILE_SHARE_SYNC_UPLOAD` は生成拒否 (negative) + synthetic payload の単体テストのみ |
+| E-2 | **producer のある 17** `LineageProcessType` の producer-shape matrix **+ RESERVED 1 種の生成拒否** | 実 business API から発火し、各 Process の inputs/outputs が期待 entity と E-17 の条件で**完全一致**。`FILE_SHARE_SYNC_UPLOAD` は生成拒否 (negative) + synthetic payload の単体テストのみ |
 | E-3 | folder endpoint | `nemaki_folder_dataset` GUID に結線される |
 | E-4 | export artifact | `nemaki_export_artifact` が outputs に現れる |
 | E-5 | external / cloud / cold endpoint | `nemaki_external_asset` GUID に結線される |
@@ -2025,7 +2073,10 @@ identity 分離を入れる前の記述で、成立しない。
 | 2d-2a (view 両 type 化 + Rhino 実行検証、型付き行結果、recordId helper) | 完了 |
 | 2d-2b (store read の一斉切替、recordId 分離、Undecodable の無変異、v2 の DISCARD 禁止) | 完了 |
 | 3 (appendV2 の 409 完全一致・`LineageIntegrityException`・§7 pre-sink gate・`REJECTED`) | 完了 (writer は v1 のまま — appendV2 は production 未呼出) |
-| P-1 (`LineageFact` + LegacyV1Projection・emitter seam・fail-open facade) | 完了 (producer 未変換 — seam は無条件で v1 射影) |
+| P-1 (`LineageFact` + LegacyV1Projection・emitter seam・fail-open facade) | 完了 (seam は無条件で v1 射影) |
+| P-2a (RetentionScheduler: ARCHIVE_LOCAL / ARCHIVE_COLD) | 完了 (preservation test で eventKey 固定) |
+| P-2b (ArchiveResource: ARCHIVE_LOCAL force) | 完了 (削除前の名前読取りは guard 済み) |
+| P-2c (CloudDriveResource ×3・IngestLineageEmitter + `GENERIC_EXTERNAL_INGEST` 新設) | 完了 (v2.3.15 ①〜⑥。残 producer: ImportExportResource 5 箇所 + restore 系新設) |
 
 A-1 を分けたのは `LineageEvent` の移行対象が 14 ファイル・`inputs()/outputs()` 参照 79 箇所に
 及び、片方だけ入った木が壊れるため。A-1 単体で型と identity は閉じている。

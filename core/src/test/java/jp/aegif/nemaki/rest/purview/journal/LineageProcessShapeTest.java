@@ -88,8 +88,8 @@ public class LineageProcessShapeTest {
 
     /** The count is asserted so that adding a constant is a deliberate act here too. */
     @Test
-    public void theEnumHasSeventeenConstants() {
-        assertEquals(17, LineageProcessType.values().length,
+    public void theEnumHasEighteenConstants() {
+        assertEquals(18, LineageProcessType.values().length,
                 "a new process type needs a shape rule and a producer decision; if you added one,"
                         + " add its rule to LineageProcessShape and update this count");
     }
@@ -253,7 +253,8 @@ public class LineageProcessShapeTest {
                 LineageProcessType.CHAT_ATTACHMENT_IMPORT,
                 LineageProcessType.FILE_SHARE_SYNC_DOWNLOAD,
                 LineageProcessType.MAIL_MESSAGE_IMPORT,
-                LineageProcessType.MAIL_ATTACHMENT_IMPORT)) {
+                LineageProcessType.MAIL_ATTACHMENT_IMPORT,
+                LineageProcessType.GENERIC_EXTERNAL_INGEST)) {
             LineageProcessShape.validate(ingest,
                     List.of(external("slack:file-1")), List.of(doc("d1")));
             assertThrows(IllegalArgumentException.class,

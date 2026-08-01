@@ -99,13 +99,16 @@ public class LineageFactTest {
 
     /**
      * The projection's process type participates in eventKey and may differ from the fact's own
-     * classification — a null-archetype ingest is IMPORT_UPLOADED in v1 whatever v2 calls it.
+     * classification. This is the exact production combination: a null-archetype ingest is
+     * IMPORT_UPLOADED in v1 (that label is hashed into every existing eventKey of the type)
+     * while v2 calls it GENERIC_EXTERNAL_INGEST — unclassified connector ingest is not a user
+     * upload.
      */
     @Test
     public void theLegacyProcessTypeDrivesTheV1EventNotTheFactsOwn() {
         LineageFact fact = new LineageFact(
                 REPO,
-                LineageProcessType.EXTERNAL_ATTACHMENT_IMPORT,
+                LineageProcessType.GENERIC_EXTERNAL_INGEST,
                 "op-1",
                 OCCURRED,
                 List.of(LineageEndpoint.externalAsset(REPO, "slack://t1/files/f1", "slack")),
@@ -195,6 +198,153 @@ public class LineageFactTest {
         assertEquals(old.snapshotAttributes(), fromFact.snapshotAttributes());
     }
 
+    /** The CLOUD_SYNC_UPLOAD fact as CloudDriveResource builds it, against the old builder. */
+    @Test
+    public void theCloudUploadFactPreservesTheV1StringsExactly() {
+        LineageEvent old = new LineageEventBuilder()
+                .repositoryId(REPO)
+                .processType(LineageProcessType.CLOUD_SYNC_UPLOAD)
+                .addInputObject(REPO, "doc-1")
+                .addOutput("cloud://google/file-123")
+                .snapshotAttribute("provider", "google")
+                .targets(List.of("purview"))
+                .build();
+
+        LineageFact fact = new LineageFact(
+                REPO,
+                LineageProcessType.CLOUD_SYNC_UPLOAD,
+                "op-1",
+                OCCURRED,
+                List.of(LineageEndpoint.document(REPO, "doc-1", "a.txt")),
+                List.of(LineageEndpoint.cloudObject(REPO, "google", "file-123")),
+                List.of("purview"),
+                null,
+                new LineageFact.LegacyV1Projection(
+                        LineageProcessType.CLOUD_SYNC_UPLOAD,
+                        List.of(LineageEvent.qualifiedName(REPO, "doc-1")),
+                        List.of("cloud://google/file-123"),
+                        Map.of("provider", "google")));
+
+        LineageEvent fromFact = fact.toV1Event();
+        assertEquals(old.eventKey(), fromFact.eventKey());
+        assertEquals(old.inputs(), fromFact.inputs());
+        assertEquals(old.outputs(), fromFact.outputs());
+        assertEquals(old.snapshotAttributes(), fromFact.snapshotAttributes());
+    }
+
+    /** The ingest fact (canonical source URI verbatim, conditional snapshot keys preserved). */
+    @Test
+    public void theIngestFactPreservesTheV1StringsExactly() {
+        String sourceUri = "slack://tenant-1/files/F123";
+        LineageEvent old = new LineageEventBuilder()
+                .repositoryId(REPO)
+                .processType(LineageProcessType.CHAT_ATTACHMENT_IMPORT)
+                .addInput(sourceUri)
+                .addOutputObject(REPO, "doc-9")
+                .correlationId("corr-9")
+                .snapshotAttribute("sourceSystem", "slack")
+                .snapshotAttribute("sourceArchetype", "CHAT_CONTEXT")
+                .snapshotAttribute("sourceObjectId", "F123")
+                .snapshotAttribute("sourceObjectType", "file")
+                .snapshotAttribute("targetFolderId", "folder-1")
+                .targets(List.of("purview"))
+                .build();
+
+        java.util.Map<String, String> v1Snapshot = new java.util.LinkedHashMap<>();
+        v1Snapshot.put("sourceSystem", "slack");
+        v1Snapshot.put("sourceArchetype", "CHAT_CONTEXT");
+        v1Snapshot.put("sourceObjectId", "F123");
+        v1Snapshot.put("sourceObjectType", "file");
+        v1Snapshot.put("targetFolderId", "folder-1");
+
+        LineageFact fact = new LineageFact(
+                REPO,
+                LineageProcessType.CHAT_ATTACHMENT_IMPORT,
+                "op-9",
+                OCCURRED,
+                List.of(LineageEndpoint.externalAsset(REPO, sourceUri, "slack")),
+                List.of(LineageEndpoint.document(REPO, "doc-9", "attachment.png")),
+                List.of("purview"),
+                "corr-9",
+                new LineageFact.LegacyV1Projection(
+                        LineageProcessType.CHAT_ATTACHMENT_IMPORT,
+                        List.of(sourceUri),
+                        List.of(LineageEvent.qualifiedName(REPO, "doc-9")),
+                        v1Snapshot));
+
+        LineageEvent fromFact = fact.toV1Event();
+        assertEquals(old.eventKey(), fromFact.eventKey());
+        assertEquals(old.snapshotAttributes(), fromFact.snapshotAttributes());
+        assertEquals(old.correlationId(), fromFact.correlationId());
+    }
+
+    // ------------------------------------------------------------------ hostile external ids
+
+    /**
+     * Real cloud file ids carry punctuation — OneDrive's contain {@code !}. Those must flow
+     * through the typed endpoint verbatim: the stable key is what the catalog sync already
+     * writes entities under, so any rewriting here would name a second entity.
+     */
+    @Test
+    public void punctuatedCloudFileIdsFlowThroughVerbatim() {
+        String oneDriveId = "01BYE5RZ6QN3ZWBTUFOFD3GSPGOHDJD36K!1025";
+        LineageFact fact = new LineageFact(
+                REPO,
+                LineageProcessType.CLOUD_SYNC_UPLOAD,
+                "op-1",
+                OCCURRED,
+                List.of(LineageEndpoint.document(REPO, "doc-1", "a.txt")),
+                List.of(LineageEndpoint.cloudObject(REPO, "microsoft", oneDriveId)),
+                List.of("purview"),
+                null,
+                new LineageFact.LegacyV1Projection(
+                        LineageProcessType.CLOUD_SYNC_UPLOAD,
+                        List.of(LineageEvent.qualifiedName(REPO, "doc-1")),
+                        List.of("cloud://microsoft/" + oneDriveId),
+                        Map.of("provider", "microsoft")));
+        assertEquals(List.of("cloud://microsoft/" + oneDriveId), fact.toV1Event().outputs());
+    }
+
+    /**
+     * A {@code ?} or {@code #} in an external id is, with overwhelming likelihood, a URL someone
+     * failed to strip — and the qualified name is reversible base64, so a signed URL here is a
+     * working credential recoverable from any catalog entity. The typed factory rejects it;
+     * v1 used to persist it verbatim, and losing that capture is the deliberate, secure trade.
+     * The loss is bounded to the one fact and never reaches the business response.
+     */
+    @Test
+    public void urlShapedExternalIdsAreRejectedAtTheFactoryAndAbsorbedByTheFacade() {
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> LineageEndpoint.cloudObject(REPO, "google",
+                        "https://drive.example/file?sig=SECRET"));
+        assertTrue(thrown.getMessage().contains("query string"), thrown.getMessage());
+
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageEndpoint.externalAsset(REPO, "slack://t1/files/f1#fragment", "slack"));
+
+        LineageEmitter emitter = mock(LineageEmitter.class);
+        when(emitter.isActive()).thenReturn(true);
+        boolean emitted = LineageFactEmission.emitSafely(emitter, () -> new LineageFact(
+                REPO,
+                LineageProcessType.CLOUD_SYNC_UPLOAD,
+                "op-1",
+                OCCURRED,
+                List.of(LineageEndpoint.document(REPO, "doc-1", "a.txt")),
+                List.of(LineageEndpoint.cloudObject(REPO, "google",
+                        "https://drive.example/file?sig=SECRET")),
+                List.of("purview"),
+                null,
+                new LineageFact.LegacyV1Projection(
+                        LineageProcessType.CLOUD_SYNC_UPLOAD,
+                        List.of(LineageEvent.qualifiedName(REPO, "doc-1")),
+                        List.of("cloud://google/https://drive.example/file?sig=SECRET"),
+                        Map.of("provider", "google"))),
+                "repo=bedroom op=op-1 type=CLOUD_SYNC_UPLOAD");
+        assertTrue(!emitted, "a rejected fact reports not-emitted, so producers with an"
+                + " id-returning contract return null instead of a dangling id");
+        verify(emitter, never()).emit(any(LineageFact.class));
+    }
+
     /** occurredAt is the fact's (allocated at establishment), not re-stamped at build. */
     @Test
     public void theV1EventCarriesTheFactsOccurredAt() {
@@ -210,6 +360,32 @@ public class LineageFactTest {
         assertNotEquals(first.eventId(), second.eventId());
         assertEquals(first.eventKey(), second.eventKey());
         assertEquals(first.occurredAt(), second.occurredAt());
+    }
+
+    /**
+     * A producer that must hand its caller a resolvable id presets it — ingest returns
+     * {@code lineageEventId} in its API response, and the returned id has to be the stored
+     * event's. A blank preset is treated as absent, not as an id.
+     */
+    @Test
+    public void aPresetEventIdIsCarriedIntoTheV1Event() {
+        LineageFact fact = new LineageFact(
+                REPO, LineageProcessType.ARCHIVE_LOCAL, "op-1", OCCURRED,
+                List.of(LineageEndpoint.document(REPO, "doc-1", "a.txt")),
+                List.of(LineageEndpoint.archive(REPO, "doc-1", "doc-1", 1L)),
+                List.of("purview"), null,
+                new LineageFact.LegacyV1Projection(LineageProcessType.ARCHIVE_LOCAL,
+                        List.of("in"), List.of("out"), Map.of(), "event-preset-1"));
+        assertEquals("event-preset-1", fact.toV1Event().eventId());
+
+        LineageFact blankPreset = new LineageFact(
+                REPO, LineageProcessType.ARCHIVE_LOCAL, "op-1", OCCURRED,
+                List.of(LineageEndpoint.document(REPO, "doc-1", "a.txt")),
+                List.of(LineageEndpoint.archive(REPO, "doc-1", "doc-1", 1L)),
+                List.of("purview"), null,
+                new LineageFact.LegacyV1Projection(LineageProcessType.ARCHIVE_LOCAL,
+                        List.of("in"), List.of("out"), Map.of(), " "));
+        assertNotEquals(" ", blankPreset.toV1Event().eventId());
     }
 
     // ------------------------------------------------------------------ v2-valid at construction
@@ -316,10 +492,11 @@ public class LineageFactTest {
         LineageEmitter emitter = mock(LineageEmitter.class);
         when(emitter.isActive()).thenReturn(true);
 
-        LineageFactEmission.emitSafely(emitter, () -> {
+        boolean emitted = LineageFactEmission.emitSafely(emitter, () -> {
             throw new IllegalArgumentException("shape rejected");
         }, "repo=bedroom op=op-1 type=EXPORT_ZIP_FOLDER");
 
+        assertTrue(!emitted);
         verify(emitter, never()).emit(any(LineageFact.class));
     }
 
@@ -330,8 +507,9 @@ public class LineageFactTest {
         org.mockito.Mockito.doThrow(new IllegalStateException("boom"))
                 .when(emitter).emit(any(LineageFact.class));
 
-        LineageFactEmission.emitSafely(emitter, LineageFactTest::archiveFact, "repo=bedroom");
-        // reaching here IS the assertion
+        boolean emitted = LineageFactEmission.emitSafely(
+                emitter, LineageFactTest::archiveFact, "repo=bedroom");
+        assertTrue(!emitted, "a broken emitter is contained AND reported as not-emitted");
     }
 
     /** Lineage-off costs nothing: the supplier never runs. */
@@ -351,6 +529,43 @@ public class LineageFactTest {
         }, "repo=bedroom");
 
         assertTrue(!ran[0], "fact construction is not free; off means off");
+    }
+
+    /**
+     * isActive() is an interface call into arbitrary emitter code — an activity check that
+     * throws must be contained like every other lineage failure, and the supplier must not run.
+     */
+    @Test
+    public void aThrowingActivityCheckIsContainedAndNothingRuns() {
+        LineageEmitter emitter = mock(LineageEmitter.class);
+        when(emitter.isActive()).thenThrow(new IllegalStateException("registry gone"));
+        boolean[] ran = {false};
+
+        boolean emitted = LineageFactEmission.emitSafely(emitter, () -> {
+            ran[0] = true;
+            return archiveFact();
+        }, "repo=bedroom");
+
+        assertTrue(!emitted);
+        assertTrue(!ran[0], "no activity signal means no construction");
+        verify(emitter, never()).emit(any(LineageFact.class));
+    }
+
+    @Test
+    public void theReturnValueSaysWhetherTheFactWasHandedOff() {
+        LineageEmitter emitter = mock(LineageEmitter.class);
+        when(emitter.isActive()).thenReturn(true);
+        assertTrue(LineageFactEmission.emitSafely(
+                emitter, LineageFactTest::archiveFact, "repo=bedroom"));
+        assertTrue(!LineageFactEmission.emitSafely(
+                null, LineageFactTest::archiveFact, "repo=bedroom"));
+        assertTrue(!LineageFactEmission.emitSafely(emitter, () -> null, "repo=bedroom"));
+
+        LineageEmitter inactive = mock(LineageEmitter.class);
+        when(inactive.isActive()).thenReturn(false);
+        assertTrue(!LineageFactEmission.emitSafely(
+                inactive, LineageFactTest::archiveFact, "repo=bedroom"),
+                "inactive means not handed off — an id-returning producer must get null");
     }
 
     @Test
