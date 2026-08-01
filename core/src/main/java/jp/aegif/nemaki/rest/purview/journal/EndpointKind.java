@@ -51,7 +51,12 @@ public enum EndpointKind {
 
     /** A CMIS document. {@code nemaki_document} extends {@code DataSet}. */
     CMIS_DOCUMENT("nemaki_document", Identity.OBJECT_ID, null,
-            requiredText("name"), text("versionLabel"), text("folderPath")),
+            requiredText("name"), text("versionLabel"), text("folderPath"),
+            // Which version series this document belongs to. In the Atlas schema today (unlike
+            // versionObjectId / changeToken / contentHash, which are increment-B additions), so
+            // declaring it costs nothing and the version-identity question (§3 v2.3.13) starts
+            // being answerable as soon as a producer supplies it.
+            text("versionSeriesId")),
 
     /**
      * A CMIS folder, referenced through its DataSet proxy.
@@ -72,7 +77,7 @@ public enum EndpointKind {
      */
     ARCHIVE("nemaki_archive", Identity.OBJECT_ID, null,
             requiredCount("archivedAt"), requiredText("originalObjectId"), text("name"),
-            text("versionLabel"), text("archiveState")),
+            text("versionLabel"), text("archiveState"), text("versionSeriesId")),
 
     /**
      * Something outside the repository reached through an ingest connector.
