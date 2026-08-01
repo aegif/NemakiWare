@@ -9,7 +9,10 @@ revision:
   bundle 複製にも届かず、失った場合に「まだ決めていない」と「決めたが消えた」を見分ける規則も
   無かった。決定を **CouchDB の `lineage_materialization:{spoolRecordId}` へ移し
   create-if-absent で排他**にする (撤回 7)。torn write も検証規則も不要になる。決定文書は削除せず、
-  fact の削除は ACK の後、という順序も明記。
+  fact の削除は ACK の後、という順序も明記。決定文書は版と `deliveryId` だけでなく
+  `eventDigest` も固定するので、決定と materialize の間にバイナリが変わって fact → event の
+  写像が変わっても、**同じ `_id` に別内容を書く前に**止まる。「ACK 前に fact を消した」は
+  spool 走査からは見えない (対象ごと無い) ので、決定文書側から照合する unresolved 列挙を足した。
   ② barrier に **D-rest capability の検査が実在しなかった** — 本文は「4b は D-rest 配布済みを
   前提に含める」と書いていたが、文書にも CAS 条件にも無く、`binaryDigest` は誰とも比較して
   いなかった。`requiredCapabilities` / `approvedBinaryDigests` と CAS 条件 8・9 を追加。
@@ -576,6 +579,12 @@ A-2 Slice 1 で次を契約にする。
 
 `eventId` (UUID) は identity に入らない監査用フィールドなので純関数性の対象外とする。
 
+**この契約が破れると実行時にも露見する。** `occurredAt` は `creationPayloadDigest` に入るが
+`processKey` には入らないので、同じ業務操作を `occurredAt` だけ変えて二度書くと
+**`deliveryId` は同じで digest だけ違う** — create-if-absent が 409 を返し、digest 不一致で
+integrity 例外になる。つまり「`lineage.digest.mismatch` が同一 `deliveryId` で繰り返し上がる」は
+ID 衝突ではなく **`occurredAt` を引き直している**ことの症状である。metric の解釈として明記する。
+
 ### processKey の直列化 (v2 / v2.3.1 で `deliveryId` に分離)
 
 現行は 32bit Java hash 2つの連結で、衝突すると別操作が同一イベント扱いになる。
@@ -1052,8 +1061,12 @@ _id: lineage_materialization:{spoolRecordId}
      201 → 自分の決定が採用された
      409 → **既存文書を読み、その決定に従う** (自分の決定は捨てる)
            factPayloadDigest が自分の fact と違えば quarantine (同一 ID・別内容)
-3. 決定の deliveryId を _id にして journal へ create-if-absent
-4. 409 は **event digest が完全一致したときだけ**成功扱い。不一致は integrity 例外 (§3)
+3. 決定の materializeSchemaVersion で event を組み立て、その deliveryId と
+   creationPayloadDigest が**決定文書の値と一致すること**を書込み前に確認する
+     不一致 → 書かない。integrity 例外 + lineage.materialization.divergence
+4. 決定の deliveryId を _id にして journal へ create-if-absent
+     409 は既存文書の creationPayloadDigest が**決定文書の eventDigest と完全一致**した
+     ときだけ成功扱い。不一致は integrity 例外 (§3)
 5. 成功後に fact の ACK を書く (fsync + atomic rename)
 6. 再起動時も 1 から実行してよい。2 の 409 が必ず同じ決定へ戻す
 ```
@@ -1062,6 +1075,13 @@ _id: lineage_materialization:{spoolRecordId}
 file 安全性契約 (§8: write → fsync → atomic rename) が防ぐが、運用者が戻した古い backup や
 別 node から来た改竄済み bundle はそこを通らない。決定文書は一度作れば固定されるので、
 **壊れた fact で決定を作らせないことが重要**である。
+
+手順 3 の事前確認は、決定文書が固定しているのが版と `deliveryId` **だけではない**ことから来る。
+`eventDigest` も固定されているので、fact → event の写像がバイナリ更新で変わった場合、
+**同じ `_id` に別内容の event を書く前に**止まる。決定を作った時点と materialize する時点で
+稼働バイナリが違うことは、まさにこの節が扱っている rollout の最中に起こりうる。比較先は
+決定文書の値であって、その場で計算し直した値ではない — 計算し直した値どうしを比べても、
+両方が新しい写像なら一致してしまう。
 
 これで 6 つの窓はすべて収束する:
 
@@ -1199,6 +1219,7 @@ D-rest が直すのは、設計上すでに確認済みの**採番欠落・二�
 | 13 | bundle 経由で別 node へ複製された fact | 同一の決定文書を読み、同一 delivery へ収束する |
 | 13b | ACK 前に fact を消す | `materializations?unresolved=true` が拾い、`lineage.materialization.orphaned` が上がる |
 | 13c | 壊れた / 改竄された fact を投入する | 手順 1 の自己照合で弾かれ、**決定文書が作られない** |
+| 13d | 決定の作成後、fact → event の写像が変わったバイナリで materialize する | 手順 3 で `eventDigest` 不一致を検出し、**journal へ書かない** |
 | 14 | `requiredCapabilities` を満たさない ACK (D-rest 未配布) で 4b を要求 | `ACTIVE` CAS が拒否し、不足 capability を返す |
 | 14b | `approvedBinaryDigests` に無い `binaryDigest` の ACK | 同上 |
 | 15 | scale-to-one 切替 | 旧 AP が 1 台も存在しないことを**運用受入条件**として確認する (アプリでは検証できない) |
