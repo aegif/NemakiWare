@@ -118,44 +118,51 @@ public class LineageProcessShapeTest {
         assertThrows(IllegalArgumentException.class, () -> LineageProcessShape.shapesOf(null));
     }
 
-    // ------------------------------------------------------------------ the two-shape type
+    // ------------------------------------------------------------------ imports move content
 
+    /** The moved content is the output — one document, many, or the folders themselves. */
     @Test
-    public void importUploadedAcceptsAnArtifactBecomingAFolder() {
+    public void anImportProducesTheContentItCreated() {
+        LineageProcessShape.validate(LineageProcessType.IMPORT_UPLOADED,
+                List.of(importArtifact("op-1")), List.of(doc("d1"), doc("d2"), folder("f1")));
         LineageProcessShape.validate(LineageProcessType.IMPORT_UPLOADED,
                 List.of(importArtifact("op-1")), List.of(folder("f1")));
-    }
-
-    @Test
-    public void importUploadedAcceptsAnExternalAssetBecomingADocument() {
-        LineageProcessShape.validate(LineageProcessType.IMPORT_UPLOADED,
-                List.of(external("slack:file-1")), List.of(doc("d1")));
+        LineageProcessShape.validate(LineageProcessType.IMPORT_FILESYSTEM,
+                List.of(importArtifact("op-1")), List.of(doc("d1")));
     }
 
     /**
-     * The reason the table holds whole shapes. Both of these pass a per-side allowlist built from
-     * the union of the two real shapes, and neither is producible.
+     * §3 v2.3.13: the archetype-null fallback shape (external asset → document) is gone from
+     * IMPORT_UPLOADED. Unclassified connector ingest is not a user upload; v2 carries it as
+     * GENERIC_EXTERNAL_INGEST instead of mislabelling it.
      */
     @Test
-    public void importUploadedRejectsTheCrossPairings() {
+    public void importUploadedNoLongerAcceptsTheFallbackShape() {
         assertThrows(IllegalArgumentException.class,
                 () -> LineageProcessShape.validate(LineageProcessType.IMPORT_UPLOADED,
-                        List.of(importArtifact("op-1")), List.of(doc("d1"))));
+                        List.of(external("slack:file-1")), List.of(doc("d1"))));
         assertThrows(IllegalArgumentException.class,
                 () -> LineageProcessShape.validate(LineageProcessType.IMPORT_UPLOADED,
                         List.of(external("slack:file-1")), List.of(folder("f1"))));
     }
 
+    /** An import that created nothing is not a movement; v1 producers guard on objCount > 0. */
     @Test
-    public void importUploadedIsTheOnlyTypeWithMoreThanOneShape() {
+    public void anImportWithNoCreatedContentIsRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> LineageProcessShape.validate(LineageProcessType.IMPORT_UPLOADED,
+                        List.of(importArtifact("op-1")), List.of()));
+    }
+
+    @Test
+    public void everyNonReservedTypeHasExactlyOneShape() {
         for (LineageProcessType type : LineageProcessType.values()) {
             int shapes = LineageProcessShape.shapesOf(type).size();
-            if (type == LineageProcessType.IMPORT_UPLOADED) {
-                assertEquals(2, shapes, type.name());
-            } else if (type == LineageProcessType.FILE_SHARE_SYNC_UPLOAD) {
+            if (type == LineageProcessType.FILE_SHARE_SYNC_UPLOAD) {
                 assertEquals(0, shapes, type.name());
             } else {
-                assertEquals(1, shapes, type + " should have exactly one shape");
+                assertEquals(1, shapes, type + " should have exactly one shape; a second one is"
+                        + " added as a whole alternative, deliberately");
             }
         }
     }
@@ -185,12 +192,17 @@ public class LineageProcessShapeTest {
                         List.of(cloud("file-1")), List.of(doc("d1"))));
     }
 
+    /**
+     * All three exports converge on one shape: the exported content in, one artifact out. How the
+     * inputs were chosen (a whole folder, a hand-picked set) is what the processType records; the
+     * moved content is documents and folders either way (§3 v2.3.13).
+     */
     @Test
-    public void exportShapesAllProduceAnArtifact() {
+    public void exportShapesAllConsumeContentAndProduceAnArtifact() {
         LineageProcessShape.validate(LineageProcessType.EXPORT_FILESYSTEM,
-                List.of(folder("f1")), List.of(exportArtifact("op-1")));
+                List.of(doc("d1"), doc("d2")), List.of(exportArtifact("op-1")));
         LineageProcessShape.validate(LineageProcessType.EXPORT_ZIP_FOLDER,
-                List.of(folder("f1")), List.of(exportArtifact("op-1")));
+                List.of(folder("f1"), doc("d1")), List.of(exportArtifact("op-1")));
         LineageProcessShape.validate(LineageProcessType.EXPORT_SELECTED_OBJECTS,
                 List.of(doc("d1"), folder("f1")), List.of(exportArtifact("op-1")));
     }

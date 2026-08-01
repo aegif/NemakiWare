@@ -27,14 +27,14 @@ import java.util.Set;
  *
  * <h2>Why a shape and not "allowed input kinds" + "allowed output kinds"</h2>
  *
- * <p>{@code IMPORT_UPLOADED} has two producers with genuinely different shapes: the zip/ACP upload
- * in {@code ImportExportResource} imports an artifact into a folder, and
- * {@code IngestLineageEmitter} falls back to it for an external asset becoming a document when the
- * request carries no archetype. Two independent allowlists would accept the union of the sides —
- * an upload artifact producing a document, or an external asset producing a folder — and neither
- * of those is anything a producer emits or a sink can project.
- *
- * <p>So the table holds <em>alternatives</em>, and an event has to match one of them completely.
+ * <p>Because two independent allowlists accept the union of the sides. When this table briefly
+ * gave {@code IMPORT_UPLOADED} two shapes (the zip/ACP upload, and the archetype-null fallback's
+ * external asset → document), per-side lists would also have accepted the cross-pairings — an
+ * upload artifact producing nothing but an external asset, say — which no producer emits and no
+ * sink can project. The fallback shape is gone (§3 v2.3.13: unclassified ingest becomes
+ * {@code GENERIC_EXTERNAL_INGEST} rather than masquerading as an upload), but the model stays:
+ * a type that legitimately gains a second shape gains it as a whole alternative, and an event has
+ * to match one alternative completely.
  *
  * <h2>These are the v2 shapes, not a transcription of what v1 emits today</h2>
  *
@@ -54,11 +54,20 @@ import java.util.Set;
  * <p>Nothing here breaks those producers: no production path validates against this table until
  * A-2 rewrites them. The table states where they are going.
  *
+ * <h2>Imports and exports move content, not folders (§3 v2.3.13)</h2>
+ *
+ * <p>The first version of this table had imports produce a folder and exports consume one. A
+ * folder is the container, and its contents change after the fact — so "what was in the ZIP at
+ * the time" would be unrecoverable from lineage, which is the one question a content-movement
+ * chain exists to answer. The endpoints are the moved documents and folders themselves; the
+ * containing folder travels as a Process attribute, not as an endpoint.
+ *
  * <h2>Chunking</h2>
  *
  * <p>Cardinality applies <b>per chunk</b>. A selected-objects export of 5,000 documents is split
  * by §2's chunking into several events, each publishing as its own Process, and each of those
- * still has one export artifact as its output.
+ * still has one export artifact as its output. The chunks of one operation are tied together by
+ * {@code operationId} and, from increment B, the artifact's manifest attributes.
  */
 public final class LineageProcessShape {
 
@@ -163,23 +172,27 @@ public final class LineageProcessShape {
         table.put(LineageProcessType.CLOUD_SYNC_DOWNLOAD,
                 List.of(shape(one(EndpointKind.CLOUD_OBJECT), one(EndpointKind.CMIS_DOCUMENT))));
 
-        // Import: an artifact (the upload, or the source directory) becomes a folder tree.
-        table.put(LineageProcessType.IMPORT_FILESYSTEM,
-                List.of(shape(one(EndpointKind.IMPORT_ARTIFACT), one(EndpointKind.CMIS_FOLDER))));
-        // The two-shape type. Neither cross-pairing is legal.
-        table.put(LineageProcessType.IMPORT_UPLOADED, List.of(
-                shape(one(EndpointKind.IMPORT_ARTIFACT), one(EndpointKind.CMIS_FOLDER)),
-                shape(one(EndpointKind.EXTERNAL_ASSET), one(EndpointKind.CMIS_DOCUMENT))));
+        // Import: an artifact (the upload, or the source directory) becomes the created content —
+        // the documents and folders themselves, per chunk. Not the target folder: that is the
+        // container, and it travels as a Process attribute (§3 v2.3.13).
+        //
+        // IMPORT_UPLOADED's former second shape (external asset → document) is gone with the
+        // archetype-null fallback it mirrored: unclassified connector ingest is not a user
+        // upload, and v2 will carry it as GENERIC_EXTERNAL_INGEST instead of mislabelling it.
+        Shape importShape = shape(one(EndpointKind.IMPORT_ARTIFACT),
+                oneOrMore(EndpointKind.CMIS_DOCUMENT, EndpointKind.CMIS_FOLDER));
+        table.put(LineageProcessType.IMPORT_FILESYSTEM, List.of(importShape));
+        table.put(LineageProcessType.IMPORT_UPLOADED, List.of(importShape));
 
-        // Export: repository content becomes an artifact.
-        table.put(LineageProcessType.EXPORT_FILESYSTEM,
-                List.of(shape(one(EndpointKind.CMIS_FOLDER), one(EndpointKind.EXPORT_ARTIFACT))));
-        table.put(LineageProcessType.EXPORT_ZIP_FOLDER,
-                List.of(shape(one(EndpointKind.CMIS_FOLDER), one(EndpointKind.EXPORT_ARTIFACT))));
-        // The only type whose inputs are legitimately mixed and unbounded: the user picks them.
-        table.put(LineageProcessType.EXPORT_SELECTED_OBJECTS, List.of(shape(
+        // Export: the exported content becomes an artifact. All three converge on one shape —
+        // what differs (a whole folder, a hand-picked set) is how the inputs were chosen, which
+        // the processType itself records; the moved content is documents and folders either way.
+        Shape exportShape = shape(
                 oneOrMore(EndpointKind.CMIS_DOCUMENT, EndpointKind.CMIS_FOLDER),
-                one(EndpointKind.EXPORT_ARTIFACT))));
+                one(EndpointKind.EXPORT_ARTIFACT));
+        table.put(LineageProcessType.EXPORT_FILESYSTEM, List.of(exportShape));
+        table.put(LineageProcessType.EXPORT_ZIP_FOLDER, List.of(exportShape));
+        table.put(LineageProcessType.EXPORT_SELECTED_OBJECTS, List.of(exportShape));
 
         // External ingest. All of these are one external asset becoming one document; they differ
         // in what the source system is, which travels as the endpoint's sourceSystem attribute

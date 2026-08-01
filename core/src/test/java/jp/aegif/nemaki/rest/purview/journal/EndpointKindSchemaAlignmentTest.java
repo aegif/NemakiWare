@@ -168,11 +168,11 @@ public class EndpointKindSchemaAlignmentTest {
      */
     @Test
     public void eachKindDeclaresExactlyTheseAttributes() {
-        assertEquals(List.of("name", "versionLabel", "folderPath"),
+        assertEquals(List.of("name", "versionLabel", "folderPath", "versionSeriesId"),
                 EndpointKind.CMIS_DOCUMENT.allowedAttributes());
         assertEquals(List.of("name"), EndpointKind.CMIS_FOLDER.allowedAttributes());
         assertEquals(List.of("archivedAt", "originalObjectId", "name", "versionLabel",
-                "archiveState"), EndpointKind.ARCHIVE.allowedAttributes());
+                "archiveState", "versionSeriesId"), EndpointKind.ARCHIVE.allowedAttributes());
         assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath"),
                 EndpointKind.EXTERNAL_ASSET.allowedAttributes());
         // no externalPath: the natural value is the drive URL, whose query string is where
@@ -196,10 +196,30 @@ public class EndpointKindSchemaAlignmentTest {
      * and leave every test green while the value never travels.
      */
     private static final Map<EndpointKind, List<String>> AWAITING_INCREMENT_B = Map.of(
-            EndpointKind.CMIS_DOCUMENT, List.of("mimeType", "contentLength"),
-            EndpointKind.EXTERNAL_ASSET, List.of("tenantId"),
-            EndpointKind.CLOUD_OBJECT, List.of("provider"),
-            EndpointKind.COLD_STORAGE, List.of("storageClass"));
+            // Version identity (v2.3.13): without these, importing the same external file three
+            // times reads as "the same asset became the same document" three times over, and the
+            // one thing a version-managing ECM's lineage should answer — which version moved —
+            // is unanswerable.
+            // versionSeriesId is NOT here: the Atlas type already declares it, so the kind
+            // declares it too (present in both). Only the genuinely-missing fields are owed.
+            EndpointKind.CMIS_DOCUMENT, List.of("mimeType", "contentLength",
+                    "versionObjectId", "changeToken", "contentHash"),
+            EndpointKind.EXTERNAL_ASSET, List.of("tenantId",
+                    "sourceRevision", "sourceModifiedAt", "sourceContentHash",
+                    "sourceContentLength"),
+            EndpointKind.CLOUD_OBJECT, List.of("provider",
+                    "sourceRevision", "sourceModifiedAt", "sourceContentHash",
+                    "sourceContentLength"),
+            EndpointKind.COLD_STORAGE, List.of("storageClass"),
+            // The manifest that ties an operation's chunks together (v2.3.13). The artifact types
+            // themselves are B work (AWAITING_SCHEMA), so these assert the kinds do not declare
+            // the attributes before the types exist to receive them.
+            EndpointKind.IMPORT_ARTIFACT, List.of("manifestDigest", "totalObjectCount",
+                    "totalByteLength", "completedObjectCount", "failedObjectCount",
+                    "businessResult"),
+            EndpointKind.EXPORT_ARTIFACT, List.of("manifestDigest", "totalObjectCount",
+                    "totalByteLength", "completedObjectCount", "failedObjectCount",
+                    "businessResult"));
 
     @Test
     public void theAttributesIncrementBOwesAreAbsentFromBothSidesOrPresentInBoth() {

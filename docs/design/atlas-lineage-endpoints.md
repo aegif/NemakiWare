@@ -1,7 +1,37 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.12 — increment A sign-off 済み。A-1〜A-1k 実装済み、A-2 Slice 1〜3 着手可・Slice 4 は §6-a の再 sign-off 待ち**
+status: **v2.3.13 — increment A sign-off 済み。A-1〜A-1k 実装済み、A-2 Slice 1〜2b 実装済み・Slice 4 は §6-a の再 sign-off 待ち**
 revision:
+- v2.3.13 — 外部分析 (コンテンツ移動チェーンとしての再整理) を吟味し、採用分を反映。
+  ① **import / export の v2 shape を「folder ではなく移動した内容」へ訂正** — folder は容れ物で
+  あり、後から中身が変われば「その時点で何が動いたか」を復元できない。input/output は
+  移動した document / folder 群 (chunk 単位 1..n)、容れ物 folder は Process 属性へ (§3)。
+  これに伴い IMPORT_UPLOADED の第二 shape (external→document、archetype null fallback 由来)
+  を削除 — fallback 自体を v2 では作らない (下記 ⑤)。
+  ② **E-2 の分母を訂正** — 「producer のある 17 種」は誤り。producer があるのは 16 種で、
+  FILE_SHARE_SYNC_UPLOAD は RESERVED。**16 positive + 1 生成拒否**が正しい受入条件。
+  ③ **CHAT_CONTEXT の分類逆転を confirmed bug として記録** — 実 attachment が汎用
+  EXTERNAL_ATTACHMENT_IMPORT になり、非 attachment が CHAT_ATTACHMENT_IMPORT になる。
+  MESSAGE_CONTEXT のパターンと逆。producer 書換え slice で修正 (CHAT_MESSAGE_IMPORT 新設)。
+  ④ **版の同一性を増分 B の必須範囲に昇格** — nemaki_document へ versionObjectId /
+  changeToken / contentHash (mimeType / contentLength は既載。versionSeriesId は **schema に
+  既在**だったので allowlist へ即時追加した — B を待つ理由が無い)、
+  nemaki_external_asset へ sourceRevision / sourceModifiedAt / sourceContentHash /
+  sourceContentLength、artifact 型へ manifest 系 (manifestDigest / totalObjectCount /
+  totalByteLength / completedObjectCount / failedObjectCount / businessResult)。
+  ⑤ **archetype null の IMPORT_UPLOADED 縮退を v2 で禁止** — 「分類できなかった connector
+  取込」を「利用者の upload」と偽る。producer 書換え slice で GENERIC_EXTERNAL_INGEST を
+  新設して正直に運ぶ (UNRESOLVED 化はチェーンを失うので採らない)。
+  ⑥ **restore 方向の欠落を記録** — 監査には ARCHIVE_RESTORE があるが lineage に無い。
+  ARCHIVE_RESTORE (archive→document) / COLD_RESTORE (cold→archive) を producer 書換え
+  slice で追加。
+  ⑦ **「業務 commit 成功後・lineage event 作成前」の crash 窓を §6-a 残余に明記** —
+  spool は event (fact) を作った後しか救えない。恒久対策は операция単位の durable
+  operation record (STARTED → CONTENT_COMMITTED → LINEAGE_ENQUEUED) で、増分 F として
+  範囲外に切り出す。
+  ⑧ 採らなかったもの: movementKind 軸への再編・CLOUD/FILE_SHARE enum 統一・Teams の
+  文脈/実体分離は識別子と sink 写像に波及するため B 以降の設計判断として記録のみ。
+  外部 identity canonicalization の欠陥列挙は**陳腐化** (A-1c〜A-1k で全て修正済み)。
 - v2.3.12 — §6-a の**排他・回復可能性・fence の実在性**を訂正し、旧疑似コードとの矛盾を解消。
   ① materialize 決定をローカル sidecar に置いていたのは**排他になっていなかった** — atomic
   rename は「置換」であって「不在なら作成」ではなく、activation を跨いだ 2 つの scanner が
@@ -438,8 +468,30 @@ nemaki_export_artifact   superTypes: [DataSet]
   objectCount      : int
 ```
 
-- `upload://` 文字列は**廃止**。`IMPORT_UPLOADED` の input は `nemaki_import_artifact`、
-  output は folder proxy。
+- `upload://` 文字列は**廃止**。`IMPORT_UPLOADED` の input は `nemaki_import_artifact`。
+
+### 移動したのは folder ではなく内容である (v2.3.13)
+
+v2.3.12 まで import / export の shape は folder を端点にしていた (import は output が
+folder proxy、export は input が folder proxy)。**目的に照らして誤りだった。** この機能が
+追跡するのはコンテンツ移動チェーンであり、folder は容れ物である。後から folder の中身が
+変われば、「その時点で ZIP に何が入っていたか」を lineage から復元できない。
+
+| processType | v2 shape (chunk 単位) |
+|---|---|
+| `IMPORT_FILESYSTEM` / `IMPORT_UPLOADED` | `nemaki_import_artifact` ×1 → **移動した document / folder 群** ×1..n |
+| `EXPORT_FILESYSTEM` / `EXPORT_ZIP_FOLDER` / `EXPORT_SELECTED_OBJECTS` | **移動した document / folder 群** ×1..n → `nemaki_export_artifact` ×1 |
+
+- 容れ物 folder (取込先 / 搬出元) は endpoint ではなく **Process 属性** (`folderId` /
+  `targetFolderId`) として残す。補助情報であって、移動したものではない。
+- 大量文書は §2 の chunking (1,000 endpoint / 1 MiB) がそのまま適用される。chunk ごとに
+  自分の Process を publish し、全体は `operationId` と manifest (増分 B の artifact 属性)
+  が束ねる。
+- `IMPORT_UPLOADED` の第二 shape (external asset → document) は**削除**。あれは
+  archetype null fallback (confirmed bug、下記) の写しであって、業務の形ではない。
+- 空 folder だけの import / export も `CMIS_FOLDER` が内容として現れるので表現できる。
+  v1 producer は成果 0 件では emit しない (`objCount > 0` guard) ため、空集合の shape は
+  要らない。
 - **`operationId` は内部契約として必須。公開 API の必須パラメータにはしない。**
   現状 `.runId(...)` を設定している producer は**存在しない** (実測 0 件)。v1 の
   `/exports/{runId}` は全 event が空値へ衝突する設計だった。
@@ -1174,6 +1226,17 @@ GET  /api/v1/admin/lineage-journal/materializations/{repositoryId}?unresolved=tr
 「journal か spool に記録がある」ことを前提とするので、**repair で回収できるとは言えない**。
 `lineage.emit.dropped{reason=flag_unreadable_and_spool_failed}` を出し alert 対象とする。
 
+**残余 2 (v2.3.13)**: spool より**前**にも窓がある。業務 commit が成功した直後・emitter が
+fact を作る前に AP が落ちると、**業務は成功したのに lineage が最初から存在しない**。spool は
+「作った記録を失わない」仕組みであって、「作られなかった記録」は検出できない。emitter の
+fail-open 契約 (業務を止めない) を保つ限り、この窓は emitter 側では閉じない。
+
+恒久対策は操作単位の durable operation record — inbound は作成された Content に
+`operationId` + provenance を**同一 commit** で保存し、export は streaming 開始前に record を
+永続化し、scanner が「`CONTENT_COMMITTED` だが lineage event が無い」ものを検出・再構築する。
+これは業務 commit と結合する新しい仕組みなので **増分 F として本増分の範囲外**に切り出す
+(v2.2 の「outbox は範囲外」判断と同じ線)。それまでは、この窓の存在自体を仕様として明記する。
+
 ### 撤回 4: D-rest を v2 有効化の後に置いていた (v2.3.11)
 
 v2.3.10 は「D-rest は `deliveryId` を使うので A-2 Slice 4 の後」と書いた。**順序が逆である。**
@@ -1773,7 +1836,9 @@ POST /api/v1/admin/lineage-journal/repair
 E2E のためだけに実装しない。
 
 - enum は legacy deserialization 互換のため**残す**。javadoc に `RESERVED / producer なし` と明記する。
-- business API E2E の分母は **17 種**。
+- business API E2E の分母は **producer のある 16 種**。v2.3.12 まで「17 種」と書いていたが、
+  同じ節が FILE_SHARE_SYNC_UPLOAD を synthetic のみと定めており、**分母と除外が矛盾**していた。
+  正しくは **16 positive + 1 生成拒否 (negative)**。
 - synthetic payload の単体テストのみ行う。
 - **`LineageEventBuilder` からの新規生成は拒否する** (`IllegalArgumentException`)。
   正式な producer を実装するまで、この値の event が新規に生まれない。
@@ -1781,11 +1846,11 @@ E2E のためだけに実装しない。
 | # | 受入項目 | 判定 |
 |---|---|---|
 | E-1 | schema apply が `applied:true` で完了 | `nemaki_folder_dataset` / `nemaki_import_artifact` / `nemaki_export_artifact` を含む |
-| E-2 | **producer のある 17** `LineageProcessType` の producer-shape matrix | 実 business API から発火し、各 Process の inputs/outputs が期待 entity と E-17 の条件で**完全一致**。`FILE_SHARE_SYNC_UPLOAD` は synthetic payload の単体テストのみ |
+| E-2 | **producer のある 16** `LineageProcessType` の producer-shape matrix **+ RESERVED 1 種の生成拒否** | 実 business API から発火し、各 Process の inputs/outputs が期待 entity と E-17 の条件で**完全一致**。`FILE_SHARE_SYNC_UPLOAD` は生成拒否 (negative) + synthetic payload の単体テストのみ |
 | E-3 | folder endpoint | `nemaki_folder_dataset` GUID に結線される |
 | E-4 | export artifact | `nemaki_export_artifact` が outputs に現れる |
 | E-5 | external / cloud / cold endpoint | `nemaki_external_asset` GUID に結線される |
-| E-6 | `IMPORT_UPLOADED` | input が `nemaki_import_artifact`、output が folder proxy。`upload://` 文字列は現れない |
+| E-6 | `IMPORT_UPLOADED` | input が `nemaki_import_artifact`、output が**移動した内容 (document / folder 群)** (§3 v2.3.13)。容れ物 folder は Process 属性。`upload://` 文字列は現れない |
 | E-7 | inputs と outputs を**別々の**実 entity で完全一致検証 | 片側欠落・方向逆転を検出できる |
 | E-8 | cross-repository event | `build()` で拒否される |
 | E-9 | v1 legacy event | `UNRESOLVED` (terminal) になり cursor が進む。durable unresolved 記録と metric が残り、repair 対象になる。ordered projector が止まらない |
@@ -1950,6 +2015,40 @@ v2 では前者で引いて後者の値で更新すると**別の文書を叩く
 存在することと「v2 を復号して projector へ流せる」ことは別で、前者だけで capability を
 立てると §6-a の CAS 条件 8 が**満たされていないのに通る**。capability は経路が通っている
 ことの表明であって、クラスの存在の表明ではない。
+
+#### producer 書換え時に直す confirmed bug と追加 (v2.3.13)
+
+外部分析で確認した producer 側の問題。**v1 の挙動は変えず**、v2 producer を書くときに直す。
+
+| # | 事実 | 対応 |
+|---|---|---|
+| 1 | [`IngestLineageEmitter.resolveProcessType`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestLineageEmitter.java#L136) の `CHAT_CONTEXT` 分岐が**逆** — 実 attachment が汎用 `EXTERNAL_ATTACHMENT_IMPORT`、非 attachment が `CHAT_ATTACHMENT_IMPORT` になる。`MESSAGE_CONTEXT` (attachment → `MAIL_ATTACHMENT_IMPORT`) と不整合 | **`CHAT_MESSAGE_IMPORT` を新設**し、attachment → `CHAT_ATTACHMENT_IMPORT` / 非 attachment → `CHAT_MESSAGE_IMPORT` に正す。enum が増えると `LineageProcessShapeTest` の網羅検査が shape 規則と件数の更新を強制する (そのための検査) |
+| 2 | archetype null の非 attachment を `IMPORT_UPLOADED` に**縮退**させている — 「分類できなかった connector 取込」を「利用者の upload」と偽る | **`GENERIC_EXTERNAL_INGEST` を新設** (external asset ×1 → document ×1)。UNRESOLVED 化はチェーン自体を失うので採らない — 「external asset X が document Y になった」は真であり、偽なのは `IMPORT_UPLOADED` というラベルだけである |
+| 3 | 監査には `ARCHIVE_RESTORE` があるが lineage に無い。restore / rehydrate の方向 (archive→active、cold→archive) が表現できない | **`ARCHIVE_RESTORE`** (`ARCHIVE` ×1 → `CMIS_DOCUMENT` ×1) と **`COLD_RESTORE`** (`COLD_STORAGE` ×1 → `ARCHIVE` ×1) を新設。復元は新しい active 版を作る事実として記録する |
+
+いずれも enum 追加を伴うため、E-2 の分母 (16 positive + 1 negative) はその時点で更新する。
+
+#### 増分 B に追加する版・manifest 属性 (v2.3.13)
+
+「どの版が動いたか」を固定できなければ、同じ外部 file を 3 回取り込んで 3 版できても
+グラフ上は毎回「同じ external asset → 同じ document」に見える。追跡機能としてはそこが本体
+なので、B の additive schema 変更に以下を含める (すべて `EndpointKindSchemaAlignmentTest` の
+`AWAITING_INCREMENT_B` 方式で両側同時に足す):
+
+| 型 | 追加属性 |
+|---|---|
+| `nemaki_document` | `versionObjectId` / `changeToken` / `contentHash` (既載の `mimeType` / `contentLength` と併せて)。`versionSeriesId` は **schema に既在**のため v2.3.13 で allowlist へ即時追加済み (`ARCHIVE` も同様) |
+| `nemaki_external_asset` | `sourceRevision` (ETag 等) / `sourceModifiedAt` / `sourceContentHash` / `sourceContentLength` |
+| `nemaki_import_artifact` / `nemaki_export_artifact` | `manifestDigest` / `totalObjectCount` / `totalByteLength` / `completedObjectCount` / `failedObjectCount` / `businessResult` (`SUCCESS` \| `PARTIAL`) — chunk 群を束ねる manifest。E-17 の verify にも版・hash・chunk 完全性の検査を足す |
+
+#### 採らなかった提案 (v2.3.13)
+
+| 提案 | 判断 |
+|---|---|
+| `movementKind` (INGEST / EGRESS / ARCHIVE / …) 軸への再編 | **保留**。processType から純関数で導出できる表示属性としてなら安全だが、identity・sink 写像・Atlas Process 型に波及する再編は B 以降の設計判断。event の必須フィールドにはしない |
+| `CLOUD_SYNC_DOWNLOAD` と `FILE_SHARE_SYNC_DOWNLOAD` の統一 | **保留**。同じ移動が API 経路で別型になるのは事実だが、統一は「どちらかの型の producer を無くす」ことであり、sink 写像 (`nemaki_cloud_sync_process`) と v1 監査の連続性に触る。producer 書換え slice の設計で決める |
+| Teams の文脈 (message) と実体 (SharePoint file) の分離 | **保留**。stableKey の書式変更 = catalog sync を含む identity migration。B で provider-canonical URL / tenant を扱うときに一緒に設計する |
+| 外部 identity canonicalization の欠陥列挙 (QN/stableKey 不一致・query 受理・未正規化 等) | **陳腐化として棄却**。挙げられた 5 点は A-1c〜A-1k で修正済み — 完全一致 QN 検査 (`LineageRepositoryScope`)、`requireCanonicalStableKey`、`requireNoUriBorneSecrets`、`normalisedAbsolutePath`、redacted `describeQualifiedName`。集約先も既に `ExternalAssetIdentity` 1 箇所である |
 
 ##### 正規化 read model は復旧 payload ではない (v2.3.12)
 
