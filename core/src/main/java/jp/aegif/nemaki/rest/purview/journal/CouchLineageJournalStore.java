@@ -197,9 +197,15 @@ public class CouchLineageJournalStore implements LineageJournalStore {
                 "function(doc) { if (" + EVENT_TYPES + ") { emit([doc.repositoryId, doc.occurredAt], null); } }",
                 null));
 
-        // by_target_status — projector claim and backlog monitoring
+        // by_target_status — projector claim and backlog monitoring.
+        // UNSEQUENCED rows are excluded: appendV2 stores v2 rows unsequenced with every target
+        // PENDING, and the ordered view already hides sequenceNumber=0 — but this view fed the
+        // UNORDERED claim path, which would have published a row before the fenced sequencer
+        // (D-rest) assigned its sequence. Event-first means the event exists first, not that it
+        // is deliverable first. v1 rows have no state field and pass as before.
         views.put("by_target_status", new ViewDefinition(
-                "function(doc) { if (" + EVENT_TYPES + " && doc.publishStatusByTarget) { " +
+                "function(doc) { if (" + EVENT_TYPES + " && doc.publishStatusByTarget"
+                        + " && doc.state !== 'UNSEQUENCED') { " +
                         "var t = doc.publishStatusByTarget; for (var k in t) { if (t.hasOwnProperty(k)) { emit([k, t[k]], null); } } } }",
                 "_count"));
 
@@ -229,9 +235,13 @@ public class CouchLineageJournalStore implements LineageJournalStore {
                 "function(doc) { if (doc.type === 'lineage_dead_letter') { emit([doc.replayed || false, doc.recordedAt], null); } }",
                 "_count"));
 
-        // by_target_status_time — target+status+occurredAt for oldest-first queries
+        // by_target_status_time — target+status+occurredAt for oldest-first queries.
+        // Same UNSEQUENCED exclusion as by_target_status: this view feeds the age/overflow
+        // drains, and an unsequenced row must not be age-discarded before it was ever
+        // deliverable.
         views.put("by_target_status_time", new ViewDefinition(
-                "function(doc) { if (" + EVENT_TYPES + " && doc.publishStatusByTarget && doc.occurredAt) { " +
+                "function(doc) { if (" + EVENT_TYPES + " && doc.publishStatusByTarget && doc.occurredAt"
+                        + " && doc.state !== 'UNSEQUENCED') { " +
                         "var t = doc.publishStatusByTarget; for (var k in t) { if (t.hasOwnProperty(k)) { emit([k, t[k], doc.occurredAt], null); } } } }",
                 null));
 
@@ -241,9 +251,12 @@ public class CouchLineageJournalStore implements LineageJournalStore {
                         "emit([doc.repositoryId, doc.sequenceNumber], null); } }",
                 null));
 
-        // non_terminal_by_target_repo — distinct repos with non-terminal events per target
+        // non_terminal_by_target_repo — distinct repos with non-terminal events per target.
+        // UNSEQUENCED excluded: it feeds the ordered path's repository discovery and the backlog
+        // counters, and a not-yet-deliverable row is not backlog.
         views.put("non_terminal_by_target_repo", new ViewDefinition(
-                "function(doc) { if (" + EVENT_TYPES + " && doc.publishStatusByTarget && doc.repositoryId) { " +
+                "function(doc) { if (" + EVENT_TYPES + " && doc.publishStatusByTarget && doc.repositoryId"
+                        + " && doc.state !== 'UNSEQUENCED') { " +
                         "var t = doc.publishStatusByTarget; for (var k in t) { if (t.hasOwnProperty(k)) { " +
                         "var s = t[k]; if (s === 'PENDING' || s === 'FAILED' || s === 'PROJECTING') { emit([k, doc.repositoryId], null); } } } } }",
                 "_count"));

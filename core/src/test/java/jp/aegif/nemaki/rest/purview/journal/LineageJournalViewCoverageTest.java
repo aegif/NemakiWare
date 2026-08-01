@@ -220,6 +220,46 @@ public class LineageJournalViewCoverageTest {
     }
 
     /**
+     * The write-flip precondition (parallel review, 2026-08-01): appendV2 stores v2 rows with
+     * state=UNSEQUENCED and every target PENDING. The ordered view already hid them
+     * (sequenceNumber 0), but the claim, oldest-first and repo-discovery views fed the UNORDERED
+     * path — which would have published a row before the fenced sequencer assigned its sequence.
+     * Event-first means the event exists first, not that it is deliverable first.
+     */
+    @Test
+    public void anUnsequencedV2RowIsInvisibleToEveryClaimFeedingView() {
+        Map<String, Object> doc = v2Document();
+        doc.put("state", "UNSEQUENCED");
+        for (String view : List.of("by_target_status", "by_target_status_time",
+                "non_terminal_by_target_repo")) {
+            assertTrue(emits(view, doc).isEmpty(),
+                    view + " must not expose an unsequenced row to the projector");
+        }
+    }
+
+    /** Once the sequencer moves the row out of UNSEQUENCED, the same views serve it. */
+    @Test
+    public void aSequencedV2RowIsServedByTheClaimViews() {
+        Map<String, Object> doc = v2Document();
+        doc.put("state", "SEQUENCED");
+        for (String view : List.of("by_target_status", "by_target_status_time",
+                "non_terminal_by_target_repo")) {
+            assertFalse(emits(view, doc).isEmpty(), view);
+        }
+    }
+
+    /**
+     * The reaper's view deliberately still covers UNSEQUENCED: nothing should legitimately claim
+     * one, but if a bug does, the stale claim must still be releasable.
+     */
+    @Test
+    public void theReaperViewStillCoversAnUnsequencedRow() {
+        Map<String, Object> doc = v2Document();
+        doc.put("state", "UNSEQUENCED");
+        assertFalse(emits("projecting_by_claimed_at", doc).isEmpty());
+    }
+
+    /**
      * Not a coverage rule, a semantics pin: an unsequenced row (sequenceNumber 0) is invisible to
      * the ordered view, for v2 exactly as for v1. The fenced sequencer is what makes it visible.
      */

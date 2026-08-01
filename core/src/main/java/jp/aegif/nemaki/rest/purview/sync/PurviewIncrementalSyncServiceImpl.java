@@ -509,7 +509,15 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
         return new PurviewCursorState(
                 currentCursorState.getRepositoryId(),
                 currentCursorState.getStreamKind(),
-                currentCursorState.getCursor(),
+                // Re-saving the old cursor on failure must not re-persist the pre-sanitisation
+                // residue: a cloud-metadata cursor written before the URL left the format would
+                // otherwise survive in CouchDB for exactly as long as the sync keeps failing —
+                // the one case where the scrub-on-next-success cycle never comes.
+                jp.aegif.nemaki.rest.purview.publish.CloudMetadataSnapshotFormat.STREAM_KIND
+                        .equals(currentCursorState.getStreamKind())
+                        ? jp.aegif.nemaki.rest.purview.publish.CloudMetadataSnapshotFormat
+                                .normalize(currentCursorState.getCursor())
+                        : currentCursorState.getCursor(),
                 resolveCursorKind(currentCursorState),
                 now,
                 currentCursorState.getLastSuccessAt(),

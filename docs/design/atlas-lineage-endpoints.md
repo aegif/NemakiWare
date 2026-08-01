@@ -1,6 +1,6 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.14 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜2d-2b 実装済み (writer は v1 のまま)・Slice 4 は §6-a の再 sign-off 待ち**
+status: **v2.3.14 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜3 実装済み (writer は v1 のまま)・Slice 4 は §6-a の再 sign-off 待ち**
 revision:
 - v2.3.14 — Slice 2d-1 (無損失 journal entry + v2 codec) の設計決定 2 点。
   ① **v2 文書は `type=lineage_event_v2`** — 旧バイナリの view は `doc.type==='lineage_event'`
@@ -162,7 +162,7 @@ scope: v3.3 内で Atlas 連携を完成させるための設計。実装は sig
 (型体系・identity 符号化・命名集約・schema 整合・identity CI / v2 型・read model・sink /
 admin / projector の版非依存化・無損失 codec・store read の一斉切替 — read:v2 の経路は
 成立、capability の登録は 4a の barrier 実装時)。**production writer は v1 のまま**。
-残: Slice 3 (digest 配線)・producer 書き換え・chunking。
+残: producer 書き換え・chunking (下記「producer 書き換えの設計」)。
 Slice 4 (v2 書込みへの切替) は **§6-a の再 sign-off 待ち**。slice 単位の状態は
 「A-2 の分割」の表が正である。
 本文の規範記述は実装と同期させており、乖離を見つけたらどちらかが誤りである —
@@ -2073,6 +2073,39 @@ payload ではない (上記) ので、そこから envelope を作ることは�
 **`recordId` を受け取る**ように再定義し、`recordId → _id` の変換を 1 箇所に集約する。
 `findByEventId` (監査上の eventId で引く) と `findByRecordId` (journal 文書を引く) も分ける —
 v2 では前者で引いて後者の値で更新すると**別の文書を叩く**。
+
+#### producer 書き換えの設計 (v2.3.14 — Codex レビュー済み・safe with named changes (B))
+
+producer は版非依存の **`LineageFact`** (§6-a の spool fact と同じ意味形状) を 1 つ作り、
+emitter が v1/v2 へ写像する。Slice 4 の writer flip は emitter 内の写像選択の変更になり、
+producer 12 箇所は触らない。
+
+中核の危険は **v1 の `eventKey` が input/output 文字列の hash** であること — 写像が 1 文字
+ずれれば同一業務操作が deploy 前後で別 Process になり冪等性も壊れる。よって:
+
+- **(B) LegacyV1Projection 方式** — fact は typed endpoint に加えて **v1 の processType・
+  input/output 文字列を明示的に併載**する (推論表は不採用 — 検証の結果、null-archetype
+  ingest の v1 型が IMPORT_UPLOADED である・ZIP 系 export に output が無い・import の
+  output が作成物でなく folder である等、推論では汚い分岐が避けられない)。保存は構成で
+  保証し、旧 builder 出力との equals テストを producer ごとに置く。v1 文字列は flip で削除。
+- **fact は構築時に v2 shape 表で検証**する — producer は初日から v2 正のかたち (export
+  artifact 込み) を供給し、v1 射影がそれを落とす。
+- **前提配管**: import/export の実装は現在「件数と folder」しか持ち帰らない。v2 shape が
+  要求する「作成/搬出した全 object」の ID 収集を先行 commit で足す。これにより
+  EXPORT_SELECTED_OBJECTS 以外 (bulk import・再帰 export) も chunking 対象になる。
+- **chunking は fact→v2 写像内・canonical UTF-8 順で分割** (producer の走査順に依存すると
+  chunk 割りが揺れて process identity が揺れる)。必須データだけで 1 MiB を超える場合の
+  terminal `UNRESOLVED(OVERSIZE)` を含む。v1 射影は chunk しない (現行どおり)。
+- **fail-open facade**: typed factory と shape 検証は v1 builder より遥かに厳しく、fact
+  構築が throw しうる。業務レスポンスを握る broad catch の中で構築してはならない —
+  lineage 専用の非 throw facade (metric + dead-letter 報告) を通す。
+- **operationId は業務開始時に発行**し X-Nemaki-Operation-Id で返す。**v1 の runId には
+  書かない** (eventKey 外だが v1 envelope を変えない)。**occurredAt は業務 fact 成立時**
+  (request 開始時ではない) に一度だけ採る。
+- **spool payload は fact の Java 型を直接使わない** — 版付き `LineageSpoolPayloadV1` +
+  明示変換 (fact の進化や v1 文字列削除が durable 記録を壊さないため)。
+- **emitter seam**: `emit(LineageFact)` を追加し fact→v1 射影を無条件適用。journaled mode が
+  appendV2 を呼ばないことをテストで固定し、選択の変更は fence された Slice 4 のみ。
 
 **`read:v2` capability (§6-a) を名乗ってよいのは Slice 2 の完了後**である。decoder クラスが
 存在することと「v2 を復号して projector へ流せる」ことは別で、前者だけで capability を
