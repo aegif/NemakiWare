@@ -656,7 +656,8 @@ public class ArchiveResource extends ResourceBase {
 		}
 	}
 
-	private void emitLineageEvent(String repositoryId, String objectId, HttpServletRequest httpRequest) {
+	private void emitLineageEvent(String repositoryId, String objectId, String documentName,
+			String operationId, HttpServletRequest httpRequest) {
 		try {
 			LineageConfig lc = getLineageConfig();
 			if (lc == null) return;
@@ -670,19 +671,30 @@ public class ArchiveResource extends ResourceBase {
 					(java.util.List<?>) SpringContext.getApplicationContext()
 					.getBeansOfType(LineageTargetSink.class).values().stream().toList();
 			LineageEmitter emitter = lc.createEmitterForMode(mode, store, sinks);
-			if (emitter.isActive()) {
-				LineageEventBuilder b = new LineageEventBuilder()
-						.repositoryId(repositoryId)
-						.processType(LineageProcessType.ARCHIVE_LOCAL)
-						.addInputObject(repositoryId, objectId)
-						.addOutput("nemaki://" + repositoryId + "/archives/" + objectId)
-						.snapshotAttribute("reason", "force-archive")
-						.snapshotAttribute("requestedBy", getCallContextUsername(httpRequest));
-				if (lc != null) {
-					b.targets(lc.getTargets());
-				}
-				emitter.emit(b.build());
-			}
+			java.util.List<String> targets = lc.getTargets();
+			String requestedBy = getCallContextUsername(httpRequest);
+			jp.aegif.nemaki.rest.purview.journal.LineageFactEmission.emitSafely(emitter, () -> {
+				String occurredAt = java.time.Instant.now().toString();
+				return new jp.aegif.nemaki.rest.purview.journal.LineageFact(
+						repositoryId,
+						LineageProcessType.ARCHIVE_LOCAL,
+						operationId,
+						occurredAt,
+						java.util.List.of(jp.aegif.nemaki.rest.purview.journal.LineageEndpoint
+								.document(repositoryId, objectId, documentName)),
+						java.util.List.of(jp.aegif.nemaki.rest.purview.journal.LineageEndpoint
+								.archive(repositoryId, objectId, objectId,
+										java.time.Instant.parse(occurredAt).toEpochMilli())),
+						targets,
+						null,
+						new jp.aegif.nemaki.rest.purview.journal.LineageFact.LegacyV1Projection(
+								LineageProcessType.ARCHIVE_LOCAL,
+								java.util.List.of(LineageEvent.qualifiedName(repositoryId, objectId)),
+								java.util.List.of("nemaki://" + repositoryId + "/archives/" + objectId),
+								java.util.Map.of(
+										"reason", "force-archive",
+										"requestedBy", requestedBy)));
+			}, "repo=" + repositoryId + " op=" + operationId + " type=ARCHIVE_LOCAL(force)");
 		} catch (Exception e) {
 			log.warn("Lineage event emission failed (non-fatal): " + e.getMessage());
 		}
@@ -738,14 +750,21 @@ public class ArchiveResource extends ResourceBase {
 		}
 		try {
 			CallContext systemContext = new SystemCallContext(repositoryId);
+			// The typed ARCHIVE endpoint needs the document's name, readable only before the
+			// deletion that archives it; the operation id is issued at operation start (§3).
+			String lineageOperationId = java.util.UUID.randomUUID().toString();
+			jp.aegif.nemaki.model.Document documentBeforeArchive =
+					getContentService().getDocument(repositoryId, objectId);
+			String documentName = documentBeforeArchive != null
+					? documentBeforeArchive.getName() : null;
 			// Use deleteDocument to properly handle attachments, renditions, and version series
 			getContentService().deleteDocument(systemContext, repositoryId, objectId, true, false);
 			if (cachePool != null) {
 				cachePool.get(repositoryId).removeCmisCache(objectId);
 			}
 
-			// Lineage Journal: ARCHIVE_LOCAL (force-archive)
-			emitLineageEvent(repositoryId, objectId, httpRequest);
+			// Lineage: one version-free fact; the emitter projects it (v1 today, v2 after §6-a).
+			emitLineageEvent(repositoryId, objectId, documentName, lineageOperationId, httpRequest);
 		} catch (Exception e) {
 			log.error("Failed to force-archive document " + objectId, e);
 			status = false;
