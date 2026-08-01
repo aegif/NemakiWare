@@ -1,7 +1,20 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.13 — increment A sign-off 済み。A-1〜A-1k 実装済み、A-2 Slice 1〜2b 実装済み・Slice 4 は §6-a の再 sign-off 待ち**
+status: **v2.3.14 — increment A sign-off 済み。A-1〜A-1k 実装済み、A-2 Slice 1〜2d-1 実装済み・Slice 4 は §6-a の再 sign-off 待ち**
 revision:
+- v2.3.14 — Slice 2d-1 (無損失 journal entry + v2 codec) の設計決定 2 点。
+  ① **v2 文書は `type=lineage_event_v2`** — 旧バイナリの view は `doc.type==='lineage_event'`
+  でしか選択しない (撤回 2) ので、v2 行は旧バイナリから**構造的に不可視**になる。手順で
+  禁じていた「混在環境への v2 投入」の帰結が、禁止から不可能へ変わる。fence は規範のまま。
+  代償として 2d-2 以降の全 view / query は両 type を対象にし、それをテストで固定する。
+  decoder は `schemaVersion=2` + `type=lineage_event` の偽装も拒否する。
+  ② **shape 規則は v2 書込み開始後 widening-only** — decoder は正典 constructor 経由で
+  復元するので保存済み行は読むたびに shape 表を通る。狭める変更は保存済み行を読めなくする
+  ため、新しい schemaVersion としてのみ許す。
+  他: 未知の publish status は v1 codec の「黙って PENDING」(publish 済み event の再 publish を
+  招く) を継承せず fail-closed。ただし status は digest 外の可変状態なので、メッセージは
+  「不変 payload は無事でありうる — 破棄でなく修復」と分類する。COUNT 属性は JSON 往復で
+  Integer に狭まるため decode で Long へ正規化 (digest は動かないが record 等価性が壊れる)。
 - v2.3.13 — 外部分析 (コンテンツ移動チェーンとしての再整理) を吟味し、採用分を反映。
   ① **import / export の v2 shape を「folder ではなく移動した内容」へ訂正** — folder は容れ物で
   あり、後から中身が変われば「その時点で何が動いたか」を復元できない。input/output は
@@ -484,6 +497,11 @@ folder proxy、export は input が folder proxy)。**目的に照らして誤�
 
 - 容れ物 folder (取込先 / 搬出元) は endpoint ではなく **Process 属性** (`folderId` /
   `targetFolderId`) として残す。補助情報であって、移動したものではない。
+- **shape 規則は v2 書込み開始後、widening-only とする (v2.3.14)。** v2 の decoder は
+  正典 constructor 経由で復元し、そこには shape 検証が入っている — つまり保存済み行は
+  読み直すたびに現行の shape 表を通る。今 (writer が v1 の間) は表を自由に直せるが、
+  Slice 4b 以降に規則を**狭める**と、書込み時に合法だった行が読めなくなる。広げるのは常に
+  互換 (旧行は通り続ける)。狭める必要が生じたら、それは新しい schemaVersion である。
 - 大量文書は §2 の chunking (1,000 endpoint / 1 MiB) がそのまま適用される。chunk ごとに
   自分の Process を publish し、全体は `operationId` と manifest (増分 B の artifact 属性)
   が束ねる。
@@ -820,6 +838,27 @@ fail-closed は *次に起動する新バイナリ* にしか効かない。
 
 **旧バイナリの排除はアプリ外の完了条件**とする — 旧 ReplicaSet / Deployment revision 削除、
 LB / Service target からの除外、旧 Pod の消滅。アプリは検証できない。
+
+#### v2 文書は別の document type を持つ (v2.3.14)
+
+撤回 2 の事実 — 旧 projector の view 選択は `doc.type === 'lineage_event'` **だけ** — は、
+裏返すと防御に使える。**v2 文書の `type` を `lineage_event_v2` にする** (A-2 Slice 2d-1 で
+codec に実装済み)。旧バイナリの view は v2 行を**構造的に返せない**ので、claim も publish も
+cursor 前進も起こしようがない — scale-to-one 手順が「存在しないはず」と言った混在クラスタに
+v2 文書が紛れ込んでも、である。手順で禁じていたこと (Slice 2 レビュー F9 の「共有環境への
+手動 v2 投入禁止」) が、構造的性質になる。
+
+**fence は規範のまま**である。これは防御の重ね掛けであって、代替ではない — 旧バイナリは
+view 以外の経路 (直接 `_id` 参照など) を持ちうるし、`minReaderSchemaVersion` が守るのは
+これとは別の不変量である。
+
+代償は恒久的で、意図して払う: **Slice 2d-2 以降に足す全 view / query は両 type を対象に
+しなければならない**。漏らすと v2 が新バイナリから見えなくなる (静かな欠落)。旧バイナリは
+直せないが新バイナリはテストできる、というのがこの取引を選ぶ理由である。2d-2 は
+「全 view が両 type を返す」ことをテストで固定する。
+
+decoder は逆向きも拒否する — `schemaVersion=2` なのに `type=lineage_event` の文書
+(旧 view に見える形で v2 payload を持ち込む偽装) は復号を拒む。
 
 ### 撤回 3: barrier に鮮度が無く、昇格が原子的でなかった (v2.3.10)
 
