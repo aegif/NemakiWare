@@ -222,6 +222,26 @@ public interface LineageJournalStore {
 
     void appendAll(List<LineageEvent> events);
 
+    /**
+     * Stores a v2 event by create-if-absent under its {@code deliveryId}-derived key.
+     *
+     * <p>This is §8-a's step 1 and only step 1: the row is written unsequenced
+     * ({@code state=UNSEQUENCED}), and the fenced sequencer that assigns {@code sequence} is
+     * D-rest's — deliberately not the v1 {@code append}'s assign-then-create pattern, whose
+     * crash window (a burned sequence number with no event) is the defect 8-a exists to remove.
+     *
+     * <p>Idempotency is exact-match: a conflict whose stored document carries the same
+     * {@code creationPayloadDigest} is this event's own earlier attempt and returns quietly;
+     * anything else under the key — different digest, a v1 row, no digest — throws
+     * {@link LineageIntegrityException}, routed per §3's table (normal emit: spool + metric,
+     * never a 500 to the business caller; admin replay/repair: 500).
+     *
+     * <p>Nothing in production calls this until A-2 Slice 4 flips the writer.
+     *
+     * @throws LineageIntegrityException on an id collision with different content
+     */
+    void appendV2(LineageEventV2 event);
+
     List<LineageJournalRow> findByRepositoryId(String repositoryId, int limit, int offset);
 
     List<LineageJournalRow> findByProcessType(String repositoryId, LineageProcessType processType, int limit, int offset);

@@ -22,6 +22,11 @@ public class NoopLineageJournalStore implements LineageJournalStore {
     }
 
     @Override
+    public void appendV2(LineageEventV2 event) {
+        // no-op
+    }
+
+    @Override
     public List<LineageJournalRow> findByRepositoryId(String repositoryId, int limit, int offset) {
         return List.of();
     }

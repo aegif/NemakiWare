@@ -2024,7 +2024,7 @@ identity 分離を入れる前の記述で、成立しない。
 | 2d-1 (無損失 `LineageJournalEntry` + v2 codec、`type=lineage_event_v2`) | 完了 (production 未配線) |
 | 2d-2a (view 両 type 化 + Rhino 実行検証、型付き行結果、recordId helper) | 完了 |
 | 2d-2b (store read の一斉切替、recordId 分離、Undecodable の無変異、v2 の DISCARD 禁止) | 完了 |
-| 3 (`creationPayloadDigest` の store/sink 直前検査配線) | 実装中 |
+| 3 (appendV2 の 409 完全一致・`LineageIntegrityException`・§7 pre-sink gate・`REJECTED`) | 完了 (writer は v1 のまま — appendV2 は production 未呼出) |
 
 A-1 を分けたのは `LineageEvent` の移行対象が 14 ファイル・`inputs()/outputs()` 参照 79 箇所に
 及び、片方だけ入った木が壊れるため。A-1 単体で型と identity は閉じている。
