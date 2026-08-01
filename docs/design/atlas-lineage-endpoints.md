@@ -1336,6 +1336,15 @@ D-rest が直すのは、設計上すでに確認済みの**採番欠落・二�
 
 Slice 1〜3 (additive、production writer は v1 のまま) は本節と独立に進められる。
 
+**Slice 4b (activation) の追加 gate — 秘密面 (v2.3.14)。** 並行レビュー (2026-08-01) の指摘を
+受け、次を 4b の前提に含める:
+
+| gate | 内容 |
+|---|---|
+| E-19 | live Atlas で、token 付き URL を持つ document を sync し、**backend が保存した実体**に token が無いことを確認する (§10 の表の定義どおり) |
+| E-20 | A-1g 以前の raw URL 入り entity が republish で消えるかを実測する。**消えなければ purge / entity 再作成の runbook を release 手順に追加してから** activate する |
+| cursor 残渣 | `cloud-metadata-snapshot` cursor が URL-free 形式であること (旧形式は成功 sync 1 周期で scrub される。sync が回らない repository は admin API 側で sanitize 済みだが、保存値の確認を運用受入に含める) |
+
 ## 7. cross-repository 方針
 
 **cross-repository lineage は認めない。**
@@ -2000,7 +2009,18 @@ identity 分離を入れる前の記述で、成立しない。
 | | 内容 | 状態 |
 |---|---|---|
 | **A-1** | `EndpointKind` / `EndpointAttribute` / `LineageEndpoint` / `LineageIdentity` / `LineageCanonicalHash` / `LineageRepositoryScope`。型・属性契約・identity 符号化 | 完了 (producer 未配線) |
-| **A-2** | `LineageEvent` を v2 形状へ移行 (14 ファイル)、`creationPayloadDigest` と `LineageIntegrityException`、cross-repo 検証 4層の**配線**、producer 全書き換え、chunking、`FILE_SHARE_SYNC_UPLOAD` 生成拒否 | 未着手 |
+| **A-2** | `LineageEvent` を v2 形状へ移行、`creationPayloadDigest` と integrity 検査、cross-repo 検証 4層の**配線**、producer 全書き換え、chunking、`FILE_SHARE_SYNC_UPLOAD` 生成拒否 | **Slice 1a/1b/2a/2b/2c/2d-1 完了** (下表)。writer は v1 のまま。残: 2d-2、Slice 3、producer 書き換え、chunking、4a/4b |
+
+| A-2 slice | 実装状態 |
+|---|---|
+| 1a (v2 型・delivery union・shape 表・純関数 builder) | 完了 |
+| 1b (版非依存 read model `LineageRecord` / `LineageAssetRef`) | 完了 |
+| 2a (sink 契約 → `LineageRecord`、3 sink 移行) | 完了 |
+| 2b (admin API 表示経路、版非依存キー併記) | 完了 |
+| 2c (projector の判断を record に、quarantine、occurredAt 比較修正) | 完了 |
+| 2d-1 (無損失 `LineageJournalEntry` + v2 codec、`type=lineage_event_v2`) | 完了 (production 未配線) |
+| 2d-2 (store read の一斉切替、view 両 type 化、recordId 分離) | 未着手 |
+| 3 (`creationPayloadDigest` の store/sink 直前検査配線) | 未着手 |
 
 A-1 を分けたのは `LineageEvent` の移行対象が 14 ファイル・`inputs()/outputs()` 参照 79 箇所に
 及び、片方だけ入った木が壊れるため。A-1 単体で型と identity は閉じている。

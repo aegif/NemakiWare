@@ -102,8 +102,12 @@ jobs:
       # -Popencmis-github-packages is what adds the GitHub Packages repository:
       # the profile is not active by default, so without it Maven consults only
       # Central and fails to resolve 1.1.0-nemakiware before any test runs.
+      # The A-2 classes are part of the identity contract: the delivery union delegates to the
+      # frozen formulas, the digest and codec re-verify stored identity, and the read model
+      # carries it. A green run here that never executed them would read as "contract OK"
+      # while binding nothing — which is how the list fell behind once already.
       - name: Java identity, endpoint and schema-alignment tests
         run: >
           mvn -B -f core/pom.xml -Pdevelopment,opencmis-github-packages test
-          -Dtest='LineageCanonicalHashTest,LineageIdentityTest,LineageEndpointTest,LineageEndpointBypassTest,LineageRepositoryScopeTest,EndpointAttributeTest,EndpointKindSchemaAlignmentTest,ExternalAssetNamingCrossPathTest,ExternalAssetIdentityTest,PurviewEntityPayloadFactoryTest,CatalogPropertyMappingResolverTest'
+          -Dtest='LineageCanonicalHashTest,LineageIdentityTest,LineageEndpointTest,LineageEndpointBypassTest,LineageRepositoryScopeTest,EndpointAttributeTest,EndpointKindSchemaAlignmentTest,ExternalAssetNamingCrossPathTest,ExternalAssetIdentityTest,PurviewEntityPayloadFactoryTest,CatalogPropertyMappingResolverTest,LineageDeliveryTest,LineageProcessShapeTest,LineageEventDigestTest,LineageEventV2Test,LineageRecordTest,LineageSinkRecordContractTest,LineageEventCodecTest'
           -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false

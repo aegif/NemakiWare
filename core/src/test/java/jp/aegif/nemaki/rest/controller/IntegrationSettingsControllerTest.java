@@ -47,6 +47,85 @@ public class IntegrationSettingsControllerTest {
         controller.setHttpRequest(httpRequest);
     }
 
+    /**
+     * The admin PUT must not invent a catalogName from the property id. The resolver's load path
+     * stopped accepting property-id reuse (A-1k); a save path that falls back to it persists the
+     * invented value, after which it is indistinguishable from one an admin chose.
+     */
+    @Nested
+    class PropertyMappingSave {
+
+        private jp.aegif.nemaki.rest.purview.payload.CatalogPropertyMappingResolver resolver;
+
+        @BeforeEach
+        void injectResolver() throws Exception {
+            resolver = mock(jp.aegif.nemaki.rest.purview.payload.CatalogPropertyMappingResolver.class);
+            java.lang.reflect.Field f =
+                    IntegrationSettingsController.class.getDeclaredField("propertyMappingResolver");
+            f.setAccessible(true);
+            f.set(controller, resolver);
+        }
+
+        @Test
+        void anEnabledMappingWithoutACatalogNameIsRejectedNotInvented() {
+            Map<String, Object> body = Map.of("mappings", Map.of(
+                    "nemaki:document", Map.of(
+                            "nemaki:cloudProvider", Map.of("enabled", true))));
+
+            var response = controller.updatePropertyMappings("bedroom", new java.util.LinkedHashMap<>(body));
+
+            org.junit.jupiter.api.Assertions.assertEquals(400, response.getStatusCode().value());
+            String message = String.valueOf(response.getBody().get("message"));
+            org.junit.jupiter.api.Assertions.assertTrue(message.contains("nemaki:cloudProvider"), message);
+            org.junit.jupiter.api.Assertions.assertTrue(message.contains("catalogName"), message);
+            org.mockito.Mockito.verify(resolver, org.mockito.Mockito.never())
+                    .saveMappings(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        }
+
+        @Test
+        void aBlankCatalogNameOnAnEnabledMappingIsAlsoRejected() {
+            Map<String, Object> body = Map.of("mappings", Map.of(
+                    "nemaki:document", Map.of(
+                            "nemaki:cloudProvider", Map.of("enabled", true, "catalogName", "  "))));
+
+            var response = controller.updatePropertyMappings("bedroom", new java.util.LinkedHashMap<>(body));
+            org.junit.jupiter.api.Assertions.assertEquals(400, response.getStatusCode().value());
+        }
+
+        @Test
+        void aDisabledMappingMayOmitTheCatalogNameAndStoresNoInventedOne() {
+            Map<String, Object> body = Map.of("mappings", Map.of(
+                    "nemaki:document", Map.of(
+                            "nemaki:cloudProvider", Map.of("enabled", false))));
+
+            var response = controller.updatePropertyMappings("bedroom", new java.util.LinkedHashMap<>(body));
+
+            org.junit.jupiter.api.Assertions.assertEquals(200, response.getStatusCode().value());
+            org.mockito.Mockito.verify(resolver).saveMappings(
+                    org.mockito.ArgumentMatchers.eq("bedroom"),
+                    org.mockito.ArgumentMatchers.argThat(parsed -> {
+                        var mapping = parsed.get("nemaki:document").get("nemaki:cloudProvider");
+                        return !mapping.enabled() && mapping.catalogName() == null;
+                    }));
+        }
+
+        @Test
+        void anEnabledMappingWithACatalogNameSavesExactlyThatName() {
+            Map<String, Object> body = Map.of("mappings", Map.of(
+                    "nemaki:document", Map.of(
+                            "nemaki:cloudProvider", Map.of("enabled", true, "catalogName", "provider"))));
+
+            var response = controller.updatePropertyMappings("bedroom", new java.util.LinkedHashMap<>(body));
+
+            org.junit.jupiter.api.Assertions.assertEquals(200, response.getStatusCode().value());
+            org.mockito.Mockito.verify(resolver).saveMappings(
+                    org.mockito.ArgumentMatchers.eq("bedroom"),
+                    org.mockito.ArgumentMatchers.argThat(parsed ->
+                            "provider".equals(parsed.get("nemaki:document")
+                                    .get("nemaki:cloudProvider").catalogName())));
+        }
+    }
+
     @Nested
     @DisplayName("Dual backend warning")
     class DualBackendWarning {

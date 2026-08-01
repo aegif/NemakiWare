@@ -532,7 +532,20 @@ public class IntegrationSettingsController {
 					if (!(propEntry.getValue() instanceof Map<?, ?>)) continue;
 					Map<String, Object> fields = (Map<String, Object>) propEntry.getValue();
 					boolean enabled = Boolean.TRUE.equals(fields.get("enabled"));
-					String catalogName = fields.get("catalogName") instanceof String s ? s : propEntry.getKey();
+					// No fallback to the property id. Inventing a catalogName here is exactly the
+					// property-id reuse the resolver's load path stopped accepting (A-1k): the
+					// invented value gets persisted, and from then on it is indistinguishable from
+					// one an admin chose. An enabled mapping without a name is a client error; a
+					// disabled one may omit it (stored as absent, same as the resolver's reading).
+					String catalogName = fields.get("catalogName") instanceof String s
+							&& !s.isBlank() ? s : null;
+					if (enabled && catalogName == null) {
+						response.put("status", "error");
+						response.put("message", "Mapping for '" + propEntry.getKey() + "' (type '"
+								+ typeEntry.getKey() + "') is enabled but has no catalogName —"
+								+ " supply one; the property id is not used as a fallback");
+						return ResponseEntity.badRequest().body(response);
+					}
 					typeMappings.put(propEntry.getKey(), new PropertyMapping(enabled, catalogName));
 				}
 				parsed.put(typeEntry.getKey(), typeMappings);
