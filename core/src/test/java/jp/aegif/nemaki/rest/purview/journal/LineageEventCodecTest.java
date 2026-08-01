@@ -344,6 +344,100 @@ public class LineageEventCodecTest {
         assertFalse(CouchLineageEventV2.toMap(event, " ").containsKey("_rev"));
     }
 
+    // ------------------------------------------------------------------ decodeRow
+
+    /**
+     * The total form: a failed row is a value, not an exception. The store's ordered read cannot
+     * throw per row (one corrupt row would hide the batch) and cannot skip per row (the cursor
+     * would walk past the broken row and violate ordered delivery) — so the failure travels.
+     */
+    @Test
+    public void decodeRowWrapsAGoodRowOfEitherVersion() {
+        LineageJournalRow v2Row = LineageEventCodec.decodeRow(CouchLineageEventV2.toMap(original()));
+        assertInstanceOf(LineageJournalRow.Decoded.class, v2Row);
+
+        LineageEvent v1 = new LineageEventBuilder()
+                .repositoryId(REPO)
+                .processType(LineageProcessType.ARCHIVE_LOCAL)
+                .addInputObject(REPO, "doc-1")
+                .targets(List.of("purview"))
+                .build();
+        LineageJournalRow v1Row = LineageEventCodec.decodeRow(new CouchLineageEvent(v1).toMap());
+        assertInstanceOf(LineageJournalRow.Decoded.class, v1Row);
+    }
+
+    @Test
+    public void decodeRowTurnsATamperedRowIntoAnUndecodableWithItsCoordinates() {
+        Map<String, Object> doc = CouchLineageEventV2.toMap(original());
+        doc.put("operationId", "op-TAMPERED");
+
+        LineageJournalRow row = LineageEventCodec.decodeRow(doc);
+        LineageJournalRow.Undecodable undecodable =
+                (LineageJournalRow.Undecodable) row;
+        assertEquals(doc.get("_id"), undecodable.documentId());
+        assertEquals("lineage_event_v2", undecodable.documentType());
+        assertEquals(2, undecodable.schemaVersion());
+        assertTrue(undecodable.reason().contains("processKey"), undecodable.reason());
+    }
+
+    /**
+     * The reason travels to logs, quarantine records and the admin API; a qualified name in it
+     * would carry an external stable key along. The identity-mismatch message names expected and
+     * stored hashes, which are not reversible — pinned here so it stays that way.
+     */
+    @Test
+    public void anUndecodableRowsReasonCarriesNoQualifiedName() {
+        LineageEventV2 event = new LineageEventV2Builder()
+                .eventId(EVENT_ID)
+                .occurredAt(OCCURRED)
+                .repositoryId(REPO)
+                .processType(LineageProcessType.EXTERNAL_ATTACHMENT_IMPORT)
+                .operationId("op-1")
+                .delivery(new LineageDelivery.Original(List.of("purview")))
+                .addInput(LineageEndpoint.externalAsset(REPO, "slack:super-secret-file-id", "slack"))
+                .addOutput(LineageEndpoint.document(REPO, "doc-1", "a.txt"))
+                .build();
+        Map<String, Object> doc = CouchLineageEventV2.toMap(event);
+        doc.put("occurredAt", "2027-01-01T00:00:00Z"); // digest mismatch
+
+        LineageJournalRow.Undecodable undecodable =
+                (LineageJournalRow.Undecodable) LineageEventCodec.decodeRow(doc);
+        assertFalse(undecodable.reason().contains("super-secret-file-id"), undecodable.reason());
+        assertFalse(undecodable.toString().contains("super-secret-file-id"),
+                undecodable.toString());
+    }
+
+    /**
+     * The rendering an operator sees. Absence-only assertions are satisfied by rendering nothing,
+     * and a diagnostic that prints nothing diagnoses nothing.
+     */
+    @Test
+    public void anUndecodableRowRendersItsCoordinates() {
+        LineageJournalRow.Undecodable undecodable =
+                new LineageJournalRow.Undecodable("lineage:x", "lineage_event_v2", 2, "torn");
+        assertEquals("Undecodable[id=lineage:x, type=lineage_event_v2, schemaVersion=2,"
+                + " reason=torn]", undecodable.toString());
+    }
+
+    @Test
+    public void decodeRowHandlesADocumentWithNothingReadable() {
+        LineageJournalRow.Undecodable undecodable =
+                (LineageJournalRow.Undecodable) LineageEventCodec.decodeRow(null);
+        assertEquals(null, undecodable.documentId());
+        assertEquals(0, undecodable.schemaVersion());
+        assertTrue(undecodable.reason().contains("null"), undecodable.reason());
+    }
+
+    @Test
+    public void theRowUnionRejectsHalfBuiltValues() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new LineageJournalRow.Decoded(null));
+        assertThrows(IllegalArgumentException.class,
+                () -> new LineageJournalRow.Undecodable("id", "t", 2, null));
+        assertThrows(IllegalArgumentException.class,
+                () -> new LineageJournalRow.Undecodable("id", "t", 2, " "));
+    }
+
     // ------------------------------------------------------------------ the entry's invariant
 
     @Test

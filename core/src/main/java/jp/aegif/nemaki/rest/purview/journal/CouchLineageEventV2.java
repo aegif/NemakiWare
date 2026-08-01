@@ -60,7 +60,7 @@ public final class CouchLineageEventV2 {
 
     /** The document {@code _id}: prefix + the delivery identity, per §3. */
     public static String documentId(String deliveryId) {
-        return ID_PREFIX + deliveryId;
+        return CouchLineageEvent.journalDocumentId(deliveryId);
     }
 
     // ------------------------------------------------------------------ encode

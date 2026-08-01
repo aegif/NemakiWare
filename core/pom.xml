@@ -210,6 +210,16 @@
 			<version>6.1.2</version>
 			<scope>test</scope>
 		</dependency>
+		<!-- Rhino, test only: LineageJournalViewCoverageTest executes the CouchDB map functions
+		     against synthetic v1/v2 documents. Pattern-matching the view source for both type
+		     literals would pass on a view whose emit is still guarded by a v1-only field — the
+		     property only binds if the JavaScript actually runs. -->
+		<dependency>
+			<groupId>org.mozilla</groupId>
+			<artifactId>rhino</artifactId>
+			<version>1.7.15</version>
+			<scope>test</scope>
+		</dependency>
 		<dependency>
 			<groupId>org.junit.platform</groupId>
 			<artifactId>junit-platform-suite</artifactId>
