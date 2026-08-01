@@ -1286,7 +1286,20 @@ test.describe('Group 7: Event replay', () => {
       { headers: { Authorization: AUTH_HEADER } }
     );
     expect(evtRes.ok(), `event lookup -> HTTP ${evtRes.status()}`).toBe(true);
-    expect((await evtRes.json())?.publishStatusByTarget?.atlas).toBe('PROJECTING');
+    const evtBody = await evtRes.json();
+    expect(evtBody?.publishStatusByTarget?.atlas).toBe('PROJECTING');
+
+    // A-2 Slice 2b added version-neutral names alongside the v1 ones. On a v1 row they agree;
+    // asserting that here is what would catch the projection starting to report something else.
+    expect(evtBody?.schemaVersion).toBe(1);
+    expect(evtBody?.idempotencyKeyVersion).toBe(1);
+    expect(evtBody?.processIdentity).toBe(evtBody?.eventKey);
+    expect(evtBody?.recordId).toBe(evtBody?.eventId);
+    expect(evtBody?.unprojectable).toBeUndefined();
+    // The structured asset form has to line up with the flat one it exists beside.
+    expect(evtBody?.inputAssets?.map((a: { qualifiedName: string }) => a.qualifiedName))
+      .toEqual(evtBody?.inputs);
+    expect(evtBody?.inputAssets?.[0]?.resolution).toBe('LEGACY_NAME');
   });
 
   test('7.2 Replay re-drives the event through to Atlas', async ({ request }) => {
