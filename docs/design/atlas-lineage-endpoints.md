@@ -1926,6 +1926,34 @@ dead letter・3 sink をまとめて書き換えることになる。それは�
 立てると §6-a の CAS 条件 8 が**満たされていないのに通る**。capability は経路が通っている
 ことの表明であって、クラスの存在の表明ではない。
 
+##### 正規化 read model は復旧 payload ではない (v2.3.12)
+
+`LineageRecord` (Slice 1b) が担うのは **表示・振り分け・catalog 発行**の 3 経路だけである。
+**dead letter / spool / replay の payload には使わない。**
+
+v2 の同一性は delivery union・`operationId`・chunk 座標・`creationPayloadDigest` に依存し、
+read model はそのどれも持たない。持たせれば read model が第二の envelope になり、
+「表示のための型」と「復旧のための型」が同じものになる。
+
+v1 の dead letter は**既にこの意味で lossy** である —
+[`CouchLineageDeadLetterStore.reconstructEvent`](../../core/src/main/java/jp/aegif/nemaki/rest/purview/journal/CouchLineageDeadLetterStore.java#L310)
+は `schemaVersion=1` / `sequenceNumber=0` / `runId=""` / `correlationId=""` / `version=1` を
+**焼き込んで**再構成する。v1 では `_id` が UUID だったので害が無かったが、v2 で同じことを
+すると **再計算した identity が保存時の identity と一致しない**記録ができる。
+
+復旧経路は**版タグ付きの無損失 envelope**を持つ。どちらの版かを記録し、その版の型へ
+そのまま戻せること。D-spool と §9 の repair の入力仕様はこれに従う。
+
+##### v1 と v2 で Process QN が変わることは read model の責務ではない
+
+v1 は `eventKey`、v2 は `processKey` から catalog の Process QN を作るので、同一業務操作に
+**別の Process entity** が生まれる。§3 はこれを既に決めている — v1 の replay / repair は
+既存 Process を更新せず、v2 の補償 event を新設し、v1 の Process は監査事実として残す。
+
+`LineageRecord` は `idempotencyKeyVersion` で**どちらの規則で作られた名前か**を報告するだけで、
+この決定を実装しない。実装するのは replay / repair のコマンド経路である。Slice 2 は
+**現行の v1 replay の振る舞いを変えない**。
+
 ---
 
 ## v2.3.1 で閉じた点
