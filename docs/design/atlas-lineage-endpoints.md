@@ -1,7 +1,31 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.11 — increment A sign-off 済み。A-1〜A-1k 実装済み、A-2 Slice 1〜3 着手可・Slice 4 は §6-a の再 sign-off 待ち**
+status: **v2.3.12 — increment A sign-off 済み。A-1〜A-1k 実装済み、A-2 Slice 1〜3 着手可・Slice 4 は §6-a の再 sign-off 待ち**
 revision:
+- v2.3.12 — §6-a の**排他・回復可能性・fence の実在性**を訂正し、旧疑似コードとの矛盾を解消。
+  ① materialize 決定をローカル sidecar に置いていたのは**排他になっていなかった** — atomic
+  rename は「置換」であって「不在なら作成」ではなく、activation を跨いだ 2 つの scanner が
+  別々の版を選べば `deliveryId` が違うので決定的 `_id` では潰れない。sidecar は node-local なので
+  bundle 複製にも届かず、失った場合に「まだ決めていない」と「決めたが消えた」を見分ける規則も
+  無かった。決定を **CouchDB の `lineage_materialization:{spoolRecordId}` へ移し
+  create-if-absent で排他**にする (撤回 7)。torn write も検証規則も不要になる。決定文書は削除せず、
+  fact の削除は ACK の後、という順序も明記。
+  ② barrier に **D-rest capability の検査が実在しなかった** — 本文は「4b は D-rest 配布済みを
+  前提に含める」と書いていたが、文書にも CAS 条件にも無く、`binaryDigest` は誰とも比較して
+  いなかった。`requiredCapabilities` / `approvedBinaryDigests` と CAS 条件 8・9 を追加。
+  ③ rollback fence を **spool の大域走査に置いていたのは判定不能** — spool 列挙は node-local で
+  集約 endpoint は v3.3 に無く、scale-to-one では v2 を書いた node が既に停止している。fence を
+  `minReaderSchemaVersion` (CouchDB 1 文書・単調増加) に移し、spool 残留は安全条件ではなく
+  **回収対象**とする (撤回 6)。
+  ④ `payloadDigest` が**存在しない `snapshot`** を対象にしていた (§2 v2.1 で event-level snapshot は
+  endpoint-local へ移行済み)。`endpointRecords(...)` を A-1 の型 tag だけで定義し直し、golden
+  vector と `reference_hash.py` で凍結する。
+  ⑤ `occurredAt` は `spoolRecordId` と `creationPayloadDigest` の両方に入るのに、現行
+  `LineageEventBuilder.build()` は毎回 `Instant.now()` を読む。**一度だけ採番・`build()` は純関数**を
+  §3 の契約にする。
+  ⑥ §8-a の「409 = 冪等に成功」、§8-d / §9 の domain tag の無い hash 式、`originalEventId` 基点の
+  replay 式、「二度 repair しても増えない」の曖昧さ、実装増分表の「D-rest は Slice 4 の後」を
+  §3 / §6-a の正典に揃えた。identity の式は §3 にのみ置き、他節は参照だけにする。
 - v2 — §4 §6 §8 §9 を全面改訂。v1 の採番一体化案・caller 例外案・raw URI QN 案・
   `upload://` 空 input 案・`REPLAYED` 上書き案は**撤回**。撤回理由は各節に残す。
 - v2.1 — 7 判断の条件を反映し、endpoint-local snapshot と shell 排除 (§2 §10)、
@@ -506,20 +530,51 @@ create-if-absent の 409 で「同一かどうか」を判定する digest の�
 | `processKey` / `deliveryId` / `schemaVersion` / `repositoryId` / `processType` | `sequence` / `state` / `sequencerGeneration` |
 | `operationId` / `occurredAt` / `inputs` / `outputs` (endpoint 属性込み) | `publishStatusByTarget` / `claimToken` / `replayRequestsByTarget` |
 | `chunkIndex` / `chunkCount` | `_rev` / `_id` 以外の CouchDB メタ |
+| | **`spoolRecordId`** (§6-a。監査・逆引き専用) |
+
+`spoolRecordId` を**除外する**のは避けようのない罠があるからである。同じ業務 fact が
+「直接 emit された event」と「spool から materialize された event」の両方で現れうるが、
+`deliveryId` はどちらも同じ (`processKey` に `spoolRecordId` は入らない) なので、digest に入れると
+**同一 `_id` で digest 不一致**という偽の integrity 違反が立つ。監査に必要な値ではあるので
+持つが、同一性の判定には使わない。
 
 **digest 不一致時の扱い (v2.3.1)**
 
 | 経路 | 挙動 |
 |---|---|
 | 通常 emit | 業務 caller に 500 を返さない (fail-open 契約)。**integrity 例外として spool へ落とし、metric `lineage.digest.mismatch` を出す** |
-| 管理 replay / repair | 500 を返す。運用者が異常を認識すべき経路だから |
+| 管理 replay / repair | `FAILED` にして 500 を返す。運用者が異常を認識すべき経路だから |
 
 - 冪等判定 (`append` の重複検出) は **`deliveryId`** で行う。`eventKey` では行わない。
 - `idempotencyKeyVersion` は `processKey` の版として持つ (§3 v2.1 の記述をここに集約)。
 - **create-if-absent の 409 は「成功」ではない。** 既存文書を読み直し、
   **immutable payload の digest が完全一致した場合のみ**成功として扱う。
-  不一致は ID 衝突という異常であり、`FAILED` にして 500 を返す。
+  不一致は ID 衝突という異常であり、**扱いは上表のとおり経路で分かれる** — 通常 emit で 500 を
+  返せば fail-open 契約を破ることになるので、そちらは integrity 例外 → spool + metric である。
+  この規則は §8-a の event-first append、§8-d の補償 event、§9 の repair、§6-a の materialize の
+  **すべてに適用される**。「409 = 冪等に成功」と書いてある箇所は無い。
 - 補償 event は元の `processKey` を保つ (同一業務操作だから)。区別は `deliveryId` が担う。
+
+#### `occurredAt` は一度だけ採番する (v2.3.12)
+
+`occurredAt` は `creationPayloadDigest` に入り、§6-a では `spoolRecordId` にも入る。したがって
+**再試行のたびに値が変われば、同じ業務 fact が別の identity を持つ**。
+
+現行 [`LineageEventBuilder.build()`](../../core/src/main/java/jp/aegif/nemaki/rest/purview/journal/LineageEventBuilder.java#L194)
+は `Instant.now()` を `build()` の中で呼んでおり、**同じ builder から二度 build すれば別の event に
+なる**。v1 では `_id` が UUID だったので害が無かったが、v2 では identity が壊れる。
+
+A-2 Slice 1 で次を契約にする。
+
+| 項目 | 規則 |
+|---|---|
+| 採番点 | 業務 fact が成立した瞬間に **emitter が一度だけ**採る。あらゆる fallible 操作より前 |
+| 受け渡し | builder の必須入力とする。`build()` の中で現在時刻を読まない |
+| `build()` | **入力の純関数**とする。同じ入力から二度呼べば `eventId` を除き完全に同一の event になる |
+| 再試行 | spool・bundle・再起動・repair のどの経路でも、最初に採った値を**そのまま運ぶ**。再構成しない |
+| 検査 | 同一 builder から 2 回 build して digest が一致することを単体テストで固定する |
+
+`eventId` (UUID) は identity に入らない監査用フィールドなので純関数性の対象外とする。
 
 ### processKey の直列化 (v2 / v2.3.1 で `deliveryId` に分離)
 
@@ -727,10 +782,13 @@ _id: lineage_write_version
   expectedMembershipDigest   : SHA-256(sorted expectedNodes)
   expectedMembershipRevision : 外部 control-plane が返した membership revision
   expectedNodes              : [ { nodeId, bootId } ]
+  requiredCapabilities       : [ ... ]   // 下表。ACK 側が満たすべき能力
+  approvedBinaryDigests      : [ ... ]   // 空なら digest 検査を課さない
   acks:
     {nodeId}:
       bootId                 : この boot の識別子。再起動で変わる
       binaryDigest           : 動作中バイナリの識別子
+      capabilities           : [ ... ]   // この binary が実際に持つ能力
       readSchemaVersions     : [1, 2]
       spoolSchemaVersions    : [1, 2]   // spool record を materialize できる版
       spoolReady             : true     // 永続 volume + write + fsync 検証済み
@@ -738,6 +796,28 @@ _id: lineage_write_version
   writeSchemaVersion         : 1 | 2
   minReaderSchemaVersion     : 1 | 2    // 単調増加のみ
 ```
+
+#### capability は「読めるか」だけでなく「直っているか」を表す (v2.3.12)
+
+v2.3.11 は「4b の CAS は D-rest 配布済みであることも前提に含める」と本文に書きながら、
+**barrier 文書にも CAS 条件にもそれが無かった**。`binaryDigest` は記録するだけで誰とも比較せず、
+改訂前の条件 1〜8 は reader と spool の能力しか見ていない。scale-to-one は旧 AP の**同時実行**を防ぐが、
+「唯一の AP が、v2 を読めるが D-rest を持たない中間ビルドである」ことは防がない。
+それでは §6-a が守ろうとしている「v2 event を既知の壊れた journal 経路へ流さない」が破れる。
+
+capability を明示的な語彙にして、ACK と barrier の両方に持たせる。
+
+| capability | 意味 | 由来 |
+|---|---|---|
+| `read:v2` | v2 event を復号し projector へ流せる | A-2 Slice 1 |
+| `spool:v2` | 版非依存 fact を materialize できる | D-spool |
+| `sequencer:event-first` | 8-a v2 (event-first UNSEQUENCED + fenced finalizer) | D-rest |
+| `cursor:cas` | 8-c (単調 CAS。publish 永続化を確認してから前進) | D-rest |
+| `replay:generation-cas` | 8-d (replay generation の CAS 状態機械) | D-rest |
+
+`requiredCapabilities` は barrier 文書側に置く。**ACK 側の宣言だけを信じる形にしない**ため、
+運用が承認したビルドの `binaryDigest` を `approvedBinaryDigests` に列挙できる
+(空なら課さない。単一 AP 運用では digest を 1 つ書くだけで足りる)。
 
 #### `ACTIVE` への CAS が同一 `_rev` で検査すること
 
@@ -748,10 +828,12 @@ _id: lineage_write_version
 5. 各 ACK が**未期限切れ**
 6. 各 ACK の `readSchemaVersions` が 2 を含む
 7. 各 ACK の `spoolReady == true` かつ `spoolSchemaVersions` が 2 を含む
-8. **同じ書込みで** `writeSchemaVersion = 2` と `minReaderSchemaVersion = 2` を設定
+8. 各 ACK の `capabilities` が `requiredCapabilities` を**包含**する
+9. `approvedBinaryDigests` が空でないなら、各 ACK の `binaryDigest` がそこに**含まれる**
+10. **同じ書込みで** `writeSchemaVersion = 2` と `minReaderSchemaVersion = 2` を設定
 
-8 が同一 CAS に入ることで、`writeSchemaVersion=2` だが `minReaderSchemaVersion=1` という状態は
-**存在し得なくなる**。
+10 が同一 CAS に入ることで、`writeSchemaVersion=2` だが `minReaderSchemaVersion=1` という状態は
+**存在し得なくなる**。8 と 9 が入ることで、D-rest を持たないビルドでは 4b が通らない。
 
 `generation` が変われば過去の ACK は無効 — ACK は `(nodeId, bootId, generation)` に紐づく。
 
@@ -798,8 +880,43 @@ membership の推測も再提示も要らず、旧バイナリが存在しない
 | `writeSchemaVersion` | 1 ⇄ 2 | producer が今書く版。rollback で 1 に戻せる |
 | `minReaderSchemaVersion` | **単調増加のみ** | `ACTIVE` 昇格と同一 CAS で 2 になり、二度と下がらない |
 
-writer を 1 に戻すことと、v1-only バイナリへ戻すことは**別物**。journal / dead letter / spool に
-v2 が 1 件でも残る限り後者は許されない。
+writer を 1 に戻すことと、v1-only バイナリへ戻すことは**別物**。前者は運用上の rollback として
+常に可能で、後者は不可逆である。
+
+#### 撤回 6: rollback 条件を spool の大域走査に置いていた (v2.3.12)
+
+v2.3.11 は「journal / dead letter / spool に v2 が 1 件でも残る限り v1-only バイナリへは戻せない」
+と書いた。**判定できない条件だった。** spool の列挙は §8 のとおり **node-local の admin API のみ**で、
+集約 endpoint は v3.3 では実装しない。しかも規範的 rollout は scale-to-one なので、rollback を
+検討する時点で **v2 を書いた node は既に停止している**ことが普通であり、その永続 volume は
+唯一動いている AP から見えない。アプリにも手順にも「どこにも残っていない」を確かめる術が無い。
+
+存在しない検査を条件に書くと、実装は必ずそれを省くか、見えた範囲だけを見て「無い」と答える。
+後者の方が危険である。
+
+**fence は `minReaderSchemaVersion` に置く。** これは CouchDB の barrier 文書 1 つで、
+どの node からも読め、単調増加で、`ACTIVE` 昇格と同一 CAS で 2 になる。
+
+| 操作 | 条件 | 誰が保証するか |
+|---|---|---|
+| `writeSchemaVersion` 2 → 1 | いつでも可 | アプリ (CAS) |
+| `minReaderSchemaVersion` 2 → 1 | **不可**。単調増加 | アプリ (CAS) |
+| 新バイナリを `readSchemaVersions=[1]` で起動する | `minReaderSchemaVersion == 1` のときのみ。2 なら**起動時に lineage subsystem を fail-closed** | アプリ (起動検査) |
+| **v1-only の旧バイナリ**を起動する | 禁止 | **運用のみ**。アプリは検証できない (撤回 2) |
+
+3 行目と 4 行目を分けているのは、撤回 2 と同じ理由である。旧バイナリは既にデプロイ済みで
+この検査を持たないので、アプリが保証できるのは「**新**バイナリが v1-only reader として
+参加しないこと」と「`minReaderSchemaVersion` を下げないこと」までである。旧バイナリを
+起動しないことは scale-to-one 手順の step 1 (旧 AP の消滅確認) が担う。
+
+`ACTIVE` 昇格の時点ではまだ v2 event が 1 件も無いので、この規則は「v2 を 1 件も書かずに
+activate だけした」場合にも rollback を禁じる。**意図的にそうする** — 緩めるには「本当に 0 件か」を
+確かめる必要があり、それがまさに確かめられない条件だからである。activate は片道であると
+運用手順に明記する。
+
+**spool の残留は安全 fence ではなく回収対象**として扱う。停止した node の永続 volume は
+`nodeId` 付きで運用 inventory に載せ (§8 の「node 可視化」)、署名付き bundle で回収する。
+回収し損ねた fact は lineage の欠落であって、rollback の可否を左右する事実ではない。
 
 ### 版非依存 spool (v2.3.10)
 
@@ -812,11 +929,16 @@ flag が読めないとき、**event を spool してはならない** — ど�
   spoolRecordId        // 版非依存の一意 ID。ファイル名に使う
   operationId / repositoryId / processType
   inputs / outputs     // typed LineageEndpoint (A-1 の型。版に依存しない)
-  snapshot
+                       // endpoint 属性 (§2 の endpoint-local snapshot) は各 endpoint の中にある
   canonicalTargetSet
+  chunkIndex / chunkCount
   occurredAt
   payloadDigest        // この fact の digest。materialize 後の digest とは別
 ```
+
+`snapshot` という単独フィールドは**無い**。v2.3.10〜11 はここに `snapshot` と書いていたが、
+§2 (v2.1) が event-level の `snapshotAttributes` を廃止して**属性を endpoint ごとに持たせた**ので、
+その名前の値はもう存在しない。`inputs` / `outputs` の各 endpoint が自分の属性を持つ。
 
 #### `spoolRecordId` と `payloadDigest` の正規仕様 (v2.3.11)
 
@@ -831,20 +953,45 @@ spoolRecordId = H("SPOOL_FACT_V1",
                   canonical(inputs), canonical(outputs), canonicalTargetSet,
                   chunkIndex, chunkCount, occurredAt)        // 64 hex
 
-payloadDigest = H("SPOOL_PAYLOAD_V1", spoolRecordId, snapshot, spoolSchemaVersion)
+payloadDigest = H("SPOOL_PAYLOAD_V1", spoolRecordId, spoolSchemaVersion,
+                  endpointRecords(inputs), endpointRecords(outputs))
 ```
+
+`canonical(...)` は §3 と同じ **`catalogQualifiedName` の列**であって、endpoint 属性を含まない。
+したがって identity (`spoolRecordId`) だけでは「同じ endpoint 集合で属性だけ違う fact」を区別
+できない。属性が変わったことを検出するのが `payloadDigest` の役目なので、そこは
+**endpoint の完全な記録**を対象にする。
+
+```
+endpointRecords(list) = LIST[ record(e) を catalogQualifiedName の符号なし UTF-8 バイト順に並べたもの ]
+
+record(e) = MAP{                     // キーは下の順に固定 (MAP の直列化はキー順に依存する)
+  "kind"                 : STRING(e.kind().name())
+  "repositoryId"         : STRING
+  "catalogQualifiedName" : STRING
+  "objectId"             : STRING | NULL
+  "operationId"          : STRING | NULL
+  "attributes"           : MAP{ 属性名の符号なし UTF-8 バイト順。
+                                TEXT → STRING、COUNT → LONG }
+}
+```
+
+型 tag は A-1 で凍結済みのもの (`NULL 0x00` / `STRING 0x01` / `LONG 0x02` / `LIST 0x03` /
+`MAP 0x04`) をそのまま使う。**新しい符号化は作らない。**
 
 | 論点 | 規則 |
 |---|---|
 | ID 方式 | domain-separated canonical hash (UUID ではない)。**同一 business fact の再試行は同一 ID** になり、部分失敗後の再書込みが重複を作らない |
-| `occurredAt` を含める理由 | fact は emit 時に一度作られ、再試行は同じ fact object の再書込みである。含めないと再試行で digest だけ変わり quarantine になる |
+| `occurredAt` を含める理由 | fact は業務 fact 成立時に一度だけ採番され (§3「`occurredAt` は一度だけ採番する」)、再試行はその値をそのまま運ぶ。含めないと、同じ endpoint 集合の操作を繰り返したときに別の fact が同一 ID へ潰れる |
+| `occurredAt` の危険 | 再構成で `Instant.now()` を引き直すと ID が変わり、**同じ fact が二重に materialize される**。§3 の純関数契約がこれを閉じる。契約が無い状態でこの式を実装してはならない |
 | 別 operation の区別 | 利用者が同じ import をやり直したなら **`operationId` が違う** ので別 fact になる (§3 の event-level `operationId` 必須契約) |
-| endpoint 集合 | `canonical(...)` は §3 と同一 — 符号なし UTF-8 バイト順、**重複は拒否**、null 要素は拒否 |
+| endpoint 集合 | `canonical(...)` は §3 と同一 — `catalogQualifiedName` を符号なし UTF-8 バイト順、**重複は拒否**、null 要素は拒否 |
 | target 集合 | `canonicalTargetSet` と同一 — trim、非空、重複除去、ソート |
 | null / 空文字 | `LineageCanonicalHash` の型 tag が区別する。`operationId=null` と `""` は別の fact |
-| `payloadDigest` の対象 | `spoolRecordId` + snapshot 属性 + `spoolSchemaVersion` の 3 つ**のみ**。identity に入る値を二重に数えない |
+| `payloadDigest` の対象 | `spoolRecordId` + `spoolSchemaVersion` + **endpoint の完全記録** (属性込み)。identity に入る QN は `spoolRecordId` 経由で 1 度だけ数える |
 | 同一 ID・digest 不一致 | **上書きしない**。`fact-{id}.quarantine.json` へ退避し `lineage.spool.quarantine{reason=digest_mismatch}` を上げる。同じ ID で内容が違うのは、識別子の規則が破れたか改竄であり、どちらも黙って上書きしてよい事象ではない |
 | ファイル名 | `fact-{64 hex}.json` — 74 文字。hex なので path-safe で、大文字小文字を区別しない FS でも衝突しない |
+| golden vector | `spoolRecordId` / `payloadDigest` / `endpointRecords` も A-1 と同じ仕組みで凍結する — `identity-golden-vectors.json` に追加し、`reference_hash.py` (仕様のみから書いた別実装) が一致することを CI で確認する |
 
 #### materialize は「一度だけ」ではなく「収束する」 (v2.3.11)
 
@@ -863,42 +1010,141 @@ v2.3.10 は「`spoolRecordId` → `deliveryId` の対応を記録して一度だ
 
 必要なのは「一度だけ実行」ではなく、**何度実行しても同じ結果へ収束するプロトコル**である。
 
+#### 撤回 7: 決定をローカル sidecar に置いていた (v2.3.12)
+
+v2.3.11 は決定を `fact-{spoolRecordId}.decision.json` に atomic rename で書き、
+「再起動時は sidecar の決定を再利用する」とした。**排他になっていない。**
+
+- **atomic rename は「置換」であって「不在なら作成」ではない。** 2 つの scanner が
+  activation を跨いで別々の `writeSchemaVersion` を読み、それぞれ v1 と v2 の決定を作り、
+  同じファイルを上書きし合い、**各自が自分のメモリ上の `deliveryId` で event を作れる**。
+  版が違えば `deliveryId` も違うので、CouchDB の決定的 `_id` では潰れない。
+  窓 4 は「決定の後」ではなく「決定そのもの」で開いていた。
+- sidecar は **node-local** である。窓 5 (bundle で別 node へ複製された同一 fact) には
+  そもそも届かない。「決定的 `_id` が最終境界」は、両者が**同じ版を選んだ場合にしか**成り立たない。
+- 「sidecar を失っても正しさは失われない」も支えが無かった。journal 作成が成功した後に
+  sidecar と ACK を失うと、その event を**探す手段が無い** — `spoolRecordId` は event の
+  payload に入っておらず、現在の flag から計算し直すと別の `deliveryId` になりうる。
+  さらに「sidecar 消失時は quarantine」と書いたが、「まだ決めていない」と「決めたが消えた」を
+  **見分ける規則が無い**ので、その分岐は書けない。
+- torn / 切り詰め / 運用者が古い backup から戻した sidecar をどう扱うかも未定義だった。
+  自前の digest を持たないので、検証しようも無い。
+
+**決定を CouchDB に置く。** materialize は CouchDB が復旧してから始まるので、CouchDB を
+使えることは前提条件として既に満たされている。ローカル sidecar は**廃止**する。
+
 ```
-1. immutable な fact を読む
-2. sidecar を atomic に永続化する:
-     fact-{spoolRecordId}.decision.json
-       materializeSchemaVersion   // ここで決めた版
-       barrierGeneration          // 決めた時点の barrier generation
-       deliveryId                 // 決めた版で計算した値
-       eventDigest                // 作る event の digest
-   (write → fsync → atomic rename)
-3. sidecar の deliveryId を _id にして journal へ create-if-absent
+_id: lineage_materialization:{spoolRecordId}
+  spoolRecordId / repositoryId
+  factPayloadDigest          // 決定の根拠になった fact の payloadDigest
+  materializeSchemaVersion   // ここで決めた版
+  barrierGeneration          // 決めた時点の barrier generation
+  deliveryId                 // 決めた版で計算した値
+  eventDigest                // 作る event の creationPayloadDigest
+  decidedAt / decidedBy      : { nodeId, bootId }
+```
+
+```
+1. fact を読み、spoolRecordId と payloadDigest を再計算して自己照合する
+     ファイル名の id と一致しない、または payloadDigest が一致しない
+       → materialize しない。quarantine + lineage.spool.quarantine{reason=self_check_failed}
+2. lineage_materialization:{spoolRecordId} を create-if-absent
+     201 → 自分の決定が採用された
+     409 → **既存文書を読み、その決定に従う** (自分の決定は捨てる)
+           factPayloadDigest が自分の fact と違えば quarantine (同一 ID・別内容)
+3. 決定の deliveryId を _id にして journal へ create-if-absent
 4. 409 は **event digest が完全一致したときだけ**成功扱い。不一致は integrity 例外 (§3)
-5. 成功後に ACK を atomic rename + fsync
-6. 再起動時は **sidecar の決定を再利用**する。現在の flag から決め直さない
+5. 成功後に fact の ACK を書く (fsync + atomic rename)
+6. 再起動時も 1 から実行してよい。2 の 409 が必ず同じ決定へ戻す
 ```
 
-これで上の 6 つの窓はすべて収束する:
+手順 1 の自己照合が、決定文書へ進む前に**壊れた fact を締め出す**。torn write は spool の
+file 安全性契約 (§8: write → fsync → atomic rename) が防ぐが、運用者が戻した古い backup や
+別 node から来た改竄済み bundle はそこを通らない。決定文書は一度作れば固定されるので、
+**壊れた fact で決定を作らせないことが重要**である。
 
-- 窓 1 — 再起動後、sidecar から同じ `deliveryId` を得て同じ event を create-if-absent。
-  409 + digest 一致で成功扱いになり、二重にならない
-- 窓 2 — sidecar は「決めた」だけで「作った」とは主張しない。3 を再実行する
-- 窓 3 — 版は sidecar に固定済み。**flag が動いても materialize の版は変わらない** (テスト参照)
-- 窓 4・5 — 決定的 `_id` と digest 一致が最終境界。**ローカル mapping を正当性の根拠にしない**
-- 窓 6 — 再試行して 409 + digest 一致に落ちるのが正しい挙動
+これで 6 つの窓はすべて収束する:
 
-**CouchDB の決定的 `_id` と digest 一致が重複防止の最終境界**であり、sidecar はそこへ至る決定を
-固定するだけの補助である。sidecar を失っても正しさは失われない (再決定すると版が変わりうるので、
-その場合は fact を quarantine して人手に回す)。
+| 窓 | なぜ閉じるか |
+|---|---|
+| 1 | 再起動後、決定文書から同じ `deliveryId` を得て create-if-absent。409 + digest 一致で成功扱い |
+| 2 | 決定文書は「決めた」だけで「作った」とは主張しない。3 を再実行する |
+| 3 | 版は決定文書に固定済み。flag が動いても materialize の版は変わらない |
+| 4 | **決定の create-if-absent が排他**。並行 scanner は必ず同じ版・同じ `deliveryId` を使う |
+| 5 | 決定文書は CouchDB にあり **node-local ではない**。別 node の scanner も同じ決定を読む |
+| 6 | 再試行して 409 + digest 一致に落ちるのが正しい挙動 |
 
-**§8-d の「spool file 名は常に `deliveryId`」という契約を訂正する。** spool には 2 種類ある:
+排他が **CouchDB の 1 回の create-if-absent** に集約されているので、torn write も部分書込みも
+存在しない — 文書は作られたか作られていないかのどちらかである。sidecar の検証規則
+(digest・切り詰め・古い backup) が要らなくなったのは、そもそも検証すべきローカル状態を
+持たなくなったからである。
+
+**決定文書は削除しない。** 数百バイトであり、消すと、生き残った fact のコピー
+(別 node の volume、古い bundle、運用者が戻した backup) が再走査されたときに
+**別の版で決め直されて別の event になる**。retention の対象は fact と ACK だけとする。
+
+**`spoolRecordId` を event の payload にも持たせる** (§3 の表のとおり `creationPayloadDigest`
+からは除外する)。決定文書がある限り逆引きはできるが、監査で「この event はどの spool fact から
+来たか」を答えるのに毎回 `deliveryId` から決定文書を逆引きするのは実用的でない。
+
+**重複防止は 2 段で成り立つ。** どちらか一方では足りない。
+
+| 段 | 何を防ぐか |
+|---|---|
+| 決定文書の create-if-absent | **版の分岐**。同じ fact に対して誰もが同じ `deliveryId` を計算する |
+| journal の決定的 `_id` + digest 一致 | **同じ `deliveryId` の二重作成**。作成の競合と再試行を吸収する |
+
+v2.3.11 が「決定的 `_id` が最終境界」とだけ書けたのは、**全員が同じ版を選ぶ**ことを暗黙に
+仮定していたからである。その仮定を成り立たせるのが 1 段目で、そこがローカル file では
+成り立たなかった。
+
+**§8-d の「spool file 名は常に `deliveryId`」という契約を訂正する。** spool には 2 系統ある:
 
 | 種別 | ファイル名 | いつ |
 |---|---|---|
-| materialized event | `{deliveryId}.json` / `.ack` | 版が確定している通常経路 |
+| materialized event | `{deliveryId}.json` / `{deliveryId}.ack` | 版が確定している通常経路 |
 | unmaterialized fact | `fact-{spoolRecordId}.json` | flag 読取不能時。scanner が後で materialize |
-| materialize 決定 | `fact-{spoolRecordId}.decision.json` | 版・generation・`deliveryId`・event digest を固定する sidecar |
+| fact の ACK | `fact-{spoolRecordId}.ack` | その fact の event が durable になったことの印 |
 | quarantine | `fact-{spoolRecordId}.quarantine.json` | 同一 ID で digest が違う fact。**上書きしない** |
+
+`.decision.json` は撤回 7 で**廃止**した (決定は CouchDB の
+`lineage_materialization:{spoolRecordId}`)。
+
+**fact は `{deliveryId}.json` に改名しない。** 改名すると、fact と materialized event という
+別種の記録が同じ名前空間に入り、`payloadDigest` (fact) と `creationPayloadDigest` (event) の
+どちらで冪等判定するのかが名前から決まらなくなる。fact は fact のまま置き、ACK で終わらせる。
+
+##### scanner の走査規則と retention (v2.3.12)
+
+| 観測される状態 | scanner の動作 |
+|---|---|
+| `fact-{id}.json` あり / `.ack` あり | **skip**。既に durable |
+| `fact-{id}.json` あり / `.ack` なし | プロトコルを 1 から実行する。決定文書があれば 409 でそこへ収束する |
+| `fact-{id}.json` なし / `.ack` あり | 完了済みの残骸。retention で ACK を消す |
+| `fact-{id}.quarantine.json` あり | 触らない。運用者の判断を待つ |
+
+| 項目 | 規則 |
+|---|---|
+| 削除順序 | **event が durable になった後**に ACK を書き、retention 経過後に fact → ACK の順で消す。ACK の前に fact を消してはならない — 決定文書は payload を持たないので、fact を失うと event を作り直せない |
+| retention | `lineage.spool.retention.days` (materialized event の spool と同じ設定) |
+| 決定文書 | **削除しない** (撤回 7)。retention の対象外 |
+
+上の表は spool を走査して分かることだけを扱う。**「決定文書はあるが event が無い」は
+spool 側からは見えない** — fact ごと失われていれば、走査する対象そのものが無いからである。
+これは決定文書の側から照合する:
+
+```
+GET  /api/v1/admin/lineage-journal/materializations/{repositoryId}?unresolved=true
+  → 決定文書のうち deliveryId の event が journal に存在しないものを列挙する
+```
+
+| 見つかったもの | 意味 | 対応 |
+|---|---|---|
+| 対応する fact がまだ spool にある | materialize 未完。scanner が次周で終わらせる | 放置してよい |
+| fact がどこにも無い | **payload が失われている**。event は作れない | `lineage.materialization.orphaned` を上げ alert。他 node の volume / bundle から fact を回収する |
+
+これが「fact を ACK 前に消してはならない」という順序規則を**検出可能にする**唯一の経路である。
+規則だけ書いて検出手段を書かなければ、破れても誰も気づかない。
 
 **残余**: fact の spool 書込みにも失敗した場合、その lineage は失われる。§9 の repair は
 「journal か spool に記録がある」ことを前提とするので、**repair で回収できるとは言えない**。
@@ -922,8 +1168,10 @@ D-rest が直すのは、設計上すでに確認済みの**採番欠落・二�
 
 順序: **A-2 Slice 1〜3 → D-spool → D-rest (dual・writer は v1) → Slice 4a → 4b → E**。
 
-4b の ACTIVE CAS は、**D-rest が配布済みであること**も前提条件に含める (ACK の
-`binaryDigest` / capability に `sequencerVersion` を持たせて検査する)。
+4b の ACTIVE CAS は、**D-rest が配布済みであること**も前提条件に含める。それは本文の約束では
+足りないので、barrier の `requiredCapabilities` に `sequencer:event-first` / `cursor:cas` /
+`replay:generation-cas` を置き、CAS 条件 8・9 が検査する (「capability は『読めるか』だけでなく
+『直っているか』を表す」)。
 
 ### 決定的テスト (Slice 4a の完了条件)
 
@@ -937,17 +1185,25 @@ D-rest が直すのは、設計上すでに確認済みの**採番欠落・二�
 | 4 | stale な旧 leader 相当が v2 view を読む | 新 reader では claim も cursor 前進も起きない。**旧バイナリの保証ではない**とテスト名に明記 |
 | 5 | `writeSchemaVersion` を 1 へ戻す | `minReaderSchemaVersion` は 2 のまま |
 | 5b | `ACTIVE` CAS 後の任意の瞬間 | `writeSchemaVersion=2 && minReaderSchemaVersion=1` が観測されない |
-| 6 | terminal / dead letter / spool に v2 が残る状態で v1-only rollback | 拒否 |
+| 6 | `minReaderSchemaVersion == 2` の状態で新バイナリを `readSchemaVersions=[1]` で起動する | lineage subsystem が起動時に fail-closed。**spool の走査結果には依存しない** |
+| 6b | `minReaderSchemaVersion` を 2 → 1 へ落とす要求 | CAS が拒否する (単調増加) |
 | 7 | flag 読取不能 | event ではなく **fact** を spool。scanner が復旧後に materialize し、そこで `deliveryId` を計算 |
 | 7b | fact spool 書込みも失敗 | `lineage.emit.dropped{reason=flag_unreadable_and_spool_failed}` が上がる。repair 可能とは主張しない |
-| 8 | 同一 fact を 2 つの scanner が並行処理 | journal に **1 件だけ** 作られる (決定的 `_id` + digest 一致) |
-| 9 | journal 成功後・sidecar/ACK 前にクラッシュ | 再起動後に重複なく収束する |
-| 10 | sidecar 成功後・journal 前にクラッシュ | 再起動後に event が作られる (sidecar は「作った」と主張しない) |
-| 11 | materialize 中に write-version が切り替わる | sidecar に固定した schema version と `deliveryId` が**変わらない** |
-| 12 | 同一 `spoolRecordId` で digest 不一致 | 上書きせず quarantine。metric が上がる |
-| 13 | bundle 経由で複製された fact | 同一 delivery へ収束する |
-| 14 | **D-rest 未配布**の状態で 4b を要求 | `ACTIVE` CAS が拒否される |
+| 8 | 同一 fact を 2 つの scanner が並行処理 | 決定文書が **1 つだけ**作られ、journal event も **1 件だけ**。敗者は勝者の版を採用する |
+| 8b | 2 つの scanner が **別々の `writeSchemaVersion`** を読んだ状態で並行処理 | 決定文書の create-if-absent が排他になり、**両者が同じ版・同じ `deliveryId`** を使う |
+| 9 | journal 成功後・ACK 前にクラッシュ | 再起動後、決定文書 → 409 + digest 一致で収束。重複しない |
+| 10 | 決定文書の作成後・journal 作成前にクラッシュ | 再起動後に event が作られる (決定文書は「作った」と主張しない) |
+| 11 | materialize 中に write-version が切り替わる | 決定文書に固定した schema version と `deliveryId` が**変わらない** |
+| 12 | 同一 `spoolRecordId` で fact の内容が違う | 上書きせず quarantine。metric が上がる |
+| 12b | 決定文書の `factPayloadDigest` と手元の fact が不一致 | materialize せず quarantine |
+| 13 | bundle 経由で別 node へ複製された fact | 同一の決定文書を読み、同一 delivery へ収束する |
+| 13b | ACK 前に fact を消す | `materializations?unresolved=true` が拾い、`lineage.materialization.orphaned` が上がる |
+| 13c | 壊れた / 改竄された fact を投入する | 手順 1 の自己照合で弾かれ、**決定文書が作られない** |
+| 14 | `requiredCapabilities` を満たさない ACK (D-rest 未配布) で 4b を要求 | `ACTIVE` CAS が拒否し、不足 capability を返す |
+| 14b | `approvedBinaryDigests` に無い `binaryDigest` の ACK | 同上 |
 | 15 | scale-to-one 切替 | 旧 AP が 1 台も存在しないことを**運用受入条件**として確認する (アプリでは検証できない) |
+| 16 | 同一入力から `build()` を 2 回呼ぶ | `eventId` 以外が完全に一致し、`creationPayloadDigest` と `spoolRecordId` が同値 (§3 の `occurredAt` 純関数契約) |
+| 17 | `spoolRecordId` / `payloadDigest` の golden vector | Java と `reference_hash.py` が一致する (A-1 と同じ CI ジョブ) |
 
 ### この節が閉じるまで Slice 4 は着手しない
 
@@ -1037,13 +1293,18 @@ v1 は「採番と event 作成を1つの CouchDB 書込みにする」として
 
 ```
 1. **`deliveryId` 由来**の決定的 _id で、完全な payload を state=UNSEQUENCED として1書込みで作成
-   (409 = 既存 → 冪等に成功)
+   409 は既存文書を読み直し、**creationPayloadDigest が完全一致したときだけ**成功扱い (§3)。
+   不一致は ID 衝突であり、経路別に integrity 例外 → spool + metric / 500 (§3 の表)
 2. per-repository の fenced sequencer が UNSEQUENCED を occurredAt 順に1件ずつ claim
    (claim token = fencing token。ACL-epoch の lease/fencing と同じ形)
 3. counter を CAS で払い出す
 4. claim token が一致するときだけ event に sequence を確定 (CAS)
 5. 確定後に次の event へ進む
 ```
+
+v2.3.11 まで 1 に「409 = 既存 → 冪等に成功」と書いていたのは **§3 と矛盾していた**。
+digest を見ずに 409 を成功にすると、ID 衝突がそのまま黙って受理される — §3 が閉じた穴を
+この疑似コードだけが開けたままにしていた。
 
 ### sequencer lease / fencing 状態表 (v2.1)
 
@@ -1200,12 +1461,16 @@ CouchDB store への保存は `// Store persistence is best-effort; log file is 
 {lineage.spool.dir}/{repositoryId}/{yyyyMMdd}/{deliveryId}.json    ← payload (完全)
 {lineage.spool.dir}/{repositoryId}/{yyyyMMdd}/{deliveryId}.ack    ← ACK marker
 {lineage.spool.dir}/{repositoryId}/{yyyyMMdd}/fact-{spoolRecordId}.json  ← 版非依存 fact
-{lineage.spool.dir}/{repositoryId}/{yyyyMMdd}/fact-{spoolRecordId}.decision.json  ← materialize 決定
+{lineage.spool.dir}/{repositoryId}/{yyyyMMdd}/fact-{spoolRecordId}.ack   ← fact の ACK
 ```
 
 **`deliveryId` を名前に使えるのは版が確定している場合だけ**である。write-version flag が
 読めないときは版を決められないので、§6-a の**版非依存 fact** として `fact-{spoolRecordId}` に
-書き、scanner が flag 復旧後に一度だけ event へ materialize して `deliveryId` を計算する。
+書き、scanner が flag 復旧後に event へ materialize して `deliveryId` を計算する。
+
+materialize の**決定はローカル file に置かない** — CouchDB の
+`lineage_materialization:{spoolRecordId}` である (§6-a 撤回 7)。走査規則・削除順序・retention も
+そちらが正典。ここは spool の file 名だけを定める。
 
 #### 起動時の扱い (v2.2) — Core 全体は落とさない
 
@@ -1326,11 +1591,19 @@ multi-target event にも適合しない。
   replayRequestsByTarget[target] — REQUESTED → CREATED → ACKED
 
 補償 event:
-  _id       = deterministic: hash(originalEventId, target, replayGeneration)
-  replayOf  = originalEventId
+  _id       = REPLAY deliveryId = H("REPLAY", originalDeliveryId, target, replayGeneration)
+  replayOf  = originalDeliveryId
   publishStatusByTarget = { 要求された target のみ PENDING }
   sequence  = 新規に払い出す (8-a と同じ経路)
 ```
+
+**式は §3 の tagged union が正典である。** v2.3.11 まで、ここには
+`hash(originalEventId, target, replayGeneration)` という **domain tag の無い、しかも
+`originalEventId` (UUID) を基点にした**別の式が書いてあった。§3 は `originalDeliveryId` を
+基点にした `H("REPLAY", ...)` を規定しており、A-1 の
+[`LineageIdentity`](../../core/src/main/java/jp/aegif/nemaki/rest/purview/journal/LineageIdentity.java)
+は既にそちらで実装済みである。二つの式が並んでいると、実装者はどちらを読んでもよいことになる。
+**この節に identity の式を再掲しない** — 参照だけを置く。
 
 ### replay generation の CAS 状態機械 (v2.1)
 
@@ -1343,10 +1616,10 @@ multi-target event にも適合しない。
    CAS 失敗: 409。既に進行中の request がある
 2. record が generation と requestId を所有する (以後この 2 つは不変)
 3. 補償 event を決定的 ID で create-if-absent
-   _id = hash(originalEventId, target, generation)
-   409 = 既存 → 成功として扱う (冪等)
-4. 補償 event を reread し、payload が期待と一致することを確認
+   _id = REPLAY deliveryId (§3)
+4. 409 は既存文書を reread し、**creationPayloadDigest が完全一致したときだけ**成功扱い
    不一致 = 別 request が同じ ID を使った異常 → REQUESTED を FAILED にして 500
+   (管理経路なので §3 の表どおり 500。通常 emit とは扱いが違う)
 5. original の record を REQUESTED → CREATED → ACKED へ CAS
 6. crash scanner が未 ACK の request を回収し、3 から再開する
 ```
@@ -1394,8 +1667,23 @@ POST /api/v1/admin/lineage-journal/repair
   | 不一致 | 実行時に digest / revision / count を再計算し、一致しなければ **409** → 再 dry-run を要求 |
   | 保護 | CSRF 検証必須 (`X-Requested-With`)。発行・使用の両方を audit log に記録 |
 - **範囲指定必須**: `repositoryId` と `processType` は省略不可。`replay-all` の轍を踏まない。
-- **冪等 repair ID**: 補償 event の `_id` は `hash(deadLetterId, "repair", repairGeneration)`。
-  同じ dead letter を二度 repair しても event は増えない。
+- **冪等 repair ID**: 補償 event の `_id` は §3 の REPAIR deliveryId
+  = `H("REPAIR", deadLetterId, repairGeneration)`。v2.3.11 まで
+  `hash(deadLetterId, "repair", repairGeneration)` と書いていたが、domain tag は hash の
+  **第 1 引数**であって位置引数ではない。式の正典は §3 とし、ここでは参照だけを置く。
+- **「二度 repair しても増えない」の正確な意味 (v2.3.12)**: 増えないのは
+  **同一 `repairGeneration` での再実行**である。`repairGeneration` が上がれば別の `deliveryId` に
+  なるので、event は**増える** — それは意図した新しい補償である。両者を混同しないよう
+  generation の払い出しを §8-d の replay と同じ CAS 状態機械にする。
+
+  | 事象 | 挙動 |
+  |---|---|
+  | 同じ token での再送・timeout 後の再試行・crash 後の再開 | 同一 `repairGeneration` → 同一 `_id` → create-if-absent の 409 + digest 一致で成功扱い。event は増えない |
+  | 直前の repair が `ACKED` の後に、運用者が改めて repair を要求 | `repairGeneration` を +1。**別の補償 event が増える**。監査上そうあるべき |
+  | 直前の repair が進行中 (`REQUESTED` / `CREATED`) | 409。新規 repair を受け付けない |
+
+  `confirmationToken` は `repairGeneration` にも bind する。誤って二重送信しても
+  generation が上がらず、上の 1 行目に落ちる。
 - **並行実行防止**: repository 単位の repair lock を取る。既存の
   `PurviewLockStateService` と同じ形。lock は TTL 付きで、期限切れは reaper が回収する
   (今回のセッションで実際に orphan lock が1時間残った事象があるため、TTL を必須にする)。
@@ -1566,13 +1854,16 @@ D を 1 つの増分にすると **D → A-2 Slice 4a → D** の循環になる
 spool readiness が入るため)。§6-a のとおり割る:
 
 - **D-spool** — 版非依存 fact spool + scanner + fsync 検証。`deliveryId` を要さないので A-1 のみに依存
-- **D-rest** — sequencer / cursor CAS / replay generation CAS。`deliveryId` を使うので A-2 Slice 4 の後
+- **D-rest** — sequencer / cursor CAS / replay generation CAS。`deliveryId` の**計算**を使うので
+  **A-2 Slice 1〜3 の後**。ただし v1/v2 dual・非活性で配布するので、**Slice 4 より前**である
+  (§6-a 撤回 4)。v2.3.10 の「Slice 4 の後」は撤回済み
 
 順序: **A-2 Slice 1〜3 → D-spool → D-rest (dual・writer は v1) → A-2 Slice 4a → 4b → E**。
 
 D の内部部品 (fenced sequencer、cursor CAS、counter/lease 復旧) は A と並行に書けるが、
-spool file 名 (materialize 済みのもの)・journal `_id`・冪等判定はいずれも `deliveryId` であり、`deliveryId` は v2 event
-から作られる。したがって**統合は A-2 完了後**。v2.3.1 までの「D は A と独立」は §3 の
+spool file 名 (materialize 済みのもの)・journal `_id`・冪等判定はいずれも `deliveryId` であり、
+`deliveryId` の計算は A-2 Slice 1〜3 が確定させる。したがって**統合は Slice 1〜3 の後**
+(Slice 4 の後ではない)。v2.3.1 までの「D は A と独立」は §3 の
 identity 分離を入れる前の記述で、成立しない。
 
 ### A の分割 (実装時)
