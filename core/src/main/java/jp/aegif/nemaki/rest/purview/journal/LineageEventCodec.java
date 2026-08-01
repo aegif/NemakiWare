@@ -44,6 +44,27 @@ public final class LineageEventCodec {
     }
 
     /**
+     * The total form of {@link #decode}: a failed row comes back as a value, not an exception.
+     *
+     * <p>This is what the store's row loops call in Slice 2d-2. Throwing per row would leave the
+     * loop the choice between failing the whole batch (one corrupt row hides every row) and
+     * catch-and-skip (the ordered read exposes rows behind the broken one, and the cursor walks
+     * past it — see {@link LineageJournalRow}). Neither is acceptable; a union is.
+     */
+    public static LineageJournalRow decodeRow(Map<String, Object> doc) {
+        try {
+            return new LineageJournalRow.Decoded(decode(doc));
+        } catch (RuntimeException e) {
+            String id = doc != null && doc.get("_id") instanceof String s ? s : null;
+            String type = doc != null && doc.get("type") instanceof String s ? s : null;
+            int schemaVersion = doc != null && doc.get("schemaVersion") instanceof Number n
+                    ? n.intValue() : 0;
+            return new LineageJournalRow.Undecodable(id, type, schemaVersion,
+                    e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+        }
+    }
+
+    /**
      * @throws IllegalArgumentException if the document is malformed, of an unsupported version,
      *                                  or fails v2's stored-identity verification. Callers route
      *                                  this to the quarantine path (Slice 2c) — the row, not the

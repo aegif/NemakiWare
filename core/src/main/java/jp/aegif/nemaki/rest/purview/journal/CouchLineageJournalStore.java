@@ -157,95 +157,131 @@ public class CouchLineageJournalStore implements LineageJournalStore {
     }
 
     /**
+     * The type predicate every event view starts with.
+     *
+     * <p>Both document types, deliberately: v2 rows carry {@code lineage_event_v2} so that OLD
+     * binaries' views — which select on {@code lineage_event} alone — structurally cannot see
+     * them (§6-a v2.3.14). The price of that protection is paid here: every view a NEW binary
+     * queries must cover both types, and one that does not makes v2 silently invisible. That is
+     * why the predicate is one shared constant and why {@code LineageJournalViewCoverageTest}
+     * executes every map function against a synthetic document of each version rather than
+     * pattern-matching the source.
+     */
+    private static final String EVENT_TYPES =
+            "(doc.type === 'lineage_event' || doc.type === 'lineage_event_v2')";
+
+    /** A CouchDB view: the map function source, and the reduce built-in or {@code null}. */
+    record ViewDefinition(String map, String reduce) {
+    }
+
+    /**
+     * Every view of the {@code lineage} design document, in deployment order.
+     *
+     * <p>Package-visible so the coverage test iterates the real definitions — a list kept beside
+     * the deployment code would be a second list to fall behind.
+     */
+    static final Map<String, ViewDefinition> VIEWS = buildViews();
+
+    private static Map<String, ViewDefinition> buildViews() {
+        Map<String, ViewDefinition> views = new LinkedHashMap<>();
+
+        // by_event_key — v1 append idempotency. Deliberately v1-only: a v2 row has no eventKey
+        // (its idempotency is the deliveryId-derived _id itself), and substituting processKey
+        // here would silently change what "same event" means for this view's one caller.
+        views.put("by_event_key", new ViewDefinition(
+                "function(doc) { if (doc.type === 'lineage_event' && doc.eventKey) { emit(doc.eventKey, null); } }",
+                null));
+
+        // by_repository_and_time — time-range queries and purge
+        views.put("by_repository_and_time", new ViewDefinition(
+                "function(doc) { if (" + EVENT_TYPES + ") { emit([doc.repositoryId, doc.occurredAt], null); } }",
+                null));
+
+        // by_target_status — projector claim and backlog monitoring
+        views.put("by_target_status", new ViewDefinition(
+                "function(doc) { if (" + EVENT_TYPES + " && doc.publishStatusByTarget) { " +
+                        "var t = doc.publishStatusByTarget; for (var k in t) { if (t.hasOwnProperty(k)) { emit([k, t[k]], null); } } } }",
+                "_count"));
+
+        // by_process_type — countByProcessType stats and listing
+        views.put("by_process_type", new ViewDefinition(
+                "function(doc) { if (" + EVENT_TYPES + " && doc.processType) { emit(doc.processType, null); } }",
+                "_count"));
+
+        // by_occurred_at — cross-repository time ordering for findAll
+        views.put("by_occurred_at", new ViewDefinition(
+                "function(doc) { if (" + EVENT_TYPES + ") { emit(doc.occurredAt, null); } }",
+                null));
+
+        // by_repository_and_process_type — repository+processType composite filter
+        views.put("by_repository_and_process_type", new ViewDefinition(
+                "function(doc) { if (" + EVENT_TYPES + " && doc.repositoryId && doc.processType) { " +
+                        "emit([doc.repositoryId, doc.processType], null); } }",
+                null));
+
+        // dead_letter_by_time — dead-letter events ordered by time
+        views.put("dead_letter_by_time", new ViewDefinition(
+                "function(doc) { if (doc.type === 'lineage_dead_letter') { emit(doc.recordedAt, null); } }",
+                null));
+
+        // dead_letter_by_replayed — dead-letter events grouped by replayed status
+        views.put("dead_letter_by_replayed", new ViewDefinition(
+                "function(doc) { if (doc.type === 'lineage_dead_letter') { emit([doc.replayed || false, doc.recordedAt], null); } }",
+                "_count"));
+
+        // by_target_status_time — target+status+occurredAt for oldest-first queries
+        views.put("by_target_status_time", new ViewDefinition(
+                "function(doc) { if (" + EVENT_TYPES + " && doc.publishStatusByTarget && doc.occurredAt) { " +
+                        "var t = doc.publishStatusByTarget; for (var k in t) { if (t.hasOwnProperty(k)) { emit([k, t[k], doc.occurredAt], null); } } } }",
+                null));
+
+        // by_repository_and_sequence — projection cursor sequence ordering
+        views.put("by_repository_and_sequence", new ViewDefinition(
+                "function(doc) { if (" + EVENT_TYPES + " && doc.repositoryId && doc.sequenceNumber) { " +
+                        "emit([doc.repositoryId, doc.sequenceNumber], null); } }",
+                null));
+
+        // non_terminal_by_target_repo — distinct repos with non-terminal events per target
+        views.put("non_terminal_by_target_repo", new ViewDefinition(
+                "function(doc) { if (" + EVENT_TYPES + " && doc.publishStatusByTarget && doc.repositoryId) { " +
+                        "var t = doc.publishStatusByTarget; for (var k in t) { if (t.hasOwnProperty(k)) { " +
+                        "var s = t[k]; if (s === 'PENDING' || s === 'FAILED' || s === 'PROJECTING') { emit([k, doc.repositoryId], null); } } } } }",
+                "_count"));
+
+        // projecting_by_claimed_at — PROJECTING events ordered by claimedAt for stale reaping.
+        // Key: [target, claimedAt], where claimedAt falls back to occurredAt for pre-upgrade
+        // events, so oldest-claimed is always found regardless of the sample window size.
+        views.put("projecting_by_claimed_at", new ViewDefinition(
+                "function(doc) { if (" + EVENT_TYPES + " && doc.publishStatusByTarget) { " +
+                        "var t = doc.publishStatusByTarget; var c = doc.claimedAtByTarget || {}; " +
+                        "for (var k in t) { if (t.hasOwnProperty(k) && t[k] === 'PROJECTING') { " +
+                        "var ts = c[k] || doc.occurredAt || ''; emit([k, ts], null); } } } }",
+                null));
+
+        // by_process_type_time — processType + occurredAt for time-ordered filtered listings
+        views.put("by_process_type_time", new ViewDefinition(
+                "function(doc) { if (" + EVENT_TYPES + " && doc.processType && doc.occurredAt) { " +
+                        "emit([doc.processType, doc.occurredAt], null); } }",
+                null));
+
+        // by_repo_process_type_time — repositoryId + processType + occurredAt per-repo listings
+        views.put("by_repo_process_type_time", new ViewDefinition(
+                "function(doc) { if (" + EVENT_TYPES + " && doc.repositoryId && doc.processType && doc.occurredAt) { " +
+                        "emit([doc.repositoryId, doc.processType, doc.occurredAt], null); } }",
+                null));
+
+        return java.util.Collections.unmodifiableMap(views);
+    }
+
+    /**
      * Deploy CouchDB views for the lineage design document.
      */
     private void deployViews() {
         CloudantClientWrapper client = lineageClient;
-
-        // View 1: by_event_key — idempotency check
-        client.createOrUpdateView(DESIGN_DOC, "by_event_key",
-                "function(doc) { if (doc.type === 'lineage_event' && doc.eventKey) { emit(doc.eventKey, null); } }",
-                null);
-
-        // View 2: by_repository_and_time — time-range queries and purge
-        client.createOrUpdateView(DESIGN_DOC, "by_repository_and_time",
-                "function(doc) { if (doc.type === 'lineage_event') { emit([doc.repositoryId, doc.occurredAt], null); } }",
-                null);
-
-        // View 3: by_target_status — projector claim and backlog monitoring
-        client.createOrUpdateView(DESIGN_DOC, "by_target_status",
-                "function(doc) { if (doc.type === 'lineage_event' && doc.publishStatusByTarget) { " +
-                        "var t = doc.publishStatusByTarget; for (var k in t) { if (t.hasOwnProperty(k)) { emit([k, t[k]], null); } } } }",
-                "_count");
-
-        // View 4: by_process_type — countByProcessType stats and listing
-        client.createOrUpdateView(DESIGN_DOC, "by_process_type",
-                "function(doc) { if (doc.type === 'lineage_event' && doc.processType) { emit(doc.processType, null); } }",
-                "_count");
-
-        // View 5: by_occurred_at — cross-repository time ordering for findAll
-        client.createOrUpdateView(DESIGN_DOC, "by_occurred_at",
-                "function(doc) { if (doc.type === 'lineage_event') { emit(doc.occurredAt, null); } }",
-                null);
-
-        // View 6: by_repository_and_process_type — repository+processType composite filter
-        client.createOrUpdateView(DESIGN_DOC, "by_repository_and_process_type",
-                "function(doc) { if (doc.type === 'lineage_event' && doc.repositoryId && doc.processType) { " +
-                        "emit([doc.repositoryId, doc.processType], null); } }",
-                null);
-
-        // View 7: dead_letter_by_time — dead-letter events ordered by time
-        client.createOrUpdateView(DESIGN_DOC, "dead_letter_by_time",
-                "function(doc) { if (doc.type === 'lineage_dead_letter') { emit(doc.recordedAt, null); } }",
-                null);
-
-        // View 8: dead_letter_by_replayed — dead-letter events grouped by replayed status
-        client.createOrUpdateView(DESIGN_DOC, "dead_letter_by_replayed",
-                "function(doc) { if (doc.type === 'lineage_dead_letter') { emit([doc.replayed || false, doc.recordedAt], null); } }",
-                "_count");
-
-        // View 9: by_target_status_time — target+status+occurredAt for oldest-first queries
-        client.createOrUpdateView(DESIGN_DOC, "by_target_status_time",
-                "function(doc) { if (doc.type === 'lineage_event' && doc.publishStatusByTarget && doc.occurredAt) { " +
-                        "var t = doc.publishStatusByTarget; for (var k in t) { if (t.hasOwnProperty(k)) { emit([k, t[k], doc.occurredAt], null); } } } }",
-                null);
-
-        // View 10: by_repository_and_sequence — projection cursor sequence ordering
-        client.createOrUpdateView(DESIGN_DOC, "by_repository_and_sequence",
-                "function(doc) { if (doc.type === 'lineage_event' && doc.repositoryId && doc.sequenceNumber) { " +
-                        "emit([doc.repositoryId, doc.sequenceNumber], null); } }",
-                null);
-
-        // View 11: non_terminal_by_target_repo — distinct repos with non-terminal events per target
-        client.createOrUpdateView(DESIGN_DOC, "non_terminal_by_target_repo",
-                "function(doc) { if (doc.type === 'lineage_event' && doc.publishStatusByTarget && doc.repositoryId) { " +
-                        "var t = doc.publishStatusByTarget; for (var k in t) { if (t.hasOwnProperty(k)) { " +
-                        "var s = t[k]; if (s === 'PENDING' || s === 'FAILED' || s === 'PROJECTING') { emit([k, doc.repositoryId], null); } } } } }",
-                "_count");
-
-        // View 12: projecting_by_claimed_at — PROJECTING events ordered by claimedAt for stale reaping.
-        // Key: [target, claimedAt], where claimedAt falls back to occurredAt for pre-upgrade events.
-        // This allows scanning from oldest-claimed first so stale events are always found,
-        // regardless of the sample window size.
-        client.createOrUpdateView(DESIGN_DOC, "projecting_by_claimed_at",
-                "function(doc) { if (doc.type === 'lineage_event' && doc.publishStatusByTarget) { " +
-                        "var t = doc.publishStatusByTarget; var c = doc.claimedAtByTarget || {}; " +
-                        "for (var k in t) { if (t.hasOwnProperty(k) && t[k] === 'PROJECTING') { " +
-                        "var ts = c[k] || doc.occurredAt || ''; emit([k, ts], null); } } } }",
-                null);
-
-        // View 13: by_process_type_time — processType + occurredAt descending for time-ordered filtered listings
-        client.createOrUpdateView(DESIGN_DOC, "by_process_type_time",
-                "function(doc) { if (doc.type === 'lineage_event' && doc.processType && doc.occurredAt) { " +
-                        "emit([doc.processType, doc.occurredAt], null); } }",
-                null);
-
-        // View 14: by_repo_process_type_time — repositoryId + processType + occurredAt for filtered listings per repo
-        client.createOrUpdateView(DESIGN_DOC, "by_repo_process_type_time",
-                "function(doc) { if (doc.type === 'lineage_event' && doc.repositoryId && doc.processType && doc.occurredAt) { " +
-                        "emit([doc.repositoryId, doc.processType, doc.occurredAt], null); } }",
-                null);
-
+        for (Map.Entry<String, ViewDefinition> view : VIEWS.entrySet()) {
+            client.createOrUpdateView(DESIGN_DOC, view.getKey(),
+                    view.getValue().map(), view.getValue().reduce());
+        }
         logger.info("Lineage journal views deployed to design document '{}'", DESIGN_DOC);
     }
 
