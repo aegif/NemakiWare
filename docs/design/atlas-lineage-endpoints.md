@@ -974,19 +974,23 @@ payloadDigest = H("SPOOL_PAYLOAD_V1", spoolRecordId, spoolSchemaVersion,
 ```
 endpointRecords(list) = LIST[ record(e) を catalogQualifiedName の符号なし UTF-8 バイト順に並べたもの ]
 
-record(e) = MAP{                     // キーは下の順に固定 (MAP の直列化はキー順に依存する)
+record(e) = MAP{
   "kind"                 : STRING(e.kind().name())
   "repositoryId"         : STRING
   "catalogQualifiedName" : STRING
   "objectId"             : STRING | NULL
   "operationId"          : STRING | NULL
-  "attributes"           : MAP{ 属性名の符号なし UTF-8 バイト順。
-                                TEXT → STRING、COUNT → LONG }
+  "attributes"           : MAP{ TEXT → STRING、COUNT → LONG }
 }
 ```
 
 型 tag は A-1 で凍結済みのもの (`NULL 0x00` / `STRING 0x01` / `LONG 0x02` / `LIST 0x03` /
 `MAP 0x04`) をそのまま使う。**新しい符号化は作らない。**
+
+MAP のキー順を仕様に書く必要は無い。`LineageCanonicalHash` の MAP 符号化が**キーを符号なし
+UTF-8 バイト順にソートしてから書く**ので、宣言順は結果に影響しない (v2.3.12 まで「キー順に
+依存する」と書いていたのは誤り)。`objectId` / `operationId` の `NULL` は型 tag が空文字と
+区別するので、identity を持たない kind の欠落値と空値は別の record になる。
 
 | 論点 | 規則 |
 |---|---|
@@ -1896,6 +1900,31 @@ identity 分離を入れる前の記述で、成立しない。
 
 A-1 を分けたのは `LineageEvent` の移行対象が 14 ファイル・`inputs()/outputs()` 参照 79 箇所に
 及び、片方だけ入った木が壊れるため。A-1 単体で型と identity は閉じている。
+
+#### A-2 の分割 (v2.3.12)
+
+「型を足すだけ」の Slice 1 と「writer を切替える」Slice 4 の 2 つに割ると、**間の全部が
+Slice 4 に落ちる** — v1 `LineageEvent` は store 契約
+([`LineageJournalStore`](../../core/src/main/java/jp/aegif/nemaki/rest/purview/journal/LineageJournalStore.java))
+と sink 契約
+([`LineageTargetSink`](../../core/src/main/java/jp/aegif/nemaki/rest/purview/journal/LineageTargetSink.java))
+の両方に型として現れているので、writer を切り替える commit が controller・projector・
+dead letter・3 sink をまとめて書き換えることになる。それは「中間状態を壊さない」を満たすが、
+**レビューできない大きさ**であり、壊れたときに戻す先が無い。
+
+読取り側を先に版非依存にする。
+
+| slice | 内容 | この時点で production は |
+|---|---|---|
+| **1** | v2 型・delivery の tagged union・identity 束縛・**`occurredAt` を要求する純関数 builder** (§3)・processType ごとの shape 表・**正規化 read model** (v1 からも v2 からも作れる)。配線なし | v1 を書き、v1 を読む |
+| **2** | codec (CouchDB JSON ⇄ v2) と consumer の read model 移行 (controller / projector / dead letter / 3 sink)。**供給するのは v1 だけ**で振る舞いは変えない | v1 を書き、**版非依存の経路で** v1 を読む |
+| **3** | `creationPayloadDigest` + 409 完全一致 + integrity 例外 → spool + metric、`operationId` 検査 (store・sink 直前) | v1 を書く |
+| **4a / 4b** | §6-a の rollout fence と writer 切替 | — |
+
+**`read:v2` capability (§6-a) を名乗ってよいのは Slice 2 の完了後**である。decoder クラスが
+存在することと「v2 を復号して projector へ流せる」ことは別で、前者だけで capability を
+立てると §6-a の CAS 条件 8 が**満たされていないのに通る**。capability は経路が通っている
+ことの表明であって、クラスの存在の表明ではない。
 
 ---
 
