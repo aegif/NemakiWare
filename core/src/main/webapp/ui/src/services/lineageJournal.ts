@@ -120,8 +120,12 @@ export async function getEvents(params: {
   return (await parseJsonResponseBody(res, 'getEvents')) as unknown as { events: LineageEventSummary[]; total: number };
 }
 
-export async function getEvent(eventId: string): Promise<LineageEventSummary> {
-  const res = await fetchWithAuth(`${BASE_URL}/events/${encodeURIComponent(eventId)}`);
+/**
+ * Fetches one journal row. The parameter is a RECORD id — v1's eventId, v2's deliveryId; use
+ * recordId from a list row where present (they are the same value for every v1 row).
+ */
+export async function getEvent(recordId: string): Promise<LineageEventSummary> {
+  const res = await fetchWithAuth(`${BASE_URL}/events/${encodeURIComponent(recordId)}`);
   ensureOk(res, 'getEvent');
   return (await parseJsonResponseBody(res, 'getEvent')) as unknown as LineageEventSummary;
 }

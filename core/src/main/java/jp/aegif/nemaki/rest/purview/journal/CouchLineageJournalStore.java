@@ -324,7 +324,7 @@ public class CouchLineageJournalStore implements LineageJournalStore {
     }
 
     @Override
-    public List<LineageEvent> findByRepositoryId(String repositoryId, int limit, int offset) {
+    public List<LineageJournalRow> findByRepositoryId(String repositoryId, int limit, int offset) {
         if (!ensureClientForRead()) {
             return List.of();
         }
@@ -340,11 +340,11 @@ public class CouchLineageJournalStore implements LineageJournalStore {
         params.put("include_docs", true);
         params.put("descending", true);
 
-        return queryEventsFromView("by_repository_and_time", params);
+        return queryRowsFromView("by_repository_and_time", params);
     }
 
     @Override
-    public List<LineageEvent> findByProcessType(String repositoryId, LineageProcessType processType, int limit, int offset) {
+    public List<LineageJournalRow> findByProcessType(String repositoryId, LineageProcessType processType, int limit, int offset) {
         if (!ensureClientForRead()) {
             return List.of();
         }
@@ -359,11 +359,11 @@ public class CouchLineageJournalStore implements LineageJournalStore {
             params.put("skip", offset);
         }
         params.put("include_docs", true);
-        return queryEventsFromView("by_repo_process_type_time", params);
+        return queryRowsFromView("by_repo_process_type_time", params);
     }
 
     @Override
-    public List<LineageEvent> findByProcessType(LineageProcessType processType, int limit, int offset) {
+    public List<LineageJournalRow> findByProcessType(LineageProcessType processType, int limit, int offset) {
         if (!ensureClientForRead()) {
             return List.of();
         }
@@ -380,21 +380,24 @@ public class CouchLineageJournalStore implements LineageJournalStore {
         }
         params.put("include_docs", true);
 
-        return queryEventsFromView("by_process_type_time", params);
+        return queryRowsFromView("by_process_type_time", params);
     }
 
     @Override
-    public int updatePublishStatus(String eventId, String target, LineagePublishStatus status) {
+    public int updatePublishStatus(String recordId, String target, LineagePublishStatus status) {
+        if (recordId == null || recordId.isBlank()) {
+            return 0;
+        }
         if (!dbProvisioned.get()) {
             return 0;
         }
 
         try {
-            String docId = CouchLineageEvent.ID_PREFIX + eventId;
+            String docId = CouchLineageEvent.journalDocumentId(recordId);
             @SuppressWarnings("unchecked")
             Map<String, Object> doc = (Map<String, Object>) getLineageClient().get(Map.class, docId, null);
             if (doc == null) {
-                logger.debug("Event not found for updatePublishStatus: {}", eventId);
+                logger.debug("Row not found for updatePublishStatus: {}", recordId);
                 return 0;
             }
 
@@ -438,7 +441,7 @@ public class CouchLineageJournalStore implements LineageJournalStore {
             return 0;
         } catch (Exception e) {
             // 409 Conflict or other error
-            logger.debug("Failed to update publish status for event {}: {}", eventId, e.getMessage());
+            logger.debug("Failed to update publish status for record {}: {}", recordId, e.getMessage());
             return 0;
         }
     }
@@ -462,12 +465,21 @@ public class CouchLineageJournalStore implements LineageJournalStore {
         params.put("limit", PURGE_BATCH_SIZE);
         params.put("include_docs", true);
 
-        List<LineageEvent> candidates = queryEventsFromView("by_occurred_at", params);
+        List<LineageJournalRow> candidates = queryRowsFromView("by_occurred_at", params);
 
         List<String[]> toDelete = new ArrayList<>(); // [id, rev] pairs
-        for (LineageEvent event : candidates) {
-            if (allTargetsTerminal(event)) {
-                String docId = CouchLineageEvent.ID_PREFIX + event.eventId();
+        for (LineageJournalRow row : candidates) {
+            // An undecodable row is never purged: whether it is terminal cannot be judged, and
+            // its stored document is the only evidence of what it was. Deleting the
+            // unclassifiable is how evidence disappears politely.
+            if (!(row instanceof LineageJournalRow.Decoded decoded)) {
+                LineageJournalRow.Undecodable u = (LineageJournalRow.Undecodable) row;
+                logger.warn("Purge skipping undecodable journal row {}: {}", u.documentId(), u.reason());
+                continue;
+            }
+            LineageRecord record = decoded.entry().record();
+            if (allTargetsTerminal(record)) {
+                String docId = CouchLineageEvent.journalDocumentId(record.recordId());
                 @SuppressWarnings("unchecked")
                 Map<String, Object> doc = (Map<String, Object>) getLineageClient().get(Map.class, docId, null);
                 if (doc != null) {
@@ -490,13 +502,13 @@ public class CouchLineageJournalStore implements LineageJournalStore {
     }
 
     @Override
-    public int discardEvent(String eventId, String target) {
-        if (!dbProvisioned.get()) {
+    public int discardEvent(String recordId, String target) {
+        if (!dbProvisioned.get() || recordId == null || recordId.isBlank()) {
             return 0;
         }
 
         try {
-            String docId = CouchLineageEvent.ID_PREFIX + eventId;
+            String docId = CouchLineageEvent.journalDocumentId(recordId);
             @SuppressWarnings("unchecked")
             Map<String, Object> doc = (Map<String, Object>) getLineageClient().get(Map.class, docId, null);
             if (doc == null) {
@@ -535,7 +547,7 @@ public class CouchLineageJournalStore implements LineageJournalStore {
             }
             return 0;
         } catch (Exception e) {
-            logger.debug("Failed to discard event {}: {}", eventId, e.getMessage());
+            logger.debug("Failed to discard row {}: {}", recordId, e.getMessage());
             return 0;
         }
     }
@@ -557,7 +569,7 @@ public class CouchLineageJournalStore implements LineageJournalStore {
 
 
     @Override
-    public List<LineageEvent> findAll(int limit, int offset) {
+    public List<LineageJournalRow> findAll(int limit, int offset) {
         if (!ensureClientForRead()) {
             return List.of();
         }
@@ -574,26 +586,25 @@ public class CouchLineageJournalStore implements LineageJournalStore {
         params.put("include_docs", true);
         params.put("descending", true);
 
-        return queryEventsFromView("by_occurred_at", params);
+        return queryRowsFromView("by_occurred_at", params);
     }
 
     @Override
-    public LineageEvent findByEventId(String eventId) {
-        if (!ensureClientForRead() || eventId == null || eventId.isEmpty()) {
+    public LineageJournalRow findByRecordId(String recordId) {
+        if (!ensureClientForRead() || recordId == null || recordId.isEmpty()) {
             return null;
         }
 
         try {
-            String docId = CouchLineageEvent.ID_PREFIX + eventId;
+            String docId = CouchLineageEvent.journalDocumentId(recordId);
             @SuppressWarnings("unchecked")
             Map<String, Object> doc = (Map<String, Object>) getLineageClient().get(Map.class, docId, null);
             if (doc == null) {
                 return null;
             }
-            CouchLineageEvent couchEvent = new CouchLineageEvent(doc);
-            return couchEvent.toLineageEvent();
+            return LineageEventCodec.decodeRow(doc);
         } catch (Exception e) {
-            logger.debug("Error finding lineage event by id {}: {}", eventId, e.getMessage());
+            logger.debug("Error finding lineage row by record id {}: {}", recordId, e.getMessage());
             return null;
         }
     }
@@ -635,7 +646,7 @@ public class CouchLineageJournalStore implements LineageJournalStore {
     }
 
     @Override
-    public List<LineageEvent> findByTargetAndStatus(String target, LineagePublishStatus status, int limit) {
+    public List<LineageJournalRow> findByTargetAndStatus(String target, LineagePublishStatus status, int limit) {
         if (!ensureClientForRead()) {
             return List.of();
         }
@@ -646,11 +657,11 @@ public class CouchLineageJournalStore implements LineageJournalStore {
         params.put("reduce", false);
         params.put("limit", limit);
         params.put("include_docs", true);
-        return queryEventsFromView("by_target_status", params);
+        return queryRowsFromView("by_target_status", params);
     }
 
     @Override
-    public List<LineageEvent> findByTargetAndStatusOldestFirst(String target, LineagePublishStatus status, int limit) {
+    public List<LineageJournalRow> findByTargetAndStatusOldestFirst(String target, LineagePublishStatus status, int limit) {
         if (!ensureClientForRead()) {
             return List.of();
         }
@@ -660,7 +671,7 @@ public class CouchLineageJournalStore implements LineageJournalStore {
         params.put("endkey", List.of(target, status.name(), "\ufff0"));
         params.put("limit", limit);
         params.put("include_docs", true);
-        return queryEventsFromView("by_target_status_time", params);
+        return queryRowsFromView("by_target_status_time", params);
     }
 
     @Override
@@ -685,20 +696,32 @@ public class CouchLineageJournalStore implements LineageJournalStore {
             params.put("limit", batchSize);
             params.put("include_docs", true);
 
-            List<LineageEvent> staleProjecting = queryEventsFromView("projecting_by_claimed_at", params);
+            List<LineageJournalRow> staleProjecting = queryRowsFromView("projecting_by_claimed_at", params);
             if (staleProjecting.isEmpty()) break;
 
             int batchReaped = 0;
-            for (LineageEvent event : staleProjecting) {
+            for (LineageJournalRow row : staleProjecting) {
+                // The status flip mutates the raw document and needs no decode, so a stale claim
+                // is released even on a row that cannot decode — otherwise a corrupt row that
+                // died mid-claim would hold PROJECTING forever.
+                String recordId = switch (row) {
+                    case LineageJournalRow.Decoded decoded -> decoded.entry().record().recordId();
+                    case LineageJournalRow.Undecodable u -> u.documentId() != null
+                            && u.documentId().startsWith(CouchLineageEvent.ID_PREFIX)
+                            ? u.documentId().substring(CouchLineageEvent.ID_PREFIX.length()) : null;
+                };
+                if (recordId == null) {
+                    continue;
+                }
                 try {
-                    int reset = updatePublishStatus(event.eventId(), target, LineagePublishStatus.FAILED);
+                    int reset = updatePublishStatus(recordId, target, LineagePublishStatus.FAILED);
                     if (reset > 0) {
-                        logger.info("Reset stale PROJECTING event to FAILED: eventKey={}, target={}",
-                                event.eventKey(), target);
+                        logger.info("Reset stale PROJECTING row to FAILED: recordId={}, target={}",
+                                recordId, target);
                         batchReaped++;
                     }
                 } catch (Exception e) {
-                    logger.debug("Error resetting stale event {}: {}", event.eventId(), e.getMessage());
+                    logger.debug("Error resetting stale row {}: {}", recordId, e.getMessage());
                 }
             }
             totalReaped += batchReaped;
@@ -710,12 +733,12 @@ public class CouchLineageJournalStore implements LineageJournalStore {
     }
 
     @Override
-    public int getRetryCount(String eventId, String target) {
-        if (!ensureClientForRead()) {
+    public int getRetryCount(String recordId, String target) {
+        if (!ensureClientForRead() || recordId == null || recordId.isBlank()) {
             return 0;
         }
         try {
-            String docId = CouchLineageEvent.ID_PREFIX + eventId;
+            String docId = CouchLineageEvent.journalDocumentId(recordId);
             @SuppressWarnings("unchecked")
             Map<String, Object> doc = (Map<String, Object>) getLineageClient().get(Map.class, docId, null);
             if (doc == null) return 0;
@@ -727,7 +750,7 @@ public class CouchLineageJournalStore implements LineageJournalStore {
             Object count = retryCounts.get(target);
             return (count instanceof Number) ? ((Number) count).intValue() : 0;
         } catch (Exception e) {
-            logger.debug("Error reading retry count for event {}: {}", eventId, e.getMessage());
+            logger.debug("Error reading retry count for record {}: {}", recordId, e.getMessage());
             return 0;
         }
     }
@@ -735,14 +758,14 @@ public class CouchLineageJournalStore implements LineageJournalStore {
 
 
     @Override
-    public List<LineageEvent> findByDateRange(String start, String end, int limit, int offset) {
+    public List<LineageJournalRow> findByDateRange(String start, String end, int limit, int offset) {
         if (!ensureClientForRead()) return List.of();
         int cappedLimit = Math.min(Math.max(limit, 1), 200);
-        return queryEventsFromView("by_occurred_at", start, end, false, cappedLimit, offset);
+        return queryRowsFromView("by_occurred_at", start, end, false, cappedLimit, offset);
     }
 
     @Override
-    public List<LineageEvent> findByRepositoryAndSequenceRange(String repositoryId, long fromSequence, int limit) {
+    public List<LineageJournalRow> findByRepositoryAndSequenceRange(String repositoryId, long fromSequence, int limit) {
         if (!ensureClientForRead()) return List.of();
         int cappedLimit = Math.min(Math.max(limit, 1), 200);
 
@@ -754,7 +777,7 @@ public class CouchLineageJournalStore implements LineageJournalStore {
         params.put("limit", cappedLimit);
         params.put("include_docs", true);
         params.put("reduce", false);
-        return queryEventsFromView("by_repository_and_sequence", params);
+        return queryRowsFromView("by_repository_and_sequence", params);
     }
 
     @Override
@@ -892,20 +915,26 @@ public class CouchLineageJournalStore implements LineageJournalStore {
     }
 
     /**
-     * Query events from a view and convert rows to LineageEvent list.
+     * Query a view and decode each row independently.
      *
-     * <p>Note: Cloudant SDK's {@code Document} does NOT implement
-     * {@code Map<String, Object>}. We must extract properties via
-     * {@code Document.getProperties()} and {@code Document.getId()}/{@code getRev()}.
+     * <p>Per-row on purpose. The previous form decoded inside one try/catch around the whole
+     * loop, so a single corrupt row turned the entire batch into an empty list — every healthy
+     * row hidden by the one broken one. Now a row that cannot decode comes back as
+     * {@link LineageJournalRow.Undecodable} and the healthy rows come back as themselves; what to
+     * do about the broken one is the caller's decision, because only the caller knows whether
+     * order matters (the outer catch stays: a view-level query failure has no rows to report).
+     *
+     * <p>Note: Cloudant SDK's {@code Document} does NOT implement {@code Map<String, Object>};
+     * properties are extracted via {@code getProperties()} and {@code getId()}/{@code getRev()}.
      */
-    private List<LineageEvent> queryEventsFromView(String viewName, Map<String, Object> params) {
+    private List<LineageJournalRow> queryRowsFromView(String viewName, Map<String, Object> params) {
         try {
             ViewResult result = getLineageClient().queryView(DESIGN_DOC, viewName, params);
             if (result == null || result.getRows() == null) {
                 return List.of();
             }
 
-            List<LineageEvent> events = new ArrayList<>();
+            List<LineageJournalRow> rows = new ArrayList<>();
             for (ViewResultRow row : result.getRows()) {
                 com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
                 if (doc != null) {
@@ -913,11 +942,10 @@ public class CouchLineageJournalStore implements LineageJournalStore {
                     if (doc.getId() != null) props.put("_id", doc.getId());
                     if (doc.getRev() != null) props.put("_rev", doc.getRev());
                     if (doc.getProperties() != null) props.putAll(doc.getProperties());
-                    CouchLineageEvent couchEvent = new CouchLineageEvent(props);
-                    events.add(couchEvent.toLineageEvent());
+                    rows.add(LineageEventCodec.decodeRow(props));
                 }
             }
-            return events;
+            return rows;
         } catch (Exception e) {
             logger.error("Error querying lineage view {}: {}", viewName, e.getMessage(), e);
             return List.of();
@@ -927,8 +955,8 @@ public class CouchLineageJournalStore implements LineageJournalStore {
     /**
      * Convenience overload for range queries on single-key views.
      */
-    private List<LineageEvent> queryEventsFromView(String viewName, String startKey, String endKey,
-                                                    boolean descending, int limit, int offset) {
+    private List<LineageJournalRow> queryRowsFromView(String viewName, String startKey, String endKey,
+                                                      boolean descending, int limit, int offset) {
         Map<String, Object> params = new HashMap<>();
         if (startKey != null) params.put(descending ? "endkey" : "startkey", startKey);
         if (endKey != null) params.put(descending ? "startkey" : "endkey", endKey);
@@ -936,17 +964,17 @@ public class CouchLineageJournalStore implements LineageJournalStore {
         params.put("limit", limit);
         if (offset > 0) params.put("skip", offset);
         params.put("include_docs", true);
-        return queryEventsFromView(viewName, params);
+        return queryRowsFromView(viewName, params);
     }
 
     /**
      * Check if all targets in the event are in terminal state.
      */
-    private boolean allTargetsTerminal(LineageEvent event) {
-        if (event.publishStatusByTarget().isEmpty()) {
+    private boolean allTargetsTerminal(LineageRecord record) {
+        if (record.publishStatusByTarget().isEmpty()) {
             return true;
         }
-        return event.publishStatusByTarget().values().stream()
+        return record.publishStatusByTarget().values().stream()
                 .allMatch(LineagePublishStatus::isTerminal);
     }
 

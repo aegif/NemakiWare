@@ -98,7 +98,7 @@ public class LineageJournalDisplayContractTest {
     }
 
     private Map<String, Object> getEventBody(LineageEvent stored) {
-        when(store.findByEventId("id")).thenReturn(stored);
+        when(store.findByRecordId("id")).thenReturn(row(stored));
         ResponseEntity<Map<String, Object>> response = controller.getEvent("id");
         assertEquals(200, response.getStatusCode().value());
         return response.getBody();
@@ -271,25 +271,27 @@ public class LineageJournalDisplayContractTest {
      */
     @Test
     public void aRowThatCannotBeProjectedDoesNotBreakTheRequest() {
-        LineageEvent broken = new LineageEvent(1, null, "k", 0L, "2026-08-01T00:00:00Z",
-                "bedroom", LineageProcessType.ARCHIVE_LOCAL, List.of(), List.of(),
-                "", "", 1, Map.of(), Map.of());
+        // Since 2d-2, decode failure happens in the STORE and arrives as a value; the controller
+        // renders it as a diagnostic row. What identifies the row is now the document
+        // coordinates, not payload fields — an undecodable row's payload is exactly the thing
+        // that must not be copied around.
+        when(store.findByRecordId("id")).thenReturn(brokenRow());
+        ResponseEntity<Map<String, Object>> response = controller.getEvent("id");
+        assertEquals(200, response.getStatusCode().value());
 
-        Map<String, Object> body = getEventBody(broken);
+        Map<String, Object> body = response.getBody();
         assertEquals(Boolean.TRUE, body.get("unprojectable"));
         assertNotNull(body.get("unprojectableReason"));
-        assertEquals("bedroom", body.get("repositoryId"),
-                "what could be read is still shown, so the row is identifiable");
-        assertNull(body.get("recordId"));
+        assertEquals("lineage:broken", body.get("documentId"),
+                "the document coordinates are what lets an operator find the row");
+        assertEquals("broken", body.get("recordId"));
+        assertEquals("lineage_event", body.get("documentType"));
     }
 
     @Test
     public void oneBrokenRowDoesNotHideTheGoodOnesInAList() {
-        LineageEvent broken = new LineageEvent(1, "", "k", 0L, "2026-08-01T00:00:00Z",
-                "bedroom", LineageProcessType.ARCHIVE_LOCAL, List.of(), List.of(),
-                "", "", 1, Map.of(), Map.of());
         LineageEvent good = v1Event();
-        when(store.findAll(51, 0)).thenReturn(List.of(broken, good));
+        when(store.findAll(51, 0)).thenReturn(java.util.List.of(brokenRow(), row(good)));
 
         ResponseEntity<Map<String, Object>> response =
                 controller.listEvents(null, null, null, null, 50, 0);
@@ -322,7 +324,7 @@ public class LineageJournalDisplayContractTest {
     @Test
     public void replayStillResetsTheOriginalToPending() {
         LineageEvent event = v1Event();
-        when(store.findByEventId("id")).thenReturn(event);
+        when(store.findByRecordId("id")).thenReturn(row(event));
         when(store.updatePublishStatus("id", "purview", LineagePublishStatus.PENDING))
                 .thenReturn(1);
 
@@ -332,9 +334,51 @@ public class LineageJournalDisplayContractTest {
                 .updatePublishStatus("id", "purview", LineagePublishStatus.PENDING);
     }
 
+    /**
+     * The discard endpoint refuses an undecodable row for a harder reason than replay does:
+     * discard is a terminal transition, terminal rows are purge-eligible, and the stored document
+     * is the row's only evidence. The raw status flip would succeed — it needs no decode — so
+     * this refusal is the only thing between one admin call and quiet evidence destruction.
+     */
+    @Test
+    public void anUndecodableRowCannotBeDiscarded() {
+        when(store.findByRecordId("broken")).thenReturn(brokenRow());
+
+        ResponseEntity<Map<String, Object>> response = controller.discardEvent("broken", "purview");
+
+        assertEquals(409, response.getStatusCode().value());
+        org.mockito.Mockito.verify(store, org.mockito.Mockito.never())
+                .discardEvent(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    public void anUndecodableRowCannotBeReplayed() {
+        when(store.findByRecordId("broken")).thenReturn(brokenRow());
+
+        ResponseEntity<Map<String, Object>> response = controller.replayEvent("broken", "purview");
+
+        assertEquals(409, response.getStatusCode().value());
+        org.mockito.Mockito.verify(store, org.mockito.Mockito.never())
+                .updatePublishStatus(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any());
+    }
+
     @Test
     public void aMissingEventIsStillANotFound() {
-        when(store.findByEventId("nope")).thenReturn(null);
+        when(store.findByRecordId("nope")).thenReturn(null);
         assertEquals(404, controller.getEvent("nope").getStatusCode().value());
     }
+    private static jp.aegif.nemaki.rest.purview.journal.LineageJournalRow row(LineageEvent event) {
+        return new jp.aegif.nemaki.rest.purview.journal.LineageJournalRow.Decoded(
+                jp.aegif.nemaki.rest.purview.journal.LineageJournalEntry.ofV1(event));
+    }
+
+    /** What the store yields for a stored row whose identifiers are junk: a diagnostic value. */
+    private static jp.aegif.nemaki.rest.purview.journal.LineageJournalRow brokenRow() {
+        return new jp.aegif.nemaki.rest.purview.journal.LineageJournalRow.Undecodable(
+                "lineage:broken", "lineage_event", 1, "recordId must not be null or blank");
+    }
+
 }
