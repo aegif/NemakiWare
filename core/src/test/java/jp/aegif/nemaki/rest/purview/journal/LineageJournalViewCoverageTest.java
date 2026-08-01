@@ -237,6 +237,34 @@ public class LineageJournalViewCoverageTest {
         }
     }
 
+    /**
+     * The allowlist's reason for being (parallel review follow-up): SEQUENCING — the fenced
+     * sequencer's mid-assignment state (§8-a) — was still visible under a denylist of
+     * UNSEQUENCED alone, and so would be any state a future slice invents. Deliverable is
+     * explicit: no state field (v1), or SEQUENCED.
+     */
+    @Test
+    public void aSequencingV2RowIsInvisibleToEveryClaimFeedingView() {
+        Map<String, Object> doc = v2Document();
+        doc.put("state", "SEQUENCING");
+        for (String view : List.of("by_target_status", "by_target_status_time",
+                "non_terminal_by_target_repo")) {
+            assertTrue(emits(view, doc).isEmpty(),
+                    view + " must not expose a mid-assignment row to the projector");
+        }
+    }
+
+    /** Fail-closed for the unknown: a state nobody defined yet is not deliverable. */
+    @Test
+    public void anUnknownFutureStateIsInvisibleToTheClaimViews() {
+        Map<String, Object> doc = v2Document();
+        doc.put("state", "SOME_FUTURE_STATE");
+        for (String view : List.of("by_target_status", "by_target_status_time",
+                "non_terminal_by_target_repo")) {
+            assertTrue(emits(view, doc).isEmpty(), view);
+        }
+    }
+
     /** Once the sequencer moves the row out of UNSEQUENCED, the same views serve it. */
     @Test
     public void aSequencedV2RowIsServedByTheClaimViews() {
