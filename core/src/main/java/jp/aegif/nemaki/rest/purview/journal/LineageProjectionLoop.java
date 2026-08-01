@@ -165,29 +165,54 @@ public class LineageProjectionLoop {
         List<LineageEvent> candidates = journalStore.findByTargetAndStatus(targetName, sourceStatus, batchSize);
 
         for (LineageEvent event : candidates) {
+            // Projected once, before the claim. A row this fails for must not be claimed at all:
+            // claiming and then failing every cycle would burn a retry per poll on a row that can
+            // never publish. Unordered processing owes the other candidates nothing, so one bad
+            // row is quarantined and the loop moves on.
+            LineageRecord record;
+            try {
+                record = LineageRecord.fromV1(event);
+            } catch (RuntimeException e) {
+                quarantineUnprojectable(event, targetName, e);
+                continue;
+            }
             try {
                 // CAS: claim the event by transitioning to PROJECTING
-                int claimed = journalStore.updatePublishStatus(event.eventId(), targetName, LineagePublishStatus.PROJECTING);
+                int claimed = journalStore.updatePublishStatus(record.recordId(), targetName, LineagePublishStatus.PROJECTING);
                 if (claimed == 0) {
                     // Another node claimed this event — skip
                     continue;
                 }
 
                 // Publish to the target
-                LineageTargetSinkResult result = sink.publish(LineageRecord.fromV1(event));
+                LineageTargetSinkResult result = sink.publish(record);
 
                 if (result.success()) {
-                    journalStore.updatePublishStatus(event.eventId(), targetName, LineagePublishStatus.PUBLISHED);
+                    journalStore.updatePublishStatus(record.recordId(), targetName, LineagePublishStatus.PUBLISHED);
                     if (lineageMetrics != null) lineageMetrics.recordPublish(targetName);
-                    logger.debug("Published event to '{}': eventKey={}, entities={}",
-                            targetName, event.eventKey(), result.entityCount());
+                    logger.debug("Published event to '{}': processIdentity={}, entities={}",
+                            targetName, record.processIdentity(), result.entityCount());
                 } else {
-                    handlePublishFailure(event, targetName, result.message());
+                    handlePublishFailure(event, record, targetName, result.message());
                 }
             } catch (Exception e) {
-                handlePublishFailure(event, targetName, e.getMessage());
+                handlePublishFailure(event, record, targetName, e.getMessage());
             }
         }
+    }
+
+    /**
+     * A stored row the read model rejects — blank identifier, junk written before the fields
+     * mattered. Retrying cannot fix it (the failure is the data's shape, not the target's mood),
+     * so it is discarded out of the poll set with the envelope preserved in the dead letter for
+     * repair. Leaving it PENDING would re-quarantine it every poll, forever.
+     */
+    private void quarantineUnprojectable(LineageEvent event, String targetName, RuntimeException e) {
+        logger.warn("Event cannot be projected and is quarantined: eventId={}, target={}, reason={}",
+                event.eventId(), targetName, e.getMessage());
+        LineageDeadLetterSink.record(event, "projection-decode-failed:" + e.getMessage());
+        journalStore.updatePublishStatus(event.eventId(), targetName, LineagePublishStatus.DISCARDED);
+        if (lineageMetrics != null) lineageMetrics.recordDiscard();
     }
 
     /**
@@ -253,33 +278,45 @@ public class LineageProjectionLoop {
             // PROJECTING by another node → stop for this repo
             if (status == LineagePublishStatus.PROJECTING) {
                 logger.debug("Event {} is PROJECTING by another node — stopping ordered projection for repo '{}'",
-                        event.eventKey(), repositoryId);
+                        event.eventId(), repositoryId);
+                break;
+            }
+
+            // A row the read model rejects. Quarantined like the unordered path, but then this
+            // repository STOPS for this cycle: publishing the next event first would break the
+            // ordering this loop exists for. DISCARDED is terminal, so the next poll advances the
+            // cursor over it and the repository resumes — the row costs one cycle, not the queue.
+            LineageRecord record;
+            try {
+                record = LineageRecord.fromV1(event);
+            } catch (RuntimeException e) {
+                quarantineUnprojectable(event, targetName, e);
                 break;
             }
 
             // PENDING or FAILED → try to claim and publish
             try {
-                int claimed = journalStore.updatePublishStatus(event.eventId(), targetName, LineagePublishStatus.PROJECTING);
+                int claimed = journalStore.updatePublishStatus(record.recordId(), targetName, LineagePublishStatus.PROJECTING);
                 if (claimed == 0) {
                     // Another node claimed it — stop to preserve order
                     break;
                 }
 
-                LineageTargetSinkResult result = sink.publish(LineageRecord.fromV1(event));
+                LineageTargetSinkResult result = sink.publish(record);
 
                 if (result.success()) {
-                    journalStore.updatePublishStatus(event.eventId(), targetName, LineagePublishStatus.PUBLISHED);
+                    journalStore.updatePublishStatus(record.recordId(), targetName, LineagePublishStatus.PUBLISHED);
                     if (lineageMetrics != null) lineageMetrics.recordPublish(targetName);
-                    advanceCursor(targetName, repositoryId, event.sequenceNumber());
-                    logger.debug("Published event (ordered) to '{}': eventKey={}, seq={}",
-                            targetName, event.eventKey(), event.sequenceNumber());
+                    advanceCursor(targetName, repositoryId, record.sequenceNumber());
+                    logger.debug("Published event (ordered) to '{}': processIdentity={}, seq={}",
+                            targetName, record.processIdentity(), record.sequenceNumber());
                 } else {
                     // Publish failed — stop processing this repo to preserve order
-                    handlePublishFailure(event, targetName, result.message());
+                    handlePublishFailure(event, record, targetName, result.message());
                     break;
                 }
             } catch (Exception e) {
-                handlePublishFailure(event, targetName, e.getMessage());
+                handlePublishFailure(event, record, targetName, e.getMessage());
                 break;
             }
         }
@@ -297,28 +334,36 @@ public class LineageProjectionLoop {
     /**
      * Handles a publish failure: transitions to FAILED, checks retry limits,
      * and writes to dead-letter if needed. Auto-discards if max retries exceeded.
+     *
+     * <p>Takes both representations on purpose, and the asymmetry is the point: the
+     * <b>record</b> drives every decision and log line, the <b>envelope</b> exists solely to hand
+     * to {@link LineageDeadLetterSink}, because recovery must be able to rebuild the original and
+     * the projection cannot (see {@link LineageRecord}'s javadoc). A combined journal-entry type
+     * is deliberately deferred to Slice 2d-1, where the version-tagged lossless form is designed;
+     * until then the two parameters keep the envelope's remaining uses visible at each call site.
      */
-    private void handlePublishFailure(LineageEvent event, String targetName, String errorMessage) {
-        journalStore.updatePublishStatus(event.eventId(), targetName, LineagePublishStatus.FAILED);
+    private void handlePublishFailure(LineageEvent envelope, LineageRecord record,
+                                      String targetName, String errorMessage) {
+        journalStore.updatePublishStatus(record.recordId(), targetName, LineagePublishStatus.FAILED);
         if (lineageMetrics != null) lineageMetrics.recordFail(targetName);
 
         // Check retry count limit — auto-discard if exceeded
         int maxRetries = lineageConfig.getBacklogMaxRetryCount();
         if (maxRetries > 0) {
-            int retryCount = journalStore.getRetryCount(event.eventId(), targetName);
+            int retryCount = journalStore.getRetryCount(record.recordId(), targetName);
             if (retryCount >= maxRetries) {
                 logger.warn("Retry count {} exceeds max {} for event {} on target '{}' — auto-discarding",
-                        retryCount, maxRetries, event.eventKey(), targetName);
-                LineageDeadLetterSink.record(event,
+                        retryCount, maxRetries, record.processIdentity(), targetName);
+                LineageDeadLetterSink.record(envelope,
                         "auto-discard:max-retry-count:" + retryCount + ":" + targetName);
-                journalStore.updatePublishStatus(event.eventId(), targetName, LineagePublishStatus.DISCARDED);
+                journalStore.updatePublishStatus(record.recordId(), targetName, LineagePublishStatus.DISCARDED);
                 if (lineageMetrics != null) lineageMetrics.recordDiscard();
                 return;
             }
         }
 
-        logger.warn("Publish failed for event {} to '{}': {}", event.eventKey(), targetName, errorMessage);
-        LineageDeadLetterSink.record(event, "publish-failed:" + targetName + ":" + errorMessage);
+        logger.warn("Publish failed for event {} to '{}': {}", record.processIdentity(), targetName, errorMessage);
+        LineageDeadLetterSink.record(envelope, "publish-failed:" + targetName + ":" + errorMessage);
     }
 
     /**
@@ -329,35 +374,60 @@ public class LineageProjectionLoop {
         int maxAgeHours = lineageConfig.getBacklogMaxRetryAgeHours();
         if (maxAgeHours > 0) {
             Instant ageCutoff = Instant.now().minus(Duration.ofHours(maxAgeHours));
-            String ageCutoffStr = ageCutoff.toString();
 
             // Check FAILED events that are too old
             List<LineageEvent> failedEvents = journalStore.findByTargetAndStatus(
                     targetName, LineagePublishStatus.FAILED, lineageConfig.getProjectionBatchSize());
             for (LineageEvent event : failedEvents) {
-                if (event.occurredAt().compareTo(ageCutoffStr) < 0) {
-                    journalStore.discardEvent(event.eventId(), targetName);
-                    LineageDeadLetterSink.record(event, "auto-discard: retry-age-exceeded (" + maxAgeHours + "h)");
-                    logger.info("Auto-discarded aged event: eventKey={}, target={}, age={}",
-                            event.eventKey(), targetName, event.occurredAt());
-                }
+                discardIfOlderThan(event, targetName, ageCutoff, maxAgeHours);
             }
 
             // Also check PENDING events that are too old
             List<LineageEvent> pendingEvents = journalStore.findByTargetAndStatus(
                     targetName, LineagePublishStatus.PENDING, lineageConfig.getProjectionBatchSize());
             for (LineageEvent event : pendingEvents) {
-                if (event.occurredAt().compareTo(ageCutoffStr) < 0) {
-                    journalStore.discardEvent(event.eventId(), targetName);
-                    LineageDeadLetterSink.record(event, "auto-discard: retry-age-exceeded (" + maxAgeHours + "h)");
-                    logger.info("Auto-discarded aged event: eventKey={}, target={}, age={}",
-                            event.eventKey(), targetName, event.occurredAt());
-                }
+                discardIfOlderThan(event, targetName, ageCutoff, maxAgeHours);
             }
         }
 
         // 2. Max docs
         int maxDocs = lineageConfig.getBacklogMaxDocs();
+        enforceMaxDocsAndBytes(targetName, maxDocs);
+    }
+
+    /**
+     * Age comparison by parsed {@link Instant}, not by string.
+     *
+     * <p>The strings compared here used to be compared lexically, and that is wrong for the very
+     * values {@code Instant.toString()} produces: the fractional second is variable-width, so
+     * {@code ...:00.500Z} sorts <em>before</em> {@code ...:00Z} — half a second later, judged
+     * older. v1 events all come from {@code Instant.now().toString()} and carry millis most of the
+     * time, so the mis-ordering was rare but real; v2's {@code occurredAt} is builder-supplied and
+     * only promises to be {@code Instant.parse}-compatible.
+     *
+     * <p>An unparseable {@code occurredAt} is skipped rather than discarded: age is the one thing
+     * we cannot know about it, and the max-docs drain below still bounds the backlog without
+     * reading the timestamp, so junk cannot accumulate forever either way.
+     */
+    private void discardIfOlderThan(LineageEvent event, String targetName, Instant ageCutoff,
+                                    int maxAgeHours) {
+        Instant occurredAt;
+        try {
+            occurredAt = Instant.parse(event.occurredAt());
+        } catch (RuntimeException e) {
+            logger.warn("Event {} has unparseable occurredAt '{}' — age unknown, not discarding",
+                    event.eventId(), event.occurredAt());
+            return;
+        }
+        if (occurredAt.isBefore(ageCutoff)) {
+            journalStore.discardEvent(event.eventId(), targetName);
+            LineageDeadLetterSink.record(event, "auto-discard: retry-age-exceeded (" + maxAgeHours + "h)");
+            logger.info("Auto-discarded aged event: eventId={}, target={}, age={}",
+                    event.eventId(), targetName, event.occurredAt());
+        }
+    }
+
+    private void enforceMaxDocsAndBytes(String targetName, int maxDocs) {
         if (maxDocs > 0) {
             long count = journalStore.countNonTerminalByTarget(targetName);
             if (count > maxDocs) {
