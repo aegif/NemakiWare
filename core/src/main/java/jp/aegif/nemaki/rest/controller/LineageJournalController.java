@@ -3,7 +3,9 @@ package jp.aegif.nemaki.rest.controller;
 import jakarta.servlet.http.HttpServletRequest;
 import jp.aegif.nemaki.rest.purview.journal.LineageConfig;
 import jp.aegif.nemaki.rest.purview.journal.LineageDeadLetterStore;
+import jp.aegif.nemaki.rest.purview.journal.LineageAssetRef;
 import jp.aegif.nemaki.rest.purview.journal.LineageEvent;
+import jp.aegif.nemaki.rest.purview.journal.LineageRecord;
 import jp.aegif.nemaki.rest.purview.journal.LineageJournalStore;
 import jp.aegif.nemaki.rest.purview.journal.LineageMetrics;
 import jp.aegif.nemaki.rest.purview.journal.LineageProcessType;
@@ -112,7 +114,7 @@ public class LineageJournalController {
         List<LineageEvent> pageEvents = hasMore ? events.subList(0, cappedLimit) : events;
 
         List<Map<String, Object>> eventList = pageEvents.stream()
-                .map(this::eventToMap)
+                .map(this::projectForDisplay)
                 .toList();
 
         // Provide a total estimate for the UI pagination component.
@@ -144,7 +146,7 @@ public class LineageJournalController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
         }
 
-        return ResponseEntity.ok(eventToMap(event));
+        return ResponseEntity.ok(projectForDisplay(event));
     }
 
     // ==================== GET /stats ====================
@@ -349,21 +351,119 @@ public class LineageJournalController {
 
     // ==================== Helpers ====================
 
-    private Map<String, Object> eventToMap(LineageEvent event) {
+    /**
+     * The display shape of one journal record.
+     *
+     * <h2>Old keys kept, new keys added</h2>
+     *
+     * <p>{@code eventKey} and {@code snapshotAttributes} stay, so the shipped UI and the Playwright
+     * spec keep working unchanged. But they cannot be the whole contract: on a v2 record
+     * {@code processIdentity} is a {@code processKey}, and putting it under a key named
+     * {@code eventKey} would be a lie that the admin page then displays. So the version-neutral
+     * names are added alongside, and the old ones are documented as v1 aliases.
+     *
+     * <p>{@code recordId} is added now rather than at Slice 2d for the same reason: after the store
+     * switches, a client needs to name the delivery it is talking about, and adding the field then
+     * would be a second API-shape change on a page that has already been rewritten once.
+     *
+     * <h2>Why the assets appear twice</h2>
+     *
+     * <p>{@code inputs}/{@code outputs} remain flat qualified-name strings for compatibility.
+     * Alone they would collapse the three reference kinds into one: an administrator looking at a
+     * publication that failed with "unresolved asset" would have no way to see <em>which</em> asset
+     * or <em>why</em>, which is the question Slice 2a's failure message raises. So
+     * {@code inputAssets}/{@code outputAssets} carry the discriminant, the kind and the reason.
+     */
+    private Map<String, Object> recordToMap(LineageRecord record) {
         Map<String, Object> map = new LinkedHashMap<>();
-        map.put("eventId", event.eventId());
-        map.put("eventKey", event.eventKey());
-        map.put("repositoryId", event.repositoryId());
-        map.put("processType", event.processType() != null ? event.processType().name() : null);
-        map.put("occurredAt", event.occurredAt());
-        map.put("inputs", event.inputs());
-        map.put("outputs", event.outputs());
-        map.put("snapshotAttributes", event.snapshotAttributes());
+        map.put("eventId", record.eventId());
+        map.put("recordId", record.recordId());
+        map.put("schemaVersion", record.schemaVersion());
+        map.put("idempotencyKeyVersion", record.idempotencyKeyVersion());
+        map.put("processIdentity", record.processIdentity());
+        // v1 alias for processIdentity. Retained for existing clients; on a v2 record it holds the
+        // processKey, which is why processIdentity above is the field to read.
+        map.put("eventKey", record.processIdentity());
+        map.put("repositoryId", record.repositoryId());
+        map.put("processType", record.processType() != null ? record.processType().name() : null);
+        map.put("occurredAt", record.occurredAt());
+        map.put("inputs", qualifiedNames(record.inputs()));
+        map.put("outputs", qualifiedNames(record.outputs()));
+        map.put("inputAssets", assetMaps(record.inputs()));
+        map.put("outputAssets", assetMaps(record.outputs()));
+        // v1 alias for legacyEventAttributes; empty on a v2 record, whose attributes are on the
+        // assets above rather than on the event.
+        map.put("snapshotAttributes", record.legacyEventAttributes());
 
         Map<String, String> statusMap = new LinkedHashMap<>();
-        event.publishStatusByTarget().forEach((k, v) -> statusMap.put(k, v.name()));
+        record.publishStatusByTarget().forEach((k, v) -> statusMap.put(k, v.name()));
         map.put("publishStatusByTarget", statusMap);
         return map;
+    }
+
+    private static List<String> qualifiedNames(List<LineageAssetRef> refs) {
+        return refs.stream().map(LineageAssetRef::qualifiedName).toList();
+    }
+
+    private static List<Map<String, Object>> assetMaps(List<LineageAssetRef> refs) {
+        return refs.stream().map(LineageJournalController::assetMap).toList();
+    }
+
+    private static Map<String, Object> assetMap(LineageAssetRef ref) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("qualifiedName", ref.qualifiedName());
+        switch (ref) {
+            case LineageAssetRef.Typed typed -> {
+                map.put("resolution", "TYPED");
+                map.put("kind", typed.kind().name());
+                map.put("atlasTypeName", typed.kind().atlasTypeName());
+                map.put("attributes", typed.attributes());
+            }
+            case LineageAssetRef.LegacyName ignored -> {
+                map.put("resolution", "LEGACY_NAME");
+                map.put("kind", null);
+                map.put("atlasTypeName", null);
+                map.put("attributes", Map.of());
+            }
+            case LineageAssetRef.Unresolved unresolved -> {
+                map.put("resolution", "UNRESOLVED");
+                map.put("kind", null);
+                map.put("atlasTypeName", null);
+                map.put("attributes", Map.of());
+                map.put("unresolvedReason", unresolved.reason());
+            }
+        }
+        return map;
+    }
+
+    /**
+     * Projects one stored envelope, or describes why it could not be projected.
+     *
+     * <p>{@link LineageEvent} lets a null identifier through as an empty string and the CouchDB
+     * decoder does not check, so a row written before those fields were mandatory can exist.
+     * {@link LineageRecord} rejects a blank {@code recordId}, which is right — it is what the
+     * projector claims — but it means one such row would throw here and turn the whole admin list
+     * into a 500. Before this change that row simply displayed with empty fields.
+     *
+     * <p>So the failure is per row. The page still renders, the bad row says what is wrong with
+     * it, and an operator can see which one it is.
+     */
+    private Map<String, Object> projectForDisplay(LineageEvent event) {
+        try {
+            return recordToMap(LineageRecord.fromV1(event));
+        } catch (RuntimeException e) {
+            Map<String, Object> map = new LinkedHashMap<>();
+            map.put("eventId", event.eventId());
+            map.put("recordId", null);
+            map.put("schemaVersion", event.schemaVersion());
+            map.put("repositoryId", event.repositoryId());
+            map.put("processType",
+                    event.processType() != null ? event.processType().name() : null);
+            map.put("occurredAt", event.occurredAt());
+            map.put("unprojectable", true);
+            map.put("unprojectableReason", e.getMessage());
+            return map;
+        }
     }
 
     private ResponseEntity<Map<String, Object>> requireAdminOrForbidden() {
