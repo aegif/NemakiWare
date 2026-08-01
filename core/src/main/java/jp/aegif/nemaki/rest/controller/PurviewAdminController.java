@@ -378,6 +378,15 @@ public class PurviewAdminController {
         return ResponseEntity.ok(buildJobResponse(purviewJobStateService.getJobState(jobId)));
     }
 
+    private static String sanitizeCursorForResponse(String streamKind, String cursor) {
+        if (jp.aegif.nemaki.rest.purview.publish.CloudMetadataSnapshotFormat.STREAM_KIND
+                .equals(streamKind)) {
+            return jp.aegif.nemaki.rest.purview.publish.CloudMetadataSnapshotFormat
+                    .normalize(cursor);
+        }
+        return cursor;
+    }
+
     @GetMapping("/cursor-state/{repositoryId}/{streamKind}")
     public ResponseEntity<Map<String, Object>> getCursorState(
             @PathVariable("repositoryId") String repositoryId,
@@ -389,7 +398,10 @@ public class PurviewAdminController {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("repositoryId", cursorState.getRepositoryId());
         response.put("streamKind", cursorState.getStreamKind());
-        response.put("cursor", cursorState.getCursor());
+        // The cloud-metadata cursor is a snapshot whose old shape carried raw drive URLs (and
+        // with them any sharing tokens). Stored cursors scrub themselves on the next successful
+        // sync; until then, nothing stored may reach a response unsanitised.
+        response.put("cursor", sanitizeCursorForResponse(streamKind, cursorState.getCursor()));
         response.put("cursorKind", cursorState.getCursorKind());
         response.put("lastRunAt", cursorState.getLastRunAt());
         response.put("lastSuccessAt", cursorState.getLastSuccessAt());
@@ -535,7 +547,8 @@ public class PurviewAdminController {
         response.put("firstFailedAt", deadLetterState.getFirstFailedAt());
         response.put("lastFailedAt", deadLetterState.getLastFailedAt());
         response.put("failureCount", deadLetterState.getFailureCount());
-        response.put("checkpoint", deadLetterState.getCheckpoint());
+        response.put("checkpoint", sanitizeCursorForResponse(
+                deadLetterState.getStreamKind(), deadLetterState.getCheckpoint()));
         response.put("errorSummary", deadLetterState.getErrorSummary());
         return response;
     }

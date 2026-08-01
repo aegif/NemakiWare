@@ -114,7 +114,11 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
     public PurviewCloudMetadataSyncResult syncRepositoryCloudMetadataIfChanged(String repositoryId, String previousSnapshot) {
         List<Content> cloudMetadataDocuments = loadCloudMetadataDocuments(repositoryId);
         String currentSnapshot = buildSnapshot(cloudMetadataDocuments);
-        String normalizedPreviousSnapshot = normalizeSnapshot(previousSnapshot);
+        // Format-normalised as well as null-normalised: a cursor stored before the URL left the
+        // format must compare equal to a fresh snapshot of unchanged documents, or the first sync
+        // after upgrade republishes everything for no observable catalog difference.
+        String normalizedPreviousSnapshot =
+                CloudMetadataSnapshotFormat.normalize(normalizeSnapshot(previousSnapshot));
         if (Objects.equals(currentSnapshot, normalizedPreviousSnapshot)) {
             return new PurviewCloudMetadataSyncResult(currentSnapshot, false, 0, 0);
         }
@@ -251,12 +255,14 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
     }
 
     private String buildSnapshotEntry(Content content) {
-        return String.join("|",
+        // No cloudFileUrl: the snapshot is persisted as the cursor and served by the admin API,
+        // and a drive URL's query string is where sharing tokens live. Identity is provider+fileId
+        // and change detection no longer needs the URL — the catalog does not carry it (A-1g).
+        return CloudMetadataSnapshotFormat.entry(
                 content.getId(),
-                nullToEmpty(PurviewCloudMetadataSupport.getCloudProvider(content)),
-                nullToEmpty(PurviewCloudMetadataSupport.getExternalFileId(content)),
-                nullToEmpty(PurviewCloudMetadataSupport.getCloudFileUrl(content)),
-                nullToEmpty(PurviewCloudMetadataSupport.getCloudLastSyncedAt(content)));
+                PurviewCloudMetadataSupport.getCloudProvider(content),
+                PurviewCloudMetadataSupport.getExternalFileId(content),
+                PurviewCloudMetadataSupport.getCloudLastSyncedAt(content));
     }
 
     private Map<String, String> parseSnapshot(String snapshot) {
@@ -271,7 +277,10 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
             }
             String[] parts = line.split("\\|", -1);
             if (parts.length >= 1 && !parts[0].isBlank()) {
-                byObjectId.put(parts[0], line);
+                // Normalised so a cursor stored before the URL left the format compares equal to
+                // a fresh snapshot of unchanged documents — no spurious republish wave, and a
+                // URL-only change no longer counts as a change (the catalog cannot see it).
+                byObjectId.put(parts[0], CloudMetadataSnapshotFormat.normalizeLineForCompare(line));
             }
         }
         return byObjectId;

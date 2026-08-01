@@ -612,14 +612,17 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
             return StreamSyncResult.success(syncResult.getSnapshot(), syncResult.getProcessedCount());
         } catch (RuntimeException e) {
             String errorSummary = buildErrorSummary(e);
+            // The old cursor shape carried raw drive URLs; never copy one into a checkpoint.
+            String sanitizedCursor = jp.aegif.nemaki.rest.purview.publish
+                    .CloudMetadataSnapshotFormat.normalize(currentCursorState.getCursor());
             deadLetterStateService.saveDeadLetterState(buildRepositoryStreamDeadLetterState(
                     repositoryId,
                     CLOUD_METADATA_STREAM_KIND,
                     repositoryId,
-                    currentCursorState.getCursor(),
+                    sanitizedCursor,
                     now,
                     errorSummary));
-            return StreamSyncResult.failure(currentCursorState.getCursor(), errorSummary);
+            return StreamSyncResult.failure(sanitizedCursor, errorSummary);
         }
     }
 
