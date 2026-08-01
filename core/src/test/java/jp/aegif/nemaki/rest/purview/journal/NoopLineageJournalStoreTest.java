@@ -42,19 +42,19 @@ public class NoopLineageJournalStoreTest {
 
     @Test
     public void testFindByRepositoryIdReturnsEmptyList() {
-        List<LineageEvent> result = store.findByRepositoryId("bedroom", 100, 0);
+        List<LineageJournalRow> result = store.findByRepositoryId("bedroom", 100, 0);
         assertTrue(result.isEmpty());
     }
 
     @Test
     public void testFindByProcessTypeReturnsEmptyList() {
-        List<LineageEvent> result = store.findByProcessType("bedroom", LineageProcessType.ARCHIVE_COLD, 100, 0);
+        List<LineageJournalRow> result = store.findByProcessType("bedroom", LineageProcessType.ARCHIVE_COLD, 100, 0);
         assertTrue(result.isEmpty());
     }
 
     @Test
     public void testFindByProcessTypeGlobalReturnsEmptyList() {
-        List<LineageEvent> result = store.findByProcessType(LineageProcessType.ARCHIVE_COLD, 100, 0);
+        List<LineageJournalRow> result = store.findByProcessType(LineageProcessType.ARCHIVE_COLD, 100, 0);
         assertTrue(result.isEmpty());
     }
 

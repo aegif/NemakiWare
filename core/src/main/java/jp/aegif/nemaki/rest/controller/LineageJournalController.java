@@ -73,7 +73,7 @@ public class LineageJournalController {
 
         // Fetch limit+1 to detect whether more results exist beyond this page
         int fetchLimit = cappedLimit + 1;
-        List<LineageEvent> events;
+        List<jp.aegif.nemaki.rest.purview.journal.LineageJournalRow> events;
 
         // Date range filter takes priority
         if (startDate != null && !startDate.isBlank() && endDate != null && !endDate.isBlank()) {
@@ -111,10 +111,11 @@ public class LineageJournalController {
         }
 
         boolean hasMore = events.size() > cappedLimit;
-        List<LineageEvent> pageEvents = hasMore ? events.subList(0, cappedLimit) : events;
+        List<jp.aegif.nemaki.rest.purview.journal.LineageJournalRow> pageEvents =
+                hasMore ? events.subList(0, cappedLimit) : events;
 
         List<Map<String, Object>> eventList = pageEvents.stream()
-                .map(this::projectForDisplay)
+                .map(this::rowToDisplayMap)
                 .toList();
 
         // Provide a total estimate for the UI pagination component.
@@ -133,20 +134,27 @@ public class LineageJournalController {
 
     // ==================== GET /events/{eventId} ====================
 
-    @GetMapping("/events/{eventId}")
-    public ResponseEntity<Map<String, Object>> getEvent(@PathVariable String eventId) {
+    /**
+     * The path variable is a <b>record id</b> — v1's eventId, v2's deliveryId. For every v1 row
+     * the two are the same value, so nothing a client held before this rename stopped working;
+     * for a v2 row the record id is the only value that addresses the document, and it is what
+     * the list response has carried as {@code recordId} since Slice 2b.
+     */
+    @GetMapping("/events/{recordId}")
+    public ResponseEntity<Map<String, Object>> getEvent(@PathVariable String recordId) {
         ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
         if (forbidden != null) return forbidden;
 
-        LineageEvent event = journalStore.findByEventId(eventId);
-        if (event == null) {
+        jp.aegif.nemaki.rest.purview.journal.LineageJournalRow row =
+                journalStore.findByRecordId(recordId);
+        if (row == null) {
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("status", "error");
-            response.put("message", "Event not found: " + eventId);
+            response.put("message", "Event not found: " + recordId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
         }
 
-        return ResponseEntity.ok(projectForDisplay(event));
+        return ResponseEntity.ok(rowToDisplayMap(row));
     }
 
     // ==================== GET /stats ====================
@@ -194,23 +202,32 @@ public class LineageJournalController {
 
     // ==================== Event actions ====================
 
-    @PostMapping("/events/{eventId}/replay")
+    @PostMapping("/events/{recordId}/replay")
     public ResponseEntity<Map<String, Object>> replayEvent(
-            @PathVariable String eventId,
+            @PathVariable String recordId,
             @RequestParam(defaultValue = "purview") String target) {
         ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
         if (forbidden != null) return forbidden;
 
-        LineageEvent event = journalStore.findByEventId(eventId);
-        if (event == null) {
+        jp.aegif.nemaki.rest.purview.journal.LineageJournalRow row =
+                journalStore.findByRecordId(recordId);
+        if (row == null) {
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("status", "error");
-            response.put("message", "Event not found: " + eventId);
+            response.put("message", "Event not found: " + recordId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+        }
+        if (row instanceof jp.aegif.nemaki.rest.purview.journal.LineageJournalRow.Undecodable u) {
+            // Resetting an undecodable row to PENDING would hand the projector a row it can only
+            // surface and never publish — a replay that cannot succeed is refused, with the reason.
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("status", "error");
+            response.put("message", "Row cannot be replayed — it does not decode: " + u.reason());
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
         }
 
         // Reset status to PENDING for the target to allow re-projection
-        int updated = journalStore.updatePublishStatus(eventId, target,
+        int updated = journalStore.updatePublishStatus(recordId, target,
                 jp.aegif.nemaki.rest.purview.journal.LineagePublishStatus.PENDING);
 
         Map<String, Object> response = new LinkedHashMap<>();
@@ -219,14 +236,29 @@ public class LineageJournalController {
         return ResponseEntity.ok(response);
     }
 
-    @PostMapping("/events/{eventId}/discard")
+    @PostMapping("/events/{recordId}/discard")
     public ResponseEntity<Map<String, Object>> discardEvent(
-            @PathVariable String eventId,
+            @PathVariable String recordId,
             @RequestParam(defaultValue = "purview") String target) {
         ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
         if (forbidden != null) return forbidden;
 
-        int updated = journalStore.discardEvent(eventId, target);
+        // Same guard as replay, for a harder reason: discard makes the row terminal, terminal
+        // rows are purge-eligible, and an undecodable row's stored document is the only evidence
+        // of what it was. Without this check, one admin call destroys it politely. The status
+        // flip itself would succeed — it mutates the raw document without decoding — which is
+        // exactly why the refusal has to live here.
+        jp.aegif.nemaki.rest.purview.journal.LineageJournalRow existing =
+                journalStore.findByRecordId(recordId);
+        if (existing instanceof jp.aegif.nemaki.rest.purview.journal.LineageJournalRow.Undecodable u) {
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("status", "error");
+            response.put("message", "Row cannot be discarded — it does not decode, and discard"
+                    + " would make its only stored copy purge-eligible: " + u.reason());
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+        }
+
+        int updated = journalStore.discardEvent(recordId, target);
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", updated > 0 ? "ok" : "error");
@@ -437,33 +469,29 @@ public class LineageJournalController {
     }
 
     /**
-     * Projects one stored envelope, or describes why it could not be projected.
-     *
-     * <p>{@link LineageEvent} lets a null identifier through as an empty string and the CouchDB
-     * decoder does not check, so a row written before those fields were mandatory can exist.
-     * {@link LineageRecord} rejects a blank {@code recordId}, which is right — it is what the
-     * projector claims — but it means one such row would throw here and turn the whole admin list
-     * into a 500. Before this change that row simply displayed with empty fields.
-     *
-     * <p>So the failure is per row. The page still renders, the bad row says what is wrong with
-     * it, and an operator can see which one it is.
+     * Renders one journal row: the record's full display shape, or — for a row the store could
+     * not decode — a diagnostic stub naming what is known and why it failed. Since Slice 2d-2 the
+     * store performs decode and projection per row, so the whole list can no longer be taken down
+     * by one broken document; the broken one renders as itself.
      */
-    private Map<String, Object> projectForDisplay(LineageEvent event) {
-        try {
-            return recordToMap(LineageRecord.fromV1(event));
-        } catch (RuntimeException e) {
-            Map<String, Object> map = new LinkedHashMap<>();
-            map.put("eventId", event.eventId());
-            map.put("recordId", null);
-            map.put("schemaVersion", event.schemaVersion());
-            map.put("repositoryId", event.repositoryId());
-            map.put("processType",
-                    event.processType() != null ? event.processType().name() : null);
-            map.put("occurredAt", event.occurredAt());
-            map.put("unprojectable", true);
-            map.put("unprojectableReason", e.getMessage());
-            return map;
-        }
+    private Map<String, Object> rowToDisplayMap(
+            jp.aegif.nemaki.rest.purview.journal.LineageJournalRow row) {
+        return switch (row) {
+            case jp.aegif.nemaki.rest.purview.journal.LineageJournalRow.Decoded decoded ->
+                    recordToMap(decoded.entry().record());
+            case jp.aegif.nemaki.rest.purview.journal.LineageJournalRow.Undecodable u -> {
+                Map<String, Object> map = new LinkedHashMap<>();
+                map.put("recordId", u.documentId() != null
+                        && u.documentId().startsWith("lineage:")
+                        ? u.documentId().substring("lineage:".length()) : null);
+                map.put("documentId", u.documentId());
+                map.put("documentType", u.documentType());
+                map.put("schemaVersion", u.schemaVersion());
+                map.put("unprojectable", true);
+                map.put("unprojectableReason", u.reason());
+                yield map;
+            }
+        };
     }
 
     private ResponseEntity<Map<String, Object>> requireAdminOrForbidden() {

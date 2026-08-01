@@ -79,7 +79,7 @@ class LineageProjectionLoopTest {
                 .build();
 
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50))
-                .thenReturn(List.of(event));
+                .thenReturn(rows(event));
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50))
                 .thenReturn(List.of());
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PROJECTING, 50))
@@ -111,7 +111,7 @@ class LineageProjectionLoopTest {
                 .build();
 
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50))
-                .thenReturn(List.of(event));
+                .thenReturn(rows(event));
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50))
                 .thenReturn(List.of());
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PROJECTING, 50))
@@ -139,7 +139,7 @@ class LineageProjectionLoopTest {
                 .build();
 
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50))
-                .thenReturn(List.of(event));
+                .thenReturn(rows(event));
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50))
                 .thenReturn(List.of());
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PROJECTING, 50))
@@ -187,7 +187,7 @@ class LineageProjectionLoopTest {
                 Map.of("purview", LineagePublishStatus.FAILED));
 
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50))
-                .thenReturn(List.of(oldEvent));
+                .thenReturn(rows(oldEvent));
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50))
                 .thenReturn(List.of());
         when(mockStore.countNonTerminalByTarget("purview")).thenReturn(1L);
@@ -209,7 +209,7 @@ class LineageProjectionLoopTest {
                 Map.of("purview", LineagePublishStatus.FAILED));
 
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50))
-                .thenReturn(List.of(recentEvent));
+                .thenReturn(rows(recentEvent));
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50))
                 .thenReturn(List.of());
         when(mockStore.countNonTerminalByTarget("purview")).thenReturn(1L);
@@ -229,7 +229,7 @@ class LineageProjectionLoopTest {
                 .build();
 
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50))
-                .thenReturn(List.of(event));
+                .thenReturn(rows(event));
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50))
                 .thenReturn(List.of());
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PROJECTING, 50))
@@ -262,7 +262,7 @@ class LineageProjectionLoopTest {
                 .build();
 
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50))
-                .thenReturn(List.of(event));
+                .thenReturn(rows(event));
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50))
                 .thenReturn(List.of());
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PROJECTING, 50))
@@ -349,4 +349,13 @@ class LineageProjectionLoopTest {
         field.setAccessible(true);
         field.set(target, value);
     }
+
+    private static java.util.List<LineageJournalRow> rows(LineageEvent... events) {
+        java.util.List<LineageJournalRow> rows = new java.util.ArrayList<>();
+        for (LineageEvent event : events) {
+            rows.add(new LineageJournalRow.Decoded(LineageJournalEntry.ofV1(event)));
+        }
+        return rows;
+    }
+
 }

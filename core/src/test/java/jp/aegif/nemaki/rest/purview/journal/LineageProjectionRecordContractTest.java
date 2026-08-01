@@ -100,11 +100,10 @@ class LineageProjectionRecordContractTest {
                 .build();
     }
 
-    /** eventId is blank, which {@link LineageRecord} rejects; everything else is fine. */
-    private static LineageEvent unprojectable() {
-        return new LineageEvent(1, "", "key", 0L, Instant.now().toString(), "bedroom",
-                LineageProcessType.ARCHIVE_LOCAL, List.of(), List.of(), "", "", 1,
-                Map.of(), Map.of("purview", LineagePublishStatus.PENDING));
+    /** What the store yields for a row that failed decode — id and reason, no payload. */
+    private static LineageJournalRow undecodable(String documentId) {
+        return new LineageJournalRow.Undecodable(documentId, "lineage_event", 1,
+                "recordId must not be null or blank");
     }
 
     // ------------------------------------------------------------------ quarantine, unordered
@@ -115,25 +114,25 @@ class LineageProjectionRecordContractTest {
      * that can never publish, forever.
      */
     @Test
-    void aRowTheReadModelRejectsIsQuarantinedAndTheBatchContinues() throws Exception {
-        LineageEvent bad = unprojectable();
+    void anUndecodableRowIsSurfacedWithoutMutationAndTheBatchContinues() throws Exception {
+        LineageJournalRow bad = undecodable("lineage:bad-row");
         LineageEvent good = event("doc-1");
+        java.util.List<LineageJournalRow> batch = new java.util.ArrayList<>();
+        batch.add(bad);
+        batch.addAll(rows(good));
         when(store.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50))
-                .thenReturn(List.of(bad, good));
+                .thenReturn(batch);
         when(store.updatePublishStatus(good.eventId(), "purview", LineagePublishStatus.PROJECTING))
                 .thenReturn(1);
         when(sink.publish(any())).thenReturn(LineageTargetSinkResult.success(1, "OK"));
 
         loop.pollAndProject();
 
-        // The bad row: dead-lettered with the decode reason, discarded out of the poll set,
-        // never claimed, never published.
-        verify(deadLetters).record(eq(bad), org.mockito.ArgumentMatchers.startsWith(
-                "projection-decode-failed:"));
-        verify(store).updatePublishStatus(bad.eventId(), "purview",
-                LineagePublishStatus.DISCARDED);
-        verify(store, never()).updatePublishStatus(bad.eventId(), "purview",
-                LineagePublishStatus.PROJECTING);
+        // The bad row: untouched. Since 2d-2b the store yields the failure as a value with no
+        // envelope in hand, so nothing durable can be kept for it yet — and DISCARDED is terminal
+        // and purge-eligible, which would delete the only evidence of what the row was.
+        verify(deadLetters, never()).record(any(), anyString());
+        verify(store, never()).updatePublishStatus(eq("bad-row"), anyString(), any());
 
         // The good row still went out.
         verify(sink).publish(LineageRecord.fromV1(good));
@@ -149,7 +148,7 @@ class LineageProjectionRecordContractTest {
      * is terminal, so the next poll advances the cursor over it and the repository resumes.
      */
     @Test
-    void inOrderedProjectionAQuarantinedRowStopsTheRepositoryForThisCycle() throws Exception {
+    void inOrderedProjectionAnUndecodableRowHaltsTheRepositoryAndMovesNothing() throws Exception {
         // Ordered mode is selected by the presence of an active cursor store.
         ProjectionCursorStore cursorStore = mock(ProjectionCursorStore.class);
         set("cursorStore", cursorStore);
@@ -158,20 +157,23 @@ class LineageProjectionRecordContractTest {
         when(store.findDistinctNonTerminalRepositoryIds("purview")).thenReturn(List.of("bedroom"));
         when(cursorStore.getCursor("purview", "bedroom")).thenReturn(null);
 
-        LineageEvent bad = unprojectable();
+        LineageJournalRow bad = undecodable("lineage:bad-row");
         LineageEvent next = event("doc-2");
+        java.util.List<LineageJournalRow> batch = new java.util.ArrayList<>();
+        batch.add(bad);
+        batch.addAll(rows(next));
         when(store.findByRepositoryAndSequenceRange("bedroom", 0L, 50))
-                .thenReturn(List.of(bad, next));
+                .thenReturn(batch);
 
         loop.pollAndProject();
 
-        verify(deadLetters).record(eq(bad), org.mockito.ArgumentMatchers.startsWith(
-                "projection-decode-failed:"));
-        verify(store).updatePublishStatus(bad.eventId(), "purview",
-                LineagePublishStatus.DISCARDED);
-        // The row after it is NOT published this cycle — order is preserved.
+        // Nothing moved: skipping the row would publish the rows behind it and advance the
+        // cursor past a row that was never processed — ordered delivery violated by a catch
+        // block. The halt persists until the row is repaired; that is the contract.
+        verify(deadLetters, never()).record(any(), anyString());
         verify(sink, never()).publish(any());
-        verify(store, never()).updatePublishStatus(eq(next.eventId()), anyString(), any());
+        verify(store, never()).updatePublishStatus(anyString(), anyString(), any());
+        verify(cursorStore, never()).updateCursor(any());
     }
 
     // ------------------------------------------------------------------ age comparison
@@ -198,7 +200,7 @@ class LineageProjectionRecordContractTest {
                 Map.of(), Map.of("purview", LineagePublishStatus.FAILED));
 
         when(store.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50))
-                .thenReturn(List.of(youngWithMillis, genuinelyOld));
+                .thenReturn(rows(youngWithMillis, genuinelyOld));
 
         loop.pollAndProject();
 
@@ -219,7 +221,7 @@ class LineageProjectionRecordContractTest {
                 LineageProcessType.ARCHIVE_LOCAL, List.of(), List.of(), "", "", 1,
                 Map.of(), Map.of("purview", LineagePublishStatus.FAILED));
         when(store.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50))
-                .thenReturn(List.of(junk));
+                .thenReturn(rows(junk));
 
         loop.pollAndProject();
 
@@ -233,7 +235,7 @@ class LineageProjectionRecordContractTest {
     void storeMutationsReceiveTheRecordId() throws Exception {
         LineageEvent event = event("doc-1");
         when(store.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50))
-                .thenReturn(List.of(event));
+                .thenReturn(rows(event));
         when(store.updatePublishStatus(anyString(), anyString(),
                 eq(LineagePublishStatus.PROJECTING))).thenReturn(1);
         when(sink.publish(any())).thenReturn(LineageTargetSinkResult.failure("boom"));
@@ -251,4 +253,13 @@ class LineageProjectionRecordContractTest {
         verify(deadLetters).record(eq(event), org.mockito.ArgumentMatchers.startsWith(
                 "publish-failed:"));
     }
+
+    private static java.util.List<LineageJournalRow> rows(LineageEvent... events) {
+        java.util.List<LineageJournalRow> rows = new java.util.ArrayList<>();
+        for (LineageEvent event : events) {
+            rows.add(new LineageJournalRow.Decoded(LineageJournalEntry.ofV1(event)));
+        }
+        return rows;
+    }
+
 }

@@ -55,7 +55,7 @@ public class LineageJournalControllerTest {
                 .addInputObject("bedroom", "doc-1")
                 .addOutputObject("bedroom", "arc-1")
                 .build();
-        when(store.findAll(51, 0)).thenReturn(List.of(event));
+        when(store.findAll(51, 0)).thenReturn(rows(event));
 
         ResponseEntity<Map<String, Object>> response = controller.listEvents(null, null, null, null, 50, 0);
 
@@ -201,7 +201,7 @@ public class LineageJournalControllerTest {
                     .processType(LineageProcessType.ARCHIVE_LOCAL)
                     .build());
         }
-        when(store.findAll(51, 0)).thenReturn(fiftyOneEvents);
+        when(store.findAll(51, 0)).thenReturn(fiftyOneEvents.stream().map(LineageJournalControllerTest::row).toList());
 
         ResponseEntity<Map<String, Object>> response = controller.listEvents(null, null, null, null, 50, 0);
 
@@ -223,7 +223,7 @@ public class LineageJournalControllerTest {
                 new LineageEventBuilder().repositoryId("bedroom").processType(LineageProcessType.IMPORT_FILESYSTEM).build(),
                 new LineageEventBuilder().repositoryId("bedroom").processType(LineageProcessType.EXPORT_ZIP_FOLDER).build()
         );
-        when(store.findAll(51, 0)).thenReturn(threeEvents);
+        when(store.findAll(51, 0)).thenReturn(threeEvents.stream().map(LineageJournalControllerTest::row).toList());
 
         ResponseEntity<Map<String, Object>> response = controller.listEvents(null, null, null, null, 50, 0);
 
@@ -247,7 +247,7 @@ public class LineageJournalControllerTest {
                     .processType(LineageProcessType.ARCHIVE_LOCAL)
                     .build());
         }
-        when(store.findAll(51, 100)).thenReturn(fiftyOneEvents);
+        when(store.findAll(51, 100)).thenReturn(fiftyOneEvents.stream().map(LineageJournalControllerTest::row).toList());
 
         ResponseEntity<Map<String, Object>> response = controller.listEvents(null, null, null, null, 50, 100);
 
@@ -267,7 +267,7 @@ public class LineageJournalControllerTest {
                 .repositoryId("bedroom")
                 .processType(LineageProcessType.IMPORT_FILESYSTEM)
                 .build();
-        when(store.findByEventId("evt-123")).thenReturn(event);
+        when(store.findByRecordId("evt-123")).thenReturn(row(event));
 
         ResponseEntity<Map<String, Object>> response = controller.getEvent("evt-123");
 
@@ -277,7 +277,7 @@ public class LineageJournalControllerTest {
 
     @Test
     void getEventReturns404WhenNotFound() {
-        when(store.findByEventId("nonexistent")).thenReturn(null);
+        when(store.findByRecordId("nonexistent")).thenReturn(null);
 
         ResponseEntity<Map<String, Object>> response = controller.getEvent("nonexistent");
 
@@ -301,7 +301,7 @@ public class LineageJournalControllerTest {
                 .repositoryId("bedroom")
                 .processType(LineageProcessType.ARCHIVE_LOCAL)
                 .build();
-        when(store.findByEventId("evt-1")).thenReturn(event);
+        when(store.findByRecordId("evt-1")).thenReturn(row(event));
         when(store.updatePublishStatus("evt-1", "purview", LineagePublishStatus.PENDING)).thenReturn(1);
 
         ResponseEntity<Map<String, Object>> response = controller.replayEvent("evt-1", "purview");
@@ -313,7 +313,7 @@ public class LineageJournalControllerTest {
 
     @Test
     void replayEventReturnsErrorWhenNotFound() {
-        when(store.findByEventId("nonexistent")).thenReturn(null);
+        when(store.findByRecordId("nonexistent")).thenReturn(null);
 
         ResponseEntity<Map<String, Object>> response = controller.replayEvent("nonexistent", "purview");
 
@@ -657,4 +657,21 @@ public class LineageJournalControllerTest {
         field.setAccessible(true);
         field.set(target, value);
     }
+
+    private static java.util.List<jp.aegif.nemaki.rest.purview.journal.LineageJournalRow> rows(
+            LineageEvent... events) {
+        java.util.List<jp.aegif.nemaki.rest.purview.journal.LineageJournalRow> rows =
+                new java.util.ArrayList<>();
+        for (LineageEvent event : events) {
+            rows.add(new jp.aegif.nemaki.rest.purview.journal.LineageJournalRow.Decoded(
+                    jp.aegif.nemaki.rest.purview.journal.LineageJournalEntry.ofV1(event)));
+        }
+        return rows;
+    }
+
+    private static jp.aegif.nemaki.rest.purview.journal.LineageJournalRow row(LineageEvent event) {
+        return new jp.aegif.nemaki.rest.purview.journal.LineageJournalRow.Decoded(
+                jp.aegif.nemaki.rest.purview.journal.LineageJournalEntry.ofV1(event));
+    }
+
 }

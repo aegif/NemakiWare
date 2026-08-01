@@ -162,20 +162,19 @@ public class LineageProjectionLoop {
      */
     private void projectEvents(String targetName, LineageTargetSink sink, LineagePublishStatus sourceStatus) {
         int batchSize = lineageConfig.getProjectionBatchSize();
-        List<LineageEvent> candidates = journalStore.findByTargetAndStatus(targetName, sourceStatus, batchSize);
+        List<LineageJournalRow> candidates = journalStore.findByTargetAndStatus(targetName, sourceStatus, batchSize);
 
-        for (LineageEvent event : candidates) {
-            // Projected once, before the claim. A row this fails for must not be claimed at all:
-            // claiming and then failing every cycle would burn a retry per poll on a row that can
-            // never publish. Unordered processing owes the other candidates nothing, so one bad
-            // row is quarantined and the loop moves on.
-            LineageRecord record;
-            try {
-                record = LineageRecord.fromV1(event);
-            } catch (RuntimeException e) {
-                quarantineUnprojectable(event, targetName, e);
+        for (LineageJournalRow row : candidates) {
+            // Decode and projection already happened in the store; a row that failed either
+            // arrives as a value. Unordered processing owes the other candidates nothing, so the
+            // broken row is surfaced and the loop moves on. It is deliberately NOT mutated: see
+            // surfaceUndecodable.
+            if (!(row instanceof LineageJournalRow.Decoded decoded)) {
+                surfaceUndecodable((LineageJournalRow.Undecodable) row, targetName);
                 continue;
             }
+            LineageJournalEntry entry = decoded.entry();
+            LineageRecord record = entry.record();
             try {
                 // CAS: claim the event by transitioning to PROJECTING
                 int claimed = journalStore.updatePublishStatus(record.recordId(), targetName, LineagePublishStatus.PROJECTING);
@@ -193,26 +192,31 @@ public class LineageProjectionLoop {
                     logger.debug("Published event to '{}': processIdentity={}, entities={}",
                             targetName, record.processIdentity(), result.entityCount());
                 } else {
-                    handlePublishFailure(event, record, targetName, result.message());
+                    handlePublishFailure(entry, targetName, result.message());
                 }
             } catch (Exception e) {
-                handlePublishFailure(event, record, targetName, e.getMessage());
+                handlePublishFailure(entry, targetName, e.getMessage());
             }
         }
     }
 
     /**
-     * A stored row the read model rejects — blank identifier, junk written before the fields
-     * mattered. Retrying cannot fix it (the failure is the data's shape, not the target's mood),
-     * so it is discarded out of the poll set with the envelope preserved in the dead letter for
-     * repair. Leaving it PENDING would re-quarantine it every poll, forever.
+     * A stored row that could not be decoded into an entry.
+     *
+     * <p>Surfaced loudly and mutated <b>not at all</b>. The obvious tidy-up — DISCARD it so it
+     * leaves the poll set — is destruction: DISCARDED is terminal, {@code purgeOlderThan} deletes
+     * terminal rows after retention, and for an undecodable row the stored document is the only
+     * evidence of what it was. The earlier slice discarded such rows while it still held a
+     * decoded envelope to preserve in the dead letter; this loop no longer has one, so nothing
+     * durable can be kept yet. Until the version-neutral quarantine record exists (D-spool), the
+     * row stays where it is, the log names it every cycle, and the admin API renders it as a
+     * diagnostic row — annoying on purpose.
      */
-    private void quarantineUnprojectable(LineageEvent event, String targetName, RuntimeException e) {
-        logger.warn("Event cannot be projected and is quarantined: eventId={}, target={}, reason={}",
-                event.eventId(), targetName, e.getMessage());
-        LineageDeadLetterSink.record(event, "projection-decode-failed:" + e.getMessage());
-        journalStore.updatePublishStatus(event.eventId(), targetName, LineagePublishStatus.DISCARDED);
-        if (lineageMetrics != null) lineageMetrics.recordDiscard();
+    private void surfaceUndecodable(LineageJournalRow.Undecodable row, String targetName) {
+        logger.warn("Journal row cannot be decoded: id={}, type={}, schemaVersion={}, target={},"
+                        + " reason={} — left in place (discarding would purge the only evidence)",
+                row.documentId(), row.documentType(), row.schemaVersion(), targetName,
+                row.reason());
     }
 
     /**
@@ -263,34 +267,42 @@ public class LineageProjectionLoop {
         ProjectionCursor cursor = cursorStore.getCursor(targetName, repositoryId);
         long fromSeq = (cursor != null) ? cursor.lastProcessedSequence() : 0;
 
-        List<LineageEvent> events = journalStore.findByRepositoryAndSequenceRange(repositoryId, fromSeq, batchSize);
+        List<LineageJournalRow> rows = journalStore.findByRepositoryAndSequenceRange(repositoryId, fromSeq, batchSize);
 
-        for (LineageEvent event : events) {
+        for (LineageJournalRow row : rows) {
+            // An undecodable row STOPS this repository, and the cursor does not move. Skipping it
+            // would publish the rows behind it and advance the cursor past a row that was never
+            // processed — ordered delivery violated by a catch block. The repository stays halted,
+            // loudly, until the row is repaired; that is the contract, not a failure of it.
+            //
+            // Deliberately including a row whose status WAS terminal before it went corrupt: an
+            // Undecodable carries no status (the status map is part of what failed to decode), so
+            // "it was already published, advance past it" would be trusting one field of a
+            // document whose other fields just failed verification. Halting on corrupt-terminal
+            // costs availability; advancing on a guess costs integrity. Repair fixes the former.
+            if (!(row instanceof LineageJournalRow.Decoded decoded)) {
+                surfaceUndecodable((LineageJournalRow.Undecodable) row, targetName);
+                logger.warn("Ordered projection for repo '{}' halted at undecodable row {} —"
+                                + " the cursor must not pass an unprocessed event",
+                        repositoryId, ((LineageJournalRow.Undecodable) row).documentId());
+                break;
+            }
+            LineageJournalEntry entry = decoded.entry();
+            LineageRecord record = entry.record();
+
             // Check the status for this target
-            LineagePublishStatus status = event.publishStatusByTarget().getOrDefault(targetName, LineagePublishStatus.PENDING);
+            LineagePublishStatus status = record.publishStatusByTarget().getOrDefault(targetName, LineagePublishStatus.PENDING);
 
             // Already terminal → advance cursor, continue
             if (status.isTerminal()) {
-                advanceCursor(targetName, repositoryId, event.sequenceNumber());
+                advanceCursor(targetName, repositoryId, record.sequenceNumber());
                 continue;
             }
 
             // PROJECTING by another node → stop for this repo
             if (status == LineagePublishStatus.PROJECTING) {
-                logger.debug("Event {} is PROJECTING by another node — stopping ordered projection for repo '{}'",
-                        event.eventId(), repositoryId);
-                break;
-            }
-
-            // A row the read model rejects. Quarantined like the unordered path, but then this
-            // repository STOPS for this cycle: publishing the next event first would break the
-            // ordering this loop exists for. DISCARDED is terminal, so the next poll advances the
-            // cursor over it and the repository resumes — the row costs one cycle, not the queue.
-            LineageRecord record;
-            try {
-                record = LineageRecord.fromV1(event);
-            } catch (RuntimeException e) {
-                quarantineUnprojectable(event, targetName, e);
+                logger.debug("Row {} is PROJECTING by another node — stopping ordered projection for repo '{}'",
+                        record.recordId(), repositoryId);
                 break;
             }
 
@@ -312,11 +324,11 @@ public class LineageProjectionLoop {
                             targetName, record.processIdentity(), record.sequenceNumber());
                 } else {
                     // Publish failed — stop processing this repo to preserve order
-                    handlePublishFailure(event, record, targetName, result.message());
+                    handlePublishFailure(entry, targetName, result.message());
                     break;
                 }
             } catch (Exception e) {
-                handlePublishFailure(event, record, targetName, e.getMessage());
+                handlePublishFailure(entry, targetName, e.getMessage());
                 break;
             }
         }
@@ -332,20 +344,32 @@ public class LineageProjectionLoop {
     }
 
     /**
-     * Handles a publish failure: transitions to FAILED, checks retry limits,
-     * and writes to dead-letter if needed. Auto-discards if max retries exceeded.
+     * Handles a publish failure: transitions to FAILED, checks retry limits, and — for a v1 row —
+     * writes to dead-letter and auto-discards past max retries.
      *
-     * <p>Takes both representations on purpose, and the asymmetry is the point: the
-     * <b>record</b> drives every decision and log line, the <b>envelope</b> exists solely to hand
-     * to {@link LineageDeadLetterSink}, because recovery must be able to rebuild the original and
-     * the projection cannot (see {@link LineageRecord}'s javadoc). A combined journal-entry type
-     * is deliberately deferred to Slice 2d-1, where the version-tagged lossless form is designed;
-     * until then the two parameters keep the envelope's remaining uses visible at each call site.
+     * <h2>A v2 row is never auto-discarded and never dead-lettered here</h2>
+     *
+     * <p>Not caution — arithmetic. {@link LineageDeadLetterSink} records v1 envelopes only, so a
+     * v2 row reaching max retries would be DISCARDED with no dead-letter copy; DISCARDED is
+     * terminal; {@code purgeOlderThan} deletes terminal rows after retention. Sum: the only
+     * lossless copy of the event, deleted, with nothing to replay from. Until the
+     * version-neutral durable dead-letter exists (D-spool / §9), a failing v2 row stays FAILED —
+     * retried, visible in the backlog metric, never destroyed. Nothing writes v2 before Slice 4,
+     * and D-spool lands before 4a, so this branch is a fence, not a running cost.
      */
-    private void handlePublishFailure(LineageEvent envelope, LineageRecord record,
-                                      String targetName, String errorMessage) {
+    private void handlePublishFailure(LineageJournalEntry entry, String targetName,
+                                      String errorMessage) {
+        LineageRecord record = entry.record();
         journalStore.updatePublishStatus(record.recordId(), targetName, LineagePublishStatus.FAILED);
         if (lineageMetrics != null) lineageMetrics.recordFail(targetName);
+
+        if (!(entry.envelope() instanceof LineageJournalEntry.V1 v1)) {
+            logger.warn("Publish failed for v2 row {} to '{}': {} — kept FAILED; auto-discard and"
+                            + " dead-letter are v1-only until the version-neutral dead letter"
+                            + " exists (D-spool)",
+                    record.recordId(), targetName, errorMessage);
+            return;
+        }
 
         // Check retry count limit — auto-discard if exceeded
         int maxRetries = lineageConfig.getBacklogMaxRetryCount();
@@ -354,7 +378,7 @@ public class LineageProjectionLoop {
             if (retryCount >= maxRetries) {
                 logger.warn("Retry count {} exceeds max {} for event {} on target '{}' — auto-discarding",
                         retryCount, maxRetries, record.processIdentity(), targetName);
-                LineageDeadLetterSink.record(envelope,
+                LineageDeadLetterSink.record(v1.event(),
                         "auto-discard:max-retry-count:" + retryCount + ":" + targetName);
                 journalStore.updatePublishStatus(record.recordId(), targetName, LineagePublishStatus.DISCARDED);
                 if (lineageMetrics != null) lineageMetrics.recordDiscard();
@@ -363,7 +387,7 @@ public class LineageProjectionLoop {
         }
 
         logger.warn("Publish failed for event {} to '{}': {}", record.processIdentity(), targetName, errorMessage);
-        LineageDeadLetterSink.record(envelope, "publish-failed:" + targetName + ":" + errorMessage);
+        LineageDeadLetterSink.record(v1.event(), "publish-failed:" + targetName + ":" + errorMessage);
     }
 
     /**
@@ -376,17 +400,17 @@ public class LineageProjectionLoop {
             Instant ageCutoff = Instant.now().minus(Duration.ofHours(maxAgeHours));
 
             // Check FAILED events that are too old
-            List<LineageEvent> failedEvents = journalStore.findByTargetAndStatus(
+            List<LineageJournalRow> failedRows = journalStore.findByTargetAndStatus(
                     targetName, LineagePublishStatus.FAILED, lineageConfig.getProjectionBatchSize());
-            for (LineageEvent event : failedEvents) {
-                discardIfOlderThan(event, targetName, ageCutoff, maxAgeHours);
+            for (LineageJournalRow row : failedRows) {
+                discardIfOlderThan(row, targetName, ageCutoff, maxAgeHours);
             }
 
             // Also check PENDING events that are too old
-            List<LineageEvent> pendingEvents = journalStore.findByTargetAndStatus(
+            List<LineageJournalRow> pendingRows = journalStore.findByTargetAndStatus(
                     targetName, LineagePublishStatus.PENDING, lineageConfig.getProjectionBatchSize());
-            for (LineageEvent event : pendingEvents) {
-                discardIfOlderThan(event, targetName, ageCutoff, maxAgeHours);
+            for (LineageJournalRow row : pendingRows) {
+                discardIfOlderThan(row, targetName, ageCutoff, maxAgeHours);
             }
         }
 
@@ -409,21 +433,36 @@ public class LineageProjectionLoop {
      * we cannot know about it, and the max-docs drain below still bounds the backlog without
      * reading the timestamp, so junk cannot accumulate forever either way.
      */
-    private void discardIfOlderThan(LineageEvent event, String targetName, Instant ageCutoff,
+    private void discardIfOlderThan(LineageJournalRow row, String targetName, Instant ageCutoff,
                                     int maxAgeHours) {
+        // Undecodable: age is one of the things we cannot know about it, and discarding it would
+        // make it purge-eligible — see surfaceUndecodable. The max-docs drain below bounds the
+        // backlog without reading a timestamp, so junk cannot accumulate forever either way.
+        if (!(row instanceof LineageJournalRow.Decoded decoded)) {
+            return;
+        }
+        LineageJournalEntry entry = decoded.entry();
+        LineageRecord record = entry.record();
+        // A v2 row is exempt for the same arithmetic as handlePublishFailure: discard without a
+        // dead-letter copy plus retention purge equals deletion of the only lossless copy.
+        if (!(entry.envelope() instanceof LineageJournalEntry.V1 v1)) {
+            logger.warn("Aged v2 row {} not auto-discarded — discard is v1-only until the"
+                    + " version-neutral dead letter exists (D-spool)", record.recordId());
+            return;
+        }
         Instant occurredAt;
         try {
-            occurredAt = Instant.parse(event.occurredAt());
+            occurredAt = Instant.parse(record.occurredAt());
         } catch (RuntimeException e) {
             logger.warn("Event {} has unparseable occurredAt '{}' — age unknown, not discarding",
-                    event.eventId(), event.occurredAt());
+                    record.recordId(), record.occurredAt());
             return;
         }
         if (occurredAt.isBefore(ageCutoff)) {
-            journalStore.discardEvent(event.eventId(), targetName);
-            LineageDeadLetterSink.record(event, "auto-discard: retry-age-exceeded (" + maxAgeHours + "h)");
-            logger.info("Auto-discarded aged event: eventId={}, target={}, age={}",
-                    event.eventId(), targetName, event.occurredAt());
+            journalStore.discardEvent(record.recordId(), targetName);
+            LineageDeadLetterSink.record(v1.event(), "auto-discard: retry-age-exceeded (" + maxAgeHours + "h)");
+            logger.info("Auto-discarded aged event: recordId={}, target={}, age={}",
+                    record.recordId(), targetName, record.occurredAt());
         }
     }
 
@@ -475,10 +514,19 @@ public class LineageProjectionLoop {
 
     private void discardOldest(String targetName, LineagePublishStatus status, int count) {
         if (count <= 0) return;
-        List<LineageEvent> events = journalStore.findByTargetAndStatusOldestFirst(targetName, status, count);
-        for (LineageEvent event : events) {
-            journalStore.discardEvent(event.eventId(), targetName);
-            LineageDeadLetterSink.record(event, "auto-discard: backlog-overflow");
+        List<LineageJournalRow> rows = journalStore.findByTargetAndStatusOldestFirst(targetName, status, count);
+        for (LineageJournalRow row : rows) {
+            if (!(row instanceof LineageJournalRow.Decoded decoded)) {
+                continue; // see surfaceUndecodable: discarding the unclassifiable purges evidence
+            }
+            if (!(decoded.entry().envelope() instanceof LineageJournalEntry.V1 v1)) {
+                logger.warn("Overflow drain skipping v2 row {} — discard is v1-only until the"
+                        + " version-neutral dead letter exists (D-spool)",
+                        decoded.entry().record().recordId());
+                continue;
+            }
+            journalStore.discardEvent(decoded.entry().record().recordId(), targetName);
+            LineageDeadLetterSink.record(v1.event(), "auto-discard: backlog-overflow");
         }
     }
 
