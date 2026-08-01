@@ -539,4 +539,48 @@ public class PurviewIncrementalSyncServiceImplTest {
         folder.setName(objectId);
         return folder;
     }
+    /**
+     * The failure path re-saves the cursor it read, and for the cloud-metadata stream that is
+     * the one place the scrub-on-next-success cycle can never reach: a sync that keeps failing
+     * keeps re-persisting whatever it read. A pre-sanitisation cursor (raw drive URL, sharing
+     * token and all) must come out of the failure rebuild normalized.
+     */
+    @org.junit.jupiter.api.Test
+    public void buildFailureCursorStateScrubsACloudMetadataCursor() throws Exception {
+        jp.aegif.nemaki.rest.purview.state.PurviewCursorState dirty =
+                new jp.aegif.nemaki.rest.purview.state.PurviewCursorState(
+                        "bedroom", "cloud-metadata-snapshot",
+                        "doc-1|google|file-1|https://drive.example/d?authkey=SECRET|2026-03-20",
+                        "snapshot", "t", "t", "", "", 0, 0);
+
+        jp.aegif.nemaki.rest.purview.state.PurviewCursorState rebuilt =
+                invokeBuildFailure(dirty);
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "doc-1|google|file-1||2026-03-20", rebuilt.getCursor());
+        org.junit.jupiter.api.Assertions.assertFalse(rebuilt.getCursor().contains("SECRET"));
+    }
+
+    /** Other streams' cursors (change tokens) are not snapshot-shaped and pass untouched. */
+    @org.junit.jupiter.api.Test
+    public void buildFailureCursorStateLeavesOtherStreamsAlone() throws Exception {
+        jp.aegif.nemaki.rest.purview.state.PurviewCursorState token =
+                new jp.aegif.nemaki.rest.purview.state.PurviewCursorState(
+                        "bedroom", "content-change-log", "token-100", "changeToken",
+                        "t", "t", "", "", 0, 0);
+        org.junit.jupiter.api.Assertions.assertEquals("token-100",
+                invokeBuildFailure(token).getCursor());
+    }
+
+    private jp.aegif.nemaki.rest.purview.state.PurviewCursorState invokeBuildFailure(
+            jp.aegif.nemaki.rest.purview.state.PurviewCursorState current) throws Exception {
+        var m = PurviewIncrementalSyncServiceImpl.class.getDeclaredMethod(
+                "buildFailureCursorState",
+                jp.aegif.nemaki.rest.purview.state.PurviewCursorState.class,
+                String.class, String.class);
+        m.setAccessible(true);
+        return (jp.aegif.nemaki.rest.purview.state.PurviewCursorState)
+                m.invoke(service, current, "2026-08-01T00:00:00Z", "boom");
+    }
+
 }
