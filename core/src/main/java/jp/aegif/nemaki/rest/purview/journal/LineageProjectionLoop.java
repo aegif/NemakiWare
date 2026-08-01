@@ -183,6 +183,13 @@ public class LineageProjectionLoop {
                     continue;
                 }
 
+                // §7's last gate, after the claim and immediately before the sink call.
+                String violation = preSinkViolation(entry);
+                if (violation != null) {
+                    rejectAtGate(record, targetName, violation);
+                    continue;
+                }
+
                 // Publish to the target
                 LineageTargetSinkResult result = sink.publish(record);
 
@@ -314,6 +321,19 @@ public class LineageProjectionLoop {
                     break;
                 }
 
+                // §7's last gate. REJECTED is a terminal decision about this row, so on a
+                // confirmed persist the cursor may advance over it and the repository continues;
+                // an unconfirmed persist (raced by another node) halts, like any other
+                // uncertainty in the ordered path.
+                String violation = preSinkViolation(entry);
+                if (violation != null) {
+                    if (rejectAtGate(record, targetName, violation)) {
+                        advanceCursor(targetName, repositoryId, record.sequenceNumber());
+                        continue;
+                    }
+                    break;
+                }
+
                 LineageTargetSinkResult result = sink.publish(record);
 
                 if (result.success()) {
@@ -341,6 +361,55 @@ public class LineageProjectionLoop {
         } catch (Exception e) {
             logger.warn("Failed to advance cursor for target='{}', repo='{}': {}", targetName, repositoryId, e.getMessage());
         }
+    }
+
+    /**
+     * §7's last gate: the same repository-scope and artifact-operation checks the canonical
+     * constructor ran, re-run against the <b>record</b> the sink is about to receive.
+     *
+     * <p>Decode already re-verified the envelope, so for a codec-produced entry the only way
+     * this fires is a record/envelope pairing that {@link LineageJournalEntry}'s constructor
+     * does not cross-check (it verifies recordId and schemaVersion, not repository scope) — or,
+     * after Slice 4, an in-memory path that never went through the codec. That is precisely what
+     * a last gate is for: it guards the boundary, not the happy path. v1 rows pass through — no
+     * typed endpoints to check; legacy stays best-effort (§8).
+     *
+     * @return the violation, or {@code null} if the record may be published
+     */
+    private String preSinkViolation(LineageJournalEntry entry) {
+        if (!(entry.envelope() instanceof LineageJournalEntry.V2 v2)) {
+            return null;
+        }
+        try {
+            LineageRepositoryScope.validate(entry.record().repositoryId(),
+                    v2.event().inputs(), v2.event().outputs());
+            LineageRepositoryScope.validateArtifactOperation(v2.event().operationId(),
+                    v2.event().inputs(), v2.event().outputs());
+            return null;
+        } catch (RuntimeException e) {
+            return e.getMessage();
+        }
+    }
+
+    /**
+     * Persists the gate's verdict. REJECTED, not FAILED: a validation failure is a property of
+     * the data and retrying cannot change the data. REJECTED is terminal but deliberately not
+     * purge-eligible ({@link LineagePublishStatus#isPurgeEligible()}) — the row is the only
+     * record of the violation until increment E's durable record exists.
+     *
+     * @return {@code true} if the transition was persisted
+     */
+    private boolean rejectAtGate(LineageRecord record, String targetName, String violation) {
+        logger.warn("Pre-sink gate refused record {} for '{}': {}",
+                record.recordId(), targetName, violation);
+        int updated = journalStore.updatePublishStatus(record.recordId(), targetName,
+                LineagePublishStatus.REJECTED);
+        if (updated == 0) {
+            logger.warn("REJECTED transition for {} was not persisted (raced?)",
+                    record.recordId());
+        }
+        if (lineageMetrics != null) lineageMetrics.recordFail(targetName);
+        return updated > 0;
     }
 
     /**

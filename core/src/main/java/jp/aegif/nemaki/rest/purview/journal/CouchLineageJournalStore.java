@@ -324,6 +324,100 @@ public class CouchLineageJournalStore implements LineageJournalStore {
     }
 
     @Override
+    public void appendV2(LineageEventV2 event) {
+        if (event == null) {
+            throw new IllegalArgumentException("event must not be null");
+        }
+        ensureDatabase();
+
+        // §7's store-layer enforcement here IS the parameter type: every LineageEventV2 passed
+        // the repository-scope, artifact-operation, shape and digest checks in its canonical
+        // constructor, and records admit no other construction path. Re-running the validators
+        // on an object that cannot exist unvalidated would be unreachable code wearing a safety
+        // vest. The injection path this method cannot see — a raw document written straight to
+        // CouchDB — bypasses appendV2 entirely, and is what the decode-side re-verification
+        // catches on every read.
+
+        String documentId = CouchLineageEventV2.documentId(event.deliveryId());
+        Map<String, Object> doc = CouchLineageEventV2.toMap(event);
+        // §8-a stores the row explicitly unsequenced. Lifecycle state lives at the store layer —
+        // beside claimedAtByTarget and retryCountByTarget — not in the codec: it is what the
+        // fenced sequencer (D-rest) mutates, not part of the event.
+        doc.put("state", "UNSEQUENCED");
+
+        // One retry for the conflict→vanished race: the conflicting document can be deleted
+        // between the failed create and our read. Absence is neither idempotent success nor a
+        // collision — it means the world changed under us, and the create is simply tried again.
+        for (int attempt = 0; attempt < 2; attempt++) {
+            if (createIfAbsent(documentId, doc)) {
+                logger.debug("Appended v2 lineage event: id={}, deliveryId={}", documentId,
+                        event.deliveryId());
+                return;
+            }
+            Map<String, Object> existing = readRaw(documentId);
+            if (existing == null) {
+                continue;
+            }
+            Object storedVersion = existing.get("schemaVersion");
+            String storedDigest = existing.get("creationPayloadDigest") instanceof String d
+                    ? d : null;
+            boolean sameRecord = CouchLineageEventV2.TYPE.equals(existing.get("type"))
+                    && storedVersion instanceof Number n
+                    && n.intValue() == LineageEventV2.CURRENT_SCHEMA_VERSION
+                    && event.creationPayloadDigest().equals(storedDigest);
+            if (sameRecord) {
+                // A retry landing after its first attempt succeeded. §3: 409 + exact digest
+                // match is the only conflict that counts as success.
+                logger.debug("v2 append found its own earlier attempt: deliveryId={}",
+                        event.deliveryId());
+                return;
+            }
+            throw new LineageIntegrityException(event.deliveryId(),
+                    event.creationPayloadDigest(), storedDigest);
+        }
+        throw new IllegalStateException("v2 append for '" + event.deliveryId() + "' conflicted"
+                + " and the conflicting document vanished before it could be read, twice —"
+                + " transient storage contention; the caller's fail-open policy applies");
+    }
+
+    /**
+     * Create-if-absent with a detectable conflict.
+     *
+     * <p>Not {@link CloudantClientWrapper#create(String, Map)}: both wrapper create methods
+     * swallow every exception and return {@code null}, which makes a 409 indistinguishable from
+     * an outage — and this method's whole job is that distinction. The raw SDK call is used so
+     * {@code ConflictException} surfaces as itself and every other failure propagates.
+     *
+     * @return {@code true} if this call created the document; {@code false} on conflict
+     */
+    private boolean createIfAbsent(String documentId, Map<String, Object> properties) {
+        com.ibm.cloud.cloudant.v1.model.Document doc =
+                new com.ibm.cloud.cloudant.v1.model.Document();
+        doc.setId(documentId);
+        Map<String, Object> withoutMeta = new HashMap<>(properties);
+        withoutMeta.remove("_id");
+        withoutMeta.remove("_rev");
+        doc.setProperties(withoutMeta);
+        try {
+            getLineageClient().getClient().putDocument(
+                    new com.ibm.cloud.cloudant.v1.model.PutDocumentOptions.Builder()
+                            .db(DB_NAME)
+                            .docId(documentId)
+                            .document(doc)
+                            .build())
+                    .execute();
+            return true;
+        } catch (com.ibm.cloud.sdk.core.service.exception.ConflictException e) {
+            return false;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> readRaw(String documentId) {
+        return (Map<String, Object>) getLineageClient().get(Map.class, documentId, null);
+    }
+
+    @Override
     public List<LineageJournalRow> findByRepositoryId(String repositoryId, int limit, int offset) {
         if (!ensureClientForRead()) {
             return List.of();
@@ -478,7 +572,7 @@ public class CouchLineageJournalStore implements LineageJournalStore {
                 continue;
             }
             LineageRecord record = decoded.entry().record();
-            if (allTargetsTerminal(record)) {
+            if (allTargetsPurgeEligible(record)) {
                 String docId = CouchLineageEvent.journalDocumentId(record.recordId());
                 @SuppressWarnings("unchecked")
                 Map<String, Object> doc = (Map<String, Object>) getLineageClient().get(Map.class, docId, null);
@@ -970,12 +1064,18 @@ public class CouchLineageJournalStore implements LineageJournalStore {
     /**
      * Check if all targets in the event are in terminal state.
      */
-    private boolean allTargetsTerminal(LineageRecord record) {
+    /**
+     * Purge keys off {@link LineagePublishStatus#isPurgeEligible()}, not
+     * {@link LineagePublishStatus#isTerminal()}: REJECTED is terminal for the projector but its
+     * document is the only evidence of the violation it records, so retention must not delete it
+     * until increment E's durable record exists.
+     */
+    private boolean allTargetsPurgeEligible(LineageRecord record) {
         if (record.publishStatusByTarget().isEmpty()) {
             return true;
         }
         return record.publishStatusByTarget().values().stream()
-                .allMatch(LineagePublishStatus::isTerminal);
+                .allMatch(LineagePublishStatus::isPurgeEligible);
     }
 
     /**
