@@ -178,7 +178,8 @@ public final class LineageProcessShape {
         //
         // IMPORT_UPLOADED's former second shape (external asset → document) is gone with the
         // archetype-null fallback it mirrored: unclassified connector ingest is not a user
-        // upload, and v2 will carry it as GENERIC_EXTERNAL_INGEST instead of mislabelling it.
+        // upload, and v2 carries it as GENERIC_EXTERNAL_INGEST instead of mislabelling it
+        // (the type exists now — a promise in a comment rejected every such fact for a slice).
         Shape importShape = shape(one(EndpointKind.IMPORT_ARTIFACT),
                 oneOrMore(EndpointKind.CMIS_DOCUMENT, EndpointKind.CMIS_FOLDER));
         table.put(LineageProcessType.IMPORT_FILESYSTEM, List.of(importShape));
@@ -204,7 +205,8 @@ public final class LineageProcessShape {
                 LineageProcessType.CHAT_ATTACHMENT_IMPORT,
                 LineageProcessType.FILE_SHARE_SYNC_DOWNLOAD,
                 LineageProcessType.MAIL_MESSAGE_IMPORT,
-                LineageProcessType.MAIL_ATTACHMENT_IMPORT)) {
+                LineageProcessType.MAIL_ATTACHMENT_IMPORT,
+                LineageProcessType.GENERIC_EXTERNAL_INGEST)) {
             table.put(ingest, List.of(
                     shape(one(EndpointKind.EXTERNAL_ASSET), one(EndpointKind.CMIS_DOCUMENT))));
         }

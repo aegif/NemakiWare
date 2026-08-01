@@ -988,6 +988,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     @Override
     public ExternalIngestResult execute(CallContext callContext, ExternalIngestRequest request) {
         String requestId = request.getRequestId();
+        // §3: the lineage operation id is issued when the business operation starts, not when
+        // the lineage event is emitted afterwards — retries of the emission reuse this id.
+        String lineageOperationId = java.util.UUID.randomUUID().toString();
 
         // 0. Validate metadata size and depth to prevent DoS
         if (request.getMetadata() != null) {
@@ -1312,9 +1315,22 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 warnings.add(relError);
             }
 
-            // 7. Emit lineage event
+            // 7. Emit lineage event. The document that actually exists may not carry the
+            // requested fileName (the version-update branch keeps the existing document's
+            // name), so the name is read back from the final object — guarded, because a
+            // lineage-only read must never fail an import that succeeded.
+            String lineageDocumentName = fileName;
+            try {
+                Content lineageContent = contentService.getContent(repositoryId, objectId);
+                if (lineageContent != null && lineageContent.getName() != null
+                        && !lineageContent.getName().isBlank()) {
+                    lineageDocumentName = lineageContent.getName();
+                }
+            } catch (Exception e) {
+                logger.debug("Lineage name read failed; using requested fileName: {}", e.getMessage());
+            }
             String lineageEventId = ingestLineageEmitter != null
-                    ? ingestLineageEmitter.emitLineageEvent(repositoryId, objectId, targetFolderId, connector, request)
+                    ? ingestLineageEmitter.emitLineageEvent(repositoryId, objectId, targetFolderId, lineageDocumentName, lineageOperationId, connector, request)
                     : null;
 
             logger.info("Canonical import completed: requestId={}, objectId={}, profile={}, connector={}",

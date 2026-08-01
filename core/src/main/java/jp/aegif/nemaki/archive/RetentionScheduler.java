@@ -486,13 +486,19 @@ public class RetentionScheduler {
             CallContext systemContext = new SystemCallContext(repositoryId);
             // §3: the operation id is issued when the business operation starts, and the typed
             // ARCHIVE endpoint needs the document's name — readable only before the deletion
-            // that archives it. Both are captured up front; neither read is fallible enough to
-            // guard (a null name simply loses this one fact inside the facade, loudly).
+            // that archives it. The read is lineage-only and guarded: a null name loses this
+            // one fact inside the facade (loudly), never the archival.
             String operationId = java.util.UUID.randomUUID().toString();
-            jp.aegif.nemaki.model.Document documentBeforeArchive =
-                    contentService.getDocument(repositoryId, documentId);
-            String documentName = documentBeforeArchive != null
-                    ? documentBeforeArchive.getName() : null;
+            String documentName = null;
+            try {
+                jp.aegif.nemaki.model.Document documentBeforeArchive =
+                        contentService.getDocument(repositoryId, documentId);
+                documentName = documentBeforeArchive != null
+                        ? documentBeforeArchive.getName() : null;
+            } catch (Exception e) {
+                log.warn("Could not read document name for lineage (archival continues): "
+                        + e.getMessage());
+            }
 
             contentService.deleteDocument(systemContext, repositoryId, documentId, true, false);
             nemakiCachePool.get(repositoryId).removeCmisCache(documentId);
@@ -501,9 +507,7 @@ public class RetentionScheduler {
             // Lineage: one version-free fact; the emitter projects it (v1 today, v2 after the
             // §6-a flip). The v1 strings ride along verbatim — they are the eventKey.
             {
-                LineageConfig lc = getLineageConfig();
-                java.util.List<String> targets =
-                        lc != null ? lc.getTargets() : java.util.List.of();
+                final String lineageDocumentName = documentName;
                 LineageFactEmission.emitSafely(resolveLineageEmitter(repositoryId), () -> {
                     String occurredAt = java.time.Instant.now().toString();
                     return new LineageFact(
@@ -512,11 +516,11 @@ public class RetentionScheduler {
                             operationId,
                             occurredAt,
                             java.util.List.of(LineageEndpoint.document(
-                                    repositoryId, documentId, documentName)),
+                                    repositoryId, documentId, lineageDocumentName)),
                             java.util.List.of(LineageEndpoint.archive(
                                     repositoryId, documentId, documentId,
                                     java.time.Instant.parse(occurredAt).toEpochMilli())),
-                            targets,
+                            lineageTargets(),
                             null,
                             new LineageFact.LegacyV1Projection(
                                     LineageProcessType.ARCHIVE_LOCAL,
@@ -540,6 +544,9 @@ public class RetentionScheduler {
     private boolean moveToCold(String repositoryId, Archive archive, LongTermStorageAdapter adapter) {
         String archiveId = archive.getId();
         String originalId = archive.getOriginalId();
+        // §3: the lineage operation id is issued when the business operation starts (the state
+        // transition below is already part of it), not when the emission happens afterwards.
+        final String lineageOperationId = java.util.UUID.randomUUID().toString();
         boolean coldPutSucceeded = false;
         String storageRef = null;
 
@@ -617,17 +624,14 @@ public class RetentionScheduler {
                 // fact inside the facade, with a WARN naming it, rather than publishing a
                 // blank. archivedAt comes from the archive record itself.
                 {
-                    LineageConfig lc = getLineageConfig();
-                    java.util.List<String> targets =
-                            lc != null ? lc.getTargets() : java.util.List.of();
-                    String operationId = java.util.UUID.randomUUID().toString();
-                    String archiveName = archive.getName();
-                    java.util.GregorianCalendar archivedAtCal = archive.getArchivedAt();
-                    // storageRef and originalId are reassigned earlier in this method; the
-                    // lambda needs effectively-final copies of the values as they stand now.
+                    // storageRef is reassigned earlier in this method; the lambda needs an
+                    // effectively-final copy of the value as it stands now. Everything else
+                    // lineage-only (config, archive getters) runs inside the boundary.
                     final String finalStorageRef = storageRef;
                     final String finalOriginalId = originalId;
                     LineageFactEmission.emitSafely(resolveLineageEmitter(repositoryId), () -> {
+                        String archiveName = archive.getName();
+                        java.util.GregorianCalendar archivedAtCal = archive.getArchivedAt();
                         String occurredAt = java.time.Instant.now().toString();
                         long archivedAtMillis = archivedAtCal != null
                                 ? archivedAtCal.getTimeInMillis()
@@ -642,7 +646,7 @@ public class RetentionScheduler {
                         return new LineageFact(
                                 repositoryId,
                                 LineageProcessType.ARCHIVE_COLD,
-                                operationId,
+                                lineageOperationId,
                                 occurredAt,
                                 java.util.List.of(new LineageEndpoint(
                                         EndpointKind.ARCHIVE,
@@ -653,7 +657,7 @@ public class RetentionScheduler {
                                         repositoryId,
                                         finalStorageRef != null ? finalStorageRef : archiveId,
                                         adapter.getClass().getSimpleName())),
-                                targets,
+                                lineageTargets(),
                                 null,
                                 new LineageFact.LegacyV1Projection(
                                         LineageProcessType.ARCHIVE_COLD,
@@ -664,7 +668,7 @@ public class RetentionScheduler {
                                         java.util.Map.of(
                                                 "originalId", finalOriginalId != null ? finalOriginalId : "",
                                                 "coldMoveMode", coldMoveMode)));
-                    }, "repo=" + repositoryId + " op=" + operationId + " type=ARCHIVE_COLD");
+                    }, "repo=" + repositoryId + " op=" + lineageOperationId + " type=ARCHIVE_COLD");
                 }
 
                 log.info("Successfully moved archive to cold storage: " + archiveId
@@ -717,6 +721,16 @@ public class RetentionScheduler {
             }
         }
         log.info("Retention scheduler stopped");
+    }
+
+    /** Lineage-only config read; never throws (fail-open — a producer must not fail the op). */
+    private java.util.List<String> lineageTargets() {
+        try {
+            LineageConfig lc = getLineageConfig();
+            return lc != null ? lc.getTargets() : java.util.List.of();
+        } catch (Exception e) {
+            return java.util.List.of();
+        }
     }
 
     private LineageConfig getLineageConfig() {

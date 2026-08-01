@@ -54,11 +54,29 @@ public final class LineageFactEmission {
      * @param factSupplier  runs entirely inside the fail-open boundary
      * @param whatHappened  operation coordinates for the failure log (repository, operation id,
      *                      process type — never payload values)
+     * @return whether the fact was handed to the emitter — {@code false} when lineage is off,
+     *         construction failed, or the supplier returned null. Producers that report an
+     *         event id to their caller use this to keep the old "id or null" contract: an id
+     *         for an emission that never happened resolves to nothing. Handed-off is the
+     *         honest boundary — {@code emit()} is itself fail-open (journal failures
+     *         dead-letter and replay, preserving the id), so "accepted" cannot mean "durable".
      */
-    public static void emitSafely(LineageEmitter emitter, Supplier<LineageFact> factSupplier,
-                                  String whatHappened) {
-        if (emitter == null || !emitter.isActive()) {
-            return;
+    public static boolean emitSafely(LineageEmitter emitter, Supplier<LineageFact> factSupplier,
+                                     String whatHappened) {
+        if (emitter == null) {
+            return false;
+        }
+        try {
+            // isActive() is an interface call into arbitrary emitter code, so it sits inside
+            // the boundary like everything else — an activity check that throws must not be
+            // able to fail the business response either.
+            if (!emitter.isActive()) {
+                return false;
+            }
+        } catch (RuntimeException e) {
+            logger.warn("Lineage activity check failed (business operation unaffected): {} — {}",
+                    whatHappened, e.getMessage());
+            return false;
         }
         LineageFact fact;
         try {
@@ -66,18 +84,20 @@ public final class LineageFactEmission {
         } catch (RuntimeException e) {
             logger.warn("Lineage fact could not be constructed (business operation unaffected):"
                     + " {} — {}", whatHappened, e.getMessage());
-            return;
+            return false;
         }
         if (fact == null) {
-            return;
+            return false;
         }
         try {
             emitter.emit(fact);
+            return true;
         } catch (RuntimeException e) {
             // emit() contracts to never throw; this catch is the boundary keeping that contract
             // even against an implementation that breaks it.
             logger.warn("Lineage emission failed (business operation unaffected): {} — {}",
                     whatHappened, e.getMessage());
+            return false;
         }
     }
 }

@@ -98,6 +98,32 @@ class IngestLineageEmitterTest {
 
     // ── buildCanonicalSourceUri ──
 
+    /**
+     * The production transformation itself must reject a URL-shaped sourceObjectId — the review
+     * finding was that percent-encoding ran before validation, so {@code ?} became {@code %3F}
+     * and the literal-character checks downstream never saw it. The throw is absorbed by the
+     * producer's fail-open boundary; the import is unaffected.
+     */
+    @Test
+    void sourceUri_urlShapedSourceObjectIdIsRejectedBeforeEncoding() {
+        ConnectorDefinition c = new ConnectorDefinition();
+        c.setSourceSystem("google_drive");
+        c.setSourceArchetype(null);
+        c.setTenantId("t1");
+        ExternalIngestRequest r = new ExternalIngestRequest();
+        r.setSourceObjectId("https://drive.example/file?sig=SECRET");
+        r.setSourceObjectType("document");
+
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> IngestLineageEmitter.buildCanonicalSourceUri(c, r));
+        assertTrue(thrown.getMessage().contains("query"), thrown.getMessage());
+
+        r.setSourceObjectId("file%3Fsig%3DSECRET");
+        assertThrows(IllegalArgumentException.class,
+                () -> IngestLineageEmitter.buildCanonicalSourceUri(c, r),
+                "a pre-encoded delimiter is an encoded URL, not an id");
+    }
+
     @Test
     void sourceUri_fileShare() {
         ConnectorDefinition c = new ConnectorDefinition();
