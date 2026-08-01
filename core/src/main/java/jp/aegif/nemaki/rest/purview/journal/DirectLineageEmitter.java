@@ -94,7 +94,9 @@ public class DirectLineageEmitter implements LineageEmitter {
 
     private void publishToSink(LineageTargetSink sink, LineageEvent event) {
         try {
-            LineageTargetSinkResult result = sink.publish(event);
+            // The sink takes the version-neutral projection; the envelope stays here, because the
+            // dead-letter path below needs something a LineageRecord cannot rebuild.
+            LineageTargetSinkResult result = sink.publish(LineageRecord.fromV1(event));
             if (!result.success()) {
                 failureCount.incrementAndGet();
                 logger.warn("Direct publish failed to '{}': eventKey={}, error={}",

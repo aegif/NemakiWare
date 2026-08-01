@@ -91,13 +91,13 @@ class LineageProjectionLoopTest {
                 .thenReturn(1);
 
         // Publish succeeds
-        when(mockSink.publish(event)).thenReturn(LineageTargetSinkResult.success(1, "OK"));
+        when(mockSink.publish(LineageRecord.fromV1(event))).thenReturn(LineageTargetSinkResult.success(1, "OK"));
 
         loop.pollAndProject();
 
         // Verify: claimed, published, status updated to PUBLISHED
         verify(mockStore).updatePublishStatus(event.eventId(), "purview", LineagePublishStatus.PROJECTING);
-        verify(mockSink).publish(event);
+        verify(mockSink).publish(LineageRecord.fromV1(event));
         verify(mockStore).updatePublishStatus(event.eventId(), "purview", LineagePublishStatus.PUBLISHED);
     }
 
@@ -148,7 +148,7 @@ class LineageProjectionLoopTest {
 
         when(mockStore.updatePublishStatus(event.eventId(), "purview", LineagePublishStatus.PROJECTING))
                 .thenReturn(1);
-        when(mockSink.publish(event)).thenThrow(new RuntimeException("Connection refused"));
+        when(mockSink.publish(LineageRecord.fromV1(event))).thenThrow(new RuntimeException("Connection refused"));
 
         loop.pollAndProject();
 
@@ -241,7 +241,7 @@ class LineageProjectionLoopTest {
         when(mockStore.updatePublishStatus(event.eventId(), "purview", LineagePublishStatus.PROJECTING))
                 .thenReturn(1);
         // Publish throws
-        when(mockSink.publish(event)).thenThrow(new RuntimeException("Connection refused"));
+        when(mockSink.publish(LineageRecord.fromV1(event))).thenThrow(new RuntimeException("Connection refused"));
         // Retry count at max
         when(mockStore.getRetryCount(event.eventId(), "purview")).thenReturn(5);
 
@@ -272,7 +272,7 @@ class LineageProjectionLoopTest {
 
         when(mockStore.updatePublishStatus(event.eventId(), "purview", LineagePublishStatus.PROJECTING))
                 .thenReturn(1);
-        when(mockSink.publish(event)).thenThrow(new RuntimeException("Timeout"));
+        when(mockSink.publish(LineageRecord.fromV1(event))).thenThrow(new RuntimeException("Timeout"));
         // Retry count below max
         when(mockStore.getRetryCount(event.eventId(), "purview")).thenReturn(2);
 

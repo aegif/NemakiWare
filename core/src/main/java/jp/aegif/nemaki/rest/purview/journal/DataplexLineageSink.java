@@ -57,9 +57,13 @@ public class DataplexLineageSink implements LineageTargetSink {
     }
 
     @Override
-    public LineageTargetSinkResult publish(LineageEvent event) throws Exception {
+    public LineageTargetSinkResult publish(LineageRecord record) throws Exception {
         if (!isAvailable()) {
             return LineageTargetSinkResult.failure("Dataplex sink not available");
+        }
+        String unresolved = LineageSinkAssets.firstUnresolvedReason(record);
+        if (unresolved != null) {
+            return LineageTargetSinkResult.failure(unresolved);
         }
 
         String token = getAccessToken();
@@ -73,13 +77,13 @@ public class DataplexLineageSink implements LineageTargetSink {
         String location = URLEncoder.encode(dataplexConfig.getLocation(), StandardCharsets.UTF_8);
 
         // Step 1: Create or reference a process
-        String processId = "nemakiware-" + event.repositoryId() + "-" +
-                (event.processType() != null ? event.processType().name().toLowerCase() : "unknown");
+        String processId = "nemakiware-" + record.repositoryId() + "-" +
+                (record.processType() != null ? record.processType().name().toLowerCase() : "unknown");
         String safeProcessId = URLEncoder.encode(processId, StandardCharsets.UTF_8);
         String processUrl = DATAPLEX_API_BASE + "/v1/projects/" + projectId +
                 "/locations/" + location + "/processes";
 
-        Map<String, Object> processPayload = buildProcessPayload(event, processId);
+        Map<String, Object> processPayload = buildProcessPayload(record, processId);
         HttpResponse<String> processResp = client.postJson(processUrl, processPayload);
 
         // Check process creation response
@@ -91,16 +95,16 @@ public class DataplexLineageSink implements LineageTargetSink {
         }
 
         // Step 2: Create a lineage event under the process
-        String safeEventId = URLEncoder.encode(event.eventId(), StandardCharsets.UTF_8);
+        String safeEventId = URLEncoder.encode(record.eventId(), StandardCharsets.UTF_8);
         String eventUrl = DATAPLEX_API_BASE + "/v1/projects/" + projectId +
                 "/locations/" + location + "/processes/" + safeProcessId + "/runs/" +
                 safeEventId + "/lineageEvents";
 
-        Map<String, Object> eventPayload = buildEventPayload(event);
+        Map<String, Object> eventPayload = buildEventPayload(record);
         HttpResponse<String> eventResp = client.postJson(eventUrl, eventPayload);
 
         if (eventResp.statusCode() >= 200 && eventResp.statusCode() < 300) {
-            logger.debug("Published lineage event to Dataplex: eventKey={}", event.eventKey());
+            logger.debug("Published lineage event to Dataplex: eventKey={}", record.processIdentity());
             return LineageTargetSinkResult.success(1, "Dataplex OK");
         } else {
             String body = eventResp.body();
@@ -118,11 +122,11 @@ public class DataplexLineageSink implements LineageTargetSink {
                 && !dataplexConfig.getLocation().isBlank();
     }
 
-    Map<String, Object> buildProcessPayload(LineageEvent event, String processId) {
+    Map<String, Object> buildProcessPayload(LineageRecord record, String processId) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("name", processId);
-        payload.put("displayName", "NemakiWare " + event.repositoryId() + " — " +
-                (event.processType() != null ? event.processType().name() : "UNKNOWN"));
+        payload.put("displayName", "NemakiWare " + record.repositoryId() + " — " +
+                (record.processType() != null ? record.processType().name() : "UNKNOWN"));
         Map<String, String> origin = new LinkedHashMap<>();
         origin.put("sourceType", "CUSTOM");
         origin.put("name", "NemakiWare CMIS");
@@ -130,21 +134,18 @@ public class DataplexLineageSink implements LineageTargetSink {
         return payload;
     }
 
-    Map<String, Object> buildEventPayload(LineageEvent event) {
+    Map<String, Object> buildEventPayload(LineageRecord record) {
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("startTime", event.occurredAt());
-        payload.put("endTime", event.occurredAt());
+        payload.put("startTime", record.occurredAt());
+        payload.put("endTime", record.occurredAt());
 
         // Build links (input → output)
         List<Map<String, Object>> links = new ArrayList<>();
-        List<String> inputs = event.inputs() != null ? event.inputs() : List.of();
-        List<String> outputs = event.outputs() != null ? event.outputs() : List.of();
-
-        for (String source : inputs) {
-            for (String target : outputs) {
+        for (LineageAssetRef source : record.inputs()) {
+            for (LineageAssetRef target : record.outputs()) {
                 Map<String, Object> link = new LinkedHashMap<>();
-                link.put("source", buildEntityRef(event.repositoryId(), source));
-                link.put("target", buildEntityRef(event.repositoryId(), target));
+                link.put("source", buildEntityRef(record.repositoryId(), source.qualifiedName()));
+                link.put("target", buildEntityRef(record.repositoryId(), target.qualifiedName()));
                 links.add(link);
             }
         }
