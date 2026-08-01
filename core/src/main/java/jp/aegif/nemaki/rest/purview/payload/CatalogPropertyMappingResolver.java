@@ -361,11 +361,18 @@ public class CatalogPropertyMappingResolver {
     /**
      * Why a mapping may not be projected, or {@code null} if it may.
      *
-     * <p><b>The one entry point.</b> Save, load, the payload boundary and the admin PUT
-     * ({@code IntegrationSettingsController}) all call this and nothing else, because the
-     * previous arrangement — a boolean for load, two separate booleans for save, one of the two
-     * for the payload — is exactly the split that let the output-name rule be enforced in two
-     * places while the input rule was enforced in none.
+     * <p><b>The one entry point for the live rules</b> — forbidden source property, blank name,
+     * reserved name. Its callers, precisely: {@code saveMappings}, the payload boundary
+     * ({@code appendCustomPropertyValues}), and the admin PUT
+     * ({@code IntegrationSettingsController.updatePropertyMappings}, enabled mappings only —
+     * a disabled mapping may omit its name). The <em>load</em> path calls
+     * {@link #rejectionForStored} instead, which applies these same rules and additionally
+     * distinguishes the two stored-shape defects a live caller cannot produce:
+     * {@code MISSING_CATALOG_NAME} (no field / JSON null) and {@code MALFORMED_CATALOG_NAME}
+     * (a non-string value). One rule set, two entry points, split only by what their inputs can
+     * be malformed as — the previous arrangement (a boolean for load, two booleans for save) is
+     * exactly the split that let the output-name rule be enforced in two places while the input
+     * rule was enforced in none.
      *
      * <p>It returns a reason rather than a boolean so that {@link #validateMappings} can still
      * tell an operator which end of the mapping is wrong without re-deriving it.
