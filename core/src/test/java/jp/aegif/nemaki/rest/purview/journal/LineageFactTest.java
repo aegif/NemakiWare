@@ -150,6 +150,51 @@ public class LineageFactTest {
         assertEquals(1, fact.outputs().size(), "the v2 side carries the artifact from day one");
     }
 
+    /**
+     * The ARCHIVE_COLD fact exactly as RetentionScheduler builds it, held against the old
+     * builder's output. The typed side names the storage adapter as sourceSystem and carries the
+     * archive's own archivedAt; the v1 side keeps the cold:// string and the originalId-or-empty
+     * snapshot verbatim, because both are hashed into eventKey.
+     */
+    @Test
+    public void theColdMoveFactPreservesTheV1StringsExactly() {
+        LineageEvent old = new LineageEventBuilder()
+                .repositoryId(REPO)
+                .processType(LineageProcessType.ARCHIVE_COLD)
+                .addInput("nemaki://bedroom/archives/arc-1")
+                .addOutput("cold://s3://bucket/key-1")
+                .snapshotAttribute("originalId", "doc-1")
+                .snapshotAttribute("coldMoveMode", "MOVE")
+                .targets(List.of("purview"))
+                .build();
+
+        java.util.Map<String, Object> archiveAttributes = new java.util.LinkedHashMap<>();
+        archiveAttributes.put("archivedAt", 1_700_000_000_000L);
+        archiveAttributes.put("originalObjectId", "doc-1");
+        LineageFact fact = new LineageFact(
+                REPO,
+                LineageProcessType.ARCHIVE_COLD,
+                "op-1",
+                OCCURRED,
+                List.of(new LineageEndpoint(EndpointKind.ARCHIVE,
+                        LineageEndpoint.archiveQualifiedName(REPO, "arc-1"),
+                        REPO, "arc-1", null, archiveAttributes)),
+                List.of(LineageEndpoint.coldStorage(REPO, "s3://bucket/key-1", "S3Adapter")),
+                List.of("purview"),
+                null,
+                new LineageFact.LegacyV1Projection(
+                        LineageProcessType.ARCHIVE_COLD,
+                        List.of("nemaki://bedroom/archives/arc-1"),
+                        List.of("cold://s3://bucket/key-1"),
+                        Map.of("originalId", "doc-1", "coldMoveMode", "MOVE")));
+
+        LineageEvent fromFact = fact.toV1Event();
+        assertEquals(old.eventKey(), fromFact.eventKey());
+        assertEquals(old.inputs(), fromFact.inputs());
+        assertEquals(old.outputs(), fromFact.outputs());
+        assertEquals(old.snapshotAttributes(), fromFact.snapshotAttributes());
+    }
+
     /** occurredAt is the fact's (allocated at establishment), not re-stamped at build. */
     @Test
     public void theV1EventCarriesTheFactsOccurredAt() {
