@@ -22,10 +22,10 @@ import java.util.Map;
  * One entry point from a stored journal document to a {@link LineageJournalEntry}, whichever
  * version wrote it.
  *
- * <p>This is the seam Slice 2d-2 threads through the store's read paths. Nothing in production
- * calls it yet; §6-a's {@code read:v2} capability is claimed only when the whole path — this
- * codec, the store, the projector, the sinks, the failure handling — demonstrably carries a v2
- * row, not when this class merely exists.
+ * <p>Since Slice 2d-2b this IS the store's read path: every view row and every
+ * {@code findByRecordId} decodes through here. What remains unclaimed is §6-a's {@code read:v2}
+ * capability — that is a barrier registration (4a), made when activation is requested, not a
+ * property of code existing or even running.
  *
  * <h2>Version dispatch</h2>
  *

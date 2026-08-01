@@ -1,6 +1,6 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.14 — increment A sign-off 済み。A-1〜A-1k 実装済み、A-2 Slice 1〜2d-1 実装済み・Slice 4 は §6-a の再 sign-off 待ち**
+status: **v2.3.14 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜2d-2b 実装済み (writer は v1 のまま)・Slice 4 は §6-a の再 sign-off 待ち**
 revision:
 - v2.3.14 — Slice 2d-1 (無損失 journal entry + v2 codec) の設計決定 2 点。
   ① **v2 文書は `type=lineage_event_v2`** — 旧バイナリの view は `doc.type==='lineage_event'`
@@ -158,10 +158,13 @@ revision:
 scope: v3.3 内で Atlas 連携を完成させるための設計。実装は sign-off 後に A〜E の独立コミットで行う。
 関連: [`docs/design/acl-epoch-fencing.md`](acl-epoch-fencing.md) (同じ outbox/cursor の考え方を使う)
 
-実装状況: **A-1〜A-1k が `deps/v3.3-breaking-majors` に実装済み** (型体系・identity 符号化・
-`ExternalAssetIdentity` への命名集約・schema 整合・identity CI)。**A-2 (event 移行) は未実装**。
-Slice 1〜3 (additive、production writer は v1 のまま) は**着手承認済み**、
-Slice 4 (v2 書込みへの切替) は **§6-a の再 sign-off 待ち**。
+実装状況: **A-1〜A-1k と A-2 Slice 1a〜2d-2b が `deps/v3.3-breaking-majors` に実装済み**
+(型体系・identity 符号化・命名集約・schema 整合・identity CI / v2 型・read model・sink /
+admin / projector の版非依存化・無損失 codec・store read の一斉切替 — read:v2 の経路は
+成立、capability の登録は 4a の barrier 実装時)。**production writer は v1 のまま**。
+残: Slice 3 (digest 配線)・producer 書き換え・chunking。
+Slice 4 (v2 書込みへの切替) は **§6-a の再 sign-off 待ち**。slice 単位の状態は
+「A-2 の分割」の表が正である。
 本文の規範記述は実装と同期させており、乖離を見つけたらどちらかが誤りである —
 A-1 を再実装しないこと。
 
@@ -1330,7 +1333,7 @@ D-rest が直すのは、設計上すでに確認済みの**採番欠落・二�
 | 14b | `approvedBinaryDigests` に無い `binaryDigest` の ACK | 同上 |
 | 15 | scale-to-one 切替 | 旧 AP が 1 台も存在しないことを**運用受入条件**として確認する (アプリでは検証できない) |
 | 16 | 同一入力から `build()` を 2 回呼ぶ | `eventId` 以外が完全に一致し、`creationPayloadDigest` と `spoolRecordId` が同値 (§3 の `occurredAt` 純関数契約) |
-| 17 | `spoolRecordId` / `payloadDigest` の golden vector | Java と `reference_hash.py` が一致する (A-1 と同じ CI ジョブ) |
+| 17 | `spoolRecordId` / `payloadDigest` の golden vector | Java と `reference_hash.py` が一致する (A-1 と同じ CI ジョブ)。**未達 — spool の実装 (D-spool) と同時に凍結する。fixture にも CI にもまだ存在しない** |
 
 ### この節が閉じるまで Slice 4 は着手しない
 
@@ -2019,8 +2022,9 @@ identity 分離を入れる前の記述で、成立しない。
 | 2b (admin API 表示経路、版非依存キー併記) | 完了 |
 | 2c (projector の判断を record に、quarantine、occurredAt 比較修正) | 完了 |
 | 2d-1 (無損失 `LineageJournalEntry` + v2 codec、`type=lineage_event_v2`) | 完了 (production 未配線) |
-| 2d-2 (store read の一斉切替、view 両 type 化、recordId 分離) | 未着手 |
-| 3 (`creationPayloadDigest` の store/sink 直前検査配線) | 未着手 |
+| 2d-2a (view 両 type 化 + Rhino 実行検証、型付き行結果、recordId helper) | 完了 |
+| 2d-2b (store read の一斉切替、recordId 分離、Undecodable の無変異、v2 の DISCARD 禁止) | 完了 |
+| 3 (`creationPayloadDigest` の store/sink 直前検査配線) | 実装中 |
 
 A-1 を分けたのは `LineageEvent` の移行対象が 14 ファイル・`inputs()/outputs()` 参照 79 箇所に
 及び、片方だけ入った木が壊れるため。A-1 単体で型と identity は閉じている。

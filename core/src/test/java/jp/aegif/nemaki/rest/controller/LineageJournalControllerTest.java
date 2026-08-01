@@ -333,6 +333,11 @@ public class LineageJournalControllerTest {
 
     @Test
     void discardEventSucceeds() {
+        // The guard reads the row first (fail-closed: null could be a transient read error, and
+        // proceeding on it would bypass the undecodable check). A decodable row passes through.
+        when(store.findByRecordId("evt-1")).thenReturn(row(new LineageEventBuilder()
+                .repositoryId("bedroom").processType(LineageProcessType.ARCHIVE_LOCAL)
+                .addInputObject("bedroom", "doc-1").targets(List.of("purview")).build()));
         when(store.discardEvent("evt-1", "purview")).thenReturn(1);
 
         ResponseEntity<Map<String, Object>> response = controller.discardEvent("evt-1", "purview");
@@ -344,6 +349,9 @@ public class LineageJournalControllerTest {
 
     @Test
     void discardEventReturnsErrorWhenFailed() {
+        when(store.findByRecordId("evt-1")).thenReturn(row(new LineageEventBuilder()
+                .repositoryId("bedroom").processType(LineageProcessType.ARCHIVE_LOCAL)
+                .addInputObject("bedroom", "doc-1").targets(List.of("purview")).build()));
         when(store.discardEvent("evt-1", "purview")).thenReturn(0);
 
         ResponseEntity<Map<String, Object>> response = controller.discardEvent("evt-1", "purview");

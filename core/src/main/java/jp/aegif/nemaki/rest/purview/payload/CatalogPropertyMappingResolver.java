@@ -361,10 +361,11 @@ public class CatalogPropertyMappingResolver {
     /**
      * Why a mapping may not be projected, or {@code null} if it may.
      *
-     * <p><b>The one entry point.</b> Save, load and the payload boundary all call this and nothing
-     * else, because the previous arrangement — a boolean for load, two separate booleans for save,
-     * one of the two for the payload — is exactly the split that let the output-name rule be
-     * enforced in two places while the input rule was enforced in none.
+     * <p><b>The one entry point.</b> Save, load, the payload boundary and the admin PUT
+     * ({@code IntegrationSettingsController}) all call this and nothing else, because the
+     * previous arrangement — a boolean for load, two separate booleans for save, one of the two
+     * for the payload — is exactly the split that let the output-name rule be enforced in two
+     * places while the input rule was enforced in none.
      *
      * <p>It returns a reason rather than a boolean so that {@link #validateMappings} can still
      * tell an operator which end of the mapping is wrong without re-deriving it.
@@ -373,7 +374,7 @@ public class CatalogPropertyMappingResolver {
      * raw value as the map key: {@code " cloudFileUrl"} would not collide, but a configuration
      * containing it is a mistake either way.
      */
-    static Rejection rejectionFor(String cmisPropertyId, String catalogName) {
+    public static Rejection rejectionFor(String cmisPropertyId, String catalogName) {
         if (cmisPropertyId != null
                 && FORBIDDEN_SOURCE_PROPERTY_IDS.contains(cmisPropertyId.trim())) {
             return Rejection.FORBIDDEN_SOURCE_PROPERTY;
