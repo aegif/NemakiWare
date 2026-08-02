@@ -1,7 +1,44 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.19 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + D-rest-1 (fenced sequencer) + D-rest-2 (v2 遷移 CAS・単調 cursor・schema routing・admin 入口) 実装済み — writer は v1 のまま・spool と全 D-rest driver は非活性 (readiness gate 既定 false)。残: D-rest-3 (replay)・D-rest-4 (materializer)・chunking・Slice 4 (§6-a 再 sign-off 待ち)**
+status: **v2.3.20 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + D-rest-1 (fenced sequencer) + D-rest-2 (v2 遷移 CAS・単調 cursor・schema routing・admin 入口) + D-rest-3 (replay CAS 機械 + crash 回収) 実装済み — writer は v1 のまま・spool と全 D-rest driver は非活性 (readiness gate 既定 false)。残: D-rest-4 (materializer + capability provider)・chunking・Slice 4 (§6-a 再 sign-off 待ち)**
 revision:
+- v2.3.20 — **D-rest-3 実装** (8-d replay request CAS 機械 + crash 回収)。Codex 計画レビュー
+  3 巡 (revise×2 → proceed) の確定事項:
+  ① **保存形**: v2ReplayRequestsByTarget[target] = MAP{state: REQUESTED|CREATED|ACKED|FAILED,
+  generation (>=1, Math.addExact で増加), requestId (UUID・request の所有 fence),
+  requestedAtMs, updatedAtMs, reason (FAILED のみ必須)}。typed LineageReplayRequest として
+  strict decode; replay request は **SEQUENCED 行にのみ合法** (未採番の配達は再演できない)。
+  ② **前提条件** (strict 再読後): 対象 target は trim 済み・source 行の lifecycle map に
+  存在・現在構成済み (未構成 target への補償は誰も claim できず readiness も sink を検証して
+  いない); publish lifecycle は **terminal のみ再演可** (PENDING/FAILED は生きた機械の管轄、
+  PROJECTING/**VERIFYING** は token-fenced claim の横取りになるため拒否 — 設計本文の
+  PROJECTING に VERIFYING を追加)。§8-d 本文の「stale claim は reaper が FAILED に落として
+  から replay 可能になる」は**撤回** — reaper の FAILED は §8-b 機械が自動再 claim する対象
+  であり、replay 適格にはならない。
+  ③ **期待集合は凍結どおり {不在, ACKED}**。FAILED request は恒久 durable (衝突診断の唯一の
+  記録) で、監査付き repair surface (将来) まで新 request を拒否する。
+  ④ **補償 event は純関数** f(original, target, generation): original の eventId/occurredAt
+  を再利用 (clock 不読)、correlationId/legacyEventKey は verbatim、**spoolRecordId は複製
+  しない** (この配達はその spool fact から材料化されていない — 複製は 1 決定に複数配達を偽束縛
+  する)。同一入力 → 同一 deliveryId+digest → appendV2 の exact-match 409 が crash 再試行を
+  収束させる。補償は UNSEQUENCED/PENDING で追加され、fenced sequencer が新 sequence を採番、
+  §8-b 機械が通常配達する — 特別経路なし。
+  ⑤ **reread 駆動収束**: 完了は遷移 boolean から推論せず、**観測された ACKED / durable
+  FAILED のみ**を報告。CAS 敗北は「再読して見直す」であり、conflict budget 尽きたら
+  INDETERMINATE (成功は捏造しない — durable request は次 poll の回収対象のまま)。衝突
+  (digest 不一致) は execute / recovery 両経路で failReplay を reread 収束させ、**FAILED を
+  観測してから** 500 を返す。
+  ⑥ **purge fence**: REQUESTED/CREATED (補償の決定的再構成が source 行を要る) と FAILED
+  (durable 診断) を含む行は purge 不可。ACKED のみは可 (補償行が durable に存在し自身の
+  lifecycle を持つ)。
+  ⑦ **crash 回収**: v2_replay_requests_unacked view (23 本目) を (documentId, target,
+  requestId, generation) の examined identity で走査 (multi-target 行は複数 item)。自動回収は
+  **leader guard 直後・empty-target 早期 return より前**に毎 poll 1 回 (B1 — 唯一の target が
+  除去された孤立 request も毎 poll 訪問され loudly 拒否される; gate 赤なら service 内で完全
+  dormant)。手動 POST /v1/admin/lineage-journal/replay-recovery も併設。
+  ⑧ **admin 経路**: 既存 POST /events/{recordId}/replay を schema dispatch — v1 分岐は
+  HTTP-200 失敗形まで byte-identical、v2 は ACKED=200 / NOT_READY・REFUSED・INDETERMINATE=
+  409 / FAILED (衝突)=500。
 - v2.3.19 — **D-rest-2 実装** (8-b v2 遷移 CAS・8-c 単調 cursor・schema 別 projector
   routing・無効化済み admin sequencer 入口)。Codex 計画レビュー 6 巡 (revise ×5 → proceed)
   の確定事項:
@@ -428,7 +465,7 @@ scope: v3.3 内で Atlas 連携を完成させるための設計。実装は sig
 関連: [`docs/design/acl-epoch-fencing.md`](acl-epoch-fencing.md) (同じ outbox/cursor の考え方を使う)
 
 実装状況: **A-1〜A-1k、A-2 Slice 1a〜3、producer P-1〜P-3c、D-spool、D-rest-1、
-D-rest-2 が `deps/v3.3-breaking-majors` に実装済み** (型体系・identity 符号化・命名集約・
+D-rest-2、D-rest-3 が `deps/v3.3-breaking-majors` に実装済み** (型体系・identity 符号化・命名集約・
 schema 整合・identity CI / v2 型・read model・sink / admin / projector の版非依存化・
 無損失 codec・store read の一斉切替・appendV2 + pre-sink gate / 全 12 producer の
 LineageFact 化 (v1 文字列は LegacyV1Projection が verbatim 運搬) / 版非依存 fact spool +
@@ -437,9 +474,8 @@ scanner + golden vector 凍結 / §8-a fenced sequencer + bootstrap patch + 実 
 v2 専用 5) + aggregate readiness gate + 無効化済み admin sequencer 入口)。
 **production writer は v1 のまま・spool と全 D-rest driver は非活性**
 (lineage.drest.enabled 既定 false; v2 branch/reaper/purge-v2/admin POST は全て単一
-readiness gate の背後)。残: D-rest-3 (replay CAS 機械)・D-rest-4 (収束 materializer +
-aggregate capability provider)・chunking (fact→v2 写像内・flip 時)・
-`FILE_SHARE_SYNC_UPLOAD` 生成拒否の E2E・4a/4b。
+readiness gate の背後)。残: D-rest-4 (収束 materializer + aggregate capability provider)・
+chunking (fact→v2 写像内・flip 時)・`FILE_SHARE_SYNC_UPLOAD` 生成拒否の E2E・4a/4b。
 Slice 4 (v2 書込みへの切替) は **§6-a の再 sign-off 待ち**。slice 単位の状態は
 「A-2 の分割」の表が正である。
 本文の規範記述は実装と同期させており、乖離を見つけたらどちらかが誤りである —
@@ -1605,7 +1641,7 @@ D-rest が直すのは、設計上すでに確認済みの**採番欠落・二�
 |---|---|---|
 | **D-rest-1** | 型付き可変 envelope (`LineageJournalRowV2` + strict codec)・`sequencerLeaseToken` 付き lease (acquire/renew/release CAS・一方向 latch)・**bootstrap patch (`Patch_LineageSequencerBootstrap`: lease 生成 + 履歴なし repo の counter=0 seed、既存は検証のみ・上書き禁止・破損は throw 再実行)**・fenced allocator (auto-seed 禁止・**v1+v2+cursor 横断の watermark 検査**)・fenced sequencer (claim/reclaim/finalize + pre-write 再確認・**infra 失敗は latch**)・sequencer view 3 種・実 CouchDB IT + **skip 不能な専用 CI job** (-Dlineage.it.required)。diff レビュー対応: appendV2 は seq≠0 拒否・409 収束は占有行を decode して再計算比較 (保存 digest 文字列を信用しない)・strict IO (404/409/障害の三分類)・整数は exact 変換・破損行は scan の barrier (追い越し禁止) | **完了 (非活性 — driver/scheduler なし)** |
 | **D-rest-2** | 8-b の v2 遷移 CAS・8-c 単調 cursor・schema 別 projector routing。その後に無効化済み admin sequencer 入口 | **完了 (非活性)** — v2.3.19。readiness gate 既定 false、v2 branch/reaper/purge-v2/admin POST 全て gate 背後 |
-| **D-rest-3** | 8-d replay request CAS 機械 + crash 回収 | 未着手 |
+| **D-rest-3** | 8-d replay request CAS 機械 + crash 回収 | **完了 (非活性)** — v2.3.20。readiness gate 背後、期待集合 {不在, ACKED} 凍結どおり |
 | **D-rest-4** | 収束 materializer (親決定 + plan entry + 検証付き ACK)・aggregate capability provider・scanner 入口 | 未着手 |
 
 順序: **A-2 Slice 1〜3 → D-spool → D-rest (dual・writer は v1) → Slice 4a → 4b → E**。
@@ -1999,7 +2035,7 @@ PENDING     → PROJECTING  (claim token 発行 + lease 期限)
 PROJECTING  → VERIFYING   (Atlas POST 成功。同一 claim token)
 VERIFYING   → PUBLISHED   (verify 成功。同一 claim token)
 VERIFYING   → VERIFYING   (retryable read lag。同一 claim token + lease renew)
-VERIFYING   → FAILED      (verifyMaxAge 超過。同一 claim token) ※ semantic mismatch は下の UNPROJECTABLE
+VERIFYING   → FAILED      (`lineage.verify.max-age-minutes` 超過。同一 claim token) ※ semantic mismatch は下の UNPROJECTABLE
 PROJECTING  → FAILED      (POST 自体の失敗。同一 claim token)
 FAILED      → PROJECTING  (claim token 再発行)
 PENDING     → DISCARDED   (管理操作のみ)
@@ -2029,9 +2065,9 @@ reason と検出内容を durable に残す。read lag による不一致だけ�
 
 | 設定 | 既定 | 意味 |
 |---|---|---|
-| `lineage.verify.timeout` | 30s | 1 回の verify poll の総 deadline |
-| `lineage.verify.interval` | 2s | poll 間隔 |
-| `lineage.verify.max-age` | 10m | **`VERIFYING` に入ってからの絶対上限**。超えたら `FAILED` |
+| `lineage.verify.timeout-seconds` | 30 | 1 回の verify poll の総 deadline |
+| `lineage.verify.interval-seconds` | 2 | poll 間隔 |
+| `lineage.verify.max-age-minutes` | 10 | **`VERIFYING` に入ってからの絶対上限**。超えたら `FAILED` |
 
 - `VERIFYING` 中も lease を renew する。renew に失敗したら fence latch が落ち、以後書かない。
 - stale `VERIFYING` (lease 期限切れ) は reaper が**同一 claim token でのみ** `FAILED` にする。
@@ -2093,8 +2129,10 @@ multi-target event にも適合しない。
   進行中 request がある間は新規 replay を受け付けない。
 - 直前が `ACKED` なら次の generation で再 replay できる。
 - 決定的 ID により、**作成後 ACK 前に crash しても同じ ID を再利用して二重生成しない**。
-- `PROJECTING` の replay は**拒否** (409)。claim を横取りするため。stale claim は reaper が
-  `FAILED` に落としてから replay 可能になる。
+- `PROJECTING` / `VERIFYING` の replay は**拒否** (409)。token-fenced claim を横取りする
+  ため (v2.3.20 で VERIFYING を明記)。stale claim は reaper が `FAILED` に落とし、§8-b 機械が
+  自動再 claim する — **replay 適格にはならない** (replay は terminal な配達のみ。v2.3.20 で
+  訂正: 旧文「FAILED に落としてから replay 可能になる」は §8-b の自動再試行と矛盾していた)。
 
 ## 9. 既存 dead letter の repair 方針 (v2)
 
@@ -2250,7 +2288,7 @@ E2E のためだけに実装しない。
 
 「POST 直後に GET 1 回」では Atlas の read-after-write 遅延で偽陰性になる。
 
-- **bounded poll**: `lineage.verify.timeout` (既定 30s) / `lineage.verify.interval` (既定 2s)。
+- **bounded poll**: `lineage.verify.timeout-seconds` (既定 30) / `lineage.verify.interval-seconds` (既定 2)。
   総 deadline を超えたら verify 失敗。
 - **endpoint を 1 件ずつ GET しない (v2.3)。** 最大 1,000 endpoint を逐次 GET すると、
   差し戻した fail-closed preflight と同じ長時間停止を再現する。

@@ -44,6 +44,13 @@ public final class CouchLineageJournalRowV2 {
     // v2-only nested fields so no v1 surface can misread a shared field, and all timestamps
     // are epoch millis — numeric view keys, no ISO fraction-width ordering defect.
     static final String FIELD_STATUS_BY_TARGET = "publishStatusByTarget";
+    static final String FIELD_REPLAY_BY_TARGET = "v2ReplayRequestsByTarget";
+    static final String REPLAY_STATE = "state";
+    static final String REPLAY_GENERATION = "generation";
+    static final String REPLAY_REQUEST_ID = "requestId";
+    static final String REPLAY_REQUESTED_AT = "requestedAtMs";
+    static final String REPLAY_UPDATED_AT = "updatedAtMs";
+    static final String REPLAY_REASON = "reason";
     static final String FIELD_CLAIM_BY_TARGET = "v2ClaimByTarget";
     static final String FIELD_REASON_BY_TARGET = "v2TerminalReasonByTarget";
     static final String CLAIM_TOKEN = "token";
@@ -106,7 +113,98 @@ public final class CouchLineageJournalRowV2 {
         }
 
         return new LineageJournalRowV2(event, rev, state, generation, token,
-                decodeLifecycles(doc));
+                decodeLifecycles(doc), decodeReplayRequests(doc));
+    }
+
+    private static Map<String, LineageReplayRequest> decodeReplayRequests(
+            Map<String, Object> doc) {
+        Map<String, Object> requests = requireMapOrNull(doc.get(FIELD_REPLAY_BY_TARGET),
+                FIELD_REPLAY_BY_TARGET);
+        if (requests == null || requests.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, LineageReplayRequest> out = new java.util.LinkedHashMap<>();
+        for (var e : requests.entrySet()) {
+            String target = e.getKey();
+            Map<String, Object> r = requireMapOrNull(e.getValue(),
+                    FIELD_REPLAY_BY_TARGET + "." + target);
+            if (r == null) {
+                throw new IllegalArgumentException("replay request for target '" + target
+                        + "' must be a map");
+            }
+            Object stateValue = r.get(REPLAY_STATE);
+            if (!(stateValue instanceof String stateName) || stateName.isBlank()) {
+                throw new IllegalArgumentException("replay request for target '" + target
+                        + "' has no state");
+            }
+            LineageReplayRequest.State state;
+            try {
+                state = LineageReplayRequest.State.valueOf(stateName);
+            } catch (IllegalArgumentException ex) {
+                throw new IllegalArgumentException("unknown replay request state '" + stateName
+                        + "' for target '" + target + "' — this build cannot act on it");
+            }
+            Object requestId = r.get(REPLAY_REQUEST_ID);
+            Long generation = exactLongOrNull(r.get(REPLAY_GENERATION), REPLAY_GENERATION);
+            Long requestedAt = exactLongOrNull(r.get(REPLAY_REQUESTED_AT), REPLAY_REQUESTED_AT);
+            Long updatedAt = exactLongOrNull(r.get(REPLAY_UPDATED_AT), REPLAY_UPDATED_AT);
+            if (generation == null || requestedAt == null || updatedAt == null
+                    || !(requestId instanceof String rid)) {
+                throw new IllegalArgumentException("replay request for target '" + target
+                        + "' is missing generation/requestId/timestamps");
+            }
+            LineageTargetLifecycle.TerminalReason reason = null;
+            Map<String, Object> reasonMap = requireMapOrNull(r.get(REPLAY_REASON),
+                    REPLAY_REASON);
+            if (reasonMap != null) {
+                Object rr = reasonMap.get(REASON_REASON);
+                Object rd = reasonMap.get(REASON_DETAIL);
+                Long at = exactLongOrNull(reasonMap.get(REASON_AT), REASON_AT);
+                if (!(rr instanceof String rs) || !(rd instanceof String ds) || at == null) {
+                    throw new IllegalArgumentException("replay failure reason for target '"
+                            + target + "' is malformed");
+                }
+                reason = new LineageTargetLifecycle.TerminalReason(rs, ds, at);
+            }
+            try {
+                out.put(target, new LineageReplayRequest(state, generation, rid, requestedAt,
+                        updatedAt, reason));
+            } catch (IllegalArgumentException ex) {
+                throw new IllegalArgumentException("v2 row '" + doc.get("_id")
+                        + "' replay request for '" + target + "': " + ex.getMessage());
+            }
+        }
+        return out;
+    }
+
+    /** CAS-creates / supersedes (from ACKED only) the target's replay request as REQUESTED. */
+    static void applyReplayRequested(Map<String, Object> raw, String target, long generation,
+                                     String requestId, long nowMs) {
+        Map<String, Object> requests = mutableChild(raw, FIELD_REPLAY_BY_TARGET);
+        Map<String, Object> r = new java.util.LinkedHashMap<>();
+        r.put(REPLAY_STATE, LineageReplayRequest.State.REQUESTED.name());
+        r.put(REPLAY_GENERATION, generation);
+        r.put(REPLAY_REQUEST_ID, requestId);
+        r.put(REPLAY_REQUESTED_AT, nowMs);
+        r.put(REPLAY_UPDATED_AT, nowMs);
+        requests.put(target, r);
+    }
+
+    /** Advances the request's state in place; generation/requestId/requestedAt untouched. */
+    static void applyReplayState(Map<String, Object> raw, String target,
+                                 LineageReplayRequest.State next, long nowMs,
+                                 LineageTargetLifecycle.TerminalReason reason) {
+        Map<String, Object> requests = mutableChild(raw, FIELD_REPLAY_BY_TARGET);
+        Map<String, Object> r = mutableChild(requests, target);
+        r.put(REPLAY_STATE, next.name());
+        r.put(REPLAY_UPDATED_AT, nowMs);
+        if (reason != null) {
+            Map<String, Object> reasonMap = new java.util.LinkedHashMap<>();
+            reasonMap.put(REASON_REASON, reason.reason());
+            reasonMap.put(REASON_DETAIL, reason.detail());
+            reasonMap.put(REASON_AT, reason.atMs());
+            r.put(REPLAY_REASON, reasonMap);
+        }
     }
 
     private static Map<String, LineageTargetLifecycle> decodeLifecycles(Map<String, Object> doc) {

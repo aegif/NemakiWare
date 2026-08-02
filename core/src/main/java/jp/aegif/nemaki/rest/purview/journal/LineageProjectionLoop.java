@@ -58,6 +58,9 @@ public class LineageProjectionLoop {
     @Autowired(required = false)
     private LineageDrestReadiness drestReadiness;
 
+    @Autowired(required = false)
+    private LineageReplayService replayService;
+
     private ScheduledExecutorService scheduler;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
@@ -128,6 +131,22 @@ public class LineageProjectionLoop {
                     && !leaderElection.isLeader("projection")) {
                 logger.debug("Not the leader for 'projection' — skipping poll cycle");
                 return;
+            }
+
+            // §8-d crash recovery (D-rest-3, B1): once per gated leader poll, BEFORE the
+            // empty-target early returns — a stranded request whose only target was removed
+            // is still visited and refused loudly. Red gate → recoverUnacked is dormant.
+            if (replayService != null) {
+                try {
+                    int recovered = replayService.recoverUnacked(
+                            lineageConfig.getProjectionBatchSize());
+                    if (recovered > 0) {
+                        logger.info("Replay crash recovery drove {} requests to ACKED",
+                                recovered);
+                    }
+                } catch (RuntimeException e) {
+                    logger.error("Replay crash recovery pass failed: {}", e.getMessage());
+                }
             }
 
             List<String> configuredTargets = lineageConfig.getTargets();
@@ -438,8 +457,14 @@ public class LineageProjectionLoop {
         ProjectionCursor cursor = cursorStore.getCursor(targetName, repositoryId);
         long fromSeq = (cursor != null) ? cursor.lastProcessedSequence() : 0;
 
+        // STRICT v1 fetch (parallel review, D-rest-2 tip): the legacy method returns an
+        // empty list on failure/inactivity and clamps its limit — either would make the merge
+        // window read a silent shortfall as coverage-to-infinity and let the v2 side advance
+        // the cursor past unseen v1 rows. The strict variant throws on failure and fetches
+        // exactly batchSize, so "fewer than a full batch" really means exhaustion.
         List<LineageJournalRow> v1rows =
-                journalStore.findByRepositoryAndSequenceRange(repositoryId, fromSeq, batchSize);
+                v2store.findV1ByRepositoryAndSequenceRangeStrict(repositoryId, fromSeq,
+                        batchSize);
         List<LineageJournalRowV2> v2rows =
                 v2store.findV2ByRepositoryAndSequenceRange(repositoryId, fromSeq, batchSize);
 

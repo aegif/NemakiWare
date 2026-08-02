@@ -61,10 +61,11 @@ public class LineageJournalViewCoverageTest {
             "non_terminal_by_target_repo", "projecting_by_claimed_at",
             "by_repository_and_sequence", "by_occurred_at");
 
-    /** v2-only §8-b projection views (D-rest-2); old binaries never query these names. */
+    /** v2-only §8-b/§8-d views (D-rest-2/3); old binaries never query these names. */
     private static final Set<String> V2_PROJECTION_VIEWS = Set.of(
             "v2_by_repository_and_sequence", "v2_by_occurred_at",
-            "v2_non_terminal_by_target_repo", "v2_claims_by_expiry", "v2_verifying_by_since");
+            "v2_non_terminal_by_target_repo", "v2_claims_by_expiry", "v2_verifying_by_since",
+            "v2_replay_requests_unacked");
 
     /**
      * v2-only and state-specific by definition (§8-a v2, D-rest-1): the fenced sequencer's
@@ -172,8 +173,9 @@ public class LineageJournalViewCoverageTest {
             if (V2_SEQUENCER_VIEWS.contains(view)) {
                 continue;
             }
-            if ("v2_verifying_by_since".equals(view)) {
-                continue; // state-specific (VERIFYING only) — pinned in its dedicated test
+            if ("v2_verifying_by_since".equals(view)
+                    || "v2_replay_requests_unacked".equals(view)) {
+                continue; // state-specific — each pinned in its dedicated test
             }
             if (V1_ONLY_VIEWS.contains(view)) {
                 assertTrue(emits(view, doc).isEmpty(),
@@ -239,7 +241,7 @@ public class LineageJournalViewCoverageTest {
 
     /** A new view must join this test, or its v1/v2 coverage is nobody's problem. */
     @Test
-    public void theViewSetIsExactlyTheKnownTwentyTwo() {
+    public void theViewSetIsExactlyTheKnownTwentyThree() {
         assertEquals(Set.of(
                         "by_event_key", "by_repository_and_time", "by_target_status",
                         "by_process_type", "by_occurred_at", "by_repository_and_process_type",
@@ -250,7 +252,7 @@ public class LineageJournalViewCoverageTest {
                         "v2_sequencer_in_flight", "sequence_watermark",
                         "v2_by_repository_and_sequence", "v2_by_occurred_at",
                         "v2_non_terminal_by_target_repo", "v2_claims_by_expiry",
-                        "v2_verifying_by_since"),
+                        "v2_verifying_by_since", "v2_replay_requests_unacked"),
                 CouchLineageJournalStore.VIEWS.keySet(),
                 "a view was added or renamed; give it v1/v2 coverage here before anything"
                         + " queries it");
@@ -411,6 +413,29 @@ public class LineageJournalViewCoverageTest {
 
         assertTrue(emits("projecting_by_claimed_at", live).isEmpty(),
                 "the v1 reaper must be blind to v2 claims");
+    }
+
+    /** The §8-d recovery scan sees exactly unacked requests ([updatedAtMs, target]). */
+    @Test
+    public void theReplayScanViewSeesExactlyUnackedRequests() {
+        for (String state : List.of("REQUESTED", "CREATED")) {
+            Map<String, Object> doc = v2Document();
+            doc.put("v2ReplayRequestsByTarget", Map.of("atlas", Map.of(
+                    "state", state, "generation", 1L, "requestId", "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+                    "requestedAtMs", 1000L, "updatedAtMs", 1500L)));
+            List<?> rows = emits("v2_replay_requests_unacked", doc);
+            assertEquals(1, rows.size(), state);
+            assertEquals(List.of(1500, "atlas"), ((List<?>) rows.get(0)).get(0));
+        }
+        for (String state : List.of("ACKED", "FAILED")) {
+            Map<String, Object> doc = v2Document();
+            doc.put("v2ReplayRequestsByTarget", Map.of("atlas", Map.of(
+                    "state", state, "generation", 1L, "requestId", "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+                    "requestedAtMs", 1000L, "updatedAtMs", 1500L)));
+            assertEquals(0, emits("v2_replay_requests_unacked", doc).size(),
+                    state + " owes no recovery");
+        }
+        assertEquals(0, emits("v2_replay_requests_unacked", v1Document()).size());
     }
 
     /** The verifying metrics view sees VERIFYING rows with a numeric since, and only those. */
