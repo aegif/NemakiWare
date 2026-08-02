@@ -28,6 +28,9 @@ public class LineageMetrics {
     private final AtomicLong spoolWriteFailed = new AtomicLong();
     private final ConcurrentHashMap<String, AtomicLong> spoolQuarantinedByReason =
             new ConcurrentHashMap<>();
+    private final AtomicLong sequencerFinalized = new AtomicLong();
+    private final AtomicLong sequencerReclaimed = new AtomicLong();
+    private final AtomicLong sequencerBacklogAlerts = new AtomicLong();
     private volatile Instant lastPollTime;
     private volatile int lastPollEventCount;
 
@@ -72,6 +75,18 @@ public class LineageMetrics {
         spoolWriteFailed.incrementAndGet();
     }
 
+    public void recordSequencerFinalized() {
+        sequencerFinalized.incrementAndGet();
+    }
+
+    public void recordSequencerReclaimed() {
+        sequencerReclaimed.incrementAndGet();
+    }
+
+    public void recordSequencerBacklogAlert() {
+        sequencerBacklogAlerts.incrementAndGet();
+    }
+
     public void recordPollComplete(int eventCount) {
         pollCount.incrementAndGet();
         lastPollTime = Instant.now();
@@ -94,6 +109,9 @@ public class LineageMetrics {
         spoolQuarantinedByReason.forEach((reason, count) -> quarantineReasons.put(reason, count.get()));
         m.put("spoolQuarantinedByReason", quarantineReasons);
         m.put("spoolWriteFailed", spoolWriteFailed.get());
+        m.put("sequencerFinalized", sequencerFinalized.get());
+        m.put("sequencerReclaimed", sequencerReclaimed.get());
+        m.put("sequencerBacklogAlerts", sequencerBacklogAlerts.get());
 
         Map<String, Object> byTarget = new LinkedHashMap<>();
         for (String target : publishedByTarget.keySet()) {
@@ -129,6 +147,9 @@ public class LineageMetrics {
         return count == null ? 0L : count.get();
     }
     public long getSpoolWriteFailed() { return spoolWriteFailed.get(); }
+    public long getSequencerFinalized() { return sequencerFinalized.get(); }
+    public long getSequencerReclaimed() { return sequencerReclaimed.get(); }
+    public long getSequencerBacklogAlerts() { return sequencerBacklogAlerts.get(); }
     public Instant getLastPollTime() { return lastPollTime; }
     public int getLastPollEventCount() { return lastPollEventCount; }
 }

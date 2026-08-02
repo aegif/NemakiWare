@@ -25,6 +25,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -77,6 +78,7 @@ public class LineageAppendV2AndGateTest {
     void setUpStore() throws Exception {
         store = new CouchLineageJournalStore();
         wrapper = mock(CloudantClientWrapper.class);
+        when(wrapper.getDatabaseName()).thenReturn("nemaki_lineage");
         rawClient = mock(Cloudant.class, RETURNS_DEEP_STUBS);
         when(wrapper.getClient()).thenReturn(rawClient);
         set(store, "lineageClient", wrapper);
@@ -98,9 +100,35 @@ public class LineageAppendV2AndGateTest {
                 .execute()).thenThrow(conflict);
     }
 
+    /**
+     * Stubs the STRICT raw read (v2.3.18: 404/409/infrastructure are distinct answers) the
+     * conflict path now uses: a map becomes an SDK Document; null becomes NotFoundException
+     * ("the occupant vanished"), which is how CouchDB actually reports absence.
+     */
     private void storedDocIs(LineageEventV2 event, Map<String, Object> doc) {
-        doReturn(doc).when(wrapper).get(Map.class,
-                CouchLineageEventV2.documentId(event.deliveryId()), null);
+        String documentId = CouchLineageEventV2.documentId(event.deliveryId());
+        if (doc == null) {
+            when(rawClient.getDocument(org.mockito.ArgumentMatchers.argThat(
+                    (com.ibm.cloud.cloudant.v1.model.GetDocumentOptions o) ->
+                            o != null && documentId.equals(o.docId())))
+                    .execute())
+                    .thenThrow(org.mockito.Mockito.mock(
+                            com.ibm.cloud.sdk.core.service.exception.NotFoundException.class));
+            return;
+        }
+        com.ibm.cloud.cloudant.v1.model.Document sdkDoc =
+                new com.ibm.cloud.cloudant.v1.model.Document();
+        Map<String, Object> withoutMeta = new HashMap<>(doc);
+        Object id = withoutMeta.remove("_id");
+        Object rev = withoutMeta.remove("_rev");
+        sdkDoc.setProperties(withoutMeta);
+        sdkDoc.setId(id instanceof String i ? i : documentId);
+        sdkDoc.setRev(rev instanceof String r ? r : "1-x");
+        when(rawClient.getDocument(org.mockito.ArgumentMatchers.argThat(
+                (com.ibm.cloud.cloudant.v1.model.GetDocumentOptions o) ->
+                        o != null && documentId.equals(o.docId())))
+                .execute().getResult())
+                .thenReturn(sdkDoc);
     }
 
     @Test
@@ -120,6 +148,41 @@ public class LineageAppendV2AndGateTest {
         verify(rawClient).putDocument(org.mockito.ArgumentMatchers.argThat(
                 (com.ibm.cloud.cloudant.v1.model.PutDocumentOptions o) ->
                         "UNSEQUENCED".equals(o.document().getProperties().get("state"))));
+    }
+
+    /** v2.3.18 ②: sequences are the fenced sequencer's alone — never accepted at append. */
+    @Test
+    public void aPreSequencedEventIsRefusedBeforeAnyWrite() {
+        LineageEventV2 preSequenced = new LineageEventV2Builder()
+                .eventId(EVENT_ID)
+                .occurredAt(OCCURRED)
+                .repositoryId(REPO)
+                .processType(LineageProcessType.ARCHIVE_LOCAL)
+                .operationId("op-1")
+                .delivery(new LineageDelivery.Original(List.of("purview")))
+                .addInput(LineageEndpoint.document(REPO, "doc-1", "a.txt"))
+                .addOutput(LineageEndpoint.archive(REPO, "arc-1", "doc-1", 1L))
+                .sequenceNumber(1)
+                .build();
+        assertThrows(IllegalArgumentException.class, () -> store.appendV2(preSequenced));
+        verify(rawClient, org.mockito.Mockito.never()).putDocument(
+                org.mockito.ArgumentMatchers.any(
+                        com.ibm.cloud.cloudant.v1.model.PutDocumentOptions.class));
+    }
+
+    /**
+     * v2.3.18 ②: the occupant is DECODED, never digest-string-compared — a corrupt row whose
+     * digest field happens to match must still be a collision, not an idempotent success.
+     */
+    @Test
+    public void aCorruptOccupantWithAMatchingDigestStringIsStillAnIntegrityException() {
+        LineageEventV2 event = v2Event();
+        putConflicts();
+        Map<String, Object> corrupt = new HashMap<>(CouchLineageEventV2.toMap(event));
+        corrupt.put("operationId", "op-TAMPERED"); // content differs; digest string still "matches"
+        storedDocIs(event, corrupt);
+
+        assertThrows(LineageIntegrityException.class, () -> store.appendV2(event));
     }
 
     /** §3: a conflict whose stored digest matches is this event's own earlier attempt. */

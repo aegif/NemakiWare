@@ -282,9 +282,25 @@ public final class CouchLineageEventV2 {
     private static void normaliseCounts(EndpointKind kind, Map<String, Object> attributes) {
         for (Map.Entry<String, Object> entry : attributes.entrySet()) {
             EndpointAttribute declared = kind.attribute(entry.getKey());
-            if (declared != null && declared.type() == EndpointAttribute.Type.COUNT
-                    && entry.getValue() instanceof Integer i) {
-                entry.setValue(i.longValue());
+            if (declared == null || declared.type() != EndpointAttribute.Type.COUNT) {
+                continue;
+            }
+            Object value = entry.getValue();
+            if (value instanceof Long) {
+                continue;
+            }
+            // Jackson narrows small longs to Integer; the Cloudant SDK's Gson path hands back
+            // LazilyParsedNumber. Both are integral values wearing the wrong class, and the
+            // validator's strictness (Integer|Long only) exists for producers, not for storage
+            // round-trips — so normalise exactly: any Number whose value is a whole number in
+            // long range becomes Long, and anything fractional stays as-is for the validator
+            // to reject loudly.
+            if (value instanceof Number n) {
+                try {
+                    entry.setValue(new java.math.BigDecimal(n.toString()).longValueExact());
+                } catch (ArithmeticException | NumberFormatException notIntegral) {
+                    // leave it; EndpointAttribute.validate reports it with the field name
+                }
             }
         }
     }
@@ -351,7 +367,12 @@ public final class CouchLineageEventV2 {
             throw new IllegalArgumentException("field '" + key + "' is required and must be a"
                     + " number");
         }
-        return n.intValue();
+        try {
+            return new java.math.BigDecimal(n.toString()).intValueExact();
+        } catch (ArithmeticException | NumberFormatException e) {
+            throw new IllegalArgumentException("field '" + key + "' must be an exact integral"
+                    + " int, got " + n);
+        }
     }
 
     private static long requireLong(Map<String, Object> map, String key) {
@@ -360,6 +381,11 @@ public final class CouchLineageEventV2 {
             throw new IllegalArgumentException("field '" + key + "' is required and must be a"
                     + " number");
         }
-        return n.longValue();
+        try {
+            return new java.math.BigDecimal(n.toString()).longValueExact();
+        } catch (ArithmeticException | NumberFormatException e) {
+            throw new IllegalArgumentException("field '" + key + "' must be an exact integral"
+                    + " long, got " + n);
+        }
     }
 }

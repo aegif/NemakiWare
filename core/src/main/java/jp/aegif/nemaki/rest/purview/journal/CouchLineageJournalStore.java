@@ -34,7 +34,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * mode is {@link LineageMode#JOURNALED}.
  */
 @Service
-public class CouchLineageJournalStore implements LineageJournalStore {
+public class CouchLineageJournalStore implements LineageJournalStore, LineageSequencingStore {
 
     private static final Logger logger = LoggerFactory.getLogger(CouchLineageJournalStore.class);
 
@@ -65,6 +65,33 @@ public class CouchLineageJournalStore implements LineageJournalStore {
      * Ensures the nemaki_lineage database and design documents exist.
      * Called lazily on first write operation.
      */
+    /**
+     * Integration-test seam, package-visible: provisions against a directly supplied Cloudant
+     * client and database name, bypassing the Spring connector pool. The real-CouchDB IT
+     * (increment D's gate) is the one caller; production wiring never reaches this.
+     */
+    static CouchLineageJournalStore forDirectClient(
+            com.ibm.cloud.cloudant.v1.Cloudant cloudant, String dbName,
+            ObjectMapper objectMapper) {
+        CouchLineageJournalStore store = new CouchLineageJournalStore();
+        store.objectMapper = objectMapper;
+        store.lineageClient = new CloudantClientWrapper(cloudant, dbName, objectMapper);
+        try {
+            try {
+                cloudant.getDatabaseInformation(new GetDatabaseInformationOptions.Builder()
+                        .db(dbName).build()).execute();
+            } catch (NotFoundException e) {
+                cloudant.putDatabase(new PutDatabaseOptions.Builder().db(dbName).build())
+                        .execute();
+            }
+            store.deployViews();
+            store.dbProvisioned.set(true);
+        } catch (Exception e) {
+            throw new RuntimeException("direct-client provisioning failed for " + dbName, e);
+        }
+        return store;
+    }
+
     private void ensureDatabase() {
         if (dbProvisioned.get()) {
             return;
@@ -260,6 +287,36 @@ public class CouchLineageJournalStore implements LineageJournalStore {
                         "var s = t[k]; if (s === 'PENDING' || s === 'FAILED' || s === 'PROJECTING') { emit([k, doc.repositoryId], null); } } } } }",
                 "_count"));
 
+        // v2_sequencer_backlog — the fenced sequencer's claim scan (§8-a v2): UNSEQUENCED rows
+        // in deterministic claim order [repositoryId, occurredAt, _id]. v2-only by definition;
+        // the reduce feeds the backlog-cap metric.
+        views.put("v2_sequencer_backlog", new ViewDefinition(
+                "function(doc) { if (doc.type === 'lineage_event_v2' && doc.state === 'UNSEQUENCED') { "
+                        + "emit([doc.repositoryId, doc.occurredAt, doc._id], null); } }",
+                "_count"));
+
+        // v2_sequencer_in_flight — SEQUENCING rows for the reclaim scan. A row only leaves this
+        // view through finalize (SEQUENCED) or reclaim-then-finalize by a newer generation.
+        views.put("v2_sequencer_in_flight", new ViewDefinition(
+                "function(doc) { if (doc.type === 'lineage_event_v2' && doc.state === 'SEQUENCING') { "
+                        + "emit([doc.repositoryId, doc.occurredAt, doc._id], null); } }",
+                "_count"));
+
+        // sequence_watermark — the rewind check's high-watermark (_stats.max per repo),
+        // covering BOTH event versions and the projection cursors (v2.3.18 ③): the counter
+        // is shared with v1, so a v1 sequence of 100 with a rewound counter must fail the
+        // check even before any v2 row exists.
+        views.put("sequence_watermark", new ViewDefinition(
+                "function(doc) { "
+                        + "if (doc.type === 'lineage_event' && doc.sequenceNumber) {"
+                        + " emit(doc.repositoryId, doc.sequenceNumber); } "
+                        + "if (doc.type === 'lineage_event_v2' && doc.state === 'SEQUENCED'"
+                        + " && doc.sequenceNumber) { emit(doc.repositoryId, doc.sequenceNumber); } "
+                        + "if (doc.type === 'projection_cursor' && doc.repositoryId"
+                        + " && doc.lastProcessedSequence) {"
+                        + " emit(doc.repositoryId, doc.lastProcessedSequence); } }",
+                "_stats"));
+
         // projecting_by_claimed_at — PROJECTING events ordered by claimedAt for stale reaping.
         // Key: [target, claimedAt], where claimedAt falls back to occurredAt for pre-upgrade
         // events, so oldest-claimed is always found regardless of the sample window size.
@@ -340,6 +397,15 @@ public class CouchLineageJournalStore implements LineageJournalStore {
         if (event == null) {
             throw new IllegalArgumentException("event must not be null");
         }
+        if (event.sequenceNumber() != 0) {
+            // v2.3.18 ②: every newly created UNSEQUENCED row has sequence 0 — the fenced
+            // finalizer is the only writer of a real sequence, in the same CAS as SEQUENCED.
+            // Accepting a pre-sequenced event here would create a row the strict envelope
+            // permanently refuses.
+            throw new IllegalArgumentException("appendV2 requires sequenceNumber 0, got "
+                    + event.sequenceNumber() + " — sequences are assigned by the fenced"
+                    + " sequencer, never at append");
+        }
         ensureDatabase();
 
         // §7's store-layer enforcement here IS the parameter type: every LineageEventV2 passed
@@ -366,17 +432,26 @@ public class CouchLineageJournalStore implements LineageJournalStore {
                         event.deliveryId());
                 return;
             }
-            Map<String, Object> existing = readRaw(documentId);
+            // Strict on purpose (v2.3.18): the wrapper's forgiving get() returns null for
+            // outages too, and an outage after a real 409 is not "the occupant vanished".
+            Map<String, Object> existing = readRawStrict(documentId);
             if (existing == null) {
                 continue;
             }
-            Object storedVersion = existing.get("schemaVersion");
-            String storedDigest = existing.get("creationPayloadDigest") instanceof String d
-                    ? d : null;
-            boolean sameRecord = CouchLineageEventV2.TYPE.equals(existing.get("type"))
-                    && storedVersion instanceof Number n
-                    && n.intValue() == LineageEventV2.CURRENT_SCHEMA_VERSION
-                    && event.creationPayloadDigest().equals(storedDigest);
+            // v2.3.18 ②: the stored digest STRING is never trusted — the existing row is
+            // decoded through the strict path (which recomputes identity and digest from the
+            // stored content) and compared on the recomputed values. A row that cannot decode
+            // is not an idempotent earlier attempt; it is a corrupt occupant of our key.
+            LineageEventV2 decoded;
+            try {
+                decoded = CouchLineageEventV2.fromMap(existing);
+            } catch (RuntimeException corrupt) {
+                throw new LineageIntegrityException(event.deliveryId(),
+                        event.creationPayloadDigest(),
+                        existing.get("creationPayloadDigest") instanceof String d ? d : null);
+            }
+            boolean sameRecord = decoded.deliveryId().equals(event.deliveryId())
+                    && decoded.creationPayloadDigest().equals(event.creationPayloadDigest());
             if (sameRecord) {
                 // A retry landing after its first attempt succeeded. §3: 409 + exact digest
                 // match is the only conflict that counts as success.
@@ -385,7 +460,7 @@ public class CouchLineageJournalStore implements LineageJournalStore {
                 return;
             }
             throw new LineageIntegrityException(event.deliveryId(),
-                    event.creationPayloadDigest(), storedDigest);
+                    event.creationPayloadDigest(), decoded.creationPayloadDigest());
         }
         throw new IllegalStateException("v2 append for '" + event.deliveryId() + "' conflicted"
                 + " and the conflicting document vanished before it could be read, twice —"
@@ -413,7 +488,7 @@ public class CouchLineageJournalStore implements LineageJournalStore {
         try {
             getLineageClient().getClient().putDocument(
                     new com.ibm.cloud.cloudant.v1.model.PutDocumentOptions.Builder()
-                            .db(DB_NAME)
+                            .db(getLineageClient().getDatabaseName())
                             .docId(documentId)
                             .document(doc)
                             .build())
@@ -1113,4 +1188,474 @@ public class CouchLineageJournalStore implements LineageJournalStore {
             return 0;
         }
     }
+    // ==================================================================
+    // LineageSequencingStore — §8-a v2 (D-rest-1). Deployed dual and inert: nothing calls
+    // these in production until activation, and none of the v1 methods above changed.
+    // ==================================================================
+
+    private static final String SEQUENCER_LEASE_PREFIX = "lineage_sequencer_lease:";
+    private static final int ALLOCATOR_CAS_RETRIES = 5;
+
+    private static String leaseDocumentId(String repositoryId) {
+        return SEQUENCER_LEASE_PREFIX + repositoryId;
+    }
+
+    /**
+     * Strict raw read for the sequencing surface: 404 is {@code null} (an ordinary answer);
+     * anything else is a {@link SequencingStorageException} — the wrapper's forgiving
+     * {@code get()} returns null for outages too, which would let an infrastructure failure
+     * impersonate LEASE_MISSING or COUNTER_MISSING and mis-route the recovery.
+     */
+    private Map<String, Object> readRawStrict(String documentId) {
+        try {
+            com.ibm.cloud.cloudant.v1.model.Document doc = getLineageClient().getClient()
+                    .getDocument(new com.ibm.cloud.cloudant.v1.model.GetDocumentOptions
+                            .Builder()
+                            .db(getLineageClient().getDatabaseName())
+                            .docId(documentId)
+                            .build())
+                    .execute().getResult();
+            Map<String, Object> props = new HashMap<>();
+            if (doc.getId() != null) props.put("_id", doc.getId());
+            if (doc.getRev() != null) props.put("_rev", doc.getRev());
+            if (doc.getProperties() != null) props.putAll(doc.getProperties());
+            return props;
+        } catch (NotFoundException notFound) {
+            return null;
+        } catch (RuntimeException e) {
+            throw new SequencingStorageException("read failed for '" + documentId + "'", e);
+        }
+    }
+
+    /**
+     * Strict CAS update for the sequencing surface: true = committed, false = 409 (an
+     * ordinary CAS loss); infrastructure failures throw — an outage reported as "conflict"
+     * would make the sequencer re-read forever instead of latching.
+     */
+    private boolean updateStrictCas(Map<String, Object> raw) {
+        try {
+            com.ibm.cloud.cloudant.v1.model.Document doc =
+                    new com.ibm.cloud.cloudant.v1.model.Document();
+            Map<String, Object> withoutMeta = new HashMap<>(raw);
+            Object id = withoutMeta.remove("_id");
+            Object rev = withoutMeta.remove("_rev");
+            doc.setProperties(withoutMeta);
+            doc.setId((String) id);
+            doc.setRev((String) rev);
+            getLineageClient().getClient().putDocument(
+                    new com.ibm.cloud.cloudant.v1.model.PutDocumentOptions.Builder()
+                            .db(getLineageClient().getDatabaseName())
+                            .docId((String) id)
+                            .document(doc)
+                            .build())
+                    .execute();
+            return true;
+        } catch (com.ibm.cloud.sdk.core.service.exception.ConflictException conflict) {
+            return false;
+        } catch (RuntimeException e) {
+            throw new SequencingStorageException("CAS update failed for '"
+                    + raw.get("_id") + "'", e);
+        }
+    }
+
+    /** Exact integral conversion — Gson hands back LazilyParsedNumber; fractions must fail. */
+    private static long exactLong(Object value, String what) {
+        if (!(value instanceof Number n)) {
+            throw new IllegalArgumentException(what + " must be a number, got "
+                    + (value == null ? "null" : value.getClass().getSimpleName()));
+        }
+        try {
+            return new java.math.BigDecimal(n.toString()).longValueExact();
+        } catch (ArithmeticException | NumberFormatException e) {
+            throw new IllegalArgumentException(what + " must be an exact integral value, got "
+                    + n);
+        }
+    }
+
+    @Override
+    public java.util.Optional<LeaseGrant> acquireSequencerLease(String repositoryId,
+            String nodeId, java.time.Duration ttl) {
+        ensureDatabase();
+        Map<String, Object> lease = readRawStrict(leaseDocumentId(repositoryId));
+        if (lease == null) {
+            // §8-a: created by the bootstrap patch only. Operation never creates it — a
+            // recreated lease would restart the generation high-watermark.
+            throw new LeaseMissingException(repositoryId);
+        }
+        String owner = lease.get("owner") instanceof String o && !o.isBlank() ? o : null;
+        String expiresAt = lease.get("expiresAt") instanceof String e ? e : null;
+        boolean free = owner == null
+                || (expiresAt != null && isExpired(expiresAt));
+        if (!free) {
+            return java.util.Optional.empty();
+        }
+        long generation;
+        try {
+            generation = exactLong(lease.get("generation"), "lease generation");
+        } catch (IllegalArgumentException malformed) {
+            generation = -1L;
+        }
+        if (generation < 0) {
+            logger.error("Sequencer lease for {} has a malformed generation — refusing to"
+                    + " acquire", repositoryId);
+            return java.util.Optional.empty();
+        }
+        long nextGeneration = Math.addExact(generation, 1);
+        String token = java.util.UUID.randomUUID() + "-" + java.util.UUID.randomUUID();
+        String newExpiresAt = Instant.now().plus(ttl).toString();
+        lease.put("generation", nextGeneration);
+        lease.put("sequencerLeaseToken", token);
+        lease.put("owner", nodeId);
+        lease.put("expiresAt", newExpiresAt);
+        if (updateStrictCas(lease)) {
+            Map<String, Object> committed = readRawStrict(leaseDocumentId(repositoryId));
+            String rev = committed != null && committed.get("_rev") instanceof String r
+                    ? r : "";
+            return java.util.Optional.of(new LeaseGrant(repositoryId, nextGeneration, token,
+                    nodeId, newExpiresAt, rev));
+        }
+        return java.util.Optional.empty();
+    }
+
+    @Override
+    public java.util.Optional<LeaseGrant> renewSequencerLease(LeaseGrant grant,
+            java.time.Duration ttl) {
+        if (grant == null) {
+            return java.util.Optional.empty();
+        }
+        Map<String, Object> lease = readRawStrict(leaseDocumentId(grant.repositoryId()));
+        if (lease == null || !matchesGrant(lease, grant)) {
+            return java.util.Optional.empty();
+        }
+        String newExpiresAt = Instant.now().plus(ttl).toString();
+        lease.put("expiresAt", newExpiresAt);
+        if (updateStrictCas(lease)) {
+            Map<String, Object> committed = readRawStrict(
+                    leaseDocumentId(grant.repositoryId()));
+            String rev = committed != null && committed.get("_rev") instanceof String r
+                    ? r : "";
+            return java.util.Optional.of(new LeaseGrant(grant.repositoryId(),
+                    grant.generation(), grant.sequencerLeaseToken(), grant.owner(),
+                    newExpiresAt, rev));
+        }
+        return java.util.Optional.empty();
+    }
+
+    @Override
+    public void releaseSequencerLease(LeaseGrant grant) {
+        if (grant == null) {
+            return;
+        }
+        try {
+            Map<String, Object> lease = readRawStrict(leaseDocumentId(grant.repositoryId()));
+            if (lease == null || !matchesGrant(lease, grant)
+                    || !grant.rev().equals(lease.get("_rev"))) {
+                // The frozen contract is an owner/generation/token/_rev CAS: a grant whose
+                // _rev is stale (the worker renewed since) must not release the newer hold.
+                return;
+            }
+            lease.put("owner", null);
+            lease.put("expiresAt", Instant.EPOCH.toString());
+            // generation and token stay: the document is the generation high-watermark and
+            // is never deleted (§8-a).
+            updateStrictCas(lease);
+        } catch (RuntimeException e) {
+            // Release is best-effort by design: expiry frees the lease anyway, and a release
+            // failure must not mask the run's real outcome.
+            logger.debug("Sequencer lease release skipped for {}: {}", grant.repositoryId(),
+                    e.getMessage());
+        }
+    }
+
+    @Override
+    public java.util.Optional<LeaseView> readSequencerLease(String repositoryId) {
+        Map<String, Object> lease = readRawStrict(leaseDocumentId(repositoryId));
+        if (lease == null) {
+            return java.util.Optional.empty();
+        }
+        long generation;
+        try {
+            generation = exactLong(lease.get("generation"), "lease generation");
+        } catch (IllegalArgumentException malformed) {
+            generation = -1L;
+        }
+        return java.util.Optional.of(new LeaseView(
+                generation,
+                lease.get("sequencerLeaseToken") instanceof String t ? t : null,
+                lease.get("owner") instanceof String o && !o.isBlank() ? o : null,
+                lease.get("expiresAt") instanceof String e ? e : null));
+    }
+
+    private static boolean matchesGrant(Map<String, Object> lease, LeaseGrant grant) {
+        long generation;
+        try {
+            generation = exactLong(lease.get("generation"), "lease generation");
+        } catch (IllegalArgumentException malformed) {
+            return false;
+        }
+        String token = lease.get("sequencerLeaseToken") instanceof String t ? t : null;
+        String owner = lease.get("owner") instanceof String o ? o : null;
+        return generation == grant.generation()
+                && grant.sequencerLeaseToken().equals(token)
+                && grant.owner().equals(owner);
+    }
+
+    private static boolean isExpired(String expiresAt) {
+        try {
+            return Instant.parse(expiresAt).isBefore(Instant.now());
+        } catch (RuntimeException e) {
+            // A lease whose expiry cannot be parsed must not be treated as free — that would
+            // let two nodes hold it. Unparseable = held forever = a management repair case.
+            return false;
+        }
+    }
+
+    @Override
+    public List<LineageJournalRowV2> findUnsequencedV2(String repositoryId, int limit) {
+        return queryV2RowsInClaimOrder("v2_sequencer_backlog", repositoryId, limit);
+    }
+
+    @Override
+    public List<LineageJournalRowV2> findSequencingV2(String repositoryId, int limit) {
+        return queryV2RowsInClaimOrder("v2_sequencer_in_flight", repositoryId, limit);
+    }
+
+    private List<LineageJournalRowV2> queryV2RowsInClaimOrder(String viewName,
+            String repositoryId, int limit) {
+        try {
+            // Raw postView, not the shared wrapper: the wrapper returns null for a missing
+            // design document, and an empty backlog and a broken index must not look alike —
+            // the sequencer would release FENCED_OK over an outage instead of latching.
+            ViewResult result = getLineageClient().getClient().postView(
+                    new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
+                            .db(getLineageClient().getDatabaseName())
+                            .ddoc(DESIGN_DOC)
+                            .view(viewName)
+                            .startKey(List.of(repositoryId))
+                            .endKey(List.of(repositoryId, new HashMap<>(), new HashMap<>()))
+                            .includeDocs(true)
+                            .reduce(false)
+                            .limit((long) limit)
+                            .build())
+                    .execute().getResult();
+            if (result == null || result.getRows() == null) {
+                // postView returning no result object at all is an abnormal answer, not an
+                // empty backlog — empty is a result with zero rows.
+                throw new IllegalStateException("view '" + viewName + "' returned no result");
+            }
+            List<LineageJournalRowV2> rows = new ArrayList<>();
+            for (ViewResultRow row : result.getRows()) {
+                com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+                Map<String, Object> props = new HashMap<>();
+                if (doc != null) {
+                    if (doc.getId() != null) props.put("_id", doc.getId());
+                    if (doc.getRev() != null) props.put("_rev", doc.getRev());
+                    if (doc.getProperties() != null) props.putAll(doc.getProperties());
+                }
+                try {
+                    if (doc == null) {
+                        // include_docs promised a document; its absence is view/store
+                        // inconsistency, exactly as blocking as an undecodable row.
+                        throw new IllegalStateException("view row without a document");
+                    }
+                    rows.add(CouchLineageJournalRowV2.fromRaw(props));
+                } catch (RuntimeException e) {
+                    // Deterministic order is the contract: sequencing PAST a broken row would
+                    // hand later occurredAt values lower positions than the row will get when
+                    // repaired. Healthy rows BEFORE the barrier proceed (the queue drains up
+                    // to it over successive passes); once the broken row is at the head there
+                    // is no progress to report, and pretending "empty backlog / FENCED_OK"
+                    // over a blocked queue is the one forbidden answer — so an empty prefix
+                    // throws, which the sequencer and the backlog probes surface as STOPPED.
+                    if (rows.isEmpty()) {
+                        throw new SequencingStorageException("corrupt v2 row '"
+                                + props.get("_id") + "' blocks the head of the sequencing"
+                                + " queue for '" + repositoryId + "'", e);
+                    }
+                    logger.error("Undecodable v2 row {} halts the sequencer scan at its"
+                            + " position ({} healthy rows before it proceed): {}",
+                            props.get("_id"), rows.size(), e.getMessage());
+                    break;
+                }
+            }
+            return rows;
+        } catch (RuntimeException e) {
+            throw new SequencingStorageException("sequencer view '" + viewName
+                    + "' query failed", e);
+        }
+    }
+
+    @Override
+    public boolean claimForSequencing(LineageJournalRowV2 row, long generation,
+            String sequencerLeaseToken) {
+        return casSequencingWrite(row, LineageJournalRowV2.SequencingState.UNSEQUENCED, null,
+                raw -> CouchLineageJournalRowV2.applySequencing(raw, generation,
+                        sequencerLeaseToken));
+    }
+
+    @Override
+    public boolean reclaimForSequencing(LineageJournalRowV2 row, long staleGeneration,
+            long generation, String sequencerLeaseToken) {
+        if (staleGeneration >= generation) {
+            // §8-a: reclaim only takes rows from strictly older generations. An equal
+            // generation is our own in-flight row; a newer one is not ours to touch.
+            return false;
+        }
+        return casSequencingWrite(row, LineageJournalRowV2.SequencingState.SEQUENCING,
+                staleGeneration,
+                raw -> CouchLineageJournalRowV2.applySequencing(raw, generation,
+                        sequencerLeaseToken));
+    }
+
+    @Override
+    public boolean finalizeSequence(LineageJournalRowV2 row, long generation,
+            String sequencerLeaseToken, long sequence) {
+        if (sequence <= 0) {
+            throw new IllegalArgumentException("sequence must be positive, got " + sequence);
+        }
+        return casSequencingWrite(row, LineageJournalRowV2.SequencingState.SEQUENCING,
+                generation, raw -> {
+                    Object token = raw.get(CouchLineageJournalRowV2.FIELD_LEASE_TOKEN);
+                    if (!sequencerLeaseToken.equals(token)) {
+                        throw new StaleRowException();
+                    }
+                    CouchLineageJournalRowV2.applyFinalize(raw, sequence);
+                });
+    }
+
+    /** Signals "the stored row no longer matches what the caller claimed to hold". */
+    private static final class StaleRowException extends RuntimeException {
+    }
+
+    /**
+     * The shared CAS shape: re-read the raw document, verify it still is what the caller
+     * holds ({@code _rev}, state, and — when given — generation), apply the mutation
+     * field-preservingly, and write under the verified {@code _rev}. Any mismatch or update
+     * conflict is {@code false}: the world moved, the caller re-reads.
+     */
+    private boolean casSequencingWrite(LineageJournalRowV2 row,
+            LineageJournalRowV2.SequencingState expectedState, Long expectedGeneration,
+            java.util.function.Consumer<Map<String, Object>> mutation) {
+        if (row == null) {
+            return false;
+        }
+        try {
+            Map<String, Object> raw = readRawStrict(row.documentId());
+            if (raw == null) {
+                return false;
+            }
+            if (!row.rev().equals(raw.get("_rev"))) {
+                return false;
+            }
+            Object state = raw.get(CouchLineageJournalRowV2.FIELD_STATE);
+            if (!expectedState.name().equals(state)) {
+                return false;
+            }
+            if (expectedGeneration != null) {
+                Object generation = raw.get(CouchLineageJournalRowV2.FIELD_GENERATION);
+                try {
+                    if (exactLong(generation, "sequencerGeneration") != expectedGeneration) {
+                        return false;
+                    }
+                } catch (IllegalArgumentException malformed) {
+                    return false;
+                }
+            }
+            mutation.accept(raw);
+            return updateStrictCas(raw);
+        } catch (StaleRowException stale) {
+            return false;
+        }
+        // SequencingStorageException propagates: an outage is not a CAS loss, and the
+        // sequencer must latch on it rather than re-read forever.
+    }
+
+    @Override
+    public long allocateSequenceFenced(String repositoryId) {
+        ensureDatabase();
+        String seqDocId = SEQ_PREFIX + repositoryId;
+        for (int attempt = 0; attempt < ALLOCATOR_CAS_RETRIES; attempt++) {
+            Map<String, Object> seqDoc = readRawStrict(seqDocId);
+            if (seqDoc == null) {
+                // v1's allocator would create it here with seq=1. This one never seeds (I-4):
+                // a missing counter under existing history means rewound sequences.
+                throw new SequenceCounterException(SequencerHealth.COUNTER_MISSING,
+                        "sequence counter for '" + repositoryId + "' is missing — bootstrap"
+                                + " provisions it; the fenced allocator never seeds");
+            }
+            Object stored = seqDoc.get("seq");
+            Number n;
+            try {
+                exactLong(stored, "sequence counter");
+                n = (Number) stored;
+            } catch (IllegalArgumentException malformed) {
+                throw new SequenceCounterException(SequencerHealth.COUNTER_MISSING,
+                        "sequence counter for '" + repositoryId + "' is malformed: " + stored);
+            }
+            if (exactLong(n, "sequence counter") < 0) {
+                throw new SequenceCounterException(SequencerHealth.COUNTER_MISSING,
+                        "sequence counter for '" + repositoryId + "' is malformed: " + stored);
+            }
+            long current = exactLong(n, "sequence counter");
+            long watermark = sequenceHighWatermark(repositoryId);
+            if (current < watermark) {
+                throw new SequenceCounterException(SequencerHealth.COUNTER_REWOUND,
+                        "sequence counter for '" + repositoryId + "' is at " + current
+                                + ", below the finalized high-watermark " + watermark
+                                + " — refusing to allocate (I-2); recover manually");
+            }
+            long next = Math.addExact(current, 1);
+            seqDoc.put("seq", next);
+            if (updateStrictCas(seqDoc)) {
+                return next;
+            }
+            // false = an ordinary CAS loss to a concurrent allocator; re-read and retry.
+        }
+        throw new SequenceCounterException(SequencerHealth.STOPPED,
+                "fenced allocator for '" + repositoryId + "' lost " + ALLOCATOR_CAS_RETRIES
+                        + " consecutive CAS attempts — transient contention, retry later");
+    }
+
+    @Override
+    public long sequenceHighWatermark(String repositoryId) {
+        try {
+            ViewResult result = getLineageClient().getClient().postView(
+                    new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
+                            .db(getLineageClient().getDatabaseName())
+                            .ddoc(DESIGN_DOC)
+                            .view("sequence_watermark")
+                            .keys(List.of(repositoryId))
+                            .group(true)
+                            .reduce(true)
+                            .build())
+                    .execute().getResult();
+            if (result == null || result.getRows() == null) {
+                throw new IllegalStateException("sequence_watermark returned no result");
+            }
+            if (result.getRows().isEmpty()) {
+                return 0L; // grouped reduce over zero rows: genuinely no history
+            }
+            Object value = result.getRows().get(0).getValue();
+            if (value == null) {
+                return 0L; // reduce over zero rows
+            }
+            if (value instanceof Map<?, ?> stats && stats.get("max") instanceof Number max) {
+                return exactLong(max, "sequence_watermark max");
+            }
+            // A reduce answer that is neither absent nor _stats-shaped is a broken index,
+            // not a zero watermark.
+            throw new IllegalStateException("malformed sequence_watermark reduce: " + value);
+        } catch (RuntimeException e) {
+            // The rewind check must not silently pass on a query failure: an unsafe failure
+            // stops allocation (the sequencer latches) rather than allocating blind. A
+            // missing view/design document lands here too — a sequencer without its views is
+            // broken infrastructure, not an empty repository.
+            if (e instanceof SequencingStorageException storage) {
+                throw storage;
+            }
+            throw new SequencingStorageException(
+                    "sequence watermark query failed for '" + repositoryId + "'", e);
+        }
+    }
+
 }
