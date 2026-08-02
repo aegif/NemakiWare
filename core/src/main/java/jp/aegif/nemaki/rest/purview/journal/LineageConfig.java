@@ -151,6 +151,32 @@ public class LineageConfig {
     @Value("${lineage.projection.stale-threshold-minutes:5}")
     private int projectionStaleThresholdMinutes;
 
+    // --- D-rest activation boundary (v2.3.18 (5)) + §8-b v2 claim/verify knobs ---
+
+    @Value("${lineage.drest.enabled:false}")
+    private boolean drestEnabled;
+
+    @Value("${lineage.projection.claim-lease-seconds:120}")
+    private int projectionClaimLeaseSeconds;
+
+    @Value("${lineage.verify.timeout-seconds:30}")
+    private int verifyTimeoutSeconds;
+
+    @Value("${lineage.verify.interval-seconds:2}")
+    private int verifyIntervalSeconds;
+
+    @Value("${lineage.verify.max-age-minutes:10}")
+    private int verifyMaxAgeMinutes;
+
+    @Value("${lineage.sequencer.lease-seconds:60}")
+    private int sequencerLeaseSeconds;
+
+    @Value("${lineage.sequencer.batch-size:100}")
+    private int sequencerBatchSize;
+
+    @Value("${lineage.sequencer.backlog-cap:1000}")
+    private int sequencerBacklogCap;
+
     // --- Leader election (multi-node deployments) ---
 
     @Value("${lineage.leader-election.enabled:false}")
@@ -207,6 +233,49 @@ public class LineageConfig {
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .toList();
+    }
+
+    /**
+     * The single aggregate D-rest readiness switch (v2.3.18 (5)), default false. Gates the v2
+     * projection branch, the v2 reaper, the v2 half of purge, and the admin sequencer POST.
+     * Config validity and view-signature checks are layered on top by LineageDrestReadiness —
+     * this is only the operator's intent bit.
+     */
+    public boolean isDrestEnabled() {
+        return readDynamicBoolean("lineage.drest.enabled", drestEnabled);
+    }
+
+    /** §8-b projection claim lease TTL. Bounds are enforced by LineageDrestReadiness. */
+    public int getProjectionClaimLeaseSeconds() {
+        return readDynamicInt("lineage.projection.claim-lease-seconds", projectionClaimLeaseSeconds);
+    }
+
+    /** §8-b verify: per-encounter poll budget. */
+    public int getVerifyTimeoutSeconds() {
+        return readDynamicInt("lineage.verify.timeout-seconds", verifyTimeoutSeconds);
+    }
+
+    /** §8-b verify: poll interval inside the encounter budget. */
+    public int getVerifyIntervalSeconds() {
+        return readDynamicInt("lineage.verify.interval-seconds", verifyIntervalSeconds);
+    }
+
+    /** §8-b verify: absolute cap from verifyingSince; exceeded → FAILED (no retry consumed). */
+    public int getVerifyMaxAgeMinutes() {
+        return readDynamicInt("lineage.verify.max-age-minutes", verifyMaxAgeMinutes);
+    }
+
+    /** §8-a admin sequencer run parameters (F7 — policy is config, not code constants). */
+    public int getSequencerLeaseSeconds() {
+        return readDynamicInt("lineage.sequencer.lease-seconds", sequencerLeaseSeconds);
+    }
+
+    public int getSequencerBatchSize() {
+        return readDynamicInt("lineage.sequencer.batch-size", sequencerBatchSize);
+    }
+
+    public int getSequencerBacklogCap() {
+        return readDynamicInt("lineage.sequencer.backlog-cap", sequencerBacklogCap);
     }
 
     public int getRetentionDays() {

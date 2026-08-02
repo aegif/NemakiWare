@@ -39,6 +39,22 @@ public final class CouchLineageJournalRowV2 {
     static final String FIELD_GENERATION = "sequencerGeneration";
     static final String FIELD_LEASE_TOKEN = "sequencerLeaseToken";
 
+    // §8-b v2 per-target lifecycle (D-rest-2). publishStatusByTarget shares v1's field name
+    // (views and the codec already read it on v2 rows); everything claim-related lives in
+    // v2-only nested fields so no v1 surface can misread a shared field, and all timestamps
+    // are epoch millis — numeric view keys, no ISO fraction-width ordering defect.
+    static final String FIELD_STATUS_BY_TARGET = "publishStatusByTarget";
+    static final String FIELD_CLAIM_BY_TARGET = "v2ClaimByTarget";
+    static final String FIELD_REASON_BY_TARGET = "v2TerminalReasonByTarget";
+    static final String CLAIM_TOKEN = "token";
+    static final String CLAIM_CLAIMED_AT = "claimedAtMs";
+    static final String CLAIM_LEASE_EXPIRES = "leaseExpiresAtMs";
+    static final String CLAIM_VERIFYING_SINCE = "verifyingSinceMs";
+    static final String CLAIM_RETRY_COUNT = "retryCount";
+    static final String REASON_REASON = "reason";
+    static final String REASON_DETAIL = "detail";
+    static final String REASON_AT = "atMs";
+
     private CouchLineageJournalRowV2() {
     }
 
@@ -89,7 +105,121 @@ public final class CouchLineageJournalRowV2 {
             token = t;
         }
 
-        return new LineageJournalRowV2(event, rev, state, generation, token);
+        return new LineageJournalRowV2(event, rev, state, generation, token,
+                decodeLifecycles(doc));
+    }
+
+    private static Map<String, LineageTargetLifecycle> decodeLifecycles(Map<String, Object> doc) {
+        Map<String, Object> statuses = requireMapOrNull(doc.get(FIELD_STATUS_BY_TARGET),
+                FIELD_STATUS_BY_TARGET);
+        Map<String, Object> claims = requireMapOrNull(doc.get(FIELD_CLAIM_BY_TARGET),
+                FIELD_CLAIM_BY_TARGET);
+        Map<String, Object> reasons = requireMapOrNull(doc.get(FIELD_REASON_BY_TARGET),
+                FIELD_REASON_BY_TARGET);
+        if (claims != null) {
+            for (String t : claims.keySet()) {
+                if (statuses == null || !statuses.containsKey(t)) {
+                    throw new IllegalArgumentException("v2 row '" + doc.get("_id")
+                            + "' has a claim for target '" + t + "' but no status for it");
+                }
+            }
+        }
+        if (reasons != null) {
+            for (String t : reasons.keySet()) {
+                if (statuses == null || !statuses.containsKey(t)) {
+                    throw new IllegalArgumentException("v2 row '" + doc.get("_id")
+                            + "' has a terminal reason for target '" + t + "' but no status");
+                }
+            }
+        }
+        if (statuses == null || statuses.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, LineageTargetLifecycle> out = new java.util.LinkedHashMap<>();
+        for (var e : statuses.entrySet()) {
+            String target = e.getKey();
+            if (!(e.getValue() instanceof String statusName) || statusName.isBlank()) {
+                throw new IllegalArgumentException("status for target '" + target
+                        + "' must be a non-blank string");
+            }
+            LineagePublishStatus status;
+            try {
+                status = LineagePublishStatus.valueOf(statusName);
+            } catch (IllegalArgumentException ex) {
+                throw new IllegalArgumentException("unknown publish status '" + statusName
+                        + "' for target '" + target + "' — this build cannot act on it");
+            }
+            Map<String, Object> claim = claims == null ? null
+                    : requireMapOrNull(claims.get(target), FIELD_CLAIM_BY_TARGET + "." + target);
+            Map<String, Object> reason = reasons == null ? null
+                    : requireMapOrNull(reasons.get(target), FIELD_REASON_BY_TARGET + "." + target);
+            String token = null;
+            Long claimedAt = null;
+            Long leaseExpires = null;
+            Long verifyingSince = null;
+            Long retryCount = null;
+            if (claim != null) {
+                Object t = claim.get(CLAIM_TOKEN);
+                if (!(t instanceof String s) || s.isBlank()) {
+                    throw new IllegalArgumentException("claim token for target '" + target
+                            + "' must be a non-blank string");
+                }
+                token = s;
+                claimedAt = exactLongOrNull(claim.get(CLAIM_CLAIMED_AT), CLAIM_CLAIMED_AT);
+                leaseExpires = exactLongOrNull(claim.get(CLAIM_LEASE_EXPIRES), CLAIM_LEASE_EXPIRES);
+                verifyingSince = exactLongOrNull(claim.get(CLAIM_VERIFYING_SINCE),
+                        CLAIM_VERIFYING_SINCE);
+                retryCount = exactLongOrNull(claim.get(CLAIM_RETRY_COUNT), CLAIM_RETRY_COUNT);
+            }
+            LineageTargetLifecycle.TerminalReason terminalReason = null;
+            if (reason != null) {
+                Object r = reason.get(REASON_REASON);
+                Object d = reason.get(REASON_DETAIL);
+                if (!(r instanceof String rs) || !(d instanceof String ds)) {
+                    throw new IllegalArgumentException("terminal reason for target '" + target
+                            + "' must carry string reason and detail");
+                }
+                Long at = exactLongOrNull(reason.get(REASON_AT), REASON_AT);
+                if (at == null) {
+                    throw new IllegalArgumentException("terminal reason for target '" + target
+                            + "' must carry atMs");
+                }
+                terminalReason = new LineageTargetLifecycle.TerminalReason(rs, ds, at);
+            }
+            try {
+                out.put(target, new LineageTargetLifecycle(status, token, claimedAt,
+                        leaseExpires, verifyingSince, retryCount, terminalReason));
+            } catch (IllegalArgumentException ex) {
+                throw new IllegalArgumentException("v2 row '" + doc.get("_id") + "' target '"
+                        + target + "': " + ex.getMessage());
+            }
+        }
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> requireMapOrNull(Object value, String what) {
+        if (value == null) {
+            return null;
+        }
+        if (!(value instanceof Map)) {
+            throw new IllegalArgumentException(what + " must be a map when present");
+        }
+        return (Map<String, Object>) value;
+    }
+
+    private static Long exactLongOrNull(Object value, String what) {
+        if (value == null) {
+            return null;
+        }
+        if (!(value instanceof Number n)) {
+            throw new IllegalArgumentException(what + " must be a number when present");
+        }
+        try {
+            return new java.math.BigDecimal(n.toString()).longValueExact();
+        } catch (ArithmeticException | NumberFormatException e) {
+            throw new IllegalArgumentException(what + " must be an exact integral value, got " + n);
+        }
     }
 
     /** Applies the claim/reclaim transition to the raw map: SEQUENCING + fencing coordinates. */
@@ -103,5 +233,95 @@ public final class CouchLineageJournalRowV2 {
     static void applyFinalize(Map<String, Object> raw, long sequence) {
         raw.put(FIELD_STATE, LineageJournalRowV2.SequencingState.SEQUENCED.name());
         raw.put("sequenceNumber", sequence);
+    }
+
+    // ---- §8-b projection lifecycle mutations (D-rest-2), field-preserving on the raw map ----
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> mutableChild(Map<String, Object> raw, String field) {
+        Object existing = raw.get(field);
+        Map<String, Object> child = existing instanceof Map
+                ? new java.util.LinkedHashMap<>((Map<String, Object>) existing)
+                : new java.util.LinkedHashMap<>();
+        raw.put(field, child);
+        return child;
+    }
+
+    /**
+     * Applies a projection claim (PENDING/FAILED → PROJECTING): fresh token + lease, and clears
+     * the per-attempt verifyingSince marker. retryCount initialized to 0 on first claim,
+     * retained otherwise — FAILED→PROJECTING is the machine's one deliberate audit-reset point.
+     */
+    static void applyProjectionClaim(Map<String, Object> raw, String target, String token,
+                                     long nowMs, long leaseExpiresAtMs) {
+        mutableChild(raw, FIELD_STATUS_BY_TARGET)
+                .put(target, LineagePublishStatus.PROJECTING.name());
+        Map<String, Object> claims = mutableChild(raw, FIELD_CLAIM_BY_TARGET);
+        Map<String, Object> claim = mutableChild(claims, target);
+        Object priorRetry = claim.get(CLAIM_RETRY_COUNT);
+        claim.put(CLAIM_TOKEN, token);
+        claim.put(CLAIM_CLAIMED_AT, nowMs);
+        claim.put(CLAIM_LEASE_EXPIRES, leaseExpiresAtMs);
+        claim.remove(CLAIM_VERIFYING_SINCE);
+        claim.put(CLAIM_RETRY_COUNT, priorRetry == null ? 0L : priorRetry);
+    }
+
+    /** PROJECTING → VERIFYING: sets the verify marker and renews the lease, same token. */
+    static void applyVerifying(Map<String, Object> raw, String target, long nowMs,
+                               long leaseExpiresAtMs) {
+        mutableChild(raw, FIELD_STATUS_BY_TARGET)
+                .put(target, LineagePublishStatus.VERIFYING.name());
+        Map<String, Object> claim = mutableChild(mutableChild(raw, FIELD_CLAIM_BY_TARGET), target);
+        claim.put(CLAIM_VERIFYING_SINCE, nowMs);
+        claim.put(CLAIM_LEASE_EXPIRES, leaseExpiresAtMs);
+    }
+
+    /** Lease renewal in place (PROJECTING or VERIFYING), same token, nothing else moves. */
+    static void applyRenew(Map<String, Object> raw, String target, long leaseExpiresAtMs) {
+        Map<String, Object> claim = mutableChild(mutableChild(raw, FIELD_CLAIM_BY_TARGET), target);
+        claim.put(CLAIM_LEASE_EXPIRES, leaseExpiresAtMs);
+    }
+
+    /**
+     * A transition out of the live-claim states into a non-live state: writes the status,
+     * clears the live lease, optionally increments retryCount (observed publish failure only),
+     * optionally writes the durable terminal reason. Never removes audit fields.
+     */
+    static void applySettle(Map<String, Object> raw, String target, LineagePublishStatus next,
+                            boolean incrementRetry,
+                            LineageTargetLifecycle.TerminalReason reason) {
+        mutableChild(raw, FIELD_STATUS_BY_TARGET).put(target, next.name());
+        Map<String, Object> claims = mutableChild(raw, FIELD_CLAIM_BY_TARGET);
+        if (claims.get(target) instanceof Map) {
+            Map<String, Object> claim = mutableChild(claims, target);
+            claim.remove(CLAIM_LEASE_EXPIRES);
+            if (incrementRetry) {
+                Object prior = claim.get(CLAIM_RETRY_COUNT);
+                long current = prior instanceof Number n ? n.longValue() : 0L;
+                claim.put(CLAIM_RETRY_COUNT, current + 1L);
+            }
+        }
+        if (reason != null) {
+            Map<String, Object> reasons = mutableChild(raw, FIELD_REASON_BY_TARGET);
+            Map<String, Object> r = new java.util.LinkedHashMap<>();
+            r.put(REASON_REASON, reason.reason());
+            r.put(REASON_DETAIL, reason.detail());
+            r.put(REASON_AT, reason.atMs());
+            reasons.put(target, r);
+        }
+    }
+
+    /** Status-only write for the pre-claim transitions (obligation and admin table rows). */
+    static void applyStatusOnly(Map<String, Object> raw, String target, LineagePublishStatus next,
+                                LineageTargetLifecycle.TerminalReason reason) {
+        mutableChild(raw, FIELD_STATUS_BY_TARGET).put(target, next.name());
+        if (reason != null) {
+            Map<String, Object> reasons = mutableChild(raw, FIELD_REASON_BY_TARGET);
+            Map<String, Object> r = new java.util.LinkedHashMap<>();
+            r.put(REASON_REASON, reason.reason());
+            r.put(REASON_DETAIL, reason.detail());
+            r.put(REASON_AT, reason.atMs());
+            reasons.put(target, r);
+        }
     }
 }

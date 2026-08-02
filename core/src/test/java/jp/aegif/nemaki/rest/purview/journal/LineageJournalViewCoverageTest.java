@@ -51,8 +51,20 @@ public class LineageJournalViewCoverageTest {
     private static final Set<String> DEAD_LETTER_VIEWS =
             Set.of("dead_letter_by_time", "dead_letter_by_replayed");
 
-    /** v1-only on purpose: a v2 row has no eventKey, and processKey must not stand in for it. */
-    private static final Set<String> V1_ONLY_VIEWS = Set.of("by_event_key");
+    /**
+     * v1-ONLY views (D-rest-2 schema split): every selector that feeds v1 machinery — claim,
+     * drains, reaper, ordered walk, purge. Isolation by selection is the only isolation that
+     * also protects OLD binaries, which query these names with no v2 guards downstream.
+     */
+    private static final Set<String> V1_ONLY_VIEWS = Set.of(
+            "by_event_key", "by_target_status", "by_target_status_time",
+            "non_terminal_by_target_repo", "projecting_by_claimed_at",
+            "by_repository_and_sequence", "by_occurred_at");
+
+    /** v2-only §8-b projection views (D-rest-2); old binaries never query these names. */
+    private static final Set<String> V2_PROJECTION_VIEWS = Set.of(
+            "v2_by_repository_and_sequence", "v2_by_occurred_at",
+            "v2_non_terminal_by_target_repo", "v2_claims_by_expiry", "v2_verifying_by_since");
 
     /**
      * v2-only and state-specific by definition (§8-a v2, D-rest-1): the fenced sequencer's
@@ -93,7 +105,11 @@ public class LineageJournalViewCoverageTest {
                 .sequenceNumber(7L)
                 .build();
         Map<String, Object> doc = new LinkedHashMap<>(CouchLineageEventV2.toMap(event));
+        doc.put("state", "SEQUENCED");
         doc.put("publishStatusByTarget", Map.of("atlas", "PROJECTING"));
+        doc.put("v2ClaimByTarget", Map.of("atlas", Map.of(
+                "token", "tok-1", "claimedAtMs", 1000L, "leaseExpiresAtMs", 2000L,
+                "retryCount", 0L)));
         return doc;
     }
 
@@ -143,23 +159,35 @@ public class LineageJournalViewCoverageTest {
     // ------------------------------------------------------------------ the coverage property
 
     /**
-     * The §6-a v2.3.14 obligation, executed. A view failing here is one that would make v2 rows
-     * silently invisible to the binary that queries it.
+     * The D-rest-2 schema split, executed as a property: a SEQUENCED v2 row with a live claim
+     * emits in every v2 projection view and every remaining dual listing view, and in NO
+     * v1-only view. §6-a's original both-versions obligation is superseded for the v1
+     * machinery views — for those, v2 INVISIBILITY is the contract (old binaries query them
+     * with token-less machinery downstream).
      */
     @Test
     public void everyEventViewEmitsForASyntheticV2Document() {
         Map<String, Object> doc = v2Document();
         for (String view : eventViews()) {
-            if (V1_ONLY_VIEWS.contains(view) || V2_SEQUENCER_VIEWS.contains(view)) {
+            if (V2_SEQUENCER_VIEWS.contains(view)) {
                 continue;
             }
-            assertFalse(emits(view, doc).isEmpty(),
-                    view + " emitted nothing for a v2 document — v2 rows would be invisible to"
-                            + " whatever queries this view");
+            if ("v2_verifying_by_since".equals(view)) {
+                continue; // state-specific (VERIFYING only) — pinned in its dedicated test
+            }
+            if (V1_ONLY_VIEWS.contains(view)) {
+                assertTrue(emits(view, doc).isEmpty(),
+                        view + " is v1-only; a v2 row emitting here reopens the old-binary"
+                                + " accident the schema split closed");
+            } else {
+                assertFalse(emits(view, doc).isEmpty(),
+                        view + " emitted nothing for a v2 document — v2 rows would be"
+                                + " invisible to whatever queries this view");
+            }
         }
     }
 
-    /** The same views must not have lost v1 in the rewrite. */
+    /** v1 rows emit everywhere except the v2-only families. */
     @Test
     public void everyEventViewStillEmitsForASyntheticV1Document() {
         Map<String, Object> doc = v1Document();
@@ -167,8 +195,14 @@ public class LineageJournalViewCoverageTest {
             if (V2_SEQUENCER_VIEWS.contains(view)) {
                 continue;
             }
-            assertFalse(emits(view, doc).isEmpty(),
-                    view + " emitted nothing for a v1 document");
+            if (V2_PROJECTION_VIEWS.contains(view)) {
+                assertTrue(emits(view, doc).isEmpty(),
+                        view + " is v2-only; a v1 row emitting here would hand v1 rows to"
+                                + " token-fenced machinery they never signed up for");
+            } else {
+                assertFalse(emits(view, doc).isEmpty(),
+                        view + " emitted nothing for a v1 document");
+            }
         }
     }
 
@@ -203,9 +237,9 @@ public class LineageJournalViewCoverageTest {
 
     // ------------------------------------------------------------------ shape pins
 
-    /** A new view must join this test, or its v2 coverage is nobody's problem until production. */
+    /** A new view must join this test, or its v1/v2 coverage is nobody's problem. */
     @Test
-    public void theViewSetIsExactlyTheKnownSeventeen() {
+    public void theViewSetIsExactlyTheKnownTwentyTwo() {
         assertEquals(Set.of(
                         "by_event_key", "by_repository_and_time", "by_target_status",
                         "by_process_type", "by_occurred_at", "by_repository_and_process_type",
@@ -213,7 +247,10 @@ public class LineageJournalViewCoverageTest {
                         "by_repository_and_sequence", "non_terminal_by_target_repo",
                         "projecting_by_claimed_at", "by_process_type_time",
                         "by_repo_process_type_time", "v2_sequencer_backlog",
-                        "v2_sequencer_in_flight", "sequence_watermark"),
+                        "v2_sequencer_in_flight", "sequence_watermark",
+                        "v2_by_repository_and_sequence", "v2_by_occurred_at",
+                        "v2_non_terminal_by_target_repo", "v2_claims_by_expiry",
+                        "v2_verifying_by_since"),
                 CouchLineageJournalStore.VIEWS.keySet(),
                 "a view was added or renamed; give it v1/v2 coverage here before anything"
                         + " queries it");
@@ -259,16 +296,20 @@ public class LineageJournalViewCoverageTest {
                 "target cursors bound the counter too");
     }
 
-    /** The ordered read's key must be [repositoryId, sequenceNumber] for both versions. */
+    /**
+     * The router MERGES the two ordered views by sequence, so their keys must share one shape:
+     * [repositoryId, sequenceNumber].
+     */
     @Test
-    public void theSequenceViewEmitsTheSameKeyShapeForBothVersions() {
-        for (Map<String, Object> doc : List.of(v1Document(), v2Document())) {
-            List<?> rows = emits("by_repository_and_sequence", doc);
-            assertEquals(1, rows.size());
-            List<?> row = (List<?>) rows.get(0);
-            assertEquals(List.of("bedroom", 7), row.get(0),
-                    "the composite key both versions must share");
-        }
+    public void theTwoOrderedViewsEmitTheSameKeyShape() {
+        List<?> v1rows = emits("by_repository_and_sequence", v1Document());
+        assertEquals(1, v1rows.size());
+        assertEquals(List.of("bedroom", 7), ((List<?>) v1rows.get(0)).get(0));
+
+        List<?> v2rows = emits("v2_by_repository_and_sequence", v2Document());
+        assertEquals(1, v2rows.size());
+        assertEquals(List.of("bedroom", 7), ((List<?>) v2rows.get(0)).get(0),
+                "the composite key the merge relies on");
     }
 
     /**
@@ -317,26 +358,75 @@ public class LineageJournalViewCoverageTest {
         }
     }
 
-    /** Once the sequencer moves the row out of UNSEQUENCED, the same views serve it. */
+    /**
+     * Once the sequencer finalizes the row, the V2 discovery view serves it — and the legacy
+     * claim views still do NOT (the schema split is unconditional, not state-gated).
+     */
     @Test
-    public void aSequencedV2RowIsServedByTheClaimViews() {
+    public void aSequencedV2RowIsServedByTheV2ViewsOnly() {
         Map<String, Object> doc = v2Document();
-        doc.put("state", "SEQUENCED");
+        assertFalse(emits("v2_non_terminal_by_target_repo", doc).isEmpty());
+        assertFalse(emits("v2_by_repository_and_sequence", doc).isEmpty());
         for (String view : List.of("by_target_status", "by_target_status_time",
-                "non_terminal_by_target_repo")) {
-            assertFalse(emits(view, doc).isEmpty(), view);
+                "non_terminal_by_target_repo", "projecting_by_claimed_at",
+                "by_repository_and_sequence", "by_occurred_at")) {
+            assertTrue(emits(view, doc).isEmpty(),
+                    view + " must never serve a v2 row, whatever its state");
+        }
+    }
+
+    /** The v2 discovery view is SEQUENCED-only: mid-sequencing rows are not deliverable. */
+    @Test
+    public void theV2DiscoveryViewHidesUnfinalizedRows() {
+        for (String state : List.of("UNSEQUENCED", "SEQUENCING")) {
+            Map<String, Object> doc = v2Document();
+            doc.put("state", state);
+            assertTrue(emits("v2_non_terminal_by_target_repo", doc).isEmpty(), state);
+            assertTrue(emits("v2_by_repository_and_sequence", doc).isEmpty(), state);
         }
     }
 
     /**
-     * The reaper's view deliberately still covers UNSEQUENCED: nothing should legitimately claim
-     * one, but if a bug does, the stale claim must still be releasable.
+     * The token-fenced reaper's scan: a live claim (PROJECTING/VERIFYING with a numeric lease
+     * expiry) emits [target, leaseExpiresAtMs]; terminal rows and claims without an expiry do
+     * not. The legacy reaper view sees no v2 row at all — a leased v2 claim must be physically
+     * invisible to the token-less v1 reaper.
      */
     @Test
-    public void theReaperViewStillCoversAnUnsequencedRow() {
-        Map<String, Object> doc = v2Document();
-        doc.put("state", "UNSEQUENCED");
-        assertFalse(emits("projecting_by_claimed_at", doc).isEmpty());
+    public void theV2ClaimExpiryViewSeesExactlyLiveLeases() {
+        Map<String, Object> live = v2Document();
+        List<?> rows = emits("v2_claims_by_expiry", live);
+        assertEquals(1, rows.size());
+        assertEquals(List.of("atlas", 2000), ((List<?>) rows.get(0)).get(0));
+
+        Map<String, Object> published = v2Document();
+        published.put("publishStatusByTarget", Map.of("atlas", "PUBLISHED"));
+        assertTrue(emits("v2_claims_by_expiry", published).isEmpty());
+
+        Map<String, Object> noExpiry = v2Document();
+        noExpiry.put("v2ClaimByTarget", Map.of("atlas", Map.of(
+                "token", "tok-1", "claimedAtMs", 1000L, "retryCount", 0L)));
+        assertTrue(emits("v2_claims_by_expiry", noExpiry).isEmpty(),
+                "no numeric expiry, nothing to reap by");
+
+        assertTrue(emits("projecting_by_claimed_at", live).isEmpty(),
+                "the v1 reaper must be blind to v2 claims");
+    }
+
+    /** The verifying metrics view sees VERIFYING rows with a numeric since, and only those. */
+    @Test
+    public void theVerifyingMetricsViewSeesExactlyVerifyingRows() {
+        Map<String, Object> verifying = v2Document();
+        verifying.put("publishStatusByTarget", Map.of("atlas", "VERIFYING"));
+        verifying.put("v2ClaimByTarget", Map.of("atlas", Map.of(
+                "token", "tok-1", "claimedAtMs", 1000L, "leaseExpiresAtMs", 2000L,
+                "verifyingSinceMs", 1500L, "retryCount", 0L)));
+        List<?> rows = emits("v2_verifying_by_since", verifying);
+        assertEquals(1, rows.size());
+        assertEquals(List.of("atlas", 1500), ((List<?>) rows.get(0)).get(0));
+
+        assertTrue(emits("v2_verifying_by_since", v2Document()).isEmpty(),
+                "PROJECTING is not VERIFYING");
     }
 
     /**

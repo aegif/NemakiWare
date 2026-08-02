@@ -261,4 +261,224 @@ public class LineageSequencingCouchIT {
                 () -> store.allocateSequenceFenced(otherRepo),
                 "no auto-seed: a missing counter is a bootstrap gap, not a zero");
     }
+
+    // ================================================================ D-rest-2: the §8-b
+    // v2 projection machine against real CouchDB CAS semantics.
+
+    @Test
+    public void theV2ClaimIsExclusiveAndTheFencedPipelinePublishes() {
+        String repo = "v2-projection-repo";
+        bootstrapLease(repo);
+        bootstrapCounter(repo, 0L);
+        store.appendV2(event(repo, "op-p1", "2026-08-01T01:00:01Z"));
+        LineageFencedSequencer sequencer = new LineageFencedSequencer(store, null,
+                "it-node", Duration.ofMinutes(1), 10, 100);
+        assertEquals(1, sequencer.runOnce(repo).finalized());
+
+        List<LineageJournalRowV2> rows = store.findV2ByRepositoryAndSequenceRange(repo, 0, 10);
+        assertEquals(1, rows.size());
+        String recordId = rows.get(0).event().deliveryId();
+
+        // Two claim attempts: real CouchDB revs make exactly one win.
+        LineageV2TransitionStore.V2ClaimGrant first =
+                store.claimForProjection(recordId, "atlas", Duration.ofMinutes(2));
+        assertEquals(true, first != null);
+        assertEquals(null, store.claimForProjection(recordId, "atlas", Duration.ofMinutes(2)),
+                "a live unexpired claim is not reclaimable");
+
+        // Fenced pipeline: PROJECTING -> VERIFYING -> PUBLISHED with the winning token.
+        assertEquals(true, store.transitionV2(recordId, "atlas",
+                LineagePublishStatus.PROJECTING, LineagePublishStatus.VERIFYING,
+                first.claimToken(), null));
+        assertEquals(false, store.transitionV2(recordId, "atlas",
+                LineagePublishStatus.VERIFYING, LineagePublishStatus.PUBLISHED,
+                "rotated-token", null), "a stale token loses the fence on the real store");
+        assertEquals(true, store.transitionV2(recordId, "atlas",
+                LineagePublishStatus.VERIFYING, LineagePublishStatus.PUBLISHED,
+                first.claimToken(), null));
+
+        LineageTargetLifecycle published = store.findV2ByRecordId(recordId)
+                .targetLifecycles().get("atlas");
+        assertEquals(LineagePublishStatus.PUBLISHED, published.status());
+        assertEquals(first.claimToken(), published.claimToken(), "token kept for audit");
+    }
+
+    @Test
+    public void theReaperTakesExactlyExpiredClaimsByToken() {
+        String repo = "v2-reaper-repo";
+        bootstrapLease(repo);
+        bootstrapCounter(repo, 0L);
+        store.appendV2(event(repo, "op-r1", "2026-08-01T02:00:01Z"));
+        store.appendV2(event(repo, "op-r2", "2026-08-01T02:00:02Z"));
+        LineageFencedSequencer sequencer = new LineageFencedSequencer(store, null,
+                "it-node", Duration.ofMinutes(1), 10, 100);
+        assertEquals(2, sequencer.runOnce(repo).finalized());
+        List<LineageJournalRowV2> rows = store.findV2ByRepositoryAndSequenceRange(repo, 0, 10);
+
+        // One claim with a lease that is already effectively expired, one live.
+        String expiredId = rows.get(0).event().deliveryId();
+        String liveId = rows.get(1).event().deliveryId();
+        LineageV2TransitionStore.V2ClaimGrant expired =
+                store.claimForProjection(expiredId, "atlas", Duration.ofMillis(1));
+        LineageV2TransitionStore.V2ClaimGrant live =
+                store.claimForProjection(liveId, "atlas", Duration.ofMinutes(5));
+        assertEquals(true, expired != null && live != null);
+        try {
+            Thread.sleep(5L);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        int reaped = store.reapExpiredClaims("atlas", java.time.Instant.now());
+        assertEquals(1, reaped, "exactly the expired claim reaps");
+        assertEquals(LineagePublishStatus.FAILED,
+                store.findV2ByRecordId(expiredId).targetLifecycles().get("atlas").status());
+        LineageTargetLifecycle survivor =
+                store.findV2ByRecordId(liveId).targetLifecycles().get("atlas");
+        assertEquals(LineagePublishStatus.PROJECTING, survivor.status());
+        assertEquals(0L, survivor.retryCount(), "reap consumed no retry anywhere");
+        assertEquals(0L, store.findV2ByRecordId(expiredId).targetLifecycles().get("atlas")
+                .retryCount(), "reap-FAILED consumed no retry either");
+
+        // The reaped row is claimable again (FAILED -> PROJECTING re-claim).
+        assertEquals(true,
+                store.claimForProjection(expiredId, "atlas", Duration.ofMinutes(5)) != null);
+    }
+
+    @Test
+    public void theMonotonicCursorRefusesRollbackOnRealRevisions() {
+        CouchProjectionCursorStore cursors = new CouchProjectionCursorStore();
+        try {
+            java.lang.reflect.Field f =
+                    CouchProjectionCursorStore.class.getDeclaredField("journalStore");
+            f.setAccessible(true);
+            f.set(cursors, store);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+        String repo = "v2-cursor-repo";
+        assertEquals(true, cursors.advanceCursorMonotonic(
+                new ProjectionCursor("atlas", repo, 10L, java.time.Instant.now())));
+        assertEquals(true, cursors.advanceCursorMonotonic(
+                new ProjectionCursor("atlas", repo, 10L, java.time.Instant.now())),
+                "equality is a no-op success");
+        assertEquals(true, cursors.advanceCursorMonotonic(
+                new ProjectionCursor("atlas", repo, 5L, java.time.Instant.now())),
+                "a smaller incoming position is covered, not written");
+        assertEquals(10L, cursors.getCursor("atlas", repo).lastProcessedSequence(),
+                "the stored position never rolled back");
+        assertEquals(true, cursors.advanceCursorMonotonic(
+                new ProjectionCursor("atlas", repo, 12L, java.time.Instant.now())));
+        assertEquals(12L, cursors.getCursor("atlas", repo).lastProcessedSequence());
+    }
+
+    /** F1: the strictly-after v2 query keeps full pages full when the cursor sits on a v2 row. */
+    @Test
+    public void theV2OrderedQueryIsStrictlyAfterAtTheQueryNotByPostFilter() {
+        String repo = "v2-boundary-repo";
+        bootstrapLease(repo);
+        bootstrapCounter(repo, 0L);
+        store.appendV2(event(repo, "op-m1", "2026-08-01T03:00:01Z"));
+        store.appendV2(event(repo, "op-m2", "2026-08-01T03:00:02Z"));
+        store.appendV2(event(repo, "op-m3", "2026-08-01T03:00:03Z"));
+        LineageFencedSequencer sequencer = new LineageFencedSequencer(store, null,
+                "it-node", Duration.ofMinutes(1), 10, 100);
+        assertEquals(3, sequencer.runOnce(repo).finalized());
+
+        List<LineageJournalRowV2> all = store.findV2ByRepositoryAndSequenceRange(repo, 0, 10);
+        assertEquals(3, all.size());
+        long first = all.get(0).event().sequenceNumber();
+
+        // Cursor ON the first v2 row, limit 2: a post-filter implementation would return a
+        // shrunken page (1 row) and the merge window would misread coverage; strictly-after
+        // returns a FULL page of the next two.
+        List<LineageJournalRowV2> page =
+                store.findV2ByRepositoryAndSequenceRange(repo, first, 2);
+        assertEquals(2, page.size(), "full page stays full at the boundary");
+        assertEquals(first + 1, page.get(0).event().sequenceNumber());
+    }
+
+    /** Round-2 fix 1: the read-only listings merge both schemas despite the view split. */
+    @Test
+    public void findAllAndDateRangeListBothSchemasInTimeOrder() {
+        String repo = "v2-listing-repo";
+        bootstrapLease(repo);
+        bootstrapCounter(repo, 0L);
+        store.appendV2(event(repo, "op-l2", "2026-08-01T05:00:02Z"));
+        // v1 events stamp occurredAt at append time (now) — later than the v2 row above.
+        LineageEvent v1 = new LineageEventBuilder()
+                .repositoryId(repo)
+                .processType(LineageProcessType.ARCHIVE_LOCAL)
+                .addInputObject(repo, "doc-l1")
+                .addOutput("nemaki://" + repo + "/archives/doc-l1")
+                .targets(List.of("atlas"))
+                .build();
+        store.append(v1);
+
+        List<LineageJournalRow> range = store.findByDateRange(
+                "2026-08-01T05:00:00Z", "2099-01-01T00:00:00Z", 50, 0);
+        // The class shares one DB — scope the assertions to this repo.
+        List<LineageJournalRow.Decoded> mine = range.stream()
+                .filter(r -> r instanceof LineageJournalRow.Decoded d
+                        && repo.equals(d.entry().record().repositoryId()))
+                .map(r -> (LineageJournalRow.Decoded) r)
+                .toList();
+        assertEquals(2, mine.size(), "both schemas appear in the ranged listing");
+        assertEquals("2026-08-01T05:00:02Z", mine.get(0).entry().record().occurredAt(),
+                "ascending merge order puts the older v2 row first");
+        assertEquals(1, store.findByDateRange(
+                "2026-08-01T05:00:00Z", "2099-01-01T00:00:00Z", 1, 0).size(),
+                "limit applies to the MERGED order");
+
+        // Nonzero offset walks the MERGED order: the row at offset 1 is the second element
+        // of the full merged listing, whatever schema it came from.
+        List<LineageJournalRow> all = store.findByDateRange(
+                "2026-08-01T05:00:00Z", "2099-01-01T00:00:00Z", 10, 0);
+        List<LineageJournalRow> offset1 = store.findByDateRange(
+                "2026-08-01T05:00:00Z", "2099-01-01T00:00:00Z", 10, 1);
+        assertEquals(all.size() - 1, offset1.size());
+        assertEquals(((LineageJournalRow.Decoded) all.get(1)).entry().record().recordId(),
+                ((LineageJournalRow.Decoded) offset1.get(0)).entry().record().recordId());
+
+        // findAll (newest first) sees both schemas too.
+        List<LineageJournalRow> newest = store.findAll(200, 0);
+        boolean hasMineV2 = newest.stream().anyMatch(r -> r instanceof LineageJournalRow.Decoded d
+                && repo.equals(d.entry().record().repositoryId())
+                && "2026-08-01T05:00:02Z".equals(d.entry().record().occurredAt()));
+        boolean hasMineV1 = newest.stream().anyMatch(r -> r instanceof LineageJournalRow.Decoded d
+                && repo.equals(d.entry().record().repositoryId())
+                && d.entry().envelope() instanceof LineageJournalEntry.V1);
+        assertEquals(true, hasMineV2 && hasMineV1, "findAll merges both schemas");
+    }
+
+    /** F2: reaping across page boundaries — mutations must not skip surviving candidates. */
+    @Test
+    public void theReaperDrainsAcrossPageBoundariesDespiteMutations() {
+        String repo = "v2-reaper-paging-repo";
+        bootstrapLease(repo);
+        bootstrapCounter(repo, 0L);
+        int total = 120; // beyond the 100-row page size
+        for (int i = 0; i < total; i++) {
+            store.appendV2(event(repo, "op-page-" + String.format("%03d", i),
+                    String.format("2026-08-01T04:%02d:%02dZ", i / 60, i % 60)));
+        }
+        LineageFencedSequencer sequencer = new LineageFencedSequencer(store, null,
+                "it-node", Duration.ofMinutes(1), 200, 1000);
+        assertEquals(total, sequencer.runOnce(repo).finalized());
+        List<LineageJournalRowV2> rows =
+                store.findV2ByRepositoryAndSequenceRange(repo, 0, total);
+        assertEquals(total, rows.size());
+        for (LineageJournalRowV2 row : rows) {
+            assertEquals(true, store.claimForProjection(row.event().deliveryId(),
+                    "page-target", Duration.ofMillis(1)) != null);
+        }
+        try {
+            Thread.sleep(5L);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        int reaped = store.reapExpiredClaims("page-target", java.time.Instant.now());
+        assertEquals(total, reaped,
+                "every expired claim across page boundaries reaps exactly once");
+    }
 }

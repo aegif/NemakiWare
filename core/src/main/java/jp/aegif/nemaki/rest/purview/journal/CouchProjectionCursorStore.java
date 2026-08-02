@@ -78,6 +78,134 @@ public class CouchProjectionCursorStore implements ProjectionCursorStore {
     }
 
     @Override
+    public boolean advanceCursorMonotonic(ProjectionCursor cursor) {
+        CloudantClientWrapper client = getClient();
+        if (client == null) {
+            logger.error("Monotonic cursor advance impossible: cursor store inactive");
+            return false;
+        }
+        String docId = cursor.docId();
+        long incoming = cursor.lastProcessedSequence();
+        if (incoming < 0) {
+            logger.error("Monotonic cursor advance refused: negative incoming position {}",
+                    incoming);
+            return false;
+        }
+        // One CAS attempt + one reread on conflict: either the write lands, or someone else
+        // already advanced at/past the incoming position (success), or the caller halts.
+        for (int attempt = 0; attempt < 2; attempt++) {
+            Map<String, Object> existing;
+            try {
+                existing = readRawStrict(client, docId);
+            } catch (RuntimeException e) {
+                logger.error("Monotonic cursor read failed for {}: {}", docId, e.getMessage());
+                return false;
+            }
+            if (existing != null) {
+                long stored;
+                try {
+                    Object value = existing.get("lastProcessedSequence");
+                    if (!(value instanceof Number n)) {
+                        throw new IllegalArgumentException("lastProcessedSequence must be a"
+                                + " number, got " + value);
+                    }
+                    stored = new java.math.BigDecimal(n.toString()).longValueExact();
+                    if (stored < 0) {
+                        throw new IllegalArgumentException("stored position is negative: "
+                                + stored);
+                    }
+                } catch (RuntimeException e) {
+                    // Never coerced to zero: a malformed cursor rewound to 0 would republish
+                    // the whole repository.
+                    logger.error("Monotonic cursor refused malformed stored position in {}: {}",
+                            docId, e.getMessage());
+                    return false;
+                }
+                if (stored >= incoming) {
+                    return true;
+                }
+                existing.put("lastProcessedSequence", incoming);
+                existing.put("updatedAt", Instant.now().toString());
+                try {
+                    if (casPut(client, docId, existing)) {
+                        return true;
+                    }
+                    // CAS lost — reread once; success iff the winner already covers us.
+                    continue;
+                } catch (RuntimeException e) {
+                    logger.error("Monotonic cursor CAS failed for {}: {}", docId,
+                            e.getMessage());
+                    return false;
+                }
+            }
+            Map<String, Object> fresh = new LinkedHashMap<>();
+            fresh.put("_id", docId);
+            fresh.put("type", "projection_cursor");
+            fresh.put("target", cursor.target());
+            fresh.put("repositoryId", cursor.repositoryId());
+            fresh.put("lastProcessedSequence", incoming);
+            fresh.put("updatedAt", Instant.now().toString());
+            try {
+                if (casPut(client, docId, fresh)) {
+                    return true;
+                }
+                continue; // create/create conflict — reread once
+            } catch (RuntimeException e) {
+                logger.error("Monotonic cursor create failed for {}: {}", docId, e.getMessage());
+                return false;
+            }
+        }
+        logger.warn("Monotonic cursor advance for {} lost two CAS rounds — halting repository"
+                + " until the next poll", docId);
+        return false;
+    }
+
+    /** Strict raw read: 404 → null; anything else propagates (never silent absence). */
+    private Map<String, Object> readRawStrict(CloudantClientWrapper client, String docId) {
+        try {
+            com.ibm.cloud.cloudant.v1.model.Document doc = client.getClient().getDocument(
+                    new com.ibm.cloud.cloudant.v1.model.GetDocumentOptions.Builder()
+                            .db(client.getDatabaseName())
+                            .docId(docId)
+                            .build())
+                    .execute().getResult();
+            Map<String, Object> props = new LinkedHashMap<>();
+            if (doc.getId() != null) props.put("_id", doc.getId());
+            if (doc.getRev() != null) props.put("_rev", doc.getRev());
+            if (doc.getProperties() != null) props.putAll(doc.getProperties());
+            return props;
+        } catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException notFound) {
+            return null;
+        }
+    }
+
+    /** Strict CAS put: true = committed, false = 409; anything else propagates. */
+    private boolean casPut(CloudantClientWrapper client, String docId, Map<String, Object> raw) {
+        try {
+            com.ibm.cloud.cloudant.v1.model.Document doc =
+                    new com.ibm.cloud.cloudant.v1.model.Document();
+            Map<String, Object> withoutMeta = new LinkedHashMap<>(raw);
+            withoutMeta.remove("_id");
+            Object rev = withoutMeta.remove("_rev");
+            doc.setProperties(withoutMeta);
+            doc.setId(docId);
+            if (rev != null) {
+                doc.setRev((String) rev);
+            }
+            client.getClient().putDocument(
+                    new com.ibm.cloud.cloudant.v1.model.PutDocumentOptions.Builder()
+                            .db(client.getDatabaseName())
+                            .docId(docId)
+                            .document(doc)
+                            .build())
+                    .execute();
+            return true;
+        } catch (com.ibm.cloud.sdk.core.service.exception.ConflictException conflict) {
+            return false;
+        }
+    }
+
+    @Override
     @SuppressWarnings("unchecked")
     public List<ProjectionCursor> getAllCursors() {
         CloudantClientWrapper client = getClient();

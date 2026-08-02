@@ -34,7 +34,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * mode is {@link LineageMode#JOURNALED}.
  */
 @Service
-public class CouchLineageJournalStore implements LineageJournalStore, LineageSequencingStore {
+public class CouchLineageJournalStore implements LineageJournalStore, LineageSequencingStore,
+        LineageV2TransitionStore {
 
     private static final Logger logger = LoggerFactory.getLogger(CouchLineageJournalStore.class);
 
@@ -49,6 +50,15 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
     @Autowired
     private LineageConfig lineageConfig;
+
+    @Autowired(required = false)
+    private LineageMetrics lineageMetrics;
+
+    // ObjectProvider breaks the construction cycle (readiness itself autowires this store);
+    // resolved lazily at each purge run, never at startup.
+    @Autowired(required = false)
+    private org.springframework.beans.factory.ObjectProvider<LineageDrestReadiness>
+            drestReadinessProvider;
 
     @Autowired
     @Qualifier("couchdbObjectMapper")
@@ -224,15 +234,13 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                 "function(doc) { if (" + EVENT_TYPES + ") { emit([doc.repositoryId, doc.occurredAt], null); } }",
                 null));
 
-        // by_target_status — projector claim and backlog monitoring.
-        // Deliverability is an ALLOWLIST: no state field (every v1 row) or explicitly SEQUENCED.
-        // A denylist of UNSEQUENCED alone left SEQUENCING visible — the fenced sequencer's
-        // mid-assignment state (§8-a) — and any state a future slice adds would have been
-        // deliverable by default. Event-first means the event exists first, not that it is
-        // deliverable first; deliverable is what the sequencer says it is, explicitly.
+        // by_target_status — v1 projector claim and backlog monitoring. v1-ONLY (D-rest-2):
+        // the SEQUENCED-allowlist half-measure is superseded by schema selection — every v1
+        // status/count/drain surface reads this view, and isolation by selection is the only
+        // isolation that also protects OLD binaries, whose code queries this view name and
+        // whose downstream (3-arg CAS, drains) has no v2 guards.
         views.put("by_target_status", new ViewDefinition(
-                "function(doc) { if (" + EVENT_TYPES + " && doc.publishStatusByTarget"
-                        + " && (doc.state == null || doc.state === 'SEQUENCED')) { " +
+                "function(doc) { if (doc.type === 'lineage_event' && doc.publishStatusByTarget) { " +
                         "var t = doc.publishStatusByTarget; for (var k in t) { if (t.hasOwnProperty(k)) { emit([k, t[k]], null); } } } }",
                 "_count"));
 
@@ -241,9 +249,11 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                 "function(doc) { if (" + EVENT_TYPES + " && doc.processType) { emit(doc.processType, null); } }",
                 "_count"));
 
-        // by_occurred_at — cross-repository time ordering for findAll
+        // by_occurred_at — cross-repository time ordering for findAll and purge. v1-ONLY:
+        // purge DELETES; an old binary must be physically unable to purge v2 rows. The new
+        // binary purges v2 through v2_by_occurred_at, and only when D-rest is enabled.
         views.put("by_occurred_at", new ViewDefinition(
-                "function(doc) { if (" + EVENT_TYPES + ") { emit(doc.occurredAt, null); } }",
+                "function(doc) { if (doc.type === 'lineage_event') { emit(doc.occurredAt, null); } }",
                 null));
 
         // by_repository_and_process_type — repository+processType composite filter
@@ -262,27 +272,27 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                 "function(doc) { if (doc.type === 'lineage_dead_letter') { emit([doc.replayed || false, doc.recordedAt], null); } }",
                 "_count"));
 
-        // by_target_status_time — target+status+occurredAt for oldest-first queries.
-        // Same allowlist as by_target_status: this view feeds the age/overflow drains, and a row
-        // must not be age-discarded before it was ever deliverable.
+        // by_target_status_time — target+status+occurredAt for oldest-first queries. v1-ONLY:
+        // this view feeds the destructive age/overflow drains, which are v1 policy.
         views.put("by_target_status_time", new ViewDefinition(
-                "function(doc) { if (" + EVENT_TYPES + " && doc.publishStatusByTarget && doc.occurredAt"
-                        + " && (doc.state == null || doc.state === 'SEQUENCED')) { " +
+                "function(doc) { if (doc.type === 'lineage_event' && doc.publishStatusByTarget && doc.occurredAt) { " +
                         "var t = doc.publishStatusByTarget; for (var k in t) { if (t.hasOwnProperty(k)) { emit([k, t[k], doc.occurredAt], null); } } } }",
                 null));
 
-        // by_repository_and_sequence — projection cursor sequence ordering
+        // by_repository_and_sequence — projection cursor sequence ordering. v1-ONLY: an old
+        // binary's ordered walk reads this view and claims via the token-less 3-arg CAS; a
+        // finalized v2 row must never appear in it. The new binary's router MERGES this stream
+        // with v2_by_repository_and_sequence by sequence (unique per repo — one counter).
         views.put("by_repository_and_sequence", new ViewDefinition(
-                "function(doc) { if (" + EVENT_TYPES + " && doc.repositoryId && doc.sequenceNumber) { " +
+                "function(doc) { if (doc.type === 'lineage_event' && doc.repositoryId && doc.sequenceNumber) { " +
                         "emit([doc.repositoryId, doc.sequenceNumber], null); } }",
                 null));
 
-        // non_terminal_by_target_repo — distinct repos with non-terminal events per target.
-        // Same allowlist: it feeds the ordered path's repository discovery and the backlog
-        // counters, and a not-yet-deliverable row is not backlog.
+        // non_terminal_by_target_repo — distinct repos with non-terminal v1 events per target.
+        // v1-ONLY: feeds v1 repository discovery and the backlog counters that drive the
+        // destructive v1 drain; v2 discovery has its own view below.
         views.put("non_terminal_by_target_repo", new ViewDefinition(
-                "function(doc) { if (" + EVENT_TYPES + " && doc.publishStatusByTarget && doc.repositoryId"
-                        + " && (doc.state == null || doc.state === 'SEQUENCED')) { " +
+                "function(doc) { if (doc.type === 'lineage_event' && doc.publishStatusByTarget && doc.repositoryId) { " +
                         "var t = doc.publishStatusByTarget; for (var k in t) { if (t.hasOwnProperty(k)) { " +
                         "var s = t[k]; if (s === 'PENDING' || s === 'FAILED' || s === 'PROJECTING') { emit([k, doc.repositoryId], null); } } } } }",
                 "_count"));
@@ -320,8 +330,10 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         // projecting_by_claimed_at — PROJECTING events ordered by claimedAt for stale reaping.
         // Key: [target, claimedAt], where claimedAt falls back to occurredAt for pre-upgrade
         // events, so oldest-claimed is always found regardless of the sample window size.
+        // v1-ONLY: the v1 reaper resets PROJECTING via the token-less 3-arg CAS; a leased v2
+        // claim must be physically invisible to it (the v2 reaper is token-fenced, below).
         views.put("projecting_by_claimed_at", new ViewDefinition(
-                "function(doc) { if (" + EVENT_TYPES + " && doc.publishStatusByTarget) { " +
+                "function(doc) { if (doc.type === 'lineage_event' && doc.publishStatusByTarget) { " +
                         "var t = doc.publishStatusByTarget; var c = doc.claimedAtByTarget || {}; " +
                         "for (var k in t) { if (t.hasOwnProperty(k) && t[k] === 'PROJECTING') { " +
                         "var ts = c[k] || doc.occurredAt || ''; emit([k, ts], null); } } } }",
@@ -338,6 +350,55 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                 "function(doc) { if (" + EVENT_TYPES + " && doc.repositoryId && doc.processType && doc.occurredAt) { " +
                         "emit([doc.repositoryId, doc.processType, doc.occurredAt], null); } }",
                 null));
+
+        // ---- §8-b v2 projection views (D-rest-2). v2-only by definition; old binaries never
+        // query these names. All v2 timestamps are epoch millis — numeric keys sort exactly.
+
+        // v2_by_repository_and_sequence — the v2 half of the ordered stream: SEQUENCED rows
+        // only (state is explicit; sequenceNumber alone is not deliverability).
+        views.put("v2_by_repository_and_sequence", new ViewDefinition(
+                "function(doc) { if (doc.type === 'lineage_event_v2' && doc.state === 'SEQUENCED'"
+                        + " && doc.repositoryId && doc.sequenceNumber) { "
+                        + "emit([doc.repositoryId, doc.sequenceNumber], null); } }",
+                null));
+
+        // v2_by_occurred_at — the v2 half of retention purge, queried only when D-rest is
+        // enabled (inertness: a disabled system touches no v2 row, purge included).
+        views.put("v2_by_occurred_at", new ViewDefinition(
+                "function(doc) { if (doc.type === 'lineage_event_v2') { emit(doc.occurredAt, null); } }",
+                null));
+
+        // v2_non_terminal_by_target_repo — v2 repository discovery for the ordered router.
+        // VERIFYING is non-terminal here; the destructive v1 drains never read this view.
+        views.put("v2_non_terminal_by_target_repo", new ViewDefinition(
+                "function(doc) { if (doc.type === 'lineage_event_v2' && doc.state === 'SEQUENCED'"
+                        + " && doc.publishStatusByTarget && doc.repositoryId) { "
+                        + "var t = doc.publishStatusByTarget; for (var k in t) { if (t.hasOwnProperty(k)) { "
+                        + "var s = t[k]; if (s === 'PENDING' || s === 'FAILED' || s === 'PROJECTING' || s === 'VERIFYING') { "
+                        + "emit([k, doc.repositoryId], null); } } } } }",
+                "_count"));
+
+        // v2_claims_by_expiry — the token-fenced reaper's scan: live claims ordered by lease
+        // expiry (epoch millis). The view row is a hint; the reaper rereads before every CAS.
+        views.put("v2_claims_by_expiry", new ViewDefinition(
+                "function(doc) { if (doc.type === 'lineage_event_v2' && doc.publishStatusByTarget"
+                        + " && doc.v2ClaimByTarget) { "
+                        + "var t = doc.publishStatusByTarget; var c = doc.v2ClaimByTarget; "
+                        + "for (var k in t) { if (t.hasOwnProperty(k) && (t[k] === 'PROJECTING' || t[k] === 'VERIFYING')"
+                        + " && c[k] && typeof c[k].leaseExpiresAtMs === 'number') { "
+                        + "emit([k, c[k].leaseExpiresAtMs], null); } } } }",
+                "_count"));
+
+        // v2_verifying_by_since — lineage.verifying.count{target} and oldest-age (§8-b v2.2
+        // metrics): VERIFYING rows ordered by when verification began.
+        views.put("v2_verifying_by_since", new ViewDefinition(
+                "function(doc) { if (doc.type === 'lineage_event_v2' && doc.publishStatusByTarget"
+                        + " && doc.v2ClaimByTarget) { "
+                        + "var t = doc.publishStatusByTarget; var c = doc.v2ClaimByTarget; "
+                        + "for (var k in t) { if (t.hasOwnProperty(k) && t[k] === 'VERIFYING'"
+                        + " && c[k] && typeof c[k].verifyingSinceMs === 'number') { "
+                        + "emit([k, c[k].verifyingSinceMs], null); } } } }",
+                "_count"));
 
         return java.util.Collections.unmodifiableMap(views);
     }
@@ -405,6 +466,20 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
             throw new IllegalArgumentException("appendV2 requires sequenceNumber 0, got "
                     + event.sequenceNumber() + " — sequences are assigned by the fenced"
                     + " sequencer, never at append");
+        }
+        for (var e : event.publishStatusByTarget().entrySet()) {
+            if (e.getValue() != LineagePublishStatus.PENDING) {
+                // F5 (v2.3.19): the only initial status this slice writes is PENDING. The
+                // creation-time classifications of the frozen table ((v1 legacy)/(oversize)
+                // →UNRESOLVED, (cross-repo)→REJECTED) land WITH their producers, which must
+                // write the durable reason shape the strict decoder requires — writing the
+                // status without its reason would create a row every read permanently
+                // refuses.
+                throw new IllegalArgumentException("appendV2 initial status for target '"
+                        + e.getKey() + "' must be PENDING, got " + e.getValue()
+                        + " — creation-time classifications require their reason shapes"
+                        + " (not implemented in this slice)");
+            }
         }
         ensureDatabase();
 
@@ -581,6 +656,14 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                 logger.debug("Row not found for updatePublishStatus: {}", recordId);
                 return 0;
             }
+            if ("lineage_event_v2".equals(doc.get("type"))) {
+                // §8-b hard fence: v2 lifecycles move only through the token-fenced
+                // LineageV2TransitionStore. The v1-only views make this unreachable from the
+                // v1 loop; the guard is for any other caller that resolves a recordId blind.
+                logger.error("updatePublishStatus refused for v2 row {} — v2 transitions are"
+                        + " token-fenced (LineageV2TransitionStore)", recordId);
+                return 0;
+            }
 
             @SuppressWarnings("unchecked")
             Map<String, String> statusMap = (Map<String, String>) doc.get("publishStatusByTarget");
@@ -646,7 +729,8 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         params.put("limit", PURGE_BATCH_SIZE);
         params.put("include_docs", true);
 
-        List<LineageJournalRow> candidates = queryRowsFromView("by_occurred_at", params);
+        List<LineageJournalRow> candidates = new ArrayList<>(
+                queryRowsFromView("by_occurred_at", params));
 
         List<String[]> toDelete = new ArrayList<>(); // [id, rev] pairs
         for (LineageJournalRow row : candidates) {
@@ -666,6 +750,57 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                 if (doc != null) {
                     toDelete.add(new String[]{(String) doc.get("_id"), (String) doc.get("_rev")});
                 }
+            }
+        }
+
+        // The v2 half of purge (B1/F3): gated by the AGGREGATE readiness verdict — the same
+        // single gate every other D-rest driver consults — and decoded through the STRICT v2
+        // envelope, so a malformed row whose status map merely claims PUBLISHED is never
+        // deleted. A disabled or unready system touches no v2 row; old binaries never query
+        // this view name at all.
+        LineageDrestReadiness readiness = drestReadinessProvider == null ? null
+                : drestReadinessProvider.getIfAvailable();
+        if (readiness != null && readiness.evaluate().ready()) {
+            try {
+                ViewResult v2Result = getLineageClient().getClient().postView(
+                        new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
+                                .db(getLineageClient().getDatabaseName())
+                                .ddoc(DESIGN_DOC)
+                                .view("v2_by_occurred_at")
+                                .startKey("")
+                                .endKey(cutoffStr)
+                                .reduce(false)
+                                .limit((long) PURGE_BATCH_SIZE)
+                                .build())
+                        .execute().getResult();
+                if (v2Result != null && v2Result.getRows() != null) {
+                    for (ViewResultRow row : v2Result.getRows()) {
+                        String docId = row.getId();
+                        try {
+                            Map<String, Object> raw = readRawStrict(docId);
+                            if (raw == null) {
+                                continue;
+                            }
+                            LineageJournalRowV2 typed = decodeV2Strict(raw);
+                            Map<String, LineageTargetLifecycle> lifecycles =
+                                    typed.targetLifecycles();
+                            // An empty lifecycle map means nothing was ever delivered —
+                            // conservative: not purge-eligible (unlike v1's empty-map rule).
+                            boolean eligible = !lifecycles.isEmpty()
+                                    && lifecycles.values().stream().allMatch(
+                                            lc -> lc.status().isPurgeEligible());
+                            if (eligible) {
+                                toDelete.add(new String[]{(String) raw.get("_id"),
+                                        (String) raw.get("_rev")});
+                            }
+                        } catch (SequencingStorageException e) {
+                            logger.warn("Purge skipping undecodable/unreadable v2 row {}: {}",
+                                    docId, e.getMessage());
+                        }
+                    }
+                }
+            } catch (RuntimeException e) {
+                logger.warn("v2 purge scan failed (skipped this run): {}", e.getMessage());
             }
         }
 
@@ -693,6 +828,13 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
             @SuppressWarnings("unchecked")
             Map<String, Object> doc = (Map<String, Object>) getLineageClient().get(Map.class, docId, null);
             if (doc == null) {
+                return 0;
+            }
+            if ("lineage_event_v2".equals(doc.get("type"))) {
+                // Same fence as updatePublishStatus: v2 discard additionally stays refused
+                // until the spool-backed dead-letter capture is wired (v2.3.18 ⑧ + §9).
+                logger.error("discardEvent refused for v2 row {} — v2 transitions are"
+                        + " token-fenced (LineageV2TransitionStore)", recordId);
                 return 0;
             }
 
@@ -739,11 +881,14 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
             return 0;
         }
 
+        // The v1 non-terminal set, EXPLICITLY (D-rest-2): this count feeds the destructive v1
+        // drains, and its view is v1-only — iterating values() would silently admit each new
+        // v2 state (VERIFYING, WAITING_FOR_CATALOG) into v1 policy arithmetic. v2 backlog is
+        // counted by the v2 views, never here.
         long count = 0;
-        for (LineagePublishStatus status : LineagePublishStatus.values()) {
-            if (!status.isTerminal()) {
-                count += queryTargetStatusCount(target, status.name());
-            }
+        for (LineagePublishStatus status : List.of(LineagePublishStatus.PENDING,
+                LineagePublishStatus.PROJECTING, LineagePublishStatus.FAILED)) {
+            count += queryTargetStatusCount(target, status.name());
         }
         return count;
     }
@@ -757,17 +902,67 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
         int cappedLimit = Math.min(Math.max(limit, 1), 200);
 
-        // Use by_occurred_at (single-key view on occurredAt) for correct
-        // cross-repository time ordering. descending=true → newest first.
-        Map<String, Object> params = new HashMap<>();
-        params.put("limit", cappedLimit);
-        if (offset > 0) {
-            params.put("skip", offset);
-        }
-        params.put("include_docs", true);
-        params.put("descending", true);
+        // by_occurred_at is v1-ONLY since the D-rest-2 schema split (purge isolation), so this
+        // READ-ONLY listing merges it with v2_by_occurred_at in memory: fetch offset+limit from
+        // EACH side from position 0 (a per-view skip would misdistribute the offset between
+        // schemas), merge by occurredAt, then apply offset+limit to the merged order.
+        // descending=true → newest first.
+        int cappedOffset = boundedListingOffset(offset);
+        int fetch = cappedOffset + cappedLimit; // both bounded: no overflow, bounded memory
+        Map<String, Object> v1Params = new HashMap<>();
+        v1Params.put("limit", fetch);
+        v1Params.put("include_docs", true);
+        v1Params.put("descending", true);
+        List<LineageJournalRow> merged = mergeByOccurredAt(
+                queryRowsFromView("by_occurred_at", v1Params),
+                queryRowsFromView("v2_by_occurred_at", new HashMap<>(v1Params)),
+                true);
+        return sliceRows(merged, cappedOffset, cappedLimit);
+    }
 
-        return queryRowsFromView("by_occurred_at", params);
+    /**
+     * The merged listings fetch offset+limit rows PER SIDE, so the offset must be bounded —
+     * an unbounded admin offset would be a client-controlled allocation (and could overflow).
+     * 10k × 2 sides is the documented deep-pagination ceiling for these admin listings.
+     */
+    static final int MAX_LISTING_OFFSET = 10_000;
+
+    private static int boundedListingOffset(int offset) {
+        return Math.min(Math.max(offset, 0), MAX_LISTING_OFFSET);
+    }
+
+    /** Merge two occurredAt-ordered row lists, preserving each side's order. */
+    private static List<LineageJournalRow> mergeByOccurredAt(List<LineageJournalRow> a,
+            List<LineageJournalRow> b, boolean descending) {
+        List<LineageJournalRow> merged = new ArrayList<>(a.size() + b.size());
+        int i = 0;
+        int j = 0;
+        while (i < a.size() && j < b.size()) {
+            String ka = occurredAtOf(a.get(i));
+            String kb = occurredAtOf(b.get(j));
+            int cmp = ka.compareTo(kb);
+            boolean takeA = descending ? cmp >= 0 : cmp <= 0;
+            merged.add(takeA ? a.get(i++) : b.get(j++));
+        }
+        while (i < a.size()) merged.add(a.get(i++));
+        while (j < b.size()) merged.add(b.get(j++));
+        return merged;
+    }
+
+    private static String occurredAtOf(LineageJournalRow row) {
+        if (row instanceof LineageJournalRow.Decoded decoded) {
+            String at = decoded.entry().record().occurredAt();
+            return at == null ? "" : at;
+        }
+        return ""; // undecodable rows sort deterministically at the edge and stay visible
+    }
+
+    private static List<LineageJournalRow> sliceRows(List<LineageJournalRow> rows, int offset,
+            int limit) {
+        if (offset >= rows.size()) {
+            return List.of();
+        }
+        return List.copyOf(rows.subList(offset, Math.min(rows.size(), offset + limit)));
     }
 
     @Override
@@ -942,7 +1137,15 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
     public List<LineageJournalRow> findByDateRange(String start, String end, int limit, int offset) {
         if (!ensureClientForRead()) return List.of();
         int cappedLimit = Math.min(Math.max(limit, 1), 200);
-        return queryRowsFromView("by_occurred_at", start, end, false, cappedLimit, offset);
+        // Same read-only merge as findAll (the view split is for purge/old-binary isolation;
+        // listings remain dual-schema). Ascending here.
+        int cappedOffset = boundedListingOffset(offset);
+        int fetch = cappedOffset + cappedLimit;
+        List<LineageJournalRow> merged = mergeByOccurredAt(
+                queryRowsFromView("by_occurred_at", start, end, false, fetch, 0),
+                queryRowsFromView("v2_by_occurred_at", start, end, false, fetch, 0),
+                false);
+        return sliceRows(merged, cappedOffset, cappedLimit);
     }
 
     @Override
@@ -1655,6 +1858,516 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
             }
             throw new SequencingStorageException(
                     "sequence watermark query failed for '" + repositoryId + "'", e);
+        }
+    }
+
+
+    // ==================================================================
+    // LineageV2TransitionStore — §8-b v2 (D-rest-2). Deployed dual and inert like the
+    // sequencing surface: nothing calls these in production until D-rest activation.
+    // ==================================================================
+
+    /**
+     * C1 (v2.3.19): compares the DEPLOYED design document against this binary's view
+     * definitions — complete definitions, map source AND reduce (including reduce-absent).
+     * An old binary redeploying its dual-schema views during a rolling window is exactly what
+     * this catches; activation must refuse until the design doc is this binary's.
+     *
+     * @return violations (empty = signatures match); "deployment pending" style entries when
+     *         the store/DB/design doc is not there yet — never a crash, never a silent pass
+     */
+    public List<String> viewSignatureViolations() {
+        if (!isActive() || !dbProvisioned.get()) {
+            return List.of("lineage store not active / database not provisioned yet");
+        }
+        Map<String, Object> designDoc;
+        try {
+            designDoc = readRawStrict("_design/" + DESIGN_DOC);
+        } catch (RuntimeException e) {
+            return List.of("design document unreadable: " + e.getMessage());
+        }
+        if (designDoc == null) {
+            return List.of("design document '_design/" + DESIGN_DOC + "' not deployed yet");
+        }
+        Object viewsValue = designDoc.get("views");
+        if (!(viewsValue instanceof Map<?, ?> deployed)) {
+            return List.of("design document has no views map");
+        }
+        List<String> violations = new ArrayList<>();
+        for (var expected : VIEWS.entrySet()) {
+            Object entry = deployed.get(expected.getKey());
+            if (!(entry instanceof Map<?, ?> view)) {
+                violations.add("view '" + expected.getKey() + "' missing from deployed design"
+                        + " document");
+                continue;
+            }
+            Object map = view.get("map");
+            if (!expected.getValue().map().equals(map)) {
+                violations.add("view '" + expected.getKey() + "' map source differs from this"
+                        + " binary's definition");
+            }
+            Object reduce = view.get("reduce");
+            String expectedReduce = expected.getValue().reduce();
+            boolean reduceMatches = expectedReduce == null
+                    ? reduce == null
+                    : expectedReduce.equals(reduce);
+            if (!reduceMatches) {
+                violations.add("view '" + expected.getKey() + "' reduce differs from this"
+                        + " binary's definition");
+            }
+        }
+        return violations;
+    }
+
+    private Map<String, Object> readV2RawStrict(String recordId) {
+        String docId = CouchLineageEventV2.documentId(recordId);
+        return readRawStrict(docId);
+    }
+
+    /** Decodes strictly; a malformed doc throws (never a value the machine could act on). */
+    private LineageJournalRowV2 decodeV2Strict(Map<String, Object> raw) {
+        try {
+            return CouchLineageJournalRowV2.fromRaw(raw);
+        } catch (RuntimeException e) {
+            throw new SequencingStorageException("undecodable v2 row '" + raw.get("_id")
+                    + "': " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public V2ClaimGrant claimForProjection(String recordId, String target,
+            java.time.Duration lease) {
+        if (recordId == null || recordId.isBlank() || target == null || target.isBlank()
+                || lease == null || lease.isNegative() || lease.isZero()) {
+            throw new IllegalArgumentException("recordId, target and a positive lease are"
+                    + " required");
+        }
+        ensureDatabase();
+        Map<String, Object> raw = readV2RawStrict(recordId);
+        if (raw == null) {
+            return null;
+        }
+        if (!"lineage_event_v2".equals(raw.get("type"))) {
+            logger.error("claimForProjection refused: '{}' is not a v2 row", recordId);
+            return null;
+        }
+        LineageJournalRowV2 row = decodeV2Strict(raw);
+        if (row.state() != LineageJournalRowV2.SequencingState.SEQUENCED) {
+            // Not deliverable, whatever the status map says — claims exist only past the
+            // sequencer's finalize.
+            return null;
+        }
+        LineageTargetLifecycle current = row.targetLifecycles().get(target);
+        LineagePublishStatus status = current == null
+                ? LineagePublishStatus.PENDING : current.status();
+        if (status != LineagePublishStatus.PENDING && status != LineagePublishStatus.FAILED) {
+            return null;
+        }
+        long nowMs = Instant.now().toEpochMilli();
+        long expiresMs = Math.addExact(nowMs, lease.toMillis());
+        String token = java.util.UUID.randomUUID().toString();
+        CouchLineageJournalRowV2.applyProjectionClaim(raw, target, token, nowMs, expiresMs);
+        if (!updateStrictCas(raw)) {
+            return null;
+        }
+        return new V2ClaimGrant(recordId, target, token, Instant.ofEpochMilli(expiresMs));
+    }
+
+    /** The token-fenced (expected→next) pairs and their effects, per the frozen §8-b table. */
+    private record FencedEffect(boolean toVerifying, boolean incrementRetry,
+                                boolean reasonRequired) {
+    }
+
+    private static final Map<List<LineagePublishStatus>, FencedEffect> FENCED_TRANSITIONS =
+            Map.of(
+                    List.of(LineagePublishStatus.PROJECTING, LineagePublishStatus.VERIFYING),
+                    new FencedEffect(true, false, false),
+                    List.of(LineagePublishStatus.VERIFYING, LineagePublishStatus.PUBLISHED),
+                    new FencedEffect(false, false, false),
+                    List.of(LineagePublishStatus.VERIFYING, LineagePublishStatus.FAILED),
+                    new FencedEffect(false, false, false),
+                    List.of(LineagePublishStatus.PROJECTING, LineagePublishStatus.FAILED),
+                    new FencedEffect(false, true, false),
+                    List.of(LineagePublishStatus.VERIFYING, LineagePublishStatus.UNPROJECTABLE),
+                    new FencedEffect(false, false, true),
+                    List.of(LineagePublishStatus.PROJECTING, LineagePublishStatus.REJECTED),
+                    new FencedEffect(false, false, true));
+
+    @Override
+    public boolean transitionV2(String recordId, String target, LineagePublishStatus expected,
+            LineagePublishStatus next, String claimToken,
+            LineageTargetLifecycle.TerminalReason reason) {
+        FencedEffect effect = FENCED_TRANSITIONS.get(List.of(expected, next));
+        if (effect == null) {
+            throw new IllegalArgumentException("transition " + expected + "->" + next
+                    + " is not in the fenced §8-b table — caller bug, not a race");
+        }
+        if (effect.reasonRequired() && reason == null) {
+            throw new IllegalArgumentException(next + " requires a durable terminal reason");
+        }
+        if (!effect.reasonRequired() && reason != null) {
+            throw new IllegalArgumentException(next + " must not carry a terminal reason");
+        }
+        if (claimToken == null || claimToken.isBlank()) {
+            throw new IllegalArgumentException("fenced transitions require the claim token");
+        }
+        ensureDatabase();
+        Map<String, Object> raw = readV2RawStrict(recordId);
+        if (raw == null) {
+            return false;
+        }
+        LineageJournalRowV2 row = decodeV2Strict(raw);
+        LineageTargetLifecycle current = row.targetLifecycles().get(target);
+        if (current == null || current.status() != expected
+                || !claimToken.equals(current.claimToken())) {
+            return false;
+        }
+        long nowMs = Instant.now().toEpochMilli();
+        if (current.leaseExpiresAtMs() == null || current.leaseExpiresAtMs() <= nowMs) {
+            // F4: EVERY claimant write fails after expiry — an expired claimant racing the
+            // reaper must lose, not settle. (The reaper's FAILED write CAS-beats us anyway;
+            // this makes the fence explicit rather than a rev-timing accident.)
+            return false;
+        }
+        if (effect.toVerifying()) {
+            // PROJECTING→VERIFYING renews the lease ATOMICALLY in the same CAS (§8-b: the
+            // transition row says "renews lease"). Lease policy is the store's (config).
+            // Null-safe for the direct-client test construction (no Spring context);
+            // production always injects the config.
+            long leaseSeconds = lineageConfig != null
+                    ? lineageConfig.getProjectionClaimLeaseSeconds() : 120L;
+            long leaseMs = Math.addExact(nowMs,
+                    java.time.Duration.ofSeconds(leaseSeconds).toMillis());
+            CouchLineageJournalRowV2.applyVerifying(raw, target, nowMs, leaseMs);
+        } else {
+            CouchLineageJournalRowV2.applySettle(raw, target, next, effect.incrementRetry(),
+                    reason);
+        }
+        return updateStrictCas(raw);
+    }
+
+    /** The pre-claim (expected→next) pairs: obligation + admin rows of the frozen table. */
+    private static final Map<List<LineagePublishStatus>, Boolean> UNCLAIMED_TRANSITIONS =
+            Map.of(
+                    List.of(LineagePublishStatus.PENDING,
+                            LineagePublishStatus.WAITING_FOR_CATALOG), false,
+                    List.of(LineagePublishStatus.WAITING_FOR_CATALOG,
+                            LineagePublishStatus.PENDING), false,
+                    List.of(LineagePublishStatus.WAITING_FOR_CATALOG,
+                            LineagePublishStatus.UNRESOLVED), true,
+                    List.of(LineagePublishStatus.PENDING,
+                            LineagePublishStatus.DISCARDED), false,
+                    List.of(LineagePublishStatus.FAILED,
+                            LineagePublishStatus.DISCARDED), false);
+
+    @Override
+    public boolean transitionV2Unclaimed(String recordId, String target,
+            LineagePublishStatus expected, LineagePublishStatus next,
+            LineageTargetLifecycle.TerminalReason reason) {
+        Boolean reasonRequired = UNCLAIMED_TRANSITIONS.get(List.of(expected, next));
+        if (reasonRequired == null) {
+            throw new IllegalArgumentException("transition " + expected + "->" + next
+                    + " is not in the unclaimed §8-b table — caller bug, not a race");
+        }
+        if (reasonRequired && reason == null) {
+            throw new IllegalArgumentException(next + " requires a durable terminal reason");
+        }
+        if (!reasonRequired && reason != null) {
+            throw new IllegalArgumentException(next + " must not carry a terminal reason");
+        }
+        ensureDatabase();
+        Map<String, Object> raw = readV2RawStrict(recordId);
+        if (raw == null) {
+            return false;
+        }
+        LineageJournalRowV2 row = decodeV2Strict(raw);
+        LineageTargetLifecycle current = row.targetLifecycles().get(target);
+        LineagePublishStatus status = current == null
+                ? LineagePublishStatus.PENDING : current.status();
+        if (status != expected) {
+            return false;
+        }
+        if (expected == LineagePublishStatus.FAILED) {
+            // FAILED→DISCARDED: status-only write; the audit bundle rides along untouched
+            // (field-preserving map mutation — nothing is removed).
+            CouchLineageJournalRowV2.applySettle(raw, target, next, false, reason);
+        } else {
+            CouchLineageJournalRowV2.applyStatusOnly(raw, target, next, reason);
+        }
+        return updateStrictCas(raw);
+    }
+
+    @Override
+    public boolean renewClaim(String recordId, String target, String claimToken,
+            java.time.Duration lease) {
+        if (claimToken == null || claimToken.isBlank() || lease == null
+                || lease.isNegative() || lease.isZero()) {
+            throw new IllegalArgumentException("claim token and a positive lease are required");
+        }
+        ensureDatabase();
+        Map<String, Object> raw = readV2RawStrict(recordId);
+        if (raw == null) {
+            return false;
+        }
+        LineageJournalRowV2 row = decodeV2Strict(raw);
+        LineageTargetLifecycle current = row.targetLifecycles().get(target);
+        if (current == null || !current.hasLiveClaim()
+                || !claimToken.equals(current.claimToken())) {
+            return false;
+        }
+        long nowMs = Instant.now().toEpochMilli();
+        if (current.leaseExpiresAtMs() == null || current.leaseExpiresAtMs() <= nowMs) {
+            // An expired claim never self-resurrects — it goes through the reaper like
+            // anyone's.
+            return false;
+        }
+        CouchLineageJournalRowV2.applyRenew(raw, target, Math.addExact(nowMs, lease.toMillis()));
+        return updateStrictCas(raw);
+    }
+
+    @Override
+    public int reapExpiredClaims(String target, Instant cutoff) {
+        if (target == null || target.isBlank() || cutoff == null) {
+            throw new IllegalArgumentException("target and cutoff are required");
+        }
+        ensureDatabase();
+        long cutoffMs = cutoff.toEpochMilli();
+        int reaped = 0;
+        // Mutation-safe pagination (F2): a successful reap REMOVES its row from this view, so
+        // an anchor-plus-skip continuation would skip the first surviving candidate once its
+        // anchor vanished. Instead: no skip, an in-memory examined set (bounded by this run),
+        // and an anchor that advances to the last row of every page — corrupt or CAS-lost
+        // rows are re-served by CouchDB but never re-examined, and can never pin a page.
+        java.util.Set<String> examined = new java.util.HashSet<>();
+        Object pageStartKey = List.of(target, 0L);
+        String pageStartDocId = null;
+        int pageSize = 100;
+        while (true) {
+            ViewResult result;
+            try {
+                var builder = new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
+                        .db(getLineageClient().getDatabaseName())
+                        .ddoc(DESIGN_DOC)
+                        .view("v2_claims_by_expiry")
+                        .startKey(pageStartKey)
+                        .endKey(List.of(target, cutoffMs))
+                        .inclusiveEnd(false)
+                        .reduce(false)
+                        .limit((long) pageSize);
+                if (pageStartDocId != null) {
+                    builder.startKeyDocId(pageStartDocId);
+                }
+                result = getLineageClient().getClient().postView(builder.build())
+                        .execute().getResult();
+            } catch (RuntimeException e) {
+                throw new SequencingStorageException("v2_claims_by_expiry query failed for '"
+                        + target + "'", e);
+            }
+            if (result == null || result.getRows() == null) {
+                throw new SequencingStorageException("v2_claims_by_expiry returned no result"
+                        + " for '" + target + "'", null);
+            }
+            List<ViewResultRow> rows = result.getRows();
+            boolean sawNew = false;
+            for (ViewResultRow viewRow : rows) {
+                String docId = viewRow.getId();
+                if (!examined.add(docId)) {
+                    continue;
+                }
+                sawNew = true;
+                try {
+                    Map<String, Object> raw = readRawStrict(docId);
+                    if (raw == null) {
+                        continue;
+                    }
+                    LineageJournalRowV2 row = decodeV2Strict(raw);
+                    LineageTargetLifecycle current = row.targetLifecycles().get(target);
+                    if (current == null || !current.hasLiveClaim()
+                            || current.leaseExpiresAtMs() == null
+                            || current.leaseExpiresAtMs() >= cutoffMs) {
+                        continue; // stale view entry, rotated claim, or no longer live
+                    }
+                    // Reap-by-CAS: the status/token just reread are what the CAS write rides
+                    // on (_rev). No retry increment — a crashed claim is not an observed
+                    // publish failure.
+                    CouchLineageJournalRowV2.applySettle(raw, target,
+                            LineagePublishStatus.FAILED, false, null);
+                    if (updateStrictCas(raw)) {
+                        reaped++;
+                        if (lineageMetrics != null) {
+                            lineageMetrics.recordV2ClaimReaped(target);
+                        }
+                    }
+                } catch (SequencingStorageException e) {
+                    // Corrupt rows are refused loudly and cannot pin the page (the examined
+                    // set carries the scan past them); infra failures abort the reap.
+                    if (e.getCause() instanceof NotFoundException
+                            || e.getMessage() != null
+                            && e.getMessage().startsWith("undecodable v2 row")) {
+                        logger.error("Reaper skipping corrupt v2 row {}: {}", docId,
+                                e.getMessage());
+                        continue;
+                    }
+                    throw e;
+                }
+            }
+            if (rows.size() < pageSize) {
+                return reaped;
+            }
+            if (!sawNew && rows.size() == pageSize) {
+                // A full page of already-examined rows: force the anchor past it.
+                ViewResultRow last = rows.get(rows.size() - 1);
+                pageStartKey = last.getKey();
+                pageStartDocId = last.getId();
+                continue;
+            }
+            ViewResultRow last = rows.get(rows.size() - 1);
+            pageStartKey = last.getKey();
+            pageStartDocId = last.getId();
+        }
+    }
+
+    @Override
+    public List<LineageJournalRowV2> findV2ByRepositoryAndSequenceRange(String repositoryId,
+            long fromSequence, int limit) {
+        ensureDatabase();
+        try {
+            ViewResult result = getLineageClient().getClient().postView(
+                    new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
+                            .db(getLineageClient().getDatabaseName())
+                            .ddoc(DESIGN_DOC)
+                            .view("v2_by_repository_and_sequence")
+                            // Strictly-after AT THE QUERY (F1): filtering the cursor row out
+                            // AFTER the limit shrinks a full page to batchSize-1, which the
+                            // merge-window arithmetic reads as coverage-to-infinity and can
+                            // skip an unreturned v2 row. Same pattern as the v1 method.
+                            .startKey(List.of(repositoryId, Math.addExact(fromSequence, 1)))
+                            .endKey(List.of(repositoryId, new HashMap<>()))
+                            .includeDocs(true)
+                            .reduce(false)
+                            .limit((long) limit)
+                            .build())
+                    .execute().getResult();
+            if (result == null || result.getRows() == null) {
+                throw new IllegalStateException(
+                        "v2_by_repository_and_sequence returned no result");
+            }
+            List<LineageJournalRowV2> rows = new ArrayList<>();
+            for (ViewResultRow viewRow : result.getRows()) {
+                com.ibm.cloud.cloudant.v1.model.Document doc = viewRow.getDoc();
+                if (doc == null) {
+                    throw new IllegalStateException("view row without a document");
+                }
+                Map<String, Object> props = new HashMap<>();
+                if (doc.getId() != null) props.put("_id", doc.getId());
+                if (doc.getRev() != null) props.put("_rev", doc.getRev());
+                if (doc.getProperties() != null) props.putAll(doc.getProperties());
+                rows.add(decodeV2Strict(props));
+            }
+            return rows;
+        } catch (SequencingStorageException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new SequencingStorageException(
+                    "v2_by_repository_and_sequence query failed for '" + repositoryId + "'", e);
+        }
+    }
+
+    /**
+     * The §8-b VERIFYING gauges (F8): count via the view's reduce, oldest verifyingSinceMs via
+     * the first ascending row. Diagnostic surface (admin GET) — never a drain input.
+     */
+    public Map<String, Object> verifyingStats(String target) {
+        ensureDatabase();
+        try {
+            ViewResult countResult = getLineageClient().getClient().postView(
+                    new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
+                            .db(getLineageClient().getDatabaseName())
+                            .ddoc(DESIGN_DOC)
+                            .view("v2_verifying_by_since")
+                            .startKey(List.of(target))
+                            .endKey(List.of(target, new HashMap<>()))
+                            .reduce(true)
+                            .build())
+                    .execute().getResult();
+            long count = 0;
+            if (countResult != null && countResult.getRows() != null
+                    && !countResult.getRows().isEmpty()
+                    && countResult.getRows().get(0).getValue() instanceof Number n) {
+                count = exactLong(n, "verifying count");
+            }
+            Long oldestSinceMs = null;
+            if (count > 0) {
+                ViewResult oldest = getLineageClient().getClient().postView(
+                        new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
+                                .db(getLineageClient().getDatabaseName())
+                                .ddoc(DESIGN_DOC)
+                                .view("v2_verifying_by_since")
+                                .startKey(List.of(target))
+                                .endKey(List.of(target, new HashMap<>()))
+                                .reduce(false)
+                                .limit(1L)
+                                .build())
+                        .execute().getResult();
+                if (oldest != null && oldest.getRows() != null && !oldest.getRows().isEmpty()
+                        && oldest.getRows().get(0).getKey() instanceof List<?> key
+                        && key.size() == 2 && key.get(1) instanceof Number since) {
+                    oldestSinceMs = exactLong(since, "oldest verifyingSinceMs");
+                }
+            }
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("count", count);
+            out.put("oldestSinceMs", oldestSinceMs);
+            return out;
+        } catch (RuntimeException e) {
+            throw new SequencingStorageException("verifying stats query failed for '"
+                    + target + "'", e);
+        }
+    }
+
+    @Override
+    public LineageJournalRowV2 findV2ByRecordId(String recordId) {
+        ensureDatabase();
+        Map<String, Object> raw = readV2RawStrict(recordId);
+        if (raw == null) {
+            return null;
+        }
+        return decodeV2Strict(raw);
+    }
+
+    @Override
+    public List<String> findV2NonTerminalRepositoryIds(String target) {
+        ensureDatabase();
+        try {
+            ViewResult result = getLineageClient().getClient().postView(
+                    new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
+                            .db(getLineageClient().getDatabaseName())
+                            .ddoc(DESIGN_DOC)
+                            .view("v2_non_terminal_by_target_repo")
+                            .startKey(List.of(target))
+                            .endKey(List.of(target, new HashMap<>()))
+                            .reduce(true)
+                            .group(true)
+                            .build())
+                    .execute().getResult();
+            if (result == null || result.getRows() == null) {
+                throw new IllegalStateException(
+                        "v2_non_terminal_by_target_repo returned no result");
+            }
+            List<String> repos = new ArrayList<>();
+            for (ViewResultRow row : result.getRows()) {
+                Object key = row.getKey();
+                if (key instanceof List<?> parts && parts.size() == 2
+                        && parts.get(1) instanceof String repo) {
+                    repos.add(repo);
+                }
+            }
+            return repos;
+        } catch (SequencingStorageException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new SequencingStorageException(
+                    "v2_non_terminal_by_target_repo query failed for '" + target + "'", e);
         }
     }
 

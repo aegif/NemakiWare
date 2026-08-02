@@ -260,12 +260,21 @@ public class LineageAppendV2AndGateTest {
 
     @Test
     public void everyOtherTerminalStatusRemainsPurgeEligible() {
+        // The evidence states: terminal for the projector, but their documents carry the only
+        // durable record of a violation/mismatch (REJECTED since A-1; UNPROJECTABLE and
+        // UNRESOLVED since D-rest-2's §8-b machine).
+        var evidenceStates = java.util.Set.of(LineagePublishStatus.REJECTED,
+                LineagePublishStatus.UNPROJECTABLE, LineagePublishStatus.UNRESOLVED);
         for (LineagePublishStatus status : LineagePublishStatus.values()) {
-            if (status == LineagePublishStatus.REJECTED) {
+            if (evidenceStates.contains(status)) {
+                assertEquals(true, status.isTerminal(), status + " is terminal");
+                assertEquals(false, status.isPurgeEligible(),
+                        status + " is evidence and must not purge");
                 continue;
             }
             assertEquals(status.isTerminal(), status.isPurgeEligible(),
-                    status + ": terminal and purge-eligible part ways only at REJECTED");
+                    status + ": terminal and purge-eligible part ways only at the evidence"
+                            + " states");
         }
     }
 

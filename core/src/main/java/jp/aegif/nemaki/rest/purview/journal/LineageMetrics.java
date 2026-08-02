@@ -31,6 +31,12 @@ public class LineageMetrics {
     private final AtomicLong sequencerFinalized = new AtomicLong();
     private final AtomicLong sequencerReclaimed = new AtomicLong();
     private final AtomicLong sequencerBacklogAlerts = new AtomicLong();
+    private final AtomicLong v2Claimed = new AtomicLong();
+    private final AtomicLong v2Published = new AtomicLong();
+    private final AtomicLong v2VerifyRetries = new AtomicLong();
+    private final AtomicLong v2Unprojectable = new AtomicLong();
+    private final AtomicLong v2ClaimsReaped = new AtomicLong();
+    private final AtomicLong v2RoutingHalts = new AtomicLong();
     private volatile Instant lastPollTime;
     private volatile int lastPollEventCount;
 
@@ -87,6 +93,32 @@ public class LineageMetrics {
         sequencerBacklogAlerts.incrementAndGet();
     }
 
+    // §8-b v2 projection machine (D-rest-2)
+
+    public void recordV2Claimed(String target) {
+        v2Claimed.incrementAndGet();
+    }
+
+    public void recordV2Published(String target) {
+        v2Published.incrementAndGet();
+    }
+
+    public void recordV2VerifyRetry(String target) {
+        v2VerifyRetries.incrementAndGet();
+    }
+
+    public void recordV2Unprojectable(String target) {
+        v2Unprojectable.incrementAndGet();
+    }
+
+    public void recordV2ClaimReaped(String target) {
+        v2ClaimsReaped.incrementAndGet();
+    }
+
+    public void recordV2RoutingHalt(String reason) {
+        v2RoutingHalts.incrementAndGet();
+    }
+
     public void recordPollComplete(int eventCount) {
         pollCount.incrementAndGet();
         lastPollTime = Instant.now();
@@ -112,6 +144,12 @@ public class LineageMetrics {
         m.put("sequencerFinalized", sequencerFinalized.get());
         m.put("sequencerReclaimed", sequencerReclaimed.get());
         m.put("sequencerBacklogAlerts", sequencerBacklogAlerts.get());
+        m.put("v2Claimed", v2Claimed.get());
+        m.put("v2Published", v2Published.get());
+        m.put("v2VerifyRetries", v2VerifyRetries.get());
+        m.put("v2Unprojectable", v2Unprojectable.get());
+        m.put("v2ClaimsReaped", v2ClaimsReaped.get());
+        m.put("v2RoutingHalts", v2RoutingHalts.get());
 
         Map<String, Object> byTarget = new LinkedHashMap<>();
         for (String target : publishedByTarget.keySet()) {

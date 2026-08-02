@@ -1,7 +1,85 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.18 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool 実装済み (writer は v1 のまま・spool は非活性)・D-rest は本版で仕様凍結・Slice 4 は §6-a の再 sign-off 待ち**
+status: **v2.3.19 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + D-rest-1 (fenced sequencer) + D-rest-2 (v2 遷移 CAS・単調 cursor・schema routing・admin 入口) 実装済み — writer は v1 のまま・spool と全 D-rest driver は非活性 (readiness gate 既定 false)。残: D-rest-3 (replay)・D-rest-4 (materializer)・chunking・Slice 4 (§6-a 再 sign-off 待ち)**
 revision:
+- v2.3.19 — **D-rest-2 実装** (8-b v2 遷移 CAS・8-c 単調 cursor・schema 別 projector
+  routing・無効化済み admin sequencer 入口)。Codex 計画レビュー 6 巡 (revise ×5 → proceed)
+  の確定事項:
+  ① **view の schema 完全分離** — SEQUENCED-allowlist の半端は撤廃。v1 機構が読む 6 view
+  (by_target_status / by_target_status_time / non_terminal_by_target_repo /
+  projecting_by_claimed_at / by_repository_and_sequence / by_occurred_at) を
+  `doc.type === 'lineage_event'` 限定に狭め、v2 専用 5 view
+  (v2_by_repository_and_sequence / v2_by_occurred_at / v2_non_terminal_by_target_repo /
+  v2_claims_by_expiry / v2_verifying_by_since) を新設 (17→22)。**選択による隔離**が唯一
+  旧バイナリも守る隔離である (旧バイナリは旧 view 名を照会し、下流に token 検証が無い)。
+  新バイナリの router は 2 つの順序 view を sequence で merge (repo 毎に単一 counter なので
+  全順序)。coverage bound: 満杯 batch を返した側は最終 sequence まで、少なく返した側は
+  無限大までを保証し、min(bound) までを batchSize 上限で処理。3 引数 updatePublishStatus と
+  discardEvent は v2 文書を拒否 (二重 fence)。purge の v2 半分 (v2_by_occurred_at) は
+  **switch ON のときだけ**照会 — OFF の系は v2 行に一切触れない。
+  ② **per-target lifecycle を typed envelope に統合**: publishStatusByTarget (v1 と共有名) +
+  v2ClaimByTarget[target] = MAP{token, claimedAtMs, leaseExpiresAtMs, verifyingSinceMs,
+  retryCount} + v2TerminalReasonByTarget[target] = MAP{reason, detail, atMs}。v2 の時刻は
+  **全て epoch millis** (数値 view key — ISO 可変小数幅の整列欠陥を構造的に排除)。
+  claim audit bundle {token, claimedAtMs, retryCount} は all-or-nothing、claim 発生以降
+  不滅。**terminal への遷移は audit field を決して除去しない**; FAILED→PROJECTING (再 claim)
+  だけが意図された per-attempt reset (token/claimedAt 更新・verifyingSince クリア・
+  retryCount 保持)。state 別 decode 不変条件 (居住 claim = token+lease 必須、FAILED は
+  verifyingSince の有無が段階 marker、PUBLISHED/UNPROJECTABLE は verifyingSince 必須、
+  REJECTED は bundle 有無で gate 由来 / 生成時分類の 2 形、UNRESOLVED/生成時 REJECTED は
+  bundle 無し、SKIPPED は v2 で違法)。
+  ③ **遷移表の実装**: fenced (token 三重一致 + rev CAS): PROJECTING→VERIFYING /
+  VERIFYING→PUBLISHED / VERIFYING→FAILED (max-age、retry 非消費) / PROJECTING→FAILED
+  (観測された publish 失敗のみ retry 消費) / VERIFYING→UNPROJECTABLE (reason 必須) /
+  **PROJECTING→REJECTED (v2 の §7 gate は 3 引数 v1 経路を絶対に通らない)**。unclaimed
+  (expected-state CAS): PENDING→WAITING_FOR_CATALOG / WAITING_FOR_CATALOG→PENDING /
+  WAITING_FOR_CATALOG→UNRESOLVED / PENDING→DISCARDED / FAILED→DISCARDED (bundle 保持)。
+  表外は IllegalArgumentException (呼び手のバグであって race ではない)。enum に VERIFYING /
+  UNPROJECTABLE / WAITING_FOR_CATALOG / UNRESOLVED を追加 — UNPROJECTABLE / UNRESOLVED は
+  terminal かつ **purge 不可** (REJECTED と同じ証拠論)。reaper / max-age の FAILED は
+  retryCount を消費しない (retry 予算は観測された配信失敗の数)。
+  ④ **VERIFYING の所有と再開**: claimant は自 token を **in-memory registry** に保持 —
+  「同一 claimant の継続」の定義。encounter 毎の bounded poll (lineage.verify.timeout-seconds
+  30 / interval-seconds 2 / max-age-minutes 10)、各 verify 呼出しは**残余 budget** を deadline
+  として受け取る。poll 開始前 renew + 残 lease < max(2×interval, TTL/4) で renew。renew 失敗・
+  token 不一致・CAS 敗北・malformed・構造 fault・reap 観測・終端遷移・shutdown の**全出口**で
+  registry を除去 (per-row fence latch)。所有していない/期限切れの居住 claim は halt (期限
+  切れは reaper 専管 — 自己 renew 資格なし)。JVM 再起動 = registry 空 = lease 期限 + reaper
+  経由で回収。**再 POST は設計自身の crash 経路** (Atlas POST は qualifiedName upsert で
+  at-least-once 収束)。
+  ⑤ **verify capability は構造的 gate**: LineageTargetSink.supportsVerification() (不変・
+  既定 false) + verify(record, deadline)。構成済み target の sink が検証不能なら readiness
+  違反 — **sequencer は排水不能な ordered barrier を作ってはならない** (journal-only =
+  target 無しは通過: 立ち往生する消費者が居ない)。runtime UNSUPPORTED は構造 fault (publish
+  しない・loud halt)。UNSUPPORTED→PUBLISHED は存在しない (PUBLISHED = verify 成功の凍結
+  意味を維持)。実 Atlas read-back verify は 4b の前提条件。
+  ⑥ **単一 aggregate readiness gate** (LineageDrestReadiness): switch
+  (lineage.drest.enabled、既定 false) + config 妥当性 (**claim-lease-seconds >
+  verify.timeout + margin**, margin = max(2×interval, 10s)、違反は起動拒否でありクランプ
+  しない) + **配備済み design doc の view 署名一致** (map と reduce の完全比較 — rolling
+  window で旧バイナリが dual-schema view を書き戻した場合に活性化を拒否; 未配備 =
+  "deployment pending" 違反であり pass でも crash でもない) + sink capability。sequencer
+  admin POST と v2 branch / reaper が**同一の評価**を参照。readiness false の間 v2 branch は
+  完全 dormant (claim/renew/verify/遷移/reap 皆無、registry は保持)。回復時は reaper 先行 →
+  registry entry の strict 再読 (status/token/未期限 lease 全一致でのみ再開)。
+  ⑦ **8-c**: ProjectionCursorStore.advanceCursorMonotonic — max() 意味論の rev CAS、格納値
+  malformed (非整数/負) は 0 扱いせず拒否、409 は 1 回だけ再読して勝者が被覆していれば成功。
+  switch ON の ordered walk は **v1 行を含む全 cursor 前進が monotonic CAS + 全 status
+  永続化の確認後** (v1 PUBLISHED の persist 未確認は前進せず halt — §8-c zero-means-stop の
+  一様適用)。switch OFF は v1 経路 byte-identical (保存 list ⑧ 維持)。
+  ⑧ **reaper**: v2_claims_by_expiry を固定 cutoff で走査し、**mutation-safe pagination**:
+  skip は使わず (reap 成功で anchor 行が view から消えると skip=1 は生存候補を飛ばす)、
+  run 内 examined set で再提供行を重複排除、全 page で anchor を最終行へ前進 (全既検査の
+  満杯 page も強制前進) — 検査済み行は結果に関わらず一度だけ処理され、corrupt 行が page を
+  pin できない。各 hit は strict 再読後に reap-by-CAS (view 行は hint)。inclusive_end=false。
+  ⑨ **admin 入口**: POST /v1/admin/lineage-journal/sequencer/{repo}/run (readiness 違反 =
+  409 + 違反列挙; 成功 = RunSummary {health, finalized, reclaimed, backlog, lostLease})、
+  GET 同 path (無効時も可; lease 不在 = bootstrap hint、infra 障害 = 503)。手動・node-local
+  のみ。**活性化前提**: 全 AP が D-rest-2 以上 (v3.3 規範は single-AP; multi-AP は 4a の
+  ACK fence 到達後)。切替で cursor が v2 行を通過済みの場合の回収は 8-d replay (D-rest-3)。
+  ⑩ countNonTerminalByTarget は v1 semantics に固定 (PENDING/PROJECTING/FAILED の明示列挙 —
+  values() 迭代は新 state を破壊的 v1 drain の算術に静かに混ぜる)。v2 backlog は v2 view
+  のみが数える。
 - v2.3.18 — **D-rest の実装前仕様凍結** (Codex 計画レビュー: proceed with named changes)。
   ① **`sequencerLeaseToken` 採用** — acquire ごとに暗号学的乱数 token を発行し、lease
   文書・SEQUENCING event・SEQUENCED event に保存。claim/reclaim/finalize と全 pre-write
@@ -349,15 +427,19 @@ revision:
 scope: v3.3 内で Atlas 連携を完成させるための設計。実装は sign-off 後に A〜E の独立コミットで行う。
 関連: [`docs/design/acl-epoch-fencing.md`](acl-epoch-fencing.md) (同じ outbox/cursor の考え方を使う)
 
-実装状況: **A-1〜A-1k、A-2 Slice 1a〜3、producer P-1〜P-3c、D-spool が
-`deps/v3.3-breaking-majors` に実装済み** (型体系・identity 符号化・命名集約・schema 整合・
-identity CI / v2 型・read model・sink / admin / projector の版非依存化・無損失 codec・
-store read の一斉切替・appendV2 + pre-sink gate / 全 12 producer の LineageFact 化
-(v1 文字列は LegacyV1Projection が verbatim 運搬) / 版非依存 fact spool + scanner +
-golden vector 凍結 — read:v2 の経路は成立、capability の登録は 4a の barrier 実装時)。
-**production writer は v1 のまま・spool は非活性** (emission 配線と materializer は
-D-rest)。残: chunking (fact→v2 写像内・flip 時)・D-rest・`FILE_SHARE_SYNC_UPLOAD`
-生成拒否の E2E・4a/4b。
+実装状況: **A-1〜A-1k、A-2 Slice 1a〜3、producer P-1〜P-3c、D-spool、D-rest-1、
+D-rest-2 が `deps/v3.3-breaking-majors` に実装済み** (型体系・identity 符号化・命名集約・
+schema 整合・identity CI / v2 型・read model・sink / admin / projector の版非依存化・
+無損失 codec・store read の一斉切替・appendV2 + pre-sink gate / 全 12 producer の
+LineageFact 化 (v1 文字列は LegacyV1Projection が verbatim 運搬) / 版非依存 fact spool +
+scanner + golden vector 凍結 / §8-a fenced sequencer + bootstrap patch + 実 CouchDB IT /
+§8-b v2 遷移 CAS + claim lease + reaper + §8-c 単調 cursor + view schema 分離 (v1-only 6 +
+v2 専用 5) + aggregate readiness gate + 無効化済み admin sequencer 入口)。
+**production writer は v1 のまま・spool と全 D-rest driver は非活性**
+(lineage.drest.enabled 既定 false; v2 branch/reaper/purge-v2/admin POST は全て単一
+readiness gate の背後)。残: D-rest-3 (replay CAS 機械)・D-rest-4 (収束 materializer +
+aggregate capability provider)・chunking (fact→v2 写像内・flip 時)・
+`FILE_SHARE_SYNC_UPLOAD` 生成拒否の E2E・4a/4b。
 Slice 4 (v2 書込みへの切替) は **§6-a の再 sign-off 待ち**。slice 単位の状態は
 「A-2 の分割」の表が正である。
 本文の規範記述は実装と同期させており、乖離を見つけたらどちらかが誤りである —
@@ -1522,7 +1604,7 @@ D-rest が直すのは、設計上すでに確認済みの**採番欠落・二�
 | D-rest slice | 内容 | 状態 |
 |---|---|---|
 | **D-rest-1** | 型付き可変 envelope (`LineageJournalRowV2` + strict codec)・`sequencerLeaseToken` 付き lease (acquire/renew/release CAS・一方向 latch)・**bootstrap patch (`Patch_LineageSequencerBootstrap`: lease 生成 + 履歴なし repo の counter=0 seed、既存は検証のみ・上書き禁止・破損は throw 再実行)**・fenced allocator (auto-seed 禁止・**v1+v2+cursor 横断の watermark 検査**)・fenced sequencer (claim/reclaim/finalize + pre-write 再確認・**infra 失敗は latch**)・sequencer view 3 種・実 CouchDB IT + **skip 不能な専用 CI job** (-Dlineage.it.required)。diff レビュー対応: appendV2 は seq≠0 拒否・409 収束は占有行を decode して再計算比較 (保存 digest 文字列を信用しない)・strict IO (404/409/障害の三分類)・整数は exact 変換・破損行は scan の barrier (追い越し禁止) | **完了 (非活性 — driver/scheduler なし)** |
-| **D-rest-2** | 8-b の v2 遷移 CAS・8-c 単調 cursor・schema 別 projector routing。その後に無効化済み admin sequencer 入口 | 未着手 |
+| **D-rest-2** | 8-b の v2 遷移 CAS・8-c 単調 cursor・schema 別 projector routing。その後に無効化済み admin sequencer 入口 | **完了 (非活性)** — v2.3.19。readiness gate 既定 false、v2 branch/reaper/purge-v2/admin POST 全て gate 背後 |
 | **D-rest-3** | 8-d replay request CAS 機械 + crash 回収 | 未着手 |
 | **D-rest-4** | 収束 materializer (親決定 + plan entry + 検証付き ACK)・aggregate capability provider・scanner 入口 | 未着手 |
 
@@ -1902,7 +1984,12 @@ repair の入力源としては spool を正とする。
 
 ### 8-b: 状態遷移を CAS + claim lease にする
 
-`updatePublishStatus(eventId, target, expected, next, claimToken)`。許可する遷移だけを持つ:
+実装 (D-rest-2, v2.3.19): `LineageV2TransitionStore` — `claimForProjection` (token+lease 発行、
+SEQUENCED 行のみ) / `transitionV2(recordId, target, expected, next, claimToken, reason)` /
+`transitionV2Unclaimed` / `renewClaim` / `reapExpiredClaims`。保存形は
+`v2ClaimByTarget[target]` (token / claimedAtMs / leaseExpiresAtMs / verifyingSinceMs /
+retryCount — epoch millis) と `v2TerminalReasonByTarget[target]`。v1 の 3 引数
+`updatePublishStatus` は v2 文書を拒否し、v1 行に対して byte-identical。許可する遷移だけを持つ:
 
 ```
 PENDING     → WAITING_FOR_CATALOG (§2 obligation あり。retry 非消費)
@@ -2254,7 +2341,7 @@ identity 分離を入れる前の記述で、成立しない。
 
 | | 内容 | 状態 |
 |---|---|---|
-| **A-1** | `EndpointKind` / `EndpointAttribute` / `LineageEndpoint` / `LineageIdentity` / `LineageCanonicalHash` / `LineageRepositoryScope`。型・属性契約・identity 符号化 | 完了 (producer 未配線) |
+| **A-1** | `EndpointKind` / `EndpointAttribute` / `LineageEndpoint` / `LineageIdentity` / `LineageCanonicalHash` / `LineageRepositoryScope`。型・属性契約・identity 符号化 | 完了 (producer 配線は P-1〜P-3c で完了) |
 | **A-2** | `LineageEvent` を v2 形状へ移行、`creationPayloadDigest` と integrity 検査、cross-repo 検証 4層の**配線**、producer 全書き換え、chunking、`FILE_SHARE_SYNC_UPLOAD` 生成拒否 | **Slice 1a〜3 + producer P-1〜P-3c 完了** (下表)。writer は v1 のまま。残: chunking (fact→v2 写像内・設計固定済み)・生成拒否 E2E・4a/4b |
 
 | A-2 slice | 実装状態 |

@@ -40,4 +40,47 @@ public interface LineageTargetSink {
      * (no publish attempts, no FAILED transitions).
      */
     boolean isAvailable();
+
+    /**
+     * §8-b v2 (D-rest-2): whether this sink can read a published record back from its target to
+     * confirm the publish took effect.
+     *
+     * <p>STRUCTURAL and immutable per sink — not a runtime probe. The D-rest readiness gate
+     * refuses to sequence v2 rows while any configured target's sink answers {@code false},
+     * because a finalized v2 row is an ordered barrier and a barrier no sink can ever verify
+     * would strand all later traffic. {@code PUBLISHED} on the v2 machine means verify
+     * <em>succeeded</em>; a sink without verification simply cannot enter the machine.
+     */
+    default boolean supportsVerification() {
+        return false;
+    }
+
+    /** Outcome of one {@link #verify} attempt. */
+    enum VerifyResult {
+        /** The record is durably visible at the target. */
+        VERIFIED,
+        /** Not visible yet — plausibly read lag; retry within the budget. */
+        RETRYABLE,
+        /**
+         * Deterministic semantic mismatch (wrong type / repositoryId / shell): the same
+         * payload can never verify. Terminal — UNPROJECTABLE.
+         */
+        MISMATCH,
+        /** This sink cannot verify. Structural; must match {@code !supportsVerification()}. */
+        UNSUPPORTED
+    }
+
+    /**
+     * §8-b v2: one bounded read-back attempt for a record this projector just published.
+     *
+     * <p>{@code deadline} is the remaining encounter budget — the sink must bound its own IO
+     * to it (v2.3.19: each call receives what is left, never the full timeout afresh).
+     *
+     * <p>A sink whose {@link #supportsVerification()} is {@code false} keeps this default; the
+     * v2 machine never calls it. Answering UNSUPPORTED despite advertising capability is
+     * treated by the loop as a structural fault: no publish, loud halt.
+     */
+    default VerifyResult verify(LineageRecord record, java.time.Duration deadline) {
+        return VerifyResult.UNSUPPORTED;
+    }
 }

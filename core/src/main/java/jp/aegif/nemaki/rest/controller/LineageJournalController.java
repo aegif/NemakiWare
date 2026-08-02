@@ -504,6 +504,65 @@ public class LineageJournalController {
         };
     }
 
+    // ==================== D-rest-2: fenced sequencer admin entry (disabled by default) ====
+
+    @Autowired(required = false)
+    private jp.aegif.nemaki.rest.purview.journal.LineageSequencerAdminService sequencerAdmin;
+
+    /**
+     * Manual, node-local sequencer run. Refuses with 409 while the aggregate D-rest readiness
+     * gate is not fully green (switch off, invalid config, view-signature drift, or an
+     * unverifiable configured target) — the refusal names every violation.
+     */
+    @PostMapping("/sequencer/{repositoryId}/run")
+    public ResponseEntity<Map<String, Object>> runSequencer(
+            @PathVariable("repositoryId") String repositoryId) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+        if (sequencerAdmin == null) {
+            return badRequest("sequencer admin service unavailable");
+        }
+        var outcome = sequencerAdmin.run(repositoryId);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("repositoryId", repositoryId);
+        if (!outcome.ran()) {
+            response.put("enabled", false);
+            response.put("violations", outcome.violations());
+            response.put("message", "D-rest readiness gate is not green — the sequencer must"
+                    + " not create ordered barriers under a red gate");
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+        }
+        var summary = outcome.summary();
+        response.put("enabled", true);
+        response.put("health", summary.health().name());
+        response.put("finalized", summary.finalized());
+        response.put("reclaimed", summary.reclaimed());
+        response.put("backlog", summary.backlog());
+        response.put("lostLease", summary.lostLease());
+        return ResponseEntity.ok(response);
+    }
+
+    /** Read-only sequencer status; available while disabled (diagnostics). */
+    @GetMapping("/sequencer/{repositoryId}")
+    public ResponseEntity<Map<String, Object>> sequencerStatus(
+            @PathVariable("repositoryId") String repositoryId) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+        if (sequencerAdmin == null) {
+            return badRequest("sequencer admin service unavailable");
+        }
+        try {
+            Map<String, Object> status = sequencerAdmin.status(repositoryId);
+            status.put("repositoryId", repositoryId);
+            return ResponseEntity.ok(status);
+        } catch (IllegalStateException infra) {
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("status", "error");
+            response.put("message", infra.getMessage());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
+        }
+    }
+
     private ResponseEntity<Map<String, Object>> requireAdminOrForbidden() {
         if (!isAdmin()) {
             Map<String, Object> response = new LinkedHashMap<>();
