@@ -31,8 +31,10 @@ import jp.aegif.nemaki.rest.purview.lineage.PurviewImportExportLineageService;
 import jp.aegif.nemaki.rest.purview.journal.LineageConfig;
 import jp.aegif.nemaki.rest.purview.journal.LineageMode;
 import jp.aegif.nemaki.rest.purview.journal.LineageEmitter;
+import jp.aegif.nemaki.rest.purview.journal.LineageEndpoint;
 import jp.aegif.nemaki.rest.purview.journal.LineageEvent;
-import jp.aegif.nemaki.rest.purview.journal.LineageEventBuilder;
+import jp.aegif.nemaki.rest.purview.journal.LineageFact;
+import jp.aegif.nemaki.rest.purview.journal.LineageFactEmission;
 import jp.aegif.nemaki.rest.purview.journal.LineageJournalStore;
 import jp.aegif.nemaki.rest.purview.journal.LineageProcessType;
 import jp.aegif.nemaki.rest.purview.journal.LineageTargetSink;
@@ -187,29 +189,241 @@ public class ImportExportResource extends ResourceBase {
     }
 
     /**
-     * Emit a lineage event using the per-repository effective mode.
-     * If the mode for the event's repository is DISABLED, the call is a no-op.
+     * Whether the journal owns lineage for this repository, in which case the direct-Purview
+     * helpers must skip (duplicate emission otherwise). Never throws, and the two null-ish
+     * cases route differently on purpose: a <em>deliberately absent</em> config (no bean, no
+     * Spring context) means lineage was never set up and direct publish stays available, while
+     * a <em>failed lookup</em> answers {@code true} — failing toward "skip the direct publish"
+     * rather than toward a duplicate emission when the journal is in fact active.
      */
-    private void emitLineageEvent(LineageEvent event) {
+    boolean journalOwnsLineage(String repositoryId) {
+        org.springframework.context.ApplicationContext ctx;
+        try {
+            ctx = SpringContext.getApplicationContext();
+        } catch (RuntimeException e) {
+            log.warn("Lineage config lookup failed (treating as journal-owned): " + e.getMessage());
+            return true;
+        }
+        if (ctx == null) {
+            return false;
+        }
+        LineageConfig lc;
+        try {
+            lc = ctx.getBean(LineageConfig.class);
+        } catch (org.springframework.beans.factory.NoSuchBeanDefinitionException e) {
+            return false;
+        } catch (RuntimeException e) {
+            log.warn("Lineage config lookup failed (treating as journal-owned): " + e.getMessage());
+            return true;
+        }
+        try {
+            return lc.getModeForRepository(repositoryId) != LineageMode.DISABLED;
+        } catch (RuntimeException e) {
+            log.warn("Lineage mode resolution failed (treating as journal-owned): " + e.getMessage());
+            return true;
+        }
+    }
+
+    /** The active emitter for this repository, or {@code null} when lineage is off. */
+    private LineageEmitter resolveLineageEmitter(String repositoryId) {
         try {
             LineageConfig config = getLineageConfig();
-            if (config == null) return;
-            LineageMode mode = config.getModeForRepository(event.repositoryId());
-            if (mode == LineageMode.DISABLED) return;
-
+            if (config == null) return null;
+            LineageMode mode = config.getModeForRepository(repositoryId);
+            if (mode == LineageMode.DISABLED) return null;
             LineageJournalStore store = SpringContext.getApplicationContext()
                     .getBean(LineageJournalStore.class);
             @SuppressWarnings("unchecked")
             java.util.List<LineageTargetSink> sinks = (java.util.List<LineageTargetSink>)
                     (java.util.List<?>) SpringContext.getApplicationContext()
                     .getBeansOfType(LineageTargetSink.class).values().stream().toList();
-            LineageEmitter emitter = config.createEmitterForMode(mode, store, sinks);
-            if (emitter.isActive()) {
-                emitter.emit(event);
-            }
+            return config.createEmitterForMode(mode, store, sinks);
         } catch (Exception e) {
-            log.warn("Lineage event emission failed (non-fatal): " + e.getMessage());
+            log.warn("Lineage emitter resolution failed (non-fatal): " + e.getMessage());
+            return null;
         }
+    }
+
+    /** Lineage-only config read; never throws (fail-open — a producer must not fail the op). */
+    private java.util.List<String> lineageTargets() {
+        try {
+            LineageConfig lc = getLineageConfig();
+            return lc != null ? lc.getTargets() : java.util.List.of();
+        } catch (Exception e) {
+            return java.util.List.of();
+        }
+    }
+
+    /** The created content as typed endpoints — what the v2 import shape carries as outputs. */
+    private static java.util.List<LineageEndpoint> createdContentEndpoints(
+            String repositoryId, java.util.List<ImportExportUtils.CreatedObject> created) {
+        java.util.List<LineageEndpoint> endpoints = new java.util.ArrayList<>(created.size());
+        for (ImportExportUtils.CreatedObject c : created) {
+            endpoints.add(c.folder()
+                    ? LineageEndpoint.folder(repositoryId, c.objectId(), c.name())
+                    : LineageEndpoint.document(repositoryId, c.objectId(), c.name()));
+        }
+        return endpoints;
+    }
+
+    /** The exported content as typed endpoints — what the v2 export shape carries as inputs. */
+    private static java.util.List<LineageEndpoint> exportedContentEndpoints(
+            String repositoryId, java.util.List<ImportExportUtils.ExportedObject> exported) {
+        java.util.List<LineageEndpoint> endpoints = new java.util.ArrayList<>(exported.size());
+        for (ImportExportUtils.ExportedObject e : exported) {
+            endpoints.add(e.folder()
+                    ? LineageEndpoint.folder(repositoryId, e.objectId(), e.name())
+                    : LineageEndpoint.document(repositoryId, e.objectId(), e.name()));
+        }
+        return endpoints;
+    }
+
+    // ------------------------------------------------------------------
+    // Lineage fact factories. Package-visible and static on purpose: the preservation tests
+    // exercise THESE — the exact construction production runs — so a changed legacy string,
+    // guard value, snapshot key or artifact kind fails a test instead of splitting every
+    // catalog Process identity at the next deploy.
+    // ------------------------------------------------------------------
+
+    static LineageFact uploadedImportFact(String repositoryId, String folderId, String importMode,
+            String requestedBy, long objCount,
+            java.util.List<ImportExportUtils.CreatedObject> createdObjects,
+            java.util.List<String> targets, String operationId, String occurredAt) {
+        java.util.Map<String, String> v1Snapshot = new java.util.LinkedHashMap<>();
+        v1Snapshot.put("importMode", importMode);
+        v1Snapshot.put("objectCount", String.valueOf(objCount));
+        v1Snapshot.put("requestedBy", requestedBy);
+        return new LineageFact(
+                repositoryId,
+                LineageProcessType.IMPORT_UPLOADED,
+                operationId,
+                occurredAt,
+                java.util.List.of(LineageEndpoint.importArtifact(
+                        repositoryId, operationId, importMode, null)),
+                createdContentEndpoints(repositoryId, createdObjects),
+                targets,
+                null,
+                new LineageFact.LegacyV1Projection(
+                        LineageProcessType.IMPORT_UPLOADED,
+                        java.util.List.of("upload://" + importMode),
+                        java.util.List.of(LineageEvent.qualifiedName(repositoryId, folderId)),
+                        v1Snapshot));
+    }
+
+    static LineageFact filesystemImportFact(String repositoryId, String folderId, String sourceDir,
+            String requestedBy, long objCount,
+            java.util.List<ImportExportUtils.CreatedObject> createdObjects,
+            java.util.List<String> targets, String operationId, String occurredAt) {
+        java.util.Map<String, String> v1Snapshot = new java.util.LinkedHashMap<>();
+        v1Snapshot.put("sourcePath", sourceDir);
+        v1Snapshot.put("objectCount", String.valueOf(objCount));
+        v1Snapshot.put("requestedBy", requestedBy);
+        return new LineageFact(
+                repositoryId,
+                LineageProcessType.IMPORT_FILESYSTEM,
+                operationId,
+                occurredAt,
+                java.util.List.of(LineageEndpoint.importArtifact(
+                        repositoryId, operationId, "filesystem", null)),
+                createdContentEndpoints(repositoryId, createdObjects),
+                targets,
+                null,
+                new LineageFact.LegacyV1Projection(
+                        LineageProcessType.IMPORT_FILESYSTEM,
+                        java.util.List.of("file://" + sourceDir),
+                        java.util.List.of(LineageEvent.qualifiedName(repositoryId, folderId)),
+                        v1Snapshot));
+    }
+
+    static LineageFact zipFolderExportFact(String repositoryId, String folderId, String folderName,
+            String requestedBy, long legacyObjectCount,
+            java.util.List<ImportExportUtils.ExportedObject> exportedObjects,
+            String zipFileName, java.util.List<String> targets, String operationId,
+            String occurredAt) {
+        java.util.List<LineageEndpoint> movedContent =
+                exportedContentEndpoints(repositoryId, exportedObjects);
+        // An empty folder exports nothing but v1 still emitted (the legacy id set counts the
+        // root): the folder itself is then the only honest typed input.
+        java.util.List<LineageEndpoint> typedInputs = movedContent.isEmpty()
+                ? java.util.List.of(LineageEndpoint.folder(repositoryId, folderId, folderName))
+                : movedContent;
+        java.util.Map<String, String> v1Snapshot = new java.util.LinkedHashMap<>();
+        v1Snapshot.put("folderName", folderName);
+        v1Snapshot.put("objectCount", String.valueOf(legacyObjectCount));
+        v1Snapshot.put("requestedBy", requestedBy);
+        return new LineageFact(
+                repositoryId,
+                LineageProcessType.EXPORT_ZIP_FOLDER,
+                operationId,
+                occurredAt,
+                typedInputs,
+                java.util.List.of(LineageEndpoint.exportArtifact(
+                        repositoryId, operationId, "ZIP", zipFileName, (long) movedContent.size())),
+                targets,
+                null,
+                new LineageFact.LegacyV1Projection(
+                        LineageProcessType.EXPORT_ZIP_FOLDER,
+                        java.util.List.of(LineageEvent.qualifiedName(repositoryId, folderId)),
+                        java.util.List.of(),
+                        v1Snapshot));
+    }
+
+    static LineageFact selectedObjectsExportFact(String repositoryId,
+            java.util.List<String> selectedObjectIds, String requestedBy, long legacyObjectCount,
+            java.util.List<ImportExportUtils.ExportedObject> exportedObjects,
+            String zipFileName, java.util.List<String> targets, String operationId,
+            String occurredAt) {
+        java.util.List<String> v1Inputs = new java.util.ArrayList<>(selectedObjectIds.size());
+        for (String selectedId : selectedObjectIds) {
+            v1Inputs.add(LineageEvent.qualifiedName(repositoryId, selectedId));
+        }
+        java.util.Map<String, String> v1Snapshot = new java.util.LinkedHashMap<>();
+        v1Snapshot.put("objectCount", String.valueOf(legacyObjectCount));
+        v1Snapshot.put("requestedBy", requestedBy);
+        java.util.List<LineageEndpoint> movedContent =
+                exportedContentEndpoints(repositoryId, exportedObjects);
+        return new LineageFact(
+                repositoryId,
+                LineageProcessType.EXPORT_SELECTED_OBJECTS,
+                operationId,
+                occurredAt,
+                movedContent,
+                java.util.List.of(LineageEndpoint.exportArtifact(
+                        repositoryId, operationId, "ZIP", zipFileName, (long) movedContent.size())),
+                targets,
+                null,
+                new LineageFact.LegacyV1Projection(
+                        LineageProcessType.EXPORT_SELECTED_OBJECTS,
+                        v1Inputs,
+                        java.util.List.of(),
+                        v1Snapshot));
+    }
+
+    static LineageFact filesystemExportFact(String repositoryId, String folderId, String targetDir,
+            String requestedBy, long objCount,
+            java.util.List<ImportExportUtils.ExportedObject> exportedObjects,
+            java.util.List<String> targets, String operationId, String occurredAt) {
+        java.util.Map<String, String> v1Snapshot = new java.util.LinkedHashMap<>();
+        v1Snapshot.put("targetPath", targetDir);
+        v1Snapshot.put("objectCount", String.valueOf(objCount));
+        v1Snapshot.put("requestedBy", requestedBy);
+        java.util.List<LineageEndpoint> movedContent =
+                exportedContentEndpoints(repositoryId, exportedObjects);
+        return new LineageFact(
+                repositoryId,
+                LineageProcessType.EXPORT_FILESYSTEM,
+                operationId,
+                occurredAt,
+                movedContent,
+                java.util.List.of(LineageEndpoint.exportArtifact(
+                        repositoryId, operationId, "FILESYSTEM", targetDir, (long) movedContent.size())),
+                targets,
+                null,
+                new LineageFact.LegacyV1Projection(
+                        LineageProcessType.EXPORT_FILESYSTEM,
+                        java.util.List.of(LineageEvent.qualifiedName(repositoryId, folderId)),
+                        java.util.List.of("file://" + targetDir),
+                        v1Snapshot));
     }
 
     private void publishFilesystemImportLineage(
@@ -220,8 +434,7 @@ public class ImportExportResource extends ResourceBase {
             ImportResult importResult) {
         // When journal is active, it owns lineage for this processType.
         // Skip direct Purview call to avoid duplicate emission.
-        LineageConfig lc = getLineageConfig();
-        if (lc != null && lc.getModeForRepository(repositoryId) != LineageMode.DISABLED) {
+        if (journalOwnsLineage(repositoryId)) {
             return;
         }
         PurviewImportExportLineageService service = getPurviewImportExportLineageService();
@@ -247,8 +460,7 @@ public class ImportExportResource extends ResourceBase {
             String targetPath,
             String requestedBy,
             ExportResult exportResult) {
-        LineageConfig lc = getLineageConfig();
-        if (lc != null && lc.getModeForRepository(repositoryId) != LineageMode.DISABLED) {
+        if (journalOwnsLineage(repositoryId)) {
             return;
         }
         PurviewImportExportLineageService service = getPurviewImportExportLineageService();
@@ -274,8 +486,7 @@ public class ImportExportResource extends ResourceBase {
             String folderName,
             String requestedBy,
             long objectCount) {
-        LineageConfig lc = getLineageConfig();
-        if (lc != null && lc.getModeForRepository(repositoryId) != LineageMode.DISABLED) {
+        if (journalOwnsLineage(repositoryId)) {
             return;
         }
         PurviewImportExportLineageService service = getPurviewImportExportLineageService();
@@ -296,8 +507,7 @@ public class ImportExportResource extends ResourceBase {
             String importMode,
             String requestedBy,
             long objectCount) {
-        LineageConfig lc = getLineageConfig();
-        if (lc != null && lc.getModeForRepository(repositoryId) != LineageMode.DISABLED) {
+        if (journalOwnsLineage(repositoryId)) {
             return;
         }
         PurviewImportExportLineageService service = getPurviewImportExportLineageService();
@@ -317,8 +527,7 @@ public class ImportExportResource extends ResourceBase {
             List<? extends Content> contents,
             String requestedBy,
             long objectCount) {
-        LineageConfig lc = getLineageConfig();
-        if (lc != null && lc.getModeForRepository(repositoryId) != LineageMode.DISABLED) {
+        if (journalOwnsLineage(repositoryId)) {
             return;
         }
         PurviewImportExportLineageService service = getPurviewImportExportLineageService();
@@ -358,6 +567,9 @@ public class ImportExportResource extends ResourceBase {
         int importedFolders = 0;
         int importedDocuments = 0;
         File tempFile = null;
+        // Method-scoped so failure responses can carry it once issued (§3: once a mutation may
+        // have happened, the correlation id is exactly what the caller needs).
+        String issuedLineageOperationId = null;
 
         String csrfError = validateCsrfProtection(request);
         if (csrfError != null) {
@@ -416,25 +628,36 @@ public class ImportExportResource extends ResourceBase {
             ImportFormat format = zipImporter.detectFormat(tempFile);
             log.info("Detected import format: " + format);
 
+            // Reject unsupported formats BEFORE issuing the operation id: nothing has mutated
+            // yet, so this rejection carries no id — and every return after issuance must.
+            if (format != ImportFormat.ACP && format != ImportFormat.CUSTOM) {
+                result.put("status", "error");
+                result.put("message", "Unknown or unsupported archive format");
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(result.toJSONString()).build();
+            }
+
+            // §3: the lineage operation id is issued when the business operation starts —
+            // before the mutation the importer performs — and returned to the caller.
+            issuedLineageOperationId = java.util.UUID.randomUUID().toString();
+            final String lineageOperationId = issuedLineageOperationId;
             int importedRelationships = 0;
+            ImportResult importOutcome = null;
             if (format == ImportFormat.ACP) {
                 ImportResult acpResult = zipImporter.importAcpFormat(repositoryId, folderId, tempFile, callContext);
+                importOutcome = acpResult;
                 importedFolders = acpResult.foldersCreated;
                 importedDocuments = acpResult.documentsCreated;
                 errors.addAll(acpResult.errors);
                 warnings.addAll(acpResult.warnings);
             } else if (format == ImportFormat.CUSTOM) {
                 ImportResult customResult = zipImporter.importCustomFormat(repositoryId, folderId, tempFile, callContext);
+                importOutcome = customResult;
                 importedFolders = customResult.foldersCreated;
                 importedDocuments = customResult.documentsCreated;
                 importedRelationships = customResult.relationshipsCreated;
                 errors.addAll(customResult.errors);
                 warnings.addAll(customResult.warnings);
-            } else {
-                result.put("status", "error");
-                result.put("message", "Unknown or unsupported archive format");
-                return Response.status(Response.Status.BAD_REQUEST)
-                        .entity(result.toJSONString()).build();
             }
 
             publishUploadedImportLineage(
@@ -444,24 +667,18 @@ public class ImportExportResource extends ResourceBase {
                     getCallContextUsername(request),
                     (long) importedFolders + importedDocuments);
 
-            // Lineage Journal: IMPORT_UPLOADED
+            // Lineage: one version-free fact (v1 strings verbatim; the emission guard is v1's).
             {
                 long objCount = (long) importedFolders + importedDocuments;
                 if (objCount > 0) {
                     String importMode = format == ImportFormat.ACP ? "acp-upload" : "zip-upload";
-                    LineageConfig lc = getLineageConfig();
-                    LineageEventBuilder b = new LineageEventBuilder()
-                            .repositoryId(repositoryId)
-                            .processType(LineageProcessType.IMPORT_UPLOADED)
-                            .addInput("upload://" + importMode)
-                            .addOutputObject(repositoryId, folderId)
-                            .snapshotAttribute("importMode", importMode)
-                            .snapshotAttribute("objectCount", String.valueOf(objCount))
-                            .snapshotAttribute("requestedBy", getCallContextUsername(request));
-                    if (lc != null) {
-                        b.targets(lc.getTargets());
-                    }
-                    emitLineageEvent(b.build());
+                    String requestedBy = getCallContextUsername(request);
+                    final ImportResult lineageOutcome = importOutcome;
+                    LineageFactEmission.emitSafely(resolveLineageEmitter(repositoryId), () ->
+                            uploadedImportFact(repositoryId, folderId, importMode, requestedBy,
+                                    objCount, lineageOutcome.createdObjects, lineageTargets(),
+                                    lineageOperationId, java.time.Instant.now().toString()),
+                            "repo=" + repositoryId + " op=" + lineageOperationId + " type=IMPORT_UPLOADED");
                 }
             }
 
@@ -491,9 +708,11 @@ public class ImportExportResource extends ResourceBase {
                         getCallContextUsername(request), folderId, true, null);
             }
 
+            result.put("operationId", lineageOperationId);
             return Response.status(Response.Status.OK)
                     .entity(result.toJSONString())
                     .type(MediaType.APPLICATION_JSON)
+                    .header("X-Nemaki-Operation-Id", lineageOperationId)
                     .build();
 
         } catch (Exception e) {
@@ -508,15 +727,22 @@ public class ImportExportResource extends ResourceBase {
             }
             result.put("status", "error");
             result.put("message", "Import failed: " + e.getMessage());
+            if (issuedLineageOperationId != null) {
+                result.put("operationId", issuedLineageOperationId);
+            }
             AuditLogger audit = getAuditLogger();
             if (audit != null) {
                 audit.logOperation(AuditOperation.IMPORT_EXECUTE, repositoryId,
                         getCallContextUsername(request), folderId, false, e.getMessage());
             }
-            return Response.status(badArchive ? Response.Status.BAD_REQUEST : Response.Status.INTERNAL_SERVER_ERROR)
+            Response.ResponseBuilder errorResponse = Response
+                    .status(badArchive ? Response.Status.BAD_REQUEST : Response.Status.INTERNAL_SERVER_ERROR)
                     .entity(result.toJSONString())
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
+                    .type(MediaType.APPLICATION_JSON);
+            if (issuedLineageOperationId != null) {
+                errorResponse.header("X-Nemaki-Operation-Id", issuedLineageOperationId);
+            }
+            return errorResponse.build();
         } finally {
             if (tempFile != null && tempFile.exists()) {
                 tempFile.delete();
@@ -566,6 +792,10 @@ public class ImportExportResource extends ResourceBase {
             // Capture username before response is committed (request may not be available in StreamingOutput)
             final String exportUsername = getCallContextUsername(request);
             final String exportFolderName = folder.getName();
+            // §3: issued before the export begins; returned in X-Nemaki-Operation-Id (the body
+            // is the ZIP, so the header is the only channel).
+            final String lineageOperationId = java.util.UUID.randomUUID().toString();
+            final String exportZipFileName = folder.getName() + "_export.zip";
 
             StreamingOutput streamingOutput = new StreamingOutput() {
                 @Override
@@ -579,7 +809,10 @@ public class ImportExportResource extends ResourceBase {
                         }
 
                         Set<String> exportedObjectIds = new HashSet<>();
-                        zipExporter.exportFolderRecursive(repositoryId, folder, "", zos, callContext, exportedObjectIds);
+                        ImportExportUtils.ExportedObjectCollector exportedObjects =
+                                new ImportExportUtils.ExportedObjectCollector();
+                        zipExporter.exportFolderRecursive(repositoryId, folder, "", zos, callContext,
+                                exportedObjectIds, exportedObjects);
 
                         try {
                             Set<String> relTypeIds = zipExporter.collectAndExportRelationships(repositoryId, exportedObjectIds, zos, callContext);
@@ -596,6 +829,10 @@ public class ImportExportResource extends ResourceBase {
                             log.warn("Failed to export type definitions: " + e.getMessage(), e);
                         }
 
+                        // The artifact exists only once the ZIP central directory is written —
+                        // lineage describes a completed export, so finish() comes first.
+                        zos.finish();
+
                         publishZipFolderExportLineage(
                                 repositoryId,
                                 folderId,
@@ -603,20 +840,17 @@ public class ImportExportResource extends ResourceBase {
                                 exportUsername,
                                 exportedObjectIds.size());
 
-                        // Lineage Journal: EXPORT_ZIP_FOLDER
+                        // Lineage: one version-free fact. The emission guard and the v1 strings
+                        // (folder input, no output, objectCount incl. the root) are v1's,
+                        // verbatim; the typed side carries the moved content itself.
                         if (!exportedObjectIds.isEmpty()) {
-                            LineageConfig lc = getLineageConfig();
-                            LineageEventBuilder b = new LineageEventBuilder()
-                                    .repositoryId(repositoryId)
-                                    .processType(LineageProcessType.EXPORT_ZIP_FOLDER)
-                                    .addInputObject(repositoryId, folderId)
-                                    .snapshotAttribute("folderName", exportFolderName)
-                                    .snapshotAttribute("objectCount", String.valueOf(exportedObjectIds.size()))
-                                    .snapshotAttribute("requestedBy", exportUsername);
-                            if (lc != null) {
-                                b.targets(lc.getTargets());
-                            }
-                            emitLineageEvent(b.build());
+                            LineageFactEmission.emitSafely(resolveLineageEmitter(repositoryId), () ->
+                                    zipFolderExportFact(repositoryId, folderId, exportFolderName,
+                                            exportUsername, exportedObjectIds.size(),
+                                            exportedObjects.asList(), exportZipFileName,
+                                            lineageTargets(), lineageOperationId,
+                                            java.time.Instant.now().toString()),
+                                    "repo=" + repositoryId + " op=" + lineageOperationId + " type=EXPORT_ZIP_FOLDER");
                         }
 
                         // Audit after streaming completes successfully
@@ -637,12 +871,11 @@ public class ImportExportResource extends ResourceBase {
                 }
             };
 
-            String fileName = folder.getName() + "_export.zip";
-
             return Response.ok(streamingOutput)
                     .header("Content-Disposition",
                             jp.aegif.nemaki.rest.importexport.ImportExportUtils
-                                    .contentDispositionAttachment(fileName))
+                                    .contentDispositionAttachment(exportZipFileName))
+                    .header("X-Nemaki-Operation-Id", lineageOperationId)
                     .build();
 
         } catch (Exception e) {
@@ -726,6 +959,11 @@ public class ImportExportResource extends ResourceBase {
             }
 
             final String exportUsername = getCallContextUsername(request);
+            // §3: issued before the export begins; the response body is the ZIP, so the id
+            // travels in X-Nemaki-Operation-Id. The file name is evaluated once, here, so the
+            // artifact attribute and the Content-Disposition header cannot disagree.
+            final String lineageOperationId = java.util.UUID.randomUUID().toString();
+            final String exportZipFileName = "export_selected_" + System.currentTimeMillis() + ".zip";
             StreamingOutput streamingOutput = new StreamingOutput() {
                 @Override
                 public void write(OutputStream output) throws IOException {
@@ -748,6 +986,8 @@ public class ImportExportResource extends ResourceBase {
 
                         ContentService cs = getContentService();
                         Set<String> exportedObjectIds = new HashSet<>();
+                        ImportExportUtils.ExportedObjectCollector exportedObjects =
+                                new ImportExportUtils.ExportedObjectCollector();
                         for (Content c : contents) {
                             if (c instanceof Folder) {
                                 Folder folder = (Folder) c;
@@ -757,10 +997,15 @@ public class ImportExportResource extends ResourceBase {
                                 String folderPath = sanitizeExportName(folder.getName());
                                 zos.putNextEntry(new java.util.zip.ZipEntry(folderPath + "/"));
                                 zos.closeEntry();
-                                zipExporter.exportFolderRecursive(repositoryId, folder, folderPath, zos, callContext, exportedObjectIds);
+                                // A selected folder is itself moved content (unlike the
+                                // whole-folder export's container root), and the non-empty
+                                // basePath makes the recursion record it.
+                                zipExporter.exportFolderRecursive(repositoryId, folder, folderPath, zos, callContext,
+                                        exportedObjectIds, exportedObjects);
                             } else if (c instanceof Document) {
                                 Document doc = (Document) c;
                                 exportedObjectIds.add(doc.getId());
+                                exportedObjects.record(doc.getId(), doc.getName(), false);
                                 zipExporter.exportSingleDocument(repositoryId, doc, sanitizeExportName(doc.getName()), zos, callContext, cs);
                             }
                         }
@@ -780,27 +1025,30 @@ public class ImportExportResource extends ResourceBase {
                             log.warn("Failed to export type definitions: " + e.getMessage(), e);
                         }
 
+                        // The artifact exists only once the ZIP central directory is written.
+                        zos.finish();
+
                         publishSelectedObjectsExportLineage(
                                 repositoryId,
                                 contents,
                                 exportUsername,
                                 exportedObjectIds.size());
 
-                        // Lineage Journal: EXPORT_SELECTED_OBJECTS
+                        // Lineage: one version-free fact. v1 keeps the top-level selection as
+                        // its inputs (order and multiplicity verbatim); the typed side carries
+                        // everything the ZIP actually holds.
                         if (!exportedObjectIds.isEmpty()) {
-                            LineageConfig lc = getLineageConfig();
-                            LineageEventBuilder b = new LineageEventBuilder()
-                                    .repositoryId(repositoryId)
-                                    .processType(LineageProcessType.EXPORT_SELECTED_OBJECTS)
-                                    .snapshotAttribute("objectCount", String.valueOf(exportedObjectIds.size()))
-                                    .snapshotAttribute("requestedBy", exportUsername);
-                            for (Content c : contents) {
-                                b.addInputObject(repositoryId, c.getId());
-                            }
-                            if (lc != null) {
-                                b.targets(lc.getTargets());
-                            }
-                            emitLineageEvent(b.build());
+                            LineageFactEmission.emitSafely(resolveLineageEmitter(repositoryId), () -> {
+                                java.util.List<String> selectedIds = new java.util.ArrayList<>();
+                                for (Content c : contents) {
+                                    selectedIds.add(c.getId());
+                                }
+                                return selectedObjectsExportFact(repositoryId, selectedIds,
+                                        exportUsername, exportedObjectIds.size(),
+                                        exportedObjects.asList(), exportZipFileName,
+                                        lineageTargets(), lineageOperationId,
+                                        java.time.Instant.now().toString());
+                            }, "repo=" + repositoryId + " op=" + lineageOperationId + " type=EXPORT_SELECTED_OBJECTS");
                         }
                     } catch (Exception e) {
                         log.error("Export streaming failed: " + e.getMessage(), e);
@@ -809,11 +1057,11 @@ public class ImportExportResource extends ResourceBase {
                 }
             };
 
-            String fileName = "export_selected_" + System.currentTimeMillis() + ".zip";
             return Response.ok(streamingOutput)
                     .header("Content-Disposition",
                             jp.aegif.nemaki.rest.importexport.ImportExportUtils
-                                    .contentDispositionAttachment(fileName))
+                                    .contentDispositionAttachment(exportZipFileName))
+                    .header("X-Nemaki-Operation-Id", lineageOperationId)
                     .build();
 
         } catch (ParseException e) {
@@ -845,6 +1093,8 @@ public class ImportExportResource extends ResourceBase {
             @Context HttpServletRequest request) {
 
         JSONObject response = new JSONObject();
+        // Method-scoped so failure responses can carry it once issued (§3).
+        String issuedLineageOperationId = null;
 
         String csrfError = validateCsrfProtection(request);
         if (csrfError != null) {
@@ -912,6 +1162,9 @@ public class ImportExportResource extends ResourceBase {
 
             log.info("Starting filesystem import from: " + sourceDir + " to folder: " + folderId);
 
+            // §3: issued before the mutation the importer performs.
+            issuedLineageOperationId = java.util.UUID.randomUUID().toString();
+            final String lineageOperationId = issuedLineageOperationId;
             ImportResult importResult = filesystemImporter.importFromFilesystemDirectory(repositoryId, folderId, sourceDir, callContext);
 
             response.put("status", importResult.errors.isEmpty() ? (importResult.warnings.isEmpty() ? "success" : "partial") : "error");
@@ -938,23 +1191,19 @@ public class ImportExportResource extends ResourceBase {
                     getCallContextUsername(request),
                     importResult);
 
-            // Lineage Journal: IMPORT_FILESYSTEM
+            // Lineage: one version-free fact (v1 strings verbatim; guard is v1's). sourcePath
+            // has no v2 home yet — importMode carries the artifact's classification and the
+            // path stays in the v1 snapshot (the IMPORT_ARTIFACT allowlist has no sourcePath).
             {
                 long objCount = (long) importResult.documentsCreated + importResult.foldersCreated;
                 if (objCount > 0) {
-                    LineageConfig lc = getLineageConfig();
-                    LineageEventBuilder b = new LineageEventBuilder()
-                            .repositoryId(repositoryId)
-                            .processType(LineageProcessType.IMPORT_FILESYSTEM)
-                            .addInput("file://" + sourceDir)
-                            .addOutputObject(repositoryId, folderId)
-                            .snapshotAttribute("sourcePath", sourceDir.toString())
-                            .snapshotAttribute("objectCount", String.valueOf(objCount))
-                            .snapshotAttribute("requestedBy", getCallContextUsername(request));
-                    if (lc != null) {
-                        b.targets(lc.getTargets());
-                    }
-                    emitLineageEvent(b.build());
+                    String requestedBy = getCallContextUsername(request);
+                    LineageFactEmission.emitSafely(resolveLineageEmitter(repositoryId), () ->
+                            filesystemImportFact(repositoryId, folderId, sourceDir.toString(),
+                                    requestedBy, objCount, importResult.createdObjects,
+                                    lineageTargets(), lineageOperationId,
+                                    java.time.Instant.now().toString()),
+                            "repo=" + repositoryId + " op=" + lineageOperationId + " type=IMPORT_FILESYSTEM");
                 }
             }
 
@@ -964,20 +1213,30 @@ public class ImportExportResource extends ResourceBase {
                         getCallContextUsername(request), folderId, true, null);
             }
 
-            return Response.ok(response.toJSONString()).build();
+            response.put("operationId", lineageOperationId);
+            return Response.ok(response.toJSONString())
+                    .header("X-Nemaki-Operation-Id", lineageOperationId)
+                    .build();
 
         } catch (Exception e) {
             log.error("Filesystem import failed: " + e.getMessage(), e);
             response.put("status", "error");
             response.put("message", "Import failed: " + e.getMessage());
+            if (issuedLineageOperationId != null) {
+                response.put("operationId", issuedLineageOperationId);
+            }
             AuditLogger audit = getAuditLogger();
             if (audit != null) {
                 audit.logOperation(AuditOperation.IMPORT_EXECUTE, repositoryId,
                         getCallContextUsername(request), folderId, false, e.getMessage());
             }
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity(response.toJSONString())
-                    .build();
+            Response.ResponseBuilder errorResponse = Response
+                    .status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(response.toJSONString());
+            if (issuedLineageOperationId != null) {
+                errorResponse.header("X-Nemaki-Operation-Id", issuedLineageOperationId);
+            }
+            return errorResponse.build();
         }
     }
 
@@ -996,6 +1255,8 @@ public class ImportExportResource extends ResourceBase {
             @Context HttpServletRequest request) {
 
         JSONObject response = new JSONObject();
+        // Method-scoped so failure responses can carry it once issued (§3).
+        String issuedLineageOperationId = null;
 
         String csrfError = validateCsrfProtection(request);
         if (csrfError != null) {
@@ -1051,10 +1312,10 @@ public class ImportExportResource extends ResourceBase {
                         .build();
             }
 
-            if (!java.nio.file.Files.exists(targetDir)) {
-                java.nio.file.Files.createDirectories(targetDir);
-            }
-            if (!java.nio.file.Files.isDirectory(targetDir)) {
+            // Every rejection below happens BEFORE the operation id is issued — nothing has
+            // mutated yet, so they carry no id, and every return after issuance must.
+            if (java.nio.file.Files.exists(targetDir)
+                    && !java.nio.file.Files.isDirectory(targetDir)) {
                 response.put("status", "error");
                 response.put("message", "Target path is not a directory: " + targetPath);
                 return Response.status(Response.Status.BAD_REQUEST)
@@ -1074,6 +1335,15 @@ public class ImportExportResource extends ResourceBase {
                         .entity(response.toJSONString())
                         .build();
             }
+
+            // §3: issued before the first mutation — creating the target directory is already
+            // part of the export. createDirectories is called unconditionally: it is a no-op
+            // for an existing directory and throws for a file, which closes the TOCTOU window
+            // an exists-guard would open (a file racing into place after the check above would
+            // otherwise skip creation and let the export run against a non-directory).
+            issuedLineageOperationId = java.util.UUID.randomUUID().toString();
+            final String lineageOperationId = issuedLineageOperationId;
+            java.nio.file.Files.createDirectories(targetDir);
 
             ExportResult exportResult = filesystemExporter.exportToFilesystemDirectory(repositoryId, folder, targetDir, callContext, allowOverwrite);
 
@@ -1097,23 +1367,19 @@ public class ImportExportResource extends ResourceBase {
                     getCallContextUsername(request),
                     exportResult);
 
-            // Lineage Journal: EXPORT_FILESYSTEM
+            // Lineage: one version-free fact (v1 strings verbatim; guard is v1's). The typed
+            // side: the recursively exported content became a FILESYSTEM artifact named by the
+            // target directory; the source container travels only in the v1 strings.
             {
                 long objCount = (long) exportResult.documentsExported + exportResult.foldersExported;
                 if (objCount > 0) {
-                    LineageConfig lc = getLineageConfig();
-                    LineageEventBuilder b = new LineageEventBuilder()
-                            .repositoryId(repositoryId)
-                            .processType(LineageProcessType.EXPORT_FILESYSTEM)
-                            .addInputObject(repositoryId, folderId)
-                            .addOutput("file://" + targetDir)
-                            .snapshotAttribute("targetPath", targetDir.toString())
-                            .snapshotAttribute("objectCount", String.valueOf(objCount))
-                            .snapshotAttribute("requestedBy", getCallContextUsername(request));
-                    if (lc != null) {
-                        b.targets(lc.getTargets());
-                    }
-                    emitLineageEvent(b.build());
+                    String requestedBy = getCallContextUsername(request);
+                    LineageFactEmission.emitSafely(resolveLineageEmitter(repositoryId), () ->
+                            filesystemExportFact(repositoryId, folderId, targetDir.toString(),
+                                    requestedBy, objCount, exportResult.exportedObjects,
+                                    lineageTargets(), lineageOperationId,
+                                    java.time.Instant.now().toString()),
+                            "repo=" + repositoryId + " op=" + lineageOperationId + " type=EXPORT_FILESYSTEM");
                 }
             }
 
@@ -1123,20 +1389,30 @@ public class ImportExportResource extends ResourceBase {
                         getCallContextUsername(request), folderId, true, null);
             }
 
-            return Response.ok(response.toJSONString()).build();
+            response.put("operationId", lineageOperationId);
+            return Response.ok(response.toJSONString())
+                    .header("X-Nemaki-Operation-Id", lineageOperationId)
+                    .build();
 
         } catch (Exception e) {
             log.error("Filesystem export failed: " + e.getMessage(), e);
             response.put("status", "error");
             response.put("message", "Export failed: " + e.getMessage());
+            if (issuedLineageOperationId != null) {
+                response.put("operationId", issuedLineageOperationId);
+            }
             AuditLogger audit = getAuditLogger();
             if (audit != null) {
                 audit.logOperation(AuditOperation.EXPORT_EXECUTE, repositoryId,
                         getCallContextUsername(request), folderId, false, e.getMessage());
             }
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity(response.toJSONString())
-                    .build();
+            Response.ResponseBuilder errorResponse = Response
+                    .status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(response.toJSONString());
+            if (issuedLineageOperationId != null) {
+                errorResponse.header("X-Nemaki-Operation-Id", issuedLineageOperationId);
+            }
+            return errorResponse.build();
         }
     }
 

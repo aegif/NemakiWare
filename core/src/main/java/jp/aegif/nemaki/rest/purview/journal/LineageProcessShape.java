@@ -206,7 +206,8 @@ public final class LineageProcessShape {
                 LineageProcessType.FILE_SHARE_SYNC_DOWNLOAD,
                 LineageProcessType.MAIL_MESSAGE_IMPORT,
                 LineageProcessType.MAIL_ATTACHMENT_IMPORT,
-                LineageProcessType.GENERIC_EXTERNAL_INGEST)) {
+                LineageProcessType.GENERIC_EXTERNAL_INGEST,
+                LineageProcessType.CHAT_MESSAGE_IMPORT)) {
             table.put(ingest, List.of(
                     shape(one(EndpointKind.EXTERNAL_ASSET), one(EndpointKind.CMIS_DOCUMENT))));
         }

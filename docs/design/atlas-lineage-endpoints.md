@@ -1,7 +1,54 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.15 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-2c 実装済み (writer は v1 のまま)・Slice 4 は §6-a の再 sign-off 待ち**
+status: **v2.3.16 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c 実装済み (writer は v1 のまま)・Slice 4 は §6-a の再 sign-off 待ち**
 revision:
+- v2.3.16 — producer P-3 (ImportExportResource 5 箇所 + CHAT_MESSAGE_IMPORT) と、その
+  Codex 計画レビュー (proceed with named changes) で確定した決定。
+  ① **moved content は再帰的な全 object** (top-level root 案は却下 — folder endpoint は
+  「移動した folder そのもの」であり、後から中身が変わる部分木の proxy ではない)。
+  配管: ImportResult.createdObjects (importer 6 作成点、objectId dedupe・作成順) と
+  ExportedObjectCollector / ExportResult.exportedObjects (exporter 再帰 + 選択 export の
+  トップレベル)。**容れ物 root は typed には入れない** (legacy の id set と objectCount は
+  従来値を維持 — ZipExporter は root を set に入れる歴史的挙動を含めて不変)。
+  空 folder の ZIP export だけは v1 が emit する (set に root が入るため) ので、typed 入力
+  は folder endpoint 自身に fallback する。
+  ② **cap はしない** — 部分集合の fact は嘘になり、fact 放棄は v1 emission の現行動作を
+  変える。将来の資源制限は「serialized event の chunking (flip 時)」か操作全体の制限で
+  あって、lineage だけの切り詰めではない。producer heap は過渡的に許容。
+  ③ artifactKind は **`ZIP` | `FILESYSTEM`** (§8-d の固定値。FILESYSTEM_DIRECTORY は誤り)。
+  artifact name は実際の HTTP response fileName を 1 回だけ評価して流用 (selected は
+  currentTimeMillis 入りだが display 属性であって identity ではない)。
+  ④ **ZIP export の emit は `zos.finish()` 成功後** — artifact は central directory が
+  書けて初めて存在する。v1 の emission タイミングも fact と共に後ろへ動く (finish 失敗時に
+  従来は不完全 export の v1 event が残った — 正しい capture へ寄る変更として受容)。
+  ⑤ **既存 direct-Purview publish* 5 ヘルパの fail-open 穴を閉鎖** — mode 判定
+  (getModeForRepository) が業務 try の外で throw しうる。非 throw の
+  journalOwnsLineage() に集約 (失敗時は「journal 所有」= direct publish skip 側へ倒す)。
+  ⑥ **operationId の返却**: 5 endpoint 全てで `X-Nemaki-Operation-Id` header、同期 JSON
+  応答 (import ×2・filesystem export) は body の `operationId` にも。streaming ZIP は
+  header のみ。v1 runId には書かない (従来どおり)。
+  ⑦ **CHAT_MESSAGE_IMPORT 新設 (19 種目)** — v2.3.13 confirmed bug 1 の実装。fact 分類は
+  attachment → CHAT_ATTACHMENT_IMPORT / message → CHAT_MESSAGE_IMPORT に正し、
+  LegacyV1Projection は歴史的な逆転ラベルを verbatim 維持 (eventKey に hash 済み)。
+  E-2 分母は 18 positive + 1 生成拒否へ。
+  ⑧ **restore 系 (ARCHIVE_RESTORE / COLD_RESTORE) は flip 後の最初の producer として延期**
+  (Codex 確認済み) — flip までは全 fact が v1 行へ射影されるため、旧バイナリが知らない
+  enum ラベルが v1 行に入ると混在環境の復号が壊れる (type=lineage_event_v2 の不可視化は
+  v2 行にしか効かない)。CLOUD_SYNC_DOWNLOAD / FILE_SHARE_SYNC_DOWNLOAD の統一は見送り
+  (sink 写像と v1 監査の連続性優先、増分 B で再訪)。
+  ⑩ (diff 再レビュー対応) **operationId は失敗応答にも載る** — 発行済みなら同期 3
+  endpoint の error body / header にも返す (mutation が始まった後の部分作成こそ相関 id が
+  要る)。filesystem export の発行は createDirectories (最初の mutation) の前。
+  **保存テストは本番構築を通す** — fact + LegacyV1Projection の構築全体を
+  ImportExportResource の package-visible static factory 5 つに抽出し、endpoint の
+  supplier は委譲のみ、テストは同じ factory を叩く (手組み複製は resource の drift を
+  検出できない)。journalOwnsLineage は「意図的な不在 (bean 無し / context 無し) →
+  direct publish 可」と「lookup 失敗 → journal 所有扱い (skip)」を区別。
+  ⑨ **4a 前提の独立項目として記録: typed process attributes の v2 運搬経路が無い** —
+  容れ物 folderId・sourcePath 等の process metadata は現状 v1 snapshot にしか載らない
+  (importMode は IMPORT_ARTIFACT に既在、sourcePath は allowlist 外)。writer 起動前に
+  LineageFact → v2 envelope/codec → digest 規則 → read model → sink の全層で typed
+  process attributes を通す先行 slice が必要。rollout fence だけの 4a に埋めない。
 - v2.3.15 — producer P-2c (CloudDriveResource ×3・IngestLineageEmitter) 変換と、その Codex
   レビュー (do-not-commit 7 件) への対応で確定した設計決定。
   ① **GENERIC_EXTERNAL_INGEST を新設 (18 種目)** — v2.3.13 ⑤ の予告を実装。shape は
@@ -1933,11 +1980,12 @@ POST /api/v1/admin/lineage-journal/repair
 E2E のためだけに実装しない。
 
 - enum は legacy deserialization 互換のため**残す**。javadoc に `RESERVED / producer なし` と明記する。
-- business API E2E の分母は **producer のある 17 種**。v2.3.12 まで「17 種 (全数)」→ v2.3.13 で
-  「16 + 1 拒否」に訂正 → v2.3.15 で GENERIC_EXTERNAL_INGEST (producer あり: archetype null の
-  connector 取込) が加わり **17 positive + 1 生成拒否 (negative)** が現在の受入条件。
-  注: GENERIC_EXTERNAL_INGEST の v2 event が現れるのは writer flip 後 — flip 前の E2E では
-  同経路の v1 event は IMPORT_UPLOADED として観測される (LegacyV1Projection)。
+- business API E2E の分母は **producer のある 18 種**。v2.3.12 まで「17 種 (全数)」→ v2.3.13 で
+  「16 + 1 拒否」→ v2.3.15 で GENERIC_EXTERNAL_INGEST (+1) → v2.3.16 で CHAT_MESSAGE_IMPORT
+  (+1、CHAT_CONTEXT 非 attachment の fact 分類) が加わり **18 positive + 1 生成拒否
+  (negative)** が現在の受入条件。
+  注: 新分類の v2 event が現れるのは writer flip 後 — flip 前の E2E では同経路の v1 event は
+  歴史的ラベル (IMPORT_UPLOADED / CHAT_ATTACHMENT_IMPORT) で観測される (LegacyV1Projection)。
 - synthetic payload の単体テストのみ行う。
 - **`LineageEventBuilder` からの新規生成は拒否する** (`IllegalArgumentException`)。
   正式な producer を実装するまで、この値の event が新規に生まれない。
@@ -1945,7 +1993,7 @@ E2E のためだけに実装しない。
 | # | 受入項目 | 判定 |
 |---|---|---|
 | E-1 | schema apply が `applied:true` で完了 | `nemaki_folder_dataset` / `nemaki_import_artifact` / `nemaki_export_artifact` を含む |
-| E-2 | **producer のある 17** `LineageProcessType` の producer-shape matrix **+ RESERVED 1 種の生成拒否** | 実 business API から発火し、各 Process の inputs/outputs が期待 entity と E-17 の条件で**完全一致**。`FILE_SHARE_SYNC_UPLOAD` は生成拒否 (negative) + synthetic payload の単体テストのみ |
+| E-2 | **producer のある 18** `LineageProcessType` の producer-shape matrix **+ RESERVED 1 種の生成拒否** | 実 business API から発火し、各 Process の inputs/outputs が期待 entity と E-17 の条件で**完全一致**。`FILE_SHARE_SYNC_UPLOAD` は生成拒否 (negative) + synthetic payload の単体テストのみ |
 | E-3 | folder endpoint | `nemaki_folder_dataset` GUID に結線される |
 | E-4 | export artifact | `nemaki_export_artifact` が outputs に現れる |
 | E-5 | external / cloud / cold endpoint | `nemaki_external_asset` GUID に結線される |
@@ -2076,7 +2124,10 @@ identity 分離を入れる前の記述で、成立しない。
 | P-1 (`LineageFact` + LegacyV1Projection・emitter seam・fail-open facade) | 完了 (seam は無条件で v1 射影) |
 | P-2a (RetentionScheduler: ARCHIVE_LOCAL / ARCHIVE_COLD) | 完了 (preservation test で eventKey 固定) |
 | P-2b (ArchiveResource: ARCHIVE_LOCAL force) | 完了 (削除前の名前読取りは guard 済み) |
-| P-2c (CloudDriveResource ×3・IngestLineageEmitter + `GENERIC_EXTERNAL_INGEST` 新設) | 完了 (v2.3.15 ①〜⑥。残 producer: ImportExportResource 5 箇所 + restore 系新設) |
+| P-2c (CloudDriveResource ×3・IngestLineageEmitter + `GENERIC_EXTERNAL_INGEST` 新設) | 完了 (v2.3.15 ①〜⑥) |
+| P-3a (moved-content 配管: ImportResult.createdObjects / ExportedObjectCollector) | 完了 (v2.3.16 ①②) |
+| P-3b (ImportExportResource 5 箇所変換 + publish* fail-open + operationId 返却) | 完了 (v2.3.16 ③〜⑥) |
+| P-3c (`CHAT_MESSAGE_IMPORT` 新設 + CHAT_CONTEXT 分類逆転の v2 側訂正) | 完了 (v2.3.16 ⑦。restore 系は flip 後へ延期 — ⑧) |
 
 A-1 を分けたのは `LineageEvent` の移行対象が 14 ファイル・`inputs()/outputs()` 参照 79 箇所に
 及び、片方だけ入った木が壊れるため。A-1 単体で型と identity は閉じている。

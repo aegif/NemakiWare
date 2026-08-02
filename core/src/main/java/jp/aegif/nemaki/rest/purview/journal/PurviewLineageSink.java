@@ -144,7 +144,7 @@ public class PurviewLineageSink implements LineageTargetSink {
             case EXTERNAL_NOTE_IMPORT, EXTERNAL_ATTACHMENT_IMPORT,
                  BUSINESS_RECORD_IMPORT, CHAT_ATTACHMENT_IMPORT,
                  MAIL_MESSAGE_IMPORT, MAIL_ATTACHMENT_IMPORT,
-                 GENERIC_EXTERNAL_INGEST -> "nemaki_import_process";
+                 GENERIC_EXTERNAL_INGEST, CHAT_MESSAGE_IMPORT -> "nemaki_import_process";
         };
     }
 
@@ -235,7 +235,7 @@ public class PurviewLineageSink implements LineageTargetSink {
                  EXTERNAL_NOTE_IMPORT, EXTERNAL_ATTACHMENT_IMPORT,
                  BUSINESS_RECORD_IMPORT, CHAT_ATTACHMENT_IMPORT,
                  MAIL_MESSAGE_IMPORT, MAIL_ATTACHMENT_IMPORT,
-                 GENERIC_EXTERNAL_INGEST -> "import-processes";
+                 GENERIC_EXTERNAL_INGEST, CHAT_MESSAGE_IMPORT -> "import-processes";
             case EXPORT_FILESYSTEM, EXPORT_ZIP_FOLDER, EXPORT_SELECTED_OBJECTS -> "export-processes";
             case CLOUD_SYNC_UPLOAD, CLOUD_SYNC_DOWNLOAD,
                  FILE_SHARE_SYNC_UPLOAD, FILE_SHARE_SYNC_DOWNLOAD -> "cloud-sync-processes";
@@ -387,7 +387,7 @@ public class PurviewLineageSink implements LineageTargetSink {
             case EXTERNAL_NOTE_IMPORT, EXTERNAL_ATTACHMENT_IMPORT,
                  BUSINESS_RECORD_IMPORT, CHAT_ATTACHMENT_IMPORT,
                  MAIL_MESSAGE_IMPORT, MAIL_ATTACHMENT_IMPORT,
-                 GENERIC_EXTERNAL_INGEST -> {
+                 GENERIC_EXTERNAL_INGEST, CHAT_MESSAGE_IMPORT -> {
                 processAttrs.putIfAbsent("repositoryId", record.repositoryId());
                 // Use targetFolderId from snapshot (set by CanonicalImportService),
                 // NOT from outputs which contains the created document objectId.
