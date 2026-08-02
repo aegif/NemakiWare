@@ -1,7 +1,69 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.17 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool 実装済み (writer は v1 のまま・spool は非活性)・Slice 4 は §6-a の再 sign-off 待ち**
+status: **v2.3.18 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool 実装済み (writer は v1 のまま・spool は非活性)・D-rest は本版で仕様凍結・Slice 4 は §6-a の再 sign-off 待ち**
 revision:
+- v2.3.18 — **D-rest の実装前仕様凍結** (Codex 計画レビュー: proceed with named changes)。
+  ① **`sequencerLeaseToken` 採用** — acquire ごとに暗号学的乱数 token を発行し、lease
+  文書・SEQUENCING event・SEQUENCED event に保存。claim/reclaim/finalize と全 pre-write
+  再確認は (owner, generation, sequencerLeaseToken) の三重一致 CAS。reclaim は
+  generation と token の両方を更新。generation の単調性・lease 文書削除禁止は不変
+  (token は復旧手順への依存を減らすが、自動再作成を正当化しない)。projector の
+  per-target claim token とは名前で区別する。
+  ② **v2 行の可変面は型付き envelope** — 不変の LineageEventV2 + _rev + state +
+  sequencerGeneration + sequencerLeaseToken + target lifecycle (claim/retry/status) +
+  replay request 群を運ぶ decoder/encoder を新設。decoder は不変部を正典 constructor で
+  再検証し、可変 field の形と state 依存の必須性を strict に検査。更新は完全 envelope の
+  直列化か、検証済み raw 文書への field-preserving patch。**appendV2 の初期行は
+  `sequenceNumber == 0`** とし、finalize が sequenceNumber と state=SEQUENCED を単一 CAS
+  で設定。409 収束は保存 digest 文字列を信用せず不変 payload を decode・再計算して比較。
+  ③ **counter は v1 と同一の `lineage_seq:{repo}` 文書を継続使用** (別 counter は flip 時の
+  high-watermark 移行問題を作るだけ)。ただし v1 helper (欠落時 auto-create・不正値 0 扱い)
+  は使わず、**fenced v2 allocator** を新設: counter の存在必須・不正/欠落/負値拒否・
+  finalized event と cursor の high-watermark 未満を拒否・CAS increment・auto-seed 禁止・
+  不安全な失敗で worker latch を落とす。bootstrap: event も cursor も無い repo は seq=0 で
+  作成、履歴があるのに counter 欠落/巻き戻りは activation 失敗 + 明示復旧。**Slice 4 で
+  schema-1 系の経路が損傷した共有 counter を黙って auto-seed しないことを 4a 前提として
+  記録**。
+  ④ **WriteVersionResolver seam** — materializer の版束縛は resolver 経由。D-rest 既定
+  実装は「unavailable」を返し (親決定が無ければ何も決めない fail-closed)、4a が barrier
+  実装を供給。**既存の検証済み親決定がある fact は flag を再読せず決定から続行** (決定は
+  版と barrier generation を凍結済み — 再読は crash 収束を弱める)。
+  ⑤ **活性化境界** — 全 D-rest driver (sequencer/replay/materializer/scanner) は単一の
+  集約 readiness switch (既定 false) + admin 認可の背後。sequencer の admin 入口は
+  D-rest-2 (v2 projector routing) 完了まで公開しない — 旧 status/cursor 経路が finalize
+  済み v2 行を処理する事故を防ぐ。
+  ⑥ **capability は単一の不変 aggregate provider** (部品の自己登録は初期化途中の slice を
+  広告するリスク)。sequencer:event-first は sequencer + 安全な v2 projection routing が
+  揃って初めて、cursor:cas は本番 v2 projector が使って初めて、replay:generation-cas は
+  request 回収配線後、spool:v2 は materializer + 検証付き ACK 完備後。ACK への公開は 4a。
+  ⑦ **材料化決定の完全 freeze** (D-rest-4 の前提):
+  親決定 `lineage_materialization:{spoolRecordId}` は plan digest だけでなく**不変の
+  plan 全 entry を保存** (後続バイナリが写像変更後も元の決定に従えるため)。子決定文書は
+  **作らない** — plan entry がそのまま chunk 単位の決定であり、journal 行は entry の
+  deliveryId による create-if-absent + digest 完全一致 409 で収束する。
+  plan entry (v2): MAP{chunkIndex: LONG, deliveryId: STRING, eventDigest: STRING
+  (= creationPayloadDigest)}。plan entry (v1、chunk しない単一 entry):
+  MAP{schemaVersion: 1, eventId: STRING (fact の presetEventId、無ければ親決定が一度だけ
+  採番した presetV1EventId), v1EventDigest: STRING}。
+  **v1EventDigest を新定義** (v1 には creationPayloadDigest が無く 13d が未定義だった):
+  H("SPOOL_V1_EVENT_V1", eventId, eventKey, repositoryId, processType.name(),
+  inputs, outputs, snapshotAttributes, occurredAt, correlationId) — LineageCanonicalHash 上、
+  golden vector に追加して凍結。v1 材料化は eventKeyExists→append の race 経路ではなく
+  **決定済み eventId 由来の `_id` (lineage:{eventId}) による create-if-absent**。409 は
+  v1EventDigest 一致のみ成功。
+  materializationPlanDigest = H("MATERIALIZATION_PLAN_V1", spoolRecordId,
+  factPayloadDigest, materializeSchemaVersion, LIST[plan entries])。
+  親決定の create 衝突は factPayloadDigest + plan digest の完全一致のみ成功。
+  **ACK は素の marker ではなく束縛 payload**: MAP{spoolRecordId, factPayloadDigest,
+  parentDecisionId, materializationPlanDigest} を持ち、scanner は ACK 検証で全束縛を
+  照合 (破損/注入後の偽抑止を防ぐ)。ACK 書込みは**全 plan entry の journal 行を再読・
+  digest 再検証して durable を確認した後**にのみ行う。
+  ⑧ v1 保存不変 (flip まで byte-identical): append(LineageEvent) と eager counter・
+  3 引数 updatePublishStatus・v1 claim/reaper/retry・v1 cursor 経路・v1 codec と保存
+  field 文字列・v1 view の key/順序/多重度。D-rest は overload と新 interface を足し、
+  schema version で dispatch する — in-place 置換をしない。
+  ⑨ 実 CouchDB IT は「env-gated で local 実行」+ **専用 CI job が CouchDB を provision
+  して必ず実行** (skip された IT は増分 D の gate を満たさない)。資格情報は環境変数。
 - v2.3.17 — **D-spool 実装**と、その Codex 計画レビュー (proceed with named changes) で確定
   した仕様修正。golden vector 未凍結のうちに直す — 保存済み record は存在しない。
   ① **spool payload に `correlationId` と optional `legacyV1Projection` を追加** (v2.3.10-11
@@ -1455,7 +1517,14 @@ D-rest が直すのは、設計上すでに確認済みの**採番欠落・二�
 | | 内容 | 依存 |
 |---|---|---|
 | **D-spool** | 版非依存 fact spool + scanner + fsync 検証。`deliveryId` を要さない。**実装済み (v2.3.17・非活性)** | A-1 + P-1 (`LineageFact` が変換入力) |
-| **D-rest** | event-first sequencer / cursor CAS / replay generation CAS。v1/v2 dual、非活性で配布 | A-2 Slice 1〜3 (型と `deliveryId` 計算) |
+| **D-rest** | event-first sequencer / cursor CAS / replay generation CAS。v1/v2 dual、非活性で配布 | A-2 Slice 1〜3 (型と `deliveryId` 計算)。**slice 分割と実装状態は下表 (v2.3.18 ⑧)** |
+
+| D-rest slice | 内容 | 状態 |
+|---|---|---|
+| **D-rest-1** | 型付き可変 envelope (`LineageJournalRowV2` + strict codec)・`sequencerLeaseToken` 付き lease (acquire/renew/release CAS・一方向 latch)・**bootstrap patch (`Patch_LineageSequencerBootstrap`: lease 生成 + 履歴なし repo の counter=0 seed、既存は検証のみ・上書き禁止・破損は throw 再実行)**・fenced allocator (auto-seed 禁止・**v1+v2+cursor 横断の watermark 検査**)・fenced sequencer (claim/reclaim/finalize + pre-write 再確認・**infra 失敗は latch**)・sequencer view 3 種・実 CouchDB IT + **skip 不能な専用 CI job** (-Dlineage.it.required)。diff レビュー対応: appendV2 は seq≠0 拒否・409 収束は占有行を decode して再計算比較 (保存 digest 文字列を信用しない)・strict IO (404/409/障害の三分類)・整数は exact 変換・破損行は scan の barrier (追い越し禁止) | **完了 (非活性 — driver/scheduler なし)** |
+| **D-rest-2** | 8-b の v2 遷移 CAS・8-c 単調 cursor・schema 別 projector routing。その後に無効化済み admin sequencer 入口 | 未着手 |
+| **D-rest-3** | 8-d replay request CAS 機械 + crash 回収 | 未着手 |
+| **D-rest-4** | 収束 materializer (親決定 + plan entry + 検証付き ACK)・aggregate capability provider・scanner 入口 | 未着手 |
 
 順序: **A-2 Slice 1〜3 → D-spool → D-rest (dual・writer は v1) → Slice 4a → 4b → E**。
 
@@ -1610,10 +1679,12 @@ digest を見ずに 409 を成功にすると、ID 衝突がそのまま黙っ�
 ### sequencer lease / fencing 状態表 (v2.1)
 
 ```
-_id        : lineage_sequencer_lease:{repositoryId}
-generation : long  — 単調増加。取得のたびに +1
-owner      : nodeId
-expiresAt  : ISO8601
+_id                 : lineage_sequencer_lease:{repositoryId}
+generation          : long  — 単調増加。取得のたびに +1
+sequencerLeaseToken : string — acquire ごとの暗号学的乱数 (v2.3.18 ①)。event にも stamp し、
+                      generation が万一再利用されても old leader の書込みを CAS 不一致にする
+owner               : nodeId
+expiresAt           : ISO8601
 ```
 
 | 操作 | 条件 | 効果 |
@@ -1662,17 +1733,21 @@ event の claim / 確定は必ず `(generation, owner)` を伴う CAS:
 
 ```
 claim   : expected state=UNSEQUENCED, _rev 一致
-          → state=SEQUENCING, sequencerGeneration=G
+          → state=SEQUENCING, sequencerGeneration=G, sequencerLeaseToken=T
 
 reclaim : expected state=SEQUENCING, sequencerGeneration=G_old, _rev 一致
           かつ G_old < 現 lease の generation (= old lease は期限切れ)
-          → state=SEQUENCING, sequencerGeneration=G_new
+          → state=SEQUENCING, sequencerGeneration=G_new, sequencerLeaseToken=T_new
           ※ old leader が停止した event はこの遷移でしか回収できない。
             claim (UNSEQUENCED からのみ) では拾えない
 
-finalize: expected state=SEQUENCING, sequencerGeneration=G, _rev 一致
-          → state=SEQUENCED, sequence=N
+finalize: expected state=SEQUENCING, sequencerGeneration=G, sequencerLeaseToken=T, _rev 一致
+          → state=SEQUENCED, sequence=N (token は監査用に残す)
 ```
+
+いずれの書込みも直前の pre-write 再確認 (owner・generation・token 一致 + 未期限切れ) を
+伴い、appendV2 が書く初期行は `sequenceNumber == 0` である (finalize が sequence と
+state を単一 CAS で設定する — v2.3.18 ②)。
 
 **old leader 復活系列の証明**
 
@@ -1719,7 +1794,7 @@ finalize: expected state=SEQUENCING, sequencerGeneration=G, _rev 一致
 4. **counter 欠落を自動 seed しない。** 0 や 1 から再開すると I-2 を破る
 5. 復旧後に sequencer を再開し、UNSEQUENCED scanner を再開する
 6. `lineage.sequencer.health` を health endpoint と metric に出す
-   (`FENCED_OK` / `COUNTER_MISSING` / `COUNTER_REWOUND` / `STOPPED`)
+   (`FENCED_OK` / `COUNTER_MISSING` / `COUNTER_REWOUND` / `STOPPED` / `LEASE_MISSING`)
 
 - counter だけ進んで crash した場合の gap は**許容する**。読み手は sequence の連続性に依存しない。
 - 古い sequencer は fencing token の世代比較で確定不能にする。

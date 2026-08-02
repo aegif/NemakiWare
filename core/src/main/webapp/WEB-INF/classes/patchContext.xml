@@ -317,6 +317,12 @@
 				<!-- ACL-epoch: (aclEpochMutationId) index so the scanner can find a document that
 				     LOST its state but kept its mutation id (review 3b [P1]) — invisible to every
 				     aclEpochState-keyed selector otherwise. -->
+				<!-- §8-a v2 (D-rest-1): sequencer lease + fresh-repository counter bootstrap -->
+				<bean class="jp.aegif.nemaki.patch.Patch_LineageSequencerBootstrap">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 				<bean class="jp.aegif.nemaki.patch.Patch_AclEpochMutationIdMangoIndex">
 					<property name="patchUtil">
 						<ref bean="patchUtil" />
@@ -588,6 +594,11 @@
 		</property>
 	</bean>
 	<bean id="patch_ApiKeyMangoIndex" class="jp.aegif.nemaki.patch.Patch_ApiKeyMangoIndex">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+	<bean id="patch_LineageSequencerBootstrap" class="jp.aegif.nemaki.patch.Patch_LineageSequencerBootstrap">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

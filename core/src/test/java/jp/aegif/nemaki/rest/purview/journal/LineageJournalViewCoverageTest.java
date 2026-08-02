@@ -54,6 +54,14 @@ public class LineageJournalViewCoverageTest {
     /** v1-only on purpose: a v2 row has no eventKey, and processKey must not stand in for it. */
     private static final Set<String> V1_ONLY_VIEWS = Set.of("by_event_key");
 
+    /**
+     * v2-only and state-specific by definition (§8-a v2, D-rest-1): the fenced sequencer's
+     * scans and its rewind watermark. Excluded from the generic both-versions loops; their
+     * per-state behaviour is pinned in a dedicated test below.
+     */
+    private static final Set<String> V2_SEQUENCER_VIEWS = Set.of(
+            "v2_sequencer_backlog", "v2_sequencer_in_flight", "sequence_watermark");
+
     // ------------------------------------------------------------------ fixtures
 
     private static Map<String, Object> v1Document() {
@@ -142,7 +150,7 @@ public class LineageJournalViewCoverageTest {
     public void everyEventViewEmitsForASyntheticV2Document() {
         Map<String, Object> doc = v2Document();
         for (String view : eventViews()) {
-            if (V1_ONLY_VIEWS.contains(view)) {
+            if (V1_ONLY_VIEWS.contains(view) || V2_SEQUENCER_VIEWS.contains(view)) {
                 continue;
             }
             assertFalse(emits(view, doc).isEmpty(),
@@ -156,6 +164,9 @@ public class LineageJournalViewCoverageTest {
     public void everyEventViewStillEmitsForASyntheticV1Document() {
         Map<String, Object> doc = v1Document();
         for (String view : eventViews()) {
+            if (V2_SEQUENCER_VIEWS.contains(view)) {
+                continue;
+            }
             assertFalse(emits(view, doc).isEmpty(),
                     view + " emitted nothing for a v1 document");
         }
@@ -194,17 +205,58 @@ public class LineageJournalViewCoverageTest {
 
     /** A new view must join this test, or its v2 coverage is nobody's problem until production. */
     @Test
-    public void theViewSetIsExactlyTheKnownFourteen() {
+    public void theViewSetIsExactlyTheKnownSeventeen() {
         assertEquals(Set.of(
                         "by_event_key", "by_repository_and_time", "by_target_status",
                         "by_process_type", "by_occurred_at", "by_repository_and_process_type",
                         "dead_letter_by_time", "dead_letter_by_replayed", "by_target_status_time",
                         "by_repository_and_sequence", "non_terminal_by_target_repo",
                         "projecting_by_claimed_at", "by_process_type_time",
-                        "by_repo_process_type_time"),
+                        "by_repo_process_type_time", "v2_sequencer_backlog",
+                        "v2_sequencer_in_flight", "sequence_watermark"),
                 CouchLineageJournalStore.VIEWS.keySet(),
                 "a view was added or renamed; give it v1/v2 coverage here before anything"
                         + " queries it");
+    }
+
+    /**
+     * The sequencer views are state machines' eyes: each sees exactly its state, and none
+     * sees v1 — a v1 row in a sequencer scan would be claimed by machinery v1 rows never
+     * signed up for.
+     */
+    @Test
+    public void theSequencerViewsSeeExactlyTheirStates() {
+        Map<String, Object> unsequenced = v2Document();
+        unsequenced.put("state", "UNSEQUENCED");
+        Map<String, Object> sequencing = v2Document();
+        sequencing.put("state", "SEQUENCING");
+        Map<String, Object> sequenced = v2Document();
+        sequenced.put("state", "SEQUENCED");
+        sequenced.put("sequenceNumber", 7L);
+
+        assertFalse(emits("v2_sequencer_backlog", unsequenced).isEmpty());
+        assertTrue(emits("v2_sequencer_backlog", sequencing).isEmpty());
+        assertTrue(emits("v2_sequencer_backlog", sequenced).isEmpty());
+        assertTrue(emits("v2_sequencer_backlog", v1Document()).isEmpty());
+
+        assertFalse(emits("v2_sequencer_in_flight", sequencing).isEmpty());
+        assertTrue(emits("v2_sequencer_in_flight", unsequenced).isEmpty());
+        assertTrue(emits("v2_sequencer_in_flight", v1Document()).isEmpty());
+
+        assertFalse(emits("sequence_watermark", sequenced).isEmpty());
+        assertTrue(emits("sequence_watermark", unsequenced).isEmpty(),
+                "an unfinalized v2 row has no sequence to bound the counter with");
+        assertFalse(emits("sequence_watermark", v1Document()).isEmpty(),
+                "v1 sequences DO bound the shared counter (v2.3.18 ③) — a rewound counter"
+                        + " must fail the check even before any v2 row exists");
+
+        Map<String, Object> cursor = new java.util.HashMap<>();
+        cursor.put("type", "projection_cursor");
+        cursor.put("repositoryId", "bedroom");
+        cursor.put("target", "purview");
+        cursor.put("lastProcessedSequence", 42L);
+        assertFalse(emits("sequence_watermark", cursor).isEmpty(),
+                "target cursors bound the counter too");
     }
 
     /** The ordered read's key must be [repositoryId, sequenceNumber] for both versions. */
