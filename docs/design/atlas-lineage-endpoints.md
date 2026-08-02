@@ -287,11 +287,15 @@ revision:
 scope: v3.3 内で Atlas 連携を完成させるための設計。実装は sign-off 後に A〜E の独立コミットで行う。
 関連: [`docs/design/acl-epoch-fencing.md`](acl-epoch-fencing.md) (同じ outbox/cursor の考え方を使う)
 
-実装状況: **A-1〜A-1k と A-2 Slice 1a〜2d-2b が `deps/v3.3-breaking-majors` に実装済み**
-(型体系・identity 符号化・命名集約・schema 整合・identity CI / v2 型・read model・sink /
-admin / projector の版非依存化・無損失 codec・store read の一斉切替 — read:v2 の経路は
-成立、capability の登録は 4a の barrier 実装時)。**production writer は v1 のまま**。
-残: producer 書き換え・chunking (下記「producer 書き換えの設計」)。
+実装状況: **A-1〜A-1k、A-2 Slice 1a〜3、producer P-1〜P-3c、D-spool が
+`deps/v3.3-breaking-majors` に実装済み** (型体系・identity 符号化・命名集約・schema 整合・
+identity CI / v2 型・read model・sink / admin / projector の版非依存化・無損失 codec・
+store read の一斉切替・appendV2 + pre-sink gate / 全 12 producer の LineageFact 化
+(v1 文字列は LegacyV1Projection が verbatim 運搬) / 版非依存 fact spool + scanner +
+golden vector 凍結 — read:v2 の経路は成立、capability の登録は 4a の barrier 実装時)。
+**production writer は v1 のまま・spool は非活性** (emission 配線と materializer は
+D-rest)。残: chunking (fact→v2 写像内・flip 時)・D-rest・`FILE_SHARE_SYNC_UPLOAD`
+生成拒否の E2E・4a/4b。
 Slice 4 (v2 書込みへの切替) は **§6-a の再 sign-off 待ち**。slice 単位の状態は
 「A-2 の分割」の表が正である。
 本文の規範記述は実装と同期させており、乖離を見つけたらどちらかが誤りである —
@@ -870,7 +874,7 @@ HMAC 付き bundle (§9) も**完全性の保証であって暗号化ではな�
 | 各規則の適用範囲 | `?` `#` は **filesystem path 以外の全 key** で拒否する (URI 形状かどうかを問わない)。opaque な connector ID にこれらが入っている場合、剥がし忘れた URL である可能性の方が高く、fail-closed 側を採る。filesystem path だけは例外で、`?` `#` はファイル名に使える普通の文字であり、拒否すると正当なファイルが lineage に載らなくなる。userinfo は authority が存在する key (`://` を含むもの) でのみ検査する — `@` 単体は mailbox path 等で正当 |
 | 検査の限界 | 区切り文字を伴わない token が opaque ID に埋まっている場合は通常の ID と区別できず、そこは producer の責任として残る。この検査は「producer が剥がしたことの確認」であって代替ではない |
 | stableKey の書式 | **既存 catalog sync が正典**。cloud = `{provider}:{externalFileId}`、filesystem = `filesystem:{絶対正規化パス}`、cold = archive の `contentRef.ref` をそのまま。`ExternalAssetIdentity` が唯一の実装で、lineage と catalog sync の両方がそこを通る。独自 scheme (`cloud://` 等) を作ると同一資産が Atlas 上で 2 entity に割れ、A-2 以降は `processKey` まで変わるので後から直せない |
-| custom property mapping | 出力名 (`catalogName`) が予約名・空白の mapping に加え、**入力 (`cmisPropertyId`) が禁止集合のものも拒否**する。`nemaki:cloudFileUrl` は禁止 — 出力名を無害なものにすれば (`legacyCloudUrl` 等) 出力側の検査を全部通り、A-1g が取り除いた生 URL が別名で載るため。旧文書は cloud metadata を `subTypeProperties` に持つので、この保存形は仮定ではない。検査は save / load / payload 最終境界の 3 箇所で、いずれも `rejectionFor(cmisPropertyId, catalogName)` **のみ**を呼ぶ (理由 enum を返すので、save は「どちらの端が悪いか」を operator に出せる)。payload 境界の `containsKey` は mapping ではなく**構築中の entity** を見る別規則であり、統合しない |
+| custom property mapping | 出力名 (`catalogName`) が予約名・空白の mapping に加え、**入力 (`cmisPropertyId`) が禁止集合のものも拒否**する。`nemaki:cloudFileUrl` は禁止 — 出力名を無害なものにすれば (`legacyCloudUrl` 等) 出力側の検査を全部通り、A-1g が取り除いた生 URL が別名で載るため。旧文書は cloud metadata を `subTypeProperties` に持つので、この保存形は仮定ではない。検査は save / load / payload 最終境界の 3 箇所で、全て同じ規則集合を通る — save と payload 境界は `rejectionFor(cmisPropertyId, catalogName)`、load (保存済み mapping) は同規則 + 保存形固有の検査を加えた `rejectionForStored` で、後者は前者へ委譲するため規則が分裂しない (理由 enum を返すので、save は「どちらの端が悪いか」を operator に出せる)。payload 境界の `containsKey` は mapping ではなく**構築中の entity** を見る別規則であり、統合しない |
 | 壊れた mapping 設定 | `catalogName` が JSON null / 非文字列 / 欠落の場合、enabled なら**その 1 件のみ**除外 (WARN + `getRejectedMappingCount()`)、他の mapping は投影を継続。CMIS property ID への流用は**廃止** (誰も設定していない出力名を黙って作るため)。disabled mapping は形が壊れていても**保持**し、rejection に数えない — 投影しないので無害であり、admin UI が表示・修正する対象だから |
 | 既発行値の除去 | **本増分が保証するのは新規発行の停止のみ。** null は payload に載る (client の ObjectMapper は Jackson 既定の inclusion) が、backend が既存 property を削除するか null を無視するかは Atlas OSS と Purview で異なり、**どちらも未検証**。A-1g 以前に発行済みの raw URL の除去は別作業とし、release gate の live Atlas E2E で「republish 後に旧 URL が実際に消えているか」を確認する。消えない backend なら明示的な purge / entity 再作成手順を用意する |
 | 表示 URL (`cloudFileUrl` / cloud の `externalPath`) | **Atlas 永続化境界は保存 URL を一切運ばない**。query 剥離では足りない — SharePoint の modern sharing link は token を **path** に置き (`/:x:/g/…TOKEN`、`CloudDriveResource` が受理する形)、`%3Ftoken` や `;auth=` のような path 内表現もあるため、保存 URL のいかなる変形も secret-free を保証できない (v2.3.2 の sanitize 案は撤回)。現契約: cloud の lineage endpoint は `externalPath` を持たない (allowlist 外・表現不能)、sync external asset の `externalPath` と process の `targetDescription` は `externalFileId`、document の `cloudFileUrl` は **null**。表示 URL が要るなら増分 B で `{provider, fileId}` から provider 別 canonical URL を**再構成**する — 保存値の変形ではなく |
@@ -1149,6 +1153,12 @@ v2.3.11 は「journal / dead letter / spool に v2 が 1 件でも残る限り v
 activate だけした」場合にも rollback を禁じる。**意図的にそうする** — 緩めるには「本当に 0 件か」を
 確かめる必要があり、それがまさに確かめられない条件だからである。activate は片道であると
 運用手順に明記する。
+
+**spool の at-rest 暗号化は §4 の要件のまま** (完全 payload を含むため volume 暗号化 or
+アプリ層暗号化 — 撤回 7 の表)。D-spool 実装が与えるのは 0700/0600 と safe path であって
+暗号化ではない。運用受入 (4b) までに volume 暗号化の確認を release 手順へ含める。
+ingest の opaque source id に紛れた秘密は producer (connector) の責任であり続ける
+(§4「producer が剥がすことの検査であって、代行ではない」)。
 
 **spool の残留は安全 fence ではなく回収対象**として扱う。停止した node の永続 volume は
 `nodeId` 付きで運用 inventory に載せ (§8 の「node 可視化」)、署名付き bundle で回収する。
@@ -2151,7 +2161,8 @@ E-12 の「故意に失敗させる」テストは、cleanup が file-scope で�
 D を 1 つの増分にすると **D → A-2 Slice 4a → D** の循環になる (Slice 4a の完了条件に
 spool readiness が入るため)。§6-a のとおり割る:
 
-- **D-spool** — 版非依存 fact spool + scanner + fsync 検証。`deliveryId` を要さないので A-1 のみに依存
+- **D-spool** — 版非依存 fact spool + scanner + fsync 検証。`deliveryId` を要さない。依存は
+  A-1 + P-1 (`LineageFact` が変換入力 — v2.3.17 ⑥ で「A-1 のみ」から訂正)。**実装済み (非活性)**
 - **D-rest** — sequencer / cursor CAS / replay generation CAS。`deliveryId` の**計算**を使うので
   **A-2 Slice 1〜3 の後**。ただし v1/v2 dual・非活性で配布するので、**Slice 4 より前**である
   (§6-a 撤回 4)。v2.3.10 の「Slice 4 の後」は撤回済み
@@ -2169,7 +2180,7 @@ identity 分離を入れる前の記述で、成立しない。
 | | 内容 | 状態 |
 |---|---|---|
 | **A-1** | `EndpointKind` / `EndpointAttribute` / `LineageEndpoint` / `LineageIdentity` / `LineageCanonicalHash` / `LineageRepositoryScope`。型・属性契約・identity 符号化 | 完了 (producer 未配線) |
-| **A-2** | `LineageEvent` を v2 形状へ移行、`creationPayloadDigest` と integrity 検査、cross-repo 検証 4層の**配線**、producer 全書き換え、chunking、`FILE_SHARE_SYNC_UPLOAD` 生成拒否 | **Slice 1a〜3 完了** (下表)。writer は v1 のまま。残: producer 書き換え・chunking (設計固定済み)・4a/4b |
+| **A-2** | `LineageEvent` を v2 形状へ移行、`creationPayloadDigest` と integrity 検査、cross-repo 検証 4層の**配線**、producer 全書き換え、chunking、`FILE_SHARE_SYNC_UPLOAD` 生成拒否 | **Slice 1a〜3 + producer P-1〜P-3c 完了** (下表)。writer は v1 のまま。残: chunking (fact→v2 写像内・設計固定済み)・生成拒否 E2E・4a/4b |
 
 | A-2 slice | 実装状態 |
 |---|---|
