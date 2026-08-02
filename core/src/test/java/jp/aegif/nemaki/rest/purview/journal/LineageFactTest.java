@@ -278,6 +278,36 @@ public class LineageFactTest {
         assertEquals(old.correlationId(), fromFact.correlationId());
     }
 
+    /**
+     * The second production dual-carriage combination (v2.3.13 confirmed bug 1): a chat message
+     * is CHAT_MESSAGE_IMPORT to v2 while its v1 event keeps the historical (inverted)
+     * CHAT_ATTACHMENT_IMPORT label — that label is hashed into every existing eventKey.
+     */
+    @Test
+    public void theChatInversionRidesTheSameDualCarriage() {
+        LineageFact fact = new LineageFact(
+                REPO,
+                LineageProcessType.CHAT_MESSAGE_IMPORT,
+                "op-1",
+                OCCURRED,
+                List.of(LineageEndpoint.externalAsset(REPO, "slack://t1/channels/C1/messages/m1", "slack")),
+                List.of(LineageEndpoint.document(REPO, "doc-1", "message.json")),
+                List.of("purview"),
+                null,
+                new LineageFact.LegacyV1Projection(
+                        LineageProcessType.CHAT_ATTACHMENT_IMPORT,
+                        List.of("slack://t1/channels/C1/messages/m1"),
+                        List.of("nemaki://bedroom/objects/doc-1"),
+                        Map.of("sourceSystem", "slack")));
+
+        LineageEvent v1 = fact.toV1Event();
+        assertEquals(LineageProcessType.CHAT_ATTACHMENT_IMPORT, v1.processType());
+        assertEquals(LineageEvent.computeEventKey(REPO, LineageProcessType.CHAT_ATTACHMENT_IMPORT,
+                        List.of("slack://t1/channels/C1/messages/m1"),
+                        List.of("nemaki://bedroom/objects/doc-1")),
+                v1.eventKey());
+    }
+
     // ------------------------------------------------------------------ hostile external ids
 
     /**

@@ -177,6 +177,7 @@ public class FilesystemImporter {
                             contentStream, VersioningState.MAJOR, null, null, null);
 
                     result.documentsCreated++;
+                    result.recordCreated(newDoc.getId(), fileName, false, parentFolderId);
 
                     if (metadata != null) {
                         applyCustomAcl(repositoryId, newDoc.getId(), metadata, callContext, result);
@@ -224,6 +225,7 @@ public class FilesystemImporter {
 
         pathToFolderId.put(path, newFolder.getId());
         result.foldersCreated++;
+        result.recordCreated(newFolder.getId(), folderName, true, parentFolderId);
 
         return newFolder.getId();
     }

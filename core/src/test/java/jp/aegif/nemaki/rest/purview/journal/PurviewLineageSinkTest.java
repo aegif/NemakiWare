@@ -76,6 +76,7 @@ class PurviewLineageSinkTest {
         assertEquals("nemaki_import_process", PurviewLineageSink.mapProcessTypeName(LineageProcessType.IMPORT_FILESYSTEM));
         assertEquals("nemaki_import_process", PurviewLineageSink.mapProcessTypeName(LineageProcessType.IMPORT_UPLOADED));
         assertEquals("nemaki_import_process", PurviewLineageSink.mapProcessTypeName(LineageProcessType.GENERIC_EXTERNAL_INGEST));
+        assertEquals("nemaki_import_process", PurviewLineageSink.mapProcessTypeName(LineageProcessType.CHAT_MESSAGE_IMPORT));
     }
 
     @Test

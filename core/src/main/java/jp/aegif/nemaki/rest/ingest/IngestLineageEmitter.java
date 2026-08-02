@@ -37,15 +37,11 @@ public class IngestLineageEmitter {
                                    ConnectorDefinition connector, ExternalIngestRequest request) {
         try {
             // Two classifications on purpose. The v1 type participates in eventKey and keeps
-            // its historical labels (null-archetype non-attachment = IMPORT_UPLOADED); the fact's
-            // own type is what v2 calls the operation — GENERIC_EXTERNAL_INGEST for that case,
-            // because unclassified connector ingest is not a user upload and the two have
-            // different v2 shapes.
+            // its historical labels — including the CHAT_CONTEXT inversion — while the fact's
+            // own type is what v2 calls the operation. See resolveFactProcessType.
             LineageProcessType legacyProcessType = resolveProcessType(connector.getSourceArchetype(), request.getSourceObjectType());
             LineageProcessType factProcessType =
-                    legacyProcessType == LineageProcessType.IMPORT_UPLOADED
-                            ? LineageProcessType.GENERIC_EXTERNAL_INGEST
-                            : legacyProcessType;
+                    resolveFactProcessType(connector.getSourceArchetype(), request.getSourceObjectType());
             String sourceUri = buildCanonicalSourceUri(connector, request);
             String v1EventId = java.util.UUID.randomUUID().toString();
 
@@ -167,6 +163,33 @@ public class IngestLineageEmitter {
         if (sourceObjectType == null) return false;
         String lower = sourceObjectType.toLowerCase();
         return "attachment".equals(lower) || "file".equals(lower);
+    }
+
+    /**
+     * The v2 classification of this ingest — what the operation actually is.
+     *
+     * <p>It differs from {@link #resolveProcessType} (whose labels are frozen into every v1
+     * eventKey) in exactly two places, both v2.3.13 confirmed corrections:
+     * <ul>
+     *   <li>null archetype, non-attachment: {@code GENERIC_EXTERNAL_INGEST}, not
+     *       {@code IMPORT_UPLOADED} — unclassified connector ingest is not a user upload;</li>
+     *   <li>{@code CHAT_CONTEXT}: the v1 branch is inverted (a real attachment became the
+     *       generic type, a message became the attachment type). v2 classifies an attachment
+     *       as {@code CHAT_ATTACHMENT_IMPORT} and a message as {@code CHAT_MESSAGE_IMPORT},
+     *       matching the {@code MESSAGE_CONTEXT} pattern.</li>
+     * </ul>
+     */
+    static LineageProcessType resolveFactProcessType(SourceArchetype archetype, String sourceObjectType) {
+        boolean isAttachment = isAttachmentObjectType(sourceObjectType);
+        if (archetype == null) {
+            return isAttachment ? LineageProcessType.EXTERNAL_ATTACHMENT_IMPORT
+                    : LineageProcessType.GENERIC_EXTERNAL_INGEST;
+        }
+        if (archetype == SourceArchetype.CHAT_CONTEXT) {
+            return isAttachment ? LineageProcessType.CHAT_ATTACHMENT_IMPORT
+                    : LineageProcessType.CHAT_MESSAGE_IMPORT;
+        }
+        return resolveProcessType(archetype, sourceObjectType);
     }
 
     static LineageProcessType resolveProcessType(SourceArchetype archetype, String sourceObjectType) {

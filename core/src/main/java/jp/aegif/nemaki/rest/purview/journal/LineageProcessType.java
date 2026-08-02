@@ -89,5 +89,17 @@ public enum LineageProcessType {
      * it what it is; the v1 eventKey keeps the old label through
      * {@code LineageFact.LegacyV1Projection} until the write flip.
      */
-    GENERIC_EXTERNAL_INGEST;
+    GENERIC_EXTERNAL_INGEST,
+
+    /**
+     * Chat message import (chat_context archetype, non-attachment).
+     *
+     * <p>v1 never had this constant, and its {@code CHAT_CONTEXT} classification is inverted —
+     * a real attachment became the generic {@code EXTERNAL_ATTACHMENT_IMPORT} and a
+     * non-attachment message became {@code CHAT_ATTACHMENT_IMPORT}, the opposite of the
+     * {@code MESSAGE_CONTEXT} pattern (v2.3.13 confirmed bug 1). v2 classifies correctly;
+     * the v1 eventKey keeps the historical inverted labels through
+     * {@code LineageFact.LegacyV1Projection} until the write flip.
+     */
+    CHAT_MESSAGE_IMPORT;
 }

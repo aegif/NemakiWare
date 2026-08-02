@@ -677,17 +677,72 @@ public final class ImportExportUtils {
 
     // ========== Result Classes ==========
 
+    /**
+     * One object an import created, as the lineage producer needs it: the v2 fact carries the
+     * created content itself (typed endpoints with names) where v1 recorded only counts and
+     * the container folder. {@code parentFolderId} lets the producer distinguish top-level
+     * roots (children of the import's target folder) from nested content.
+     */
+    public record CreatedObject(String objectId, String name, boolean folder,
+                                String parentFolderId) {}
+
     public static class ImportResult {
         public int foldersCreated = 0;
         public int documentsCreated = 0;
         public int relationshipsCreated = 0;
         public List<String> errors = new ArrayList<>();
         public List<String> warnings = new ArrayList<>();
+        /** Creation order, deduplicated by objectId; append via {@link #recordCreated}. */
+        public final List<CreatedObject> createdObjects = new ArrayList<>();
+        private final java.util.Set<String> createdObjectIds = new java.util.HashSet<>();
+
+        public void recordCreated(String objectId, String name, boolean folder,
+                                  String parentFolderId) {
+            if (objectId == null || !createdObjectIds.add(objectId)) {
+                return;
+            }
+            createdObjects.add(new CreatedObject(objectId, name, folder, parentFolderId));
+        }
+    }
+
+    /**
+     * One object an export actually moved, as the lineage producer needs it. The requested
+     * container root is deliberately not one of these — it is where the content came from,
+     * not content that moved (§3 v2.3.13); the legacy id set and counters keep their
+     * historical values independently.
+     */
+    public record ExportedObject(String objectId, String name, boolean folder) {}
+
+    /** Insertion-ordered, deduplicated-by-objectId collector for {@link ExportedObject}. */
+    public static final class ExportedObjectCollector {
+        private final java.util.LinkedHashMap<String, ExportedObject> byId =
+                new java.util.LinkedHashMap<>();
+
+        public void record(String objectId, String name, boolean folder) {
+            if (objectId == null) {
+                return;
+            }
+            byId.putIfAbsent(objectId, new ExportedObject(objectId, name, folder));
+        }
+
+        public List<ExportedObject> asList() {
+            return List.copyOf(byId.values());
+        }
     }
 
     public static class ExportResult {
         public int foldersExported = 0;
         public int documentsExported = 0;
         public List<String> errors = new ArrayList<>();
+        /** Export order, deduplicated by objectId; append via {@link #recordExported}. */
+        public final List<ExportedObject> exportedObjects = new ArrayList<>();
+        private final java.util.Set<String> exportedObjectIdSet = new java.util.HashSet<>();
+
+        public void recordExported(String objectId, String name, boolean folder) {
+            if (objectId == null || !exportedObjectIdSet.add(objectId)) {
+                return;
+            }
+            exportedObjects.add(new ExportedObject(objectId, name, folder));
+        }
     }
 }
