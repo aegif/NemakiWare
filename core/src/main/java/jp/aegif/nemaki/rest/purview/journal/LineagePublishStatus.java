@@ -67,11 +67,43 @@ public enum LineagePublishStatus {
      * would delete the record of the violation along with the violation. Increment E's durable
      * §6-format record is what eventually makes these purgeable.
      */
-    REJECTED;
+    REJECTED,
+
+    /**
+     * §8-b v2: the target POST succeeded and the row is being read back from the target to
+     * confirm the publish took effect. Non-terminal, v2-only — the v1 machine never enters it.
+     *
+     * <p>Holds a live claim (token + lease) like PROJECTING. Bounded two ways: per-encounter by
+     * {@code lineage.verify.timeout}, absolutely by {@code lineage.verify.max-age} (exceeded →
+     * FAILED without consuming a publish retry — verify never consumes retries).
+     */
+    VERIFYING,
+
+    /**
+     * §8-b v2: verify detected a deterministic semantic mismatch (wrong type, wrong
+     * repositoryId, shell) — the same payload can never verify, so retrying is pointless.
+     * Terminal, not purge-eligible: the row plus its durable reason are the evidence.
+     */
+    UNPROJECTABLE,
+
+    /**
+     * §8-b v2: a §2 catalog obligation must resolve before this row may be claimed.
+     * Non-terminal, consumes no retries. Represented now (frozen state machine), reachable only
+     * once catalog obligations exist.
+     */
+    WAITING_FOR_CATALOG,
+
+    /**
+     * §8-b v2: the row can never be projected for a structural reason recorded durably
+     * (LEGACY_ENDPOINT / OVERSIZE / SNAPSHOT_INCOMPLETE / CATALOG_WAIT_EXPIRED). Terminal,
+     * not purge-eligible.
+     */
+    UNRESOLVED;
 
     /** Returns {@code true} if this status is a terminal state (no further transitions). */
     public boolean isTerminal() {
-        return this == PUBLISHED || this == SKIPPED || this == DISCARDED || this == REJECTED;
+        return this == PUBLISHED || this == SKIPPED || this == DISCARDED || this == REJECTED
+                || this == UNPROJECTABLE || this == UNRESOLVED;
     }
 
     /**

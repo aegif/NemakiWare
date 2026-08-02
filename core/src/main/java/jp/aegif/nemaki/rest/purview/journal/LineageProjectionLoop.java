@@ -55,8 +55,23 @@ public class LineageProjectionLoop {
     @Autowired(required = false)
     private ProjectionCursorStore cursorStore;
 
+    @Autowired(required = false)
+    private LineageDrestReadiness drestReadiness;
+
     private ScheduledExecutorService scheduler;
     private final AtomicBoolean running = new AtomicBoolean(false);
+
+    /**
+     * The claimant's own tokens (v2.3.19 R4): key {@code recordId|target} → claim token.
+     * §8-b's VERIFYING→VERIFYING (same token + renew) is the claimant continuing ITS OWN
+     * claim; this registry is what "its own" means across poll cycles. Tokens are only ever
+     * minted in claimForProjection and never adopted from storage, so two APs can never share
+     * one. Entries are removed at every exit (terminal transition, CAS/token loss, max-age,
+     * malformed row, structural fault, renewal failure, reap observed, shutdown); a JVM
+     * restart empties it, and the orphaned claims recover through lease expiry + the reaper.
+     */
+    private final java.util.concurrent.ConcurrentHashMap<String, String> ownedClaims =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     @PostConstruct
     public void init() {
@@ -138,7 +153,18 @@ public class LineageProjectionLoop {
 
                     // Use cursor-based ordered processing if cursor store is available
                     if (cursorStore != null && cursorStore.isActive()) {
-                        projectEventsOrdered(targetName, sink);
+                        // D-rest activation boundary: ONE readiness evaluation per target per
+                        // poll (B2). Not ready → the v2 branch is fully dormant (C2: no claim,
+                        // no renewal, no verify, no transition, no reap; registry retained
+                        // untouched) and the legacy v1-only path runs byte-identical.
+                        boolean drestActive = drestReadiness != null
+                                && journalStore instanceof LineageV2TransitionStore
+                                && drestReadiness.evaluate().ready();
+                        if (drestActive) {
+                            projectEventsOrderedDrest(targetName, sink);
+                        } else {
+                            projectEventsOrdered(targetName, sink);
+                        }
                     } else {
                         projectEvents(targetName, sink, LineagePublishStatus.PENDING);
                         projectEvents(targetName, sink, LineagePublishStatus.FAILED);
@@ -352,6 +378,522 @@ public class LineageProjectionLoop {
                 break;
             }
         }
+    }
+
+    // ==================================================================
+    // D-rest ordered walk (§8-b/§8-c, v2.3.19). Runs ONLY when LineageDrestReadiness is
+    // ready; the legacy methods above are byte-identical and run otherwise.
+    // ==================================================================
+
+    /**
+     * The D-rest ordered walk for one target: reaper first (C2 ordering), then per-repository
+     * merged v1+v2 processing with uniform zero-means-stop (§8-c) and monotonic cursor CAS.
+     */
+    private void projectEventsOrderedDrest(String targetName, LineageTargetSink sink) {
+        LineageV2TransitionStore v2store = (LineageV2TransitionStore) journalStore;
+        // Reaper before anything else: expired claims become FAILED (token-fenced, reap-by-CAS)
+        // so this cycle's claims see clean state. One pass per target per poll.
+        try {
+            int reaped = v2store.reapExpiredClaims(targetName, Instant.now());
+            if (reaped > 0) {
+                logger.info("v2 reaper transitioned {} expired claims to FAILED for '{}'",
+                        reaped, targetName);
+            }
+        } catch (RuntimeException e) {
+            logger.error("v2 reaper failed for '{}' — halting this target's poll: {}",
+                    targetName, e.getMessage());
+            return;
+        }
+
+        Set<String> repositoryIds = new LinkedHashSet<>();
+        for (ProjectionCursor c : cursorStore.getAllCursors()) {
+            if (targetName.equals(c.target())) {
+                repositoryIds.add(c.repositoryId());
+            }
+        }
+        repositoryIds.addAll(journalStore.findDistinctNonTerminalRepositoryIds(targetName));
+        try {
+            repositoryIds.addAll(v2store.findV2NonTerminalRepositoryIds(targetName));
+        } catch (RuntimeException e) {
+            logger.error("v2 repository discovery failed for '{}' — halting this target's"
+                    + " poll: {}", targetName, e.getMessage());
+            return;
+        }
+
+        int batchSize = lineageConfig.getProjectionBatchSize();
+        for (String repositoryId : repositoryIds) {
+            try {
+                projectMergedForRepo(targetName, sink, v2store, repositoryId, batchSize);
+            } catch (RuntimeException e) {
+                logger.error("D-rest ordered projection halted for repo '{}': {}",
+                        repositoryId, e.getMessage());
+            }
+        }
+    }
+
+    /** One merged (v1 ∪ v2) sequence-ordered pass over a repository, capped at batchSize. */
+    private void projectMergedForRepo(String targetName, LineageTargetSink sink,
+                                      LineageV2TransitionStore v2store, String repositoryId,
+                                      int batchSize) {
+        ProjectionCursor cursor = cursorStore.getCursor(targetName, repositoryId);
+        long fromSeq = (cursor != null) ? cursor.lastProcessedSequence() : 0;
+
+        List<LineageJournalRow> v1rows =
+                journalStore.findByRepositoryAndSequenceRange(repositoryId, fromSeq, batchSize);
+        List<LineageJournalRowV2> v2rows =
+                v2store.findV2ByRepositoryAndSequenceRange(repositoryId, fromSeq, batchSize);
+
+        // Coverage bounds (A1): a side that returned a FULL batch covers only up to its last
+        // sequence; a side with fewer rows covers to infinity. Processing past min(bounds)
+        // could skip a sequence the truncated side has not shown yet.
+        long v1Bound = v1rows.size() < batchSize ? Long.MAX_VALUE : v1SequenceOf(v1rows.get(v1rows.size() - 1));
+        long v2Bound = v2rows.size() < batchSize ? Long.MAX_VALUE
+                : v2rows.get(v2rows.size() - 1).event().sequenceNumber();
+        long bound = Math.min(v1Bound, v2Bound);
+
+        int i1 = 0;
+        int i2 = 0;
+        int processed = 0;
+        while (processed < batchSize) {
+            LineageJournalRow v1 = i1 < v1rows.size() ? v1rows.get(i1) : null;
+            LineageJournalRowV2 v2 = i2 < v2rows.size() ? v2rows.get(i2) : null;
+            if (v1 == null && v2 == null) {
+                return;
+            }
+            long s1 = v1 != null ? v1SequenceOf(v1) : Long.MAX_VALUE;
+            long s2 = v2 != null ? v2.event().sequenceNumber() : Long.MAX_VALUE;
+            boolean takeV1 = s1 <= s2;
+            long seq = takeV1 ? s1 : s2;
+            if (seq > bound) {
+                return; // beyond the merge window — the next poll refetches from the cursor
+            }
+            boolean advanced = takeV1
+                    ? processV1RowDrest(targetName, sink, repositoryId, v1)
+                    : processV2RowDrest(targetName, sink, v2store, repositoryId, v2);
+            if (!advanced) {
+                return; // zero-means-stop, uniformly (§8-c)
+            }
+            if (takeV1) {
+                i1++;
+            } else {
+                i2++;
+            }
+            processed++;
+        }
+    }
+
+    /**
+     * The v1 row's sequence, halting (via exception caught by the repo loop) on an
+     * undecodable row — the merged walk inherits the legacy rule: the cursor never passes an
+     * unprocessed event.
+     */
+    private long v1SequenceOf(LineageJournalRow row) {
+        if (!(row instanceof LineageJournalRow.Decoded decoded)) {
+            LineageJournalRow.Undecodable u = (LineageJournalRow.Undecodable) row;
+            throw new IllegalStateException("undecodable v1 row " + u.documentId()
+                    + " blocks the ordered stream: " + u.reason());
+        }
+        return decoded.entry().record().sequenceNumber();
+    }
+
+    /**
+     * One v1 row under D-rest: the v1 claim/status machinery unchanged, but B4's uniform
+     * zero-means-stop — every status persistence is CONFIRMED before the monotonic cursor
+     * advances.
+     *
+     * @return {@code true} to continue the walk
+     */
+    private boolean processV1RowDrest(String targetName, LineageTargetSink sink,
+                                      String repositoryId, LineageJournalRow row) {
+        LineageJournalRow.Decoded decoded = (LineageJournalRow.Decoded) row; // v1SequenceOf vetted
+        LineageJournalEntry entry = decoded.entry();
+        LineageRecord record = entry.record();
+        LineagePublishStatus status = record.publishStatusByTarget()
+                .getOrDefault(targetName, LineagePublishStatus.PENDING);
+        if (status.isTerminal()) {
+            return advanceCursorMonotonicChecked(targetName, repositoryId,
+                    record.sequenceNumber());
+        }
+        if (status == LineagePublishStatus.PROJECTING) {
+            logger.debug("v1 row {} is PROJECTING by another node — stopping repo '{}'",
+                    record.recordId(), repositoryId);
+            return false;
+        }
+        try {
+            int claimed = journalStore.updatePublishStatus(record.recordId(), targetName,
+                    LineagePublishStatus.PROJECTING);
+            if (claimed == 0) {
+                return false;
+            }
+            String violation = preSinkViolation(entry);
+            if (violation != null) {
+                if (rejectAtGate(record, targetName, violation)) {
+                    return advanceCursorMonotonicChecked(targetName, repositoryId,
+                            record.sequenceNumber());
+                }
+                return false;
+            }
+            LineageTargetSinkResult result = sink.publish(record);
+            if (result.success()) {
+                int persisted = journalStore.updatePublishStatus(record.recordId(), targetName,
+                        LineagePublishStatus.PUBLISHED);
+                if (persisted == 0) {
+                    // B4: an unconfirmed PUBLISHED must not advance the cursor — the legacy
+                    // path's ignore-and-advance is exactly the §8-c defect this walk removes.
+                    logger.warn("PUBLISHED persist unconfirmed for v1 row {} — halting repo"
+                            + " '{}'", record.recordId(), repositoryId);
+                    return false;
+                }
+                if (lineageMetrics != null) lineageMetrics.recordPublish(targetName);
+                return advanceCursorMonotonicChecked(targetName, repositoryId,
+                        record.sequenceNumber());
+            }
+            handlePublishFailure(entry, targetName, result.message());
+            return false;
+        } catch (Exception e) {
+            handlePublishFailure(entry, targetName, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * One v2 row under D-rest: the token-fenced §8-b machine.
+     *
+     * @return {@code true} to continue the walk
+     */
+    private boolean processV2RowDrest(String targetName, LineageTargetSink sink,
+                                      LineageV2TransitionStore v2store, String repositoryId,
+                                      LineageJournalRowV2 row) {
+        String recordId = row.event().deliveryId();
+        String registryKey = recordId + "|" + targetName;
+        long seq = row.event().sequenceNumber();
+        LineageTargetLifecycle lifecycle = row.targetLifecycles().get(targetName);
+        LineagePublishStatus status = lifecycle == null
+                ? LineagePublishStatus.PENDING : lifecycle.status();
+
+        if (status.isTerminal()) {
+            ownedClaims.remove(registryKey);
+            return advanceCursorMonotonicChecked(targetName, repositoryId, seq);
+        }
+        if (status == LineagePublishStatus.WAITING_FOR_CATALOG) {
+            logger.debug("v2 row {} awaits a catalog obligation — halting repo '{}'",
+                    recordId, repositoryId);
+            return false;
+        }
+        long nowMs = Instant.now().toEpochMilli();
+        if (status == LineagePublishStatus.PROJECTING
+                || status == LineagePublishStatus.VERIFYING) {
+            String ownedToken = ownedClaims.get(registryKey);
+            boolean owned = ownedToken != null && lifecycle != null
+                    && ownedToken.equals(lifecycle.claimToken());
+            boolean expired = lifecycle == null || lifecycle.leaseExpiresAtMs() == null
+                    || lifecycle.leaseExpiresAtMs() <= nowMs;
+            if (!owned || expired) {
+                // Not ours, or expired (the reaper owns expiry — an own expired claim never
+                // renews from memory, C2). Either way the walk cannot pass a live sequence.
+                ownedClaims.remove(registryKey);
+                if (lineageMetrics != null) {
+                    lineageMetrics.recordV2RoutingHalt(expired ? "expired-claim"
+                            : "foreign-claim");
+                }
+                return false;
+            }
+            if (status == LineagePublishStatus.PROJECTING) {
+                // Defensive: an owned PROJECTING re-encounter means a previous encounter broke
+                // between claim and settle. Whether the POST happened is unknowable here, so
+                // no blind re-POST: drop ownership and let lease expiry + reaper recover it.
+                logger.error("Owned v2 claim {} re-encountered in PROJECTING — dropping"
+                        + " ownership for reaper recovery", recordId);
+                ownedClaims.remove(registryKey);
+                return false;
+            }
+            return verifyOwnedV2(targetName, sink, v2store, repositoryId, row, ownedToken);
+        }
+
+        // PENDING or FAILED → claim
+        java.time.Duration lease =
+                java.time.Duration.ofSeconds(lineageConfig.getProjectionClaimLeaseSeconds());
+        LineageV2TransitionStore.V2ClaimGrant grant;
+        try {
+            grant = v2store.claimForProjection(recordId, targetName, lease);
+        } catch (RuntimeException e) {
+            logger.error("v2 claim failed for {} — halting repo '{}': {}", recordId,
+                    repositoryId, e.getMessage());
+            return false;
+        }
+        if (grant == null) {
+            return false;
+        }
+        ownedClaims.put(registryKey, grant.claimToken());
+        if (lineageMetrics != null) lineageMetrics.recordV2Claimed(targetName);
+
+        LineageRecord record = recordOf(row);
+        if (record == null) {
+            // Cannot rebuild the projection — treat like an undecodable row: drop ownership,
+            // halt; the claim recovers via the reaper.
+            ownedClaims.remove(registryKey);
+            return false;
+        }
+        String violation = preSinkViolationV2(row, record);
+        if (violation != null) {
+            boolean persisted = v2store.transitionV2(recordId, targetName,
+                    LineagePublishStatus.PROJECTING, LineagePublishStatus.REJECTED,
+                    grant.claimToken(),
+                    new LineageTargetLifecycle.TerminalReason("PRE_SINK_GATE",
+                            violation, nowMs));
+            ownedClaims.remove(registryKey);
+            if (lineageMetrics != null) lineageMetrics.recordFail(targetName);
+            if (persisted) {
+                logger.warn("Pre-sink gate refused v2 record {} for '{}': {}", recordId,
+                        targetName, violation);
+                return advanceCursorMonotonicChecked(targetName, repositoryId, seq);
+            }
+            return false;
+        }
+        try {
+            LineageTargetSinkResult result = sink.publish(record);
+            if (!result.success()) {
+                settleV2PublishFailure(v2store, recordId, targetName, grant.claimToken(),
+                        registryKey, result.message());
+                return false;
+            }
+        } catch (Exception e) {
+            settleV2PublishFailure(v2store, recordId, targetName, grant.claimToken(),
+                    registryKey, e.getMessage());
+            return false;
+        }
+        boolean toVerifying = v2store.transitionV2(recordId, targetName,
+                LineagePublishStatus.PROJECTING, LineagePublishStatus.VERIFYING,
+                grant.claimToken(), null);
+        if (!toVerifying) {
+            ownedClaims.remove(registryKey);
+            return false;
+        }
+        return verifyOwnedV2(targetName, sink, v2store, repositoryId, row, grant.claimToken());
+    }
+
+    private void settleV2PublishFailure(LineageV2TransitionStore v2store, String recordId,
+                                        String targetName, String token, String registryKey,
+                                        String message) {
+        logger.warn("v2 publish failed for {} to '{}': {}", recordId, targetName, message);
+        try {
+            v2store.transitionV2(recordId, targetName, LineagePublishStatus.PROJECTING,
+                    LineagePublishStatus.FAILED, token, null);
+        } catch (RuntimeException e) {
+            logger.error("v2 FAILED settle also failed for {}: {}", recordId, e.getMessage());
+        }
+        ownedClaims.remove(registryKey);
+        if (lineageMetrics != null) lineageMetrics.recordFail(targetName);
+    }
+
+    /**
+     * The owned bounded verify poll (R4/B3): interval steps inside the per-encounter budget,
+     * renewals with a safety margin, every verify call bounded by the REMAINING budget.
+     *
+     * @return {@code true} iff the row settled terminal AND the cursor advanced
+     */
+    private boolean verifyOwnedV2(String targetName, LineageTargetSink sink,
+                                  LineageV2TransitionStore v2store, String repositoryId,
+                                  LineageJournalRowV2 row, String token) {
+        String recordId = row.event().deliveryId();
+        String registryKey = recordId + "|" + targetName;
+        long seq = row.event().sequenceNumber();
+        LineageRecord record = recordOf(row);
+        if (record == null) {
+            ownedClaims.remove(registryKey);
+            return false;
+        }
+        java.time.Duration lease =
+                java.time.Duration.ofSeconds(lineageConfig.getProjectionClaimLeaseSeconds());
+        long intervalMs = lineageConfig.getVerifyIntervalSeconds() * 1000L;
+        long budgetDeadline = System.nanoTime()
+                + java.time.Duration.ofSeconds(lineageConfig.getVerifyTimeoutSeconds()).toNanos();
+        long maxAgeMs = lineageConfig.getVerifyMaxAgeMinutes() * 60_000L;
+        // Renew before the first attempt (B3): the encounter must never outlive its lease.
+        if (!renewOrFence(v2store, recordId, targetName, token, lease, registryKey)) {
+            return false;
+        }
+        // The lease clock is tracked as an ESTIMATE from actual renewals (F4/F6): it resets
+        // only when a renewal really happened — never silently per iteration.
+        long leaseExpiryEstimate = System.nanoTime() + lease.toNanos();
+        long marginNs = Math.max(2 * intervalMs * 1_000_000L, lease.toNanos() / 4);
+        while (true) {
+            LineageTargetLifecycle current = rereadLifecycle(v2store, recordId, targetName);
+            if (current == null || current.status() != LineagePublishStatus.VERIFYING
+                    || !token.equals(current.claimToken())) {
+                ownedClaims.remove(registryKey);
+                return false;
+            }
+            long nowMs = Instant.now().toEpochMilli();
+            Long since = current.verifyingSinceMs();
+            if (since != null && nowMs - since > maxAgeMs) {
+                boolean persisted = v2store.transitionV2(recordId, targetName,
+                        LineagePublishStatus.VERIFYING, LineagePublishStatus.FAILED, token,
+                        null);
+                ownedClaims.remove(registryKey);
+                logger.warn("v2 verify max-age exceeded for {} ({} ms) — FAILED{}", recordId,
+                        nowMs - since, persisted ? "" : " (persist unconfirmed)");
+                return false;
+            }
+            long remainingNs = budgetDeadline - System.nanoTime();
+            if (remainingNs <= 0) {
+                // Budget exhausted: renew, keep VERIFYING, resume next cycle from the
+                // registry (the owner recognizes its own claim — no stall, no re-POST).
+                renewOrFence(v2store, recordId, targetName, token, lease, registryKey);
+                if (lineageMetrics != null) lineageMetrics.recordV2VerifyRetry(targetName);
+                return false;
+            }
+            if (leaseExpiryEstimate - System.nanoTime() < marginNs) {
+                if (!renewOrFence(v2store, recordId, targetName, token, lease, registryKey)) {
+                    return false;
+                }
+                leaseExpiryEstimate = System.nanoTime() + lease.toNanos();
+            }
+            // B3 exactly: each verify call receives min(interval slice, budget left) — never
+            // the full timeout afresh.
+            long callBudgetMs = Math.min(intervalMs,
+                    Math.max(1, remainingNs / 1_000_000));
+            LineageTargetSink.VerifyResult verdict;
+            try {
+                verdict = sink.verify(record, java.time.Duration.ofMillis(callBudgetMs));
+            } catch (RuntimeException e) {
+                logger.warn("v2 verify attempt errored for {}: {} — treated as retryable",
+                        recordId, e.getMessage());
+                verdict = LineageTargetSink.VerifyResult.RETRYABLE;
+            }
+            switch (verdict) {
+                case VERIFIED -> {
+                    boolean persisted = v2store.transitionV2(recordId, targetName,
+                            LineagePublishStatus.VERIFYING, LineagePublishStatus.PUBLISHED,
+                            token, null);
+                    ownedClaims.remove(registryKey);
+                    if (!persisted) {
+                        return false;
+                    }
+                    if (lineageMetrics != null) {
+                        lineageMetrics.recordV2Published(targetName);
+                        lineageMetrics.recordPublish(targetName);
+                    }
+                    return advanceCursorMonotonicChecked(targetName, repositoryId, seq);
+                }
+                case MISMATCH -> {
+                    boolean persisted = v2store.transitionV2(recordId, targetName,
+                            LineagePublishStatus.VERIFYING,
+                            LineagePublishStatus.UNPROJECTABLE, token,
+                            new LineageTargetLifecycle.TerminalReason("VERIFY_MISMATCH",
+                                    "deterministic semantic mismatch at target '" + targetName
+                                            + "'", nowMs));
+                    ownedClaims.remove(registryKey);
+                    if (lineageMetrics != null) lineageMetrics.recordV2Unprojectable(targetName);
+                    if (!persisted) {
+                        return false;
+                    }
+                    return advanceCursorMonotonicChecked(targetName, repositoryId, seq);
+                }
+                case UNSUPPORTED -> {
+                    // Structural fault: the sink advertised supportsVerification() (readiness
+                    // required it) yet answered UNSUPPORTED. No publish, loud halt (B3);
+                    // the claim recovers via lease expiry + reaper.
+                    logger.error("Sink '{}' answered UNSUPPORTED despite advertising"
+                            + " verification — structural fault, halting repo '{}'",
+                            targetName, repositoryId);
+                    ownedClaims.remove(registryKey);
+                    if (lineageMetrics != null) {
+                        lineageMetrics.recordV2RoutingHalt("verify-unsupported");
+                    }
+                    return false;
+                }
+                case RETRYABLE -> {
+                    if (lineageMetrics != null) lineageMetrics.recordV2VerifyRetry(targetName);
+                    long sleepMs = Math.min(intervalMs,
+                            Math.max(1, (budgetDeadline - System.nanoTime()) / 1_000_000));
+                    try {
+                        Thread.sleep(sleepMs);
+                    } catch (InterruptedException e) {
+                        // Shutdown-adjacent exit (F6): ownership is dropped like every other
+                        // exit — the claim recovers via lease expiry + reaper.
+                        ownedClaims.remove(registryKey);
+                        Thread.currentThread().interrupt();
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+
+    /** Renewal failure is a per-row fence: drop ownership, never write with the dead token. */
+    private boolean renewOrFence(LineageV2TransitionStore v2store, String recordId,
+                                 String targetName, String token, java.time.Duration lease,
+                                 String registryKey) {
+        boolean renewed;
+        try {
+            renewed = v2store.renewClaim(recordId, targetName, token, lease);
+        } catch (RuntimeException e) {
+            logger.error("v2 lease renewal errored for {}: {}", recordId, e.getMessage());
+            renewed = false;
+        }
+        if (!renewed) {
+            ownedClaims.remove(registryKey);
+            logger.warn("v2 lease renewal failed for {} — ownership dropped (fence latch)",
+                    recordId);
+        }
+        return renewed;
+    }
+
+    /** Strict per-row reread; {@code null} on absence, malformed row, or infra failure. */
+    private LineageTargetLifecycle rereadLifecycle(LineageV2TransitionStore v2store,
+                                                   String recordId, String targetName) {
+        try {
+            LineageJournalRowV2 row = v2store.findV2ByRecordId(recordId);
+            return row == null ? null : row.targetLifecycles().get(targetName);
+        } catch (RuntimeException e) {
+            logger.error("v2 lifecycle reread failed for {}: {}", recordId, e.getMessage());
+            return null;
+        }
+    }
+
+    /** The record projection of a v2 row, or {@code null} when it cannot be rebuilt. */
+    private LineageRecord recordOf(LineageJournalRowV2 row) {
+        try {
+            return LineageRecord.fromV2(row.event());
+        } catch (RuntimeException e) {
+            logger.error("v2 row {} cannot project to a record: {}",
+                    row.event().deliveryId(), e.getMessage());
+            return null;
+        }
+    }
+
+    /** §7's last gate for the v2 route (persisted through the fenced transition, never 3-arg). */
+    private String preSinkViolationV2(LineageJournalRowV2 row, LineageRecord record) {
+        try {
+            LineageRepositoryScope.validate(record.repositoryId(),
+                    row.event().inputs(), row.event().outputs());
+            LineageRepositoryScope.validateArtifactOperation(row.event().operationId(),
+                    row.event().inputs(), row.event().outputs());
+            return null;
+        } catch (RuntimeException e) {
+            return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+        }
+    }
+
+    /** §8-c: the D-rest walk's only cursor advance — monotonic CAS, zero-means-stop. */
+    private boolean advanceCursorMonotonicChecked(String targetName, String repositoryId,
+                                                  long sequenceNumber) {
+        ProjectionCursor updated = new ProjectionCursor(targetName, repositoryId,
+                sequenceNumber, java.time.Instant.now());
+        boolean advanced;
+        try {
+            advanced = cursorStore.advanceCursorMonotonic(updated);
+        } catch (RuntimeException e) {
+            logger.error("Monotonic cursor advance errored for repo '{}': {}", repositoryId,
+                    e.getMessage());
+            advanced = false;
+        }
+        if (!advanced) {
+            logger.warn("Monotonic cursor advance unconfirmed for repo '{}' seq {} — halting",
+                    repositoryId, sequenceNumber);
+        }
+        return advanced;
     }
 
     private void advanceCursor(String targetName, String repositoryId, long sequenceNumber) {
@@ -645,6 +1187,9 @@ public class LineageProjectionLoop {
 
     @PreDestroy
     public void destroy() {
+        // Every registry exit includes shutdown (B3): orphaned claims recover via lease
+        // expiry + the reaper on the next start.
+        ownedClaims.clear();
         if (scheduler != null) {
             scheduler.shutdown();
             try {

@@ -42,15 +42,49 @@ public record LineageJournalRowV2(
         String rev,
         SequencingState state,
         Long sequencerGeneration,
-        String sequencerLeaseToken
+        String sequencerLeaseToken,
+        java.util.Map<String, LineageTargetLifecycle> targetLifecycles
 ) {
 
     /** §8-a's sequencing lifecycle. Terminal for this machine is {@code SEQUENCED}. */
     public enum SequencingState { UNSEQUENCED, SEQUENCING, SEQUENCED }
 
+    /** D-rest-1-shaped constructor: sequencer coordinates only, no target lifecycles yet. */
+    public LineageJournalRowV2(LineageEventV2 event, String rev, SequencingState state,
+                               Long sequencerGeneration, String sequencerLeaseToken) {
+        this(event, rev, state, sequencerGeneration, sequencerLeaseToken, java.util.Map.of());
+    }
+
     public LineageJournalRowV2 {
         if (event == null) {
             throw new IllegalArgumentException("event must not be null");
+        }
+        if (targetLifecycles == null) {
+            throw new IllegalArgumentException("targetLifecycles must not be null (empty means"
+                    + " no target has a lifecycle yet)");
+        }
+        targetLifecycles = java.util.Map.copyOf(targetLifecycles);
+        for (var e : targetLifecycles.entrySet()) {
+            if (e.getKey() == null || e.getKey().isBlank()) {
+                throw new IllegalArgumentException("lifecycle target name must not be blank");
+            }
+        }
+        // §8-b: a target lifecycle beyond PENDING can only exist on a SEQUENCED row — claims
+        // require SEQUENCED, and the creation-time classifications (REJECTED/UNRESOLVED) are
+        // exempt because they are appendV2-time verdicts, not projection progress.
+        if (state != SequencingState.SEQUENCED) {
+            for (var e : targetLifecycles.entrySet()) {
+                LineagePublishStatus s = e.getValue().status();
+                boolean creationTime = s == LineagePublishStatus.PENDING
+                        || s == LineagePublishStatus.REJECTED
+                        || s == LineagePublishStatus.UNRESOLVED
+                        || s == LineagePublishStatus.WAITING_FOR_CATALOG;
+                if (!creationTime) {
+                    throw new IllegalArgumentException("target '" + e.getKey() + "' is "
+                            + s + " but the row is " + state + " — projection progress on an"
+                            + " unsequenced row cannot exist");
+                }
+            }
         }
         if (rev == null || rev.isBlank()) {
             throw new IllegalArgumentException("rev must not be blank — every transition on"
