@@ -226,6 +226,14 @@ public class LineageJournalController {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
         }
 
+        // §8-d (D-rest-3): a v2 row routes to the generation-CAS replay machine; the v1
+        // branch below stays byte-identical (including its HTTP-200 failure shape).
+        if (row instanceof jp.aegif.nemaki.rest.purview.journal.LineageJournalRow.Decoded d
+                && d.entry().envelope()
+                        instanceof jp.aegif.nemaki.rest.purview.journal.LineageJournalEntry.V2) {
+            return replayV2(recordId, target);
+        }
+
         // Reset status to PENDING for the target to allow re-projection
         int updated = journalStore.updatePublishStatus(recordId, target,
                 jp.aegif.nemaki.rest.purview.journal.LineagePublishStatus.PENDING);
@@ -502,6 +510,68 @@ public class LineageJournalController {
                 yield map;
             }
         };
+    }
+
+    // ==================== D-rest-3: §8-d replay machine (v2 rows) ====
+
+    @Autowired(required = false)
+    private jp.aegif.nemaki.rest.purview.journal.LineageReplayService replayService;
+
+    private ResponseEntity<Map<String, Object>> replayV2(String recordId, String target) {
+        if (replayService == null) {
+            return badRequest("replay service unavailable");
+        }
+        var outcome = replayService.execute(recordId, target);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("recordId", recordId);
+        response.put("target", target);
+        response.put("state", outcome.state());
+        switch (outcome.state()) {
+            case "ACKED" -> {
+                response.put("generation", outcome.generation());
+                response.put("requestId", outcome.requestId());
+                response.put("compensationDeliveryId", outcome.compensationDeliveryId());
+                return ResponseEntity.ok(response);
+            }
+            case "NOT_READY" -> {
+                response.put("violations", outcome.violations());
+                response.put("message", "D-rest readiness gate is not green");
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+            }
+            case "REFUSED", "INDETERMINATE" -> {
+                response.put("message", outcome.message());
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+            }
+            default -> { // FAILED — the design's admin-route rule: collision = 500
+                response.put("message", outcome.message());
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+            }
+        }
+    }
+
+    /** Manual §8-d crash recovery trigger (the automatic pass runs per gated leader poll). */
+    @PostMapping("/replay-recovery")
+    public ResponseEntity<Map<String, Object>> replayRecovery(
+            @RequestParam(name = "limit", defaultValue = "50") int limit) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+        if (replayService == null) {
+            return badRequest("replay service unavailable");
+        }
+        int bounded = Math.min(Math.max(limit, 1), 500);
+        var outcome = replayService.recoverUnackedOutcome(bounded);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("limit", bounded);
+        if (!outcome.ready()) {
+            // Dormancy must be distinguishable from an empty queue (F4).
+            response.put("violations", outcome.violations());
+            response.put("message", "D-rest readiness gate is not green — recovery is"
+                    + " dormant");
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+        }
+        response.put("recovered", outcome.recovered());
+        response.put("moreRemaining", outcome.moreRemaining());
+        return ResponseEntity.ok(response);
     }
 
     // ==================== D-rest-2: fenced sequencer admin entry (disabled by default) ====

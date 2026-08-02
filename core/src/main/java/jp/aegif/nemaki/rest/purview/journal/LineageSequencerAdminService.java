@@ -121,6 +121,11 @@ public class LineageSequencerAdminService {
                     out.put("verifying:" + target, Map.of("error", e.getMessage()));
                 }
             }
+            try {
+                out.put("unackedReplayRequests", couch.countUnackedReplayRequests());
+            } catch (RuntimeException e) {
+                out.put("unackedReplayRequestsError", e.getMessage());
+            }
         }
         return out;
     }

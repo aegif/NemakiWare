@@ -37,6 +37,10 @@ public class LineageMetrics {
     private final AtomicLong v2Unprojectable = new AtomicLong();
     private final AtomicLong v2ClaimsReaped = new AtomicLong();
     private final AtomicLong v2RoutingHalts = new AtomicLong();
+    private final AtomicLong replayRequested = new AtomicLong();
+    private final AtomicLong replayAcked = new AtomicLong();
+    private final AtomicLong replayFailed = new AtomicLong();
+    private final AtomicLong replayRecovered = new AtomicLong();
     private volatile Instant lastPollTime;
     private volatile int lastPollEventCount;
 
@@ -119,6 +123,24 @@ public class LineageMetrics {
         v2RoutingHalts.incrementAndGet();
     }
 
+    // §8-d replay machine (D-rest-3)
+
+    public void recordReplayRequested(String target) {
+        replayRequested.incrementAndGet();
+    }
+
+    public void recordReplayAcked(String target) {
+        replayAcked.incrementAndGet();
+    }
+
+    public void recordReplayFailed(String target) {
+        replayFailed.incrementAndGet();
+    }
+
+    public void recordReplayRecovered(String target) {
+        replayRecovered.incrementAndGet();
+    }
+
     public void recordPollComplete(int eventCount) {
         pollCount.incrementAndGet();
         lastPollTime = Instant.now();
@@ -150,6 +172,10 @@ public class LineageMetrics {
         m.put("v2Unprojectable", v2Unprojectable.get());
         m.put("v2ClaimsReaped", v2ClaimsReaped.get());
         m.put("v2RoutingHalts", v2RoutingHalts.get());
+        m.put("replayRequested", replayRequested.get());
+        m.put("replayAcked", replayAcked.get());
+        m.put("replayFailed", replayFailed.get());
+        m.put("replayRecovered", replayRecovered.get());
 
         Map<String, Object> byTarget = new LinkedHashMap<>();
         for (String target : publishedByTarget.keySet()) {

@@ -55,6 +55,7 @@ public class LineageDrestRoutingTest {
     private LineageTargetSink sink;
     private ProjectionCursorStore cursorStore;
     private LineageDrestReadiness readiness;
+    private LineageReplayService replayService;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -66,6 +67,7 @@ public class LineageDrestRoutingTest {
         sink = mock(LineageTargetSink.class);
         cursorStore = mock(ProjectionCursorStore.class);
         readiness = mock(LineageDrestReadiness.class);
+        replayService = mock(LineageReplayService.class);
 
         when(config.getTargets()).thenReturn(List.of(TARGET));
         when(config.getProjectionBatchSize()).thenReturn(50);
@@ -92,6 +94,7 @@ public class LineageDrestRoutingTest {
         setField(loop, "targetSinks", List.of(sink));
         setField(loop, "cursorStore", cursorStore);
         setField(loop, "drestReadiness", readiness);
+        setField(loop, "replayService", replayService);
     }
 
     private static void setField(Object target, String fieldName, Object value)
@@ -131,6 +134,19 @@ public class LineageDrestRoutingTest {
             doc.put("v2ClaimByTarget", Map.of(TARGET, claim));
         }
         return CouchLineageJournalRowV2.fromRaw(doc);
+    }
+
+    /**
+     * B1 (v2.3.20): recovery runs once per poll BEFORE the empty-target early return — a
+     * stranded request whose only target was removed is still visited every poll. The
+     * service itself is readiness-gated, so a red gate stays fully dormant inside it.
+     */
+    @Test
+    public void replayRecoveryRunsEvenWhenNoTargetsAreConfigured() {
+        readinessIs(false);
+        when(config.getTargets()).thenReturn(List.of()); // early-return path
+        loop.pollAndProject();
+        verify(replayService).recoverUnacked(org.mockito.ArgumentMatchers.anyInt());
     }
 
     // ---------------------------------------------------------------- readiness OFF

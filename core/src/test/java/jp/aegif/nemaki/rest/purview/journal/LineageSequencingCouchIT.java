@@ -481,4 +481,218 @@ public class LineageSequencingCouchIT {
         assertEquals(total, reaped,
                 "every expired claim across page boundaries reaps exactly once");
     }
+
+    // ================================================================ D-rest-3: §8-d
+    // replay machine against real CouchDB.
+
+    @Test
+    public void theReplayRequestRaceHasExactlyOneWinnerAndTheMachineConverges() {
+        String repo = "v2-replay-repo";
+        bootstrapLease(repo);
+        bootstrapCounter(repo, 0L);
+        store.appendV2(event(repo, "op-rp1", "2026-08-01T06:00:01Z"));
+        LineageFencedSequencer sequencer = new LineageFencedSequencer(store, null,
+                "it-node", Duration.ofMinutes(1), 10, 100);
+        assertEquals(1, sequencer.runOnce(repo).finalized());
+        List<LineageJournalRowV2> rows = store.findV2ByRepositoryAndSequenceRange(repo, 0, 10);
+        String recordId = rows.get(0).event().deliveryId();
+
+        // Drive the publish lifecycle to PUBLISHED (terminal — the replayable set).
+        LineageV2TransitionStore.V2ClaimGrant claim =
+                store.claimForProjection(recordId, "atlas", Duration.ofMinutes(2));
+        assertEquals(true, store.transitionV2(recordId, "atlas",
+                LineagePublishStatus.PROJECTING, LineagePublishStatus.VERIFYING,
+                claim.claimToken(), null));
+        assertEquals(true, store.transitionV2(recordId, "atlas",
+                LineagePublishStatus.VERIFYING, LineagePublishStatus.PUBLISHED,
+                claim.claimToken(), null));
+
+        // Race: two requests — real revisions make exactly one win.
+        LineageV2ReplayStore.ReplayGrant g1 = store.requestReplay(recordId, "atlas");
+        assertEquals(true, g1 != null);
+        try {
+            store.requestReplay(recordId, "atlas");
+            throw new AssertionError("an in-progress request must refuse the second");
+        } catch (LineageV2ReplayStore.ReplayRefusedException expected) {
+            // in progress — the frozen expected set is {absent, ACKED}
+        }
+
+        // The deterministic compensation converges across two append attempts.
+        LineageJournalRowV2 original = store.findV2ByRecordId(recordId);
+        LineageEventV2 comp =
+                LineageReplayService.compensationOf(original, "atlas", g1.generation());
+        store.appendV2(comp);
+        store.appendV2(comp); // idempotent — digest-exact 409 convergence
+        assertEquals(true, store.advanceReplay(recordId, "atlas", g1.requestId(),
+                LineageReplayRequest.State.REQUESTED, LineageReplayRequest.State.CREATED));
+        assertEquals(true, store.advanceReplay(recordId, "atlas", g1.requestId(),
+                LineageReplayRequest.State.CREATED, LineageReplayRequest.State.ACKED));
+
+        // The compensation rides the normal pipeline: sequencer assigns a NEW sequence.
+        assertEquals(1, sequencer.runOnce(repo).finalized());
+        List<LineageJournalRowV2> after = store.findV2ByRepositoryAndSequenceRange(repo, 0, 10);
+        assertEquals(2, after.size());
+        assertEquals(true, after.get(1).event().sequenceNumber()
+                > after.get(0).event().sequenceNumber());
+
+        // ACKED admits generation+1.
+        LineageV2ReplayStore.ReplayGrant g2 = store.requestReplay(recordId, "atlas");
+        assertEquals(g1.generation() + 1, g2.generation());
+
+        // The original's publish lifecycle is untouched audit fact.
+        assertEquals(LineagePublishStatus.PUBLISHED,
+                store.findV2ByRecordId(recordId).targetLifecycles().get("atlas").status());
+    }
+
+    @Test
+    public void aLiveClaimRefusesReplayOnTheRealStore() {
+        String repo = "v2-replay-live-repo";
+        bootstrapLease(repo);
+        bootstrapCounter(repo, 0L);
+        store.appendV2(event(repo, "op-rp2", "2026-08-01T06:10:01Z"));
+        LineageFencedSequencer sequencer = new LineageFencedSequencer(store, null,
+                "it-node", Duration.ofMinutes(1), 10, 100);
+        sequencer.runOnce(repo);
+        String recordId = store.findV2ByRepositoryAndSequenceRange(repo, 0, 10)
+                .get(0).event().deliveryId();
+        store.claimForProjection(recordId, "atlas", Duration.ofMinutes(5));
+        try {
+            store.requestReplay(recordId, "atlas");
+            throw new AssertionError("a live PROJECTING claim must refuse replay");
+        } catch (LineageV2ReplayStore.ReplayRefusedException expected) {
+            // token-fenced claim is not stealable
+        }
+    }
+
+    @Test
+    public void unackedRequestsFencePurgeAndAppearInTheRecoveryScan() {
+        String repo = "v2-replay-scan-repo";
+        bootstrapLease(repo);
+        bootstrapCounter(repo, 0L);
+        store.appendV2(event(repo, "op-rp3", "2020-01-01T00:00:01Z")); // old = purge window
+        LineageFencedSequencer sequencer = new LineageFencedSequencer(store, null,
+                "it-node", Duration.ofMinutes(1), 10, 100);
+        sequencer.runOnce(repo);
+        String recordId = store.findV2ByRepositoryAndSequenceRange(repo, 0, 10)
+                .get(0).event().deliveryId();
+        LineageV2TransitionStore.V2ClaimGrant claim =
+                store.claimForProjection(recordId, "purview", Duration.ofMinutes(2));
+        store.transitionV2(recordId, "purview", LineagePublishStatus.PROJECTING,
+                LineagePublishStatus.VERIFYING, claim.claimToken(), null);
+        store.transitionV2(recordId, "purview", LineagePublishStatus.VERIFYING,
+                LineagePublishStatus.PUBLISHED, claim.claimToken(), null);
+        LineageV2ReplayStore.ReplayGrant grant = store.requestReplay(recordId, "purview");
+
+        List<LineageV2ReplayStore.ReplayRecovery> scan =
+                store.findUnackedReplayRequests(50);
+        assertEquals(true, scan.stream().anyMatch(r -> r.recordId().equals(recordId)
+                && r.target().equals("purview")
+                && r.request().requestId().equals(grant.requestId())),
+                "the REQUESTED record is a recovery item");
+
+        // ---- The purge fence, exercised against the REAL purge (round-1 finding 5) ----
+        // The row's occurredAt (2020) is far inside the cutoff; readiness is stubbed green
+        // through the ObjectProvider seam so the v2 half of purge actually runs.
+        var readiness = org.mockito.Mockito.mock(LineageDrestReadiness.class);
+        org.mockito.Mockito.when(readiness.evaluate()).thenReturn(
+                new LineageDrestReadiness.Readiness(true, java.util.List.of()));
+        org.springframework.beans.factory.ObjectProvider<LineageDrestReadiness> provider =
+                new org.springframework.beans.factory.ObjectProvider<>() {
+                    @Override
+                    public LineageDrestReadiness getObject(Object... args) {
+                        return readiness;
+                    }
+
+                    @Override
+                    public LineageDrestReadiness getIfAvailable() {
+                        return readiness;
+                    }
+
+                    @Override
+                    public LineageDrestReadiness getIfUnique() {
+                        return readiness;
+                    }
+
+                    @Override
+                    public LineageDrestReadiness getObject() {
+                        return readiness;
+                    }
+                };
+        try {
+            java.lang.reflect.Field f =
+                    CouchLineageJournalStore.class.getDeclaredField("drestReadinessProvider");
+            f.setAccessible(true);
+            f.set(store, provider);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+
+        java.time.Instant cutoff = java.time.Instant.parse("2025-01-01T00:00:00Z");
+        store.purgeOlderThan(cutoff);
+        assertEquals(true, store.findV2ByRecordId(recordId) != null,
+                "a REQUESTED replay request fences purge — the deterministic reconstruction"
+                        + " needs this row");
+
+        // Drive the request to ACKED; the fence lifts and the row purges.
+        LineageJournalRowV2 original = store.findV2ByRecordId(recordId);
+        LineageEventV2 comp = LineageReplayService.compensationOf(original, "purview",
+                grant.generation());
+        store.appendV2(comp);
+        assertEquals(true, store.advanceReplay(recordId, "purview", grant.requestId(),
+                LineageReplayRequest.State.REQUESTED, LineageReplayRequest.State.CREATED));
+        assertEquals(true, store.advanceReplay(recordId, "purview", grant.requestId(),
+                LineageReplayRequest.State.CREATED, LineageReplayRequest.State.ACKED));
+        int purged = store.purgeOlderThan(cutoff);
+        assertEquals(true, store.findV2ByRecordId(recordId) == null,
+                "ACKED alone does not fence (purged=" + purged + ") — the compensation row"
+                        + " is the durable artifact");
+    }
+
+    /** F3: a corrupt head row cannot pin the recovery scan, even at limit 1. */
+    @Test
+    public void aCorruptHeadRowCannotPinTheRecoveryScan() {
+        String repo = "v2-replay-pin-repo";
+        bootstrapLease(repo);
+        bootstrapCounter(repo, 0L);
+        store.appendV2(event(repo, "op-pin1", "2026-08-01T07:00:01Z"));
+        store.appendV2(event(repo, "op-pin2", "2026-08-01T07:00:02Z"));
+        LineageFencedSequencer sequencer = new LineageFencedSequencer(store, null,
+                "it-node", Duration.ofMinutes(1), 10, 100);
+        assertEquals(2, sequencer.runOnce(repo).finalized());
+        List<LineageJournalRowV2> rows = store.findV2ByRepositoryAndSequenceRange(repo, 0, 10);
+
+        // Both rows get real requests (earlier updatedAtMs sorts first)...
+        for (LineageJournalRowV2 row : rows) {
+            String rid = row.event().deliveryId();
+            LineageV2TransitionStore.V2ClaimGrant c =
+                    store.claimForProjection(rid, "atlas", Duration.ofMinutes(2));
+            store.transitionV2(rid, "atlas", LineagePublishStatus.PROJECTING,
+                    LineagePublishStatus.VERIFYING, c.claimToken(), null);
+            store.transitionV2(rid, "atlas", LineagePublishStatus.VERIFYING,
+                    LineagePublishStatus.PUBLISHED, c.claimToken(), null);
+            store.requestReplay(rid, "atlas");
+        }
+        // ...then the FIRST row's request is corrupted in place (a non-UUID fence).
+        String headId = CouchLineageEventV2.documentId(rows.get(0).event().deliveryId());
+        try {
+            var doc = cloudant.getDocument(
+                    new com.ibm.cloud.cloudant.v1.model.GetDocumentOptions.Builder()
+                            .db(dbName).docId(headId).build()).execute().getResult();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> requests =
+                    (Map<String, Object>) doc.getProperties().get("v2ReplayRequestsByTarget");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> atlas = (Map<String, Object>) requests.get("atlas");
+            atlas.put("requestId", "not-a-uuid");
+            cloudant.putDocument(new com.ibm.cloud.cloudant.v1.model.PutDocumentOptions
+                    .Builder().db(dbName).docId(headId).document(doc).build()).execute();
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
+
+        List<LineageV2ReplayStore.ReplayRecovery> scan = store.findUnackedReplayRequests(1);
+        assertEquals(1, scan.size(), "the corrupt head is skipped loudly, the healthy"
+                + " request behind it is still found at limit 1");
+        assertEquals(rows.get(1).event().deliveryId(), scan.get(0).recordId());
+    }
 }

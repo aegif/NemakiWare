@@ -122,6 +122,21 @@ public interface LineageV2TransitionStore {
             String repositoryId, long fromSequence, int limit);
 
     /**
+     * The v1 half of the D-rest merged ordered stream, STRICT: same rows and order as the
+     * legacy {@code findByRepositoryAndSequenceRange}, but infrastructure failures and
+     * store-inactive conditions THROW instead of returning an empty list — the merge window
+     * reads "fewer than a full batch" as coverage-to-infinity, so a silent empty v1 answer
+     * would let the v2 side advance the cursor past unseen v1 rows (parallel review, D-rest-2
+     * tip). No limit clamp: the caller's batch size is the fetch size, so the coverage
+     * arithmetic and the real fetch agree exactly.
+     *
+     * @throws LineageSequencingStore.SequencingStorageException on infrastructure failure or
+     *         inactive store
+     */
+    java.util.List<LineageJournalRow> findV1ByRepositoryAndSequenceRangeStrict(
+            String repositoryId, long fromSequence, int limit);
+
+    /**
      * Strict single-row read by record id (deliveryId): {@code null} when absent, throws on a
      * malformed document or infrastructure failure — a claimant rereading its row must never
      * mistake an outage for a vanished claim.

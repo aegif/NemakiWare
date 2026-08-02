@@ -43,7 +43,8 @@ public record LineageJournalRowV2(
         SequencingState state,
         Long sequencerGeneration,
         String sequencerLeaseToken,
-        java.util.Map<String, LineageTargetLifecycle> targetLifecycles
+        java.util.Map<String, LineageTargetLifecycle> targetLifecycles,
+        java.util.Map<String, LineageReplayRequest> replayRequests
 ) {
 
     /** §8-a's sequencing lifecycle. Terminal for this machine is {@code SEQUENCED}. */
@@ -52,7 +53,16 @@ public record LineageJournalRowV2(
     /** D-rest-1-shaped constructor: sequencer coordinates only, no target lifecycles yet. */
     public LineageJournalRowV2(LineageEventV2 event, String rev, SequencingState state,
                                Long sequencerGeneration, String sequencerLeaseToken) {
-        this(event, rev, state, sequencerGeneration, sequencerLeaseToken, java.util.Map.of());
+        this(event, rev, state, sequencerGeneration, sequencerLeaseToken, java.util.Map.of(),
+                java.util.Map.of());
+    }
+
+    /** D-rest-2-shaped constructor: lifecycles, no replay requests yet. */
+    public LineageJournalRowV2(LineageEventV2 event, String rev, SequencingState state,
+                               Long sequencerGeneration, String sequencerLeaseToken,
+                               java.util.Map<String, LineageTargetLifecycle> targetLifecycles) {
+        this(event, rev, state, sequencerGeneration, sequencerLeaseToken, targetLifecycles,
+                java.util.Map.of());
     }
 
     public LineageJournalRowV2 {
@@ -68,6 +78,17 @@ public record LineageJournalRowV2(
             if (e.getKey() == null || e.getKey().isBlank()) {
                 throw new IllegalArgumentException("lifecycle target name must not be blank");
             }
+        }
+        if (replayRequests == null) {
+            throw new IllegalArgumentException("replayRequests must not be null (empty means"
+                    + " no target has a request)");
+        }
+        replayRequests = java.util.Map.copyOf(replayRequests);
+        // §8-d: replay requests are legal ONLY on SEQUENCED rows — nothing unsequenced was
+        // ever deliverable, so nothing about it can be replayed.
+        if (state != SequencingState.SEQUENCED && !replayRequests.isEmpty()) {
+            throw new IllegalArgumentException("replay requests on a " + state
+                    + " row cannot exist — replay presupposes a sequenced delivery");
         }
         // §8-b: a target lifecycle beyond PENDING can only exist on a SEQUENCED row — claims
         // require SEQUENCED, and the creation-time classifications (REJECTED/UNRESOLVED) are

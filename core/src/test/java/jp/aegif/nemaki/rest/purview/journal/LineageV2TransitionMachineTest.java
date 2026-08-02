@@ -359,6 +359,83 @@ public class LineageV2TransitionMachineTest {
         }
     }
 
+    // ================================================================ §8-d replay decode
+
+    @Nested
+    class ReplayRequestShapes {
+
+        @Test
+        public void failedRequiresItsReasonAndOthersForbidIt() {
+            assertThrows(IllegalArgumentException.class, () -> new LineageReplayRequest(
+                    LineageReplayRequest.State.FAILED, 1L, "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d", 1L, 1L, null));
+            assertThrows(IllegalArgumentException.class, () -> new LineageReplayRequest(
+                    LineageReplayRequest.State.ACKED, 1L, "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d", 1L, 1L,
+                    new TerminalReason("R", "", 1L)));
+            assertNotNull(new LineageReplayRequest(LineageReplayRequest.State.FAILED, 1L,
+                    "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d", 1L, 1L, new TerminalReason("R", "d", 1L)));
+        }
+
+        @Test
+        public void generationStartsAtOneAndRequestIdIsRequired() {
+            assertThrows(IllegalArgumentException.class, () -> new LineageReplayRequest(
+                    LineageReplayRequest.State.REQUESTED, 0L, "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d", 1L, 1L, null));
+            assertThrows(IllegalArgumentException.class, () -> new LineageReplayRequest(
+                    LineageReplayRequest.State.REQUESTED, 1L, " ", 1L, 1L, null));
+            assertThrows(IllegalArgumentException.class, () -> new LineageReplayRequest(
+                    LineageReplayRequest.State.REQUESTED, 1L, "not-a-uuid", 1L, 1L, null),
+                    "the requestId is an ownership fence — arbitrary strings are refused");
+        }
+
+        @Test
+        public void aRequestOnAnUnsequencedRowIsMalformed() {
+            Map<String, Object> doc = sequencedDoc("PENDING", null, null);
+            doc.put("state", "UNSEQUENCED");
+            doc.remove("sequencerGeneration");
+            doc.remove("sequencerLeaseToken");
+            doc.put("sequenceNumber", 0L);
+            doc.put("v2ReplayRequestsByTarget", Map.of(TARGET, Map.of(
+                    "state", "REQUESTED", "generation", 1L, "requestId", "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+                    "requestedAtMs", 1L, "updatedAtMs", 1L)));
+            assertThrows(IllegalArgumentException.class,
+                    () -> CouchLineageJournalRowV2.fromRaw(doc),
+                    "replay presupposes a sequenced delivery");
+        }
+
+        @Test
+        public void isUnackedIsExactlyTheTwoWorkOwingStates() {
+            assertTrue(new LineageReplayRequest(LineageReplayRequest.State.REQUESTED, 1L,
+                    "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d", 1L, 1L, null).isUnacked());
+            assertTrue(new LineageReplayRequest(LineageReplayRequest.State.CREATED, 1L,
+                    "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d", 1L, 1L, null).isUnacked());
+            assertFalse(new LineageReplayRequest(LineageReplayRequest.State.ACKED, 1L,
+                    "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d", 1L, 1L, null).isUnacked());
+            assertFalse(new LineageReplayRequest(LineageReplayRequest.State.FAILED, 1L,
+                    "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d", 1L, 1L, new TerminalReason("R", "d", 1L)).isUnacked());
+        }
+
+        @Test
+        public void aStoredRequestDecodesTyped() {
+            Map<String, Object> doc = sequencedDoc("PUBLISHED", publishedClaim(), null);
+            doc.put("v2ReplayRequestsByTarget", Map.of(TARGET, Map.of(
+                    "state", "CREATED", "generation", 3L, "requestId", "8f14e45f-ceea-467f-a34e-d7e6c1b5c5d1",
+                    "requestedAtMs", 1000L, "updatedAtMs", 2000L)));
+            LineageReplayRequest r = CouchLineageJournalRowV2.fromRaw(doc)
+                    .replayRequests().get(TARGET);
+            assertEquals(LineageReplayRequest.State.CREATED, r.state());
+            assertEquals(3L, r.generation());
+            assertTrue(r.isUnacked());
+        }
+    }
+
+    private static Map<String, Object> publishedClaim() {
+        Map<String, Object> claim = new LinkedHashMap<>();
+        claim.put("token", "tok-1");
+        claim.put("claimedAtMs", 1000L);
+        claim.put("verifyingSinceMs", 1500L);
+        claim.put("retryCount", 0L);
+        return claim;
+    }
+
     // ================================================================ the fenced store
 
     @Nested
@@ -539,6 +616,72 @@ public class LineageV2TransitionMachineTest {
                     "creation-time classifications land with their producers and reason"
                             + " shapes — a bare non-PENDING status would be a row every read"
                             + " refuses");
+        }
+
+        /** §8-d preconditions: terminal-only source, no live claim, frozen expected set. */
+        @Test
+        public void replayPreconditionsAreEnforcedOnTheStore() throws Exception {
+            var config = mock(LineageConfig.class);
+            when(config.getTargets()).thenReturn(java.util.List.of(TARGET));
+            set(store, "lineageConfig", config);
+
+            // Live claim → refused
+            storedDocIs(sequencedDoc("PROJECTING", liveClaim(null), null));
+            assertThrows(LineageV2ReplayStore.ReplayRefusedException.class,
+                    () -> store.requestReplay(v2Event().deliveryId(), TARGET));
+
+            // Non-terminal (PENDING) → refused
+            storedDocIs(sequencedDoc("PENDING", null, null));
+            assertThrows(LineageV2ReplayStore.ReplayRefusedException.class,
+                    () -> store.requestReplay(v2Event().deliveryId(), TARGET));
+
+            // Terminal PUBLISHED → granted, generation 1
+            storedDocIs(sequencedDoc("PUBLISHED", publishedClaim(), null));
+            LineageV2ReplayStore.ReplayGrant grant =
+                    store.requestReplay(v2Event().deliveryId(), TARGET);
+            assertNotNull(grant);
+            assertEquals(1L, grant.generation());
+
+            // Unconfigured target → refused before any read
+            assertThrows(LineageV2ReplayStore.ReplayRefusedException.class,
+                    () -> store.requestReplay(v2Event().deliveryId(), "not-configured"));
+
+            // A durable FAILED request permanently blocks (frozen {absent, ACKED})
+            Map<String, Object> doc = sequencedDoc("PUBLISHED", publishedClaim(), null);
+            doc.put("v2ReplayRequestsByTarget", Map.of(TARGET, Map.of(
+                    "state", "FAILED", "generation", 2L, "requestId", "6c84fb90-12c4-11e1-840d-7b25c5ee775a",
+                    "requestedAtMs", 1L, "updatedAtMs", 2L,
+                    "reason", Map.of("reason", "COMPENSATION_ID_COLLISION", "detail", "d",
+                            "atMs", 3L))));
+            storedDocIs(doc);
+            assertThrows(LineageV2ReplayStore.ReplayRefusedException.class,
+                    () -> store.requestReplay(v2Event().deliveryId(), TARGET));
+
+            // ACKED admits the next generation
+            Map<String, Object> acked = sequencedDoc("PUBLISHED", publishedClaim(), null);
+            acked.put("v2ReplayRequestsByTarget", Map.of(TARGET, Map.of(
+                    "state", "ACKED", "generation", 2L, "requestId", "6c84fb90-12c4-11e1-840d-7b25c5ee775a",
+                    "requestedAtMs", 1L, "updatedAtMs", 2L)));
+            storedDocIs(acked);
+            assertEquals(3L, store.requestReplay(v2Event().deliveryId(), TARGET).generation());
+        }
+
+        @Test
+        public void replayAdvanceIsRequestIdFencedAndTableBound() {
+            assertThrows(IllegalArgumentException.class, () -> store.advanceReplay("r",
+                    TARGET, "req", LineageReplayRequest.State.REQUESTED,
+                    LineageReplayRequest.State.ACKED), "skipping CREATED is a caller bug");
+            Map<String, Object> doc = sequencedDoc("PUBLISHED", publishedClaim(), null);
+            doc.put("v2ReplayRequestsByTarget", Map.of(TARGET, Map.of(
+                    "state", "REQUESTED", "generation", 1L, "requestId", "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+                    "requestedAtMs", 1L, "updatedAtMs", 1L)));
+            storedDocIs(doc);
+            assertFalse(store.advanceReplay(v2Event().deliveryId(), TARGET, "8f14e45f-ceea-467f-a34e-d7e6c1b5c5d1",
+                    LineageReplayRequest.State.REQUESTED,
+                    LineageReplayRequest.State.CREATED), "a rotated requestId loses the fence");
+            assertTrue(store.advanceReplay(v2Event().deliveryId(), TARGET, "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+                    LineageReplayRequest.State.REQUESTED,
+                    LineageReplayRequest.State.CREATED));
         }
 
         @Test
