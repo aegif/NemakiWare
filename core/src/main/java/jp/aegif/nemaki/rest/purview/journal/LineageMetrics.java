@@ -22,6 +22,12 @@ public class LineageMetrics {
     private final AtomicLong eventsDiscarded = new AtomicLong();
     private final AtomicLong deadLetterCount = new AtomicLong();
     private final AtomicLong pollCount = new AtomicLong();
+    private final AtomicLong spoolAppended = new AtomicLong();
+    private final AtomicLong spoolIdempotent = new AtomicLong();
+    private final AtomicLong spoolQuarantined = new AtomicLong();
+    private final AtomicLong spoolWriteFailed = new AtomicLong();
+    private final ConcurrentHashMap<String, AtomicLong> spoolQuarantinedByReason =
+            new ConcurrentHashMap<>();
     private volatile Instant lastPollTime;
     private volatile int lastPollEventCount;
 
@@ -46,6 +52,26 @@ public class LineageMetrics {
         deadLetterCount.incrementAndGet();
     }
 
+    public void recordSpoolAppended() {
+        spoolAppended.incrementAndGet();
+    }
+
+    public void recordSpoolIdempotent() {
+        spoolIdempotent.incrementAndGet();
+    }
+
+    /** @param reason {@code digest_mismatch} or {@code self_check_failed} (§6-a) */
+    public void recordSpoolQuarantine(String reason) {
+        spoolQuarantined.incrementAndGet();
+        spoolQuarantinedByReason
+                .computeIfAbsent(reason == null ? "unknown" : reason, r -> new AtomicLong())
+                .incrementAndGet();
+    }
+
+    public void recordSpoolWriteFailed() {
+        spoolWriteFailed.incrementAndGet();
+    }
+
     public void recordPollComplete(int eventCount) {
         pollCount.incrementAndGet();
         lastPollTime = Instant.now();
@@ -61,6 +87,13 @@ public class LineageMetrics {
         m.put("pollCount", pollCount.get());
         m.put("lastPollTime", lastPollTime != null ? lastPollTime.toString() : null);
         m.put("lastPollEventCount", lastPollEventCount);
+        m.put("spoolAppended", spoolAppended.get());
+        m.put("spoolIdempotent", spoolIdempotent.get());
+        m.put("spoolQuarantined", spoolQuarantined.get());
+        Map<String, Object> quarantineReasons = new LinkedHashMap<>();
+        spoolQuarantinedByReason.forEach((reason, count) -> quarantineReasons.put(reason, count.get()));
+        m.put("spoolQuarantinedByReason", quarantineReasons);
+        m.put("spoolWriteFailed", spoolWriteFailed.get());
 
         Map<String, Object> byTarget = new LinkedHashMap<>();
         for (String target : publishedByTarget.keySet()) {
@@ -88,6 +121,14 @@ public class LineageMetrics {
     public long getEventsDiscarded() { return eventsDiscarded.get(); }
     public long getDeadLetterCount() { return deadLetterCount.get(); }
     public long getPollCount() { return pollCount.get(); }
+    public long getSpoolAppended() { return spoolAppended.get(); }
+    public long getSpoolIdempotent() { return spoolIdempotent.get(); }
+    public long getSpoolQuarantined() { return spoolQuarantined.get(); }
+    public long getSpoolQuarantined(String reason) {
+        AtomicLong count = spoolQuarantinedByReason.get(reason);
+        return count == null ? 0L : count.get();
+    }
+    public long getSpoolWriteFailed() { return spoolWriteFailed.get(); }
     public Instant getLastPollTime() { return lastPollTime; }
     public int getLastPollEventCount() { return lastPollEventCount; }
 }

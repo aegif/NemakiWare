@@ -159,6 +159,43 @@ public class LineageCanonicalHashTest {
         computed.put("repairDeliveryId",
                 LineageIdentity.repairDeliveryId("lineage_dl:fixed", 1));
 
+        // §6-a spool identity (D-spool). Declared out of canonical order and with targets
+        // needing trim/dedupe/sort — both on purpose; the formulas must normalise.
+        LineageEndpoint spoolInDoc = new LineageEndpoint(EndpointKind.CMIS_DOCUMENT,
+                "nemaki://bedroom/objects/doc-in", "bedroom", "doc-in", null,
+                java.util.Map.of("name", "契約書.txt", "versionLabel", "1.0"));
+        LineageEndpoint spoolInExt = new LineageEndpoint(EndpointKind.EXTERNAL_ASSET,
+                "nemaki://bedroom/external-assets/c2xhY2s6ZjE", "bedroom", null, null,
+                java.util.Map.of("sourceSystem", "slack", "externalStableKey", "slack:f1"));
+        LineageEndpoint spoolOutArtifact = new LineageEndpoint(EndpointKind.EXPORT_ARTIFACT,
+                "nemaki://bedroom/export-artifacts/op-fixed", "bedroom", null, "op-fixed",
+                java.util.Map.of("artifactKind", "ZIP", "name", "out.zip", "objectCount", 2L));
+        List<LineageEndpoint> spoolInputs = List.of(spoolInDoc, spoolInExt);
+        List<LineageEndpoint> spoolOutputs = List.of(spoolOutArtifact);
+        String spoolRecordId = LineageSpoolIdentity.spoolRecordId("bedroom",
+                LineageProcessType.IMPORT_UPLOADED, "op-fixed", spoolInputs, spoolOutputs,
+                List.of(" purview", "atlas", "atlas"), 0L, 1L, "2026-08-01T00:00:00Z");
+        computed.put("spoolRecordId", spoolRecordId);
+        java.util.Map<String, String> legacySnapshot = new LinkedHashMap<>();
+        legacySnapshot.put("importMode", "zip-upload");
+        legacySnapshot.put("objectCount", "2");
+        LineageFact.LegacyV1Projection legacyNoPreset = new LineageFact.LegacyV1Projection(
+                LineageProcessType.IMPORT_UPLOADED,
+                List.of("upload://zip-upload", "upload://zip-upload"),
+                List.of("nemaki://bedroom/objects/folder-1"),
+                legacySnapshot, null);
+        LineageFact.LegacyV1Projection legacyPreset = new LineageFact.LegacyV1Projection(
+                LineageProcessType.IMPORT_UPLOADED,
+                List.of("upload://zip-upload", "upload://zip-upload"),
+                List.of("nemaki://bedroom/objects/folder-1"),
+                legacySnapshot, "evt-1");
+        computed.put("spoolPayloadDigest_minimal", LineageSpoolIdentity.payloadDigest(
+                spoolRecordId, 1L, spoolInputs, spoolOutputs, null, null));
+        computed.put("spoolPayloadDigest_full", LineageSpoolIdentity.payloadDigest(
+                spoolRecordId, 1L, spoolInputs, spoolOutputs, "corr-1", legacyNoPreset));
+        computed.put("spoolPayloadDigest_legacyPreset", LineageSpoolIdentity.payloadDigest(
+                spoolRecordId, 1L, spoolInputs, spoolOutputs, "corr-1", legacyPreset));
+
         assertEquals(fixture.keySet(), computed.keySet(),
                 "the fixture and this test cover different vectors");
         for (Map.Entry<String, String> entry : computed.entrySet()) {
@@ -179,7 +216,7 @@ public class LineageCanonicalHashTest {
         while (matcher.find()) {
             vectors.put(matcher.group(1), matcher.group(2));
         }
-        assertEquals(21, vectors.size(), "unexpected fixture size: " + vectors.size());
+        assertEquals(25, vectors.size(), "unexpected fixture size: " + vectors.size());
         return vectors;
     }
 

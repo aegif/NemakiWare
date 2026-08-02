@@ -1,7 +1,47 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.16 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c 実装済み (writer は v1 のまま)・Slice 4 は §6-a の再 sign-off 待ち**
+status: **v2.3.17 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool 実装済み (writer は v1 のまま・spool は非活性)・Slice 4 は §6-a の再 sign-off 待ち**
 revision:
+- v2.3.17 — **D-spool 実装**と、その Codex 計画レビュー (proceed with named changes) で確定
+  した仕様修正。golden vector 未凍結のうちに直す — 保存済み record は存在しない。
+  ① **spool payload に `correlationId` と optional `legacyV1Projection` を追加** (v2.3.10-11
+  の仕様は LegacyV1Projection 設計 (v2.3.14) より古く、v1 材料化に必要な v1 文字列を運べ
+  なかった — typed endpoint からの推論は却下済みで、v1 eventKey は生文字列の hash)。
+  legacy block は MAP{processType, inputs (宣言順・重複保持 — 正規化しない), outputs,
+  snapshotAttributes, presetEventId}|NULL。**schema-1 材料化が正式に退役するまで**生成し
+  続ける (最初の flip 完了時ではない — writeSchemaVersion は 1 へ戻りうる)。
+  presetEventId 無しの v1 材料化では、D-rest が v1 eventId を決定文書内で一度だけ採番する
+  (scanner 再試行ごとの UUID 生成は禁止)。
+  ② **payloadDigest 式を訂正して凍結**: H("SPOOL_PAYLOAD_V1", spoolRecordId,
+  spoolSchemaVersion, endpointRecords(inputs), endpointRecords(outputs), correlationId,
+  legacyProjectionRecord|NULL)。endpointRecords は LineageEventDigest と共有 (再実装禁止)。
+  golden vector 4 件 (spoolRecordId / digest 3 変種: minimal・correlation+legacy・
+  legacy preset 付き) を identity-golden-vectors.json に凍結し、reference_hash.py が独立
+  再導出 — Java / Python 双方 25 vector 一致を確認済み。
+  ③ **ファイル公開は hard-link create-if-absent**: write-temp (対象 dir 内) →
+  FileChannel.force(true) → Files.createLink (POSIX で原子的 fail-if-exists) → 親 dir
+  fsync → temp 削除。ATOMIC_MOVE fallback は置かない (Java に同等に移植可能な
+  create-if-absent が無く、置換は last-writer-wins になる)。hard link 非対応 FS は起動時
+  readiness probe (実 write/link/fsync) で spoolReady=false とし、全書込みが
+  fail-closed → 呼び手の dropped metric へ。FS 要件として文書化。
+  ④ **quarantine は上書きしない**: 同一 id・内容相違は fact-{id}.quarantine.json へ保存し
+  metric。quarantine 枠が既に埋まっていれば以後の変種は loudly drop (原本 + 最初の
+  conflicter で診断証拠は足りる — 全変種保持はバグにディスクを溢れさせる)。既存 record が
+  自己検証に失敗する場合は、破損 bytes を quarantine へ退避して検証済み retry を再公開
+  (self-heal)。既存 record の照合は**保存 digest を信用せず両 hash を再計算**。
+  ⑤ {yyyyMMdd} は payload の occurredAt から **UTC で**導出 (書込み時刻・JVM TZ 禁止 —
+  retry が同一 path に収束するため)。producer レベル fact の chunk 座標は **0/1 固定**。
+  版未確定の fact を chunk してはならない (v1 へ忠実に再構成できなくなる)。
+  ⑥ **scanner / materializer の分割**: D-spool の scanner は列挙・自己検証 (13c: 壊れた
+  fact は materializer に到達せず隔離)・SpoolMaterializer seam まで。収束 materializer
+  (決定文書・版束縛・journal create-if-absent・ACK) は D-rest。**capability `spool:v2` の
+  登録も D-rest** (「materialize できる」の表明であるため — capability 表の担い手を訂正)。
+  scheduler 配線なし (活性化は D-rest)。D-spool の依存は A-1 + P-1 (LineageFact を変換
+  入力に使うため「A-1 のみ」から訂正)。
+  ⑦ **D-rest への仕様修正を先行記録: 決定文書は fact 単位の親 + chunk 単位の子**。単一の
+  deliveryId/eventDigest では 1 fact → 複数 v2 chunk を表せない。親決定が schema 版と
+  materialization-plan digest を凍結し、chunk ごとの決定/delivery record は決定的に導出、
+  fact の ACK は**全 chunk の永続化後**にのみ書く。
 - v2.3.16 — producer P-3 (ImportExportResource 5 箇所 + CHAT_MESSAGE_IMPORT) と、その
   Codex 計画レビュー (proceed with named changes) で確定した決定。
   ① **moved content は再帰的な全 object** (top-level root 案は却下 — folder endpoint は
@@ -1006,7 +1046,7 @@ capability を明示的な語彙にして、ACK と barrier の両方に持た�
 | capability | 意味 | 由来 |
 |---|---|---|
 | `read:v2` | v2 event を復号し projector へ流せる | **A-2 Slice 2 の最終 commit** — 型が在るだけの Slice 1 ではない |
-| `spool:v2` | 版非依存 fact を materialize できる | D-spool |
+| `spool:v2` | 版非依存 fact を materialize できる | **D-rest** (v2.3.17 ⑥ — 表明は「materialize できる」であり、store と scanner だけの D-spool では立てられない) |
 | `sequencer:event-first` | 8-a v2 (event-first UNSEQUENCED + fenced finalizer) | D-rest |
 | `cursor:cas` | 8-c (単調 CAS。publish 永続化を確認してから前進) | D-rest |
 | `replay:generation-cas` | 8-d (replay generation の CAS 状態機械) | D-rest |
@@ -1120,15 +1160,20 @@ flag が読めないとき、**event を spool してはならない** — ど�
 からである。保存するのは**版に依存しない business fact** とする。
 
 ```
-{lineage.spool.dir}/{repositoryId}/{yyyyMMdd}/fact-{spoolRecordId}.json
+{lineage.spool.dir}/{repoSegment}/{yyyyMMdd}/fact-{spoolRecordId}.json
+  // repoSegment = urlsafe_base64(repositoryId) + "-" + sha256(repositoryId)[0:16 hex] —
+  // 生の repositoryId は path に使わない (§8 の安全性表: traversal / 大文字小文字衝突)。
+  // {yyyyMMdd} は occurredAt から UTC で導出 (書込み時刻ではない — retry の path 収束)。
   spoolSchemaVersion   // この spool record 自身の版
   spoolRecordId        // 版非依存の一意 ID。ファイル名に使う
   operationId / repositoryId / processType
   inputs / outputs     // typed LineageEndpoint (A-1 の型。版に依存しない)
                        // endpoint 属性 (§2 の endpoint-local snapshot) は各 endpoint の中にある
   canonicalTargetSet
-  chunkIndex / chunkCount
+  chunkIndex / chunkCount   // producer レベルの fact は 0 / 1 固定 (v2.3.17 ⑤)
   occurredAt
+  correlationId             // STRING | NULL (v2.3.17 ①)
+  legacyV1Projection        // 上記 MAP | NULL — v1 材料化の素材 (v2.3.17 ①)
   payloadDigest        // この fact の digest。materialize 後の digest とは別
 ```
 
@@ -1150,8 +1195,15 @@ spoolRecordId = H("SPOOL_FACT_V1",
                   chunkIndex, chunkCount, occurredAt)        // 64 hex
 
 payloadDigest = H("SPOOL_PAYLOAD_V1", spoolRecordId, spoolSchemaVersion,
-                  endpointRecords(inputs), endpointRecords(outputs))
+                  endpointRecords(inputs), endpointRecords(outputs),
+                  correlationId,                     // STRING | NULL — null と空文字は別
+                  legacyProjectionRecord | NULL)     // 下記 MAP。v2.3.17 ①
 ```
+
+`legacyProjectionRecord` は `MAP{ processType: STRING, inputs: LIST[STRING],
+outputs: LIST[STRING], snapshotAttributes: MAP{STRING→STRING}, presetEventId: STRING|NULL }`。
+inputs / outputs は**宣言順・重複保持のまま** (正規化しない — 生文字列が v1 eventKey を
+駆動する)。schema-1 材料化が正式に退役するまで生成し続ける (v2.3.17 ①)。
 
 `canonical(...)` は §3 と同じ **`catalogQualifiedName` の列**であって、endpoint 属性を含まない。
 したがって identity (`spoolRecordId`) だけでは「同じ endpoint 集合で属性だけ違う fact」を区別
@@ -1188,7 +1240,7 @@ UTF-8 バイト順にソートしてから書く**ので、宣言順は結果に
 | endpoint 集合 | `canonical(...)` は §3 と同一 — `catalogQualifiedName` を符号なし UTF-8 バイト順、**重複は拒否**、null 要素は拒否 |
 | target 集合 | `canonicalTargetSet` と同一 — trim、非空、重複除去、ソート |
 | null / 空文字 | `LineageCanonicalHash` の型 tag が区別する。`operationId=null` と `""` は別の fact |
-| `payloadDigest` の対象 | `spoolRecordId` + `spoolSchemaVersion` + **endpoint の完全記録** (属性込み)。identity に入る QN は `spoolRecordId` 経由で 1 度だけ数える |
+| `payloadDigest` の対象 | `spoolRecordId` + `spoolSchemaVersion` + **endpoint の完全記録** (属性込み) + `correlationId` (NULL 可) + `legacyProjectionRecord` (NULL 可) — v2.3.17 ①。identity に入る QN は `spoolRecordId` 経由で 1 度だけ数える |
 | 同一 ID・digest 不一致 | **上書きしない**。`fact-{id}.quarantine.json` へ退避し `lineage.spool.quarantine{reason=digest_mismatch}` を上げる。同じ ID で内容が違うのは、識別子の規則が破れたか改竄であり、どちらも黙って上書きしてよい事象ではない |
 | ファイル名 | `fact-{64 hex}.json` — 74 文字。hex なので path-safe で、大文字小文字を区別しない FS でも衝突しない |
 | golden vector | `spoolRecordId` / `payloadDigest` / `endpointRecords` も A-1 と同じ仕組みで凍結する — `identity-golden-vectors.json` に追加し、`reference_hash.py` (仕様のみから書いた別実装) が一致することを CI で確認する |
@@ -1233,11 +1285,18 @@ v2.3.11 は決定を `fact-{spoolRecordId}.decision.json` に atomic rename で�
 **決定を CouchDB に置く。** materialize は CouchDB が復旧してから始まるので、CouchDB を
 使えることは前提条件として既に満たされている。ローカル sidecar は**廃止**する。
 
+決定文書は **fact 単位の親**である (v2.3.17 ⑦)。単一の deliveryId / eventDigest では
+1 fact → 複数 v2 chunk を表せないため、親は版と materialization-plan digest を凍結し、
+chunk ごとの決定 / delivery record は plan から決定的に導出する。fact の ACK は
+**全 chunk の永続化後**にのみ書く。v1 材料化 (chunk しない) は plan が単一 entry に退化する。
+
 ```
 _id: lineage_materialization:{spoolRecordId}
   spoolRecordId / repositoryId
   factPayloadDigest          // 決定の根拠になった fact の payloadDigest
   materializeSchemaVersion   // ここで決めた版
+  materializationPlanDigest  // 版確定後に決定的に導出した chunk 群 (deliveryId・eventDigest の列) の digest (v2.3.17 ⑦)
+  presetV1EventId            // 版=1 かつ fact に preset が無いとき、ここで一度だけ採番 (scanner 再試行ごとの UUID 生成は禁止 — v2.3.17 ①)
   barrierGeneration          // 決めた時点の barrier generation
   deliveryId                 // 決めた版で計算した値
   eventDigest                // 作る event の creationPayloadDigest
@@ -1263,7 +1322,7 @@ _id: lineage_materialization:{spoolRecordId}
 ```
 
 手順 1 の自己照合が、決定文書へ進む前に**壊れた fact を締め出す**。torn write は spool の
-file 安全性契約 (§8: write → fsync → atomic rename) が防ぐが、運用者が戻した古い backup や
+file 安全性契約 (§8: write → fsync → **hard link (create-if-absent)** → dir fsync、v2.3.17 ③) が防ぐが、運用者が戻した古い backup や
 別 node から来た改竄済み bundle はそこを通らない。決定文書は一度作れば固定されるので、
 **壊れた fact で決定を作らせないことが重要**である。
 
@@ -1385,7 +1444,7 @@ D-rest が直すのは、設計上すでに確認済みの**採番欠落・二�
 
 | | 内容 | 依存 |
 |---|---|---|
-| **D-spool** | 版非依存 fact spool + scanner + fsync 検証。`deliveryId` を要さない | A-1 のみ |
+| **D-spool** | 版非依存 fact spool + scanner + fsync 検証。`deliveryId` を要さない。**実装済み (v2.3.17・非活性)** | A-1 + P-1 (`LineageFact` が変換入力) |
 | **D-rest** | event-first sequencer / cursor CAS / replay generation CAS。v1/v2 dual、非活性で配布 | A-2 Slice 1〜3 (型と `deliveryId` 計算) |
 
 順序: **A-2 Slice 1〜3 → D-spool → D-rest (dual・writer は v1) → Slice 4a → 4b → E**。
@@ -1426,7 +1485,7 @@ D-rest が直すのは、設計上すでに確認済みの**採番欠落・二�
 | 14b | `approvedBinaryDigests` に無い `binaryDigest` の ACK | 同上 |
 | 15 | scale-to-one 切替 | 旧 AP が 1 台も存在しないことを**運用受入条件**として確認する (アプリでは検証できない) |
 | 16 | 同一入力から `build()` を 2 回呼ぶ | `eventId` 以外が完全に一致し、`creationPayloadDigest` と `spoolRecordId` が同値 (§3 の `occurredAt` 純関数契約) |
-| 17 | `spoolRecordId` / `payloadDigest` の golden vector | Java と `reference_hash.py` が一致する (A-1 と同じ CI ジョブ)。**未達 — spool の実装 (D-spool) と同時に凍結する。fixture にも CI にもまだ存在しない** |
+| 17 | `spoolRecordId` / `payloadDigest` の golden vector | Java と `reference_hash.py` が一致する (A-1 と同じ CI ジョブ)。**達成 (v2.3.17)** — fixture に 4 vector を凍結、双方 25 vector 一致 |
 
 ### この節が閉じるまで Slice 4 は着手しない
 
@@ -1690,10 +1749,11 @@ CouchDB store への保存は `// Store persistence is best-effort; log file is 
 「scanner + repair で回収」は**現状のままでは成立しない**。v2.1 では専用 spool を設計する。
 
 ```
-{lineage.spool.dir}/{repositoryId}/{yyyyMMdd}/{deliveryId}.json    ← payload (完全)
-{lineage.spool.dir}/{repositoryId}/{yyyyMMdd}/{deliveryId}.ack    ← ACK marker
-{lineage.spool.dir}/{repositoryId}/{yyyyMMdd}/fact-{spoolRecordId}.json  ← 版非依存 fact
-{lineage.spool.dir}/{repositoryId}/{yyyyMMdd}/fact-{spoolRecordId}.ack   ← fact の ACK
+{lineage.spool.dir}/{repoSegment}/{yyyyMMdd}/{deliveryId}.json    ← payload (完全)
+{lineage.spool.dir}/{repoSegment}/{yyyyMMdd}/{deliveryId}.ack    ← ACK marker
+{lineage.spool.dir}/{repoSegment}/{yyyyMMdd}/fact-{spoolRecordId}.json  ← 版非依存 fact
+{lineage.spool.dir}/{repoSegment}/{yyyyMMdd}/fact-{spoolRecordId}.ack   ← fact の ACK
+  (repoSegment = §6-a の凍結済み safe encoding — 生 repositoryId は path に使わない)
 ```
 
 **`deliveryId` を名前に使えるのは版が確定している場合だけ**である。write-version flag が
@@ -1722,8 +1782,9 @@ materialize の**決定はローカル file に置かない** — CouchDB の
 | path | `repositoryId` を**そのまま path に使わない**。safe encode (URL-safe base64) + hash を使う |
 | 権限 | directory `0700` / file `0600` |
 | symlink | **追わない** (`NOFOLLOW`)。spool 配下に symlink があれば異常として拒否 |
-| temp file | **同一 directory 内**に作る (rename が atomic であることを保証するため) |
-| 書込み | file を `fsync` → atomic rename → **parent directory も `fsync`** |
+| temp file | **同一 directory 内**に作る (同一 FS を保証するため) |
+| 書込み (fact spool) | file を `fsync` → **hard link (原子的 create-if-absent)** → **parent directory も `fsync`** (v2.3.17 ③ — rename は「置換」であり並行 writer の last-wins を許すため fact spool では用いない)。dir fsync の失敗は**握り潰さず伝播**し、readiness probe が非対応 FS を fail-closed にする |
+| 書込み (決定文書 ACK 等の置換系) | file を `fsync` → atomic rename → **parent directory も `fsync`** |
 | 冪等 | 既存 spool file があるときは、payload digest が一致する場合のみ成功扱い。不一致は異常として別名で退避 |
 | サイズ上限 | `lineage.spool.max-file-bytes` / `lineage.spool.max-bundle-bytes` |
 | ACK | `.ack` も `fsync`、または `pending` → `acked` の atomic rename |

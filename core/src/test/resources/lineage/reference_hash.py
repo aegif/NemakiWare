@@ -69,6 +69,59 @@ vectors["originalDeliveryId"] = orig
 vectors["replayDeliveryId"] = h("REPLAY", orig, "atlas", 1)
 vectors["repairDeliveryId"] = h("REPAIR", "lineage_dl:fixed", 1)
 
+# ---- §6-a spool identity (D-spool) --------------------------------------------------------
+
+def endpoint_records(endpoints):
+    """Complete records ordered by catalogQualifiedName in unsigned UTF-8 byte order."""
+    ordered = sorted(endpoints, key=lambda e: e["catalogQualifiedName"].encode("utf-8"))
+    return [dict(e) for e in ordered]
+
+def spool_record_id(repo, ptype, op, input_qns, output_qns, targets, idx, count, occurred_at):
+    input_qns = sorted(input_qns, key=lambda x: x.encode("utf-8"))
+    output_qns = sorted(output_qns, key=lambda x: x.encode("utf-8"))
+    canonical_targets = sorted({t.strip() for t in targets}, key=lambda x: x.encode("utf-8"))
+    return h("SPOOL_FACT_V1", repo, ptype, op, input_qns, output_qns, canonical_targets,
+             idx, count, occurred_at)
+
+def spool_payload_digest(record_id, schema, inputs, outputs, correlation_id, legacy):
+    return h("SPOOL_PAYLOAD_V1", record_id, schema,
+             endpoint_records(inputs), endpoint_records(outputs), correlation_id, legacy)
+
+SPOOL_IN_DOC = {"kind": "CMIS_DOCUMENT", "repositoryId": "bedroom",
+                "catalogQualifiedName": "nemaki://bedroom/objects/doc-in",
+                "objectId": "doc-in", "operationId": None,
+                "attributes": {"name": "契約書.txt", "versionLabel": "1.0"}}
+SPOOL_IN_EXT = {"kind": "EXTERNAL_ASSET", "repositoryId": "bedroom",
+                "catalogQualifiedName": "nemaki://bedroom/external-assets/c2xhY2s6ZjE",
+                "objectId": None, "operationId": None,
+                "attributes": {"sourceSystem": "slack", "externalStableKey": "slack:f1"}}
+# COUNT attribute (objectCount) and OPERATION_ID identity live on the artifact kind
+SPOOL_OUT_ART = {"kind": "EXPORT_ARTIFACT", "repositoryId": "bedroom",
+                 "catalogQualifiedName": "nemaki://bedroom/export-artifacts/op-fixed",
+                 "objectId": None, "operationId": "op-fixed",
+                 "attributes": {"artifactKind": "ZIP", "name": "out.zip", "objectCount": 2}}
+# declared out of canonical order, and with targets needing trim/dedup/sort — both on purpose
+_spool_id = spool_record_id(
+    "bedroom", "IMPORT_UPLOADED", "op-fixed",
+    [SPOOL_IN_DOC["catalogQualifiedName"], SPOOL_IN_EXT["catalogQualifiedName"]],
+    [SPOOL_OUT_ART["catalogQualifiedName"]],
+    [" purview", "atlas", "atlas"], 0, 1, "2026-08-01T00:00:00Z")
+vectors["spoolRecordId"] = _spool_id
+
+_legacy_no_preset = {"processType": "IMPORT_UPLOADED",
+                     "inputs": ["upload://zip-upload", "upload://zip-upload"],
+                     "outputs": ["nemaki://bedroom/objects/folder-1"],
+                     "snapshotAttributes": {"importMode": "zip-upload", "objectCount": "2"},
+                     "presetEventId": None}
+_legacy_preset = dict(_legacy_no_preset, presetEventId="evt-1")
+
+vectors["spoolPayloadDigest_minimal"] = spool_payload_digest(
+    _spool_id, 1, [SPOOL_IN_DOC, SPOOL_IN_EXT], [SPOOL_OUT_ART], None, None)
+vectors["spoolPayloadDigest_full"] = spool_payload_digest(
+    _spool_id, 1, [SPOOL_IN_DOC, SPOOL_IN_EXT], [SPOOL_OUT_ART], "corr-1", _legacy_no_preset)
+vectors["spoolPayloadDigest_legacyPreset"] = spool_payload_digest(
+    _spool_id, 1, [SPOOL_IN_DOC, SPOOL_IN_EXT], [SPOOL_OUT_ART], "corr-1", _legacy_preset)
+
 def main():
     """Compare against the fixture the Java golden test also reads, and exit non-zero on drift."""
     import json, os, sys
