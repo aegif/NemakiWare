@@ -19,5 +19,9 @@
   "processKey": "v2:30565d46184fd03ca367573e4b34b78962995a7094258f901f0c4022afd773b3",
   "originalDeliveryId": "3db33959793d7be66f9ad5329d4a28f77f3332aefdd33f44a4d7669d3507ec48",
   "replayDeliveryId": "b096d6174a5b83b2ec23fd7685a83fab95843b54e4c2c69668832497e388ba62",
-  "repairDeliveryId": "1510a3f32e8cdda507d877cf86e87a2958f5551c811fffd7e316823813c9deb6"
+  "repairDeliveryId": "1510a3f32e8cdda507d877cf86e87a2958f5551c811fffd7e316823813c9deb6",
+  "spoolRecordId": "6773ce5cd518888cfaa81ead96f68f0cc89b682eee3b0f63ae7b3f4526f34dd3",
+  "spoolPayloadDigest_minimal": "f966455e2c93524f62d1391291eab6950fb2e073f3299e143d894a760af887dd",
+  "spoolPayloadDigest_full": "2eb730f81f1a0831f65f97f3f559d78ff455c859621139f098ddfbde0d1f85a8",
+  "spoolPayloadDigest_legacyPreset": "36e78718e4424df0247e990cdd9924c91e3bc8e25baa8882a566d66dabb191bc"
 }
