@@ -79,4 +79,33 @@ public interface LineageMaterializationStore {
      *         missing/rewound
      */
     void createMaterializedV1RowIfAbsent(LineageEvent event, String expectedV1EventDigest);
+
+    /**
+     * CouchDB's own verdict that a document cannot be stored (v2.3.22 D1). CouchDB measures
+     * {@code max_document_size} on its internal representation, so no JSON-side ruler can
+     * prove acceptance — this deterministic rejection is what routes a fact into the
+     * {@code .oversize} parking path. Every other failure stays an infrastructure failure.
+     */
+    class DocumentTooLargeException extends RuntimeException {
+        public DocumentTooLargeException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
+    /**
+     * §2's creation-time classification (v2.3.22 B1/C1): writes the event with a TERMINAL
+     * status and its durable reason for exactly the classified targets, atomically, in one
+     * document. {@link LineageJournalStore#appendV2} stays PENDING-only and unchanged.
+     *
+     * <p>The status target set and the classification target set must be exactly equal, and
+     * every status must be UNRESOLVED or REJECTED. A 409 converges only when the occupant's
+     * creationPayloadDigest AND its complete per-target classification match — an existing
+     * PENDING row at the same key is an integrity refusal, never a silent accept.
+     *
+     * @throws LineageIntegrityException on an occupant with different content or classification
+     * @throws DocumentTooLargeException when CouchDB refuses the document for its size
+     */
+    void appendV2Classified(LineageEventV2 event,
+            java.util.Map<String, LineageMaterializationDecision.CreationClassification>
+                    classification);
 }

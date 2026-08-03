@@ -65,6 +65,8 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
     private final LineageMetrics metrics;
     private final java.util.function.Supplier<String> eventIdAllocator;
     private final java.util.function.LongSupplier clockMs;
+    private final LineageChunkPlanner.ChunkLimits chunkLimits;
+    private final long maxDocumentBytes;
 
     public LineageSpoolMaterializer(LineageMaterializationStore decisions,
                                     LineageJournalStore journal,
@@ -74,6 +76,35 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
                                     LineageMetrics metrics,
                                     java.util.function.Supplier<String> eventIdAllocator,
                                     java.util.function.LongSupplier clockMs) {
+        this(decisions, journal, v2reads, resolver, spool, metrics, eventIdAllocator, clockMs,
+                new LineageChunkPlanner.ChunkLimits(1000L, 1024L * 1024L), 4L * 1024 * 1024);
+    }
+
+    public LineageSpoolMaterializer(LineageMaterializationStore decisions,
+                                    LineageJournalStore journal,
+                                    LineageV2TransitionStore v2reads,
+                                    WriteVersionResolver resolver,
+                                    LineageFactSpool spool,
+                                    LineageMetrics metrics,
+                                    java.util.function.Supplier<String> eventIdAllocator,
+                                    java.util.function.LongSupplier clockMs,
+                                    LineageChunkPlanner.ChunkLimits chunkLimits) {
+        this(decisions, journal, v2reads, resolver, spool, metrics, eventIdAllocator, clockMs,
+                chunkLimits, 4L * 1024 * 1024);
+    }
+
+    public LineageSpoolMaterializer(LineageMaterializationStore decisions,
+                                    LineageJournalStore journal,
+                                    LineageV2TransitionStore v2reads,
+                                    WriteVersionResolver resolver,
+                                    LineageFactSpool spool,
+                                    LineageMetrics metrics,
+                                    java.util.function.Supplier<String> eventIdAllocator,
+                                    java.util.function.LongSupplier clockMs,
+                                    LineageChunkPlanner.ChunkLimits chunkLimits,
+                                    long maxDocumentBytes) {
+        this.chunkLimits = chunkLimits;
+        this.maxDocumentBytes = maxDocumentBytes;
         this.decisions = decisions;
         this.journal = journal;
         this.v2reads = v2reads;
@@ -99,6 +130,20 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
             // Absence and unreadability route differently: an unreadable canonical ACK is
             // BROKEN and goes through hard-link repair, never treated as merely missing.
             if (factFile != null) {
+                // A verified PARKING marker suppresses work exactly like a verified ACK, and
+                // is re-verified on every encounter for the same reason (a forged marker must
+                // never suppress).
+                LineageFactSpool.AckRead parked = spool.readOversizeMarker(factFile);
+                if (parked instanceof LineageFactSpool.AckBytes parkedBytes) {
+                    if (isValidOversizeMarker(parkedBytes.bytes(), payload)) {
+                        return new MaterializeResult(Outcome.ALREADY_ACKED, false);
+                    }
+                    logger.error("Broken/forged oversize marker for {} — quarantining",
+                            payload.spoolRecordId());
+                    spool.repairInvalidOversizeMarker(factFile);
+                } else if (parked instanceof LineageFactSpool.AckUnreadable) {
+                    spool.repairInvalidOversizeMarker(factFile);
+                }
                 LineageFactSpool.AckRead read = spool.readAck(factFile);
                 if (read instanceof LineageFactSpool.AckBytes bytes) {
                     if (isValidAck(bytes.bytes(), payload)) {
@@ -145,9 +190,20 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
             // BEFORE anything is written.
             List<PlannedRow> planned = reconstructAndCompare(payload, decision);
 
-            // 4. Write each row (create-if-absent, digest-exact convergence).
+            // 4. Write each row (create-if-absent, digest-exact convergence). CouchDB's own
+            // size verdict (D1) is the authority on storability: it parks the fact
+            // deterministically instead of retrying an impossible write forever.
             for (PlannedRow row : planned) {
-                row.write();
+                try {
+                    row.write();
+                } catch (LineageMaterializationStore.DocumentTooLargeException tooLarge) {
+                    long measured = LineageChunkPlanner.measure(payload,
+                            new LineageChunkPlanner.ChunkSlice(payload.inputs(),
+                                    payload.outputs()),
+                            decision.allocatedEventId(), decision.creationClassification());
+                    return parkOversize(payload, factFile, tooLarge.getMessage(), measured,
+                            maxDocumentBytes);
+                }
             }
 
             // 5. Reread + verify EVERY row (durability fence) — only then the ACK.
@@ -199,6 +255,34 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
         }
     }
 
+    /**
+     * Parks a fact CouchDB refuses to store: a deterministic marker beside it (published like
+     * the ACK), the fact file retained as evidence, and the fact removed from the work set —
+     * no wedge, no corruption-quarantine reuse.
+     */
+    private MaterializeResult parkOversize(LineageSpoolPayloadV1 payload, Path factFile,
+                                           String detail, long measuredBytes,
+                                           long ceilingBytes) {
+        logger.error("CouchDB refused the materialized document for {} — parking:"
+                + " {}", payload.spoolRecordId(), detail);
+        if (metrics != null) {
+            metrics.recordOversizeParked();
+        }
+        if (factFile == null) {
+            return new MaterializeResult(Outcome.FAILED, false);
+        }
+        // Deterministic evidence: what we measured, what the guard rail allowed, and the
+        // canonical hash of the whole fact's endpoint records — all re-derivable, so the
+        // verification can recompute rather than trust them.
+        byte[] marker = oversizeMarkerBytes(payload, measuredBytes, ceilingBytes,
+                evidenceHashOf(payload));
+        LineageFactSpool.AckOutcome published = spool.publishOversizeMarker(factFile, marker);
+        return new MaterializeResult(
+                published == LineageFactSpool.AckOutcome.PUBLISHED
+                        || published == LineageFactSpool.AckOutcome.IDEMPOTENT
+                        ? Outcome.ALREADY_ACKED : Outcome.PARTIAL, false);
+    }
+
     // ---------------------------------------------------------------- decision + binding
 
     private void requireDecisionBinding(LineageMaterializationDecision decision,
@@ -236,12 +320,39 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
                     now);
         }
         String eventId = eventIdAllocator.get();
-        LineageEventV2 event = v2EventOf(payload, eventId);
-        return LineageMaterializationDecision.of(payload.spoolRecordId(),
-                payload.payloadDigest(), 2, resolved.barrierGeneration(), eventId,
-                List.of(new LineageMaterializationDecision.V2Entry(payload.chunkIndex(),
-                        event.deliveryId(), event.creationPayloadDigest())),
-                now);
+        List<LineageChunkPlanner.ChunkSlice> slices;
+        Map<String, LineageMaterializationDecision.CreationClassification> classification =
+                Map.of();
+        try {
+            slices = LineageChunkPlanner.partition(payload, chunkLimits, eventId);
+        } catch (LineageChunkPlanner.OversizeException oversize) {
+            // §2: the whole fact becomes ONE terminal row — publishing the fitting half of a
+            // process would emit a lineage process that claims to be complete.
+            slices = List.of(new LineageChunkPlanner.ChunkSlice(payload.inputs(),
+                    payload.outputs()));
+            var reason = new LineageTargetLifecycle.TerminalReason("OVERSIZE",
+                    oversize.getMessage() + " endpointRecordHash="
+                            + oversize.offendingEndpointRecordHash(),
+                    now); // frozen with the decision — never a fresh clock read
+            Map<String, LineageMaterializationDecision.CreationClassification> classified =
+                    new LinkedHashMap<>();
+            for (String target : payload.canonicalTargetSet()) {
+                classified.put(target,
+                        new LineageMaterializationDecision.CreationClassification(
+                                LineagePublishStatus.UNRESOLVED, reason));
+            }
+            classification = classified;
+        }
+        List<LineageMaterializationDecision.PlanEntry> entries = new ArrayList<>();
+        for (int i = 0; i < slices.size(); i++) {
+            LineageEventV2 event = v2EventOf(payload, eventId, slices.get(i), i,
+                    slices.size());
+            entries.add(new LineageMaterializationDecision.V2Entry(i, event.deliveryId(),
+                    event.creationPayloadDigest()));
+        }
+        return LineageMaterializationDecision.ofV3(payload.spoolRecordId(),
+                payload.payloadDigest(), resolved.barrierGeneration(), eventId, entries, now,
+                LineageChunkPlanner.PARTITION_VERSION, chunkLimits, classification);
     }
 
     // ---------------------------------------------------------------- reconstruction
@@ -262,8 +373,20 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
                 legacy.snapshotAttributes(), statuses);
     }
 
-    /** Deterministic v2 event via the pure builder. */
+    /** Deterministic v2 event via the pure builder — the whole fact, chunk(0,1). */
     static LineageEventV2 v2EventOf(LineageSpoolPayloadV1 payload, String eventId) {
+        return v2EventOf(payload, eventId,
+                new LineageChunkPlanner.ChunkSlice(payload.inputs(), payload.outputs()),
+                (int) payload.chunkIndex(), (int) payload.chunkCount());
+    }
+
+    /**
+     * Deterministic v2 event for ONE chunk slice (v2.3.22): the slice's endpoints at the
+     * slice's chunk coordinates. Everything else is the fact, verbatim.
+     */
+    static LineageEventV2 v2EventOf(LineageSpoolPayloadV1 payload, String eventId,
+                                    LineageChunkPlanner.ChunkSlice slice, int chunkIndex,
+                                    int chunkCount) {
         LineageEventV2Builder builder = new LineageEventV2Builder()
                 .eventId(eventId)
                 .occurredAt(payload.occurredAt())
@@ -271,7 +394,7 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
                 .processType(payload.processType())
                 .operationId(payload.operationId())
                 .delivery(new LineageDelivery.Original(payload.canonicalTargetSet()))
-                .chunk((int) payload.chunkIndex(), (int) payload.chunkCount())
+                .chunk(chunkIndex, chunkCount)
                 .sequenceNumber(0L)
                 .spoolRecordId(payload.spoolRecordId());
         if (payload.correlationId() != null) {
@@ -282,8 +405,8 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
             builder.legacyEventKey(LineageEvent.computeEventKey(payload.repositoryId(),
                     legacy.processType(), legacy.inputs(), legacy.outputs()));
         }
-        payload.inputs().forEach(builder::addInput);
-        payload.outputs().forEach(builder::addOutput);
+        slice.inputs().forEach(builder::addInput);
+        slice.outputs().forEach(builder::addOutput);
         return builder.build();
     }
 
@@ -342,29 +465,87 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
             });
             return planned;
         }
-        for (LineageMaterializationDecision.PlanEntry planEntry : decision.planEntries()) {
+        // Re-derive the partition under the DECISION's frozen limits (never live config), so
+        // a config change after the decision cannot re-partition and wedge the fact.
+        List<LineageChunkPlanner.ChunkSlice> slices;
+        boolean classified = !decision.creationClassification().isEmpty();
+        LineageChunkPlanner.ChunkSlice wholeFact =
+                new LineageChunkPlanner.ChunkSlice(payload.inputs(), payload.outputs());
+        if (classified) {
+            slices = List.of(wholeFact);
+        } else if (decision.chunkLimits() != null) {
+            slices = LineageChunkPlanner.partition(payload, decision.chunkLimits(),
+                    decision.allocatedEventId());
+        } else {
+            // A pre-chunking V2 decision: every entry reconstructed the WHOLE fact at the
+            // fact's own chunk coordinates — including historical multi-entry decisions,
+            // whose shape v2.3.22 deliberately did not narrow (F2).
+            List<LineageChunkPlanner.ChunkSlice> legacy = new ArrayList<>();
+            for (int i = 0; i < decision.planEntries().size(); i++) {
+                legacy.add(wholeFact);
+            }
+            slices = legacy;
+        }
+        if (slices.size() != decision.planEntries().size()) {
+            throw new LineageIntegrityException(decision.documentId(),
+                    decision.materializationPlanDigest(),
+                    "the partition re-derived " + slices.size() + " chunks but the frozen plan"
+                            + " has " + decision.planEntries().size() + " — nothing written");
+        }
+        for (int i = 0; i < decision.planEntries().size(); i++) {
             LineageMaterializationDecision.V2Entry entry =
-                    (LineageMaterializationDecision.V2Entry) planEntry;
-            LineageEventV2 event = v2EventOf(payload, decision.allocatedEventId());
+                    (LineageMaterializationDecision.V2Entry) decision.planEntries().get(i);
+            boolean legacyV2 = decision.chunkLimits() == null && !classified;
+            LineageEventV2 event = legacyV2
+                    ? v2EventOf(payload, decision.allocatedEventId(), slices.get(i),
+                            (int) payload.chunkIndex(), (int) payload.chunkCount())
+                    : v2EventOf(payload, decision.allocatedEventId(), slices.get(i), i,
+                            slices.size());
             if (!entry.deliveryId().equals(event.deliveryId())
                     || !entry.eventDigest().equals(event.creationPayloadDigest())) {
                 throw new LineageIntegrityException(decision.documentId(), entry.eventDigest(),
                         "reconstruction drifted from the frozen v2 plan entry — nothing"
                                 + " written (A1)");
             }
+            LineageEventV2 toWrite = classified
+                    ? withClassifiedStatuses(event, decision.creationClassification())
+                    : event;
             planned.add(new PlannedRow() {
                 @Override
                 public void write() {
-                    journal.appendV2(event);
+                    if (classified) {
+                        ((LineageMaterializationStore) journal).appendV2Classified(toWrite,
+                                decision.creationClassification());
+                    } else {
+                        journal.appendV2(event);
+                    }
                 }
 
                 @Override
                 public boolean rereadAndVerify() {
                     LineageJournalRowV2 stored = v2reads.findV2ByRecordId(entry.deliveryId());
-                    return stored != null
-                            && stored.event().creationPayloadDigest()
+                    if (stored == null
+                            || !stored.event().creationPayloadDigest()
                                     .equals(entry.eventDigest())
-                            && stored.event().eventId().equals(decision.allocatedEventId());
+                            || !stored.event().eventId()
+                                    .equals(decision.allocatedEventId())) {
+                        return false;
+                    }
+                    // C1: the classification is part of the decision, so it is part of what
+                    // the pre-ACK verification checks — a PENDING row where the decision says
+                    // UNRESOLVED is not the row the decision committed to.
+                    for (var e : decision.creationClassification().entrySet()) {
+                        LineageTargetLifecycle lifecycle =
+                                stored.targetLifecycles().get(e.getKey());
+                        if (lifecycle == null || lifecycle.status() != e.getValue().status()
+                                || !e.getValue().reason()
+                                        .equals(lifecycle.terminalReason())) {
+                            // Value equality: the DETAIL is the evidence, so a row with
+                            // different evidence is not the row the decision committed to.
+                            return false;
+                        }
+                    }
+                    return true;
                 }
             });
         }
@@ -372,6 +553,75 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
     }
 
     // ---------------------------------------------------------------- ACK bytes + checks
+
+    /** The event with its targets' statuses set to the decision's classification. */
+    static LineageEventV2 withClassifiedStatuses(LineageEventV2 event,
+            Map<String, LineageMaterializationDecision.CreationClassification> classification) {
+        Map<String, LineagePublishStatus> statuses = new LinkedHashMap<>();
+        classification.forEach((target, c) -> statuses.put(target, c.status()));
+        return new LineageEventV2(event.schemaVersion(), event.idempotencyKeyVersion(),
+                event.eventId(), event.processKey(), event.delivery(), event.deliveryId(),
+                event.repositoryId(), event.processType(), event.operationId(),
+                event.occurredAt(), event.inputs(), event.outputs(), event.chunkIndex(),
+                event.chunkCount(), event.sequenceNumber(), event.correlationId(),
+                event.spoolRecordId(), event.legacyEventKey(), statuses,
+                event.creationPayloadDigest());
+    }
+
+    /** The parking marker's deterministic body (v2.3.22 C3). */
+    static byte[] oversizeMarkerBytes(LineageSpoolPayloadV1 payload, long measuredBytes,
+                                      long ceilingBytes, String endpointRecordHash) {
+        String json = "{\"spoolRecordId\":\"" + payload.spoolRecordId()
+                + "\",\"factPayloadDigest\":\"" + payload.payloadDigest()
+                + "\",\"reason\":\"OVERSIZE_UNSTORABLE\",\"measuredBytes\":" + measuredBytes
+                + ",\"ceilingBytes\":" + ceilingBytes
+                + ",\"offendingEndpointRecordHash\":\"" + endpointRecordHash + "\"}";
+        return json.getBytes(StandardCharsets.UTF_8);
+    }
+
+    /** The canonical hash of the fact's COMPLETE endpoint records — the marker's evidence. */
+    static String evidenceHashOf(LineageSpoolPayloadV1 payload) {
+        return LineageCanonicalHash.hash("OVERSIZE_ENDPOINT_V1",
+                LineageEventDigest.endpointRecords(payload.inputs()),
+                LineageEventDigest.endpointRecords(payload.outputs()));
+    }
+
+    /** Every binding of a parking marker, verified on every encounter. */
+    boolean isValidOversizeMarker(byte[] markerBytes, LineageSpoolPayloadV1 payload) {
+        try {
+            Map<?, ?> marker = JSON.readValue(markerBytes, Map.class);
+            // The COMPLETE shape, every time: a marker missing its evidence is not a marker
+            // this materializer wrote, and must not suppress work (F7).
+            if (marker.size() != 6) {
+                return false;
+            }
+            Object measured = marker.get("measuredBytes");
+            Object ceiling = marker.get("ceilingBytes");
+            Object hash = marker.get("offendingEndpointRecordHash");
+            if (!(measured instanceof Number measuredBytes)
+                    || !(ceiling instanceof Number ceilingBytes)
+                    || !(hash instanceof String hashText)) {
+                return false;
+            }
+            // The evidence is RECOMPUTED, not merely shaped (round-2 R2): a marker whose
+            // hash, ceiling or measurement was altered is not a marker this materializer
+            // wrote for this fact, and must not suppress work.
+            if (!hashText.equals(evidenceHashOf(payload))) {
+                return false;
+            }
+            if (ceilingBytes.longValue() != maxDocumentBytes) {
+                return false;
+            }
+            if (measuredBytes.longValue() <= 0) {
+                return false;
+            }
+            return payload.spoolRecordId().equals(marker.get("spoolRecordId"))
+                    && payload.payloadDigest().equals(marker.get("factPayloadDigest"))
+                    && "OVERSIZE_UNSTORABLE".equals(marker.get("reason"));
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
     /** The frozen four-field ACK body, in fixed order — deterministic bytes. */
     static byte[] ackBytes(LineageSpoolPayloadV1 payload,

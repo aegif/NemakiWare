@@ -189,6 +189,15 @@ public class LineageConfig {
     @Value("${lineage.spool.scan.max-millis:5000}")
     private long spoolScanMaxMillis;
 
+    @Value("${lineage.endpoint.max-per-event:1000}")
+    private int endpointMaxPerEvent;
+
+    @Value("${lineage.event.max-payload-bytes:1048576}")
+    private long eventMaxPayloadBytes;
+
+    @Value("${lineage.event.max-document-bytes:4194304}")
+    private long eventMaxDocumentBytes;
+
     // --- Leader election (multi-node deployments) ---
 
     @Value("${lineage.leader-election.enabled:false}")
@@ -306,6 +315,23 @@ public class LineageConfig {
 
     public long getSpoolScanMaxMillis() {
         return readDynamicLong("lineage.spool.scan.max-millis", spoolScanMaxMillis);
+    }
+
+    /** §2's chunking limits (v2.3.22). Frozen into each decision that partitions under them. */
+    public int getEndpointMaxPerEvent() {
+        return readDynamicInt("lineage.endpoint.max-per-event", endpointMaxPerEvent);
+    }
+
+    public long getEventMaxPayloadBytes() {
+        return readDynamicLong("lineage.event.max-payload-bytes", eventMaxPayloadBytes);
+    }
+
+    /**
+     * A guard rail, NOT a guarantee: CouchDB measures {@code max_document_size} on its own
+     * internal representation, so its rejection is the final word (v2.3.22 D1).
+     */
+    public long getEventMaxDocumentBytes() {
+        return readDynamicLong("lineage.event.max-document-bytes", eventMaxDocumentBytes);
     }
 
     public int getRetentionDays() {

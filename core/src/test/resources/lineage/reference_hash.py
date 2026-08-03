@@ -151,6 +151,25 @@ vectors["materializationPlanDigest_v2"] = plan_digest(
     _spool_id, vectors["spoolPayloadDigest_full"], 2,
     "22222222-3333-4444-5555-666666666666", [_v2_entry])
 
+# ---- chunking (v2.3.22): the V3 plan digest binds partition version, limits, classification
+def plan_digest_v3(spool_record_id_, fact_digest, schema, allocated_event_id,
+                   partition_version, chunk_limits, classification, entries):
+    return h("MATERIALIZATION_PLAN_V3", spool_record_id_, fact_digest, schema,
+             allocated_event_id, partition_version, chunk_limits, classification, entries)
+
+_v3_limits = {"maxEndpointsPerEvent": 1000, "maxPayloadBytes": 1048576}
+_v3_entries = [{"chunkIndex": 0, "deliveryId": "d" * 64, "eventDigest": "e" * 64},
+               {"chunkIndex": 1, "deliveryId": "f" * 64, "eventDigest": "0" * 64}]
+vectors["materializationPlanDigest_v3_twoChunks"] = plan_digest_v3(
+    _spool_id, vectors["spoolPayloadDigest_full"], 2,
+    "22222222-3333-4444-5555-666666666666", 1, _v3_limits, {}, _v3_entries)
+_v3_classification = {"atlas": {"status": "UNRESOLVED",
+                                "reason": {"reason": "OVERSIZE", "detail": "d", "atMs": 1000}}}
+vectors["materializationPlanDigest_v3_classified"] = plan_digest_v3(
+    _spool_id, vectors["spoolPayloadDigest_full"], 2,
+    "22222222-3333-4444-5555-666666666666", 1, _v3_limits, _v3_classification,
+    [_v3_entries[0]])
+
 vectors["spoolPayloadDigest_legacyPreset"] = spool_payload_digest(
     _spool_id, 1, [SPOOL_IN_DOC, SPOOL_IN_EXT], [SPOOL_OUT_ART], "corr-1", _legacy_preset)
 

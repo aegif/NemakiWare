@@ -65,7 +65,7 @@ public class LineageJournalViewCoverageTest {
     private static final Set<String> V2_PROJECTION_VIEWS = Set.of(
             "v2_by_repository_and_sequence", "v2_by_occurred_at",
             "v2_non_terminal_by_target_repo", "v2_claims_by_expiry", "v2_verifying_by_since",
-            "v2_replay_requests_unacked");
+            "v2_replay_requests_unacked", "v2_sequenced_repositories");
 
     /**
      * v2-only and state-specific by definition (§8-a v2, D-rest-1): the fenced sequencer's
@@ -241,7 +241,7 @@ public class LineageJournalViewCoverageTest {
 
     /** A new view must join this test, or its v1/v2 coverage is nobody's problem. */
     @Test
-    public void theViewSetIsExactlyTheKnownTwentyThree() {
+    public void theViewSetIsExactlyTheKnownTwentyFour() {
         assertEquals(Set.of(
                         "by_event_key", "by_repository_and_time", "by_target_status",
                         "by_process_type", "by_occurred_at", "by_repository_and_process_type",
@@ -252,7 +252,8 @@ public class LineageJournalViewCoverageTest {
                         "v2_sequencer_in_flight", "sequence_watermark",
                         "v2_by_repository_and_sequence", "v2_by_occurred_at",
                         "v2_non_terminal_by_target_repo", "v2_claims_by_expiry",
-                        "v2_verifying_by_since", "v2_replay_requests_unacked"),
+                        "v2_verifying_by_since", "v2_replay_requests_unacked",
+                        "v2_sequenced_repositories"),
                 CouchLineageJournalStore.VIEWS.keySet(),
                 "a view was added or renamed; give it v1/v2 coverage here before anything"
                         + " queries it");
@@ -436,6 +437,22 @@ public class LineageJournalViewCoverageTest {
                     state + " owes no recovery");
         }
         assertEquals(0, emits("v2_replay_requests_unacked", v1Document()).size());
+    }
+
+    /** v2.3.22 C2: terminal-only rows are still discoverable, per target. */
+    @Test
+    public void theSequencedRepositoryViewSeesTerminalRowsToo() {
+        Map<String, Object> terminal = v2Document();
+        terminal.put("publishStatusByTarget", Map.of("atlas", "UNRESOLVED"));
+        List<?> rows = emits("v2_sequenced_repositories", terminal);
+        assertEquals(1, rows.size(), "a terminal row must still be discoverable");
+        assertEquals(List.of("atlas", "bedroom"), ((List<?>) rows.get(0)).get(0),
+                "target-qualified: a repo never becomes visible to a target it does not owe");
+
+        Map<String, Object> unsequenced = v2Document();
+        unsequenced.put("state", "UNSEQUENCED");
+        assertEquals(0, emits("v2_sequenced_repositories", unsequenced).size());
+        assertEquals(0, emits("v2_sequenced_repositories", v1Document()).size());
     }
 
     /** D-rest-4: a materialization decision document emits in NO view (reached by _id only). */

@@ -717,6 +717,40 @@ public class LineageV2TransitionMachineTest {
                     "500 must reach the query unclamped");
         }
 
+        /** F4: V3-only fields under a V2 decision are malformed, not fields to ignore. */
+        @Test
+        public void aV2DecisionCarryingV3FieldsIsRefused() {
+            String spoolId = "a".repeat(64);
+            String documentId = "lineage_materialization:" + spoolId;
+            Map<String, Object> doc = new LinkedHashMap<>();
+            doc.put("type", "lineage_materialization");
+            doc.put("spoolRecordId", spoolId);
+            doc.put("factPayloadDigest", "b".repeat(64));
+            doc.put("materializeSchemaVersion", 2L);
+            doc.put("barrierGeneration", 0L);
+            doc.put("allocatedEventId", "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d");
+            doc.put("planEntries", java.util.List.of(Map.of("chunkIndex", 0L,
+                    "deliveryId", "d".repeat(64), "eventDigest", "e".repeat(64))));
+            doc.put("materializationPlanDigest", "f".repeat(64));
+            doc.put("createdAtMs", 1000L);
+            doc.put("chunkLimits", Map.of("maxEndpointsPerEvent", 1000L,
+                    "maxPayloadBytes", 1048576L));
+
+            com.ibm.cloud.cloudant.v1.model.Document sdkDoc =
+                    new com.ibm.cloud.cloudant.v1.model.Document();
+            sdkDoc.setProperties(new HashMap<>(doc));
+            sdkDoc.setId(documentId);
+            sdkDoc.setRev("1-x");
+            when(rawClient.getDocument(org.mockito.ArgumentMatchers.argThat(
+                    (com.ibm.cloud.cloudant.v1.model.GetDocumentOptions o) ->
+                            o != null && documentId.equals(o.docId())))
+                    .execute().getResult())
+                    .thenReturn(sdkDoc);
+            assertThrows(LineageSequencingStore.SequencingStorageException.class,
+                    () -> store.readDecision(spoolId),
+                    "chunk fields under V2 are a malformed document");
+        }
+
         /** D-rest-4 round-1 fix 1: schema values are validated BEFORE int narrowing. */
         @Test
         public void aDecisionSchemaOutsideOneOrTwoIsRefusedBeforeNarrowing() {

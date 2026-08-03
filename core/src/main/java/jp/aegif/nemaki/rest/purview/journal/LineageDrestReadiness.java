@@ -203,6 +203,24 @@ public class LineageDrestReadiness {
             budgetViolations.add("lineage.spool.scan.max-millis must be in [1, 600000], got "
                     + maxMillis);
         }
+        int maxPerEvent = lineageConfig.getEndpointMaxPerEvent();
+        long maxPayload = lineageConfig.getEventMaxPayloadBytes();
+        long maxDocument = lineageConfig.getEventMaxDocumentBytes();
+        if (maxPerEvent < 2 || maxPerEvent > 10_000) {
+            budgetViolations.add("lineage.endpoint.max-per-event must be in [2, 10000] (2"
+                    + " admits an anchor plus one payload endpoint), got " + maxPerEvent);
+        }
+        if (maxPayload < 64L * 1024 || maxPayload > 16L * 1024 * 1024) {
+            budgetViolations.add("lineage.event.max-payload-bytes must be in [65536,"
+                    + " 16777216], got " + maxPayload);
+        }
+        if (maxDocument < 1024L * 1024 || maxDocument > 8_000_000L) {
+            // 8,000,000 is CouchDB 3.x's default max_document_size; a ceiling above it would
+            // promise more than the backend accepts.
+            budgetViolations.add("lineage.event.max-document-bytes must be in [1048576,"
+                    + " 8000000] (CouchDB 3.x's default max_document_size), got "
+                    + maxDocument);
+        }
         if (!budgetViolations.isEmpty()) {
             return budgetViolations;
         }

@@ -477,6 +477,23 @@ public class LineageFactSpool {
                 + ".ack");
     }
 
+    /**
+     * The oversize PARKING marker (v2.3.22 C3): {@code fact-{id}.oversize}, published exactly
+     * like the ACK and verified on every encounter. Deliberately NOT the corruption
+     * quarantine slot — that slot means "this record is broken", is single-occupancy, and
+     * leaving the canonical fact in place there would recreate the wedge. A parked fact is a
+     * VALID record that this deployment cannot store; the fact file stays as evidence and the
+     * marker removes it from the work set.
+     */
+    static Path oversizePathFor(Path factFile) {
+        String name = factFile.getFileName().toString();
+        if (!name.endsWith(".json")) {
+            throw new IllegalArgumentException("not a fact file: " + name);
+        }
+        return factFile.resolveSibling(name.substring(0, name.length() - ".json".length())
+                + ".oversize");
+    }
+
     /** The non-overwriting evidence slot for an invalid ACK: {@code fact-{id}.ack.quarantine}. */
     static Path ackQuarantinePathFor(Path ackFile) {
         return ackFile.resolveSibling(ackFile.getFileName().toString() + ".quarantine");
@@ -492,7 +509,10 @@ public class LineageFactSpool {
      * differing occupant is CONFLICT (the caller re-verifies and repairs — never overwrite).
      */
     public AckOutcome publishAck(Path factFile, byte[] ackBytes) {
-        Path target = ackPathFor(factFile);
+        return publishAt(ackPathFor(factFile), ackBytes);
+    }
+
+    private AckOutcome publishAt(Path target, byte[] ackBytes) {
         Path tmp = target.resolveSibling(target.getFileName() + ".tmp-"
                 + java.util.UUID.randomUUID());
         try {
@@ -575,9 +595,27 @@ public class LineageFactSpool {
     public record AckBytes(byte[] bytes) implements AckRead {
     }
 
+    /** Publishes the oversize parking marker (same durability protocol as the ACK). */
+    public AckOutcome publishOversizeMarker(Path factFile, byte[] markerBytes) {
+        return publishAt(oversizePathFor(factFile), markerBytes);
+    }
+
+    /** Bounded, symlink-refusing read of the oversize parking marker. */
+    public AckRead readOversizeMarker(Path factFile) {
+        return readAt(oversizePathFor(factFile));
+    }
+
+    /** Convergent repair of an invalid parking marker (same hard-link protocol as the ACK). */
+    public boolean repairInvalidOversizeMarker(Path factFile) {
+        return repairInvalidAck(oversizePathFor(factFile));
+    }
+
     /** Bounded, symlink-refusing ACK read. */
     public AckRead readAck(Path factFile) {
-        Path ack = ackPathFor(factFile);
+        return readAt(ackPathFor(factFile));
+    }
+
+    private AckRead readAt(Path ack) {
         if (!Files.exists(ack, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
             return new AckAbsent();
         }
@@ -586,7 +624,7 @@ public class LineageFactSpool {
         } catch (IOException | RuntimeException e) {
             // Oversized (IllegalArgumentException from the bounded read), symlinked,
             // permission-denied … — all BROKEN, all routed through repair, never "absent".
-            logger.error("ACK read failed for {}: {} — treated as broken, repair will run",
+            logger.error("marker read failed for {}: {} — treated as broken, repair will run",
                     ack.getFileName(), e.getClass().getSimpleName());
             return new AckUnreadable();
         }

@@ -224,6 +224,36 @@ public class LineageCanonicalHashTest {
                                         .LineageMaterializationDecision.V2Entry(0,
                                         "d".repeat(64), "e".repeat(64)).asRecord())));
 
+        // v2.3.22: the chunk-aware V3 plan digest (limits + partition version + classification).
+        var v3Limits = new jp.aegif.nemaki.rest.purview.journal.LineageChunkPlanner
+                .ChunkLimits(1000L, 1048576L);
+        var v3EntryA = new jp.aegif.nemaki.rest.purview.journal.LineageMaterializationDecision
+                .V2Entry(0, "d".repeat(64), "e".repeat(64));
+        var v3EntryB = new jp.aegif.nemaki.rest.purview.journal.LineageMaterializationDecision
+                .V2Entry(1, "f".repeat(64), "0".repeat(64));
+        computed.put("materializationPlanDigest_v3_twoChunks",
+                LineageSpoolIdentity.materializationPlanDigestV3(spoolRecordId, factDigestFull,
+                        2, "22222222-3333-4444-5555-666666666666", 1L,
+                        java.util.Map.of("maxEndpointsPerEvent", 1000L,
+                                "maxPayloadBytes", 1048576L),
+                        java.util.Map.of(),
+                        List.of(v3EntryA.asRecord(), v3EntryB.asRecord())));
+        java.util.Map<String, Object> classificationRecord = new LinkedHashMap<>();
+        java.util.Map<String, Object> classificationEntry = new LinkedHashMap<>();
+        classificationEntry.put("status", "UNRESOLVED");
+        java.util.Map<String, Object> classificationReason = new LinkedHashMap<>();
+        classificationReason.put("reason", "OVERSIZE");
+        classificationReason.put("detail", "d");
+        classificationReason.put("atMs", 1000L);
+        classificationEntry.put("reason", classificationReason);
+        classificationRecord.put("atlas", classificationEntry);
+        computed.put("materializationPlanDigest_v3_classified",
+                LineageSpoolIdentity.materializationPlanDigestV3(spoolRecordId, factDigestFull,
+                        2, "22222222-3333-4444-5555-666666666666", 1L,
+                        java.util.Map.of("maxEndpointsPerEvent", 1000L,
+                                "maxPayloadBytes", 1048576L),
+                        classificationRecord, List.of(v3EntryA.asRecord())));
+
         assertEquals(fixture.keySet(), computed.keySet(),
                 "the fixture and this test cover different vectors");
         for (Map.Entry<String, String> entry : computed.entrySet()) {
@@ -244,7 +274,7 @@ public class LineageCanonicalHashTest {
         while (matcher.find()) {
             vectors.put(matcher.group(1), matcher.group(2));
         }
-        assertEquals(29, vectors.size(), "unexpected fixture size: " + vectors.size());
+        assertEquals(31, vectors.size(), "unexpected fixture size: " + vectors.size());
         return vectors;
     }
 

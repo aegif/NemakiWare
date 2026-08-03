@@ -121,7 +121,8 @@ public class LineageMaterializationTest {
             assertThrows(IllegalArgumentException.class, () ->
                     new LineageMaterializationDecision(decision.spoolRecordId(),
                             decision.factPayloadDigest(), 1, 0L, decision.allocatedEventId(),
-                            decision.planEntries(), "f".repeat(64), 1000L),
+                            decision.planEntries(), "f".repeat(64), 1000L, 2, null, null,
+                            java.util.Map.of()),
                     "a stored digest that does not recompute is a tampered decision");
         }
 
@@ -134,7 +135,8 @@ public class LineageMaterializationTest {
                     new LineageMaterializationDecision(decision.spoolRecordId(),
                             decision.factPayloadDigest(), 1, 0L,
                             "99999999-9999-9999-9999-999999999999", decision.planEntries(),
-                            decision.materializationPlanDigest(), 1000L));
+                            decision.materializationPlanDigest(), 1000L, 2, null, null,
+                            java.util.Map.of()));
         }
 
         @Test
@@ -222,6 +224,9 @@ public class LineageMaterializationTest {
         private LineageSpoolPayloadV1 payload;
         private Path factFile;
 
+        private static final LineageChunkPlanner.ChunkLimits DEFAULT_LIMITS =
+                new LineageChunkPlanner.ChunkLimits(1000L, 1024L * 1024L);
+
         @BeforeEach
         void setUp() throws Exception {
             journal = mock(LineageJournalStore.class, withSettings().extraInterfaces(
@@ -251,12 +256,14 @@ public class LineageMaterializationTest {
             }
         }
 
+        /** The decision shape the materializer now writes: chunk-aware V3, one chunk. */
         private LineageMaterializationDecision v2Decision() {
             LineageEventV2 event = LineageSpoolMaterializer.v2EventOf(payload, EVENT_ID);
-            return LineageMaterializationDecision.of(payload.spoolRecordId(),
-                    payload.payloadDigest(), 2, 0L, EVENT_ID,
+            return LineageMaterializationDecision.ofV3(payload.spoolRecordId(),
+                    payload.payloadDigest(), 0L, EVENT_ID,
                     List.of(new V2Entry(0, event.deliveryId(),
-                            event.creationPayloadDigest())), 1000L);
+                            event.creationPayloadDigest())), 1000L,
+                    LineageChunkPlanner.PARTITION_VERSION, DEFAULT_LIMITS, Map.of());
         }
 
         private LineageJournalRowV2 storedRow() {
@@ -332,6 +339,122 @@ public class LineageMaterializationTest {
             Files.write(ack, huge);
             assertEquals(LineageFactSpool.AckOutcome.CONFLICT,
                     smallCap.publishAck(factFile, "x".getBytes()));
+        }
+
+        /** v2.3.22: K chunks → K plan entries, K rows, and the ACK only after all K. */
+        @Test
+        public void aChunkingFactProducesKEntriesKRowsAndOneAckAfterAll() throws Exception {
+            // A fresh spool + a fact whose 4 documents must split at 1 document per chunk.
+            List<LineageEndpoint> inputs = new java.util.ArrayList<>();
+            for (int i = 0; i < 4; i++) {
+                inputs.add(LineageEndpoint.document("bedroom", String.format("doc-%03d", i),
+                        "f" + i + ".txt"));
+            }
+            LineageFact fact = new LineageFact("bedroom",
+                    LineageProcessType.EXPORT_SELECTED_OBJECTS, "op-chunk",
+                    "2026-08-01T00:00:00Z", inputs,
+                    List.of(LineageEndpoint.exportArtifact("bedroom", "op-chunk", "ZIP",
+                            "out.zip", 4L)),
+                    List.of("atlas"), null,
+                    new LineageFact.LegacyV1Projection(
+                            LineageProcessType.EXPORT_SELECTED_OBJECTS, List.of("i"),
+                            List.of("o"), Map.of(), null));
+            LineageSpoolPayloadV1 chunky = LineageSpoolPayloadV1.of(fact);
+            assertEquals(LineageFactSpool.AppendOutcome.APPENDED, spool.append(chunky));
+            Path chunkyFile;
+            try (var walk = Files.walk(spoolDir)) {
+                chunkyFile = walk.filter(f -> f.getFileName().toString()
+                                .equals("fact-" + chunky.spoolRecordId() + ".json"))
+                        .findFirst().orElseThrow();
+            }
+            var limits = new LineageChunkPlanner.ChunkLimits(2L, 1024L * 1024L);
+            LineageSpoolMaterializer chunking = new LineageSpoolMaterializer(decisions,
+                    journal, v2reads, resolver, spool, null, () -> EVENT_ID, () -> 1000L,
+                    limits);
+
+            List<LineageChunkPlanner.ChunkSlice> slices =
+                    LineageChunkPlanner.partition(chunky, limits, EVENT_ID);
+            assertEquals(4, slices.size());
+            List<LineageMaterializationDecision.PlanEntry> entries = new java.util.ArrayList<>();
+            java.util.Map<String, LineageJournalRowV2> rows = new java.util.LinkedHashMap<>();
+            for (int i = 0; i < slices.size(); i++) {
+                LineageEventV2 event = LineageSpoolMaterializer.v2EventOf(chunky, EVENT_ID,
+                        slices.get(i), i, slices.size());
+                entries.add(new V2Entry(i, event.deliveryId(),
+                        event.creationPayloadDigest()));
+                rows.put(event.deliveryId(), new LineageJournalRowV2(event, "1-x",
+                        LineageJournalRowV2.SequencingState.UNSEQUENCED, null, null));
+            }
+            LineageMaterializationDecision decision = LineageMaterializationDecision.ofV3(
+                    chunky.spoolRecordId(), chunky.payloadDigest(), 0L, EVENT_ID, entries,
+                    1000L, LineageChunkPlanner.PARTITION_VERSION, limits, Map.of());
+            when(decisions.readDecision(chunky.spoolRecordId())).thenReturn(decision);
+
+            // One row still missing → no ACK.
+            when(v2reads.findV2ByRecordId(anyString())).thenAnswer(i ->
+                    ((V2Entry) entries.get(3)).deliveryId().equals(i.getArgument(0))
+                            ? null : rows.get(i.<String>getArgument(0)));
+            assertEquals(LineageSpoolMaterializer.Outcome.PARTIAL,
+                    chunking.materialize(chunky, chunkyFile).outcome());
+            assertTrue(spool.readAck(chunkyFile) instanceof LineageFactSpool.AckAbsent,
+                    "the ACK waits for every chunk");
+
+            // All four durable → ACK, and K distinct rows were written.
+            when(v2reads.findV2ByRecordId(anyString())).thenAnswer(i ->
+                    rows.get(i.<String>getArgument(0)));
+            assertEquals(LineageSpoolMaterializer.Outcome.ACKED,
+                    chunking.materialize(chunky, chunkyFile).outcome());
+            verify(journal, org.mockito.Mockito.atLeast(4)).appendV2(any());
+        }
+
+        /** v2.3.22: an unsplittable fact becomes ONE terminal row, classified at creation. */
+        @Test
+        public void anUnsplittableFactIsClassifiedTerminalAtCreation() {
+            var tiny = new LineageChunkPlanner.ChunkLimits(2L, 64L);
+            LineageSpoolMaterializer tinyMat = new LineageSpoolMaterializer(decisions, journal,
+                    v2reads, resolver, spool, null, () -> EVENT_ID, () -> 1000L, tiny);
+            when(decisions.readDecision(payload.spoolRecordId())).thenReturn(null);
+            when(resolver.resolve(any())).thenReturn(
+                    Optional.of(new WriteVersionResolver.ResolvedWrite(2, 0L)));
+            org.mockito.ArgumentCaptor<LineageMaterializationDecision> captor =
+                    org.mockito.ArgumentCaptor.forClass(LineageMaterializationDecision.class);
+            when(decisions.createDecisionIfAbsent(captor.capture()))
+                    .thenAnswer(i -> i.getArgument(0));
+            when(v2reads.findV2ByRecordId(anyString())).thenReturn(null);
+
+            tinyMat.materialize(payload, factFile);
+
+            LineageMaterializationDecision decided = captor.getValue();
+            assertEquals(1, decided.planEntries().size(), "the WHOLE fact is one terminal row");
+            assertEquals(LineagePublishStatus.UNRESOLVED,
+                    decided.creationClassification().get("atlas").status());
+            assertEquals("OVERSIZE",
+                    decided.creationClassification().get("atlas").reason().reason());
+            assertEquals(1000L, decided.creationClassification().get("atlas").reason().atMs(),
+                    "the classification's atMs is frozen with the decision, not a fresh clock");
+            assertTrue(decided.creationClassification().get("atlas").reason().detail()
+                    .contains("endpointRecordHash="), "the audit evidence rides along");
+        }
+
+        /** F2: a historical multi-entry V2 decision still materializes entry by entry. */
+        @Test
+        public void aLegacyMultiEntryV2DecisionStillMaterializes() {
+            LineageEventV2 event = LineageSpoolMaterializer.v2EventOf(payload, EVENT_ID);
+            // Two entries at the same identity: the pre-chunking shape this slice must not
+            // narrow (each entry reconstructed the WHOLE fact).
+            LineageMaterializationDecision legacy = LineageMaterializationDecision.of(
+                    payload.spoolRecordId(), payload.payloadDigest(), 2, 0L, EVENT_ID,
+                    List.of(new V2Entry(0, event.deliveryId(),
+                                    event.creationPayloadDigest()),
+                            new V2Entry(0, event.deliveryId(),
+                                    event.creationPayloadDigest())), 1000L);
+            when(decisions.readDecision(payload.spoolRecordId())).thenReturn(legacy);
+            when(v2reads.findV2ByRecordId(anyString())).thenReturn(storedRow());
+
+            assertEquals(LineageSpoolMaterializer.Outcome.ACKED,
+                    materializer.materialize(payload, factFile).outcome(),
+                    "V2 decisions keep working exactly as they did");
+            verify(journal, org.mockito.Mockito.times(2)).appendV2(any());
         }
 
         @Test
@@ -414,9 +537,10 @@ public class LineageMaterializationTest {
         public void mapperDriftAgainstTheFrozenPlanWritesNothing() {
             // A decision whose entry digest disagrees with today's reconstruction.
             LineageEventV2 event = LineageSpoolMaterializer.v2EventOf(payload, EVENT_ID);
-            LineageMaterializationDecision drifted = LineageMaterializationDecision.of(
-                    payload.spoolRecordId(), payload.payloadDigest(), 2, 0L, EVENT_ID,
-                    List.of(new V2Entry(0, event.deliveryId(), "f".repeat(64))), 1000L);
+            LineageMaterializationDecision drifted = LineageMaterializationDecision.ofV3(
+                    payload.spoolRecordId(), payload.payloadDigest(), 0L, EVENT_ID,
+                    List.of(new V2Entry(0, event.deliveryId(), "f".repeat(64))), 1000L,
+                    LineageChunkPlanner.PARTITION_VERSION, DEFAULT_LIMITS, Map.of());
             when(decisions.readDecision(payload.spoolRecordId())).thenReturn(drifted);
 
             assertEquals(LineageSpoolMaterializer.Outcome.FAILED,
@@ -427,10 +551,11 @@ public class LineageMaterializationTest {
         @Test
         public void aDecisionBoundToADifferentFactIsRefused() {
             LineageEventV2 event = LineageSpoolMaterializer.v2EventOf(payload, EVENT_ID);
-            LineageMaterializationDecision other = LineageMaterializationDecision.of(
-                    payload.spoolRecordId(), "f".repeat(64), 2, 0L, EVENT_ID,
+            LineageMaterializationDecision other = LineageMaterializationDecision.ofV3(
+                    payload.spoolRecordId(), "f".repeat(64), 0L, EVENT_ID,
                     List.of(new V2Entry(0, event.deliveryId(),
-                            event.creationPayloadDigest())), 1000L);
+                            event.creationPayloadDigest())), 1000L,
+                    LineageChunkPlanner.PARTITION_VERSION, DEFAULT_LIMITS, Map.of());
             when(decisions.readDecision(payload.spoolRecordId())).thenReturn(other);
             assertEquals(LineageSpoolMaterializer.Outcome.FAILED,
                     materializer.materialize(payload, factFile).outcome());
