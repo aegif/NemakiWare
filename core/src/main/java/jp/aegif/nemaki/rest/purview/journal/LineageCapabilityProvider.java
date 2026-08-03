@@ -29,7 +29,15 @@ import org.springframework.stereotype.Component;
  * {@code sequencer:event-first} (fenced sequencer + safe v2 projection routing, D-rest-1/2),
  * {@code cursor:cas} (the production v2 walk advances only through the monotonic CAS,
  * D-rest-2), {@code replay:generation-cas} (request machine + crash recovery, D-rest-3),
- * {@code spool:v2} (convergent materializer + verified bound ACK, D-rest-4).
+ * {@code spool:v2} (convergent materializer + verified bound ACK, D-rest-4). {@code read:v2}
+ * (decode a v2 event and hand it to the projector) has been true since A-2 Slice 2's final
+ * commit and belongs in the same set — §6-a's capability table lists it as required, and a
+ * provider that omits it cannot satisfy a barrier that demands it (v2.3.23).
+ *
+ * <p><b>Wired is not ready.</b> This set is a STATIC fact about the binary; whether the
+ * machinery actually runs on this node is {@link LineageDrestReadiness}. §6-a's barrier
+ * requires BOTH, so that an ACTIVE flip cannot open v2 writes while the sequencer and
+ * projector sit dormant behind a red gate.
  *
  * <p>{@code active} is the runtime gate ({@link LineageDrestReadiness}), surfaced beside the
  * wired set on the admin status route. EXPOSURE of these capabilities into the §6-a rollout
@@ -39,7 +47,8 @@ import org.springframework.stereotype.Component;
 public class LineageCapabilityProvider {
 
     private static final Set<String> WIRED = Set.of(
-            "sequencer:event-first", "cursor:cas", "replay:generation-cas", "spool:v2");
+            "read:v2", "sequencer:event-first", "cursor:cas", "replay:generation-cas",
+            "spool:v2");
 
     /** The immutable wired-capability set of this binary. */
     public Set<String> wiredCapabilities() {

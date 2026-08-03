@@ -1,7 +1,41 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.22 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: §2 の属性別上限 (producer 側)・Slice 4 (§6-a 再 sign-off 待ち)・4a/4b**
+status: **v2.3.23 — increment A sign-off 済み・**§6-a 再 sign-off 承認済み (2026-08-03)**。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: §2 の属性別上限 (producer 側)・**Slice 4a (着手可)**・4b (運用受入条件待ち)**
 revision:
+- v2.3.23 — **§6-a の sign-off レビュー対応** (Codex: NO-GO → 指摘 Critical 2 + High 2 を反映)。
+  §6-a は D-rest / chunking が着地する前に書かれており、実装に追い越されていた:
+  ① **capability と readiness を両方要求する** — capability は「このバイナリに配線がある」
+  という静的事実、readiness は「今この node で実際に動く」という動的事実。旧稿は前者しか
+  見ておらず、**v2 書込みを開いたのに sequencer/projector が dormant** という状態が作れた。
+  ACK に `drestReady` / `drestViolations` を追加し、CAS 条件 10 として要求 (ACK 受理時と
+  `ACTIVE` CAS 時の**両方**で新鮮な評価)。`requiredCapabilities` は server-defined で
+  弱められない (文書側で足すことはできる)。実装の capability 定数に **`read:v2` を追加**
+  (§6-a の表は要求しているのに provider が持っていなかった)。
+  ② **`spoolSchemaVersions が 2 を含む` は充足不能だった** — spool record の版は 1 だけで
+  codec は他を拒否する。2 を要求すべきは「fact から materialize できる **event** の版」なので
+  `materializeEventSchemaVersions` へ改名し、record 側は `spoolRecordSchemaVersions` として
+  別に報告する。4a に spool schema 2 を捏造させない。
+  ③ **v3.3 の規範形 = 単一 AP 状態機械を完全化** — multi-node の 11 条件と「単一 AP なので
+  membership 推測も再提示も要らない」が並存して矛盾していた。v3.3 が実装する条件集合
+  (1・3〜11、2 は適用外) と、**永続化契約を全て凍結** (barrier 文書は `nemaki_lineage` の
+  `lineage_write_version` 1 件・`_rev` CAS・nodeId/bootId/binaryDigest の定義・
+  membership digest は LineageCanonicalHash で JSON 文字列を hash しない・時刻は epoch
+  millis・ACK TTL 300s)。決定的テスト #2 は将来 multi-node 側へ移す。
+  ④ **決定 schema と 4a テスト表を chunking に同期** — 単一 `deliveryId` / `eventDigest` は
+  撤回 (1 fact は K 行になり得る)。schema を実装形 (allocatedEventId / planDigestVersion /
+  partitionVersion / chunkLimits / creationClassification / planEntries 列) に更新し、
+  手順 3〜5 を「凍結 limits で再分割 → entry ごとに事前照合 → K 行 → **全 entry 再読検証後に**
+  ACK」へ。テスト #8/#10/#11 の「1 件だけ」を「K 件ちょうど」に、#9b (K-1 行でクラッシュ) を
+  追加、#4 を書き換え (活性化した新 reader は v2 を**意図して** claim する — 正しい不変条件は
+  「v1 専用 6 view が v2 行を emit しない」)、#13b は実装の無い endpoint/metric を指していたので
+  4a の完了条件から除外、readiness 否定テスト #18/#19 を追加。
+  ⑤ **rollback の意味を明記** — `writeSchemaVersion` を 1 へ戻すのは「新しい ORIGINAL fact を
+  どの版で材料化するか」だけを変える。凍結済み V3 決定の材料化と v2 replay は続くので
+  「以後 v2 行は 1 件も作られない」保証ではない。
+  ⑥ **E-19 / E-20 を実測して記録** (2026-08-03、Apache Atlas 2.3.0 OSS ローカル): 両方 PASS。
+  E-20 は「同一 guid のまま `cloudFileUrl` が null になり token が残らない」ので、Atlas OSS
+  では purge / 再作成 runbook は**不要**。Purview は別 backend なので再実測が要る。
+  再実行可能な gate として `PurviewLiveAtlasSecretsIT` + 専用 CI job (skip 不能) を追加。
 - v2.3.22 — **chunking 実装** (fact→v2 写像内)。Codex 計画レビュー 5 巡 (revise×4 →
   proceed) の確定事項:
   ① **分割は正準順序** — MANY 側を `LineageCanonicalHash.canonicalQualifiedNames` 順
@@ -1301,12 +1335,18 @@ _id: lineage_write_version
   approvedBinaryDigests      : [ ... ]   // 空なら digest 検査を課さない
   acks:
     {nodeId}:
+      generation             : この ACK が答えた barrier generation (v2.3.23)。世代が上がれば
+                             //   古い ACK は条件 3〜11 で無効 — 「世代を上げれば無効」と
+                             //   本文が言うのに ACK が世代を持たなければ効かない
       bootId                 : この boot の識別子。再起動で変わる
       binaryDigest           : 動作中バイナリの識別子
       capabilities           : [ ... ]   // この binary が実際に持つ能力
       readSchemaVersions     : [1, 2]
-      spoolSchemaVersions    : [1, 2]   // spool record を materialize できる版
+      spoolRecordSchemaVersions  : [1]      // 読み書きできる spool RECORD の版 (実装は 1 のみ)
+      materializeEventSchemaVersions : [1, 2] // spool fact から材料化できる EVENT の版
       spoolReady             : true     // 永続 volume + write + fsync 検証済み
+      drestReady             : true     // ACK 時点の LineageDrestReadiness.ready (v2.3.23)
+      drestViolations        : [ ... ]  // 上が false のときの違反列挙 (診断用)
       ackedAt / expiresAt    : 鮮度。期限切れ ACK は無効
   writeSchemaVersion         : 1 | 2
   minReaderSchemaVersion     : 1 | 2    // 単調増加のみ
@@ -1330,7 +1370,11 @@ capability を明示的な語彙にして、ACK と barrier の両方に持た�
 | `cursor:cas` | 8-c (単調 CAS。publish 永続化を確認してから前進) | D-rest |
 | `replay:generation-cas` | 8-d (replay generation の CAS 状態機械) | D-rest |
 
-`requiredCapabilities` は barrier 文書側に置く。**ACK 側の宣言だけを信じる形にしない**ため、
+`requiredCapabilities` は barrier 文書側に置く。**server-defined かつ弱められない** (v2.3.23):
+必須集合 {`read:v2`, `sequencer:event-first`, `cursor:cas`, `replay:generation-cas`,
+`spool:v2`} はバイナリ側の定数であり、barrier 文書がそれより**狭い**集合を宣言していても
+CAS は定数側で検査する — 文書を書き換えて gate を緩められる形にしない。文書側で
+**足す**ことはできる。**ACK 側の宣言だけを信じる形にしない**ため、
 運用が承認したビルドの `binaryDigest` を `approvedBinaryDigests` に列挙できる
 (空なら課さない。単一 AP 運用では digest を 1 つ書くだけで足りる)。
 
@@ -1338,17 +1382,29 @@ capability を明示的な語彙にして、ACK と barrier の両方に持た�
 
 1. `state == PREPARING` かつ `generation` が要求と一致
 2. 要求が再提示した `expectedMembershipRevision` と `expectedMembershipDigest` が文書と一致
-3. `expectedNodes` の**全 node**に ACK がある
+3. `expectedNodes` の**全 node**に ACK があり、各 ACK の `generation` が文書の `generation`
+   と**一致する** (v2.3.23)
 4. 各 ACK の `nodeId` / `bootId` が `expectedNodes` の値と一致
 5. 各 ACK が**未期限切れ**
 6. 各 ACK の `readSchemaVersions` が 2 を含む
-7. 各 ACK の `spoolReady == true` かつ `spoolSchemaVersions` が 2 を含む
+7. 各 ACK の `spoolReady == true` かつ **`materializeEventSchemaVersions` が 2 を含む**
+   (v2.3.23 訂正: 旧文の「`spoolSchemaVersions` が 2 を含む」は**実装に対して充足不能**だった —
+   spool record の版は 1 だけで、codec は他の値を拒否する。2 を要求すべきは「fact から
+   materialize できる **event** の版」であって record の版ではない。record 側は
+   `spoolRecordSchemaVersions` として別に報告する)
 8. 各 ACK の `capabilities` が `requiredCapabilities` を**包含**する
 9. `approvedBinaryDigests` が空でないなら、各 ACK の `binaryDigest` がそこに**含まれる**
-10. **同じ書込みで** `writeSchemaVersion = 2` と `minReaderSchemaVersion = 2` を設定
+10. **各 ACK の `drestReady == true`** (v2.3.23 追加)。capability は「このバイナリに配線がある」
+    という**静的事実**であり、readiness は「今この node で実際に動く」という**動的事実**である。
+    両方を要求しないと、`ACTIVE` が v2 書込みを開くのに sequencer/projector が dormant のまま —
+    という状態が作れてしまう (`lineage.drest.enabled` が false・view 署名 drift・検証不能 sink・
+    spool probe 失敗のいずれでも起きる)。ACK 受理時と `ACTIVE` CAS 時の**両方**で新鮮な
+    readiness を要求し、違反ごとに決定的な否定テストを置く。
+11. **同じ書込みで** `writeSchemaVersion = 2` と `minReaderSchemaVersion = 2` を設定
 
-10 が同一 CAS に入ることで、`writeSchemaVersion=2` だが `minReaderSchemaVersion=1` という状態は
-**存在し得なくなる**。8 と 9 が入ることで、D-rest を持たないビルドでは 4b が通らない。
+11 が同一 CAS に入ることで、`writeSchemaVersion=2` だが `minReaderSchemaVersion=1` という状態は
+**存在し得なくなる**。8 と 9 が入ることで D-rest を持たないビルドでは 4b が通らず、10 が入ることで
+**配線はあるが動いていない**ビルドでも通らない。
 
 `generation` が変われば過去の ACK は無効 — ACK は `(nodeId, bootId, generation)` に紐づく。
 
@@ -1383,6 +1439,48 @@ control-plane が保証する形である。NemakiWare は現時点でその連�
 | 5 | 新版のみで scale-out する |
 
 membership の推測も再提示も要らず、旧バイナリが存在しないことは手順 1 で担保される。
+
+#### rollback と再活性化の状態機械 (v2.3.23)
+
+`writeSchemaVersion` が `1 ⇄ 2` であることだけ書いて、2 への経路が `PREPARING → ACTIVE`
+しか定義されていなかった。往復を完全に定義する:
+
+| 遷移 | 条件 | 効果 |
+|---|---|---|
+| `ACTIVE` → `ACTIVE` (rollback) | 管理操作。**条件検査なし** (安全側への移動なので緩める) | `writeSchemaVersion = 1`。`minReaderSchemaVersion` は 2 のまま (単調)。`generation` と `acks` は**そのまま** — rollback 自体は「今の構成のまま書込みだけ v1 に戻す」操作であり、ACK を捨てる必要が無い。ACK を捨てるのは**再活性化の入口** (次行) であって rollback ではない |
+| `ACTIVE` → `PREPARING` (再活性化の開始) | 管理操作。`writeSchemaVersion == 1` であること | `generation` を **+1** し、**同じ書込みで `acks` を空にする**。ACK 側も `generation` を持つので条件 3 が二重に効く (世代不一致 + 不在)。再活性化は**新しい ACK を集め直すことを意図している** — 「一度 ACTIVE にした構成」を根拠に無検査で戻せてはならず、その間に readiness が赤化している可能性もあるため |
+| `PREPARING` → `ACTIVE` | 条件 1・3〜11 (単一 AP では 2 は適用外) | `writeSchemaVersion = 2` と `minReaderSchemaVersion = 2` を同一書込みで設定 |
+
+決定的テスト (4a 完了条件に追加): **#20** rollback 後に `PREPARING` を経ずに
+`writeSchemaVersion` を 2 へ戻す要求は CAS が拒否する。**#21** 再活性化の `PREPARING` は
+generation を上げ、旧 generation の ACK では `ACTIVE` に到達できない。
+
+#### v3.3 の規範形 = 単一 AP 状態機械 (v2.3.23 で完全化)
+
+前段の 11 条件は multi-node barrier の完全形で、`expectedNodes` / membership digest /
+revision 再提示を要求する。**これは v3.3 では実装しない** — control-plane 連携が無く、
+規範 rollout が単一 AP だからである。両方を並べたまま「仕様どおり実装せよ」と言うと矛盾
+するので、ここで v3.3 が実装する形を固定する:
+
+| | v3.3 (規範・実装対象) | 将来 multi-node (**保証しない**) |
+|---|---|---|
+| membership | **推測しない**。`expectedNodes` は自 node 1 件、`bootId` は自プロセスの boot id | control-plane の revision を再提示 |
+| CAS 条件 | 1・3〜11 を自 node の ACK に対して適用 (2 は**適用外**) | 全条件 |
+| 決定的テスト #2 (確認後・CAS 前の membership 変更) | **v3.3 の完了条件から外す** — 単一 AP に membership 変更は無い | 将来 protocol の条件 |
+
+**永続化契約** (CAS テストが決定的であるために全て凍結する):
+
+| 項目 | 固定値 |
+|---|---|
+| barrier 文書の所在 | `nemaki_lineage` DB (journal と同一 — 追加 DB を作らない)、`_id = lineage_write_version`。1 文書のみ |
+| CAS 手段 | CouchDB `_rev` (journal と同じ strict IO: 404/409/障害を三分類) |
+| `nodeId` | node 固有かつ**再起動をまたいで不変**。単一 AP では `lineage.node.id` (未設定なら barrier 作成時に採番して同 DB に保存) |
+| `bootId` | プロセス起動ごとの UUID v4。再起動で必ず変わる |
+| `binaryDigest` | WAR の `WEB-INF/lib` を含む配布物の SHA-256 を hex 小文字。起動時に 1 度計算 |
+| `expectedMembershipDigest` | `LineageCanonicalHash.hash("BARRIER_MEMBERSHIP_V1", LIST[ MAP{nodeId, bootId} ])`。LIST は `nodeId` の unsigned UTF-8 昇順。**JSON 文字列を hash しない** |
+| 時刻 | `ackedAt` / `expiresAt` は **epoch millis** (v2 の他の可変 field と同じ)。ISO 文字列は使わない |
+| ACK の TTL | 既定 300000 ms。期限切れは条件 5 で無効 |
+| `drestReady` | ACK 生成時に `LineageDrestReadiness.evaluate()` を呼んだ結果。`ACTIVE` CAS は**再評価**して再確認する (ACK 記録時から gate が赤化していないこと) |
 
 **オンライン多重 AP barrier は「将来設計・v3.3 では非保証」**と明記する。§6-a の barrier 文書と
 二段階 ACK はその将来設計として残すが、control-plane 連携が実装されるまで
@@ -1576,16 +1674,27 @@ chunk ごとの決定 / delivery record は plan から決定的に導出する�
 **全 chunk の永続化後**にのみ書く。v1 材料化 (chunk しない) は plan が単一 entry に退化する。
 
 ```
-_id: lineage_materialization:{spoolRecordId}
-  spoolRecordId / repositoryId
+_id: lineage_materialization:{spoolRecordId}          // v2.3.23: 実装形に同期
+  spoolRecordId
   factPayloadDigest          // 決定の根拠になった fact の payloadDigest
-  materializeSchemaVersion   // ここで決めた版
-  materializationPlanDigest  // 版確定後に決定的に導出した chunk 群 (deliveryId・eventDigest の列) の digest (v2.3.17 ⑦)
-  presetV1EventId            // 版=1 かつ fact に preset が無いとき、ここで一度だけ採番 (scanner 再試行ごとの UUID 生成は禁止 — v2.3.17 ①)
+  materializeSchemaVersion   // ここで決めた版 (1 | 2)
   barrierGeneration          // 決めた時点の barrier generation
-  deliveryId                 // 決めた版で計算した値
-  eventDigest                // 作る event の creationPayloadDigest
-  decidedAt / decidedBy      : { nodeId, bootId }
+  allocatedEventId           // 監査 eventId を**一度だけ**採番 (v1 は fact の presetEventId が
+                             //   あればそれ)。旧稿の presetV1EventId を一般化した名前 —
+                             //   v2 側にも同じ「一度だけ」規則が要る (v2.3.21)
+  planDigestVersion          // 2 | 3。3 = chunk-aware (v2.3.22)
+  partitionVersion           // 3 のとき必須。分割アルゴリズムの同一性
+  chunkLimits                // 3 のとき必須。MAP{maxEndpointsPerEvent, maxPayloadBytes}
+  creationClassification     // MAP{target -> MAP{status, reason}}。OVERSIZE などの生成時終端
+  planEntries                // **列**。v2: MAP{chunkIndex, deliveryId, eventDigest}、
+                             //   v1: MAP{schemaVersion:1, eventId, v1EventDigest}
+  materializationPlanDigest  // 上記全部を束縛する digest (V3 domain)
+  createdAtMs
+```
+
+**単一の `deliveryId` / `eventDigest` は撤回した (v2.3.23)**。1 fact は K 個の journal 行に
+なり得るので (chunking)、決定が固定するのは**列**である。旧稿の 2 field は chunk が 1 個の
+場合だけ成立する形だった。
 ```
 
 ```
@@ -1596,13 +1705,18 @@ _id: lineage_materialization:{spoolRecordId}
      201 → 自分の決定が採用された
      409 → **既存文書を読み、その決定に従う** (自分の決定は捨てる)
            factPayloadDigest が自分の fact と違えば quarantine (同一 ID・別内容)
-3. 決定の materializeSchemaVersion で event を組み立て、その deliveryId と
-   creationPayloadDigest が**決定文書の値と一致すること**を書込み前に確認する
-     不一致 → 書かない。integrity 例外 + lineage.materialization.divergence
-4. 決定の deliveryId を _id にして journal へ create-if-absent
-     409 は既存文書の creationPayloadDigest が**決定文書の eventDigest と完全一致**した
+3. 決定の materializeSchemaVersion と **凍結された chunkLimits** で分割を再導出し、
+   **各 plan entry i** について slice i を組み立て、その (deliveryId, creationPayloadDigest)
+   が**その entry の値と一致すること**を書込み前に確認する (v2.3.23)
+     entry 数の不一致・値の不一致 → **1 行も書かない**。integrity 例外 +
+     lineage.materialization.divergence
+4. **各 entry の** deliveryId を _id にして journal へ create-if-absent (K 行)
+     409 は既存文書の creationPayloadDigest が**その entry の eventDigest と完全一致**した
      ときだけ成功扱い。不一致は integrity 例外 (§3)
-5. 成功後に fact の ACK を書く (fsync + atomic rename)
+     creationClassification がある場合は status + reason を同一文書に原子的に書き、
+     409 収束もその一致を要求する
+5. **全 entry の行を再読して digest (と v2 の allocatedEventId) を再検証**してから、
+   fact の ACK を書く (write-temp → fsync → hard link → dir fsync)
 6. 再起動時も 1 から実行してよい。2 の 409 が必ず同じ決定へ戻す
 ```
 
@@ -1688,9 +1802,14 @@ v2.3.11 が「決定的 `_id` が最終境界」とだけ書けたのは、**全
 spool 側からは見えない** — fact ごと失われていれば、走査する対象そのものが無いからである。
 これは決定文書の側から照合する:
 
+**この節は将来仕様である (v2.3.23)。** 下の endpoint も `lineage.materialization.orphaned` も
+実装が無く、決定的テスト #13b は 4a の完了条件から外してある。**規範として読まないこと** —
+検出手段を持たない規則を「唯一の経路」と書いたままにすると、無い機能を根拠に活性化を
+承認しかねない。実装は増分 E の運用面と合わせて設計する。
+
 ```
-GET  /api/v1/admin/lineage-journal/materializations/{repositoryId}?unresolved=true
-  → 決定文書のうち deliveryId の event が journal に存在しないものを列挙する
+(将来) GET /api/v1/admin/lineage-journal/materializations/{repositoryId}?unresolved=true
+  → 決定文書のうち plan entry の event が journal に存在しないものを列挙する
 ```
 
 | 見つかったもの | 意味 | 対応 |
@@ -1698,8 +1817,9 @@ GET  /api/v1/admin/lineage-journal/materializations/{repositoryId}?unresolved=tr
 | 対応する fact がまだ spool にある | materialize 未完。scanner が次周で終わらせる | 放置してよい |
 | fact がどこにも無い | **payload が失われている**。event は作れない | `lineage.materialization.orphaned` を上げ alert。他 node の volume / bundle から fact を回収する |
 
-これが「fact を ACK 前に消してはならない」という順序規則を**検出可能にする**唯一の経路である。
-規則だけ書いて検出手段を書かなければ、破れても誰も気づかない。
+これが実装されれば「fact を ACK 前に消してはならない」という順序規則が**検出可能**になる。
+**現時点では検出手段が無い** (v2.3.23) ので、順序規則は materializer の実装 (全 entry 再読
+検証の後にのみ ACK) が守っており、破れた場合の事後検出は将来仕事である。
 
 **残余**: fact の spool 書込みにも失敗した場合、その lineage は失われる。§9 の repair は
 「journal か spool に記録がある」ことを前提とするので、**repair で回収できるとは言えない**。
@@ -1751,45 +1871,66 @@ D-rest が直すのは、設計上すでに確認済みの**採番欠落・二�
 | # | 系列 | 期待 |
 |---|---|---|
 | 1 | capability を一切登録しない legacy node が `expectedNodes` に居る | `ACTIVE` CAS が失敗し、ACK 欠落の nodeId を返す |
-| 2 | ACK 収集後・`ACTIVE` CAS 前に membership が変わる | 再提示された `expectedMembershipRevision` が不一致で CAS 失敗 |
+| 2 | ACK 収集後・`ACTIVE` CAS 前に membership が変わる | 再提示された `expectedMembershipRevision` が不一致で CAS 失敗。**v3.3 の完了条件から除外** (v2.3.23) — 規範形は単一 AP で membership 変更が存在しない。将来の multi-node protocol の条件として保持する |
 | 3 | 古い `generation` の ACK が残っている | 新 generation では無効 |
 | 3b | 同じ `nodeId` が再起動し `bootId` が変わった | 旧 `bootId` の ACK は無効 |
 | 3c | ACK が `expiresAt` を過ぎている | 無効 |
-| 4 | stale な旧 leader 相当が v2 view を読む | 新 reader では claim も cursor 前進も起きない。**旧バイナリの保証ではない**とテスト名に明記 |
-| 5 | `writeSchemaVersion` を 1 へ戻す | `minReaderSchemaVersion` は 2 のまま |
+| 4 | v1 専用 view が v2 行を露出しない | **v2.3.23 で書き換え**: 旧文「stale な旧 leader 相当が v2 view を読んでも claim も cursor 前進も起きない」は実装に矛盾する — 活性化した新 reader は v2 を**意図して** claim し cursor を進める。正しい不変条件は「v1 機構が読む 6 view が v2 行を 1 件も emit しない」で、`LineageJournalViewCoverageTest` が既に固定している (旧バイナリはその view 名しか照会しないので、これが旧バイナリに対する唯一の実効的保証でもある) |
+| 5 | `writeSchemaVersion` を 1 へ戻す | `minReaderSchemaVersion` は 2 のまま。**rollback が変えるのは「新しい ORIGINAL fact をどの版で材料化するか」だけ** (v2.3.23) — 既に凍結された V3 決定はその版で材料化を完了し、v2 行への replay も動き続ける。「以後 v2 行は 1 件も作られない」という保証ではない |
+| 5c | rollback 後にもう一度 v2 へ上げる | **`PREPARING` からやり直す** (下記の状態機械)。`ACTIVE` から直接 `writeSchemaVersion` を 2 へは戻せない |
 | 5b | `ACTIVE` CAS 後の任意の瞬間 | `writeSchemaVersion=2 && minReaderSchemaVersion=1` が観測されない |
 | 6 | `minReaderSchemaVersion == 2` の状態で新バイナリを `readSchemaVersions=[1]` で起動する | lineage subsystem が起動時に fail-closed。**spool の走査結果には依存しない** |
 | 6b | `minReaderSchemaVersion` を 2 → 1 へ落とす要求 | CAS が拒否する (単調増加) |
 | 7 | flag 読取不能 | event ではなく **fact** を spool。scanner が復旧後に materialize し、そこで `deliveryId` を計算 |
 | 7b | fact spool 書込みも失敗 | `lineage.emit.dropped{reason=flag_unreadable_and_spool_failed}` が上がる。repair 可能とは主張しない |
-| 8 | 同一 fact を 2 つの scanner が並行処理 | 決定文書が **1 つだけ**作られ、journal event も **1 件だけ**。敗者は勝者の版を採用する |
-| 8b | 2 つの scanner が **別々の `writeSchemaVersion`** を読んだ状態で並行処理 | 決定文書の create-if-absent が排他になり、**両者が同じ版・同じ `deliveryId`** を使う |
-| 9 | journal 成功後・ACK 前にクラッシュ | 再起動後、決定文書 → 409 + digest 一致で収束。重複しない |
-| 10 | 決定文書の作成後・journal 作成前にクラッシュ | 再起動後に event が作られる (決定文書は「作った」と主張しない) |
-| 11 | materialize 中に write-version が切り替わる | 決定文書に固定した schema version と `deliveryId` が**変わらない** |
+| 8 | 同一 fact を 2 つの scanner が並行処理 | 決定文書が **1 つだけ**作られ、journal 行は**その決定の plan entry と同数 (K 件) ちょうど**。敗者は勝者の決定 (版・割当・plan) を採用する (v2.3.23: 「1 件だけ」は chunk が 1 個の場合の特殊形だった) |
+| 8b | 2 つの scanner が **別々の `writeSchemaVersion`** を読んだ状態で並行処理 | 決定文書の create-if-absent が排他になり、**両者が同じ版・同じ plan (同じ deliveryId 列)** を使う |
+| 9 | journal 成功後・ACK 前にクラッシュ | 再起動後、決定文書 → 409 + digest 一致で**全 entry が**収束。重複しない |
+| 9b | K 行のうち K-1 行だけ書けた状態でクラッシュ (v2.3.23) | ACK は書かれておらず、次の pass が残り 1 行を作って**全 entry 再読検証の後**に ACK する |
+| 10 | 決定文書の作成後・journal 作成前にクラッシュ | 再起動後に**全 entry の** event が作られる (決定文書は「作った」と主張しない) |
+| 11 | materialize 中に write-version が切り替わる | 決定文書に固定した schema version・**chunkLimits**・plan (deliveryId 列) が**変わらない** (v2.3.23: 限界値も凍結対象。live config を読むと再分割が起きて fact が詰まる) |
 | 12 | 同一 `spoolRecordId` で fact の内容が違う | 上書きせず quarantine。metric が上がる |
 | 12b | 決定文書の `factPayloadDigest` と手元の fact が不一致 | materialize せず quarantine |
 | 13 | bundle 経由で別 node へ複製された fact | 同一の決定文書を読み、同一 delivery へ収束する |
-| 13b | ACK 前に fact を消す | `materializations?unresolved=true` が拾い、`lineage.materialization.orphaned` が上がる |
+| 13b | ACK 前に fact を消す | ~~`materializations?unresolved=true` が拾い、`lineage.materialization.orphaned` が上がる~~ → **v3.3 の完了条件から除外 (v2.3.23)**: この admin endpoint も metric も実装が無く、fact が消えた時点で決定文書だけが残る (journal 行は既に durable で、ACK は fact に紐づくので書けない)。孤児決定の列挙は増分 E の運用面と合わせて設計する |
 | 13c | 壊れた / 改竄された fact を投入する | 手順 1 の自己照合で弾かれ、**決定文書が作られない** |
 | 13d | 決定の作成後、fact → event の写像が変わったバイナリで materialize する | 手順 3 で `eventDigest` 不一致を検出し、**journal へ書かない** |
 | 14 | `requiredCapabilities` を満たさない ACK (D-rest 未配布) で 4b を要求 | `ACTIVE` CAS が拒否し、不足 capability を返す |
 | 14b | `approvedBinaryDigests` に無い `binaryDigest` の ACK | 同上 |
 | 15 | scale-to-one 切替 | 旧 AP が 1 台も存在しないことを**運用受入条件**として確認する (アプリでは検証できない) |
 | 16 | 同一入力から `build()` を 2 回呼ぶ | `eventId` 以外が完全に一致し、`creationPayloadDigest` と `spoolRecordId` が同値 (§3 の `occurredAt` 純関数契約) |
+| 18 | `drestReady == false` の ACK で `ACTIVE` を要求する (v2.3.23) | 各 readiness 違反 (switch off / config 域外 / view 署名 drift / 検証不能 sink / spool probe 失敗) ごとに CAS が失敗し、違反を返す |
+| 19 | ACK 記録時は green、`ACTIVE` CAS 直前に gate が赤化 (v2.3.23) | CAS 時の**再評価**で失敗する — ACK の記録値だけを信じない |
 | 17 | `spoolRecordId` / `payloadDigest` の golden vector | Java と `reference_hash.py` が一致する (A-1 と同じ CI ジョブ)。**達成 (v2.3.17)** — fixture に 4 vector を凍結、双方 25 vector 一致 |
 
-### この節が閉じるまで Slice 4 は着手しない
+### §6-a 再 sign-off: **承認済み (2026-08-03, v2.3.23)**
+
+Codex による GO/NO-GO レビュー 4 巡 (NO-GO×3 → **sign-off**) を経て承認。指摘は全て
+「§6-a が D-rest / chunking の着地に追い越されていた」箇所で、v2.3.23 で解消済み:
+capability と readiness の二重要求 (+ `read:v2`)・充足不能だった `spoolSchemaVersions` の
+分離・単一 AP 状態機械と永続化契約の凍結・決定 schema と 4a テスト表の chunking 同期・
+rollback / 再活性化の完全な状態機械 (ACK の generation と `acks` の消去)。
+
+**したがって Slice 4a に着手してよい。** Slice 4b (activation) は引き続き E-19/E-20
+(実測済み・PASS) に加えて運用受入条件 (scale-to-one の確認・spool の at-rest 暗号化・
+cursor 残渣・`approvedBinaryDigests` の決定) を要する。
+
+### この節が閉じるまで Slice 4 は着手しない (履歴 — 上記で閉じた)
 
 Slice 1〜3 (additive、production writer は v1 のまま) は本節と独立に進められる。
 
 **Slice 4b (activation) の追加 gate — 秘密面 (v2.3.14)。** 並行レビュー (2026-08-01) の指摘を
 受け、次を 4b の前提に含める:
 
-| gate | 内容 |
-|---|---|
-| E-19 | live Atlas で、token 付き URL を持つ document を sync し、**backend が保存した実体**に token が無いことを確認する (§10 の表の定義どおり) |
-| E-20 | A-1g 以前の raw URL 入り entity が republish で消えるかを実測する。**消えなければ purge / entity 再作成の runbook を release 手順に追加してから** activate する |
+| gate | 内容 | 実測 (2026-08-03) |
+|---|---|---|
+| E-19 | live Atlas で、token 付き URL を持つ document を sync し、**backend が保存した実体**に token が無いことを確認する (§10 の表の定義どおり) | **PASS** — Apache Atlas 2.3.0 (OSS, ローカル docker)。実 `PurviewEntityPayloadFactory` が組んだ entity を publish し、`entity/uniqueAttribute` で読み戻した**保存実体の全文**に `?authkey=` 型・`/:x:/g/…` 型のどちらの token も無い |
+| E-20 | A-1g 以前の raw URL 入り entity が republish で消えるかを実測する。**消えなければ purge / entity 再作成の runbook を release 手順に追加してから** activate する | **PASS (消える)** — 同一 qualifiedName に raw URL 入り entity を作成 → 今日の factory (`cloudFileUrl: null`) で republish → **同一 guid のまま `cloudFileUrl` が null になり token は実体のどこにも残らない**。したがって Atlas OSS では purge / 再作成 runbook は不要。**Purview は別 backend であり、Purview へ activate する場合は再実測が必要** (設計が「Atlas OSS と Purview で異なる」と述べているとおり) |
+
+再実行可能な gate として `PurviewLiveAtlasSecretsIT` に実装済み (env-gated:
+`NEMAKI_ATLAS_IT_URL` / `NEMAKI_ATLAS_IT_USER` / `NEMAKI_ATLAS_IT_PASSWORD`、CI では
+`-Datlas.it.required=true` で skip 不能)。E-19 は「期待した属性が null か」ではなく
+**保存実体の全文に token が現れないこと**を検査する (思いつかなかった属性こそ gate の目的)。
 | cursor 残渣 | `cloud-metadata-snapshot` cursor が URL-free 形式であること (旧形式は成功 sync 1 周期で scrub される。sync が回らない repository は admin API 側で sanitize 済みだが、保存値の確認を運用受入に含める) |
 
 ## 7. cross-repository 方針
