@@ -42,11 +42,107 @@ public class JournaledLineageEmitter implements LineageEmitter {
 
     private final LineageJournalStore store;
     private final LineageConfig config;
+    private final LineageBarrierReader barrierReader;
+    private final LineageSpoolMachinery spoolMachinery;
+    private final LineageMetrics metrics;
     private final AtomicLong failureCount = new AtomicLong(0);
+    private final java.util.concurrent.atomic.AtomicBoolean warnedUnwired =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
 
     public JournaledLineageEmitter(LineageJournalStore store, LineageConfig config) {
+        this(store, config, null, null, null);
+    }
+
+    public JournaledLineageEmitter(LineageJournalStore store, LineageConfig config,
+                                   LineageBarrierReader barrierReader,
+                                   LineageSpoolMachinery spoolMachinery,
+                                   LineageMetrics metrics) {
         this.store = store;
         this.config = config;
+        this.barrierReader = barrierReader;
+        this.spoolMachinery = spoolMachinery;
+        this.metrics = metrics;
+    }
+
+    /**
+     * §6-a's write seam (A-2 Slice 4a): where a version-free business fact goes.
+     *
+     * <p>4a ships the whole routing while the flag still says 1, which is what makes 4b a
+     * guarded CAS on one document rather than another deploy.
+     *
+     * <table>
+     *   <tr><th>barrier</th><th>action</th></tr>
+     *   <tr><td>reader absent</td><td>v1 append — the pre-4a construction seam</td></tr>
+     *   <tr><td>{@code Pristine}, {@code Present(1)}</td><td>v1 append, byte-identical</td></tr>
+     *   <tr><td>{@code Present(2)}</td><td>spool the fact</td></tr>
+     *   <tr><td>{@code Indeterminate}</td><td>spool the fact</td></tr>
+     * </table>
+     *
+     * <p>v2 is never appended from here. Chunking, the decision document, digest-exact
+     * convergence and the K-row ACK all live in the materializer, so the emit path hands it a
+     * fact and lets the scanner converge it — which is also why an unreadable flag spools
+     * rather than guessing a version it cannot know.
+     *
+     * <p><b>A missing spool is not a licence to write v1.</b> The barrier said this fact does
+     * not belong on the v1 path; "we could not spool it" does not change that, so it is
+     * dropped and reported. Falling back would cross the fence exactly when the fence matters.
+     */
+    @Override
+    public void emit(LineageFact fact) {
+        if (fact == null) {
+            return;
+        }
+        if (barrierReader == null) {
+            if (warnedUnwired.compareAndSet(false, true)) {
+                logger.warn("No §6-a barrier reader is wired — journaling v1 unconditionally");
+            }
+            emit(fact.toV1Event());
+            return;
+        }
+        LineageBarrierReader.BarrierView view = barrierReader.view();
+        if (view instanceof LineageBarrierReader.BarrierView.Pristine) {
+            emit(fact.toV1Event());
+            return;
+        }
+        if (view instanceof LineageBarrierReader.BarrierView.Present present
+                && present.barrier().writeSchemaVersion() == 1) {
+            emit(fact.toV1Event());
+            return;
+        }
+        String reason = view instanceof LineageBarrierReader.BarrierView.Indeterminate
+                ? "flag_unreadable_and_spool_failed" : "write_v2_and_spool_failed";
+        spool(fact, reason);
+    }
+
+    private void spool(LineageFact fact, String dropReason) {
+        java.util.Optional<LineageFactSpool> spool =
+                spoolMachinery == null ? java.util.Optional.empty() : spoolMachinery.spool();
+        if (spool.isEmpty()) {
+            drop(fact, "spool_machinery_absent", "no spool is configured on this node");
+            return;
+        }
+        try {
+            LineageFactSpool.AppendOutcome outcome =
+                    spool.get().append(LineageSpoolPayloadV1.of(fact));
+            if (outcome == LineageFactSpool.AppendOutcome.APPENDED
+                    || outcome == LineageFactSpool.AppendOutcome.IDEMPOTENT) {
+                return;
+            }
+            drop(fact, dropReason, "the spool refused the record (" + outcome + ")");
+        } catch (RuntimeException e) {
+            drop(fact, dropReason, e.toString());
+        }
+    }
+
+    private void drop(LineageFact fact, String reason, String detail) {
+        failureCount.incrementAndGet();
+        if (metrics != null) {
+            metrics.recordEmitDropped(reason);
+        }
+        // Unconditional: the drop must be visible even where no metrics bean is wired.
+        logger.error("Lineage fact DROPPED (reason={}): repo={}, process={}, operation={} — {}."
+                + " It is not recoverable from here.", reason, fact.repositoryId(),
+                fact.processType(), fact.operationId(), detail);
     }
 
     @Override

@@ -75,6 +75,11 @@ public class LineageDrestReadiness {
     @Autowired
     private LineageJournalStore journalStore;
 
+    // The one spool bundle (4a): the probe must measure the volume the writer and the scanner
+    // will actually use, not a throwaway instance that merely shares its path.
+    @Autowired(required = false)
+    private LineageSpoolMachinery spoolMachinery;
+
     @Autowired(required = false)
     private List<LineageTargetSink> targetSinks;
 
@@ -233,8 +238,17 @@ public class LineageDrestReadiness {
             return budgetViolations;
         }
         try {
-            LineageFactSpool probe = new LineageFactSpool(java.nio.file.Path.of(dir), null);
-            if (!probe.probeReadiness()) {
+            // The SAME spool the writer and the scanner use (4a) — a probe against a
+            // throwaway instance is a statement about a different object than the one that
+            // will actually take the writes.
+            if (spoolMachinery == null) {
+                // A throwaway probe would report on an object the emitter and the scanner do
+                // not use, which is exactly the split the shared bundle exists to remove.
+                return List.of("the spool machinery is not wired — nothing can vouch for the"
+                        + " volume the writer will actually use");
+            }
+            LineageFactSpool probe = spoolMachinery.spool().orElse(null);
+            if (probe == null || !probe.probeReadiness()) {
                 return List.of("lineage.spool.dir '" + dir + "' failed the write/link/fsync"
                         + " probe — the spool volume cannot honor the durability contract");
             }

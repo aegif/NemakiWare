@@ -1,7 +1,54 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.24 — increment A sign-off 済み・**§6-a 再 sign-off 承認済み (2026-08-03)**。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: §2 の属性別上限 (producer 側)・**Slice 4a (着手可)**・4b (運用受入条件待ち)**
+status: **v2.3.25 — increment A sign-off 済み・**§6-a 再 sign-off 承認済み (2026-08-03)**。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: §2 の属性別上限 (producer 側)・4b (運用受入条件待ち)。**Slice 4a 実装済み — writer は v1 のまま (barrier 文書が無い＝pristine)**
 revision:
+- v2.3.25 — **Slice 4a 実装** (Codex 計画レビュー 8 巡 → proceed)。writer は v1 のままだが、
+  **版対応の書込み経路を完成させた**ので 4b は「文書 1 件の CAS」だけになり、デプロイを伴わない。
+  - **三値の barrier 読取り** (`LineageBarrierReader`): `Present` / `Pristine` (検証済み 404) /
+    `Indeterminate` (読取不能、または **witness 付きの 404**)。emit・materializer・reader
+    admission・admin status の 4 者が**同じ 1 つの判定**を使う (別々に読むと「片方は spool、
+    片方は admit」が起きる)。
+  - **witness 文書** (`lineage_barrier_witness`) を **barrier より先に**書く。barrier 文書を
+    消しただけで pristine に戻る = fence を 1 文書の削除で無効化できる、を塞ぐ。
+    **限界を明記**: `nemaki_lineage` を DB ごと復元すると witness も barrier も消え、node-local
+    spool だけが残る — アプリは新規デプロイと区別できない。復元後に fence を作り直す/検証するのは
+    **運用手順の責任**であってアプリの保証ではない。
+  - **materializer は `Pristine` を v1 (generation 0) に収束させる**。一時障害中に spool した
+    fact は、不在が証明された時点で**収束できなければならない**。`Indeterminate` だけが未決。
+  - **emit の分岐**: reader 未配線 → v1 (4a 以前の構成)、`Pristine`/`Present(1)` → v1、
+    `Present(2)`/`Indeterminate` → **fact を spool**。v2 を emit から append することは無い
+    (chunking・決定文書・digest 収束・K 行 ACK は全て materializer 側)。**spool が無いときに
+    v1 へ落ちない** — barrier が「この fact は v1 経路ではない」と言った以上、spool できない
+    ことはそれを覆さない。`lineage.emit.dropped{reason=...}` を上げて捨てる。
+  - **tick 順序を凍結**: admission → REFUSED は spool に触れず return → UNDETERMINED は
+    **未解決 pin で scan** して return → ADMITTED で scan → `isActive()` → leader guard。
+    `isActive()` の後ろに scan があると、最初の fact が spool された (= DB 未作成) デプロイで
+    scan が永久に動かない罠になる。UNDETERMINED が保証するのは「**新規**決定を作らない」ことで、
+    凍結済み決定の収束は続く (§6-a の crash convergence)。
+  - **admission は全 v2 driver 境界**に適用 (loop・両 scan 入口・replay・replay-recovery・
+    sequencer admin)。loop の guard は loop しか守らない。
+  - **pin は scan 呼び出しスコープ** (`ThreadLocal` + `try/finally`)。bundle は共有だが scan は
+    共有ではない (admin route は request thread) ため、bundle 全体の可変 pin は漏れる。
+  - **spool は 1 bundle に統合** (`LineageSpoolMachinery`): emitter・readiness probe・scanner・
+    materializer が同一 instance を使う。probe が測る volume と writer が書く volume が
+    別物では probe の意味が無い。
+  - **`BARRIER_BINARY_V1`** (新規凍結): `WEB-INF/lib` と `WEB-INF/classes` 配下の全通常ファイルの
+    `hash(domain, LIST[MAP{path, sha256Hex}])`。`SecureDirectoryStream` で降り、**個別の
+    regular-file 検査を置かない** — `NOFOLLOW_LINKS` 付きの open 自体が検査であり、hash するのは
+    その open が通したオブジェクトそのもの (check/open race が構造的に無い)。symlink・
+    測定不能はすべて `BINARY_DIGEST_UNAVAILABLE` で **ack 拒否**。部分 digest も `""` も作らない。
+    **凍結値の改訂 (レビュー承認済み)**: 「起動時に 1 度計算」→「プロセスにつき 1 度・初回使用時」。
+    barrier を使わないデプロイに毎起動のハッシュ計算を負わせない。安全性は不変。
+  - **ack / activate は毎回 reread-recompute**。409 は**再計算からやり直す** (前の revision に
+    対して計算した ACK を貼り直すと readiness・鮮度・世代が stale になる)。ack は red gate・
+    測定不能 digest・状態/世代不一致で**文書を一切変更せずに**拒否する。
+  - **`prepare` は membership を受け取らない**。v3.3 の規範形は単一 AP であり、`expectedNodes` は
+    自 node 1 件。`approvedBinaryDigests` / 追加 capability は未指定なら**保持** (再 prepare で
+    allowlist が静かに消えない)、明示的な空リストで消去。
+  - **決定的テスト**: 50 (barrier/CAS/witness/memo/admission/golden vector) + 9 (emit 分岐) +
+    実 CouchDB IT 3。IT のうち 1 つは **pre-4a 構成と 4a 構成を独立した 2 つの空 DB で走らせ、
+    全文書を突き合わせる**差分テスト — 「barrier が無ければ 4a 以前と同じものしか永続化しない」は
+    1 回走らせて文書集合を見ても証明にならない。
 - v2.3.24 — **chunking 後追いレビュー対応** (P1 1 件 + P2 3 件)。
   **F1 — 途中 chunk の park が先行行を projectable のまま残していた。** K 行中 j 行目で
   CouchDB が拒否すると、0..j-1 行は既に PENDING で durable なのに park marker が出て

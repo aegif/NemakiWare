@@ -64,12 +64,15 @@ public class LineageProjectionLoop {
     @Autowired(required = false)
     private WriteVersionResolver writeVersionResolver;
 
-    // Node-local spool machinery, built lazily per configured dir; the scanner instance is
-    // retained so its JVM-lifetime rotation cursor survives across polls.
-    private volatile String spoolDirInUse;
-    private volatile LineageFactSpool spoolInUse;
-    private volatile LineageSpoolScanner spoolScannerInUse;
-    private volatile LineageSpoolMaterializer spoolMaterializerInUse;
+    @Autowired(required = false)
+    private LineageReaderAdmission readerAdmission;
+
+    @Autowired(required = false)
+    private LineageSpoolMachinery spoolMachinery;
+
+    // The spool machinery lives in LineageSpoolMachinery (4a): the emitter, the readiness
+    // probe and this loop must share ONE spool per directory, or a config change leaves the
+    // writer and the scanner on different volumes.
 
     private ScheduledExecutorService scheduler;
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -132,14 +135,34 @@ public class LineageProjectionLoop {
      */
     void pollAndProject() {
         try {
-            if (!journalStore.isActive()) {
+            // §6-a's reader admission comes FIRST and the order below is frozen (4a):
+            //   1. admission   2. REFUSED → return without touching the spool
+            //   3. UNDETERMINED → scan with an unresolved pin, then return
+            //   4. ADMITTED → scan   5. isActive()   6. leader guard → DB-global work
+            // Each step exists because of a specific failure: admitting after the scan would
+            // let a v1-only reader materialize v2; returning on UNDETERMINED before the scan
+            // would strand facts spooled during the outage that caused it; and gating the
+            // node-local scan on isActive() traps a deployment whose first fact spooled
+            // instead of appending, so the database was never provisioned and the scan that
+            // would fix it never runs.
+            LineageReaderAdmission.Admission admission = readerAdmission == null
+                    ? null : readerAdmission.evaluate();
+            if (admission != null
+                    && admission.decision() == LineageReaderAdmission.Decision.REFUSED) {
                 return;
             }
-
             // §7 spool scan (D-rest-4, B3): NODE-LOCAL IO, so it runs on every node —
             // BEFORE the leader guard (leader election gates DB-global work only). The
             // readiness gate (incl. the mode-aware spool clause) keeps it dormant by default.
-            runSpoolScanIfReady();
+            runSpoolScanIfReady(admission == null ? null : admission.view());
+            if (admission != null
+                    && admission.decision() == LineageReaderAdmission.Decision.UNDETERMINED) {
+                return; // facts accumulate safely; nothing DB-global runs unproven
+            }
+
+            if (!journalStore.isActive()) {
+                return;
+            }
 
             // Leader election guard: only the leader node runs projection
             if (leaderElection != null && leaderElection.isEnabled()
@@ -941,24 +964,72 @@ public class LineageProjectionLoop {
 
     /** One bounded, fair spool scan per poll when the aggregate gate is green (B3/A6). */
     public void runSpoolScanIfReady() {
+        LineageReaderAdmission.Admission admission =
+                readerAdmission == null ? null : readerAdmission.evaluate();
+        if (admission != null
+                && admission.decision() == LineageReaderAdmission.Decision.REFUSED) {
+            return; // a public entry point is a boundary too — it fails closed on its own
+        }
+        runSpoolScanIfReady(admission == null ? null : admission.view());
+    }
+
+    /**
+     * The scheduled scan, under the barrier view this tick already evaluated (4a).
+     *
+     * <p>Passing the view rather than letting the materializer read one is what makes a tick's
+     * decisions consistent: a barrier that becomes readable halfway through a scan must not
+     * start materializing inside a pass that was admitted as UNDETERMINED.
+     */
+    public void runSpoolScanIfReady(LineageBarrierReader.BarrierView view) {
         try {
             runSpoolScan(new LineageSpoolScanner.ScanBudget(
                     lineageConfig.getSpoolScanMaxFiles(),
                     lineageConfig.getSpoolScanMaxMaterializations(),
-                    lineageConfig.getSpoolScanMaxMillis()));
+                    lineageConfig.getSpoolScanMaxMillis()), view);
         } catch (RuntimeException e) {
             logger.error("Spool scan pass failed: {}", e.getMessage());
         }
     }
 
-    /**
-     * The bounded scan with an explicit budget (the manual admin route's entry). Returns
-     * {@code null} when the scanner cannot run (gate red, no dir, no machinery) — the caller
-     * distinguishes dormancy from an empty scan.
-     */
+    /** The manual entry, which evaluates its own view — see the two-argument form. */
     public LineageSpoolScanner.ScanSummary runSpoolScan(
             LineageSpoolScanner.ScanBudget budget) {
-        if (drestReadiness == null || writeVersionResolver == null
+        LineageReaderAdmission.Admission admission =
+                readerAdmission == null ? null : readerAdmission.evaluate();
+        if (admission != null
+                && admission.decision() == LineageReaderAdmission.Decision.REFUSED) {
+            return null; // never scan under a refused reader, whoever called
+        }
+        return runSpoolScan(budget, admission == null ? null : admission.view());
+    }
+
+    /**
+     * The bounded scan with an explicit budget and a pinned barrier view. Returns
+     * {@code null} when the scanner cannot run (gate red, no dir, no machinery) — the caller
+     * distinguishes dormancy from an empty scan.
+     *
+     * <p>The view is pinned for the duration of THIS scan only. The machinery bundle is
+     * shared, and the admin route runs on a request thread, so a bundle-wide pin could leak
+     * between a manual and an automatic scan; the pin is thread-scoped and removed in a
+     * {@code finally}. With no pin at all the resolver answers "unavailable" rather than
+     * falling back to a live read.
+     */
+    public LineageSpoolScanner.ScanSummary runSpoolScan(
+            LineageSpoolScanner.ScanBudget budget, LineageBarrierReader.BarrierView view) {
+        // The last gate: no caller reaches the spool past a refused reader. A null view is
+        // NOT taken as pristine here — that would let the public overload walk around a
+        // REFUSED decision; on a wired node it means "nobody told me", so we ask.
+        if (readerAdmission != null) {
+            LineageReaderAdmission.Admission gate = view == null
+                    ? readerAdmission.evaluate() : readerAdmission.evaluate(view);
+            if (gate.decision() == LineageReaderAdmission.Decision.REFUSED) {
+                return null;
+            }
+            // And USE what we just read: evaluating a view and then pinning Pristine anyway
+            // would materialize at v1 under an ACTIVE v2 barrier.
+            view = gate.view();
+        }
+        if (drestReadiness == null || spoolMachinery == null
                 || !(journalStore instanceof LineageMaterializationStore)) {
             return null;
         }
@@ -969,9 +1040,18 @@ public class LineageProjectionLoop {
         if (!drestReadiness.evaluate().ready()) {
             return null; // fully dormant under a red gate
         }
-        LineageSpoolScanner scanner = spoolMachineryFor(dir);
-        LineageSpoolScanner.ScanSummary summary = scanner.scan(
-                java.nio.file.Path.of(dir), spoolMaterializerInUse, budget);
+        java.util.Optional<LineageSpoolMachinery.Bundle> bundle = spoolMachinery.bundle();
+        if (bundle.isEmpty() || bundle.get().materializer() == null) {
+            return null;
+        }
+        LineageSpoolScanner scanner = bundle.get().scanner();
+        // A null view can only survive to here on a node with no admission gate wired, which
+        // is the pre-4a construction: no barrier machinery, so pristine is the truth.
+        LineageBarrierReader.BarrierView pinned =
+                view == null ? new LineageBarrierReader.BarrierView.Pristine() : view;
+        LineageSpoolScanner.ScanSummary summary = LineageSpoolMachinery.BarrierPin.with(pinned,
+                () -> scanner.scan(java.nio.file.Path.of(dir),
+                        bundle.get().materializer(), budget));
         if (summary.acked() > 0 || summary.failed() > 0 || summary.ackBroken() > 0
                 || summary.budgetExhausted()) {
             logger.info("Spool scan: acked={} alreadyAcked={} unresolved={} partial={}"
@@ -980,26 +1060,6 @@ public class LineageProjectionLoop {
                     summary.failed(), summary.ackBroken(), summary.budgetExhausted());
         }
         return summary;
-    }
-
-    private synchronized LineageSpoolScanner spoolMachineryFor(String dir) {
-        if (!dir.equals(spoolDirInUse) || spoolScannerInUse == null) {
-            LineageFactSpool spool = new LineageFactSpool(java.nio.file.Path.of(dir),
-                    lineageMetrics);
-            spoolInUse = spool;
-            spoolScannerInUse = new LineageSpoolScanner(spool, lineageMetrics);
-            spoolMaterializerInUse = new LineageSpoolMaterializer(
-                    (LineageMaterializationStore) journalStore, journalStore,
-                    (LineageV2TransitionStore) journalStore, writeVersionResolver, spool,
-                    lineageMetrics, () -> java.util.UUID.randomUUID().toString(),
-                    System::currentTimeMillis,
-                    new LineageChunkPlanner.ChunkLimits(
-                            lineageConfig.getEndpointMaxPerEvent(),
-                            lineageConfig.getEventMaxPayloadBytes()),
-                    lineageConfig.getEventMaxDocumentBytes());
-            spoolDirInUse = dir;
-        }
-        return spoolScannerInUse;
     }
 
     private void advanceCursor(String targetName, String repositoryId, long sequenceNumber) {

@@ -29,5 +29,7 @@
   "materializationPlanDigest_v1": "783e05d36d6faac728813b3975ed348910da6c316fbe6d7d0ff59ada44ee2563",
   "materializationPlanDigest_v2": "5e5a1f8c6ade02c17aefa53a6431775079e2583b40d32a6b057a00a6b84eea96",
   "materializationPlanDigest_v3_twoChunks": "3f3aaa14dccc50693bb27998272e505093a96a159f5bae3fda6b95a39df75bef",
-  "materializationPlanDigest_v3_classified": "39f69fd2d8ead434f83352e8fe3565c963c6828c651773262ac79fc0cc286844"
+  "materializationPlanDigest_v3_classified": "39f69fd2d8ead434f83352e8fe3565c963c6828c651773262ac79fc0cc286844",
+  "barrierMembershipDigest": "ce6be555263b351fdf70473f60090700ced75a66d8a84bf0c5603e4e3892e2be",
+  "barrierBinaryDigest": "d27e6212ffd71557019fe3c0bf7c43ad5b2342a4595a5dce9c81b2bb22dbf26e"
 }
