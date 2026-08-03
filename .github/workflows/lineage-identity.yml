@@ -158,3 +158,51 @@ jobs:
           -Dtest='LineageSequencingCouchIT'
           -Dlineage.it.required=true
           -Dsurefire.failIfNoSpecifiedTests=true
+
+  # §6-a's live-Atlas release gates E-19/E-20. Apache Atlas is heavy to boot, so this job is
+  # deliberately separate: it must run before Slice 4b (activation), and a skipped gate does
+  # not satisfy it (-Datlas.it.required=true turns a missing URL into a failure).
+  atlas-secrets-it:
+    runs-on: ubuntu-latest
+    env:
+      MAVEN_USERNAME: ${{ github.actor }}
+      MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+    services:
+      atlas:
+        image: sburn/apache-atlas:2.3.0
+        ports:
+          - 21000:21000
+        options: >-
+          --health-cmd "wget -q -O /dev/null --auth-no-challenge --user=admin --password=admin http://localhost:21000/api/atlas/v2/types/typedefs/headers || exit 1"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 20
+          --health-start-period 300s
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          server-id: github-opencmis
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+      - name: Build sibling modules
+        run: |
+          mvn clean install -N -DskipTests -q
+          mvn clean install -f common/pom.xml -DskipTests -q
+          mvn clean install -f cloudant-init/pom.xml -DskipTests -q
+      # The IT installs the nemaki type definitions itself (a fresh Atlas service has none),
+      # using the real PurviewSchemaPayloadFactory — so this job needs no separate schema step
+      # and is re-runnable against a clean service.
+      - name: E-19/E-20 against live Atlas (must run — never skippable)
+        env:
+          NEMAKI_ATLAS_IT_URL: http://127.0.0.1:21000
+          NEMAKI_ATLAS_IT_USER: admin
+          NEMAKI_ATLAS_IT_PASSWORD: admin
+        run: >
+          mvn -B -f core/pom.xml -Pdevelopment,opencmis-github-packages test
+          -Dtest='PurviewLiveAtlasSecretsIT'
+          -Datlas.it.required=true
+          -Dsurefire.failIfNoSpecifiedTests=true
