@@ -99,6 +99,18 @@ public class LineageConfig {
     @Autowired(required = false)
     private PropertyManager propertyManager;
 
+    // §6-a's write seam (4a). All three are optional so that a context without the barrier
+    // machinery still builds an emitter — that construction is the pre-4a behaviour, and the
+    // emitter treats an absent reader as "no fence exists" rather than guessing.
+    @Autowired(required = false)
+    private LineageBarrierReader barrierReader;
+
+    @Autowired(required = false)
+    private LineageSpoolMachinery spoolMachinery;
+
+    @Autowired(required = false)
+    private LineageMetrics lineageMetrics;
+
     @Value("${lineage.mode:disabled}")
     private String mode;
 
@@ -194,6 +206,18 @@ public class LineageConfig {
 
     @Value("${lineage.event.max-payload-bytes:1048576}")
     private long eventMaxPayloadBytes;
+
+    @Value("${lineage.read.schema.versions:1,2}")
+    private String readSchemaVersions;
+
+    @Value("${lineage.barrier.view.ttl-ms:1000}")
+    private long barrierViewTtlMs;
+
+    @Value("${lineage.node.id:}")
+    private String nodeId;
+
+    @Value("${lineage.barrier.distribution.dir:}")
+    private String barrierDistributionDir;
 
     @Value("${lineage.event.max-document-bytes:4194304}")
     private long eventMaxDocumentBytes;
@@ -332,6 +356,65 @@ public class LineageConfig {
      */
     public long getEventMaxDocumentBytes() {
         return readDynamicLong("lineage.event.max-document-bytes", eventMaxDocumentBytes);
+    }
+
+    /**
+     * Which event schema versions this node is willing to READ (4a).
+     *
+     * <p>Configurable so that a deployment can be pinned to v1 during a rollout — and so that
+     * §6-a's startup fence has something to fence: a node declaring {@code [1]} must not join
+     * a deployment whose {@code minReaderSchemaVersion} is already 2, because the v2 rows it
+     * cannot read would sit unprojected while its cursor moved past them.
+     */
+    public java.util.Set<Integer> getReadSchemaVersions() {
+        String raw = trimToEmpty(readDynamic("lineage.read.schema.versions",
+                readSchemaVersions));
+        if (raw.isEmpty()) {
+            return java.util.Set.of(1, 2);
+        }
+        java.util.Set<Integer> versions = new java.util.LinkedHashSet<>();
+        for (String token : raw.split(",")) {
+            String trimmed = token.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            try {
+                versions.add(Integer.parseInt(trimmed));
+            } catch (NumberFormatException notANumber) {
+                logger.warn("Ignoring unparseable lineage.read.schema.versions entry '{}'",
+                        trimmed);
+            }
+        }
+        if (versions.isEmpty()) {
+            // Configured, and configured to nothing usable. {1,2} is the answer for an ABSENT
+            // setting; handing it back here would let a node ACK as a v2 reader on the
+            // strength of a value nobody could parse.
+            logger.error("lineage.read.schema.versions is set to '{}' but yields no usable"
+                    + " version — this node declares that it reads NOTHING", raw);
+            return java.util.Set.of();
+        }
+        return java.util.Set.copyOf(versions);
+    }
+
+    /**
+     * How long a read of the §6-a barrier may be reused (4a). The emit path consults the
+     * barrier per fact, so without this every journaled emit would add an HTTP round trip.
+     * The lag is bounded and one-directional in the tolerable sense — a rollback governs which
+     * version NEW facts materialize at, so being a second late is not a correctness question.
+     */
+    public long getBarrierViewTtlMs() {
+        return readDynamicLong("lineage.barrier.view.ttl-ms", barrierViewTtlMs);
+    }
+
+    /** The operator-pinned node id, or empty to allocate one on the first prepare/ack. */
+    public String getNodeId() {
+        return trimToEmpty(readDynamic("lineage.node.id", nodeId));
+    }
+
+    /** Overrides the deployment root the binary digest walks (tests and odd containers). */
+    public String getBarrierDistributionDir() {
+        return trimToEmpty(readDynamic("lineage.barrier.distribution.dir",
+                barrierDistributionDir));
     }
 
     public int getRetentionDays() {
@@ -503,7 +586,8 @@ public class LineageConfig {
         return switch (getMode()) {
             case DISABLED  -> new NoopLineageEmitter();
             case DIRECT    -> new DirectLineageEmitter(this, sinks);
-            case JOURNALED -> new JournaledLineageEmitter(store, this);
+            case JOURNALED -> new JournaledLineageEmitter(store, this, barrierReader,
+                    spoolMachinery, lineageMetrics);
         };
     }
 
@@ -535,7 +619,8 @@ public class LineageConfig {
         return switch (mode) {
             case DISABLED  -> new NoopLineageEmitter();
             case DIRECT    -> new DirectLineageEmitter(this, sinks);
-            case JOURNALED -> new JournaledLineageEmitter(store, this);
+            case JOURNALED -> new JournaledLineageEmitter(store, this, barrierReader,
+                    spoolMachinery, lineageMetrics);
         };
     }
 

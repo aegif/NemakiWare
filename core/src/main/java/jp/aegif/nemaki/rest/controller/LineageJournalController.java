@@ -208,6 +208,8 @@ public class LineageJournalController {
             @RequestParam(defaultValue = "purview") String target) {
         ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
         if (forbidden != null) return forbidden;
+        ResponseEntity<Map<String, Object>> notAdmitted = requireAdmittedReader();
+        if (notAdmitted != null) return notAdmitted;
 
         jp.aegif.nemaki.rest.purview.journal.LineageJournalRow row =
                 journalStore.findByRecordId(recordId);
@@ -250,6 +252,8 @@ public class LineageJournalController {
             @RequestParam(defaultValue = "purview") String target) {
         ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
         if (forbidden != null) return forbidden;
+        ResponseEntity<Map<String, Object>> notAdmittedDiscard = requireAdmittedReader();
+        if (notAdmittedDiscard != null) return notAdmittedDiscard;
 
         // Same guard as replay, for a harder reason: discard makes the row terminal, terminal
         // rows are purge-eligible, and an undecodable row's stored document is the only evidence
@@ -518,6 +522,8 @@ public class LineageJournalController {
     private jp.aegif.nemaki.rest.purview.journal.LineageReplayService replayService;
 
     private ResponseEntity<Map<String, Object>> replayV2(String recordId, String target) {
+        ResponseEntity<Map<String, Object>> notAdmitted = requireAdmittedReader();
+        if (notAdmitted != null) return notAdmitted;
         if (replayService == null) {
             return badRequest("replay service unavailable");
         }
@@ -555,6 +561,8 @@ public class LineageJournalController {
             @RequestParam(name = "limit", defaultValue = "50") int limit) {
         ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
         if (forbidden != null) return forbidden;
+        ResponseEntity<Map<String, Object>> notAdmittedRecovery = requireAdmittedReader();
+        if (notAdmittedRecovery != null) return notAdmittedRecovery;
         if (replayService == null) {
             return badRequest("replay service unavailable");
         }
@@ -582,6 +590,15 @@ public class LineageJournalController {
     @Autowired(required = false)
     private jp.aegif.nemaki.rest.purview.journal.LineageDrestReadiness drestReadinessBean;
 
+    @Autowired(required = false)
+    private jp.aegif.nemaki.rest.purview.journal.LineageReaderAdmission readerAdmission;
+
+    @Autowired(required = false)
+    private jp.aegif.nemaki.rest.purview.journal.LineageBarrierService barrierService;
+
+    @Autowired(required = false)
+    private jp.aegif.nemaki.rest.purview.journal.LineageBarrierReader barrierReader;
+
     /** Manual bounded spool scan (the automatic pass runs per poll on every node). */
     @PostMapping("/spool-scan")
     public ResponseEntity<Map<String, Object>> spoolScan(
@@ -593,6 +610,22 @@ public class LineageJournalController {
         if (forbidden != null) return forbidden;
         if (projectionLoop == null || drestReadinessBean == null) {
             return badRequest("spool scan unavailable");
+        }
+        // §6-a admission applies here too (4a). This route is not a side door: a manual scan
+        // under a REFUSED reader would materialize v2 rows the automatic pass is forbidden to
+        // touch, and it runs on a request thread where the tick's guard never sees it.
+        var admission = readerAdmission == null ? null : readerAdmission.evaluate();
+        if (admission != null && !admission.admitted()) {
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("admission", admission.decision().name());
+            response.put("violations", admission.violations());
+            if (admission.decision()
+                    == jp.aegif.nemaki.rest.purview.journal.LineageReaderAdmission.Decision
+                            .REFUSED) {
+                response.put("message", "the lineage reader is refused on this node — the"
+                        + " spool is not touched");
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+            }
         }
         var verdict = drestReadinessBean.evaluate();
         if (!verdict.ready()) {
@@ -606,7 +639,9 @@ public class LineageJournalController {
                 new jp.aegif.nemaki.rest.purview.journal.LineageSpoolScanner.ScanBudget(
                         Math.min(Math.max(maxFiles, 1), 10_000),
                         Math.min(Math.max(maxMaterializations, 1), 1_000),
-                        Math.min(Math.max(maxMillis, 1L), 60_000L)));
+                        Math.min(Math.max(maxMillis, 1L), 60_000L)),
+                // The view THIS request evaluated, pinned for its own scan only.
+                admission == null ? null : admission.view());
         Map<String, Object> response = new LinkedHashMap<>();
         if (summary == null) {
             response.put("message", "scanner cannot run on this node (no spool dir or no"
@@ -641,6 +676,8 @@ public class LineageJournalController {
             @PathVariable("repositoryId") String repositoryId) {
         ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
         if (forbidden != null) return forbidden;
+        ResponseEntity<Map<String, Object>> notAdmitted = requireAdmittedReader();
+        if (notAdmitted != null) return notAdmitted;
         if (sequencerAdmin == null) {
             return badRequest("sequencer admin service unavailable");
         }
@@ -712,5 +749,182 @@ public class LineageJournalController {
         response.put("status", "error");
         response.put("message", message);
         return ResponseEntity.badRequest().body(response);
+    }
+
+
+
+    /**
+     * §6-a's reader admission, applied at EVERY v2 driver boundary (4a).
+     *
+     * <p>The projection loop's guard only covers the loop. Replay, recovery and the sequencer
+     * are separately wired and separately reachable, so a REFUSED reader could still drive v2
+     * state through one of these routes — which is precisely the "the lineage subsystem fails
+     * closed" property §6-a asks for. UNDETERMINED counts as not-admitted here: unlike the
+     * spool scan, these paths have no way to accumulate safely and decide later.
+     *
+     * @return a 409 body when the caller must not proceed, or null when it may
+     */
+    private ResponseEntity<Map<String, Object>> requireAdmittedReader() {
+        if (readerAdmission == null) {
+            return null;
+        }
+        var admission = readerAdmission.evaluate();
+        if (admission.admitted()) {
+            return null;
+        }
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("admission", admission.decision().name());
+        response.put("violations", admission.violations());
+        response.put("message", "the lineage reader is not admitted on this node — v2 state"
+                + " must not be driven from here");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
+    // ==================== §6-a rollout fence (A-2 Slice 4a) ====
+
+    /**
+     * What the barrier says, what currently blocks activation, and whether this node's reader
+     * is admitted. Reads through the memo so an operator never acts on a stale answer.
+     */
+    @GetMapping("/barrier")
+    public ResponseEntity<Map<String, Object>> barrier() {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+        if (barrierReader == null || barrierService == null) {
+            return badRequest("the barrier machinery is not wired on this node");
+        }
+        var view = barrierReader.viewUncached();
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("requiredCapabilities", barrierService.requiredCapabilities());
+        if (view instanceof jp.aegif.nemaki.rest.purview.journal.LineageBarrierReader
+                .BarrierView.Present present) {
+            var b = present.barrier();
+            response.put("present", true);
+            response.put("state", b.state().name());
+            response.put("generation", b.generation());
+            response.put("writeSchemaVersion", b.writeSchemaVersion());
+            response.put("minReaderSchemaVersion", b.minReaderSchemaVersion());
+            response.put("expectedNodes", b.expectedNodes().stream()
+                    .map(n -> Map.of("nodeId", n.nodeId(), "bootId", n.bootId())).toList());
+            response.put("approvedBinaryDigests", b.approvedBinaryDigests());
+            Map<String, Object> acks = new LinkedHashMap<>();
+            b.acks().forEach((nodeId, ack) -> acks.put(nodeId, Map.of(
+                    "generation", ack.generation(),
+                    "bootId", ack.bootId(),
+                    "capabilities", ack.capabilities(),
+                    "readSchemaVersions", ack.readSchemaVersions(),
+                    "spoolReady", ack.spoolReady(),
+                    "drestReady", ack.drestReady(),
+                    "ackedAtMs", ack.ackedAtMs(),
+                    "expiresAtMs", ack.expiresAtMs())));
+            response.put("acks", acks);
+            response.put("blockingConditions", barrierService.activationViolations(b));
+        } else if (view instanceof jp.aegif.nemaki.rest.purview.journal.LineageBarrierReader
+                .BarrierView.Pristine) {
+            response.put("present", false);
+            response.put("message", "no barrier exists — this deployment writes v1");
+        } else if (view instanceof jp.aegif.nemaki.rest.purview.journal.LineageBarrierReader
+                .BarrierView.Indeterminate indeterminate) {
+            response.put("present", false);
+            response.put("indeterminate", indeterminate.reasonClass());
+            response.put("message", "the barrier cannot be read — facts spool until it can");
+        }
+        if (readerAdmission != null) {
+            var admission = readerAdmission.evaluate(view);
+            response.put("readerAdmission", admission.decision().name());
+            response.put("readerAdmissionViolations", admission.violations());
+        }
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Creates or re-arms the barrier for THIS node.
+     *
+     * <p>There is deliberately no membership parameter: v3.3's normative rollout is a single
+     * AP, and a route that accepted an invented {@code expectedNodes} would let an operator
+     * describe a cluster the fence cannot actually check.
+     */
+    @PostMapping("/barrier/prepare")
+    public ResponseEntity<Map<String, Object>> prepareBarrier(
+            @RequestBody(required = false) Map<String, Object> body) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+        if (barrierService == null) {
+            return badRequest("the barrier machinery is not wired on this node");
+        }
+        // Absent/null PRESERVES what the document holds; an explicit [] clears it.
+        java.util.Set<String> digests = stringSetOrNull(body, "approvedBinaryDigests");
+        java.util.Set<String> extra = stringSetOrNull(body, "additionalRequiredCapabilities");
+        return barrierOutcome(barrierService.prepare(digests, extra));
+    }
+
+    /** Records this node's ACK, computed fresh at the revision it is written against. */
+    @PostMapping("/barrier/ack")
+    public ResponseEntity<Map<String, Object>> ackBarrier() {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+        if (barrierService == null) {
+            return badRequest("the barrier machinery is not wired on this node");
+        }
+        return barrierOutcome(barrierService.ack());
+    }
+
+    /** {@code PREPARING → ACTIVE}. One-way: {@code minReaderSchemaVersion} never comes back. */
+    @PostMapping("/barrier/activate")
+    public ResponseEntity<Map<String, Object>> activateBarrier() {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+        if (barrierService == null) {
+            return badRequest("the barrier machinery is not wired on this node");
+        }
+        return barrierOutcome(barrierService.activate());
+    }
+
+    /** Writes go back to v1. Always allowed — it is movement toward safety. */
+    @PostMapping("/barrier/rollback")
+    public ResponseEntity<Map<String, Object>> rollbackBarrier() {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+        if (barrierService == null) {
+            return badRequest("the barrier machinery is not wired on this node");
+        }
+        return barrierOutcome(barrierService.rollback());
+    }
+
+    private ResponseEntity<Map<String, Object>> barrierOutcome(
+            jp.aegif.nemaki.rest.purview.journal.LineageBarrierService.BarrierOutcome outcome) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        if (!outcome.applied()) {
+            response.put("applied", false);
+            response.put("violations", outcome.violations());
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+        }
+        response.put("applied", true);
+        if (outcome.barrier() != null) {
+            response.put("state", outcome.barrier().state().name());
+            response.put("generation", outcome.barrier().generation());
+            response.put("writeSchemaVersion", outcome.barrier().writeSchemaVersion());
+            response.put("minReaderSchemaVersion",
+                    outcome.barrier().minReaderSchemaVersion());
+        }
+        return ResponseEntity.ok(response);
+    }
+
+    /** null = the caller said nothing (preserve); empty set = the caller said "none". */
+    private static java.util.Set<String> stringSetOrNull(Map<String, Object> body, String key) {
+        if (body == null || !body.containsKey(key) || body.get(key) == null) {
+            return null;
+        }
+        if (!(body.get(key) instanceof java.util.List<?> list)) {
+            throw new IllegalArgumentException(key + " must be a list of strings");
+        }
+        java.util.Set<String> values = new java.util.LinkedHashSet<>();
+        for (Object element : list) {
+            if (!(element instanceof String s) || s.isBlank()) {
+                throw new IllegalArgumentException(key + " must hold non-blank strings");
+            }
+            values.add(s);
+        }
+        return values;
     }
 }

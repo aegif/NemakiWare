@@ -104,7 +104,7 @@ public class LineageJournalControllerReplayShapeTest {
         when(readiness.evaluate()).thenReturn(
                 new jp.aegif.nemaki.rest.purview.journal.LineageDrestReadiness.Readiness(
                         true, List.of()));
-        when(loop.runSpoolScan(any())).thenReturn(
+        when(loop.runSpoolScan(any(), any())).thenReturn(
                 new jp.aegif.nemaki.rest.purview.journal.LineageSpoolScanner.ScanSummary(
                         5, 1, 2, 3, 4, 6, 7, 8, 9, true));
         set("projectionLoop", loop);

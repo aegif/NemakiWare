@@ -46,6 +46,8 @@ public class LineageMetrics {
     private final AtomicLong spoolAckVerified = new AtomicLong();
     private final AtomicLong spoolOversizeParked = new AtomicLong();
     private final AtomicLong partialRowsEscaped = new AtomicLong();
+    private final AtomicLong emitDropped = new AtomicLong();
+    private final Map<String, AtomicLong> emitDroppedByReason = new ConcurrentHashMap<>();
     private final AtomicLong decisionCollisions = new AtomicLong();
     private final AtomicLong unresolvedSkipped = new AtomicLong();
     private volatile Instant lastPollTime;
@@ -175,6 +177,16 @@ public class LineageMetrics {
         partialRowsEscaped.incrementAndGet();
     }
 
+    /**
+     * A fact the emit path could not place anywhere (4a). The reason is the diagnosis: an
+     * unreadable barrier with a failing spool, a v2 flag with no spool, or no spool wired.
+     */
+    public void recordEmitDropped(String reason) {
+        emitDropped.incrementAndGet();
+        emitDroppedByReason.computeIfAbsent(reason == null ? "unknown" : reason,
+                r -> new AtomicLong()).incrementAndGet();
+    }
+
     public void recordDecisionCollision() {
         decisionCollisions.incrementAndGet();
     }
@@ -223,6 +235,10 @@ public class LineageMetrics {
         m.put("spoolAckVerified", spoolAckVerified.get());
         m.put("spoolOversizeParked", spoolOversizeParked.get());
         m.put("partialRowsEscaped", partialRowsEscaped.get());
+        m.put("emitDropped", emitDropped.get());
+        Map<String, Object> emitDropReasons = new LinkedHashMap<>();
+        emitDroppedByReason.forEach((reason, count) -> emitDropReasons.put(reason, count.get()));
+        m.put("emitDroppedByReason", emitDropReasons);
         m.put("decisionCollisions", decisionCollisions.get());
         m.put("unresolvedSkipped", unresolvedSkipped.get());
 

@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.rest.purview.journal;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -60,6 +61,9 @@ public class LineageDrestReadinessTest {
         when(store.viewSignatureViolations()).thenReturn(List.of());
         when(sink.targetName()).thenReturn("atlas");
         when(sink.supportsVerification()).thenReturn(true);
+        // 4a: readiness probes the SHARED spool, so the machinery must be wired — an absent
+        // one is now a red verdict rather than a throwaway probe.
+        set("spoolMachinery", new LineageSpoolMachinery(config, null, store));
         set("lineageConfig", config);
         set("journalStore", store);
         set("targetSinks", List.of(sink));
@@ -257,6 +261,26 @@ public class LineageDrestReadinessTest {
 
         when(config.getEventMaxDocumentBytes()).thenReturn(4L * 1024 * 1024);
         assertTrue(readiness.evaluate().ready(), "equal is allowed — the ceiling is inclusive");
+    }
+
+    /**
+     * 4a: an unparseable reader-version declaration must NOT resolve to the default. The
+     * default belongs to an absent setting; here the operator said something, and nothing
+     * usable came of it, so this node declares that it reads nothing.
+     */
+    @Test
+    public void anUnparseableReadSchemaVersionsDeclarationFailsClosed() throws Exception {
+        LineageConfig real = new LineageConfig();
+        Field field = LineageConfig.class.getDeclaredField("readSchemaVersions");
+        field.setAccessible(true);
+        field.set(real, "foo");
+        assertTrue(real.getReadSchemaVersions().isEmpty(),
+                "a malformed declaration must not become {1,2}");
+        field.set(real, "");
+        assertEquals(java.util.Set.of(1, 2), real.getReadSchemaVersions(),
+                "an ABSENT declaration is the one that means both versions");
+        field.set(real, "1");
+        assertEquals(java.util.Set.of(1), real.getReadSchemaVersions());
     }
 
     @Test

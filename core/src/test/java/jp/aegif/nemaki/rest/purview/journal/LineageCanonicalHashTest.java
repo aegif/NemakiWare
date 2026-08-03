@@ -254,6 +254,19 @@ public class LineageCanonicalHashTest {
                                 "maxPayloadBytes", 1048576L),
                         classificationRecord, List.of(v3EntryA.asRecord())));
 
+        // §6-a's two frozen formulas (4a). The membership digest binds who the barrier
+        // expects; the binary digest binds which distribution may ACK.
+        computed.put("barrierMembershipDigest",
+                LineageWriteVersionBarrier.membershipDigestOf(List.of(
+                        new LineageWriteVersionBarrier.NodeRef("node-a", "boot-1"),
+                        new LineageWriteVersionBarrier.NodeRef("node-b", "boot-2"))));
+        computed.put("barrierBinaryDigest", LineageCanonicalHash.hash(
+                LineageBinaryDigest.DOMAIN, List.of(
+                        new java.util.TreeMap<>(java.util.Map.of("path",
+                                "WEB-INF/classes/a.class", "sha256Hex", sha256Hex("aaa"))),
+                        new java.util.TreeMap<>(java.util.Map.of("path", "WEB-INF/lib/b.jar",
+                                "sha256Hex", sha256Hex("bbb"))))));
+
         assertEquals(fixture.keySet(), computed.keySet(),
                 "the fixture and this test cover different vectors");
         for (Map.Entry<String, String> entry : computed.entrySet()) {
@@ -274,8 +287,14 @@ public class LineageCanonicalHashTest {
         while (matcher.find()) {
             vectors.put(matcher.group(1), matcher.group(2));
         }
-        assertEquals(31, vectors.size(), "unexpected fixture size: " + vectors.size());
+        assertEquals(33, vectors.size(), "unexpected fixture size: " + vectors.size());
         return vectors;
+    }
+
+    private static String sha256Hex(String content) throws Exception {
+        return java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256")
+                .digest(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
     }
 
     /**

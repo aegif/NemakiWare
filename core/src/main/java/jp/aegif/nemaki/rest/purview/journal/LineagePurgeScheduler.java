@@ -38,6 +38,9 @@ public class LineagePurgeScheduler {
     private static final Logger logger = LoggerFactory.getLogger(LineagePurgeScheduler.class);
     private static final int CONFIG_CHECK_INTERVAL_SECONDS = 60;
 
+    @Autowired(required = false)
+    private LineageReaderAdmission readerAdmission;
+
     @Autowired
     private LineageConfig lineageConfig;
 
@@ -165,6 +168,13 @@ public class LineagePurgeScheduler {
     }
 
     private void executePurge() {
+        // §6-a admission (4a): purge deletes v2 rows, so it is a v2 driver like any other and
+        // must not run under a reader the fence refused. UNDETERMINED counts as not-admitted
+        // here — unlike the spool scan, deleting has no "accumulate safely and decide later".
+        if (readerAdmission != null && !readerAdmission.evaluate().admitted()) {
+            logger.warn("Lineage purge skipped: the reader is not admitted on this node");
+            return;
+        }
         // Leader election guard: only the leader node runs purge
         if (leaderElection != null && leaderElection.isEnabled()
                 && !leaderElection.isLeader("purge")) {

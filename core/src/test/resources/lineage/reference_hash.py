@@ -173,6 +173,31 @@ vectors["materializationPlanDigest_v3_classified"] = plan_digest_v3(
 vectors["spoolPayloadDigest_legacyPreset"] = spool_payload_digest(
     _spool_id, 1, [SPOOL_IN_DOC, SPOOL_IN_EXT], [SPOOL_OUT_ART], "corr-1", _legacy_preset)
 
+# ---------------------------------------------------------------- §6-a barrier (4a)
+
+def barrier_membership_digest(nodes):
+    """hash("BARRIER_MEMBERSHIP_V1", LIST[MAP{nodeId, bootId}]), sorted by nodeId."""
+    ordered = sorted(nodes, key=lambda n: n[0].encode("utf-8"))
+    return h("BARRIER_MEMBERSHIP_V1",
+             [{"nodeId": n[0], "bootId": n[1]} for n in ordered])
+
+
+def barrier_binary_digest(files):
+    """hash("BARRIER_BINARY_V1", LIST[MAP{path, sha256Hex}]), sorted by path."""
+    ordered = sorted(files, key=lambda f: f[0].encode("utf-8"))
+    return h("BARRIER_BINARY_V1",
+             [{"path": f[0], "sha256Hex": f[1]} for f in ordered])
+
+
+vectors["barrierMembershipDigest"] = barrier_membership_digest(
+    [("node-b", "boot-2"), ("node-a", "boot-1")])
+
+vectors["barrierBinaryDigest"] = barrier_binary_digest([
+    ("WEB-INF/lib/b.jar", hashlib.sha256(b"bbb").hexdigest()),
+    ("WEB-INF/classes/a.class", hashlib.sha256(b"aaa").hexdigest()),
+])
+
+
 def main():
     """Compare against the fixture the Java golden test also reads, and exit non-zero on drift."""
     import json, os, sys
