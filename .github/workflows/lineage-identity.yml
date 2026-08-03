@@ -158,6 +158,18 @@ jobs:
           -Dtest='LineageSequencingCouchIT'
           -Dlineage.it.required=true
           -Dsurefire.failIfNoSpecifiedTests=true
+      # Runs AFTER the sequencing IT and alone: it lowers the node's max_document_size for
+      # the duration of the test, so nothing else may be writing to this CouchDB meanwhile.
+      - name: Parking IT against real CouchDB (must run — never skippable)
+        env:
+          NEMAKI_LINEAGE_IT_COUCHDB_URL: http://127.0.0.1:5984
+          NEMAKI_LINEAGE_IT_COUCHDB_USER: admin
+          NEMAKI_LINEAGE_IT_COUCHDB_PASSWORD: itpassword
+        run: >
+          mvn -B -f core/pom.xml -Pdevelopment,opencmis-github-packages test
+          -Dtest='LineageParkingCouchIT'
+          -Dlineage.it.required=true
+          -Dsurefire.failIfNoSpecifiedTests=true
 
   # §6-a's live-Atlas release gates E-19/E-20. Apache Atlas is heavy to boot, so this job is
   # deliberately separate: it must run before Slice 4b (activation), and a skipped gate does

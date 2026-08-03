@@ -588,5 +588,328 @@ public class LineageMaterializationTest {
                     materializer.materialize(payload, factFile).outcome());
             assertTrue(spool.readAck(factFile) instanceof LineageFactSpool.AckAbsent);
         }
+
+        // ------------------------------------------------- v2.3.24 F1/F2: mid-plan parking
+
+        /** A 4-chunk export fact, spooled, with its frozen V3 decision already in place. */
+        private record Chunky(LineageSpoolPayloadV1 payload, Path file,
+                              LineageMaterializationDecision decision,
+                              List<String> deliveryIds, List<LineageEventV2> events,
+                              LineageChunkPlanner.ChunkLimits limits) {
+        }
+
+        private Chunky chunkyFact() throws Exception {
+            List<LineageEndpoint> inputs = new java.util.ArrayList<>();
+            for (int i = 0; i < 6; i++) {
+                inputs.add(LineageEndpoint.document("bedroom", "doc-" + i, "f" + i + ".txt"));
+            }
+            LineageFact fact = new LineageFact("bedroom",
+                    LineageProcessType.EXPORT_SELECTED_OBJECTS, "op-chunky",
+                    "2026-08-01T00:00:00Z", inputs,
+                    List.of(LineageEndpoint.exportArtifact("bedroom", "op-chunky", "ZIP",
+                            "out.zip", 1L)),
+                    List.of("atlas"), null,
+                    new LineageFact.LegacyV1Projection(
+                            LineageProcessType.EXPORT_SELECTED_OBJECTS, List.of("i"),
+                            List.of("o"), Map.of(), null));
+            LineageSpoolPayloadV1 chunky = LineageSpoolPayloadV1.of(fact);
+            assertEquals(LineageFactSpool.AppendOutcome.APPENDED, spool.append(chunky));
+            Path file;
+            try (var walk = Files.walk(spoolDir)) {
+                file = walk.filter(f -> f.getFileName().toString()
+                                .equals("fact-" + chunky.spoolRecordId() + ".json"))
+                        .findFirst().orElseThrow();
+            }
+            var limits = new LineageChunkPlanner.ChunkLimits(2L, 1024L * 1024L);
+            List<LineageChunkPlanner.ChunkSlice> slices =
+                    LineageChunkPlanner.partition(chunky, limits, EVENT_ID);
+            assertTrue(slices.size() >= 3, "the fixture must have a later chunk to refuse");
+            List<LineageMaterializationDecision.PlanEntry> entries = new java.util.ArrayList<>();
+            List<String> deliveryIds = new java.util.ArrayList<>();
+            List<LineageEventV2> events = new java.util.ArrayList<>();
+            for (int i = 0; i < slices.size(); i++) {
+                LineageEventV2 event = LineageSpoolMaterializer.v2EventOf(chunky, EVENT_ID,
+                        slices.get(i), i, slices.size());
+                entries.add(new V2Entry(i, event.deliveryId(), event.creationPayloadDigest()));
+                deliveryIds.add(event.deliveryId());
+                events.add(event);
+            }
+            LineageMaterializationDecision decision = LineageMaterializationDecision.ofV3(
+                    chunky.spoolRecordId(), chunky.payloadDigest(), 0L, EVENT_ID, entries,
+                    1000L, LineageChunkPlanner.PARTITION_VERSION, limits, Map.of());
+            when(decisions.readDecision(chunky.spoolRecordId())).thenReturn(decision);
+            return new Chunky(chunky, file, decision, deliveryIds, events, limits);
+        }
+
+        /**
+         * A row in the shape the materializer actually creates (UNSEQUENCED + PENDING), or —
+         * for PUBLISHED — the only shape that status is legal in: a SEQUENCED row with its
+         * fencing coordinates and a complete claim bundle. Building the PUBLISHED case on an
+         * UNSEQUENCED row throws at construction, which would make the escaped-row test pass
+         * for the wrong reason.
+         */
+        private LineageJournalRowV2 rowWithAtlas(LineagePublishStatus status) {
+            if (status == LineagePublishStatus.PENDING) {
+                return new LineageJournalRowV2(
+                        LineageSpoolMaterializer.v2EventOf(payload, EVENT_ID), "1-x",
+                        LineageJournalRowV2.SequencingState.UNSEQUENCED, null, null,
+                        Map.of("atlas", new LineageTargetLifecycle(status, null, null, null,
+                                null, null, null)), Map.of());
+            }
+            LineageEventV2 base = LineageSpoolMaterializer.v2EventOf(payload, EVENT_ID);
+            LineageEventV2 sequenced = new LineageEventV2(base.schemaVersion(),
+                    base.idempotencyKeyVersion(), base.eventId(), base.processKey(),
+                    base.delivery(), base.deliveryId(), base.repositoryId(),
+                    base.processType(), base.operationId(), base.occurredAt(), base.inputs(),
+                    base.outputs(), base.chunkIndex(), base.chunkCount(), 7L,
+                    base.correlationId(), base.spoolRecordId(), base.legacyEventKey(),
+                    base.publishStatusByTarget(), base.creationPayloadDigest());
+            return new LineageJournalRowV2(sequenced, "1-x",
+                    LineageJournalRowV2.SequencingState.SEQUENCED, 1L, "seq-token",
+                    // PUBLISHED came through a claim: bundle + verifyingSince, no live lease.
+                    Map.of("atlas", new LineageTargetLifecycle(status, "tok", 1L, null, 2L,
+                            0L, null)), Map.of());
+        }
+
+        /** The planned row exactly as the materializer creates it: UNSEQUENCED + PENDING. */
+        private LineageJournalRowV2 plannedPendingRow(LineageEventV2 planned) {
+            return new LineageJournalRowV2(planned, "1-x",
+                    LineageJournalRowV2.SequencingState.UNSEQUENCED, null, null,
+                    Map.of("atlas", new LineageTargetLifecycle(LineagePublishStatus.PENDING,
+                            null, null, null, null, null, null)), Map.of());
+        }
+
+        /** The planned row, as a later pass rereads it after the F1 path terminalized it. */
+        private LineageJournalRowV2 abandonedRow(LineageEventV2 planned) {
+            return new LineageJournalRowV2(planned, "1-x",
+                    LineageJournalRowV2.SequencingState.UNSEQUENCED, null, null,
+                    Map.of("atlas", new LineageTargetLifecycle(LineagePublishStatus.UNRESOLVED,
+                            null, null, null, null, null,
+                            new LineageTargetLifecycle.TerminalReason(
+                                    "unstorable_plan", "a later chunk was refused", 1L))),
+                    Map.of());
+        }
+
+        /**
+         * F1: CouchDB refuses chunk 3 of K. The rows already written must be made
+         * non-projectable BEFORE the fact is parked — K-1 of K chunks published as if they
+         * were the whole fact is the silent partial lineage §8-b exists to prevent.
+         */
+        @Test
+        public void aRefusalAtALaterChunkTerminalizesTheRowsAlreadyWritten() throws Exception {
+            Chunky c = chunkyFact();
+            var written = new java.util.ArrayList<String>();
+            org.mockito.Mockito.doAnswer(i -> {
+                LineageEventV2 e = i.getArgument(0);
+                if (written.size() >= 2) {
+                    throw new LineageMaterializationStore.DocumentTooLargeException(
+                            "document_too_large", null);
+                }
+                written.add(e.deliveryId());
+                return null;
+            }).when(journal).appendV2(any());
+            when(v2reads.findV2ByRecordId(anyString())).thenAnswer(i ->
+                    written.contains(i.<String>getArgument(0))
+                            ? rowWithAtlas(LineagePublishStatus.PENDING) : null);
+            when(v2reads.transitionV2Unclaimed(anyString(), anyString(), any(), any(), any()))
+                    .thenReturn(true);
+
+            LineageSpoolMaterializer mat = new LineageSpoolMaterializer(decisions, journal,
+                    v2reads, resolver, spool, null, () -> EVENT_ID, () -> 1000L, c.limits());
+            assertEquals(LineageSpoolMaterializer.Outcome.ALREADY_ACKED,
+                    mat.materialize(c.payload(), c.file()).outcome());
+
+            for (String deliveryId : written) {
+                verify(v2reads).transitionV2Unclaimed(org.mockito.ArgumentMatchers.eq(
+                                deliveryId), org.mockito.ArgumentMatchers.eq("atlas"),
+                        org.mockito.ArgumentMatchers.eq(LineagePublishStatus.PENDING),
+                        org.mockito.ArgumentMatchers.eq(LineagePublishStatus.UNRESOLVED),
+                        org.mockito.ArgumentMatchers.notNull());
+            }
+            assertTrue(spool.readOversizeMarker(c.file())
+                    instanceof LineageFactSpool.AckBytes,
+                    "with nothing projectable left behind, the fact parks");
+        }
+
+        /**
+         * F1 fail-closed: one already-written row has been PUBLISHED, so it cannot be made
+         * non-projectable. Parking would declare an incomplete fact done — refuse instead.
+         */
+        @Test
+        public void aRefusalIsNotParkedWhenAWrittenRowHasAlreadyEscaped() throws Exception {
+            Chunky c = chunkyFact();
+            LineageMetrics metrics = new LineageMetrics();
+            var written = new java.util.ArrayList<String>();
+            org.mockito.Mockito.doAnswer(i -> {
+                LineageEventV2 e = i.getArgument(0);
+                if (written.size() >= 2) {
+                    throw new LineageMaterializationStore.DocumentTooLargeException(
+                            "document_too_large", null);
+                }
+                written.add(e.deliveryId());
+                return null;
+            }).when(journal).appendV2(any());
+            when(v2reads.findV2ByRecordId(anyString())).thenAnswer(i -> {
+                String id = i.getArgument(0);
+                if (!written.contains(id)) {
+                    return null;
+                }
+                return rowWithAtlas(written.indexOf(id) == 0
+                        ? LineagePublishStatus.PUBLISHED : LineagePublishStatus.PENDING);
+            });
+            when(v2reads.transitionV2Unclaimed(anyString(), anyString(), any(), any(), any()))
+                    .thenReturn(true);
+
+            LineageSpoolMaterializer mat = new LineageSpoolMaterializer(decisions, journal,
+                    v2reads, resolver, spool, metrics, () -> EVENT_ID, () -> 1000L,
+                    c.limits());
+            assertEquals(LineageSpoolMaterializer.Outcome.FAILED,
+                    mat.materialize(c.payload(), c.file()).outcome());
+            assertTrue(spool.readOversizeMarker(c.file())
+                            instanceof LineageFactSpool.AckAbsent,
+                    "a fact whose rows escaped is NOT parked — it stays in the work set");
+            assertEquals(1L, ((Number) metrics.snapshot().get("partialRowsEscaped")).longValue());
+        }
+
+        /**
+         * F1 round 2: the fact was terminalized by an earlier pass and its parking marker is
+         * gone, so this pass writes the rows again and CouchDB now accepts every one of them.
+         * The terminalized rows are still undeliverable, so the fact must be RE-PARKED, never
+         * ACKed — the door the first fix left open.
+         */
+        @Test
+        public void aPassThatSucceedsOverTerminalizedRowsReParksInsteadOfAcking()
+                throws Exception {
+            Chunky c = chunkyFact();
+            when(v2reads.findV2ByRecordId(anyString())).thenAnswer(i -> c.events().stream()
+                    .filter(e -> e.deliveryId().equals(i.<String>getArgument(0)))
+                    .findFirst().map(this::abandonedRow).orElse(null));
+
+            LineageSpoolMaterializer mat = new LineageSpoolMaterializer(decisions, journal,
+                    v2reads, resolver, spool, null, () -> EVENT_ID, () -> 1000L, c.limits());
+            assertEquals(LineageSpoolMaterializer.Outcome.ALREADY_ACKED,
+                    mat.materialize(c.payload(), c.file()).outcome());
+            assertTrue(spool.readAck(c.file()) instanceof LineageFactSpool.AckAbsent,
+                    "an abandoned plan must never produce an ACK");
+            assertTrue(spool.readOversizeMarker(c.file())
+                    instanceof LineageFactSpool.AckBytes, "it is parked again instead");
+        }
+
+        /**
+         * F1 round 2, the realistic retry: pass 1 terminalized chunks 0–1 and parked; the
+         * marker was then lost. Pass 2 writes every chunk successfully (the ceiling moved),
+         * so the LATER chunks are PENDING and projectable while the earlier ones are
+         * abandoned. Re-parking alone would leave those later rows deliverable — every row
+         * must go non-projectable first.
+         */
+        @Test
+        public void aRetryOverPartiallyAbandonedRowsTerminalizesTheRestBeforeReParking()
+                throws Exception {
+            Chunky c = chunkyFact();
+            when(v2reads.findV2ByRecordId(anyString())).thenAnswer(i -> {
+                String id = i.getArgument(0);
+                int index = c.deliveryIds().indexOf(id);
+                if (index < 0) {
+                    return null;
+                }
+                return index < 2 ? abandonedRow(c.events().get(index))
+                        : plannedPendingRow(c.events().get(index));
+            });
+            var terminalized = new java.util.ArrayList<String>();
+            when(v2reads.transitionV2Unclaimed(anyString(), anyString(), any(), any(), any()))
+                    .thenAnswer(i -> terminalized.add(i.getArgument(0)));
+
+            LineageSpoolMaterializer mat = new LineageSpoolMaterializer(decisions, journal,
+                    v2reads, resolver, spool, null, () -> EVENT_ID, () -> 1000L, c.limits());
+            assertEquals(LineageSpoolMaterializer.Outcome.ALREADY_ACKED,
+                    mat.materialize(c.payload(), c.file()).outcome());
+            assertTrue(spool.readAck(c.file()) instanceof LineageFactSpool.AckAbsent);
+            assertTrue(spool.readOversizeMarker(c.file())
+                    instanceof LineageFactSpool.AckBytes);
+            for (int i = 2; i < c.deliveryIds().size(); i++) {
+                assertTrue(terminalized.contains(c.deliveryIds().get(i)),
+                        "the still-PENDING chunk " + i + " must be terminalized before the"
+                                + " fact is parked again");
+            }
+        }
+
+        /**
+         * F1 round 2: the row was written but rereads as absent. The lookup is view-backed,
+         * so absence does not prove the row is gone — terminalization is unproven and the
+         * fact must NOT be parked.
+         */
+        @Test
+        public void anAbsentRereadOfAWrittenRowRefusesToPark() throws Exception {
+            Chunky c = chunkyFact();
+            LineageMetrics metrics = new LineageMetrics();
+            var written = new java.util.ArrayList<String>();
+            org.mockito.Mockito.doAnswer(i -> {
+                if (written.size() >= 2) {
+                    throw new LineageMaterializationStore.DocumentTooLargeException(
+                            "document_too_large", null);
+                }
+                written.add(((LineageEventV2) i.getArgument(0)).deliveryId());
+                return null;
+            }).when(journal).appendV2(any());
+            when(v2reads.findV2ByRecordId(anyString())).thenReturn(null);
+
+            LineageSpoolMaterializer mat = new LineageSpoolMaterializer(decisions, journal,
+                    v2reads, resolver, spool, metrics, () -> EVENT_ID, () -> 1000L,
+                    c.limits());
+            assertEquals(LineageSpoolMaterializer.Outcome.FAILED,
+                    mat.materialize(c.payload(), c.file()).outcome());
+            assertTrue(spool.readOversizeMarker(c.file())
+                            instanceof LineageFactSpool.AckAbsent,
+                    "an unprovable terminalization must not park");
+            assertEquals(1L,
+                    ((Number) metrics.snapshot().get("partialRowsEscaped")).longValue());
+        }
+
+        /**
+         * F2: the planner fits chunks against max-payload-bytes, which is a different knob
+         * from the document ceiling. A plan over the ceiling parks with NOTHING written.
+         */
+        @Test
+        public void aPlanOverTheDocumentCeilingParksBeforeAnyRowIsWritten() throws Exception {
+            Chunky c = chunkyFact();
+            LineageSpoolMaterializer tiny = new LineageSpoolMaterializer(decisions, journal,
+                    v2reads, resolver, spool, null, () -> EVENT_ID, () -> 1000L, c.limits(),
+                    64L);
+            assertEquals(LineageSpoolMaterializer.Outcome.ALREADY_ACKED,
+                    tiny.materialize(c.payload(), c.file()).outcome());
+            verify(journal, never()).appendV2(any());
+            verify(decisions, never()).appendV2Classified(any(), any());
+            assertTrue(spool.readOversizeMarker(c.file())
+                    instanceof LineageFactSpool.AckBytes);
+        }
+
+        /**
+         * F2's other half: with the knobs in their configured relation
+         * (maxPayloadBytes ≤ maxDocumentBytes, which readiness now enforces) the conservative
+         * fence is provably inert — it must not park a plan the planner already fit.
+         */
+        @Test
+        public void anOrdinaryPlanIsNeverParkedByTheConservativeFence() throws Exception {
+            Chunky c = chunkyFact();
+            when(v2reads.findV2ByRecordId(anyString())).thenReturn(null);
+            LineageSpoolMaterializer mat = new LineageSpoolMaterializer(decisions, journal,
+                    v2reads, resolver, spool, null, () -> EVENT_ID, () -> 1000L, c.limits(),
+                    // the planner's own byte limit, i.e. the tightest legal ceiling
+                    c.limits().maxPayloadBytes());
+            assertEquals(LineageSpoolMaterializer.Outcome.PARTIAL,
+                    mat.materialize(c.payload(), c.file()).outcome(),
+                    "every row is written; only the reread is not yet visible");
+            assertTrue(spool.readOversizeMarker(c.file())
+                            instanceof LineageFactSpool.AckAbsent,
+                    "the fence must not fire on a plan the planner fit under the same ruler");
+            org.mockito.ArgumentCaptor<LineageEventV2> appended =
+                    org.mockito.ArgumentCaptor.forClass(LineageEventV2.class);
+            verify(journal, org.mockito.Mockito.atLeastOnce()).appendV2(appended.capture());
+            assertEquals(new java.util.LinkedHashSet<>(c.deliveryIds()),
+                    appended.getAllValues().stream().map(LineageEventV2::deliveryId)
+                            .collect(java.util.stream.Collectors.toCollection(
+                                    java.util.LinkedHashSet::new)),
+                    "every planned row, and only the planned rows, reached the store");
+        }
     }
 }

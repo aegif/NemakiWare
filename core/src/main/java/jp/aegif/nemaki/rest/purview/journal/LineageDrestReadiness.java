@@ -221,6 +221,14 @@ public class LineageDrestReadiness {
                     + " 8000000] (CouchDB 3.x's default max_document_size), got "
                     + maxDocument);
         }
+        if (maxPayload > maxDocument) {
+            // The chunk planner fits slices against max-payload-bytes; the store's ceiling is
+            // max-document-bytes. With the first above the second, every plan is well-formed
+            // and unstorable, and the fact can only park (v2.3.24 F3).
+            budgetViolations.add("lineage.event.max-payload-bytes (" + maxPayload + ") must"
+                    + " not exceed lineage.event.max-document-bytes (" + maxDocument + ") —"
+                    + " the planner would fit chunks the store cannot accept");
+        }
         if (!budgetViolations.isEmpty()) {
             return budgetViolations;
         }
