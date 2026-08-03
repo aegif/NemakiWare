@@ -86,6 +86,11 @@ public class PurviewSchemaPayloadFactory {
                 attribute("folderPath", "string", true),
                 attribute("versionSeriesId", "string", true),
                 attribute("versionLabel", "string", true),
+                // §2's truncation evidence (v2.3.26). Additive: an attribute the type does
+                // not declare is dropped on arrival, so the companion has to exist here or
+                // the evidence for a shortened value would be the thing that goes missing.
+                attribute("folderPathOriginalSha256", "string", true),
+                attribute("versionLabelOriginalSha256", "string", true),
                 attribute("isLatestVersion", "boolean", true),
                 attribute("lifecycleState", "string", true),
                 attribute("archiveState", "string", true),
@@ -167,7 +172,10 @@ public class PurviewSchemaPayloadFactory {
                 attribute("archiveState", "string", true),
                 attribute("archivedAt", "long", true),
                 attribute("versionSeriesId", "string", true),
-                attribute("versionLabel", "string", true)));
+                attribute("versionLabel", "string", true),
+                // §2's truncation evidence (v2.3.26) — see nemaki_document.
+                attribute("nameOriginalSha256", "string", true),
+                attribute("versionLabelOriginalSha256", "string", true)));
         return entityDef;
     }
 

@@ -636,23 +636,17 @@ public class RetentionScheduler {
                         long archivedAtMillis = archivedAtCal != null
                                 ? archivedAtCal.getTimeInMillis()
                                 : java.time.Instant.parse(occurredAt).toEpochMilli();
-                        java.util.Map<String, Object> archiveAttributes =
-                                new java.util.LinkedHashMap<>();
-                        archiveAttributes.put("archivedAt", archivedAtMillis);
-                        archiveAttributes.put("originalObjectId", finalOriginalId);
-                        if (archiveName != null && !archiveName.isBlank()) {
-                            archiveAttributes.put("name", archiveName);
-                        }
                         return new LineageFact(
                                 repositoryId,
                                 LineageProcessType.ARCHIVE_COLD,
                                 lineageOperationId,
                                 occurredAt,
-                                java.util.List.of(new LineageEndpoint(
-                                        EndpointKind.ARCHIVE,
-                                        LineageEndpoint.archiveQualifiedName(
-                                                repositoryId, archiveId),
-                                        repositoryId, archiveId, null, archiveAttributes)),
+                                // Through the producer factory, not the canonical constructor:
+                                // §2's attribute limits are applied at that boundary, and a
+                                // hand-built endpoint would skip them (v2.3.26).
+                                java.util.List.of(LineageEndpoint.archive(
+                                        repositoryId, archiveId, finalOriginalId,
+                                        archivedAtMillis, archiveName)),
                                 java.util.List.of(LineageEndpoint.coldStorage(
                                         repositoryId,
                                         finalStorageRef != null ? finalStorageRef : archiveId,

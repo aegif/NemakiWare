@@ -267,6 +267,12 @@ public class LineageCanonicalHashTest {
                         new java.util.TreeMap<>(java.util.Map.of("path", "WEB-INF/lib/b.jar",
                                 "sha256Hex", sha256Hex("bbb"))))));
 
+        // §2's truncation evidence (v2.3.26): plain SHA-256 of the original UTF-8 bytes, so
+        // the value a truncated attribute records is reproducible outside Java.
+        computed.put("attributeEvidenceDigest_1025v",
+                EndpointAttribute.evidenceDigest("v".repeat(
+                        EndpointAttribute.MAX_DISPLAY_CODE_UNITS + 1)));
+
         assertEquals(fixture.keySet(), computed.keySet(),
                 "the fixture and this test cover different vectors");
         for (Map.Entry<String, String> entry : computed.entrySet()) {
@@ -287,7 +293,7 @@ public class LineageCanonicalHashTest {
         while (matcher.find()) {
             vectors.put(matcher.group(1), matcher.group(2));
         }
-        assertEquals(33, vectors.size(), "unexpected fixture size: " + vectors.size());
+        assertEquals(34, vectors.size(), "unexpected fixture size: " + vectors.size());
         return vectors;
     }
 

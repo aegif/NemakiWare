@@ -19,6 +19,7 @@ package jp.aegif.nemaki.rest.purview.journal;
 import static jp.aegif.nemaki.rest.purview.journal.EndpointAttribute.count;
 import static jp.aegif.nemaki.rest.purview.journal.EndpointAttribute.requiredCount;
 import static jp.aegif.nemaki.rest.purview.journal.EndpointAttribute.requiredText;
+import static jp.aegif.nemaki.rest.purview.journal.EndpointAttribute.displayText;
 import static jp.aegif.nemaki.rest.purview.journal.EndpointAttribute.text;
 
 import java.util.LinkedHashMap;
@@ -51,7 +52,10 @@ public enum EndpointKind {
 
     /** A CMIS document. {@code nemaki_document} extends {@code DataSet}. */
     CMIS_DOCUMENT("nemaki_document", Identity.OBJECT_ID, null,
-            requiredText("name"), text("versionLabel"), text("folderPath"),
+            requiredText("name"), displayText("versionLabel"), displayText("folderPath"),
+            // §2's evidence companions (v2.3.26): declared here so nothing is dropped, and
+            // present in the Atlas type so the sink is not handing over something discarded.
+            text("versionLabelOriginalSha256"), text("folderPathOriginalSha256"),
             // Which version series this document belongs to. In the Atlas schema today (unlike
             // versionObjectId / changeToken / contentHash, which are increment-B additions), so
             // declaring it costs nothing and the version-identity question (§3 v2.3.13) starts
@@ -76,8 +80,13 @@ public enum EndpointKind {
      * is the attribute the type actually has, and it is mandatory there.
      */
     ARCHIVE("nemaki_archive", Identity.OBJECT_ID, null,
-            requiredCount("archivedAt"), requiredText("originalObjectId"), text("name"),
-            text("versionLabel"), text("archiveState"), text("versionSeriesId")),
+            requiredCount("archivedAt"), requiredText("originalObjectId"),
+            displayText("name"), displayText("versionLabel"),
+            text("nameOriginalSha256"), text("versionLabelOriginalSha256"),
+            // archiveState is machine-interpreted STATE and versionSeriesId IDENTIFIES the
+            // version lineage — a shortened one of either names something that does not exist,
+            // so both stay whole (§2 is about display values).
+            text("archiveState"), text("versionSeriesId")),
 
     /**
      * Something outside the repository reached through an ingest connector.
@@ -146,7 +155,20 @@ public enum EndpointKind {
         this.identityAttribute = identityAttribute;
         Map<String, EndpointAttribute> declared = new LinkedHashMap<>();
         for (EndpointAttribute attribute : attributes) {
-            declared.put(attribute.name(), attribute);
+            // A duplicate used to overwrite silently, which would let a generated evidence
+            // companion quietly replace a declared attribute of the same name (v2.3.26).
+            if (declared.put(attribute.name(), attribute) != null) {
+                throw new IllegalStateException("attribute '" + attribute.name()
+                        + "' is declared twice on " + atlasTypeName);
+            }
+        }
+        for (EndpointAttribute attribute : declared.values()) {
+            if (attribute.policy() == EndpointAttribute.Policy.TRUNCATE_WITH_EVIDENCE
+                    && !declared.containsKey(attribute.evidenceName())) {
+                throw new IllegalStateException("'" + attribute.name() + "' truncates but its"
+                        + " companion '" + attribute.evidenceName() + "' is not declared on "
+                        + atlasTypeName + " — the evidence would be dropped on arrival");
+            }
         }
         // Not Map.copyOf: that loses insertion order, and both allowedAttributes() and the
         // "allowed: [...]" in a rejection message are meant to read in declaration order.

@@ -168,10 +168,16 @@ public class EndpointKindSchemaAlignmentTest {
      */
     @Test
     public void eachKindDeclaresExactlyTheseAttributes() {
-        assertEquals(List.of("name", "versionLabel", "folderPath", "versionSeriesId"),
+        // The OriginalSha256 companions are §2's truncation evidence (v2.3.26): declared so
+        // the value's shortening is never silent, and present in the Atlas type so the sink
+        // is not handing over an attribute the catalog discards.
+        assertEquals(List.of("name", "versionLabel", "folderPath",
+                        "versionLabelOriginalSha256", "folderPathOriginalSha256",
+                        "versionSeriesId"),
                 EndpointKind.CMIS_DOCUMENT.allowedAttributes());
         assertEquals(List.of("name"), EndpointKind.CMIS_FOLDER.allowedAttributes());
         assertEquals(List.of("archivedAt", "originalObjectId", "name", "versionLabel",
+                "nameOriginalSha256", "versionLabelOriginalSha256",
                 "archiveState", "versionSeriesId"), EndpointKind.ARCHIVE.allowedAttributes());
         assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath"),
                 EndpointKind.EXTERNAL_ASSET.allowedAttributes());
