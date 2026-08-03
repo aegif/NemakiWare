@@ -574,6 +574,58 @@ public class LineageJournalController {
         return ResponseEntity.ok(response);
     }
 
+    // ==================== D-rest-4: manual spool scan ====
+
+    @Autowired(required = false)
+    private jp.aegif.nemaki.rest.purview.journal.LineageProjectionLoop projectionLoop;
+
+    @Autowired(required = false)
+    private jp.aegif.nemaki.rest.purview.journal.LineageDrestReadiness drestReadinessBean;
+
+    /** Manual bounded spool scan (the automatic pass runs per poll on every node). */
+    @PostMapping("/spool-scan")
+    public ResponseEntity<Map<String, Object>> spoolScan(
+            @RequestParam(name = "maxFiles", defaultValue = "2000") int maxFiles,
+            @RequestParam(name = "maxMaterializations", defaultValue = "100")
+                    int maxMaterializations,
+            @RequestParam(name = "maxMillis", defaultValue = "5000") long maxMillis) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+        if (projectionLoop == null || drestReadinessBean == null) {
+            return badRequest("spool scan unavailable");
+        }
+        var verdict = drestReadinessBean.evaluate();
+        if (!verdict.ready()) {
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("violations", verdict.violations());
+            response.put("message", "D-rest readiness gate is not green — the scanner is"
+                    + " dormant");
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+        }
+        var summary = projectionLoop.runSpoolScan(
+                new jp.aegif.nemaki.rest.purview.journal.LineageSpoolScanner.ScanBudget(
+                        Math.min(Math.max(maxFiles, 1), 10_000),
+                        Math.min(Math.max(maxMaterializations, 1), 1_000),
+                        Math.min(Math.max(maxMillis, 1L), 60_000L)));
+        Map<String, Object> response = new LinkedHashMap<>();
+        if (summary == null) {
+            response.put("message", "scanner cannot run on this node (no spool dir or no"
+                    + " machinery)");
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+        }
+        response.put("verified", summary.verified());
+        response.put("acked", summary.acked());
+        response.put("alreadyAcked", summary.alreadyAcked());
+        response.put("unresolved", summary.unresolved());
+        response.put("partial", summary.partial());
+        response.put("failed", summary.failed());
+        response.put("ackBroken", summary.ackBroken());
+        response.put("quarantinedNow", summary.quarantinedNow());
+        response.put("alreadyQuarantined", summary.alreadyQuarantined());
+        response.put("budgetExhausted", summary.budgetExhausted());
+        return ResponseEntity.ok(response);
+    }
+
     // ==================== D-rest-2: fenced sequencer admin entry (disabled by default) ====
 
     @Autowired(required = false)

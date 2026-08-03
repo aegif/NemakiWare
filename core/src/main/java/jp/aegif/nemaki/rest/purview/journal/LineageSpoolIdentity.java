@@ -140,4 +140,61 @@ public final class LineageSpoolIdentity {
             throw new IllegalArgumentException(what + " must not be null or blank");
         }
     }
+
+    /** Domain tag for {@code v1EventDigest} — identity of a materialized v1 journal row. */
+    static final String V1_EVENT_DOMAIN = "SPOOL_V1_EVENT_V1";
+
+    /** Domain tag for {@code materializationPlanDigest} (v2.3.21 — V2 binds the audit id). */
+    static final String PLAN_DOMAIN = "MATERIALIZATION_PLAN_V2";
+
+    /**
+     * v2.3.18 ⑦'s v1EventDigest, on the frozen formula: the identity of the v1 row a plan
+     * entry commits to. Covers the identity fields and deliberately EXCLUDES sequenceNumber
+     * and targets (assignment-time / mutable), so crash retries converge on the stored row
+     * regardless of which attempt's sequence landed.
+     */
+    public static String v1EventDigest(String eventId, String eventKey, String repositoryId,
+                                       LineageProcessType processType,
+                                       java.util.List<String> inputs,
+                                       java.util.List<String> outputs,
+                                       java.util.Map<String, String> snapshotAttributes,
+                                       String occurredAt, String correlationId) {
+        if (eventId == null || eventId.isBlank() || eventKey == null || eventKey.isBlank()) {
+            throw new IllegalArgumentException("v1EventDigest requires eventId and eventKey");
+        }
+        if (processType == null) {
+            throw new IllegalArgumentException("v1EventDigest requires the processType");
+        }
+        return LineageCanonicalHash.hash(V1_EVENT_DOMAIN, eventId, eventKey, repositoryId,
+                processType.name(),
+                inputs == null ? java.util.List.of() : inputs,
+                outputs == null ? java.util.List.of() : outputs,
+                snapshotAttributes == null ? java.util.Map.of() : snapshotAttributes,
+                occurredAt, correlationId);
+    }
+
+    /**
+     * The parent decision's plan digest (v2.3.21, domain V2): binds the fact, the resolved
+     * schema version, the once-allocated audit id, and the COMPLETE plan entries. Recomputed
+     * (never trusted) at every decode — a decision whose stored allocatedEventId or entries
+     * were tampered never becomes a value.
+     */
+    public static String materializationPlanDigest(String spoolRecordId,
+                                                   String factPayloadDigest,
+                                                   long materializeSchemaVersion,
+                                                   String allocatedEventId,
+                                                   java.util.List<java.util.Map<String, Object>>
+                                                           planEntryRecords) {
+        if (spoolRecordId == null || spoolRecordId.isBlank()
+                || factPayloadDigest == null || factPayloadDigest.isBlank()
+                || allocatedEventId == null || allocatedEventId.isBlank()) {
+            throw new IllegalArgumentException("plan digest requires spoolRecordId,"
+                    + " factPayloadDigest and allocatedEventId");
+        }
+        if (planEntryRecords == null || planEntryRecords.isEmpty()) {
+            throw new IllegalArgumentException("plan digest requires at least one entry");
+        }
+        return LineageCanonicalHash.hash(PLAN_DOMAIN, spoolRecordId, factPayloadDigest,
+                materializeSchemaVersion, allocatedEventId, planEntryRecords);
+    }
 }

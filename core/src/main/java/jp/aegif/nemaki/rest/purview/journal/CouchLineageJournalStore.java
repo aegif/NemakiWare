@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 @Service
 public class CouchLineageJournalStore implements LineageJournalStore, LineageSequencingStore,
-        LineageV2TransitionStore, LineageV2ReplayStore {
+        LineageV2TransitionStore, LineageV2ReplayStore, LineageMaterializationStore {
 
     private static final Logger logger = LoggerFactory.getLogger(CouchLineageJournalStore.class);
 
@@ -2680,6 +2680,325 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
             return value instanceof Number n ? exactLong(n, "unacked replay count") : 0;
         } catch (RuntimeException e) {
             throw new SequencingStorageException("unacked replay count query failed", e);
+        }
+    }
+
+
+    // ==================================================================
+    // LineageMaterializationStore — v2.3.18 ⑦ (D-rest-4). Deployed dual and inert: nothing
+    // resolves a write version before 4a, so nothing creates decisions in production.
+    // ==================================================================
+
+    private static final String DECISION_TYPE = "lineage_materialization";
+
+    @Override
+    public LineageMaterializationDecision createDecisionIfAbsent(
+            LineageMaterializationDecision decision) {
+        if (decision == null) {
+            throw new IllegalArgumentException("decision must not be null");
+        }
+        ensureDatabase();
+        Map<String, Object> doc = decisionToRaw(decision);
+        try {
+            com.ibm.cloud.cloudant.v1.model.Document sdkDoc =
+                    new com.ibm.cloud.cloudant.v1.model.Document();
+            Map<String, Object> withoutMeta = new HashMap<>(doc);
+            withoutMeta.remove("_id");
+            sdkDoc.setProperties(withoutMeta);
+            sdkDoc.setId(decision.documentId());
+            getLineageClient().getClient().putDocument(
+                    new com.ibm.cloud.cloudant.v1.model.PutDocumentOptions.Builder()
+                            .db(getLineageClient().getDatabaseName())
+                            .docId(decision.documentId())
+                            .document(sdkDoc)
+                            .build())
+                    .execute();
+            return decision;
+        } catch (com.ibm.cloud.sdk.core.service.exception.ConflictException conflict) {
+            LineageMaterializationDecision stored =
+                    readDecision(decision.spoolRecordId());
+            if (stored == null) {
+                throw new SequencingStorageException("decision occupant for '"
+                        + decision.spoolRecordId() + "' vanished after 409", null);
+            }
+            if (!stored.factPayloadDigest().equals(decision.factPayloadDigest())
+                    || !stored.materializationPlanDigest()
+                            .equals(decision.materializationPlanDigest())) {
+                throw new LineageIntegrityException(decision.documentId(),
+                        stored.materializationPlanDigest(),
+                        "decision occupant disagrees — a different fact or plan already"
+                                + " committed under this spoolRecordId");
+            }
+            // Benign collision: the STORED decision's allocations are the frozen truth.
+            if (lineageMetrics != null) {
+                lineageMetrics.recordDecisionCollision();
+            }
+            return stored;
+        } catch (RuntimeException e) {
+            throw new SequencingStorageException("decision create failed for '"
+                    + decision.spoolRecordId() + "'", e);
+        }
+    }
+
+    @Override
+    public LineageMaterializationDecision readDecision(String spoolRecordId) {
+        if (spoolRecordId == null || spoolRecordId.isBlank()) {
+            throw new IllegalArgumentException("spoolRecordId must not be blank");
+        }
+        ensureDatabase();
+        Map<String, Object> raw = readRawStrict("lineage_materialization:" + spoolRecordId);
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return decisionFromRaw(raw);
+        } catch (RuntimeException e) {
+            throw new SequencingStorageException("undecodable materialization decision '"
+                    + spoolRecordId + "': " + e.getMessage(), e);
+        }
+    }
+
+    private static Map<String, Object> decisionToRaw(LineageMaterializationDecision d) {
+        Map<String, Object> doc = new LinkedHashMap<>();
+        doc.put("_id", d.documentId());
+        doc.put("type", DECISION_TYPE);
+        doc.put("spoolRecordId", d.spoolRecordId());
+        doc.put("factPayloadDigest", d.factPayloadDigest());
+        doc.put("materializeSchemaVersion", (long) d.materializeSchemaVersion());
+        doc.put("barrierGeneration", d.barrierGeneration());
+        doc.put("allocatedEventId", d.allocatedEventId());
+        doc.put("planEntries", d.planEntries().stream()
+                .map(LineageMaterializationDecision.PlanEntry::asRecord).toList());
+        doc.put("materializationPlanDigest", d.materializationPlanDigest());
+        doc.put("createdAtMs", d.createdAtMs());
+        return doc;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static LineageMaterializationDecision decisionFromRaw(Map<String, Object> raw) {
+        if (!DECISION_TYPE.equals(raw.get("type"))) {
+            throw new IllegalArgumentException("not a materialization decision: type="
+                    + raw.get("type"));
+        }
+        String spoolRecordId = requireString(raw, "spoolRecordId");
+        String expectedId = "lineage_materialization:" + spoolRecordId;
+        if (!expectedId.equals(raw.get("_id"))) {
+            throw new IllegalArgumentException("decision _id '" + raw.get("_id")
+                    + "' does not match its spoolRecordId");
+        }
+        long schemaLong = exactLong(raw.get("materializeSchemaVersion"),
+                "materializeSchemaVersion");
+        if (schemaLong != 1L && schemaLong != 2L) {
+            // Validated BEFORE narrowing: 4294967297 must never masquerade as schema 1.
+            throw new IllegalArgumentException("materializeSchemaVersion must be 1 or 2, got "
+                    + schemaLong);
+        }
+        int schemaVersion = (int) schemaLong;
+        Object entriesValue = raw.get("planEntries");
+        if (!(entriesValue instanceof List<?> entryList) || entryList.isEmpty()) {
+            throw new IllegalArgumentException("planEntries must be a non-empty list");
+        }
+        List<LineageMaterializationDecision.PlanEntry> entries = new ArrayList<>();
+        for (Object entryValue : entryList) {
+            if (!(entryValue instanceof Map)) {
+                throw new IllegalArgumentException("plan entry must be a map");
+            }
+            Map<String, Object> e = (Map<String, Object>) entryValue;
+            if (schemaVersion == 1) {
+                entries.add(new LineageMaterializationDecision.V1Entry(
+                        requireString(e, "eventId"), requireString(e, "v1EventDigest")));
+            } else {
+                entries.add(new LineageMaterializationDecision.V2Entry(
+                        exactLong(e.get("chunkIndex"), "chunkIndex"),
+                        requireString(e, "deliveryId"), requireString(e, "eventDigest")));
+            }
+        }
+        // The typed constructor recomputes the plan digest — tampered content throws here.
+        return new LineageMaterializationDecision(spoolRecordId,
+                requireString(raw, "factPayloadDigest"), schemaVersion,
+                exactLong(raw.get("barrierGeneration"), "barrierGeneration"),
+                requireString(raw, "allocatedEventId"), entries,
+                requireString(raw, "materializationPlanDigest"),
+                exactLong(raw.get("createdAtMs"), "createdAtMs"));
+    }
+
+    private static String requireString(Map<String, Object> map, String field) {
+        if (!(map.get(field) instanceof String s) || s.isBlank()) {
+            throw new IllegalArgumentException(field + " must be a non-blank string");
+        }
+        return s;
+    }
+
+    @Override
+    public MaterializedV1Row readMaterializedV1RowStrict(String eventId) {
+        if (eventId == null || eventId.isBlank()) {
+            throw new IllegalArgumentException("eventId must not be blank");
+        }
+        ensureDatabase();
+        Map<String, Object> raw = readRawStrict("lineage:" + eventId);
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return new MaterializedV1Row(strictV1Event(raw, eventId),
+                    raw.get("_rev") instanceof String r ? r : null);
+        } catch (RuntimeException e) {
+            throw new SequencingStorageException("undecodable materialized v1 row 'lineage:"
+                    + eventId + "': " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * The strict v1 materialization decoder (v2.3.21 B4): the exact writer shape, no
+     * defaulting. Absence of the two writer-omitted-when-empty maps decodes as canonical
+     * empty; present-but-wrong-type is refused.
+     */
+    @SuppressWarnings("unchecked")
+    private static LineageEvent strictV1Event(Map<String, Object> raw, String eventId) {
+        if (!"lineage_event".equals(raw.get("type"))) {
+            throw new IllegalArgumentException("type must be lineage_event, got "
+                    + raw.get("type"));
+        }
+        long schemaVersion = exactLong(raw.get("schemaVersion"), "schemaVersion");
+        if (schemaVersion != 1) {
+            throw new IllegalArgumentException("schemaVersion must be 1, got " + schemaVersion);
+        }
+        String storedEventId = requireString(raw, "eventId");
+        if (!storedEventId.equals(eventId) || !("lineage:" + eventId).equals(raw.get("_id"))) {
+            throw new IllegalArgumentException("row identity disagrees with its _id");
+        }
+        LineageProcessType processType;
+        try {
+            processType = LineageProcessType.valueOf(requireString(raw, "processType"));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("unknown processType " + raw.get("processType"));
+        }
+        List<String> inputs = strictStringList(raw.get("inputs"), "inputs");
+        List<String> outputs = strictStringList(raw.get("outputs"), "outputs");
+        Map<String, String> snapshot;
+        Object sa = raw.get("snapshotAttributes");
+        if (sa == null && !raw.containsKey("snapshotAttributes")) {
+            snapshot = Map.of(); // writer omits when empty — absence IS canonical empty
+        } else if (sa instanceof Map) {
+            snapshot = new LinkedHashMap<>();
+            for (var e : ((Map<Object, Object>) sa).entrySet()) {
+                if (!(e.getKey() instanceof String k) || !(e.getValue() instanceof String v)) {
+                    throw new IllegalArgumentException("snapshotAttributes must map strings"
+                            + " to strings");
+                }
+                ((LinkedHashMap<String, String>) snapshot).put(k, v);
+            }
+        } else {
+            throw new IllegalArgumentException("snapshotAttributes present but not a map");
+        }
+        Map<String, LineagePublishStatus> statuses;
+        Object ps = raw.get("publishStatusByTarget");
+        if (ps == null && !raw.containsKey("publishStatusByTarget")) {
+            statuses = Map.of();
+        } else if (ps instanceof Map) {
+            statuses = new LinkedHashMap<>();
+            for (var e : ((Map<Object, Object>) ps).entrySet()) {
+                if (!(e.getKey() instanceof String k) || !(e.getValue() instanceof String v)) {
+                    throw new IllegalArgumentException("publishStatusByTarget must map"
+                            + " strings to status names");
+                }
+                ((LinkedHashMap<String, LineagePublishStatus>) statuses)
+                        .put(k, LineagePublishStatus.valueOf(v));
+            }
+        } else {
+            throw new IllegalArgumentException("publishStatusByTarget present but not a map");
+        }
+        long sequence = exactLong(raw.get("sequenceNumber"), "sequenceNumber");
+        if (sequence < 0) {
+            throw new IllegalArgumentException("sequenceNumber must be >= 0");
+        }
+        return new LineageEvent((int) schemaVersion, storedEventId,
+                requireString(raw, "eventKey"), sequence, requireString(raw, "occurredAt"),
+                requireString(raw, "repositoryId"), processType, inputs, outputs,
+                requireStringAllowEmpty(raw, "runId"),
+                requireStringAllowEmpty(raw, "correlationId"),
+                (int) exactLong(raw.get("version"), "version"), snapshot, statuses);
+    }
+
+    private static String requireStringAllowEmpty(Map<String, Object> map, String field) {
+        if (!(map.get(field) instanceof String s)) {
+            throw new IllegalArgumentException(field + " must be a string");
+        }
+        return s;
+    }
+
+    private static List<String> strictStringList(Object value, String what) {
+        if (!(value instanceof List<?> list)) {
+            throw new IllegalArgumentException(what + " must be a list");
+        }
+        List<String> out = new ArrayList<>();
+        for (Object item : list) {
+            if (!(item instanceof String s)) {
+                throw new IllegalArgumentException(what + " must contain only strings");
+            }
+            out.add(s);
+        }
+        return out;
+    }
+
+    @Override
+    public void createMaterializedV1RowIfAbsent(LineageEvent event,
+            String expectedV1EventDigest) {
+        if (event == null || expectedV1EventDigest == null
+                || expectedV1EventDigest.isBlank()) {
+            throw new IllegalArgumentException("event and expected digest are required");
+        }
+        ensureDatabase();
+        MaterializedV1Row existing = readMaterializedV1RowStrict(event.eventId());
+        if (existing != null) {
+            verifyMaterializedV1Digest(existing.event(), expectedV1EventDigest);
+            return;
+        }
+        // The fenced allocator, never the eager v1 helper: counter-required,
+        // watermark-checked, fail-closed. A burned number on a lost race is an accepted gap.
+        long sequence = allocateSequenceFenced(event.repositoryId());
+        LineageEvent sequenced = new LineageEvent(event.schemaVersion(), event.eventId(),
+                event.eventKey(), sequence, event.occurredAt(), event.repositoryId(),
+                event.processType(), event.inputs(), event.outputs(), event.runId(),
+                event.correlationId(), event.version(), event.snapshotAttributes(),
+                event.publishStatusByTarget());
+        Map<String, Object> doc = new CouchLineageEvent(sequenced).toMap();
+        try {
+            com.ibm.cloud.cloudant.v1.model.Document sdkDoc =
+                    new com.ibm.cloud.cloudant.v1.model.Document();
+            Map<String, Object> withoutMeta = new HashMap<>(doc);
+            Object id = withoutMeta.remove("_id");
+            withoutMeta.remove("_rev");
+            sdkDoc.setProperties(withoutMeta);
+            sdkDoc.setId((String) id);
+            getLineageClient().getClient().putDocument(
+                    new com.ibm.cloud.cloudant.v1.model.PutDocumentOptions.Builder()
+                            .db(getLineageClient().getDatabaseName())
+                            .docId((String) id)
+                            .document(sdkDoc)
+                            .build())
+                    .execute();
+        } catch (com.ibm.cloud.sdk.core.service.exception.ConflictException conflict) {
+            MaterializedV1Row occupant = readMaterializedV1RowStrict(event.eventId());
+            if (occupant == null) {
+                throw new SequencingStorageException("v1 row occupant for '"
+                        + event.eventId() + "' vanished after 409", null);
+            }
+            verifyMaterializedV1Digest(occupant.event(), expectedV1EventDigest);
+        } catch (RuntimeException e) {
+            throw new SequencingStorageException("materialized v1 create failed for '"
+                    + event.eventId() + "'", e);
+        }
+    }
+
+    private static void verifyMaterializedV1Digest(LineageEvent stored, String expected) {
+        String recomputed = LineageSpoolIdentity.v1EventDigest(stored.eventId(),
+                stored.eventKey(), stored.repositoryId(), stored.processType(),
+                stored.inputs(), stored.outputs(), stored.snapshotAttributes(),
+                stored.occurredAt(), stored.correlationId());
+        if (!recomputed.equals(expected)) {
+            throw new LineageIntegrityException("lineage:" + stored.eventId(), recomputed,
+                    "materialized v1 occupant disagrees with the frozen plan entry");
         }
     }
 

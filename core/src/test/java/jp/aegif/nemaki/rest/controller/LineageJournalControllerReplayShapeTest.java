@@ -96,6 +96,36 @@ public class LineageJournalControllerReplayShapeTest {
         assertEquals("Failed to reset status", response.getBody().get("message"));
     }
 
+    /** D-rest-4 round-2: the manual spool-scan returns the FULL summary shape. */
+    @Test
+    public void theSpoolScanResponseCarriesTheWholeSummary() throws Exception {
+        var loop = mock(jp.aegif.nemaki.rest.purview.journal.LineageProjectionLoop.class);
+        var readiness = mock(jp.aegif.nemaki.rest.purview.journal.LineageDrestReadiness.class);
+        when(readiness.evaluate()).thenReturn(
+                new jp.aegif.nemaki.rest.purview.journal.LineageDrestReadiness.Readiness(
+                        true, List.of()));
+        when(loop.runSpoolScan(any())).thenReturn(
+                new jp.aegif.nemaki.rest.purview.journal.LineageSpoolScanner.ScanSummary(
+                        5, 1, 2, 3, 4, 6, 7, 8, 9, true));
+        set("projectionLoop", loop);
+        set("drestReadinessBean", readiness);
+
+        ResponseEntity<Map<String, Object>> response =
+                controller.spoolScan(100, 10, 1000);
+        assertEquals(200, response.getStatusCode().value());
+        Map<String, Object> body = response.getBody();
+        assertEquals(5, body.get("verified"));
+        assertEquals(4, body.get("acked"));
+        assertEquals(6, body.get("alreadyAcked"));
+        assertEquals(7, body.get("unresolved"));
+        assertEquals(8, body.get("partial"));
+        assertEquals(3, body.get("failed"));
+        assertEquals(9, body.get("ackBroken"));
+        assertEquals(1, body.get("quarantinedNow"));
+        assertEquals(2, body.get("alreadyQuarantined"));
+        assertEquals(true, body.get("budgetExhausted"));
+    }
+
     @Test
     public void theV1SuccessShapeIsUnchangedToo() {
         when(journalStore.findByRecordId(anyString())).thenReturn(v1Row());

@@ -62,7 +62,8 @@ public class LineageDrestRoutingTest {
         loop = new LineageProjectionLoop();
         config = mock(LineageConfig.class);
         store = mock(LineageJournalStore.class, withSettings()
-                .extraInterfaces(LineageV2TransitionStore.class));
+                .extraInterfaces(LineageV2TransitionStore.class,
+                        LineageMaterializationStore.class));
         v2store = (LineageV2TransitionStore) store;
         sink = mock(LineageTargetSink.class);
         cursorStore = mock(ProjectionCursorStore.class);
@@ -149,6 +150,48 @@ public class LineageDrestRoutingTest {
         verify(replayService).recoverUnacked(org.mockito.ArgumentMatchers.anyInt());
     }
 
+    /** A8 (v2.3.21): production defaults do ZERO spool/materialization work. */
+    @Test
+    public void productionDefaultsTouchNothingInTheSpoolOrDecisions() throws Exception {
+        readinessIs(false);
+        when(config.getSpoolDir()).thenReturn(""); // blank tested BEFORE Path construction
+        WriteVersionResolver resolverMock = mock(WriteVersionResolver.class);
+        setField(loop, "writeVersionResolver", resolverMock);
+        when(store.findByRepositoryAndSequenceRange(eq(REPO), anyLong(), anyInt()))
+                .thenReturn(List.of());
+
+        loop.pollAndProject();
+
+        verify(resolverMock, never()).resolve(any());
+        // The store's materialization surface is untouched (mock records all calls).
+        verify((LineageMaterializationStore) store, never()).readDecision(anyString());
+        verify((LineageMaterializationStore) store, never())
+                .createDecisionIfAbsent(any());
+    }
+
+    /**
+     * 後追いレビュー R-mid: the merged walk's v1 side is WIRED to the strict fetch — a
+     * regression to the legacy clamped/empty-on-failure method must fail here, not in
+     * production.
+     */
+    @Test
+    public void theMergedWalkCallsTheStrictV1FetchAndNeverTheLegacyOne() throws Exception {
+        readinessIs(true);
+        when(v2store.reapExpiredClaims(eq(TARGET), any())).thenReturn(0);
+        when(v2store.findV2NonTerminalRepositoryIds(TARGET)).thenReturn(List.of(REPO));
+        when(v2store.findV1ByRepositoryAndSequenceRangeStrict(eq(REPO), anyLong(), anyInt()))
+                .thenReturn(List.of());
+        when(v2store.findV2ByRepositoryAndSequenceRange(eq(REPO), anyLong(), anyInt()))
+                .thenReturn(List.of());
+
+        loop.pollAndProject();
+
+        verify(v2store).findV1ByRepositoryAndSequenceRangeStrict(eq(REPO), anyLong(),
+                anyInt());
+        verify(store, never()).findByRepositoryAndSequenceRange(anyString(), anyLong(),
+                anyInt());
+    }
+
     // ---------------------------------------------------------------- readiness OFF
 
     @Test
@@ -174,7 +217,7 @@ public class LineageDrestRoutingTest {
         readinessIs(true);
         when(v2store.reapExpiredClaims(eq(TARGET), any())).thenReturn(0);
         when(v2store.findV2NonTerminalRepositoryIds(TARGET)).thenReturn(List.of(REPO));
-        when(store.findByRepositoryAndSequenceRange(eq(REPO), anyLong(), anyInt()))
+        when(v2store.findV1ByRepositoryAndSequenceRangeStrict(eq(REPO), anyLong(), anyInt()))
                 .thenReturn(List.of());
         LineageJournalRowV2 row = sequencedRow(7L, "PENDING", null);
         when(v2store.findV2ByRepositoryAndSequenceRange(eq(REPO), anyLong(), anyInt()))
@@ -213,7 +256,7 @@ public class LineageDrestRoutingTest {
         readinessIs(true);
         when(v2store.reapExpiredClaims(eq(TARGET), any())).thenReturn(0);
         when(v2store.findV2NonTerminalRepositoryIds(TARGET)).thenReturn(List.of(REPO));
-        when(store.findByRepositoryAndSequenceRange(eq(REPO), anyLong(), anyInt()))
+        when(v2store.findV1ByRepositoryAndSequenceRangeStrict(eq(REPO), anyLong(), anyInt()))
                 .thenReturn(List.of());
         LineageJournalRowV2 row = sequencedRow(7L, "PENDING", null);
         when(v2store.findV2ByRepositoryAndSequenceRange(eq(REPO), anyLong(), anyInt()))
@@ -244,6 +287,8 @@ public class LineageDrestRoutingTest {
                 Map.of("token", "foreign-tok", "claimedAtMs", 1000L,
                         "leaseExpiresAtMs", System.currentTimeMillis() + 60_000L,
                         "retryCount", 0L));
+        when(v2store.findV1ByRepositoryAndSequenceRangeStrict(eq(REPO), anyLong(), anyInt()))
+                .thenReturn(List.of());
         when(v2store.findV2ByRepositoryAndSequenceRange(eq(REPO), anyLong(), anyInt()))
                 .thenReturn(List.of(row));
 
@@ -260,6 +305,8 @@ public class LineageDrestRoutingTest {
         readinessIs(true);
         when(v2store.reapExpiredClaims(eq(TARGET), any())).thenReturn(0);
         when(v2store.findV2NonTerminalRepositoryIds(TARGET)).thenReturn(List.of(REPO));
+        when(v2store.findV1ByRepositoryAndSequenceRangeStrict(eq(REPO), anyLong(), anyInt()))
+                .thenReturn(List.of());
         // v2 row at seq 7 (foreign live claim = halt), v2 row at seq 9 PENDING behind it.
         LineageJournalRowV2 halted = sequencedRow(7L, "PROJECTING",
                 Map.of("token", "foreign-tok", "claimedAtMs", 1000L,
@@ -294,7 +341,7 @@ public class LineageDrestRoutingTest {
                 .targets(List.of(TARGET))
                 .build();
         LineageJournalRow row = new LineageJournalRow.Decoded(LineageJournalEntry.ofV1(event));
-        when(store.findByRepositoryAndSequenceRange(eq(REPO), anyLong(), anyInt()))
+        when(v2store.findV1ByRepositoryAndSequenceRangeStrict(eq(REPO), anyLong(), anyInt()))
                 .thenReturn(List.of(row));
         when(store.updatePublishStatus(anyString(), eq(TARGET),
                 eq(LineagePublishStatus.PROJECTING))).thenReturn(1);

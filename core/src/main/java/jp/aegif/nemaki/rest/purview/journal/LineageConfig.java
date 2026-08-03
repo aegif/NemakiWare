@@ -177,6 +177,18 @@ public class LineageConfig {
     @Value("${lineage.sequencer.backlog-cap:1000}")
     private int sequencerBacklogCap;
 
+    @Value("${lineage.spool.dir:}")
+    private String spoolDir;
+
+    @Value("${lineage.spool.scan.max-files:2000}")
+    private int spoolScanMaxFiles;
+
+    @Value("${lineage.spool.scan.max-materializations:100}")
+    private int spoolScanMaxMaterializations;
+
+    @Value("${lineage.spool.scan.max-millis:5000}")
+    private long spoolScanMaxMillis;
+
     // --- Leader election (multi-node deployments) ---
 
     @Value("${lineage.leader-election.enabled:false}")
@@ -276,6 +288,24 @@ public class LineageConfig {
 
     public int getSequencerBacklogCap() {
         return readDynamicInt("lineage.sequencer.backlog-cap", sequencerBacklogCap);
+    }
+
+    /** The node-local fact spool base directory; blank = no spool on this node. */
+    public String getSpoolDir() {
+        return trimToEmpty(readDynamic("lineage.spool.dir", spoolDir));
+    }
+
+    public int getSpoolScanMaxFiles() {
+        return readDynamicInt("lineage.spool.scan.max-files", spoolScanMaxFiles);
+    }
+
+    public int getSpoolScanMaxMaterializations() {
+        return readDynamicInt("lineage.spool.scan.max-materializations",
+                spoolScanMaxMaterializations);
+    }
+
+    public long getSpoolScanMaxMillis() {
+        return readDynamicLong("lineage.spool.scan.max-millis", spoolScanMaxMillis);
     }
 
     public int getRetentionDays() {
@@ -531,6 +561,20 @@ public class LineageConfig {
             return startupDefault;
         }
         return Boolean.parseBoolean(value.trim());
+    }
+
+    private long readDynamicLong(String key, long startupDefault) {
+        String value = readDynamic(key, null);
+        if (value == null || value.trim().isEmpty()) {
+            return startupDefault;
+        }
+        try {
+            return Long.parseLong(value.trim());
+        } catch (NumberFormatException e) {
+            logger.warn("Invalid long for key '{}': '{}', using default {}", key, value,
+                    startupDefault);
+            return startupDefault;
+        }
     }
 
     private int readDynamicInt(String key, int startupDefault) {

@@ -46,6 +46,9 @@ public class LineageSequencerAdminService {
     @Autowired(required = false)
     private LineageMetrics lineageMetrics;
 
+    @Autowired(required = false)
+    private LineageCapabilityProvider capabilityProvider;
+
     /** A run refusal (readiness violations) as data; {@code summary} set on success. */
     public record SequencerRunOutcome(boolean ran,
                                       java.util.List<String> violations,
@@ -74,6 +77,13 @@ public class LineageSequencerAdminService {
         LineageDrestReadiness.Readiness verdict = readiness.evaluate();
         out.put("enabled", verdict.ready());
         out.put("violations", verdict.violations());
+        if (capabilityProvider != null) {
+            Map<String, Object> capabilities = new LinkedHashMap<>();
+            capabilities.put("wired", capabilityProvider.wiredCapabilities().stream()
+                    .sorted().toList());
+            capabilities.put("active", verdict.ready());
+            out.put("capabilities", capabilities);
+        }
         if (!(journalStore instanceof LineageSequencingStore store)) {
             out.put("leasePresent", false);
             out.put("hint", "journal store has no sequencing surface");

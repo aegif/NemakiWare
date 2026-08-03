@@ -50,6 +50,7 @@ public class LineageDrestReadinessTest {
         when(config.getVerifyIntervalSeconds()).thenReturn(2);
         when(config.getVerifyMaxAgeMinutes()).thenReturn(10);
         when(config.getTargets()).thenReturn(List.of("atlas"));
+        when(config.getMode()).thenReturn(LineageMode.DIRECT);
         when(config.getSequencerLeaseSeconds()).thenReturn(60);
         when(config.getSequencerBatchSize()).thenReturn(100);
         when(config.getSequencerBacklogCap()).thenReturn(1000);
@@ -177,6 +178,30 @@ public class LineageDrestReadinessTest {
         assertFalse(readiness.evaluate().ready(), "29 < 30 blocks on the range bound");
         when(config.getProjectionClaimLeaseSeconds()).thenReturn(30);
         assertTrue(readiness.evaluate().ready(), "30 is in range and past the margin");
+    }
+
+    /** D-rest-4 round-2 fix 4: journaled mode also validates the scan budgets. */
+    @Test
+    public void journaledModeValidatesSpoolAndScanBudgets(@org.junit.jupiter.api.io.TempDir
+            java.nio.file.Path spoolDir) {
+        when(config.getMode()).thenReturn(LineageMode.JOURNALED);
+        when(config.getSpoolDir()).thenReturn(spoolDir.toString());
+        when(config.getSpoolScanMaxFiles()).thenReturn(2000);
+        when(config.getSpoolScanMaxMaterializations()).thenReturn(100);
+        when(config.getSpoolScanMaxMillis()).thenReturn(5000L);
+        assertTrue(readiness.evaluate().ready(), "a real writable dir + sane budgets pass");
+
+        when(config.getSpoolScanMaxFiles()).thenReturn(0);
+        assertFalse(readiness.evaluate().ready(),
+                "a zero budget would throw every poll — the gate refuses it up front");
+        when(config.getSpoolScanMaxFiles()).thenReturn(2000);
+        when(config.getSpoolScanMaxMillis()).thenReturn(0L);
+        assertFalse(readiness.evaluate().ready());
+        when(config.getSpoolScanMaxMillis()).thenReturn(5000L);
+
+        when(config.getSpoolDir()).thenReturn("");
+        assertFalse(readiness.evaluate().ready(),
+                "journaled mode without a spool dir is NOT_READY");
     }
 
     @Test

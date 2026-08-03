@@ -684,6 +684,43 @@ public class LineageV2TransitionMachineTest {
                     LineageReplayRequest.State.CREATED));
         }
 
+        /** D-rest-4 round-1 fix 1: schema values are validated BEFORE int narrowing. */
+        @Test
+        public void aDecisionSchemaOutsideOneOrTwoIsRefusedBeforeNarrowing() {
+            Map<String, Object> doc = new LinkedHashMap<>();
+            String spoolId = "a".repeat(64);
+            doc.put("_id", "lineage_materialization:" + spoolId);
+            doc.put("_rev", "1-x");
+            doc.put("type", "lineage_materialization");
+            doc.put("spoolRecordId", spoolId);
+            doc.put("factPayloadDigest", "b".repeat(64));
+            doc.put("materializeSchemaVersion", 4294967297L); // (int) would see 1
+            doc.put("barrierGeneration", 0L);
+            doc.put("allocatedEventId", "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d");
+            doc.put("planEntries", java.util.List.of(Map.of("schemaVersion", 1L,
+                    "eventId", "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+                    "v1EventDigest", "c".repeat(64))));
+            doc.put("materializationPlanDigest", "d".repeat(64));
+            doc.put("createdAtMs", 1000L);
+            String documentId = "lineage_materialization:" + spoolId;
+            com.ibm.cloud.cloudant.v1.model.Document sdkDoc =
+                    new com.ibm.cloud.cloudant.v1.model.Document();
+            Map<String, Object> withoutMeta = new HashMap<>(doc);
+            withoutMeta.remove("_id");
+            withoutMeta.remove("_rev");
+            sdkDoc.setProperties(withoutMeta);
+            sdkDoc.setId(documentId);
+            sdkDoc.setRev("1-x");
+            when(rawClient.getDocument(org.mockito.ArgumentMatchers.argThat(
+                    (com.ibm.cloud.cloudant.v1.model.GetDocumentOptions o) ->
+                            o != null && documentId.equals(o.docId())))
+                    .execute().getResult())
+                    .thenReturn(sdkDoc);
+            assertThrows(LineageSequencingStore.SequencingStorageException.class,
+                    () -> store.readDecision(spoolId),
+                    "4294967297 must never masquerade as schema 1");
+        }
+
         @Test
         public void aMalformedRowThrowsRatherThanBecomingAValue() {
             Map<String, Object> doc = sequencedDoc("VERIFYING", liveClaim(null), null);
