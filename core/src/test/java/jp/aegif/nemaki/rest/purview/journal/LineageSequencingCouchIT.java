@@ -749,4 +749,95 @@ public class LineageSequencingCouchIT {
         } catch (LineageIntegrityException expected) {
         }
     }
+
+    // ================================================================ chunking (v2.3.22)
+
+    @Test
+    public void chunkedRowsMaterializeIndependentlyAndGetIndependentSequences() {
+        String repo = "v2-chunk-repo";
+        bootstrapLease(repo);
+        bootstrapCounter(repo, 0L);
+
+        // A 3-way split: anchor + 1 document per chunk.
+        List<LineageEndpoint> inputs = new java.util.ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            inputs.add(LineageEndpoint.document(repo, String.format("doc-%03d", i),
+                    "f" + i + ".txt"));
+        }
+        LineageFact fact = new LineageFact(repo,
+                LineageProcessType.EXPORT_SELECTED_OBJECTS, "op-chunk-it",
+                "2026-08-01T08:00:00Z", inputs,
+                List.of(LineageEndpoint.exportArtifact(repo, "op-chunk-it", "ZIP", "o.zip",
+                        3L)),
+                List.of("purview"), null,
+                new LineageFact.LegacyV1Projection(LineageProcessType.EXPORT_SELECTED_OBJECTS,
+                        List.of("i"), List.of("o"), Map.of(), null));
+        LineageSpoolPayloadV1 payload = LineageSpoolPayloadV1.of(fact);
+        var limits = new LineageChunkPlanner.ChunkLimits(2L, 1024L * 1024L);
+        String eventId = "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d";
+        List<LineageChunkPlanner.ChunkSlice> slices =
+                LineageChunkPlanner.partition(payload, limits, eventId);
+        assertEquals(3, slices.size());
+
+        // Each chunk is its own create-if-absent row; a second append converges.
+        for (int i = 0; i < slices.size(); i++) {
+            LineageEventV2 event = LineageSpoolMaterializer.v2EventOf(payload, eventId,
+                    slices.get(i), i, slices.size());
+            store.appendV2(event);
+            store.appendV2(event);
+        }
+
+        // The fenced sequencer assigns each chunk its own sequence — the design does NOT
+        // require them to be consecutive, only that each is finalized.
+        LineageFencedSequencer sequencer = new LineageFencedSequencer(store, null,
+                "it-node", Duration.ofMinutes(1), 10, 100);
+        assertEquals(3, sequencer.runOnce(repo).finalized());
+        List<LineageJournalRowV2> rows = store.findV2ByRepositoryAndSequenceRange(repo, 0, 10);
+        assertEquals(3, rows.size());
+        java.util.Set<Long> sequences = new java.util.LinkedHashSet<>();
+        java.util.Set<String> deliveryIds = new java.util.LinkedHashSet<>();
+        for (LineageJournalRowV2 row : rows) {
+            sequences.add(row.event().sequenceNumber());
+            deliveryIds.add(row.event().deliveryId());
+            assertEquals(eventId, row.event().eventId(), "chunks share the audit event");
+            assertEquals("op-chunk-it", row.event().operationId());
+            assertEquals(3, row.event().chunkCount());
+        }
+        assertEquals(3, sequences.size(), "each chunk got its own sequence");
+        assertEquals(3, deliveryIds.size(), "each chunk is its own row");
+    }
+
+    @Test
+    public void aTerminalOnlyRepositoryIsDiscoverableAndClassifiedAtCreation() {
+        String repo = "v2-terminal-repo";
+        bootstrapLease(repo);
+        bootstrapCounter(repo, 0L);
+        LineageEventV2 base = event(repo, "op-terminal", "2026-08-01T09:00:00Z");
+        var reason = new LineageTargetLifecycle.TerminalReason("OVERSIZE", "detail", 1000L);
+        LineageEventV2 classifiedEvent = LineageSpoolMaterializer.withClassifiedStatuses(base,
+                Map.of("purview", new LineageMaterializationDecision.CreationClassification(
+                        LineagePublishStatus.UNRESOLVED, reason)));
+        store.appendV2Classified(classifiedEvent,
+                Map.of("purview", new LineageMaterializationDecision.CreationClassification(
+                        LineagePublishStatus.UNRESOLVED, reason)));
+        store.appendV2Classified(classifiedEvent,
+                Map.of("purview", new LineageMaterializationDecision.CreationClassification(
+                        LineagePublishStatus.UNRESOLVED, reason)));  // idempotent
+
+        LineageJournalRowV2 stored = store.findV2ByRecordId(base.deliveryId());
+        assertEquals(LineagePublishStatus.UNRESOLVED,
+                stored.targetLifecycles().get("purview").status());
+        assertEquals("OVERSIZE",
+                stored.targetLifecycles().get("purview").terminalReason().reason());
+
+        LineageFencedSequencer sequencer = new LineageFencedSequencer(store, null,
+                "it-node", Duration.ofMinutes(1), 10, 100);
+        assertEquals(1, sequencer.runOnce(repo).finalized());
+
+        // The non-terminal discovery cannot see it; the sequenced-repository view can.
+        assertEquals(false, store.findV2NonTerminalRepositoryIds("purview").contains(repo),
+                "a terminal row is not backlog");
+        assertEquals(true, store.findV2SequencedRepositoryIds("purview").contains(repo),
+                "but its repository must still be visited, or the cursor never advances");
+    }
 }

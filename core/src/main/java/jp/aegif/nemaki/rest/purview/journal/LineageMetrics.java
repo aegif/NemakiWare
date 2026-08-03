@@ -44,6 +44,7 @@ public class LineageMetrics {
     private final AtomicLong spoolMaterialized = new AtomicLong();
     private final AtomicLong spoolAckBroken = new AtomicLong();
     private final AtomicLong spoolAckVerified = new AtomicLong();
+    private final AtomicLong spoolOversizeParked = new AtomicLong();
     private final AtomicLong decisionCollisions = new AtomicLong();
     private final AtomicLong unresolvedSkipped = new AtomicLong();
     private volatile Instant lastPollTime;
@@ -160,6 +161,10 @@ public class LineageMetrics {
         spoolAckVerified.incrementAndGet();
     }
 
+    public void recordOversizeParked() {
+        spoolOversizeParked.incrementAndGet();
+    }
+
     public void recordDecisionCollision() {
         decisionCollisions.incrementAndGet();
     }
@@ -206,6 +211,7 @@ public class LineageMetrics {
         m.put("spoolMaterialized", spoolMaterialized.get());
         m.put("spoolAckBroken", spoolAckBroken.get());
         m.put("spoolAckVerified", spoolAckVerified.get());
+        m.put("spoolOversizeParked", spoolOversizeParked.get());
         m.put("decisionCollisions", decisionCollisions.get());
         m.put("unresolvedSkipped", unresolvedSkipped.get());
 

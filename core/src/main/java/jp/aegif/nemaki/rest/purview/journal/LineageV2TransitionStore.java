@@ -153,4 +153,13 @@ public interface LineageV2TransitionStore {
      * @throws LineageSequencingStore.SequencingStorageException on infrastructure failure
      */
     java.util.List<String> findV2NonTerminalRepositoryIds(String target);
+
+    /**
+     * v2.3.22 C2: every repository with a SEQUENCED v2 row owing this target, TERMINAL rows
+     * included. The non-terminal discovery above cannot see a row that was classified
+     * terminal at creation, so its cursor would never advance past it.
+     *
+     * @throws LineageSequencingStore.SequencingStorageException on infrastructure failure
+     */
+    java.util.List<String> findV2SequencedRepositoryIds(String target);
 }

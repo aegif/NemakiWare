@@ -54,6 +54,9 @@ public class LineageDrestReadinessTest {
         when(config.getSequencerLeaseSeconds()).thenReturn(60);
         when(config.getSequencerBatchSize()).thenReturn(100);
         when(config.getSequencerBacklogCap()).thenReturn(1000);
+        when(config.getEndpointMaxPerEvent()).thenReturn(1000);
+        when(config.getEventMaxPayloadBytes()).thenReturn(1024L * 1024);
+        when(config.getEventMaxDocumentBytes()).thenReturn(4L * 1024 * 1024);
         when(store.viewSignatureViolations()).thenReturn(List.of());
         when(sink.targetName()).thenReturn("atlas");
         when(sink.supportsVerification()).thenReturn(true);
@@ -122,6 +125,9 @@ public class LineageDrestReadinessTest {
         assertFalse(readiness.evaluate().ready(),
                 "an unbounded cap overflows the cap+1 probe");
         when(config.getSequencerBacklogCap()).thenReturn(1000);
+        when(config.getEndpointMaxPerEvent()).thenReturn(1000);
+        when(config.getEventMaxPayloadBytes()).thenReturn(1024L * 1024);
+        when(config.getEventMaxDocumentBytes()).thenReturn(4L * 1024 * 1024);
         assertTrue(readiness.evaluate().ready());
     }
 
@@ -178,6 +184,29 @@ public class LineageDrestReadinessTest {
         assertFalse(readiness.evaluate().ready(), "29 < 30 blocks on the range bound");
         when(config.getProjectionClaimLeaseSeconds()).thenReturn(30);
         assertTrue(readiness.evaluate().ready(), "30 is in range and past the margin");
+    }
+
+    /** v2.3.22: the chunk limits are validated by the same gate. */
+    @Test
+    public void journaledModeValidatesTheChunkLimits(@org.junit.jupiter.api.io.TempDir
+            java.nio.file.Path spoolDir) {
+        when(config.getMode()).thenReturn(LineageMode.JOURNALED);
+        when(config.getSpoolDir()).thenReturn(spoolDir.toString());
+        when(config.getSpoolScanMaxFiles()).thenReturn(2000);
+        when(config.getSpoolScanMaxMaterializations()).thenReturn(100);
+        when(config.getSpoolScanMaxMillis()).thenReturn(5000L);
+        assertTrue(readiness.evaluate().ready());
+
+        when(config.getEndpointMaxPerEvent()).thenReturn(1);
+        assertFalse(readiness.evaluate().ready(),
+                "a limit of 1 cannot admit an anchor plus a payload endpoint");
+        when(config.getEndpointMaxPerEvent()).thenReturn(1000);
+
+        when(config.getEventMaxDocumentBytes()).thenReturn(9_000_000L);
+        assertFalse(readiness.evaluate().ready(),
+                "a ceiling above CouchDB's default max_document_size promises too much");
+        when(config.getEventMaxDocumentBytes()).thenReturn(4L * 1024 * 1024);
+        assertTrue(readiness.evaluate().ready());
     }
 
     /** D-rest-4 round-2 fix 4: journaled mode also validates the scan budgets. */

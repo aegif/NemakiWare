@@ -148,6 +148,13 @@ public final class LineageSpoolIdentity {
     static final String PLAN_DOMAIN = "MATERIALIZATION_PLAN_V2";
 
     /**
+     * Domain tag for the chunk-aware plan digest (v2.3.22 — V3 additionally binds the
+     * partition algorithm version, the frozen chunk limits and the creation classification).
+     * V2 stays frozen and in use for schema-1 decisions; domains are never redefined.
+     */
+    static final String PLAN_DOMAIN_V3 = "MATERIALIZATION_PLAN_V3";
+
+    /**
      * v2.3.18 ⑦'s v1EventDigest, on the frozen formula: the identity of the v1 row a plan
      * entry commits to. Covers the identity fields and deliberately EXCLUDES sequenceNumber
      * and targets (assignment-time / mutable), so crash retries converge on the stored row
@@ -196,5 +203,37 @@ public final class LineageSpoolIdentity {
         }
         return LineageCanonicalHash.hash(PLAN_DOMAIN, spoolRecordId, factPayloadDigest,
                 materializeSchemaVersion, allocatedEventId, planEntryRecords);
+    }
+
+    /**
+     * The chunk-aware plan digest (v2.3.22, domain V3). Binds everything a later binary needs
+     * to reproduce the decision byte-for-byte: the fact, the resolved schema version, the
+     * once-allocated audit id, the partition algorithm version, the limits that partition ran
+     * under, the creation classification (status AND reason per target), and the complete
+     * plan entries.
+     */
+    public static String materializationPlanDigestV3(String spoolRecordId,
+            String factPayloadDigest, long materializeSchemaVersion, String allocatedEventId,
+            long partitionVersion, java.util.Map<String, Object> chunkLimitsRecord,
+            java.util.Map<String, Object> creationClassificationRecord,
+            java.util.List<java.util.Map<String, Object>> planEntryRecords) {
+        if (spoolRecordId == null || spoolRecordId.isBlank()
+                || factPayloadDigest == null || factPayloadDigest.isBlank()
+                || allocatedEventId == null || allocatedEventId.isBlank()) {
+            throw new IllegalArgumentException("plan digest requires spoolRecordId,"
+                    + " factPayloadDigest and allocatedEventId");
+        }
+        if (chunkLimitsRecord == null || chunkLimitsRecord.isEmpty()) {
+            throw new IllegalArgumentException("a V3 plan digest requires its chunk limits");
+        }
+        if (planEntryRecords == null || planEntryRecords.isEmpty()) {
+            throw new IllegalArgumentException("plan digest requires at least one entry");
+        }
+        return LineageCanonicalHash.hash(PLAN_DOMAIN_V3, spoolRecordId, factPayloadDigest,
+                materializeSchemaVersion, allocatedEventId, partitionVersion,
+                chunkLimitsRecord,
+                creationClassificationRecord == null ? java.util.Map.of()
+                        : creationClassificationRecord,
+                planEntryRecords);
     }
 }

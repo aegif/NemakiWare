@@ -1,7 +1,52 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.21 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: chunking・Slice 4 (§6-a 再 sign-off 待ち)・4a/4b**
+status: **v2.3.22 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: §2 の属性別上限 (producer 側)・Slice 4 (§6-a 再 sign-off 待ち)・4a/4b**
 revision:
+- v2.3.22 — **chunking 実装** (fact→v2 写像内)。Codex 計画レビュー 5 巡 (revise×4 →
+  proceed) の確定事項:
+  ① **分割は正準順序** — MANY 側を `LineageCanonicalHash.canonicalQualifiedNames` 順
+  (digest が使う凍結正準化と同一) で走査。同一 fact の並べ替えは同じ spoolRecordId /
+  payloadDigest を持つので、chunk 構成・deliveryId・plan digest も一致しなければならない
+  (producer 走査順に identity が依存する — 旧案の「宣言順」は撤回)。
+  ② **anchor を全 chunk に複製**し MANY 側だけを分割。全 shape は「片側 ×1 / 反対側 1..n」
+  なので、×1 側を各 chunk に載せることで**各 chunk が独立に shape-valid・単独 publish 可能**。
+  1→1 shape は分割不能。適合する fact は chunk(0,1) 1 枚で、**従来出力と byte-identical**。
+  ③ **ruler は上界 pre-filter、権威は CouchDB** — `LineageDocumentSizeRuler` は JSON 型ごと
+  に証明可能な上界 (string = 2+6×length: `\uXXXX` が最大幅かつ任意 code unit の UTF-8 長
+  以上 / number = 20 / bool = 5 / null = 4 / 配列・objectは括弧+区切り) を返す **RULER で
+  あって serializer ではない**。Jackson 設定に依存せず、corpus/property test は上界の
+  **回帰証拠**であって証明ではない。CouchDB は `max_document_size` を内部表現で測るため
+  JSON 側の上界は受理を証明できない — **`document_too_large` (413/理由文字列) の判定だけ**
+  を決定的な "unstorable" として扱い、他の失敗は infra として伝播する。
+  chunk 座標は固定幅 (20 byte) で計上し、計算中の chunkCount に依存しない。
+  ④ **限界値は決定に凍結** — plan digest は新 domain **"MATERIALIZATION_PLAN_V3"** で
+  spoolRecordId / factPayloadDigest / schema / allocatedEventId / **partitionVersion** /
+  **chunkLimits** / **creationClassification** / plan entries を束縛。live config を読むと
+  設定変更後に再分割が起きて drift fence に当たり fact が永久に詰まるため。
+  `planDigestVersion` 不在または 2 = **既存 V2 決定をそのまま復号** (multi-entry 含め形を
+  狭めない)、3 = chunk-aware schema-2 のみ、他は拒否。schema-1 決定は V2 のまま (v1 は
+  chunk しない)。
+  ⑤ **OVERSIZE は wedge させない** — 分割不能な fact は**全体で 1 つの terminal 行**
+  (適合分だけ publish すると「完全だと主張する部分 process」になる)。`appendV2` は
+  **PENDING 専用のまま**で、status と durable reason を 1 文書に原子的に書く
+  `appendV2Classified` overload を新設 (D-rest-3 F5 の回収)。分類は決定に凍結され (atMs も
+  決定の createdAtMs で固定)、409 収束と ACK 前再読の**両方**が status+reason 一致を検査
+  する — 同じ key の PENDING 行は integrity 拒否。
+  ⑥ **terminal-only repository の発見**: `v2_sequenced_repositories` view
+  (`[target, repositoryId]`・SEQUENCED 行・terminal 含む) を ordered walk の discovery に
+  union。既存の discovery は cursor と非 terminal 行しか見ないため、生成時 terminal の行
+  しか無い repository は訪問されず cursor が前進できなかった。view 23 → 24。
+  ⑦ **CouchDB が拒否した fact は parking** — `fact-{id}.oversize` marker (ACK と同じ
+  決定的 bytes・hard-link create-if-absent・全束縛検証・破損時は同じ修復経路) で work set
+  から外す。**破損 quarantine slot は流用しない** (あちらは「壊れた record」の意味で単数
+  占有であり、canonical fact を残す挙動が wedge を再現するため)。fact file は証拠として残る。
+  ⑧ 設定: `lineage.endpoint.max-per-event` (既定 1000・域 [2,10000])、
+  `lineage.event.max-payload-bytes` (既定 1 MiB・域 [64 KiB,16 MiB])、
+  `lineage.event.max-document-bytes` (既定 4 MiB・域 [1 MiB, **8,000,000** = CouchDB 3.x の
+  既定 max_document_size]) — いずれも readiness が域検証。**guard rail であって保証ではない**。
+  ⑨ **未了として明示**: §2 の属性別上限 + `truncate + SHA-256` 併記 + protected key 規則は
+  producer 側の別 slice。本 slice は属性を**一切落とさず truncate もしない**ので、§2 が完全
+  実装されるのはその slice 完了時である。
 - v2.3.21 — **D-rest-4 実装** (収束 materializer・aggregate capability provider・scanner
   入口 — D-rest 最終 slice)。Codex 計画レビュー 4 巡 (revise×3 → proceed) の確定事項:
   ① **frozen identity**: v1EventDigest = H("SPOOL_V1_EVENT_V1", eventId, eventKey,
@@ -524,8 +569,8 @@ scanner + golden vector 凍結 / §8-a fenced sequencer + bootstrap patch + 実 
 v2 専用 5) + aggregate readiness gate + 無効化済み admin sequencer 入口)。
 **production writer は v1 のまま・spool と全 D-rest driver は非活性**
 (lineage.drest.enabled 既定 false; v2 branch/reaper/purge-v2/admin POST は全て単一
-readiness gate の背後)。残: chunking (fact→v2 写像内・flip 時)・`FILE_SHARE_SYNC_UPLOAD` 生成拒否の E2E・
-4a/4b (§6-a 再 sign-off・E-19/E-20 含む)。
+readiness gate の背後)。残: §2 の属性別上限 + truncate-with-SHA-256 (producer 側 slice)・
+`FILE_SHARE_SYNC_UPLOAD` 生成拒否の E2E・4a/4b (§6-a 再 sign-off・E-19/E-20 含む)。
 Slice 4 (v2 書込みへの切替) は **§6-a の再 sign-off 待ち**。slice 単位の状態は
 「A-2 の分割」の表が正である。
 本文の規範記述は実装と同期させており、乖離を見つけたらどちらかが誤りである —

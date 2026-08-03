@@ -448,6 +448,9 @@ public class LineageProjectionLoop {
         repositoryIds.addAll(journalStore.findDistinctNonTerminalRepositoryIds(targetName));
         try {
             repositoryIds.addAll(v2store.findV2NonTerminalRepositoryIds(targetName));
+            // v2.3.22 C2: rows classified terminal at creation are invisible to the
+            // non-terminal discovery, and their cursor would never advance past them.
+            repositoryIds.addAll(v2store.findV2SequencedRepositoryIds(targetName));
         } catch (RuntimeException e) {
             logger.error("v2 repository discovery failed for '{}' — halting this target's"
                     + " poll: {}", targetName, e.getMessage());
@@ -989,7 +992,11 @@ public class LineageProjectionLoop {
                     (LineageMaterializationStore) journalStore, journalStore,
                     (LineageV2TransitionStore) journalStore, writeVersionResolver, spool,
                     lineageMetrics, () -> java.util.UUID.randomUUID().toString(),
-                    System::currentTimeMillis);
+                    System::currentTimeMillis,
+                    new LineageChunkPlanner.ChunkLimits(
+                            lineageConfig.getEndpointMaxPerEvent(),
+                            lineageConfig.getEventMaxPayloadBytes()),
+                    lineageConfig.getEventMaxDocumentBytes());
             spoolDirInUse = dir;
         }
         return spoolScannerInUse;
