@@ -209,8 +209,12 @@ public class PurviewSchemaPayloadFactoryTest {
         List<Map<String, Object>> entityDefs = (List<Map<String, Object>>) payload.get("entityDefs");
         List<String> docAttrs = attributeNames(entityDefs, "nemaki_document");
 
-        // Should have exactly 16 standard attributes
-        assertEquals(16, docAttrs.size());
+        // 16 standard attributes + §2's two truncation-evidence companions (v2.3.26):
+        // folderPathOriginalSha256 and versionLabelOriginalSha256 must be declared on the type,
+        // or the evidence for a shortened value is the thing Atlas drops.
+        assertEquals(18, docAttrs.size(), docAttrs.toString());
+        assertTrue(docAttrs.containsAll(
+                List.of("folderPathOriginalSha256", "versionLabelOriginalSha256")));
     }
 
     @SuppressWarnings("unchecked")

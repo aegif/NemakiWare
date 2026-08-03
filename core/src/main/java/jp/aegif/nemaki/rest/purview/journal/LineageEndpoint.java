@@ -236,15 +236,30 @@ public record LineageEndpoint(
     // qualified-name rules live in exactly one place.
     // ------------------------------------------------------------------
 
+    /**
+     * The producer boundary (v2.3.26): raw domain data becomes an endpoint here, and §2's
+     * attribute limits are applied here and ONLY here.
+     *
+     * <p>Not in the canonical constructor — the spool and v2 codecs rebuild endpoints through
+     * it, so normalizing there would rewrite a stored record as it was read and its persisted
+     * digest would stop verifying.
+     */
+    private static LineageEndpoint produced(EndpointKind kind, String catalogQualifiedName,
+            String repositoryId, String objectId, String operationId,
+            Map<String, Object> attributes) {
+        return new LineageEndpoint(kind, catalogQualifiedName, repositoryId, objectId,
+                operationId, EndpointAttributeLimits.normalize(kind, attributes));
+    }
+
     public static LineageEndpoint document(String repositoryId, String objectId, String name) {
-        return new LineageEndpoint(EndpointKind.CMIS_DOCUMENT,
+        return produced(EndpointKind.CMIS_DOCUMENT,
                 objectQualifiedName(repositoryId, objectId), repositoryId, objectId, null,
                 Map.of("name", nonBlank(name, "name")));
     }
 
     public static LineageEndpoint document(String repositoryId, String objectId,
                                            Map<String, Object> attributes) {
-        return new LineageEndpoint(EndpointKind.CMIS_DOCUMENT,
+        return produced(EndpointKind.CMIS_DOCUMENT,
                 objectQualifiedName(repositoryId, objectId), repositoryId, objectId, null,
                 attributes);
     }
@@ -254,7 +269,7 @@ public record LineageEndpoint(
      * {@link EndpointKind#CMIS_FOLDER}.
      */
     public static LineageEndpoint folder(String repositoryId, String objectId, String name) {
-        return new LineageEndpoint(EndpointKind.CMIS_FOLDER,
+        return produced(EndpointKind.CMIS_FOLDER,
                 folderProxyQualifiedName(repositoryId, objectId), repositoryId, objectId, null,
                 Map.of("name", nonBlank(name, "name")));
     }
@@ -271,10 +286,26 @@ public record LineageEndpoint(
      */
     public static LineageEndpoint archive(String repositoryId, String archiveId,
                                           String originalObjectId, long archivedAt) {
+        return archive(repositoryId, archiveId, originalObjectId, archivedAt, null);
+    }
+
+    /**
+     * The same archive endpoint with the optional display name.
+     *
+     * <p>Exists so that the retention scheduler, which has a name to record, goes through the
+     * producer boundary instead of the canonical constructor — building one by hand is how an
+     * over-long name would skip §2's limits entirely (v2.3.26).
+     */
+    public static LineageEndpoint archive(String repositoryId, String archiveId,
+                                          String originalObjectId, long archivedAt,
+                                          String name) {
         Map<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("archivedAt", archivedAt);
         attributes.put("originalObjectId", nonBlank(originalObjectId, "originalObjectId"));
-        return new LineageEndpoint(EndpointKind.ARCHIVE,
+        if (name != null && !name.isBlank()) {
+            attributes.put("name", name);
+        }
+        return produced(EndpointKind.ARCHIVE,
                 archiveQualifiedName(repositoryId, archiveId), repositoryId, archiveId, null,
                 attributes);
     }
@@ -285,7 +316,7 @@ public record LineageEndpoint(
         Map<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("sourceSystem", nonBlank(sourceSystem, "sourceSystem"));
         attributes.put(ATTR_EXTERNAL_STABLE_KEY, key);
-        return new LineageEndpoint(EndpointKind.EXTERNAL_ASSET,
+        return produced(EndpointKind.EXTERNAL_ASSET,
                 externalAssetQualifiedName(repositoryId, key), repositoryId, null, null,
                 attributes);
     }
@@ -307,7 +338,7 @@ public record LineageEndpoint(
         String stableKey = ExternalAssetIdentity
                 .cloud(nonBlank(provider, "provider"), nonBlank(cloudFileId, "cloudFileId"))
                 .value();
-        return new LineageEndpoint(EndpointKind.CLOUD_OBJECT,
+        return produced(EndpointKind.CLOUD_OBJECT,
                 externalAssetQualifiedName(repositoryId, stableKey), repositoryId, null, null,
                 Map.of("sourceSystem", provider, ATTR_EXTERNAL_STABLE_KEY, stableKey));
     }
@@ -325,7 +356,7 @@ public record LineageEndpoint(
     public static LineageEndpoint coldStorage(String repositoryId, String contentRef,
                                               String sourceSystem) {
         String stableKey = ExternalAssetIdentity.opaque(nonBlank(contentRef, "contentRef")).value();
-        return new LineageEndpoint(EndpointKind.COLD_STORAGE,
+        return produced(EndpointKind.COLD_STORAGE,
                 externalAssetQualifiedName(repositoryId, stableKey), repositoryId, null, null,
                 Map.of("sourceSystem", nonBlank(sourceSystem, "sourceSystem"),
                         ATTR_EXTERNAL_STABLE_KEY, stableKey,
@@ -346,7 +377,7 @@ public record LineageEndpoint(
     public static LineageEndpoint filesystemPath(String repositoryId, String path) {
         String stableKey = ExternalAssetIdentity.filesystem(nonBlank(path, "path")).value();
         String normalised = ExternalAssetIdentity.filesystemPathOf(stableKey);
-        return new LineageEndpoint(EndpointKind.EXTERNAL_ASSET,
+        return produced(EndpointKind.EXTERNAL_ASSET,
                 externalAssetQualifiedName(repositoryId, stableKey), repositoryId, null, null,
                 Map.of("sourceSystem", FILESYSTEM_SOURCE_SYSTEM,
                         ATTR_EXTERNAL_STABLE_KEY, stableKey,
@@ -369,7 +400,7 @@ public record LineageEndpoint(
                 attributes.put(extra.getKey(), extra.getValue());
             }
         }
-        return new LineageEndpoint(EndpointKind.IMPORT_ARTIFACT,
+        return produced(EndpointKind.IMPORT_ARTIFACT,
                 importArtifactQualifiedName(repositoryId, operationId), repositoryId, null,
                 nonBlank(operationId, "operationId"), attributes);
     }
@@ -385,7 +416,7 @@ public record LineageEndpoint(
         if (objectCount != null) {
             attributes.put("objectCount", objectCount);
         }
-        return new LineageEndpoint(EndpointKind.EXPORT_ARTIFACT,
+        return produced(EndpointKind.EXPORT_ARTIFACT,
                 exportArtifactQualifiedName(repositoryId, operationId), repositoryId, null,
                 nonBlank(operationId, "operationId"), attributes);
     }

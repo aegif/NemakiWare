@@ -1,7 +1,41 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.25 — increment A sign-off 済み・**§6-a 再 sign-off 承認済み (2026-08-03)**。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: §2 の属性別上限 (producer 側)・4b (運用受入条件待ち)。**Slice 4a 実装済み — writer は v1 のまま (barrier 文書が無い＝pristine)**
+status: **v2.3.26 — increment A sign-off 済み・**§6-a 再 sign-off 承認済み (2026-08-03)**。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: 4b (運用受入条件待ち)。**§2 の属性別上限は実装済み (v2.3.26)**。**Slice 4a 実装済み — writer は v1 のまま (barrier 文書が無い＝pristine)**
 revision:
+- v2.3.26 — **§2 の属性別上限 (producer 側 slice) 実装** (Codex 計画レビュー 4 巡 → proceed)。
+  §2 の 5 規則のうち「単独超過 → durable `UNRESOLVED(OVERSIZE)`」と「silent drop 禁止」は
+  v2.3.22 の chunking で既に実装済み。今回入れたのは残る 2 つ = 事前上限と truncate 証跡。
+  - **truncate は producer factory でのみ行う。** canonical constructor では**やらない** —
+    spool / v2 の両 codec が constructor 経由で endpoint を再構築するため、そこで正規化すると
+    **保存済みレコードを読んだ瞬間に書き換え**、永続化された `payloadDigest` /
+    `creationPayloadDigest` の検証が壊れる。移行注記で済む話ではなく破壊である。
+  - **必須値・identity 値は一切縮めない。** constructor で拒否する案は撤回した:
+    `LineageFactEmission.emitSafely` が例外を握り潰すので、1 属性を守るために **fact 全体を
+    失う**。超過分は planner に届き、既存の `UNRESOLVED(OVERSIZE)` + endpoint hash で終端する
+    (§2 の規則そのもの)。さらに外側に `LineageFactSpool` の 32 MiB record 上限がある。
+  - **証跡は `{name}OriginalSha256`、存在自体が marker。** §2 の字面 `nameTruncated=true` を
+    **改訂**した: `EndpointAttribute.Type` に boolean が無く、1 flag のために凍結済み語彙を
+    増やすのは割に合わない。また "Truncated" という名の field に digest を入れるのは嘘になる。
+    値は**元値**の SHA-256 (UTF-8, lower hex)。
+  - **companion は Atlas schema にも足す** (`nemaki_document` / `nemaki_archive`、additive)。
+    型が宣言していない属性は到着時に落ちるので、schema に無ければ「縮めた証跡」こそが
+    消える。`EndpointKindSchemaAlignmentTest` がこの条件を検査している。
+  - **truncate 対象は 4 箇所だけ**: `CMIS_DOCUMENT.versionLabel` / `.folderPath`、
+    `ARCHIVE.name` / `.versionLabel`。他は全て `PRESERVE` — `versionSeriesId` は version
+    lineage を**識別**する値、`archiveState` は機械解釈される**状態**、`externalPath` は
+    constructor が等値を要求する identity の**鏡**、artifact 2 種は Atlas 型が未定義
+    (増分 B)。§2 の規則は「optional な**表示値**」に対するものなので、絞ると 4 つになる。
+  - **冪等**: digest は常に元値から。長い値 + 既存 companion は再計算して**一致を要求**、
+    短い値 + companion は両方保持 (再送 case。元値はもう無いので再 truncate 不能)、
+    companion 自身は `PRESERVE`。`EndpointKind` は重複宣言を**例外**にした (従来は黙って上書き)。
+  - **identity は動かない**: `processKey` / `deliveryId` / `spoolRecordId` は qualified name を
+    hash しており、truncate 対象から qualified name は作られない。動くのは
+    `creationPayloadDigest` / spool `payloadDigest` / `materializationPlanDigest` (V2・V3) の
+    content digest 群。既存 golden vector に 1024 超の属性は無いので**既存の期待値は不変**。
+  - `RetentionScheduler` が `new LineageEndpoint(...)` で archive endpoint を直に組んでいた
+    (= 上限を素通り) ので factory 経由に変更。**production ソースを走査して
+    `new LineageEndpoint(` を factory 群と 2 つの decode 経路以外で使っていたら落ちるテスト**を
+    追加したので、次に同じことをすればビルドが落ちる。
 - v2.3.25 — **Slice 4a 実装** (Codex 計画レビュー 8 巡 → proceed)。writer は v1 のままだが、
   **版対応の書込み経路を完成させた**ので 4b は「文書 1 件の CAS」だけになり、デプロイを伴わない。
   - **三値の barrier 読取り** (`LineageBarrierReader`): `Present` / `Pristine` (検証済み 404) /

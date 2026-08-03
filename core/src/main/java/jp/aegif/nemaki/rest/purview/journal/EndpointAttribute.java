@@ -33,7 +33,42 @@ package jp.aegif.nemaki.rest.purview.journal;
  * was built — the snapshot would then change under an event that had already been emitted.
  * Restricting to immutable scalars makes the shallow copy sufficient.
  */
-public record EndpointAttribute(String name, Type type, boolean required) {
+public record EndpointAttribute(String name, Type type, boolean required, Policy policy) {
+
+    /** §2's per-attribute ceiling, in UTF-16 code units. Frozen, not configurable. */
+    public static final int MAX_DISPLAY_CODE_UNITS = 1024;
+
+    /** The suffix of the companion attribute that carries a truncated value's evidence. */
+    public static final String EVIDENCE_SUFFIX = "OriginalSha256";
+
+    /**
+     * What happens when a value exceeds its ceiling (§2's attribute-limit rules).
+     *
+     * <p>The default everywhere is {@link #PRESERVE}, and the exceptions are enumerated one by
+     * one, because almost everything that looks like a display value turns out not to be:
+     * {@code versionSeriesId} is how version lineage is identified, {@code archiveState} is
+     * machine-interpreted state, and {@code externalPath} mirrors an identity key under an
+     * equality the endpoint's constructor enforces. Truncating any of those manufactures a
+     * different fact rather than a shorter rendering of the same one.
+     */
+    public enum Policy {
+
+        /**
+         * Never modified. The value flows on whole, and if the fact then cannot be stored,
+         * {@code LineageChunkPlanner} classifies it as durable {@code UNRESOLVED(OVERSIZE)}
+         * with the endpoint's record hash — which is §2's rule for that case, and is already
+         * implemented. Shortening a required value here would lose the fact instead: the
+         * producer's emit path swallows construction failures.
+         */
+        PRESERVE,
+
+        /**
+         * An optional DISPLAY value: over the ceiling it is cut, and a companion attribute
+         * {@code {name}OriginalSha256} records the SHA-256 of what it was. Nothing is dropped
+         * silently — that is the rule the evidence exists to satisfy.
+         */
+        TRUNCATE_WITH_EVIDENCE
+    }
 
     public enum Type {
 
@@ -52,11 +87,16 @@ public record EndpointAttribute(String name, Type type, boolean required) {
     }
 
     public static EndpointAttribute requiredText(String name) {
-        return new EndpointAttribute(name, Type.TEXT, true);
+        return new EndpointAttribute(name, Type.TEXT, true, Policy.PRESERVE);
     }
 
     public static EndpointAttribute text(String name) {
-        return new EndpointAttribute(name, Type.TEXT, false);
+        return new EndpointAttribute(name, Type.TEXT, false, Policy.PRESERVE);
+    }
+
+    /** An optional display value: long ones are cut, with their original digest recorded. */
+    public static EndpointAttribute displayText(String name) {
+        return new EndpointAttribute(name, Type.TEXT, false, Policy.TRUNCATE_WITH_EVIDENCE);
     }
 
     public static EndpointAttribute count(String name) {
@@ -65,6 +105,52 @@ public record EndpointAttribute(String name, Type type, boolean required) {
 
     public static EndpointAttribute requiredCount(String name) {
         return new EndpointAttribute(name, Type.COUNT, true);
+    }
+
+    public EndpointAttribute(String name, Type type, boolean required) {
+        this(name, type, required, Policy.PRESERVE);
+    }
+
+    /** The companion this attribute's evidence is written to. */
+    public String evidenceName() {
+        return name + EVIDENCE_SUFFIX;
+    }
+
+    /** True when this attribute IS a companion — companions are never themselves truncated. */
+    public static boolean isEvidenceName(String name) {
+        return name != null && name.endsWith(EVIDENCE_SUFFIX);
+    }
+
+    /**
+     * How far a value may be cut without splitting a surrogate pair.
+     *
+     * <p>Cutting between the two halves of a pair produces an unpaired surrogate — a string
+     * that is no longer valid UTF-16, hashes differently in every implementation that repairs
+     * it, and renders as a replacement character. The cut moves back one unit instead, so a
+     * truncated value can be {@code ceiling - 1}.
+     */
+    public static int truncationLength(String value, int ceiling) {
+        if (value.length() <= ceiling) {
+            return value.length();
+        }
+        return Character.isHighSurrogate(value.charAt(ceiling - 1)) ? ceiling - 1 : ceiling;
+    }
+
+    /** {@code SHA-256} of the ORIGINAL value's UTF-8 bytes, lowercase hex. */
+    public static String evidenceDigest(String original) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                    .getInstance("SHA-256")
+                    .digest(original.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new AssertionError("SHA-256 not available", e);
+        }
+    }
+
+    /** True iff {@code value} is the shape a companion may hold: 64 lowercase hex. */
+    public static boolean isEvidenceDigest(Object value) {
+        return value instanceof String s && s.length() == 64
+                && s.chars().allMatch(c -> (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'));
     }
 
     /** @throws IllegalArgumentException if {@code value} is not a valid value for this attribute. */

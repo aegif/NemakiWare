@@ -198,6 +198,20 @@ vectors["barrierBinaryDigest"] = barrier_binary_digest([
 ])
 
 
+# ---------------------------------------------------------------- §2 attribute limits (v2.3.26)
+
+MAX_DISPLAY_CODE_UNITS = 1024
+
+
+def attribute_evidence_digest(original):
+    """SHA-256 of the ORIGINAL value's UTF-8 bytes, lowercase hex."""
+    return hashlib.sha256(original.encode("utf-8")).hexdigest()
+
+
+vectors["attributeEvidenceDigest_1025v"] = attribute_evidence_digest(
+    "v" * (MAX_DISPLAY_CODE_UNITS + 1))
+
+
 def main():
     """Compare against the fixture the Java golden test also reads, and exit non-zero on drift."""
     import json, os, sys
