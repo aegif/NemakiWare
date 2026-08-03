@@ -514,6 +514,7 @@ public class LineageV2TransitionMachineTest {
                     List.of(LineagePublishStatus.WAITING_FOR_CATALOG,
                             LineagePublishStatus.UNRESOLVED),
                     List.of(LineagePublishStatus.PENDING, LineagePublishStatus.DISCARDED),
+                    List.of(LineagePublishStatus.PENDING, LineagePublishStatus.UNRESOLVED),
                     List.of(LineagePublishStatus.FAILED, LineagePublishStatus.DISCARDED));
             for (LineagePublishStatus expected : LineagePublishStatus.values()) {
                 for (LineagePublishStatus next : LineagePublishStatus.values()) {
@@ -538,6 +539,43 @@ public class LineageV2TransitionMachineTest {
             assertThrows(IllegalArgumentException.class, () -> store.transitionV2Unclaimed(
                     "rec", TARGET, LineagePublishStatus.WAITING_FOR_CATALOG,
                     LineagePublishStatus.UNRESOLVED, null));
+            // v2.3.24 F1: the late creation-time verdict carries its reason too — without
+            // this the exhaustive table test above would pass for the wrong reason (a null
+            // reason throws whether or not the pair itself is legal).
+            assertThrows(IllegalArgumentException.class, () -> store.transitionV2Unclaimed(
+                    "rec", TARGET, LineagePublishStatus.PENDING,
+                    LineagePublishStatus.UNRESOLVED, null));
+        }
+
+        /**
+         * v2.3.24 F1: a created row whose plan proved unstorable goes terminal WITHOUT a
+         * claim, on the UNSEQUENCED row it always is — the only terminalization that row's
+         * invariants admit.
+         */
+        @Test
+        public void aPendingRowGoesUnresolvedWithItsReasonAndNoClaim() {
+            Map<String, Object> doc = sequencedDoc("PENDING", null, null);
+            doc.put("state", "UNSEQUENCED");
+            doc.put("sequenceNumber", 0L); // an unsequenced row has no sequence yet
+            doc.remove("sequencerGeneration");
+            doc.remove("sequencerLeaseToken");
+            storedDocIs(doc);
+            assertTrue(store.transitionV2Unclaimed(v2Event().deliveryId(), TARGET,
+                    LineagePublishStatus.PENDING, LineagePublishStatus.UNRESOLVED,
+                    new TerminalReason("unstorable_plan", "a later chunk was refused", 5L)));
+            org.mockito.ArgumentCaptor<com.ibm.cloud.cloudant.v1.model.PutDocumentOptions> put =
+                    org.mockito.ArgumentCaptor.forClass(
+                            com.ibm.cloud.cloudant.v1.model.PutDocumentOptions.class);
+            org.mockito.Mockito.verify(rawClient, org.mockito.Mockito.atLeastOnce())
+                    .putDocument(put.capture());
+            Map<String, Object> written = put.getValue().document().getProperties();
+            assertEquals("UNRESOLVED", ((Map<?, ?>) written.get("publishStatusByTarget"))
+                    .get(TARGET));
+            Map<?, ?> reason = (Map<?, ?>) ((Map<?, ?>) written.get("v2TerminalReasonByTarget"))
+                    .get(TARGET);
+            assertEquals("unstorable_plan", reason.get("reason"));
+            assertNull(written.get("v2ClaimByTarget"),
+                    "a pre-claim terminalization never invents a claim bundle");
         }
 
         @Test

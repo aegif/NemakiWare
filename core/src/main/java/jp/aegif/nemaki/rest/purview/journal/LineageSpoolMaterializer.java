@@ -53,6 +53,22 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
     /** Per-fact outcome, tallied by the scanner. */
     public enum Outcome { ACKED, ALREADY_ACKED, UNRESOLVED, PARTIAL, FAILED }
 
+    /**
+     * The terminal reason a row carries once its plan was abandoned as unstorable
+     * (v2.3.24 F1). It is the durable proof that no later pass may ACK this fact.
+     */
+    static final String UNSTORABLE_PLAN = "unstorable_plan";
+
+    /** {@link PlannedRow#documentBound()} for a row the pre-write ceiling fence exempts. */
+    private static final long UNMEASURED = -1L;
+
+    /** True when any target of this row was terminalized by the F1 path. */
+    private static boolean isTerminalizedAsUnstorable(LineageJournalRowV2 row) {
+        return row.targetLifecycles().values().stream()
+                .anyMatch(l -> l.terminalReason() != null
+                        && UNSTORABLE_PLAN.equals(l.terminalReason().reason()));
+    }
+
     /** The outcome plus whether a broken/unreadable ACK was met (summary accounting). */
     public record MaterializeResult(Outcome outcome, boolean brokenAck) {
     }
@@ -190,25 +206,69 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
             // BEFORE anything is written.
             List<PlannedRow> planned = reconstructAndCompare(payload, decision);
 
-            // 4. Write each row (create-if-absent, digest-exact convergence). CouchDB's own
-            // size verdict (D1) is the authority on storability: it parks the fact
-            // deterministically instead of retrying an impossible write forever.
+            // 4. Pre-write ceiling fence (v2.3.24 F2): the planner fits chunks against
+            // chunkLimits.maxPayloadBytes, which is a DIFFERENT knob from the document
+            // ceiling — a plan can therefore be well-formed and still unstorable. Measuring
+            // EVERY row before writing ANY row means such a plan parks with nothing in the
+            // journal, instead of parking behind rows it already wrote.
             for (PlannedRow row : planned) {
+                long bound = row.documentBound();
+                if (bound > maxDocumentBytes) {
+                    return parkOversize(payload, factFile, "planned row " + row.rowId()
+                            + " measures " + bound + " bytes, above the " + maxDocumentBytes
+                            + " byte document ceiling", bound, maxDocumentBytes);
+                }
+            }
+
+            // 5. Write each row (create-if-absent, digest-exact convergence). CouchDB's own
+            // size verdict (D1) is the authority on storability: it parks the fact
+            // deterministically instead of retrying an impossible write forever. The ruler is
+            // an upper bound on JSON, not on CouchDB's internal representation, so a refusal
+            // can still arrive here — and for chunk j > 0 the rows before it are already
+            // durable and PENDING.
+            for (int i = 0; i < planned.size(); i++) {
                 try {
-                    row.write();
+                    planned.get(i).write();
                 } catch (LineageMaterializationStore.DocumentTooLargeException tooLarge) {
                     long measured = LineageChunkPlanner.measure(payload,
                             new LineageChunkPlanner.ChunkSlice(payload.inputs(),
                                     payload.outputs()),
                             decision.allocatedEventId(), decision.creationClassification());
+                    if (!terminalizeWritten(planned.subList(0, i), payload)) {
+                        // Fail-closed (v2.3.24 F1): parking would publish the marker and
+                        // remove the fact from the work set, leaving PROJECTABLE rows for a
+                        // fact that will never be complete. A visible wedge is the lesser
+                        // harm — the next pass converges on the same rows and retries the
+                        // terminalization.
+                        return new MaterializeResult(Outcome.FAILED, brokenAck);
+                    }
                     return parkOversize(payload, factFile, tooLarge.getMessage(), measured,
                             maxDocumentBytes);
                 }
             }
 
-            // 5. Reread + verify EVERY row (durability fence) — only then the ACK.
+            // 6. Reread + verify EVERY row (durability fence) — only then the ACK.
             for (PlannedRow row : planned) {
-                if (!row.rereadAndVerify()) {
+                RowVerdict verdict = row.rereadAndVerify();
+                if (verdict == RowVerdict.ABANDONED) {
+                    // The marker that should have suppressed this pass was lost or repaired
+                    // away, and this pass may well have (re)written the rows the earlier one
+                    // could not — so the plan's OTHER rows are projectable right now. Every
+                    // row goes non-projectable before the fact is parked again, on the same
+                    // terms as the first park: if one escaped, we do not park (v2.3.24 F1).
+                    if (!terminalizeWritten(planned, payload)) {
+                        return new MaterializeResult(Outcome.FAILED, brokenAck);
+                    }
+                    return parkOversize(payload, factFile, "a previous pass terminalized this"
+                            + " plan as unstorable and its parking marker is missing",
+                            LineageChunkPlanner.measure(payload,
+                                    new LineageChunkPlanner.ChunkSlice(payload.inputs(),
+                                            payload.outputs()),
+                                    decision.allocatedEventId(),
+                                    decision.creationClassification()),
+                            maxDocumentBytes);
+                }
+                if (verdict != RowVerdict.VERIFIED) {
                     logger.error("Materialized row for {} not yet verifiable — no ACK this"
                             + " pass", payload.spoolRecordId());
                     return new MaterializeResult(Outcome.PARTIAL, brokenAck);
@@ -253,6 +313,104 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
                     e.getMessage());
             return new MaterializeResult(Outcome.FAILED, brokenAck);
         }
+    }
+
+    /**
+     * Makes every row written before an unstorable chunk non-projectable (v2.3.24 F1).
+     *
+     * <p>Parking removes the fact from the work set, so it may only happen once nothing
+     * projectable is left behind: K-1 of K chunks published as if they were the whole fact is
+     * exactly the silent partial lineage §8-b exists to prevent.
+     *
+     * <p>Terminalization uses the pre-claim transitions — {@code PENDING→UNRESOLVED},
+     * {@code WAITING_FOR_CATALOG→UNRESOLVED}, {@code FAILED→DISCARDED} — and treats an already
+     * terminal, non-projectable target as done, so a retried pass converges instead of failing
+     * on the rows it terminalized last time. A target that is claimed or already PUBLISHED
+     * cannot be terminalized: that work has escaped, and the caller must not park.
+     *
+     * <p>PENDING goes to UNRESOLVED, not DISCARDED, for a reason a real-CouchDB run found:
+     * these rows are UNSEQUENCED, and {@link LineageJournalRowV2} refuses any status beyond
+     * the creation-time set on an unsequenced row. UNRESOLVED is in that set, carries the
+     * durable reason, and is exactly the verdict the unstorable-classification path writes at
+     * creation.
+     *
+     * @return true iff every target of every row is now terminal and non-projectable
+     */
+    private boolean terminalizeWritten(List<PlannedRow> written, LineageSpoolPayloadV1 payload) {
+        if (written.isEmpty()) {
+            return true;
+        }
+        List<String> escaped = new ArrayList<>();
+        for (PlannedRow row : written) {
+            try {
+                if (!row.terminalize()) {
+                    escaped.add(row.rowId());
+                }
+            } catch (RuntimeException e) {
+                logger.error("Terminalization of {} failed: {}", row.rowId(), e.getMessage());
+                escaped.add(row.rowId());
+            }
+        }
+        if (escaped.isEmpty()) {
+            logger.error("Fact {} is unstorable — its {} planned row(s) were made"
+                    + " non-projectable before parking", payload.spoolRecordId(),
+                    written.size());
+            return true;
+        }
+        if (metrics != null) {
+            metrics.recordPartialRowsEscaped();
+        }
+        logger.error("Fact {} is unstorable at a later chunk, but these already-written rows"
+                + " could NOT be made non-projectable: {} — NOT parking (an incomplete fact"
+                + " must not be declared done); the next pass retries",
+                payload.spoolRecordId(), escaped);
+        return false;
+    }
+
+    /**
+     * Makes one already-written v2 row non-projectable on every target, idempotently.
+     *
+     * @return true iff no target of this row can still be projected
+     */
+    private boolean terminalizeV2Row(String deliveryId) {
+        LineageJournalRowV2 stored = v2reads.findV2ByRecordId(deliveryId);
+        if (stored == null) {
+            // NOT success: this row was written moments ago, and the lookup is view-backed,
+            // so an absent answer is as likely to be a stale index as a missing document. We
+            // cannot prove it is non-projectable, so we do not park (v2.3.24 F1, round 2).
+            logger.error("Row {} was written but rereads as absent — terminalization cannot"
+                    + " be proven, so the fact is NOT parked", deliveryId);
+            return false;
+        }
+        LineageTargetLifecycle.TerminalReason reason = new LineageTargetLifecycle.TerminalReason(
+                UNSTORABLE_PLAN,
+                "a later chunk of this fact was refused by the store, so this chunk must not"
+                        + " be projected on its own",
+                clockMs.getAsLong());
+        boolean allTerminal = true;
+        for (Map.Entry<String, LineageTargetLifecycle> e : stored.targetLifecycles().entrySet()) {
+            String target = e.getKey();
+            boolean ok = switch (e.getValue().status()) {
+                case DISCARDED, UNRESOLVED, REJECTED, UNPROJECTABLE -> true;
+                // v1-only: a v2 lifecycle refuses it at construction, so this is unreachable.
+                case SKIPPED -> true;
+                case PENDING -> v2reads.transitionV2Unclaimed(deliveryId, target,
+                        LineagePublishStatus.PENDING, LineagePublishStatus.UNRESOLVED, reason);
+                case FAILED -> v2reads.transitionV2Unclaimed(deliveryId, target,
+                        LineagePublishStatus.FAILED, LineagePublishStatus.DISCARDED, null);
+                case WAITING_FOR_CATALOG -> v2reads.transitionV2Unclaimed(deliveryId, target,
+                        LineagePublishStatus.WAITING_FOR_CATALOG,
+                        LineagePublishStatus.UNRESOLVED, reason);
+                // Claimed or already published: this row's work has left the node.
+                case PROJECTING, VERIFYING, PUBLISHED -> false;
+            };
+            if (!ok) {
+                logger.error("Row {} target '{}' is {} — it cannot be made non-projectable",
+                        deliveryId, target, e.getValue().status());
+                allTerminal = false;
+            }
+        }
+        return allTerminal;
     }
 
     /**
@@ -410,11 +568,54 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
         return builder.build();
     }
 
+    /** The pre-ACK verdict for one row. */
+    enum RowVerdict {
+        /** Durable and identical to what the decision committed to. */
+        VERIFIED,
+        /** Not yet visible or not yet matching — no ACK this pass, retry later. */
+        NOT_YET,
+        /**
+         * A previous pass terminalized this row as part of an unstorable plan (v2.3.24 F1).
+         * The row can never be delivered, so the fact must be re-parked rather than ACKed —
+         * an ACK would declare an incomplete fact done.
+         */
+        ABANDONED
+    }
+
     /** One frozen entry, reconstructed and drift-checked, ready to write and verify. */
     private interface PlannedRow {
         void write();
 
-        boolean rereadAndVerify();
+        RowVerdict rereadAndVerify();
+
+        /** This row's identity, for the operator-facing log of an escaped partial write. */
+        String rowId();
+
+        /**
+         * The ruler's upper bound on the document this row stores, or {@code UNMEASURED} when
+         * the pre-write ceiling fence does not apply to this row.
+         *
+         * <p>Two shapes are exempt, both deliberately:
+         * <ul>
+         *   <li><b>v1</b> — a v1 plan is always single-entry, so a refusal can never strand a
+         *       predecessor; CouchDB's own verdict parks it, which is the D1 contract.</li>
+         *   <li><b>the classified whole-fact row</b> — §2's unsplittable fact is written ON
+         *       PURPOSE as one terminal, non-projectable row carrying its evidence. Parking it
+         *       up front would throw that evidence away and record less, not more.</li>
+         * </ul>
+         *
+         * <p><b>The bound is conservative, and that is a policy choice.</b> The ruler charges
+         * six bytes per UTF-16 code unit, so it over-measures ordinary text several-fold and
+         * can in principle refuse a document CouchDB would accept. In a configured deployment
+         * it cannot fire at all: the planner fits every chunk under
+         * {@code chunkLimits.maxPayloadBytes} using this same ruler, and readiness now
+         * requires {@code maxPayloadBytes <= maxDocumentBytes}. What is left is exactly the
+         * case the fence exists for — a plan frozen under limits that no longer hold.
+         */
+        long documentBound();
+
+        /** @see #terminalizeWritten */
+        boolean terminalize();
     }
 
     private List<PlannedRow> reconstructAndCompare(LineageSpoolPayloadV1 payload,
@@ -442,16 +643,31 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
             LineageMaterializationStore store = (LineageMaterializationStore) journal;
             planned.add(new PlannedRow() {
                 @Override
+                public String rowId() {
+                    return "v1:" + entry.eventId();
+                }
+
+                @Override
+                public long documentBound() {
+                    return UNMEASURED; // single-entry — see PlannedRow#documentBound
+                }
+
+                @Override
+                public boolean terminalize() {
+                    return false; // unreachable: a single-entry plan has no predecessor row
+                }
+
+                @Override
                 public void write() {
                     store.createMaterializedV1RowIfAbsent(event, entry.v1EventDigest());
                 }
 
                 @Override
-                public boolean rereadAndVerify() {
+                public RowVerdict rereadAndVerify() {
                     LineageMaterializationStore.MaterializedV1Row stored =
                             store.readMaterializedV1RowStrict(entry.eventId());
                     if (stored == null) {
-                        return false;
+                        return RowVerdict.NOT_YET;
                     }
                     String recomputed = LineageSpoolIdentity.v1EventDigest(
                             stored.event().eventId(), stored.event().eventKey(),
@@ -460,7 +676,8 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
                             stored.event().snapshotAttributes(), stored.event().occurredAt(),
                             stored.event().correlationId());
                     return recomputed.equals(entry.v1EventDigest())
-                            && stored.event().eventId().equals(decision.allocatedEventId());
+                            && stored.event().eventId().equals(decision.allocatedEventId())
+                            ? RowVerdict.VERIFIED : RowVerdict.NOT_YET;
                 }
             });
             return planned;
@@ -510,7 +727,29 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
             LineageEventV2 toWrite = classified
                     ? withClassifiedStatuses(event, decision.creationClassification())
                     : event;
+            LineageChunkPlanner.ChunkSlice measured = slices.get(i);
             planned.add(new PlannedRow() {
+                @Override
+                public String rowId() {
+                    return "v2:" + entry.deliveryId();
+                }
+
+                @Override
+                public long documentBound() {
+                    if (classified) {
+                        return UNMEASURED; // §2's deliberate terminal row — see the interface
+                    }
+                    // The ruler charges every number its widest rendering, so the probe's
+                    // chunk coordinates bound this row's actual ones (F6).
+                    return LineageChunkPlanner.measure(payload, measured,
+                            decision.allocatedEventId(), decision.creationClassification());
+                }
+
+                @Override
+                public boolean terminalize() {
+                    return terminalizeV2Row(entry.deliveryId());
+                }
+
                 @Override
                 public void write() {
                     if (classified) {
@@ -522,14 +761,20 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
                 }
 
                 @Override
-                public boolean rereadAndVerify() {
+                public RowVerdict rereadAndVerify() {
                     LineageJournalRowV2 stored = v2reads.findV2ByRecordId(entry.deliveryId());
                     if (stored == null
                             || !stored.event().creationPayloadDigest()
                                     .equals(entry.eventDigest())
                             || !stored.event().eventId()
                                     .equals(decision.allocatedEventId())) {
-                        return false;
+                        return RowVerdict.NOT_YET;
+                    }
+                    // F1: a row a previous pass terminalized can never be delivered. It is
+                    // NOT "not yet" — waiting cannot fix it — and it must never pass into the
+                    // ACK, which would declare an incomplete fact done.
+                    if (isTerminalizedAsUnstorable(stored)) {
+                        return RowVerdict.ABANDONED;
                     }
                     // C1: the classification is part of the decision, so it is part of what
                     // the pre-ACK verification checks — a PENDING row where the decision says
@@ -542,10 +787,10 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
                                         .equals(lifecycle.terminalReason())) {
                             // Value equality: the DETAIL is the evidence, so a row with
                             // different evidence is not the row the decision committed to.
-                            return false;
+                            return RowVerdict.NOT_YET;
                         }
                     }
-                    return true;
+                    return RowVerdict.VERIFIED;
                 }
             });
         }

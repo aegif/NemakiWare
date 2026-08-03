@@ -2096,6 +2096,14 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                             LineagePublishStatus.UNRESOLVED), true,
                     List.of(LineagePublishStatus.PENDING,
                             LineagePublishStatus.DISCARDED), false,
+                    // v2.3.24 F1: the row was created but its plan turned out to be
+                    // unstorable, so this target can never be delivered. UNRESOLVED is the
+                    // same verdict the creation-time classification writes for an
+                    // unsplittable fact — the only difference is that here it is learned
+                    // AFTER the row exists. DISCARDED cannot serve: it forbids the durable
+                    // reason, and it is illegal on the UNSEQUENCED row this always is.
+                    List.of(LineagePublishStatus.PENDING,
+                            LineagePublishStatus.UNRESOLVED), true,
                     List.of(LineagePublishStatus.FAILED,
                             LineagePublishStatus.DISCARDED), false);
 

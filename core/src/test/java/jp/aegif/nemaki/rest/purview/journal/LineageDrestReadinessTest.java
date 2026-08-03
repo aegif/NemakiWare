@@ -233,6 +233,32 @@ public class LineageDrestReadinessTest {
                 "journaled mode without a spool dir is NOT_READY");
     }
 
+    /**
+     * v2.3.24 F3: each byte knob was validated alone, but never against the other. The
+     * planner fits chunks against max-payload-bytes while the store's ceiling is
+     * max-document-bytes — with the first above the second every plan is well-formed and
+     * unstorable, so every fact would park.
+     */
+    @Test
+    public void aPayloadLimitAboveTheDocumentCeilingBlocks(@org.junit.jupiter.api.io.TempDir
+            java.nio.file.Path spoolDir) {
+        when(config.getMode()).thenReturn(LineageMode.JOURNALED);
+        when(config.getSpoolDir()).thenReturn(spoolDir.toString());
+        when(config.getSpoolScanMaxFiles()).thenReturn(2000);
+        when(config.getSpoolScanMaxMaterializations()).thenReturn(100);
+        when(config.getSpoolScanMaxMillis()).thenReturn(5000L);
+        when(config.getEventMaxPayloadBytes()).thenReturn(4L * 1024 * 1024);
+        when(config.getEventMaxDocumentBytes()).thenReturn(2L * 1024 * 1024);
+        LineageDrestReadiness.Readiness verdict = readiness.evaluate();
+        assertFalse(verdict.ready());
+        assertTrue(verdict.violations().stream()
+                        .anyMatch(v -> v.contains("must not exceed")),
+                "the relation between the two knobs is the violation, not either alone");
+
+        when(config.getEventMaxDocumentBytes()).thenReturn(4L * 1024 * 1024);
+        assertTrue(readiness.evaluate().ready(), "equal is allowed — the ceiling is inclusive");
+    }
+
     @Test
     public void aTargetAddedLaterWithoutASinkBlocks() {
         when(config.getTargets()).thenReturn(List.of("atlas", "dataplex"));

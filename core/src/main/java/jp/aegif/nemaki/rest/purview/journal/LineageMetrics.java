@@ -45,6 +45,7 @@ public class LineageMetrics {
     private final AtomicLong spoolAckBroken = new AtomicLong();
     private final AtomicLong spoolAckVerified = new AtomicLong();
     private final AtomicLong spoolOversizeParked = new AtomicLong();
+    private final AtomicLong partialRowsEscaped = new AtomicLong();
     private final AtomicLong decisionCollisions = new AtomicLong();
     private final AtomicLong unresolvedSkipped = new AtomicLong();
     private volatile Instant lastPollTime;
@@ -165,6 +166,15 @@ public class LineageMetrics {
         spoolOversizeParked.incrementAndGet();
     }
 
+    /**
+     * A plan whose later chunk CouchDB refused, whose ALREADY-WRITTEN rows could not all be
+     * made non-projectable. The fact is not parked (that would declare the work done), so
+     * this counter marks the one condition where an incomplete fact may reach a sink.
+     */
+    public void recordPartialRowsEscaped() {
+        partialRowsEscaped.incrementAndGet();
+    }
+
     public void recordDecisionCollision() {
         decisionCollisions.incrementAndGet();
     }
@@ -212,6 +222,7 @@ public class LineageMetrics {
         m.put("spoolAckBroken", spoolAckBroken.get());
         m.put("spoolAckVerified", spoolAckVerified.get());
         m.put("spoolOversizeParked", spoolOversizeParked.get());
+        m.put("partialRowsEscaped", partialRowsEscaped.get());
         m.put("decisionCollisions", decisionCollisions.get());
         m.put("unresolvedSkipped", unresolvedSkipped.get());
 

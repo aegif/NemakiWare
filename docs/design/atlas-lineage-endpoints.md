@@ -1,7 +1,30 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.23 — increment A sign-off 済み・**§6-a 再 sign-off 承認済み (2026-08-03)**。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: §2 の属性別上限 (producer 側)・**Slice 4a (着手可)**・4b (運用受入条件待ち)**
+status: **v2.3.24 — increment A sign-off 済み・**§6-a 再 sign-off 承認済み (2026-08-03)**。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: §2 の属性別上限 (producer 側)・**Slice 4a (着手可)**・4b (運用受入条件待ち)**
 revision:
+- v2.3.24 — **chunking 後追いレビュー対応** (P1 1 件 + P2 3 件)。
+  **F1 — 途中 chunk の park が先行行を projectable のまま残していた。** K 行中 j 行目で
+  CouchDB が拒否すると、0..j-1 行は既に PENDING で durable なのに park marker が出て
+  fact が作業集合から外れる — **K-1 of K chunk が「完全な fact」として publish される**。
+  park の前に先行行を**非 projectable 化**し、できなければ **park しない** (`FAILED` のまま
+  次 pass が再試行。`lineage.materialization.partial_rows_escaped` を上げる)。見える wedge の
+  方が静かな部分 lineage より害が小さい。
+  終端は `PENDING → UNRESOLVED` (**§8-b 無 claim 表に追加**)。`DISCARDED` は使えない —
+  durable reason を持てず、かつ **UNSEQUENCED 行では不変条件違反**になる
+  (`LineageJournalRowV2` は unsequenced 行に creation-time 集合以外の status を拒否する)。
+  これは**実 CouchDB IT が発見**した (mock は行不変条件を再検証しないので緑になっていた)。
+  `UNRESOLVED` は unsplittable fact に対して creation 時に書く判定そのもので、違いは
+  「行が既に在ってから判明した」ことだけである。
+  **F2 — 書込み前の ceiling 検査。** planner は `chunkLimits.maxPayloadBytes` に対して
+  chunk を詰めるが、store の上限は `maxDocumentBytes` という**別の設定**。全行を書込み前に
+  測り、超過なら**1 行も書かずに** park する。F1 の終端経路は ruler と CouchDB 内部表現の
+  差だけに残る。
+  **F3 — readiness に関係式を追加**: `max-payload-bytes <= max-document-bytes`。個別範囲は
+  検証していたが関係は見ていなかった。逆転すると全 plan が well-formed かつ unstorable。
+  **F4 — 実 CouchDB parking IT** (`LineageParkingCouchIT`): node の `max_document_size` を
+  一時的に下げ、①最初の chunk が拒否される fact は 1 行も書かずに park、②後続 chunk が
+  拒否される fact は先行行が UNRESOLVED になってから park、を実測する。設定は
+  `@AfterAll` で必ず復元し、失敗時は大声で落とす (元が未設定なら DELETE で戻す)。
 - v2.3.23 — **§6-a の sign-off レビュー対応** (Codex: NO-GO → 指摘 Critical 2 + High 2 を反映)。
   §6-a は D-rest / chunking が着地する前に書かれており、実装に追い越されていた:
   ① **capability と readiness を両方要求する** — capability は「このバイナリに配線がある」
@@ -193,7 +216,8 @@ revision:
   (観測された publish 失敗のみ retry 消費) / VERIFYING→UNPROJECTABLE (reason 必須) /
   **PROJECTING→REJECTED (v2 の §7 gate は 3 引数 v1 経路を絶対に通らない)**。unclaimed
   (expected-state CAS): PENDING→WAITING_FOR_CATALOG / WAITING_FOR_CATALOG→PENDING /
-  WAITING_FOR_CATALOG→UNRESOLVED / PENDING→DISCARDED / FAILED→DISCARDED (bundle 保持)。
+  WAITING_FOR_CATALOG→UNRESOLVED / PENDING→DISCARDED / FAILED→DISCARDED (bundle 保持) /
+  **PENDING→UNRESOLVED (v2.3.24 F1。reason 必須)**。
   表外は IllegalArgumentException (呼び手のバグであって race ではない)。enum に VERIFYING /
   UNPROJECTABLE / WAITING_FOR_CATALOG / UNRESOLVED を追加 — UNPROJECTABLE / UNRESOLVED は
   terminal かつ **purge 不可** (REJECTED と同じ証拠論)。reaper / max-age の FAILED は
@@ -818,6 +842,9 @@ PENDING             → WAITING_FOR_CATALOG  (publish 前検査で obligation �
 WAITING_FOR_CATALOG → PENDING              (obligation が RESOLVED。再開)
 WAITING_FOR_CATALOG → UNRESOLVED           (obligation が SNAPSHOT_INCOMPLETE。terminal)
 WAITING_FOR_CATALOG → DISCARDED            (管理操作のみ)
+PENDING             → UNRESOLVED           (v2.3.24 F1: 行は作られたが plan が unstorable と
+                                            判明。UNSEQUENCED 行で合法な唯一の終端であり、
+                                            durable reason を持つ)
 ```
 
 | 論点 | 契約 |

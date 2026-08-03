@@ -87,12 +87,15 @@ public interface LineageV2TransitionStore {
     /**
      * Pre-claim transitions (no token exists): the obligation rows of the frozen table
      * (PENDING→WAITING_FOR_CATALOG, WAITING_FOR_CATALOG→PENDING,
-     * WAITING_FOR_CATALOG→UNRESOLVED) and the admin rows (PENDING→DISCARDED, FAILED→DISCARDED).
+     * WAITING_FOR_CATALOG→UNRESOLVED), the admin rows (PENDING→DISCARDED, FAILED→DISCARDED),
+     * and PENDING→UNRESOLVED (v2.3.24 F1: a created row whose plan proved unstorable — the
+     * creation-time verdict, learned late. It is the only terminalization legal on an
+     * UNSEQUENCED row, where every status beyond the creation-time set is refused).
      * Expected-state CAS on {@code _rev}. FAILED→DISCARDED preserves the audit bundle
      * byte-for-byte; no transition into a terminal state removes audit fields.
      *
      * @param reason required for UNRESOLVED, forbidden otherwise
-     * @throws IllegalArgumentException for any pair outside the five above
+     * @throws IllegalArgumentException for any pair outside the six above
      * @throws LineageSequencingStore.SequencingStorageException on infrastructure failure
      */
     boolean transitionV2Unclaimed(String recordId, String target, LineagePublishStatus expected,
