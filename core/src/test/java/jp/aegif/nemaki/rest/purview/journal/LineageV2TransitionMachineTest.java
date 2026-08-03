@@ -684,6 +684,39 @@ public class LineageV2TransitionMachineTest {
                     LineageReplayRequest.State.CREATED));
         }
 
+        /**
+         * 後追いレビュー: the strict v1 merge fetch's two load-bearing properties, pinned
+         * directly (the routing test proves the WIRING; these prove the CONTRACT).
+         */
+        @Test
+        public void theStrictV1FetchThrowsOnANullResultAndDoesNotClampItsLimit() {
+            // (1) A null view result is abnormal — never an empty page, which the merge
+            // window would read as coverage-to-infinity.
+            when(rawClient.postView(org.mockito.ArgumentMatchers.any(
+                    com.ibm.cloud.cloudant.v1.model.PostViewOptions.class))
+                    .execute().getResult()).thenReturn(null);
+            assertThrows(LineageSequencingStore.SequencingStorageException.class,
+                    () -> store.findV1ByRepositoryAndSequenceRangeStrict("bedroom", 0, 50));
+
+            // (2) The caller's limit reaches the query VERBATIM — the legacy method clamps
+            // at 200, which would silently shrink a page the coverage arithmetic sized.
+            var result = mock(com.ibm.cloud.cloudant.v1.model.ViewResult.class);
+            when(result.getRows()).thenReturn(java.util.List.of());
+            when(rawClient.postView(org.mockito.ArgumentMatchers.any(
+                    com.ibm.cloud.cloudant.v1.model.PostViewOptions.class))
+                    .execute().getResult()).thenReturn(result);
+            store.findV1ByRepositoryAndSequenceRangeStrict("bedroom", 0, 500);
+            org.mockito.ArgumentCaptor<com.ibm.cloud.cloudant.v1.model.PostViewOptions> options =
+                    org.mockito.ArgumentCaptor.forClass(
+                            com.ibm.cloud.cloudant.v1.model.PostViewOptions.class);
+            org.mockito.Mockito.verify(rawClient, org.mockito.Mockito.atLeastOnce())
+                    .postView(options.capture());
+            assertEquals(500L, options.getAllValues().stream()
+                    .filter(o -> o != null && "by_repository_and_sequence".equals(o.view()))
+                    .reduce((a, b) -> b).orElseThrow().limit(),
+                    "500 must reach the query unclamped");
+        }
+
         /** D-rest-4 round-1 fix 1: schema values are validated BEFORE int narrowing. */
         @Test
         public void aDecisionSchemaOutsideOneOrTwoIsRefusedBeforeNarrowing() {

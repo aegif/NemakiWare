@@ -210,8 +210,14 @@ revision:
   golden vector に追加して凍結。v1 材料化は eventKeyExists→append の race 経路ではなく
   **決定済み eventId 由来の `_id` (lineage:{eventId}) による create-if-absent**。409 は
   v1EventDigest 一致のみ成功。
-  materializationPlanDigest = H("MATERIALIZATION_PLAN_V1", spoolRecordId,
-  factPayloadDigest, materializeSchemaVersion, LIST[plan entries])。
+  materializationPlanDigest = ~~H("MATERIALIZATION_PLAN_V1", spoolRecordId,
+  factPayloadDigest, materializeSchemaVersion, LIST[plan entries])~~ →
+  **v2.3.21 で改訂**: H("MATERIALIZATION_PLAN_V2", spoolRecordId, factPayloadDigest,
+  materializeSchemaVersion, **allocatedEventId**, LIST[plan entries])。v2 plan entry は
+  監査 eventId を持たないため、digest が束縛しないと「行を書く前の決定改竄」が閉じない。
+  V1 domain は**未使用のまま凍結**する (domain は再定義しない)。決定文書の当該 field 名も
+  実装では `allocatedEventId` (上の presetV1EventId は v1 の場合の由来を述べたもので、
+  v2 の監査 id にも同じ「一度だけ採番」規則を適用する — v2.3.21 参照)。
   親決定の create 衝突は factPayloadDigest + plan digest の完全一致のみ成功。
   **ACK は素の marker ではなく束縛 payload**: MAP{spoolRecordId, factPayloadDigest,
   parentDecisionId, materializationPlanDigest} を持ち、scanner は ACK 検証で全束縛を
