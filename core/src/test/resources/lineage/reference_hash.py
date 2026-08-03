@@ -119,6 +119,38 @@ vectors["spoolPayloadDigest_minimal"] = spool_payload_digest(
     _spool_id, 1, [SPOOL_IN_DOC, SPOOL_IN_EXT], [SPOOL_OUT_ART], None, None)
 vectors["spoolPayloadDigest_full"] = spool_payload_digest(
     _spool_id, 1, [SPOOL_IN_DOC, SPOOL_IN_EXT], [SPOOL_OUT_ART], "corr-1", _legacy_no_preset)
+# ---- D-rest-4 (v2.3.21): v1EventDigest + materializationPlanDigest (domain V2) ----
+def v1_event_digest(event_id, event_key, repo, ptype, inputs, outputs, snapshot,
+                    occurred_at, correlation_id):
+    return h("SPOOL_V1_EVENT_V1", event_id, event_key, repo, ptype, inputs, outputs,
+             snapshot, occurred_at, correlation_id)
+
+def plan_digest(spool_record_id_, fact_digest, schema, allocated_event_id, entries):
+    return h("MATERIALIZATION_PLAN_V2", spool_record_id_, fact_digest, schema,
+             allocated_event_id, entries)
+
+vectors["v1EventDigest_minimal"] = v1_event_digest(
+    "11111111-2222-3333-4444-555555555555",
+    "bedroom:IMPORT_UPLOADED:100:200", "bedroom", "IMPORT_UPLOADED",
+    ["upload://zip-upload"], ["nemaki://bedroom/objects/folder-1"], {},
+    "2026-08-01T00:00:00Z", "")
+vectors["v1EventDigest_full"] = v1_event_digest(
+    "11111111-2222-3333-4444-555555555555",
+    "bedroom:IMPORT_UPLOADED:100:200", "bedroom", "IMPORT_UPLOADED",
+    ["upload://zip-upload", "upload://zip-upload"],
+    ["nemaki://bedroom/objects/folder-1"],
+    {"importMode": "zip-upload", "objectCount": "2"},
+    "2026-08-01T00:00:00Z", "corr-1")
+_v1_entry = {"schemaVersion": 1, "eventId": "11111111-2222-3333-4444-555555555555",
+             "v1EventDigest": vectors["v1EventDigest_full"]}
+vectors["materializationPlanDigest_v1"] = plan_digest(
+    _spool_id, vectors["spoolPayloadDigest_full"], 1,
+    "11111111-2222-3333-4444-555555555555", [_v1_entry])
+_v2_entry = {"chunkIndex": 0, "deliveryId": "d" * 64, "eventDigest": "e" * 64}
+vectors["materializationPlanDigest_v2"] = plan_digest(
+    _spool_id, vectors["spoolPayloadDigest_full"], 2,
+    "22222222-3333-4444-5555-666666666666", [_v2_entry])
+
 vectors["spoolPayloadDigest_legacyPreset"] = spool_payload_digest(
     _spool_id, 1, [SPOOL_IN_DOC, SPOOL_IN_EXT], [SPOOL_OUT_ART], "corr-1", _legacy_preset)
 

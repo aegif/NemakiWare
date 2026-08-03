@@ -1,7 +1,51 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.20 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + D-rest-1 (fenced sequencer) + D-rest-2 (v2 遷移 CAS・単調 cursor・schema routing・admin 入口) + D-rest-3 (replay CAS 機械 + crash 回収) 実装済み — writer は v1 のまま・spool と全 D-rest driver は非活性 (readiness gate 既定 false)。残: D-rest-4 (materializer + capability provider)・chunking・Slice 4 (§6-a 再 sign-off 待ち)**
+status: **v2.3.21 — increment A sign-off 済み。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: chunking・Slice 4 (§6-a 再 sign-off 待ち)・4a/4b**
 revision:
+- v2.3.21 — **D-rest-4 実装** (収束 materializer・aggregate capability provider・scanner
+  入口 — D-rest 最終 slice)。Codex 計画レビュー 4 巡 (revise×3 → proceed) の確定事項:
+  ① **frozen identity**: v1EventDigest = H("SPOOL_V1_EVENT_V1", eventId, eventKey,
+  repositoryId, processType.name(), inputs, outputs, snapshotAttributes, occurredAt,
+  correlationId)。materializationPlanDigest は**新 domain "MATERIALIZATION_PLAN_V2"** =
+  H(domain, spoolRecordId, factPayloadDigest, materializeSchemaVersion, **allocatedEventId**,
+  LIST[entries]) — v2 の監査 eventId は plan entry に無いため digest が束縛しないと
+  「行が書かれる前の決定改竄」が閉じない (V1 domain は未使用のまま凍結保持 — domain は
+  再定義しない)。golden vector 4 件追加 (Java/Python 29 vector 一致)。
+  ② **決定文書** lineage_materialization:{spoolRecordId}: typed decode が plan digest を
+  **毎回再計算** — allocatedEventId/entries を改竄した決定は値にならない。create-if-absent
+  409 は factPayloadDigest + planDigest 完全一致のみ成功 (STORED 決定の割当が凍結真実)。
+  既存決定経路も**全束縛辺**を検査: _id / spoolRecordId / factPayloadDigest ==
+  再計算した手元 fact digest (復元された自己整合な別 fact を拒否)。
+  ③ **書く前に凍結 plan と照合** (A1): 再構成 (純関数 — v1 は record 直構築・clock 不読、
+  v2 は pure builder) の (id, digest) が stored entry と不一致 = mapper drift →
+  integrity 拒否、**何も書かない** (drift した id に unplanned 行は作れない)。最終再読 =
+  durability fence (v2 は eventId == allocatedEventId も検査 — digest は eventId を
+  含まないため)。v1 行は **strict 専用 decoder** (writer 実形: 空 map は省略 = 正準空、
+  存在して型違いは拒否・runId/correlationId は必須 string・defaulting なし) + fenced
+  allocator で sequence を write 時割当 (digest は sequence/targets を含まず、負け race の
+  burn は許容 gap)。
+  ④ **ACK = fact-{spoolRecordId}.ack** (凍結 layout どおり・4 field のみ・version field
+  なし)。検証は fact↔decision↔ACK の**全辺・毎回** (存在だけで抑止しない — 偽造 ACK が
+  仕事を抑止するのが ⑦ の名指しした攻撃)。壊れた ACK の収束修復は **hard-link のみ**:
+  quarantine slot へ create-if-absent link (先着勝ち) → dir fsync → canonical unlink →
+  dir fsync → 検証済み ACK を再公開。遅い repairer が有効 ACK を unlink し得るのは良性
+  (次 pass が決定的 bytes を再公開)。
+  ⑤ **scanner 入口**: node-local IO なので **leader guard より前・全 node で** 毎 poll 1 回。
+  有限 fair budget {max-files 2000 / max-materializations 100 / max-millis 5000} +
+  JVM-lifetime rotating cursor (restart は rotation を再開するだけ)。blank dir は Path 構築
+  前に検査。手動 POST /spool-scan (gate 赤 = 409)。
+  ⑥ **readiness spool 条項 (mode-aware)**: journaled mode (global または repo override) では
+  lineage.spool.dir 必須 + 実 write/link/fsync probe 通過が条件 (unset/unwritable =
+  NOT_READY)。direct/disabled は Path 構築も probe もせず通過。
+  ⑦ **WriteVersionResolver seam**: 既定実装は unavailable (決定なし = fail-closed)。検証済み
+  既存決定は resolver を再読しない。4a が §6-a barrier 実装を供給。
+  ⑧ **capability provider**: 定数 immutable 集合 {sequencer:event-first, cursor:cas,
+  replay:generation-cas, spool:v2} (部品の自己登録なし)。admin status に wired + active
+  (= readiness) を表示。§6-a rollout ACK への公開は 4a。
+  ⑨ production 既定での完全不活性を test で証明 (resolver 呼出/決定 IO/spool 列挙/ACK IO/
+  journal 書込 = ゼロ)。後追いレビュー対応: strict v1 merge fetch の配線 pin (merge が
+  Strict を呼び legacy を呼ばない・null result throw・非 clamp) + 本 revision 要約の
+  verify キー略記を実装名に統一。
 - v2.3.20 — **D-rest-3 実装** (8-d replay request CAS 機械 + crash 回収)。Codex 計画レビュー
   3 巡 (revise×2 → proceed) の確定事項:
   ① **保存形**: v2ReplayRequestsByTarget[target] = MAP{state: REQUESTED|CREATED|ACKED|FAILED,
@@ -92,7 +136,7 @@ revision:
   意味を維持)。実 Atlas read-back verify は 4b の前提条件。
   ⑥ **単一 aggregate readiness gate** (LineageDrestReadiness): switch
   (lineage.drest.enabled、既定 false) + config 妥当性 (**claim-lease-seconds >
-  verify.timeout + margin**, margin = max(2×interval, 10s)、違反は起動拒否でありクランプ
+  verify.timeout-seconds + margin**, margin = max(2×interval-seconds, 10s)、違反は起動拒否でありクランプ
   しない) + **配備済み design doc の view 署名一致** (map と reduce の完全比較 — rolling
   window で旧バイナリが dual-schema view を書き戻した場合に活性化を拒否; 未配備 =
   "deployment pending" 違反であり pass でも crash でもない) + sink capability。sequencer
@@ -464,8 +508,8 @@ revision:
 scope: v3.3 内で Atlas 連携を完成させるための設計。実装は sign-off 後に A〜E の独立コミットで行う。
 関連: [`docs/design/acl-epoch-fencing.md`](acl-epoch-fencing.md) (同じ outbox/cursor の考え方を使う)
 
-実装状況: **A-1〜A-1k、A-2 Slice 1a〜3、producer P-1〜P-3c、D-spool、D-rest-1、
-D-rest-2、D-rest-3 が `deps/v3.3-breaking-majors` に実装済み** (型体系・identity 符号化・命名集約・
+実装状況: **A-1〜A-1k、A-2 Slice 1a〜3、producer P-1〜P-3c、D-spool、D-rest-1〜4
+(全 slice) が `deps/v3.3-breaking-majors` に実装済み** (型体系・identity 符号化・命名集約・
 schema 整合・identity CI / v2 型・read model・sink / admin / projector の版非依存化・
 無損失 codec・store read の一斉切替・appendV2 + pre-sink gate / 全 12 producer の
 LineageFact 化 (v1 文字列は LegacyV1Projection が verbatim 運搬) / 版非依存 fact spool +
@@ -474,8 +518,8 @@ scanner + golden vector 凍結 / §8-a fenced sequencer + bootstrap patch + 実 
 v2 専用 5) + aggregate readiness gate + 無効化済み admin sequencer 入口)。
 **production writer は v1 のまま・spool と全 D-rest driver は非活性**
 (lineage.drest.enabled 既定 false; v2 branch/reaper/purge-v2/admin POST は全て単一
-readiness gate の背後)。残: D-rest-4 (収束 materializer + aggregate capability provider)・
-chunking (fact→v2 写像内・flip 時)・`FILE_SHARE_SYNC_UPLOAD` 生成拒否の E2E・4a/4b。
+readiness gate の背後)。残: chunking (fact→v2 写像内・flip 時)・`FILE_SHARE_SYNC_UPLOAD` 生成拒否の E2E・
+4a/4b (§6-a 再 sign-off・E-19/E-20 含む)。
 Slice 4 (v2 書込みへの切替) は **§6-a の再 sign-off 待ち**。slice 単位の状態は
 「A-2 の分割」の表が正である。
 本文の規範記述は実装と同期させており、乖離を見つけたらどちらかが誤りである —
@@ -1642,7 +1686,7 @@ D-rest が直すのは、設計上すでに確認済みの**採番欠落・二�
 | **D-rest-1** | 型付き可変 envelope (`LineageJournalRowV2` + strict codec)・`sequencerLeaseToken` 付き lease (acquire/renew/release CAS・一方向 latch)・**bootstrap patch (`Patch_LineageSequencerBootstrap`: lease 生成 + 履歴なし repo の counter=0 seed、既存は検証のみ・上書き禁止・破損は throw 再実行)**・fenced allocator (auto-seed 禁止・**v1+v2+cursor 横断の watermark 検査**)・fenced sequencer (claim/reclaim/finalize + pre-write 再確認・**infra 失敗は latch**)・sequencer view 3 種・実 CouchDB IT + **skip 不能な専用 CI job** (-Dlineage.it.required)。diff レビュー対応: appendV2 は seq≠0 拒否・409 収束は占有行を decode して再計算比較 (保存 digest 文字列を信用しない)・strict IO (404/409/障害の三分類)・整数は exact 変換・破損行は scan の barrier (追い越し禁止) | **完了 (非活性 — driver/scheduler なし)** |
 | **D-rest-2** | 8-b の v2 遷移 CAS・8-c 単調 cursor・schema 別 projector routing。その後に無効化済み admin sequencer 入口 | **完了 (非活性)** — v2.3.19。readiness gate 既定 false、v2 branch/reaper/purge-v2/admin POST 全て gate 背後 |
 | **D-rest-3** | 8-d replay request CAS 機械 + crash 回収 | **完了 (非活性)** — v2.3.20。readiness gate 背後、期待集合 {不在, ACKED} 凍結どおり |
-| **D-rest-4** | 収束 materializer (親決定 + plan entry + 検証付き ACK)・aggregate capability provider・scanner 入口 | 未着手 |
+| **D-rest-4** | 収束 materializer (親決定 + plan entry + 検証付き ACK)・aggregate capability provider・scanner 入口 | **完了 (非活性)** — v2.3.21。resolver 既定 unavailable = 決定ゼロ、scanner は readiness gate + spool 条項の背後 |
 
 順序: **A-2 Slice 1〜3 → D-spool → D-rest (dual・writer は v1) → Slice 4a → 4b → E**。
 

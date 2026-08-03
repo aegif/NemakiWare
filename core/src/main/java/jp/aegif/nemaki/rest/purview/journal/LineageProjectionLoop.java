@@ -61,6 +61,16 @@ public class LineageProjectionLoop {
     @Autowired(required = false)
     private LineageReplayService replayService;
 
+    @Autowired(required = false)
+    private WriteVersionResolver writeVersionResolver;
+
+    // Node-local spool machinery, built lazily per configured dir; the scanner instance is
+    // retained so its JVM-lifetime rotation cursor survives across polls.
+    private volatile String spoolDirInUse;
+    private volatile LineageFactSpool spoolInUse;
+    private volatile LineageSpoolScanner spoolScannerInUse;
+    private volatile LineageSpoolMaterializer spoolMaterializerInUse;
+
     private ScheduledExecutorService scheduler;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
@@ -125,6 +135,11 @@ public class LineageProjectionLoop {
             if (!journalStore.isActive()) {
                 return;
             }
+
+            // §7 spool scan (D-rest-4, B3): NODE-LOCAL IO, so it runs on every node —
+            // BEFORE the leader guard (leader election gates DB-global work only). The
+            // readiness gate (incl. the mode-aware spool clause) keeps it dormant by default.
+            runSpoolScanIfReady();
 
             // Leader election guard: only the leader node runs projection
             if (leaderElection != null && leaderElection.isEnabled()
@@ -919,6 +934,65 @@ public class LineageProjectionLoop {
                     repositoryId, sequenceNumber);
         }
         return advanced;
+    }
+
+    /** One bounded, fair spool scan per poll when the aggregate gate is green (B3/A6). */
+    public void runSpoolScanIfReady() {
+        try {
+            runSpoolScan(new LineageSpoolScanner.ScanBudget(
+                    lineageConfig.getSpoolScanMaxFiles(),
+                    lineageConfig.getSpoolScanMaxMaterializations(),
+                    lineageConfig.getSpoolScanMaxMillis()));
+        } catch (RuntimeException e) {
+            logger.error("Spool scan pass failed: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * The bounded scan with an explicit budget (the manual admin route's entry). Returns
+     * {@code null} when the scanner cannot run (gate red, no dir, no machinery) — the caller
+     * distinguishes dormancy from an empty scan.
+     */
+    public LineageSpoolScanner.ScanSummary runSpoolScan(
+            LineageSpoolScanner.ScanBudget budget) {
+        if (drestReadiness == null || writeVersionResolver == null
+                || !(journalStore instanceof LineageMaterializationStore)) {
+            return null;
+        }
+        String dir = lineageConfig.getSpoolDir();
+        if (dir.isBlank()) {
+            return null; // blank tested BEFORE any Path construction (A8)
+        }
+        if (!drestReadiness.evaluate().ready()) {
+            return null; // fully dormant under a red gate
+        }
+        LineageSpoolScanner scanner = spoolMachineryFor(dir);
+        LineageSpoolScanner.ScanSummary summary = scanner.scan(
+                java.nio.file.Path.of(dir), spoolMaterializerInUse, budget);
+        if (summary.acked() > 0 || summary.failed() > 0 || summary.ackBroken() > 0
+                || summary.budgetExhausted()) {
+            logger.info("Spool scan: acked={} alreadyAcked={} unresolved={} partial={}"
+                            + " failed={} ackBroken={} budgetExhausted={}", summary.acked(),
+                    summary.alreadyAcked(), summary.unresolved(), summary.partial(),
+                    summary.failed(), summary.ackBroken(), summary.budgetExhausted());
+        }
+        return summary;
+    }
+
+    private synchronized LineageSpoolScanner spoolMachineryFor(String dir) {
+        if (!dir.equals(spoolDirInUse) || spoolScannerInUse == null) {
+            LineageFactSpool spool = new LineageFactSpool(java.nio.file.Path.of(dir),
+                    lineageMetrics);
+            spoolInUse = spool;
+            spoolScannerInUse = new LineageSpoolScanner(spool, lineageMetrics);
+            spoolMaterializerInUse = new LineageSpoolMaterializer(
+                    (LineageMaterializationStore) journalStore, journalStore,
+                    (LineageV2TransitionStore) journalStore, writeVersionResolver, spool,
+                    lineageMetrics, () -> java.util.UUID.randomUUID().toString(),
+                    System::currentTimeMillis);
+            spoolDirInUse = dir;
+        }
+        return spoolScannerInUse;
     }
 
     private void advanceCursor(String targetName, String repositoryId, long sequenceNumber) {

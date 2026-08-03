@@ -23,5 +23,9 @@
   "spoolRecordId": "6773ce5cd518888cfaa81ead96f68f0cc89b682eee3b0f63ae7b3f4526f34dd3",
   "spoolPayloadDigest_minimal": "f966455e2c93524f62d1391291eab6950fb2e073f3299e143d894a760af887dd",
   "spoolPayloadDigest_full": "2eb730f81f1a0831f65f97f3f559d78ff455c859621139f098ddfbde0d1f85a8",
-  "spoolPayloadDigest_legacyPreset": "36e78718e4424df0247e990cdd9924c91e3bc8e25baa8882a566d66dabb191bc"
+  "spoolPayloadDigest_legacyPreset": "36e78718e4424df0247e990cdd9924c91e3bc8e25baa8882a566d66dabb191bc",
+  "v1EventDigest_minimal": "7fd6d03b3d6320861d9643d8b7ecdbc54b3de2fee86763da627241af66f79cf7",
+  "v1EventDigest_full": "364ad1b1d319d0a5e350d8a19a894bbf6d1487a47c00bd5b098240681edcf6fc",
+  "materializationPlanDigest_v1": "783e05d36d6faac728813b3975ed348910da6c316fbe6d7d0ff59ada44ee2563",
+  "materializationPlanDigest_v2": "5e5a1f8c6ade02c17aefa53a6431775079e2583b40d32a6b057a00a6b84eea96"
 }

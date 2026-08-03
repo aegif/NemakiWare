@@ -41,6 +41,11 @@ public class LineageMetrics {
     private final AtomicLong replayAcked = new AtomicLong();
     private final AtomicLong replayFailed = new AtomicLong();
     private final AtomicLong replayRecovered = new AtomicLong();
+    private final AtomicLong spoolMaterialized = new AtomicLong();
+    private final AtomicLong spoolAckBroken = new AtomicLong();
+    private final AtomicLong spoolAckVerified = new AtomicLong();
+    private final AtomicLong decisionCollisions = new AtomicLong();
+    private final AtomicLong unresolvedSkipped = new AtomicLong();
     private volatile Instant lastPollTime;
     private volatile int lastPollEventCount;
 
@@ -141,6 +146,28 @@ public class LineageMetrics {
         replayRecovered.incrementAndGet();
     }
 
+    // v2.3.21 materializer (D-rest-4)
+
+    public void recordMaterialized() {
+        spoolMaterialized.incrementAndGet();
+    }
+
+    public void recordAckBroken() {
+        spoolAckBroken.incrementAndGet();
+    }
+
+    public void recordAckVerified() {
+        spoolAckVerified.incrementAndGet();
+    }
+
+    public void recordDecisionCollision() {
+        decisionCollisions.incrementAndGet();
+    }
+
+    public void recordUnresolvedSkipped() {
+        unresolvedSkipped.incrementAndGet();
+    }
+
     public void recordPollComplete(int eventCount) {
         pollCount.incrementAndGet();
         lastPollTime = Instant.now();
@@ -176,6 +203,11 @@ public class LineageMetrics {
         m.put("replayAcked", replayAcked.get());
         m.put("replayFailed", replayFailed.get());
         m.put("replayRecovered", replayRecovered.get());
+        m.put("spoolMaterialized", spoolMaterialized.get());
+        m.put("spoolAckBroken", spoolAckBroken.get());
+        m.put("spoolAckVerified", spoolAckVerified.get());
+        m.put("decisionCollisions", decisionCollisions.get());
+        m.put("unresolvedSkipped", unresolvedSkipped.get());
 
         Map<String, Object> byTarget = new LinkedHashMap<>();
         for (String target : publishedByTarget.keySet()) {

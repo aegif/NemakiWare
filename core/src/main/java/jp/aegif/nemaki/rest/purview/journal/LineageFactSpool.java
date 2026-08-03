@@ -465,6 +465,133 @@ public class LineageFactSpool {
         }
     }
 
+    // ================================================================ §7 ACK (D-rest-4)
+
+    /** The canonical ACK path for a fact file: {@code fact-{id}.ack} beside it. */
+    static Path ackPathFor(Path factFile) {
+        String name = factFile.getFileName().toString();
+        if (!name.endsWith(".json")) {
+            throw new IllegalArgumentException("not a fact file: " + name);
+        }
+        return factFile.resolveSibling(name.substring(0, name.length() - ".json".length())
+                + ".ack");
+    }
+
+    /** The non-overwriting evidence slot for an invalid ACK: {@code fact-{id}.ack.quarantine}. */
+    static Path ackQuarantinePathFor(Path ackFile) {
+        return ackFile.resolveSibling(ackFile.getFileName().toString() + ".quarantine");
+    }
+
+    /** Outcome of an ACK publication attempt. */
+    public enum AckOutcome { PUBLISHED, IDEMPOTENT, CONFLICT, FAILED }
+
+    /**
+     * Durable ACK publication (v2.3.21 B1): write-temp (same dir) → force → hard-link
+     * create-if-absent → parent dir fsync → temp delete. ACK bytes are deterministic for a
+     * given decision, so a collision whose occupant matches byte-for-byte is idempotent; a
+     * differing occupant is CONFLICT (the caller re-verifies and repairs — never overwrite).
+     */
+    public AckOutcome publishAck(Path factFile, byte[] ackBytes) {
+        Path target = ackPathFor(factFile);
+        Path tmp = target.resolveSibling(target.getFileName() + ".tmp-"
+                + java.util.UUID.randomUUID());
+        try {
+            writeDurably(tmp, ackBytes);
+            try {
+                createLinkAtomically(target, tmp);
+                fsyncDirectory(target.getParent());
+                return AckOutcome.PUBLISHED;
+            } catch (java.nio.file.FileAlreadyExistsException occupied) {
+                try {
+                    byte[] occupant = readBoundedNoFollow(target);
+                    return java.util.Arrays.equals(occupant, ackBytes)
+                            ? AckOutcome.IDEMPOTENT : AckOutcome.CONFLICT;
+                } catch (IOException | RuntimeException unreadable) {
+                    // An unreadable occupant is a CONFLICT — the repair path owns it.
+                    return AckOutcome.CONFLICT;
+                }
+            }
+        } catch (IOException e) {
+            logger.error("ACK publication failed for {}: {}", target.getFileName(),
+                    e.getClass().getSimpleName());
+            return AckOutcome.FAILED;
+        } finally {
+            quietDelete(tmp);
+        }
+    }
+
+    /**
+     * Convergent repair of an invalid canonical ACK (v2.3.21 B1, hard-link only): (1)
+     * hard-link the invalid file to its quarantine slot via create-if-absent (first occupant
+     * wins; occupied slot = evidence already kept, skip); (2) dir fsync; (3) unlink the
+     * canonical ACK; (4) dir fsync. A late repairer racing a republish can unlink an
+     * already-valid ACK — benign (C3): the next verification pass finds no ACK, re-verifies
+     * the rows and republishes the deterministic bytes.
+     *
+     * @return {@code true} when the canonical path is clear afterwards
+     */
+    public boolean repairInvalidAck(Path ackFile) {
+        Path quarantine = ackQuarantinePathFor(ackFile);
+        try {
+            try {
+                createLinkAtomically(quarantine, ackFile);
+            } catch (java.nio.file.FileAlreadyExistsException occupied) {
+                // First evidence wins; this variant is dropped from the slot, loudly.
+                logger.error("ACK quarantine slot already occupied for {} — evidence kept,"
+                        + " new variant dropped", ackFile.getFileName());
+            } catch (java.nio.file.NoSuchFileException gone) {
+                // A concurrent repairer already moved it; the canonical path may already be
+                // clear or re-published — both converge.
+                return true;
+            }
+            fsyncDirectory(ackFile.getParent());
+            try {
+                Files.deleteIfExists(ackFile);
+            } catch (IOException unlinkFailure) {
+                logger.error("Could not unlink invalid ACK {}: {}", ackFile.getFileName(),
+                        unlinkFailure.getClass().getSimpleName());
+                return false;
+            }
+            fsyncDirectory(ackFile.getParent());
+            return true;
+        } catch (IOException e) {
+            logger.error("ACK repair failed for {}: {}", ackFile.getFileName(),
+                    e.getClass().getSimpleName());
+            return false;
+        }
+    }
+
+    /** An ACK read distinguishes absence from unreadability — they route differently. */
+    public sealed interface AckRead permits AckAbsent, AckUnreadable, AckBytes {
+    }
+
+    public record AckAbsent() implements AckRead {
+    }
+
+    /** Oversized, symlinked, permission-denied … — broken, and routed through repair. */
+    public record AckUnreadable() implements AckRead {
+    }
+
+    public record AckBytes(byte[] bytes) implements AckRead {
+    }
+
+    /** Bounded, symlink-refusing ACK read. */
+    public AckRead readAck(Path factFile) {
+        Path ack = ackPathFor(factFile);
+        if (!Files.exists(ack, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            return new AckAbsent();
+        }
+        try {
+            return new AckBytes(readBoundedNoFollow(ack));
+        } catch (IOException | RuntimeException e) {
+            // Oversized (IllegalArgumentException from the bounded read), symlinked,
+            // permission-denied … — all BROKEN, all routed through repair, never "absent".
+            logger.error("ACK read failed for {}: {} — treated as broken, repair will run",
+                    ack.getFileName(), e.getClass().getSimpleName());
+            return new AckUnreadable();
+        }
+    }
+
     private static void quietDelete(Path file) {
         try {
             Files.deleteIfExists(file);

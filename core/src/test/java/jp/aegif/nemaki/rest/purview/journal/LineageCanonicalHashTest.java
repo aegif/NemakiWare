@@ -196,6 +196,34 @@ public class LineageCanonicalHashTest {
         computed.put("spoolPayloadDigest_legacyPreset", LineageSpoolIdentity.payloadDigest(
                 spoolRecordId, 1L, spoolInputs, spoolOutputs, "corr-1", legacyPreset));
 
+        // v2.3.21 (D-rest-4): v1EventDigest + the V2-domain plan digest.
+        String matEventId = "11111111-2222-3333-4444-555555555555";
+        computed.put("v1EventDigest_minimal", LineageSpoolIdentity.v1EventDigest(matEventId,
+                "bedroom:IMPORT_UPLOADED:100:200", "bedroom",
+                LineageProcessType.IMPORT_UPLOADED, List.of("upload://zip-upload"),
+                List.of("nemaki://bedroom/objects/folder-1"), java.util.Map.of(),
+                "2026-08-01T00:00:00Z", ""));
+        String v1Full = LineageSpoolIdentity.v1EventDigest(matEventId,
+                "bedroom:IMPORT_UPLOADED:100:200", "bedroom",
+                LineageProcessType.IMPORT_UPLOADED,
+                List.of("upload://zip-upload", "upload://zip-upload"),
+                List.of("nemaki://bedroom/objects/folder-1"), legacySnapshot,
+                "2026-08-01T00:00:00Z", "corr-1");
+        computed.put("v1EventDigest_full", v1Full);
+        String factDigestFull = computed.get("spoolPayloadDigest_full");
+        computed.put("materializationPlanDigest_v1",
+                LineageSpoolIdentity.materializationPlanDigest(spoolRecordId, factDigestFull,
+                        1, matEventId, List.of(
+                                new jp.aegif.nemaki.rest.purview.journal
+                                        .LineageMaterializationDecision.V1Entry(matEventId,
+                                        v1Full).asRecord())));
+        computed.put("materializationPlanDigest_v2",
+                LineageSpoolIdentity.materializationPlanDigest(spoolRecordId, factDigestFull,
+                        2, "22222222-3333-4444-5555-666666666666", List.of(
+                                new jp.aegif.nemaki.rest.purview.journal
+                                        .LineageMaterializationDecision.V2Entry(0,
+                                        "d".repeat(64), "e".repeat(64)).asRecord())));
+
         assertEquals(fixture.keySet(), computed.keySet(),
                 "the fixture and this test cover different vectors");
         for (Map.Entry<String, String> entry : computed.entrySet()) {
@@ -216,7 +244,7 @@ public class LineageCanonicalHashTest {
         while (matcher.find()) {
             vectors.put(matcher.group(1), matcher.group(2));
         }
-        assertEquals(25, vectors.size(), "unexpected fixture size: " + vectors.size());
+        assertEquals(29, vectors.size(), "unexpected fixture size: " + vectors.size());
         return vectors;
     }
 

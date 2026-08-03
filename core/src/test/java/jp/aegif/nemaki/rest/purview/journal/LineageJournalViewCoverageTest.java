@@ -438,6 +438,22 @@ public class LineageJournalViewCoverageTest {
         assertEquals(0, emits("v2_replay_requests_unacked", v1Document()).size());
     }
 
+    /** D-rest-4: a materialization decision document emits in NO view (reached by _id only). */
+    @Test
+    public void aMaterializationDecisionEmitsNowhere() {
+        Map<String, Object> doc = new java.util.HashMap<>();
+        doc.put("_id", "lineage_materialization:" + "a".repeat(64));
+        doc.put("type", "lineage_materialization");
+        doc.put("spoolRecordId", "a".repeat(64));
+        doc.put("occurredAt", "2026-08-01T00:00:00Z");
+        doc.put("repositoryId", "bedroom");
+        doc.put("sequenceNumber", 7L);
+        doc.put("publishStatusByTarget", Map.of("atlas", "PENDING"));
+        for (String view : CouchLineageJournalStore.VIEWS.keySet()) {
+            assertTrue(emits(view, doc).isEmpty(), view);
+        }
+    }
+
     /** The verifying metrics view sees VERIFYING rows with a numeric since, and only those. */
     @Test
     public void theVerifyingMetricsViewSeesExactlyVerifyingRows() {

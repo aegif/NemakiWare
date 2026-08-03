@@ -695,4 +695,58 @@ public class LineageSequencingCouchIT {
                 + " request behind it is still found at limit 1");
         assertEquals(rows.get(1).event().deliveryId(), scan.get(0).recordId());
     }
+
+    // ================================================================ D-rest-4: decisions
+    // + materialized rows against real CouchDB.
+
+    @Test
+    public void theDecisionRaceHasOneWinnerAndV1RowsConvergeDigestExact() {
+        String repo = "v2-mat-repo";
+        bootstrapLease(repo);
+        bootstrapCounter(repo, 0L);
+        String eventId = "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d";
+        String eventKey = LineageEvent.computeEventKey(repo,
+                LineageProcessType.IMPORT_UPLOADED, List.of("upload://zip-upload"),
+                List.of("nemaki://" + repo + "/objects/folder-1"));
+        String digest = LineageSpoolIdentity.v1EventDigest(eventId, eventKey, repo,
+                LineageProcessType.IMPORT_UPLOADED, List.of("upload://zip-upload"),
+                List.of("nemaki://" + repo + "/objects/folder-1"), Map.of(),
+                "2026-08-01T00:00:00Z", "");
+        LineageMaterializationDecision mine = LineageMaterializationDecision.of(
+                "a".repeat(64), "b".repeat(64), 1, 0L, eventId,
+                List.of(new LineageMaterializationDecision.V1Entry(eventId, digest)), 1000L);
+        assertEquals(mine.materializationPlanDigest(),
+                store.createDecisionIfAbsent(mine).materializationPlanDigest());
+        // Second creator with the SAME content converges on the stored decision...
+        assertEquals(eventId, store.createDecisionIfAbsent(mine).allocatedEventId());
+        // ...and a DIFFERENT fact under the same id is refused.
+        LineageMaterializationDecision other = LineageMaterializationDecision.of(
+                "a".repeat(64), "c".repeat(64), 1, 0L, eventId,
+                List.of(new LineageMaterializationDecision.V1Entry(eventId, digest)), 1000L);
+        try {
+            store.createDecisionIfAbsent(other);
+            throw new AssertionError("a different fact must not share the decision id");
+        } catch (LineageIntegrityException expected) {
+        }
+
+        // The materialized v1 row: create-if-absent, digest-exact convergence, fenced
+        // sequence.
+        LineageEvent event = new LineageEvent(1, eventId, eventKey, 0L,
+                "2026-08-01T00:00:00Z", repo, LineageProcessType.IMPORT_UPLOADED,
+                List.of("upload://zip-upload"),
+                List.of("nemaki://" + repo + "/objects/folder-1"), "", "", 1, Map.of(),
+                Map.of("atlas", LineagePublishStatus.PENDING));
+        store.createMaterializedV1RowIfAbsent(event, digest);
+        store.createMaterializedV1RowIfAbsent(event, digest); // idempotent
+        LineageMaterializationStore.MaterializedV1Row stored =
+                store.readMaterializedV1RowStrict(eventId);
+        assertEquals(true, stored.event().sequenceNumber() > 0,
+                "the fenced allocator assigned a real sequence");
+        assertEquals(eventKey, stored.event().eventKey());
+        try {
+            store.createMaterializedV1RowIfAbsent(event, "f".repeat(64));
+            throw new AssertionError("an occupant with a different digest must refuse");
+        } catch (LineageIntegrityException expected) {
+        }
+    }
 }

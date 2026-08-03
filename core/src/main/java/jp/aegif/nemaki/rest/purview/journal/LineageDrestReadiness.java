@@ -78,6 +78,9 @@ public class LineageDrestReadiness {
     @Autowired(required = false)
     private List<LineageTargetSink> targetSinks;
 
+    @Autowired(required = false)
+    private jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repositoryInfoMap;
+
     public Readiness evaluate() {
         List<String> violations = new ArrayList<>();
         if (!lineageConfig.isDrestEnabled()) {
@@ -90,6 +93,7 @@ public class LineageDrestReadiness {
             violations.add("journal store is not the Couch store — no D-rest surface");
         }
         violations.addAll(sinkCapabilityViolations());
+        violations.addAll(spoolViolations());
         List<String> previous = lastViolations.getAndSet(List.copyOf(violations));
         if (!violations.equals(previous)) {
             if (violations.isEmpty()) {
@@ -152,6 +156,66 @@ public class LineageDrestReadiness {
             }
         }
         return violations;
+    }
+
+    /**
+     * B6 (v2.3.21, mode-aware): journaled lineage mode requires a working node-local spool —
+     * unset or unwritable is NOT_READY. Direct/disabled modes pass WITHOUT constructing a
+     * Path or probing (the spool is not part of those modes). Evaluated only when the
+     * operator switch is already on (the disabled case short-circuits at the switch clause
+     * anyway; this method still guards itself for exactness).
+     */
+    private List<String> spoolViolations() {
+        if (!lineageConfig.isDrestEnabled()) {
+            return List.of();
+        }
+        boolean journaled = lineageConfig.getMode() == LineageMode.JOURNALED;
+        if (!journaled && repositoryInfoMap != null) {
+            for (String repositoryId : repositoryInfoMap.keys()) {
+                if (lineageConfig.getModeForRepository(repositoryId)
+                        == LineageMode.JOURNALED) {
+                    journaled = true;
+                    break;
+                }
+            }
+        }
+        if (!journaled) {
+            return List.of();
+        }
+        String dir = lineageConfig.getSpoolDir();
+        if (dir.isBlank()) {
+            return List.of("journaled mode requires lineage.spool.dir — the fact spool is"
+                    + " part of the journaled contract");
+        }
+        List<String> budgetViolations = new ArrayList<>();
+        int maxFiles = lineageConfig.getSpoolScanMaxFiles();
+        int maxMat = lineageConfig.getSpoolScanMaxMaterializations();
+        long maxMillis = lineageConfig.getSpoolScanMaxMillis();
+        if (maxFiles < 1 || maxFiles > 100_000) {
+            budgetViolations.add("lineage.spool.scan.max-files must be in [1, 100000], got "
+                    + maxFiles);
+        }
+        if (maxMat < 1 || maxMat > 10_000) {
+            budgetViolations.add("lineage.spool.scan.max-materializations must be in"
+                    + " [1, 10000], got " + maxMat);
+        }
+        if (maxMillis < 1 || maxMillis > 600_000) {
+            budgetViolations.add("lineage.spool.scan.max-millis must be in [1, 600000], got "
+                    + maxMillis);
+        }
+        if (!budgetViolations.isEmpty()) {
+            return budgetViolations;
+        }
+        try {
+            LineageFactSpool probe = new LineageFactSpool(java.nio.file.Path.of(dir), null);
+            if (!probe.probeReadiness()) {
+                return List.of("lineage.spool.dir '" + dir + "' failed the write/link/fsync"
+                        + " probe — the spool volume cannot honor the durability contract");
+            }
+        } catch (RuntimeException e) {
+            return List.of("lineage.spool.dir '" + dir + "' is unusable: " + e.getMessage());
+        }
+        return List.of();
     }
 
     private List<String> sinkCapabilityViolations() {
