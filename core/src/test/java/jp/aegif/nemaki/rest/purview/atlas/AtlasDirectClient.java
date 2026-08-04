@@ -63,6 +63,25 @@ public class AtlasDirectClient {
     }
 
     /**
+     * Reads one type definition by name (増分 B).
+     *
+     * <p>Used to establish that a type the schema payload declares actually exists in the
+     * catalog afterwards. A schema apply that reports success can still have skipped a type,
+     * and everything downstream would then fail as "entity not found" rather than as
+     * "the type was never created".
+     */
+    public AtlasResponse getTypeDef(String typeName) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(endpoint + "/api/atlas/v2/types/typedef/name/" + typeName))
+                .header("Authorization", authHeader)
+                .GET()
+                .build();
+        HttpResponse<String> response =
+                httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        return new AtlasResponse(response.statusCode(), parseBody(response.body()));
+    }
+
+    /**
      * Gets an entity by qualifiedName.
      * @return response with status code and parsed body (null body if 404)
      */
