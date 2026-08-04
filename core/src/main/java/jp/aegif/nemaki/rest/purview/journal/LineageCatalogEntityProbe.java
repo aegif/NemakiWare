@@ -17,37 +17,47 @@
 package jp.aegif.nemaki.rest.purview.journal;
 
 /**
- * Whether the catalog holds the entity an endpoint names — in three values, never two.
+ * Whether <em>a given target's</em> catalog holds the entity an endpoint names — in three values.
  *
- * <p>The two-valued version of this question is the bug. "Not present" and "could not ask" lead
- * to opposite actions: the first means wait for the authoritative publisher, the second means
- * we know nothing and must not decide. Collapsing them makes an outage look like a missing
- * entity, and every endpoint checked during that outage acquires an obligation for something
- * that was there all along.
+ * <h2>Why the target is an input</h2>
  *
- * <p>Kept as an interface in this package so the obligation machine does not depend on the
- * catalog client: the machine is about parking and resuming projections, and the only thing it
- * needs from a catalog is this one answer.
+ * <p>An obligation's identity includes the target, because each target waits independently: the
+ * same qualified name can be present in Atlas and absent in Purview, and a projection to Purview
+ * must not proceed on the strength of Atlas holding it. A probe that took only the kind and the
+ * name could answer for one catalog and have its answer applied to another — the task key would
+ * say "purview" while the observation came from somewhere else.
+ *
+ * <p>{@code repositoryId} is here for the same reason: routing may be per repository, and a
+ * probe that has to re-derive it from the qualified name is parsing an identity it was handed.
+ *
+ * <h2>Why three values</h2>
+ *
+ * <p>The two-valued version is the bug. "Not present" and "could not ask" lead to opposite
+ * actions: the first means wait for the authoritative publisher, the second means we know
+ * nothing and must not decide. Collapsing them makes an outage look like a missing entity, and
+ * every endpoint checked during that outage acquires an obligation for something that was there
+ * all along.
  */
 public interface LineageCatalogEntityProbe {
 
     enum Presence {
-        /** The catalog holds it. A projection may proceed. */
+        /** This target's catalog holds it. A projection to this target may proceed. */
         PRESENT,
-        /** The catalog answered, and does not hold it. An obligation is owed. */
+        /** This target's catalog answered, and does not hold it. An obligation is owed. */
         ABSENT,
         /**
-         * The catalog did not answer.
+         * This target's catalog did not answer, or the target is not one this node can reach.
          *
-         * <p>Not {@code ABSENT}: nothing was established. Treated the same as {@code ABSENT} by
-         * the producer (both mean "do not publish yet") and differently by the consumer (only
-         * {@code ABSENT} can lead to building a historical entity; {@code UNKNOWN} is retried).
+         * <p>Not {@code ABSENT}: nothing was established. Both mean "do not publish yet" to the
+         * producer; only {@code ABSENT} can lead the consumer to build a historical entity.
          */
         UNKNOWN
     }
 
     /**
+     * @param target which catalog is being asked; an unknown one answers {@code UNKNOWN}
      * @param catalogQualifiedName the name the endpoint resolves to; never logged by callers
      */
-    Presence presenceOf(EndpointKind kind, String catalogQualifiedName);
+    Presence presenceOf(String target, String repositoryId, EndpointKind kind,
+            String catalogQualifiedName);
 }

@@ -68,6 +68,7 @@ public class LineageCatalogObligationServiceTest {
     private Presence answer;
     private RuntimeException probeFailure;
     private int probeCalls;
+    private final List<String> probedTargets = new ArrayList<>();
 
     /** An in-memory store honouring the CAS, token and lease rules of the real one. */
     private static final class FakeStore implements LineageCatalogObligationStore {
@@ -228,8 +229,10 @@ public class LineageCatalogObligationServiceTest {
                 clock::get);
     }
 
-    private Presence probe(EndpointKind kind, String qualifiedName) {
+    private Presence probe(String target, String repositoryId, EndpointKind kind,
+            String qualifiedName) {
         probeCalls++;
+        probedTargets.add(target);
         if (probeFailure != null) {
             throw probeFailure;
         }
@@ -246,6 +249,7 @@ public class LineageCatalogObligationServiceTest {
         answer = Presence.ABSENT;
         probeFailure = null;
         probeCalls = 0;
+        probedTargets.clear();
     }
 
     @Nested
@@ -375,6 +379,35 @@ public class LineageCatalogObligationServiceTest {
             assertEquals(Optional.empty(),
                     service(true).requireCatalogEntity(TARGET, REPO, KIND, QN));
         }
+    }
+
+    /**
+     * The task key names a target, and the verdict behind it must come from that target.
+     *
+     * <p>Otherwise the key is a label rather than an identity: a projection to Purview would
+     * proceed because Atlas happened to hold the entity.
+     */
+    @Test
+    @DisplayName("the probe is asked about the obligation's own target")
+    public void probeRoutingMatchesTheTaskKey() {
+        answer = Presence.ABSENT;
+        LineageCatalogObligationService active = service(true);
+        active.requireCatalogEntity("atlas", REPO, KIND, QN);
+        active.requireCatalogEntity("purview", REPO, KIND, QN);
+
+        assertEquals(List.of("atlas", "purview"), probedTargets);
+        // Two targets, one qualified name, two obligations: each waits independently.
+        assertEquals(2, store.byKey.size());
+        assertFalse(LineageCatalogObligation.taskKey("atlas", REPO, KIND, QN)
+                .equals(LineageCatalogObligation.taskKey("purview", REPO, KIND, QN)));
+
+        // And the consumer asks the catalog each obligation names, not whichever came first.
+        probedTargets.clear();
+        answer = Presence.PRESENT;
+        active.runOnce(10);
+        assertEquals(2, probedTargets.size());
+        assertTrue(probedTargets.contains("atlas"));
+        assertTrue(probedTargets.contains("purview"));
     }
 
     @Nested

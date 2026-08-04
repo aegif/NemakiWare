@@ -105,7 +105,7 @@ public class LineageCatalogObligationService {
         }
         LineageCatalogEntityProbe.Presence presence;
         try {
-            presence = probe.presenceOf(kind, catalogQualifiedName);
+            presence = probe.presenceOf(target, repositoryId, kind, catalogQualifiedName);
         } catch (RuntimeException e) {
             // A probe that threw has established nothing. Owing an obligation is the
             // conservative answer; publishing would assert an entity nobody confirmed.
@@ -195,8 +195,10 @@ public class LineageCatalogObligationService {
             LineageCatalogObligation obligation) {
         LineageCatalogEntityProbe.Presence presence;
         try {
-            presence = probe.presenceOf(obligation.endpointKind(),
-                    obligation.catalogQualifiedName());
+            // The obligation's own target and repository: the verdict must come from the
+            // catalog the task key names, never from whichever probe answered first.
+            presence = probe.presenceOf(obligation.target(), obligation.repositoryId(),
+                    obligation.endpointKind(), obligation.catalogQualifiedName());
         } catch (RuntimeException e) {
             presence = LineageCatalogEntityProbe.Presence.UNKNOWN;
         }
