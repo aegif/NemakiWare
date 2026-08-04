@@ -145,6 +145,53 @@ public class LineageBinaryDigest {
                 null);
     }
 
+    /**
+     * The offline entry point CI and operations use to measure an APPROVED artifact
+     * (4b preflight).
+     *
+     * <p>It exists so that {@code approvedBinaryDigests} can be filled from something other
+     * than the running node's own claim about itself. Reading the digest off the admin route
+     * and approving it because the route said so is circular; this computes the same value
+     * from the artifact you are about to ship, <b>through the same code the ACK uses</b> —
+     * it validates its argument and calls {@link #compute(Path)}, which is exactly what
+     * {@link #digest()} does. A second implementation would only prove that two programs
+     * agree with each other.
+     *
+     * <pre>
+     *   unzip -q core.war -d /tmp/approved
+     *   java -cp core/target/classes jp.aegif.nemaki.rest.purview.journal.LineageBinaryDigest \
+     *        /tmp/approved
+     * </pre>
+     *
+     * <p>Exits non-zero, printing to stderr, when the distribution cannot be measured — an
+     * unmeasurable artifact must not silently produce a value someone then approves.
+     */
+    public static void main(String[] args) {
+        System.exit(run(args, System.out, System.err));
+    }
+
+    /**
+     * {@link #main} without the exit — so a test can drive the real CLI without taking the
+     * whole JVM down with it, which is exactly what happened the first time.
+     *
+     * @return the process exit code: 0 measured, 1 unmeasurable, 2 bad usage
+     */
+    static int run(String[] args, java.io.PrintStream out, java.io.PrintStream err) {
+        if (args == null || args.length != 1 || args[0].isBlank()) {
+            err.println("usage: LineageBinaryDigest <exploded-deployment-root>");
+            err.println("  prints the BARRIER_BINARY_V1 digest of WEB-INF/lib and"
+                    + " WEB-INF/classes under that root");
+            return 2;
+        }
+        try {
+            out.println(compute(Path.of(args[0])));
+            return 0;
+        } catch (UnmeasurableException unmeasurable) {
+            err.println("unmeasurable: " + unmeasurable.getMessage());
+            return 1;
+        }
+    }
+
     /** Package-visible for the golden vector, which measures a fixture tree. */
     static String compute(Path deploymentRoot) {
         List<Map<String, Object>> records = new ArrayList<>();

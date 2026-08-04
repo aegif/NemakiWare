@@ -38,9 +38,10 @@ import java.util.Map;
  *   <li><b>The anchor is replicated verbatim into every chunk.</b> Every shape in
  *       {@link LineageProcessShape} pairs a ×1 side with a 1..n side; carrying the ×1 side
  *       into each chunk is what keeps each chunk independently shape-valid and publishable.</li>
- *   <li><b>Chunk coordinates are measured with a fixed allowance</b>
- *       ({@link LineageDocumentSizeRuler#CHUNK_COORDINATE_ALLOWANCE}), so the size decisions
- *       never depend on the chunk count still being computed.</li>
+ *   <li><b>Chunk coordinates cost nothing extra to measure.</b> The ruler charges every
+ *       number its widest rendering, so {@code chunkIndex} and {@code chunkCount} are already
+ *       covered whatever their digits turn out to be — a partition's size decisions never
+ *       depend on the chunk count it is still computing.</li>
  * </ol>
  *
  * <p>A fact that fits produces exactly one slice at {@code chunk(0,1)} — byte-identical to
