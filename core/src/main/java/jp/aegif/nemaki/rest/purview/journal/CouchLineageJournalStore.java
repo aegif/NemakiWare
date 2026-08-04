@@ -40,8 +40,9 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
     private static final Logger logger = LoggerFactory.getLogger(CouchLineageJournalStore.class);
 
-    static final String DB_NAME = "nemaki_lineage";
-    static final String SEQ_PREFIX = "lineage_seq:";
+    // DB_NAME / SEQ_PREFIX are persistence contract shared with the extracted stores, so they
+    // live in LineageStoreDocuments — a delegate must not name this class to read a string.
+    private static final String DB_NAME = LineageStoreDocuments.DB_NAME;
     private static final String DESIGN_DOC = "lineage";
     private static final int MAX_CAS_RETRIES = 5;
     private static final int PURGE_BATCH_SIZE = 1000;
@@ -601,7 +602,7 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
             // CouchDB's size verdict is deterministic and must reach the caller as such on
             // EVERY v2 write path, not only the classified one (round-2 R1): otherwise an
             // ordinary chunk that the backend refuses is retried forever.
-            if (isDocumentTooLarge(e)) {
+            if (LineageStoreDecoding.isDocumentTooLarge(e)) {
                 throw new LineageMaterializationStore.DocumentTooLargeException(
                         "CouchDB refused the document for its size: " + e.getMessage(), e);
             }
@@ -1316,7 +1317,7 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
      * using CouchDB compare-and-set on a sequence counter document.
      */
     private long assignSequenceNumber(String repositoryId) {
-        String seqDocId = SEQ_PREFIX + repositoryId;
+        String seqDocId = LineageStoreDocuments.SEQ_PREFIX + repositoryId;
         CloudantClientWrapper client = getLineageClient();
 
         for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
@@ -1516,27 +1517,6 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         } catch (RuntimeException e) {
             throw new LineageSequencingStore.SequencingStorageException("CAS update failed for '"
                     + raw.get("_id") + "'", e);
-        }
-    }
-
-    /** Exact integral conversion — Gson hands back LazilyParsedNumber; fractions must fail. */
-    /**
-     * A pure numeric parser with no IO. Package-visible because the extracted decision codec
-     * needs the SAME strictness — a second copy would be a second definition of "integral".
-     * Not on {@link LineageStoreSupport}: that interface is the storage basis, and this is not
-     * storage. If a second delegate turns out to need it, it moves to a shared codec then, not
-     * before (v2.3.28 split).
-     */
-    static long exactLong(Object value, String what) {
-        if (!(value instanceof Number n)) {
-            throw new IllegalArgumentException(what + " must be a number, got "
-                    + (value == null ? "null" : value.getClass().getSimpleName()));
-        }
-        try {
-            return new java.math.BigDecimal(n.toString()).longValueExact();
-        } catch (ArithmeticException | NumberFormatException e) {
-            throw new IllegalArgumentException(what + " must be an exact integral value, got "
-                    + n);
         }
     }
 
@@ -1822,7 +1802,7 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
             synchronized (this) {
                 if (wiredMaterializationStore == null) {
                     wiredMaterializationStore =
-                            new CouchLineageMaterializationStore(this, this);
+                            new CouchLineageMaterializationStore(this, sequencing());
                 }
                 wired = wiredMaterializationStore;
             }
@@ -1856,31 +1836,6 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
     public void appendV2Classified(LineageEventV2 event,
             Map<String, LineageMaterializationDecision.CreationClassification> classification) {
         materialization().appendV2Classified(event, classification);
-    }
-
-    /**
-     * CouchDB's document-size verdict, classified strictly (v2.3.22 D1): 413, or a status
-     * whose reason names {@code document_too_large}. Everything else is infrastructure.
-     */
-    static boolean isDocumentTooLarge(RuntimeException e) {
-        // ONLY a response-carrying failure counts, and only 413 or a CouchDB error/reason of
-        // document_too_large: a 503 (or any message that merely says "too large") is an
-        // infrastructure failure and must propagate, never park a fact (F3).
-        if (!(e instanceof com.ibm.cloud.sdk.core.service.exception.ServiceResponseException
-                sre)) {
-            return false;
-        }
-        if (sre.getStatusCode() == 413) {
-            return true;
-        }
-        if (sre.getStatusCode() != 400 && sre.getStatusCode() != 500) {
-            return false;
-        }
-        Object reason = sre.getDebuggingInfo() == null ? null
-                : sre.getDebuggingInfo().get("reason");
-        Object error = sre.getDebuggingInfo() == null ? null
-                : sre.getDebuggingInfo().get("error");
-        return "document_too_large".equals(reason) || "document_too_large".equals(error);
     }
 
     @Override

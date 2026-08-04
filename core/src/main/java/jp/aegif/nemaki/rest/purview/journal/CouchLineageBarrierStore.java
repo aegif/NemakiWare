@@ -43,7 +43,7 @@ import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
  */
 final class CouchLineageBarrierStore implements LineageBarrierStore {
 
-    static final String DB_NAME = CouchLineageJournalStore.DB_NAME;
+    static final String DB_NAME = LineageStoreDocuments.DB_NAME;
 
     private final CloudantClientPool connectorPool;
     private final ObjectMapper objectMapper;

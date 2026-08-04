@@ -181,7 +181,7 @@ final class CouchLineageMaterializationStore {
 
     /** The owner's strict integral parse, under a short local name. Same implementation. */
     private static long longOf(Object value, String field) {
-        return CouchLineageJournalStore.exactLong(value, field);
+        return LineageStoreDecoding.exactLong(value, field);
     }
 
     private static String requireString(Map<String, Object> map, String field) {
@@ -536,7 +536,7 @@ final class CouchLineageMaterializationStore {
                 }
             }
         } catch (RuntimeException e) {
-            if (CouchLineageJournalStore.isDocumentTooLarge(e)) {
+            if (LineageStoreDecoding.isDocumentTooLarge(e)) {
                 throw new LineageMaterializationStore.DocumentTooLargeException("CouchDB refused the document for its"
                         + " size: " + e.getMessage(), e);
             }

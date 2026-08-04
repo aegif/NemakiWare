@@ -1,6 +1,6 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.29 — increment A sign-off 済み・**§6-a 再 sign-off 承認済み (2026-08-03)**。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: 4b (**運用証跡待ち** — preflight は実装済み)。**§2 の属性別上限は実装済み (v2.3.26)**。**Slice 4a 実装済み — writer は v1 のまま (barrier 文書が無い＝pristine)**。**増分 B の artifact 型 2 つ実装済み (v2.3.29)** — 残る B は folder_dataset / external・document への属性追加 / backfill / lifecycle / reconciliation
+status: **v2.3.35 — increment A sign-off 済み・**§6-a 再 sign-off 承認済み (2026-08-03)**。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: 4b (**運用証跡待ち** — preflight は実装済み)。**§2 の属性別上限は実装済み (v2.3.26)**。**Slice 4a 実装済み — writer は v1 のまま (barrier 文書が無い＝pristine)**。**増分 B 実装済み (v2.3.35)** — 型追加 / 属性追加 / secret 境界 / backfill / lifecycle / reconciliation / runbook。live Atlas は起動できず B-E1〜B-E4 を EXTERNAL_EVIDENCE_REQUIRED として [`lineage-increment-b-runbook.md`](../operations/lineage-increment-b-runbook.md) に固定
 
 revision 履歴と、過去に閉じた指摘の一覧は
 [`atlas-lineage-endpoints-changelog.md`](atlas-lineage-endpoints-changelog.md) にあります
@@ -283,6 +283,29 @@ nemaki_folder_dataset   superTypes: [DataSet]
   `Process.inputs` の型制約を満たしつつ、UI/governance の folder 実体は従来どおり `nemaki_folder`。
 - 「疎な shell を作る」案との違い: proxy は**実在する folder に 1:1 で対応し、同時に作られ、同時に消える**。
   実体のない参照を埋めるための空 entity ではない。
+
+### 増分 B の契約表 (v2.3.30 — 実装前に既存設計から抽出)
+
+実装の対象は 3 つ。identity・属性・relationship・更新主体・削除規則を先に固定する。
+**未確定箇所は安全側 (fail-closed / 削除しない / secret を運ばない) を採り、test で固定する。**
+
+| 型 | identity | 追加する属性 | relationship | 更新主体 | 削除規則 |
+|---|---|---|---|---|---|
+| `nemaki_folder_dataset` (新規) | `nemaki://{repo}/folders/{objectId}/dataset` — 正典は `LineageEndpoint.folderProxyQualifiedName` | `repositoryId` `objectId` (必須) / `active` (boolean) / `sourceState` | `nemaki_folder_has_dataset` 1:1 → `nemaki_folder` | catalog sync が folder と**同一 bulk**で作る + backfill | **削除しない**。delete→`ARCHIVED`、purge→`PURGED`、restore→`ACTIVE`、実体の記録も無い→`ORPHAN`。GC は `PURGED` かつ参照 Process 0 件かつ retention 経過のみ |
+| `nemaki_document` (属性追加) | 既存 `nemaki://{repo}/objects/{objectId}` (不変) | `mimeType` `contentLength` `versionObjectId` `changeToken` `contentHash` | 既存のまま | catalog sync (authoritative) | 既存のまま |
+| `nemaki_external_asset` (属性追加) | 既存 (stable key 由来・不変) | `tenantId` (EXTERNAL_ASSET) / `provider` (CLOUD_OBJECT) / `storageClass` (COLD_STORAGE) / `sourceRevision` `sourceModifiedAt` `sourceContentHash` `sourceContentLength` | 既存のまま | catalog sync / cloud metadata sync | 既存のまま |
+
+**identity は既存を一切動かさない。** 追加は属性と新型だけで、既存 entity の QN が変われば
+過去の lineage が参照先を失う。`nemaki_folder_dataset` の QN も新規ではなく、A-1 の
+`folderProxyQualifiedName` が既に持っている値である。
+
+**secret 非保持**: 追加属性に URL・query・fragment・userinfo・token・credential・
+ローカル絶対パスは 1 つも含まない。`sourceRevision` は provider の revision id、
+`storageClass` は `GLACIER` のような列挙値、`tenantId` は tenant の識別子である。
+artifact 型と同じ否定検査を適用する。
+
+**§2 の属性上限**: 追加分のうち表示値は無い (すべて識別子・機械値・数量) ため
+companion は増えない。identity に使う値は切り詰めない。
 
 ### proxy の lifecycle (v2 追加)
 

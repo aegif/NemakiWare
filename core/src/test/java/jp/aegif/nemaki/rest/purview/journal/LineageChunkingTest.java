@@ -422,24 +422,24 @@ public class LineageChunkingTest {
 
         @Test
         public void only413OrTheCouchReasonCounts() {
-            assertTrue(CouchLineageJournalStore.isDocumentTooLarge(response(413, null)));
-            assertTrue(CouchLineageJournalStore.isDocumentTooLarge(
+            assertTrue(LineageStoreDecoding.isDocumentTooLarge(response(413, null)));
+            assertTrue(LineageStoreDecoding.isDocumentTooLarge(
                     response(400, "document_too_large")));
-            assertTrue(CouchLineageJournalStore.isDocumentTooLarge(
+            assertTrue(LineageStoreDecoding.isDocumentTooLarge(
                     response(500, "document_too_large")));
         }
 
         @Test
         public void infrastructureFailuresNeverPark() {
-            assertEquals(false, CouchLineageJournalStore.isDocumentTooLarge(
+            assertEquals(false, LineageStoreDecoding.isDocumentTooLarge(
                     response(503, null)), "an outage must propagate, never park a fact");
-            assertEquals(false, CouchLineageJournalStore.isDocumentTooLarge(
+            assertEquals(false, LineageStoreDecoding.isDocumentTooLarge(
                     response(503, "document_too_large")),
                     "even a 503 whose body says so is an outage, not a verdict");
-            assertEquals(false, CouchLineageJournalStore.isDocumentTooLarge(
+            assertEquals(false, LineageStoreDecoding.isDocumentTooLarge(
                     new RuntimeException("document_too_large")),
                     "a bare message is not a CouchDB response");
-            assertEquals(false, CouchLineageJournalStore.isDocumentTooLarge(
+            assertEquals(false, LineageStoreDecoding.isDocumentTooLarge(
                     response(400, "too large")), "'too large' prose is not the reason code");
         }
     }

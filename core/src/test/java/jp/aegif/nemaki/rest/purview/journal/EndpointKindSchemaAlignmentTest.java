@@ -61,12 +61,13 @@ public class EndpointKindSchemaAlignmentTest {
             Set.of("qualifiedName", "name", "description", "owner");
 
     /**
-     * Kinds whose Atlas type increment B still has to create.
+     * Kinds whose Atlas type increment B still has to create — now none (v2.3.30).
      *
-     * <p>Asserted to be exactly this set, so that the day B adds one of these types the alignment
-     * check below starts applying to it and this list has to be shortened deliberately.
+     * <p>Kept, empty, rather than deleted with its assertion: it is the check that every kind's
+     * Atlas type exists, and an empty expected set is the strongest form of it. A kind added
+     * later without a type fails here rather than passing a loop that skips what it cannot find.
      */
-    private static final Set<EndpointKind> AWAITING_SCHEMA = Set.of(EndpointKind.CMIS_FOLDER);
+    private static final Set<EndpointKind> AWAITING_SCHEMA = Set.of();
 
     @Test
     public void everyDeclaredAttributeExistsInTheAtlasType() {
@@ -174,19 +175,27 @@ public class EndpointKindSchemaAlignmentTest {
         // is not handing over an attribute the catalog discards.
         assertEquals(List.of("name", "versionLabel", "folderPath",
                         "versionLabelOriginalSha256", "folderPathOriginalSha256",
-                        "versionSeriesId"),
+                        "versionSeriesId",
+                        // 増分 B (v2.3.31)
+                        "mimeType", "contentLength",
+                        "versionObjectId", "changeToken", "contentHash"),
                 EndpointKind.CMIS_DOCUMENT.allowedAttributes());
         assertEquals(List.of("name"), EndpointKind.CMIS_FOLDER.allowedAttributes());
         assertEquals(List.of("archivedAt", "originalObjectId", "name", "versionLabel",
                 "nameOriginalSha256", "versionLabelOriginalSha256",
                 "archiveState", "versionSeriesId"), EndpointKind.ARCHIVE.allowedAttributes());
-        assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath"),
+        assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath",
+                        "tenantId", "sourceRevision", "sourceModifiedAt",
+                        "sourceContentHash", "sourceContentLength"),
                 EndpointKind.EXTERNAL_ASSET.allowedAttributes());
         // no externalPath: the natural value is the drive URL, whose query string is where
         // sharing tokens live — unrepresentable until B defines a provider-canonical URL
-        assertEquals(List.of("sourceSystem", "externalStableKey"),
+        assertEquals(List.of("sourceSystem", "externalStableKey",
+                        "provider", "sourceRevision", "sourceModifiedAt",
+                        "sourceContentHash", "sourceContentLength"),
                 EndpointKind.CLOUD_OBJECT.allowedAttributes());
-        assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath"),
+        assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath",
+                        "storageClass"),
                 EndpointKind.COLD_STORAGE.allowedAttributes());
         // originalFileName / name are display values and carry §2 companions (v2.3.29);
         // importMode, artifactKind and contentHash do not — machine state and a digest.
@@ -198,31 +207,20 @@ public class EndpointKindSchemaAlignmentTest {
     }
 
     /**
-     * Attributes increment B is to add to the schema, and to the kind that should then carry them.
+     * Attributes increment B still owes: the artifact manifest fields (v2.3.13).
      *
-     * <p>The other direction of the alignment check. {@code everyDeclaredAttributeExistsInTheAtlasType}
-     * catches an attribute declared here and missing from Atlas; nothing caught the reverse, so B
-     * could add {@code provider} to {@code nemaki_external_asset}, forget {@code EndpointKind},
-     * and leave every test green while the value never travels.
+     * <p>The other direction of the alignment check.
+     * {@code everyDeclaredAttributeExistsInTheAtlasType} catches an attribute declared in a kind
+     * and missing from Atlas; nothing caught the reverse, so B could add {@code provider} to
+     * {@code nemaki_external_asset}, forget {@code EndpointKind}, and leave every test green
+     * while the value never travels.
+     *
+     * <p>The content and version-identity fields that used to be here are now on both sides
+     * (v2.3.31), so they are asserted by the alignment checks rather than by their absence.
+     * What remains is the manifest that ties an operation's chunks together, which needs the
+     * chunking work rather than a schema line.
      */
     private static final Map<EndpointKind, List<String>> AWAITING_INCREMENT_B = Map.of(
-            // Version identity (v2.3.13): without these, importing the same external file three
-            // times reads as "the same asset became the same document" three times over, and the
-            // one thing a version-managing ECM's lineage should answer — which version moved —
-            // is unanswerable.
-            // versionSeriesId is NOT here: the Atlas type already declares it, so the kind
-            // declares it too (present in both). Only the genuinely-missing fields are owed.
-            EndpointKind.CMIS_DOCUMENT, List.of("mimeType", "contentLength",
-                    "versionObjectId", "changeToken", "contentHash"),
-            EndpointKind.EXTERNAL_ASSET, List.of("tenantId",
-                    "sourceRevision", "sourceModifiedAt", "sourceContentHash",
-                    "sourceContentLength"),
-            EndpointKind.CLOUD_OBJECT, List.of("provider",
-                    "sourceRevision", "sourceModifiedAt", "sourceContentHash",
-                    "sourceContentLength"),
-            EndpointKind.COLD_STORAGE, List.of("storageClass"),
-            // The manifest that ties an operation's chunks together (v2.3.13). The artifact
-            // types now exist (v2.3.29); these six are the remaining B attributes, still owed.
             EndpointKind.IMPORT_ARTIFACT, List.of("manifestDigest", "totalObjectCount",
                     "totalByteLength", "completedObjectCount", "failedObjectCount",
                     "businessResult"),
@@ -283,6 +281,55 @@ public class EndpointKindSchemaAlignmentTest {
                                     + " belongs to the Process type; §4 forbids a stored URL at"
                                     + " the Atlas boundary because the token can be in the path.");
                 }
+            }
+        }
+    }
+
+    /**
+     * The folder companion is identified by the folder's object id, not its name or path.
+     *
+     * <p>A rename or a move must not change the qualified name: past lineage points at it, and
+     * an identity that tracked the name would strand every Process the moment someone renamed a
+     * folder. The name lives in the entity as an attribute, where changing it is an update.
+     */
+    @Test
+    public void aFolderCompanionIsIdentifiedByObjectId() {
+        assertEquals(EndpointKind.Identity.OBJECT_ID, EndpointKind.CMIS_FOLDER.identity());
+        assertEquals("nemaki_folder_dataset", EndpointKind.CMIS_FOLDER.atlasTypeName());
+
+        assertEquals("nemaki://bedroom/folders/f-1/dataset",
+                LineageEndpoint.folderProxyQualifiedName("bedroom", "f-1"));
+        assertNotEquals(LineageEndpoint.folderProxyQualifiedName("bedroom", "f-1"),
+                LineageEndpoint.folderProxyQualifiedName("bedroom", "f-2"));
+        assertNotEquals(LineageEndpoint.folderProxyQualifiedName("bedroom", "f-1"),
+                LineageEndpoint.folderProxyQualifiedName("canopy", "f-1"));
+        // The companion is a distinct entity from the folder, so the two names must differ.
+        assertNotEquals(LineageEndpoint.objectQualifiedName("bedroom", "f-1"),
+                LineageEndpoint.folderProxyQualifiedName("bedroom", "f-1"));
+    }
+
+    /**
+     * The companion carries the two fields the retention rule needs, and no location.
+     *
+     * <p>{@code active} is what a query filters on and {@code sourceState} is why; collapsing
+     * them would make ARCHIVED and PURGED indistinguishable, and only the second may ever be
+     * removed. Neither is a folder path — the companion is named by id precisely so it does not
+     * have to carry one.
+     */
+    @Test
+    public void theFolderCompanionCarriesLifecycleStateAndNoLocation() {
+        Map<String, String> type = atlasTypes().get("nemaki_folder_dataset");
+        assertNotNull(type, "nemaki_folder_dataset must exist in the schema payload");
+        assertEquals("boolean", type.get("active"));
+        assertEquals("string", type.get("sourceState"));
+        assertEquals("string", type.get("repositoryId"));
+        assertEquals("string", type.get("objectId"));
+
+        for (String name : type.keySet()) {
+            for (String forbidden : FORBIDDEN_ON_ARTIFACTS) {
+                assertFalse(name.toLowerCase(java.util.Locale.ROOT).contains(forbidden),
+                        "nemaki_folder_dataset declares '" + name + "', which looks like a"
+                                + " location or a secret");
             }
         }
     }

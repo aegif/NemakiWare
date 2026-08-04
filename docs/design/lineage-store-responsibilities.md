@@ -33,8 +33,8 @@
 | `readRaw` / `readRawStrict` / `updateStrictCas` / `createIfAbsent` | strict IO の三分類 (404 / 409 / 障害)。**複数責務が同一実装を共有している**ことを確認済み — 先に共通化するのではなく、元々共有なのでここに残す |
 | `objectMapper` / `connectorPool` / `lineageConfig` / `lineageMetrics` | 注入点。composition root の役目 |
 | `dbProvisioned` | provisioning の一度きり性 |
-| `exactLong` | 数値の厳密変換。**当初は sequencing 固有と見ていたが、materialization も同じ実装を呼んでいた** — 抽出中にコンパイルで判明。片方へ移すと複製になるので owner に残す |
-| `SEQ_PREFIX` | v1 の `assignSequenceNumber` と §8-a の fenced allocator が**同じ counter 文書**を指す。片方に閉じ込めると id が二重定義になる |
+| `exactLong` / `isDocumentTooLarge` | 厳密な数値 decode と例外分類。複数の抽出先が同じ実装を呼ぶ。**owner ではなく `LineageStoreDecoding` (責務中立) が持つ** |
+| `DB_NAME` / `SEQ_PREFIX` | 永続化契約。`SEQ_PREFIX` は v1 の `assignSequenceNumber` と §8-a の fenced allocator が**同じ counter 文書**を指す。**owner ではなく `LineageStoreDocuments` (責務中立) が持つ** |
 
 ## 責務ごとの内訳
 
@@ -121,9 +121,26 @@ composition root そのもの、(b) 他の 5 責務が「同じ DB の別文書�
 | `CouchLineageSequencingStore` | 437 | 本コミット |
 | `CouchLineageJournalStore` (facade) | 3,441 → 1,943 | |
 
-委譲先はいずれも `LineageStoreSupport` (+ 必要なら `LineageConfig`) だけを持ち、facade の具象型を
-参照しない。唯一の例外は `CouchLineageJournalStore.SEQ_PREFIX` / `exactLong` の**静的**参照で、
-これは上表のとおり共有基盤であって循環ではない (委譲先はインスタンスに触らない)。
+委譲先は facade の具象型を **instance / static いずれの形でも参照しない** (v2.3.30)。
+当初は `SEQ_PREFIX` / `DB_NAME` / `exactLong` / `isDocumentTooLarge` を facade の static として
+残していたが、循環でなくても「その 1,900 行のクラス無しには委譲先をコンパイルも
+テストもできない」状態であり、分割の目的そのものを損なう。責務中立な
+`LineageStoreDocuments` / `LineageStoreDecoding` へ移した (値・検査・例外分類は不変)。
+
+`CouchLineageMaterializationStore` は sequence 採番を必要とするので `LineageSequencingStore` を
+受け取る。これは**狭い契約 (interface)** であって facade ではない。ただし facade が
+`new CouchLineageMaterializationStore(this, this)` と書けば、宣言型は狭いまま実体は facade
+全体になるので、wiring 側も検査対象にしている (`this` は基盤として 1 つまで)。
+実体は抽出済みの `CouchLineageSequencingStore` を渡す。
+
+`CouchLineageBarrierStore` だけは `CloudantClientPool` + `ObjectMapper` を直接受け取る。
+これは漏れではなく barrier を最初に抽出した理由そのもので、`ensureClientForRead` が
+検証済み 404 と障害を同じ `false` に潰すため、§6-a の Pristine / Indeterminate 判定は
+専用 client を必要とする。
+
+**この 3 点はすべて `LineageStoreCollaboratorTest` が bytecode と source の両面で pin している。**
+String 定数は javac が inline するので bytecode には痕跡が残らず、逆に static import 経由の
+呼出しは source の pattern をすり抜け得るため、片方だけでは不十分である。
 
 ## 現状固定した疑義 (今回は意味を変えない)
 

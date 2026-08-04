@@ -98,7 +98,12 @@ public class PurviewAdminControllerTest {
                 incrementalSyncService, archiveReconciliationService, cloudMetadataReconciliationService, containmentReconciliationService, typeReconciliationService,
                 deleteResolutionService, jobStateService,
                 cursorStateService, stateOverviewService, deadLetterStateService, deadLetterRetryService,
-                cloudSyncLineageService);
+                cloudSyncLineageService,
+                // 増分 B's backfill and reconciliation: mocked, because these tests are about
+                // the controller's authorisation and response shape, not the services'.
+                mock(jp.aegif.nemaki.rest.purview.lineage.LineageFolderCompanionBackfill.class),
+                mock(jp.aegif.nemaki.rest.purview.lineage
+                        .LineageCatalogReconciliationService.class));
     }
 
     @Test

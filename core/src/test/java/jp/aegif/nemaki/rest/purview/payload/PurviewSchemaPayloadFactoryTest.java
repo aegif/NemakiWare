@@ -100,7 +100,10 @@ public class PurviewSchemaPayloadFactoryTest {
         assertTrue(attributeNames(entityDefs, "nemaki_import_process").contains("objectCount"));
         assertTrue(attributeNames(entityDefs, "nemaki_export_process").contains("targetDescription"));
         assertTrue(attributeNames(entityDefs, "nemaki_export_process").contains("objectCount"));
-        assertEquals(5, relationshipDefs.size());
+        // 6 since increment B added nemaki_folder_has_dataset (v2.3.30). The count is pinned
+        // so a relationship cannot appear or vanish unremarked; manifestTypeNamesMatchThe...
+        // separately pins that the manifest lists the same six.
+        assertEquals(6, relationshipDefs.size());
         assertTrue(relationshipDefs.stream().anyMatch(def -> "nemaki_repository_contains_folder".equals(def.get("name"))));
         assertTrue(relationshipDefs.stream().anyMatch(def -> "nemaki_folder_contains_folder".equals(def.get("name"))));
         assertTrue(relationshipDefs.stream().anyMatch(def -> "nemaki_folder_contains_document".equals(def.get("name"))));
@@ -246,9 +249,12 @@ public class PurviewSchemaPayloadFactoryTest {
         // 16 standard attributes + §2's two truncation-evidence companions (v2.3.26):
         // folderPathOriginalSha256 and versionLabelOriginalSha256 must be declared on the type,
         // or the evidence for a shortened value is the thing Atlas drops.
-        assertEquals(18, docAttrs.size(), docAttrs.toString());
+        // + 5 for 増分 B (v2.3.31): content facts and version identity.
+        assertEquals(23, docAttrs.size(), docAttrs.toString());
         assertTrue(docAttrs.containsAll(
                 List.of("folderPathOriginalSha256", "versionLabelOriginalSha256")));
+        assertTrue(docAttrs.containsAll(List.of("mimeType", "contentLength",
+                "versionObjectId", "changeToken", "contentHash")));
     }
 
     @SuppressWarnings("unchecked")

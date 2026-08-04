@@ -28,6 +28,7 @@ dependency-reduced-pom.xml
 **/cloudant-init.jar
 cloudant-init/target/
 core/target/
+core/target-cli/
 solr/target/
 action/target/
 common/target/
