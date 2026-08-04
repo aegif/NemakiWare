@@ -467,6 +467,17 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                         + " && doc.state) { emit(doc.state, null); } }",
                 "_count"));
 
+        // historicalIntentsContendingBySubject — the arbitration query. EVERYTHING except
+        // SUPERSEDED: an intent that already wrote the entity still has a claim on the subject,
+        // and an older observation must not be published over it merely because the newer one
+        // finished first. Emitting only the in-flight states let a loser scanned after the
+        // winner find itself alone and publish.
+        views.put("historicalIntentsContendingBySubject", new ViewDefinition(
+                "function(doc) { if (doc.type === 'lineage_historical_intent' && doc.subjectKey"
+                        + " && doc.state && doc.state !== 'SUPERSEDED') { "
+                        + "emit(doc.subjectKey, null); } }",
+                "_count"));
+
         return java.util.Collections.unmodifiableMap(views);
     }
 

@@ -61,6 +61,9 @@ public record LineageHistoricalPublishIntent(
         String sourceEvidenceDigest,
         String plannedOperationDigest,
         int payloadSchemaVersion,
+        long observationSequence,
+        String observationDeliveryId,
+        String supersededByDigest,
         State state,
         String owner,
         String token,
@@ -92,11 +95,31 @@ public record LineageHistoricalPublishIntent(
         /** The source came back. The written entity is wrong and must be replaced. */
         COMPENSATION_REQUIRED,
         /** The current authoritative entity has been re-published over it. */
-        COMPENSATED;
+        COMPENSATED,
+        /**
+         * A later observation's intent won the subject; this plan will not be written.
+         *
+         * <p>Terminal, and not a failure. Without it an older intent sits in {@code PLANNED}
+         * for ever, finding a {@code CONFLICT} on every scan and never settling — and every
+         * event waiting on its obligation waits with it.
+         */
+        SUPERSEDED;
 
         /** Whether a scanner should still be driving this one. */
         public boolean incomplete() {
             return this == PLANNED || this == PUBLISHED || this == COMPENSATION_REQUIRED;
+        }
+
+        /**
+         * Whether this intent still has a claim on its subject.
+         *
+         * <p>Everything except {@code SUPERSEDED}. A terminated intent still counts: it wrote,
+         * or is writing, the catalog entity, and an older observation must not be published
+         * over it just because the newer one finished first. Restricting this to the in-flight
+         * states let a loser scanned after the winner find itself alone and publish.
+         */
+        public boolean claimsSubject() {
+            return this != SUPERSEDED;
         }
     }
 
@@ -118,6 +141,42 @@ public record LineageHistoricalPublishIntent(
         if (attempts < 0) {
             throw new IllegalArgumentException("attempts must not be negative");
         }
+        if (observationSequence <= 0 || observationDeliveryId == null
+                || observationDeliveryId.isBlank()) {
+            // Without an observation coordinate two intents for one subject cannot be ordered,
+            // and "whichever the scan reached first" would decide what the catalog holds.
+            throw new IllegalArgumentException(
+                    "an intent needs the observation coordinate its snapshot was taken at");
+        }
+    }
+
+    /**
+     * Which of two intents for one subject describes the later observation.
+     *
+     * <p>The same coordinate the waiting-snapshot resolver orders by, persisted here so the
+     * decision does not depend on re-reading events: repository-scoped origin sequence first,
+     * delivery id only to break a tie. A delivery sequence is <b>not</b> used — a replay of an
+     * old observation takes a new one, and ordering by it is how a tombstone ends up over a
+     * restored object.
+     *
+     * <p>Callers must have established that both intents name the same subject; comparing
+     * across subjects is meaningless.
+     */
+    public boolean observedLaterThan(LineageHistoricalPublishIntent other) {
+        if (other == null) {
+            return true;
+        }
+        if (observationSequence != other.observationSequence) {
+            return observationSequence > other.observationSequence;
+        }
+        return observationDeliveryId.compareTo(other.observationDeliveryId) > 0;
+    }
+
+    /** Same observation position — where two different plans are a contradiction. */
+    public boolean sameObservationAs(LineageHistoricalPublishIntent other) {
+        return other != null
+                && observationSequence == other.observationSequence
+                && observationDeliveryId.equals(other.observationDeliveryId);
     }
 
     /**
@@ -130,10 +189,11 @@ public record LineageHistoricalPublishIntent(
     public static String intentId(String taskKey, String target, String repositoryId,
             EndpointKind kind, String subjectDigest, String snapshotEvidenceDigest,
             String sourceEvidenceDigest, String plannedOperationDigest,
-            int payloadSchemaVersion) {
+            int payloadSchemaVersion, long observationSequence, String observationDeliveryId) {
         return LineageCanonicalHash.hash(IDENTITY_DOMAIN, taskKey, target, repositoryId,
                 kind == null ? null : kind.name(), subjectDigest, snapshotEvidenceDigest,
-                sourceEvidenceDigest, plannedOperationDigest, (long) payloadSchemaVersion);
+                sourceEvidenceDigest, plannedOperationDigest, (long) payloadSchemaVersion,
+                observationSequence, observationDeliveryId);
     }
 
     public String documentId() {
@@ -152,7 +212,9 @@ public record LineageHistoricalPublishIntent(
                 && snapshotEvidenceDigest.equals(other.snapshotEvidenceDigest)
                 && sourceEvidenceDigest.equals(other.sourceEvidenceDigest)
                 && plannedOperationDigest.equals(other.plannedOperationDigest)
-                && payloadSchemaVersion == other.payloadSchemaVersion;
+                && payloadSchemaVersion == other.payloadSchemaVersion
+                && observationSequence == other.observationSequence
+                && observationDeliveryId.equals(other.observationDeliveryId);
     }
 
     public boolean leaseExpired(long nowMs) {
@@ -169,6 +231,7 @@ public record LineageHistoricalPublishIntent(
     @Override
     public String toString() {
         return "LineageHistoricalPublishIntent[" + intentId.substring(0, 12) + " " + state
-                + " target=" + target + " kind=" + endpointKind + " attempts=" + attempts + "]";
+                + " target=" + target + " kind=" + endpointKind
+                + " observedAt=" + observationSequence + " attempts=" + attempts + "]";
     }
 }

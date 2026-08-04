@@ -61,7 +61,8 @@ public class LineageJournalViewCoverageTest {
      */
     private static final Set<String> OBLIGATION_VIEWS =
             Set.of("obligationsByState", "v2_waiting_by_task_key",
-                    "historicalIntentsByState", "historicalCompensationsByState");
+                    "historicalIntentsByState", "historicalCompensationsByState",
+                    "historicalIntentsContendingBySubject");
 
     /**
      * v1-ONLY views (D-rest-2 schema split): every selector that feeds v1 machinery — claim,
@@ -293,6 +294,42 @@ public class LineageJournalViewCoverageTest {
                 "a document with no state cannot be scheduled and must not be emitted");
     }
 
+    /**
+     * The arbitration index emits every intent that still has a claim on its subject.
+     *
+     * <p>Including the terminated ones. An intent that already wrote the entity still owns the
+     * subject, and an older observation must not publish over it merely because the newer one
+     * finished first — restricting this to the in-flight states let a loser scanned after the
+     * winner find itself alone.
+     */
+    @Test
+    public void theArbitrationViewEmitsEveryClaimExceptSuperseded() {
+        Map<String, Object> intent = new java.util.LinkedHashMap<>();
+        intent.put("_id", "lineage_historical_intent:abc");
+        intent.put("type", "lineage_historical_intent");
+        intent.put("subjectKey", "subject-1");
+
+        for (String state : List.of("PLANNED", "PUBLISHED", "RESOLVED",
+                "COMPENSATION_REQUIRED", "COMPENSATED")) {
+            Map<String, Object> one = new java.util.LinkedHashMap<>(intent);
+            one.put("state", state);
+            assertFalse(emits("historicalIntentsContendingBySubject", one).isEmpty(),
+                    state + " still claims its subject");
+        }
+
+        Map<String, Object> superseded = new java.util.LinkedHashMap<>(intent);
+        superseded.put("state", "SUPERSEDED");
+        assertTrue(emits("historicalIntentsContendingBySubject", superseded).isEmpty(),
+                "a settled loser must not beat a live plan");
+
+        // Not an event view, and a document with no subject key cannot be arbitrated.
+        assertTrue(emits("historicalIntentsContendingBySubject", v2Document()).isEmpty());
+        Map<String, Object> keyless = new java.util.LinkedHashMap<>(intent);
+        keyless.put("state", "PLANNED");
+        keyless.remove("subjectKey");
+        assertTrue(emits("historicalIntentsContendingBySubject", keyless).isEmpty());
+    }
+
     /** v1 rows emit everywhere except the v2-only families. */
     @Test
     public void everyEventViewStillEmitsForASyntheticV1Document() {
@@ -352,6 +389,7 @@ public class LineageJournalViewCoverageTest {
                         // a general event view — see OBLIGATION_VIEWS.
                         "obligationsByState", "v2_waiting_by_task_key",
                         "historicalIntentsByState", "historicalCompensationsByState",
+                        "historicalIntentsContendingBySubject",
                         "by_event_key", "by_repository_and_time", "by_target_status",
                         "by_process_type", "by_occurred_at", "by_repository_and_process_type",
                         "dead_letter_by_time", "dead_letter_by_replayed", "by_target_status_time",

@@ -104,6 +104,8 @@ public class LineageHistoricalPublishMachine {
         COMPENSATING,
         /** Both durable states agree the wrong entity has been replaced. */
         COMPENSATED,
+        /** A later observation owns this subject; this plan settles without writing. */
+        SUPERSEDED,
         /** The snapshot structurally cannot rebuild the entity. Terminal on the obligation. */
         SNAPSHOT_INCOMPLETE
     }
@@ -115,8 +117,14 @@ public class LineageHistoricalPublishMachine {
      * same decision finds the same intent and continues from wherever it got to.
      */
     public Verdict publish(LineageCatalogObligation obligation,
-            HistoricalEntitySnapshot historical, List<String> mandatoryAttributes) {
+            HistoricalEntitySnapshot historical, LineageObservationProvenance provenance,
+            List<String> mandatoryAttributes) {
         if (obligation == null || historical == null) {
+            return Verdict.RETRY;
+        }
+        if (provenance == null || !provenance.usable()) {
+            // Without an observation coordinate this plan cannot be ordered against another
+            // for the same subject, and "whichever the scan reached first" would decide.
             return Verdict.RETRY;
         }
         if (!historical.snapshot().hasAll(mandatoryAttributes)) {
@@ -135,7 +143,7 @@ public class LineageHistoricalPublishMachine {
         Map<String, Object> payload = canonicalPayload(historical);
         String plannedOperationDigest = operationDigest(historical, payload);
         LineageHistoricalPublishIntent planned = plan(obligation, historical,
-                plannedOperationDigest);
+                plannedOperationDigest, provenance);
 
         LineageHistoricalPublishIntent stored;
         try {
@@ -183,6 +191,7 @@ public class LineageHistoricalPublishMachine {
             case COMPENSATION_REQUIRED -> compensate(intent, held);
             case RESOLVED -> Verdict.RESOLVED_PURGED;
             case COMPENSATED -> Verdict.COMPENSATED;
+            case SUPERSEDED -> Verdict.SUPERSEDED;
         };
     }
 
@@ -202,7 +211,26 @@ public class LineageHistoricalPublishMachine {
             return Verdict.RETRY;
         }
 
-        // Read back FIRST, and bound to THIS plan. A crash between the external write and this
+        // Arbitration first: whether this plan may write at all is prior to what the catalog
+        // currently holds. Deciding it after the read-back made the outcome depend on scan
+        // order whenever two plans produced the same payload — the read-back cannot tell two
+        // identical writes apart, so a loser scanned second recorded the winner's entity as
+        // its own success.
+        String subjectKey = LineageHistoricalPublishIntentStore.subjectKey(intent.target(),
+                intent.repositoryId(), intent.endpointKind(), intent.subjectDigest());
+        Optional<LineageHistoricalPublishIntent> beatenBy = loserTo(intent, subjectKey);
+        if (beatenBy.isPresent()) {
+            // Settle rather than conflict for ever: an intent that never terminates keeps
+            // every event waiting on its obligation waiting too. Only the winner's digest is
+            // recorded — no values, no snapshot, no qualified name.
+            if (intents.markSuperseded(held, beatenBy.get().plannedOperationDigest(),
+                    "a later observation of this subject was planned")) {
+                return Verdict.SUPERSEDED;
+            }
+            return Verdict.RETRY;
+        }
+
+        // Then read back, bound to THIS plan. A crash between the external write and this
         // state update leaves exactly PLANNED-with-the-entity-written, and re-checking the
         // source instead would find it restored and walk away from a tombstone nobody comes
         // back for. "Something is present" is not this plan's write — see LineageHistoricalReadBack.
@@ -215,9 +243,10 @@ public class LineageHistoricalPublishMachine {
                 return Verdict.RETRY;
             }
             case CONFLICT -> {
-                // Something else owns this qualified name — the authoritative entity, or
-                // another intent's. Overwriting it is the failure the subject fence exists to
-                // prevent, so this plan stops and stays visible.
+                // Arbitration above already established this plan is the latest observation,
+                // so whatever is there is not a later intent's — it is the authoritative
+                // publisher's, or something unaccounted for. Overwriting it is the failure the
+                // fence exists to prevent, so this plan stops and stays visible.
                 logger.warn("A historical plan found a conflicting entity in its place");
                 intents.recordAttempt(held, "the catalog holds an entity this plan did not write");
                 return Verdict.RETRY;
@@ -238,8 +267,6 @@ public class LineageHistoricalPublishMachine {
 
         // One writer per catalog entity. Intent ids differ per evidence, which does not stop
         // two observations of one object from publishing concurrently.
-        String subjectKey = LineageHistoricalPublishIntentStore.subjectKey(intent.target(),
-                intent.repositoryId(), intent.endpointKind(), intent.subjectDigest());
         Optional<LineageHistoricalPublishIntentStore.SubjectFence> fence =
                 intents.acquireSubjectFence(subjectKey, intent.intentId(), INTENT_LEASE,
                         clockMs.getAsLong());
@@ -248,19 +275,71 @@ public class LineageHistoricalPublishMachine {
             intents.recordAttempt(held, "another intent holds this subject");
             return Verdict.RETRY;
         }
+        LineageHistoricalPublishIntentStore.SubjectFence heldFence = fence.get();
         try {
-            return publishUnderFence(intent, held, historical, publisher,
+            return publishUnderFence(intent, held, heldFence, historical, publisher,
                     plannedOperationDigest);
         } finally {
-            intents.releaseSubjectFence(fence.get());
+            intents.releaseSubjectFence(heldFence);
         }
+    }
+
+    /**
+     * Which contending intent for this subject describes the later observation.
+     *
+     * <p>The fence stops two writes at once; it does not say which write should happen. And the
+     * source cannot say either — a purged object has no opinion about which of two snapshots of
+     * it is newer. So the answer is the observation coordinate the intents carry, which is the
+     * same order the waiting-snapshot resolver uses.
+     *
+     * @return empty if this intent is the winner; otherwise the intent that beats it
+     */
+    private Optional<LineageHistoricalPublishIntent> loserTo(
+            LineageHistoricalPublishIntent intent, String subjectKey) {
+        List<LineageHistoricalPublishIntent> contenders;
+        try {
+            contenders = intents.findContendingForSubject(subjectKey, 32);
+        } catch (RuntimeException e) {
+            // Cannot establish who wins. Publishing anyway would be deciding by scan order.
+            logger.warn("Could not read the contenders for a subject: {}",
+                    e.getClass().getSimpleName());
+            return Optional.of(intent);
+        }
+        LineageHistoricalPublishIntent best = intent;
+        for (LineageHistoricalPublishIntent other : contenders) {
+            if (other == null || other.intentId().equals(intent.intentId())) {
+                continue;
+            }
+            if (other.sameObservationAs(intent)
+                    && !other.plannedOperationDigest().equals(intent.plannedOperationDigest())) {
+                // Two different plans claiming one observation. Neither may be written.
+                logger.error("Two historical plans claim one observation of a subject");
+                return Optional.of(other);
+            }
+            if (other.observedLaterThan(best)) {
+                best = other;
+            }
+        }
+        return best.intentId().equals(intent.intentId()) ? Optional.empty() : Optional.of(best);
     }
 
     /** The external write, with the subject fence held. */
     private Verdict publishUnderFence(LineageHistoricalPublishIntent intent,
             LineageHistoricalPublishIntentStore.IntentClaim held,
+            LineageHistoricalPublishIntentStore.SubjectFence fence,
             HistoricalEntitySnapshot historical, LineageHistoricalEntityPublisher publisher,
             String plannedOperationDigest) {
+        // Re-checked under the fence: another intent may have been created between the first
+        // arbitration and the fence acquisition.
+        Optional<LineageHistoricalPublishIntent> winner = loserTo(intent, fence.subjectKey());
+        if (winner.isPresent()) {
+            if (intents.markSuperseded(held, winner.get().plannedOperationDigest(),
+                    "a later observation of this subject was planned")) {
+                return Verdict.SUPERSEDED;
+            }
+            return Verdict.RETRY;
+        }
+
         // Re-check the source immediately before the external write: the gap between planning
         // and publishing is exactly where a restore does the most damage.
         LineageSourceDispositionResolver.SourceEvidence before = sources.dispositionOf(
@@ -272,13 +351,20 @@ public class LineageHistoricalPublishMachine {
             return Verdict.RETRY;
         }
 
-        // The renew is the AUTHORISATION for the external side effect, not a courtesy. If the
-        // lease has gone — expired, or reclaimed by another worker — this process no longer
-        // speaks for the intent, and a write it made would be one nothing is tracking.
+        // BOTH leases are the authorisation for the external side effect, not a courtesy.
+        // The intent lease says this process still speaks for the plan; the fence says it still
+        // owns the subject. Renewing only the intent would leave another intent free to take
+        // the fence and write the same entity concurrently.
         Optional<LineageHistoricalPublishIntentStore.IntentClaim> renewed =
                 intents.renew(held, INTENT_LEASE, clockMs.getAsLong());
         if (renewed.isEmpty()) {
             logger.warn("Lost the intent lease before publishing; not writing");
+            return Verdict.RETRY;
+        }
+        Optional<LineageHistoricalPublishIntentStore.SubjectFence> heldFence =
+                intents.renewSubjectFence(fence, INTENT_LEASE, clockMs.getAsLong());
+        if (heldFence.isEmpty()) {
+            logger.warn("Lost the subject fence before publishing; not writing");
             return Verdict.RETRY;
         }
         LineageHistoricalPublishIntentStore.IntentClaim live = renewed.get();
@@ -462,18 +548,22 @@ public class LineageHistoricalPublishMachine {
     // ------------------------------------------------------------------
 
     private LineageHistoricalPublishIntent plan(LineageCatalogObligation obligation,
-            HistoricalEntitySnapshot historical, String plannedOperationDigest) {
+            HistoricalEntitySnapshot historical, String plannedOperationDigest,
+            LineageObservationProvenance provenance) {
         String subjectDigest = historical.sourceEvidence().subjectDigest();
         String intentId = LineageHistoricalPublishIntent.intentId(obligation.taskKey(),
                 historical.target(), historical.repositoryId(), historical.endpointKind(),
                 subjectDigest, historical.snapshot().evidenceDigest(),
                 historical.sourceEvidence().evidenceDigest(), plannedOperationDigest,
-                PAYLOAD_SCHEMA_VERSION);
+                PAYLOAD_SCHEMA_VERSION, provenance.observationOrder(),
+                provenance.originDeliveryId());
         return new LineageHistoricalPublishIntent(null, intentId, obligation.taskKey(),
                 historical.target(), historical.repositoryId(), historical.endpointKind(),
                 subjectDigest, historical.snapshot().evidenceDigest(),
                 historical.sourceEvidence().evidenceDigest(), plannedOperationDigest,
-                PAYLOAD_SCHEMA_VERSION, LineageHistoricalPublishIntent.State.PLANNED,
+                PAYLOAD_SCHEMA_VERSION, provenance.observationOrder(),
+                provenance.originDeliveryId(), null,
+                LineageHistoricalPublishIntent.State.PLANNED,
                 null, null, 0L, 0, clockMs.getAsLong(), null);
     }
 

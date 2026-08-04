@@ -112,8 +112,34 @@ public interface LineageHistoricalPublishIntentStore {
     Optional<SubjectFence> acquireSubjectFence(String subjectKey, String intentId,
             Duration lease, long nowMs);
 
+    /**
+     * Extends the fence. Token must match.
+     *
+     * <p>Needed because a source lookup and a catalog write both take time, and a fence that
+     * expired mid-write would let another intent take the subject while the first is still
+     * writing to it. Renewing the intent lease alone does not restore that exclusivity.
+     */
+    Optional<SubjectFence> renewSubjectFence(SubjectFence fence, Duration lease, long nowMs);
+
     /** Releases the fence, if this holder still has it. */
     boolean releaseSubjectFence(SubjectFence fence);
+
+    /**
+     * The intents still contending for one subject — {@code PLANNED} and {@code PUBLISHED}.
+     *
+     * <p>The fence stops two from writing at once; this is what decides which of them <em>may</em>
+     * write. A source that has been purged cannot say which of two snapshots is newer, so the
+     * answer has to come from the observation coordinate the intents carry.
+     */
+    List<LineageHistoricalPublishIntent> findContendingForSubject(String subjectKey, int limit);
+
+    /**
+     * Settles a losing intent, recording only the winner's digest.
+     *
+     * <p>Terminal and not a failure. Without it the loser sits in {@code PLANNED} for ever,
+     * finding a conflict on every scan, and every event waiting on its obligation waits with it.
+     */
+    boolean markSuperseded(IntentClaim claim, String supersededByDigest, String reason);
 
     /** The subject key a fence is taken on. One per catalog entity. */
     static String subjectKey(String target, String repositoryId, EndpointKind kind,

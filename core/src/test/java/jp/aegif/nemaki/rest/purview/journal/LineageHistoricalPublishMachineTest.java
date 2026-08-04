@@ -73,6 +73,7 @@ public class LineageHistoricalPublishMachineTest {
         final Map<String, SubjectFence> fences = new LinkedHashMap<>();
         boolean failWrites;
         boolean failRenew;
+        boolean failFenceRenew;
         boolean failFinalTransition;
 
         @Override
@@ -146,6 +147,57 @@ public class LineageHistoricalPublishMachineTest {
         }
 
         @Override
+        public Optional<SubjectFence> renewSubjectFence(SubjectFence fence, Duration lease,
+                long nowMs) {
+            if (failFenceRenew) {
+                return Optional.empty();
+            }
+            SubjectFence current = fence == null ? null : fences.get(fence.subjectKey());
+            if (current == null || !current.token().equals(fence.token())) {
+                return Optional.empty();
+            }
+            SubjectFence renewed = new SubjectFence(fence.subjectKey(), fence.intentId(),
+                    fence.token(), nowMs + lease.toMillis());
+            fences.put(fence.subjectKey(), renewed);
+            return Optional.of(renewed);
+        }
+
+        @Override
+        public List<LineageHistoricalPublishIntent> findContendingForSubject(String subjectKey,
+                int limit) {
+            List<LineageHistoricalPublishIntent> found = new ArrayList<>();
+            for (LineageHistoricalPublishIntent intent : byId.values()) {
+                String key = LineageHistoricalPublishIntentStore.subjectKey(intent.target(),
+                        intent.repositoryId(), intent.endpointKind(), intent.subjectDigest());
+                if (key.equals(subjectKey) && intent.state().claimsSubject()
+                        && found.size() < limit) {
+                    found.add(intent);
+                }
+            }
+            return found;
+        }
+
+        @Override
+        public boolean markSuperseded(IntentClaim claim, String supersededByDigest,
+                String reason) {
+            LineageHistoricalPublishIntent held = heldBy(claim);
+            if (held == null
+                    || held.state() != LineageHistoricalPublishIntent.State.PLANNED) {
+                return false;
+            }
+            byId.put(claim.intentId(), new LineageHistoricalPublishIntent(null, held.intentId(),
+                    held.taskKey(), held.target(), held.repositoryId(), held.endpointKind(),
+                    held.subjectDigest(), held.snapshotEvidenceDigest(),
+                    held.sourceEvidenceDigest(), held.plannedOperationDigest(),
+                    held.payloadSchemaVersion(), held.observationSequence(),
+                    held.observationDeliveryId(), supersededByDigest,
+                    LineageHistoricalPublishIntent.State.SUPERSEDED, claim.owner(),
+                    claim.token(), held.leaseUntilMs(), held.attempts(), held.createdAtMs(),
+                    reason));
+            return true;
+        }
+
+        @Override
         public boolean releaseSubjectFence(SubjectFence fence) {
             SubjectFence current = fence == null ? null : fences.get(fence.subjectKey());
             if (current == null || !current.token().equals(fence.token())) {
@@ -211,8 +263,9 @@ public class LineageHistoricalPublishMachineTest {
                     base.target(), base.repositoryId(), base.endpointKind(),
                     base.subjectDigest(), base.snapshotEvidenceDigest(),
                     base.sourceEvidenceDigest(), base.plannedOperationDigest(),
-                    base.payloadSchemaVersion(), state, owner, token, leaseUntilMs, attempts,
-                    base.createdAtMs(), reason);
+                    base.payloadSchemaVersion(), base.observationSequence(),
+                    base.observationDeliveryId(), base.supersededByDigest(), state, owner,
+                    token, leaseUntilMs, attempts, base.createdAtMs(), reason);
         }
     }
 
@@ -395,8 +448,16 @@ public class LineageHistoricalPublishMachineTest {
                 .orElseThrow();
     }
 
+    /** An original observation at the given repository-scoped sequence. */
+    private static LineageObservationProvenance observedAt(long sequence, String deliveryId) {
+        return new LineageObservationProvenance(
+                LineageObservationProvenance.LineageDeliveryKind.ORIGINAL, deliveryId,
+                deliveryId, sequence, sequence, "2026-01-01T00:00:00Z", "a".repeat(64));
+    }
+
     private LineageHistoricalPublishMachine.Verdict publish() {
-        return machine.publish(obligation(), historical(), List.of("name"));
+        return machine.publish(obligation(), historical(), observedAt(10L, "d-1"),
+                List.of("name"));
     }
 
     // ------------------------------------------------------------------ tests
@@ -735,23 +796,158 @@ public class LineageHistoricalPublishMachineTest {
             intents.createIfAbsent(plannedIntent());
             assertEquals(LineageHistoricalPublishMachine.Verdict.RESOLVED_PURGED, resumeAll());
 
-            // A second intent for the same subject, from a later observation.
+            // A second intent for the same subject, from a LATER observation.
             authorisingIncarnation = "inc-2";
             sourceIncarnation = "inc-2";
             publisher.storedOperationDigest = null;
-            intents.createIfAbsent(plannedIntent());
+            intents.createIfAbsent(plannedIntentObservedAt(20L, "d-2"));
             assertEquals(2, intents.byId.size(), "two intents for one subject");
 
             assertEquals(LineageHistoricalPublishMachine.Verdict.RESOLVED_PURGED, resumeAll());
             assertTrue(intents.fences.isEmpty(), "every write released its fence");
 
-            // Reversing the enumeration reaches the same terminal states.
-            List<LineageHistoricalPublishIntent.State> states = new ArrayList<>();
+            // Both settle terminally; neither is left conflicting for ever.
             for (LineageHistoricalPublishIntent one : intents.byId.values()) {
-                states.add(one.state());
+                assertFalse(one.state().incomplete(), one + " never settled");
             }
-            assertEquals(List.of(LineageHistoricalPublishIntent.State.RESOLVED,
-                    LineageHistoricalPublishIntent.State.RESOLVED), states);
+        }
+    }
+
+    @Nested
+    @DisplayName("arbitration between intents for one subject")
+    class Arbitration {
+
+        /**
+         * The fence stops two writes at once; it does not say which write should happen. And a
+         * purged source has no opinion about which of two snapshots of it is newer — so the
+         * answer is the observation coordinate, not the scan order.
+         */
+        @Test
+        @DisplayName("the later observation wins, whichever is scanned first")
+        void laterObservationWins() {
+            intents.createIfAbsent(plannedIntentObservedAt(10L, "d-1"));
+            intents.createIfAbsent(plannedIntentObservedAt(20L, "d-2"));
+
+            resumeAll();
+
+            LineageHistoricalPublishIntent older = intentObservedAt(10L);
+            LineageHistoricalPublishIntent newer = intentObservedAt(20L);
+            assertEquals(LineageHistoricalPublishIntent.State.SUPERSEDED, older.state());
+            assertEquals(LineageHistoricalPublishIntent.State.RESOLVED, newer.state());
+            assertEquals(1, publisher.publishCount, "only the winner writes");
+        }
+
+        /** The same outcome with the enumeration reversed. */
+        @Test
+        @DisplayName("reversing the scan order reaches the same states")
+        void reversedScanOrderConverges() {
+            intents.createIfAbsent(plannedIntentObservedAt(20L, "d-2"));
+            intents.createIfAbsent(plannedIntentObservedAt(10L, "d-1"));
+
+            resumeAll();
+
+            assertEquals(LineageHistoricalPublishIntent.State.SUPERSEDED,
+                    intentObservedAt(10L).state());
+            assertEquals(LineageHistoricalPublishIntent.State.RESOLVED,
+                    intentObservedAt(20L).state());
+            assertEquals(1, publisher.publishCount);
+        }
+
+        /**
+         * A loser must settle. Left in PLANNED it would find a conflict on every scan for ever,
+         * and every event waiting on its obligation would wait with it.
+         */
+        @Test
+        @DisplayName("the loser settles to SUPERSEDED carrying only the winner's digest")
+        void loserSettles() {
+            intents.createIfAbsent(plannedIntentObservedAt(10L, "d-1"));
+            LineageHistoricalPublishIntent winner =
+                    intents.createIfAbsent(plannedIntentObservedAt(20L, "d-2"));
+
+            resumeAll();
+
+            LineageHistoricalPublishIntent loser = intentObservedAt(10L);
+            assertEquals(LineageHistoricalPublishIntent.State.SUPERSEDED, loser.state());
+            assertEquals(winner.plannedOperationDigest(), loser.supersededByDigest());
+            assertFalse(loser.state().incomplete(), "a settled loser is not rescanned for ever");
+        }
+
+        @Test
+        @DisplayName("a superseded intent is not driven again")
+        void supersededIsTerminal() {
+            intents.createIfAbsent(plannedIntentObservedAt(10L, "d-1"));
+            intents.createIfAbsent(plannedIntentObservedAt(20L, "d-2"));
+            resumeAll();
+
+            int publishesAfterFirstPass = publisher.publishCount;
+            resumeAll();
+
+            assertEquals(publishesAfterFirstPass, publisher.publishCount);
+        }
+
+        /** The tie-break, so two observations at one sequence still order deterministically. */
+        @Test
+        @DisplayName("the origin delivery id breaks a tie in observation sequence")
+        void tieBreak() {
+            LineageHistoricalPublishIntent a = plannedIntentObservedAt(10L, "d-a");
+            LineageHistoricalPublishIntent b = plannedIntentObservedAt(10L, "d-b");
+
+            assertTrue(b.observedLaterThan(a));
+            assertFalse(a.observedLaterThan(b));
+        }
+
+        private LineageHistoricalPublishIntent intentObservedAt(long sequence) {
+            for (LineageHistoricalPublishIntent intent : intents.byId.values()) {
+                if (intent.observationSequence() == sequence) {
+                    return intent;
+                }
+            }
+            throw new AssertionError("no intent observed at " + sequence);
+        }
+    }
+
+    @Nested
+    @DisplayName("the subject fence is also an authorisation")
+    class FenceLease {
+
+        /**
+         * Renewing the intent lease does not restore exclusivity on the subject. If the fence
+         * has gone, another intent may already be writing the same entity.
+         */
+        @Test
+        @DisplayName("a lost subject fence means the publisher is never called")
+        void lostFenceMeansNoWrite() {
+            intents.createIfAbsent(plannedIntent());
+            intents.failFenceRenew = true;
+
+            assertEquals(LineageHistoricalPublishMachine.Verdict.RETRY, resumeAll());
+            assertEquals(0, publisher.publishCount,
+                    "wrote while another intent could hold the subject");
+        }
+
+        /**
+         * Worker A stalls, its fence expires, worker B takes the subject, then A comes back.
+         * A must not be able to claim success.
+         */
+        @Test
+        @DisplayName("a returning worker whose fence expired cannot claim success")
+        void returningWorkerCannotClaimSuccess() {
+            LineageHistoricalPublishIntent planned =
+                    intents.createIfAbsent(plannedIntent());
+            String subjectKey = LineageHistoricalPublishIntentStore.subjectKey(TARGET, REPO,
+                    KIND, planned.subjectDigest());
+            LineageHistoricalPublishIntentStore.SubjectFence stale = intents
+                    .acquireSubjectFence(subjectKey, planned.intentId(), Duration.ofMinutes(5),
+                            clock.get()).orElseThrow();
+
+            clock.addAndGet(Duration.ofMinutes(6).toMillis());
+            intents.acquireSubjectFence(subjectKey, "another-intent", Duration.ofMinutes(5),
+                    clock.get());
+
+            assertTrue(intents.renewSubjectFence(stale, Duration.ofMinutes(5), clock.get())
+                    .isEmpty(), "a stale fence must not renew");
+            assertFalse(intents.releaseSubjectFence(stale),
+                    "a stale holder must not release the new holder's fence");
         }
     }
 
@@ -805,7 +1001,8 @@ public class LineageHistoricalPublishMachineTest {
                     republisher, identity, clock::get);
 
             assertEquals(LineageHistoricalPublishMachine.Verdict.RETRY,
-                    unwired.publish(obligation(), historical(), List.of("name")));
+                    unwired.publish(obligation(), historical(), observedAt(10L, "d-1"),
+                            List.of("name")));
             assertTrue(intents.byId.isEmpty(), "an unwired target must not plan a write");
         }
 
@@ -903,13 +1100,25 @@ public class LineageHistoricalPublishMachineTest {
                 LineageHistoricalPublishMachine.canonicalPayload(historical);
         String operation = LineageHistoricalPublishMachine.operationDigest(historical, payload);
         String subject = historical.sourceEvidence().subjectDigest();
+        return plannedIntentObservedAt(10L, "d-1");
+    }
+
+    private LineageHistoricalPublishIntent plannedIntentObservedAt(long sequence,
+            String deliveryId) {
+        HistoricalEntitySnapshot historical = historical();
+        Map<String, Object> payload =
+                LineageHistoricalPublishMachine.canonicalPayload(historical);
+        String operation = LineageHistoricalPublishMachine.operationDigest(historical, payload);
+        String subject = historical.sourceEvidence().subjectDigest();
         String intentId = LineageHistoricalPublishIntent.intentId(obligation().taskKey(), TARGET,
                 REPO, KIND, subject, historical.snapshot().evidenceDigest(),
-                historical.sourceEvidence().evidenceDigest(), operation, 1);
+                historical.sourceEvidence().evidenceDigest(), operation, 1, sequence,
+                deliveryId);
         return new LineageHistoricalPublishIntent(null, intentId, obligation().taskKey(), TARGET,
                 REPO, KIND, subject, historical.snapshot().evidenceDigest(),
-                historical.sourceEvidence().evidenceDigest(), operation, 1,
-                LineageHistoricalPublishIntent.State.PLANNED, null, null, 0L, 0, 1L, null);
+                historical.sourceEvidence().evidenceDigest(), operation, 1, sequence,
+                deliveryId, null, LineageHistoricalPublishIntent.State.PLANNED, null, null, 0L,
+                0, 1L, null);
     }
 
     /** Resumes every incomplete intent, as the recovery scanner would. */

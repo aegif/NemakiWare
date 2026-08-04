@@ -197,6 +197,78 @@ public class CouchLineageHistoricalPublishIntentStore
     }
 
     @Override
+    public boolean markSuperseded(IntentClaim claim, String supersededByDigest, String reason) {
+        Map<String, Object> raw = heldBy(claim);
+        if (raw == null || !LineageHistoricalPublishIntent.State.PLANNED.name()
+                .equals(raw.get("state"))) {
+            // Only a plan that has not been written can be settled this way. A PUBLISHED
+            // intent has an entity in the catalog and must go through compensation instead.
+            return false;
+        }
+        raw.put("state", LineageHistoricalPublishIntent.State.SUPERSEDED.name());
+        raw.put("supersededByDigest", supersededByDigest);
+        raw.put("reason", reason);
+        return support.updateStrictCas(raw);
+    }
+
+    @Override
+    public List<LineageHistoricalPublishIntent> findContendingForSubject(String subjectKey,
+            int limit) {
+        support.ensureDatabase();
+        List<LineageHistoricalPublishIntent> found = new ArrayList<>();
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("key", subjectKey);
+        params.put("limit", Math.max(1, limit));
+        params.put("include_docs", true);
+        com.ibm.cloud.cloudant.v1.model.ViewResult result =
+                support.client().queryView(support.designDoc(),
+                        "historicalIntentsContendingBySubject", params);
+        if (result == null || result.getRows() == null) {
+            return List.of();
+        }
+        for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : result.getRows()) {
+            com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+            if (doc == null) {
+                continue;
+            }
+            Map<String, Object> raw = new LinkedHashMap<>();
+            if (doc.getId() != null) {
+                raw.put("_id", doc.getId());
+            }
+            if (doc.getRev() != null) {
+                raw.put("_rev", doc.getRev());
+            }
+            if (doc.getProperties() != null) {
+                raw.putAll(doc.getProperties());
+            }
+            found.add(fromRaw(raw));
+        }
+        return found;
+    }
+
+    @Override
+    public Optional<SubjectFence> renewSubjectFence(SubjectFence fence, Duration lease,
+            long nowMs) {
+        if (fence == null) {
+            return Optional.empty();
+        }
+        support.ensureDatabase();
+        Map<String, Object> raw = support.readRawStrict(FENCE_ID_PREFIX + fence.subjectKey());
+        if (raw == null || !fence.token().equals(raw.get("token"))) {
+            // Expired and taken by someone else, or released. Either way this process no
+            // longer owns the subject, and renewing the intent lease does not restore that.
+            return Optional.empty();
+        }
+        long until = Math.addExact(nowMs, lease.toMillis());
+        raw.put("leaseUntilMs", until);
+        if (!support.updateStrictCas(raw)) {
+            return Optional.empty();
+        }
+        return Optional.of(new SubjectFence(fence.subjectKey(), fence.intentId(), fence.token(),
+                until));
+    }
+
+    @Override
     public Optional<SubjectFence> acquireSubjectFence(String subjectKey, String intentId,
             Duration lease, long nowMs) {
         support.ensureDatabase();
@@ -275,6 +347,15 @@ public class CouchLineageHistoricalPublishIntentStore
         raw.put("sourceEvidenceDigest", intent.sourceEvidenceDigest());
         raw.put("plannedOperationDigest", intent.plannedOperationDigest());
         raw.put("payloadSchemaVersion", intent.payloadSchemaVersion());
+        raw.put("observationSequence", intent.observationSequence());
+        raw.put("observationDeliveryId", intent.observationDeliveryId());
+        // The subject key is stored so the arbitration query is one indexed lookup rather than
+        // a scan of every contending intent in the database.
+        raw.put("subjectKey", LineageHistoricalPublishIntentStore.subjectKey(intent.target(),
+                intent.repositoryId(), intent.endpointKind(), intent.subjectDigest()));
+        if (intent.supersededByDigest() != null) {
+            raw.put("supersededByDigest", intent.supersededByDigest());
+        }
         raw.put("state", intent.state().name());
         raw.put("attempts", intent.attempts());
         raw.put("createdAtMs", intent.createdAtMs());
@@ -306,6 +387,10 @@ public class CouchLineageHistoricalPublishIntentStore
                 requireString(raw, "plannedOperationDigest"),
                 (int) LineageStoreDecoding.exactLong(
                         raw.getOrDefault("payloadSchemaVersion", 1L), "payloadSchemaVersion"),
+                LineageStoreDecoding.exactLong(raw.getOrDefault("observationSequence", 0L),
+                        "observationSequence"),
+                requireString(raw, "observationDeliveryId"),
+                asString(raw.get("supersededByDigest")),
                 LineageHistoricalPublishIntent.State.valueOf(requireString(raw, "state")),
                 asString(raw.get("owner")), asString(raw.get("token")),
                 LineageStoreDecoding.exactLong(raw.getOrDefault("leaseUntilMs", 0L),
