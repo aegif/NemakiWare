@@ -12,10 +12,14 @@ import org.springframework.stereotype.Component;
 @Component
 public class PurviewSchemaManifestFactory {
 
-    // 14: increment B adds nemaki_import_artifact / nemaki_export_artifact. The version
-    // moves with the type list because the manifest hash is what tells a deployment that
-    // its catalog is missing a type rather than merely out of date.
-    private static final String SCHEMA_VERSION = "14";
+    // 14: increment B adds nemaki_import_artifact / nemaki_export_artifact.
+    // 15: increment B adds nemaki_folder_dataset and nemaki_folder_has_dataset.
+    //
+    // The version moves with the type list because the manifest hash is what tells a deployment
+    // that its catalog is missing a type rather than merely out of date. It only ever increases,
+    // and every step is additive: applying 15 over a catalog at 13 creates what 14 and 15 add
+    // and touches nothing that exists, so the upgrade is safe to re-run.
+    private static final String SCHEMA_VERSION = "15";
     private static final List<String> CUSTOM_TYPE_NAMES = List.of(
             "nemaki_repository",
             "nemaki_folder",
@@ -28,13 +32,15 @@ public class PurviewSchemaManifestFactory {
             "nemaki_import_process",
             "nemaki_export_process",
             "nemaki_import_artifact",
-            "nemaki_export_artifact");
+            "nemaki_export_artifact",
+            "nemaki_folder_dataset");
     private static final List<String> RELATIONSHIP_TYPE_NAMES = List.of(
             "nemaki_repository_contains_folder",
             "nemaki_folder_contains_folder",
             "nemaki_folder_contains_document",
             "nemaki_document_has_type_definition",
-            "nemaki_document_has_archive");
+            "nemaki_document_has_archive",
+            "nemaki_folder_has_dataset");
     private static final List<String> BUSINESS_METADATA_NAMES = List.of();
 
     private CatalogPropertyMappingResolver propertyMappingResolver;

@@ -61,12 +61,13 @@ public class EndpointKindSchemaAlignmentTest {
             Set.of("qualifiedName", "name", "description", "owner");
 
     /**
-     * Kinds whose Atlas type increment B still has to create.
+     * Kinds whose Atlas type increment B still has to create — now none (v2.3.30).
      *
-     * <p>Asserted to be exactly this set, so that the day B adds one of these types the alignment
-     * check below starts applying to it and this list has to be shortened deliberately.
+     * <p>Kept, empty, rather than deleted with its assertion: it is the check that every kind's
+     * Atlas type exists, and an empty expected set is the strongest form of it. A kind added
+     * later without a type fails here rather than passing a loop that skips what it cannot find.
      */
-    private static final Set<EndpointKind> AWAITING_SCHEMA = Set.of(EndpointKind.CMIS_FOLDER);
+    private static final Set<EndpointKind> AWAITING_SCHEMA = Set.of();
 
     @Test
     public void everyDeclaredAttributeExistsInTheAtlasType() {
@@ -283,6 +284,55 @@ public class EndpointKindSchemaAlignmentTest {
                                     + " belongs to the Process type; §4 forbids a stored URL at"
                                     + " the Atlas boundary because the token can be in the path.");
                 }
+            }
+        }
+    }
+
+    /**
+     * The folder companion is identified by the folder's object id, not its name or path.
+     *
+     * <p>A rename or a move must not change the qualified name: past lineage points at it, and
+     * an identity that tracked the name would strand every Process the moment someone renamed a
+     * folder. The name lives in the entity as an attribute, where changing it is an update.
+     */
+    @Test
+    public void aFolderCompanionIsIdentifiedByObjectId() {
+        assertEquals(EndpointKind.Identity.OBJECT_ID, EndpointKind.CMIS_FOLDER.identity());
+        assertEquals("nemaki_folder_dataset", EndpointKind.CMIS_FOLDER.atlasTypeName());
+
+        assertEquals("nemaki://bedroom/folders/f-1/dataset",
+                LineageEndpoint.folderProxyQualifiedName("bedroom", "f-1"));
+        assertNotEquals(LineageEndpoint.folderProxyQualifiedName("bedroom", "f-1"),
+                LineageEndpoint.folderProxyQualifiedName("bedroom", "f-2"));
+        assertNotEquals(LineageEndpoint.folderProxyQualifiedName("bedroom", "f-1"),
+                LineageEndpoint.folderProxyQualifiedName("canopy", "f-1"));
+        // The companion is a distinct entity from the folder, so the two names must differ.
+        assertNotEquals(LineageEndpoint.objectQualifiedName("bedroom", "f-1"),
+                LineageEndpoint.folderProxyQualifiedName("bedroom", "f-1"));
+    }
+
+    /**
+     * The companion carries the two fields the retention rule needs, and no location.
+     *
+     * <p>{@code active} is what a query filters on and {@code sourceState} is why; collapsing
+     * them would make ARCHIVED and PURGED indistinguishable, and only the second may ever be
+     * removed. Neither is a folder path — the companion is named by id precisely so it does not
+     * have to carry one.
+     */
+    @Test
+    public void theFolderCompanionCarriesLifecycleStateAndNoLocation() {
+        Map<String, String> type = atlasTypes().get("nemaki_folder_dataset");
+        assertNotNull(type, "nemaki_folder_dataset must exist in the schema payload");
+        assertEquals("boolean", type.get("active"));
+        assertEquals("string", type.get("sourceState"));
+        assertEquals("string", type.get("repositoryId"));
+        assertEquals("string", type.get("objectId"));
+
+        for (String name : type.keySet()) {
+            for (String forbidden : FORBIDDEN_ON_ARTIFACTS) {
+                assertFalse(name.toLowerCase(java.util.Locale.ROOT).contains(forbidden),
+                        "nemaki_folder_dataset declares '" + name + "', which looks like a"
+                                + " location or a secret");
             }
         }
     }

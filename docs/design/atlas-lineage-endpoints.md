@@ -284,6 +284,29 @@ nemaki_folder_dataset   superTypes: [DataSet]
 - 「疎な shell を作る」案との違い: proxy は**実在する folder に 1:1 で対応し、同時に作られ、同時に消える**。
   実体のない参照を埋めるための空 entity ではない。
 
+### 増分 B の契約表 (v2.3.30 — 実装前に既存設計から抽出)
+
+実装の対象は 3 つ。identity・属性・relationship・更新主体・削除規則を先に固定する。
+**未確定箇所は安全側 (fail-closed / 削除しない / secret を運ばない) を採り、test で固定する。**
+
+| 型 | identity | 追加する属性 | relationship | 更新主体 | 削除規則 |
+|---|---|---|---|---|---|
+| `nemaki_folder_dataset` (新規) | `nemaki://{repo}/folders/{objectId}/dataset` — 正典は `LineageEndpoint.folderProxyQualifiedName` | `repositoryId` `objectId` (必須) / `active` (boolean) / `sourceState` | `nemaki_folder_has_dataset` 1:1 → `nemaki_folder` | catalog sync が folder と**同一 bulk**で作る + backfill | **削除しない**。delete→`ARCHIVED`、purge→`PURGED`、restore→`ACTIVE`、実体の記録も無い→`ORPHAN`。GC は `PURGED` かつ参照 Process 0 件かつ retention 経過のみ |
+| `nemaki_document` (属性追加) | 既存 `nemaki://{repo}/objects/{objectId}` (不変) | `mimeType` `contentLength` `versionObjectId` `changeToken` `contentHash` | 既存のまま | catalog sync (authoritative) | 既存のまま |
+| `nemaki_external_asset` (属性追加) | 既存 (stable key 由来・不変) | `tenantId` (EXTERNAL_ASSET) / `provider` (CLOUD_OBJECT) / `storageClass` (COLD_STORAGE) / `sourceRevision` `sourceModifiedAt` `sourceContentHash` `sourceContentLength` | 既存のまま | catalog sync / cloud metadata sync | 既存のまま |
+
+**identity は既存を一切動かさない。** 追加は属性と新型だけで、既存 entity の QN が変われば
+過去の lineage が参照先を失う。`nemaki_folder_dataset` の QN も新規ではなく、A-1 の
+`folderProxyQualifiedName` が既に持っている値である。
+
+**secret 非保持**: 追加属性に URL・query・fragment・userinfo・token・credential・
+ローカル絶対パスは 1 つも含まない。`sourceRevision` は provider の revision id、
+`storageClass` は `GLACIER` のような列挙値、`tenantId` は tenant の識別子である。
+artifact 型と同じ否定検査を適用する。
+
+**§2 の属性上限**: 追加分のうち表示値は無い (すべて識別子・機械値・数量) ため
+companion は増えない。identity に使う値は切り詰めない。
+
 ### proxy の lifecycle (v2 追加)
 
 「同一 bulk だから片方だけ存在しない」とは**断言しない**。Atlas の bulk は partial success を返しうる。

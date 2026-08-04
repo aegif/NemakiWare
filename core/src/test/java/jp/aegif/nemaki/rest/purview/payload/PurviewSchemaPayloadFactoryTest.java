@@ -100,7 +100,10 @@ public class PurviewSchemaPayloadFactoryTest {
         assertTrue(attributeNames(entityDefs, "nemaki_import_process").contains("objectCount"));
         assertTrue(attributeNames(entityDefs, "nemaki_export_process").contains("targetDescription"));
         assertTrue(attributeNames(entityDefs, "nemaki_export_process").contains("objectCount"));
-        assertEquals(5, relationshipDefs.size());
+        // 6 since increment B added nemaki_folder_has_dataset (v2.3.30). The count is pinned
+        // so a relationship cannot appear or vanish unremarked; manifestTypeNamesMatchThe...
+        // separately pins that the manifest lists the same six.
+        assertEquals(6, relationshipDefs.size());
         assertTrue(relationshipDefs.stream().anyMatch(def -> "nemaki_repository_contains_folder".equals(def.get("name"))));
         assertTrue(relationshipDefs.stream().anyMatch(def -> "nemaki_folder_contains_folder".equals(def.get("name"))));
         assertTrue(relationshipDefs.stream().anyMatch(def -> "nemaki_folder_contains_document".equals(def.get("name"))));

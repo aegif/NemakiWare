@@ -35,13 +35,15 @@ public class PurviewSchemaPayloadFactory {
                 buildImportProcessEntityDef(),
                 buildExportProcessEntityDef(),
                 buildImportArtifactEntityDef(),
-                buildExportArtifactEntityDef()));
+                buildExportArtifactEntityDef(),
+                buildFolderDatasetEntityDef()));
         payload.put("relationshipDefs", List.of(
                 buildRepositoryContainsFolderRelationshipDef(),
                 buildFolderContainsFolderRelationshipDef(),
                 buildFolderContainsDocumentRelationshipDef(),
                 buildDocumentHasTypeDefinitionRelationshipDef(),
-                buildDocumentHasArchiveRelationshipDef()));
+                buildDocumentHasArchiveRelationshipDef(),
+                buildFolderHasDatasetRelationshipDef()));
         payload.put("businessMetadataDefs", List.of());
         payload.put("classificationDefs", List.of());
         payload.put("enumDefs", List.of());
@@ -286,6 +288,55 @@ public class PurviewSchemaPayloadFactory {
                 // name itself is inherited from Asset; only its evidence companion is declared.
                 attribute("nameOriginalSha256", "string", true)));
         return entityDef;
+    }
+
+    /**
+     * The DataSet companion of a folder (増分 B, §3).
+     *
+     * <p>Atlas types {@code Process.inputs} and {@code Process.outputs} as {@code DataSet}, and
+     * {@code nemaki_folder} is not one. Changing its supertype would rewrite every folder entity
+     * already in the catalog, so a folder gets a 1:1 companion instead: the same object, named
+     * for lineage's benefit, created and retired alongside it. It is not a placeholder for a
+     * folder that does not exist — {@code sourceState} says which of those it is.
+     *
+     * <p><b>Never deleted on source deletion.</b> Past lineage points at it, and a Process whose
+     * input has vanished is worse than one whose input is marked {@code PURGED}. Only the
+     * retention path may remove it, and only with no referencing Process left.
+     *
+     * <p>{@code name} is inherited from {@code Asset}; the identity is the qualified name, which
+     * is derived from {@code objectId} and therefore survives a rename and a move.
+     */
+    private Map<String, Object> buildFolderDatasetEntityDef() {
+        Map<String, Object> entityDef = baseTypeDef("nemaki_folder_dataset",
+                "DataSet companion of a NemakiWare folder, for lineage endpoints");
+        entityDef.put("superTypes", List.of("DataSet"));
+        entityDef.put("attributeDefs", List.of(
+                attribute("repositoryId", "string", false),
+                attribute("objectId", "string", false),
+                // Two fields, not one: `active` is what a query filters on, `sourceState` is why.
+                // Collapsing them would make "archived" and "purged" indistinguishable to the
+                // retention rule, which may only remove the second.
+                attribute("active", "boolean", true),
+                attribute("sourceState", "string", true)));
+        return entityDef;
+    }
+
+    /**
+     * The 1:1 tie between a folder and its DataSet companion.
+     *
+     * <p>{@code endDef1} is the folder rather than {@code DataSet}: the companion belongs to
+     * exactly one folder, and naming the concrete type is what stops a second companion from
+     * being attached to the same folder by a retry.
+     */
+    private Map<String, Object> buildFolderHasDatasetRelationshipDef() {
+        Map<String, Object> relationshipDef = baseTypeDef("nemaki_folder_has_dataset",
+                "Links a NemakiWare folder to its DataSet companion");
+        relationshipDef.put("category", "RELATIONSHIP");
+        relationshipDef.put("relationshipCategory", "ASSOCIATION");
+        relationshipDef.put("endDef1", relationshipEnd("nemaki_folder", "folder"));
+        relationshipDef.put("endDef2", relationshipEnd("nemaki_folder_dataset", "folderDataset"));
+        relationshipDef.put("propagateTags", "NONE");
+        return relationshipDef;
     }
 
     private Map<String, Object> buildRepositoryContainsFolderRelationshipDef() {
