@@ -16,8 +16,6 @@
  */
 package jp.aegif.nemaki.rest.purview.journal;
 
-import java.util.Map;
-
 /**
  * Builds the historical entity for a source that is gone, from the endpoint snapshot alone (§2).
  *
@@ -55,9 +53,15 @@ public interface LineageHistoricalEntityPublisher {
     }
 
     /**
-     * @param snapshot the endpoint's attributes as recorded when the fact was emitted; its
-     *        values are never logged, put in a reason, or echoed in an exception
+     * Writes the historical entity, and confirms it by reading it back.
+     *
+     * <p>Takes a {@link HistoricalEntitySnapshot} rather than a subject plus a raw map: that
+     * type can only exist for a purged source whose snapshot matches the obligation and whose
+     * target matches this publisher's registration, so none of those checks can be forgotten
+     * here or at any other call site.
+     *
+     * <p>Snapshot values, the qualified name and the task key are never logged, put in a
+     * reason, or echoed in an exception.
      */
-    Outcome publishHistorical(String target, String repositoryId, EndpointKind kind,
-            String catalogQualifiedName, Map<String, Object> snapshot);
+    Outcome publishHistorical(HistoricalEntitySnapshot snapshot);
 }

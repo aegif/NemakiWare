@@ -19,23 +19,23 @@ package jp.aegif.nemaki.rest.purview.journal;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import jp.aegif.nemaki.rest.purview.journal.LineageWaitingSnapshotResolver.Candidate;
 import jp.aegif.nemaki.rest.purview.journal.LineageWaitingSnapshotResolver.Resolution;
 
 /**
- * Corruption is not incompleteness, and "whichever row came first" is not a choice.
+ * History is not corruption, and a delivery id is not a clock.
  *
- * <p>Both distinctions matter for the same reason: the historical builder writes the catalog's
- * only remaining record of an object nobody can look at any more. Material it was not entitled
- * to use must not reach it, and a verdict it could not establish must not be terminal.
+ * <p>Both were wrong in the first version. Treating any attribute difference as corruption made
+ * every renamed object permanently unreconstructable; sorting by delivery id produced an order
+ * unrelated to when anything happened, so "the latest" could be the earliest.
  */
 public class LineageWaitingSnapshotResolverTest {
 
@@ -57,170 +57,242 @@ public class LineageWaitingSnapshotResolverTest {
                 disposition, 2);
     }
 
-    private static LineageWaitingSnapshotResolver resolverOver(List<Candidate> candidates) {
+    private static Candidate at(long sequence, String deliveryId, LineageWaitingSnapshot snap) {
+        return new Candidate(new LineageJournalOrder(REPO, sequence, deliveryId), snap);
+    }
+
+    private static LineageWaitingSnapshotResolver over(List<Candidate> candidates) {
         return new LineageWaitingSnapshotResolver(taskKey -> candidates);
     }
 
-    @Test
-    @DisplayName("one matching candidate resolves")
-    public void singleCandidate() {
-        Resolution resolution = resolverOver(List.of(
-                new Candidate("d-1", snapshot("a.txt", LineageSourceDisposition.SOURCE_PURGED))))
-                .resolve(obligation());
-
-        LineageWaitingSnapshot found =
-                assertInstanceOf(Resolution.Found.class, resolution).snapshot();
-        assertEquals(QN, found.catalogQualifiedName());
-        assertEquals(LineageSourceDisposition.SOURCE_PURGED, found.sourceDisposition());
+    private static LineageWaitingSnapshot resolved(List<Candidate> candidates) {
+        return assertInstanceOf(Resolution.Found.class, over(candidates).resolve(obligation()))
+                .snapshot();
     }
 
-    /** A wait that has ended is not corruption; there is simply nothing to rebuild from. */
-    @Test
-    @DisplayName("no waiting event is its own answer, not corruption")
-    public void noWaitingEvent() {
-        assertInstanceOf(Resolution.NoWaitingEvent.class,
-                resolverOver(List.of()).resolve(obligation()));
+    @Nested
+    @DisplayName("ordinary history")
+    class History {
+
+        /** The case that broke: a rename made the object permanently unreconstructable. */
+        @Test
+        @DisplayName("a rename is history, and the later name wins")
+        void renameIsNotCorruption() {
+            assertEquals("new.txt", resolved(List.of(
+                    at(10L, "d-1", snapshot("old.txt", LineageSourceDisposition.SOURCE_PURGED)),
+                    at(20L, "d-2", snapshot("new.txt", LineageSourceDisposition.SOURCE_PURGED))))
+                    .attributes().get("name"));
+        }
+
+        @Test
+        @DisplayName("a move is history too")
+        void moveIsNotCorruption() {
+            LineageWaitingSnapshot before = LineageWaitingSnapshot.of(TARGET, REPO, KIND, QN,
+                    Map.of("folderPath", "/a"), LineageSourceDisposition.SOURCE_PURGED, 2);
+            LineageWaitingSnapshot after = LineageWaitingSnapshot.of(TARGET, REPO, KIND, QN,
+                    Map.of("folderPath", "/b"), LineageSourceDisposition.SOURCE_PURGED, 2);
+
+            assertEquals("/b", resolved(List.of(at(10L, "d-1", before), at(20L, "d-2", after)))
+                    .attributes().get("folderPath"));
+        }
+
+        @Test
+        @DisplayName("a version change is history")
+        void versionChangeIsNotCorruption() {
+            LineageWaitingSnapshot v1 = LineageWaitingSnapshot.of(TARGET, REPO, KIND, QN,
+                    Map.of("versionLabel", "1.0"), LineageSourceDisposition.SOURCE_PURGED, 2);
+            LineageWaitingSnapshot v2 = LineageWaitingSnapshot.of(TARGET, REPO, KIND, QN,
+                    Map.of("versionLabel", "2.0"), LineageSourceDisposition.SOURCE_PURGED, 2);
+
+            assertEquals("2.0", resolved(List.of(at(10L, "d-1", v1), at(20L, "d-2", v2)))
+                    .attributes().get("versionLabel"));
+        }
+
+        /** An operator needs to know an object has history without being shown it. */
+        @Test
+        @DisplayName("the count of superseded snapshots is reported, never their content")
+        void supersededCountIsReported() {
+            Resolution.Found found = assertInstanceOf(Resolution.Found.class, over(List.of(
+                    at(10L, "d-1", snapshot("a", LineageSourceDisposition.SOURCE_PURGED)),
+                    at(20L, "d-2", snapshot("b", LineageSourceDisposition.SOURCE_PURGED)),
+                    at(30L, "d-3", snapshot("c", LineageSourceDisposition.SOURCE_PURGED))))
+                    .resolve(obligation()));
+
+            assertEquals(2, found.supersededCount());
+        }
     }
 
-    @Test
-    @DisplayName("a query failure is corruption, never an empty result")
-    public void queryFailureIsCorrupt() {
-        LineageWaitingSnapshotResolver resolver = new LineageWaitingSnapshotResolver(taskKey -> {
-            throw new IllegalStateException("view unavailable");
-        });
+    @Nested
+    @DisplayName("disposition transitions")
+    class Dispositions {
 
-        Resolution resolution = resolver.resolve(obligation());
-        assertInstanceOf(Resolution.Corrupt.class, resolution);
+        @Test
+        @DisplayName("EXISTS then PURGED: the later PURGED is current")
+        void existsThenPurged() {
+            assertEquals(LineageSourceDisposition.SOURCE_PURGED, resolved(List.of(
+                    at(10L, "d-1", snapshot("a", LineageSourceDisposition.SOURCE_EXISTS)),
+                    at(20L, "d-2", snapshot("a", LineageSourceDisposition.SOURCE_PURGED))))
+                    .sourceDisposition());
+        }
+
+        /** A restore. The latest says the source is back, so no tombstone may be built. */
+        @Test
+        @DisplayName("PURGED then EXISTS: the later EXISTS is current")
+        void purgedThenExists() {
+            assertEquals(LineageSourceDisposition.SOURCE_EXISTS, resolved(List.of(
+                    at(10L, "d-1", snapshot("a", LineageSourceDisposition.SOURCE_PURGED)),
+                    at(20L, "d-2", snapshot("a", LineageSourceDisposition.SOURCE_EXISTS))))
+                    .sourceDisposition());
+        }
+
+        @Test
+        @DisplayName("UNKNOWN then PURGED: the later PURGED is current")
+        void unknownThenPurged() {
+            assertEquals(LineageSourceDisposition.SOURCE_PURGED, resolved(List.of(
+                    at(10L, "d-1", snapshot("a", LineageSourceDisposition.SOURCE_UNKNOWN)),
+                    at(20L, "d-2", snapshot("a", LineageSourceDisposition.SOURCE_PURGED))))
+                    .sourceDisposition());
+        }
+
+        /**
+         * The hole the incomplete digest left: identical attributes, opposite dispositions, one
+         * digest. A resolver comparing digests called that agreement — and a tombstone could be
+         * built for a live object.
+         */
+        @Test
+        @DisplayName("two snapshots differing only in disposition have different digests")
+        void dispositionIsInTheDigest() {
+            assertFalse(snapshot("a", LineageSourceDisposition.SOURCE_PURGED).evidenceDigest()
+                    .equals(snapshot("a", LineageSourceDisposition.SOURCE_EXISTS)
+                            .evidenceDigest()));
+        }
     }
 
-    /**
-     * Each mismatch separately: an entity rebuilt from another repository's snapshot would be
-     * wrong in a way nothing downstream could detect.
-     */
-    @Test
-    @DisplayName("a subject mismatch in any part is corruption")
-    public void subjectMismatchIsCorrupt() {
-        assertInstanceOf(Resolution.Corrupt.class, resolverOver(List.of(new Candidate("d-1",
-                LineageWaitingSnapshot.of("atlas", REPO, KIND, QN, Map.of(),
-                        LineageSourceDisposition.SOURCE_PURGED, 2)))).resolve(obligation()));
+    @Nested
+    @DisplayName("order")
+    class Order {
 
-        assertInstanceOf(Resolution.Corrupt.class, resolverOver(List.of(new Candidate("d-1",
-                LineageWaitingSnapshot.of(TARGET, "canopy", KIND, QN, Map.of(),
-                        LineageSourceDisposition.SOURCE_PURGED, 2)))).resolve(obligation()));
+        @Test
+        @DisplayName("the view's return order does not change the answer")
+        void viewOrderIsIrrelevant() {
+            Candidate earlier = at(10L, "d-1",
+                    snapshot("old.txt", LineageSourceDisposition.SOURCE_PURGED));
+            Candidate later = at(20L, "d-2",
+                    snapshot("new.txt", LineageSourceDisposition.SOURCE_PURGED));
 
-        assertInstanceOf(Resolution.Corrupt.class, resolverOver(List.of(new Candidate("d-1",
-                LineageWaitingSnapshot.of(TARGET, REPO, EndpointKind.CMIS_FOLDER, QN, Map.of(),
-                        LineageSourceDisposition.SOURCE_PURGED, 2)))).resolve(obligation()));
+            assertEquals("new.txt", resolved(List.of(earlier, later)).attributes().get("name"));
+            assertEquals("new.txt", resolved(List.of(later, earlier)).attributes().get("name"));
+        }
 
-        assertInstanceOf(Resolution.Corrupt.class, resolverOver(List.of(new Candidate("d-1",
-                LineageWaitingSnapshot.of(TARGET, REPO, KIND, QN + "-other", Map.of(),
-                        LineageSourceDisposition.SOURCE_PURGED, 2)))).resolve(obligation()));
+        /** The defect: a delivery id is a stable identifier, not a clock. */
+        @Test
+        @DisplayName("journal order wins when the delivery id sorts the other way")
+        void deliveryIdIsNotTime() {
+            // Sequence says "aaa" is later; lexicographic delivery id says "zzz" is.
+            assertEquals("later.txt", resolved(List.of(
+                    at(20L, "aaa", snapshot("later.txt", LineageSourceDisposition.SOURCE_PURGED)),
+                    at(10L, "zzz", snapshot("earlier.txt",
+                            LineageSourceDisposition.SOURCE_PURGED))))
+                    .attributes().get("name"));
+        }
+
+        @Test
+        @DisplayName("the delivery id breaks a tie deterministically")
+        void deliveryIdBreaksTies() {
+            LineageWaitingSnapshot same = snapshot("a", LineageSourceDisposition.SOURCE_PURGED);
+            assertEquals(same.evidenceDigest(),
+                    resolved(List.of(at(10L, "d-2", same), at(10L, "d-1", same)))
+                            .evidenceDigest());
+        }
+
+        /** An UNSEQUENCED event has no place in the stream, so it cannot be ordered at all. */
+        @Test
+        @DisplayName("an unusable journal position is INDETERMINATE, not first")
+        void unusablePositionIsIndeterminate() {
+            assertInstanceOf(Resolution.Indeterminate.class, over(List.of(
+                    at(0L, "d-1", snapshot("a", LineageSourceDisposition.SOURCE_PURGED))))
+                    .resolve(obligation()));
+
+            assertInstanceOf(Resolution.Indeterminate.class, over(List.of(
+                    new Candidate(null, snapshot("a", LineageSourceDisposition.SOURCE_PURGED))))
+                    .resolve(obligation()));
+        }
     }
 
-    /** Same inputs, same snapshot — not whichever row the view happened to return first. */
-    @Test
-    @DisplayName("several agreeing candidates resolve deterministically")
-    public void severalAgreeingCandidates() {
-        LineageWaitingSnapshot same = snapshot("a.txt", LineageSourceDisposition.SOURCE_PURGED);
-        Resolution forward = resolverOver(List.of(
-                new Candidate("d-1", same), new Candidate("d-2", same))).resolve(obligation());
-        Resolution reverse = resolverOver(List.of(
-                new Candidate("d-2", same), new Candidate("d-1", same))).resolve(obligation());
+    @Nested
+    @DisplayName("corruption")
+    class Corruption {
 
-        assertEquals(assertInstanceOf(Resolution.Found.class, forward).snapshot().evidenceDigest(),
-                assertInstanceOf(Resolution.Found.class, reverse).snapshot().evidenceDigest());
+        /** Same position, different content: one of these is not what the journal recorded. */
+        @Test
+        @DisplayName("two snapshots at one journal position disagree")
+        void samePositionDifferentPayload() {
+            assertInstanceOf(Resolution.Corrupt.class, over(List.of(
+                    at(10L, "d-1", snapshot("a", LineageSourceDisposition.SOURCE_PURGED)),
+                    at(10L, "d-1", snapshot("b", LineageSourceDisposition.SOURCE_PURGED))))
+                    .resolve(obligation()));
+        }
+
+        @Test
+        @DisplayName("a subject mismatch in any part is corruption")
+        void subjectMismatch() {
+            assertInstanceOf(Resolution.Corrupt.class, over(List.of(at(10L, "d-1",
+                    LineageWaitingSnapshot.of("atlas", REPO, KIND, QN, Map.of(),
+                            LineageSourceDisposition.SOURCE_PURGED, 2)))).resolve(obligation()));
+
+            assertInstanceOf(Resolution.Corrupt.class, over(List.of(at(10L, "d-1",
+                    LineageWaitingSnapshot.of(TARGET, REPO, EndpointKind.CMIS_FOLDER, QN,
+                            Map.of(), LineageSourceDisposition.SOURCE_PURGED, 2))))
+                    .resolve(obligation()));
+
+            assertInstanceOf(Resolution.Corrupt.class, over(List.of(at(10L, "d-1",
+                    LineageWaitingSnapshot.of(TARGET, REPO, KIND, QN + "-other", Map.of(),
+                            LineageSourceDisposition.SOURCE_PURGED, 2)))).resolve(obligation()));
+        }
+
+        /** Sequence numbers come from a per-repository counter; mixing them is meaningless. */
+        @Test
+        @DisplayName("candidates spanning repositories are corruption, not an ordering problem")
+        void crossRepositoryIsCorrupt() {
+            Candidate elsewhere = new Candidate(new LineageJournalOrder("canopy", 20L, "d-2"),
+                    snapshot("a", LineageSourceDisposition.SOURCE_PURGED));
+
+            assertInstanceOf(Resolution.Corrupt.class, over(List.of(
+                    at(10L, "d-1", snapshot("a", LineageSourceDisposition.SOURCE_PURGED)),
+                    elsewhere)).resolve(obligation()));
+        }
+
+        @Test
+        @DisplayName("a candidate with no snapshot is corruption")
+        void nullSnapshot() {
+            assertInstanceOf(Resolution.Corrupt.class, over(java.util.Arrays.asList(
+                    new Candidate(new LineageJournalOrder(REPO, 10L, "d-1"), null)))
+                    .resolve(obligation()));
+        }
     }
 
-    /**
-     * Same subject, different content. Choosing either would silently make one event's record
-     * of the object the one that survives into the catalog forever.
-     */
-    @Test
-    @DisplayName("candidates that disagree about content are corruption, not a choice")
-    public void disagreeingCandidatesAreCorrupt() {
-        Resolution resolution = resolverOver(List.of(
-                new Candidate("d-1", snapshot("a.txt", LineageSourceDisposition.SOURCE_PURGED)),
-                new Candidate("d-2", snapshot("b.txt", LineageSourceDisposition.SOURCE_PURGED))))
-                .resolve(obligation());
+    @Nested
+    @DisplayName("nothing to resolve")
+    class Absent {
 
-        assertInstanceOf(Resolution.Corrupt.class, resolution);
-    }
+        /**
+         * The producer may have created the obligation and then failed the CAS that moves the
+         * event to WAITING. Retryable, and specifically not an incomplete snapshot.
+         */
+        @Test
+        @DisplayName("no waiting event is its own answer, neither corrupt nor incomplete")
+        void noWaitingEvent() {
+            assertInstanceOf(Resolution.NoWaitingEvent.class,
+                    over(List.of()).resolve(obligation()));
+        }
 
-    @Test
-    @DisplayName("a candidate with no snapshot is corruption")
-    public void nullSnapshotIsCorrupt() {
-        assertInstanceOf(Resolution.Corrupt.class,
-                resolverOver(java.util.Arrays.asList(new Candidate("d-1", null)))
-                        .resolve(obligation()));
-    }
-
-    /** The evidence digest binds a verdict to the material it was reached from. */
-    @Test
-    @DisplayName("the evidence digest changes with the content and not with the order")
-    public void evidenceDigestBindsContent() {
-        LineageWaitingSnapshot one = LineageWaitingSnapshot.of(TARGET, REPO, KIND, QN,
-                new java.util.LinkedHashMap<>(Map.of("a", "1", "b", "2")),
-                LineageSourceDisposition.SOURCE_PURGED, 2);
-        LineageWaitingSnapshot reordered = LineageWaitingSnapshot.of(TARGET, REPO, KIND, QN,
-                new java.util.LinkedHashMap<>(Map.of("b", "2", "a", "1")),
-                LineageSourceDisposition.SOURCE_PURGED, 2);
-        LineageWaitingSnapshot different = LineageWaitingSnapshot.of(TARGET, REPO, KIND, QN,
-                Map.of("a", "1", "b", "3"), LineageSourceDisposition.SOURCE_PURGED, 2);
-
-        assertEquals(one.evidenceDigest(), reordered.evidenceDigest());
-        assertFalse(one.evidenceDigest().equals(different.evidenceDigest()));
-    }
-
-    @Test
-    @DisplayName("mandatory attributes are checked structurally, blank counting as absent")
-    public void mandatoryAttributes() {
-        LineageWaitingSnapshot complete = LineageWaitingSnapshot.of(TARGET, REPO, KIND, QN,
-                Map.of("name", "a.txt", "versionLabel", "1.0"),
-                LineageSourceDisposition.SOURCE_PURGED, 2);
-        LineageWaitingSnapshot blank = LineageWaitingSnapshot.of(TARGET, REPO, KIND, QN,
-                Map.of("name", "   "), LineageSourceDisposition.SOURCE_PURGED, 2);
-
-        assertTrue(complete.hasAll(List.of("name", "versionLabel")));
-        assertFalse(complete.hasAll(List.of("name", "contentHash")));
-        assertFalse(blank.hasAll(List.of("name")));
-        assertTrue(complete.hasAll(null));
-    }
-
-    /** The snapshot is logged and put in reports; its content is the object's own. */
-    @Test
-    @DisplayName("the description carries no qualified name and no attribute value")
-    public void descriptionLeaksNothing() {
-        String secretish = "nemaki://bedroom/external/s3%3A%2F%2Fbucket%2Fkey";
-        LineageWaitingSnapshot snapshot = LineageWaitingSnapshot.of(TARGET, REPO,
-                EndpointKind.EXTERNAL_ASSET, secretish, Map.of("externalStableKey", secretish),
-                LineageSourceDisposition.SOURCE_PURGED, 2);
-
-        String description = snapshot.toString();
-        assertFalse(description.contains(secretish));
-        assertTrue(description.contains("<redacted:"));
-    }
-
-    /** Immutable: the builder must not be able to add a field on the way to publishing. */
-    @Test
-    @DisplayName("attributes cannot be modified after construction")
-    public void attributesAreImmutable() {
-        java.util.Map<String, Object> mutable = new java.util.LinkedHashMap<>();
-        mutable.put("name", "a.txt");
-        LineageWaitingSnapshot snapshot = LineageWaitingSnapshot.of(TARGET, REPO, KIND, QN,
-                mutable, LineageSourceDisposition.SOURCE_PURGED, 2);
-
-        mutable.put("name", "changed");
-        assertEquals("a.txt", snapshot.attributes().get("name"));
-        org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class,
-                () -> snapshot.attributes().put("injected", "x"));
-    }
-
-    /** Only a purged source may be rebuilt. */
-    @Test
-    @DisplayName("disposition decides, and catalog-absent is not one of its inputs")
-    public void dispositionGovernsRebuild() {
-        assertTrue(LineageSourceDisposition.SOURCE_PURGED.permitsHistoricalEntity());
-        assertFalse(LineageSourceDisposition.SOURCE_EXISTS.permitsHistoricalEntity());
-        assertFalse(LineageSourceDisposition.SOURCE_UNKNOWN.permitsHistoricalEntity());
+        @Test
+        @DisplayName("a failed lookup is INDETERMINATE, never an empty result")
+        void queryFailure() {
+            assertInstanceOf(Resolution.Indeterminate.class,
+                    new LineageWaitingSnapshotResolver(taskKey -> {
+                        throw new IllegalStateException("view unavailable");
+                    }).resolve(obligation()));
+        }
     }
 }

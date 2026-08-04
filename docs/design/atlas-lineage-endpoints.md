@@ -261,6 +261,60 @@ producer・consumer・回収処理は、**非活性状態で先に配布・検�
 | **D-rest 無効時** | 作成・claim・scan・回収・projector 待避の**すべてが動かない**。gate は `LineageDrestReadiness` 1 箇所で、各所に散らさない |
 | **barrier 統合** | 新 capability `catalog:obligations` を **server-defined 必須集合**へ追加する。文書だけに前提を書かず、**barrier が知っている**状態にする。これを持たない古い binary の ACK では activation が拒否される |
 
+#### historical snapshot の順序契約 (v2.3.47)
+
+historical 再構成で「どちらの snapshot が新しいか」を決める順序は、**projector と cursor が
+既に使っている durable な座標**を再利用する。新しい時系列は作らない。
+
+| 要素 | 値 | 根拠 |
+|---|---|---|
+| partition | `repositoryId` | sequence は **repository 単位の counter** なので、別 repository の 41 は別物。跨いだ比較は無意味であり corruption |
+| 主順序 | `sequenceNumber` | `v2_by_repository_and_sequence` の view key `[repositoryId, sequenceNumber]` が正典。§8 で `sequence` は finalization order と定義済み |
+| tie-break | `deliveryId` | 同順位のときの**決定性のためだけ**。単独では新旧を決めない |
+| 順序不能 | `sequenceNumber == 0` (UNSEQUENCED) | stream 上の位置がまだ無い。「最初」ではなく `INDETERMINATE` |
+
+**deliveryId の辞書順を新旧判定に使わない。** 安定した識別子ではあるが時刻とは無関係で、
+その順の「最後」が実際には最初に起きたものになり得る。
+
+#### 複数 snapshot の選択規則 (v2.3.47)
+
+**同一 subject で attributes が違うこと自体は corruption ではない。** `name` /
+`folderPath` / `versionLabel` は rename・移動・version 更新で正当に変わる。当初案は
+digest 差を corruption としていたが、それでは**一度でも rename された object が
+永久に再構成不能**になる。複数 snapshot は普通の状態であり、その object の履歴である。
+
+1. 全候補の subject 一致と integrity を検証
+2. journal の正規順序で並べる
+3. **最新候補の source disposition を現在の証拠**とする
+4. 最新が `SOURCE_EXISTS` → historical entity を作らない (restore された場合を含む)
+5. 最新が `SOURCE_UNKNOWN` → retryable
+6. 最新が `SOURCE_PURGED` → その snapshot から再構成を試みる
+7. 最新が構造的に不足していても、**古い snapshot と黙って merge しない**
+
+corruption: subject 不一致 / **同一順序座標に異なる snapshot** / evidence digest 不一致 /
+decode 失敗 / disposition 不正 / unsupported schema / repository 跨ぎ。
+
+corruption ではない: 時系列の異なる event で name や folderPath が違う /
+`EXISTS→PURGED` の正規遷移 / purge 後の restore による `PURGED→EXISTS` /
+互換 decoder を通った表現変更。
+
+#### evidence digest は disposition を含む (v2.3.47)
+
+domain を `LINEAGE_WAITING_SNAPSHOT_V2` へ上げた。V1 は `sourceDisposition` を
+含んでいなかったので、**属性が同じで disposition だけ違う 2 候補が同じ digest** になり、
+resolver が「一致」と判定できた。これは**生存 object へ tombstone を作る経路**である。
+domain を黙って再定義せず version を上げたのは、旧式で計算された digest が新式の下で
+妥当と見なされないようにするため。
+
+canonical constructor が検証する: 64 桁小文字 hex / 内容から再計算した digest と
+constant-time 比較 / kind の allowlist 内 / scalar のみ (List・Map・配列・任意 Object を拒否) /
+secret 境界 / schema version が対応範囲内。**factory 利用は javadoc の約束ではなく、
+public constructor から不正な snapshot を作れない**。
+
+`Map.copyOf` は浅いコピーなので、nested List/Map は「不変」を満たさない
+(呼び手の参照から変更でき、digest が記述しない内容になる)。deep copy ではなく
+**拒否**する — §2 が endpoint 属性で既に禁じているのと同じ理由。
+
 ### 件数・サイズ上限 (v2.1)
 
 `EXPORT_SELECTED_OBJECTS` は選択件数だけ endpoint が並ぶ。無制限は Atlas payload と

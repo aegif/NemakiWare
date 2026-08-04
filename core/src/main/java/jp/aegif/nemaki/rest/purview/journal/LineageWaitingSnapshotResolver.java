@@ -17,9 +17,7 @@
 package jp.aegif.nemaki.rest.purview.journal;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * Finds the endpoint snapshot an obligation is about, from the events waiting on it.
@@ -32,20 +30,23 @@ import java.util.Optional;
  * re-created — precisely the document you would least like to be a source of truth about
  * content.
  *
- * <h2>Corruption is not incompleteness</h2>
+ * <h2>Different attributes are history, not corruption</h2>
  *
- * <p>A snapshot that does not describe the obligation's subject, an event that cannot be
- * decoded, a query that failed — none of these are "the snapshot lacks a field". They are
- * states where nothing was established, and the historical builder must not conclude anything
- * terminal from them. {@link Resolution} keeps them apart by construction.
+ * <p>An earlier version treated any disagreement between candidates as corruption. That is
+ * wrong and it is worse than wrong: {@code name}, {@code folderPath} and {@code versionLabel}
+ * change legitimately, so any object that had ever been renamed became permanently
+ * unreconstructable. Several snapshots of one endpoint are the ordinary case — they are its
+ * history.
  *
- * <h2>Several events, one task</h2>
+ * <p>So the candidates are <em>ordered</em> and the latest one is the current evidence.
+ * Corruption is reserved for statements that cannot both be true: two snapshots at the same
+ * journal position with different content, a snapshot about another subject, a coordinate that
+ * cannot order anything.
  *
- * <p>Many events can wait for one entity. Candidates are examined in a stable order (by delivery
- * id) rather than "whichever row the view returned first", so the same inputs always produce the
- * same snapshot. If two candidates describe the same subject with <em>different</em> evidence
- * digests, that is a disagreement about content and is reported as corruption rather than
- * settled by picking one.
+ * <h2>The order is the journal's, not the delivery id's</h2>
+ *
+ * <p>See {@link LineageJournalOrder}. Sorting by delivery id produces an order that has nothing
+ * to do with time, so "the latest" under it can be the earliest that happened.
  */
 public class LineageWaitingSnapshotResolver {
 
@@ -55,36 +56,48 @@ public class LineageWaitingSnapshotResolver {
     /** What the reverse lookup produced. Exactly one of these is true. */
     public sealed interface Resolution {
 
-        /** A single, subject-matching, self-consistent snapshot. */
-        record Found(LineageWaitingSnapshot snapshot) implements Resolution { }
+        /**
+         * The latest snapshot in journal order, and what it says about the source.
+         *
+         * @param supersededCount how many older snapshots there were; a count, never their
+         *        content — an operator needs to know an object has history without reading it
+         */
+        record Found(LineageWaitingSnapshot snapshot, int supersededCount) implements Resolution { }
 
-        /** No event is waiting on this task. Not corruption — the wait may have ended. */
+        /**
+         * No event is waiting on this task.
+         *
+         * <p>Not corruption and <b>not</b> an incomplete snapshot: the producer may have
+         * created the obligation and then failed the CAS that moves the event to
+         * {@code WAITING_FOR_CATALOG}. Retryable, or an orphan candidate — never terminal.
+         */
         record NoWaitingEvent() implements Resolution { }
 
         /**
-         * Something is wrong with the material: a mismatched subject, an undecodable event,
-         * candidates that disagree, or a query that failed.
+         * Statements that cannot both be true, or material that cannot be ordered.
          *
          * @param reason fixed words; never a value, a name or a digest of one
          */
         record Corrupt(String reason) implements Resolution { }
+
+        /**
+         * Nothing was established — a failed query, or a coordinate that cannot order.
+         *
+         * <p>Separate from {@link Corrupt} because the responses differ: corruption is a fact
+         * about the data that will not improve by waiting, and this may.
+         */
+        record Indeterminate(String reason) implements Resolution { }
     }
 
     /** Reads the waiting events for a task key. Narrow, so this class can be tested alone. */
     public interface WaitingEventSource {
 
-        /**
-         * @return the endpoints, in whatever order the store produced; this class sorts them
-         */
+        /** @return the candidates, in whatever order the store produced; this class orders them */
         List<Candidate> candidatesFor(String taskKey);
     }
 
-    /**
-     * One waiting event's view of the endpoint a task names.
-     *
-     * @param orderingKey a stable, total ordering across candidates — the delivery id
-     */
-    public record Candidate(String orderingKey, LineageWaitingSnapshot snapshot) { }
+    /** One waiting event's view of the endpoint a task names, with its place in the journal. */
+    public record Candidate(LineageJournalOrder order, LineageWaitingSnapshot snapshot) { }
 
     private final WaitingEventSource source;
 
@@ -93,7 +106,7 @@ public class LineageWaitingSnapshotResolver {
     }
 
     /**
-     * The snapshot for this obligation, or why there is not one.
+     * The current snapshot for this obligation, or why there is not one.
      *
      * <p>Every candidate must describe the obligation's subject exactly. A near miss is not a
      * weaker match — an entity rebuilt from another repository's snapshot would be wrong in a
@@ -110,37 +123,55 @@ public class LineageWaitingSnapshotResolver {
             // A query that failed established nothing. Class name only: a store message can
             // echo a document, and a v2 document carries endpoint attributes.
             logger.warn("Waiting-event lookup failed: {}", e.getClass().getSimpleName());
-            return new Resolution.Corrupt("the waiting-event lookup failed");
+            return new Resolution.Indeterminate("the waiting-event lookup failed");
         }
         if (candidates == null || candidates.isEmpty()) {
             return new Resolution.NoWaitingEvent();
         }
 
-        List<Candidate> ordered = new ArrayList<>(candidates);
-        ordered.sort(Comparator.comparing(c -> c == null || c.orderingKey() == null ? ""
-                : c.orderingKey()));
-
-        LineageWaitingSnapshot chosen = null;
-        for (Candidate candidate : ordered) {
+        List<Candidate> usable = new ArrayList<>();
+        for (Candidate candidate : candidates) {
             if (candidate == null || candidate.snapshot() == null) {
                 return new Resolution.Corrupt("a waiting event yielded no usable snapshot");
             }
-            LineageWaitingSnapshot snapshot = candidate.snapshot();
-            if (!snapshot.describesSubject(obligation)) {
-                // The task key is a hash of the subject, so a candidate under it that describes
-                // something else means the key set on the event and the obligation disagree.
+            if (candidate.order() == null || !candidate.order().usable()) {
+                // An UNSEQUENCED event has no place in the stream yet, so it cannot be called
+                // earlier or later than anything. That is unknown, not first.
+                return new Resolution.Indeterminate(
+                        "a waiting event has no usable journal position");
+            }
+            if (!candidate.snapshot().describesSubject(obligation)) {
+                // The task key is a hash of the subject, so a candidate under it describing
+                // something else means the event's key set and the obligation disagree.
                 return new Resolution.Corrupt(
                         "a waiting event's snapshot does not describe the obligation's subject");
             }
-            if (chosen == null) {
-                chosen = snapshot;
-            } else if (!chosen.evidenceDigest().equals(snapshot.evidenceDigest())) {
-                // Same subject, different content. Choosing either would silently make one of
-                // the two events' record of the object the one that survives.
+            if (!candidate.order().repositoryId().equals(obligation.repositoryId())) {
+                // Sequence numbers come from a per-repository counter; ordering across
+                // repositories is meaningless rather than merely wrong.
                 return new Resolution.Corrupt(
-                        "waiting events disagree about the endpoint's snapshot");
+                        "waiting events span more than one repository");
+            }
+            usable.add(candidate);
+        }
+
+        usable.sort((a, b) -> LineageJournalOrder.withinRepository()
+                .compare(a.order(), b.order()));
+
+        for (int i = 1; i < usable.size(); i++) {
+            Candidate previous = usable.get(i - 1);
+            Candidate current = usable.get(i);
+            if (previous.order().samePositionAs(current.order())
+                    && !previous.snapshot().evidenceDigest()
+                            .equals(current.snapshot().evidenceDigest())) {
+                // Same position in the journal, different content. One of these is not what
+                // the journal recorded, and choosing either would make it so.
+                return new Resolution.Corrupt(
+                        "two waiting events at one journal position disagree");
             }
         }
-        return new Resolution.Found(chosen);
+
+        Candidate latest = usable.get(usable.size() - 1);
+        return new Resolution.Found(latest.snapshot(), usable.size() - 1);
     }
 }

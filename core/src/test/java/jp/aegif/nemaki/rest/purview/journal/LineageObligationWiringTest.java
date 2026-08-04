@@ -52,8 +52,7 @@ public class LineageObligationWiringTest {
     private LineageHistoricalPublisherRegistry publishersFor(String... targets) {
         Map<String, LineageHistoricalEntityPublisher> byTarget = new java.util.LinkedHashMap<>();
         for (String target : targets) {
-            byTarget.put(target, (t, r, k, qn, snapshot)
-                    -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED);
+            byTarget.put(target, snapshot -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED);
         }
         return new LineageHistoricalPublisherRegistry(byTarget);
     }
@@ -277,10 +276,8 @@ public class LineageObligationWiringTest {
     @Test
     @DisplayName("duplicate publisher targets are refused at construction")
     public void duplicatePublisherTargetsAreRefused() {
-        LineageHistoricalEntityPublisher first = (t, r, k, qn, snapshot)
-                -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED;
-        LineageHistoricalEntityPublisher second = (t, r, k, qn, snapshot)
-                -> LineageHistoricalEntityPublisher.Outcome.RETRYABLE;
+        LineageHistoricalEntityPublisher first = snapshot -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED;
+        LineageHistoricalEntityPublisher second = snapshot -> LineageHistoricalEntityPublisher.Outcome.RETRYABLE;
 
         Map<String, LineageHistoricalEntityPublisher> colliding =
                 new java.util.LinkedHashMap<>();
@@ -297,8 +294,7 @@ public class LineageObligationWiringTest {
     @DisplayName("a blank or null-valued publisher registration is refused")
     public void malformedPublisherRegistrationIsRefused() {
         Map<String, LineageHistoricalEntityPublisher> blank = new java.util.LinkedHashMap<>();
-        blank.put("  ", (t, r, k, qn, snapshot)
-                -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED);
+        blank.put("  ", snapshot -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED);
         org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
                 () -> new LineageHistoricalPublisherRegistry(blank));
 
