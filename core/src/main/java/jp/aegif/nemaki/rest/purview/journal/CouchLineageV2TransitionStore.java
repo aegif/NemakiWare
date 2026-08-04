@@ -417,7 +417,7 @@ final class CouchLineageV2TransitionStore {
             if (countResult != null && countResult.getRows() != null
                     && !countResult.getRows().isEmpty()
                     && countResult.getRows().get(0).getValue() instanceof Number n) {
-                count = CouchLineageJournalStore.exactLong(n, "verifying count");
+                count = LineageStoreDecoding.exactLong(n, "verifying count");
             }
             Long oldestSinceMs = null;
             if (count > 0) {
@@ -435,7 +435,7 @@ final class CouchLineageV2TransitionStore {
                 if (oldest != null && oldest.getRows() != null && !oldest.getRows().isEmpty()
                         && oldest.getRows().get(0).getKey() instanceof List<?> key
                         && key.size() == 2 && key.get(1) instanceof Number since) {
-                    oldestSinceMs = CouchLineageJournalStore.exactLong(since, "oldest verifyingSinceMs");
+                    oldestSinceMs = LineageStoreDecoding.exactLong(since, "oldest verifyingSinceMs");
                 }
             }
             Map<String, Object> out = new LinkedHashMap<>();
@@ -558,7 +558,7 @@ final class CouchLineageV2TransitionStore {
                 return 0;
             }
             Object value = result.getRows().get(0).getValue();
-            return value instanceof Number n ? CouchLineageJournalStore.exactLong(n, "unacked replay count") : 0;
+            return value instanceof Number n ? LineageStoreDecoding.exactLong(n, "unacked replay count") : 0;
         } catch (RuntimeException e) {
             throw new LineageSequencingStore.SequencingStorageException("unacked replay count query failed", e);
         }

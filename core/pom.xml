@@ -1516,6 +1516,36 @@
 	</build>
 
 	<profiles>
+		<!--
+			Build into core/target-cli instead of core/target.
+
+			The Eclipse JDT language server behind the VS Code / Cursor Java extension owns
+			core/target as its own output directory and rebuilds into it on file change. When
+			that happens between Maven's compile and testCompile phases, javac fails on classes
+			it just wrote:
+
+			    jp.aegif.nemaki.security.SsrfGuard にアクセスできません
+			      クラス・ファイル .../target/classes/.../SsrfGuard.class は不正です
+			        java.nio.file.NoSuchFileException: .../SsrfGuard.class
+
+			-Dproject.build.directory does NOT work for this: the path is derived inside the
+			POM, not read from a user property. A profile is the only place it can move.
+
+			Usage:  mvn -pl core clean test -DisolatedTarget
+			Note:   the WAR then lands in core/target-cli/core.war, so a deploy must copy from
+			        there — see docs/development/troubleshooting-build.md.
+		-->
+		<profile>
+			<id>isolated-target</id>
+			<activation>
+				<property>
+					<name>isolatedTarget</name>
+				</property>
+			</activation>
+			<build>
+				<directory>${project.basedir}/target-cli</directory>
+			</build>
+		</profile>
 		<profile>
 			<id>opencmis-github-packages</id>
 			<repositories>

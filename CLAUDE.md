@@ -152,6 +152,7 @@ GET  /api/v1/admin/acl-epoch/migration/{repositoryId}      # verdict を確認
 | ACL-epoch の現在地 | `.claude/skills/acl-epoch/` |
 | 利用者向け変更履歴 | [`RELEASE_NOTES.md`](RELEASE_NOTES.md) |
 | per-commit 開発ログ (約 4200 行) | [`docs/history/development-log.md`](docs/history/development-log.md) |
+| ビルドが「ソースと無関係に」落ちるとき | [`docs/development/troubleshooting-build.md`](docs/development/troubleshooting-build.md) |
 | 開発者向け詳細ガイド | [`AGENTS.md`](AGENTS.md) |
 | アーキテクチャ | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | multi-replica 運用 | [`docs/MULTI-REPLICA-DEPLOYMENT.md`](docs/MULTI-REPLICA-DEPLOYMENT.md) |

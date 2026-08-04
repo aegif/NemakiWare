@@ -40,7 +40,7 @@ import jp.aegif.nemaki.rest.purview.journal.LineageSequencingStore.SequencerHeal
  *
  * <p>Its only test support is a real-CouchDB IT, which is why it was extracted last.
  */
-final class CouchLineageSequencingStore {
+final class CouchLineageSequencingStore implements LineageSequencingStore {
 
     private static final org.slf4j.Logger logger =
             org.slf4j.LoggerFactory.getLogger(CouchLineageSequencingStore.class);
@@ -60,7 +60,8 @@ final class CouchLineageSequencingStore {
         return SEQUENCER_LEASE_PREFIX + repositoryId;
     }
 
-    java.util.Optional<LineageSequencingStore.LeaseGrant> acquireSequencerLease(String repositoryId,
+    @Override
+    public java.util.Optional<LineageSequencingStore.LeaseGrant> acquireSequencerLease(String repositoryId,
             String nodeId, java.time.Duration ttl) {
         support.ensureDatabase();
         Map<String, Object> lease = support.readRawStrict(leaseDocumentId(repositoryId));
@@ -78,7 +79,7 @@ final class CouchLineageSequencingStore {
         }
         long generation;
         try {
-            generation = CouchLineageJournalStore.exactLong(lease.get("generation"), "lease generation");
+            generation = LineageStoreDecoding.exactLong(lease.get("generation"), "lease generation");
         } catch (IllegalArgumentException malformed) {
             generation = -1L;
         }
@@ -104,7 +105,8 @@ final class CouchLineageSequencingStore {
         return java.util.Optional.empty();
     }
 
-    java.util.Optional<LineageSequencingStore.LeaseGrant> renewSequencerLease(LineageSequencingStore.LeaseGrant grant,
+    @Override
+    public java.util.Optional<LineageSequencingStore.LeaseGrant> renewSequencerLease(LineageSequencingStore.LeaseGrant grant,
             java.time.Duration ttl) {
         if (grant == null) {
             return java.util.Optional.empty();
@@ -127,7 +129,8 @@ final class CouchLineageSequencingStore {
         return java.util.Optional.empty();
     }
 
-    void releaseSequencerLease(LineageSequencingStore.LeaseGrant grant) {
+    @Override
+    public void releaseSequencerLease(LineageSequencingStore.LeaseGrant grant) {
         if (grant == null) {
             return;
         }
@@ -152,14 +155,15 @@ final class CouchLineageSequencingStore {
         }
     }
 
-    java.util.Optional<LineageSequencingStore.LeaseView> readSequencerLease(String repositoryId) {
+    @Override
+    public java.util.Optional<LineageSequencingStore.LeaseView> readSequencerLease(String repositoryId) {
         Map<String, Object> lease = support.readRawStrict(leaseDocumentId(repositoryId));
         if (lease == null) {
             return java.util.Optional.empty();
         }
         long generation;
         try {
-            generation = CouchLineageJournalStore.exactLong(lease.get("generation"), "lease generation");
+            generation = LineageStoreDecoding.exactLong(lease.get("generation"), "lease generation");
         } catch (IllegalArgumentException malformed) {
             generation = -1L;
         }
@@ -173,7 +177,7 @@ final class CouchLineageSequencingStore {
     private static boolean matchesGrant(Map<String, Object> lease, LineageSequencingStore.LeaseGrant grant) {
         long generation;
         try {
-            generation = CouchLineageJournalStore.exactLong(lease.get("generation"), "lease generation");
+            generation = LineageStoreDecoding.exactLong(lease.get("generation"), "lease generation");
         } catch (IllegalArgumentException malformed) {
             return false;
         }
@@ -194,11 +198,13 @@ final class CouchLineageSequencingStore {
         }
     }
 
-    List<LineageJournalRowV2> findUnsequencedV2(String repositoryId, int limit) {
+    @Override
+    public List<LineageJournalRowV2> findUnsequencedV2(String repositoryId, int limit) {
         return queryV2RowsInClaimOrder("v2_sequencer_backlog", repositoryId, limit);
     }
 
-    List<LineageJournalRowV2> findSequencingV2(String repositoryId, int limit) {
+    @Override
+    public List<LineageJournalRowV2> findSequencingV2(String repositoryId, int limit) {
         return queryV2RowsInClaimOrder("v2_sequencer_in_flight", repositoryId, limit);
     }
 
@@ -267,14 +273,16 @@ final class CouchLineageSequencingStore {
         }
     }
 
-    boolean claimForSequencing(LineageJournalRowV2 row, long generation,
+    @Override
+    public boolean claimForSequencing(LineageJournalRowV2 row, long generation,
             String sequencerLeaseToken) {
         return casSequencingWrite(row, LineageJournalRowV2.SequencingState.UNSEQUENCED, null,
                 raw -> CouchLineageJournalRowV2.applySequencing(raw, generation,
                         sequencerLeaseToken));
     }
 
-    boolean reclaimForSequencing(LineageJournalRowV2 row, long staleGeneration,
+    @Override
+    public boolean reclaimForSequencing(LineageJournalRowV2 row, long staleGeneration,
             long generation, String sequencerLeaseToken) {
         if (staleGeneration >= generation) {
             // §8-a: reclaim only takes rows from strictly older generations. An equal
@@ -287,7 +295,8 @@ final class CouchLineageSequencingStore {
                         sequencerLeaseToken));
     }
 
-    boolean finalizeSequence(LineageJournalRowV2 row, long generation,
+    @Override
+    public boolean finalizeSequence(LineageJournalRowV2 row, long generation,
             String sequencerLeaseToken, long sequence) {
         if (sequence <= 0) {
             throw new IllegalArgumentException("sequence must be positive, got " + sequence);
@@ -333,7 +342,7 @@ final class CouchLineageSequencingStore {
             if (expectedGeneration != null) {
                 Object generation = raw.get(CouchLineageJournalRowV2.FIELD_GENERATION);
                 try {
-                    if (CouchLineageJournalStore.exactLong(generation, "sequencerGeneration") != expectedGeneration) {
+                    if (LineageStoreDecoding.exactLong(generation, "sequencerGeneration") != expectedGeneration) {
                         return false;
                     }
                 } catch (IllegalArgumentException malformed) {
@@ -349,9 +358,10 @@ final class CouchLineageSequencingStore {
         // sequencer must latch on it rather than re-read forever.
     }
 
-    long allocateSequenceFenced(String repositoryId) {
+    @Override
+    public long allocateSequenceFenced(String repositoryId) {
         support.ensureDatabase();
-        String seqDocId = CouchLineageJournalStore.SEQ_PREFIX + repositoryId;
+        String seqDocId = LineageStoreDocuments.SEQ_PREFIX + repositoryId;
         for (int attempt = 0; attempt < ALLOCATOR_CAS_RETRIES; attempt++) {
             Map<String, Object> seqDoc = support.readRawStrict(seqDocId);
             if (seqDoc == null) {
@@ -364,17 +374,17 @@ final class CouchLineageSequencingStore {
             Object stored = seqDoc.get("seq");
             Number n;
             try {
-                CouchLineageJournalStore.exactLong(stored, "sequence counter");
+                LineageStoreDecoding.exactLong(stored, "sequence counter");
                 n = (Number) stored;
             } catch (IllegalArgumentException malformed) {
                 throw new LineageSequencingStore.SequenceCounterException(SequencerHealth.COUNTER_MISSING,
                         "sequence counter for '" + repositoryId + "' is malformed: " + stored);
             }
-            if (CouchLineageJournalStore.exactLong(n, "sequence counter") < 0) {
+            if (LineageStoreDecoding.exactLong(n, "sequence counter") < 0) {
                 throw new LineageSequencingStore.SequenceCounterException(SequencerHealth.COUNTER_MISSING,
                         "sequence counter for '" + repositoryId + "' is malformed: " + stored);
             }
-            long current = CouchLineageJournalStore.exactLong(n, "sequence counter");
+            long current = LineageStoreDecoding.exactLong(n, "sequence counter");
             long watermark = sequenceHighWatermark(repositoryId);
             if (current < watermark) {
                 throw new LineageSequencingStore.SequenceCounterException(SequencerHealth.COUNTER_REWOUND,
@@ -394,7 +404,8 @@ final class CouchLineageSequencingStore {
                         + " consecutive CAS attempts — transient contention, retry later");
     }
 
-    long sequenceHighWatermark(String repositoryId) {
+    @Override
+    public long sequenceHighWatermark(String repositoryId) {
         try {
             ViewResult result = support.client().getClient().postView(
                     new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
@@ -417,7 +428,7 @@ final class CouchLineageSequencingStore {
                 return 0L; // reduce over zero rows
             }
             if (value instanceof Map<?, ?> stats && stats.get("max") instanceof Number max) {
-                return CouchLineageJournalStore.exactLong(max, "sequence_watermark max");
+                return LineageStoreDecoding.exactLong(max, "sequence_watermark max");
             }
             // A reduce answer that is neither absent nor _stats-shaped is a broken index,
             // not a zero watermark.
