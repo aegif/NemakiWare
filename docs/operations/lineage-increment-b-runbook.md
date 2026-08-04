@@ -118,12 +118,21 @@ curl -u admin:admin -X POST -H "X-Requested-With: XMLHttpRequest" \
 ### Atlas OSS
 
 ```bash
-docker compose -f docker/docker-compose-atlas.yml up -d atlas
-curl -s -u admin:admin http://localhost:21000/api/atlas/admin/version   # 200 を待つ
+# ARM64 host はネイティブイメージを使う (docker/atlas/build-arm64.sh で一度ビルド)
+NEMAKI_ATLAS_IMAGE=nemakiware-atlas:2.3.0-arm64 NEMAKI_ATLAS_PLATFORM=linux/arm64 \
+  docker compose -f docker/docker-compose-simple.yml -f docker/docker-compose-atlas.yml \
+  up -d --force-recreate --no-deps atlas
 
-mvn -pl core test -Dgroups=atlas-integration -Dsurefire.excludedGroups= \
+curl -s -o /dev/null -w "%{http_code}\n" -u admin:admin \
+  http://localhost:21000/api/atlas/admin/version   # 200 を待つ (60〜90 秒)
+
+# -pl core は使わない (core は reactor の一部ではないので "Could not find the selected
+# project in the reactor" になる)。-f core/pom.xml で直接指定する。
+mvn test -Dgroups=atlas-integration -Dsurefire.excludedGroups= \
   -Dtest=LineageIncrementBAtlasTest -DforkCount=0 -f core/pom.xml -Pdevelopment
 ```
+
+> **`docker compose restart atlas` は使用禁止。** 下の「Atlas が起動しないとき」参照。
 
 **期待**: 8 tests, 0 failures。検証内容は
 
@@ -142,7 +151,7 @@ mvn -pl core test -Dgroups=atlas-integration -Dsurefire.excludedGroups= \
 
 | # | 項目 | 必要なもの | 実行 | 期待 |
 |---|---|---|---|---|
-| B-E1 | **Atlas OSS live 結果** | 起動する Atlas 2.x コンテナ。<br>2026-08-04 時点で `docker/docker-compose-atlas.yml` の image は**起動に失敗する** (`NoSuchBeanDefinitionException: ...ConfigurationClassPostProcessor.importRegistry` — Atlas 自身の Spring 配線の問題で、増分 B とは無関係)。まず image を起動する版に更新する必要がある | 上記の `mvn -Dgroups=atlas-integration` | 8 tests, 0 failures |
+| ~~B-E1~~ | ~~**Atlas OSS live 結果**~~ | — | — | **実測済み (2026-08-04): 8 tests, 0 failures, 0 errors。** image `nemakiware-atlas:2.3.0-arm64` (digest `sha256:04eb610a…`)、Atlas 2.3.0 |
 | B-E2 | **Purview live 結果** | Azure Purview アカウント、collection、`tenantId` / `clientId` / `clientSecret` (Service Principal に Data Curator ロール) | `PURVIEW_ENDPOINT` 等を設定し、手順 1〜3 を実 Purview に対して実行 | schema apply が `applied: true` / backfill が `successful: true` / reconciliation が `clean: true` |
 | B-E3 | **属性 round trip (Purview)** | 同上 | B-E2 の後、`nemaki_folder_dataset` を 1 件読む | `repositoryId` / `objectId` / `active` / `sourceState` が保存されている |
 | B-E4 | **大規模 backfill の再開性** | 10,000 folder 以上の repository | `maxBatches=1` で複数回、途中で core を再起動 | `processed` が単調増加し、最終的に `successful: true`。folder 数と `processed` が一致 |
@@ -150,6 +159,43 @@ mvn -pl core test -Dgroups=atlas-integration -Dsurefire.excludedGroups= \
 **B-E1 の結果を B-E2 の代わりにしてはならない。** Atlas OSS と Purview は
 error vocabulary も属性型の対応も relationship の意味論も共有しない。
 Atlas が green でも Purview の証跡にはならない。
+
+### Atlas が起動しないとき (2026-08-04 に調査・解消済み)
+
+**症状**: コンテナは `Up` だが `/api/atlas/admin/version` が 503。ログ末尾に
+`org.springframework.beans.factory.NoSuchBeanDefinitionException: No bean named
+'...ConfigurationClassPostProcessor.importRegistry'`。
+
+**この Spring エラーは原因ではない。** 起動失敗の連鎖を `/apache-atlas/logs/application.log`
+(コンテナ内。`docker logs` の tail ではなくこちらが正典) で遡ると、最初の例外は
+
+```
+EmbeddedKafkaServer.start(isEmbedded=true)
+Starting zookeeper at localhost:9026
+org.apache.zookeeper.KeeperException$NodeExistsException: KeeperErrorCode = NodeExists
+→ AtlasBaseException: EmbeddedServer.Start: failed!
+→ BeanCreationException: atlasRelationshipStoreV2
+→ NoSuchBeanDefinitionException (末尾に出るのはこれ)
+```
+
+**原因**: `docker-compose-atlas.yml` は atlas に **volume を宣言していない**ので、
+embedded HBase / ZooKeeper / Kafka の状態はコンテナの writable layer に置かれる。
+`docker compose restart` はこの layer を保持するため、一度壊れた ZK ノードは
+**restart を何度繰り返しても消えない**。
+
+**対処**: `--force-recreate` でコンテナを作り直す (writable layer が捨てられる)。
+
+```bash
+NEMAKI_ATLAS_IMAGE=nemakiware-atlas:2.3.0-arm64 NEMAKI_ATLAS_PLATFORM=linux/arm64 \
+  docker compose -f docker/docker-compose-simple.yml -f docker/docker-compose-atlas.yml \
+  up -d --force-recreate --no-deps atlas
+```
+
+`--no-deps` を付けないと core / couchdb / solr まで作り直される。
+
+**イメージ側の不具合ではない。** 同じ digest のイメージが fresh な writable layer では
+正常に起動し、B-E1 が 8/8 で通ることを確認済み。第三者 Atlas への patch も jar の
+手動差替えも不要だった。
 
 ---
 
