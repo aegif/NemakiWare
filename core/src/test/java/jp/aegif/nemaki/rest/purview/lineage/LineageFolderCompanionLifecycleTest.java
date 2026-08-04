@@ -274,6 +274,42 @@ public class LineageFolderCompanionLifecycleTest {
             assertEquals(COMPANION_QN, attributes.get("qualifiedName"));
         }
 
+        /**
+         * A catalog bulk write MERGES, so an attribute the payload omits keeps its old value.
+         * Writing back whatever the read returned would therefore preserve a field this build
+         * no longer declares — forever, and with nothing to say why it is there.
+         */
+        @Test
+        @DisplayName("an attribute this build no longer declares is dropped, not carried forward")
+        void staleAttributesAreRemoved() throws Exception {
+            java.util.Map<String, Object> stored = new LinkedHashMap<>();
+            stored.put("qualifiedName", COMPANION_QN);
+            stored.put("name", "Reports");
+            stored.put("repositoryId", REPO);
+            stored.put("objectId", "f-1");
+            stored.put("active", true);
+            stored.put("sourceState", "ACTIVE");
+            // Left behind by an older shape of the type.
+            stored.put("legacyFolderPath", "/old/location");
+            stored.put("proxyVersion", 1);
+            when(client.getEntityByUniqueAttribute(any(), any(), any(), any()))
+                    .thenReturn(Map.of("entity", Map.of("attributes", stored)));
+
+            assertTrue(lifecycle.markState(REPO, "f-1",
+                    PurviewEntityPayloadFactory.SOURCE_STATE_ARCHIVED));
+
+            Map<String, Object> written = capturedAttributes();
+            assertFalse(written.containsKey("legacyFolderPath"),
+                    "a stale attribute survived a transition and would survive every later one");
+            assertFalse(written.containsKey("proxyVersion"));
+            // And the declared ones are still all there.
+            assertEquals("Reports", written.get("name"));
+            assertEquals(REPO, written.get("repositoryId"));
+            assertEquals("f-1", written.get("objectId"));
+            assertEquals("ARCHIVED", written.get("sourceState"));
+            assertEquals(Boolean.FALSE, written.get("active"));
+        }
+
         @Test
         @DisplayName("re-running a transition is a no-op that still succeeds")
         void transitionIsIdempotent() throws Exception {

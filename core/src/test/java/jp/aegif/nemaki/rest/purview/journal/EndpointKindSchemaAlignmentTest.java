@@ -358,6 +358,53 @@ public class EndpointKindSchemaAlignmentTest {
     }
 
     /**
+     * Every endpoint kind resolves to a {@code DataSet}, so a Process can name it.
+     *
+     * <p>Atlas types {@code Process.inputs} and {@code Process.outputs} as {@code DataSet}. A
+     * kind whose Atlas type is not one produces a lineage edge the catalog refuses — which is
+     * exactly why {@code CMIS_FOLDER} points at {@code nemaki_folder_dataset} and not at
+     * {@code nemaki_folder}, and why the artifact types were created at all.
+     */
+    @Test
+    public void everyEndpointKindIsADataSet() {
+        Map<String, List<String>> superTypes = atlasSuperTypes();
+        for (EndpointKind kind : EndpointKind.values()) {
+            List<String> parents = superTypes.get(kind.atlasTypeName());
+            assertNotNull(parents, kind.atlasTypeName() + " has no type definition");
+            assertTrue(parents.contains("DataSet"),
+                    kind + " resolves to " + kind.atlasTypeName() + ", whose superTypes are "
+                            + parents + ". Process.inputs/outputs are typed DataSet, so a"
+                            + " lineage edge naming this kind would be refused.");
+        }
+        // The folder itself is deliberately NOT a DataSet — that is the whole reason the
+        // companion exists, and changing it would rewrite every folder entity in the catalog.
+        assertFalse(superTypes.get("nemaki_folder").contains("DataSet"));
+    }
+
+    /**
+     * An import/export artifact and a folder companion are different entities in one graph.
+     *
+     * <p>{@code IMPORT_UPLOADED}'s input is the artifact and its output is the moved content —
+     * folders among it. If the two ever produced the same qualified name, a Process would name
+     * one entity as both its input and its output and the lineage would be a self-loop.
+     */
+    @Test
+    public void anArtifactAndAFolderCompanionAreDistinctEntities() {
+        String importArtifact = LineageEndpoint.importArtifactQualifiedName("bedroom", "op-1");
+        String exportArtifact = LineageEndpoint.exportArtifactQualifiedName("bedroom", "op-1");
+        String companion = LineageEndpoint.folderProxyQualifiedName("bedroom", "f-1");
+        String folder = LineageEndpoint.objectQualifiedName("bedroom", "f-1");
+
+        assertEquals(4, new TreeSet<>(List.of(importArtifact, exportArtifact, companion, folder))
+                .size(), "two of these collide, which would make a Process name one entity twice");
+
+        // The same operation id used for an import and an export is still two artifacts.
+        assertNotEquals(importArtifact, exportArtifact);
+        // And a lineage edge for a folder names the companion, never the folder.
+        assertNotEquals(folder, companion);
+    }
+
+    /**
      * Exactly the display values carry §2 companions, and the companions exist in Atlas.
      *
      * <p>A companion the Atlas type does not declare is discarded on arrival, which turns
@@ -384,6 +431,17 @@ public class EndpointKindSchemaAlignmentTest {
     }
 
     // ------------------------------------------------------------------
+
+    /** {@code typeName -> superTypes}, read from the real payload factory. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, List<String>> atlasSuperTypes() {
+        Map<String, List<String>> superTypes = new LinkedHashMap<>();
+        for (Map<String, Object> entityDef : entityDefs()) {
+            superTypes.put((String) entityDef.get("name"),
+                    (List<String>) entityDef.getOrDefault("superTypes", List.of()));
+        }
+        return superTypes;
+    }
 
     /** {@code typeName -> (attributeName -> atlasType)}, read from the real payload factory. */
     private static Map<String, Map<String, String>> atlasTypes() {

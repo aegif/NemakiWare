@@ -48,6 +48,20 @@ public class LineageFolderCompanionLifecycleImpl implements LineageFolderCompani
      */
     private static final List<String> LIFECYCLE_ATTRIBUTES = List.of("active", "sourceState");
 
+    /**
+     * Every attribute a companion may carry (§3). Anything else is dropped on write-back.
+     *
+     * <p>{@link #markState} reads the stored entity and writes it back with two fields changed.
+     * A catalog bulk write MERGES — an attribute the payload omits keeps its old value — so
+     * writing back whatever came out would preserve attributes this build no longer declares:
+     * a field removed from the schema, or one an older version set, survives every transition
+     * forever and nothing ever says why it is there. Rebuilding from a known list is what makes
+     * a transition converge on the current shape instead of accumulating the history of every
+     * shape the type has had.
+     */
+    private static final List<String> COMPANION_ATTRIBUTES =
+            List.of("qualifiedName", "name", "repositoryId", "objectId", "active", "sourceState");
+
     private final MetadataCatalogConnectionResolver connectionResolver;
     private final PurviewEntityPayloadFactory entityPayloadFactory;
     private final PurviewEntityRegistryClient entityRegistryClient;
@@ -132,7 +146,13 @@ public class LineageFolderCompanionLifecycleImpl implements LineageFolderCompani
             return false;
         }
 
-        Map<String, Object> merged = new LinkedHashMap<>(attributes);
+        // Only the declared attributes are carried forward; see COMPANION_ATTRIBUTES.
+        Map<String, Object> merged = new LinkedHashMap<>();
+        for (String declared : COMPANION_ATTRIBUTES) {
+            if (attributes.containsKey(declared)) {
+                merged.put(declared, attributes.get(declared));
+            }
+        }
         merged.put("qualifiedName", qualifiedName);
         merged.put("active",
                 PurviewEntityPayloadFactory.SOURCE_STATE_ACTIVE.equals(sourceState));
