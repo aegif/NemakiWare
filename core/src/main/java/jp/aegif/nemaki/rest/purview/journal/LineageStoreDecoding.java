@@ -112,4 +112,45 @@ final class LineageStoreDecoding {
         }
         return result;
     }
+
+    /**
+     * An exact count from a view's own reduce, or a lower bound when it cannot be read.
+     *
+     * <p>Never a clean zero on failure. Zero is the one answer that makes a backlogged or
+     * broken deployment look finished, so an unreadable reduce degrades to {@code lowerBound(0)}
+     * and a preflight can tell "nothing there" from "could not tell".
+     *
+     * @param extraParams merged into the query, for ranged counts
+     */
+    static LineageCatalogObligationStore.StateCount reduceCount(LineageStoreSupport support,
+            String viewName, Object key, java.util.Map<String, Object> extraParams) {
+        try {
+            java.util.Map<String, Object> params = new java.util.LinkedHashMap<>();
+            if (key != null) {
+                params.put("key", key);
+            }
+            params.put("reduce", true);
+            params.put("group", false);
+            if (extraParams != null) {
+                params.putAll(extraParams);
+            }
+            com.ibm.cloud.cloudant.v1.model.ViewResult result =
+                    support.client().queryView(support.designDoc(), viewName, params);
+            if (result == null) {
+                // The view is missing. Not an exact zero — see requireViewResult.
+                return LineageCatalogObligationStore.StateCount.lowerBound(0L);
+            }
+            if (result.getRows() == null || result.getRows().isEmpty()) {
+                // _count over no matching keys returns no rows, which is an exact zero.
+                return LineageCatalogObligationStore.StateCount.exact(0L);
+            }
+            Object value = result.getRows().get(0).getValue();
+            if (!(value instanceof Number n)) {
+                return LineageCatalogObligationStore.StateCount.lowerBound(0L);
+            }
+            return LineageCatalogObligationStore.StateCount.exact(n.longValue());
+        } catch (RuntimeException e) {
+            return LineageCatalogObligationStore.StateCount.lowerBound(0L);
+        }
+    }
 }

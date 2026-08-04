@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Map;
@@ -111,6 +112,7 @@ public class LineageObligationWiringTest {
         LineageCurrentEntityRepublisher republisher = mock(LineageCurrentEntityRepublisher.class);
         /** Comfortably inside half the five-minute fence lease, for every target and kind. */
         LineageOperationBudgetProvider budgets = FixedOperationBudgets.healthy();
+        LineagePurgeLedger purgeLedger = availableLedger();
 
         LineageObligationWiring build() {
             LineageCatalogObligationService wired =
@@ -118,7 +120,8 @@ public class LineageObligationWiringTest {
             return new LineageObligationWiring(store, probes, publishers, wired,
                     withScanner ? new LineageObligationScannerImpl(wired) : null,
                     withProjector ? new LineageObligationProjectorCollaboratorImpl(wired) : null,
-                    intentStore, compensationStore, machine, sources, republisher, budgets);
+                    intentStore, compensationStore, machine, sources, republisher, budgets,
+                    purgeLedger);
         }
     }
 
@@ -172,7 +175,7 @@ public class LineageObligationWiringTest {
         LineageObligationWiring wiring = new LineageObligationWiring(assembly.store,
                 assembly.probes, assembly.publishers, null, null, null, assembly.intentStore,
                 assembly.compensationStore, assembly.machine, assembly.sources,
-                assembly.republisher, assembly.budgets);
+                assembly.republisher, assembly.budgets, assembly.purgeLedger);
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("obligation service")));
@@ -270,7 +273,8 @@ public class LineageObligationWiringTest {
                 mock(LineageHistoricalPublishIntentStore.class),
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
-                mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy());
+                mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
+                availableLedger());
 
         assertTrue(wiring.sharesService(service));
         assertFalse(wiring.sharesService(serviceOver(store)));
@@ -297,7 +301,8 @@ public class LineageObligationWiringTest {
                 mock(LineageHistoricalPublishIntentStore.class),
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
-                mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy());
+                mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
+                availableLedger());
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("scanner drives a different service")),
@@ -317,7 +322,8 @@ public class LineageObligationWiringTest {
                 mock(LineageHistoricalPublishIntentStore.class),
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
-                mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy());
+                mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
+                availableLedger());
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("projector's obligation collaborator")),
@@ -339,7 +345,8 @@ public class LineageObligationWiringTest {
                 mock(LineageHistoricalPublishIntentStore.class),
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
-                mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy());
+                mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
+                availableLedger());
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("different store")),
@@ -629,5 +636,12 @@ public class LineageObligationWiringTest {
         // No readiness, no config, no service.active() — construction and evaluation involve
         // nothing that could recurse back into the gate that consumes this.
         assertEquals(List.of(), complete().violations(TARGETS));
+    }
+
+    /** A purge ledger that is present and usable — the ledger has its own tests. */
+    private static LineagePurgeLedger availableLedger() {
+        LineagePurgeLedger ledger = mock(LineagePurgeLedger.class);
+        when(ledger.available()).thenReturn(true);
+        return ledger;
     }
 }

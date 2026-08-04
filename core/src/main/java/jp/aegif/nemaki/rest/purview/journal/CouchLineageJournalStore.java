@@ -472,6 +472,16 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         // and an older observation must not be published over it merely because the newer one
         // finished first. Emitting only the in-flight states let a loser scanned after the
         // winner find itself alone and publish.
+        // historicalFencesByLease — how many subject fences exist and how many have expired.
+        // Keyed by the lease instant so both questions are one ranged reduce rather than a
+        // listing: a preflight that had to enumerate them would report a truncated count on
+        // exactly the busy deployment where the number matters.
+        views.put("historicalFencesByLease", new ViewDefinition(
+                "function(doc) { if (doc.type === 'lineage_historical_fence'"
+                        + " && typeof doc.leaseUntilMs === 'number') {"
+                        + " emit(doc.leaseUntilMs, null); } }",
+                "_count"));
+
         views.put("historicalIntentsContendingBySubject", new ViewDefinition(
                 "function(doc) { if (doc.type === 'lineage_historical_intent' && doc.subjectKey"
                         + " && doc.state && doc.state !== 'SUPERSEDED') { "

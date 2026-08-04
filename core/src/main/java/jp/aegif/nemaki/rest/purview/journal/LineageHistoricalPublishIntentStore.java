@@ -131,6 +131,25 @@ public interface LineageHistoricalPublishIntentStore {
      * write. A source that has been purged cannot say which of two snapshots is newer, so the
      * answer has to come from the observation coordinate the intents carry.
      */
+    /**
+     * Exact counts per state, from the view's own reduce.
+     *
+     * <p>A preflight reads these. A count that cannot be read must come back as a lower bound
+     * rather than as zero — zero is the one answer that looks finished.
+     */
+    java.util.Map<LineageHistoricalPublishIntent.State,
+            LineageCatalogObligationStore.StateCount> countByState();
+
+    /**
+     * How many subject fences exist, and how many of them have expired.
+     *
+     * @param nowMs the instant expiry is measured against
+     */
+    record FenceCounts(long active, long expired, boolean truncated) { }
+
+    /** Fence counts, or a truncated verdict when they cannot be established. */
+    FenceCounts countFences(long nowMs, int limit);
+
     List<LineageHistoricalPublishIntent> findContendingForSubject(String subjectKey, int limit);
 
     /**

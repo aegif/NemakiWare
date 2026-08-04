@@ -69,6 +69,20 @@ public class LineageObligationWiringConfig {
     }
 
     /**
+     * The purge ledger, over the same database as the journal.
+     *
+     * <p>The only thing that can authorise a tombstone. Registered here rather than beside the
+     * repository services because it lives in the lineage database and shares its provisioning.
+     */
+    @Bean
+    public LineagePurgeLedger lineagePurgeLedger(
+            ObjectProvider<LineageJournalStore> journalStore) {
+        LineageJournalStore store = journalStore.getIfAvailable();
+        return store instanceof LineageStoreSupport support
+                ? new CouchLineagePurgeLedger(support) : null;
+    }
+
+    /**
      * One probe per target this node can actually reach a catalog for.
      *
      * <p>Derived from the sinks that support verification, each bound to a probe over the
@@ -104,20 +118,65 @@ public class LineageObligationWiringConfig {
     }
 
     /**
-     * Empty on purpose — see the class javadoc. Readiness stays red for configured targets.
+     * One historical publisher per target that can be verified.
+     *
+     * <p>Derived from the same sinks as the probes, and bound the same way: a publisher answers
+     * for its own target and refuses every other, so a write can never be recorded against a
+     * catalog it did not reach. A target with no verifying sink gets none, and readiness names
+     * it — inventing one would claim this node can rebuild a purged entity in a catalog it
+     * cannot even ask about.
      */
     @Bean
     public LineageHistoricalPublisherRegistry lineageHistoricalPublisherRegistry(
-            ObjectProvider<LineageHistoricalEntityPublisher> publishers) {
+            ObjectProvider<LineageTargetSink> sinks,
+            ObjectProvider<jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver>
+                    connectionResolver,
+            ObjectProvider<jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient>
+                    entityRegistryClient,
+            ObjectProvider<LineageHistoricalEntityPublisher> explicitPublishers) {
         Map<String, LineageHistoricalEntityPublisher> byTarget = new LinkedHashMap<>();
-        // Whatever real publishers exist get registered; today there are none, and the
-        // registry refuses duplicates rather than choosing between them.
-        for (LineageHistoricalEntityPublisher publisher : publishers.orderedStream().toList()) {
+        var resolver = connectionResolver.getIfAvailable();
+        var client = entityRegistryClient.getIfAvailable();
+        if (resolver != null && client != null) {
+            for (LineageTargetSink sink : sinks.orderedStream().toList()) {
+                String target = sink == null ? null : sink.targetName();
+                if (target == null || target.isBlank() || !sink.supportsVerification()) {
+                    continue;
+                }
+                byTarget.put(target,
+                        new CatalogHistoricalEntityPublisher(target, resolver, client));
+            }
+        }
+        // An explicitly declared publisher wins over the derived one: a deployment that needs a
+        // different write path for a target says so with a bean, and this must not overrule it.
+        for (LineageHistoricalEntityPublisher publisher
+                : explicitPublishers.orderedStream().toList()) {
             if (publisher instanceof TargetedHistoricalPublisher targeted) {
                 byTarget.put(targeted.targetName(), publisher);
             }
         }
         return new LineageHistoricalPublisherRegistry(byTarget);
+    }
+
+    /**
+     * The compensation's repair path.
+     *
+     * <p>Uses the ordinary entity payload factory, so a repair writes what the next normal sync
+     * would write. A second builder here would let the repair and the steady state disagree.
+     */
+    @Bean
+    public LineageCurrentEntityRepublisher lineageCurrentEntityRepublisher(
+            ObjectProvider<jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver>
+                    connectionResolver,
+            ObjectProvider<jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient>
+                    entityRegistryClient,
+            ObjectProvider<jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory>
+                    payloadFactory,
+            ObjectProvider<jp.aegif.nemaki.businesslogic.ContentService> contentService,
+            ObjectProvider<LineagePurgeLedger> purgeLedger) {
+        return new CatalogCurrentEntityRepublisher(connectionResolver.getIfAvailable(),
+                entityRegistryClient.getIfAvailable(), payloadFactory.getIfAvailable(),
+                contentService.getIfAvailable(), purgeLedger.getIfAvailable());
     }
 
     /** A publisher that says which target it writes to, so the registry can key it. */
@@ -168,19 +227,36 @@ public class LineageObligationWiringConfig {
     /**
      * One authoritative source resolver per endpoint kind.
      *
-     * <p>Empty for now, exactly as the historical publisher registry is: a resolver that
-     * guessed would license a tombstone. Readiness names every kind that has none.
+     * <h2>Not an always-UNKNOWN placeholder</h2>
+     *
+     * <p>Every kind gets a resolver that can reach a real verdict: PURGED whenever the purge
+     * ledger holds an unsuperseded mark for the subject, and EXISTS additionally for the kinds
+     * whose live object this service can read by identity. Registering a resolver that always
+     * answered UNKNOWN would turn readiness green while making {@code SOURCE_PURGED}
+     * unreachable, so every obligation for a genuinely purged source would retry for ever.
+     *
+     * <p>What none of them does is infer PURGED from absence — see
+     * {@link RepositorySourceDispositionResolver}.
      */
     @Bean
     public LineageSourceDispositionRegistry lineageSourceDispositionRegistry(
-            ObjectProvider<KindBoundSourceResolver> resolvers) {
+            ObjectProvider<KindBoundSourceResolver> resolvers,
+            ObjectProvider<jp.aegif.nemaki.businesslogic.ContentService> contentService,
+            ObjectProvider<LineagePurgeLedger> purgeLedger) {
         Map<EndpointKind, LineageSourceDispositionResolver> byKind =
                 new java.util.EnumMap<>(EndpointKind.class);
-        for (KindBoundSourceResolver resolver : resolvers.orderedStream().toList()) {
-            if (byKind.put(resolver.endpointKind(), resolver) != null) {
-                throw new IllegalStateException(
-                        "two authoritative source resolvers claim " + resolver.endpointKind());
+        var content = contentService.getIfAvailable();
+        var ledger = purgeLedger.getIfAvailable();
+        if (ledger != null) {
+            for (EndpointKind kind : EndpointKind.values()) {
+                byKind.put(kind, new RepositorySourceDispositionResolver(kind, content, ledger,
+                        System::currentTimeMillis));
             }
+        }
+        // An explicitly declared resolver wins: a connector that owns a kind's lifecycle knows
+        // more about it than the generic ledger-backed one does.
+        for (KindBoundSourceResolver resolver : resolvers.orderedStream().toList()) {
+            byKind.put(resolver.endpointKind(), resolver);
         }
         return new LineageSourceDispositionRegistry(byKind, System::currentTimeMillis);
     }
@@ -222,11 +298,12 @@ public class LineageObligationWiringConfig {
             LineageHistoricalPublishMachine historicalMachine,
             LineageSourceDispositionRegistry sourceResolvers,
             ObjectProvider<LineageCurrentEntityRepublisher> republisher,
-            LineageOperationBudgetProvider budgets) {
+            LineageOperationBudgetProvider budgets,
+            ObjectProvider<LineagePurgeLedger> purgeLedger) {
         return new LineageObligationWiring(store.getIfAvailable(), probes, historicalPublishers,
                 service, scanner, projectorCollaborator, intentStore.getIfAvailable(),
                 compensationStore.getIfAvailable(), historicalMachine, sourceResolvers,
-                republisher.getIfAvailable(), budgets);
+                republisher.getIfAvailable(), budgets, purgeLedger.getIfAvailable());
     }
 
     /**

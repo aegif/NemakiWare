@@ -111,7 +111,8 @@ public class LineageDrestReadinessTest {
                 mock(LineageHistoricalPublishIntentStore.class),
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), everyKindResolvable(),
-                mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy());
+                mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
+                availableLedger());
     }
 
     /** A source resolver for every kind, so the per-kind readiness check passes. */
@@ -167,7 +168,8 @@ public class LineageDrestReadinessTest {
                 mock(LineageHistoricalPublishIntentStore.class),
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), everyKindResolvable(),
-                mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy()));
+                mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
+                availableLedger()));
 
         LineageDrestReadiness.Readiness verdict = readiness.evaluate();
 
@@ -391,5 +393,12 @@ public class LineageDrestReadinessTest {
         LineageDrestReadiness.Readiness verdict = readiness.evaluate();
         assertFalse(verdict.ready());
         assertTrue(verdict.violations().stream().anyMatch(v -> v.contains("dataplex")));
+    }
+
+    /** A purge ledger that is present and usable — the ledger has its own tests. */
+    private static LineagePurgeLedger availableLedger() {
+        LineagePurgeLedger ledger = mock(LineagePurgeLedger.class);
+        when(ledger.available()).thenReturn(true);
+        return ledger;
     }
 }

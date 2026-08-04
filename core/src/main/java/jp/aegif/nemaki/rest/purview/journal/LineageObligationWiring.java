@@ -68,6 +68,7 @@ public final class LineageObligationWiring {
     private final LineageSourceDispositionRegistry sourceResolvers;
     private final LineageCurrentEntityRepublisher republisher;
     private final LineageOperationBudgetProvider budgets;
+    private final LineagePurgeLedger purgeLedger;
 
     public LineageObligationWiring(LineageCatalogObligationStore store,
             LineageCatalogProbeRegistry probes,
@@ -80,7 +81,7 @@ public final class LineageObligationWiring {
             LineageHistoricalPublishMachine historicalMachine,
             LineageSourceDispositionRegistry sourceResolvers,
             LineageCurrentEntityRepublisher republisher,
-            LineageOperationBudgetProvider budgets) {
+            LineageOperationBudgetProvider budgets, LineagePurgeLedger purgeLedger) {
         this.store = store;
         this.probes = probes;
         this.historicalPublishers = historicalPublishers;
@@ -93,6 +94,7 @@ public final class LineageObligationWiring {
         this.sourceResolvers = sourceResolvers;
         this.republisher = republisher;
         this.budgets = budgets;
+        this.purgeLedger = purgeLedger;
     }
 
     /**
@@ -102,7 +104,7 @@ public final class LineageObligationWiring {
      * lease left to renew in — and a renewal that has to win a race against its own expiry is
      * not a renewal.
      */
-    static final double FENCE_SAFETY_FACTOR = 0.5;
+    public static final double FENCE_SAFETY_FACTOR = 0.5;
 
     /**
      * What is missing or inconsistent, named. Empty means assembled.
@@ -139,6 +141,13 @@ public final class LineageObligationWiring {
             // A compensation that cannot converge on the current entity is a record of a
             // problem rather than a fix for one.
             violations.add("no current-entity republisher is wired");
+        }
+        if (purgeLedger == null || !purgeLedger.available()) {
+            // Without it nothing can ever say SOURCE_PURGED, because absence is not evidence.
+            // Every obligation for a genuinely purged source would then retry for ever, and
+            // the events waiting on it would never terminalise.
+            violations.add("no authoritative purge ledger is wired, so no source can be shown"
+                    + " to have been destroyed and no historical entity can ever be published");
         }
         violations.addAll(collaboratorViolations());
         violations.addAll(targetViolations(configuredTargets));
@@ -182,7 +191,7 @@ public final class LineageObligationWiring {
             return violations;
         }
         long fenceLeaseMs = LineageHistoricalPublishMachine.INTENT_LEASE.toMillis();
-        long safetyMarginMs = (long) (fenceLeaseMs * FENCE_SAFETY_FACTOR);
+        long safetyMarginMs = fenceSafetyMarginMs(fenceLeaseMs);
         for (String target : targets) {
             for (EndpointKind kind : EndpointKind.values()) {
                 java.util.Optional<LineageOperationBudget> resolved;
@@ -307,5 +316,16 @@ public final class LineageObligationWiring {
     /** The store registered here. */
     public LineageCatalogObligationStore store() {
         return store;
+    }
+
+    /**
+     * The margin a fenced section must fit inside, in milliseconds.
+     *
+     * <p>Exposed so a preflight reports the number this class actually enforces. Recomputing
+     * the product at the call site would let a report and a gate drift apart, and the report is
+     * what an operator uses to decide the gate is right.
+     */
+    public static long fenceSafetyMarginMs(long fenceLeaseMs) {
+        return (long) (fenceLeaseMs * FENCE_SAFETY_FACTOR);
     }
 }

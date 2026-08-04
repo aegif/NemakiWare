@@ -187,4 +187,19 @@ public class CouchLineageHistoricalCompensationStore
     private static String asString(Object value) {
         return value instanceof String s ? s : null;
     }
+
+    @Override
+    public java.util.Map<LineageHistoricalCompensation.State,
+            LineageCatalogObligationStore.StateCount> countByState() {
+        support.ensureDatabase();
+        java.util.Map<LineageHistoricalCompensation.State,
+                LineageCatalogObligationStore.StateCount> counts =
+                new java.util.EnumMap<>(LineageHistoricalCompensation.State.class);
+        for (LineageHistoricalCompensation.State state
+                : LineageHistoricalCompensation.State.values()) {
+            counts.put(state, LineageStoreDecoding.reduceCount(support,
+                    "historicalCompensationsByState", state.name(), null));
+        }
+        return counts;
+    }
 }
