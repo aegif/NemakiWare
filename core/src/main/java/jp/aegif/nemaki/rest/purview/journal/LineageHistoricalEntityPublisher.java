@@ -64,4 +64,16 @@ public interface LineageHistoricalEntityPublisher {
      * reason, or echoed in an exception.
      */
     LineageHistoricalPublishReceipt publishHistorical(HistoricalEntitySnapshot snapshot);
+
+    /**
+     * Whether the catalog already holds the historical entity for this snapshot.
+     *
+     * <p>Needed because a crash between the external write and the durable state update leaves
+     * a {@code PLANNED} intent with the entity already written. Resuming without looking would
+     * either write it twice or — worse — re-check the source, find it restored, and walk away
+     * from a tombstone nobody will come back for.
+     *
+     * @return {@code UNKNOWN} on any failure; never guessed
+     */
+    LineageCatalogEntityProbe.Presence readBackHistorical(HistoricalEntitySnapshot snapshot);
 }

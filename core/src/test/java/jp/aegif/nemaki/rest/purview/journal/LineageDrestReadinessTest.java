@@ -34,6 +34,26 @@ import org.junit.jupiter.api.Test;
  */
 public class LineageDrestReadinessTest {
 
+    /**
+     * A publisher that does nothing. These tests are about wiring, not publishing — but the
+     * interface has two methods now, so a lambda will not do.
+     */
+    private static LineageHistoricalEntityPublisher noOpPublisher() {
+        return new LineageHistoricalEntityPublisher() {
+            @Override
+            public LineageHistoricalPublishReceipt publishHistorical(
+                    HistoricalEntitySnapshot snapshot) {
+                return null;
+            }
+
+            @Override
+            public LineageCatalogEntityProbe.Presence readBackHistorical(
+                    HistoricalEntitySnapshot snapshot) {
+                return LineageCatalogEntityProbe.Presence.UNKNOWN;
+            }
+        };
+    }
+
     private LineageDrestReadiness readiness;
     private LineageConfig config;
     private CouchLineageJournalStore store;
@@ -85,7 +105,7 @@ public class LineageDrestReadinessTest {
                 new LineageCatalogProbeRegistry(java.util.Map.of("atlas",
                         (t, r, k, qn) -> LineageCatalogEntityProbe.Presence.PRESENT)),
                 new LineageHistoricalPublisherRegistry(java.util.Map.of("atlas",
-                        snapshot -> null)),
+                        noOpPublisher())),
                 service, new LineageObligationScannerImpl(service),
                 new LineageObligationProjectorCollaboratorImpl(service));
     }
@@ -126,7 +146,7 @@ public class LineageDrestReadinessTest {
         set("obligationWiring", new LineageObligationWiring(obligationStore,
                 new LineageCatalogProbeRegistry(java.util.Map.of()),
                 new LineageHistoricalPublisherRegistry(java.util.Map.of("atlas",
-                        snapshot -> null)),
+                        noOpPublisher())),
                 service, new LineageObligationScannerImpl(service),
                 new LineageObligationProjectorCollaboratorImpl(service)));
 

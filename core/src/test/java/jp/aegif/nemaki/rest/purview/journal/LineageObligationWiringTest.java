@@ -39,6 +39,26 @@ import org.junit.jupiter.api.Test;
  */
 public class LineageObligationWiringTest {
 
+    /**
+     * A publisher that does nothing. These tests are about wiring, not publishing — but the
+     * interface has two methods now, so a lambda will not do.
+     */
+    private static LineageHistoricalEntityPublisher noOpPublisher() {
+        return new LineageHistoricalEntityPublisher() {
+            @Override
+            public LineageHistoricalPublishReceipt publishHistorical(
+                    HistoricalEntitySnapshot snapshot) {
+                return null;
+            }
+
+            @Override
+            public LineageCatalogEntityProbe.Presence readBackHistorical(
+                    HistoricalEntitySnapshot snapshot) {
+                return LineageCatalogEntityProbe.Presence.UNKNOWN;
+            }
+        };
+    }
+
     private static final Set<String> TARGETS = Set.of("atlas", "purview");
 
     private LineageCatalogProbeRegistry probesFor(String... targets) {
@@ -52,7 +72,7 @@ public class LineageObligationWiringTest {
     private LineageHistoricalPublisherRegistry publishersFor(String... targets) {
         Map<String, LineageHistoricalEntityPublisher> byTarget = new java.util.LinkedHashMap<>();
         for (String target : targets) {
-            byTarget.put(target, snapshot -> null);
+            byTarget.put(target, noOpPublisher());
         }
         return new LineageHistoricalPublisherRegistry(byTarget);
     }
@@ -276,8 +296,8 @@ public class LineageObligationWiringTest {
     @Test
     @DisplayName("duplicate publisher targets are refused at construction")
     public void duplicatePublisherTargetsAreRefused() {
-        LineageHistoricalEntityPublisher first = snapshot -> null;
-        LineageHistoricalEntityPublisher second = snapshot -> null;
+        LineageHistoricalEntityPublisher first = noOpPublisher();
+        LineageHistoricalEntityPublisher second = noOpPublisher();
 
         Map<String, LineageHistoricalEntityPublisher> colliding =
                 new java.util.LinkedHashMap<>();
@@ -294,7 +314,7 @@ public class LineageObligationWiringTest {
     @DisplayName("a blank or null-valued publisher registration is refused")
     public void malformedPublisherRegistrationIsRefused() {
         Map<String, LineageHistoricalEntityPublisher> blank = new java.util.LinkedHashMap<>();
-        blank.put("  ", snapshot -> null);
+        blank.put("  ", noOpPublisher());
         org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
                 () -> new LineageHistoricalPublisherRegistry(blank));
 
