@@ -1,7 +1,36 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.26 — increment A sign-off 済み・**§6-a 再 sign-off 承認済み (2026-08-03)**。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: 4b (運用受入条件待ち)。**§2 の属性別上限は実装済み (v2.3.26)**。**Slice 4a 実装済み — writer は v1 のまま (barrier 文書が無い＝pristine)**
+status: **v2.3.27 — increment A sign-off 済み・**§6-a 再 sign-off 承認済み (2026-08-03)**。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: 4b (**運用証跡待ち** — preflight は実装済み)。**§2 の属性別上限は実装済み (v2.3.26)**。**Slice 4a 実装済み — writer は v1 のまま (barrier 文書が無い＝pristine)**
 revision:
+- v2.3.27 — **4b preflight** (Codex 計画レビュー 3 巡 → proceed)。4b の受入条件のうち 3 つは
+  「判断」ではなく**今のデプロイでは取れない測定**だった、という並行レビューの指摘への対応。
+  activation は行わない。
+  - **cursor 検査は厳密パース**。当初案の `stored == normalize(stored)` は **false-green** —
+    `normalizeLine` は五フィールド形式でない行を意図的に素通しするので、未知の形の URL を持つ
+    cursor が自分の正規化と一致し clean と出る。この検査が探しているのは正にそれ。全非空行が
+    正確に 5 フィールドで URL スロットが空であることを要求し、未知形式・読取り失敗・inventory
+    列挙失敗は全て **fail-closed**。
+  - **inventory は和集合** (configured ∪ 永続 cursor 保持者)。設定から外れた repository は
+    cursor を保持し続けるので、configured だけを見ると残渣を跨いでしまう。
+  - **presence は 4 状態** (`ABSENT` / `PRESENT_EMPTY` / `PRESENT_VALUE` / `ERROR`)。
+    `PurviewStateStore.getString` は欠損を `""` に潰すため、絶対に区別できない。`getRaw` を
+    追加 (既存 API は不変)。`ERROR` は受入失敗 — 読めなかった cursor は検査されていない。
+  - **cursor 値・URL・token・その断片は response にもログにも例外にも出さない**。残留 token の
+    検査が、それを印字するものになってはいけない。テストで断片の非出現を固定。
+  - **digest の循環論法を応答自身に書く**。`GET /barrier` が ACK ごとの `binaryDigest` と実測値を
+    返すようにしたが、この route が返した値をこの route が返したという理由で承認するのは循環。
+    `LineageBinaryDigest` に **CLI entry point** を足し、承認対象成果物から**本番と同一コード**で
+    計算して照合する。別実装は「2 つのプログラムが一致する」ことしか証明しない。
+  - **空の allowlist は production 受入失敗**。CAS 条件 9 は空リストのとき検査を課さないので
+    `blockingConditions` は何も言わない。preflight が言う。
+  - **spool は real path と FileStore を報告**。絶対パスは mount ではなく、どのボリュームに
+    落ちるかを何も語らない。暗号化・鍵管理・再起動永続性は**検証不能項目として名指し**する
+    (省略は「問題なし」と読まれる)。
+  - **総合 verdict に `PASS` は無い** — `FAIL` / `EXTERNAL_EVIDENCE_REQUIRED` の 2 値。外部でしか
+    測れない項目がある以上、アプリが PASS を宣言するのは検査していないことの主張になる。
+  - 運用手順は [`docs/operations/lineage-4b-activation-checklist.md`](../operations/lineage-4b-activation-checklist.md)。
+    旧 AP 不在・暗号化・鍵管理・backup 暗号化・2 回起動マーカー・digest 独立照合・片道性・
+    rollback の限定的意味・**Purview での E-20 再実測必須**を含む。
 - v2.3.26 — **§2 の属性別上限 (producer 側 slice) 実装** (Codex 計画レビュー 4 巡 → proceed)。
   §2 の 5 規則のうち「単独超過 → durable `UNRESOLVED(OVERSIZE)`」と「silent drop 禁止」は
   v2.3.22 の chunking で既に実装済み。今回入れたのは残る 2 つ = 事前上限と truncate 証跡。

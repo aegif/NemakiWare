@@ -30,6 +30,15 @@ package jp.aegif.nemaki.rest.purview.publish;
  * <p>Every successful sync cycle stores the freshly built (URL-free) snapshot, so persistence
  * scrubs itself one cycle after deployment. Until that cycle happens — or if sync keeps failing —
  * the admin API normalizes on the way out, so the stored residue is never served.
+ *
+ * <h2>Which is why {@link #normalize} cannot be used to CHECK a stored cursor</h2>
+ *
+ * <p>{@code normalizeLine} passes a line that is not in the five-field shape through untouched,
+ * on purpose — guessing at an unrecognized shape is worse than leaving it. The consequence is
+ * that {@code stored.equals(normalize(stored))} is true for a cursor holding a URL in any shape
+ * this class does not recognize, which is exactly the case an acceptance check is looking for.
+ * The 4b preflight therefore parses strictly instead
+ * ({@code CloudMetadataCursorInspection}): five fields, URL slot empty, anything else fails.
  */
 public final class CloudMetadataSnapshotFormat {
 

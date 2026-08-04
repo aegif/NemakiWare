@@ -54,12 +54,6 @@ public final class LineageDocumentSizeRuler {
     /** The widest {@code long} rendering, sign included. */
     private static final long MAX_NUMBER_BYTES = 20L;
 
-    /**
-     * Chunk coordinates are measured with this fixed allowance instead of their digits, so a
-     * partition's size decisions never depend on the chunk count it is still computing.
-     */
-    static final long CHUNK_COORDINATE_ALLOWANCE = MAX_NUMBER_BYTES;
-
     private LineageDocumentSizeRuler() {
     }
 

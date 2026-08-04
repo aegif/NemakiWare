@@ -599,6 +599,9 @@ public class LineageJournalController {
     @Autowired(required = false)
     private jp.aegif.nemaki.rest.purview.journal.LineageBarrierReader barrierReader;
 
+    @Autowired(required = false)
+    private jp.aegif.nemaki.rest.purview.journal.LineageBinaryDigest binaryDigest;
+
     /** Manual bounded spool scan (the automatic pass runs per poll on every node). */
     @PostMapping("/spool-scan")
     public ResponseEntity<Map<String, Object>> spoolScan(
@@ -811,6 +814,9 @@ public class LineageJournalController {
             b.acks().forEach((nodeId, ack) -> acks.put(nodeId, Map.of(
                     "generation", ack.generation(),
                     "bootId", ack.bootId(),
+                    // For COMPARISON against a digest computed independently from the
+                    // approved artifact — see binaryDigestNote below.
+                    "binaryDigest", ack.binaryDigest(),
                     "capabilities", ack.capabilities(),
                     "readSchemaVersions", ack.readSchemaVersions(),
                     "spoolReady", ack.spoolReady(),
@@ -834,7 +840,34 @@ public class LineageJournalController {
             response.put("readerAdmission", admission.decision().name());
             response.put("readerAdmissionViolations", admission.violations());
         }
+        // This node's own measurement, and the warning that makes it usable.
+        response.put("measuredBinaryDigest", measuredBinaryDigestOrNull());
+        response.put("binaryDigestNote", BINARY_DIGEST_NOTE);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Why the digests are here, stated in the response itself: approving the value this route
+     * reports, on the strength of this route reporting it, establishes nothing — the node is
+     * vouching for itself. The value is for COMPARISON against a digest computed
+     * independently from the approved artifact
+     * ({@code java -cp ... LineageBinaryDigest <exploded-war>}).
+     */
+    private static final String BINARY_DIGEST_NOTE =
+            "Compare these against a digest computed independently from the approved"
+            + " artifact (LineageBinaryDigest's CLI over the exploded WAR). Approving the"
+            + " value this API reports, because this API reported it, is circular: the node"
+            + " would be vouching for itself.";
+
+    private String measuredBinaryDigestOrNull() {
+        if (binaryDigest == null) {
+            return null;
+        }
+        try {
+            return binaryDigest.digest();
+        } catch (RuntimeException unmeasurable) {
+            return null; // reported as unmeasurable by /preflight; never a fabricated value
+        }
     }
 
     /**
@@ -926,5 +959,236 @@ public class LineageJournalController {
             values.add(s);
         }
         return values;
+    }
+
+
+    // ==================== 4b preflight (v2.3.27) ====
+
+    @Autowired(required = false)
+    private jp.aegif.nemaki.rest.purview.state.PurviewCursorStateService cursorStateService;
+
+    @Autowired(required = false)
+    private jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repositoryInfoMap;
+
+    @Autowired(required = false)
+    private jp.aegif.nemaki.rest.purview.journal.LineageSpoolMachinery preflightSpoolMachinery;
+
+    /**
+     * The stored {@code cloud-metadata-snapshot} cursors, as verdicts (4b acceptance).
+     *
+     * <p>The ordinary cursor route normalizes on the way out, deliberately — nothing stored may
+     * reach a response unsanitised — which is precisely why reading it can never be evidence
+     * ABOUT the stored value. This inspects the raw value where it lives and returns counts and
+     * a verdict: no cursor, URL, token or fragment of one appears in the response, in a log, or
+     * in an exception message.
+     */
+    @GetMapping("/preflight/cursors")
+    public ResponseEntity<Map<String, Object>> preflightCursors() {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+        if (cursorStateService == null) {
+            return badRequest("cursor state service unavailable");
+        }
+        return ResponseEntity.ok(cursorPreflight());
+    }
+
+    private Map<String, Object> cursorPreflight() {
+        java.util.Collection<String> configured;
+        try {
+            if (repositoryInfoMap == null) {
+                // Not "no repositories": an inventory we could not obtain is one we did not
+                // check, and treating it as empty would report all-clean for everything.
+                Map<String, Object> unknown = new LinkedHashMap<>();
+                unknown.put("verdict", "FAIL");
+                unknown.put("reason", "the configured repository inventory is unavailable");
+                return unknown;
+            }
+            configured = repositoryInfoMap.keys();
+        } catch (RuntimeException e) {
+            Map<String, Object> unknown = new LinkedHashMap<>();
+            unknown.put("verdict", "FAIL");
+            unknown.put("reason", "the configured repository inventory could not be read ("
+                    + e.getClass().getSimpleName() + ")");
+            return unknown;
+        }
+        var inspections = cursorStateService.inspectCloudMetadataCursors(configured);
+        java.util.List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        boolean allClean = true;
+        for (var inspection : inspections) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("repositoryId", inspection.repositoryId());
+            row.put("presence", inspection.presence().name());
+            row.put("lines", inspection.lines());
+            row.put("malformedLines", inspection.malformedLines());
+            row.put("populatedUrlLines", inspection.populatedUrlLines());
+            row.put("clean", inspection.clean());
+            if (inspection.reasonClass() != null) {
+                // The exception CLASS only — enough to act on, never enough to leak a value.
+                row.put("reasonClass", inspection.reasonClass());
+            }
+            rows.add(row);
+            allClean &= inspection.clean();
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("verdict", allClean ? "PASS" : "FAIL");
+        result.put("checked", rows.size());
+        result.put("repositories", rows);
+        result.put("predicate", "every non-blank line splits into exactly 5 fields with the"
+                + " URL slot empty; an unrecognized shape, a read failure, or an unreadable"
+                + " inventory FAILS (equality with normalize() would call an unrecognized"
+                + " shape clean, which is the case this check exists to catch)");
+        return result;
+    }
+
+    /**
+     * Everything the deployment itself can contribute to the 4b acceptance decision — and, by
+     * name, everything it cannot.
+     *
+     * <p>The overall verdict is deliberately three-valued. {@code PASS} would claim more than
+     * the application knows: old-AP absence, volume and backup encryption, key custody and
+     * restart persistence are measurable only outside it, so a deployment that is otherwise
+     * green reports {@code EXTERNAL_EVIDENCE_REQUIRED} rather than green.
+     */
+    @GetMapping("/preflight")
+    public ResponseEntity<Map<String, Object>> preflight() {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        boolean fail = false;
+
+        // --- cursors
+        if (cursorStateService == null) {
+            response.put("cursors", Map.of("verdict", "FAIL",
+                    "reason", "cursor state service unavailable"));
+            fail = true;
+        } else {
+            Map<String, Object> cursors = cursorPreflight();
+            response.put("cursors", cursors);
+            fail |= !"PASS".equals(cursors.get("verdict"));
+        }
+
+        // --- spool: the real path and the FileStore, because an absolute pathname is not a
+        // mount and says nothing about which volume an operator must check the encryption of
+        Map<String, Object> spool = new LinkedHashMap<>();
+        String spoolDir = lineageConfig == null ? "" : lineageConfig.getSpoolDir();
+        spool.put("configured", spoolDir);
+        if (spoolDir == null || spoolDir.isBlank()) {
+            spool.put("verdict", "FAIL");
+            spool.put("reason", "lineage.spool.dir is not set; journaled mode requires it");
+            fail = true;
+        } else {
+            try {
+                java.nio.file.Path real = java.nio.file.Path.of(spoolDir).toRealPath();
+                spool.put("realPath", real.toString());
+                boolean fileStoreKnown;
+                try {
+                    spool.put("fileStore", java.nio.file.Files.getFileStore(real).toString());
+                    fileStoreKnown = true;
+                } catch (java.io.IOException noStore) {
+                    // The FileStore is the thing an operator correlates the encryption
+                    // evidence with; without it that evidence cannot be tied to anything.
+                    spool.put("fileStore", null);
+                    spool.put("fileStoreError", noStore.getClass().getSimpleName());
+                    fileStoreKnown = false;
+                }
+                boolean probe = preflightSpoolMachinery != null
+                        && preflightSpoolMachinery.probeReadiness();
+                spool.put("probe", probe);
+                spool.put("verdict", probe && fileStoreKnown ? "PASS" : "FAIL");
+                fail |= !probe || !fileStoreKnown;
+            } catch (java.io.IOException | RuntimeException e) {
+                spool.put("verdict", "FAIL");
+                spool.put("reason", "real path unavailable: " + e.getClass().getSimpleName());
+                fail = true;
+            }
+        }
+        response.put("spool", spool);
+
+        // --- readiness and admission
+        if (drestReadinessBean != null) {
+            var verdict = drestReadinessBean.evaluate();
+            response.put("drestReadiness", Map.of("ready", verdict.ready(),
+                    "violations", verdict.violations()));
+            fail |= !verdict.ready();
+        } else {
+            response.put("drestReadiness", Map.of("ready", false,
+                    "violations", java.util.List.of("readiness gate not wired")));
+            fail = true;
+        }
+        if (readerAdmission != null) {
+            var admission = readerAdmission.evaluate();
+            response.put("readerAdmission", Map.of("decision", admission.decision().name(),
+                    "violations", admission.violations()));
+            fail |= !admission.admitted();
+        } else {
+            // Silently omitting an unwired gate would let the response read as complete.
+            response.put("readerAdmission", Map.of("decision", "UNWIRED",
+                    "violations", java.util.List.of("the reader admission gate is not wired;"
+                            + " this node cannot say whether it may read")));
+            fail = true;
+        }
+
+        // --- barrier + digest policy
+        Map<String, Object> barrier = new LinkedHashMap<>();
+        String measured = measuredBinaryDigestOrNull();
+        barrier.put("measuredBinaryDigest", measured);
+        barrier.put("binaryDigestMeasurable", measured != null);
+        barrier.put("binaryDigestNote", BINARY_DIGEST_NOTE);
+        fail |= measured == null; // ack() refuses without it, so an unmeasurable node cannot pass
+        if (barrierReader != null && barrierService != null) {
+            var view = barrierReader.viewUncached();
+            if (view instanceof jp.aegif.nemaki.rest.purview.journal.LineageBarrierReader
+                    .BarrierView.Present present) {
+                var b = present.barrier();
+                barrier.put("state", b.state().name());
+                barrier.put("generation", b.generation());
+                barrier.put("writeSchemaVersion", b.writeSchemaVersion());
+                barrier.put("minReaderSchemaVersion", b.minReaderSchemaVersion());
+                barrier.put("blockingConditions", barrierService.activationViolations(b));
+                barrier.put("ackBinaryDigests", b.acks().values().stream()
+                        .map(a -> a.binaryDigest()).distinct().toList());
+                // Condition 9 skips an empty allowlist, so blockingConditions will say
+                // nothing about it. The policy has to be asserted HERE or not at all.
+                boolean allowlistOk = !b.approvedBinaryDigests().isEmpty();
+                barrier.put("approvedBinaryDigests", b.approvedBinaryDigests());
+                barrier.put("approvedBinaryDigestsPolicy", allowlistOk ? "ok"
+                        : "empty-allowlist-not-acceptable-in-production");
+                fail |= !allowlistOk;
+            } else {
+                barrier.put("state", view instanceof jp.aegif.nemaki.rest.purview.journal
+                        .LineageBarrierReader.BarrierView.Pristine ? "ABSENT" : "INDETERMINATE");
+                barrier.put("approvedBinaryDigestsPolicy",
+                        "empty-allowlist-not-acceptable-in-production");
+                // No barrier yet is the ordinary pre-4b state, but it is not a pass: the
+                // allowlist cannot have been set on a document that does not exist.
+                fail = true;
+            }
+        } else {
+            barrier.put("state", "UNWIRED");
+            // No barrier machinery means no allowlist either — the policy is unmet, and
+            // reporting only "UNWIRED" would leave that unsaid.
+            barrier.put("approvedBinaryDigestsPolicy",
+                    "empty-allowlist-not-acceptable-in-production");
+            fail = true;
+        }
+        response.put("barrier", barrier);
+
+        // --- named, not omitted: an omission reads as "fine"
+        response.put("notCheckableByThisApplication", java.util.List.of(
+                "old-AP absence (scale-to-one): old binaries are already deployed and carry no"
+                        + " guard; the projector's view selection is doc.type only",
+                "spool volume encryption at rest",
+                "spool backup/snapshot encryption",
+                "encryption key custody and recovery",
+                "spool persistence across a restart (the probe is cached and tests"
+                        + " write/link/fsync support only)",
+                "E-20 on Purview: measured on Apache Atlas OSS; Purview is a different backend"
+                        + " and must be re-measured before activating against it"));
+        response.put("verdict", fail ? "FAIL" : "EXTERNAL_EVIDENCE_REQUIRED");
+        response.put("verdictNote", "PASS is not a value this endpoint can return: the items"
+                + " under notCheckableByThisApplication are measurable only outside the"
+                + " application, so a green deployment still needs their evidence.");
+        return ResponseEntity.ok(response);
     }
 }
