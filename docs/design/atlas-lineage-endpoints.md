@@ -1,6 +1,6 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.27 — increment A sign-off 済み・**§6-a 再 sign-off 承認済み (2026-08-03)**。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: 4b (**運用証跡待ち** — preflight は実装済み)。**§2 の属性別上限は実装済み (v2.3.26)**。**Slice 4a 実装済み — writer は v1 のまま (barrier 文書が無い＝pristine)**
+status: **v2.3.29 — increment A sign-off 済み・**§6-a 再 sign-off 承認済み (2026-08-03)**。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: 4b (**運用証跡待ち** — preflight は実装済み)。**§2 の属性別上限は実装済み (v2.3.26)**。**Slice 4a 実装済み — writer は v1 のまま (barrier 文書が無い＝pristine)**。**増分 B の artifact 型 2 つ実装済み (v2.3.29)** — 残る B は folder_dataset / external・document への属性追加 / backfill / lifecycle / reconciliation
 
 revision 履歴と、過去に閉じた指摘の一覧は
 [`atlas-lineage-endpoints-changelog.md`](atlas-lineage-endpoints-changelog.md) にあります
@@ -330,6 +330,29 @@ nemaki_export_artifact   superTypes: [DataSet]
 ```
 
 - `upload://` 文字列は**廃止**。`IMPORT_UPLOADED` の input は `nemaki_import_artifact`。
+
+#### artifact 型の 3 契約 (v2.3.29 — 実装済み)
+
+Atlas 型定義を `PurviewSchemaPayloadFactory` に追加した (schema version 13 → 14)。
+`EndpointKind` 側は A-1 で既にあったので、B が負っていたのは**受け側**である。
+
+| 契約 | 規則 | pin |
+|---|---|---|
+| identity | `Identity.OPERATION_ID`。QN は `nemaki://{repo}/{imports\|exports}/{operationId}` | `anArtifactIsIdentifiedByItsOperation` |
+| 属性上限 (§2) | 表示値だけが `TRUNCATE_WITH_EVIDENCE` — import は `originalFileName`、export は `name`。`importMode` / `artifactKind` / `contentHash` は機械値と digest なので `PRESERVE` | `artifactDisplayValuesCarryTheirTruncationEvidence` |
+| secret 非保持 (§4) | **場所を表す属性を一切持たない**。`url` / `uri` / `link` / `href` / `path` / `token` / `secret` / `credential` / `signature` / `sas` を含む名前は、allowlist にも entityDef にも現れてはならない | `anArtifactTypeCarriesNoLocationOrSecretAttribute` |
+
+- **なぜ folder ではなく operation で識別するか**: folder で識別すると
+  `computeEventKey` が 2 回目の import に 1 回目と同じ key を与え、`append()` が
+  **黙って捨てる**。この失敗は無音なので、設計文だけに置かず test で pin した。
+- **なぜ場所属性を置かないか**: 出所・宛先は operation の性質であり、
+  `nemaki_import_process.sourceDescription` / `nemaki_export_process.targetDescription`
+  が既に運んでいる。artifact 側にも置くと、同じ operator 由来のパスが
+  **2 つ目のより長命な保持規則**の下に入る。`originalFileName` は leaf name であって path ではない。
+- 併せて **manifest と payload の突合せ**を追加した (`manifestTypeNamesMatchTheTypesThePayloadCreates`)。
+  両者は別ファイルで編集され、片方だけに型を足しても従来は誰も気づけなかった —
+  payload だけに足すと manifest hash が変わらず、適用済みのデプロイは「最新」と判断して
+  型を作らない。
 
 ### 移動したのは folder ではなく内容である (v2.3.13)
 
@@ -2007,7 +2030,7 @@ E-12 の「故意に失敗させる」テストは、cleanup が file-scope で�
 |---|---|---|
 | **A-2 Slice 4** | v2 write への切替。**§6-a の rollout fence (4a/4b) が前提**。Slice 1〜3 は additive で本節に依存しない |
 | **A** | typed `LineageEndpoint` (全 kind で `repositoryId` 必須) + endpoint-local snapshot allowlist + kind 明示 builder + producer 全書き換え + サーバー発行 `operationId` + **`processKey` / `deliveryId` 分離** + endpoint 件数/payload 上限と chunking + `FILE_SHARE_SYNC_UPLOAD` 生成拒否 + cross-repo 検証 4層 (external 含む) (§2 §3 §7) | 単体。Atlas 不要 |
-| **B** | schema additive 拡張 (`nemaki_folder_dataset` / `nemaki_import_artifact` / `nemaki_export_artifact`、および `nemaki_external_asset` への `provider`/`storageClass`/`tenantId`、`nemaki_document` への `mimeType`/`contentLength`) + catalog sync の同一 bulk 作成と **partial response の reconcile** + **既存 folder の authoritative backfill** + lifecycle (rename/move/delete/restore/`sourceState`) + **`LineageCatalogReconciliationService`** (§2 §3) | schema apply + backfill + orphan reconciliation + obligation IT |
+| **B** | schema additive 拡張 (`nemaki_folder_dataset` / **`nemaki_import_artifact` / `nemaki_export_artifact` — 実装済み (v2.3.29)**、および `nemaki_external_asset` への `provider`/`storageClass`/`tenantId`、`nemaki_document` への `mimeType`/`contentLength`) + catalog sync の同一 bulk 作成と **partial response の reconcile** + **既存 folder の authoritative backfill** + lifecycle (rename/move/delete/restore/`sourceState`) + **`LineageCatalogReconciliationService`** (§2 §3) | schema apply + backfill + orphan reconciliation + obligation IT |
 | **C** | `CatalogPayloadFactory` へ payload 生成を集約、canonical QN を1箇所化 (既存 `buildExternalAssetQualifiedName` を移設)、`AtlasLineageSink` から payload を剥がす、**POST 後 GUID 完全一致を production の成功条件に** (§4 §5) | 単体 (payload golden) + sink IT |
 | **D** | event-first UNSEQUENCED + fenced sequencer (bootstrap 専用 lease / 書込み直前再確認 / 一方向 latch / crash 再開) + 状態遷移 CAS (`VERIFYING` / `WAITING_FOR_CATALOG` 含む) + cursor 単調 CAS + counter・lease 復旧手順 + durable spool と spool scanner + replay generation CAS (§8) + IT-1〜IT-32 | 実 CouchDB IT |
 | **E** | v1 legacy reader + durable unresolved (§6)、repair API + opaque confirmation token + DLQ bundle upload (§9)、`VERIFYING` と E-17 verify 契約 (§10)、Atlas-enabled E2E 受入表 E-1〜E-17 | E2E |

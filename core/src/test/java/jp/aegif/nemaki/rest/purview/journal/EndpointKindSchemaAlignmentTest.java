@@ -17,6 +17,8 @@
 package jp.aegif.nemaki.rest.purview.journal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -64,8 +66,7 @@ public class EndpointKindSchemaAlignmentTest {
      * <p>Asserted to be exactly this set, so that the day B adds one of these types the alignment
      * check below starts applying to it and this list has to be shortened deliberately.
      */
-    private static final Set<EndpointKind> AWAITING_SCHEMA = Set.of(
-            EndpointKind.CMIS_FOLDER, EndpointKind.IMPORT_ARTIFACT, EndpointKind.EXPORT_ARTIFACT);
+    private static final Set<EndpointKind> AWAITING_SCHEMA = Set.of(EndpointKind.CMIS_FOLDER);
 
     @Test
     public void everyDeclaredAttributeExistsInTheAtlasType() {
@@ -187,9 +188,12 @@ public class EndpointKindSchemaAlignmentTest {
                 EndpointKind.CLOUD_OBJECT.allowedAttributes());
         assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath"),
                 EndpointKind.COLD_STORAGE.allowedAttributes());
-        assertEquals(List.of("importMode", "byteLength", "contentHash", "originalFileName"),
+        // originalFileName / name are display values and carry §2 companions (v2.3.29);
+        // importMode, artifactKind and contentHash do not — machine state and a digest.
+        assertEquals(List.of("importMode", "byteLength", "contentHash", "originalFileName",
+                        "originalFileNameOriginalSha256"),
                 EndpointKind.IMPORT_ARTIFACT.allowedAttributes());
-        assertEquals(List.of("artifactKind", "objectCount", "name"),
+        assertEquals(List.of("artifactKind", "objectCount", "name", "nameOriginalSha256"),
                 EndpointKind.EXPORT_ARTIFACT.allowedAttributes());
     }
 
@@ -217,9 +221,8 @@ public class EndpointKindSchemaAlignmentTest {
                     "sourceRevision", "sourceModifiedAt", "sourceContentHash",
                     "sourceContentLength"),
             EndpointKind.COLD_STORAGE, List.of("storageClass"),
-            // The manifest that ties an operation's chunks together (v2.3.13). The artifact types
-            // themselves are B work (AWAITING_SCHEMA), so these assert the kinds do not declare
-            // the attributes before the types exist to receive them.
+            // The manifest that ties an operation's chunks together (v2.3.13). The artifact
+            // types now exist (v2.3.29); these six are the remaining B attributes, still owed.
             EndpointKind.IMPORT_ARTIFACT, List.of("manifestDigest", "totalObjectCount",
                     "totalByteLength", "completedObjectCount", "failedObjectCount",
                     "businessResult"),
@@ -243,6 +246,94 @@ public class EndpointKindSchemaAlignmentTest {
                                 + " travels, and adding only here means Atlas drops it.");
             }
         }
+    }
+
+    /**
+     * Names an artifact type may never declare, on either side (v2.3.29).
+     *
+     * <p>§4's boundary rule is that the Atlas persistence layer carries no stored URL: a
+     * SharePoint sharing link keeps its token in the <em>path</em>, so stripping a query string
+     * does not make a URL safe and no transformation of a stored one can be shown to be. The
+     * artifact types are where a "source" or "destination" attribute would most naturally be
+     * added by someone who has not read that rule — the operation's own Process type already
+     * carries the description, and adding it here would put the same operator-supplied path
+     * behind a second, longer-lived retention rule.
+     *
+     * <p>Matched as substrings, case-insensitively, so a future {@code sourceUri} or
+     * {@code downloadLink} is caught by the same list that catches {@code url}.
+     */
+    private static final List<String> FORBIDDEN_ON_ARTIFACTS = List.of(
+            "url", "uri", "link", "href", "path", "token", "secret", "credential",
+            "signature", "sas");
+
+    @Test
+    public void anArtifactTypeCarriesNoLocationOrSecretAttribute() {
+        Map<String, Map<String, String>> schema = atlasTypes();
+        for (EndpointKind kind : List.of(EndpointKind.IMPORT_ARTIFACT,
+                EndpointKind.EXPORT_ARTIFACT)) {
+            Set<String> names = new TreeSet<>(kind.allowedAttributes());
+            Map<String, String> type = schema.get(kind.atlasTypeName());
+            assertNotNull(type, kind.atlasTypeName() + " must exist in the schema payload");
+            names.addAll(type.keySet());
+            for (String name : names) {
+                for (String forbidden : FORBIDDEN_ON_ARTIFACTS) {
+                    assertFalse(name.toLowerCase(java.util.Locale.ROOT).contains(forbidden),
+                            kind.atlasTypeName() + " declares '" + name + "', which looks like a"
+                                    + " location or a secret. Where the bytes came from or went"
+                                    + " belongs to the Process type; §4 forbids a stored URL at"
+                                    + " the Atlas boundary because the token can be in the path.");
+                }
+            }
+        }
+    }
+
+    /**
+     * Identity is the operation, not the folder — and the qualified names say so.
+     *
+     * <p>If an artifact were named after the folder, {@code computeEventKey} would give the
+     * second import of that folder the same key as the first and {@code append()} would drop it
+     * as a duplicate. That failure is silent, which is why it is pinned here rather than left to
+     * the identity rules in the design doc.
+     */
+    @Test
+    public void anArtifactIsIdentifiedByItsOperation() {
+        assertEquals(EndpointKind.Identity.OPERATION_ID, EndpointKind.IMPORT_ARTIFACT.identity());
+        assertEquals(EndpointKind.Identity.OPERATION_ID, EndpointKind.EXPORT_ARTIFACT.identity());
+
+        assertEquals("nemaki://bedroom/imports/op-1",
+                LineageEndpoint.importArtifactQualifiedName("bedroom", "op-1"));
+        assertEquals("nemaki://bedroom/exports/op-1",
+                LineageEndpoint.exportArtifactQualifiedName("bedroom", "op-1"));
+        assertNotEquals(LineageEndpoint.importArtifactQualifiedName("bedroom", "op-1"),
+                LineageEndpoint.importArtifactQualifiedName("bedroom", "op-2"));
+        assertNotEquals(LineageEndpoint.importArtifactQualifiedName("bedroom", "op-1"),
+                LineageEndpoint.importArtifactQualifiedName("canopy", "op-1"));
+    }
+
+    /**
+     * Exactly the display values carry §2 companions, and the companions exist in Atlas.
+     *
+     * <p>A companion the Atlas type does not declare is discarded on arrival, which turns
+     * "this value was shortened" into silence — the precise failure §2 was written to stop.
+     */
+    @Test
+    public void artifactDisplayValuesCarryTheirTruncationEvidence() {
+        Map<String, Map<String, String>> schema = atlasTypes();
+        assertEquals(EndpointAttribute.Policy.TRUNCATE_WITH_EVIDENCE,
+                EndpointKind.IMPORT_ARTIFACT.attribute("originalFileName").policy());
+        assertEquals(EndpointAttribute.Policy.TRUNCATE_WITH_EVIDENCE,
+                EndpointKind.EXPORT_ARTIFACT.attribute("name").policy());
+        assertTrue(schema.get("nemaki_import_artifact")
+                .containsKey("originalFileNameOriginalSha256"));
+        assertTrue(schema.get("nemaki_export_artifact").containsKey("nameOriginalSha256"));
+
+        // The values that must never be shortened: a digest, and two machine-read modes.
+        assertEquals(EndpointAttribute.Policy.PRESERVE,
+                EndpointKind.IMPORT_ARTIFACT.attribute("contentHash").policy());
+        assertEquals(EndpointAttribute.Policy.PRESERVE,
+                EndpointKind.IMPORT_ARTIFACT.attribute("importMode").policy());
+        assertEquals(EndpointAttribute.Policy.PRESERVE,
+                EndpointKind.EXPORT_ARTIFACT.attribute("artifactKind").policy());
     }
 
     // ------------------------------------------------------------------

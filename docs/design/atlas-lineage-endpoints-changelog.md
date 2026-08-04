@@ -14,6 +14,20 @@
 
 ## revision
 
+- v2.3.29 — **増分 B: artifact 型の Atlas 型定義**。`EndpointKind.IMPORT_ARTIFACT` /
+  `EXPORT_ARTIFACT` は A-1 からあったが、**受け側の Atlas 型が無かった** —
+  `EndpointKindSchemaAlignmentTest.AWAITING_SCHEMA` がその負債を明示していた。
+  - `nemaki_import_artifact` / `nemaki_export_artifact` を `PurviewSchemaPayloadFactory` に追加
+    (schema version 13 → 14)。`AWAITING_SCHEMA` は `CMIS_FOLDER` のみに縮小。
+  - 3 契約 (identity = operation / §2 の属性上限 / §4 の secret 非保持) を
+    それぞれ test で pin した。詳細は §3 の「artifact 型の 3 契約」。
+  - **secret 非保持は「置かない」ではなく「置けない」にした**: 場所や secret を思わせる
+    名前を allowlist と entityDef の両方で禁止する。artifact 型は「source を足す」提案が
+    最も自然に来る場所なので、規約ではなく検査にした。
+  - manifest と payload の型一覧の突合せを追加。両者は別ファイルで、
+    payload だけに型を足すと manifest hash が変わらず、適用済みデプロイは型を作らない。
+    突合せが実際に落ちることを mutation で確認済み。
+
 - v2.3.28 — **digest / 切詰めの整理** (仕様追加ではなく、既にあった 4 種類の呼び分けを
   名前と型で固定した)。`MessageDigest.getInstance("SHA-256")` の直接呼出しが 7 箇所・
   5 つの別名 (`hash` / `sha256` / `sha256Hex` / `shortDigest` / `evidenceDigest`) に散っており、

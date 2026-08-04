@@ -124,14 +124,32 @@ public enum EndpointKind {
     COLD_STORAGE("nemaki_external_asset", Identity.STABLE_KEY, "externalStableKey",
             requiredText("sourceSystem"), requiredText("externalStableKey"), text("externalPath")),
 
-    /** What was fed into an import — the upload or the source directory. */
+    /**
+     * What was fed into an import — the upload or the source directory.
+     *
+     * <p>No source path or URL attribute, deliberately: where the bytes came from belongs to the
+     * operation ({@code nemaki_import_process.sourceDescription}), and an operator-supplied path
+     * is exactly where §4's sharing links keep their tokens. {@code originalFileName} is a leaf
+     * name. {@code EndpointKindSchemaAlignmentTest} asserts this rather than trusting it.
+     *
+     * <p>{@code originalFileName} is the only display value, so it is the only one under §2's
+     * limit; {@code importMode} is machine state and {@code contentHash} is a digest, and a
+     * shortened one of either would name something that does not exist.
+     */
     IMPORT_ARTIFACT("nemaki_import_artifact", Identity.OPERATION_ID, null,
             requiredText("importMode"), count("byteLength"), text("contentHash"),
-            text("originalFileName")),
+            displayText("originalFileName"), text("originalFileNameOriginalSha256")),
 
-    /** What an export produced — the zip or the target directory. */
+    /**
+     * What an export produced — the zip or the target directory.
+     *
+     * <p>No target path or URL attribute, mirroring the import side; the destination is
+     * {@code nemaki_export_process.targetDescription}. {@code name} is the export's display name
+     * and is the only value here under §2's limit.
+     */
     EXPORT_ARTIFACT("nemaki_export_artifact", Identity.OPERATION_ID, null,
-            requiredText("artifactKind"), count("objectCount"), text("name"));
+            requiredText("artifactKind"), count("objectCount"),
+            displayText("name"), text("nameOriginalSha256"));
 
     /** Which value the qualified name is built from. Exactly one per kind. */
     public enum Identity {

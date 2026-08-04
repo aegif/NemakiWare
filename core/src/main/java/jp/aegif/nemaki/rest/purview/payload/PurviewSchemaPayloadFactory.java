@@ -33,7 +33,9 @@ public class PurviewSchemaPayloadFactory {
                 buildArchiveProcessEntityDef(),
                 buildCloudSyncProcessEntityDef(),
                 buildImportProcessEntityDef(),
-                buildExportProcessEntityDef()));
+                buildExportProcessEntityDef(),
+                buildImportArtifactEntityDef(),
+                buildExportArtifactEntityDef()));
         payload.put("relationshipDefs", List.of(
                 buildRepositoryContainsFolderRelationshipDef(),
                 buildFolderContainsFolderRelationshipDef(),
@@ -230,6 +232,59 @@ public class PurviewSchemaPayloadFactory {
                 attribute("externalStableKey", "string", true),
                 attribute("targetDescription", "string", true),
                 attribute("objectCount", "long", true)));
+        return entityDef;
+    }
+
+    /**
+     * What was fed into an import — the upload or the source directory (increment B).
+     *
+     * <p>Identity is {@code nemaki://{repo}/imports/{operationId}}: an artifact belongs to one
+     * operation, so the same folder imported twice produces two artifacts and two Processes.
+     * Naming it after the folder instead would make the second import collapse into the first.
+     *
+     * <p><b>No source path or URL attribute, deliberately.</b> Where the bytes came from is a
+     * property of the operation, and {@code nemaki_import_process.sourceDescription} carries it.
+     * Putting it here as well would put an operator-supplied path — the one place §4's sharing
+     * links keep their tokens — behind a second, longer-lived retention rule.
+     * {@code originalFileName} is a leaf name, not a path.
+     *
+     * <p>{@code originalFileName} is the only display value here, so it is the only one carrying
+     * a §2 truncation companion. {@code importMode} and {@code contentHash} are machine values
+     * and a digest; shortening either would name something that does not exist.
+     */
+    private Map<String, Object> buildImportArtifactEntityDef() {
+        Map<String, Object> entityDef = baseTypeDef("nemaki_import_artifact",
+                "Artifact consumed by a NemakiWare import operation");
+        entityDef.put("superTypes", List.of("DataSet"));
+        entityDef.put("attributeDefs", List.of(
+                attribute("importMode", "string", false),
+                attribute("byteLength", "long", true),
+                attribute("contentHash", "string", true),
+                attribute("originalFileName", "string", true),
+                // §2's truncation evidence (v2.3.26) — see nemaki_document.
+                attribute("originalFileNameOriginalSha256", "string", true)));
+        return entityDef;
+    }
+
+    /**
+     * What an export produced — the zip or the target directory (increment B).
+     *
+     * <p>Identity is {@code nemaki://{repo}/exports/{operationId}}, for the same reason as the
+     * import artifact: two exports of the same folder are two facts.
+     *
+     * <p><b>No target path or URL attribute</b>, mirroring the import side; the destination is
+     * {@code nemaki_export_process.targetDescription}. {@code name} is the export's display name
+     * and is the only value here under §2's limit.
+     */
+    private Map<String, Object> buildExportArtifactEntityDef() {
+        Map<String, Object> entityDef = baseTypeDef("nemaki_export_artifact",
+                "Artifact produced by a NemakiWare export operation");
+        entityDef.put("superTypes", List.of("DataSet"));
+        entityDef.put("attributeDefs", List.of(
+                attribute("artifactKind", "string", false),
+                attribute("objectCount", "long", true),
+                // name itself is inherited from Asset; only its evidence companion is declared.
+                attribute("nameOriginalSha256", "string", true)));
         return entityDef;
     }
 
