@@ -2,7 +2,7 @@
 
 **承認待ちは不要。この文書の「次の作業」から、確定した順序でそのまま再開してください。**
 
-最終 checkpoint: `987b3f572` (`test/v3.3-arm64-full` / `deps/v3.3-breaking-majors` の両方)。
+最終 checkpoint: `d7abaa2cd` (`test/v3.3-arm64-full` / `deps/v3.3-breaking-majors` の両方)。
 作業ツリー clean。
 
 ---
@@ -16,6 +16,7 @@
 | 2 | identity / 文書形式 / 状態機械 / CAS・lease・fencing | `8c0217505` |
 | 3 | barrier の server-defined 必須 capability へ統合 | `2be711b97` |
 | 4 | Atlas 起動障害の原因究明 + B-E1 実測 (8/8) | `987b3f572` |
+| 5 | **N-1 producer / consumer / reclaimer** | `d7abaa2cd` |
 
 ### 2 で入ったもの
 
@@ -39,21 +40,19 @@ baseline が union される) ことも test で固定。
 
 ## 次の作業 (この順序)
 
-### N-1. obligation の producer / consumer / scanner
+### N-1 で入ったもの (完了)
 
-まだ**書いていない**のは機械の「動く部分」である。store と識別子はあるが、
-これらを呼ぶものが無い。
+- `LineageCatalogEntityProbe` — 三値 (PRESENT / ABSENT / UNKNOWN)。
+- `LineageCatalogObligationService` — producer / consumer / reclaimer。
+  gate は `active()` 1 箇所のみ。
 
-1. **producer**: v2 projection の publish 前検査。endpoint の catalog entity が
-   `PRESENT` と確定できないとき (`ABSENT` と `UNKNOWN` の両方) に `createIfAbsent`。
-   `LineageCatalogReconciliationServiceImpl` の `companionPresence` が三値判定の
-   既存実装なので、これを endpoint kind 全般へ一般化して共有する。
-2. **consumer**: `claim` → catalog 照合 → `resolve` / `release` / `giveUp`。
-   outcome の対応は契約表のとおり。`SOURCE_PURGED` は endpoint snapshot から
-   historical entity を作る (§2 — snapshot からしか作れないのがこの service を
-   分けた理由の一つ)。
-3. **scanner / reclaimer**: `findByState(PENDING)` と `reclaimExpired`。
-   **すべて `LineageDrestReadiness` 1 箇所で gate する** (各所に散らさない)。
+**残っている穴**: `SOURCE_PURGED` の historical entity builder。§2 は
+「削除済み source の historical entity は endpoint snapshot からしか作れない」と
+定めるが、その builder が無いので consumer は ABSENT を retryable として release し
+続ける。**terminal な `SNAPSHOT_INCOMPLETE` へ到達する自動経路がまだ無い**
+(`giveUp` は API としてはあり、projector の滞留上限と admin route の入口になる)。
+`LineageCatalogEntityProbe` の実装 (catalog client 側) もまだ無い — N-2 で
+projector を結線するときに、既存の `PurviewEntityRegistryClient` 越しの実装を足す。
 
 ### N-2. projector の `WAITING_FOR_CATALOG` 統合
 
