@@ -52,6 +52,16 @@ public class LineageJournalViewCoverageTest {
             Set.of("dead_letter_by_time", "dead_letter_by_replayed");
 
     /**
+     * Views over a document type that is not an event at all (§2's catalog obligations).
+     *
+     * <p>The coverage property below is about event rows: every view an event should be
+     * visible in must emit for one. A view indexing a different type emits nothing for an
+     * event by design, and asserting otherwise would demand it index events it has no business
+     * with. Listed rather than pattern-matched, so a new one has to be classified deliberately.
+     */
+    private static final Set<String> OBLIGATION_VIEWS = Set.of("obligationsByState");
+
+    /**
      * v1-ONLY views (D-rest-2 schema split): every selector that feeds v1 machinery — claim,
      * drains, reaper, ordered walk, purge. Isolation by selection is the only isolation that
      * also protects OLD binaries, which query these names with no v2 guards downstream.
@@ -154,6 +164,7 @@ public class LineageJournalViewCoverageTest {
     private static Set<String> eventViews() {
         Set<String> names = new java.util.LinkedHashSet<>(CouchLineageJournalStore.VIEWS.keySet());
         names.removeAll(DEAD_LETTER_VIEWS);
+        names.removeAll(OBLIGATION_VIEWS);
         return names;
     }
 
@@ -187,6 +198,31 @@ public class LineageJournalViewCoverageTest {
                                 + " invisible to whatever queries this view");
             }
         }
+    }
+
+    /**
+     * The obligation index emits for an obligation and for nothing else.
+     *
+     * <p>Its own coverage, since it is excluded from the event property above: a view that
+     * indexed events as well would put unrelated rows in front of the scanner and the
+     * reclaimer.
+     */
+    @Test
+    public void theObligationViewEmitsOnlyForObligations() {
+        Map<String, Object> obligation = new java.util.LinkedHashMap<>();
+        obligation.put("_id", "lineage_catalog_obligation:abc");
+        obligation.put("type", "lineage_catalog_obligation");
+        obligation.put("state", "PENDING");
+
+        assertFalse(emits("obligationsByState", obligation).isEmpty(),
+                "an obligation must be visible to the scanner and the reclaimer");
+        assertTrue(emits("obligationsByState", v1Document()).isEmpty());
+        assertTrue(emits("obligationsByState", v2Document()).isEmpty());
+
+        // A document with no state cannot be scheduled and must not be emitted as if it could.
+        Map<String, Object> stateless = new java.util.LinkedHashMap<>(obligation);
+        stateless.remove("state");
+        assertTrue(emits("obligationsByState", stateless).isEmpty());
     }
 
     /** v1 rows emit everywhere except the v2-only families. */
@@ -243,6 +279,9 @@ public class LineageJournalViewCoverageTest {
     @Test
     public void theViewSetIsExactlyTheKnownTwentyFour() {
         assertEquals(Set.of(
+                        // §2's obligation index (v2.3.37). Not an event view — see
+                        // OBLIGATION_VIEWS for why it is excluded from the coverage property.
+                        "obligationsByState",
                         "by_event_key", "by_repository_and_time", "by_target_status",
                         "by_process_type", "by_occurred_at", "by_repository_and_process_type",
                         "dead_letter_by_time", "dead_letter_by_replayed", "by_target_status_time",

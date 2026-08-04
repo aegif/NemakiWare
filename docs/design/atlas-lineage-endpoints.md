@@ -230,6 +230,37 @@ PENDING             → UNRESOLVED           (v2.3.24 F1: 行は作られたが 
 | 複数 event が同一 task を待つ | task は 1 つ。**ACK は task 側で 1 回**。`RESOLVED` 後に task key から待機 event を逆引きして全件戻す (逆引き用の index を張る) |
 | task の GC | 待機 event が 0 件かつ `RESOLVED` から `lineage.catalog-task.retention` 経過で削除 |
 
+#### obligation machine の契約表 (v2.3.37 — 実装前に §2 / reconciliation / materialization / projector から抽出)
+
+**4b は deploy を伴わない flag flip を目標とする。** したがって activation で必要になる
+producer・consumer・回収処理は、**非活性状態で先に配布・検証されている**必要がある。
+「projector が非活性だから未実装」は、D-rest を有効化してから不足に気付く構成であり、採らない。
+
+| 論点 | 契約 |
+|---|---|
+| **作成条件** | v2 projection の **publish 前検査**で、endpoint が指す catalog entity が `PRESENT` と確定できないとき。`ABSENT` と `UNKNOWN` の両方が対象で、後者を「無い」に潰さない |
+| **deterministic identity** | `taskKey = LineageCanonicalHash.hash("LINEAGE_CATALOG_OBLIGATION_V1", target, repositoryId, endpointKind, catalogQualifiedName)`。**入力順序にも時刻にも依存しない**。同じ対象からは常に同じ id |
+| **文書 ID** | `lineage_catalog_obligation:{taskKey}`。`nemaki_lineage` DB。`type = lineage_catalog_obligation` |
+| **状態** | `PENDING` → `CLAIMED(owner, token, leaseUntilMs)` → `RESOLVED` / `UNRESOLVED`。`CLAIMED` → `PENDING` (lease 失効の回収、または retryable 失敗) |
+| **CAS** | 全遷移が `_rev` 一致の PUT。409 は CAS 敗北 (ordinary)、それ以外は例外。**1 つの CAS が 1 つの委譲先の中で完結する** |
+| **claim owner / lease / fencing** | `owner` = node id、`token` = claim ごとの UUID、`leaseUntilMs`。**更新は token 一致が必須**。期限切れ claim は誰でも `PENDING` へ戻せるが、戻した後の token は新しいので、**古い claimant の更新は必ず拒否される** |
+| **retryable な失敗** | `SOURCE_ERROR` (catalog 未到達・5xx・timeout)。`attempts` を増やし capped backoff で `PENDING` へ戻す。**terminal にしない** |
+| **terminal な失敗** | `SNAPSHOT_INCOMPLETE` のみ。`UNRESOLVED` は **reason と証拠 (`evidence`) に束縛**される — 理由なしの `UNRESOLVED` は作れない |
+| **outcome** | `SOURCE_EXISTS` → `RESOLVED` / `SOURCE_PURGED` → snapshot から historical entity を作って `RESOLVED` / `SOURCE_ERROR` → retry / `SNAPSHOT_INCOMPLETE` → `UNRESOLVED` |
+| **対応する endpoint** | artifact (`nemaki_import_artifact` / `nemaki_export_artifact`)、folder companion (`nemaki_folder_dataset`)、external asset、document。**kind は taskKey に入る**ので、同じ QN でも kind が違えば別 task |
+| **catalog entity 準備完了の判定** | `PRESENT` のみ。`ABSENT` は未完了、**`UNKNOWN` (catalog が答えない) も未完了**。UNKNOWN を resolved / in-sync として扱わない |
+| **projector が `WAITING_FOR_CATALOG` へ入る条件** | publish 前検査で obligation を作った、または既存の未 `RESOLVED` obligation を見つけたとき。target ごとに独立 |
+| **cursor** | `WAITING_FOR_CATALOG` の間は **cursor を進めない** (順序保証)。terminal 化 (`UNRESOLVED`) したときだけ進める |
+| **publish 抑止** | `WAITING_FOR_CATALOG` の間は publish しない。retry も消費しない (`VERIFYING` と同じ扱い) |
+| **再開** | event は `waitingTaskKeys` を持つ。**全件が `RESOLVED` になって初めて** `PENDING` へ戻す。1 件では戻さない |
+| **滞留計測** | `waitingSince` は最初に待機へ入った時刻。`PENDING` へ戻って再び待機しても**リセットしない** (往復で上限を回避させない) |
+| **滞留上限** | `lineage.catalog-wait.max-age` (既定 24h) 超過で `UNRESOLVED` |
+| **reconciliation との関係** | reconciliation が catalog を照合し、`PRESENT` を確認できた obligation を `RESOLVED` にする。`UNDETERMINED` では解決しない |
+| **replay / 再起動 / 重複配送** | taskKey が deterministic なので、再起動後も replay 後も**同じ task に合流**する。create は create-if-absent で、既存文書と意味が食い違えば**成功扱いにしない** |
+| **dead letter / metric / admin status** | metric は件数のみ (`lineage.obligation.{pending,claimed,resolved,unresolved}`)。**secret・QN の protected 部分・cursor 値をログ / 例外 / dead letter に出さない** |
+| **D-rest 無効時** | 作成・claim・scan・回収・projector 待避の**すべてが動かない**。gate は `LineageDrestReadiness` 1 箇所で、各所に散らさない |
+| **barrier 統合** | 新 capability `catalog:obligations` を **server-defined 必須集合**へ追加する。文書だけに前提を書かず、**barrier が知っている**状態にする。これを持たない古い binary の ACK では activation が拒否される |
+
 ### 件数・サイズ上限 (v2.1)
 
 `EXPORT_SELECTED_OBJECTS` は選択件数だけ endpoint が並ぶ。無制限は Atlas payload と

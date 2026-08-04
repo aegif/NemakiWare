@@ -427,6 +427,15 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                         + "emit([r[k].updatedAtMs, k], null); } } } }",
                 "_count"));
 
+        // obligationsByState — §2's catalog obligations, keyed by state so the scanner, the
+        // reclaimer and the admin status route all read the same index. Distributed and
+        // deployed while D-rest is off: 4b is a flag flip, so what activation needs has to be
+        // in the design document already, not applied by the flip.
+        views.put("obligationsByState", new ViewDefinition(
+                "function(doc) { if (doc.type === 'lineage_catalog_obligation' && doc.state) { "
+                        + "emit(doc.state, null); } }",
+                "_count"));
+
         return java.util.Collections.unmodifiableMap(views);
     }
 
