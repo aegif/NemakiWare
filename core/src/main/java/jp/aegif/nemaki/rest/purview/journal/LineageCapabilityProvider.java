@@ -48,7 +48,13 @@ public class LineageCapabilityProvider {
 
     private static final Set<String> WIRED = Set.of(
             "read:v2", "sequencer:event-first", "cursor:cas", "replay:generation-cas",
-            "spool:v2");
+            "spool:v2",
+            // §2's catalog obligations (v2.3.37). In the required set because 4b is a flag
+            // flip: a node whose binary cannot create, claim, resolve or reclaim an obligation
+            // would, the moment v2 writes open, meet an endpoint whose catalog entity is not
+            // ready and have nowhere to park it. Requiring it here is what makes an ACK from
+            // such a binary fail condition 8 instead of the gap being found after the flip.
+            "catalog:obligations");
 
     /** The immutable wired-capability set of this binary. */
     public Set<String> wiredCapabilities() {

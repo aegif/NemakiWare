@@ -461,6 +461,49 @@ public class LineageBarrierTest {
                     .anyMatch(v -> v.contains("condition 8") && v.contains("spool:v2")));
         }
 
+        /**
+         * #14c: an older binary — one without §2's obligation machine — cannot activate.
+         *
+         * <p>4b is a flag flip, so a node that cannot park a projection whose catalog entity is
+         * not ready would meet that case for the first time with v2 writes already open. The
+         * capability is in the server-defined required set precisely so the ACK fails here
+         * rather than the gap being discovered afterwards.
+         */
+        @Test
+        public void aBinaryWithoutTheObligationMachineIsRefused() {
+            Set<String> withoutObligations = new java.util.LinkedHashSet<>(
+                    new LineageCapabilityProvider().wiredCapabilities());
+            assertTrue(withoutObligations.remove("catalog:obligations"),
+                    "catalog:obligations must be in the server-defined required set");
+
+            withAck(new LineageWriteVersionBarrier.Ack(1L, identity.bootId(), DIGEST,
+                    withoutObligations, Set.of(1, 2), Set.of(1), Set.of(1, 2), true, true,
+                    List.of(), now, now + 300_000L));
+
+            var outcome = service.activate();
+            assertFalse(outcome.applied());
+            assertTrue(outcome.violations().stream()
+                    .anyMatch(v -> v.contains("condition 8")
+                            && v.contains("catalog:obligations")),
+                    "activation must name the missing obligation capability: "
+                            + outcome.violations());
+        }
+
+        /**
+         * The required set is server-defined: a document cannot narrow it.
+         *
+         * <p>An operator who could drop a capability from the barrier document could activate a
+         * fleet that is missing the machinery the capability stands for.
+         */
+        @Test
+        public void aDocumentCannotDropARequiredCapability() {
+            service.prepare(null, Set.of("read:v2"));
+            service.ack();
+
+            assertTrue(service.requiredCapabilities().contains("catalog:obligations"),
+                    "the binary's baseline is unioned in and can never be narrowed");
+        }
+
         /** #14b: an unapproved binary cannot ACK its way through. */
         @Test
         public void anUnapprovedBinaryDigestIsRefused() {
