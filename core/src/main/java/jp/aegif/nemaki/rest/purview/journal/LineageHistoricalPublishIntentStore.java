@@ -29,8 +29,28 @@ import java.util.Optional;
  */
 public interface LineageHistoricalPublishIntentStore {
 
-    /** A hold on an intent, and the only thing that authorises advancing it. */
-    record IntentClaim(String intentId, String owner, String token, long leaseUntilMs) { }
+    /**
+     * A hold on an intent, and the only thing that authorises advancing it.
+     *
+     * <p>Carries the state observed <em>at the moment of the CAS</em>. A caller that branched on
+     * the state of the intent object it was handed would be acting on a reading from before the
+     * claim — which is exactly the window another worker uses to move it.
+     */
+    record IntentClaim(String intentId, String owner, String token, long leaseUntilMs,
+            LineageHistoricalPublishIntent.State stateAtClaim) { }
+
+    /**
+     * Exclusive right to write the catalog entity for one subject.
+     *
+     * <p>Intent ids differ per evidence, which is necessary and not sufficient: two intents
+     * built from different observations of one object would otherwise publish to the same
+     * qualified name concurrently, and the surviving entity would be whichever call finished
+     * last. The fence serialises them; ordering between them is then decided by the source,
+     * which is the only authority on which observation is current.
+     *
+     * @param subjectKey target + repository + kind + subject digest
+     */
+    record SubjectFence(String subjectKey, String intentId, String token, long leaseUntilMs) { }
 
     /** Storage or protocol failure. Never used for a CAS loss. */
     class IntentStorageException extends RuntimeException {
@@ -82,4 +102,23 @@ public interface LineageHistoricalPublishIntentStore {
     /** Bounded, for the recovery scanner and for admin status. */
     List<LineageHistoricalPublishIntent> findByState(LineageHistoricalPublishIntent.State state,
             int limit);
+
+    /**
+     * Takes the exclusive right to write this subject's entity, or reports who holds it.
+     *
+     * <p>Leased, so an abandoned holder cannot block the subject forever. Empty means another
+     * intent holds it and this one must wait — not that it may proceed anyway.
+     */
+    Optional<SubjectFence> acquireSubjectFence(String subjectKey, String intentId,
+            Duration lease, long nowMs);
+
+    /** Releases the fence, if this holder still has it. */
+    boolean releaseSubjectFence(SubjectFence fence);
+
+    /** The subject key a fence is taken on. One per catalog entity. */
+    static String subjectKey(String target, String repositoryId, EndpointKind kind,
+            String subjectDigest) {
+        return LineageCanonicalHash.hash("LINEAGE_HISTORICAL_SUBJECT_FENCE_V1", target,
+                repositoryId, kind == null ? null : kind.name(), subjectDigest);
+    }
 }

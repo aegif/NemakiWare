@@ -52,9 +52,9 @@ public class LineageObligationWiringTest {
             }
 
             @Override
-            public LineageCatalogEntityProbe.Presence readBackHistorical(
-                    HistoricalEntitySnapshot snapshot) {
-                return LineageCatalogEntityProbe.Presence.UNKNOWN;
+            public LineageHistoricalReadBack readBackHistorical(
+                    HistoricalEntitySnapshot snapshot, String plannedOperationDigest) {
+                return LineageHistoricalReadBack.UNKNOWN;
             }
         };
     }

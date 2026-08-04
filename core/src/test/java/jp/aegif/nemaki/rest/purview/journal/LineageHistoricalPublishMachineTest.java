@@ -70,7 +70,10 @@ public class LineageHistoricalPublishMachineTest {
     /** Honours _rev CAS, token fencing and state guards, like the real store must. */
     private static final class FakeIntentStore implements LineageHistoricalPublishIntentStore {
         final Map<String, LineageHistoricalPublishIntent> byId = new LinkedHashMap<>();
+        final Map<String, SubjectFence> fences = new LinkedHashMap<>();
         boolean failWrites;
+        boolean failRenew;
+        boolean failFinalTransition;
 
         @Override
         public LineageHistoricalPublishIntent createIfAbsent(
@@ -108,11 +111,15 @@ public class LineageHistoricalPublishMachineTest {
             long until = nowMs + lease.toMillis();
             byId.put(intentId, with(current, current.state(), owner, token, until,
                     current.attempts(), current.reason()));
-            return Optional.of(new IntentClaim(intentId, owner, token, until));
+            return Optional.of(new IntentClaim(intentId, owner, token, until,
+                    current.state()));
         }
 
         @Override
         public Optional<IntentClaim> renew(IntentClaim claim, Duration lease, long nowMs) {
+            if (failRenew) {
+                return Optional.empty();
+            }
             LineageHistoricalPublishIntent held = heldBy(claim);
             if (held == null) {
                 return Optional.empty();
@@ -121,13 +128,41 @@ public class LineageHistoricalPublishMachineTest {
             byId.put(claim.intentId(), with(held, held.state(), claim.owner(), claim.token(),
                     until, held.attempts(), held.reason()));
             return Optional.of(new IntentClaim(claim.intentId(), claim.owner(), claim.token(),
-                    until));
+                    until, held.state()));
+        }
+
+        @Override
+        public Optional<SubjectFence> acquireSubjectFence(String subjectKey, String intentId,
+                Duration lease, long nowMs) {
+            SubjectFence current = fences.get(subjectKey);
+            if (current != null && current.leaseUntilMs() > nowMs
+                    && !current.intentId().equals(intentId)) {
+                return Optional.empty();
+            }
+            SubjectFence fence = new SubjectFence(subjectKey, intentId,
+                    UUID.randomUUID().toString(), nowMs + lease.toMillis());
+            fences.put(subjectKey, fence);
+            return Optional.of(fence);
+        }
+
+        @Override
+        public boolean releaseSubjectFence(SubjectFence fence) {
+            SubjectFence current = fence == null ? null : fences.get(fence.subjectKey());
+            if (current == null || !current.token().equals(fence.token())) {
+                return false;
+            }
+            fences.remove(fence.subjectKey());
+            return true;
         }
 
         @Override
         public boolean transition(IntentClaim claim, LineageHistoricalPublishIntent.State from,
                 LineageHistoricalPublishIntent.State to, String reason) {
             if (failWrites) {
+                return false;
+            }
+            if (failFinalTransition
+                    && to == LineageHistoricalPublishIntent.State.COMPENSATED) {
                 return false;
             }
             LineageHistoricalPublishIntent held = heldBy(claim);
@@ -185,6 +220,7 @@ public class LineageHistoricalPublishMachineTest {
             implements LineageHistoricalCompensationStore {
         final Map<String, LineageHistoricalCompensation> byId = new LinkedHashMap<>();
         boolean failWrites;
+        boolean failMarkResolved;
 
         @Override
         public LineageHistoricalCompensation createIfAbsent(
@@ -214,7 +250,8 @@ public class LineageHistoricalPublishMachineTest {
 
         @Override
         public boolean markResolved(LineageHistoricalCompensation compensation, String reason) {
-            return mark(compensation, LineageHistoricalCompensation.State.RESOLVED);
+            return !failMarkResolved
+                    && mark(compensation, LineageHistoricalCompensation.State.RESOLVED);
         }
 
         @Override
@@ -243,13 +280,23 @@ public class LineageHistoricalPublishMachineTest {
         boolean fail;
         String forcedOperationDigest;
         String lastOperationDigest;
-        /** What the catalog would answer on a read-back. */
-        LineageCatalogEntityProbe.Presence stored = LineageCatalogEntityProbe.Presence.ABSENT;
+        /** Non-null unless the read itself fails. */
+        Object stored = "readable";
+        /** Which operation the catalog holds, if any. */
+        String storedOperationDigest;
 
         @Override
-        public LineageCatalogEntityProbe.Presence readBackHistorical(
-                HistoricalEntitySnapshot snapshot) {
-            return stored;
+        public LineageHistoricalReadBack readBackHistorical(HistoricalEntitySnapshot snapshot,
+                String plannedOperationDigest) {
+            if (stored == null) {
+                return LineageHistoricalReadBack.UNKNOWN;
+            }
+            if (storedOperationDigest == null) {
+                return LineageHistoricalReadBack.ABSENT;
+            }
+            // MATCH only if the entity in the catalog is THIS plan's write.
+            return storedOperationDigest.equals(plannedOperationDigest)
+                    ? LineageHistoricalReadBack.MATCH : LineageHistoricalReadBack.CONFLICT;
         }
 
         @Override
@@ -265,7 +312,7 @@ public class LineageHistoricalPublishMachineTest {
                     : LineageHistoricalPublishMachine.operationDigest(snapshot,
                             LineageHistoricalPublishMachine.canonicalPayload(snapshot));
             lastOperationDigest = digest;
-            stored = LineageCatalogEntityProbe.Presence.PRESENT;
+            storedOperationDigest = digest;
             return new LineageHistoricalPublishReceipt(Outcome.PUBLISHED, snapshot.target(),
                     snapshot.sourceEvidence().subjectDigest(), digest,
                     LineageCatalogEntityProbe.Presence.PRESENT);
@@ -436,11 +483,16 @@ public class LineageHistoricalPublishMachineTest {
 
             LineageHistoricalPublishMachine.Verdict verdict = resumeAll();
 
-            assertEquals(LineageHistoricalPublishMachine.Verdict.COMPENSATING, verdict);
+            // COMPENSATED, not merely COMPENSATING: both durable states agree.
+            assertEquals(LineageHistoricalPublishMachine.Verdict.COMPENSATED, verdict);
             assertFalse(compensations.byId.isEmpty(),
                     "a wrong historical entity with nothing recorded is never revisited");
             assertEquals(1, republisher.calls,
                     "the compensation must converge on the current entity");
+            assertEquals(LineageHistoricalCompensation.State.RESOLVED,
+                    compensations.byId.values().iterator().next().state());
+            assertEquals(LineageHistoricalPublishIntent.State.COMPENSATED,
+                    intents.byId.values().iterator().next().state());
         }
 
         @Test
@@ -473,8 +525,73 @@ public class LineageHistoricalPublishMachineTest {
                     LineageHistoricalPublishIntent.State.COMPENSATION_REQUIRED);
             sourceSays = LineageSourceDisposition.SOURCE_EXISTS;
 
-            assertEquals(LineageHistoricalPublishMachine.Verdict.COMPENSATING, resumeAll());
+            assertEquals(LineageHistoricalPublishMachine.Verdict.COMPENSATED, resumeAll());
             assertFalse(compensations.byId.isEmpty());
+        }
+
+        /**
+         * Stopped between the two final CAS steps. The next scan must finish only what is
+         * left, and must not report completion until both durable states agree.
+         */
+        @Test
+        @DisplayName("compensation RESOLVED but intent still COMPENSATION_REQUIRED — finishes")
+        void resumesFromResolvedCompensation() {
+            intents.createIfAbsent(plannedIntent());
+            claimAndTransition(LineageHistoricalPublishIntent.State.PLANNED,
+                    LineageHistoricalPublishIntent.State.PUBLISHED);
+            claimAndTransition(LineageHistoricalPublishIntent.State.PUBLISHED,
+                    LineageHistoricalPublishIntent.State.COMPENSATION_REQUIRED);
+            sourceSays = LineageSourceDisposition.SOURCE_EXISTS;
+            // The compensation was recorded AND resolved before the stop.
+            LineageHistoricalPublishIntent intent = intents.byId.values().iterator().next();
+            LineageHistoricalCompensation stored = compensations.createIfAbsent(
+                    new LineageHistoricalCompensation(null,
+                            LineageHistoricalCompensation.taskId(TARGET, REPO, KIND,
+                                    intent.subjectDigest(), intent.plannedOperationDigest()),
+                            TARGET, REPO, KIND, intent.subjectDigest(),
+                            intent.plannedOperationDigest(), intent.sourceEvidenceDigest(), null,
+                            LineageHistoricalCompensation.Reason
+                                    .SOURCE_CHANGED_DURING_HISTORICAL_PUBLISH,
+                            1L, LineageHistoricalCompensation.State.PENDING));
+            compensations.markResolved(stored, "already done");
+
+            assertEquals(LineageHistoricalPublishMachine.Verdict.COMPENSATED, resumeAll());
+            assertEquals(0, republisher.calls,
+                    "the current entity was already re-published; do not do it again");
+            assertEquals(LineageHistoricalPublishIntent.State.COMPENSATED,
+                    intents.byId.values().iterator().next().state());
+        }
+
+        /** The republish happened; recording it did not. Not finished. */
+        @Test
+        @DisplayName("a compensation that cannot be marked resolved is not reported complete")
+        void markResolvedFailureDoesNotComplete() {
+            intents.createIfAbsent(plannedIntent());
+            claimAndTransition(LineageHistoricalPublishIntent.State.PLANNED,
+                    LineageHistoricalPublishIntent.State.PUBLISHED);
+            sourceSays = LineageSourceDisposition.SOURCE_EXISTS;
+            compensations.failMarkResolved = true;
+
+            assertEquals(LineageHistoricalPublishMachine.Verdict.COMPENSATING, resumeAll());
+            assertEquals(LineageHistoricalCompensation.State.PENDING,
+                    compensations.byId.values().iterator().next().state());
+            assertNotEquals(LineageHistoricalPublishIntent.State.COMPENSATED,
+                    intents.byId.values().iterator().next().state());
+        }
+
+        /** The last CAS lost. Both states are not consistent, so it is not complete. */
+        @Test
+        @DisplayName("a failed final intent CAS is not reported complete")
+        void finalIntentCasFailureDoesNotComplete() {
+            intents.createIfAbsent(plannedIntent());
+            claimAndTransition(LineageHistoricalPublishIntent.State.PLANNED,
+                    LineageHistoricalPublishIntent.State.PUBLISHED);
+            sourceSays = LineageSourceDisposition.SOURCE_EXISTS;
+            intents.failFinalTransition = true;
+
+            assertEquals(LineageHistoricalPublishMachine.Verdict.COMPENSATING, resumeAll());
+            assertNotEquals(LineageHistoricalPublishIntent.State.COMPENSATED,
+                    intents.byId.values().iterator().next().state());
         }
 
         /** Without a durable request nothing comes back for the wrong entity. */
@@ -509,6 +626,132 @@ public class LineageHistoricalPublishMachineTest {
                     compensations.byId.values().iterator().next().state());
             assertNotEquals(LineageHistoricalPublishIntent.State.COMPENSATED,
                     intents.byId.values().iterator().next().state());
+        }
+    }
+
+    @Nested
+    @DisplayName("the lease authorises the external write")
+    class LeaseAuthorisation {
+
+        /**
+         * The renew is not a courtesy. A process that has lost the lease no longer speaks for
+         * the intent, and a write it made would be one nothing is tracking.
+         */
+        @Test
+        @DisplayName("a failed renew means the publisher is never called")
+        void lostLeaseMeansNoWrite() {
+            intents.createIfAbsent(plannedIntent());
+            intents.failRenew = true;
+
+            assertEquals(LineageHistoricalPublishMachine.Verdict.RETRY, resumeAll());
+            assertEquals(0, publisher.publishCount,
+                    "an unauthorised process wrote to the catalog");
+            assertEquals(LineageHistoricalPublishIntent.State.PLANNED,
+                    intents.byId.values().iterator().next().state());
+        }
+
+        /** The fence is released even when the write is refused, or the subject would stick. */
+        @Test
+        @DisplayName("a refused write still releases the subject fence")
+        void refusedWriteReleasesTheFence() {
+            intents.createIfAbsent(plannedIntent());
+            intents.failRenew = true;
+            resumeAll();
+
+            assertTrue(intents.fences.isEmpty(), "the subject would be blocked forever");
+        }
+    }
+
+    @Nested
+    @DisplayName("read-back is bound to this plan")
+    class ReadBack {
+
+        /** Something present is not this plan's write — the authoritative publisher uses the
+         * same qualified name. */
+        @Test
+        @DisplayName("a conflicting entity is not treated as this plan's write")
+        void conflictIsNotSuccess() {
+            intents.createIfAbsent(plannedIntent());
+            publisher.storedOperationDigest = "f".repeat(64);
+
+            assertEquals(LineageHistoricalPublishMachine.Verdict.RETRY, resumeAll());
+            assertEquals(0, publisher.publishCount,
+                    "overwriting someone else's entity is what the fence exists to prevent");
+            assertEquals(LineageHistoricalPublishIntent.State.PLANNED,
+                    intents.byId.values().iterator().next().state());
+        }
+
+        @Test
+        @DisplayName("an unreadable catalog neither writes nor advances")
+        void unknownReadBack() {
+            intents.createIfAbsent(plannedIntent());
+            publisher.stored = null;
+
+            assertEquals(LineageHistoricalPublishMachine.Verdict.RETRY, resumeAll());
+            assertEquals(0, publisher.publishCount);
+        }
+    }
+
+    @Nested
+    @DisplayName("one writer per subject")
+    class SubjectFence {
+
+        /** Two intents from different observations write the same qualified name. */
+        @Test
+        @DisplayName("a second intent cannot publish while another holds the subject")
+        void secondIntentWaits() {
+            LineageHistoricalPublishIntent first = intents.createIfAbsent(plannedIntent());
+            String subjectKey = LineageHistoricalPublishIntentStore.subjectKey(TARGET, REPO,
+                    KIND, first.subjectDigest());
+            // Another intent already holds the subject.
+            intents.acquireSubjectFence(subjectKey, "another-intent", Duration.ofMinutes(5),
+                    clock.get());
+
+            assertEquals(LineageHistoricalPublishMachine.Verdict.RETRY, resumeAll());
+            assertEquals(0, publisher.publishCount,
+                    "two intents wrote the same catalog entity concurrently");
+        }
+
+        /** An abandoned holder must not block the subject forever. */
+        @Test
+        @DisplayName("an expired fence can be taken over")
+        void expiredFenceIsReclaimable() {
+            LineageHistoricalPublishIntent first = intents.createIfAbsent(plannedIntent());
+            String subjectKey = LineageHistoricalPublishIntentStore.subjectKey(TARGET, REPO,
+                    KIND, first.subjectDigest());
+            intents.acquireSubjectFence(subjectKey, "abandoned", Duration.ofMinutes(5),
+                    clock.get());
+
+            clock.addAndGet(Duration.ofMinutes(6).toMillis());
+
+            assertEquals(LineageHistoricalPublishMachine.Verdict.RESOLVED_PURGED, resumeAll());
+            assertEquals(1, publisher.publishCount);
+        }
+
+        /** The result must not depend on which order the scanner happened to enumerate them. */
+        @Test
+        @DisplayName("the outcome does not depend on scan order")
+        void scanOrderDoesNotMatter() {
+            intents.createIfAbsent(plannedIntent());
+            assertEquals(LineageHistoricalPublishMachine.Verdict.RESOLVED_PURGED, resumeAll());
+
+            // A second intent for the same subject, from a later observation.
+            authorisingIncarnation = "inc-2";
+            sourceIncarnation = "inc-2";
+            publisher.storedOperationDigest = null;
+            intents.createIfAbsent(plannedIntent());
+            assertEquals(2, intents.byId.size(), "two intents for one subject");
+
+            assertEquals(LineageHistoricalPublishMachine.Verdict.RESOLVED_PURGED, resumeAll());
+            assertTrue(intents.fences.isEmpty(), "every write released its fence");
+
+            // Reversing the enumeration reaches the same terminal states.
+            List<LineageHistoricalPublishIntent.State> states = new ArrayList<>();
+            for (LineageHistoricalPublishIntent one : intents.byId.values()) {
+                states.add(one.state());
+            }
+            assertEquals(List.of(LineageHistoricalPublishIntent.State.RESOLVED,
+                    LineageHistoricalPublishIntent.State.RESOLVED), states);
         }
     }
 

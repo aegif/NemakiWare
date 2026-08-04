@@ -100,8 +100,10 @@ public class LineageHistoricalPublishMachine {
         RESOLVED_PURGED,
         /** Nothing was established or the step could not complete. Try again later. */
         RETRY,
-        /** The source came back. A compensation exists and is being worked. */
+        /** The source came back. A compensation exists and is being worked, not finished. */
         COMPENSATING,
+        /** Both durable states agree the wrong entity has been replaced. */
+        COMPENSATED,
         /** The snapshot structurally cannot rebuild the entity. Terminal on the obligation. */
         SNAPSHOT_INCOMPLETE
     }
@@ -171,13 +173,16 @@ public class LineageHistoricalPublishMachine {
         }
         LineageHistoricalPublishIntentStore.IntentClaim held = claim.get();
 
-        return switch (intent.state()) {
+        // The state AT THE CLAIM, not the one on the object handed in. That object was read
+        // before the claim, and the window between is exactly where another worker moves it.
+        return switch (held.stateAtClaim()) {
             case PLANNED -> fromPlanned(intent, held, historical, publisher, payload,
                     plannedOperationDigest);
-            case PUBLISHED -> fromPublished(intent, held, historical);
+            case PUBLISHED -> fromPublished(intent, held, historical, publisher,
+                    plannedOperationDigest);
             case COMPENSATION_REQUIRED -> compensate(intent, held);
             case RESOLVED -> Verdict.RESOLVED_PURGED;
-            case COMPENSATED -> Verdict.COMPENSATING;
+            case COMPENSATED -> Verdict.COMPENSATED;
         };
     }
 
@@ -197,34 +202,65 @@ public class LineageHistoricalPublishMachine {
             return Verdict.RETRY;
         }
 
-        // Read back FIRST. A crash between the external write and this state update leaves
-        // exactly PLANNED-with-the-entity-written, and re-checking the source instead would
-        // find it restored and walk away from a tombstone nobody comes back for.
-        LineageCatalogEntityProbe.Presence alreadyThere;
-        try {
-            alreadyThere = publisher.readBackHistorical(historical);
-        } catch (RuntimeException e) {
-            logger.warn("Could not read back a planned historical entity: {}",
-                    e.getClass().getSimpleName());
-            alreadyThere = LineageCatalogEntityProbe.Presence.UNKNOWN;
-        }
-        if (alreadyThere == LineageCatalogEntityProbe.Presence.UNKNOWN) {
-            // Not established. Publishing now might be a second write; skipping might abandon
-            // a first one.
-            intents.recordAttempt(held, "the planned entity could not be read back");
-            return Verdict.RETRY;
-        }
-        if (alreadyThere == LineageCatalogEntityProbe.Presence.PRESENT) {
-            // The write happened before the crash. Record it and go on to the source re-check,
-            // which is where a restore during the gap is caught.
-            if (!intents.transition(held, LineageHistoricalPublishIntent.State.PLANNED,
-                    LineageHistoricalPublishIntent.State.PUBLISHED,
-                    "the entity was already written before this attempt")) {
+        // Read back FIRST, and bound to THIS plan. A crash between the external write and this
+        // state update leaves exactly PLANNED-with-the-entity-written, and re-checking the
+        // source instead would find it restored and walk away from a tombstone nobody comes
+        // back for. "Something is present" is not this plan's write — see LineageHistoricalReadBack.
+        LineageHistoricalReadBack readBack =
+                readBack(publisher, historical, plannedOperationDigest);
+        switch (readBack) {
+            case UNKNOWN -> {
+                // Publishing now might be a second write; skipping might abandon a first one.
+                intents.recordAttempt(held, "the planned entity could not be read back");
                 return Verdict.RETRY;
             }
-            return fromPublished(intent, held, historical);
+            case CONFLICT -> {
+                // Something else owns this qualified name — the authoritative entity, or
+                // another intent's. Overwriting it is the failure the subject fence exists to
+                // prevent, so this plan stops and stays visible.
+                logger.warn("A historical plan found a conflicting entity in its place");
+                intents.recordAttempt(held, "the catalog holds an entity this plan did not write");
+                return Verdict.RETRY;
+            }
+            case MATCH -> {
+                // The write happened before the crash. Record it and go on to the source
+                // re-check, which is where a restore during the gap is caught.
+                if (!intents.transition(held, LineageHistoricalPublishIntent.State.PLANNED,
+                        LineageHistoricalPublishIntent.State.PUBLISHED,
+                        "the entity was already written before this attempt")) {
+                    return Verdict.RETRY;
+                }
+                return fromPublished(intent, held, historical, publisher,
+                        plannedOperationDigest);
+            }
+            case ABSENT -> { /* fall through to publishing */ }
         }
 
+        // One writer per catalog entity. Intent ids differ per evidence, which does not stop
+        // two observations of one object from publishing concurrently.
+        String subjectKey = LineageHistoricalPublishIntentStore.subjectKey(intent.target(),
+                intent.repositoryId(), intent.endpointKind(), intent.subjectDigest());
+        Optional<LineageHistoricalPublishIntentStore.SubjectFence> fence =
+                intents.acquireSubjectFence(subjectKey, intent.intentId(), INTENT_LEASE,
+                        clockMs.getAsLong());
+        if (fence.isEmpty()) {
+            // Another intent is writing this entity. Waiting is the whole point.
+            intents.recordAttempt(held, "another intent holds this subject");
+            return Verdict.RETRY;
+        }
+        try {
+            return publishUnderFence(intent, held, historical, publisher,
+                    plannedOperationDigest);
+        } finally {
+            intents.releaseSubjectFence(fence.get());
+        }
+    }
+
+    /** The external write, with the subject fence held. */
+    private Verdict publishUnderFence(LineageHistoricalPublishIntent intent,
+            LineageHistoricalPublishIntentStore.IntentClaim held,
+            HistoricalEntitySnapshot historical, LineageHistoricalEntityPublisher publisher,
+            String plannedOperationDigest) {
         // Re-check the source immediately before the external write: the gap between planning
         // and publishing is exactly where a restore does the most damage.
         LineageSourceDispositionResolver.SourceEvidence before = sources.dispositionOf(
@@ -235,19 +271,29 @@ public class LineageHistoricalPublishMachine {
             intents.recordAttempt(held, "the source changed before publishing");
             return Verdict.RETRY;
         }
-        intents.renew(held, INTENT_LEASE, clockMs.getAsLong());
+
+        // The renew is the AUTHORISATION for the external side effect, not a courtesy. If the
+        // lease has gone — expired, or reclaimed by another worker — this process no longer
+        // speaks for the intent, and a write it made would be one nothing is tracking.
+        Optional<LineageHistoricalPublishIntentStore.IntentClaim> renewed =
+                intents.renew(held, INTENT_LEASE, clockMs.getAsLong());
+        if (renewed.isEmpty()) {
+            logger.warn("Lost the intent lease before publishing; not writing");
+            return Verdict.RETRY;
+        }
+        LineageHistoricalPublishIntentStore.IntentClaim live = renewed.get();
 
         LineageHistoricalPublishReceipt receipt;
         try {
             receipt = publisher.publishHistorical(historical);
         } catch (RuntimeException e) {
             logger.warn("Historical publish failed: {}", e.getClass().getSimpleName());
-            intents.recordAttempt(held, "the publish attempt failed");
+            intents.recordAttempt(live, "the publish attempt failed");
             return Verdict.RETRY;
         }
         if (receipt == null
                 || receipt.outcome() != LineageHistoricalEntityPublisher.Outcome.PUBLISHED) {
-            intents.recordAttempt(held, "the publish did not complete");
+            intents.recordAttempt(live, "the publish did not complete");
             return Verdict.RETRY;
         }
         if (!plannedOperationDigest.equals(receipt.operationDigest())) {
@@ -255,22 +301,37 @@ public class LineageHistoricalPublishMachine {
             // compensation derived from it — names the planned write, so accepting this would
             // leave an entity nothing can identify later.
             logger.error("A historical publish wrote a different operation than was planned");
-            intents.recordAttempt(held, "the publisher's operation does not match the plan");
+            intents.recordAttempt(live, "the publisher's operation does not match the plan");
             return Verdict.RETRY;
         }
-        if (!intents.transition(held, LineageHistoricalPublishIntent.State.PLANNED,
+        if (!intents.transition(live, LineageHistoricalPublishIntent.State.PLANNED,
                 LineageHistoricalPublishIntent.State.PUBLISHED, "read-back confirmed")) {
             // The entity is written and the state is not updated. Harmless: the next pass finds
-            // PLANNED, reads back, sees it there, and moves on.
+            // PLANNED, reads back, sees a MATCH, and moves on.
             return Verdict.RETRY;
         }
-        return fromPublished(intent, held, historical);
+        return fromPublished(intent, live, historical, publisher, plannedOperationDigest);
+    }
+
+    /** Read-back, with every failure collapsing to UNKNOWN rather than to a guess. */
+    private LineageHistoricalReadBack readBack(LineageHistoricalEntityPublisher publisher,
+            HistoricalEntitySnapshot historical, String plannedOperationDigest) {
+        try {
+            LineageHistoricalReadBack verdict =
+                    publisher.readBackHistorical(historical, plannedOperationDigest);
+            return verdict == null ? LineageHistoricalReadBack.UNKNOWN : verdict;
+        } catch (RuntimeException e) {
+            logger.warn("Could not read back a planned historical entity: {}",
+                    e.getClass().getSimpleName());
+            return LineageHistoricalReadBack.UNKNOWN;
+        }
     }
 
     /** PUBLISHED: the entity is there. Does the source still say it should be? */
     private Verdict fromPublished(LineageHistoricalPublishIntent intent,
             LineageHistoricalPublishIntentStore.IntentClaim held,
-            HistoricalEntitySnapshot historical) {
+            HistoricalEntitySnapshot historical, LineageHistoricalEntityPublisher publisher,
+            String plannedOperationDigest) {
         if (historical == null) {
             return Verdict.RETRY;
         }
@@ -307,6 +368,21 @@ public class LineageHistoricalPublishMachine {
      * <p>Re-publishing the authoritative entity rather than deleting the historical one:
      * deletion semantics differ between catalog backends and a delete that silently does
      * nothing would leave the wrong entity in place looking compensated.
+     *
+     * <h2>The convergence order, and why every step's result is checked</h2>
+     *
+     * <pre>
+     *   1. re-publish the authoritative current entity
+     *   2. read it back
+     *   3. CAS the compensation to RESOLVED
+     *   4. CAS the intent to COMPENSATED
+     * </pre>
+     *
+     * <p>A stop at any point leaves a state the next scan finishes: the compensation is still
+     * PENDING, or the intent is still COMPENSATION_REQUIRED, and both are found by
+     * {@code findByState}. What must never happen is reporting completion with either durable
+     * state unconfirmed — so no CAS result is discarded, and {@code COMPENSATING} is returned
+     * unless <em>both</em> transitions succeeded.
      */
     private Verdict compensate(LineageHistoricalPublishIntent intent,
             LineageHistoricalPublishIntentStore.IntentClaim held) {
@@ -331,8 +407,18 @@ public class LineageHistoricalPublishMachine {
             intents.recordAttempt(held, "the compensation could not be recorded");
             return Verdict.RETRY;
         }
+        if (stored == null) {
+            intents.recordAttempt(held, "the compensation could not be recorded");
+            return Verdict.RETRY;
+        }
+        if (stored.state() == LineageHistoricalCompensation.State.RESOLVED) {
+            // Step 3 already done by an earlier attempt; only step 4 is left.
+            return finishCompensation(held, stored);
+        }
 
         if (republisher == null) {
+            // Unwired. The request is durable, so nothing is lost — but nothing converges
+            // either, and readiness names this.
             return Verdict.COMPENSATING;
         }
         LineageCurrentEntityRepublisher.Outcome outcome;
@@ -349,11 +435,28 @@ public class LineageHistoricalPublishMachine {
             // entity has actually been read back in place of the historical one.
             return Verdict.COMPENSATING;
         }
-        compensations.markResolved(stored, "the current entity was re-published");
-        intents.transition(held, LineageHistoricalPublishIntent.State.COMPENSATION_REQUIRED,
+        if (!compensations.markResolved(stored, "the current entity was re-published")) {
+            // The republish happened; the record of it did not. The next scan finds the
+            // compensation still PENDING and repeats an idempotent republish.
+            logger.warn("Could not mark a historical compensation resolved");
+            return Verdict.COMPENSATING;
+        }
+        return finishCompensation(held, stored);
+    }
+
+    /**
+     * The last CAS. Split out so the resume path — compensation already RESOLVED, intent still
+     * COMPENSATION_REQUIRED — reaches exactly the same code.
+     */
+    private Verdict finishCompensation(LineageHistoricalPublishIntentStore.IntentClaim held,
+            LineageHistoricalCompensation stored) {
+        if (!intents.transition(held, LineageHistoricalPublishIntent.State.COMPENSATION_REQUIRED,
                 LineageHistoricalPublishIntent.State.COMPENSATED,
-                "the current entity was re-published");
-        return Verdict.COMPENSATING;
+                "the current entity was re-published")) {
+            // Both durable states are not yet consistent, so this is not finished.
+            return Verdict.COMPENSATING;
+        }
+        return Verdict.COMPENSATED;
     }
 
     // ------------------------------------------------------------------

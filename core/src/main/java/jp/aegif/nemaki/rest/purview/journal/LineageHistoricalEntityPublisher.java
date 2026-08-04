@@ -66,14 +66,22 @@ public interface LineageHistoricalEntityPublisher {
     LineageHistoricalPublishReceipt publishHistorical(HistoricalEntitySnapshot snapshot);
 
     /**
-     * Whether the catalog already holds the historical entity for this snapshot.
+     * Whether the catalog holds <em>this plan's</em> historical entity.
      *
      * <p>Needed because a crash between the external write and the durable state update leaves
      * a {@code PLANNED} intent with the entity already written. Resuming without looking would
      * either write it twice or — worse — re-check the source, find it restored, and walk away
      * from a tombstone nobody will come back for.
      *
+     * <p>Must distinguish "this plan's write is there" from "something is there": the
+     * authoritative publisher and older intents write to the same qualified name. Where the
+     * planned operation digest cannot be read back from the catalog, publish it as a historical
+     * marker attribute so that it can — a verdict that cannot tell the two apart is
+     * {@link LineageHistoricalReadBack#UNKNOWN}, not {@code MATCH}.
+     *
+     * @param plannedOperationDigest what this plan intends to have written
      * @return {@code UNKNOWN} on any failure; never guessed
      */
-    LineageCatalogEntityProbe.Presence readBackHistorical(HistoricalEntitySnapshot snapshot);
+    LineageHistoricalReadBack readBackHistorical(HistoricalEntitySnapshot snapshot,
+            String plannedOperationDigest);
 }
