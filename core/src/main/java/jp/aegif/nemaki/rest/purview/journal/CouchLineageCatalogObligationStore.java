@@ -353,14 +353,48 @@ public class CouchLineageCatalogObligationStore implements LineageCatalogObligat
         return found;
     }
 
+    /**
+     * Exact counts from the view's own reduce, not from counting rows.
+     *
+     * <p>The previous version listed up to 10,000 documents and returned the size as if it were
+     * the count. Past that it under-reported silently, and a preflight reading a truncated zero
+     * would call a backlogged deployment clean.
+     */
     @Override
-    public Map<LineageCatalogObligation.State, Long> countByState() {
-        Map<LineageCatalogObligation.State, Long> counts =
+    public Map<LineageCatalogObligation.State, StateCount> countByState() {
+        support.ensureDatabase();
+        Map<LineageCatalogObligation.State, StateCount> counts =
                 new EnumMap<>(LineageCatalogObligation.State.class);
         for (LineageCatalogObligation.State state : LineageCatalogObligation.State.values()) {
-            counts.put(state, (long) findByState(state, 10_000).size());
+            counts.put(state, reduceCount(state));
         }
         return counts;
+    }
+
+    private StateCount reduceCount(LineageCatalogObligation.State state) {
+        try {
+            Map<String, Object> params = new LinkedHashMap<>();
+            params.put("key", state.name());
+            params.put("reduce", true);
+            params.put("group", false);
+            com.ibm.cloud.cloudant.v1.model.ViewResult result =
+                    support.client().queryView(support.designDoc(), "obligationsByState", params);
+            if (result == null || result.getRows() == null || result.getRows().isEmpty()) {
+                // _count over no matching keys returns no rows, which is an exact zero.
+                return StateCount.exact(0L);
+            }
+            Object value = result.getRows().get(0).getValue();
+            if (!(value instanceof Number n)) {
+                // The reduce answered something this code cannot read. Reporting it as zero
+                // would be inventing the one answer that looks green.
+                logger.warn("Obligation count for {} was not a number", state);
+                return StateCount.lowerBound(0L);
+            }
+            return StateCount.exact(n.longValue());
+        } catch (RuntimeException e) {
+            logger.warn("Obligation count for {} failed: {}", state, e.getClass().getSimpleName());
+            return StateCount.lowerBound(0L);
+        }
     }
 
     // ------------------------------------------------------------------

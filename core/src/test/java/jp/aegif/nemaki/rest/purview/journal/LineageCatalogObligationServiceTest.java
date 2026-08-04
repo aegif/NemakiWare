@@ -73,6 +73,7 @@ public class LineageCatalogObligationServiceTest {
     /** An in-memory store honouring the CAS, token and lease rules of the real one. */
     private static final class FakeStore implements LineageCatalogObligationStore {
         final Map<String, LineageCatalogObligation> byKey = new LinkedHashMap<>();
+        boolean failReads;
 
         @Override
         public LineageCatalogObligation createIfAbsent(LineageCatalogObligation obligation) {
@@ -89,6 +90,9 @@ public class LineageCatalogObligationServiceTest {
 
         @Override
         public Optional<LineageCatalogObligation> read(String taskKey) {
+            if (failReads) {
+                throw new ObligationStorageException("store unavailable");
+            }
             return Optional.ofNullable(byKey.get(taskKey));
         }
 
@@ -209,10 +213,11 @@ public class LineageCatalogObligationServiceTest {
         }
 
         @Override
-        public Map<LineageCatalogObligation.State, Long> countByState() {
-            Map<LineageCatalogObligation.State, Long> counts = new LinkedHashMap<>();
+        public Map<LineageCatalogObligation.State, StateCount> countByState() {
+            Map<LineageCatalogObligation.State, StateCount> counts = new LinkedHashMap<>();
             for (LineageCatalogObligation.State state : LineageCatalogObligation.State.values()) {
-                counts.put(state, (long) findByState(state, Integer.MAX_VALUE).size());
+                counts.put(state,
+                        StateCount.exact(findByState(state, Integer.MAX_VALUE).size()));
             }
             return counts;
         }
@@ -289,19 +294,21 @@ public class LineageCatalogObligationServiceTest {
             assertEquals(0, probeCalls, "an inert machine asked the catalog");
         }
 
-        /** An inert machine cannot answer a resume question either — it parked nothing. */
+        /** An inert machine parked nothing, so it cannot authorise a resume. */
         @Test
-        @DisplayName("nothing is reported as resumable")
+        @DisplayName("nothing is reported as resumable, and an empty set is not success")
         void nothingResumes() {
-            assertFalse(service(false).allResolved(List.of("some-key")));
-            // An empty wait list is still trivially satisfied: there is nothing to wait for.
-            assertTrue(service(false).allResolved(List.of()));
+            assertEquals(LineageCatalogObligationService.VerdictKind.INDETERMINATE,
+                    service(false).verdictFor(List.of("some-key")).kind());
+            assertEquals(LineageCatalogObligationService.VerdictKind.INDETERMINATE,
+                    service(false).verdictFor(List.of()).kind());
         }
 
         @Test
-        @DisplayName("a terminal verdict cannot be recorded")
-        void cannotGiveUp() {
-            assertFalse(service(false).giveUp(new Claim("k", "node-1", "tok", 0L), "why"));
+        @DisplayName("a snapshot verdict cannot be recorded")
+        void cannotRecordSnapshotIncomplete() {
+            assertFalse(service(false).recordSnapshotIncomplete(
+                    new Claim("k", "node-1", "tok", 0L), "why"));
         }
 
         @Test
@@ -608,7 +615,8 @@ public class LineageCatalogObligationServiceTest {
             Claim claim = store.claim(taskKey, "node-1", Duration.ofMinutes(5), clock.get())
                     .orElseThrow();
 
-            assertTrue(service(true).giveUp(claim, "the snapshot cannot rebuild the entity"));
+            assertTrue(service(true).recordSnapshotIncomplete(claim,
+                    "the snapshot cannot rebuild the entity"));
             assertEquals(LineageCatalogObligation.State.UNRESOLVED,
                     store.byKey.get(taskKey).state());
             assertEquals(LineageCatalogObligation.Outcome.SNAPSHOT_INCOMPLETE,
@@ -642,50 +650,131 @@ public class LineageCatalogObligationServiceTest {
     }
 
     @Nested
-    @DisplayName("the resume condition")
+    @DisplayName("the resume verdict")
     class Resume {
+
+        private LineageCatalogObligationService active;
+
+        private String owe(String qn) {
+            answer = Presence.ABSENT;
+            return active.requireCatalogEntity(TARGET, REPO, KIND, qn).orElseThrow();
+        }
+
+        private void resolve(String taskKey) {
+            Claim claim = store.claim(taskKey, "node-1", Duration.ofMinutes(5), clock.get())
+                    .orElseThrow();
+            store.resolve(claim, LineageCatalogObligation.Outcome.SOURCE_EXISTS, "there", null);
+        }
+
+        @org.junit.jupiter.api.BeforeEach
+        void activate() {
+            active = service(true);
+        }
 
         /** §2: ALL of them. One resolved obligation says nothing about the others. */
         @Test
-        @DisplayName("one resolved obligation does not resume an event waiting on two")
+        @DisplayName("one of two resolved is WAITING, not resumable")
         void allNotAny() {
-            answer = Presence.ABSENT;
-            LineageCatalogObligationService active = service(true);
-            String first = active.requireCatalogEntity(TARGET, REPO, KIND, QN).orElseThrow();
-            String second =
-                    active.requireCatalogEntity(TARGET, REPO, KIND, QN + "-2").orElseThrow();
+            String first = owe(QN);
+            String second = owe(QN + "-2");
+            resolve(first);
 
-            Claim claim = store.claim(first, "node-1", Duration.ofMinutes(5), clock.get())
-                    .orElseThrow();
-            store.resolve(claim, LineageCatalogObligation.Outcome.SOURCE_EXISTS, "there", null);
+            LineageCatalogObligationService.Verdict verdict =
+                    active.verdictFor(List.of(first, second));
+            assertEquals(LineageCatalogObligationService.VerdictKind.WAITING, verdict.kind());
+            assertFalse(verdict.resumes());
+            assertEquals(2, verdict.taskCount());
 
-            assertFalse(active.allResolved(List.of(first, second)));
-
-            Claim other = store.claim(second, "node-1", Duration.ofMinutes(5), clock.get())
-                    .orElseThrow();
-            store.resolve(other, LineageCatalogObligation.Outcome.SOURCE_EXISTS, "there", null);
-
-            assertTrue(active.allResolved(List.of(first, second)));
+            resolve(second);
+            assertEquals(LineageCatalogObligationService.VerdictKind.ALL_RESOLVED,
+                    active.verdictFor(List.of(first, second)).kind());
         }
 
-        /** A task key nobody knows is not resolved — it is unaccounted for. */
+        /**
+         * The three situations a boolean folded together. Keep waiting, terminate the event,
+         * and change nothing are different responses.
+         */
         @Test
-        @DisplayName("an unknown task key does not resume anything")
-        void unknownKeyDoesNotResume() {
-            assertFalse(service(true).allResolved(List.of("nonexistent")));
-        }
-
-        @Test
-        @DisplayName("an UNRESOLVED obligation does not resume the event either")
-        void unresolvedDoesNotResume() {
-            answer = Presence.ABSENT;
-            LineageCatalogObligationService active = service(true);
-            String taskKey = active.requireCatalogEntity(TARGET, REPO, KIND, QN).orElseThrow();
+        @DisplayName("a terminal obligation is TERMINAL_UNRESOLVED, not merely 'not resolved'")
+        void terminalIsItsOwnAnswer() {
+            String taskKey = owe(QN);
             Claim claim = store.claim(taskKey, "node-1", Duration.ofMinutes(5), clock.get())
                     .orElseThrow();
-            active.giveUp(claim, "the snapshot cannot rebuild it");
+            active.recordSnapshotIncomplete(claim, "the snapshot lacks required attributes");
 
-            assertFalse(active.allResolved(List.of(taskKey)));
+            LineageCatalogObligationService.Verdict verdict = active.verdictFor(List.of(taskKey));
+            assertEquals(LineageCatalogObligationService.VerdictKind.TERMINAL_UNRESOLVED,
+                    verdict.kind());
+            assertFalse(verdict.resumes());
+        }
+
+        /** Terminal wins: no amount of others resolving makes an unrebuildable entity appear. */
+        @Test
+        @DisplayName("terminal wins over still-waiting siblings")
+        void terminalWins() {
+            String terminal = owe(QN);
+            String waiting = owe(QN + "-2");
+            Claim claim = store.claim(terminal, "node-1", Duration.ofMinutes(5), clock.get())
+                    .orElseThrow();
+            active.recordSnapshotIncomplete(claim, "structurally short");
+
+            assertEquals(LineageCatalogObligationService.VerdictKind.TERMINAL_UNRESOLVED,
+                    active.verdictFor(List.of(terminal, waiting)).kind());
+        }
+
+        @Test
+        @DisplayName("a task nobody can find is INDETERMINATE, never a resume")
+        void missingTaskIsIndeterminate() {
+            assertEquals(LineageCatalogObligationService.VerdictKind.INDETERMINATE,
+                    active.verdictFor(List.of("nonexistent")).kind());
+        }
+
+        /**
+         * A WAITING_FOR_CATALOG row with no keys has lost its metadata. Resuming it would
+         * publish on the strength of a wait nobody can account for.
+         */
+        @Test
+        @DisplayName("an empty or blank key set is INDETERMINATE, not success")
+        void emptyKeySetIsFailClosed() {
+            assertEquals(LineageCatalogObligationService.VerdictKind.INDETERMINATE,
+                    active.verdictFor(List.of()).kind());
+            assertEquals(LineageCatalogObligationService.VerdictKind.INDETERMINATE,
+                    active.verdictFor(null).kind());
+            assertEquals(LineageCatalogObligationService.VerdictKind.INDETERMINATE,
+                    active.verdictFor(List.of(owe(QN), "  ")).kind());
+        }
+
+        /** A store that could not answer has established nothing — including "still waiting". */
+        @Test
+        @DisplayName("an unreadable store is INDETERMINATE")
+        void unreadableStoreIsIndeterminate() {
+            String taskKey = owe(QN);
+            store.failReads = true;
+
+            assertEquals(LineageCatalogObligationService.VerdictKind.INDETERMINATE,
+                    active.verdictFor(List.of(taskKey)).kind());
+        }
+
+        @Test
+        @DisplayName("a red gate never authorises a resume")
+        void redGateDoesNotResume() {
+            String taskKey = owe(QN);
+            resolve(taskKey);
+
+            assertEquals(LineageCatalogObligationService.VerdictKind.INDETERMINATE,
+                    service(false).verdictFor(List.of(taskKey)).kind());
+        }
+
+        /** The verdict is read into logs and admin responses. */
+        @Test
+        @DisplayName("the verdict carries a count and no key, name or evidence")
+        void verdictCarriesNoValues() {
+            String taskKey = owe(QN);
+            LineageCatalogObligationService.Verdict verdict = active.verdictFor(List.of(taskKey));
+
+            assertEquals(1, verdict.taskCount());
+            assertFalse(verdict.reason().contains(taskKey));
+            assertFalse(verdict.reason().contains(QN));
         }
     }
 }

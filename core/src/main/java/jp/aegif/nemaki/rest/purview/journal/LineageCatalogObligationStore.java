@@ -138,6 +138,32 @@ public interface LineageCatalogObligationStore {
     /** Obligations in a state, bounded. For the scanner and for admin status. */
     List<LineageCatalogObligation> findByState(LineageCatalogObligation.State state, int limit);
 
+    /**
+     * A count that says whether it is a count.
+     *
+     * <p>A number that silently stops at a page size is worse than no number: a preflight
+     * reading it cannot tell "none" from "none in the first page", and zero is the answer that
+     * looks green.
+     *
+     * @param count exact when {@code truncated} is false; otherwise a lower bound
+     * @param truncated whether the scan stopped before the end
+     */
+    record StateCount(long count, boolean truncated) {
+
+        public static StateCount exact(long count) {
+            return new StateCount(count, false);
+        }
+
+        public static StateCount lowerBound(long count) {
+            return new StateCount(count, true);
+        }
+
+        /** A count nobody can stand behind must not be read as "nothing to see". */
+        public boolean conclusiveZero() {
+            return !truncated && count == 0L;
+        }
+    }
+
     /** Counts by state, for metrics and admin status. Never returns a value from a document. */
-    java.util.Map<LineageCatalogObligation.State, Long> countByState();
+    java.util.Map<LineageCatalogObligation.State, StateCount> countByState();
 }

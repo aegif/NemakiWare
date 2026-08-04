@@ -237,14 +237,21 @@ public class LineageCatalogObligationService {
     }
 
     /**
-     * Gives up on an obligation, terminally.
+     * Records that a snapshot cannot rebuild the entity. <b>Not a timeout API.</b>
      *
-     * <p>Separate from {@link #runOnce} because nothing automatic reaches this yet: the only
-     * legitimate terminal outcome is a snapshot that cannot rebuild the entity, and that verdict
-     * belongs to the historical-entity builder. Exposed so the projector's stall timeout and the
-     * admin route have one way in rather than each inventing a terminal state.
+     * <p>A task key is shared by every event waiting for the same entity. An event that has
+     * waited past {@code lineage.catalog-wait.max-age} may terminate <em>itself</em>
+     * ({@code CATALOG_WAIT_EXPIRED}), but it must not terminate the obligation: time elapsed is
+     * not evidence that a snapshot is incomplete, and doing so would terminate every other
+     * event waiting on the same entity — including ones that had only just started waiting.
+     *
+     * <p>The only caller that may reach this is the historical-entity builder, which has
+     * actually examined the snapshot and found it structurally short.
+     *
+     * @param reason names which fields the snapshot lacks — never the snapshot's values
      */
-    public boolean giveUp(LineageCatalogObligationStore.Claim claim, String reason) {
+    public boolean recordSnapshotIncomplete(LineageCatalogObligationStore.Claim claim,
+            String reason) {
         if (!active()) {
             return false;
         }
@@ -256,29 +263,112 @@ public class LineageCatalogObligationService {
     // Status
     // ------------------------------------------------------------------
 
-    /** Counts by state, for metrics and admin status. Empty while inert. */
-    public Map<LineageCatalogObligation.State, Long> status() {
+    /**
+     * Counts by state, for metrics and admin status. Empty while inert.
+     *
+     * <p>Each count says whether it is exact. A preflight must read {@code truncated} before
+     * treating a zero as "nothing pending".
+     */
+    public Map<LineageCatalogObligation.State, LineageCatalogObligationStore.StateCount>
+            status() {
         return active() ? store.countByState() : Map.of();
     }
 
-    /** Whether every one of these obligations is RESOLVED — the projector's resume condition. */
-    public boolean allResolved(List<String> taskKeys) {
-        if (taskKeys == null || taskKeys.isEmpty()) {
-            return true;
+    /** What a waiting event's obligations collectively say. Four answers, not two. */
+    public enum VerdictKind {
+        /** Every task is RESOLVED. The only answer that resumes a projection. */
+        ALL_RESOLVED,
+        /** At least one is PENDING or CLAIMED, and none is terminal. Keep waiting. */
+        WAITING,
+        /** One ended SNAPSHOT_INCOMPLETE. The event is terminal too. */
+        TERMINAL_UNRESOLVED,
+        /**
+         * Nothing could be established: a task is missing, the key set is empty or malformed,
+         * or the store could not be read.
+         *
+         * <p>Distinct from {@code WAITING} because the responses differ — waiting is a state
+         * the machine will leave on its own, and this one is not. Fail-closed: the projector
+         * changes nothing.
+         */
+        INDETERMINATE
+    }
+
+    /**
+     * The verdict, plus enough to act on it and nothing that could carry a value.
+     *
+     * @param reason why, in fixed words — never a catalog message, a key or a name
+     * @param taskCount how many tasks were considered; a count, not the keys
+     */
+    public record Verdict(VerdictKind kind, String reason, int taskCount) {
+
+        static Verdict of(VerdictKind kind, String reason, int taskCount) {
+            return new Verdict(kind, reason, taskCount);
         }
+
+        public boolean resumes() {
+            return kind == VerdictKind.ALL_RESOLVED;
+        }
+    }
+
+    /**
+     * What the projector should do about an event's obligations.
+     *
+     * <p>A boolean could not carry this: "not all resolved" folded together still-waiting, a
+     * terminal verdict, and a task nobody can find — three situations whose correct responses
+     * are keep waiting, terminate the event, and change nothing.
+     *
+     * <p>An <b>empty</b> key set is {@code INDETERMINATE}, not success. A row in
+     * {@code WAITING_FOR_CATALOG} carrying no keys has lost its metadata, and resuming it
+     * would publish on the strength of a wait nobody can account for.
+     */
+    public Verdict verdictFor(List<String> taskKeys) {
         if (!active()) {
-            // Inert: nothing was ever parked by this machine, so nothing can be resumed by it.
-            return false;
+            // Inert or red: this machine parked nothing, so it cannot authorise a resume.
+            return Verdict.of(VerdictKind.INDETERMINATE,
+                    "the obligation machine is not active", taskKeys == null ? 0
+                            : taskKeys.size());
         }
+        if (taskKeys == null || taskKeys.isEmpty()) {
+            return Verdict.of(VerdictKind.INDETERMINATE,
+                    "a waiting event carries no obligation keys", 0);
+        }
+        int waiting = 0;
         for (String taskKey : taskKeys) {
-            Optional<LineageCatalogObligation> obligation = store.read(taskKey);
-            if (obligation.isEmpty()
-                    || obligation.get().state() != LineageCatalogObligation.State.RESOLVED) {
-                // §2: ALL of them, not any. One resolved obligation does not mean the event's
-                // other endpoints have their entities.
-                return false;
+            if (taskKey == null || taskKey.isBlank()) {
+                return Verdict.of(VerdictKind.INDETERMINATE,
+                        "a waiting event carries a blank obligation key", taskKeys.size());
+            }
+            Optional<LineageCatalogObligation> read;
+            try {
+                read = store.read(taskKey);
+            } catch (RuntimeException e) {
+                // A store that could not answer has established nothing. Not WAITING: that
+                // would be a claim about the obligation's state.
+                logger.warn("Cannot read an obligation for a waiting event: {}",
+                        e.getClass().getSimpleName());
+                return Verdict.of(VerdictKind.INDETERMINATE,
+                        "an obligation could not be read", taskKeys.size());
+            }
+            if (read.isEmpty()) {
+                return Verdict.of(VerdictKind.INDETERMINATE,
+                        "an obligation named by a waiting event does not exist",
+                        taskKeys.size());
+            }
+            LineageCatalogObligation obligation = read.get();
+            switch (obligation.state()) {
+                case RESOLVED -> { }
+                case UNRESOLVED -> {
+                    // Terminal wins immediately: no amount of the others resolving makes an
+                    // unrebuildable entity appear.
+                    return Verdict.of(VerdictKind.TERMINAL_UNRESOLVED,
+                            "an obligation ended " + obligation.outcome(), taskKeys.size());
+                }
+                default -> waiting++;
             }
         }
-        return true;
+        return waiting > 0
+                ? Verdict.of(VerdictKind.WAITING, "obligations are still open", taskKeys.size())
+                : Verdict.of(VerdictKind.ALL_RESOLVED, "every obligation resolved",
+                        taskKeys.size());
     }
 }
