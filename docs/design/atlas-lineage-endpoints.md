@@ -1,6 +1,6 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.35 — increment A sign-off 済み・**§6-a 再 sign-off 承認済み (2026-08-03)**。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: 4b (**運用証跡待ち** — preflight は実装済み)。**§2 の属性別上限は実装済み (v2.3.26)**。**Slice 4a 実装済み — writer は v1 のまま (barrier 文書が無い＝pristine)**。**増分 B 実装済み (v2.3.35)** — 型追加 / 属性追加 / secret 境界 / backfill / lifecycle / reconciliation / runbook。live Atlas は起動できず B-E1〜B-E4 を EXTERNAL_EVIDENCE_REQUIRED として [`lineage-increment-b-runbook.md`](../operations/lineage-increment-b-runbook.md) に固定
+status: **v2.3.53 — increment A sign-off 済み・**§6-a 再 sign-off 承認済み (2026-08-03)**。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: 4b (**運用証跡待ち** — preflight は実装済み)。**§2 の属性別上限は実装済み (v2.3.26)**。**Slice 4a 実装済み — writer は v1 のまま (barrier 文書が無い＝pristine)**。**増分 B 実装済み (v2.3.35)**。**§2 obligation machine + historical publish 状態機械 実装済み (v2.3.53)** — 実 CouchDB IT が mock 不能な本番バグ 3 件を検出 (IT-42〜IT-44)。fence の budget は target/kind 別の型付き `LineageOperationBudget` — 型追加 / 属性追加 / secret 境界 / backfill / lifecycle / reconciliation / runbook。live Atlas は起動できず B-E1〜B-E4 を EXTERNAL_EVIDENCE_REQUIRED として [`lineage-increment-b-runbook.md`](../operations/lineage-increment-b-runbook.md) に固定
 
 revision 履歴と、過去に閉じた指摘の一覧は
 [`atlas-lineage-endpoints-changelog.md`](atlas-lineage-endpoints-changelog.md) にあります
@@ -2142,6 +2142,12 @@ POST /api/v1/admin/lineage-journal/repair
 | IT-38 | 2 つの catalog task を待つ event の片方だけ `RESOLVED` | `WAITING_FOR_CATALOG` のまま。両方解決で `PENDING` へ戻る。`waitingSince` はリセットされない |
 | IT-39 | hash 直列化の golden | `("ab","c")` と `("a","bc")` が別 ID。`null` と空文字が別 ID |
 | IT-40 | 重複 endpoint / 順序違い | 重複は `build()` で拒否。順序違いは同一 `processKey` |
+| IT-41 | 実 CouchDB で intent/compensation/fence/obligation を全 state 往復 | 全 state が decode 可能。stale token 拒否・claim 時 state の原子的返却・fence renew / 失効 / stale release |
+| IT-42 | `_count` reduce を持つ view に `include_docs` を付けて document 列挙 | **本番バグ (v2.3.53 で修正)**。CouchDB が `include_docs is invalid for reduce` で拒否するため `reduce=false` が必須。mock は全て通っていた |
+| IT-43 | `markResolved` 後に compensation を再 decode | **本番バグ (v2.3.53 で修正)**。人間可読文が `reason` enum を潰し、以後 decode 不能になっていた。note は `outcomeNote` へ |
+| IT-44 | design document から view を削除して列挙・arbitration を実行 | **本番バグ (v2.3.53 で修正)**。`queryView` は view 欠落時に `null` を返し、store がそれを空リストへ潰していた。**arbitration では「競合なし」＝単独所有と読まれ、2 node が同一 subject を上書きし得た**。現在は失敗として送出する |
+| IT-45 | reduce が数値以外を返す | 件数は `lowerBound` へ縮退。**exact 0 にしない** (0 は唯一 green に見える答え) |
+| IT-46 | 再 provisioning の前後で必要 view を照会 | 5 view すべてが照会可能。upgrade 経路でも同じ |
 
 ### Atlas-enabled E2E 受入表 (v3.3 release gate)
 

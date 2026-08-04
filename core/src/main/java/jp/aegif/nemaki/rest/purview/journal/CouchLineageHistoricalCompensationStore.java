@@ -88,9 +88,11 @@ public class CouchLineageHistoricalCompensationStore
         params.put("reduce", false);
         params.put("include_docs", true);
         com.ibm.cloud.cloudant.v1.model.ViewResult result =
-                support.client().queryView(support.designDoc(), "historicalCompensationsByState",
-                        params);
-        if (result == null || result.getRows() == null) {
+                LineageStoreDecoding.requireViewResult(
+                        support.client().queryView(support.designDoc(),
+                                "historicalCompensationsByState", params),
+                        "historicalCompensationsByState");
+        if (result.getRows() == null) {
             return List.of();
         }
         for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : result.getRows()) {

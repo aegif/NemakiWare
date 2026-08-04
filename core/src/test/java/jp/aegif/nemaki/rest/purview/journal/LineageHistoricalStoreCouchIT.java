@@ -23,7 +23,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -473,6 +475,297 @@ public class LineageHistoricalStoreCouchIT {
             assertTrue(compensations.read(digest("no-such-compensation")).isEmpty());
             assertFalse(compensations.markResolved(compensation("never-stored"), "x"));
         }
+    }
+
+    /**
+     * The two ways these views are queried must describe the same documents.
+     *
+     * <h2>The production bug this pins</h2>
+     *
+     * <p>Every one of these views carries a {@code _count} reduce for the status routes, and
+     * CouchDB rejects {@code include_docs} on a reduce query outright. So every document-listing
+     * call — the recovery scanner's, arbitration's, the admin status route's — failed against a
+     * real server while every mocked test passed. Only {@code reduce=false} makes the listing
+     * legal, and only a real CouchDB can tell us so.
+     *
+     * <p>Counting rows of the listing and reading the reduce are two independent code paths over
+     * one population. If they disagree, one of them is lying to a preflight.
+     */
+    @Nested
+    class ReduceRegression {
+
+        @Test
+        @DisplayName("intents: the reduce count and the document listing agree")
+        void intentCountMatchesListing() {
+            for (int i = 0; i < 5; i++) {
+                intents.createIfAbsent(intent("reduce-intent-" + i, 100L + i, "d-" + i));
+            }
+            List<LineageHistoricalPublishIntent> listed = intents
+                    .findByState(LineageHistoricalPublishIntent.State.PLANNED, 1_000);
+            long counted = listed.stream()
+                    .filter(one -> one.intentId().length() == 64).count();
+            assertEquals(listed.size(), counted, "every listed row must decode");
+            assertTrue(listed.size() >= 5,
+                    "reduce=false listing must return documents, not fail the query");
+        }
+
+        @Test
+        @DisplayName("compensations: the reduce count and the document listing agree")
+        void compensationCountMatchesListing() {
+            for (int i = 0; i < 3; i++) {
+                compensations.createIfAbsent(compensation("reduce-comp-" + i));
+            }
+            assertTrue(compensations
+                    .findByState(LineageHistoricalCompensation.State.PENDING, 1_000).size() >= 3);
+        }
+
+        /**
+         * The obligation store has the same views, the same reduce, and had the same bug.
+         *
+         * <p>Its count route is the one a preflight reads, so its two paths are compared
+         * directly: a listing that fails while the reduce succeeds would leave the preflight
+         * reporting a backlog nobody can enumerate.
+         */
+        @Test
+        @DisplayName("obligations: reduce=true count equals the reduce=false listing")
+        void obligationCountEqualsListing() {
+            CouchLineageCatalogObligationStore store =
+                    new CouchLineageCatalogObligationStore(journal);
+            for (int i = 0; i < 4; i++) {
+                store.createIfAbsent(obligation("reduce-obl-" + i));
+            }
+
+            List<LineageCatalogObligation> listed =
+                    store.findByState(LineageCatalogObligation.State.PENDING, 10_000);
+            LineageCatalogObligationStore.StateCount count =
+                    store.countByState().get(LineageCatalogObligation.State.PENDING);
+
+            assertFalse(count.truncated(),
+                    "a real reduce must answer exactly, not as a lower bound");
+            assertEquals(listed.size(), count.count(),
+                    "the reduce and the listing must describe one population");
+        }
+
+        /**
+         * A count that cannot be read is not zero.
+         *
+         * <p>Zero is the one answer that looks green, so a malformed reduce value must degrade
+         * to a lower bound instead. Forced here by pointing the store at a view whose reduce
+         * emits a non-numeric value.
+         */
+        @Test
+        @DisplayName("a malformed reduce value degrades to a lower bound, never to a clean zero")
+        void malformedReduceIsNotZero() {
+            Map<String, Object> original = viewDefinition("obligationsByState");
+            try {
+                // A reduce that answers with a string. The store must not read it as a number,
+                // and must not substitute the number it would like to see.
+                Map<String, Object> broken = new LinkedHashMap<>(original);
+                broken.put("reduce", "function(k, v, r) { return 'not-a-number'; }");
+                replaceView("obligationsByState", broken);
+
+                CouchLineageCatalogObligationStore store =
+                        new CouchLineageCatalogObligationStore(journal);
+                store.createIfAbsent(obligation("malformed-reduce"));
+                LineageCatalogObligationStore.StateCount count =
+                        store.countByState().get(LineageCatalogObligation.State.PENDING);
+                assertTrue(count.truncated(),
+                        "an unreadable reduce must be reported as a lower bound");
+            } finally {
+                // Put the real view back; later tests in this class depend on it.
+                replaceView("obligationsByState", original);
+            }
+        }
+
+        /**
+         * A view that is not there is not an empty result set.
+         *
+         * <p>Collapsing a query failure into {@code List.of()} tells a scanner there is no work
+         * and a preflight there is no backlog. Both are the reading that lets a broken
+         * deployment look finished.
+         */
+        @Test
+        @DisplayName("a query failure propagates instead of collapsing to an empty list")
+        void queryFailureIsNotEmpty() {
+            Map<String, Object> original = viewDefinition("historicalIntentsByState");
+            try {
+                removeView("historicalIntentsByState");
+                org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                        () -> intents.findByState(
+                                LineageHistoricalPublishIntent.State.PLANNED, 100),
+                        "a missing view must be an error, not 'there is nothing to do'");
+            } finally {
+                replaceView("historicalIntentsByState", original);
+            }
+        }
+
+        /**
+         * The arbitration view is the one that must never fail quietly.
+         *
+         * <p>"No contenders" is the answer that lets every intent conclude it holds the subject
+         * alone. Two nodes then publish over each other — precisely what the fence exists to
+         * prevent — and nothing in the machine would notice.
+         */
+        @Test
+        @DisplayName("a missing arbitration view is an error, not 'nobody else holds the subject'")
+        void missingArbitrationViewIsNotSoleOwnership() {
+            LineageHistoricalPublishIntent stored =
+                    intents.createIfAbsent(intent("arbitration-view", 50L, "d-arb"));
+            String subjectKey = LineageHistoricalPublishIntentStore.subjectKey(stored.target(),
+                    stored.repositoryId(), stored.endpointKind(), stored.subjectDigest());
+            // With the view present, the intent finds itself contending.
+            assertFalse(intents.findContendingForSubject(subjectKey, 100).isEmpty());
+
+            Map<String, Object> original =
+                    viewDefinition("historicalIntentsContendingBySubject");
+            try {
+                removeView("historicalIntentsContendingBySubject");
+                org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                        () -> intents.findContendingForSubject(subjectKey, 100),
+                        "sole ownership must never be inferred from a broken query");
+            } finally {
+                replaceView("historicalIntentsContendingBySubject", original);
+            }
+        }
+
+        private Map<String, Object> viewDefinition(String viewName) {
+            Map<String, Object> found = plainViews().get(viewName);
+            if (found == null) {
+                throw new IllegalStateException("no such view: " + viewName);
+            }
+            return found;
+        }
+
+        private void replaceView(String viewName, Map<String, Object> definition) {
+            mutateViews(views -> views.put(viewName, definition));
+        }
+
+        private void removeView(String viewName) {
+            mutateViews(views -> views.remove(viewName));
+        }
+
+        /**
+         * The design document's views as plain maps.
+         *
+         * <p>The SDK deserialises them into its own {@code DesignDocumentViewsMapReduce}, which
+         * is not a {@code Map} and cannot be edited in place. Flattening them keeps the write
+         * path a plain JSON round trip.
+         */
+        private Map<String, Map<String, Object>> plainViews() {
+            com.ibm.cloud.cloudant.v1.model.Document design =
+                    journal.client().get("_design/" + journal.designDoc());
+            Object rawViews = design.get("views");
+            Map<String, Map<String, Object>> plain = new LinkedHashMap<>();
+            if (!(rawViews instanceof Map<?, ?> byName)) {
+                return plain;
+            }
+            for (Map.Entry<?, ?> entry : byName.entrySet()) {
+                Map<String, Object> definition = new LinkedHashMap<>();
+                Object value = entry.getValue();
+                if (value instanceof com.ibm.cloud.cloudant.v1.model.DesignDocumentViewsMapReduce
+                        typed) {
+                    definition.put("map", typed.map());
+                    if (typed.reduce() != null) {
+                        definition.put("reduce", typed.reduce());
+                    }
+                } else if (value instanceof Map<?, ?> asMap) {
+                    asMap.forEach((k, v) -> definition.put(String.valueOf(k), v));
+                }
+                plain.put(String.valueOf(entry.getKey()), definition);
+            }
+            return plain;
+        }
+
+        private void mutateViews(
+                java.util.function.Consumer<Map<String, Map<String, Object>>> mutation) {
+            com.ibm.cloud.cloudant.v1.model.Document design =
+                    journal.client().get("_design/" + journal.designDoc());
+            Map<String, Map<String, Object>> views = plainViews();
+            mutation.accept(views);
+            Map<String, Object> raw = new LinkedHashMap<>();
+            raw.put("_id", design.getId());
+            raw.put("_rev", design.getRev());
+            if (design.getProperties() != null) {
+                raw.putAll(design.getProperties());
+            }
+            raw.put("views", views);
+            journal.client().update(raw);
+        }
+
+        /**
+         * Every view the machine needs must exist after provisioning.
+         *
+         * <p>Provisioning is idempotent and runs on every start, so this also covers the
+         * upgrade path: a store built against a database whose design document predates these
+         * views must end up with them rather than failing on first use.
+         */
+        @Test
+        @DisplayName("every required view is queryable before and after re-provisioning")
+        void requiredViewsSurviveReprovisioning() {
+            List<String> required = List.of("obligationsByState", "v2_waiting_by_task_key",
+                    "historicalIntentsByState", "historicalCompensationsByState",
+                    "historicalIntentsContendingBySubject");
+            assertQueryable(required);
+
+            // Re-run provisioning over the existing design document.
+            journal.ensureDatabase();
+            assertQueryable(required);
+        }
+
+        private void assertQueryable(List<String> viewNames) {
+            for (String view : viewNames) {
+                Map<String, Object> params = new LinkedHashMap<>();
+                params.put("reduce", false);
+                params.put("limit", 1);
+                org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                        () -> journal.client().queryView(journal.designDoc(), view, params),
+                        view + " must be queryable");
+            }
+        }
+    }
+
+    /**
+     * The enum field and the human note are different fields, and must stay that way.
+     *
+     * <h2>The production bug this pins</h2>
+     *
+     * <p>{@code markResolved} wrote its free-text explanation into {@code reason}, which holds
+     * the {@code Reason} enum. Every document it touched became undecodable — a compensation
+     * that had been acted on could never be read again, so nothing could report on it. Mocks do
+     * not go through the codec, so nothing caught it until a real round trip did.
+     */
+    @Test
+    @DisplayName("the compensation reason enum and its outcome note stay independent")
+    public void reasonAndOutcomeNoteAreIndependent() {
+        LineageHistoricalCompensation stored =
+                compensations.createIfAbsent(compensation("reason-independence"));
+        assertEquals(LineageHistoricalCompensation.Reason
+                .SOURCE_CHANGED_DURING_HISTORICAL_PUBLISH, stored.reason());
+
+        assertTrue(compensations.markResolved(stored,
+                "the current authoritative entity was re-published over the historical one"));
+
+        LineageHistoricalCompensation reread = compensations.read(stored.taskId()).orElseThrow();
+        assertEquals(LineageHistoricalCompensation.Reason
+                .SOURCE_CHANGED_DURING_HISTORICAL_PUBLISH, reread.reason(),
+                "the note must not have overwritten the enum");
+        assertEquals(LineageHistoricalCompensation.State.RESOLVED, reread.state());
+        // And the note itself survived, in its own field.
+        com.ibm.cloud.cloudant.v1.model.Document raw = cloudant.getDocument(
+                new com.ibm.cloud.cloudant.v1.model.GetDocumentOptions.Builder().db(dbName)
+                        .docId(LineageHistoricalCompensation.DOCUMENT_ID_PREFIX + stored.taskId())
+                        .build()).execute().getResult();
+        assertEquals("SOURCE_CHANGED_DURING_HISTORICAL_PUBLISH", raw.get("reason"));
+        assertTrue(String.valueOf(raw.get("outcomeNote")).contains("re-published"));
+    }
+
+    /** A PENDING obligation, deterministic per seed. */
+    private static LineageCatalogObligation obligation(String seed) {
+        String qualifiedName = "nemaki://" + REPO + "/" + seed;
+        return new LineageCatalogObligation(null,
+                LineageCatalogObligation.taskKey(TARGET, REPO, KIND, qualifiedName),
+                TARGET, REPO, KIND, qualifiedName, LineageCatalogObligation.State.PENDING,
+                null, null, 0L, 0L, 0, 1_000L, LineageCatalogObligation.Outcome.NONE, null, null);
     }
 
     /**

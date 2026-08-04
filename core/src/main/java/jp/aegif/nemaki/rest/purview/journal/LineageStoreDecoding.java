@@ -80,4 +80,36 @@ final class LineageStoreDecoding {
                 : sre.getDebuggingInfo().get("error");
         return "document_too_large".equals(reason) || "document_too_large".equals(error);
     }
+
+    /**
+     * A view result that came back, or a failure — never "there is nothing to do".
+     *
+     * <h2>The production bug this closes</h2>
+     *
+     * <p>{@code CloudantClientWrapper.queryView} returns {@code null} when the design document or
+     * the view is missing, deliberately, because the legacy CMIS DAOs run before provisioning and
+     * want "no data yet". The lineage stores then mapped that {@code null} onto an empty list,
+     * which reads as an entirely different statement: <em>there is no work</em>.
+     *
+     * <p>For this machine that reading is unsafe in three separate ways. The recovery scanner
+     * sees no expired claims and stops recovering. A preflight sees no backlog and reports a
+     * broken deployment as clean. Worst of all, subject arbitration sees no contenders — so
+     * every intent concludes it is the only one holding the subject, and two nodes publish over
+     * each other, which is the exact thing the fence exists to prevent.
+     *
+     * <p>These stores call {@code ensureDatabase()} before every query, so a view that is still
+     * missing afterwards is not a startup race. It is a broken database, and it has to be loud.
+     *
+     * @param viewName named in the message so an operator knows which view to re-provision;
+     *        view names are code identifiers, never data
+     */
+    static com.ibm.cloud.cloudant.v1.model.ViewResult requireViewResult(
+            com.ibm.cloud.cloudant.v1.model.ViewResult result, String viewName) {
+        if (result == null) {
+            throw new IllegalStateException("lineage view '" + viewName + "' is unavailable:"
+                    + " the design document is missing or was not provisioned. Refusing to read"
+                    + " that as an empty result set.");
+        }
+        return result;
+    }
 }

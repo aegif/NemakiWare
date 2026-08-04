@@ -67,7 +67,7 @@ public final class LineageObligationWiring {
     private final LineageHistoricalPublishMachine historicalMachine;
     private final LineageSourceDispositionRegistry sourceResolvers;
     private final LineageCurrentEntityRepublisher republisher;
-    private final long catalogRequestTimeoutMs;
+    private final LineageOperationBudgetProvider budgets;
 
     public LineageObligationWiring(LineageCatalogObligationStore store,
             LineageCatalogProbeRegistry probes,
@@ -80,7 +80,7 @@ public final class LineageObligationWiring {
             LineageHistoricalPublishMachine historicalMachine,
             LineageSourceDispositionRegistry sourceResolvers,
             LineageCurrentEntityRepublisher republisher,
-            long catalogRequestTimeoutMs) {
+            LineageOperationBudgetProvider budgets) {
         this.store = store;
         this.probes = probes;
         this.historicalPublishers = historicalPublishers;
@@ -92,15 +92,15 @@ public final class LineageObligationWiring {
         this.historicalMachine = historicalMachine;
         this.sourceResolvers = sourceResolvers;
         this.republisher = republisher;
-        this.catalogRequestTimeoutMs = catalogRequestTimeoutMs;
+        this.budgets = budgets;
     }
 
     /**
-     * The margin between the slowest catalog call and the fence that guards it.
+     * The margin between the slowest fenced section and the fence that guards it.
      *
-     * <p>A request that can outlast the fence is a request that can still be writing when
-     * another intent takes the subject and writes it too. Half the lease, so a call that runs
-     * to its full timeout still leaves time to renew before expiry.
+     * <p>Half the lease. A section that ran to its full budget would then still have half the
+     * lease left to renew in — and a renewal that has to win a race against its own expiry is
+     * not a renewal.
      */
     static final double FENCE_SAFETY_FACTOR = 0.5;
 
@@ -143,32 +143,80 @@ public final class LineageObligationWiring {
         violations.addAll(collaboratorViolations());
         violations.addAll(targetViolations(configuredTargets));
         violations.addAll(kindViolations());
-        violations.addAll(timeoutViolations());
+        violations.addAll(budgetViolations(configuredTargets));
         return violations;
     }
 
     /**
-     * The catalog request must not be able to outlive the fence protecting it.
+     * Every configured target and endpoint kind must have a budget that fits inside the fence.
      *
-     * <p>If it can, a call still in flight when the fence expires is a call that may be writing
-     * the same entity another intent has just taken the subject for — and neither writer knows
-     * about the other. Checked here rather than left to configuration review, because the two
-     * values are set in different places and nothing else compares them.
+     * <h2>What is being budgeted</h2>
+     *
+     * <p>Not one HTTP request — the whole fenced critical section: the authoritative source
+     * re-check, the historical publish, the read-back that confirms it, each with its connect
+     * and read timeouts, its retries and the total sleep between them, plus the client's own
+     * overhead. The earlier check compared a single read timeout against the lease, which passed
+     * configurations whose section takes several times as long as it is allowed to.
+     *
+     * <h2>Why per target and per kind</h2>
+     *
+     * <p>Atlas and Purview are configured independently, and a section's cost also depends on
+     * the kind, because each kind's authoritative source resolver talks to a different backend.
+     * A single number could only be right for one combination and would be a guess for the rest.
+     *
+     * <h2>Read now, not at startup</h2>
+     *
+     * <p>The provider is asked on every evaluation, so a timeout an administrator raises past
+     * the lease turns the gate red at the next readiness call rather than at the next restart.
      */
-    private List<String> timeoutViolations() {
+    private List<String> budgetViolations(Set<String> configuredTargets) {
         List<String> violations = new ArrayList<>();
-        long fenceLeaseMs = LineageHistoricalPublishMachine.INTENT_LEASE.toMillis();
-        if (catalogRequestTimeoutMs <= 0) {
-            violations.add("the catalog request timeout is not configured, so it cannot be"
-                    + " shown to fit inside the subject fence lease");
+        Set<String> targets = configuredTargets == null ? Set.of() : configuredTargets;
+        if (targets.isEmpty()) {
+            // Nothing is published, so no section is fenced. Consistent with targetViolations.
             return violations;
         }
-        long safeLimit = (long) (fenceLeaseMs * FENCE_SAFETY_FACTOR);
-        if (catalogRequestTimeoutMs >= safeLimit) {
-            violations.add("the catalog request timeout (" + catalogRequestTimeoutMs
-                    + "ms) leaves no safe margin inside the subject fence lease ("
-                    + fenceLeaseMs + "ms): a call may still be writing when another intent"
-                    + " takes the subject");
+        if (budgets == null) {
+            violations.add("no operation budget provider is wired, so no target can be shown to"
+                    + " finish inside the subject fence lease");
+            return violations;
+        }
+        long fenceLeaseMs = LineageHistoricalPublishMachine.INTENT_LEASE.toMillis();
+        long safetyMarginMs = (long) (fenceLeaseMs * FENCE_SAFETY_FACTOR);
+        for (String target : targets) {
+            for (EndpointKind kind : EndpointKind.values()) {
+                java.util.Optional<LineageOperationBudget> resolved;
+                try {
+                    resolved = budgets.budgetFor(target, kind);
+                } catch (RuntimeException unreadable) {
+                    // An exception is not a small budget. Fail closed, and do not echo the
+                    // message: configuration errors can carry endpoints and credentials.
+                    resolved = java.util.Optional.empty();
+                }
+                if (resolved == null || resolved.isEmpty()) {
+                    violations.add("no operation budget is resolvable for target '" + target
+                            + "' kind " + kind + ", so its fenced section cannot be shown to"
+                            + " finish inside the subject fence lease");
+                    continue;
+                }
+                LineageOperationBudget budget = resolved.get();
+                if (!budget.bounded()) {
+                    violations.add("the operation budget for target '" + target + "' kind "
+                            + kind + " is not bounded (unknown or unlimited retries cannot be"
+                            + " budgeted)");
+                    continue;
+                }
+                if (!budget.fitsInside(fenceLeaseMs, safetyMarginMs)) {
+                    long worst = budget.worstCaseMs();
+                    violations.add("the worst-case fenced section for target '" + target
+                            + "' kind " + kind + " ("
+                            + (worst == Long.MAX_VALUE ? "unbounded" : worst + "ms")
+                            + ") plus the safety margin (" + safetyMarginMs
+                            + "ms) does not fit inside the subject fence lease (" + fenceLeaseMs
+                            + "ms): a publish may still be in flight when another intent takes"
+                            + " the subject");
+                }
+            }
         }
         return violations;
     }

@@ -324,15 +324,17 @@ public class CouchLineageCatalogObligationStore implements LineageCatalogObligat
             Map<String, Object> params = new LinkedHashMap<>();
             params.put("key", state.name());
             params.put("limit", Math.max(1, limit));
-            // reduce=false is REQUIRED, not optional: these views carry a _count reduce for the
-        // status routes, and CouchDB rejects include_docs on a reduce query outright
-        // ("`include_docs` is invalid for reduce"). Omitting it made every document-listing
-        // call fail in production while every mocked test passed.
-        params.put("reduce", false);
-        params.put("include_docs", true);
+            // reduce=false is REQUIRED, not optional: these views carry a _count reduce for
+            // the status routes, and CouchDB rejects include_docs on a reduce query outright
+            // ("`include_docs` is invalid for reduce"). Omitting it made every document-listing
+            // call fail in production while every mocked test passed.
+            params.put("reduce", false);
+            params.put("include_docs", true);
             com.ibm.cloud.cloudant.v1.model.ViewResult result =
-                    support.client().queryView(support.designDoc(), "obligationsByState", params);
-            if (result == null || result.getRows() == null) {
+                    LineageStoreDecoding.requireViewResult(
+                            support.client().queryView(support.designDoc(),
+                                    "obligationsByState", params), "obligationsByState");
+            if (result.getRows() == null) {
                 return List.of();
             }
             for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : result.getRows()) {
@@ -384,7 +386,13 @@ public class CouchLineageCatalogObligationStore implements LineageCatalogObligat
             params.put("group", false);
             com.ibm.cloud.cloudant.v1.model.ViewResult result =
                     support.client().queryView(support.designDoc(), "obligationsByState", params);
-            if (result == null || result.getRows() == null || result.getRows().isEmpty()) {
+            if (result == null) {
+                // The view is missing. An exact zero here would tell a preflight that a
+                // deployment whose design document never provisioned has no backlog.
+                logger.warn("Obligation count for {} could not be read: view unavailable", state);
+                return StateCount.lowerBound(0L);
+            }
+            if (result.getRows() == null || result.getRows().isEmpty()) {
                 // _count over no matching keys returns no rows, which is an exact zero.
                 return StateCount.exact(0L);
             }

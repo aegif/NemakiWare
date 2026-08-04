@@ -12,6 +12,56 @@
 
 ---
 
+## v2.3.53 — mock が通していた本番バグ 3 件と、fence が守る区間の budget
+
+### 実 CouchDB IT が検出した本番バグ
+
+いずれも mock では検出不能だった。CouchDB のクエリ意味論と codec を通らないため。
+
+| # | 症状 | 影響 |
+|---|---|---|
+| 1 | `_count` reduce を持つ view への `include_docs` を CouchDB が拒否 (`include_docs is invalid for reduce`) | **document を列挙する呼出しが本番で全て失敗**していた — recovery scanner・arbitration・admin status。obligation store にも同じ欠陥。`reduce=false` を明示して修正 |
+| 2 | `markResolved` が人間可読文を `reason` (enum) へ書いていた | 以後その compensation は **decode 不能**。acted-on な記録が二度と読めない。`outcomeNote` へ分離 |
+| 3 | `CloudantClientWrapper.queryView` は view 欠落時に `null` を返す仕様 (legacy CMIS DAO が provisioning 前に走るため) を、lineage store が空リストへ潰していた | 「仕事がない」と読める。recovery scanner は回収を止め、preflight は壊れた deployment を clean と報告し、**arbitration は「競合なし」＝単独所有と読む** — 2 node が同一 subject を上書きし得た。`LineageStoreDecoding.requireViewResult` で失敗として送出 |
+
+3 は fence の存在意義そのものを無効化する経路であり、これが最も重い。obligation /
+intent / compensation の 3 store は照会前に必ず `ensureDatabase()` を通るため、
+provisioning 後に view が無いのは起動時 race ではなく壊れた database である。
+
+reduce が数値以外を返す場合も `exact 0` にしない (`lowerBound` へ縮退)。0 は唯一
+green に見える答えなので、読めなかったことを 0 と書くのは preflight に対する嘘になる。
+
+### N-1.5D.2.1 — fence が守るのは 1 request ではない
+
+readiness が単一の Purview read timeout を lease と比較していた。これは誰も訊いて
+いない質問への答えで、**個々の request が余裕で収まっていても区間全体は超え得る**。
+
+budget を型付きにし (`LineageOperationBudget`)、区間の worst case を次の合成で表す。
+
+- source disposition の直前再確認 (kind ごと — resolver の backend が異なる)
+- connect timeout + read timeout
+- retry 回数 (負値＝無制限は budget 不能)
+- retry backoff の総時間
+- catalog 呼出し **2 回** (historical publish と publish 後 read-back)
+- target client 固有の余裕
+
+target/kind ごとの `LineageOperationBudgetProvider` に置き換えた。
+
+- **Atlas の timeout を Purview 設定から推測しない**。`buildConnectionRequest()` は
+  *enabled* な backend の設定を返すため、これを budget に使うと Atlas へ publish する
+  node に Purview の数値が入り、どちらも無効なら例外になっていた
+- publisher が実際に使う retry policy を readiness も読む
+  (`PurviewHttpRetryHandler.maxRetries()` / `worstCaseBackoffTotalMs()`) — 定数を
+  複製すると乖離し、動作中のコードが守っていない margin を主張することになる
+- 起動時に固定しない。両 config は `readDynamic*` 経由なので、fresh readiness 評価が
+  即座に red/green を変える
+- 解決不能な target/kind は red。設定の無い target (dataplex) は既定値を借りない
+- 境界の等号は拒否 (`budget + margin < lease`)。等号では fence 失効の瞬間に区間が
+  まだ走っている
+- overflow は「収まらない」。小さい数へ折り返すと異常な設定が通る
+
+---
+
 ## revision
 
 - v2.3.35 — **増分 B 完了**。B-1 型追加 / B-2 属性追加 / B-3 secret 境界 / B-4 backfill /

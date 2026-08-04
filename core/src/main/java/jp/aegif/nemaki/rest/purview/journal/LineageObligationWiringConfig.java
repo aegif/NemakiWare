@@ -222,33 +222,27 @@ public class LineageObligationWiringConfig {
             LineageHistoricalPublishMachine historicalMachine,
             LineageSourceDispositionRegistry sourceResolvers,
             ObjectProvider<LineageCurrentEntityRepublisher> republisher,
-            ObjectProvider<jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver>
-                    connectionResolver) {
+            LineageOperationBudgetProvider budgets) {
         return new LineageObligationWiring(store.getIfAvailable(), probes, historicalPublishers,
                 service, scanner, projectorCollaborator, intentStore.getIfAvailable(),
                 compensationStore.getIfAvailable(), historicalMachine, sourceResolvers,
-                republisher.getIfAvailable(), catalogRequestTimeoutMs(connectionResolver));
+                republisher.getIfAvailable(), budgets);
     }
 
     /**
-     * The catalog's own read timeout, so readiness can compare it with the fence lease.
+     * The budget readiness compares against the fence lease.
      *
-     * <p>Zero when it cannot be read: readiness then reports that it could not be shown to fit,
-     * which is the fail-closed answer. Guessing a default would assert a safety margin nobody
-     * measured.
+     * <p>A provider, not a value. Timeouts are administrator-managed and resolve dynamically, so
+     * a number captured here would freeze readiness at whatever was configured when the context
+     * started — and a later change that pushed a section past the lease would never turn the
+     * gate red.
      */
-    private static long catalogRequestTimeoutMs(
-            ObjectProvider<jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver>
-                    connectionResolver) {
-        var resolver = connectionResolver.getIfAvailable();
-        if (resolver == null) {
-            return 0L;
-        }
-        try {
-            var request = resolver.buildConnectionRequest();
-            return request == null ? 0L : request.getReadTimeoutMs();
-        } catch (RuntimeException e) {
-            return 0L;
-        }
+    @Bean
+    public LineageOperationBudgetProvider lineageOperationBudgetProvider(
+            ObjectProvider<jp.aegif.nemaki.rest.purview.PurviewConfig> purviewConfig,
+            ObjectProvider<AtlasConfig> atlasConfig) {
+        return new ConfiguredLineageOperationBudgetProvider(purviewConfig.getIfAvailable(),
+                atlasConfig.getIfAvailable());
     }
+
 }

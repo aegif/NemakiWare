@@ -176,9 +176,10 @@ public class CouchLineageHistoricalPublishIntentStore
         params.put("reduce", false);
         params.put("include_docs", true);
         com.ibm.cloud.cloudant.v1.model.ViewResult result =
-                support.client().queryView(support.designDoc(), "historicalIntentsByState",
-                        params);
-        if (result == null || result.getRows() == null) {
+                LineageStoreDecoding.requireViewResult(
+                        support.client().queryView(support.designDoc(),
+                                "historicalIntentsByState", params), "historicalIntentsByState");
+        if (result.getRows() == null) {
             return List.of();
         }
         for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : result.getRows()) {
@@ -230,10 +231,14 @@ public class CouchLineageHistoricalPublishIntentStore
         // call fail in production while every mocked test passed.
         params.put("reduce", false);
         params.put("include_docs", true);
+        // A missing view must never read as "nobody else holds this subject" — that is the
+        // one answer that lets two nodes publish over each other.
         com.ibm.cloud.cloudant.v1.model.ViewResult result =
-                support.client().queryView(support.designDoc(),
-                        "historicalIntentsContendingBySubject", params);
-        if (result == null || result.getRows() == null) {
+                LineageStoreDecoding.requireViewResult(
+                        support.client().queryView(support.designDoc(),
+                                "historicalIntentsContendingBySubject", params),
+                        "historicalIntentsContendingBySubject");
+        if (result.getRows() == null) {
             return List.of();
         }
         for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : result.getRows()) {
