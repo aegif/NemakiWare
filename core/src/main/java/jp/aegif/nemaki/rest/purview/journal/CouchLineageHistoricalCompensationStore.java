@@ -81,6 +81,11 @@ public class CouchLineageHistoricalCompensationStore
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("key", state.name());
         params.put("limit", Math.max(1, limit));
+        // reduce=false is REQUIRED, not optional: these views carry a _count reduce for the
+        // status routes, and CouchDB rejects include_docs on a reduce query outright
+        // ("`include_docs` is invalid for reduce"). Omitting it made every document-listing
+        // call fail in production while every mocked test passed.
+        params.put("reduce", false);
         params.put("include_docs", true);
         com.ibm.cloud.cloudant.v1.model.ViewResult result =
                 support.client().queryView(support.designDoc(), "historicalCompensationsByState",
@@ -129,7 +134,10 @@ public class CouchLineageHistoricalCompensationStore
             return false;
         }
         raw.put("state", state.name());
-        raw.put("reason", reason);
+        // NOT "reason": that field holds the Reason enum this compensation was created for.
+        // Writing a human sentence into it made the document undecodable — the mock accepted
+        // it because it never round-tripped through the codec.
+        raw.put("outcomeNote", reason);
         return support.updateStrictCas(raw);
     }
 

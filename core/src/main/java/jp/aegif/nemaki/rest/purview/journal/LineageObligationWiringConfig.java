@@ -221,10 +221,34 @@ public class LineageObligationWiringConfig {
             ObjectProvider<LineageHistoricalCompensationStore> compensationStore,
             LineageHistoricalPublishMachine historicalMachine,
             LineageSourceDispositionRegistry sourceResolvers,
-            ObjectProvider<LineageCurrentEntityRepublisher> republisher) {
+            ObjectProvider<LineageCurrentEntityRepublisher> republisher,
+            ObjectProvider<jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver>
+                    connectionResolver) {
         return new LineageObligationWiring(store.getIfAvailable(), probes, historicalPublishers,
                 service, scanner, projectorCollaborator, intentStore.getIfAvailable(),
                 compensationStore.getIfAvailable(), historicalMachine, sourceResolvers,
-                republisher.getIfAvailable());
+                republisher.getIfAvailable(), catalogRequestTimeoutMs(connectionResolver));
+    }
+
+    /**
+     * The catalog's own read timeout, so readiness can compare it with the fence lease.
+     *
+     * <p>Zero when it cannot be read: readiness then reports that it could not be shown to fit,
+     * which is the fail-closed answer. Guessing a default would assert a safety margin nobody
+     * measured.
+     */
+    private static long catalogRequestTimeoutMs(
+            ObjectProvider<jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver>
+                    connectionResolver) {
+        var resolver = connectionResolver.getIfAvailable();
+        if (resolver == null) {
+            return 0L;
+        }
+        try {
+            var request = resolver.buildConnectionRequest();
+            return request == null ? 0L : request.getReadTimeoutMs();
+        } catch (RuntimeException e) {
+            return 0L;
+        }
     }
 }

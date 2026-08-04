@@ -169,6 +169,11 @@ public class CouchLineageHistoricalPublishIntentStore
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("key", state.name());
         params.put("limit", Math.max(1, limit));
+        // reduce=false is REQUIRED, not optional: these views carry a _count reduce for the
+        // status routes, and CouchDB rejects include_docs on a reduce query outright
+        // ("`include_docs` is invalid for reduce"). Omitting it made every document-listing
+        // call fail in production while every mocked test passed.
+        params.put("reduce", false);
         params.put("include_docs", true);
         com.ibm.cloud.cloudant.v1.model.ViewResult result =
                 support.client().queryView(support.designDoc(), "historicalIntentsByState",
@@ -219,6 +224,11 @@ public class CouchLineageHistoricalPublishIntentStore
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("key", subjectKey);
         params.put("limit", Math.max(1, limit));
+        // reduce=false is REQUIRED, not optional: these views carry a _count reduce for the
+        // status routes, and CouchDB rejects include_docs on a reduce query outright
+        // ("`include_docs` is invalid for reduce"). Omitting it made every document-listing
+        // call fail in production while every mocked test passed.
+        params.put("reduce", false);
         params.put("include_docs", true);
         com.ibm.cloud.cloudant.v1.model.ViewResult result =
                 support.client().queryView(support.designDoc(),

@@ -109,6 +109,8 @@ public class LineageObligationWiringTest {
         LineageHistoricalPublishMachine machine = mock(LineageHistoricalPublishMachine.class);
         LineageSourceDispositionRegistry sources = sourcesForEveryKind();
         LineageCurrentEntityRepublisher republisher = mock(LineageCurrentEntityRepublisher.class);
+        /** Comfortably inside half the five-minute fence lease. */
+        long catalogRequestTimeoutMs = 30_000L;
 
         LineageObligationWiring build() {
             LineageCatalogObligationService wired =
@@ -116,7 +118,8 @@ public class LineageObligationWiringTest {
             return new LineageObligationWiring(store, probes, publishers, wired,
                     withScanner ? new LineageObligationScannerImpl(wired) : null,
                     withProjector ? new LineageObligationProjectorCollaboratorImpl(wired) : null,
-                    intentStore, compensationStore, machine, sources, republisher);
+                    intentStore, compensationStore, machine, sources, republisher,
+                    catalogRequestTimeoutMs);
         }
     }
 
@@ -170,7 +173,7 @@ public class LineageObligationWiringTest {
         LineageObligationWiring wiring = new LineageObligationWiring(assembly.store,
                 assembly.probes, assembly.publishers, null, null, null, assembly.intentStore,
                 assembly.compensationStore, assembly.machine, assembly.sources,
-                assembly.republisher);
+                assembly.republisher, assembly.catalogRequestTimeoutMs);
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("obligation service")));
@@ -268,7 +271,7 @@ public class LineageObligationWiringTest {
                 mock(LineageHistoricalPublishIntentStore.class),
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
-                mock(LineageCurrentEntityRepublisher.class));
+                mock(LineageCurrentEntityRepublisher.class), 30_000L);
 
         assertTrue(wiring.sharesService(service));
         assertFalse(wiring.sharesService(serviceOver(store)));
@@ -295,7 +298,7 @@ public class LineageObligationWiringTest {
                 mock(LineageHistoricalPublishIntentStore.class),
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
-                mock(LineageCurrentEntityRepublisher.class));
+                mock(LineageCurrentEntityRepublisher.class), 30_000L);
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("scanner drives a different service")),
@@ -315,7 +318,7 @@ public class LineageObligationWiringTest {
                 mock(LineageHistoricalPublishIntentStore.class),
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
-                mock(LineageCurrentEntityRepublisher.class));
+                mock(LineageCurrentEntityRepublisher.class), 30_000L);
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("projector's obligation collaborator")),
@@ -337,7 +340,7 @@ public class LineageObligationWiringTest {
                 mock(LineageHistoricalPublishIntentStore.class),
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
-                mock(LineageCurrentEntityRepublisher.class));
+                mock(LineageCurrentEntityRepublisher.class), 30_000L);
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("different store")),
@@ -461,6 +464,40 @@ public class LineageObligationWiringTest {
         assembly.sources = null;
         assertTrue(assembly.build().violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("source disposition registry")));
+    }
+
+    /**
+     * A catalog call that can outlast its fence is a call that may still be writing when
+     * another intent takes the subject and writes it too.
+     */
+    @Test
+    @DisplayName("a catalog timeout that does not fit inside the fence lease is a violation")
+    public void timeoutMustFitInsideTheFenceLease() {
+        Assembly tooLong = new Assembly();
+        // The fence lease is five minutes; a five-minute request leaves no margin at all.
+        tooLong.catalogRequestTimeoutMs =
+                LineageHistoricalPublishMachine.INTENT_LEASE.toMillis();
+        assertTrue(tooLong.build().violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("no safe margin")),
+                tooLong.build().violations(TARGETS).toString());
+
+        // Exactly at the safety factor is still refused — the margin must be a margin.
+        Assembly borderline = new Assembly();
+        borderline.catalogRequestTimeoutMs = (long)
+                (LineageHistoricalPublishMachine.INTENT_LEASE.toMillis()
+                        * LineageObligationWiring.FENCE_SAFETY_FACTOR);
+        assertTrue(borderline.build().violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("no safe margin")));
+    }
+
+    /** Unmeasured is not "probably fine". */
+    @Test
+    @DisplayName("an unreadable catalog timeout is a violation, not an assumed default")
+    public void unknownTimeoutIsRed() {
+        Assembly unknown = new Assembly();
+        unknown.catalogRequestTimeoutMs = 0L;
+        assertTrue(unknown.build().violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("not configured")));
     }
 
     /** The check must be meaningful while D-rest is off — that is when it is most useful. */

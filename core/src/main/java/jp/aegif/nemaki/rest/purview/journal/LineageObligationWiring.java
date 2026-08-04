@@ -67,6 +67,7 @@ public final class LineageObligationWiring {
     private final LineageHistoricalPublishMachine historicalMachine;
     private final LineageSourceDispositionRegistry sourceResolvers;
     private final LineageCurrentEntityRepublisher republisher;
+    private final long catalogRequestTimeoutMs;
 
     public LineageObligationWiring(LineageCatalogObligationStore store,
             LineageCatalogProbeRegistry probes,
@@ -78,7 +79,8 @@ public final class LineageObligationWiring {
             LineageHistoricalCompensationStore compensationStore,
             LineageHistoricalPublishMachine historicalMachine,
             LineageSourceDispositionRegistry sourceResolvers,
-            LineageCurrentEntityRepublisher republisher) {
+            LineageCurrentEntityRepublisher republisher,
+            long catalogRequestTimeoutMs) {
         this.store = store;
         this.probes = probes;
         this.historicalPublishers = historicalPublishers;
@@ -90,7 +92,17 @@ public final class LineageObligationWiring {
         this.historicalMachine = historicalMachine;
         this.sourceResolvers = sourceResolvers;
         this.republisher = republisher;
+        this.catalogRequestTimeoutMs = catalogRequestTimeoutMs;
     }
+
+    /**
+     * The margin between the slowest catalog call and the fence that guards it.
+     *
+     * <p>A request that can outlast the fence is a request that can still be writing when
+     * another intent takes the subject and writes it too. Half the lease, so a call that runs
+     * to its full timeout still leaves time to renew before expiry.
+     */
+    static final double FENCE_SAFETY_FACTOR = 0.5;
 
     /**
      * What is missing or inconsistent, named. Empty means assembled.
@@ -131,6 +143,33 @@ public final class LineageObligationWiring {
         violations.addAll(collaboratorViolations());
         violations.addAll(targetViolations(configuredTargets));
         violations.addAll(kindViolations());
+        violations.addAll(timeoutViolations());
+        return violations;
+    }
+
+    /**
+     * The catalog request must not be able to outlive the fence protecting it.
+     *
+     * <p>If it can, a call still in flight when the fence expires is a call that may be writing
+     * the same entity another intent has just taken the subject for — and neither writer knows
+     * about the other. Checked here rather than left to configuration review, because the two
+     * values are set in different places and nothing else compares them.
+     */
+    private List<String> timeoutViolations() {
+        List<String> violations = new ArrayList<>();
+        long fenceLeaseMs = LineageHistoricalPublishMachine.INTENT_LEASE.toMillis();
+        if (catalogRequestTimeoutMs <= 0) {
+            violations.add("the catalog request timeout is not configured, so it cannot be"
+                    + " shown to fit inside the subject fence lease");
+            return violations;
+        }
+        long safeLimit = (long) (fenceLeaseMs * FENCE_SAFETY_FACTOR);
+        if (catalogRequestTimeoutMs >= safeLimit) {
+            violations.add("the catalog request timeout (" + catalogRequestTimeoutMs
+                    + "ms) leaves no safe margin inside the subject fence lease ("
+                    + fenceLeaseMs + "ms): a call may still be writing when another intent"
+                    + " takes the subject");
+        }
         return violations;
     }
 
