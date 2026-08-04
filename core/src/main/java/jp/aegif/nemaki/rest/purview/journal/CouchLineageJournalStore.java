@@ -436,6 +436,24 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                         + "emit(doc.state, null); } }",
                 "_count"));
 
+        // v2_waiting_by_task_key — §2's reverse lookup: which events, for which target, are
+        // waiting on a given obligation. Strictly limited to v2 rows at the schema version
+        // this build writes, so a v1 binary's views never see a v2 row and this view never
+        // sees a row whose waiting metadata it could not interpret.
+        //
+        // A row in WAITING_FOR_CATALOG with no task keys is NOT emitted: it is corruption, and
+        // putting it in front of the resolver would let a resume be attempted on an event whose
+        // wait nobody can account for. The reader detects it by its absence here plus its
+        // status, which is a louder signal than a half-populated row.
+        views.put("v2_waiting_by_task_key", new ViewDefinition(
+                "function(doc) { if (doc.type === 'lineage_event_v2' && doc.schemaVersion === 2"
+                        + " && doc.v2WaitingByTarget) { var w = doc.v2WaitingByTarget;"
+                        + " for (var target in w) { if (w.hasOwnProperty(target) && w[target]"
+                        + " && w[target].taskKeys && w[target].taskKeys.length > 0) {"
+                        + " for (var i = 0; i < w[target].taskKeys.length; i++) {"
+                        + " emit(w[target].taskKeys[i], target); } } } } }",
+                "_count"));
+
         return java.util.Collections.unmodifiableMap(views);
     }
 

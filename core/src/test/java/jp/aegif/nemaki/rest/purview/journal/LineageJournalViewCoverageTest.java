@@ -59,7 +59,8 @@ public class LineageJournalViewCoverageTest {
      * event by design, and asserting otherwise would demand it index events it has no business
      * with. Listed rather than pattern-matched, so a new one has to be classified deliberately.
      */
-    private static final Set<String> OBLIGATION_VIEWS = Set.of("obligationsByState");
+    private static final Set<String> OBLIGATION_VIEWS =
+            Set.of("obligationsByState", "v2_waiting_by_task_key");
 
     /**
      * v1-ONLY views (D-rest-2 schema split): every selector that feeds v1 machinery — claim,
@@ -225,6 +226,38 @@ public class LineageJournalViewCoverageTest {
         assertTrue(emits("obligationsByState", stateless).isEmpty());
     }
 
+    /**
+     * The reverse lookup sees waiting v2 rows and nothing else.
+     *
+     * <p>Strictly limited to {@code type=lineage_event_v2} at schema version 2: a v1 row must
+     * never appear here, and a v2 row this build could not interpret must not either.
+     */
+    @Test
+    public void theWaitingReverseLookupIsStrictlyScoped() {
+        Map<String, Object> waiting = v2Document();
+        waiting.put("v2WaitingByTarget", Map.of(
+                "purview", Map.of("taskKeys", List.of("task-a", "task-b"),
+                        "waitingSince", 1000L)));
+
+        List<?> emitted = emits("v2_waiting_by_task_key", waiting);
+        assertEquals(2, emitted.size(), "each task key must be findable: " + emitted);
+
+        // A v1 row, and a v2 row at another schema version, are both invisible.
+        assertTrue(emits("v2_waiting_by_task_key", v1Document()).isEmpty());
+        Map<String, Object> otherVersion = new java.util.LinkedHashMap<>(waiting);
+        otherVersion.put("schemaVersion", 3);
+        assertTrue(emits("v2_waiting_by_task_key", otherVersion).isEmpty(),
+                "a schema version this build cannot interpret must not be indexed");
+
+        // A row with no waiting metadata, and one with an EMPTY key list, are both absent —
+        // the second is corruption, and indexing it would offer a resume nobody can account for.
+        assertTrue(emits("v2_waiting_by_task_key", v2Document()).isEmpty());
+        Map<String, Object> empty = new java.util.LinkedHashMap<>(waiting);
+        empty.put("v2WaitingByTarget", Map.of("purview",
+                Map.of("taskKeys", List.of(), "waitingSince", 1000L)));
+        assertTrue(emits("v2_waiting_by_task_key", empty).isEmpty());
+    }
+
     /** v1 rows emit everywhere except the v2-only families. */
     @Test
     public void everyEventViewStillEmitsForASyntheticV1Document() {
@@ -279,9 +312,9 @@ public class LineageJournalViewCoverageTest {
     @Test
     public void theViewSetIsExactlyTheKnownTwentyFour() {
         assertEquals(Set.of(
-                        // §2's obligation index (v2.3.37). Not an event view — see
-                        // OBLIGATION_VIEWS for why it is excluded from the coverage property.
-                        "obligationsByState",
+                        // §2's obligation index (v2.3.37) and waiting reverse lookup
+                        // (v2.3.46). Neither is a general event view — see OBLIGATION_VIEWS.
+                        "obligationsByState", "v2_waiting_by_task_key",
                         "by_event_key", "by_repository_and_time", "by_target_status",
                         "by_process_type", "by_occurred_at", "by_repository_and_process_type",
                         "dead_letter_by_time", "dead_letter_by_replayed", "by_target_status_time",
