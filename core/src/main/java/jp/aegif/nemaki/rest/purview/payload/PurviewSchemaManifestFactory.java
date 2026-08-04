@@ -12,7 +12,10 @@ import org.springframework.stereotype.Component;
 @Component
 public class PurviewSchemaManifestFactory {
 
-    private static final String SCHEMA_VERSION = "13";
+    // 14: increment B adds nemaki_import_artifact / nemaki_export_artifact. The version
+    // moves with the type list because the manifest hash is what tells a deployment that
+    // its catalog is missing a type rather than merely out of date.
+    private static final String SCHEMA_VERSION = "14";
     private static final List<String> CUSTOM_TYPE_NAMES = List.of(
             "nemaki_repository",
             "nemaki_folder",
@@ -23,7 +26,9 @@ public class PurviewSchemaManifestFactory {
             "nemaki_archive_process",
             "nemaki_cloud_sync_process",
             "nemaki_import_process",
-            "nemaki_export_process");
+            "nemaki_export_process",
+            "nemaki_import_artifact",
+            "nemaki_export_artifact");
     private static final List<String> RELATIONSHIP_TYPE_NAMES = List.of(
             "nemaki_repository_contains_folder",
             "nemaki_folder_contains_folder",
@@ -58,6 +63,15 @@ public class PurviewSchemaManifestFactory {
                 BUSINESS_METADATA_NAMES);
     }
 
+    /**
+     * The schema manifest hash: plain SHA-256 over the canonical schema text.
+     *
+     * <p>Not domain-separated, and it does not need to be — its input is one specific
+     * serialisation of one specific document, never a concatenation of caller-supplied parts.
+     * That is the distinction {@code LineageDigests} draws; this class keeps its own copy only
+     * because that primitive is package-private to the journal package, and widening it to
+     * share four lines would be the worse trade.
+     */
     private String sha256(String value) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");

@@ -36,12 +36,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Service
 public class CouchLineageJournalStore implements LineageJournalStore, LineageSequencingStore,
         LineageV2TransitionStore, LineageV2ReplayStore, LineageMaterializationStore,
-        LineageBarrierStore {
+        LineageBarrierStore, LineageStoreSupport {
 
     private static final Logger logger = LoggerFactory.getLogger(CouchLineageJournalStore.class);
 
     static final String DB_NAME = "nemaki_lineage";
-    private static final String SEQ_PREFIX = "lineage_seq:";
+    static final String SEQ_PREFIX = "lineage_seq:";
     private static final String DESIGN_DOC = "lineage";
     private static final int MAX_CAS_RETRIES = 5;
     private static final int PURGE_BATCH_SIZE = 1000;
@@ -104,7 +104,8 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         return store;
     }
 
-    private void ensureDatabase() {
+    @Override
+    public void ensureDatabase() {
         if (dbProvisioned.get()) {
             return;
         }
@@ -1270,6 +1271,25 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
     }
 
     // ---------------------------------------------------------------
+    // LineageStoreSupport — the narrow basis the extracted responsibilities share
+    // ---------------------------------------------------------------
+
+    @Override
+    public CloudantClientWrapper client() {
+        return getLineageClient();
+    }
+
+    @Override
+    public String designDoc() {
+        return DESIGN_DOC;
+    }
+
+    @Override
+    public LineageMetrics metrics() {
+        return lineageMetrics;
+    }
+
+    // ---------------------------------------------------------------
     // Internal helpers
     // ---------------------------------------------------------------
 
@@ -1437,20 +1457,15 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
     // these in production until activation, and none of the v1 methods above changed.
     // ==================================================================
 
-    private static final String SEQUENCER_LEASE_PREFIX = "lineage_sequencer_lease:";
-    private static final int ALLOCATOR_CAS_RETRIES = 5;
-
-    private static String leaseDocumentId(String repositoryId) {
-        return SEQUENCER_LEASE_PREFIX + repositoryId;
-    }
 
     /**
      * Strict raw read for the sequencing surface: 404 is {@code null} (an ordinary answer);
-     * anything else is a {@link SequencingStorageException} — the wrapper's forgiving
+     * anything else is a {@link LineageSequencingStore.SequencingStorageException} — the wrapper's forgiving
      * {@code get()} returns null for outages too, which would let an infrastructure failure
      * impersonate LEASE_MISSING or COUNTER_MISSING and mis-route the recovery.
      */
-    private Map<String, Object> readRawStrict(String documentId) {
+    @Override
+    public Map<String, Object> readRawStrict(String documentId) {
         try {
             com.ibm.cloud.cloudant.v1.model.Document doc = getLineageClient().getClient()
                     .getDocument(new com.ibm.cloud.cloudant.v1.model.GetDocumentOptions
@@ -1467,16 +1482,18 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         } catch (NotFoundException notFound) {
             return null;
         } catch (RuntimeException e) {
-            throw new SequencingStorageException("read failed for '" + documentId + "'", e);
+            throw new LineageSequencingStore.SequencingStorageException("read failed for '" + documentId + "'", e);
         }
     }
+
 
     /**
      * Strict CAS update for the sequencing surface: true = committed, false = 409 (an
      * ordinary CAS loss); infrastructure failures throw — an outage reported as "conflict"
      * would make the sequencer re-read forever instead of latching.
      */
-    private boolean updateStrictCas(Map<String, Object> raw) {
+    @Override
+    public boolean updateStrictCas(Map<String, Object> raw) {
         try {
             com.ibm.cloud.cloudant.v1.model.Document doc =
                     new com.ibm.cloud.cloudant.v1.model.Document();
@@ -1497,13 +1514,20 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         } catch (com.ibm.cloud.sdk.core.service.exception.ConflictException conflict) {
             return false;
         } catch (RuntimeException e) {
-            throw new SequencingStorageException("CAS update failed for '"
+            throw new LineageSequencingStore.SequencingStorageException("CAS update failed for '"
                     + raw.get("_id") + "'", e);
         }
     }
 
     /** Exact integral conversion — Gson hands back LazilyParsedNumber; fractions must fail. */
-    private static long exactLong(Object value, String what) {
+    /**
+     * A pure numeric parser with no IO. Package-visible because the extracted decision codec
+     * needs the SAME strictness — a second copy would be a second definition of "integral".
+     * Not on {@link LineageStoreSupport}: that interface is the storage basis, and this is not
+     * storage. If a second delegate turns out to need it, it moves to a shared codec then, not
+     * before (v2.3.28 split).
+     */
+    static long exactLong(Object value, String what) {
         if (!(value instanceof Number n)) {
             throw new IllegalArgumentException(what + " must be a number, got "
                     + (value == null ? "null" : value.getClass().getSimpleName()));
@@ -1516,397 +1540,83 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         }
     }
 
+    private volatile CouchLineageSequencingStore wiredSequencingStore;
+
+    private CouchLineageSequencingStore sequencing() {
+        CouchLineageSequencingStore wired = wiredSequencingStore;
+        if (wired == null) {
+            synchronized (this) {
+                if (wiredSequencingStore == null) {
+                    wiredSequencingStore =
+                            new CouchLineageSequencingStore(this, lineageConfig);
+                }
+                wired = wiredSequencingStore;
+            }
+        }
+        return wired;
+    }
+
     @Override
     public java.util.Optional<LeaseGrant> acquireSequencerLease(String repositoryId,
             String nodeId, java.time.Duration ttl) {
-        ensureDatabase();
-        Map<String, Object> lease = readRawStrict(leaseDocumentId(repositoryId));
-        if (lease == null) {
-            // §8-a: created by the bootstrap patch only. Operation never creates it — a
-            // recreated lease would restart the generation high-watermark.
-            throw new LeaseMissingException(repositoryId);
-        }
-        String owner = lease.get("owner") instanceof String o && !o.isBlank() ? o : null;
-        String expiresAt = lease.get("expiresAt") instanceof String e ? e : null;
-        boolean free = owner == null
-                || (expiresAt != null && isExpired(expiresAt));
-        if (!free) {
-            return java.util.Optional.empty();
-        }
-        long generation;
-        try {
-            generation = exactLong(lease.get("generation"), "lease generation");
-        } catch (IllegalArgumentException malformed) {
-            generation = -1L;
-        }
-        if (generation < 0) {
-            logger.error("Sequencer lease for {} has a malformed generation — refusing to"
-                    + " acquire", repositoryId);
-            return java.util.Optional.empty();
-        }
-        long nextGeneration = Math.addExact(generation, 1);
-        String token = java.util.UUID.randomUUID() + "-" + java.util.UUID.randomUUID();
-        String newExpiresAt = Instant.now().plus(ttl).toString();
-        lease.put("generation", nextGeneration);
-        lease.put("sequencerLeaseToken", token);
-        lease.put("owner", nodeId);
-        lease.put("expiresAt", newExpiresAt);
-        if (updateStrictCas(lease)) {
-            Map<String, Object> committed = readRawStrict(leaseDocumentId(repositoryId));
-            String rev = committed != null && committed.get("_rev") instanceof String r
-                    ? r : "";
-            return java.util.Optional.of(new LeaseGrant(repositoryId, nextGeneration, token,
-                    nodeId, newExpiresAt, rev));
-        }
-        return java.util.Optional.empty();
+        return sequencing().acquireSequencerLease(repositoryId, nodeId, ttl);
     }
 
     @Override
     public java.util.Optional<LeaseGrant> renewSequencerLease(LeaseGrant grant,
             java.time.Duration ttl) {
-        if (grant == null) {
-            return java.util.Optional.empty();
-        }
-        Map<String, Object> lease = readRawStrict(leaseDocumentId(grant.repositoryId()));
-        if (lease == null || !matchesGrant(lease, grant)) {
-            return java.util.Optional.empty();
-        }
-        String newExpiresAt = Instant.now().plus(ttl).toString();
-        lease.put("expiresAt", newExpiresAt);
-        if (updateStrictCas(lease)) {
-            Map<String, Object> committed = readRawStrict(
-                    leaseDocumentId(grant.repositoryId()));
-            String rev = committed != null && committed.get("_rev") instanceof String r
-                    ? r : "";
-            return java.util.Optional.of(new LeaseGrant(grant.repositoryId(),
-                    grant.generation(), grant.sequencerLeaseToken(), grant.owner(),
-                    newExpiresAt, rev));
-        }
-        return java.util.Optional.empty();
+        return sequencing().renewSequencerLease(grant, ttl);
     }
 
     @Override
     public void releaseSequencerLease(LeaseGrant grant) {
-        if (grant == null) {
-            return;
-        }
-        try {
-            Map<String, Object> lease = readRawStrict(leaseDocumentId(grant.repositoryId()));
-            if (lease == null || !matchesGrant(lease, grant)
-                    || !grant.rev().equals(lease.get("_rev"))) {
-                // The frozen contract is an owner/generation/token/_rev CAS: a grant whose
-                // _rev is stale (the worker renewed since) must not release the newer hold.
-                return;
-            }
-            lease.put("owner", null);
-            lease.put("expiresAt", Instant.EPOCH.toString());
-            // generation and token stay: the document is the generation high-watermark and
-            // is never deleted (§8-a).
-            updateStrictCas(lease);
-        } catch (RuntimeException e) {
-            // Release is best-effort by design: expiry frees the lease anyway, and a release
-            // failure must not mask the run's real outcome.
-            logger.debug("Sequencer lease release skipped for {}: {}", grant.repositoryId(),
-                    e.getMessage());
-        }
+        sequencing().releaseSequencerLease(grant);
     }
 
     @Override
     public java.util.Optional<LeaseView> readSequencerLease(String repositoryId) {
-        Map<String, Object> lease = readRawStrict(leaseDocumentId(repositoryId));
-        if (lease == null) {
-            return java.util.Optional.empty();
-        }
-        long generation;
-        try {
-            generation = exactLong(lease.get("generation"), "lease generation");
-        } catch (IllegalArgumentException malformed) {
-            generation = -1L;
-        }
-        return java.util.Optional.of(new LeaseView(
-                generation,
-                lease.get("sequencerLeaseToken") instanceof String t ? t : null,
-                lease.get("owner") instanceof String o && !o.isBlank() ? o : null,
-                lease.get("expiresAt") instanceof String e ? e : null));
-    }
-
-    private static boolean matchesGrant(Map<String, Object> lease, LeaseGrant grant) {
-        long generation;
-        try {
-            generation = exactLong(lease.get("generation"), "lease generation");
-        } catch (IllegalArgumentException malformed) {
-            return false;
-        }
-        String token = lease.get("sequencerLeaseToken") instanceof String t ? t : null;
-        String owner = lease.get("owner") instanceof String o ? o : null;
-        return generation == grant.generation()
-                && grant.sequencerLeaseToken().equals(token)
-                && grant.owner().equals(owner);
-    }
-
-    private static boolean isExpired(String expiresAt) {
-        try {
-            return Instant.parse(expiresAt).isBefore(Instant.now());
-        } catch (RuntimeException e) {
-            // A lease whose expiry cannot be parsed must not be treated as free — that would
-            // let two nodes hold it. Unparseable = held forever = a management repair case.
-            return false;
-        }
+        return sequencing().readSequencerLease(repositoryId);
     }
 
     @Override
     public List<LineageJournalRowV2> findUnsequencedV2(String repositoryId, int limit) {
-        return queryV2RowsInClaimOrder("v2_sequencer_backlog", repositoryId, limit);
+        return sequencing().findUnsequencedV2(repositoryId, limit);
     }
 
     @Override
     public List<LineageJournalRowV2> findSequencingV2(String repositoryId, int limit) {
-        return queryV2RowsInClaimOrder("v2_sequencer_in_flight", repositoryId, limit);
-    }
-
-    private List<LineageJournalRowV2> queryV2RowsInClaimOrder(String viewName,
-            String repositoryId, int limit) {
-        try {
-            // Raw postView, not the shared wrapper: the wrapper returns null for a missing
-            // design document, and an empty backlog and a broken index must not look alike —
-            // the sequencer would release FENCED_OK over an outage instead of latching.
-            ViewResult result = getLineageClient().getClient().postView(
-                    new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
-                            .db(getLineageClient().getDatabaseName())
-                            .ddoc(DESIGN_DOC)
-                            .view(viewName)
-                            .startKey(List.of(repositoryId))
-                            .endKey(List.of(repositoryId, new HashMap<>(), new HashMap<>()))
-                            .includeDocs(true)
-                            .reduce(false)
-                            .limit((long) limit)
-                            .build())
-                    .execute().getResult();
-            if (result == null || result.getRows() == null) {
-                // postView returning no result object at all is an abnormal answer, not an
-                // empty backlog — empty is a result with zero rows.
-                throw new IllegalStateException("view '" + viewName + "' returned no result");
-            }
-            List<LineageJournalRowV2> rows = new ArrayList<>();
-            for (ViewResultRow row : result.getRows()) {
-                com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
-                Map<String, Object> props = new HashMap<>();
-                if (doc != null) {
-                    if (doc.getId() != null) props.put("_id", doc.getId());
-                    if (doc.getRev() != null) props.put("_rev", doc.getRev());
-                    if (doc.getProperties() != null) props.putAll(doc.getProperties());
-                }
-                try {
-                    if (doc == null) {
-                        // include_docs promised a document; its absence is view/store
-                        // inconsistency, exactly as blocking as an undecodable row.
-                        throw new IllegalStateException("view row without a document");
-                    }
-                    rows.add(CouchLineageJournalRowV2.fromRaw(props));
-                } catch (RuntimeException e) {
-                    // Deterministic order is the contract: sequencing PAST a broken row would
-                    // hand later occurredAt values lower positions than the row will get when
-                    // repaired. Healthy rows BEFORE the barrier proceed (the queue drains up
-                    // to it over successive passes); once the broken row is at the head there
-                    // is no progress to report, and pretending "empty backlog / FENCED_OK"
-                    // over a blocked queue is the one forbidden answer — so an empty prefix
-                    // throws, which the sequencer and the backlog probes surface as STOPPED.
-                    if (rows.isEmpty()) {
-                        throw new SequencingStorageException("corrupt v2 row '"
-                                + props.get("_id") + "' blocks the head of the sequencing"
-                                + " queue for '" + repositoryId + "'", e);
-                    }
-                    logger.error("Undecodable v2 row {} halts the sequencer scan at its"
-                            + " position ({} healthy rows before it proceed): {}",
-                            props.get("_id"), rows.size(), e.getMessage());
-                    break;
-                }
-            }
-            return rows;
-        } catch (RuntimeException e) {
-            throw new SequencingStorageException("sequencer view '" + viewName
-                    + "' query failed", e);
-        }
+        return sequencing().findSequencingV2(repositoryId, limit);
     }
 
     @Override
     public boolean claimForSequencing(LineageJournalRowV2 row, long generation,
             String sequencerLeaseToken) {
-        return casSequencingWrite(row, LineageJournalRowV2.SequencingState.UNSEQUENCED, null,
-                raw -> CouchLineageJournalRowV2.applySequencing(raw, generation,
-                        sequencerLeaseToken));
+        return sequencing().claimForSequencing(row, generation, sequencerLeaseToken);
     }
 
     @Override
     public boolean reclaimForSequencing(LineageJournalRowV2 row, long staleGeneration,
             long generation, String sequencerLeaseToken) {
-        if (staleGeneration >= generation) {
-            // §8-a: reclaim only takes rows from strictly older generations. An equal
-            // generation is our own in-flight row; a newer one is not ours to touch.
-            return false;
-        }
-        return casSequencingWrite(row, LineageJournalRowV2.SequencingState.SEQUENCING,
-                staleGeneration,
-                raw -> CouchLineageJournalRowV2.applySequencing(raw, generation,
-                        sequencerLeaseToken));
+        return sequencing().reclaimForSequencing(row, staleGeneration, generation,
+                sequencerLeaseToken);
     }
 
     @Override
     public boolean finalizeSequence(LineageJournalRowV2 row, long generation,
-            String sequencerLeaseToken, long sequence) {
-        if (sequence <= 0) {
-            throw new IllegalArgumentException("sequence must be positive, got " + sequence);
-        }
-        return casSequencingWrite(row, LineageJournalRowV2.SequencingState.SEQUENCING,
-                generation, raw -> {
-                    Object token = raw.get(CouchLineageJournalRowV2.FIELD_LEASE_TOKEN);
-                    if (!sequencerLeaseToken.equals(token)) {
-                        throw new StaleRowException();
-                    }
-                    CouchLineageJournalRowV2.applyFinalize(raw, sequence);
-                });
-    }
-
-    /** Signals "the stored row no longer matches what the caller claimed to hold". */
-    private static final class StaleRowException extends RuntimeException {
-    }
-
-    /**
-     * The shared CAS shape: re-read the raw document, verify it still is what the caller
-     * holds ({@code _rev}, state, and — when given — generation), apply the mutation
-     * field-preservingly, and write under the verified {@code _rev}. Any mismatch or update
-     * conflict is {@code false}: the world moved, the caller re-reads.
-     */
-    private boolean casSequencingWrite(LineageJournalRowV2 row,
-            LineageJournalRowV2.SequencingState expectedState, Long expectedGeneration,
-            java.util.function.Consumer<Map<String, Object>> mutation) {
-        if (row == null) {
-            return false;
-        }
-        try {
-            Map<String, Object> raw = readRawStrict(row.documentId());
-            if (raw == null) {
-                return false;
-            }
-            if (!row.rev().equals(raw.get("_rev"))) {
-                return false;
-            }
-            Object state = raw.get(CouchLineageJournalRowV2.FIELD_STATE);
-            if (!expectedState.name().equals(state)) {
-                return false;
-            }
-            if (expectedGeneration != null) {
-                Object generation = raw.get(CouchLineageJournalRowV2.FIELD_GENERATION);
-                try {
-                    if (exactLong(generation, "sequencerGeneration") != expectedGeneration) {
-                        return false;
-                    }
-                } catch (IllegalArgumentException malformed) {
-                    return false;
-                }
-            }
-            mutation.accept(raw);
-            return updateStrictCas(raw);
-        } catch (StaleRowException stale) {
-            return false;
-        }
-        // SequencingStorageException propagates: an outage is not a CAS loss, and the
-        // sequencer must latch on it rather than re-read forever.
+            String sequencerLeaseToken, long sequenceNumber) {
+        return sequencing().finalizeSequence(row, generation, sequencerLeaseToken,
+                sequenceNumber);
     }
 
     @Override
     public long allocateSequenceFenced(String repositoryId) {
-        ensureDatabase();
-        String seqDocId = SEQ_PREFIX + repositoryId;
-        for (int attempt = 0; attempt < ALLOCATOR_CAS_RETRIES; attempt++) {
-            Map<String, Object> seqDoc = readRawStrict(seqDocId);
-            if (seqDoc == null) {
-                // v1's allocator would create it here with seq=1. This one never seeds (I-4):
-                // a missing counter under existing history means rewound sequences.
-                throw new SequenceCounterException(SequencerHealth.COUNTER_MISSING,
-                        "sequence counter for '" + repositoryId + "' is missing — bootstrap"
-                                + " provisions it; the fenced allocator never seeds");
-            }
-            Object stored = seqDoc.get("seq");
-            Number n;
-            try {
-                exactLong(stored, "sequence counter");
-                n = (Number) stored;
-            } catch (IllegalArgumentException malformed) {
-                throw new SequenceCounterException(SequencerHealth.COUNTER_MISSING,
-                        "sequence counter for '" + repositoryId + "' is malformed: " + stored);
-            }
-            if (exactLong(n, "sequence counter") < 0) {
-                throw new SequenceCounterException(SequencerHealth.COUNTER_MISSING,
-                        "sequence counter for '" + repositoryId + "' is malformed: " + stored);
-            }
-            long current = exactLong(n, "sequence counter");
-            long watermark = sequenceHighWatermark(repositoryId);
-            if (current < watermark) {
-                throw new SequenceCounterException(SequencerHealth.COUNTER_REWOUND,
-                        "sequence counter for '" + repositoryId + "' is at " + current
-                                + ", below the finalized high-watermark " + watermark
-                                + " — refusing to allocate (I-2); recover manually");
-            }
-            long next = Math.addExact(current, 1);
-            seqDoc.put("seq", next);
-            if (updateStrictCas(seqDoc)) {
-                return next;
-            }
-            // false = an ordinary CAS loss to a concurrent allocator; re-read and retry.
-        }
-        throw new SequenceCounterException(SequencerHealth.STOPPED,
-                "fenced allocator for '" + repositoryId + "' lost " + ALLOCATOR_CAS_RETRIES
-                        + " consecutive CAS attempts — transient contention, retry later");
+        return sequencing().allocateSequenceFenced(repositoryId);
     }
 
     @Override
     public long sequenceHighWatermark(String repositoryId) {
-        try {
-            ViewResult result = getLineageClient().getClient().postView(
-                    new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
-                            .db(getLineageClient().getDatabaseName())
-                            .ddoc(DESIGN_DOC)
-                            .view("sequence_watermark")
-                            .keys(List.of(repositoryId))
-                            .group(true)
-                            .reduce(true)
-                            .build())
-                    .execute().getResult();
-            if (result == null || result.getRows() == null) {
-                throw new IllegalStateException("sequence_watermark returned no result");
-            }
-            if (result.getRows().isEmpty()) {
-                return 0L; // grouped reduce over zero rows: genuinely no history
-            }
-            Object value = result.getRows().get(0).getValue();
-            if (value == null) {
-                return 0L; // reduce over zero rows
-            }
-            if (value instanceof Map<?, ?> stats && stats.get("max") instanceof Number max) {
-                return exactLong(max, "sequence_watermark max");
-            }
-            // A reduce answer that is neither absent nor _stats-shaped is a broken index,
-            // not a zero watermark.
-            throw new IllegalStateException("malformed sequence_watermark reduce: " + value);
-        } catch (RuntimeException e) {
-            // The rewind check must not silently pass on a query failure: an unsafe failure
-            // stops allocation (the sequencer latches) rather than allocating blind. A
-            // missing view/design document lands here too — a sequencer without its views is
-            // broken infrastructure, not an empty repository.
-            if (e instanceof SequencingStorageException storage) {
-                throw storage;
-            }
-            throw new SequencingStorageException(
-                    "sequence watermark query failed for '" + repositoryId + "'", e);
-        }
+        return sequencing().sequenceHighWatermark(repositoryId);
     }
-
-
-    // ==================================================================
-    // LineageV2TransitionStore — §8-b v2 (D-rest-2). Deployed dual and inert like the
-    // sequencing surface: nothing calls these in production until D-rest activation.
-    // ==================================================================
 
     /**
      * C1 (v2.3.19): compares the DEPLOYED design document against this binary's view
@@ -1960,13 +1670,15 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         return violations;
     }
 
-    private Map<String, Object> readV2RawStrict(String recordId) {
+    @Override
+    public Map<String, Object> readV2RawStrict(String recordId) {
         String docId = CouchLineageEventV2.documentId(recordId);
         return readRawStrict(docId);
     }
 
     /** Decodes strictly; a malformed doc throws (never a value the machine could act on). */
-    private LineageJournalRowV2 decodeV2Strict(Map<String, Object> raw) {
+    @Override
+    public LineageJournalRowV2 decodeV2Strict(Map<String, Object> raw) {
         try {
             return CouchLineageJournalRowV2.fromRaw(raw);
         } catch (RuntimeException e) {
@@ -1978,742 +1690,120 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
     @Override
     public V2ClaimGrant claimForProjection(String recordId, String target,
             java.time.Duration lease) {
-        if (recordId == null || recordId.isBlank() || target == null || target.isBlank()
-                || lease == null || lease.isNegative() || lease.isZero()) {
-            throw new IllegalArgumentException("recordId, target and a positive lease are"
-                    + " required");
-        }
-        ensureDatabase();
-        Map<String, Object> raw = readV2RawStrict(recordId);
-        if (raw == null) {
-            return null;
-        }
-        if (!"lineage_event_v2".equals(raw.get("type"))) {
-            logger.error("claimForProjection refused: '{}' is not a v2 row", recordId);
-            return null;
-        }
-        LineageJournalRowV2 row = decodeV2Strict(raw);
-        if (row.state() != LineageJournalRowV2.SequencingState.SEQUENCED) {
-            // Not deliverable, whatever the status map says — claims exist only past the
-            // sequencer's finalize.
-            return null;
-        }
-        LineageTargetLifecycle current = row.targetLifecycles().get(target);
-        LineagePublishStatus status = current == null
-                ? LineagePublishStatus.PENDING : current.status();
-        if (status != LineagePublishStatus.PENDING && status != LineagePublishStatus.FAILED) {
-            return null;
-        }
-        long nowMs = Instant.now().toEpochMilli();
-        long expiresMs = Math.addExact(nowMs, lease.toMillis());
-        String token = java.util.UUID.randomUUID().toString();
-        CouchLineageJournalRowV2.applyProjectionClaim(raw, target, token, nowMs, expiresMs);
-        if (!updateStrictCas(raw)) {
-            return null;
-        }
-        return new V2ClaimGrant(recordId, target, token, Instant.ofEpochMilli(expiresMs));
+        return transitions().claimForProjection(recordId, target, lease);
     }
-
-    /** The token-fenced (expected→next) pairs and their effects, per the frozen §8-b table. */
-    private record FencedEffect(boolean toVerifying, boolean incrementRetry,
-                                boolean reasonRequired) {
-    }
-
-    private static final Map<List<LineagePublishStatus>, FencedEffect> FENCED_TRANSITIONS =
-            Map.of(
-                    List.of(LineagePublishStatus.PROJECTING, LineagePublishStatus.VERIFYING),
-                    new FencedEffect(true, false, false),
-                    List.of(LineagePublishStatus.VERIFYING, LineagePublishStatus.PUBLISHED),
-                    new FencedEffect(false, false, false),
-                    List.of(LineagePublishStatus.VERIFYING, LineagePublishStatus.FAILED),
-                    new FencedEffect(false, false, false),
-                    List.of(LineagePublishStatus.PROJECTING, LineagePublishStatus.FAILED),
-                    new FencedEffect(false, true, false),
-                    List.of(LineagePublishStatus.VERIFYING, LineagePublishStatus.UNPROJECTABLE),
-                    new FencedEffect(false, false, true),
-                    List.of(LineagePublishStatus.PROJECTING, LineagePublishStatus.REJECTED),
-                    new FencedEffect(false, false, true));
 
     @Override
     public boolean transitionV2(String recordId, String target, LineagePublishStatus expected,
             LineagePublishStatus next, String claimToken,
             LineageTargetLifecycle.TerminalReason reason) {
-        FencedEffect effect = FENCED_TRANSITIONS.get(List.of(expected, next));
-        if (effect == null) {
-            throw new IllegalArgumentException("transition " + expected + "->" + next
-                    + " is not in the fenced §8-b table — caller bug, not a race");
-        }
-        if (effect.reasonRequired() && reason == null) {
-            throw new IllegalArgumentException(next + " requires a durable terminal reason");
-        }
-        if (!effect.reasonRequired() && reason != null) {
-            throw new IllegalArgumentException(next + " must not carry a terminal reason");
-        }
-        if (claimToken == null || claimToken.isBlank()) {
-            throw new IllegalArgumentException("fenced transitions require the claim token");
-        }
-        ensureDatabase();
-        Map<String, Object> raw = readV2RawStrict(recordId);
-        if (raw == null) {
-            return false;
-        }
-        LineageJournalRowV2 row = decodeV2Strict(raw);
-        LineageTargetLifecycle current = row.targetLifecycles().get(target);
-        if (current == null || current.status() != expected
-                || !claimToken.equals(current.claimToken())) {
-            return false;
-        }
-        long nowMs = Instant.now().toEpochMilli();
-        if (current.leaseExpiresAtMs() == null || current.leaseExpiresAtMs() <= nowMs) {
-            // F4: EVERY claimant write fails after expiry — an expired claimant racing the
-            // reaper must lose, not settle. (The reaper's FAILED write CAS-beats us anyway;
-            // this makes the fence explicit rather than a rev-timing accident.)
-            return false;
-        }
-        if (effect.toVerifying()) {
-            // PROJECTING→VERIFYING renews the lease ATOMICALLY in the same CAS (§8-b: the
-            // transition row says "renews lease"). Lease policy is the store's (config).
-            // Null-safe for the direct-client test construction (no Spring context);
-            // production always injects the config.
-            long leaseSeconds = lineageConfig != null
-                    ? lineageConfig.getProjectionClaimLeaseSeconds() : 120L;
-            long leaseMs = Math.addExact(nowMs,
-                    java.time.Duration.ofSeconds(leaseSeconds).toMillis());
-            CouchLineageJournalRowV2.applyVerifying(raw, target, nowMs, leaseMs);
-        } else {
-            CouchLineageJournalRowV2.applySettle(raw, target, next, effect.incrementRetry(),
-                    reason);
-        }
-        return updateStrictCas(raw);
+        return transitions().transitionV2(recordId, target, expected, next, claimToken, reason);
     }
-
-    /** The pre-claim (expected→next) pairs: obligation + admin rows of the frozen table. */
-    private static final Map<List<LineagePublishStatus>, Boolean> UNCLAIMED_TRANSITIONS =
-            Map.of(
-                    List.of(LineagePublishStatus.PENDING,
-                            LineagePublishStatus.WAITING_FOR_CATALOG), false,
-                    List.of(LineagePublishStatus.WAITING_FOR_CATALOG,
-                            LineagePublishStatus.PENDING), false,
-                    List.of(LineagePublishStatus.WAITING_FOR_CATALOG,
-                            LineagePublishStatus.UNRESOLVED), true,
-                    List.of(LineagePublishStatus.PENDING,
-                            LineagePublishStatus.DISCARDED), false,
-                    // v2.3.24 F1: the row was created but its plan turned out to be
-                    // unstorable, so this target can never be delivered. UNRESOLVED is the
-                    // same verdict the creation-time classification writes for an
-                    // unsplittable fact — the only difference is that here it is learned
-                    // AFTER the row exists. DISCARDED cannot serve: it forbids the durable
-                    // reason, and it is illegal on the UNSEQUENCED row this always is.
-                    List.of(LineagePublishStatus.PENDING,
-                            LineagePublishStatus.UNRESOLVED), true,
-                    List.of(LineagePublishStatus.FAILED,
-                            LineagePublishStatus.DISCARDED), false);
 
     @Override
     public boolean transitionV2Unclaimed(String recordId, String target,
             LineagePublishStatus expected, LineagePublishStatus next,
             LineageTargetLifecycle.TerminalReason reason) {
-        Boolean reasonRequired = UNCLAIMED_TRANSITIONS.get(List.of(expected, next));
-        if (reasonRequired == null) {
-            throw new IllegalArgumentException("transition " + expected + "->" + next
-                    + " is not in the unclaimed §8-b table — caller bug, not a race");
-        }
-        if (reasonRequired && reason == null) {
-            throw new IllegalArgumentException(next + " requires a durable terminal reason");
-        }
-        if (!reasonRequired && reason != null) {
-            throw new IllegalArgumentException(next + " must not carry a terminal reason");
-        }
-        ensureDatabase();
-        Map<String, Object> raw = readV2RawStrict(recordId);
-        if (raw == null) {
-            return false;
-        }
-        LineageJournalRowV2 row = decodeV2Strict(raw);
-        LineageTargetLifecycle current = row.targetLifecycles().get(target);
-        LineagePublishStatus status = current == null
-                ? LineagePublishStatus.PENDING : current.status();
-        if (status != expected) {
-            return false;
-        }
-        if (expected == LineagePublishStatus.FAILED) {
-            // FAILED→DISCARDED: status-only write; the audit bundle rides along untouched
-            // (field-preserving map mutation — nothing is removed).
-            CouchLineageJournalRowV2.applySettle(raw, target, next, false, reason);
-        } else {
-            CouchLineageJournalRowV2.applyStatusOnly(raw, target, next, reason);
-        }
-        return updateStrictCas(raw);
+        return transitions().transitionV2Unclaimed(recordId, target, expected, next, reason);
     }
 
     @Override
     public boolean renewClaim(String recordId, String target, String claimToken,
             java.time.Duration lease) {
-        if (claimToken == null || claimToken.isBlank() || lease == null
-                || lease.isNegative() || lease.isZero()) {
-            throw new IllegalArgumentException("claim token and a positive lease are required");
-        }
-        ensureDatabase();
-        Map<String, Object> raw = readV2RawStrict(recordId);
-        if (raw == null) {
-            return false;
-        }
-        LineageJournalRowV2 row = decodeV2Strict(raw);
-        LineageTargetLifecycle current = row.targetLifecycles().get(target);
-        if (current == null || !current.hasLiveClaim()
-                || !claimToken.equals(current.claimToken())) {
-            return false;
-        }
-        long nowMs = Instant.now().toEpochMilli();
-        if (current.leaseExpiresAtMs() == null || current.leaseExpiresAtMs() <= nowMs) {
-            // An expired claim never self-resurrects — it goes through the reaper like
-            // anyone's.
-            return false;
-        }
-        CouchLineageJournalRowV2.applyRenew(raw, target, Math.addExact(nowMs, lease.toMillis()));
-        return updateStrictCas(raw);
+        return transitions().renewClaim(recordId, target, claimToken, lease);
     }
 
     @Override
     public int reapExpiredClaims(String target, Instant cutoff) {
-        if (target == null || target.isBlank() || cutoff == null) {
-            throw new IllegalArgumentException("target and cutoff are required");
-        }
-        ensureDatabase();
-        long cutoffMs = cutoff.toEpochMilli();
-        int reaped = 0;
-        // Mutation-safe pagination (F2): a successful reap REMOVES its row from this view, so
-        // an anchor-plus-skip continuation would skip the first surviving candidate once its
-        // anchor vanished. Instead: no skip, an in-memory examined set (bounded by this run),
-        // and an anchor that advances to the last row of every page — corrupt or CAS-lost
-        // rows are re-served by CouchDB but never re-examined, and can never pin a page.
-        java.util.Set<String> examined = new java.util.HashSet<>();
-        Object pageStartKey = List.of(target, 0L);
-        String pageStartDocId = null;
-        int pageSize = 100;
-        while (true) {
-            ViewResult result;
-            try {
-                var builder = new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
-                        .db(getLineageClient().getDatabaseName())
-                        .ddoc(DESIGN_DOC)
-                        .view("v2_claims_by_expiry")
-                        .startKey(pageStartKey)
-                        .endKey(List.of(target, cutoffMs))
-                        .inclusiveEnd(false)
-                        .reduce(false)
-                        .limit((long) pageSize);
-                if (pageStartDocId != null) {
-                    builder.startKeyDocId(pageStartDocId);
-                }
-                result = getLineageClient().getClient().postView(builder.build())
-                        .execute().getResult();
-            } catch (RuntimeException e) {
-                throw new SequencingStorageException("v2_claims_by_expiry query failed for '"
-                        + target + "'", e);
-            }
-            if (result == null || result.getRows() == null) {
-                throw new SequencingStorageException("v2_claims_by_expiry returned no result"
-                        + " for '" + target + "'", null);
-            }
-            List<ViewResultRow> rows = result.getRows();
-            boolean sawNew = false;
-            for (ViewResultRow viewRow : rows) {
-                String docId = viewRow.getId();
-                if (!examined.add(docId)) {
-                    continue;
-                }
-                sawNew = true;
-                try {
-                    Map<String, Object> raw = readRawStrict(docId);
-                    if (raw == null) {
-                        continue;
-                    }
-                    LineageJournalRowV2 row = decodeV2Strict(raw);
-                    LineageTargetLifecycle current = row.targetLifecycles().get(target);
-                    if (current == null || !current.hasLiveClaim()
-                            || current.leaseExpiresAtMs() == null
-                            || current.leaseExpiresAtMs() >= cutoffMs) {
-                        continue; // stale view entry, rotated claim, or no longer live
-                    }
-                    // Reap-by-CAS: the status/token just reread are what the CAS write rides
-                    // on (_rev). No retry increment — a crashed claim is not an observed
-                    // publish failure.
-                    CouchLineageJournalRowV2.applySettle(raw, target,
-                            LineagePublishStatus.FAILED, false, null);
-                    if (updateStrictCas(raw)) {
-                        reaped++;
-                        if (lineageMetrics != null) {
-                            lineageMetrics.recordV2ClaimReaped(target);
-                        }
-                    }
-                } catch (SequencingStorageException e) {
-                    // Corrupt rows are refused loudly and cannot pin the page (the examined
-                    // set carries the scan past them); infra failures abort the reap.
-                    if (e.getCause() instanceof NotFoundException
-                            || e.getMessage() != null
-                            && e.getMessage().startsWith("undecodable v2 row")) {
-                        logger.error("Reaper skipping corrupt v2 row {}: {}", docId,
-                                e.getMessage());
-                        continue;
-                    }
-                    throw e;
-                }
-            }
-            if (rows.size() < pageSize) {
-                return reaped;
-            }
-            if (!sawNew && rows.size() == pageSize) {
-                // A full page of already-examined rows: force the anchor past it.
-                ViewResultRow last = rows.get(rows.size() - 1);
-                pageStartKey = last.getKey();
-                pageStartDocId = last.getId();
-                continue;
-            }
-            ViewResultRow last = rows.get(rows.size() - 1);
-            pageStartKey = last.getKey();
-            pageStartDocId = last.getId();
-        }
+        return transitions().reapExpiredClaims(target, cutoff);
     }
 
     @Override
     public List<LineageJournalRowV2> findV2ByRepositoryAndSequenceRange(String repositoryId,
             long fromSequence, int limit) {
-        ensureDatabase();
-        try {
-            ViewResult result = getLineageClient().getClient().postView(
-                    new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
-                            .db(getLineageClient().getDatabaseName())
-                            .ddoc(DESIGN_DOC)
-                            .view("v2_by_repository_and_sequence")
-                            // Strictly-after AT THE QUERY (F1): filtering the cursor row out
-                            // AFTER the limit shrinks a full page to batchSize-1, which the
-                            // merge-window arithmetic reads as coverage-to-infinity and can
-                            // skip an unreturned v2 row. Same pattern as the v1 method.
-                            .startKey(List.of(repositoryId, Math.addExact(fromSequence, 1)))
-                            .endKey(List.of(repositoryId, new HashMap<>()))
-                            .includeDocs(true)
-                            .reduce(false)
-                            .limit((long) limit)
-                            .build())
-                    .execute().getResult();
-            if (result == null || result.getRows() == null) {
-                throw new IllegalStateException(
-                        "v2_by_repository_and_sequence returned no result");
-            }
-            List<LineageJournalRowV2> rows = new ArrayList<>();
-            for (ViewResultRow viewRow : result.getRows()) {
-                com.ibm.cloud.cloudant.v1.model.Document doc = viewRow.getDoc();
-                if (doc == null) {
-                    throw new IllegalStateException("view row without a document");
-                }
-                Map<String, Object> props = new HashMap<>();
-                if (doc.getId() != null) props.put("_id", doc.getId());
-                if (doc.getRev() != null) props.put("_rev", doc.getRev());
-                if (doc.getProperties() != null) props.putAll(doc.getProperties());
-                rows.add(decodeV2Strict(props));
-            }
-            return rows;
-        } catch (SequencingStorageException e) {
-            throw e;
-        } catch (RuntimeException e) {
-            throw new SequencingStorageException(
-                    "v2_by_repository_and_sequence query failed for '" + repositoryId + "'", e);
-        }
-    }
-
-    /**
-     * The §8-b VERIFYING gauges (F8): count via the view's reduce, oldest verifyingSinceMs via
-     * the first ascending row. Diagnostic surface (admin GET) — never a drain input.
-     */
-    public Map<String, Object> verifyingStats(String target) {
-        ensureDatabase();
-        try {
-            ViewResult countResult = getLineageClient().getClient().postView(
-                    new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
-                            .db(getLineageClient().getDatabaseName())
-                            .ddoc(DESIGN_DOC)
-                            .view("v2_verifying_by_since")
-                            .startKey(List.of(target))
-                            .endKey(List.of(target, new HashMap<>()))
-                            .reduce(true)
-                            .build())
-                    .execute().getResult();
-            long count = 0;
-            if (countResult != null && countResult.getRows() != null
-                    && !countResult.getRows().isEmpty()
-                    && countResult.getRows().get(0).getValue() instanceof Number n) {
-                count = exactLong(n, "verifying count");
-            }
-            Long oldestSinceMs = null;
-            if (count > 0) {
-                ViewResult oldest = getLineageClient().getClient().postView(
-                        new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
-                                .db(getLineageClient().getDatabaseName())
-                                .ddoc(DESIGN_DOC)
-                                .view("v2_verifying_by_since")
-                                .startKey(List.of(target))
-                                .endKey(List.of(target, new HashMap<>()))
-                                .reduce(false)
-                                .limit(1L)
-                                .build())
-                        .execute().getResult();
-                if (oldest != null && oldest.getRows() != null && !oldest.getRows().isEmpty()
-                        && oldest.getRows().get(0).getKey() instanceof List<?> key
-                        && key.size() == 2 && key.get(1) instanceof Number since) {
-                    oldestSinceMs = exactLong(since, "oldest verifyingSinceMs");
-                }
-            }
-            Map<String, Object> out = new LinkedHashMap<>();
-            out.put("count", count);
-            out.put("oldestSinceMs", oldestSinceMs);
-            return out;
-        } catch (RuntimeException e) {
-            throw new SequencingStorageException("verifying stats query failed for '"
-                    + target + "'", e);
-        }
+        return transitions().findV2ByRepositoryAndSequenceRange(repositoryId, fromSequence,
+                limit);
     }
 
     @Override
     public LineageJournalRowV2 findV2ByRecordId(String recordId) {
-        ensureDatabase();
-        Map<String, Object> raw = readV2RawStrict(recordId);
-        if (raw == null) {
-            return null;
-        }
-        return decodeV2Strict(raw);
+        return transitions().findV2ByRecordId(recordId);
     }
 
     @Override
     public List<String> findV2NonTerminalRepositoryIds(String target) {
-        ensureDatabase();
-        try {
-            ViewResult result = getLineageClient().getClient().postView(
-                    new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
-                            .db(getLineageClient().getDatabaseName())
-                            .ddoc(DESIGN_DOC)
-                            .view("v2_non_terminal_by_target_repo")
-                            .startKey(List.of(target))
-                            .endKey(List.of(target, new HashMap<>()))
-                            .reduce(true)
-                            .group(true)
-                            .build())
-                    .execute().getResult();
-            if (result == null || result.getRows() == null) {
-                throw new IllegalStateException(
-                        "v2_non_terminal_by_target_repo returned no result");
-            }
-            List<String> repos = new ArrayList<>();
-            for (ViewResultRow row : result.getRows()) {
-                Object key = row.getKey();
-                if (key instanceof List<?> parts && parts.size() == 2
-                        && parts.get(1) instanceof String repo) {
-                    repos.add(repo);
-                }
-            }
-            return repos;
-        } catch (SequencingStorageException e) {
-            throw e;
-        } catch (RuntimeException e) {
-            throw new SequencingStorageException(
-                    "v2_non_terminal_by_target_repo query failed for '" + target + "'", e);
-        }
-    }
-
-
-    // ==================================================================
-    // LineageV2ReplayStore — §8-d (D-rest-3). Deployed dual and inert like the rest of the
-    // D-rest surface: nothing calls these in production until activation.
-    // ==================================================================
-
-    @Override
-    public ReplayGrant requestReplay(String recordId, String target) {
-        if (recordId == null || recordId.isBlank() || target == null) {
-            throw new IllegalArgumentException("recordId and target are required");
-        }
-        String canonicalTarget = target.trim();
-        if (canonicalTarget.isBlank()) {
-            throw new LineageV2ReplayStore.ReplayRefusedException("target must not be blank");
-        }
-        // Null-safe for the direct-client test construction; production always injects.
-        if (lineageConfig != null && !lineageConfig.getTargets().contains(canonicalTarget)) {
-            // An unconfigured target would create a compensation nothing can ever claim, and
-            // readiness never verified its sink.
-            throw new LineageV2ReplayStore.ReplayRefusedException("target '" + canonicalTarget
-                    + "' is not currently configured (lineage.targets)");
-        }
-        ensureDatabase();
-        Map<String, Object> raw = readV2RawStrict(recordId);
-        if (raw == null) {
-            throw new LineageV2ReplayStore.ReplayRefusedException("row '" + recordId
-                    + "' does not exist");
-        }
-        if (!"lineage_event_v2".equals(raw.get("type"))) {
-            throw new LineageV2ReplayStore.ReplayRefusedException("row '" + recordId
-                    + "' is not a v2 row");
-        }
-        LineageJournalRowV2 row = decodeV2Strict(raw);
-        if (row.state() != LineageJournalRowV2.SequencingState.SEQUENCED) {
-            throw new LineageV2ReplayStore.ReplayRefusedException(
-                    "only a SEQUENCED row can be replayed — this row is " + row.state());
-        }
-        LineageTargetLifecycle lifecycle = row.targetLifecycles().get(canonicalTarget);
-        if (lifecycle == null) {
-            throw new LineageV2ReplayStore.ReplayRefusedException("target '" + canonicalTarget
-                    + "' is not owed by this row — replay cannot invent a delivery");
-        }
-        if (lifecycle.hasLiveClaim()) {
-            throw new LineageV2ReplayStore.ReplayRefusedException("target '" + canonicalTarget
-                    + "' holds a live " + lifecycle.status()
-                    + " claim — replay must not steal a token-fenced claim");
-        }
-        if (!lifecycle.status().isTerminal()) {
-            throw new LineageV2ReplayStore.ReplayRefusedException("target '" + canonicalTarget
-                    + "' is " + lifecycle.status() + " — only a terminal delivery is"
-                    + " replayable (the live machine owns everything else)");
-        }
-        LineageReplayRequest existing = row.replayRequests().get(canonicalTarget);
-        long generation;
-        if (existing == null) {
-            generation = 1L;
-        } else if (existing.state() == LineageReplayRequest.State.ACKED) {
-            generation = Math.addExact(existing.generation(), 1L);
-        } else if (existing.state() == LineageReplayRequest.State.FAILED) {
-            throw new LineageV2ReplayStore.ReplayRefusedException("target '" + canonicalTarget
-                    + "' has a durable FAILED replay request (generation "
-                    + existing.generation() + ": " + existing.reason().reason()
-                    + ") — it blocks new requests pending an audited repair");
-        } else {
-            throw new LineageV2ReplayStore.ReplayRefusedException("a replay request is"
-                    + " already in progress for target '" + canonicalTarget + "' (state "
-                    + existing.state() + ", generation " + existing.generation() + ")");
-        }
-        String requestId = java.util.UUID.randomUUID().toString();
-        long nowMs = Instant.now().toEpochMilli();
-        CouchLineageJournalRowV2.applyReplayRequested(raw, canonicalTarget, generation,
-                requestId, nowMs);
-        if (!updateStrictCas(raw)) {
-            return null; // lost the race — the winner's request is in progress
-        }
-        if (lineageMetrics != null) {
-            lineageMetrics.recordReplayRequested(canonicalTarget);
-        }
-        return new ReplayGrant(recordId, canonicalTarget, generation, requestId);
-    }
-
-    @Override
-    public boolean advanceReplay(String recordId, String target, String requestId,
-            LineageReplayRequest.State expected, LineageReplayRequest.State next) {
-        boolean allowed = (expected == LineageReplayRequest.State.REQUESTED
-                && next == LineageReplayRequest.State.CREATED)
-                || (expected == LineageReplayRequest.State.CREATED
-                        && next == LineageReplayRequest.State.ACKED);
-        if (!allowed) {
-            throw new IllegalArgumentException("replay transition " + expected + "->" + next
-                    + " is not in the §8-d table — caller bug, not a race");
-        }
-        if (requestId == null || requestId.isBlank()) {
-            throw new IllegalArgumentException("requestId fence is required");
-        }
-        ensureDatabase();
-        Map<String, Object> raw = readV2RawStrict(recordId);
-        if (raw == null) {
-            return false;
-        }
-        LineageJournalRowV2 row = decodeV2Strict(raw);
-        LineageReplayRequest current = row.replayRequests().get(target);
-        if (current == null || current.state() != expected
-                || !requestId.equals(current.requestId())) {
-            return false;
-        }
-        CouchLineageJournalRowV2.applyReplayState(raw, target, next,
-                Instant.now().toEpochMilli(), null);
-        return updateStrictCas(raw);
-    }
-
-    @Override
-    public boolean failReplay(String recordId, String target, String requestId,
-            LineageTargetLifecycle.TerminalReason reason) {
-        if (requestId == null || requestId.isBlank() || reason == null) {
-            throw new IllegalArgumentException("requestId fence and reason are required");
-        }
-        ensureDatabase();
-        Map<String, Object> raw = readV2RawStrict(recordId);
-        if (raw == null) {
-            return false;
-        }
-        LineageJournalRowV2 row = decodeV2Strict(raw);
-        LineageReplayRequest current = row.replayRequests().get(target);
-        if (current == null || !current.isUnacked()
-                || !requestId.equals(current.requestId())) {
-            return false;
-        }
-        CouchLineageJournalRowV2.applyReplayState(raw, target,
-                LineageReplayRequest.State.FAILED, Instant.now().toEpochMilli(), reason);
-        boolean persisted = updateStrictCas(raw);
-        if (persisted && lineageMetrics != null) {
-            lineageMetrics.recordReplayFailed(target);
-        }
-        return persisted;
-    }
-
-    @Override
-    public List<ReplayRecovery> findUnackedReplayRequests(int limit) {
-        ensureDatabase();
-        List<ReplayRecovery> out = new ArrayList<>();
-        // (documentId, target, requestId, generation) — one row with two active targets is
-        // two recovery items, and a superseded request is a different item.
-        java.util.Set<String> examined = new java.util.HashSet<>();
-        Object pageStartKey = null;
-        String pageStartDocId = null;
-        int pageSize = Math.min(Math.max(limit, 1), 100);
-        while (out.size() < limit) {
-            ViewResult result;
-            try {
-                var builder = new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
-                        .db(getLineageClient().getDatabaseName())
-                        .ddoc(DESIGN_DOC)
-                        .view("v2_replay_requests_unacked")
-                        .reduce(false)
-                        .limit((long) pageSize);
-                if (pageStartKey != null) {
-                    // EXCLUSIVE continuation (F3): this scan is read-only, so the anchor row
-                    // is still present on the next page — skip(1) steps past it and a corrupt
-                    // first row can never pin a page even at limit 1.
-                    builder.startKey(pageStartKey).skip(1L);
-                }
-                if (pageStartDocId != null) {
-                    builder.startKeyDocId(pageStartDocId);
-                }
-                result = getLineageClient().getClient().postView(builder.build())
-                        .execute().getResult();
-            } catch (RuntimeException e) {
-                throw new SequencingStorageException(
-                        "v2_replay_requests_unacked query failed", e);
-            }
-            if (result == null || result.getRows() == null) {
-                throw new SequencingStorageException(
-                        "v2_replay_requests_unacked returned no result", null);
-            }
-            List<ViewResultRow> rows = result.getRows();
-            if (rows.isEmpty()) {
-                return out;
-            }
-            for (ViewResultRow viewRow : rows) {
-                if (out.size() >= limit) {
-                    return out;
-                }
-                String docId = viewRow.getId();
-                Object key = viewRow.getKey();
-                String targetHint = key instanceof List<?> parts && parts.size() == 2
-                        && parts.get(1) instanceof String t ? t : null;
-                if (targetHint == null) {
-                    logger.error("Replay scan skipping malformed view key {} on {}", key,
-                            docId);
-                    continue;
-                }
-                try {
-                    Map<String, Object> raw = readRawStrict(docId);
-                    if (raw == null) {
-                        continue; // purged/changed under us — the view is a hint
-                    }
-                    LineageJournalRowV2 row = decodeV2Strict(raw);
-                    LineageReplayRequest request = row.replayRequests().get(targetHint);
-                    if (request == null || !request.isUnacked()) {
-                        continue; // stale hint
-                    }
-                    String identity = docId + "|" + targetHint + "|" + request.requestId()
-                            + "|" + request.generation();
-                    if (!examined.add(identity)) {
-                        continue;
-                    }
-                    String recordId = row.event().deliveryId();
-                    out.add(new ReplayRecovery(recordId, targetHint, request));
-                } catch (SequencingStorageException e) {
-                    if (e.getMessage() != null
-                            && e.getMessage().startsWith("undecodable v2 row")) {
-                        logger.error("Replay scan skipping corrupt v2 row {}: {}", docId,
-                                e.getMessage());
-                        continue;
-                    }
-                    throw e;
-                }
-            }
-            if (rows.size() < pageSize) {
-                return out;
-            }
-            ViewResultRow last = rows.get(rows.size() - 1);
-            pageStartKey = last.getKey();
-            pageStartDocId = last.getId();
-        }
-        return out;
+        return transitions().findV2NonTerminalRepositoryIds(target);
     }
 
     @Override
     public List<LineageJournalRow> findV1ByRepositoryAndSequenceRangeStrict(
             String repositoryId, long fromSequence, int limit) {
-        ensureDatabase();
-        try {
-            ViewResult result = getLineageClient().getClient().postView(
-                    new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
-                            .db(getLineageClient().getDatabaseName())
-                            .ddoc(DESIGN_DOC)
-                            .view("by_repository_and_sequence")
-                            .startKey(List.of(repositoryId, Math.addExact(fromSequence, 1)))
-                            .endKey(List.of(repositoryId, new HashMap<>()))
-                            .includeDocs(true)
-                            .reduce(false)
-                            .limit((long) limit)
-                            .build())
-                    .execute().getResult();
-            if (result == null || result.getRows() == null) {
-                // Empty is a result with zero rows; the ABSENCE of a result is an abnormal
-                // answer — the merge window must halt, never read it as full coverage.
-                throw new IllegalStateException(
-                        "by_repository_and_sequence returned no result");
-            }
-            List<LineageJournalRow> rows = new ArrayList<>();
-            for (ViewResultRow viewRow : result.getRows()) {
-                com.ibm.cloud.cloudant.v1.model.Document doc = viewRow.getDoc();
-                if (doc == null) {
-                    throw new IllegalStateException("view row without a document");
-                }
-                Map<String, Object> props = new HashMap<>();
-                if (doc.getId() != null) props.put("_id", doc.getId());
-                if (doc.getRev() != null) props.put("_rev", doc.getRev());
-                if (doc.getProperties() != null) props.putAll(doc.getProperties());
-                rows.add(LineageEventCodec.decodeRow(props));
-            }
-            return rows;
-        } catch (SequencingStorageException e) {
-            throw e;
-        } catch (RuntimeException e) {
-            throw new SequencingStorageException(
-                    "strict v1 merge fetch failed for '" + repositoryId + "'", e);
-        }
+        return transitions().findV1ByRepositoryAndSequenceRangeStrict(repositoryId,
+                fromSequence, limit);
     }
 
-    /** F4: the unacked gauge — the recovery view's _count reduce, for diagnostics. */
-    public long countUnackedReplayRequests() {
-        ensureDatabase();
-        try {
-            ViewResult result = getLineageClient().getClient().postView(
-                    new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
-                            .db(getLineageClient().getDatabaseName())
-                            .ddoc(DESIGN_DOC)
-                            .view("v2_replay_requests_unacked")
-                            .reduce(true)
-                            .build())
-                    .execute().getResult();
-            if (result == null || result.getRows() == null || result.getRows().isEmpty()) {
-                return 0;
-            }
-            Object value = result.getRows().get(0).getValue();
-            return value instanceof Number n ? exactLong(n, "unacked replay count") : 0;
-        } catch (RuntimeException e) {
-            throw new SequencingStorageException("unacked replay count query failed", e);
-        }
+    public ReplayGrant requestReplay(String recordId, String target) {
+        return replay().requestReplay(recordId, target);
     }
+
+    public boolean advanceReplay(String recordId, String target, String requestId,
+            LineageReplayRequest.State expected, LineageReplayRequest.State next) {
+        return replay().advanceReplay(recordId, target, requestId, expected, next);
+    }
+
+    public boolean failReplay(String recordId, String target, String requestId,
+            LineageTargetLifecycle.TerminalReason reason) {
+        return replay().failReplay(recordId, target, requestId, reason);
+    }
+
+    public List<ReplayRecovery> findUnackedReplayRequests(int limit) {
+        return replay().findUnackedReplayRequests(limit);
+    }
+
+    private volatile CouchLineageReplayStore wiredReplayStore;
+
+    private CouchLineageReplayStore replay() {
+        CouchLineageReplayStore wired = wiredReplayStore;
+        if (wired == null) {
+            synchronized (this) {
+                if (wiredReplayStore == null) {
+                    wiredReplayStore = new CouchLineageReplayStore(this, lineageConfig);
+                }
+                wired = wiredReplayStore;
+            }
+        }
+        return wired;
+    }
+
+    /**
+     * Not on any interface: the sequencer admin route reads it off the concrete store. Kept as
+     * a facade method so that caller is unchanged by the split.
+     */
+    public Map<String, Object> verifyingStats(String target) {
+        return transitions().verifyingStats(target);
+    }
+
+    /** Same: an admin-route read that is not on any interface. */
+    public long countUnackedReplayRequests() {
+        return transitions().countUnackedReplayRequests();
+    }
+
+    private volatile CouchLineageV2TransitionStore wiredTransitionStore;
+
+    private CouchLineageV2TransitionStore transitions() {
+        CouchLineageV2TransitionStore wired = wiredTransitionStore;
+        if (wired == null) {
+            synchronized (this) {
+                if (wiredTransitionStore == null) {
+                    wiredTransitionStore =
+                            new CouchLineageV2TransitionStore(this, lineageConfig);
+                }
+                wired = wiredTransitionStore;
+            }
+        }
+        return wired;
+    }
+
 
 
     // ==================================================================
@@ -2723,476 +1813,49 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
     private static final String DECISION_TYPE = "lineage_materialization";
 
+    private volatile CouchLineageMaterializationStore wiredMaterializationStore;
+
+    /** Built on first use: the injected fields are not available at construction. */
+    private CouchLineageMaterializationStore materialization() {
+        CouchLineageMaterializationStore wired = wiredMaterializationStore;
+        if (wired == null) {
+            synchronized (this) {
+                if (wiredMaterializationStore == null) {
+                    wiredMaterializationStore =
+                            new CouchLineageMaterializationStore(this, this);
+                }
+                wired = wiredMaterializationStore;
+            }
+        }
+        return wired;
+    }
+
     @Override
     public LineageMaterializationDecision createDecisionIfAbsent(
             LineageMaterializationDecision decision) {
-        if (decision == null) {
-            throw new IllegalArgumentException("decision must not be null");
-        }
-        ensureDatabase();
-        Map<String, Object> doc = decisionToRaw(decision);
-        try {
-            com.ibm.cloud.cloudant.v1.model.Document sdkDoc =
-                    new com.ibm.cloud.cloudant.v1.model.Document();
-            Map<String, Object> withoutMeta = new HashMap<>(doc);
-            withoutMeta.remove("_id");
-            sdkDoc.setProperties(withoutMeta);
-            sdkDoc.setId(decision.documentId());
-            getLineageClient().getClient().putDocument(
-                    new com.ibm.cloud.cloudant.v1.model.PutDocumentOptions.Builder()
-                            .db(getLineageClient().getDatabaseName())
-                            .docId(decision.documentId())
-                            .document(sdkDoc)
-                            .build())
-                    .execute();
-            return decision;
-        } catch (com.ibm.cloud.sdk.core.service.exception.ConflictException conflict) {
-            LineageMaterializationDecision stored =
-                    readDecision(decision.spoolRecordId());
-            if (stored == null) {
-                throw new SequencingStorageException("decision occupant for '"
-                        + decision.spoolRecordId() + "' vanished after 409", null);
-            }
-            if (!stored.factPayloadDigest().equals(decision.factPayloadDigest())
-                    || !stored.materializationPlanDigest()
-                            .equals(decision.materializationPlanDigest())) {
-                throw new LineageIntegrityException(decision.documentId(),
-                        stored.materializationPlanDigest(),
-                        "decision occupant disagrees — a different fact or plan already"
-                                + " committed under this spoolRecordId");
-            }
-            // Benign collision: the STORED decision's allocations are the frozen truth.
-            if (lineageMetrics != null) {
-                lineageMetrics.recordDecisionCollision();
-            }
-            return stored;
-        } catch (RuntimeException e) {
-            throw new SequencingStorageException("decision create failed for '"
-                    + decision.spoolRecordId() + "'", e);
-        }
+        return materialization().createDecisionIfAbsent(decision);
     }
 
     @Override
     public LineageMaterializationDecision readDecision(String spoolRecordId) {
-        if (spoolRecordId == null || spoolRecordId.isBlank()) {
-            throw new IllegalArgumentException("spoolRecordId must not be blank");
-        }
-        ensureDatabase();
-        Map<String, Object> raw = readRawStrict("lineage_materialization:" + spoolRecordId);
-        if (raw == null) {
-            return null;
-        }
-        try {
-            return decisionFromRaw(raw);
-        } catch (RuntimeException e) {
-            throw new SequencingStorageException("undecodable materialization decision '"
-                    + spoolRecordId + "': " + e.getMessage(), e);
-        }
-    }
-
-    private static Map<String, Object> decisionToRaw(LineageMaterializationDecision d) {
-        Map<String, Object> doc = new LinkedHashMap<>();
-        doc.put("_id", d.documentId());
-        doc.put("type", DECISION_TYPE);
-        doc.put("spoolRecordId", d.spoolRecordId());
-        doc.put("factPayloadDigest", d.factPayloadDigest());
-        doc.put("materializeSchemaVersion", (long) d.materializeSchemaVersion());
-        doc.put("barrierGeneration", d.barrierGeneration());
-        doc.put("allocatedEventId", d.allocatedEventId());
-        doc.put("planEntries", d.planEntries().stream()
-                .map(LineageMaterializationDecision.PlanEntry::asRecord).toList());
-        doc.put("materializationPlanDigest", d.materializationPlanDigest());
-        doc.put("createdAtMs", d.createdAtMs());
-        // v2.3.22: absent planDigestVersion means V2 (historical decisions), so only V3
-        // decisions write the version and its chunk-aware fields.
-        if (d.planDigestVersion() == 3) {
-            doc.put("planDigestVersion", 3L);
-            doc.put("partitionVersion", d.partitionVersion());
-            doc.put("chunkLimits", java.util.Map.of(
-                    "maxEndpointsPerEvent", d.chunkLimits().maxEndpointsPerEvent(),
-                    "maxPayloadBytes", d.chunkLimits().maxPayloadBytes()));
-            Map<String, Object> classification = new LinkedHashMap<>();
-            d.creationClassification().forEach((target, c) -> {
-                Map<String, Object> entry = new LinkedHashMap<>();
-                entry.put("status", c.status().name());
-                Map<String, Object> reason = new LinkedHashMap<>();
-                reason.put("reason", c.reason().reason());
-                reason.put("detail", c.reason().detail());
-                reason.put("atMs", c.reason().atMs());
-                entry.put("reason", reason);
-                classification.put(target, entry);
-            });
-            doc.put("creationClassification", classification);
-        }
-        return doc;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static LineageMaterializationDecision decisionFromRaw(Map<String, Object> raw) {
-        if (!DECISION_TYPE.equals(raw.get("type"))) {
-            throw new IllegalArgumentException("not a materialization decision: type="
-                    + raw.get("type"));
-        }
-        String spoolRecordId = requireString(raw, "spoolRecordId");
-        String expectedId = "lineage_materialization:" + spoolRecordId;
-        if (!expectedId.equals(raw.get("_id"))) {
-            throw new IllegalArgumentException("decision _id '" + raw.get("_id")
-                    + "' does not match its spoolRecordId");
-        }
-        long schemaLong = exactLong(raw.get("materializeSchemaVersion"),
-                "materializeSchemaVersion");
-        if (schemaLong != 1L && schemaLong != 2L) {
-            // Validated BEFORE narrowing: 4294967297 must never masquerade as schema 1.
-            throw new IllegalArgumentException("materializeSchemaVersion must be 1 or 2, got "
-                    + schemaLong);
-        }
-        int schemaVersion = (int) schemaLong;
-        Object entriesValue = raw.get("planEntries");
-        if (!(entriesValue instanceof List<?> entryList) || entryList.isEmpty()) {
-            throw new IllegalArgumentException("planEntries must be a non-empty list");
-        }
-        List<LineageMaterializationDecision.PlanEntry> entries = new ArrayList<>();
-        for (Object entryValue : entryList) {
-            if (!(entryValue instanceof Map)) {
-                throw new IllegalArgumentException("plan entry must be a map");
-            }
-            Map<String, Object> e = (Map<String, Object>) entryValue;
-            if (schemaVersion == 1) {
-                entries.add(new LineageMaterializationDecision.V1Entry(
-                        requireString(e, "eventId"), requireString(e, "v1EventDigest")));
-            } else {
-                entries.add(new LineageMaterializationDecision.V2Entry(
-                        exactLong(e.get("chunkIndex"), "chunkIndex"),
-                        requireString(e, "deliveryId"), requireString(e, "eventDigest")));
-            }
-        }
-        // Version dispatch (v2.3.22 B5/C1): absent means V2 — historical decisions decode
-        // exactly as they always did, multi-entry shapes included.
-        long planDigestVersion = raw.containsKey("planDigestVersion")
-                ? exactLong(raw.get("planDigestVersion"), "planDigestVersion") : 2L;
-        if (planDigestVersion != 2L && planDigestVersion != 3L) {
-            throw new IllegalArgumentException("unknown planDigestVersion "
-                    + planDigestVersion + " — this build cannot act on it");
-        }
-        Long partitionVersion = null;
-        LineageChunkPlanner.ChunkLimits chunkLimits = null;
-        Map<String, LineageMaterializationDecision.CreationClassification> classification =
-                new LinkedHashMap<>();
-        if (planDigestVersion == 2L) {
-            // V3-only fields under V2 are a malformed document, not fields to ignore (F4).
-            for (String forbidden : List.of("partitionVersion", "chunkLimits",
-                    "creationClassification")) {
-                if (raw.containsKey(forbidden)) {
-                    throw new IllegalArgumentException("a V2 decision must not carry '"
-                            + forbidden + "'");
-                }
-            }
-        }
-        if (planDigestVersion == 3L) {
-            partitionVersion = exactLong(raw.get("partitionVersion"), "partitionVersion");
-            Object limitsValue = raw.get("chunkLimits");
-            if (!(limitsValue instanceof Map)) {
-                throw new IllegalArgumentException("a V3 decision requires chunkLimits");
-            }
-            Map<String, Object> limits = (Map<String, Object>) limitsValue;
-            chunkLimits = new LineageChunkPlanner.ChunkLimits(
-                    exactLong(limits.get("maxEndpointsPerEvent"), "maxEndpointsPerEvent"),
-                    exactLong(limits.get("maxPayloadBytes"), "maxPayloadBytes"));
-            Object classificationValue = raw.get("creationClassification");
-            if (classificationValue != null) {
-                if (!(classificationValue instanceof Map)) {
-                    throw new IllegalArgumentException("creationClassification must be a map");
-                }
-                for (var e : ((Map<String, Object>) classificationValue).entrySet()) {
-                    if (!(e.getValue() instanceof Map)) {
-                        throw new IllegalArgumentException("classification entry must be a map");
-                    }
-                    Map<String, Object> entry = (Map<String, Object>) e.getValue();
-                    Object reasonValue = entry.get("reason");
-                    if (!(reasonValue instanceof Map)) {
-                        throw new IllegalArgumentException("classification requires its reason");
-                    }
-                    Map<String, Object> reason = (Map<String, Object>) reasonValue;
-                    classification.put(e.getKey(),
-                            new LineageMaterializationDecision.CreationClassification(
-                                    LineagePublishStatus.valueOf(requireString(entry, "status")),
-                                    new LineageTargetLifecycle.TerminalReason(
-                                            requireString(reason, "reason"),
-                                            reason.get("detail") instanceof String d ? d : null,
-                                            exactLong(reason.get("atMs"), "atMs"))));
-                }
-            }
-        }
-        // The typed constructor recomputes the plan digest — tampered content throws here.
-        return new LineageMaterializationDecision(spoolRecordId,
-                requireString(raw, "factPayloadDigest"), schemaVersion,
-                exactLong(raw.get("barrierGeneration"), "barrierGeneration"),
-                requireString(raw, "allocatedEventId"), entries,
-                requireString(raw, "materializationPlanDigest"),
-                exactLong(raw.get("createdAtMs"), "createdAtMs"),
-                (int) planDigestVersion, partitionVersion, chunkLimits, classification);
-    }
-
-    private static String requireString(Map<String, Object> map, String field) {
-        if (!(map.get(field) instanceof String s) || s.isBlank()) {
-            throw new IllegalArgumentException(field + " must be a non-blank string");
-        }
-        return s;
+        return materialization().readDecision(spoolRecordId);
     }
 
     @Override
     public MaterializedV1Row readMaterializedV1RowStrict(String eventId) {
-        if (eventId == null || eventId.isBlank()) {
-            throw new IllegalArgumentException("eventId must not be blank");
-        }
-        ensureDatabase();
-        Map<String, Object> raw = readRawStrict("lineage:" + eventId);
-        if (raw == null) {
-            return null;
-        }
-        try {
-            return new MaterializedV1Row(strictV1Event(raw, eventId),
-                    raw.get("_rev") instanceof String r ? r : null);
-        } catch (RuntimeException e) {
-            throw new SequencingStorageException("undecodable materialized v1 row 'lineage:"
-                    + eventId + "': " + e.getMessage(), e);
-        }
-    }
-
-    /**
-     * The strict v1 materialization decoder (v2.3.21 B4): the exact writer shape, no
-     * defaulting. Absence of the two writer-omitted-when-empty maps decodes as canonical
-     * empty; present-but-wrong-type is refused.
-     */
-    @SuppressWarnings("unchecked")
-    private static LineageEvent strictV1Event(Map<String, Object> raw, String eventId) {
-        if (!"lineage_event".equals(raw.get("type"))) {
-            throw new IllegalArgumentException("type must be lineage_event, got "
-                    + raw.get("type"));
-        }
-        long schemaVersion = exactLong(raw.get("schemaVersion"), "schemaVersion");
-        if (schemaVersion != 1) {
-            throw new IllegalArgumentException("schemaVersion must be 1, got " + schemaVersion);
-        }
-        String storedEventId = requireString(raw, "eventId");
-        if (!storedEventId.equals(eventId) || !("lineage:" + eventId).equals(raw.get("_id"))) {
-            throw new IllegalArgumentException("row identity disagrees with its _id");
-        }
-        LineageProcessType processType;
-        try {
-            processType = LineageProcessType.valueOf(requireString(raw, "processType"));
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("unknown processType " + raw.get("processType"));
-        }
-        List<String> inputs = strictStringList(raw.get("inputs"), "inputs");
-        List<String> outputs = strictStringList(raw.get("outputs"), "outputs");
-        Map<String, String> snapshot;
-        Object sa = raw.get("snapshotAttributes");
-        if (sa == null && !raw.containsKey("snapshotAttributes")) {
-            snapshot = Map.of(); // writer omits when empty — absence IS canonical empty
-        } else if (sa instanceof Map) {
-            snapshot = new LinkedHashMap<>();
-            for (var e : ((Map<Object, Object>) sa).entrySet()) {
-                if (!(e.getKey() instanceof String k) || !(e.getValue() instanceof String v)) {
-                    throw new IllegalArgumentException("snapshotAttributes must map strings"
-                            + " to strings");
-                }
-                ((LinkedHashMap<String, String>) snapshot).put(k, v);
-            }
-        } else {
-            throw new IllegalArgumentException("snapshotAttributes present but not a map");
-        }
-        Map<String, LineagePublishStatus> statuses;
-        Object ps = raw.get("publishStatusByTarget");
-        if (ps == null && !raw.containsKey("publishStatusByTarget")) {
-            statuses = Map.of();
-        } else if (ps instanceof Map) {
-            statuses = new LinkedHashMap<>();
-            for (var e : ((Map<Object, Object>) ps).entrySet()) {
-                if (!(e.getKey() instanceof String k) || !(e.getValue() instanceof String v)) {
-                    throw new IllegalArgumentException("publishStatusByTarget must map"
-                            + " strings to status names");
-                }
-                ((LinkedHashMap<String, LineagePublishStatus>) statuses)
-                        .put(k, LineagePublishStatus.valueOf(v));
-            }
-        } else {
-            throw new IllegalArgumentException("publishStatusByTarget present but not a map");
-        }
-        long sequence = exactLong(raw.get("sequenceNumber"), "sequenceNumber");
-        if (sequence < 0) {
-            throw new IllegalArgumentException("sequenceNumber must be >= 0");
-        }
-        return new LineageEvent((int) schemaVersion, storedEventId,
-                requireString(raw, "eventKey"), sequence, requireString(raw, "occurredAt"),
-                requireString(raw, "repositoryId"), processType, inputs, outputs,
-                requireStringAllowEmpty(raw, "runId"),
-                requireStringAllowEmpty(raw, "correlationId"),
-                (int) exactLong(raw.get("version"), "version"), snapshot, statuses);
-    }
-
-    private static String requireStringAllowEmpty(Map<String, Object> map, String field) {
-        if (!(map.get(field) instanceof String s)) {
-            throw new IllegalArgumentException(field + " must be a string");
-        }
-        return s;
-    }
-
-    private static List<String> strictStringList(Object value, String what) {
-        if (!(value instanceof List<?> list)) {
-            throw new IllegalArgumentException(what + " must be a list");
-        }
-        List<String> out = new ArrayList<>();
-        for (Object item : list) {
-            if (!(item instanceof String s)) {
-                throw new IllegalArgumentException(what + " must contain only strings");
-            }
-            out.add(s);
-        }
-        return out;
+        return materialization().readMaterializedV1RowStrict(eventId);
     }
 
     @Override
     public void createMaterializedV1RowIfAbsent(LineageEvent event,
             String expectedV1EventDigest) {
-        if (event == null || expectedV1EventDigest == null
-                || expectedV1EventDigest.isBlank()) {
-            throw new IllegalArgumentException("event and expected digest are required");
-        }
-        ensureDatabase();
-        MaterializedV1Row existing = readMaterializedV1RowStrict(event.eventId());
-        if (existing != null) {
-            verifyMaterializedV1Digest(existing.event(), expectedV1EventDigest);
-            return;
-        }
-        // The fenced allocator, never the eager v1 helper: counter-required,
-        // watermark-checked, fail-closed. A burned number on a lost race is an accepted gap.
-        long sequence = allocateSequenceFenced(event.repositoryId());
-        LineageEvent sequenced = new LineageEvent(event.schemaVersion(), event.eventId(),
-                event.eventKey(), sequence, event.occurredAt(), event.repositoryId(),
-                event.processType(), event.inputs(), event.outputs(), event.runId(),
-                event.correlationId(), event.version(), event.snapshotAttributes(),
-                event.publishStatusByTarget());
-        Map<String, Object> doc = new CouchLineageEvent(sequenced).toMap();
-        try {
-            com.ibm.cloud.cloudant.v1.model.Document sdkDoc =
-                    new com.ibm.cloud.cloudant.v1.model.Document();
-            Map<String, Object> withoutMeta = new HashMap<>(doc);
-            Object id = withoutMeta.remove("_id");
-            withoutMeta.remove("_rev");
-            sdkDoc.setProperties(withoutMeta);
-            sdkDoc.setId((String) id);
-            getLineageClient().getClient().putDocument(
-                    new com.ibm.cloud.cloudant.v1.model.PutDocumentOptions.Builder()
-                            .db(getLineageClient().getDatabaseName())
-                            .docId((String) id)
-                            .document(sdkDoc)
-                            .build())
-                    .execute();
-        } catch (com.ibm.cloud.sdk.core.service.exception.ConflictException conflict) {
-            MaterializedV1Row occupant = readMaterializedV1RowStrict(event.eventId());
-            if (occupant == null) {
-                throw new SequencingStorageException("v1 row occupant for '"
-                        + event.eventId() + "' vanished after 409", null);
-            }
-            verifyMaterializedV1Digest(occupant.event(), expectedV1EventDigest);
-        } catch (RuntimeException e) {
-            throw new SequencingStorageException("materialized v1 create failed for '"
-                    + event.eventId() + "'", e);
-        }
+        materialization().createMaterializedV1RowIfAbsent(event, expectedV1EventDigest);
     }
 
     @Override
     public void appendV2Classified(LineageEventV2 event,
             Map<String, LineageMaterializationDecision.CreationClassification> classification) {
-        if (event == null || classification == null || classification.isEmpty()) {
-            throw new IllegalArgumentException("event and a non-empty classification are"
-                    + " required");
-        }
-        if (!event.publishStatusByTarget().keySet().equals(classification.keySet())) {
-            throw new IllegalArgumentException("the classified targets and the event's status"
-                    + " targets must be exactly equal");
-        }
-        for (var e : classification.entrySet()) {
-            if (event.publishStatusByTarget().get(e.getKey()) != e.getValue().status()) {
-                throw new IllegalArgumentException("target '" + e.getKey() + "' status"
-                        + " disagrees with its classification");
-            }
-        }
-        if (event.sequenceNumber() != 0) {
-            throw new IllegalArgumentException("a classified append is still an UNSEQUENCED"
-                    + " row: sequences are the fenced sequencer's");
-        }
-        ensureDatabase();
-        Map<String, Object> doc = new LinkedHashMap<>(CouchLineageEventV2.toMap(event));
-        doc.put("state", LineageJournalRowV2.SequencingState.UNSEQUENCED.name());
-        Map<String, Object> reasons = new LinkedHashMap<>();
-        classification.forEach((target, c) -> {
-            Map<String, Object> reason = new LinkedHashMap<>();
-            reason.put("reason", c.reason().reason());
-            reason.put("detail", c.reason().detail());
-            reason.put("atMs", c.reason().atMs());
-            reasons.put(target, reason);
-        });
-        doc.put("v2TerminalReasonByTarget", reasons);
-        try {
-            com.ibm.cloud.cloudant.v1.model.Document sdkDoc =
-                    new com.ibm.cloud.cloudant.v1.model.Document();
-            Map<String, Object> withoutMeta = new LinkedHashMap<>(doc);
-            Object id = withoutMeta.remove("_id");
-            withoutMeta.remove("_rev");
-            sdkDoc.setProperties(withoutMeta);
-            sdkDoc.setId((String) id);
-            getLineageClient().getClient().putDocument(
-                    new com.ibm.cloud.cloudant.v1.model.PutDocumentOptions.Builder()
-                            .db(getLineageClient().getDatabaseName())
-                            .docId((String) id)
-                            .document(sdkDoc)
-                            .build())
-                    .execute();
-        } catch (com.ibm.cloud.sdk.core.service.exception.ConflictException conflict) {
-            Map<String, Object> occupantRaw =
-                    readV2RawStrict(event.deliveryId());
-            if (occupantRaw == null) {
-                throw new SequencingStorageException("classified occupant for '"
-                        + event.deliveryId() + "' vanished after 409", null);
-            }
-            LineageJournalRowV2 occupant = decodeV2Strict(occupantRaw);
-            if (!occupant.event().creationPayloadDigest()
-                    .equals(event.creationPayloadDigest())) {
-                throw new LineageIntegrityException(
-                        CouchLineageEventV2.documentId(event.deliveryId()),
-                        occupant.event().creationPayloadDigest(),
-                        "classified occupant carries a different payload");
-            }
-            // The classification is part of what must match: a PENDING occupant at this key
-            // is a DIFFERENT decision about the same payload.
-            for (var e : classification.entrySet()) {
-                LineageTargetLifecycle lifecycle =
-                        occupant.targetLifecycles().get(e.getKey());
-                boolean same = lifecycle != null
-                        && lifecycle.status() == e.getValue().status()
-                        && lifecycle.terminalReason() != null
-                        && lifecycle.terminalReason().reason()
-                                .equals(e.getValue().reason().reason())
-                        && lifecycle.terminalReason().detail()
-                                .equals(e.getValue().reason().detail())
-                        && lifecycle.terminalReason().atMs() == e.getValue().reason().atMs();
-                if (!same) {
-                    throw new LineageIntegrityException(
-                            CouchLineageEventV2.documentId(event.deliveryId()),
-                            occupant.event().creationPayloadDigest(),
-                            "classified occupant disagrees for target '" + e.getKey() + "'");
-                }
-            }
-        } catch (RuntimeException e) {
-            if (isDocumentTooLarge(e)) {
-                throw new DocumentTooLargeException("CouchDB refused the document for its"
-                        + " size: " + e.getMessage(), e);
-            }
-            throw new SequencingStorageException("classified append failed for '"
-                    + event.deliveryId() + "'", e);
-        }
+        materialization().appendV2Classified(event, classification);
     }
 
     /**
@@ -3222,53 +1885,8 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
     @Override
     public List<String> findV2SequencedRepositoryIds(String target) {
-        ensureDatabase();
-        try {
-            ViewResult result = getLineageClient().getClient().postView(
-                    new com.ibm.cloud.cloudant.v1.model.PostViewOptions.Builder()
-                            .db(getLineageClient().getDatabaseName())
-                            .ddoc(DESIGN_DOC)
-                            .view("v2_sequenced_repositories")
-                            .startKey(List.of(target))
-                            .endKey(List.of(target, new HashMap<>()))
-                            .reduce(true)
-                            .group(true)
-                            .build())
-                    .execute().getResult();
-            if (result == null || result.getRows() == null) {
-                throw new IllegalStateException("v2_sequenced_repositories returned no result");
-            }
-            List<String> repos = new ArrayList<>();
-            for (ViewResultRow row : result.getRows()) {
-                if (row.getKey() instanceof List<?> parts && parts.size() == 2
-                        && parts.get(1) instanceof String repo) {
-                    repos.add(repo);
-                }
-            }
-            return repos;
-        } catch (SequencingStorageException e) {
-            throw e;
-        } catch (RuntimeException e) {
-            throw new SequencingStorageException(
-                    "v2_sequenced_repositories query failed for '" + target + "'", e);
-        }
+        return transitions().findV2SequencedRepositoryIds(target);
     }
-
-    private static void verifyMaterializedV1Digest(LineageEvent stored, String expected) {
-        String recomputed = LineageSpoolIdentity.v1EventDigest(stored.eventId(),
-                stored.eventKey(), stored.repositoryId(), stored.processType(),
-                stored.inputs(), stored.outputs(), stored.snapshotAttributes(),
-                stored.occurredAt(), stored.correlationId());
-        if (!recomputed.equals(expected)) {
-            throw new LineageIntegrityException("lineage:" + stored.eventId(), recomputed,
-                    "materialized v1 occupant disagrees with the frozen plan entry");
-        }
-    }
-
-
-    // ---------------------------------------------------------------
-    // §6-a barrier seam — delegated (see CouchLineageBarrierStore)
-    // ---------------------------------------------------------------
 
     @Override
     public Map<String, Object> readBarrierRaw() {

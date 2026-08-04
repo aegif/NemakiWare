@@ -29,12 +29,10 @@ import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
-import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
-import java.util.HexFormat;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -377,13 +375,10 @@ public class LineageFactSpool {
     static String repositorySegment(String repositoryId) {
         String encoded = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(repositoryId.getBytes(StandardCharsets.UTF_8));
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(repositoryId.getBytes(StandardCharsets.UTF_8));
-            return encoded + "-" + HexFormat.of().formatHex(digest, 0, 8);
-        } catch (java.security.NoSuchAlgorithmException e) {
-            throw new AssertionError("SHA-256 not available", e);
-        }
+        // A truncated digest, and legitimately so: it disambiguates a path segment, it is not
+        // evidence. The full id is already recoverable from the base64 half. Kept at 16 hex
+        // (8 bytes) because that is the width already on disk.
+        return encoded + "-" + LineageDigests.sha256Hex(repositoryId).substring(0, 16);
     }
 
     static Path quarantinePath(Path target) {
