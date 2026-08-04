@@ -57,12 +57,23 @@ public class LineageWaitingSnapshotResolver {
     public sealed interface Resolution {
 
         /**
-         * The latest snapshot in journal order, and what it says about the source.
+         * The latest snapshot <em>among the waiting candidates</em>, in observation order.
          *
-         * @param supersededCount how many older snapshots there were; a count, never their
+         * <p><b>This is not the source's current state.</b> The reverse lookup only sees events
+         * in {@code WAITING_FOR_CATALOG}, and a later event can legitimately be absent from it:
+         * it was published normally because the catalog entity was already PRESENT, it has
+         * already RESOLVED, the authoritative publisher synced it after a restore, or it
+         * completed against a different target. So the newest waiting snapshot can say PURGED
+         * while the object is sitting in the repository.
+         *
+         * <p>Historical publication therefore requires a second, independent answer from
+         * {@link LineageSourceDispositionResolver}. This record supplies material, not licence.
+         *
+         * @param supersededCount how many older observations there were; a count, never their
          *        content — an operator needs to know an object has history without reading it
          */
-        record Found(LineageWaitingSnapshot snapshot, int supersededCount) implements Resolution { }
+        record LatestWaitingSnapshot(LineageWaitingSnapshot snapshot, int supersededCount)
+                implements Resolution { }
 
         /**
          * No event is waiting on this task.
@@ -96,8 +107,16 @@ public class LineageWaitingSnapshotResolver {
         List<Candidate> candidatesFor(String taskKey);
     }
 
-    /** One waiting event's view of the endpoint a task names, with its place in the journal. */
-    public record Candidate(LineageJournalOrder order, LineageWaitingSnapshot snapshot) { }
+    /**
+     * One waiting event's view of the endpoint a task names.
+     *
+     * @param order where the delivery sits in the journal — the cursor's order, used for
+     *        repository/partition checking only
+     * @param provenance when the snapshot <em>observed</em> the source; a replay inherits its
+     *        origin's, so re-delivering an old observation does not make it a new one
+     */
+    public record Candidate(LineageJournalOrder order, LineageObservationProvenance provenance,
+            LineageWaitingSnapshot snapshot) { }
 
     private final WaitingEventSource source;
 
@@ -140,6 +159,22 @@ public class LineageWaitingSnapshotResolver {
                 return new Resolution.Indeterminate(
                         "a waiting event has no usable journal position");
             }
+            if (candidate.provenance() == null || !candidate.provenance().usable()) {
+                // A replay whose origin cannot be traced is not "probably recent" — nothing is
+                // known about when it observed the source. Guessing reintroduces the tombstone
+                // -over-restored-object bug this separation exists to prevent.
+                return new Resolution.Indeterminate(
+                        "a waiting event's observation provenance cannot be traced");
+            }
+            if (candidate.provenance().deliveryKind()
+                            != LineageObservationProvenance.LineageDeliveryKind.ORIGINAL
+                    && candidate.provenance().originEvidenceDigest() != null
+                    && !candidate.provenance().originEvidenceDigest()
+                            .equals(candidate.snapshot().evidenceDigest())) {
+                // A re-delivery must carry what it claims to re-deliver.
+                return new Resolution.Corrupt(
+                        "a re-delivered snapshot does not match the observation it names");
+            }
             if (!candidate.snapshot().describesSubject(obligation)) {
                 // The task key is a hash of the subject, so a candidate under it describing
                 // something else means the event's key set and the obligation disagree.
@@ -155,23 +190,45 @@ public class LineageWaitingSnapshotResolver {
             usable.add(candidate);
         }
 
-        usable.sort((a, b) -> LineageJournalOrder.withinRepository()
-                .compare(a.order(), b.order()));
-
-        for (int i = 1; i < usable.size(); i++) {
-            Candidate previous = usable.get(i - 1);
-            Candidate current = usable.get(i);
-            if (previous.order().samePositionAs(current.order())
-                    && !previous.snapshot().evidenceDigest()
-                            .equals(current.snapshot().evidenceDigest())) {
-                // Same position in the journal, different content. One of these is not what
-                // the journal recorded, and choosing either would make it so.
+        // Deduplicate by observation, not by delivery: replaying one original five times is
+        // one observation delivered five times, and counting them separately would let a burst
+        // of replays outweigh a genuinely later observation.
+        java.util.Map<String, Candidate> byObservation = new java.util.LinkedHashMap<>();
+        for (Candidate candidate : usable) {
+            String key = candidate.provenance().observationKey();
+            Candidate existing = byObservation.get(key);
+            if (existing == null) {
+                byObservation.put(key, candidate);
+                continue;
+            }
+            if (!existing.snapshot().evidenceDigest()
+                    .equals(candidate.snapshot().evidenceDigest())) {
+                // Two deliveries claiming to carry one observation, with different content.
+                // A replay whose payload was altered looks exactly like this.
                 return new Resolution.Corrupt(
-                        "two waiting events at one journal position disagree");
+                        "two deliveries of one observation carry different snapshots");
             }
         }
 
-        Candidate latest = usable.get(usable.size() - 1);
-        return new Resolution.Found(latest.snapshot(), usable.size() - 1);
+        List<Candidate> observations = new ArrayList<>(byObservation.values());
+        observations.sort((a, b) -> LineageObservationProvenance.byObservation()
+                .compare(a.provenance(), b.provenance()));
+
+        for (int i = 1; i < observations.size(); i++) {
+            Candidate previous = observations.get(i - 1);
+            Candidate current = observations.get(i);
+            if (previous.provenance().observationOrder()
+                            == current.provenance().observationOrder()
+                    && !previous.snapshot().evidenceDigest()
+                            .equals(current.snapshot().evidenceDigest())) {
+                // Same observation position, different content. One of these is not what was
+                // observed, and choosing either would make it so.
+                return new Resolution.Corrupt(
+                        "two observations at one position disagree");
+            }
+        }
+
+        Candidate latest = observations.get(observations.size() - 1);
+        return new Resolution.LatestWaitingSnapshot(latest.snapshot(), observations.size() - 1);
     }
 }

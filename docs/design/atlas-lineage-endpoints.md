@@ -315,6 +315,69 @@ public constructor から不正な snapshot を作れない**。
 (呼び手の参照から変更でき、digest が記述しない内容になる)。deep copy ではなく
 **拒否**する — §2 が endpoint 属性で既に禁じているのと同じ理由。
 
+#### delivery 順と観測順の分離 (v2.3.48)
+
+**replay/repair は古い観測に新しい journal sequence を与える。** sequence 最大を
+「最新の証拠」とすると次が起きる:
+
+```
+seq 10  ORIGINAL  object が PURGED
+seq 20  ORIGINAL  restore されて SOURCE_EXISTS
+seq 30  REPLAY of seq 10 — 内容は PURGED のまま、順序上は最後
+→ resolver が PURGED を最新と判断 → 生存 object へ tombstone を publish
+```
+
+2 つの順序を名前で分ける。
+
+| 順序 | 値 | 用途 |
+|---|---|---|
+| **delivery order** | `deliverySequence` (= `sequenceNumber`) | projector / cursor が処理する順。配送には正典、「どちらの観測が新しいか」には無意味 |
+| **observation order** | `originObservationSequence` | どの snapshot が source を後に観測したか。**REPLAY/REPAIR は origin のものを継承する** |
+
+- ORIGINAL は自分自身が origin (`originDeliveryId == deliveryId` かつ sequence 一致)。
+  ずれていれば「自分が何の配送か」で矛盾しているので unusable。
+- REPLAY/REPAIR は origin を名指し、それが別 delivery であること。
+  **origin を辿れなければ INDETERMINATE** — 「たぶん新しい」と推測すると、この分離が
+  防ごうとしているバグが戻る。
+- 同一 origin の複数 replay は `observationKey = originDeliveryId@originObservationSequence`
+  で **dedupe**。1 つの観測が 5 回配送されただけであり、5 つの観測ではない。
+- re-delivery の payload が origin の evidence digest と一致しなければ corruption。
+
+#### waiting view は「source の現在状態」ではない (v2.3.48)
+
+`v2_waiting_by_task_key` は historical 素材の入口であって、source の現在状態を確定しない。
+後発 event が次のいずれかなら waiting view に出ない:
+
+- catalog entity が PRESENT だったため通常 publish された
+- 既に RESOLVED / PUBLISHED になった
+- restore 後に authoritative publisher が同期した
+- 別 target で完了した
+
+したがって resolver の結果は `LatestWaitingSnapshot` — **waiting 候補中の最新**であって
+source の現在状態ではない、と型名でも明示する。**素材であって許可ではない。**
+
+#### authoritative source disposition の再確認 (v2.3.48)
+
+historical publish の認可には、waiting snapshot に加えて **catalog とも target とも
+独立した** repository 側の verdict を必須にする。`LineageSourceDispositionRegistry` が
+endpoint kind ごとに解決し、**fallback を持たない** (未登録 kind は `SOURCE_UNKNOWN`)。
+
+- live または restore 済みを確認できれば `EXISTS`
+- **authoritative な tombstone / purge 記録を確認できた場合だけ** `PURGED`
+- catalog の ABSENT だけでは `PURGED` にならない
+- source API の 404 は、その API で 404 が purge を意味すると保証される場合だけ
+- 権限エラー・timeout・5xx・repository 不明・decode 失敗は `UNKNOWN`
+
+`SourceEvidence` は `incarnation` / `revision` / `checkedAt` を持つ。**PURGED verdict は
+incarnation と revision を必須**とする — 無いと publish 直前に再検証できず、
+再検証こそが restore-during-publish の窓を閉じるものだから。
+
+`HistoricalEntitySnapshot.from(waitingSnapshot, obligation, registeredTarget,
+verifiedSourceEvidence)` は、**両方が独立に PURGED** のときだけ構築できる。
+SOURCE_PURGED という文字列が 2 箇所で一致するだけでは足りない。
+`stillAuthorised(recheck)` が incarnation / revision の変化を検出し、publish 直前と
+直後の再確認で restore 競合を弾く。
+
 ### 件数・サイズ上限 (v2.1)
 
 `EXPORT_SELECTED_OBJECTS` は選択件数だけ endpoint が並ぶ。無制限は Atlas payload と

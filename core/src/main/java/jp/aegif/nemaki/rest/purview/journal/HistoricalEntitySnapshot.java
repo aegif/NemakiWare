@@ -32,7 +32,8 @@ import java.util.Optional;
  * <p>The gate is deliberately narrow: only {@code SOURCE_PURGED}, only a subject that matches
  * the obligation, and only a target that matches the publisher's registration.
  */
-public record HistoricalEntitySnapshot(LineageWaitingSnapshot snapshot, String taskKey) {
+public record HistoricalEntitySnapshot(LineageWaitingSnapshot snapshot, String taskKey,
+        LineageSourceDispositionResolver.SourceEvidence sourceEvidence) {
 
     public HistoricalEntitySnapshot {
         if (snapshot == null) {
@@ -48,6 +49,15 @@ public record HistoricalEntitySnapshot(LineageWaitingSnapshot snapshot, String t
             throw new IllegalArgumentException(
                     "only a purged source may become a historical entity");
         }
+        if (sourceEvidence == null
+                || sourceEvidence.disposition() != LineageSourceDisposition.SOURCE_PURGED) {
+            // TWO independent statements, not one string appearing twice. The snapshot says
+            // what someone observed; this says what the repository holds now. A snapshot alone
+            // cannot authorise a tombstone, because a replayed old observation is a snapshot.
+            throw new IllegalArgumentException(
+                    "a historical entity needs an authoritative source verdict of PURGED,"
+                            + " independent of the snapshot");
+        }
     }
 
     /**
@@ -55,9 +65,12 @@ public record HistoricalEntitySnapshot(LineageWaitingSnapshot snapshot, String t
      *
      * @param registeredTarget the target the publisher is bound to, so a historical entity
      *        cannot be written to a catalog the obligation does not name
+     * @param verifiedSourceEvidence what the repository said, read independently of the
+     *        catalog and of the snapshot; must itself be {@code SOURCE_PURGED}
      */
     public static Optional<HistoricalEntitySnapshot> from(LineageWaitingSnapshot snapshot,
-            LineageCatalogObligation obligation, String registeredTarget) {
+            LineageCatalogObligation obligation, String registeredTarget,
+            LineageSourceDispositionResolver.SourceEvidence verifiedSourceEvidence) {
         if (snapshot == null || obligation == null) {
             return Optional.empty();
         }
@@ -70,7 +83,25 @@ public record HistoricalEntitySnapshot(LineageWaitingSnapshot snapshot, String t
         if (snapshot.sourceDisposition() != LineageSourceDisposition.SOURCE_PURGED) {
             return Optional.empty();
         }
-        return Optional.of(new HistoricalEntitySnapshot(snapshot, obligation.taskKey()));
+        if (verifiedSourceEvidence == null || verifiedSourceEvidence.disposition()
+                != LineageSourceDisposition.SOURCE_PURGED) {
+            // The snapshot may be a replay of an observation from before a restore. Only the
+            // repository can say whether the object is gone now.
+            return Optional.empty();
+        }
+        return Optional.of(new HistoricalEntitySnapshot(snapshot, obligation.taskKey(),
+                verifiedSourceEvidence));
+    }
+
+    /**
+     * Whether the evidence this was built on is still the current fact.
+     *
+     * <p>Called again immediately before publishing and again after it: a restore between the
+     * check and the write would otherwise leave a tombstone over a live object, and nothing
+     * downstream distinguishes that from a correct one.
+     */
+    public boolean stillAuthorised(LineageSourceDispositionResolver.SourceEvidence recheck) {
+        return sourceEvidence.stillMatches(recheck);
     }
 
     public String target() {
