@@ -175,19 +175,27 @@ public class EndpointKindSchemaAlignmentTest {
         // is not handing over an attribute the catalog discards.
         assertEquals(List.of("name", "versionLabel", "folderPath",
                         "versionLabelOriginalSha256", "folderPathOriginalSha256",
-                        "versionSeriesId"),
+                        "versionSeriesId",
+                        // 増分 B (v2.3.31)
+                        "mimeType", "contentLength",
+                        "versionObjectId", "changeToken", "contentHash"),
                 EndpointKind.CMIS_DOCUMENT.allowedAttributes());
         assertEquals(List.of("name"), EndpointKind.CMIS_FOLDER.allowedAttributes());
         assertEquals(List.of("archivedAt", "originalObjectId", "name", "versionLabel",
                 "nameOriginalSha256", "versionLabelOriginalSha256",
                 "archiveState", "versionSeriesId"), EndpointKind.ARCHIVE.allowedAttributes());
-        assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath"),
+        assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath",
+                        "tenantId", "sourceRevision", "sourceModifiedAt",
+                        "sourceContentHash", "sourceContentLength"),
                 EndpointKind.EXTERNAL_ASSET.allowedAttributes());
         // no externalPath: the natural value is the drive URL, whose query string is where
         // sharing tokens live — unrepresentable until B defines a provider-canonical URL
-        assertEquals(List.of("sourceSystem", "externalStableKey"),
+        assertEquals(List.of("sourceSystem", "externalStableKey",
+                        "provider", "sourceRevision", "sourceModifiedAt",
+                        "sourceContentHash", "sourceContentLength"),
                 EndpointKind.CLOUD_OBJECT.allowedAttributes());
-        assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath"),
+        assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath",
+                        "storageClass"),
                 EndpointKind.COLD_STORAGE.allowedAttributes());
         // originalFileName / name are display values and carry §2 companions (v2.3.29);
         // importMode, artifactKind and contentHash do not — machine state and a digest.
@@ -199,31 +207,20 @@ public class EndpointKindSchemaAlignmentTest {
     }
 
     /**
-     * Attributes increment B is to add to the schema, and to the kind that should then carry them.
+     * Attributes increment B still owes: the artifact manifest fields (v2.3.13).
      *
-     * <p>The other direction of the alignment check. {@code everyDeclaredAttributeExistsInTheAtlasType}
-     * catches an attribute declared here and missing from Atlas; nothing caught the reverse, so B
-     * could add {@code provider} to {@code nemaki_external_asset}, forget {@code EndpointKind},
-     * and leave every test green while the value never travels.
+     * <p>The other direction of the alignment check.
+     * {@code everyDeclaredAttributeExistsInTheAtlasType} catches an attribute declared in a kind
+     * and missing from Atlas; nothing caught the reverse, so B could add {@code provider} to
+     * {@code nemaki_external_asset}, forget {@code EndpointKind}, and leave every test green
+     * while the value never travels.
+     *
+     * <p>The content and version-identity fields that used to be here are now on both sides
+     * (v2.3.31), so they are asserted by the alignment checks rather than by their absence.
+     * What remains is the manifest that ties an operation's chunks together, which needs the
+     * chunking work rather than a schema line.
      */
     private static final Map<EndpointKind, List<String>> AWAITING_INCREMENT_B = Map.of(
-            // Version identity (v2.3.13): without these, importing the same external file three
-            // times reads as "the same asset became the same document" three times over, and the
-            // one thing a version-managing ECM's lineage should answer — which version moved —
-            // is unanswerable.
-            // versionSeriesId is NOT here: the Atlas type already declares it, so the kind
-            // declares it too (present in both). Only the genuinely-missing fields are owed.
-            EndpointKind.CMIS_DOCUMENT, List.of("mimeType", "contentLength",
-                    "versionObjectId", "changeToken", "contentHash"),
-            EndpointKind.EXTERNAL_ASSET, List.of("tenantId",
-                    "sourceRevision", "sourceModifiedAt", "sourceContentHash",
-                    "sourceContentLength"),
-            EndpointKind.CLOUD_OBJECT, List.of("provider",
-                    "sourceRevision", "sourceModifiedAt", "sourceContentHash",
-                    "sourceContentLength"),
-            EndpointKind.COLD_STORAGE, List.of("storageClass"),
-            // The manifest that ties an operation's chunks together (v2.3.13). The artifact
-            // types now exist (v2.3.29); these six are the remaining B attributes, still owed.
             EndpointKind.IMPORT_ARTIFACT, List.of("manifestDigest", "totalObjectCount",
                     "totalByteLength", "completedObjectCount", "failedObjectCount",
                     "businessResult"),

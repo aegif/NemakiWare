@@ -60,14 +60,20 @@ public enum EndpointKind {
             // versionObjectId / changeToken / contentHash, which are increment-B additions), so
             // declaring it costs nothing and the version-identity question (§3 v2.3.13) starts
             // being answerable as soon as a producer supplies it.
-            text("versionSeriesId")),
+            text("versionSeriesId"),
+            // 増分 B (v2.3.31): content facts and version identity. All identifiers, digests
+            // and counts, so all PRESERVE — a shortened contentHash names no content, and a
+            // shortened changeToken names no version.
+            text("mimeType"), count("contentLength"),
+            text("versionObjectId"), text("changeToken"), text("contentHash")),
 
     /**
      * A CMIS folder, referenced through its DataSet proxy.
      *
      * <p>{@code nemaki_folder} extends {@code Referenceable}, which {@code Process.inputs} does
-     * not accept, so the proxy is what appears in lineage. Increment B creates it; until then a
-     * folder endpoint is well-formed here but will not resolve in Atlas.
+     * not accept, so the proxy is what appears in lineage. Increment B created it (v2.3.30):
+     * {@code nemaki_folder_dataset}, tied 1:1 to the folder and never deleted when the folder
+     * is.
      */
     CMIS_FOLDER("nemaki_folder_dataset", Identity.OBJECT_ID, null,
             requiredText("name")),
@@ -99,7 +105,12 @@ public enum EndpointKind {
      * declaring it would have made the allowlist the source of the problem it solves.
      */
     EXTERNAL_ASSET("nemaki_external_asset", Identity.STABLE_KEY, "externalStableKey",
-            requiredText("sourceSystem"), requiredText("externalStableKey"), text("externalPath")),
+            requiredText("sourceSystem"), requiredText("externalStableKey"), text("externalPath"),
+            // 増分 B (v2.3.31). tenantId only here: a cloud object's tenancy is already inside
+            // its stable key, and cold storage has no tenant.
+            text("tenantId"),
+            text("sourceRevision"), count("sourceModifiedAt"),
+            text("sourceContentHash"), count("sourceContentLength")),
 
     /**
      * An object in a cloud drive; {@code sourceSystem} carries the provider.
@@ -112,7 +123,13 @@ public enum EndpointKind {
      * {@code {provider}:{fileId}}.
      */
     CLOUD_OBJECT("nemaki_external_asset", Identity.STABLE_KEY, "externalStableKey",
-            requiredText("sourceSystem"), requiredText("externalStableKey")),
+            requiredText("sourceSystem"), requiredText("externalStableKey"),
+            // 増分 B (v2.3.31). provider is the drive vendor as its own field, so a query does
+            // not have to parse it back out of sourceSystem. Still no externalPath: B defines
+            // no provider-canonical URL, so there remains nothing safe to put there.
+            text("provider"),
+            text("sourceRevision"), count("sourceModifiedAt"),
+            text("sourceContentHash"), count("sourceContentLength")),
 
     /**
      * An object moved to cold storage.
@@ -122,7 +139,10 @@ public enum EndpointKind {
      * A storage class such as {@code GLACIER} is a different fact and is an increment-B attribute.
      */
     COLD_STORAGE("nemaki_external_asset", Identity.STABLE_KEY, "externalStableKey",
-            requiredText("sourceSystem"), requiredText("externalStableKey"), text("externalPath")),
+            requiredText("sourceSystem"), requiredText("externalStableKey"), text("externalPath"),
+            // 増分 B (v2.3.31). The storage class within the adapter — GLACIER and friends —
+            // which is a different fact from the adapter type in sourceSystem.
+            text("storageClass")),
 
     /**
      * What was fed into an import — the upload or the source directory.

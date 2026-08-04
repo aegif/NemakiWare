@@ -103,7 +103,16 @@ public class PurviewSchemaPayloadFactory {
                 attribute("cloudProvider", "string", true),
                 attribute("externalFileId", "string", true),
                 attribute("cloudFileUrl", "string", true),
-                attribute("cloudLastSyncedAt", "string", true)));
+                attribute("cloudLastSyncedAt", "string", true),
+                // 増分 B (v2.3.31). Content facts and version identity: without the latter,
+                // importing the same external file three times reads as "the same asset became
+                // the same document" three times, and which version moved is unanswerable.
+                // All identifiers, digests and counts — no display value, so no §2 companion.
+                attribute("mimeType", "string", true),
+                attribute("contentLength", "long", true),
+                attribute("versionObjectId", "string", true),
+                attribute("changeToken", "string", true),
+                attribute("contentHash", "string", true)));
         attrs.addAll(customAttrDefs);
         entityDef.put("attributeDefs", attrs);
         return entityDef;
@@ -161,7 +170,23 @@ public class PurviewSchemaPayloadFactory {
         entityDef.put("attributeDefs", List.of(
                 attribute("externalStableKey", "string", false),
                 attribute("sourceSystem", "string", false),
-                attribute("externalPath", "string", true)));
+                attribute("externalPath", "string", true),
+                // 増分 B (v2.3.31). One Atlas type, three kinds, and the kinds diverge:
+                // tenantId on the generic external asset, provider on cloud, storageClass on
+                // cold. Sharing a type constrains what may be declared, not what must be.
+                //
+                // storageClass is NOT sourceSystem: sourceSystem carries the storage adapter
+                // type (what the catalog sync reads from contentRef.type), and GLACIER is a
+                // property of the object within that adapter.
+                attribute("tenantId", "string", true),
+                attribute("provider", "string", true),
+                attribute("storageClass", "string", true),
+                // What the source said about the bytes, so a re-sync can tell "unchanged" from
+                // "changed back". Identifiers and counts; no URL, no path, no credential.
+                attribute("sourceRevision", "string", true),
+                attribute("sourceModifiedAt", "long", true),
+                attribute("sourceContentHash", "string", true),
+                attribute("sourceContentLength", "long", true)));
         return entityDef;
     }
 

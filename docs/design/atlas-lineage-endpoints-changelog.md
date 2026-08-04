@@ -14,6 +14,45 @@
 
 ## revision
 
+- v2.3.31 — **増分 B-2/B-3: 属性追加と secret 非保持の「設定不能化」**。
+  - `nemaki_document` に `mimeType` / `contentLength` / `versionObjectId` / `changeToken` /
+    `contentHash`、`nemaki_external_asset` に `tenantId` / `provider` / `storageClass` /
+    `sourceRevision` / `sourceModifiedAt` / `sourceContentHash` / `sourceContentLength`。
+    **schema と allowlist の両方**に足した (片方だけでは値が届かない)。
+    追加分はすべて識別子・digest・数量なので §2 の companion は増えない。
+  - `AWAITING_INCREMENT_B` に残るのは artifact manifest の 6 属性のみ。
+  - **`CatalogSecretBoundary` を payload の最終境界に置いた**。これまで §4 は
+    「producer が設定しないこと」で守られていた — `cloudFileUrl` に null を入れる、
+    mapping resolver が `nemaki:cloudFileUrl` を source として拒否する、endpoint の
+    allowlist に置き場が無い。**どれも「行を足せる場所」である**。16 の entity builder が
+    すべてこの gate を通り、location や credential の形の値は**ログではなく拒否**される。
+    - 拒否: 任意の `scheme://` (自前の `nemaki://` を除く) / Windows ドライブパス /
+      `file:` / 名前が secret を名乗る属性 (`token` `secret` `credential` `password`
+      `apikey` `sas` `signature`)。`nemaki://` でも query・fragment・userinfo は拒否。
+    - **除外は 4 属性のみ** (`externalStableKey` `externalPath` `targetDescription`
+      `sourceDescription`)。これらは cold storage の `s3://…` や managed mount の
+      `filesystem:/…` を持つ**既存の identity** で、拒否しても secret は減らず
+      archive lineage の解決先が壊れるだけ。除外しても query・fragment・userinfo は
+      拒否し続ける。cloud の stable key は `{provider}:{fileId}` で authority を持たないので、
+      §4 が対象とした sharing link はこの除外があってもなお置き場が無い。
+    - **POSIX 絶対パスは形では拒否しない**。CMIS の `folderPath` も `/a/b` で、
+      文字列から区別できないため。これは「置ける属性が無い」側で担保し、
+      本 class は covered だと主張しない (javadoc に明記)。
+    - 拒否メッセージに**値は現れない** (属性名と 12 hex の redaction digest のみ)。
+      例外メッセージはログにも dead letter にも入るため。
+    - `CatalogSecretBoundaryTest` は全件が mutation — 「足しうるもの」を並べて
+      拒否されることを確認する。
+
+- v2.3.30 — **増分 B-1: `nemaki_folder_dataset`** + `nemaki_folder_has_dataset` (schema 14 → 15)。
+  Atlas は `Process.inputs` を DataSet で型付けするが `nemaki_folder` は DataSet ではない。
+  supertype を変えると既存 folder entity を全部書き換えることになるので 1:1 companion を足す。
+  identity は objectId 由来で rename / move で不変。`active` と `sourceState` を分けて持つ
+  (潰すと retention が消してよい PURGED を ARCHIVED と区別できない)。
+  source 削除でも **entity は削除しない**。`AWAITING_SCHEMA` は空になった。
+  併せて委譲先から facade への static 参照を除去し (`LineageStoreDocuments` /
+  `LineageStoreDecoding`)、JDT language server と Maven の race を
+  [`docs/development/troubleshooting-build.md`](../development/troubleshooting-build.md) に記録した。
+
 - v2.3.29 — **増分 B: artifact 型の Atlas 型定義**。`EndpointKind.IMPORT_ARTIFACT` /
   `EXPORT_ARTIFACT` は A-1 からあったが、**受け側の Atlas 型が無かった** —
   `EndpointKindSchemaAlignmentTest.AWAITING_SCHEMA` がその負債を明示していた。

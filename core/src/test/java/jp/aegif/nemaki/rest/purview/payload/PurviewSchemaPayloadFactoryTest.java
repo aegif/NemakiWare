@@ -249,9 +249,12 @@ public class PurviewSchemaPayloadFactoryTest {
         // 16 standard attributes + §2's two truncation-evidence companions (v2.3.26):
         // folderPathOriginalSha256 and versionLabelOriginalSha256 must be declared on the type,
         // or the evidence for a shortened value is the thing Atlas drops.
-        assertEquals(18, docAttrs.size(), docAttrs.toString());
+        // + 5 for 増分 B (v2.3.31): content facts and version identity.
+        assertEquals(23, docAttrs.size(), docAttrs.toString());
         assertTrue(docAttrs.containsAll(
                 List.of("folderPathOriginalSha256", "versionLabelOriginalSha256")));
+        assertTrue(docAttrs.containsAll(List.of("mimeType", "contentLength",
+                "versionObjectId", "changeToken", "contentHash")));
     }
 
     @SuppressWarnings("unchecked")

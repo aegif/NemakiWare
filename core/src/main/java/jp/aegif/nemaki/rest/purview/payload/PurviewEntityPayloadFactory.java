@@ -80,7 +80,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", REPOSITORY_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("status", "ACTIVE");
         entity.put("createdBy", "system");
         entity.put("updatedBy", "system");
@@ -114,7 +114,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", FOLDER_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(content.getCreator(), "system"));
         entity.put("updatedBy", firstNonBlank(content.getModifier(), content.getCreator(), "system"));
@@ -176,7 +176,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", DOCUMENT_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(content.getCreator(), "system"));
         entity.put("updatedBy", firstNonBlank(content.getModifier(), content.getCreator(), "system"));
@@ -308,7 +308,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", TYPE_DEFINITION_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(typeDefinition.getCreator(), "system"));
         entity.put("updatedBy", firstNonBlank(typeDefinition.getModifier(), typeDefinition.getCreator(), "system"));
@@ -421,7 +421,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", DOCUMENT_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(archive.getCreator(), "system"));
         entity.put("updatedBy", firstNonBlank(archive.getArchivedBy(), archive.getModifier(), archive.getCreator(), "system"));
@@ -453,7 +453,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", ARCHIVE_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(archive.getCreator(), "system"));
         entity.put("updatedBy", firstNonBlank(archive.getArchivedBy(), archive.getModifier(), archive.getCreator(), "system"));
@@ -506,7 +506,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", EXTERNAL_ASSET_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(archive.getCreator(), "system"));
         entity.put("updatedBy", firstNonBlank(archive.getArchivedBy(), archive.getModifier(), archive.getCreator(), "system"));
@@ -546,7 +546,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", EXTERNAL_ASSET_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(content.getCreator(), "system"));
         entity.put("updatedBy", firstNonBlank(content.getModifier(), content.getCreator(), "system"));
@@ -580,7 +580,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", CLOUD_SYNC_PROCESS_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("relationshipAttributes", relationshipAttributes);
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(content.getCreator(), "system"));
@@ -618,7 +618,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", EXTERNAL_ASSET_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(username, "system"));
         entity.put("updatedBy", firstNonBlank(username, "system"));
@@ -656,7 +656,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", IMPORT_PROCESS_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("relationshipAttributes", relationshipAttributes);
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(username, "system"));
@@ -692,7 +692,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", IMPORT_PROCESS_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("relationshipAttributes", relationshipAttributes);
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(username, "system"));
@@ -731,7 +731,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", EXPORT_PROCESS_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("relationshipAttributes", relationshipAttributes);
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(username, "system"));
@@ -767,7 +767,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", EXPORT_PROCESS_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("relationshipAttributes", relationshipAttributes);
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(username, "system"));
@@ -804,7 +804,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", EXPORT_PROCESS_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("relationshipAttributes", relationshipAttributes);
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(username, "system"));
@@ -843,7 +843,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", ARCHIVE_PROCESS_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("relationshipAttributes", relationshipAttributes);
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(archive.getCreator(), "system"));
