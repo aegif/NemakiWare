@@ -80,6 +80,20 @@ public final class CatalogHistoricalEntityPublisher
         }
 
         Map<String, Object> entity = LineageHistoricalEntityFactory.entityFor(snapshot);
+        java.util.List<String> missing =
+                LineageHistoricalEntityFactory.missingMandatoryAttributes(entity,
+                        snapshot.snapshot().endpointKind());
+        if (!missing.isEmpty()) {
+            // The catalog rejects a write missing these in full, so retrying cannot help — the
+            // snapshot simply does not contain enough to rebuild the entity. Terminal, and the
+            // only terminal publish outcome there is. Names only: a value here is the very
+            // identity the secret boundary exists to keep out of records.
+            logger.warn("A {} snapshot cannot reconstruct its entity: mandatory attribute(s) {}"
+                    + " are absent", snapshot.snapshot().endpointKind(), missing);
+            return new LineageHistoricalPublishReceipt(
+                    LineageHistoricalEntityPublisher.Outcome.SNAPSHOT_INCOMPLETE, boundTarget,
+                    snapshot.sourceEvidence().subjectDigest(), null, null);
+        }
         String plannedDigest = LineageHistoricalEntityFactory.operationDigest(entity);
         try {
             PurviewEntityPublishResult result = entityRegistryClient.bulkCreateOrUpdateEntities(

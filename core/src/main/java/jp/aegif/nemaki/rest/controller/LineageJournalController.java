@@ -1372,6 +1372,18 @@ public class LineageJournalController {
         // --- adapters, resolvers and budgets, per target and per kind
         java.util.Set<String> targets = configuredTargetNames();
         section.put("configuredTargets", targets);
+        if (targets.isEmpty()) {
+            // Nothing was checked. Reporting PASS here would say "the machine is ready" on the
+            // strength of an empty loop — the per-target adapter checks, the per-kind resolver
+            // checks and every budget are all skipped when there is no target. A node with no
+            // lineage targets genuinely owes nothing, but it also cannot be activated for
+            // lineage, so this is stated rather than left to look green.
+            section.put("configuredTargetsNote", "no lineage target is enabled on this node, so"
+                    + " no per-target adapter, per-kind resolver or operation budget was"
+                    + " checked; this section says nothing about activation readiness");
+            blocking.add("no lineage target is enabled, so the obligation machine cannot be"
+                    + " shown ready for any catalog");
+        }
         if (preflightWiring == null) {
             section.put("wiring", Map.of("verdict", "UNWIRED"));
             blocking.add("the obligation wiring descriptor is not wired, so no adapter can be"
@@ -1383,6 +1395,20 @@ public class LineageJournalController {
             // that does not fit — all of them blocking by construction.
             blocking.addAll(violations);
         }
+        // Which kinds can actually receive a tombstone. Named per kind rather than summarised:
+        // a type with nowhere to record the purge would otherwise be discovered only when its
+        // obligations started ending SNAPSHOT_INCOMPLETE in production.
+        Map<String, Object> tombstonable = new LinkedHashMap<>();
+        for (var kind : jp.aegif.nemaki.rest.purview.journal.EndpointKind.values()) {
+            String marker = jp.aegif.nemaki.rest.purview.journal.LineageHistoricalEntityFactory
+                    .tombstoneMarkerAttribute(kind);
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("atlasType", kind.atlasTypeName());
+            entry.put("markerAttribute", marker);
+            entry.put("historicalEntitySupported", marker != null);
+            tombstonable.put(kind.name(), entry);
+        }
+        section.put("historicalEntitySupportByKind", tombstonable);
         section.put("purgeLedger", Map.of("available",
                 preflightPurgeLedger != null && preflightPurgeLedger.available()));
         section.put("operationBudgets", budgetView(targets));
@@ -1437,18 +1463,19 @@ public class LineageJournalController {
         }
     }
 
-    /** The targets this node publishes lineage to, from the sinks themselves. */
+    /**
+     * The targets this node publishes lineage to.
+     *
+     * <p>From {@code lineage.targets}, the same list D-rest readiness uses. Enumerating the sink
+     * beans instead reported every sink Spring happened to construct — including one for a
+     * backend this deployment does not publish to — and the preflight then demanded adapters for
+     * a target nobody configured.
+     */
     private java.util.Set<String> configuredTargetNames() {
-        java.util.Set<String> targets = new java.util.LinkedHashSet<>();
-        if (preflightTargetSinks != null) {
-            for (var sink : preflightTargetSinks) {
-                if (sink != null && sink.targetName() != null && !sink.targetName().isBlank()
-                        && sink.isAvailable()) {
-                    targets.add(sink.targetName());
-                }
-            }
-        }
-        return targets;
+        java.util.List<String> configured =
+                lineageConfig == null ? null : lineageConfig.getTargets();
+        return configured == null ? java.util.Set.of()
+                : new java.util.LinkedHashSet<>(configured);
     }
 
     /**

@@ -101,7 +101,59 @@ class LineageProductionAdapterTest {
             assertEquals(QUALIFIED_NAME, attrs.get("qualifiedName"));
             assertEquals("a.txt", attrs.get("name"));
             assertEquals(PurviewEntityPayloadFactory.SOURCE_STATE_PURGED,
-                    attrs.get(LineageHistoricalEntityFactory.SOURCE_STATE));
+                    attrs.get(LineageHistoricalEntityFactory.LIFECYCLE_STATE),
+                    "nemaki_document declares lifecycleState, not sourceState");
+            // The type's mandatory identity attributes, which the per-kind allowlist does not
+            // carry. Atlas rejects the write in full without them.
+            assertEquals(REPO, attrs.get("repositoryId"));
+            assertEquals(OBJECT_ID, attrs.get("objectId"));
+        }
+
+        /**
+         * The marker name differs per type, and three types have none.
+         *
+         * <p>Atlas silently drops an attribute a type does not declare, so writing one name
+         * everywhere produced entities with no tombstone marker at all — indistinguishable from
+         * live objects. Pinned per kind because a summary would hide exactly that.
+         */
+        @Test
+        @DisplayName("the tombstone marker name follows the type, and is absent for three")
+        void tombstoneMarkerPerType() {
+            assertEquals("lifecycleState", LineageHistoricalEntityFactory
+                    .tombstoneMarkerAttribute(EndpointKind.CMIS_DOCUMENT));
+            assertEquals("lifecycleState", LineageHistoricalEntityFactory
+                    .tombstoneMarkerAttribute(EndpointKind.ARCHIVE));
+            assertEquals("sourceState", LineageHistoricalEntityFactory
+                    .tombstoneMarkerAttribute(EndpointKind.CMIS_FOLDER));
+            for (EndpointKind kind : java.util.List.of(EndpointKind.EXTERNAL_ASSET,
+                    EndpointKind.CLOUD_OBJECT, EndpointKind.COLD_STORAGE,
+                    EndpointKind.IMPORT_ARTIFACT, EndpointKind.EXPORT_ARTIFACT)) {
+                assertNull(LineageHistoricalEntityFactory.tombstoneMarkerAttribute(kind),
+                        kind + "'s Atlas type declares neither marker");
+            }
+        }
+
+        /** No marker means no write — an unmarked tombstone reads as a live object. */
+        @Test
+        @DisplayName("a kind with no marker is reported as missing a mandatory attribute")
+        void noMarkerIsIncomplete() {
+            assertFalse(LineageHistoricalEntityFactory.missingMandatoryAttributes(
+                    Map.of("attributes", Map.of()), EndpointKind.EXTERNAL_ASSET).isEmpty());
+            assertTrue(LineageHistoricalEntityFactory.missingMandatoryAttributes(
+                    LineageHistoricalEntityFactory.entityFor(historical()),
+                    EndpointKind.CMIS_DOCUMENT).isEmpty());
+        }
+
+        /** A snapshot that cannot supply a mandatory attribute names it, and only its name. */
+        @Test
+        @DisplayName("a missing mandatory attribute is named, never its value")
+        void missingMandatoryIsNamed() {
+            Map<String, Object> entity = new LinkedHashMap<>();
+            entity.put("typeName", "nemaki_document");
+            entity.put("attributes", new LinkedHashMap<>(Map.of("repositoryId", REPO)));
+            assertEquals(java.util.List.of("objectId"),
+                    LineageHistoricalEntityFactory.missingMandatoryAttributes(entity,
+                            EndpointKind.CMIS_DOCUMENT));
         }
 
         /** The digest must not depend on how the maps were built. */

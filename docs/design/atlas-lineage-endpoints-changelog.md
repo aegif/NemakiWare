@@ -12,6 +12,55 @@
 
 ---
 
+## v2.3.56 — 本番 adapter・N-3 preflight・実 Atlas が検出した 2 件
+
+### 実 Atlas IT が検出した本番バグ (mock 不能)
+
+| # | 症状 | 影響 |
+|---|---|---|
+| 4 | historical entity が type の必須属性 (`nemaki_document.repositoryId` / `objectId` 等) を設定していない | Atlas が `ATLAS-404-00-007` で write 全体を拒否。**publisher は一度も書けない**。snapshot の kind 別 allowlist は「観測した属性」であって「entity の identity」ではないため、factory が導出して補う |
+| 5 | tombstone marker を `sourceState` 固定で書いていた | `nemaki_document` / `nemaki_archive` は `lifecycleState`、`nemaki_folder_dataset` は `sourceState`、外部 3 type は**どちらも持たない**。Atlas は未宣言属性を**黙って捨てる**ので、live entity と区別不能な tombstone ができていた。mock は与えられた物を保存するだけなので検出不能 |
+
+5 の帰結として、marker を書く場所が無い kind (`nemaki_external_asset` /
+`nemaki_import_artifact` / `nemaki_export_artifact`) は publish を
+`SNAPSHOT_INCOMPLETE` で拒否する。書けば「存在する証拠」として読まれる entity になり、
+entity が無いより悪い。`GET /preflight` の `historicalEntitySupportByKind` が kind ごとに
+表示する。解消には Atlas 型定義への属性追加が必要で、これは別作業。
+
+### purge ledger — tombstone を authorise できる唯一のもの
+
+404・検索 0 件・archive 不在はすべて「見つからなかった」であり、stale replica・遅延 index・
+未作成・そして「今リポジトリに存在する」と両立する。どれを PURGED と読んでも、生きた文書に
+対する恒久 tombstone を書く。
+
+破棄した側が破棄した時点で記録する。restore は delete ではなく supersede。hook は
+`ContentServiceImpl.destroyArchive` / `restoreArchive` の 2 箇所だけで、どちらも
+破棄・復元の**前**に読み**後**に記録する (逆だと失敗した delete が tombstone を authorise
+する)。lineage の都合でリポジトリ操作を失敗させないため例外は投げない。
+
+### adapter
+
+publisher / read-back / republisher は `LineageHistoricalEntityFactory` を共有する。別実装
+だと偶然一致し偶然不一致になり、read-back の答えが何も意味しなくなる。read-back は catalog
+固有属性 (guid・timestamp 等) を planned key へ射影して除外する — 除外しないと正しく
+publish された entity が毎回 CONFLICT になり、obligation は永久に解決しない。
+
+republisher は digest を逆算できないので object id を purge ledger の `incarnation` から
+取り、導出した qualifiedName を再 hash して subject digest と一致することを確認してから
+書く。一致しない mark では repair しない (別 object の entity を壊すため)。
+
+### N-3 preflight
+
+件数は必ず exact/lowerBound を伴う。読めなかったものを 0 と書かない。
+
+target が 1 つも有効でない場合は PASS にしない。per-target/per-kind の検査が全て空ループに
+なるため、「機械が ready」を空ループの強さで主張することになる。
+
+通常の PENDING/CLAIMED は blocking にしない (稼働中のシステムでは永久に activate できない)。
+oldest waiting age を出して運用判断に委ねる。
+
+---
+
 ## v2.3.54 — N-2b: projector の WAITING_FOR_CATALOG 統合
 
 ### 書込み順序が本体

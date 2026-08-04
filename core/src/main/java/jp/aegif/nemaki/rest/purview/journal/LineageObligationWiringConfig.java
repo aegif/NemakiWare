@@ -106,10 +106,9 @@ public class LineageObligationWiringConfig {
         if (resolver == null || client == null) {
             return new LineageCatalogProbeRegistry(byTarget);
         }
-        List<LineageTargetSink> wired = sinks.orderedStream().toList();
-        for (LineageTargetSink sink : wired) {
+        for (LineageTargetSink sink : sinks.orderedStream().toList()) {
             String target = sink == null ? null : sink.targetName();
-            if (target == null || target.isBlank() || !sink.supportsVerification()) {
+            if (!hasCatalogClient(resolver, target)) {
                 continue;
             }
             byTarget.put(target, new LineageCatalogClientProbe(target, resolver, client));
@@ -140,7 +139,7 @@ public class LineageObligationWiringConfig {
         if (resolver != null && client != null) {
             for (LineageTargetSink sink : sinks.orderedStream().toList()) {
                 String target = sink == null ? null : sink.targetName();
-                if (target == null || target.isBlank() || !sink.supportsVerification()) {
+                if (!hasCatalogClient(resolver, target)) {
                     continue;
                 }
                 byTarget.put(target,
@@ -177,6 +176,38 @@ public class LineageObligationWiringConfig {
         return new CatalogCurrentEntityRepublisher(connectionResolver.getIfAvailable(),
                 entityRegistryClient.getIfAvailable(), payloadFactory.getIfAvailable(),
                 contentService.getIfAvailable(), purgeLedger.getIfAvailable());
+    }
+
+    /**
+     * Whether the catalog client this node holds actually answers for this target.
+     *
+     * <h2>Why not {@code supportsVerification()}</h2>
+     *
+     * <p>That flag is about reading a published lineage <em>Process</em> back — the D-rest
+     * machine's own verify step. A catalog probe and a historical entity write need neither: they
+     * talk to the entity API. Keying off it meant a target whose catalog is perfectly reachable
+     * got no probe and no publisher, and the preflight reported the adapters as missing when the
+     * only thing missing was Process verification.
+     *
+     * <h2>Why the active backend, and not "the config is enabled"</h2>
+     *
+     * <p>{@code buildConnectionRequest()} answers for whichever backend is active — one client,
+     * one endpoint. Binding a probe to a target the client does not point at would attribute an
+     * answer to a catalog it never reached, which is the cross-target inference this whole
+     * increment refuses. A target that is configured but not the active backend gets nothing,
+     * and readiness says so.
+     */
+    private static boolean hasCatalogClient(
+            jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver resolver,
+            String target) {
+        if (resolver == null || target == null || target.isBlank()) {
+            return false;
+        }
+        return switch (resolver.activeBackend()) {
+            case PURVIEW -> "purview".equals(target);
+            case ATLAS -> "atlas".equals(target);
+            case NONE -> false;
+        };
     }
 
     /** A publisher that says which target it writes to, so the registry can key it. */

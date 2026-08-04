@@ -33,7 +33,8 @@ curl -u admin:admin -H "X-Requested-With: XMLHttpRequest" \
   "http://localhost:8080/core/api/v1/admin/lineage-journal/preflight"
 ```
 
-**Pass condition:** `verdict` is `EXTERNAL_EVIDENCE_REQUIRED`. It is never `PASS` — the items
+**Pass condition:** `verdict` is `EXTERNAL_EVIDENCE_REQUIRED` **and**
+`catalogObligations.blockingConditions` is empty. It is never `PASS` — the items
 in §3 are measurable only outside the application, so the application declaring a pass would be
 claiming something it did not check. `FAIL` means one of the sections below is red; fix it and
 re-run.
@@ -50,6 +51,64 @@ Sections and what a failure means:
 | `readerAdmission.decision` | this node is not admitted to read; activation would open writes nobody may consume. |
 | `barrier.binaryDigestMeasurable` | `ack()` refuses without a measurable distribution — see §4. |
 | `barrier.approvedBinaryDigestsPolicy` | see §4. **`blockingConditions` will NOT report this**: CAS condition 9 deliberately skips an empty allowlist, so the policy is asserted here or nowhere. |
+| `catalogObligations.blockingConditions` | non-empty. See the table below — every entry names one missing adapter, one unprovable source, or one budget that does not fit. |
+
+### 1.1 `catalogObligations` — the §2 machine
+
+4b is a flag flip with no deployment, so producers, consumers and recovery must all be present
+*before* it. This section is how that is established rather than assumed.
+
+| field | what it says |
+|---|---|
+| `obligations` / `historicalIntents` / `compensations` | counts per state, each with `exact` and `basis`. **A count that could not be read comes back as `lowerBound`, never as a clean zero** — zero is the one answer that makes a broken deployment look finished. |
+| `subjectFences.active` / `.expired` | from two ranged reduces over `historicalFencesByLease`. `exact: false` means they could not be established, which is blocking. |
+| `oldestWaitingAgeMs` | how long the oldest PENDING/CLAIMED obligation has waited. **Ordinary PENDING/CLAIMED work does not block activation** — refusing while any obligation is outstanding would mean never activating a system in use. This is the number that says whether the machine is working or stuck. `null` means it could not be established, which is blocking. |
+| `wiring.violations` | missing publisher, probe, source resolver, intent/compensation store, republisher or purge ledger, per target and per kind. |
+| `operationBudgets` | per target and kind: `worstCaseMs` for the whole fenced section (source re-check + publish + read-back, with retries and backoff), against `subjectFenceLeaseMs` and `safetyMarginMs`. `resolvable: false` is blocking — a target with no configuration of its own must not borrow another's. |
+| `purgeLedger.available` | without it nothing can ever say `SOURCE_PURGED`, so obligations for genuinely purged sources retry for ever. |
+| `historicalEntitySupportByKind` | which kinds can receive a tombstone at all — see below. |
+
+### 1.2 Operation budget — the default timeouts do not fit
+
+The fenced critical section is the source re-check, the historical publish and the read-back,
+each with its connect and read timeouts, its retries and the total backoff between them. With
+the shipped defaults that is:
+
+```
+2 catalog calls x (2000 + 30000) x 4 attempts   = 256,000 ms
++ 2 x 7,700 ms backoff                          =  15,400 ms
++ client overhead                               =   5,000 ms
++ source re-check (CMIS kinds)                  =   2,000 ms
+                                                = 278,400 ms
+```
+
+against a 300,000 ms subject fence lease with a 150,000 ms safety margin. **It does not fit,
+and readiness is right to refuse it**: a publish still in flight when the fence expires can be
+overwritten by another intent that has taken the subject.
+
+Either lower the per-target read timeout (`atlas.read.timeout.ms` /
+`purview.timeout.read.ms`) or accept that historical publishing stays off. `2000/10000` brings
+the section to about 118,000 ms, inside the margin. `docker-compose-4b-dryrun.yml` sets exactly
+that for the rehearsal.
+
+The preflight prints `worstCaseMs` per target and kind next to `subjectFenceLeaseMs` and
+`safetyMarginMs`, so the arithmetic above does not have to be redone by hand.
+
+### 1.3 A target with no catalog client gets no adapters
+
+The catalog client answers for **one** active backend. A node with both `purview.enabled` and
+`atlas.enabled` binds its probe and its historical publisher to purview, and the preflight then
+reports atlas as having neither — correctly, because a probe bound to a catalog the client does
+not point at would attribute an answer to a catalog it never reached. Enable exactly the
+backend the lineage target names.
+
+**`historicalEntitySupportByKind`.** `nemaki_external_asset`, `nemaki_import_artifact` and
+`nemaki_export_artifact` declare neither `lifecycleState` nor `sourceState`, so there is
+nowhere on those types to record that the source is gone. Atlas silently drops an undeclared
+attribute, so publishing anyway would put an entity in the catalog that is indistinguishable
+from a live one. The publisher refuses with `SNAPSHOT_INCOMPLETE` (terminal — retrying cannot
+make a type grow an attribute). This is **not** an activation blocker: it is a limitation to
+know about, and it shows up as terminal obligations for those kinds if they are ever purged.
 
 ---
 

@@ -1,11 +1,45 @@
 # §2 obligation machine — 申し送り
 
-**承認待ちは不要。この文書の「次の作業」から、確定した順序でそのまま再開してください。**
+**この文書は現状を述べます。** 設計の正典は
+[`atlas-lineage-endpoints.md`](atlas-lineage-endpoints.md)、経緯は
+[`atlas-lineage-endpoints-changelog.md`](atlas-lineage-endpoints-changelog.md)。
 
-最終 checkpoint: `3fa6a0212` (`test/v3.3-arm64-full` / `deps/v3.3-breaking-majors` の両方)。
+最終 checkpoint: `v2.3.56` (`test/v3.3-arm64-full` / `deps/v3.3-breaking-majors` の両方)。
 作業ツリー clean。
 
+## 現状 — 実装は完了、残るのは Purview 固有の証跡のみ
+
+producer・consumer・recovery・historical publish 状態機械・projector 統合・本番 adapter・
+preflight まで実装済み。**4b は deployment を伴わない flag flip** なので、活性化した瞬間に
+これらが揃っている必要がある — 非活性のうちに実装し検証するのが唯一の順序である。
+
+| 部品 | 実体 | 状態 |
+|---|---|---|
+| obligation store / service / scanner | `CouchLineageCatalogObligationStore` ほか | 実装・IT 済 |
+| catalog probe (target 別) | `LineageCatalogClientProbe` | 実装済 |
+| historical publisher (target 別) | `CatalogHistoricalEntityPublisher` | 実装・実 Atlas IT 済 |
+| exact read-back | 同上 (`readBackHistorical`) | 実装・実 Atlas IT 済 |
+| current entity republisher | `CatalogCurrentEntityRepublisher` | 実装済 |
+| source disposition resolver (kind 別) | `RepositorySourceDispositionResolver` | 実装済 |
+| authoritative purge ledger | `CouchLineagePurgeLedger` + `ContentServiceImpl` hook | 実装済 |
+| projector の `WAITING_FOR_CATALOG` | `LineageCatalogWaitCoordinator` | 実装・実 CouchDB IT 済 |
+| operation budget (target/kind 別) | `ConfiguredLineageOperationBudgetProvider` | 実装済 |
+| preflight | `GET /preflight` の `catalogObligations` 節 | 実装済 |
+
+**残: B-E2〜B-E4 (Purview 固有)。** Atlas / mock の結果を Purview の証跡に流用しない。
+
+## historical entity を書けない kind
+
+`nemaki_external_asset` / `nemaki_import_artifact` / `nemaki_export_artifact` は Atlas 型に
+`lifecycleState` も `sourceState` も無く、**tombstone marker を書く場所が無い**。Atlas は
+未宣言属性を黙って捨てるため、書けば live entity と区別不能な entity ができる。
+publisher はこれを `SNAPSHOT_INCOMPLETE` (唯一の終端 publish outcome) で拒否する。
+`GET /preflight` の `historicalEntitySupportByKind` が kind ごとに表示する。
+
+解消するには Atlas 型定義に marker 属性を追加する必要があり、これは別作業。
+
 ---
+
 
 ## 完了済み
 
@@ -42,90 +76,18 @@ baseline が union される) ことも test で固定。
 
 ---
 
-## 次の作業 (この順序)
+## 完了した増分 (N-1.5 以降)
 
-### N-1.5 で入ったもの
-
-レビュー指摘 5 点のうち **4 点を閉じた**。
-
-- **B** — `presenceOf(target, repositoryId, kind, qn)`。`LineageCatalogProbeRegistry` が
-  target ごとに routing し、未知 target は fail-closed で UNKNOWN。fallback 無し。
-- **C** — obligation 文書に `notBeforeMs`。query 段と claim CAS 直前の 2 段で
-  eligibility を確認。overflow / clock 逆行は `Long.MAX_VALUE` へ fail-closed。
-  自動 terminal 化はしない。
-- **E** — `verdictFor()` が `ALL_RESOLVED` / `WAITING` / `TERMINAL_UNRESOLVED` /
-  `INDETERMINATE` を返す。**空 key 集合は INDETERMINATE** (成功ではない)。
-- **F** — `giveUp()` → `recordSnapshotIncomplete()` に改名し用途限定。
-  event の待機上限で obligation を terminal 化してはならない。
-- **G** — `countByState()` は view の `_count` reduce で正確に数え、
-  `StateCount(count, truncated)` を返す。読めなければ `lowerBound(0)`。
-- **A(前半)** — readiness が `LineageObligationWiring` を検査する。gate を読まないので
-  再帰せず、D-rest OFF でも意味のある答えを返す。
-
-### 次の作業 (この順序)
-
-### N-1.5A(後半). Spring 本番配線
-
-**readiness は既に red**。配線が無い node は gate を通らないので、現状は
-「動かない機構で activation できる」状態ではない。残っているのは配線そのもの。
-
-1. `CouchLineageCatalogObligationStore` を bean にする (`LineageStoreSupport` は
-   `CouchLineageJournalStore` が実装しているので、そこから作る)。
-2. target ごとの `LineageCatalogEntityProbe` 実装 — 既存
-   `PurviewEntityRegistryClient.getEntityByUniqueAttribute` 越し。
-   **404 を ABSENT、例外を UNKNOWN** に分けること。
-3. `LineageCatalogObligationService` bean。
-4. bounded scanner/reclaimer (既存の scheduler に載せる。`active()` で gate 済み)。
-5. `LineageObligationWiring` bean を組み立てて readiness へ注入。
-
-### N-1.5D. historical entity builder
-
-`LineageHistoricalEntityPublisher` の**契約だけ**があり実装が無い。
-readiness が target ごとに要求するので、**これが無い限り gate は red のまま**。
-
-- endpoint snapshot だけから再構成する (live source は読めない前提)。
-- publish 後の read-back で PRESENT を確認してから `RESOLVED(SOURCE_PURGED)`。
-- read-back UNKNOWN / 5xx / timeout は retryable。
-- snapshot が構造的に不足しているときだけ `SNAPSHOT_INCOMPLETE`。
-- consumer 側の `settle()` に `SOURCE_PURGED` 経路を足す
-  (現在は ABSENT を一律 retryable として release している)。
-
-### N-2. projector の `WAITING_FOR_CATALOG` 統合
-
-`LineagePublishStatus.WAITING_FOR_CATALOG` と遷移は既にある
-(`CouchLineageV2TransitionStore` / `LineageSpoolMaterializer`)。**無いのは**:
-
-- v2 行の `waitingTaskKeys` (複数可) と `waitingSince`。
-- **全件が `RESOLVED` になって初めて** `PENDING` へ戻す (1 件では戻さない)。
-- `waitingSince` は `PENDING` へ戻って再び待機してもリセットしない
-  (往復で滞留上限を回避させない)。
-- 待機中は publish しない・**cursor を進めない**・retry を消費しない。
-- task key から待機 event を逆引きする index。
-- `lineage.catalog-wait.max-age` (既定 24h) 超過は **event だけ**を
-  `UNRESOLVED(reason=CATALOG_WAIT_EXPIRED)` にする。obligation は PENDING/CLAIMED の
-  まま継続し、同じ task を待つ別 event は待ち続ける (N-1.5F)。
-- 判定は `verdictFor()` の 4 値を使う。`INDETERMINATE` は**状態を変えない** (fail-closed)。
-- 逆引き view は event の document type と schema version を厳密に限定し、
-  古い v1 view へ v2 行を露出させない coverage test を足す。
-
-### N-3. activation 前 preflight への統合
-
-`LineagePreflightShapeTest` / 4b preflight に obligation の状態を足す。
-`PENDING` / `CLAIMED` が残っている状態での activation をどう扱うかを決めて test で固定
-(安全側は「残っていても activation は拒否しない。ただし件数を verdict に出す」——
-obligation は activation 後に発生するものなので、事前に 0 である必要はない)。
-
-### N-4. B-E2〜B-E4
-
-runbook の表のとおり。**Atlas の結果を Purview へ流用しない。**
-
-### N-5. disposable 環境での 4b リハーサル
-
-`POST /barrier/activate` は **disposable 環境でも実行禁止**。activation 直前までの
-全条件が観測・判定できることを示す。手順は runbook §4 と
-`lineage-4b-activation-checklist.md`。
-
----
+| # | 内容 | commit |
+|---|---|---|
+| N-1.5A(後半) | Spring 本番配線 + readiness 配線検査 | `987e2b5c9` |
+| N-1.5C/E/F/G | durable backoff・集合 verdict・timeout 分離・正確な件数 | `cbb238c24` |
+| N-2a.1/2/2.1 | snapshot resolver・replay provenance・origin 証明・publish 後補償 | `569e2cf64` `3b2c1009a` |
+| N-1.5D/D.1/D.2 | intent 先行状態機械・lease 認可・arbitration・subject fence | `fab80d8aa` `2dee45aa2` `c0f3aa710` |
+| N-1.5A-2/2.1 | historical machine 本番配線・実 CouchDB IT (本番バグ 2 件検出) | `53c44e651` `04e298a53` |
+| N-1.5D.2.1 | target/kind 別 operation budget・view 障害の非隠蔽 (本番バグ 1 件) | `4acf101b3` |
+| N-2b | projector の `WAITING_FOR_CATALOG` 統合 | `d99ae7cfc` |
+| 本番 adapter + N-3 | publisher / read-back / republisher / resolver / purge ledger / preflight | `b3108a4ed` |
 
 ## 落とし穴 (この作業で踏んだもの)
 

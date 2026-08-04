@@ -1,6 +1,6 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.53 — increment A sign-off 済み・**§6-a 再 sign-off 承認済み (2026-08-03)**。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: 4b (**運用証跡待ち** — preflight は実装済み)。**§2 の属性別上限は実装済み (v2.3.26)**。**Slice 4a 実装済み — writer は v1 のまま (barrier 文書が無い＝pristine)**。**増分 B 実装済み (v2.3.35)**。**§2 obligation machine + historical publish 状態機械 実装済み (v2.3.53)** — 実 CouchDB IT が mock 不能な本番バグ 3 件を検出 (IT-42〜IT-44)。fence の budget は target/kind 別の型付き `LineageOperationBudget` — 型追加 / 属性追加 / secret 境界 / backfill / lifecycle / reconciliation / runbook。live Atlas は起動できず B-E1〜B-E4 を EXTERNAL_EVIDENCE_REQUIRED として [`lineage-increment-b-runbook.md`](../operations/lineage-increment-b-runbook.md) に固定
+status: **v2.3.56 — increment A sign-off 済み・**§6-a 再 sign-off 承認済み (2026-08-03)**。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: 4b (**運用証跡待ち** — preflight は実装済み)。**§2 の属性別上限は実装済み (v2.3.26)**。**Slice 4a 実装済み — writer は v1 のまま (barrier 文書が無い＝pristine)**。**増分 B 実装済み (v2.3.35)**。**§2 obligation machine + historical publish 状態機械 + 本番 adapter + N-3 preflight 実装済み (v2.3.56)** — 実 CouchDB IT が mock 不能な本番バグ 3 件を検出 (IT-42〜IT-44)。fence の budget は target/kind 別の型付き `LineageOperationBudget` — 型追加 / 属性追加 / secret 境界 / backfill / lifecycle / reconciliation / runbook。live Atlas は起動できず B-E1〜B-E4 を EXTERNAL_EVIDENCE_REQUIRED として [`lineage-increment-b-runbook.md`](../operations/lineage-increment-b-runbook.md) に固定
 
 revision 履歴と、過去に閉じた指摘の一覧は
 [`atlas-lineage-endpoints-changelog.md`](atlas-lineage-endpoints-changelog.md) にあります
@@ -2152,6 +2152,10 @@ POST /api/v1/admin/lineage-journal/repair
 | IT-48 | 復帰後に再待機 | `waitingSinceMs` は**最初の**待機開始のまま。再待機で時計を戻さない (戻すと max age に永久に到達しない) |
 | IT-49 | 逆引き view `v2_waiting_by_task_key` | 共有 obligation を待つ全 event を target 付きで返す。1 event が復帰するとその event だけ消える |
 | IT-50 | taskKeys を欠いた WAITING 行 | 逆引き view が emit しない。resolver に「説明できない待機」を渡さない |
+| IT-51 | 実 Atlas へ historical entity を publish し read-back | **本番バグ (v2.3.56 で修正)**。type の必須属性 (`repositoryId` / `objectId`) 欠落で Atlas が write 全体を拒否していた。snapshot の allowlist は観測属性であって identity ではない |
+| IT-52 | publish 後に marker を読み直す | **本番バグ (v2.3.56 で修正)**。marker 名が type ごとに違い (`lifecycleState` / `sourceState`)、Atlas は未宣言属性を黙って捨てるため、live entity と区別不能な tombstone ができていた |
+| IT-53 | marker を持たない type へ historical publish | `SNAPSHOT_INCOMPLETE` (終端)。書けば「存在する証拠」になる |
+| IT-54 | read-back に catalog 固有属性 (guid 等) が付く | planned key へ射影して除外。除外しないと正しい publish が毎回 CONFLICT になり obligation が永久に解決しない |
 
 ### Atlas-enabled E2E 受入表 (v3.3 release gate)
 

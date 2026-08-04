@@ -82,6 +82,89 @@ public class AtlasLineageSink implements LineageTargetSink {
                 && !atlasConfig.getEndpoint().isBlank();
     }
 
+    /**
+     * Atlas can be read back, so it can verify.
+     *
+     * <p>Structural and immutable, as the contract requires: the entity API this uses is part of
+     * the Atlas v2 API every supported version has. Answering false here left D-rest unable to
+     * sequence a single v2 row for this target — a finalized v2 row is an ordered barrier, and a
+     * barrier no sink can drain strands everything behind it.
+     */
+    @Override
+    public boolean supportsVerification() {
+        return true;
+    }
+
+    /**
+     * Whether the Process this record produced is durably readable from Atlas.
+     *
+     * <h2>What each answer means, and what must not collapse into another</h2>
+     *
+     * <ul>
+     *   <li>{@code VERIFIED} — the Process is there, under the qualified name this record's
+     *       identity produces.</li>
+     *   <li>{@code RETRYABLE} — not there yet, or the request failed. Atlas indexes
+     *       asynchronously, so "not found" moments after a write is ordinary read lag; the
+     *       caller retries inside its own budget. Calling it a mismatch would burn a record
+     *       that was written correctly.</li>
+     *   <li>{@code MISMATCH} — reserved for a deterministic semantic disagreement, which a
+     *       read by unique attribute cannot produce: either the name is there or it is not.
+     *       Never returned rather than returned speculatively.</li>
+     * </ul>
+     *
+     * <p>The qualified name is rebuilt by the same expression the payload uses, so a verify can
+     * only fail because the entity is absent — never because two pieces of code disagreed about
+     * what to call it.
+     */
+    @Override
+    public VerifyResult verify(LineageRecord record, Duration deadline) {
+        if (!isAvailable() || record == null) {
+            return VerifyResult.RETRYABLE;
+        }
+        String endpoint = atlasConfig.getEndpoint().replaceAll("/+$", "");
+        try {
+            validateEndpoint(endpoint);
+        } catch (RuntimeException badEndpoint) {
+            return VerifyResult.RETRYABLE;
+        }
+        String qualifiedName = processQualifiedName(record);
+        String url = endpoint + "/api/atlas/v2/entity/uniqueAttribute/type/Process?attr:"
+                + "qualifiedName=" + java.net.URLEncoder.encode(qualifiedName,
+                        java.nio.charset.StandardCharsets.UTF_8);
+        try {
+            HttpResponse<String> response = this.httpClient
+                    .withBasicAuth(atlasConfig.getUsername(), atlasConfig.getPassword())
+                    .getJson(url);
+            int status = response.statusCode();
+            if (status >= 200 && status < 300) {
+                return VerifyResult.VERIFIED;
+            }
+            if (status == 404) {
+                // Atlas indexes asynchronously; absent now is not absent for ever.
+                return VerifyResult.RETRYABLE;
+            }
+            // Any other status is the server having trouble, not the record being wrong.
+            return VerifyResult.RETRYABLE;
+        } catch (Exception e) {
+            // Class name only: an Atlas error body echoes the qualified name.
+            logger.debug("Atlas verify could not answer: {}", e.getClass().getSimpleName());
+            return VerifyResult.RETRYABLE;
+        }
+    }
+
+    /**
+     * The Process qualified name for a record.
+     *
+     * <p>One expression, used by both the payload and the verify, so the two cannot drift into
+     * disagreeing about what was written.
+     */
+    static String processQualifiedName(LineageRecord record) {
+        return "nemakiware:" + record.repositoryId() + ":"
+                + (record.processType() != null ? record.processType().name().toLowerCase()
+                        : "unknown")
+                + ":" + record.processIdentity();
+    }
+
     Map<String, Object> buildAtlasPayload(LineageRecord record) {
         List<Map<String, Object>> entities = new ArrayList<>();
 
@@ -93,9 +176,7 @@ public class AtlasLineageSink implements LineageTargetSink {
         // what the design's §3 says the Process qualifiedName is built from in each case. The two
         // rules produce different names for one business operation, and §3 accepts that: the v1
         // Process stays as an audit fact and the v2 compensation gets its own.
-        processAttrs.put("qualifiedName", "nemakiware:" + record.repositoryId() + ":" +
-                (record.processType() != null ? record.processType().name().toLowerCase() : "unknown") +
-                ":" + record.processIdentity());
+        processAttrs.put("qualifiedName", processQualifiedName(record));
         processAttrs.put("name", record.processType() != null ? record.processType().name() : "UNKNOWN");
         processAttrs.put("description", "NemakiWare lineage event: " + record.processIdentity());
         processEntity.put("attributes", processAttrs);
