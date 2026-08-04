@@ -219,6 +219,33 @@ public class CatalogSecretBoundaryTest {
         }
     }
 
+    @Nested
+    @DisplayName("the user's own display text")
+    class UserText {
+
+        /**
+         * A CMIS object may legally be named like a URL. Refusing it would protect nothing —
+         * the name is already visible to anyone who can see the object — and would make the
+         * object unsyncable.
+         */
+        @Test
+        @DisplayName("passes, because a name is what the object is called")
+        void nameAndDescriptionPass() {
+            assertDoesNotThrow(() -> CatalogSecretBoundary.sealed(
+                    attributes("name", "https://example.com/my-research")));
+            assertDoesNotThrow(() -> CatalogSecretBoundary.sealed(
+                    attributes("description", "see file:///share/readme.txt")));
+        }
+
+        /** The exemption is by exact attribute name, not by a name containing "name". */
+        @Test
+        @DisplayName("does not extend to every attribute with name in it")
+        void exemptionIsExact() {
+            refusalFor("originalFileName", "https://host/a");
+            refusalFor("qualifiedName", "https://host/a");
+        }
+    }
+
     @Test
     @DisplayName("sealed returns the very map it was given, so it can wrap an assignment")
     public void sealedIsPassThrough() {

@@ -261,7 +261,7 @@ public class LineageFolderCompanionBackfillImpl implements LineageFolderCompanio
             PurviewEntityPublishResult result = entityRegistryClient.bulkCreateOrUpdateEntities(
                     connectionResolver.buildConnectionRequest(),
                     entityPayloadFactory.buildBulkPayload(entities));
-            if (!result.isSuccess()) {
+            if (result == null || !result.isSuccess()) {
                 // The message can echo a catalog response, so it is counted and not narrated.
                 cursor.failed += folders.size();
                 cursor.processed += folders.size();
@@ -287,7 +287,9 @@ public class LineageFolderCompanionBackfillImpl implements LineageFolderCompanio
                 PurviewEntityPublishResult tie = entityRegistryClient.createRelationship(
                         connectionResolver.buildConnectionRequest(),
                         entityPayloadFactory.buildFolderDatasetRelationship(repositoryId, folder));
-                if (!tie.isSuccess()) {
+                // null is a client that answered nothing — a failed tie, never an NPE that
+                // would abort the batch and lose the entities already published.
+                if (tie == null || !tie.isSuccess()) {
                     cursor.failed++;
                 }
             } catch (PurviewClientException e) {

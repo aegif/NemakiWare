@@ -47,6 +47,8 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
     private final PurviewContainmentRelationshipService containmentRelationshipService;
     private final PurviewDocumentTypeRelationshipService documentTypeRelationshipService;
     private final PurviewDeadLetterStateService deadLetterStateService;
+    private final jp.aegif.nemaki.rest.purview.lineage.LineageFolderCompanionLifecycle
+            folderCompanionLifecycle;
 
     public PurviewDocumentPublishServiceImpl(
             MetadataCatalogConnectionResolver connectionResolver,
@@ -56,7 +58,9 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
             PurviewEntityRegistryClient entityRegistryClient,
             PurviewContainmentRelationshipService containmentRelationshipService,
             PurviewDocumentTypeRelationshipService documentTypeRelationshipService,
-            PurviewDeadLetterStateService deadLetterStateService) {
+            PurviewDeadLetterStateService deadLetterStateService,
+            jp.aegif.nemaki.rest.purview.lineage.LineageFolderCompanionLifecycle
+                    folderCompanionLifecycle) {
         this.connectionResolver = connectionResolver;
         this.repositoryInfoMap = repositoryInfoMap;
         this.contentDaoService = contentDaoService;
@@ -65,6 +69,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
         this.containmentRelationshipService = containmentRelationshipService;
         this.documentTypeRelationshipService = documentTypeRelationshipService;
         this.deadLetterStateService = deadLetterStateService;
+        this.folderCompanionLifecycle = folderCompanionLifecycle;
     }
 
     @Override
@@ -81,6 +86,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
         pathMap.put(rootFolderId, "/");
         Map<String, String> guidAccumulator = new HashMap<>();
         Set<String> failedQualifiedNames = new HashSet<>();
+        List<Content> companionCandidates = new ArrayList<>();
         int processedCount = 0;
 
         entityBatch.add(entityPayloadFactory.buildRepositoryEntity(repositoryInfo));
@@ -92,6 +98,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
         }
         entityBatch.add(entityPayloadFactory.buildFolderEntity(repositoryId, rootFolder, "/"));
         containmentCandidates.add(rootFolder);
+        addCompanion(repositoryId, rootFolder, entityBatch, companionCandidates);
         processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator, failedQualifiedNames);
 
         while (!folderQueue.isEmpty()) {
@@ -121,6 +128,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
                         pathMap.put(child.getId(), childPath);
                         entityBatch.add(entityPayloadFactory.buildFolderEntity(repositoryId, child, childPath));
                         containmentCandidates.add(child);
+                        addCompanion(repositoryId, child, entityBatch, companionCandidates);
                         processedCount += flushIfNeeded(repositoryId, entityBatch, guidAccumulator, failedQualifiedNames);
                         folderQueue.addLast(child.getId());
                         continue;
@@ -140,6 +148,8 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
         processedCount += flushEntities(repositoryId, entityBatch, guidAccumulator, failedQualifiedNames);
         pruneFailedCandidates(repositoryId, containmentCandidates, failedQualifiedNames);
         pruneFailedCandidates(repositoryId, relationshipCandidates, failedQualifiedNames);
+        pruneFailedCandidates(repositoryId, companionCandidates, failedQualifiedNames);
+        folderCompanionLifecycle.tie(repositoryId, companionCandidates, guidAccumulator);
         return processedCount
                 + containmentRelationshipService.upsertContainmentRelationships(repositoryId, containmentCandidates, guidAccumulator)
                 + documentTypeRelationshipService.upsertDocumentTypeRelationships(repositoryId, relationshipCandidates, guidAccumulator);
@@ -166,6 +176,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
         List<Map<String, Object>> pending = new ArrayList<>();
         List<Content> containmentCandidates = new ArrayList<>();
         List<Content> relationshipCandidates = new ArrayList<>();
+        List<Content> companionCandidates = new ArrayList<>();
         Map<String, String> guidAccumulator = new HashMap<>();
         Set<String> failedQualifiedNames = new HashSet<>();
         int processedCount = 0;
@@ -180,11 +191,22 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
             if (content != null && content.isDocument()) {
                 relationshipCandidates.add(content);
             }
+            // §3 (増分 B): a folder and its DataSet companion go in the SAME bulk, so neither
+            // exists without the other for longer than one call. The response is still checked
+            // — a bulk can succeed partially — and what is missing becomes reconciliation's.
+            Map<String, Object> companion =
+                    folderCompanionLifecycle.companionFor(repositoryId, content);
+            if (companion != null) {
+                pending.add(companion);
+                companionCandidates.add(content);
+            }
             processedCount += flushIfNeeded(repositoryId, pending, guidAccumulator, failedQualifiedNames);
         }
         processedCount += flushEntities(repositoryId, pending, guidAccumulator, failedQualifiedNames);
         pruneFailedCandidates(repositoryId, containmentCandidates, failedQualifiedNames);
         pruneFailedCandidates(repositoryId, relationshipCandidates, failedQualifiedNames);
+        pruneFailedCandidates(repositoryId, companionCandidates, failedQualifiedNames);
+        folderCompanionLifecycle.tie(repositoryId, companionCandidates, guidAccumulator);
         return processedCount
                 + containmentRelationshipService.upsertContainmentRelationships(repositoryId, containmentCandidates, guidAccumulator)
                 + documentTypeRelationshipService.upsertDocumentTypeRelationships(repositoryId, relationshipCandidates, guidAccumulator);
@@ -193,6 +215,23 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
     @Override
     public int upsertDocuments(String repositoryId, List<Content> documents) {
         return upsertContents(repositoryId, documents);
+    }
+
+    /**
+     * Adds a folder's DataSet companion to the same batch as the folder (§3, 増分 B).
+     *
+     * <p>Same batch so the two are never separated by more than one call. A partial bulk
+     * response can still leave one of them missing, which is why the candidates are pruned
+     * against the failures before the tie is attempted.
+     */
+    private void addCompanion(String repositoryId, Content folder,
+            List<Map<String, Object>> entityBatch, List<Content> companionCandidates) {
+        Map<String, Object> companion =
+                folderCompanionLifecycle.companionFor(repositoryId, folder);
+        if (companion != null) {
+            entityBatch.add(companion);
+            companionCandidates.add(folder);
+        }
     }
 
     private Map<String, Object> buildContentEntity(String repositoryId, Content content, String folderPath) {

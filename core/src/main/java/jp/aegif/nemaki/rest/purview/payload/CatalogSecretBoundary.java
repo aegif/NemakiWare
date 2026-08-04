@@ -104,6 +104,21 @@ public final class CatalogSecretBoundary {
     private static final List<String> IDENTITY_ATTRIBUTES = List.of(
             "externalStableKey", "externalPath", "targetDescription", "sourceDescription");
 
+    /**
+     * The user's own display text, which this gate does not get to judge.
+     *
+     * <p>A CMIS object may legally be named {@code https://example.com/x}, and the catalog's
+     * job is to show what the object is called. Refusing it would not protect a secret — the
+     * name is already visible in the repository to anyone who can see the object — it would
+     * simply make the folder unsyncable, and a rule that breaks on valid user data gets
+     * removed rather than fixed.
+     *
+     * <p>This is not a hole to route a stored URL through. A value put here becomes the
+     * entity's displayed name, which is the opposite of silent retention, and every attribute
+     * that exists to hold a system-chosen location is still checked.
+     */
+    private static final List<String> USER_TEXT_ATTRIBUTES = List.of("name", "description");
+
     private CatalogSecretBoundary() {
     }
 
@@ -157,6 +172,9 @@ public final class CatalogSecretBoundary {
             if (lowerName.contains(secret)) {
                 throw refusal(name, text, "its name says it holds a secret");
             }
+        }
+        if (USER_TEXT_ATTRIBUTES.contains(name)) {
+            return;
         }
         if (IDENTITY_ATTRIBUTES.contains(name)) {
             // Scheme and path allowed; the credential-bearing parts are not.
