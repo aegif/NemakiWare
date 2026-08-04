@@ -67,12 +67,65 @@ public class LineageDrestReadinessTest {
         set("lineageConfig", config);
         set("journalStore", store);
         set("targetSinks", List.of(sink));
+        // §2's obligation machine (v2.3.44): readiness now requires it to be ASSEMBLED, not
+        // merely present in the binary. The tests below are about other conditions, so they
+        // start from a wired one; aMachineThatIsNotWiredBlocks covers the absence.
+        set("obligationWiring", wiredObligationMachine());
+    }
+
+    /** A complete obligation machine for the one configured target. */
+    private static LineageObligationWiring wiredObligationMachine() {
+        return new LineageObligationWiring(
+                mock(LineageCatalogObligationStore.class),
+                new LineageCatalogProbeRegistry(java.util.Map.of("atlas",
+                        (t, r, k, qn) -> LineageCatalogEntityProbe.Presence.PRESENT)),
+                java.util.Map.of("atlas", (t, r, k, qn, snapshot)
+                        -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED),
+                mock(LineageCatalogObligationService.class),
+                new Object(), new Object());
     }
 
     private void set(String field, Object value) throws Exception {
         Field f = LineageDrestReadiness.class.getDeclaredField(field);
         f.setAccessible(true);
         f.set(readiness, value);
+    }
+
+    /**
+     * The false-green {@code catalog:obligations} allowed until v2.3.44.
+     *
+     * <p>The capability says the code is in the binary. A node with the code and none of the
+     * wiring passed condition 8 and a green gate, and would have found out with v2 writes
+     * already open — which is exactly what 4b being a flag flip forbids.
+     */
+    @Test
+    public void aMachineThatIsNotWiredBlocks() throws Exception {
+        set("obligationWiring", null);
+
+        LineageDrestReadiness.Readiness verdict = readiness.evaluate();
+
+        assertFalse(verdict.ready());
+        assertTrue(verdict.violations().stream()
+                .anyMatch(v -> v.contains("obligation machine is not wired")),
+                verdict.violations().toString());
+    }
+
+    /** A probe missing for a configured target is the same class of gap, per target. */
+    @Test
+    public void aTargetWithoutAProbeBlocks() throws Exception {
+        set("obligationWiring", new LineageObligationWiring(
+                mock(LineageCatalogObligationStore.class),
+                new LineageCatalogProbeRegistry(java.util.Map.of()),
+                java.util.Map.of("atlas", (t, r, k, qn, snapshot)
+                        -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED),
+                mock(LineageCatalogObligationService.class), new Object(), new Object()));
+
+        LineageDrestReadiness.Readiness verdict = readiness.evaluate();
+
+        assertFalse(verdict.ready());
+        assertTrue(verdict.violations().stream()
+                .anyMatch(v -> v.contains("probe") && v.contains("atlas")),
+                verdict.violations().toString());
     }
 
     @Test

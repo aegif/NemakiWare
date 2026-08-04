@@ -86,6 +86,33 @@ public class LineageDrestReadiness {
     @Autowired(required = false)
     private jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repositoryInfoMap;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private LineageObligationWiring obligationWiring;
+
+    /**
+     * §2's obligation machine, checked STRUCTURALLY (v2.3.44).
+     *
+     * <p>{@code catalog:obligations} is a static capability — it says the code is in the binary.
+     * Without this, a node with the code and none of the wiring passed both condition 8 and a
+     * green gate, and would have found out with v2 writes already open.
+     *
+     * <p>Deliberately does not call {@code LineageCatalogObligationService.active()}: that reads
+     * this gate, and the two would recurse. {@link LineageObligationWiring} reads no gate.
+     */
+    private List<String> obligationWiringViolations() {
+        if (obligationWiring == null) {
+            return List.of("the catalog obligation machine is not wired"
+                    + " (catalog:obligations is declared, so the code is present but unassembled)");
+        }
+        return obligationWiring.violations(configuredTargets());
+    }
+
+    /** The targets this node publishes lineage to, as the sink configuration names them. */
+    private java.util.Set<String> configuredTargets() {
+        java.util.List<String> targets = lineageConfig == null ? null : lineageConfig.getTargets();
+        return targets == null ? java.util.Set.of() : java.util.Set.copyOf(targets);
+    }
+
     public Readiness evaluate() {
         List<String> violations = new ArrayList<>();
         if (!lineageConfig.isDrestEnabled()) {
@@ -98,6 +125,7 @@ public class LineageDrestReadiness {
             violations.add("journal store is not the Couch store — no D-rest surface");
         }
         violations.addAll(sinkCapabilityViolations());
+        violations.addAll(obligationWiringViolations());
         violations.addAll(spoolViolations());
         List<String> previous = lastViolations.getAndSet(List.copyOf(violations));
         if (!violations.equals(previous)) {
