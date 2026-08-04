@@ -277,8 +277,8 @@ public class LineageWaitingSnapshotTest {
         }
 
         private LineageSourceDispositionResolver.SourceEvidence purgedSource() {
-            return new LineageSourceDispositionResolver.SourceEvidence(
-                    LineageSourceDisposition.SOURCE_PURGED, "inc-1", "rev-1", 1000L, null);
+            return LineageSourceDispositionResolver.SourceEvidence.of(REPO, KIND, QN,
+                    LineageSourceDisposition.SOURCE_PURGED, "inc-1", "rev-1", "marker-1", 1000L);
         }
 
         /** The whole point of the type: the publisher cannot be handed a live source. */
@@ -298,8 +298,8 @@ public class LineageWaitingSnapshotTest {
         }
 
         /**
-         * The replay hole: a snapshot saying PURGED may be a re-delivery of an observation
-         * from before a restore. Only the repository can say whether the object is gone now.
+         * The replay hole: a snapshot saying PURGED may be a re-delivery of an observation from
+         * before a restore. Only the repository can say whether the object is gone now.
          */
         @Test
         @DisplayName("a purged snapshot alone does not convert — the source must agree")
@@ -307,14 +307,35 @@ public class LineageWaitingSnapshotTest {
             assertTrue(HistoricalEntitySnapshot.from(valid(), obligation(), TARGET, null)
                     .isEmpty());
 
-            for (LineageSourceDisposition notPurged : List.of(
-                    LineageSourceDisposition.SOURCE_EXISTS,
-                    LineageSourceDisposition.SOURCE_UNKNOWN)) {
-                assertTrue(HistoricalEntitySnapshot.from(valid(), obligation(), TARGET,
-                        new LineageSourceDispositionResolver.SourceEvidence(notPurged, null,
-                                null, 1000L, null)).isEmpty(),
-                        "an authoritative " + notPurged + " must veto a PURGED snapshot");
-            }
+            assertTrue(HistoricalEntitySnapshot.from(valid(), obligation(), TARGET,
+                    LineageSourceDispositionResolver.SourceEvidence.of(REPO, KIND, QN,
+                            LineageSourceDisposition.SOURCE_EXISTS, null, null, null, 1000L))
+                    .isEmpty(), "an authoritative EXISTS must veto a PURGED snapshot");
+
+            assertTrue(HistoricalEntitySnapshot.from(valid(), obligation(), TARGET,
+                    LineageSourceDispositionResolver.SourceEvidence.unknown(1000L)).isEmpty());
+        }
+
+        /** Evidence gathered for another object must not authorise this one. */
+        @Test
+        @DisplayName("evidence about another subject does not convert")
+        void evidenceIsSubjectBound() {
+            assertTrue(HistoricalEntitySnapshot.from(valid(), obligation(), TARGET,
+                    LineageSourceDispositionResolver.SourceEvidence.of(REPO, KIND,
+                            QN + "-other", LineageSourceDisposition.SOURCE_PURGED, "inc-1",
+                            "rev-1", null, 1000L)).isEmpty(),
+                    "another endpoint's purge verdict must not license this one");
+
+            assertTrue(HistoricalEntitySnapshot.from(valid(), obligation(), TARGET,
+                    LineageSourceDispositionResolver.SourceEvidence.of("canopy", KIND, QN,
+                            LineageSourceDisposition.SOURCE_PURGED, "inc-1", "rev-1", null,
+                            1000L)).isEmpty(), "another repository's verdict must not license");
+
+            assertTrue(HistoricalEntitySnapshot.from(valid(), obligation(), TARGET,
+                    LineageSourceDispositionResolver.SourceEvidence.of(REPO,
+                            EndpointKind.CMIS_FOLDER, QN,
+                            LineageSourceDisposition.SOURCE_PURGED, "inc-1", "rev-1", null,
+                            1000L)).isEmpty(), "another kind's verdict must not license");
         }
 
         @Test
@@ -352,43 +373,103 @@ public class LineageWaitingSnapshotTest {
         @DisplayName("a PURGED verdict without incarnation or revision is refused")
         void purgedVerdictNeedsSomethingToRecheck() {
             assertThrows(IllegalArgumentException.class,
-                    () -> new LineageSourceDispositionResolver.SourceEvidence(
-                            LineageSourceDisposition.SOURCE_PURGED, null, null, 1000L, null));
+                    () -> LineageSourceDispositionResolver.SourceEvidence.of(REPO, KIND, QN,
+                            LineageSourceDisposition.SOURCE_PURGED, null, null, null, 1000L));
             assertThrows(IllegalArgumentException.class,
-                    () -> new LineageSourceDispositionResolver.SourceEvidence(
-                            LineageSourceDisposition.SOURCE_PURGED, "inc-1", "  ", 1000L, null));
+                    () -> LineageSourceDispositionResolver.SourceEvidence.of(REPO, KIND, QN,
+                            LineageSourceDisposition.SOURCE_PURGED, "inc-1", "  ", null, 1000L));
         }
 
         /** TOCTOU: a restore between the check and the write must stop the publish. */
         @Test
-        @DisplayName("a changed incarnation withdraws the authorisation")
-        void changedIncarnationWithdrawsAuthorisation() {
+        @DisplayName("a changed incarnation or revision withdraws the authorisation")
+        void changedEvidenceWithdrawsAuthorisation() {
             HistoricalEntitySnapshot authorised = HistoricalEntitySnapshot
                     .from(valid(), obligation(), TARGET, purgedSource()).orElseThrow();
 
-            assertTrue(authorised.stillAuthorised(purgedSource()));
+            assertTrue(authorised.stillAuthorised(purgedSource()),
+                    "the same fact read again must match, or the guard is useless");
             assertFalse(authorised.stillAuthorised(
-                    new LineageSourceDispositionResolver.SourceEvidence(
-                            LineageSourceDisposition.SOURCE_PURGED, "inc-2", "rev-1", 2000L,
-                            null)),
+                    LineageSourceDispositionResolver.SourceEvidence.of(REPO, KIND, QN,
+                            LineageSourceDisposition.SOURCE_PURGED, "inc-2", "rev-1", "marker-1",
+                            2000L)),
                     "a restore makes a new incarnation; evidence from the old one authorises"
                             + " nothing about it");
             assertFalse(authorised.stillAuthorised(
-                    new LineageSourceDispositionResolver.SourceEvidence(
-                            LineageSourceDisposition.SOURCE_EXISTS, "inc-1", "rev-1", 2000L,
-                            null)));
+                    LineageSourceDispositionResolver.SourceEvidence.of(REPO, KIND, QN,
+                            LineageSourceDisposition.SOURCE_PURGED, "inc-1", "rev-2", "marker-1",
+                            2000L)));
+            assertFalse(authorised.stillAuthorised(
+                    LineageSourceDispositionResolver.SourceEvidence.of(REPO, KIND, QN,
+                            LineageSourceDisposition.SOURCE_EXISTS, null, null, null, 2000L)));
             assertFalse(authorised.stillAuthorised(
                     LineageSourceDispositionResolver.SourceEvidence.unknown(2000L)));
             assertFalse(authorised.stillAuthorised(null));
         }
 
+        /** Re-verification happens later by definition; the time must not be part of the fact. */
+        @Test
+        @DisplayName("evidence differing only in checkedAt is the same fact")
+        void checkedAtIsNotPartOfTheFact() {
+            HistoricalEntitySnapshot authorised = HistoricalEntitySnapshot
+                    .from(valid(), obligation(), TARGET, purgedSource()).orElseThrow();
+
+            assertTrue(authorised.stillAuthorised(
+                    LineageSourceDispositionResolver.SourceEvidence.of(REPO, KIND, QN,
+                            LineageSourceDisposition.SOURCE_PURGED, "inc-1", "rev-1", "marker-1",
+                            999_999L)));
+        }
+
+        /** Same incarnation and revision, different marker: not the same reading. */
+        @Test
+        @DisplayName("evidence with a different marker does not match")
+        void markerIsPartOfTheFact() {
+            HistoricalEntitySnapshot authorised = HistoricalEntitySnapshot
+                    .from(valid(), obligation(), TARGET, purgedSource()).orElseThrow();
+
+            assertFalse(authorised.stillAuthorised(
+                    LineageSourceDispositionResolver.SourceEvidence.of(REPO, KIND, QN,
+                            LineageSourceDisposition.SOURCE_PURGED, "inc-1", "rev-1", "marker-2",
+                            2000L)));
+        }
+
+        @Test
+        @DisplayName("a forged or malformed evidence digest is refused")
+        void forgedEvidenceDigestIsRefused() {
+            LineageSourceDispositionResolver.SourceEvidence real = purgedSource();
+
+            assertThrows(IllegalArgumentException.class,
+                    () -> new LineageSourceDispositionResolver.SourceEvidence(REPO, KIND,
+                            real.subjectDigest(), LineageSourceDisposition.SOURCE_PURGED,
+                            "inc-1", "rev-1", "marker-1", 1000L, "0".repeat(64)));
+            for (String bad : List.of("", "abc", "0".repeat(63), "G".repeat(64))) {
+                assertThrows(IllegalArgumentException.class,
+                        () -> new LineageSourceDispositionResolver.SourceEvidence(REPO, KIND,
+                                real.subjectDigest(), LineageSourceDisposition.SOURCE_PURGED,
+                                "inc-1", "rev-1", "marker-1", 1000L, bad));
+            }
+        }
+
+        /** Unknown may be unbound, and must never authorise. */
+        @Test
+        @DisplayName("an unbound UNKNOWN is allowed but authorises nothing")
+        void unboundUnknownAuthorisesNothing() {
+            LineageSourceDispositionResolver.SourceEvidence unknown =
+                    LineageSourceDispositionResolver.SourceEvidence.unknown(1000L);
+
+            assertFalse(unknown.authorisesHistorical());
+            assertTrue(HistoricalEntitySnapshot.from(valid(), obligation(), TARGET, unknown)
+                    .isEmpty());
+        }
+
         /** Evidence is read back on admin routes and put in logs. */
         @Test
-        @DisplayName("source evidence carries no revision or incarnation in its description")
+        @DisplayName("source evidence carries no revision, incarnation or subject in its text")
         void evidenceDescriptionLeaksNothing() {
             String description = purgedSource().toString();
             assertFalse(description.contains("inc-1"));
             assertFalse(description.contains("rev-1"));
+            assertFalse(description.contains(QN));
             assertTrue(description.contains("SOURCE_PURGED"));
         }
     }

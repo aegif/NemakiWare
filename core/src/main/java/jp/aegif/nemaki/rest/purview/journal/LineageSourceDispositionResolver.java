@@ -16,6 +16,8 @@
  */
 package jp.aegif.nemaki.rest.purview.journal;
 
+import java.util.Objects;
+
 /**
  * Asks the <em>repository</em> what became of a source — never the catalog.
  *
@@ -39,64 +41,184 @@ package jp.aegif.nemaki.rest.purview.journal;
 public interface LineageSourceDispositionResolver {
 
     /**
-     * What the repository says, and the evidence it said it from.
+     * What the repository says, bound to the subject it says it about.
      *
-     * @param incarnation which instantiation of the object this is about — a restore makes a
-     *        new one, so evidence gathered before a restore stops matching after it
+     * <h2>Subject-bound, because a verdict is not transferable</h2>
+     *
+     * <p>The first version carried a disposition, an incarnation and a revision, and nothing
+     * that said which object they were about. Evidence gathered for one document would then
+     * authorise a historical entity for another — the caller was trusted to keep them together,
+     * and a caller that mixed them up would produce a tombstone for a live object with every
+     * field looking correct.
+     *
+     * <h2>Self-verifying, because it authorises a permanent write</h2>
+     *
+     * <p>{@link #evidenceDigest} is recomputed in the canonical constructor and compared in
+     * constant time, exactly as {@code LineageWaitingSnapshot} does. Anything that can license
+     * a tombstone is checked to the same standard as the material the tombstone is built from.
+     *
+     * @param subjectDigest the endpoint this verdict is about, as a digest — the qualified name
+     *        of an external asset contains its stable key and does not belong in a record that
+     *        is logged and stored
+     * @param incarnation which instantiation of the object this is about; a restore makes a new
+     *        one, so evidence from before a restore stops matching after it
      * @param revision the object or tombstone revision the verdict was read from
-     * @param checkedAtMs when, so a caller can tell a fresh answer from a remembered one
-     * @param evidenceDigest binds the verdict to what was read, without carrying it
+     * @param markerDigest the resolver's own tombstone/purge marker, digested; {@code null}
+     *        where a resolver has none to offer
+     * @param checkedAtMs when. <b>Deliberately not in the digest</b>: re-verification has to be
+     *        able to produce evidence that matches, and it necessarily happens later.
      */
-    record SourceEvidence(LineageSourceDisposition disposition, String incarnation,
-            String revision, long checkedAtMs, String evidenceDigest) {
+    record SourceEvidence(String repositoryId, EndpointKind endpointKind, String subjectDigest,
+            LineageSourceDisposition disposition, String incarnation, String revision,
+            String markerDigest, long checkedAtMs, String evidenceDigest) {
 
         /** The evidence's domain tag; frozen because it keys stored comparisons. */
         public static final String EVIDENCE_DOMAIN = "LINEAGE_SOURCE_EVIDENCE_V1";
+
+        /** The subject digest's domain, kept apart from the evidence's. */
+        public static final String SUBJECT_DOMAIN = "LINEAGE_SOURCE_SUBJECT_V1";
 
         public SourceEvidence {
             if (disposition == null) {
                 throw new IllegalArgumentException("a source verdict needs a disposition");
             }
-            if (disposition == LineageSourceDisposition.SOURCE_PURGED
-                    && (isBlank(incarnation) || isBlank(revision))) {
+            if (disposition != LineageSourceDisposition.SOURCE_UNKNOWN) {
+                // UNKNOWN may legitimately have no subject — the resolver may not have got far
+                // enough to identify one. Anything that can be acted on must name its subject.
+                requireText(repositoryId, "repositoryId");
+                requireText(subjectDigest, "subjectDigest");
+                if (endpointKind == null) {
+                    throw new IllegalArgumentException(
+                            "a source verdict that can be acted on needs its endpoint kind");
+                }
+            }
+            if (disposition == LineageSourceDisposition.SOURCE_PURGED) {
                 // A purge verdict with nothing to point at cannot be re-verified later, and
                 // re-verification is what closes the restore-during-publish window.
-                throw new IllegalArgumentException(
-                        "a PURGED verdict must carry the incarnation and revision it was read"
-                                + " from, or it cannot be re-checked before publishing");
+                requireText(incarnation, "incarnation");
+                requireText(revision, "revision");
             }
+            // UNKNOWN with no digest is the one shape that binds nothing: it is allowed, and
+            // authorisesHistorical() refuses it. Everything else must prove it describes itself.
+            boolean unboundUnknown = disposition == LineageSourceDisposition.SOURCE_UNKNOWN
+                    && evidenceDigest == null;
+            if (!unboundUnknown) {
+                requireWellFormedDigest(evidenceDigest);
+                String recomputed = digestOf(repositoryId, endpointKind, subjectDigest,
+                        disposition, incarnation, revision, markerDigest);
+                if (!constantTimeEquals(recomputed, evidenceDigest)) {
+                    throw new IllegalArgumentException(
+                            "the evidence digest does not describe this verdict");
+                }
+            }
+        }
+
+        /** The subject an endpoint names, as a digest. */
+        public static String subjectDigest(String repositoryId, EndpointKind kind,
+                String catalogQualifiedName) {
+            return LineageCanonicalHash.hash(SUBJECT_DOMAIN, repositoryId,
+                    kind == null ? null : kind.name(), catalogQualifiedName);
+        }
+
+        /** Builds a verdict and its digest from the same material. */
+        public static SourceEvidence of(String repositoryId, EndpointKind kind,
+                String catalogQualifiedName, LineageSourceDisposition disposition,
+                String incarnation, String revision, String markerDigest, long checkedAtMs) {
+            String subject = subjectDigest(repositoryId, kind, catalogQualifiedName);
+            String digest = digestOf(repositoryId, kind, subject, disposition, incarnation,
+                    revision, markerDigest);
+            return new SourceEvidence(repositoryId, kind, subject, disposition, incarnation,
+                    revision, markerDigest, checkedAtMs, digest);
         }
 
         /** Unknown, with nothing to point at. The answer for every failure. */
         public static SourceEvidence unknown(long checkedAtMs) {
-            return new SourceEvidence(LineageSourceDisposition.SOURCE_UNKNOWN, null, null,
-                    checkedAtMs, null);
+            return new SourceEvidence(null, null, null, LineageSourceDisposition.SOURCE_UNKNOWN,
+                    null, null, null, checkedAtMs, null);
+        }
+
+        private static String digestOf(String repositoryId, EndpointKind kind,
+                String subjectDigest, LineageSourceDisposition disposition, String incarnation,
+                String revision, String markerDigest) {
+            // checkedAtMs is NOT here: a re-check happens later by definition, and evidence
+            // that could never match its own re-reading would make the TOCTOU guard useless.
+            return LineageCanonicalHash.hash(EVIDENCE_DOMAIN, repositoryId,
+                    kind == null ? null : kind.name(), subjectDigest, disposition.name(),
+                    incarnation, revision, markerDigest);
+        }
+
+        /** Whether this verdict is about the endpoint an obligation names. */
+        public boolean describesSubject(String repositoryId, EndpointKind kind,
+                String catalogQualifiedName) {
+            return subjectDigest != null
+                    && subjectDigest.equals(subjectDigest(repositoryId, kind,
+                            catalogQualifiedName))
+                    && java.util.Objects.equals(this.repositoryId, repositoryId)
+                    && this.endpointKind == kind;
         }
 
         /**
          * Whether a later reading is the same fact as this one.
          *
-         * <p>A changed incarnation means the object was restored — the evidence is about a
-         * previous life of it and may not authorise anything about this one.
+         * <p>Compares everything that identifies the fact, including the digest. Deliberately
+         * <em>not</em> {@code checkedAtMs}: the whole point is to compare two readings taken at
+         * different times, so requiring the times to match would make it always false.
          */
         public boolean stillMatches(SourceEvidence later) {
             return later != null
                     && later.disposition == disposition
-                    && java.util.Objects.equals(later.incarnation, incarnation)
-                    && java.util.Objects.equals(later.revision, revision);
+                    && Objects.equals(later.repositoryId, repositoryId)
+                    && later.endpointKind == endpointKind
+                    && Objects.equals(later.subjectDigest, subjectDigest)
+                    && Objects.equals(later.incarnation, incarnation)
+                    && Objects.equals(later.revision, revision)
+                    && Objects.equals(later.evidenceDigest, evidenceDigest);
         }
 
-        private static boolean isBlank(String value) {
-            return value == null || value.isBlank();
+        /** Whether this verdict can license a historical entity. */
+        public boolean authorisesHistorical() {
+            return disposition == LineageSourceDisposition.SOURCE_PURGED
+                    && subjectDigest != null && evidenceDigest != null;
         }
 
-        /** No revision, no incarnation, no path: those identify and locate the object. */
+        private static void requireText(String value, String what) {
+            if (value == null || value.isBlank()) {
+                throw new IllegalArgumentException(what + " must not be blank");
+            }
+        }
+
+        private static void requireWellFormedDigest(String digest) {
+            if (digest == null || digest.length() != 64) {
+                throw new IllegalArgumentException(
+                        "an evidence digest is 64 lowercase hex digits");
+            }
+            for (int i = 0; i < digest.length(); i++) {
+                char c = digest.charAt(i);
+                if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+                    throw new IllegalArgumentException(
+                            "an evidence digest is 64 lowercase hex digits");
+                }
+            }
+        }
+
+        private static boolean constantTimeEquals(String a, String b) {
+            if (a == null || b == null || a.length() != b.length()) {
+                return false;
+            }
+            int difference = 0;
+            for (int i = 0; i < a.length(); i++) {
+                difference |= a.charAt(i) ^ b.charAt(i);
+            }
+            return difference == 0;
+        }
+
+        /** No revision, no incarnation, no subject: those identify and locate the object. */
         @Override
         public String toString() {
-            return "SourceEvidence[" + disposition + " checkedAt=" + checkedAtMs
+            return "SourceEvidence[" + disposition + " kind=" + endpointKind
+                    + " checkedAt=" + checkedAtMs
                     + (evidenceDigest == null ? ""
-                            : " evidence=" + evidenceDigest.substring(0,
-                                    Math.min(12, evidenceDigest.length()))) + "]";
+                            : " evidence=" + evidenceDigest.substring(0, 12)) + "]";
         }
     }
 

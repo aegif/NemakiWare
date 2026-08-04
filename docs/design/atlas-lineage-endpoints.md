@@ -378,6 +378,56 @@ SOURCE_PURGED という文字列が 2 箇所で一致するだけでは足りな
 `stillAuthorised(recheck)` が incarnation / revision の変化を検出し、publish 直前と
 直後の再確認で restore 競合を弾く。
 
+#### provenance 証明・evidence 自己検証・publish 後補償 (v2.3.49)
+
+**REPLAY/REPAIR は origin digest を必須**とする。以前は `originEvidenceDigest != null` の
+ときだけ照合していたので、origin ID と sequence だけ持つ再配送は素通りした。
+**任意の証明は証明ではない** — 改竄・切詰められた再配送は単にその field を省く。
+欠損・blank・非 hex・長さ不正はいずれも `INDETERMINATE`、内容不一致は corruption。
+REPAIR は REPLAY と同形だが独立に検証・テストする。
+
+`occurredAt` は **監査情報であって ordering input ではない**。順序は
+`originObservationSequence` のみで決まる。
+
+**`SourceEvidence` は subject に束縛し、自己検証する。** 以前は disposition・
+incarnation・revision だけで「どの object についてか」を持たず、**別 object の PURGED
+evidence を流用できた** (全 field が正しく見えたまま生存 object へ tombstone)。
+
+| field | 役割 |
+|---|---|
+| `repositoryId` / `endpointKind` / `subjectDigest` | どの endpoint についての verdict か |
+| `disposition` / `incarnation` / `revision` / `markerDigest` | 何を読んで出した verdict か |
+| `checkedAtMs` | **digest に含めない** — 再検証は必ず後で起きるので、含めると自分の再読と一致し得ず TOCTOU guard が無意味になる |
+| `evidenceDigest` | 64 桁小文字 hex。canonical constructor が再計算して constant-time 比較 |
+
+`PURGED` は incarnation・revision・subjectDigest・evidenceDigest を必須。
+`UNKNOWN` だけは subject 未確定を許すが `authorisesHistorical()` は false。
+`stillMatches()` は disposition・subject・incarnation・revision・**evidenceDigest** を比較する
+(checkedAt は比較しない — 明示的な判断)。
+`HistoricalEntitySnapshot.from` は snapshot subject と evidence subject の完全一致も要求する。
+
+#### publish 後の補償 (v2.3.49)
+
+```
+PURGED 再確認 → historical publish 成功 → source が restore → 再確認で EXISTS
+```
+
+**obligation を resolve しないだけでは足りない。** catalog には生存 object の tombstone が
+残り、obligation machine は二度と戻らない (retry すると source が在るので release し、
+誤った entity は永久に残る)。
+
+`LineageHistoricalCompensation` を **durable に** (obligation と同じ DB に) 書く。
+in-memory queue にしないのは、restore が多発する障害ではまさに再起動が起きるため。
+値は持たず digest と識別子だけ: target / repository / kind / subjectDigest /
+operationDigest / publish 時と publish 後の evidence digest / reason=
+`SOURCE_CHANGED_DURING_HISTORICAL_PUBLISH` / 作成時刻 / **deterministic task ID**
+(同一 publish の retry が 2 つ作らない)。
+
+publisher は enum ではなく `LineageHistoricalPublishReceipt` を返す。**PUBLISHED は
+read-back が PRESENT を見たときだけ主張できる** (publish が success を返したことは
+entity が在る証拠ではない) し、operationDigest が無ければ補償が「どの書込みを
+取り消すのか」を名指せない。catalog の応答本文も QN も保持しない。
+
 ### 件数・サイズ上限 (v2.1)
 
 `EXPORT_SELECTED_OBJECTS` は選択件数だけ endpoint が並ぶ。無制限は Atlas payload と

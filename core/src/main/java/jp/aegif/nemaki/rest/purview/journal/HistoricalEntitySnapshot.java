@@ -49,8 +49,7 @@ public record HistoricalEntitySnapshot(LineageWaitingSnapshot snapshot, String t
             throw new IllegalArgumentException(
                     "only a purged source may become a historical entity");
         }
-        if (sourceEvidence == null
-                || sourceEvidence.disposition() != LineageSourceDisposition.SOURCE_PURGED) {
+        if (sourceEvidence == null || !sourceEvidence.authorisesHistorical()) {
             // TWO independent statements, not one string appearing twice. The snapshot says
             // what someone observed; this says what the repository holds now. A snapshot alone
             // cannot authorise a tombstone, because a replayed old observation is a snapshot.
@@ -83,10 +82,16 @@ public record HistoricalEntitySnapshot(LineageWaitingSnapshot snapshot, String t
         if (snapshot.sourceDisposition() != LineageSourceDisposition.SOURCE_PURGED) {
             return Optional.empty();
         }
-        if (verifiedSourceEvidence == null || verifiedSourceEvidence.disposition()
-                != LineageSourceDisposition.SOURCE_PURGED) {
+        if (verifiedSourceEvidence == null || !verifiedSourceEvidence.authorisesHistorical()) {
             // The snapshot may be a replay of an observation from before a restore. Only the
-            // repository can say whether the object is gone now.
+            // repository can say whether the object is gone now — and only a verdict that is
+            // bound to a subject and to its own digest can say it about THIS object.
+            return Optional.empty();
+        }
+        if (!verifiedSourceEvidence.describesSubject(obligation.repositoryId(),
+                obligation.endpointKind(), obligation.catalogQualifiedName())) {
+            // Evidence gathered for another object would otherwise authorise this one, with
+            // every field looking correct.
             return Optional.empty();
         }
         return Optional.of(new HistoricalEntitySnapshot(snapshot, obligation.taskKey(),

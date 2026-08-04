@@ -52,7 +52,7 @@ public class LineageObligationWiringTest {
     private LineageHistoricalPublisherRegistry publishersFor(String... targets) {
         Map<String, LineageHistoricalEntityPublisher> byTarget = new java.util.LinkedHashMap<>();
         for (String target : targets) {
-            byTarget.put(target, snapshot -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED);
+            byTarget.put(target, snapshot -> null);
         }
         return new LineageHistoricalPublisherRegistry(byTarget);
     }
@@ -276,8 +276,8 @@ public class LineageObligationWiringTest {
     @Test
     @DisplayName("duplicate publisher targets are refused at construction")
     public void duplicatePublisherTargetsAreRefused() {
-        LineageHistoricalEntityPublisher first = snapshot -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED;
-        LineageHistoricalEntityPublisher second = snapshot -> LineageHistoricalEntityPublisher.Outcome.RETRYABLE;
+        LineageHistoricalEntityPublisher first = snapshot -> null;
+        LineageHistoricalEntityPublisher second = snapshot -> null;
 
         Map<String, LineageHistoricalEntityPublisher> colliding =
                 new java.util.LinkedHashMap<>();
@@ -294,7 +294,7 @@ public class LineageObligationWiringTest {
     @DisplayName("a blank or null-valued publisher registration is refused")
     public void malformedPublisherRegistrationIsRefused() {
         Map<String, LineageHistoricalEntityPublisher> blank = new java.util.LinkedHashMap<>();
-        blank.put("  ", snapshot -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED);
+        blank.put("  ", snapshot -> null);
         org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
                 () -> new LineageHistoricalPublisherRegistry(blank));
 

@@ -70,11 +70,26 @@ public class LineageWaitingSnapshotResolverTest {
     /** A replay: a NEW delivery sequence carrying an OLD observation. */
     private static Candidate replayOf(long deliverySequence, String deliveryId,
             long originSequence, String originDeliveryId, LineageWaitingSnapshot snap) {
+        return redelivery(LineageObservationProvenance.LineageDeliveryKind.REPLAY,
+                deliverySequence, deliveryId, originSequence, originDeliveryId, snap,
+                snap.evidenceDigest());
+    }
+
+    /** A repair: reconstructed from a dead letter, also carrying an older observation. */
+    private static Candidate repairOf(long deliverySequence, String deliveryId,
+            long originSequence, String originDeliveryId, LineageWaitingSnapshot snap) {
+        return redelivery(LineageObservationProvenance.LineageDeliveryKind.REPAIR,
+                deliverySequence, deliveryId, originSequence, originDeliveryId, snap,
+                snap.evidenceDigest());
+    }
+
+    private static Candidate redelivery(
+            LineageObservationProvenance.LineageDeliveryKind kind, long deliverySequence,
+            String deliveryId, long originSequence, String originDeliveryId,
+            LineageWaitingSnapshot snap, String originDigest) {
         return new Candidate(new LineageJournalOrder(REPO, deliverySequence, deliveryId),
-                new LineageObservationProvenance(
-                        LineageObservationProvenance.LineageDeliveryKind.REPLAY,
-                        deliveryId, originDeliveryId, deliverySequence, originSequence,
-                        "2026-01-01T00:00:00Z", snap.evidenceDigest()),
+                new LineageObservationProvenance(kind, deliveryId, originDeliveryId,
+                        deliverySequence, originSequence, "2026-01-01T00:00:00Z", originDigest),
                 snap);
     }
 
@@ -317,6 +332,18 @@ public class LineageWaitingSnapshotResolverTest {
                             purged))).resolve(obligation()));
         }
 
+        /** Optional proof is not proof — a tampered replay would simply omit the field. */
+        @Test
+        @DisplayName("a replay with no origin digest is INDETERMINATE")
+        void replayWithoutOriginDigestIsIndeterminate() {
+            LineageWaitingSnapshot purged =
+                    snapshot("a", LineageSourceDisposition.SOURCE_PURGED);
+
+            assertInstanceOf(Resolution.Indeterminate.class, over(List.of(
+                    redelivery(LineageObservationProvenance.LineageDeliveryKind.REPLAY,
+                            30L, "d-3", 10L, "d-1", purged, null))).resolve(obligation()));
+        }
+
         /** A replay must carry what it claims to re-deliver. */
         @Test
         @DisplayName("an altered replay payload is corruption")
@@ -382,6 +409,145 @@ public class LineageWaitingSnapshotResolverTest {
 
             assertEquals(resolved(forward).evidenceDigest(),
                     resolved(reversed).evidenceDigest());
+        }
+    }
+
+    @Nested
+    @DisplayName("repair carries an old observation too")
+    class Repair {
+
+        /** Repair has the same shape as replay and needs its own evidence, not replay's. */
+        @Test
+        @DisplayName("a repaired PURGED does not outrank a later restore")
+        void repairedPurgedDoesNotOutrankRestore() {
+            LineageWaitingSnapshot purged =
+                    snapshot("a", LineageSourceDisposition.SOURCE_PURGED);
+            LineageWaitingSnapshot restored =
+                    snapshot("a", LineageSourceDisposition.SOURCE_EXISTS);
+
+            assertEquals(LineageSourceDisposition.SOURCE_EXISTS, resolved(List.of(
+                    at(10L, "d-1", purged),
+                    at(20L, "d-2", restored),
+                    repairOf(30L, "d-3", 10L, "d-1", purged))).sourceDisposition());
+        }
+
+        @Test
+        @DisplayName("valid repair provenance resolves")
+        void validRepairResolves() {
+            LineageWaitingSnapshot purged =
+                    snapshot("a", LineageSourceDisposition.SOURCE_PURGED);
+
+            assertEquals(LineageSourceDisposition.SOURCE_PURGED,
+                    resolved(List.of(repairOf(30L, "d-3", 10L, "d-1", purged)))
+                            .sourceDisposition());
+        }
+
+        /** No origin means nothing is known about when it observed the source. */
+        @Test
+        @DisplayName("a repair with no origin is INDETERMINATE")
+        void repairWithoutOriginIsIndeterminate() {
+            LineageWaitingSnapshot purged =
+                    snapshot("a", LineageSourceDisposition.SOURCE_PURGED);
+
+            assertInstanceOf(Resolution.Indeterminate.class, over(List.of(
+                    redelivery(LineageObservationProvenance.LineageDeliveryKind.REPAIR,
+                            30L, "d-3", 10L, null, purged, purged.evidenceDigest())))
+                    .resolve(obligation()));
+        }
+
+        /**
+         * Optional proof is not proof: a tampered or truncated re-delivery would simply omit
+         * the field, so a missing origin digest cannot be treated as "nothing to check".
+         */
+        @Test
+        @DisplayName("a repair with no origin digest is INDETERMINATE")
+        void repairWithoutOriginDigestIsIndeterminate() {
+            LineageWaitingSnapshot purged =
+                    snapshot("a", LineageSourceDisposition.SOURCE_PURGED);
+
+            assertInstanceOf(Resolution.Indeterminate.class, over(List.of(
+                    redelivery(LineageObservationProvenance.LineageDeliveryKind.REPAIR,
+                            30L, "d-3", 10L, "d-1", purged, null))).resolve(obligation()));
+        }
+
+        @Test
+        @DisplayName("a malformed origin digest is INDETERMINATE, not accepted as proof")
+        void malformedOriginDigestIsIndeterminate() {
+            LineageWaitingSnapshot purged =
+                    snapshot("a", LineageSourceDisposition.SOURCE_PURGED);
+
+            for (String bad : List.of("", "abc", "0".repeat(63), "G".repeat(64))) {
+                assertInstanceOf(Resolution.Indeterminate.class, over(List.of(
+                        redelivery(LineageObservationProvenance.LineageDeliveryKind.REPAIR,
+                                30L, "d-3", 10L, "d-1", purged, bad))).resolve(obligation()));
+            }
+        }
+
+        @Test
+        @DisplayName("an altered repair payload is corruption")
+        void alteredRepairIsCorrupt() {
+            LineageWaitingSnapshot original =
+                    snapshot("original.txt", LineageSourceDisposition.SOURCE_PURGED);
+            LineageWaitingSnapshot altered =
+                    snapshot("tampered.txt", LineageSourceDisposition.SOURCE_PURGED);
+
+            assertInstanceOf(Resolution.Corrupt.class, over(List.of(
+                    redelivery(LineageObservationProvenance.LineageDeliveryKind.REPAIR,
+                            30L, "d-3", 10L, "d-1", altered, original.evidenceDigest())))
+                    .resolve(obligation()));
+        }
+
+        @Test
+        @DisplayName("a repair from another repository is corruption")
+        void repairFromAnotherRepositoryIsCorrupt() {
+            LineageWaitingSnapshot purged =
+                    snapshot("a", LineageSourceDisposition.SOURCE_PURGED);
+
+            assertInstanceOf(Resolution.Corrupt.class, over(List.of(
+                    new Candidate(new LineageJournalOrder("canopy", 30L, "d-3"),
+                            new LineageObservationProvenance(
+                                    LineageObservationProvenance.LineageDeliveryKind.REPAIR,
+                                    "d-3", "d-1", 30L, 10L, "t", purged.evidenceDigest()),
+                            purged))).resolve(obligation()));
+        }
+
+        /** A repair and a replay of one original are one observation, not two. */
+        @Test
+        @DisplayName("a repair and a replay of the same original are deduped together")
+        void repairAndReplayOfOneOriginalAreOneObservation() {
+            LineageWaitingSnapshot purged =
+                    snapshot("a", LineageSourceDisposition.SOURCE_PURGED);
+            LineageWaitingSnapshot restored =
+                    snapshot("a", LineageSourceDisposition.SOURCE_EXISTS);
+
+            Resolution.LatestWaitingSnapshot found = assertInstanceOf(
+                    Resolution.LatestWaitingSnapshot.class, over(List.of(
+                            at(10L, "d-1", purged),
+                            at(20L, "d-2", restored),
+                            replayOf(30L, "d-3", 10L, "d-1", purged),
+                            repairOf(40L, "d-4", 10L, "d-1", purged)))
+                            .resolve(obligation()));
+
+            assertEquals(LineageSourceDisposition.SOURCE_EXISTS,
+                    found.snapshot().sourceDisposition());
+            assertEquals(1, found.supersededCount());
+        }
+
+        /** Two repair generations from one dead letter are still one observation. */
+        @Test
+        @DisplayName("several repair generations from one origin are deduped")
+        void severalRepairGenerations() {
+            LineageWaitingSnapshot purged =
+                    snapshot("a", LineageSourceDisposition.SOURCE_PURGED);
+
+            Resolution.LatestWaitingSnapshot found = assertInstanceOf(
+                    Resolution.LatestWaitingSnapshot.class, over(List.of(
+                            repairOf(30L, "d-3", 10L, "d-1", purged),
+                            repairOf(40L, "d-4", 10L, "d-1", purged)))
+                            .resolve(obligation()));
+
+            assertEquals(0, found.supersededCount(),
+                    "two repairs of one observation must not count as two");
         }
     }
 

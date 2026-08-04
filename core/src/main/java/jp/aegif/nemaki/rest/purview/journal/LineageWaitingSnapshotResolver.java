@@ -168,10 +168,10 @@ public class LineageWaitingSnapshotResolver {
             }
             if (candidate.provenance().deliveryKind()
                             != LineageObservationProvenance.LineageDeliveryKind.ORIGINAL
-                    && candidate.provenance().originEvidenceDigest() != null
                     && !candidate.provenance().originEvidenceDigest()
                             .equals(candidate.snapshot().evidenceDigest())) {
-                // A re-delivery must carry what it claims to re-deliver.
+                // A re-delivery must carry what it claims to re-deliver. The digest itself is
+                // required by usable(), so reaching here means it is present and disagrees.
                 return new Resolution.Corrupt(
                         "a re-delivered snapshot does not match the observation it names");
             }

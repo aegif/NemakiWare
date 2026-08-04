@@ -84,7 +84,13 @@ public record LineageObservationProvenance(
         }
         // A replay or repair must name the observation it is re-delivering, and that origin
         // must be a different delivery — otherwise it is claiming to be its own source.
-        return !isBlank(originDeliveryId) && !originDeliveryId.equals(deliveryId);
+        //
+        // It must ALSO carry the origin's evidence digest. Without it there is no way to show
+        // that what arrived is what the origin recorded, and a re-delivery that cannot prove
+        // that is exactly the thing this provenance exists to distinguish. Optional proof is
+        // not proof: a tampered or truncated replay would simply omit the field.
+        return !isBlank(originDeliveryId) && !originDeliveryId.equals(deliveryId)
+                && wellFormedDigest(originEvidenceDigest);
     }
 
     /**
@@ -126,6 +132,20 @@ public record LineageObservationProvenance(
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    /** 64 lowercase hex. A malformed digest proves nothing and must not be treated as proof. */
+    private static boolean wellFormedDigest(String digest) {
+        if (digest == null || digest.length() != 64) {
+            return false;
+        }
+        for (int i = 0; i < digest.length(); i++) {
+            char c = digest.charAt(i);
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** No delivery ids: they identify events, and an event carries endpoint attributes. */

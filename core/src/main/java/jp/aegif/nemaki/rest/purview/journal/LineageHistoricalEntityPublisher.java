@@ -63,5 +63,5 @@ public interface LineageHistoricalEntityPublisher {
      * <p>Snapshot values, the qualified name and the task key are never logged, put in a
      * reason, or echoed in an exception.
      */
-    Outcome publishHistorical(HistoricalEntitySnapshot snapshot);
+    LineageHistoricalPublishReceipt publishHistorical(HistoricalEntitySnapshot snapshot);
 }

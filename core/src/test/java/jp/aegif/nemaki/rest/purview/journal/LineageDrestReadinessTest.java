@@ -85,7 +85,7 @@ public class LineageDrestReadinessTest {
                 new LineageCatalogProbeRegistry(java.util.Map.of("atlas",
                         (t, r, k, qn) -> LineageCatalogEntityProbe.Presence.PRESENT)),
                 new LineageHistoricalPublisherRegistry(java.util.Map.of("atlas",
-                        snapshot -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED)),
+                        snapshot -> null)),
                 service, new LineageObligationScannerImpl(service),
                 new LineageObligationProjectorCollaboratorImpl(service));
     }
@@ -126,7 +126,7 @@ public class LineageDrestReadinessTest {
         set("obligationWiring", new LineageObligationWiring(obligationStore,
                 new LineageCatalogProbeRegistry(java.util.Map.of()),
                 new LineageHistoricalPublisherRegistry(java.util.Map.of("atlas",
-                        snapshot -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED)),
+                        snapshot -> null)),
                 service, new LineageObligationScannerImpl(service),
                 new LineageObligationProjectorCollaboratorImpl(service)));
 
