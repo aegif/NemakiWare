@@ -14,10 +14,17 @@
   残ったことを確認してから。
 - 元クラスは互換 facade / composition root として残すが、最終的に業務ロジックは持たない。
 
-## 共有基盤 — 元クラスに残す
+## 共有基盤 — `LineageStoreSupport` 経由で使う
 
-委譲先はこれらを元クラス経由で使う。`private` → package-private への変更は可視性の
+委譲先は**元クラスの具象型を見ない**。共有すべきものだけを並べた package-private の
+`LineageStoreSupport` を facade が実装し、委譲先はそれだけを持つ。全部を渡すと、分割の
+最終形が「どの子からもどの子のメソッドにも手が届く」循環になる。可視性の変更は
 **拡大**なので既存テストを弱めない。
+
+> **表と実装の不一致 (実装中に発見・訂正済み)**: `findV2SequencedRepositoryIds` は
+> ソース上は materialization ブロックの中にあるが、契約上は `LineageV2TransitionStore` の
+> メソッドである。**物理的な位置ではなくインターフェース契約で分類する** — 最初の抽出試行で
+> 位置を根拠に materialization へ動かしてコンパイルが壊れた。
 
 | 処理 | 理由 |
 |---|---|
@@ -44,7 +51,7 @@
 
 | | |
 |---|---|
-| public method | `createDecisionIfAbsent` `readDecision` `readMaterializedV1RowStrict` `createMaterializedV1RowIfAbsent` `appendV2Classified` `findV2SequencedRepositoryIds` |
+| public method | `createDecisionIfAbsent` `readDecision` `readMaterializedV1RowStrict` `createMaterializedV1RowIfAbsent` `appendV2Classified` |
 | 文書 | `lineage_materialization:{spoolRecordId}` / v1 event 行 / v2 event 行 |
 | CAS | create-if-absent (409 = 既存) + digest 一致検証。`appendV2Classified` は `document_too_large` を D1 分類 |
 | 固有 codec | `decisionToRaw` / `decisionFromRaw` / `strictV1Event` / `verifyMaterializedV1Digest` / `requireString` 系 |
@@ -63,7 +70,7 @@
 
 | | |
 |---|---|
-| public method | `claimForProjection` `transitionV2` `transitionV2Unclaimed` `renewClaim` `reapExpiredClaims` `findV2ByRepositoryAndSequenceRange` `findV2ByRecordId` `findV2NonTerminalRepositoryIds` `findV1ByRepositoryAndSequenceRangeStrict` |
+| public method | `claimForProjection` `transitionV2` `transitionV2Unclaimed` `renewClaim` `reapExpiredClaims` `findV2ByRepositoryAndSequenceRange` `findV2ByRecordId` `findV2NonTerminalRepositoryIds` `findV1ByRepositoryAndSequenceRangeStrict` **`findV2SequencedRepositoryIds`** |
 | 文書 | v2 event 行 (`lineage_event_v2`) |
 | CAS | token-fenced CAS。§8-b の遷移表 (claimed 6 対 + unclaimed 6 対) |
 | 固有 IO | `readV2RawStrict` / `decodeV2Strict` / `queryV2RowsInClaimOrder` |
