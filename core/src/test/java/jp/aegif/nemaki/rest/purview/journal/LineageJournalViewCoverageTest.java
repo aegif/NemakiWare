@@ -60,7 +60,8 @@ public class LineageJournalViewCoverageTest {
      * with. Listed rather than pattern-matched, so a new one has to be classified deliberately.
      */
     private static final Set<String> OBLIGATION_VIEWS =
-            Set.of("obligationsByState", "v2_waiting_by_task_key");
+            Set.of("obligationsByState", "v2_waiting_by_task_key",
+                    "historicalIntentsByState", "historicalCompensationsByState");
 
     /**
      * v1-ONLY views (D-rest-2 schema split): every selector that feeds v1 machinery — claim,
@@ -258,6 +259,40 @@ public class LineageJournalViewCoverageTest {
         assertTrue(emits("v2_waiting_by_task_key", empty).isEmpty());
     }
 
+    /**
+     * The historical machine's indexes see their own document types and nothing else.
+     *
+     * <p>A view that also indexed events would put unrelated rows in front of the recovery
+     * scanner, which drives external catalog writes from what it finds.
+     */
+    @Test
+    public void theHistoricalMachineViewsAreStrictlyScoped() {
+        Map<String, Object> intent = new java.util.LinkedHashMap<>();
+        intent.put("_id", "lineage_historical_intent:abc");
+        intent.put("type", "lineage_historical_intent");
+        intent.put("state", "PLANNED");
+
+        Map<String, Object> compensation = new java.util.LinkedHashMap<>();
+        compensation.put("_id", "lineage_historical_compensation:abc");
+        compensation.put("type", "lineage_historical_compensation");
+        compensation.put("state", "PENDING");
+
+        assertFalse(emits("historicalIntentsByState", intent).isEmpty());
+        assertFalse(emits("historicalCompensationsByState", compensation).isEmpty());
+
+        // Neither sees the other, nor any event, nor a stateless document.
+        assertTrue(emits("historicalIntentsByState", compensation).isEmpty());
+        assertTrue(emits("historicalCompensationsByState", intent).isEmpty());
+        assertTrue(emits("historicalIntentsByState", v1Document()).isEmpty());
+        assertTrue(emits("historicalIntentsByState", v2Document()).isEmpty());
+        assertTrue(emits("historicalCompensationsByState", v2Document()).isEmpty());
+
+        Map<String, Object> stateless = new java.util.LinkedHashMap<>(intent);
+        stateless.remove("state");
+        assertTrue(emits("historicalIntentsByState", stateless).isEmpty(),
+                "a document with no state cannot be scheduled and must not be emitted");
+    }
+
     /** v1 rows emit everywhere except the v2-only families. */
     @Test
     public void everyEventViewStillEmitsForASyntheticV1Document() {
@@ -312,9 +347,11 @@ public class LineageJournalViewCoverageTest {
     @Test
     public void theViewSetIsExactlyTheKnownTwentyFour() {
         assertEquals(Set.of(
-                        // §2's obligation index (v2.3.37) and waiting reverse lookup
-                        // (v2.3.46). Neither is a general event view — see OBLIGATION_VIEWS.
+                        // §2's obligation index (v2.3.37), waiting reverse lookup (v2.3.46)
+                        // and the historical publish machine's two indexes (v2.3.52). None is
+                        // a general event view — see OBLIGATION_VIEWS.
                         "obligationsByState", "v2_waiting_by_task_key",
+                        "historicalIntentsByState", "historicalCompensationsByState",
                         "by_event_key", "by_repository_and_time", "by_target_status",
                         "by_process_type", "by_occurred_at", "by_repository_and_process_type",
                         "dead_letter_by_time", "dead_letter_by_replayed", "by_target_status_time",

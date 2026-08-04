@@ -147,6 +147,62 @@ public class LineageObligationWiringConfig {
         return new LineageObligationProjectorCollaboratorImpl(service);
     }
 
+    /** Durable storage for the intent that precedes every historical write. */
+    @Bean
+    public LineageHistoricalPublishIntentStore lineageHistoricalPublishIntentStore(
+            ObjectProvider<LineageJournalStore> journalStore) {
+        LineageJournalStore store = journalStore.getIfAvailable();
+        return store instanceof LineageStoreSupport support
+                ? new CouchLineageHistoricalPublishIntentStore(support) : null;
+    }
+
+    /** Durable storage for compensation requests. Same database, same strict-IO rules. */
+    @Bean
+    public LineageHistoricalCompensationStore lineageHistoricalCompensationStore(
+            ObjectProvider<LineageJournalStore> journalStore) {
+        LineageJournalStore store = journalStore.getIfAvailable();
+        return store instanceof LineageStoreSupport support
+                ? new CouchLineageHistoricalCompensationStore(support) : null;
+    }
+
+    /**
+     * One authoritative source resolver per endpoint kind.
+     *
+     * <p>Empty for now, exactly as the historical publisher registry is: a resolver that
+     * guessed would license a tombstone. Readiness names every kind that has none.
+     */
+    @Bean
+    public LineageSourceDispositionRegistry lineageSourceDispositionRegistry(
+            ObjectProvider<KindBoundSourceResolver> resolvers) {
+        Map<EndpointKind, LineageSourceDispositionResolver> byKind =
+                new java.util.EnumMap<>(EndpointKind.class);
+        for (KindBoundSourceResolver resolver : resolvers.orderedStream().toList()) {
+            if (byKind.put(resolver.endpointKind(), resolver) != null) {
+                throw new IllegalStateException(
+                        "two authoritative source resolvers claim " + resolver.endpointKind());
+            }
+        }
+        return new LineageSourceDispositionRegistry(byKind, System::currentTimeMillis);
+    }
+
+    /** A source resolver that says which kind it answers for, so the registry can key it. */
+    public interface KindBoundSourceResolver extends LineageSourceDispositionResolver {
+        EndpointKind endpointKind();
+    }
+
+    @Bean
+    public LineageHistoricalPublishMachine lineageHistoricalPublishMachine(
+            ObjectProvider<LineageHistoricalPublishIntentStore> intents,
+            ObjectProvider<LineageHistoricalCompensationStore> compensations,
+            LineageHistoricalPublisherRegistry publishers,
+            LineageSourceDispositionRegistry sources,
+            ObjectProvider<LineageCurrentEntityRepublisher> republisher,
+            LineageNodeIdentity identity) {
+        return new LineageHistoricalPublishMachine(intents.getIfAvailable(),
+                compensations.getIfAvailable(), publishers, sources,
+                republisher.getIfAvailable(), identity, System::currentTimeMillis);
+    }
+
     /**
      * The descriptor readiness reads.
      *
@@ -160,8 +216,15 @@ public class LineageObligationWiringConfig {
             LineageHistoricalPublisherRegistry historicalPublishers,
             LineageCatalogObligationService service,
             LineageObligationScanner scanner,
-            LineageObligationProjectorCollaborator projectorCollaborator) {
+            LineageObligationProjectorCollaborator projectorCollaborator,
+            ObjectProvider<LineageHistoricalPublishIntentStore> intentStore,
+            ObjectProvider<LineageHistoricalCompensationStore> compensationStore,
+            LineageHistoricalPublishMachine historicalMachine,
+            LineageSourceDispositionRegistry sourceResolvers,
+            ObjectProvider<LineageCurrentEntityRepublisher> republisher) {
         return new LineageObligationWiring(store.getIfAvailable(), probes, historicalPublishers,
-                service, scanner, projectorCollaborator);
+                service, scanner, projectorCollaborator, intentStore.getIfAvailable(),
+                compensationStore.getIfAvailable(), historicalMachine, sourceResolvers,
+                republisher.getIfAvailable());
     }
 }

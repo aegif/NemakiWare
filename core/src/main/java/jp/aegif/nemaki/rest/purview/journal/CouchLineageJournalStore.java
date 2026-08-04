@@ -454,6 +454,19 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                         + " emit(w[target].taskKeys[i], target); } } } } }",
                 "_count"));
 
+        // historicalIntentsByState / historicalCompensationsByState — the recovery scanner's
+        // and the admin status route's index over §2's historical publish machine. Neither is
+        // an event view; both are excluded from the event coverage property and have their own.
+        views.put("historicalIntentsByState", new ViewDefinition(
+                "function(doc) { if (doc.type === 'lineage_historical_intent' && doc.state) { "
+                        + "emit(doc.state, null); } }",
+                "_count"));
+
+        views.put("historicalCompensationsByState", new ViewDefinition(
+                "function(doc) { if (doc.type === 'lineage_historical_compensation'"
+                        + " && doc.state) { emit(doc.state, null); } }",
+                "_count"));
+
         return java.util.Collections.unmodifiableMap(views);
     }
 

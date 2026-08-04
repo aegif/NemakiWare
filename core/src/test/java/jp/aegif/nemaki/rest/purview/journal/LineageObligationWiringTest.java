@@ -89,34 +89,68 @@ public class LineageObligationWiringTest {
                 () -> 0L);
     }
 
-    private LineageObligationWiring complete() {
+    /**
+     * A complete machine, with named holes.
+     *
+     * <p>A builder rather than eleven positional arguments repeated per test: the point of each
+     * case is which single collaborator is missing, and that has to be readable.
+     */
+    private final class Assembly {
         LineageCatalogObligationStore store = mock(LineageCatalogObligationStore.class);
-        LineageCatalogObligationService service = serviceOver(store);
-        return new LineageObligationWiring(store, probesFor("atlas", "purview"),
-                publishersFor("atlas", "purview"), service,
-                new LineageObligationScannerImpl(service),
-                new LineageObligationProjectorCollaboratorImpl(service));
+        LineageCatalogProbeRegistry probes = probesFor("atlas", "purview");
+        LineageHistoricalPublisherRegistry publishers = publishersFor("atlas", "purview");
+        LineageCatalogObligationService service;
+        boolean withScanner = true;
+        boolean withProjector = true;
+        LineageHistoricalPublishIntentStore intentStore =
+                mock(LineageHistoricalPublishIntentStore.class);
+        LineageHistoricalCompensationStore compensationStore =
+                mock(LineageHistoricalCompensationStore.class);
+        LineageHistoricalPublishMachine machine = mock(LineageHistoricalPublishMachine.class);
+        LineageSourceDispositionRegistry sources = sourcesForEveryKind();
+        LineageCurrentEntityRepublisher republisher = mock(LineageCurrentEntityRepublisher.class);
+
+        LineageObligationWiring build() {
+            LineageCatalogObligationService wired =
+                    service != null ? service : serviceOver(store);
+            return new LineageObligationWiring(store, probes, publishers, wired,
+                    withScanner ? new LineageObligationScannerImpl(wired) : null,
+                    withProjector ? new LineageObligationProjectorCollaboratorImpl(wired) : null,
+                    intentStore, compensationStore, machine, sources, republisher);
+        }
+    }
+
+    /** An authoritative source resolver for every kind, so the per-kind check passes. */
+    private static LineageSourceDispositionRegistry sourcesForEveryKind() {
+        Map<EndpointKind, LineageSourceDispositionResolver> byKind =
+                new java.util.EnumMap<>(EndpointKind.class);
+        for (EndpointKind kind : EndpointKind.values()) {
+            byKind.put(kind, (repositoryId, k, qn)
+                    -> LineageSourceDispositionResolver.SourceEvidence.unknown(0L));
+        }
+        return new LineageSourceDispositionRegistry(byKind, () -> 0L);
+    }
+
+    private LineageObligationWiring complete() {
+        return new Assembly().build();
     }
 
     /** Complete but for the two registries under test. */
     private LineageObligationWiring storeAnd(LineageCatalogProbeRegistry probes,
             LineageHistoricalPublisherRegistry publishers) {
-        LineageCatalogObligationStore store = mock(LineageCatalogObligationStore.class);
-        LineageCatalogObligationService service = serviceOver(store);
-        return new LineageObligationWiring(store, probes, publishers, service,
-                new LineageObligationScannerImpl(service),
-                new LineageObligationProjectorCollaboratorImpl(service));
+        Assembly assembly = new Assembly();
+        assembly.probes = probes;
+        assembly.publishers = publishers;
+        return assembly.build();
     }
 
     /** Complete but for whichever collaborator is switched off. */
     private LineageObligationWiring storeAndCollaborators(boolean withScanner,
             boolean withProjector) {
-        LineageCatalogObligationStore store = mock(LineageCatalogObligationStore.class);
-        LineageCatalogObligationService service = serviceOver(store);
-        return new LineageObligationWiring(store, probesFor("atlas", "purview"),
-                publishersFor("atlas", "purview"), service,
-                withScanner ? new LineageObligationScannerImpl(service) : null,
-                withProjector ? new LineageObligationProjectorCollaboratorImpl(service) : null);
+        Assembly assembly = new Assembly();
+        assembly.withScanner = withScanner;
+        assembly.withProjector = withProjector;
+        return assembly.build();
     }
 
     @Test
@@ -129,9 +163,14 @@ public class LineageObligationWiringTest {
     @Test
     @DisplayName("no service bean is a violation, not a green gate")
     public void missingServiceIsRed() {
-        LineageObligationWiring wiring = new LineageObligationWiring(
-                mock(LineageCatalogObligationStore.class), probesFor("atlas", "purview"),
-                publishersFor("atlas", "purview"), null, null, null);
+        Assembly assembly = new Assembly();
+        assembly.service = null;
+        assembly.withScanner = false;
+        assembly.withProjector = false;
+        LineageObligationWiring wiring = new LineageObligationWiring(assembly.store,
+                assembly.probes, assembly.publishers, null, null, null, assembly.intentStore,
+                assembly.compensationStore, assembly.machine, assembly.sources,
+                assembly.republisher);
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("obligation service")));
@@ -195,11 +234,11 @@ public class LineageObligationWiringTest {
     @Test
     @DisplayName("a missing store is a violation")
     public void missingStoreIsRed() {
-        LineageObligationWiring wiring = new LineageObligationWiring(
-                null, probesFor("atlas", "purview"), publishersFor("atlas", "purview"),
-                serviceOver(null), null, null);
-
-        assertTrue(wiring.violations(TARGETS).stream().anyMatch(v -> v.contains("store")));
+        Assembly assembly = new Assembly();
+        assembly.store = null;
+        assembly.service = serviceOver(null);
+        assertTrue(assembly.build().violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("store")));
     }
 
     /**
@@ -225,7 +264,11 @@ public class LineageObligationWiringTest {
         LineageObligationWiring wiring = new LineageObligationWiring(store,
                 probesFor("atlas", "purview"), publishersFor("atlas", "purview"), service,
                 new LineageObligationScannerImpl(service),
-                new LineageObligationProjectorCollaboratorImpl(service));
+                new LineageObligationProjectorCollaboratorImpl(service),
+                mock(LineageHistoricalPublishIntentStore.class),
+                mock(LineageHistoricalCompensationStore.class),
+                mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
+                mock(LineageCurrentEntityRepublisher.class));
 
         assertTrue(wiring.sharesService(service));
         assertFalse(wiring.sharesService(serviceOver(store)));
@@ -248,7 +291,11 @@ public class LineageObligationWiringTest {
         LineageObligationWiring wiring = new LineageObligationWiring(store,
                 probesFor("atlas", "purview"), publishersFor("atlas", "purview"), registered,
                 new LineageObligationScannerImpl(other),
-                new LineageObligationProjectorCollaboratorImpl(registered));
+                new LineageObligationProjectorCollaboratorImpl(registered),
+                mock(LineageHistoricalPublishIntentStore.class),
+                mock(LineageHistoricalCompensationStore.class),
+                mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
+                mock(LineageCurrentEntityRepublisher.class));
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("scanner drives a different service")),
@@ -264,7 +311,11 @@ public class LineageObligationWiringTest {
         LineageObligationWiring wiring = new LineageObligationWiring(store,
                 probesFor("atlas", "purview"), publishersFor("atlas", "purview"), registered,
                 new LineageObligationScannerImpl(registered),
-                new LineageObligationProjectorCollaboratorImpl(serviceOver(store)));
+                new LineageObligationProjectorCollaboratorImpl(serviceOver(store)),
+                mock(LineageHistoricalPublishIntentStore.class),
+                mock(LineageHistoricalCompensationStore.class),
+                mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
+                mock(LineageCurrentEntityRepublisher.class));
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("projector's obligation collaborator")),
@@ -282,7 +333,11 @@ public class LineageObligationWiringTest {
         LineageObligationWiring wiring = new LineageObligationWiring(registered,
                 probesFor("atlas", "purview"), publishersFor("atlas", "purview"), service,
                 new LineageObligationScannerImpl(service),
-                new LineageObligationProjectorCollaboratorImpl(service));
+                new LineageObligationProjectorCollaboratorImpl(service),
+                mock(LineageHistoricalPublishIntentStore.class),
+                mock(LineageHistoricalCompensationStore.class),
+                mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
+                mock(LineageCurrentEntityRepublisher.class));
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("different store")),
@@ -335,6 +390,77 @@ public class LineageObligationWiringTest {
         assertFalse(registry.canPublish("Atlas"));
         assertFalse(registry.canPublish(null));
         org.junit.jupiter.api.Assertions.assertNull(registry.publisherFor("purview"));
+    }
+
+    /** Without it, a crash during publication leaves nothing to recover from. */
+    @Test
+    @DisplayName("a missing intent store is a violation")
+    public void missingIntentStoreIsRed() {
+        Assembly assembly = new Assembly();
+        assembly.intentStore = null;
+        assertTrue(assembly.build().violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("intent store")));
+    }
+
+    /** Without it, a wrong historical entity is never revisited. */
+    @Test
+    @DisplayName("a missing compensation store is a violation")
+    public void missingCompensationStoreIsRed() {
+        Assembly assembly = new Assembly();
+        assembly.compensationStore = null;
+        assertTrue(assembly.build().violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("compensation store")));
+    }
+
+    @Test
+    @DisplayName("a missing historical publish machine is a violation")
+    public void missingMachineIsRed() {
+        Assembly assembly = new Assembly();
+        assembly.machine = null;
+        assertTrue(assembly.build().violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("historical publish machine")));
+    }
+
+    /** A compensation that cannot converge is a record of a problem, not a fix for one. */
+    @Test
+    @DisplayName("a missing current-entity republisher is a violation")
+    public void missingRepublisherIsRed() {
+        Assembly assembly = new Assembly();
+        assembly.republisher = null;
+        assertTrue(assembly.build().violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("republisher")));
+    }
+
+    /**
+     * A kind with no authoritative resolver can never reach SOURCE_PURGED, so its obligations
+     * retry for ever. Partial coverage is the dangerous case, so each is named.
+     */
+    @Test
+    @DisplayName("a kind with no authoritative source resolver is a violation naming it")
+    public void missingSourceResolverForOneKindIsRed() {
+        Map<EndpointKind, LineageSourceDispositionResolver> byKind =
+                new java.util.EnumMap<>(EndpointKind.class);
+        for (EndpointKind kind : EndpointKind.values()) {
+            if (kind != EndpointKind.CMIS_FOLDER) {
+                byKind.put(kind, (repositoryId, k, qn)
+                        -> LineageSourceDispositionResolver.SourceEvidence.unknown(0L));
+            }
+        }
+        Assembly assembly = new Assembly();
+        assembly.sources = new LineageSourceDispositionRegistry(byKind, () -> 0L);
+
+        List<String> violations = assembly.build().violations(TARGETS);
+        assertEquals(1, violations.size(), violations.toString());
+        assertTrue(violations.get(0).contains("CMIS_FOLDER"));
+    }
+
+    @Test
+    @DisplayName("no source disposition registry at all is a violation")
+    public void missingSourceRegistryIsRed() {
+        Assembly assembly = new Assembly();
+        assembly.sources = null;
+        assertTrue(assembly.build().violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("source disposition registry")));
     }
 
     /** The check must be meaningful while D-rest is off — that is when it is most useful. */

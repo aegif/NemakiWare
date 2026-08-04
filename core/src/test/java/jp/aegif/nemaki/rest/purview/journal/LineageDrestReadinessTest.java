@@ -107,7 +107,22 @@ public class LineageDrestReadinessTest {
                 new LineageHistoricalPublisherRegistry(java.util.Map.of("atlas",
                         noOpPublisher())),
                 service, new LineageObligationScannerImpl(service),
-                new LineageObligationProjectorCollaboratorImpl(service));
+                new LineageObligationProjectorCollaboratorImpl(service),
+                mock(LineageHistoricalPublishIntentStore.class),
+                mock(LineageHistoricalCompensationStore.class),
+                mock(LineageHistoricalPublishMachine.class), everyKindResolvable(),
+                mock(LineageCurrentEntityRepublisher.class));
+    }
+
+    /** A source resolver for every kind, so the per-kind readiness check passes. */
+    private static LineageSourceDispositionRegistry everyKindResolvable() {
+        java.util.Map<EndpointKind, LineageSourceDispositionResolver> byKind =
+                new java.util.EnumMap<>(EndpointKind.class);
+        for (EndpointKind kind : EndpointKind.values()) {
+            byKind.put(kind, (repositoryId, k, qn)
+                    -> LineageSourceDispositionResolver.SourceEvidence.unknown(0L));
+        }
+        return new LineageSourceDispositionRegistry(byKind, () -> 0L);
     }
 
     private void set(String field, Object value) throws Exception {
@@ -148,7 +163,11 @@ public class LineageDrestReadinessTest {
                 new LineageHistoricalPublisherRegistry(java.util.Map.of("atlas",
                         noOpPublisher())),
                 service, new LineageObligationScannerImpl(service),
-                new LineageObligationProjectorCollaboratorImpl(service)));
+                new LineageObligationProjectorCollaboratorImpl(service),
+                mock(LineageHistoricalPublishIntentStore.class),
+                mock(LineageHistoricalCompensationStore.class),
+                mock(LineageHistoricalPublishMachine.class), everyKindResolvable(),
+                mock(LineageCurrentEntityRepublisher.class)));
 
         LineageDrestReadiness.Readiness verdict = readiness.evaluate();
 

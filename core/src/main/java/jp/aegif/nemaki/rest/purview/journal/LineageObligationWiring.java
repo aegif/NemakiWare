@@ -62,19 +62,34 @@ public final class LineageObligationWiring {
     private final LineageCatalogObligationService service;
     private final LineageObligationScanner scanner;
     private final LineageObligationProjectorCollaborator projectorCollaborator;
+    private final LineageHistoricalPublishIntentStore intentStore;
+    private final LineageHistoricalCompensationStore compensationStore;
+    private final LineageHistoricalPublishMachine historicalMachine;
+    private final LineageSourceDispositionRegistry sourceResolvers;
+    private final LineageCurrentEntityRepublisher republisher;
 
     public LineageObligationWiring(LineageCatalogObligationStore store,
             LineageCatalogProbeRegistry probes,
             LineageHistoricalPublisherRegistry historicalPublishers,
             LineageCatalogObligationService service,
             LineageObligationScanner scanner,
-            LineageObligationProjectorCollaborator projectorCollaborator) {
+            LineageObligationProjectorCollaborator projectorCollaborator,
+            LineageHistoricalPublishIntentStore intentStore,
+            LineageHistoricalCompensationStore compensationStore,
+            LineageHistoricalPublishMachine historicalMachine,
+            LineageSourceDispositionRegistry sourceResolvers,
+            LineageCurrentEntityRepublisher republisher) {
         this.store = store;
         this.probes = probes;
         this.historicalPublishers = historicalPublishers;
         this.service = service;
         this.scanner = scanner;
         this.projectorCollaborator = projectorCollaborator;
+        this.intentStore = intentStore;
+        this.compensationStore = compensationStore;
+        this.historicalMachine = historicalMachine;
+        this.sourceResolvers = sourceResolvers;
+        this.republisher = republisher;
     }
 
     /**
@@ -96,8 +111,47 @@ public final class LineageObligationWiring {
         if (historicalPublishers == null) {
             violations.add("no historical entity publisher registry is wired");
         }
+        if (intentStore == null) {
+            // Without it the machine cannot record an intent before publishing, which is the
+            // one thing that makes a crash during publication recoverable.
+            violations.add("no historical publish intent store is wired");
+        }
+        if (compensationStore == null) {
+            // Without it a wrong historical entity is never revisited.
+            violations.add("no historical compensation store is wired");
+        }
+        if (historicalMachine == null) {
+            violations.add("no historical publish machine is wired");
+        }
+        if (republisher == null) {
+            // A compensation that cannot converge on the current entity is a record of a
+            // problem rather than a fix for one.
+            violations.add("no current-entity republisher is wired");
+        }
         violations.addAll(collaboratorViolations());
         violations.addAll(targetViolations(configuredTargets));
+        violations.addAll(kindViolations());
+        return violations;
+    }
+
+    /**
+     * An authoritative source resolver for every kind an endpoint can be.
+     *
+     * <p>A kind with no resolver can never reach {@code SOURCE_PURGED}, so its obligations
+     * retry for ever. Named per kind because partial coverage is the dangerous case — some
+     * endpoints work and the rest silently never finish.
+     */
+    private List<String> kindViolations() {
+        List<String> violations = new ArrayList<>();
+        if (sourceResolvers == null) {
+            violations.add("no authoritative source disposition registry is wired");
+            return violations;
+        }
+        for (EndpointKind kind : EndpointKind.values()) {
+            if (!sourceResolvers.canResolve(kind)) {
+                violations.add("no authoritative source resolver is wired for " + kind);
+            }
+        }
         return violations;
     }
 
