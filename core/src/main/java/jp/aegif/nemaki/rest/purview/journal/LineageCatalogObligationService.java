@@ -164,6 +164,30 @@ public class LineageCatalogObligationService {
         return Optional.of(stored.taskKey());
     }
 
+    /**
+     * Whether the obligation is readable from the store — a read-back, not a write result.
+     *
+     * <p>{@code createIfAbsent} returns what the write path produced. That is not the same
+     * statement as "a later pass will find this document": a create that raced, or a write that
+     * was accepted and then lost, both return a value. A projection is only allowed to depend
+     * on an obligation whose document has actually been read.
+     *
+     * <p>False on any failure, including a store that could not be read. The caller's response
+     * to false is to change nothing and recompute the same deterministic key next pass, which
+     * is safe under both readings.
+     */
+    public boolean isDurable(String taskKey) {
+        if (taskKey == null || taskKey.isBlank() || store == null) {
+            return false;
+        }
+        try {
+            return store.read(taskKey).isPresent();
+        } catch (RuntimeException e) {
+            logger.warn("Obligation read-back failed: {}", e.getClass().getSimpleName());
+            return false;
+        }
+    }
+
     // ------------------------------------------------------------------
     // Consumer
     // ------------------------------------------------------------------

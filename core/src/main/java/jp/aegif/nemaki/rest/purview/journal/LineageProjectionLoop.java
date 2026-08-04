@@ -70,6 +70,13 @@ public class LineageProjectionLoop {
     @Autowired(required = false)
     private LineageSpoolMachinery spoolMachinery;
 
+    /**
+     * The §2 obligation door. Optional so a node without the machine still starts — but a
+     * configured target with no collaborator halts rather than publishing unprobed edges.
+     */
+    @Autowired(required = false)
+    private LineageObligationProjectorCollaborator obligationCollaborator;
+
     // The spool machinery lives in LineageSpoolMachinery (4a): the emitter, the readiness
     // probe and this loop must share ONE spool per directory, or a config change leaves the
     // writer and the scanner on different volumes.
@@ -642,8 +649,22 @@ public class LineageProjectionLoop {
             return advanceCursorMonotonicChecked(targetName, repositoryId, seq);
         }
         if (status == LineagePublishStatus.WAITING_FOR_CATALOG) {
-            logger.debug("v2 row {} awaits a catalog obligation — halting repo '{}'",
-                    recordId, repositoryId);
+            // Ask, then halt either way. The walk cannot pass a waiting row even when this
+            // pass resumed it: the row is PENDING again and must be re-read from storage with
+            // whatever its lifecycle now says, not from the copy this pass is holding.
+            LineageCatalogWaitCoordinator.WaitOutcome outcome =
+                    catalogWaits(v2store).whileWaiting(recordId, targetName, lifecycle);
+            if (outcome instanceof LineageCatalogWaitCoordinator.WaitOutcome.Terminal terminal) {
+                logger.info("v2 row {} left the catalog wait as UNRESOLVED for '{}': {}",
+                        recordId, targetName, terminal.reason());
+                // Terminal, so the cursor may pass it — but only now that the transition is
+                // durable, never on the strength of the decision alone.
+                return advanceCursorMonotonicChecked(targetName, repositoryId, seq);
+            }
+            if (outcome instanceof LineageCatalogWaitCoordinator.WaitOutcome.Resumed) {
+                logger.debug("v2 row {} resumed from the catalog wait for '{}'", recordId,
+                        targetName);
+            }
             return false;
         }
         long nowMs = Instant.now().toEpochMilli();
@@ -674,6 +695,29 @@ public class LineageProjectionLoop {
                 return false;
             }
             return verifyOwnedV2(targetName, sink, v2store, repositoryId, row, ownedToken);
+        }
+
+        if (status == LineagePublishStatus.PENDING) {
+            // Probe before the claim: a row that turns out to be waiting must never have taken
+            // one, or the wait would consume a retry and hold a lease it cannot renew.
+            LineageCatalogWaitCoordinator.Decision decision =
+                    catalogWaits(v2store).beforePublish(recordId, targetName, repositoryId,
+                            allEndpointsOf(row));
+            if (decision instanceof LineageCatalogWaitCoordinator.Decision.Waiting waiting) {
+                logger.debug("v2 row {} entered the catalog wait for '{}' on {} obligation(s)",
+                        recordId, targetName, waiting.taskKeys().size());
+                if (lineageMetrics != null) {
+                    lineageMetrics.recordV2RoutingHalt("catalog-wait");
+                }
+                return false;
+            }
+            if (decision instanceof LineageCatalogWaitCoordinator.Decision.Halt halt) {
+                // Nothing was established and nothing was written. The row is still PENDING
+                // and the next pass recomputes the same deterministic keys.
+                logger.debug("v2 row {} cannot be projected yet for '{}': {}", recordId,
+                        targetName, halt.why());
+                return false;
+            }
         }
 
         // PENDING or FAILED → claim
@@ -736,6 +780,41 @@ public class LineageProjectionLoop {
             return false;
         }
         return verifyOwnedV2(targetName, sink, v2store, repositoryId, row, grant.claimToken());
+    }
+
+    /**
+     * The wait coordinator for this pass.
+     *
+     * <p>Built per call rather than held as a field: the max age comes from configuration that
+     * an administrator can change while the loop runs, and a coordinator captured at startup
+     * would keep expiring events against a number nobody has set for hours.
+     */
+    private LineageCatalogWaitCoordinator catalogWaits(LineageV2TransitionStore v2store) {
+        long maxAgeMs = lineageConfig == null ? 0L
+                : java.time.Duration.ofHours(lineageConfig.getCatalogWaitMaxAgeHours()).toMillis();
+        return new LineageCatalogWaitCoordinator(obligationCollaborator, v2store,
+                () -> Instant.now().toEpochMilli(), maxAgeMs);
+    }
+
+    /**
+     * Inputs and outputs together.
+     *
+     * <p>An input whose catalog entity is missing breaks the lineage edge exactly as an output
+     * would — the edge needs both ends to exist. Probing only outputs would publish half-edges
+     * that no consumer can follow back.
+     */
+    private static java.util.List<LineageEndpoint> allEndpointsOf(LineageJournalRowV2 row) {
+        if (row == null || row.event() == null) {
+            return java.util.List.of();
+        }
+        java.util.List<LineageEndpoint> all = new java.util.ArrayList<>();
+        if (row.event().inputs() != null) {
+            all.addAll(row.event().inputs());
+        }
+        if (row.event().outputs() != null) {
+            all.addAll(row.event().outputs());
+        }
+        return all;
     }
 
     private void settleV2PublishFailure(LineageV2TransitionStore v2store, String recordId,

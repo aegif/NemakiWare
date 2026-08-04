@@ -12,6 +12,58 @@
 
 ---
 
+## v2.3.54 — N-2b: projector の WAITING_FOR_CATALOG 統合
+
+### 書込み順序が本体
+
+危険な状態はすべて「途中」である。obligation を一部だけ作成して WAITING へ遷移した行は、
+その一部が解決した時点で復帰し、**他の endpoint に catalog entity が無いまま publish** する。
+key を second write で保存する設計は、その 2 write の間で crash すると復帰不能になる。
+
+固定した順序 (`LineageCatalogWaitCoordinator`):
+
+1. claim 前・publish 前に**全** endpoint を probe (input と output の両方 — input 側の
+   entity が無ければ edge は同じく壊れる)
+2. ABSENT/UNKNOWN 全件の deterministic task key を算出
+3. 全 obligation を create-if-absent し、**read-back で durable を確認**
+   (`createIfAbsent` の戻り値は write path の産物であり「後の pass が見つける」ことの証明ではない)
+4. 完全な key 集合と status を**一つの CAS** で保存
+
+最後の step の手前で止まった場合、行は PENDING のまま。task key は endpoint の純関数なので
+次の pass が同じ集合を再計算して不足分を埋める。**途中で止まっても何も失われない**ことが、
+crash 境界を「安全」にしている (「起きにくい」ではなく)。
+
+### probe は claim の前
+
+凍結済み §8-b の表は WAITING を **PENDING から**到達させ、lifecycle 契約は待機行が claim
+bundle を持たないと定める。probe を先に置けば、待機する行は claim を**そもそも取らない** —
+retry を消費せず、待機と claim が同時に成立する窓も存在しない。
+
+### 待機中に固定したこと
+
+claim しない・publish しない・verify しない・retry を消費しない・cursor を進めない・
+一部 task の RESOLVED では復帰しない・INDETERMINATE では何も変えない・
+`waitingSince` は再待機でも保持・max age 超過は **event だけ** UNRESOLVED
+(共有 obligation は他の event も待っているので触らない)・target ごとに独立。
+
+`INDETERMINATE` を「遅い WAITING」として扱わない。読めなかった store を event への終端判定
+に変換することになるため、max age を通さない。
+
+### codec は view に合わせた
+
+逆引き view `v2_waiting_by_task_key` は配備済みで `doc.v2WaitingByTarget[target].taskKeys`
+を読む。codec 側の名前をこれに合わせた。逆に view を変えると、全 deployment の design
+document を再構築するまで逆引きが無言で 0 件を返し、「この obligation は誰も止めていない」
+と読めてしまう。
+
+### 設定
+
+`lineage.catalog-wait.max-age-hours` (既定 24)。verify poll の分単位ではなく時間単位 —
+待っている相手は別システムが publish する catalog entity である。0 で expiry 無効
+(UNRESOLVED を記録するより停滞を選ぶ deployment のための正当な選択肢)。
+
+---
+
 ## v2.3.53 — mock が通していた本番バグ 3 件と、fence が守る区間の budget
 
 ### 実 CouchDB IT が検出した本番バグ

@@ -2148,6 +2148,10 @@ POST /api/v1/admin/lineage-journal/repair
 | IT-44 | design document から view を削除して列挙・arbitration を実行 | **本番バグ (v2.3.53 で修正)**。`queryView` は view 欠落時に `null` を返し、store がそれを空リストへ潰していた。**arbitration では「競合なし」＝単独所有と読まれ、2 node が同一 subject を上書きし得た**。現在は失敗として送出する |
 | IT-45 | reduce が数値以外を返す | 件数は `lowerBound` へ縮退。**exact 0 にしない** (0 は唯一 green に見える答え) |
 | IT-46 | 再 provisioning の前後で必要 view を照会 | 5 view すべてが照会可能。upgrade 経路でも同じ |
+| IT-47 | WAITING 遷移・復帰・expire を実 CouchDB で往復 | 全 key が正規化 (dedupe / sort) されて保存。CAS は PENDING 以外を拒否。空集合は CouchDB へ届く前に拒否 |
+| IT-48 | 復帰後に再待機 | `waitingSinceMs` は**最初の**待機開始のまま。再待機で時計を戻さない (戻すと max age に永久に到達しない) |
+| IT-49 | 逆引き view `v2_waiting_by_task_key` | 共有 obligation を待つ全 event を target 付きで返す。1 event が復帰するとその event だけ消える |
+| IT-50 | taskKeys を欠いた WAITING 行 | 逆引き view が emit しない。resolver に「説明できない待機」を渡さない |
 
 ### Atlas-enabled E2E 受入表 (v3.3 release gate)
 

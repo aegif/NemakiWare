@@ -1739,6 +1739,23 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
     }
 
     @Override
+    public boolean enterCatalogWait(String recordId, String target,
+            java.util.List<String> taskKeys) {
+        return transitions().enterCatalogWait(recordId, target, taskKeys);
+    }
+
+    @Override
+    public boolean resumeFromCatalogWait(String recordId, String target) {
+        return transitions().resumeFromCatalogWait(recordId, target);
+    }
+
+    @Override
+    public boolean expireCatalogWait(String recordId, String target,
+            LineageTargetLifecycle.TerminalReason reason) {
+        return transitions().expireCatalogWait(recordId, target, reason);
+    }
+
+    @Override
     public boolean renewClaim(String recordId, String target, String claimToken,
             java.time.Duration lease) {
         return transitions().renewClaim(recordId, target, claimToken, lease);

@@ -180,6 +180,20 @@ public class LineageConfig {
     @Value("${lineage.verify.max-age-minutes:10}")
     private int verifyMaxAgeMinutes;
 
+    /**
+     * How long one event may wait for a catalog obligation before giving up on itself.
+     *
+     * <p>Hours, not minutes: the obligation is waiting for a catalog entity that another
+     * system has to publish, and a wait measured against a verify poll would expire almost
+     * every real case. Zero disables expiry entirely, which is a legitimate choice for a
+     * deployment that would rather stall than record an UNRESOLVED it did not mean.
+     *
+     * <p>Expiry ends the EVENT's wait only. The obligation is shared with every other event
+     * waiting on the same catalog entity and is never touched by it.
+     */
+    @Value("${lineage.catalog-wait.max-age-hours:24}")
+    private int catalogWaitMaxAgeHours;
+
     @Value("${lineage.sequencer.lease-seconds:60}")
     private int sequencerLeaseSeconds;
 
@@ -306,6 +320,10 @@ public class LineageConfig {
     }
 
     /** §8-b verify: absolute cap from verifyingSince; exceeded → FAILED (no retry consumed). */
+    public int getCatalogWaitMaxAgeHours() {
+        return catalogWaitMaxAgeHours;
+    }
+
     public int getVerifyMaxAgeMinutes() {
         return readDynamicInt("lineage.verify.max-age-minutes", verifyMaxAgeMinutes);
     }

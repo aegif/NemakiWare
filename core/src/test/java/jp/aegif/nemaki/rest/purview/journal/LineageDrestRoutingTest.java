@@ -96,6 +96,41 @@ public class LineageDrestRoutingTest {
         setField(loop, "cursorStore", cursorStore);
         setField(loop, "drestReadiness", readiness);
         setField(loop, "replayService", replayService);
+        // A node whose D-rest readiness is green necessarily has the obligation collaborator
+        // wired — LineageObligationWiring makes readiness red without it. The loop refuses to
+        // publish unprobed edges, so a test that drives the D-rest path must supply one.
+        setField(loop, "obligationCollaborator", nothingOwed());
+    }
+
+    /**
+     * A collaborator that finds every endpoint already in the catalog.
+     *
+     * <p>The catalog wait has its own tests; here it must simply not be the thing under test.
+     */
+    private static LineageObligationProjectorCollaborator nothingOwed() {
+        return new LineageObligationProjectorCollaborator() {
+            @Override
+            public LineageCatalogObligationService service() {
+                return null;
+            }
+
+            @Override
+            public java.util.Optional<String> requireCatalogEntity(String target,
+                    String repositoryId, EndpointKind kind, String catalogQualifiedName) {
+                return java.util.Optional.empty();
+            }
+
+            @Override
+            public boolean isDurable(String taskKey) {
+                return true;
+            }
+
+            @Override
+            public LineageCatalogObligationService.Verdict verdictFor(
+                    java.util.List<String> taskKeys) {
+                throw new UnsupportedOperationException("no row here waits");
+            }
+        };
     }
 
     private static void setField(Object target, String fieldName, Object value)
@@ -210,6 +245,32 @@ public class LineageDrestRoutingTest {
     }
 
     // ---------------------------------------------------------------- readiness ON
+
+    /**
+     * An unprobed edge is never published.
+     *
+     * <p>Readiness makes a node without the collaborator red, so this is not a state a running
+     * deployment reaches — which is exactly why it has to be asserted rather than assumed. If
+     * the wiring check were ever weakened, this is what stops the loop from publishing lineage
+     * into a catalog nobody asked about.
+     */
+    @Test
+    public void withoutTheObligationCollaboratorNothingIsClaimedOrPublished() throws Exception {
+        readinessIs(true);
+        setField(loop, "obligationCollaborator", null);
+        when(v2store.reapExpiredClaims(eq(TARGET), any())).thenReturn(0);
+        when(v2store.findV2NonTerminalRepositoryIds(TARGET)).thenReturn(List.of(REPO));
+        when(v2store.findV1ByRepositoryAndSequenceRangeStrict(eq(REPO), anyLong(), anyInt()))
+                .thenReturn(List.of());
+        when(v2store.findV2ByRepositoryAndSequenceRange(eq(REPO), anyLong(), anyInt()))
+                .thenReturn(List.of(sequencedRow(7L, "PENDING", null)));
+
+        loop.pollAndProject();
+
+        verify(v2store, never()).claimForProjection(anyString(), anyString(), any());
+        verify(sink, never()).publish(any());
+        verify(cursorStore, never()).advanceCursorMonotonic(any());
+    }
 
     @Test
     public void theHappyPathClaimsVerifiesPublishesAndAdvancesTheMonotonicCursor()

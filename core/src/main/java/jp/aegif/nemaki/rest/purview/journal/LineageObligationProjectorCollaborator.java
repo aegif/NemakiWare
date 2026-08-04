@@ -38,6 +38,17 @@ public interface LineageObligationProjectorCollaborator {
     java.util.Optional<String> requireCatalogEntity(String target, String repositoryId,
             EndpointKind kind, String catalogQualifiedName);
 
+    /**
+     * Whether the obligation is readable from the store — a read-back, not a write result.
+     *
+     * <p>Asked through the collaborator rather than by reaching into {@code service()}: that
+     * accessor exists for readiness to compare instances by identity, and calling it would let
+     * the projector depend on the service's shape instead of this door.
+     *
+     * @return false on any failure, including a store that could not be read
+     */
+    boolean isDurable(String taskKey);
+
     /** What a waiting event's obligations collectively say. Four answers, never a boolean. */
     LineageCatalogObligationService.Verdict verdictFor(List<String> taskKeys);
 }
