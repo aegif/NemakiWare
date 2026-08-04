@@ -116,7 +116,16 @@ public interface LineageCatalogObligationStore {
      * <p>Token must match, so a worker whose lease expired cannot release a claim that has
      * since been taken by someone else.
      */
-    boolean release(Claim claim, String reason);
+    boolean release(Claim claim, String reason, long nowMs, long baseMs, long maxMs);
+
+    /**
+     * PENDING obligations whose backoff has elapsed. Bounded.
+     *
+     * <p>Separate from {@link #findByState} because a scanner that took every PENDING one and
+     * then failed to claim the backed-off ones would still have asked the catalog about them —
+     * the backoff has to keep work away from the catalog, not merely from the CAS.
+     */
+    List<LineageCatalogObligation> findClaimable(int limit, long nowMs);
 
     /**
      * Returns expired claims to PENDING, so an obligation does not outlive the worker holding

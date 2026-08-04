@@ -98,8 +98,7 @@ public class LineageCatalogObligationServiceTest {
             if (current == null || current.terminal()) {
                 return Optional.empty();
             }
-            if (current.state() == LineageCatalogObligation.State.CLAIMED
-                    && !current.leaseExpired(nowMs)) {
+            if (!current.claimableAt(nowMs)) {
                 return Optional.empty();
             }
             String token = UUID.randomUUID().toString();
@@ -144,13 +143,25 @@ public class LineageCatalogObligationServiceTest {
             }
             byKey.put(claim.taskKey(), new LineageCatalogObligation(null, held.taskKey(),
                     held.target(), held.repositoryId(), held.endpointKind(),
-                    held.catalogQualifiedName(), state, null, null, 0L, held.attempts(),
+                    held.catalogQualifiedName(), state, null, null, 0L, 0L, held.attempts(),
                     held.createdAtMs(), outcome, reason, evidence));
             return true;
         }
 
         @Override
-        public boolean release(Claim claim, String reason) {
+        public List<LineageCatalogObligation> findClaimable(int limit, long nowMs) {
+            List<LineageCatalogObligation> claimable = new ArrayList<>();
+            for (LineageCatalogObligation o : byKey.values()) {
+                if (o.state() == LineageCatalogObligation.State.PENDING
+                        && o.claimableAt(nowMs) && claimable.size() < limit) {
+                    claimable.add(o);
+                }
+            }
+            return claimable;
+        }
+
+        @Override
+        public boolean release(Claim claim, String reason, long nowMs, long baseMs, long maxMs) {
             LineageCatalogObligation held = heldBy(claim);
             if (held == null) {
                 return false;
@@ -158,7 +169,10 @@ public class LineageCatalogObligationServiceTest {
             byKey.put(claim.taskKey(), new LineageCatalogObligation(null, held.taskKey(),
                     held.target(), held.repositoryId(), held.endpointKind(),
                     held.catalogQualifiedName(), LineageCatalogObligation.State.PENDING,
-                    null, null, 0L, held.attempts() + 1, held.createdAtMs(),
+                    null, null, 0L,
+                    LineageCatalogObligation.backoffUntil(nowMs, held.attempts() + 1, baseMs,
+                            maxMs),
+                    held.attempts() + 1, held.createdAtMs(),
                     LineageCatalogObligation.Outcome.NONE, reason, null));
             return true;
         }
@@ -172,6 +186,8 @@ public class LineageCatalogObligationServiceTest {
                     entry.setValue(new LineageCatalogObligation(null, o.taskKey(), o.target(),
                             o.repositoryId(), o.endpointKind(), o.catalogQualifiedName(),
                             LineageCatalogObligation.State.PENDING, null, null, 0L,
+                            LineageCatalogObligation.backoffUntil(nowMs, o.attempts() + 1,
+                                    5_000L, 300_000L),
                             o.attempts() + 1, o.createdAtMs(),
                             LineageCatalogObligation.Outcome.NONE, "lease expired", null));
                     reclaimed++;
@@ -216,8 +232,9 @@ public class LineageCatalogObligationServiceTest {
                 String owner, String token, long until) {
             return new LineageCatalogObligation(null, o.taskKey(), o.target(), o.repositoryId(),
                     o.endpointKind(), o.catalogQualifiedName(),
-                    LineageCatalogObligation.State.CLAIMED, owner, token, until, o.attempts(),
-                    o.createdAtMs(), LineageCatalogObligation.Outcome.NONE, null, null);
+                    LineageCatalogObligation.State.CLAIMED, owner, token, until,
+                    o.notBeforeMs(), o.attempts(), o.createdAtMs(),
+                    LineageCatalogObligation.Outcome.NONE, null, null);
         }
     }
 
@@ -361,7 +378,8 @@ public class LineageCatalogObligationServiceTest {
             String taskKey = LineageCatalogObligation.taskKey(TARGET, REPO, KIND, QN);
             store.byKey.put(taskKey, new LineageCatalogObligation(null, taskKey, TARGET, REPO,
                     EndpointKind.CMIS_DOCUMENT, QN, LineageCatalogObligation.State.PENDING,
-                    null, null, 0L, 0, 1L, LineageCatalogObligation.Outcome.NONE, null, null));
+                    null, null, 0L, 0L, 0, 1L, LineageCatalogObligation.Outcome.NONE, null,
+                    null));
 
             assertThrows(LineageCatalogObligationStore.ObligationSubjectConflictException.class,
                     () -> service(true).requireCatalogEntity(TARGET, REPO, KIND, QN));
@@ -373,8 +391,8 @@ public class LineageCatalogObligationServiceTest {
         void resolvedDoesNotPark() {
             String taskKey = LineageCatalogObligation.taskKey(TARGET, REPO, KIND, QN);
             store.byKey.put(taskKey, new LineageCatalogObligation(null, taskKey, TARGET, REPO,
-                    KIND, QN, LineageCatalogObligation.State.RESOLVED, null, null, 0L, 1, 1L,
-                    LineageCatalogObligation.Outcome.SOURCE_EXISTS, "already there", null));
+                    KIND, QN, LineageCatalogObligation.State.RESOLVED, null, null, 0L, 0L, 1,
+                    1L, LineageCatalogObligation.Outcome.SOURCE_EXISTS, "already there", null));
 
             assertEquals(Optional.empty(),
                     service(true).requireCatalogEntity(TARGET, REPO, KIND, QN));
@@ -445,6 +463,12 @@ public class LineageCatalogObligationServiceTest {
 
             assertEquals(LineageCatalogObligation.State.PENDING,
                     store.byKey.get(taskKey).state());
+            // The reclaimed obligation serves a backoff first: a worker that died mid-check
+            // gets the same wait as one that failed, so the next attempt does not hammer
+            // whatever killed it.
+            assertTrue(store.claim(taskKey, "node-2", Duration.ofMinutes(5), clock.get())
+                    .isEmpty(), "a reclaimed obligation was immediately claimable");
+            clock.addAndGet(Duration.ofMinutes(6).toMillis());
             assertTrue(store.claim(taskKey, "node-2", Duration.ofMinutes(5), clock.get())
                     .isPresent());
             assertEquals(held.taskKey(), taskKey);
@@ -463,12 +487,14 @@ public class LineageCatalogObligationServiceTest {
 
             clock.addAndGet(Duration.ofMinutes(6).toMillis());
             store.reclaimExpired(10, clock.get());
+            // Past the reclaim's own backoff, so the replacement worker can take it.
+            clock.addAndGet(Duration.ofMinutes(6).toMillis());
             Claim fresh = store.claim(taskKey, "node-2", Duration.ofMinutes(5), clock.get())
                     .orElseThrow();
 
             assertFalse(store.resolve(stale, LineageCatalogObligation.Outcome.SOURCE_EXISTS,
                     "stale worker came back", null));
-            assertFalse(store.release(stale, "stale"));
+            assertFalse(store.release(stale, "stale", clock.get(), 5_000L, 300_000L));
             assertTrue(store.renew(stale, Duration.ofMinutes(5), clock.get()).isEmpty());
 
             // And the worker that actually holds it still can.
@@ -563,6 +589,12 @@ public class LineageCatalogObligationServiceTest {
             answer = Presence.UNKNOWN;
             assertEquals(1, active.runOnce(10).released());
 
+            // Still backing off: the catalog is not asked again yet.
+            probeCalls = 0;
+            assertEquals(0, active.runOnce(10).claimed());
+            assertEquals(0, probeCalls, "a backed-off obligation reached the catalog");
+
+            clock.addAndGet(Duration.ofMinutes(6).toMillis());
             answer = Presence.PRESENT;
             assertEquals(1, active.runOnce(10).resolved());
             assertEquals(LineageCatalogObligation.State.RESOLVED,

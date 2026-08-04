@@ -54,8 +54,20 @@ public class LineageCatalogObligationService {
     /** How long a worker holds an obligation before it may be reclaimed. */
     static final Duration DEFAULT_LEASE = Duration.ofMinutes(5);
 
-    /** Capped backoff: a retryable failure is retried, but not forever at full speed. */
-    static final int MAX_ATTEMPTS_BEFORE_BACKOFF = 10;
+    /**
+     * Capped exponential backoff between retries of one obligation.
+     *
+     * <p>Durable, not in-memory: the schedule lives on the document, so a restart during a
+     * catalog outage does not reset every obligation to "try now" and turn a recovering
+     * catalog into a hammered one.
+     *
+     * <p>There is no attempt ceiling that terminates. Retrying forever is correct here —
+     * {@code ABSENT} means the authoritative publisher has not run yet, and no number of
+     * failed checks makes that permanent. Only the historical builder can conclude a snapshot
+     * cannot be rebuilt.
+     */
+    static final long BACKOFF_BASE_MS = 5_000L;
+    static final long BACKOFF_MAX_MS = 300_000L;
 
     private final LineageCatalogObligationStore store;
     private final LineageCatalogEntityProbe probe;
@@ -121,8 +133,8 @@ public class LineageCatalogObligationService {
                 LineageCatalogObligation.taskKey(target, repositoryId, kind, catalogQualifiedName);
         LineageCatalogObligation wanted = new LineageCatalogObligation(null, taskKey, target,
                 repositoryId, kind, catalogQualifiedName,
-                LineageCatalogObligation.State.PENDING, null, null, 0L, 0, clockMs.getAsLong(),
-                LineageCatalogObligation.Outcome.NONE, null, null);
+                LineageCatalogObligation.State.PENDING, null, null, 0L, 0L, 0,
+                clockMs.getAsLong(), LineageCatalogObligation.Outcome.NONE, null, null);
 
         LineageCatalogObligation stored = store.createIfAbsent(wanted);
         if (stored.state() == LineageCatalogObligation.State.RESOLVED) {
@@ -164,8 +176,9 @@ public class LineageCatalogObligationService {
         int resolved = 0;
         int released = 0;
         int gaveUp = 0;
-        for (LineageCatalogObligation pending
-                : store.findByState(LineageCatalogObligation.State.PENDING, Math.max(1, limit))) {
+        // findClaimable, not findByState: an obligation serving its backoff must not be
+        // asked about at all. Filtering after the query would still have called the catalog.
+        for (LineageCatalogObligation pending : store.findClaimable(Math.max(1, limit), now)) {
             Optional<LineageCatalogObligationStore.Claim> claim =
                     store.claim(pending.taskKey(), identity.nodeId(), DEFAULT_LEASE, now);
             if (claim.isEmpty()) {
@@ -214,9 +227,11 @@ public class LineageCatalogObligationService {
             // yet. Only the snapshot being unusable is terminal, and nothing here can
             // establish that — building the historical entity is what discovers it, and that
             // is the piece this slice does not yet have.
-            case ABSENT -> store.release(claim, "the catalog does not hold the entity yet")
+            case ABSENT -> store.release(claim, "the catalog does not hold the entity yet",
+                    clockMs.getAsLong(), BACKOFF_BASE_MS, BACKOFF_MAX_MS)
                     ? Settlement.RELEASED : Settlement.LOST;
-            case UNKNOWN -> store.release(claim, "the catalog did not answer")
+            case UNKNOWN -> store.release(claim, "the catalog did not answer",
+                    clockMs.getAsLong(), BACKOFF_BASE_MS, BACKOFF_MAX_MS)
                     ? Settlement.RELEASED : Settlement.LOST;
         };
     }

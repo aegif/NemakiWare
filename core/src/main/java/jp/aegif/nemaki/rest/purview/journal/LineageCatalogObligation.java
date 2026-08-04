@@ -48,6 +48,7 @@ public record LineageCatalogObligation(
         String owner,
         String token,
         long leaseUntilMs,
+        long notBeforeMs,
         int attempts,
         long createdAtMs,
         Outcome outcome,
@@ -155,6 +156,48 @@ public record LineageCatalogObligation(
     /** Whether a lease has run out, so the obligation may be reclaimed. */
     public boolean leaseExpired(long nowMs) {
         return state == State.CLAIMED && leaseUntilMs <= nowMs;
+    }
+
+    /**
+     * Whether this obligation may be claimed now, or is still serving its backoff.
+     *
+     * <p>{@code notBeforeMs} is durable, so a restart does not reset a retry schedule and turn
+     * a catalog outage into a hot loop against the catalog that is already struggling.
+     *
+     * <p>A CLAIMED obligation past its lease is eligible regardless of backoff: the backoff
+     * describes when to try <em>again</em>, and a lease that expired means nobody is trying.
+     */
+    public boolean claimableAt(long nowMs) {
+        if (terminal()) {
+            return false;
+        }
+        if (state == State.CLAIMED) {
+            return leaseExpired(nowMs);
+        }
+        return notBeforeMs <= nowMs;
+    }
+
+    /**
+     * The next attempt time after {@code attempts} failures: exponential, capped, deterministic.
+     *
+     * <p>No jitter, because the caller supplies the clock and a test has to be able to say what
+     * the answer is. Spreading a fleet's retries is the scanner's business (each node scans on
+     * its own schedule), not this function's.
+     */
+    public static long backoffUntil(long nowMs, int attempts, long baseMs, long maxMs) {
+        if (attempts <= 0) {
+            return nowMs;
+        }
+        long delay = baseMs;
+        for (int i = 1; i < attempts && delay < maxMs; i++) {
+            // Doubling with a ceiling, so no shift count and no overflow to negative.
+            delay = delay > maxMs / 2 ? maxMs : delay * 2;
+        }
+        delay = Math.min(delay, maxMs);
+        long until = nowMs + delay;
+        // A clock that jumped backwards, or an addition that wrapped, must not produce a time
+        // in the past — that would defeat the backoff exactly when the system is least well.
+        return until < nowMs ? Long.MAX_VALUE : until;
     }
 
     /** Terminal states do not change again except by administrative action. */

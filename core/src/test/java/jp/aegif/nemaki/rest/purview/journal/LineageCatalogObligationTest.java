@@ -45,7 +45,7 @@ public class LineageCatalogObligationTest {
         return new LineageCatalogObligation(null,
                 LineageCatalogObligation.taskKey(TARGET, REPO, EndpointKind.CMIS_FOLDER, QN),
                 TARGET, REPO, EndpointKind.CMIS_FOLDER, QN,
-                LineageCatalogObligation.State.PENDING, null, null, 0L, 0, 1000L,
+                LineageCatalogObligation.State.PENDING, null, null, 0L, 0L, 0, 1000L,
                 LineageCatalogObligation.Outcome.NONE, null, null);
     }
 
@@ -69,7 +69,7 @@ public class LineageCatalogObligationTest {
             LineageCatalogObligation early = pending();
             LineageCatalogObligation late = new LineageCatalogObligation(null, early.taskKey(),
                     TARGET, REPO, EndpointKind.CMIS_FOLDER, QN,
-                    LineageCatalogObligation.State.PENDING, null, null, 0L, 7,
+                    LineageCatalogObligation.State.PENDING, null, null, 0L, 0L, 7,
                     9_999_999_999L, LineageCatalogObligation.Outcome.NONE, null, null);
 
             assertEquals(early.taskKey(), late.taskKey());
@@ -138,11 +138,11 @@ public class LineageCatalogObligationTest {
         void terminalNeedsAReason() {
             assertThrows(IllegalArgumentException.class, () -> new LineageCatalogObligation(
                     null, "k", TARGET, REPO, EndpointKind.CMIS_FOLDER, QN,
-                    LineageCatalogObligation.State.RESOLVED, null, null, 0L, 0, 1L,
+                    LineageCatalogObligation.State.RESOLVED, null, null, 0L, 0L, 0, 1L,
                     LineageCatalogObligation.Outcome.SOURCE_EXISTS, null, null));
             assertThrows(IllegalArgumentException.class, () -> new LineageCatalogObligation(
                     null, "k", TARGET, REPO, EndpointKind.CMIS_FOLDER, QN,
-                    LineageCatalogObligation.State.UNRESOLVED, null, null, 0L, 0, 1L,
+                    LineageCatalogObligation.State.UNRESOLVED, null, null, 0L, 0L, 0, 1L,
                     LineageCatalogObligation.Outcome.NONE, "why", null));
         }
 
@@ -156,7 +156,7 @@ public class LineageCatalogObligationTest {
             IllegalArgumentException refusal = assertThrows(IllegalArgumentException.class,
                     () -> new LineageCatalogObligation(null, "k", TARGET, REPO,
                             EndpointKind.CMIS_FOLDER, QN,
-                            LineageCatalogObligation.State.UNRESOLVED, null, null, 0L, 0, 1L,
+                            LineageCatalogObligation.State.UNRESOLVED, null, null, 0L, 0L, 0, 1L,
                             LineageCatalogObligation.Outcome.SOURCE_ERROR, "catalog down", null));
             assertTrue(refusal.getMessage().contains("retryable"));
         }
@@ -166,11 +166,11 @@ public class LineageCatalogObligationTest {
         void claimNeedsOwnerAndToken() {
             assertThrows(IllegalArgumentException.class, () -> new LineageCatalogObligation(
                     null, "k", TARGET, REPO, EndpointKind.CMIS_FOLDER, QN,
-                    LineageCatalogObligation.State.CLAIMED, "node-1", null, 1L, 0, 1L,
+                    LineageCatalogObligation.State.CLAIMED, "node-1", null, 1L, 0L, 0, 1L,
                     LineageCatalogObligation.Outcome.NONE, null, null));
             assertThrows(IllegalArgumentException.class, () -> new LineageCatalogObligation(
                     null, "k", TARGET, REPO, EndpointKind.CMIS_FOLDER, QN,
-                    LineageCatalogObligation.State.CLAIMED, null, "tok", 1L, 0, 1L,
+                    LineageCatalogObligation.State.CLAIMED, null, "tok", 1L, 0L, 0, 1L,
                     LineageCatalogObligation.Outcome.NONE, null, null));
         }
 
@@ -179,7 +179,7 @@ public class LineageCatalogObligationTest {
         void leaseBoundary() {
             LineageCatalogObligation claimed = new LineageCatalogObligation(null, "k", TARGET,
                     REPO, EndpointKind.CMIS_FOLDER, QN,
-                    LineageCatalogObligation.State.CLAIMED, "node-1", "tok", 1000L, 0, 1L,
+                    LineageCatalogObligation.State.CLAIMED, "node-1", "tok", 1000L, 0L, 0, 1L,
                     LineageCatalogObligation.Outcome.NONE, null, null);
 
             assertFalse(claimed.leaseExpired(999L));
@@ -193,6 +193,89 @@ public class LineageCatalogObligationTest {
         void terminalStates() {
             assertFalse(pending().terminal());
             assertTrue(resolved().terminal());
+        }
+    }
+
+    @Nested
+    @DisplayName("durable capped backoff")
+    class Backoff {
+
+        /** Deterministic: the caller supplies the clock, so a test can state the answer. */
+        @Test
+        @DisplayName("grows with attempts and stops at the cap")
+        void exponentialAndCapped() {
+            assertEquals(1000L, LineageCatalogObligation.backoffUntil(1000L, 0, 100L, 800L),
+                    "no failures yet means no wait");
+            assertEquals(1100L, LineageCatalogObligation.backoffUntil(1000L, 1, 100L, 800L));
+            assertEquals(1200L, LineageCatalogObligation.backoffUntil(1000L, 2, 100L, 800L));
+            assertEquals(1400L, LineageCatalogObligation.backoffUntil(1000L, 3, 100L, 800L));
+            assertEquals(1800L, LineageCatalogObligation.backoffUntil(1000L, 4, 100L, 800L));
+            assertEquals(1800L, LineageCatalogObligation.backoffUntil(1000L, 5, 100L, 800L));
+            assertEquals(1800L, LineageCatalogObligation.backoffUntil(1000L, 99, 100L, 800L),
+                    "the cap holds however many times it failed");
+        }
+
+        /**
+         * A clock that jumped backwards, or an addition that wrapped, must not produce a time
+         * in the past — that would defeat the backoff exactly when the system is least well.
+         */
+        @Test
+        @DisplayName("overflow becomes never, not now")
+        void overflowIsFailClosed() {
+            assertEquals(Long.MAX_VALUE, LineageCatalogObligation.backoffUntil(
+                    Long.MAX_VALUE - 10L, 5, 1000L, 1_000_000L));
+            assertTrue(LineageCatalogObligation.backoffUntil(Long.MAX_VALUE - 10L, 1, 1000L,
+                    1_000_000L) >= Long.MAX_VALUE - 10L);
+        }
+
+        @Test
+        @DisplayName("a PENDING obligation is not claimable before its time")
+        void notClaimableDuringBackoff() {
+            LineageCatalogObligation backingOff = new LineageCatalogObligation(null, "k", TARGET,
+                    REPO, EndpointKind.CMIS_FOLDER, QN, LineageCatalogObligation.State.PENDING,
+                    null, null, 0L, 5000L, 3, 1L, LineageCatalogObligation.Outcome.NONE,
+                    "retrying", null);
+
+            assertFalse(backingOff.claimableAt(4999L));
+            assertTrue(backingOff.claimableAt(5000L));
+        }
+
+        /**
+         * The backoff says when to try again; an expired lease says nobody is trying. The
+         * second wins, or a worker that died would hold the obligation for the backoff too.
+         */
+        @Test
+        @DisplayName("an expired lease is reclaimable regardless of backoff")
+        void expiredLeaseBeatsBackoff() {
+            LineageCatalogObligation stalled = new LineageCatalogObligation(null, "k", TARGET,
+                    REPO, EndpointKind.CMIS_FOLDER, QN, LineageCatalogObligation.State.CLAIMED,
+                    "node-1", "tok", 100L, Long.MAX_VALUE, 3, 1L,
+                    LineageCatalogObligation.Outcome.NONE, null, null);
+
+            assertTrue(stalled.claimableAt(200L));
+        }
+
+        @Test
+        @DisplayName("a terminal obligation is never claimable")
+        void terminalIsNeverClaimable() {
+            assertFalse(resolved().claimableAt(Long.MAX_VALUE));
+        }
+
+        /** Durable: the schedule is on the document, so a restart does not reset it. */
+        @Test
+        @DisplayName("the schedule survives a codec round trip")
+        void backoffIsDurable() {
+            LineageCatalogObligation backingOff = new LineageCatalogObligation(null, "k", TARGET,
+                    REPO, EndpointKind.CMIS_FOLDER, QN, LineageCatalogObligation.State.PENDING,
+                    null, null, 0L, 987_654L, 4, 1L, LineageCatalogObligation.Outcome.NONE,
+                    "retrying", null);
+
+            LineageCatalogObligation decoded = CouchLineageCatalogObligationStore.fromRaw(
+                    CouchLineageCatalogObligationStore.toRaw(backingOff));
+
+            assertEquals(987_654L, decoded.notBeforeMs());
+            assertEquals(4, decoded.attempts());
+            assertFalse(decoded.claimableAt(987_653L));
         }
     }
 
@@ -212,7 +295,7 @@ public class LineageCatalogObligationTest {
         void differentSubjectIsNotTheSame() {
             LineageCatalogObligation other = new LineageCatalogObligation(null,
                     pending().taskKey(), TARGET, REPO, EndpointKind.CMIS_DOCUMENT, QN,
-                    LineageCatalogObligation.State.PENDING, null, null, 0L, 0, 1L,
+                    LineageCatalogObligation.State.PENDING, null, null, 0L, 0L, 0, 1L,
                     LineageCatalogObligation.Outcome.NONE, null, null);
 
             assertFalse(pending().sameSubjectAs(other));
@@ -229,7 +312,7 @@ public class LineageCatalogObligationTest {
     public void descriptionLeaksNothing() {
         LineageCatalogObligation claimed = new LineageCatalogObligation(null, pending().taskKey(),
                 TARGET, REPO, EndpointKind.CMIS_FOLDER, QN,
-                LineageCatalogObligation.State.CLAIMED, "node-1", "secret-token-value", 1L, 0, 1L,
+                LineageCatalogObligation.State.CLAIMED, "node-1", "secret-token-value", 1L, 0L, 0, 1L,
                 LineageCatalogObligation.Outcome.NONE, null, null);
 
         String description = claimed.toString();
@@ -279,7 +362,7 @@ public class LineageCatalogObligationTest {
     private static LineageCatalogObligation resolved() {
         return new LineageCatalogObligation(null, pending().taskKey(), TARGET, REPO,
                 EndpointKind.CMIS_FOLDER, QN, LineageCatalogObligation.State.RESOLVED,
-                null, null, 0L, 2, 1000L, LineageCatalogObligation.Outcome.SOURCE_EXISTS,
+                null, null, 0L, 0L, 2, 1000L, LineageCatalogObligation.Outcome.SOURCE_EXISTS,
                 "the catalog holds it", "guid-digest");
     }
 }

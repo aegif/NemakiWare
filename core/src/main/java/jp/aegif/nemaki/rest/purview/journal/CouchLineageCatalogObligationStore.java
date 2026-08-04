@@ -44,6 +44,10 @@ public class CouchLineageCatalogObligationStore implements LineageCatalogObligat
 
     private static final int MAX_CAS_ATTEMPTS = 5;
 
+    /** Backoff used by the reclaimer, which has no caller to supply one. */
+    static final long DEFAULT_BACKOFF_BASE_MS = 5_000L;
+    static final long DEFAULT_BACKOFF_MAX_MS = 300_000L;
+
     private final LineageStoreSupport support;
 
     public CouchLineageCatalogObligationStore(LineageStoreSupport support) {
@@ -135,11 +139,10 @@ public class CouchLineageCatalogObligationStore implements LineageCatalogObligat
                 return Optional.empty();
             }
             LineageCatalogObligation current = fromRaw(raw);
-            if (current.terminal()) {
-                return Optional.empty();
-            }
-            if (current.state() == LineageCatalogObligation.State.CLAIMED
-                    && !current.leaseExpired(nowMs)) {
+            // Checked again HERE, under the read this CAS is about to use: the query that
+            // found this obligation may have run before its backoff, and the state may have
+            // moved since. Eligibility filtered only at query time would be advisory.
+            if (!current.claimableAt(nowMs)) {
                 return Optional.empty();
             }
             // A fresh token on every claim, including a reclaim: this is the fence, and the
@@ -215,13 +218,17 @@ public class CouchLineageCatalogObligationStore implements LineageCatalogObligat
     }
 
     @Override
-    public boolean release(Claim claim, String reason) {
+    public boolean release(Claim claim, String reason, long nowMs, long baseMs, long maxMs) {
         Map<String, Object> raw = readForClaim(claim);
         if (raw == null) {
             return false;
         }
+        int attempts = asInt(raw.get("attempts")) + 1;
         raw.put("state", LineageCatalogObligation.State.PENDING.name());
-        raw.put("attempts", asInt(raw.get("attempts")) + 1);
+        raw.put("attempts", attempts);
+        // Durable: a restart must not reset the schedule and turn an outage into a hot loop.
+        raw.put("notBeforeMs",
+                LineageCatalogObligation.backoffUntil(nowMs, attempts, baseMs, maxMs));
         raw.put("reason", reason);
         raw.remove("owner");
         raw.remove("token");
@@ -275,8 +282,13 @@ public class CouchLineageCatalogObligationStore implements LineageCatalogObligat
             if (asLong(raw.get("leaseUntilMs")) > nowMs) {
                 continue;
             }
+            int attempts = asInt(raw.get("attempts")) + 1;
             raw.put("state", LineageCatalogObligation.State.PENDING.name());
-            raw.put("attempts", asInt(raw.get("attempts")) + 1);
+            raw.put("attempts", attempts);
+            // A worker that died mid-check gets the same backoff as one that failed: coming
+            // straight back would hammer whatever killed it.
+            raw.put("notBeforeMs", LineageCatalogObligation.backoffUntil(
+                    nowMs, attempts, DEFAULT_BACKOFF_BASE_MS, DEFAULT_BACKOFF_MAX_MS));
             raw.put("reason", "lease expired");
             raw.remove("owner");
             raw.remove("token");
@@ -287,6 +299,20 @@ public class CouchLineageCatalogObligationStore implements LineageCatalogObligat
             }
         }
         return reclaimed;
+    }
+
+    @Override
+    public List<LineageCatalogObligation> findClaimable(int limit, long nowMs) {
+        List<LineageCatalogObligation> claimable = new ArrayList<>();
+        // Over-read, because the view cannot filter on notBeforeMs without a second index and
+        // the eligible ones may be sparse. Bounded either way.
+        for (LineageCatalogObligation o
+                : findByState(LineageCatalogObligation.State.PENDING, Math.max(1, limit) * 4)) {
+            if (o.claimableAt(nowMs) && claimable.size() < Math.max(1, limit)) {
+                claimable.add(o);
+            }
+        }
+        return claimable;
     }
 
     @Override
@@ -360,6 +386,7 @@ public class CouchLineageCatalogObligationStore implements LineageCatalogObligat
             raw.put("token", obligation.token());
         }
         raw.put("leaseUntilMs", obligation.leaseUntilMs());
+        raw.put("notBeforeMs", obligation.notBeforeMs());
         if (obligation.reason() != null) {
             raw.put("reason", obligation.reason());
         }
@@ -392,6 +419,7 @@ public class CouchLineageCatalogObligationStore implements LineageCatalogObligat
                 asString(raw.get("owner")),
                 asString(raw.get("token")),
                 asLong(raw.get("leaseUntilMs")),
+                asLong(raw.get("notBeforeMs")),
                 asInt(raw.get("attempts")),
                 asLong(raw.get("createdAtMs")),
                 parseOutcome(asString(raw.get("outcome"))),
