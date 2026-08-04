@@ -33,6 +33,8 @@
 | `readRaw` / `readRawStrict` / `updateStrictCas` / `createIfAbsent` | strict IO の三分類 (404 / 409 / 障害)。**複数責務が同一実装を共有している**ことを確認済み — 先に共通化するのではなく、元々共有なのでここに残す |
 | `objectMapper` / `connectorPool` / `lineageConfig` / `lineageMetrics` | 注入点。composition root の役目 |
 | `dbProvisioned` | provisioning の一度きり性 |
+| `exactLong` | 数値の厳密変換。**当初は sequencing 固有と見ていたが、materialization も同じ実装を呼んでいた** — 抽出中にコンパイルで判明。片方へ移すと複製になるので owner に残す |
+| `SEQ_PREFIX` | v1 の `assignSequenceNumber` と §8-a の fenced allocator が**同じ counter 文書**を指す。片方に閉じ込めると id が二重定義になる |
 
 ## 責務ごとの内訳
 
@@ -84,8 +86,9 @@
 | public method | `acquireSequencerLease` `renewSequencerLease` `releaseSequencerLease` `readSequencerLease` `findUnsequencedV2` `findSequencingV2` `claimForSequencing` `reclaimForSequencing` `finalizeSequence` `allocateSequenceFenced` `sequenceHighWatermark` |
 | 文書 | `lineage_seq_lease:{repositoryId}` / `lineage_seq:{repositoryId}` |
 | CAS | lease の generation CAS + `casSequencingWrite`。`FencedEffect` |
-| 固有 helper | `leaseDocumentId` / `exactLong` / `matchesGrant` / `isExpired` |
+| 固有 helper | `leaseDocumentId` / `matchesGrant` / `isExpired` (`exactLong` は共有基盤へ) |
 | 既存テスト | `LineageSequencingCouchIT` (18、実 CouchDB) |
+| 注意 | `SequencerHealth` はインターフェースの入れ子 enum。owner は interface を implements していたので素の名前で見えていたが、委譲先は implements しないので明示 import が要る |
 
 ### 6. `LineageJournalStore` (v1) → 元クラスに残す
 
@@ -104,6 +107,23 @@ composition root そのもの、(b) 他の 5 責務が「同じ DB の別文書�
 4. **v2 transition** — replay と codec を共有するので replay の後
 5. **sequencing** — 実 CouchDB IT が唯一の支え。最後
 6. v1 journal + 共有基盤は元クラスに残す
+
+## 抽出の現在地
+
+5 責務すべて抽出済み。`CouchLineageJournalStore` は v1 journal + 共有基盤 + 委譲のみ。
+
+| | 行数 | commit |
+|---|---|---|
+| `CouchLineageBarrierStore` | 228 | `fc01393dd` |
+| `CouchLineageMaterializationStore` | 547 | `ad36f0522` |
+| `CouchLineageReplayStore` | 270 | `f0f0ebfdd` |
+| `CouchLineageV2TransitionStore` | 599 | `bbd300dc9` |
+| `CouchLineageSequencingStore` | 437 | 本コミット |
+| `CouchLineageJournalStore` (facade) | 3,441 → 1,943 | |
+
+委譲先はいずれも `LineageStoreSupport` (+ 必要なら `LineageConfig`) だけを持ち、facade の具象型を
+参照しない。唯一の例外は `CouchLineageJournalStore.SEQ_PREFIX` / `exactLong` の**静的**参照で、
+これは上表のとおり共有基盤であって循環ではない (委譲先はインスタンスに触らない)。
 
 ## 現状固定した疑義 (今回は意味を変えない)
 
