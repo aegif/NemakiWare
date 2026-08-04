@@ -93,12 +93,63 @@ public class LineageEventBuilderTest {
         assertTrue(event.publishStatusByTarget().isEmpty());
     }
 
+    /**
+     * The truncation rule the snapshot path now shares with §2's attribute limits.
+     *
+     * <p>These used to assert against a private {@code truncate(String, int)} that cut at a raw
+     * index. That helper had no production caller and is gone; what production actually does is
+     * asserted here, through the builder, including the case the old helper got wrong.
+     */
     @Test
-    public void testTruncateShortensLongStrings() {
-        assertEquals("abc", LineageEventBuilder.truncate("abcdef", 3));
-        assertEquals("abcdef", LineageEventBuilder.truncate("abcdef", 100));
-        assertEquals(null, LineageEventBuilder.truncate(null, 10));
-        assertEquals("abcdef", LineageEventBuilder.truncate("abcdef", 0));
+    public void testSnapshotNameTruncatesAtTheConfiguredLength() throws Exception {
+        LineageConfig config = newConfig(3, 100, true);
+        LineageEvent event = new LineageEventBuilder()
+                .repositoryId("r")
+                .processType(LineageProcessType.IMPORT_UPLOADED)
+                .snapshotName("abcdef", config)
+                .build();
+
+        assertEquals("abc", event.snapshotAttributes().get("name"));
+        assertEquals("true", event.snapshotAttributes().get("name_truncated"));
+    }
+
+    @Test
+    public void testSnapshotNameShorterThanTheLimitIsUntouched() throws Exception {
+        LineageConfig config = newConfig(100, 100, true);
+        LineageEvent event = new LineageEventBuilder()
+                .repositoryId("r")
+                .processType(LineageProcessType.IMPORT_UPLOADED)
+                .snapshotName("abcdef", config)
+                .build();
+
+        assertEquals("abcdef", event.snapshotAttributes().get("name"));
+        assertNull(event.snapshotAttributes().get("name_truncated"));
+    }
+
+    /**
+     * A cut that would land inside a surrogate pair steps back instead of splitting it.
+     *
+     * <p>"\uD83D\uDCC4" is one code point in two UTF-16 units, so a limit of 3 lands between
+     * them. The deleted helper returned a lone high surrogate here — a value that is not
+     * text and does not survive UTF-8 encoding. The evidence digest still covers the original,
+     * so nothing is lost by keeping the stored prefix well-formed.
+     */
+    @Test
+    public void testSnapshotNameNeverSplitsASurrogatePair() throws Exception {
+        LineageConfig config = newConfig(3, 100, true);
+        String name = "ab\uD83D\uDCC4cd";
+        LineageEvent event = new LineageEventBuilder()
+                .repositoryId("r")
+                .processType(LineageProcessType.IMPORT_UPLOADED)
+                .snapshotName(name, config)
+                .build();
+
+        String stored = event.snapshotAttributes().get("name");
+        assertEquals("ab", stored);
+        assertEquals("true", event.snapshotAttributes().get("name_truncated"));
+        assertFalse(Character.isHighSurrogate(stored.charAt(stored.length() - 1)));
+        assertEquals(EndpointAttribute.evidenceDigest(name),
+                event.snapshotAttributes().get("name_hash"));
     }
 
     @Test
@@ -229,19 +280,27 @@ public class LineageEventBuilderTest {
         assertNull(event.snapshotAttributes().get("folderPath"));
     }
 
+    /**
+     * {@code name_hash} is the evidence kind: full width, and recomputable from the original.
+     *
+     * <p>Asserted through the public builder rather than a package-private hash helper, because
+     * what callers depend on is that the stored companion matches a recomputation — not that
+     * some private method is a hash function.
+     */
     @Test
-    public void testSha256HexIsDeterministic() {
-        String hash1 = LineageEventBuilder.sha256Hex("hello world");
-        String hash2 = LineageEventBuilder.sha256Hex("hello world");
-        assertEquals(hash1, hash2);
-        assertEquals(64, hash1.length());
-    }
+    public void testSnapshotNameHashIsTheEvidenceDigestOfTheOriginal() throws Exception {
+        LineageConfig config = newConfig(3, 100, true);
+        LineageEvent event = new LineageEventBuilder()
+                .repositoryId("r")
+                .processType(LineageProcessType.IMPORT_UPLOADED)
+                .snapshotName("hello world", config)
+                .build();
 
-    @Test
-    public void testSha256HexDiffersForDifferentInputs() {
-        String hash1 = LineageEventBuilder.sha256Hex("hello");
-        String hash2 = LineageEventBuilder.sha256Hex("world");
-        assertFalse(hash1.equals(hash2));
+        String stored = event.snapshotAttributes().get("name_hash");
+        assertEquals(EndpointAttribute.evidenceDigest("hello world"), stored);
+        assertEquals(64, stored.length());
+        assertTrue(EndpointAttribute.isEvidenceDigest(stored));
+        assertFalse(stored.equals(EndpointAttribute.evidenceDigest("hello")));
     }
 
     private static LineageConfig newConfig(int maxNameLength, int maxPathLength, boolean capturePath) throws Exception {

@@ -58,6 +58,15 @@ public class PurviewSchemaManifestFactory {
                 BUSINESS_METADATA_NAMES);
     }
 
+    /**
+     * The schema manifest hash: plain SHA-256 over the canonical schema text.
+     *
+     * <p>Not domain-separated, and it does not need to be — its input is one specific
+     * serialisation of one specific document, never a concatenation of caller-supplied parts.
+     * That is the distinction {@code LineageDigests} draws; this class keeps its own copy only
+     * because that primitive is package-private to the journal package, and widening it to
+     * share four lines would be the worse trade.
+     */
     private String sha256(String value) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");

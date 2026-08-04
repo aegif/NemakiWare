@@ -14,6 +14,22 @@
 
 ## revision
 
+- v2.3.28 — **digest / 切詰めの整理** (仕様追加ではなく、既にあった 4 種類の呼び分けを
+  名前と型で固定した)。`MessageDigest.getInstance("SHA-256")` の直接呼出しが 7 箇所・
+  5 つの別名 (`hash` / `sha256` / `sha256Hex` / `shortDigest` / `evidenceDigest`) に散っており、
+  全部が「小文字 hex」を返すので**取り違えても気づけない**状態だった。
+  - `LineageDigests` に素の primitive を 1 つ置き、plain な呼出しを合流。
+    **identity (`LineageCanonicalHash`) と distribution (`LineageBinaryDigest`) は合流させない** —
+    domain 分離が契約そのもので、golden vector が凍結されている。
+  - **redaction (12 hex) は evidence (64 hex) の prefix** である、という取り違えの経路を明示し、
+    `isEvidenceDigest` の幅検査で塞いだ (`LineageDigestKindsTest` が pin)。
+  - 切詰めも 2 種類あった。`LineageEventBuilder` の素の `substring` は**本番呼出しが無く**、
+    surrogate pair を割り得た。削除し、snapshot 系を §2 の `truncationLength` に合流させた
+    (**唯一の挙動変更**: 上限が surrogate 中央に落ちる名前/パスの保存値が、壊れた最終文字から
+    well-formed な prefix になる。`_hash` は元値の evidence なので情報は失われない)。
+  - 併せて `CouchLineageJournalStore` の責務分割 5/5 が完了 (3,441 → 1,943 行)。
+    対応表は [`lineage-store-responsibilities.md`](lineage-store-responsibilities.md)。
+
 - v2.3.27 — **4b preflight** (Codex 計画レビュー 3 巡 → proceed)。4b の受入条件のうち 3 つは
   「判断」ではなく**今のデプロイでは取れない測定**だった、という並行レビューの指摘への対応。
   activation は行わない。

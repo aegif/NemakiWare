@@ -18,10 +18,7 @@ package jp.aegif.nemaki.rest.purview.journal;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -99,12 +96,9 @@ public final class LineageCanonicalHash {
     public static String hash(Object... parts) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         writeList(out, parts == null ? List.of() : List.of(nullSafe(parts)));
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(out.toByteArray());
-            return HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException e) {
-            throw new AssertionError("SHA-256 not available", e);
-        }
+        // The domain separation is in writeList's type tags and length prefixes, not here.
+        // See LineageDigests for why this class keeps its own encoder.
+        return LineageDigests.sha256Hex(out.toByteArray());
     }
 
     /** {@link List#of} rejects nulls, and null is a value we must be able to encode. */

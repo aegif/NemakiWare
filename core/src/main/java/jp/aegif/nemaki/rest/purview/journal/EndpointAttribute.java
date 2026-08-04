@@ -136,15 +136,14 @@ public record EndpointAttribute(String name, Type type, boolean required, Policy
         return Character.isHighSurrogate(value.charAt(ceiling - 1)) ? ceiling - 1 : ceiling;
     }
 
-    /** {@code SHA-256} of the ORIGINAL value's UTF-8 bytes, lowercase hex. */
+    /**
+     * {@code SHA-256} of the ORIGINAL value's UTF-8 bytes, lowercase hex.
+     *
+     * <p>The <i>evidence</i> kind in {@link LineageDigests}: plain, full width, and the only
+     * digest a caller may recompute and compare against a stored {@code ...OriginalSha256}.
+     */
     public static String evidenceDigest(String original) {
-        try {
-            return java.util.HexFormat.of().formatHex(java.security.MessageDigest
-                    .getInstance("SHA-256")
-                    .digest(original.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        } catch (java.security.NoSuchAlgorithmException e) {
-            throw new AssertionError("SHA-256 not available", e);
-        }
+        return LineageDigests.evidenceDigest(original);
     }
 
     /** True iff {@code value} is the shape a companion may hold: 64 lowercase hex. */

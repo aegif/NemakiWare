@@ -207,15 +207,15 @@ public record LineageEndpoint(
         return safe;
     }
 
-    /** Enough to tell two values apart in a log without reproducing either. */
+    /**
+     * Enough to tell two values apart in a log without reproducing either.
+     *
+     * <p>The <i>redaction</i> kind in {@link LineageDigests}: truncated on purpose, so it is not
+     * evidence of anything. Never persist it and never compare it with an evidence digest —
+     * {@link EndpointAttribute#isEvidenceDigest} refuses it by width.
+     */
     public static String shortDigest(String value) {
-        try {
-            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(StandardCharsets.UTF_8));
-            return java.util.HexFormat.of().formatHex(digest).substring(0, 12);
-        } catch (java.security.NoSuchAlgorithmException e) {
-            throw new AssertionError("SHA-256 not available", e);
-        }
+        return LineageDigests.redactionDigest(value);
     }
 
     /** Identity fields are required exactly when the kind uses them, and forbidden otherwise. */

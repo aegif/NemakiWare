@@ -414,6 +414,27 @@ REPLAY だけ、と分ける。
   `core/src/test/resources/lineage/reference_hash.py` が仕様のみから書いた別実装で、
   golden vector が一致することを確認済み。
 
+### digest は 4 種類ある (v2.3.28)
+
+すべて SHA-256 の小文字 hex なので**見た目では区別できない**。1 つに寄せると壊れるので、
+種類と比較可能性を固定する。正典は `LineageDigests` の javadoc。
+
+| 種類 | 実装 | domain 分離 | 幅 | 比較してよい相手 |
+|---|---|---|---|---|
+| identity | `LineageCanonicalHash.hash` | あり (型 tag + 長さ prefix そのもの) | 64 hex | 同じ型構造の identity hash のみ |
+| distribution | `LineageBinaryDigest` | あり (`BARRIER_BINARY_V1` tag) | 64 hex | 設定の `approvedBinaryDigests` |
+| evidence | `LineageDigests.evidenceDigest` | **なし** (元値の UTF-8 の素の SHA-256) | 64 hex | 同じ元値からの再計算 |
+| redaction | `LineageDigests.redactionDigest` | **なし** | **12 hex (切詰め)** | **なし。**ログで「同じ値か違う値か」を人に伝えるだけ |
+
+- redaction は evidence の **prefix** である。取り違えると「digest らしい」検査を通りながら
+  衝突耐性が 52 hex 分減る。`EndpointAttribute.isEvidenceDigest` が幅で拒否し、
+  `LineageDigestKindsTest` が pin している。
+- identity / distribution は**共通化しない**。SHA-256 に渡すバイト列が型 tag と長さを
+  持つことが契約そのもので、素の helper を経由させると golden vector が静かに壊れる。
+- 切詰めも 2 種類あった。§2 の `EndpointAttribute.truncationLength` (surrogate 対応) と、
+  `LineageEventBuilder` にあった素の `substring` である。後者は本番呼出しが無く、
+  最終文字を壊し得たので**削除**し、snapshot 系も §2 の規則に合流させた。
+
 ### endpoint 集合の正規化 (v2.3.1)
 
 `canonical(inputs)` / `canonical(outputs)` / `canonicalTargetSet` の規則を固定する。
