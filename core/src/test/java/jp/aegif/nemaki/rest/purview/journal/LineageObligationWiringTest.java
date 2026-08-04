@@ -49,22 +49,55 @@ public class LineageObligationWiringTest {
         return new LineageCatalogProbeRegistry(byTarget);
     }
 
-    private Map<String, LineageHistoricalEntityPublisher> publishersFor(String... targets) {
+    private LineageHistoricalPublisherRegistry publishersFor(String... targets) {
         Map<String, LineageHistoricalEntityPublisher> byTarget = new java.util.LinkedHashMap<>();
         for (String target : targets) {
             byTarget.put(target, (t, r, k, qn, snapshot)
                     -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED);
         }
-        return byTarget;
+        return new LineageHistoricalPublisherRegistry(byTarget);
+    }
+
+    /**
+     * A service over a known store, so the wiring's identity comparisons have something real
+     * to compare. Not a mock: {@code storeRef()} has to return the store that was passed in.
+     */
+    private static LineageCatalogObligationService serviceOver(
+            LineageCatalogObligationStore store) {
+        return new LineageCatalogObligationService(store,
+                (t, r, k, qn) -> LineageCatalogEntityProbe.Presence.PRESENT,
+                mock(LineageDrestReadiness.class), mock(LineageNodeIdentity.class),
+                () -> 0L);
     }
 
     private LineageObligationWiring complete() {
-        return new LineageObligationWiring(
-                mock(LineageCatalogObligationStore.class),
-                probesFor("atlas", "purview"),
-                publishersFor("atlas", "purview"),
-                mock(LineageCatalogObligationService.class),
-                new Object(), new Object());
+        LineageCatalogObligationStore store = mock(LineageCatalogObligationStore.class);
+        LineageCatalogObligationService service = serviceOver(store);
+        return new LineageObligationWiring(store, probesFor("atlas", "purview"),
+                publishersFor("atlas", "purview"), service,
+                new LineageObligationScannerImpl(service),
+                new LineageObligationProjectorCollaboratorImpl(service));
+    }
+
+    /** Complete but for the two registries under test. */
+    private LineageObligationWiring storeAnd(LineageCatalogProbeRegistry probes,
+            LineageHistoricalPublisherRegistry publishers) {
+        LineageCatalogObligationStore store = mock(LineageCatalogObligationStore.class);
+        LineageCatalogObligationService service = serviceOver(store);
+        return new LineageObligationWiring(store, probes, publishers, service,
+                new LineageObligationScannerImpl(service),
+                new LineageObligationProjectorCollaboratorImpl(service));
+    }
+
+    /** Complete but for whichever collaborator is switched off. */
+    private LineageObligationWiring storeAndCollaborators(boolean withScanner,
+            boolean withProjector) {
+        LineageCatalogObligationStore store = mock(LineageCatalogObligationStore.class);
+        LineageCatalogObligationService service = serviceOver(store);
+        return new LineageObligationWiring(store, probesFor("atlas", "purview"),
+                publishersFor("atlas", "purview"), service,
+                withScanner ? new LineageObligationScannerImpl(service) : null,
+                withProjector ? new LineageObligationProjectorCollaboratorImpl(service) : null);
     }
 
     @Test
@@ -79,7 +112,7 @@ public class LineageObligationWiringTest {
     public void missingServiceIsRed() {
         LineageObligationWiring wiring = new LineageObligationWiring(
                 mock(LineageCatalogObligationStore.class), probesFor("atlas", "purview"),
-                publishersFor("atlas", "purview"), null, new Object(), new Object());
+                publishersFor("atlas", "purview"), null, null, null);
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("obligation service")));
@@ -88,10 +121,7 @@ public class LineageObligationWiringTest {
     @Test
     @DisplayName("a store with no probe is a violation")
     public void storeWithoutProbeIsRed() {
-        LineageObligationWiring wiring = new LineageObligationWiring(
-                mock(LineageCatalogObligationStore.class), null,
-                publishersFor("atlas", "purview"),
-                mock(LineageCatalogObligationService.class), new Object(), new Object());
+        LineageObligationWiring wiring = storeAnd(null, publishersFor("atlas", "purview"));
 
         List<String> violations = wiring.violations(TARGETS);
         assertTrue(violations.stream().anyMatch(v -> v.contains("probe registry")));
@@ -102,10 +132,7 @@ public class LineageObligationWiringTest {
     @Test
     @DisplayName("a probe for only some targets is a violation naming the missing one")
     public void partialProbeCoverageIsRed() {
-        LineageObligationWiring wiring = new LineageObligationWiring(
-                mock(LineageCatalogObligationStore.class), probesFor("atlas"),
-                publishersFor("atlas", "purview"),
-                mock(LineageCatalogObligationService.class), new Object(), new Object());
+        LineageObligationWiring wiring = storeAnd(probesFor("atlas"), publishersFor("atlas", "purview"));
 
         List<String> violations = wiring.violations(TARGETS);
         assertEquals(1, violations.size(), violations.toString());
@@ -120,10 +147,7 @@ public class LineageObligationWiringTest {
     @Test
     @DisplayName("a missing historical publisher is a violation naming the target")
     public void missingHistoricalPublisherIsRed() {
-        LineageObligationWiring wiring = new LineageObligationWiring(
-                mock(LineageCatalogObligationStore.class), probesFor("atlas", "purview"),
-                publishersFor("atlas"),
-                mock(LineageCatalogObligationService.class), new Object(), new Object());
+        LineageObligationWiring wiring = storeAnd(probesFor("atlas", "purview"), publishersFor("atlas"));
 
         List<String> violations = wiring.violations(TARGETS);
         assertEquals(1, violations.size(), violations.toString());
@@ -134,10 +158,7 @@ public class LineageObligationWiringTest {
     @Test
     @DisplayName("an unwired scanner is a violation")
     public void missingScannerIsRed() {
-        LineageObligationWiring wiring = new LineageObligationWiring(
-                mock(LineageCatalogObligationStore.class), probesFor("atlas", "purview"),
-                publishersFor("atlas", "purview"),
-                mock(LineageCatalogObligationService.class), null, new Object());
+        LineageObligationWiring wiring = storeAndCollaborators(false, true);
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("scanner/reclaimer")));
@@ -146,10 +167,7 @@ public class LineageObligationWiringTest {
     @Test
     @DisplayName("an unwired projector collaborator is a violation")
     public void missingProjectorCollaboratorIsRed() {
-        LineageObligationWiring wiring = new LineageObligationWiring(
-                mock(LineageCatalogObligationStore.class), probesFor("atlas", "purview"),
-                publishersFor("atlas", "purview"),
-                mock(LineageCatalogObligationService.class), new Object(), null);
+        LineageObligationWiring wiring = storeAndCollaborators(true, false);
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("projector")));
@@ -160,7 +178,7 @@ public class LineageObligationWiringTest {
     public void missingStoreIsRed() {
         LineageObligationWiring wiring = new LineageObligationWiring(
                 null, probesFor("atlas", "purview"), publishersFor("atlas", "purview"),
-                mock(LineageCatalogObligationService.class), new Object(), new Object());
+                serviceOver(null), null, null);
 
         assertTrue(wiring.violations(TARGETS).stream().anyMatch(v -> v.contains("store")));
     }
@@ -183,14 +201,124 @@ public class LineageObligationWiringTest {
     @Test
     @DisplayName("sharing is identity, not merely having a service")
     public void serviceSharingIsIdentity() {
-        LineageCatalogObligationService service = mock(LineageCatalogObligationService.class);
-        LineageObligationWiring wiring = new LineageObligationWiring(
-                mock(LineageCatalogObligationStore.class), probesFor("atlas", "purview"),
-                publishersFor("atlas", "purview"), service, new Object(), new Object());
+        LineageCatalogObligationStore store = mock(LineageCatalogObligationStore.class);
+        LineageCatalogObligationService service = serviceOver(store);
+        LineageObligationWiring wiring = new LineageObligationWiring(store,
+                probesFor("atlas", "purview"), publishersFor("atlas", "purview"), service,
+                new LineageObligationScannerImpl(service),
+                new LineageObligationProjectorCollaboratorImpl(service));
 
         assertTrue(wiring.sharesService(service));
-        assertFalse(wiring.sharesService(mock(LineageCatalogObligationService.class)));
+        assertFalse(wiring.sharesService(serviceOver(store)));
         assertFalse(wiring.sharesService(null));
+    }
+
+    /**
+     * The failure a presence check cannot see: nothing is null, and nothing works.
+     *
+     * <p>A scanner resolving obligations in one service while the projector waits on another
+     * leaves both halves looking wired and neither able to see the other's state.
+     */
+    @Test
+    @DisplayName("a scanner driving a different service instance is a violation")
+    public void scannerOnAnotherServiceIsRed() {
+        LineageCatalogObligationStore store = mock(LineageCatalogObligationStore.class);
+        LineageCatalogObligationService registered = serviceOver(store);
+        LineageCatalogObligationService other = serviceOver(store);
+
+        LineageObligationWiring wiring = new LineageObligationWiring(store,
+                probesFor("atlas", "purview"), publishersFor("atlas", "purview"), registered,
+                new LineageObligationScannerImpl(other),
+                new LineageObligationProjectorCollaboratorImpl(registered));
+
+        assertTrue(wiring.violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("scanner drives a different service")),
+                wiring.violations(TARGETS).toString());
+    }
+
+    @Test
+    @DisplayName("a projector on a different service instance is a violation")
+    public void projectorOnAnotherServiceIsRed() {
+        LineageCatalogObligationStore store = mock(LineageCatalogObligationStore.class);
+        LineageCatalogObligationService registered = serviceOver(store);
+
+        LineageObligationWiring wiring = new LineageObligationWiring(store,
+                probesFor("atlas", "purview"), publishersFor("atlas", "purview"), registered,
+                new LineageObligationScannerImpl(registered),
+                new LineageObligationProjectorCollaboratorImpl(serviceOver(store)));
+
+        assertTrue(wiring.violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("projector's obligation collaborator")),
+                wiring.violations(TARGETS).toString());
+    }
+
+    /** Two halves addressing different documents is not something a null check can find. */
+    @Test
+    @DisplayName("a service reading a different store is a violation")
+    public void serviceOnAnotherStoreIsRed() {
+        LineageCatalogObligationStore registered = mock(LineageCatalogObligationStore.class);
+        LineageCatalogObligationService service =
+                serviceOver(mock(LineageCatalogObligationStore.class));
+
+        LineageObligationWiring wiring = new LineageObligationWiring(registered,
+                probesFor("atlas", "purview"), publishersFor("atlas", "purview"), service,
+                new LineageObligationScannerImpl(service),
+                new LineageObligationProjectorCollaboratorImpl(service));
+
+        assertTrue(wiring.violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("different store")),
+                wiring.violations(TARGETS).toString());
+    }
+
+    /**
+     * Two beans claiming one target is not a preference to resolve — it is a deployment where
+     * nobody can say which catalog a historical entity was written to.
+     */
+    @Test
+    @DisplayName("duplicate publisher targets are refused at construction")
+    public void duplicatePublisherTargetsAreRefused() {
+        LineageHistoricalEntityPublisher first = (t, r, k, qn, snapshot)
+                -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED;
+        LineageHistoricalEntityPublisher second = (t, r, k, qn, snapshot)
+                -> LineageHistoricalEntityPublisher.Outcome.RETRYABLE;
+
+        Map<String, LineageHistoricalEntityPublisher> colliding =
+                new java.util.LinkedHashMap<>();
+        colliding.put("atlas", first);
+        colliding.put("Atlas", second);
+
+        IllegalStateException refusal = org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalStateException.class,
+                () -> new LineageHistoricalPublisherRegistry(colliding));
+        assertTrue(refusal.getMessage().contains("claim target"));
+    }
+
+    @Test
+    @DisplayName("a blank or null-valued publisher registration is refused")
+    public void malformedPublisherRegistrationIsRefused() {
+        Map<String, LineageHistoricalEntityPublisher> blank = new java.util.LinkedHashMap<>();
+        blank.put("  ", (t, r, k, qn, snapshot)
+                -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED);
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> new LineageHistoricalPublisherRegistry(blank));
+
+        Map<String, LineageHistoricalEntityPublisher> nullValued = new java.util.LinkedHashMap<>();
+        nullValued.put("atlas", null);
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> new LineageHistoricalPublisherRegistry(nullValued));
+    }
+
+    /** Lookup is exact, so a differently-cased registration never silently matches. */
+    @Test
+    @DisplayName("a publisher never answers for another target")
+    public void publisherLookupIsExact() {
+        LineageHistoricalPublisherRegistry registry = publishersFor("atlas");
+
+        assertTrue(registry.canPublish("atlas"));
+        assertFalse(registry.canPublish("purview"));
+        assertFalse(registry.canPublish("Atlas"));
+        assertFalse(registry.canPublish(null));
+        org.junit.jupiter.api.Assertions.assertNull(registry.publisherFor("purview"));
     }
 
     /** The check must be meaningful while D-rest is off — that is when it is most useful. */

@@ -75,14 +75,20 @@ public class LineageDrestReadinessTest {
 
     /** A complete obligation machine for the one configured target. */
     private static LineageObligationWiring wiredObligationMachine() {
+        LineageCatalogObligationStore obligationStore =
+                mock(LineageCatalogObligationStore.class);
+        LineageCatalogObligationService service = new LineageCatalogObligationService(
+                obligationStore, (t, r, k, qn) -> LineageCatalogEntityProbe.Presence.PRESENT,
+                mock(LineageDrestReadiness.class), mock(LineageNodeIdentity.class), () -> 0L);
         return new LineageObligationWiring(
-                mock(LineageCatalogObligationStore.class),
+                obligationStore,
                 new LineageCatalogProbeRegistry(java.util.Map.of("atlas",
                         (t, r, k, qn) -> LineageCatalogEntityProbe.Presence.PRESENT)),
-                java.util.Map.of("atlas", (t, r, k, qn, snapshot)
-                        -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED),
-                mock(LineageCatalogObligationService.class),
-                new Object(), new Object());
+                new LineageHistoricalPublisherRegistry(java.util.Map.of("atlas",
+                        (t, r, k, qn, snapshot)
+                                -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED)),
+                service, new LineageObligationScannerImpl(service),
+                new LineageObligationProjectorCollaboratorImpl(service));
     }
 
     private void set(String field, Object value) throws Exception {
@@ -113,12 +119,18 @@ public class LineageDrestReadinessTest {
     /** A probe missing for a configured target is the same class of gap, per target. */
     @Test
     public void aTargetWithoutAProbeBlocks() throws Exception {
-        set("obligationWiring", new LineageObligationWiring(
-                mock(LineageCatalogObligationStore.class),
+        LineageCatalogObligationStore obligationStore =
+                mock(LineageCatalogObligationStore.class);
+        LineageCatalogObligationService service = new LineageCatalogObligationService(
+                obligationStore, (t, r, k, qn) -> LineageCatalogEntityProbe.Presence.PRESENT,
+                mock(LineageDrestReadiness.class), mock(LineageNodeIdentity.class), () -> 0L);
+        set("obligationWiring", new LineageObligationWiring(obligationStore,
                 new LineageCatalogProbeRegistry(java.util.Map.of()),
-                java.util.Map.of("atlas", (t, r, k, qn, snapshot)
-                        -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED),
-                mock(LineageCatalogObligationService.class), new Object(), new Object()));
+                new LineageHistoricalPublisherRegistry(java.util.Map.of("atlas",
+                        (t, r, k, qn, snapshot)
+                                -> LineageHistoricalEntityPublisher.Outcome.PUBLISHED)),
+                service, new LineageObligationScannerImpl(service),
+                new LineageObligationProjectorCollaboratorImpl(service)));
 
         LineageDrestReadiness.Readiness verdict = readiness.evaluate();
 

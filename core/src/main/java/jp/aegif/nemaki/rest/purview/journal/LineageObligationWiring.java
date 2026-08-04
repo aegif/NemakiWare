@@ -18,7 +18,6 @@ package jp.aegif.nemaki.rest.purview.journal;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 /**
@@ -32,43 +31,54 @@ import java.util.Set;
  * target, and no publisher — and would discover that the moment v2 writes opened, which is
  * precisely what 4b being a flag flip forbids.
  *
- * <p>So the capability keeps its meaning ("the code exists") and readiness gains this: the
- * parts exist, and there is one for every target this node is configured to publish to.
+ * <h2>Presence is not enough</h2>
  *
- * <h2>Why it does not ask the service</h2>
+ * <p>A null check would pass a deployment where the scanner drives one service instance and the
+ * projector another: each half looks wired, and obligations resolved by one are invisible to the
+ * other. So the collaborators are typed, they expose the instance they use, and this compares
+ * them by identity. Same for the service's store — a service reading a different store than the
+ * one registered here is a machine whose two halves address different documents.
+ *
+ * <h2>Why it does not ask the service whether it is active</h2>
  *
  * <p>{@code LineageCatalogObligationService.active()} reads readiness. If readiness asked the
- * service back, the two would recurse. This check therefore reads no gate at all — it only
- * looks at whether references are present and whether the registries cover the configured
- * targets. That also makes it meaningful while D-rest is off, which is when an operator most
+ * service back, the two would recurse. The dependency direction is fixed:
+ *
+ * <pre>
+ *   readiness → wiring descriptor
+ *   service   → readiness
+ *   scanner / projector → service
+ * </pre>
+ *
+ * <p>Everything this class calls is an identity accessor that reads no gate and does no work.
+ * That also makes the check meaningful while D-rest is off, which is when an operator most
  * wants to know whether the flip would land on a wired node.
  */
 public final class LineageObligationWiring {
 
     private final LineageCatalogObligationStore store;
     private final LineageCatalogProbeRegistry probes;
-    private final Map<String, LineageHistoricalEntityPublisher> historicalPublishers;
+    private final LineageHistoricalPublisherRegistry historicalPublishers;
     private final LineageCatalogObligationService service;
-    private final Object scanner;
-    private final Object projectorCollaborator;
+    private final LineageObligationScanner scanner;
+    private final LineageObligationProjectorCollaborator projectorCollaborator;
 
     public LineageObligationWiring(LineageCatalogObligationStore store,
             LineageCatalogProbeRegistry probes,
-            Map<String, LineageHistoricalEntityPublisher> historicalPublishers,
+            LineageHistoricalPublisherRegistry historicalPublishers,
             LineageCatalogObligationService service,
-            Object scanner,
-            Object projectorCollaborator) {
+            LineageObligationScanner scanner,
+            LineageObligationProjectorCollaborator projectorCollaborator) {
         this.store = store;
         this.probes = probes;
-        this.historicalPublishers =
-                historicalPublishers == null ? Map.of() : Map.copyOf(historicalPublishers);
+        this.historicalPublishers = historicalPublishers;
         this.service = service;
         this.scanner = scanner;
         this.projectorCollaborator = projectorCollaborator;
     }
 
     /**
-     * What is missing, named. Empty means assembled.
+     * What is missing or inconsistent, named. Empty means assembled.
      *
      * @param configuredTargets the targets this node publishes lineage to
      */
@@ -80,28 +90,67 @@ public final class LineageObligationWiring {
         if (service == null) {
             violations.add("no catalog obligation service is wired");
         }
-        if (scanner == null) {
-            violations.add("no obligation scanner/reclaimer is wired");
-        }
-        if (projectorCollaborator == null) {
-            violations.add("the projector is not wired to the obligation service");
-        }
         if (probes == null) {
             violations.add("no catalog probe registry is wired");
         }
+        if (historicalPublishers == null) {
+            violations.add("no historical entity publisher registry is wired");
+        }
+        violations.addAll(collaboratorViolations());
+        violations.addAll(targetViolations(configuredTargets));
+        return violations;
+    }
+
+    /**
+     * The halves must drive one machine.
+     *
+     * <p>A scanner resolving obligations in one service while the projector waits on another is
+     * the failure a presence check cannot see: nothing is null, and nothing works.
+     */
+    private List<String> collaboratorViolations() {
+        List<String> violations = new ArrayList<>();
+        if (scanner == null) {
+            violations.add("no obligation scanner/reclaimer is wired");
+        } else if (service != null && scanner.service() != service) {
+            violations.add("the obligation scanner drives a different service instance than the"
+                    + " one readiness knows about — obligations it resolves would be invisible"
+                    + " to the projector");
+        }
+        if (projectorCollaborator == null) {
+            violations.add("the projector is not wired to the obligation service");
+        } else if (service != null && projectorCollaborator.service() != service) {
+            violations.add("the projector's obligation collaborator uses a different service"
+                    + " instance than the one readiness knows about");
+        }
+        if (service != null && store != null && service.storeRef() != store) {
+            violations.add("the obligation service reads a different store than the one wired"
+                    + " here — the two halves would address different documents");
+        }
+        return violations;
+    }
+
+    /**
+     * One probe and one publisher per configured target, resolved exactly.
+     *
+     * <p>An empty registry is allowed only when there is nothing to publish to. Otherwise every
+     * target is named individually, because partial coverage is the dangerous case: one target
+     * works and the other silently cannot, and an aggregate "some probes exist" would pass.
+     */
+    private List<String> targetViolations(Set<String> configuredTargets) {
+        List<String> violations = new ArrayList<>();
         Set<String> targets = configuredTargets == null ? Set.of() : configuredTargets;
         if (targets.isEmpty()) {
-            // Not a violation: a node with no lineage targets has nothing to owe. Said
-            // explicitly so the empty case is a decision rather than a gap in the loop.
+            // Not a violation: a node with no lineage targets owes nothing. Stated explicitly
+            // so the empty case is a decision rather than a loop that happened not to run.
             return violations;
         }
         for (String target : targets) {
             if (probes == null || !probes.canProbe(target)) {
                 violations.add("no catalog probe is wired for target '" + target + "'");
             }
-            if (historicalPublishers.get(target) == null) {
+            if (historicalPublishers == null || !historicalPublishers.canPublish(target)) {
                 // Without this, a purged source's obligation can never leave PENDING — the
-                // consumer would retry a source that will never come back.
+                // consumer would retry a source that is never coming back.
                 violations.add("no historical entity publisher is wired for target '"
                         + target + "'");
             }
@@ -114,7 +163,7 @@ public final class LineageObligationWiring {
         return service != null && service == other;
     }
 
-    /** The store the service must be using. */
+    /** The store registered here. */
     public LineageCatalogObligationStore store() {
         return store;
     }

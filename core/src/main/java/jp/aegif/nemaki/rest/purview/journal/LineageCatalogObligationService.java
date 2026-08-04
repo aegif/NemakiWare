@@ -86,6 +86,25 @@ public class LineageCatalogObligationService {
     }
 
     /**
+     * The store this service reads — an identity accessor for the wiring check.
+     *
+     * <p>Package-private and deliberately not a getter anyone else can reach: it exists so
+     * {@link LineageObligationWiring} can establish that the service and the registered store
+     * are the same object, without reflection and without reading any gate. Calling
+     * {@link #active()} from there would recurse through readiness.
+     */
+    LineageCatalogObligationStore storeRef() {
+        return store;
+    }
+
+    /**
+     * The probe this service uses. Same purpose as {@link #storeRef()}.
+     */
+    LineageCatalogEntityProbe probeRef() {
+        return probe;
+    }
+
+    /**
      * The single gate. Every public method starts here.
      *
      * <p>Reads readiness rather than the raw flag: a node whose sequencer, spool or views are
