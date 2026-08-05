@@ -76,4 +76,34 @@ public class LineageSourceDispositionRegistry implements LineageSourceDispositio
             return SourceEvidence.unknown(now);
         }
     }
+
+    /**
+     * The verdict and, where the resolver can build one, the catalog projection from that read.
+     *
+     * <p>Routed the same way and failing the same way. A kind with no resolver, a resolver that
+     * threw, a null answer — all of them are an unknown verdict with no projection, never a
+     * projection without a verdict to license it.
+     */
+    @Override
+    public LiveSourceObservation observeLive(String repositoryId, EndpointKind kind,
+            String catalogQualifiedName) {
+        long now = clockMs == null ? 0L : clockMs.getAsLong();
+        LineageSourceDispositionResolver resolver = kind == null ? null : byKind.get(kind);
+        if (resolver == null) {
+            logger.warn("No authoritative source resolver is wired for {} — answering UNKNOWN",
+                    kind);
+            return new LiveSourceObservation(SourceEvidence.unknown(now), null);
+        }
+        try {
+            LiveSourceObservation observation =
+                    resolver.observeLive(repositoryId, kind, catalogQualifiedName);
+            return observation == null
+                    ? new LiveSourceObservation(SourceEvidence.unknown(now), null)
+                    : observation;
+        } catch (RuntimeException e) {
+            logger.warn("Authoritative live observation for {} failed: {}",
+                    kind, e.getClass().getSimpleName());
+            return new LiveSourceObservation(SourceEvidence.unknown(now), null);
+        }
+    }
 }

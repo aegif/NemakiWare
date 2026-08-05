@@ -19,6 +19,7 @@ package jp.aegif.nemaki.rest.purview.journal;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -551,7 +552,11 @@ public class LineageCatalogWaitCouchIT {
                     .addInput(LineageEndpoint.document(REPO, objectId, "a.txt"))
                     .addOutput(LineageEndpoint.archive(REPO, objectId, objectId, 1L))
                     .build();
-            // Build a replay whose origin is its own delivery id.
+            // A well-formed replay first. The builder cannot produce a self-referential one:
+            // deliveryId is a tagged-union hash, and an ORIGINAL hashes over its target set
+            // while a REPLAY hashes over origin+target+generation, so the two can never collide.
+            // This check used to assume they could and skipped for ever — reporting green with
+            // nothing executed, which is the one result a guard against looping must not get.
             LineageEventV2 selfReplay = new LineageEventV2Builder()
                     .eventId("evt-" + seed)
                     .occurredAt("2026-08-05T00:00:00Z")
@@ -562,14 +567,33 @@ public class LineageCatalogWaitCouchIT {
                     .addInput(LineageEndpoint.document(REPO, objectId, "a.txt"))
                     .addOutput(LineageEndpoint.archive(REPO, objectId, objectId, 1L))
                     .build();
-            org.junit.jupiter.api.Assumptions.assumeTrue(
-                    selfReplay.deliveryId().equals(probe.deliveryId()),
-                    "this check needs the replay's own delivery id to equal its origin's");
+            assertNotEquals(probe.deliveryId(), selfReplay.deliveryId(),
+                    "identity must keep an original and its replay apart");
             store.appendV2(selfReplay);
             assertTrue(store.enterCatalogWait(selfReplay.deliveryId(), TARGET, List.of(taskKey)));
 
-            org.junit.jupiter.api.Assertions.assertThrows(CorruptWaitingEventException.class,
+            // So the cycle is written the only way it can occur: as a corrupt stored row. That
+            // is exactly the case the guard exists for — nothing stops a hand-edited or
+            // half-migrated document from pointing at itself, and following it would loop.
+            Map<String, Object> raw = store.readV2RawStrict(selfReplay.deliveryId());
+            assertNotNull(raw, "the replay must be readable before it is corrupted");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> delivery = (Map<String, Object>) raw.get("delivery");
+            delivery.put("originalDeliveryId", selfReplay.deliveryId());
+            store.client().update(raw);
+
+            CorruptWaitingEventException corrupt = org.junit.jupiter.api.Assertions.assertThrows(
+                    CorruptWaitingEventException.class,
                     () -> new CouchLineageWaitingEventSource(store).candidatesFor(taskKey));
+            // UNDECODABLE_ROW, and that is the honest answer rather than the origin-chain guard
+            // further in: LineageEventV2's canonical constructor recomputes deliveryId from the
+            // delivery and refuses a mismatch, so a row whose replay points at itself no longer
+            // describes its own id and never decodes. The self-reference check in
+            // replayProvenance is the layer behind this one and is unreachable through any path
+            // that builds a LineageEventV2 — do not "correct" this expectation to
+            // BROKEN_ORIGIN_CHAIN without first making that path reachable.
+            assertEquals(CorruptWaitingEventException.Reason.UNDECODABLE_ROW, corrupt.reason(),
+                    "identity validation refuses the cycle before the chain is ever followed");
         }
 
         /**

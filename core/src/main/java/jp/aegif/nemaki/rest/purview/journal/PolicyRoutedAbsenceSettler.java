@@ -181,21 +181,35 @@ public final class PolicyRoutedAbsenceSettler implements LineageCatalogAbsenceSe
         // before the catalog is touched, and the plan's own authorisation is rechecked against
         // it. Not a re-decision of the route: a disagreement writes nothing and the next pass
         // starts again from prepare.
-        LineageSourceDispositionResolver.SourceEvidence recheck;
+        // One read, both answers: the verdict that authorises the write and the attributes that
+        // get written. Taking them separately could straddle a modification and pair one
+        // instance's verdict with another instance's content — which is the whole defect. This
+        // costs no extra call; the re-check was already being made and already budgeted.
+        LineageSourceDispositionResolver.LiveSourceObservation observation;
         try {
-            recheck = sourceResolvers.dispositionOf(plan.current().snapshot().repositoryId(),
+            observation = sourceResolvers.observeLive(plan.current().snapshot().repositoryId(),
                     plan.current().snapshot().endpointKind(),
                     plan.current().snapshot().catalogQualifiedName());
         } catch (RuntimeException e) {
             logger.warn("A live-source re-check failed: {}", e.getClass().getSimpleName());
             return Verdict.RETRY;
         }
-        if (!plan.current().stillAuthorised(recheck)) {
+        if (!plan.current().stillAuthorised(observation.evidence())) {
             // Zero catalog calls. The write was licensed by a verdict that no longer holds.
             return Verdict.RETRY;
         }
-        // The same materialisation shape — pre-read, publish, exact post-read.
-        return materializeCurrent(plan.current());
+        if (!observation.publishable()) {
+            // The source is there but this node cannot project it — an external kind, or a
+            // payload build that failed. Retry, and never the event's own copy as a stand-in:
+            // that substitution is exactly what publishes one revision's content under another
+            // revision's authorisation, on a route whose result nothing revisits.
+            logger.warn("A live {} source could not be projected for publication; nothing written",
+                    plan.current().snapshot().endpointKind());
+            return Verdict.RETRY;
+        }
+        // The same materialisation shape — pre-read, publish, exact post-read — over the
+        // attributes this execution's own read returned.
+        return materializeCurrent(plan.current(), observation.projection());
     }
 
     private Verdict materialize(ObservedEntitySnapshot observed, Verdict onSuccess) {
@@ -219,14 +233,15 @@ public final class PolicyRoutedAbsenceSettler implements LineageCatalogAbsenceSe
         };
     }
 
-    private Verdict materializeCurrent(VerifiedCurrentEntitySnapshot current) {
+    private Verdict materializeCurrent(VerifiedCurrentEntitySnapshot current,
+            Map<String, Object> projection) {
         LineageObservedEntityMaterializer materializer = materializerFor(current.target());
         if (materializer == null) {
             return Verdict.RETRY;
         }
         LineageObservedEntityMaterializer.Outcome outcome;
         try {
-            outcome = materializer.materializeCurrent(current);
+            outcome = materializer.materializeCurrent(current, projection);
         } catch (RuntimeException e) {
             logger.warn("Current materialisation failed: {}", e.getClass().getSimpleName());
             return Verdict.RETRY;

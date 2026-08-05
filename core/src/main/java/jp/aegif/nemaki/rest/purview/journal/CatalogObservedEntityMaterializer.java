@@ -60,14 +60,22 @@ public final class CatalogObservedEntityMaterializer implements LineageObservedE
     }
 
     @Override
-    public Outcome materializeCurrent(VerifiedCurrentEntitySnapshot current) {
+    public Outcome materializeCurrent(VerifiedCurrentEntitySnapshot current,
+            Map<String, Object> projection) {
         if (current == null || !boundTarget.equals(current.target())) {
             return Outcome.RETRYABLE;
         }
-        // Same payload shape as an observation: the attributes the event carried, no tombstone
-        // marker. What differs is upstream — the snapshot's constructor demanded a positive
-        // live-source verdict — so the write itself needs no second policy branch.
-        return publishAndConfirm(current.attributeSource(),
+        if (projection == null || projection.isEmpty()) {
+            // No projection, no write. The snapshot's own attributes are not a substitute: they
+            // are what the event saw, possibly at an earlier revision than the verdict that
+            // licensed this write, and the schema records no revision to compare them against.
+            return Outcome.RETRYABLE;
+        }
+        // The entity this execution's own repository read produced, published and confirmed by
+        // the same pre-read / write / post-read shape as an observation. What differs is
+        // upstream — the snapshot's constructor demanded a positive live-source verdict — so
+        // the write itself needs no second policy branch.
+        return publishAndConfirm(projection, current.snapshot().catalogQualifiedName(),
                 current.snapshot().endpointKind());
     }
 
@@ -81,22 +89,37 @@ public final class CatalogObservedEntityMaterializer implements LineageObservedE
             return Outcome.RETRYABLE;
         }
 
-        return publishAndConfirm(observed.snapshot(), observed.snapshot().endpointKind());
+        return publishAndConfirm(
+                LineageHistoricalEntityFactory.observedEntityFrom(observed.snapshot()),
+                observed.snapshot().catalogQualifiedName(),
+                observed.snapshot().endpointKind());
     }
 
     /**
      * Pre-read, publish only if absent, then read back exactly.
      *
-     * <p>Shared by both routes because the write is the same write: an ordinary entity built
-     * from what the event carried. The difference between them is which constructor authorised
-     * it, and that has already happened by the time this runs.
+     * <p>Shared by both routes because the confirmation is the same confirmation. What differs
+     * is where the entity came from — the event's observation for a source NemakiWare never
+     * destroys, this execution's own repository read for a live LEDGERED source — and that has
+     * been decided before this runs.
+     *
+     * @param qualifiedName the subject's own name, from the obligation rather than the payload
      */
-    private Outcome publishAndConfirm(LineageWaitingSnapshot snapshot, EndpointKind kind) {
+    private Outcome publishAndConfirm(Map<String, Object> planned, String qualifiedName,
+            EndpointKind kind) {
         if (connectionResolver == null || entityRegistryClient == null) {
             return Outcome.RETRYABLE;
         }
-        Map<String, Object> planned =
-                LineageHistoricalEntityFactory.observedEntityFrom(snapshot);
+        if (planned == null || planned.isEmpty()) {
+            return Outcome.RETRYABLE;
+        }
+        if (!namesSubject(planned, qualifiedName)) {
+            // The payload is for some other object. Writing it would put content under a name
+            // this obligation does not own, and resolve the obligation on the strength of it.
+            logger.warn("A planned {} entity does not name the subject it would settle; nothing"
+                    + " written", kind);
+            return Outcome.CONFLICT;
+        }
         List<String> missing =
                 LineageHistoricalEntityFactory.missingMandatoryAttributes(planned, kind);
         if (!missing.isEmpty()) {
@@ -115,7 +138,7 @@ public final class CatalogObservedEntityMaterializer implements LineageObservedE
         // 1. Read BEFORE writing. A crash between a successful write and the obligation being
         // resolved leaves the next pass here, and without this it would write again over
         // whatever is now there.
-        switch (readBack(snapshot, planned, plannedDigest, kind)) {
+        switch (readBack(qualifiedName, planned, plannedDigest, kind)) {
             case MATCH -> {
                 return Outcome.MATCHED;
             }
@@ -148,18 +171,27 @@ public final class CatalogObservedEntityMaterializer implements LineageObservedE
         }
 
         // 2. Read AFTER writing. A 2xx says the request was accepted, not that it is there.
-        return readBack(snapshot, planned, plannedDigest, kind)
+        return readBack(qualifiedName, planned, plannedDigest, kind)
                 == LineageHistoricalReadBack.MATCH ? Outcome.MATERIALIZED : Outcome.RETRYABLE;
     }
 
+    /** Whether a planned entity is about the subject this obligation names. */
+    private static boolean namesSubject(Map<String, Object> planned, String qualifiedName) {
+        if (qualifiedName == null || qualifiedName.isBlank()) {
+            return false;
+        }
+        Object attributes = planned.get("attributes");
+        return attributes instanceof Map<?, ?> attrs
+                && qualifiedName.equals(attrs.get("qualifiedName"));
+    }
+
     /** Whether the catalog holds exactly this plan's content, projected onto its own keys. */
-    private LineageHistoricalReadBack readBack(LineageWaitingSnapshot snapshot,
+    private LineageHistoricalReadBack readBack(String qualifiedName,
             Map<String, Object> planned, String plannedDigest, EndpointKind kind) {
         try {
             Map<String, Object> read = entityRegistryClient.getEntityByUniqueAttribute(
                     connectionResolver.buildConnectionRequest(),
-                    snapshot.endpointKind().atlasTypeName(), "qualifiedName",
-                    snapshot.catalogQualifiedName());
+                    kind.atlasTypeName(), "qualifiedName", qualifiedName);
             if (read == null || read.isEmpty()) {
                 return LineageHistoricalReadBack.ABSENT;
             }
