@@ -164,20 +164,36 @@ public final class CatalogCurrentEntityRepublisher implements LineageCurrentEnti
             // well be correct — SOURCE_UNKNOWN rather than an invented entity.
             return null;
         }
+        // The subject's own type, not the folder's.
+        //
+        // A CMIS_FOLDER subject is the DataSet proxy — nemaki_folder_dataset at
+        // .../folders/{id}/dataset — which is what a tombstone for it was written against and
+        // what qualifiedNameOf() above compares. buildFolderEntity produces the other thing: a
+        // nemaki_folder at .../objects/{id}. Repairing with it wrote a different type at a
+        // different name, so the tombstone this compensation exists to overwrite was left
+        // exactly where it was.
+        //
+        // It could not even fail visibly: nemaki_folder does not declare sourceState, so the
+        // explicit ACTIVE below made Atlas reject the whole write, and the compensation retried
+        // for ever against a tombstone nothing could reach.
         Map<String, Object> entity = kind == EndpointKind.CMIS_FOLDER
-                ? payloadFactory.buildFolderEntity(repositoryId, content)
+                ? payloadFactory.buildFolderDatasetEntity(repositoryId, content,
+                        PurviewEntityPayloadFactory.SOURCE_STATE_ACTIVE)
                 : payloadFactory.buildDocumentEntity(repositoryId, content);
         if (entity == null) {
             return null;
         }
-        // The object is live, so its entity says so. Whatever sourceState the builder produced
-        // would be right for a normal sync, but this write exists specifically to overwrite a
-        // PURGED tombstone and must be explicit about that.
+        // The object is live, so its entity says so. Whatever state the builder produced would
+        // be right for a normal sync, but this write exists specifically to overwrite a PURGED
+        // tombstone and must be explicit about that. Per type: the DataSet proxy carries
+        // sourceState (already set by its builder above), a document carries lifecycleState.
         Object attributes = entity.get("attributes");
         if (attributes instanceof Map<?, ?>) {
             @SuppressWarnings("unchecked")
             Map<String, Object> attrs = (Map<String, Object>) attributes;
-            attrs.put(LineageHistoricalEntityFactory.SOURCE_STATE,
+            attrs.put(kind == EndpointKind.CMIS_FOLDER
+                            ? LineageHistoricalEntityFactory.SOURCE_STATE
+                            : LineageHistoricalEntityFactory.LIFECYCLE_STATE,
                     PurviewEntityPayloadFactory.SOURCE_STATE_ACTIVE);
         }
         return entity;
