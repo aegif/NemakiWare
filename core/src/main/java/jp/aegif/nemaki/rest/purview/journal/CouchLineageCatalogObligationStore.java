@@ -492,9 +492,22 @@ public class CouchLineageCatalogObligationStore implements LineageCatalogObligat
         throw new ObligationStorageException("unknown obligation state '" + name + "'");
     }
 
+    /**
+     * The name {@code LIVE_SOURCE_OBSERVATION_MATERIALIZED} was stored under before it was
+     * renamed for saying more than the route establishes.
+     *
+     * <p>Kept because {@link #parseOutcome} throws on a name it does not know, so dropping this
+     * would make an already-resolved obligation unreadable — and an unreadable terminal row is
+     * worse than the overstated name ever was. Read-only: nothing writes it again.
+     */
+    private static final String LEGACY_CURRENT_MATERIALIZED = "CURRENT_MATERIALIZED";
+
     private static LineageCatalogObligation.Outcome parseOutcome(String name) {
         if (name == null) {
             return LineageCatalogObligation.Outcome.NONE;
+        }
+        if (LEGACY_CURRENT_MATERIALIZED.equals(name)) {
+            return LineageCatalogObligation.Outcome.LIVE_SOURCE_OBSERVATION_MATERIALIZED;
         }
         for (LineageCatalogObligation.Outcome outcome
                 : LineageCatalogObligation.Outcome.values()) {

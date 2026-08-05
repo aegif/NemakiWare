@@ -100,12 +100,25 @@ public record LineageCatalogObligation(
          */
         OBSERVED_MATERIALIZED,
         /**
-         * The current entity was published from a positive live-source verdict.
+         * The catalog read back the entity built from one authoritative live-source read.
          *
-         * <p>For a LEDGERED kind whose source the repository confirmed. Distinct from
-         * SOURCE_EXISTS, which records that the authoritative publisher already had it.
+         * <h2>What this does and does not claim</h2>
+         *
+         * <p>It claims exactly this: during that execution, the repository returned a live
+         * instance, the entity was derived from that same read, and the catalog confirmed it
+         * holds it. Nothing more. It is not a statement that the catalog is current now — the
+         * source may have changed a millisecond later, and this obligation is terminal, so
+         * nothing here revisits it.
+         *
+         * <p>It was called {@code CURRENT_MATERIALIZED}, which said the stronger thing. The
+         * durable record of a terminal decision is the wrong place to overstate: whoever reads
+         * it later has no way to find out it meant less than it said. Avoid {@code CURRENT} and
+         * {@code LATEST} here for the same reason — neither survives the read that produced it.
+         *
+         * <p>Distinct from SOURCE_EXISTS, which records that the authoritative publisher
+         * already had the entity and this machine wrote nothing.
          */
-        CURRENT_MATERIALIZED,
+        LIVE_SOURCE_OBSERVATION_MATERIALIZED,
         /** The snapshot cannot reconstruct the entity. The only terminal failure. */
         SNAPSHOT_INCOMPLETE
     }
