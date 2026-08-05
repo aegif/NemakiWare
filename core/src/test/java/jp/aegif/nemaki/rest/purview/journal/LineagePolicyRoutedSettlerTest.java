@@ -227,6 +227,90 @@ class LineagePolicyRoutedSettlerTest {
         }
     }
 
+    /**
+     * The prepare-time verdict is not the write-time authorisation.
+     *
+     * <p>Between prepare and the renewal the source can be purged, re-created or modified.
+     * Writing on the older verdict would publish content for an instance that no longer exists,
+     * or publish an object as current at the moment it stopped being so.
+     */
+    @Test
+    @DisplayName("a source that changed between prepare and execute writes nothing")
+    void currentPlanIsRecheckedBeforeWriting() {
+        String qn = "nemaki://" + REPO + "/objects/doc-1";
+        var prepared = LineageSourceDispositionResolver.SourceEvidence.of(REPO,
+                EndpointKind.CMIS_DOCUMENT, qn, LineageSourceDisposition.SOURCE_EXISTS,
+                "inc-1", "rev-1", null, 1_000L);
+
+        record Case(String name, LineageSourceDispositionResolver.SourceEvidence recheck,
+                boolean throwsUp) { }
+        var cases = java.util.List.of(
+                new Case("purged", LineageSourceDispositionResolver.SourceEvidence.of(REPO,
+                        EndpointKind.CMIS_DOCUMENT, qn, LineageSourceDisposition.SOURCE_PURGED,
+                        "inc-1", "rev-1", null, 2_000L), false),
+                new Case("unknown",
+                        LineageSourceDispositionResolver.SourceEvidence.unknown(2_000L), false),
+                new Case("re-created", LineageSourceDispositionResolver.SourceEvidence.of(REPO,
+                        EndpointKind.CMIS_DOCUMENT, qn, LineageSourceDisposition.SOURCE_EXISTS,
+                        "inc-2", "rev-1", null, 2_000L), false),
+                new Case("modified", LineageSourceDispositionResolver.SourceEvidence.of(REPO,
+                        EndpointKind.CMIS_DOCUMENT, qn, LineageSourceDisposition.SOURCE_EXISTS,
+                        "inc-1", "rev-2", null, 2_000L), false),
+                new Case("resolver threw", null, true));
+
+        for (Case scenario : cases) {
+            var sources = mock(LineageSourceDispositionRegistry.class);
+            when(sources.dispositionOf(anyString(), any(), anyString()))
+                    .thenReturn(prepared)
+                    .thenAnswer(invocation -> {
+                        if (scenario.throwsUp()) {
+                            throw new IllegalStateException("source unreachable");
+                        }
+                        return scenario.recheck();
+                    });
+            var materializer = mock(LineageObservedEntityMaterializer.class);
+            var settler = new PolicyRoutedAbsenceSettler(
+                    resolverForKind(EndpointKind.CMIS_DOCUMENT, qn),
+                    mock(LineageHistoricalPublishMachine.class), materializer, sources);
+
+            var plan = settler.prepare(obligationFor(EndpointKind.CMIS_DOCUMENT, qn));
+            assertTrue(plan instanceof LineageAbsencePlan.CurrentSourcePlan);
+            assertEquals(LineageCatalogAbsenceSettler.Verdict.RETRY, settler.execute(plan),
+                    scenario.name() + " must not authorise a write");
+            // Zero catalog calls: the write was licensed by a verdict that no longer holds.
+            verify(materializer, never()).materializeCurrent(any());
+            verify(materializer, never()).materialize(any());
+        }
+    }
+
+    /** Only an identical verdict proceeds — checkedAt aside, which differs by construction. */
+    @Test
+    @DisplayName("an identical re-check proceeds, and checkedAt is not compared")
+    void identicalRecheckProceeds() {
+        String qn = "nemaki://" + REPO + "/objects/doc-1";
+        var prepared = LineageSourceDispositionResolver.SourceEvidence.of(REPO,
+                EndpointKind.CMIS_DOCUMENT, qn, LineageSourceDisposition.SOURCE_EXISTS,
+                "inc-1", "rev-1", null, 1_000L);
+        // Same subject, same incarnation and revision, later clock.
+        var later = LineageSourceDispositionResolver.SourceEvidence.of(REPO,
+                EndpointKind.CMIS_DOCUMENT, qn, LineageSourceDisposition.SOURCE_EXISTS,
+                "inc-1", "rev-1", null, 9_000L);
+        var sources = mock(LineageSourceDispositionRegistry.class);
+        when(sources.dispositionOf(anyString(), any(), anyString()))
+                .thenReturn(prepared).thenReturn(later);
+        var materializer = mock(LineageObservedEntityMaterializer.class);
+        when(materializer.materializeCurrent(any()))
+                .thenReturn(LineageObservedEntityMaterializer.Outcome.MATERIALIZED);
+        var settler = new PolicyRoutedAbsenceSettler(
+                resolverForKind(EndpointKind.CMIS_DOCUMENT, qn),
+                mock(LineageHistoricalPublishMachine.class), materializer, sources);
+
+        var plan = settler.prepare(obligationFor(EndpointKind.CMIS_DOCUMENT, qn));
+        assertEquals(LineageCatalogAbsenceSettler.Verdict.RESOLVED_CURRENT,
+                settler.execute(plan));
+        verify(materializer).materializeCurrent(any());
+    }
+
     private static LineageCatalogObligation obligationFor(EndpointKind kind, String qn) {
         return new LineageCatalogObligation(null,
                 LineageCatalogObligation.taskKey(TARGET, REPO, kind, qn), TARGET, REPO, kind, qn,

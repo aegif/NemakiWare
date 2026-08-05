@@ -96,6 +96,52 @@ public record VerifiedCurrentEntitySnapshot(LineageWaitingSnapshot snapshot,
         }
     }
 
+    /**
+     * Whether a fresh verdict still authorises this write.
+     *
+     * <h2>Why prepare-time evidence is not write-time authorisation</h2>
+     *
+     * <p>The verdict that produced this plan was read before the claim was renewed, and the
+     * renewal itself takes time. In between, the source can be purged, re-created or modified.
+     * Publishing a current entity on the strength of the older verdict would put content in
+     * the catalog for an instance of the object that no longer exists — and for a purge, it
+     * would publish an object as current at the moment it stopped being so.
+     *
+     * <p>So the verdict is taken again immediately before the catalog is touched, and this
+     * compares the two. It is <em>not</em> a re-decision of the route: a recheck that disagrees
+     * does not become a historical plan, because that plan would have been built from different
+     * evidence with a different snapshot. It fails the authorisation, nothing is written, and
+     * the next pass starts again from prepare.
+     *
+     * @param recheck the fresh verdict; null, an exception upstream, or anything but a matching
+     *        SOURCE_EXISTS means unauthorised
+     */
+    public boolean stillAuthorised(LineageSourceDispositionResolver.SourceEvidence recheck) {
+        if (recheck == null) {
+            return false;
+        }
+        // UNKNOWN and PURGED both mean this write is no longer licensed. UNKNOWN especially:
+        // an unestablished source is not a weaker EXISTS.
+        if (recheck.disposition() != LineageSourceDisposition.SOURCE_EXISTS) {
+            return false;
+        }
+        if (!recheck.describesSubject(snapshot.repositoryId(), snapshot.endpointKind(),
+                snapshot.catalogQualifiedName())) {
+            return false;
+        }
+        // The same instance, not merely some instance. A re-created object at the same id is a
+        // different incarnation, and a modified one a different revision — publishing the old
+        // snapshot's attributes for either would assert content that instance never had.
+        // checkedAtMs is deliberately not compared: it differs by construction, being the whole
+        // point of taking the verdict again.
+        return equalsExactly(recheck.incarnation(), evidence.incarnation())
+                && equalsExactly(recheck.revision(), evidence.revision());
+    }
+
+    private static boolean equalsExactly(String a, String b) {
+        return a != null && b != null && a.equals(b);
+    }
+
     /** The target this materialisation would write to. */
     public String target() {
         return snapshot.target();

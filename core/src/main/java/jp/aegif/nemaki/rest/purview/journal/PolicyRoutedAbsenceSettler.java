@@ -173,8 +173,28 @@ public final class PolicyRoutedAbsenceSettler implements LineageCatalogAbsenceSe
     }
 
     private Verdict executeCurrent(LineageAbsencePlan.CurrentSourcePlan plan) {
-        // The same materialisation shape — pre-read, publish, exact post-read — over a
-        // snapshot whose constructor demanded a positive live-source verdict.
+        if (sourceResolvers == null) {
+            return Verdict.RETRY;
+        }
+        // The verdict that built this plan was read before the renewal. In between the source
+        // can be purged, re-created or modified — so it is taken again here, immediately
+        // before the catalog is touched, and the plan's own authorisation is rechecked against
+        // it. Not a re-decision of the route: a disagreement writes nothing and the next pass
+        // starts again from prepare.
+        LineageSourceDispositionResolver.SourceEvidence recheck;
+        try {
+            recheck = sourceResolvers.dispositionOf(plan.current().snapshot().repositoryId(),
+                    plan.current().snapshot().endpointKind(),
+                    plan.current().snapshot().catalogQualifiedName());
+        } catch (RuntimeException e) {
+            logger.warn("A live-source re-check failed: {}", e.getClass().getSimpleName());
+            return Verdict.RETRY;
+        }
+        if (!plan.current().stillAuthorised(recheck)) {
+            // Zero catalog calls. The write was licensed by a verdict that no longer holds.
+            return Verdict.RETRY;
+        }
+        // The same materialisation shape — pre-read, publish, exact post-read.
         return materializeCurrent(plan.current());
     }
 
