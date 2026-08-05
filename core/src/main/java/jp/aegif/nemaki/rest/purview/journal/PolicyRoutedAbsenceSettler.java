@@ -335,8 +335,25 @@ public final class PolicyRoutedAbsenceSettler implements LineageCatalogAbsenceSe
             historical = java.util.Optional.empty();
         }
         if (historical.isEmpty()) {
-            return latest.snapshot().hasAll(LineageHistoricalEntityFactory
-                    .mandatoryAttributes(obligation.endpointKind()))
+            // Asked of the entity this snapshot builds, not of the snapshot's own attributes.
+            //
+            // The mandatory names are the ones the CATALOG TYPE requires, and the factory
+            // derives several of them — a CMIS document's repositoryId and objectId come from
+            // the snapshot's subject, never from its attribute map, which carries only name.
+            // So hasAll() on the raw snapshot was false for every LEDGERED kind, always: the
+            // retryable branch was unreachable, and any refusal — including a transient
+            // disagreement between the snapshot and the fresh evidence — terminalised the
+            // obligation. That is the one verdict that cannot be walked back, and it makes
+            // every event waiting on it permanently unprojectable.
+            boolean reconstructable;
+            try {
+                reconstructable = LineageHistoricalEntityFactory.missingMandatoryAttributes(
+                        LineageHistoricalEntityFactory.observedEntityFrom(latest.snapshot()),
+                        obligation.endpointKind()).isEmpty();
+            } catch (RuntimeException cannotBuild) {
+                reconstructable = false;
+            }
+            return reconstructable
                     ? new LineageAbsencePlan.NoWrite.Retry("the historical snapshot was refused")
                     : new LineageAbsencePlan.NoWrite.SnapshotIncomplete(
                             "the snapshot cannot reconstruct the entity");
