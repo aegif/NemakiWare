@@ -479,11 +479,20 @@ class LineageProductionAdapterTest {
                             .disposition());
         }
 
-        /** Every kind must be able to reach PURGED, or its obligations retry for ever. */
+        /**
+         * Every LEDGERED kind must be able to reach PURGED, or its obligations retry for ever.
+         *
+         * <p>Only the LEDGERED ones. A NON_PURGEABLE_BY_NEMAKI kind reaching PURGED would mean
+         * acting on a mark that could only have come from a compensating cleanup — covered by
+         * {@code nonPurgeableKindsNeverReturnPurged}.
+         */
         @Test
-        @DisplayName("every endpoint kind can reach PURGED through the ledger")
+        @DisplayName("every LEDGERED kind can reach PURGED through the ledger")
         void everyKindCanReachPurged() {
             for (EndpointKind kind : EndpointKind.values()) {
+                if (!LineagePurgeLifecyclePolicy.canBePurged(kind)) {
+                    continue;
+                }
                 String qualifiedName = switch (kind) {
                     case CMIS_FOLDER -> "nemaki://" + REPO + "/folders/f-1/dataset";
                     case ARCHIVE -> "nemaki://" + REPO + "/archives/a-1";
@@ -615,6 +624,56 @@ class LineageProductionAdapterTest {
     @Nested
     class LedgerLifecycleCoverage {
 
+        /**
+         * A kind NemakiWare never destroys must never produce a purge verdict.
+         *
+         * <p>Even with a ledger mark present. The only call sites that could write one for
+         * these kinds are compensating cleanups for failed operations, so a mark that somehow
+         * existed would describe a failure rather than a destruction — and acting on it would
+         * tombstone an object that is still there.
+         */
+        @Test
+        @DisplayName("a NON_PURGEABLE kind never returns PURGED, even with a ledger mark")
+        void nonPurgeableKindsNeverReturnPurged() {
+            for (EndpointKind kind : EndpointKind.values()) {
+                if (LineagePurgeLifecyclePolicy.canBePurged(kind)) {
+                    continue;
+                }
+                String qualifiedName = "nemaki://" + REPO + "/objects/x-" + kind;
+                String subject = LineageSourceDispositionResolver.SourceEvidence.subjectDigest(
+                        REPO, kind, qualifiedName);
+                LineagePurgeLedger ledger = mock(LineagePurgeLedger.class);
+                when(ledger.find(anyString(), any(), anyString()))
+                        .thenReturn(Optional.of(new LineagePurgeLedger.PurgeMark(REPO, kind,
+                                subject, "inc-1", "rev-1", 900L, null)));
+                ContentService contentService = mock(ContentService.class);
+                when(contentService.getContent(anyString(), anyString())).thenReturn(null);
+
+                assertEquals(LineageSourceDisposition.SOURCE_UNKNOWN,
+                        new RepositorySourceDispositionResolver(kind, contentService, ledger,
+                                () -> 5_000L).dispositionOf(REPO, kind, qualifiedName)
+                                .disposition(),
+                        kind + " is NON_PURGEABLE_BY_NEMAKI and must never say PURGED");
+            }
+        }
+
+        /** Every kind is classified, and the two classes are the ones established. */
+        @Test
+        @DisplayName("every endpoint kind has a purge lifecycle classification")
+        void everyKindIsClassified() {
+            for (EndpointKind kind : EndpointKind.values()) {
+                assertTrue(LineagePurgeLifecyclePolicy.of(kind).isPresent(),
+                        kind + " must be classified — unclassified is red, not a default");
+                assertFalse(LineagePurgeLifecyclePolicy.of(kind).get().reason().isBlank(),
+                        kind + " must say why");
+            }
+            assertEquals(java.util.Set.of(EndpointKind.CMIS_DOCUMENT, EndpointKind.CMIS_FOLDER,
+                    EndpointKind.ARCHIVE),
+                    java.util.Arrays.stream(EndpointKind.values())
+                            .filter(LineagePurgeLifecyclePolicy::canBePurged)
+                            .collect(java.util.stream.Collectors.toSet()));
+        }
+
         @Test
         @DisplayName("the ledger names the kinds a lifecycle actually writes marks for")
         void coveredKindsAreTheHookedOnes() {
@@ -623,14 +682,12 @@ class LineageProductionAdapterTest {
             // ContentServiceImpl.destroyArchive / restoreArchive cover exactly these.
             assertEquals(java.util.Set.of(EndpointKind.CMIS_DOCUMENT, EndpointKind.CMIS_FOLDER,
                     EndpointKind.ARCHIVE), covered);
+            // Coverage and classification must agree: every LEDGERED kind is hooked, and
+            // every kind that is not hooked is one NemakiWare never destroys.
             for (EndpointKind kind : EndpointKind.values()) {
-                if (!covered.contains(kind)) {
-                    // Not an accident: an uncovered kind must be visible as uncovered rather
-                    // than pass because its marker attribute happens to exist.
-                    assertNotNull(LineageHistoricalEntityFactory.tombstoneMarkerAttribute(kind),
-                            kind + " has a marker but no lifecycle — exactly the case the"
-                                    + " readiness gate exists for");
-                }
+                assertEquals(LineagePurgeLifecyclePolicy.canBePurged(kind),
+                        covered.contains(kind),
+                        kind + ": ledger coverage must match its lifecycle classification");
             }
         }
     }

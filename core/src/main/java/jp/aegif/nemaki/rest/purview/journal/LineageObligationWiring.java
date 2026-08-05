@@ -283,15 +283,25 @@ public final class LineageObligationWiring {
                     + " non-emittable in lineage.emit.disabled-kinds");
         }
         // A marker attribute and a resolver bean both say the machine COULD record a purge.
-        // Neither says anything does. Without a lifecycle hook writing marks for this kind,
-        // SOURCE_PURGED is unreachable and every obligation for a destroyed source of it
-        // retries for ever — so presence of the parts is not evidence of coverage.
-        if (purgeLedger == null || !purgeLedger.lifecycleCoveredKinds().contains(kind)) {
-            return List.of(kind + " is emittable but no authoritative lifecycle records purges"
-                    + " for it, so SOURCE_PURGED is unreachable and its obligations would retry"
-                    + " for ever — wire the connector's purge/restore to the ledger or declare"
-                    + " the kind non-emittable in lineage.emit.disabled-kinds");
+        // Neither says anything does, and "no mark" has two opposite causes — a missing hook,
+        // or a source NemakiWare never destroys. The classification is what separates them.
+        var classified = LineagePurgeLifecyclePolicy.of(kind);
+        if (classified.isEmpty()) {
+            return List.of(kind + " is emittable but its purge lifecycle is unclassified — a"
+                    + " kind nobody has established either destroys its source or does not"
+                    + " must not be activated over");
         }
+        if (classified.get().policy() == LineagePurgeLifecyclePolicy.LEDGERED
+                && (purgeLedger == null
+                        || !purgeLedger.lifecycleCoveredKinds().contains(kind))) {
+            // Classified as ours to destroy, but nothing records it: SOURCE_PURGED is
+            // unreachable and every obligation for a destroyed source retries for ever.
+            return List.of(kind + " is LEDGERED but no authoritative lifecycle records purges"
+                    + " for it, so SOURCE_PURGED is unreachable and its obligations would"
+                    + " retry for ever");
+        }
+        // NON_PURGEABLE_BY_NEMAKI needs no hook — inventing one would mean writing a mark from
+        // a compensating cleanup, which describes a failed operation rather than a purge.
         return List.of();
     }
 

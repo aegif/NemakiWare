@@ -125,6 +125,13 @@ public final class RepositorySourceDispositionResolver
                     e.getClass().getSimpleName());
             return SourceEvidence.unknown(now);
         }
+        if (!LineagePurgeLifecyclePolicy.canBePurged(kind)) {
+            // NemakiWare never destroys a source of this kind, so no mark for it can be
+            // authoritative. Refusing here rather than trusting the ledger means a mark
+            // written by mistake — from a compensating cleanup, say — can never tombstone
+            // an object that is still there.
+            return SourceEvidence.unknown(now);
+        }
         if (mark.isEmpty() || !mark.get().authoritative()) {
             // No mark, or one a restore superseded. Both mean nobody can attest destruction.
             return SourceEvidence.unknown(now);
