@@ -88,6 +88,23 @@ public class PurviewHttpRetryHandlerTest {
         assertEquals(1, callCount[0]);
     }
 
+    /**
+     * 403 is an RBAC verdict, not a transient fault — Data Curator missing on the collection,
+     * say. Retrying hammers an account that already answered, and no number of attempts
+     * changes a role assignment; the fix is an operator action.
+     */
+    @Test
+    public void testNoRetryOn403() throws Exception {
+        int[] callCount = {0};
+        HttpResponse<String> result = handler.sendWithRetry(() -> {
+            callCount[0]++;
+            return mockResponse(403, "Forbidden");
+        }, null, null);
+
+        assertEquals(403, result.statusCode());
+        assertEquals(1, callCount[0]);
+    }
+
     @Test
     public void testNoRetryOn404() throws Exception {
         int[] callCount = {0};

@@ -63,4 +63,29 @@ public class HttpPurviewSchemaRegistryClientTest {
 
         assertEquals("Bearer mock-token", header);
     }
+
+    /**
+     * The typedef apply is the runbook's first step, so a missing api-version on the Data Map
+     * surface would fail B-E2 at step one with an error that reads as a permission problem.
+     */
+    @org.junit.jupiter.api.Test
+    public void testSchemaUriCarriesApiVersionOnDataMapSurface() {
+        HttpPurviewSchemaRegistryClient client = new HttpPurviewSchemaRegistryClient();
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "https://example.purview.azure.com/datamap/api/atlas/v2/types/typedefs"
+                        + "?api-version=" + PurviewDataMapApi.API_VERSION,
+                client.buildSchemaUri(new PurviewConnectionRequest(
+                        "https://example.purview.azure.com", "datamap/api/atlas/v2", "oauth2",
+                        "t", "c", "s", "", "", 5000, 30000)).toString());
+    }
+
+    @org.junit.jupiter.api.Test
+    public void testSchemaUriStaysBareOffTheDataMapSurface() {
+        HttpPurviewSchemaRegistryClient client = new HttpPurviewSchemaRegistryClient();
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "http://localhost:21000/api/atlas/v2/types/typedefs",
+                client.buildSchemaUri(new PurviewConnectionRequest(
+                        "http://localhost:21000", "api/atlas/v2", "basic",
+                        "", "", "", "u", "p", 5000, 30000)).toString());
+    }
 }
