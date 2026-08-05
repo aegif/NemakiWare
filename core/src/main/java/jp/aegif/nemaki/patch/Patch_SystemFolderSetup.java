@@ -435,6 +435,35 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                 return;
             }
 
+            // Existence is a property of the logical key, not of this method's id convention.
+            // The initialization dump seeds some of these keys under fixed ids
+            // (system_config_001 carries system.version), while this method derives its id
+            // from the key — so an id-only check missed the seeded copy and created a second
+            // document for the same key. The strict configuration reader refuses to choose
+            // between duplicates, which turned the 4b cursor preflight red on every standard
+            // install: the gate could never be satisfied, only argued with.
+            java.util.List<com.ibm.cloud.cloudant.v1.model.Document> holders =
+                findConfigurationDocumentsByKey(confClient, key, repositoryId);
+            String duplicate = duplicateToDelete(documentId, holders);
+            if (duplicate != null) {
+                // Both this method's document and another holder exist — the state earlier
+                // runs of this very patch created. Heal by removing OUR copy, never the other
+                // one: the other id may be the dump's seed or an operator's own document, and
+                // this patch has no authority over either.
+                com.ibm.cloud.cloudant.v1.model.Document ours = holders.stream()
+                    .filter(d -> duplicate.equals(d.getId())).findFirst().orElse(null);
+                if (ours != null) {
+                    confClient.delete(ours.getId(), ours.getRev());
+                    log.info("Removed duplicate configuration document '" + duplicate
+                        + "' for key '" + key + "' — another document already carries it");
+                }
+                return;
+            }
+            if (!holders.isEmpty()) {
+                log.info("Configuration key already stored: " + key + " (document: "
+                    + holders.get(0).getId() + ")");
+                return;
+            }
             if (confClient.exists(documentId)) {
                 log.info("Configuration document already exists: " + documentId);
                 return;
@@ -463,5 +492,62 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
         } catch (Exception e) {
             log.error("Error creating configuration document: " + documentId, e);
         }
+    }
+
+    /**
+     * Every configuration document that carries this logical key in this scope, whatever its id.
+     *
+     * <p>Scope matters: a global entry (no {@code repositoryId}) and a repository entry with the
+     * same key name are different settings, and treating one as a duplicate of the other would
+     * delete a document that is not ours to judge.
+     */
+    private java.util.List<com.ibm.cloud.cloudant.v1.model.Document> findConfigurationDocumentsByKey(
+            jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper confClient,
+            String key, String repositoryId) {
+        java.util.List<com.ibm.cloud.cloudant.v1.model.Document> holders =
+            new java.util.ArrayList<>();
+        com.ibm.cloud.cloudant.v1.model.AllDocsResult result = confClient.getClient()
+            .postAllDocs(new com.ibm.cloud.cloudant.v1.model.PostAllDocsOptions.Builder()
+                .db(confClient.getDatabaseName())
+                .includeDocs(true)
+                .build())
+            .execute().getResult();
+        for (com.ibm.cloud.cloudant.v1.model.DocsResultRow row : result.getRows()) {
+            if (row.getValue() != null && Boolean.TRUE.equals(row.getValue().isDeleted())) {
+                continue;
+            }
+            com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+            if (doc == null || doc.getId() == null || doc.getId().startsWith("_design/")) {
+                continue;
+            }
+            java.util.Map<String, Object> props = doc.getProperties();
+            if (props == null || !key.equals(props.get("key"))) {
+                continue;
+            }
+            Object scope = props.get("repositoryId");
+            boolean sameScope = repositoryId == null ? scope == null
+                : repositoryId.equals(scope);
+            if (sameScope) {
+                holders.add(doc);
+            }
+        }
+        return holders;
+    }
+
+    /**
+     * Which document this patch may delete to end a duplication, or null.
+     *
+     * <p>Only its own — the one under the id this patch derives — and only while another
+     * document also carries the key. A single holder is healthy whatever its id, and a
+     * duplication among documents this patch never wrote is not its call to resolve: the
+     * strict reader will keep refusing, which is the honest outcome.
+     */
+    static String duplicateToDelete(String derivedId,
+            java.util.List<com.ibm.cloud.cloudant.v1.model.Document> holders) {
+        if (derivedId == null || holders == null || holders.size() < 2) {
+            return null;
+        }
+        return holders.stream().map(com.ibm.cloud.cloudant.v1.model.Document::getId)
+            .anyMatch(derivedId::equals) ? derivedId : null;
     }
 }

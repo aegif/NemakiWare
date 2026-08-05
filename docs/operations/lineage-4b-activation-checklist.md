@@ -409,6 +409,49 @@ bumps and the ACKs are cleared, so a fresh ACK is required.
 
 ---
 
+## 5.6 Dry-run (rehearsal, second pass) — 2026-08-05, same environment, non-vacuous gate
+
+The first rehearsal (§5.5) demonstrated the machine but left the gate unproven: the cursor
+check errored and the allowlist was empty, so condition 9 was skipped rather than satisfied.
+This pass closed both, with the v2.3.71–v2.3.80 build. **`POST /barrier/activate` was not
+called, and `POST /barrier/rollback` was not called; `writeSchemaVersion` stayed 1.**
+
+| item | result |
+|---|---|
+| §1 preflight | `verdict = EXTERNAL_EVIDENCE_REQUIRED`, `catalogObligations.verdict = PASS`, `blockingConditions = []`, `drestReadiness.ready = true`, `spool = PASS` |
+| §2 cursors | **`verdict = PASS`**, `checked = 2` (bedroom `PRESENT_EMPTY` clean, canopy `ABSENT` clean) — after fixing the duplicate-key defect below |
+| §4 digest | computed out of process in a separate Linux container from the image, over the image's own deployed tree; **equal to the node's `measuredBinaryDigest`** |
+| §5 negative control | with a deliberately non-member digest approved, `blockingConditions = ["condition 9: the binary running on '<node>' is not in approvedBinaryDigests"]` — the gate blocks by membership |
+| §5 final | `approvedBinaryDigests` non-empty, `measuredBinaryDigest == every ack == every allowlisted digest`, **`blockingConditions = []`** — condition 9 satisfied by membership, not skipped |
+
+Two findings from this pass, both fixed rather than worked around:
+
+1. **The cursor preflight could never PASS on a standard install.** The initialization dump
+   seeds `system.version` as `system_config_001` while `Patch_SystemFolderSetup` derived
+   `system_config_system_version` for the same key and checked existence by id only — so every
+   standard install carried the key twice, the strict legacy reader refused to choose
+   (correctly), and §2 reported ERROR for every repository. The patch now checks existence by
+   logical key and removes its own duplicate (never the other holder's document) on the next
+   boot. The check itself was not weakened.
+2. **The artifact you approve is the image, not the WAR, in an image-based deployment.** The
+   image build rewrites `WEB-INF/classes/nemakiware.properties` and
+   `nemakiware-basetype.properties`, so the WAR-only digest differs from the running tree —
+   and condition 9 correctly refused it (the negative control above). Compute the digest from
+   the image's deployed tree, in a fresh container from that image: it reproduces the node's
+   measurement exactly, and it is still out of the serving node's process. On this host the
+   CLI also refused to measure at all (no `SecureDirectoryStream` on macOS), which is the
+   documented fail-closed behaviour — measure on the platform the node runs on.
+
+Also in this pass: the overlay's 2s/10s timeouts — computed under the pre-v2.3.72 two-call
+budget model — were refused by the corrected per-route model (true worst case ~202s against a
+150s bound) and tightened to 1s/6s (~142s worst route). The refusal is the check working.
+
+Evidence files: preflight before/after, `/preflight/cursors`, both `prepare` responses, both
+`ack` responses, the blocked and clean `GET /barrier` bodies, and the CLI digest output with
+the artifact identity.
+
+---
+
 ## 5.5 Dry-run (rehearsal) — 2026-08-05, local disposable environment
 
 Executed with `docker-compose-4b-dryrun.yml` against local CouchDB 3.x, Solr and Apache Atlas,
