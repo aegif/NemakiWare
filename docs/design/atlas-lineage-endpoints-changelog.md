@@ -12,6 +12,31 @@
 
 ---
 
+## v2.3.82 — Purview throttling: Retry-After を budget 内で尊重する (公開仕様ベース)
+
+前提: 当面 Purview 環境は無く、公開技術情報を根拠に実装を進める (live 証跡 B-E2〜B-E4 は
+open のまま)。
+
+Microsoft の公開ドキュメントは Purview の throttling 時に `Retry-After` の尊重を求めるが、
+retry handler はこれを無視して自前の指数 backoff (1s/2s/4s ±10%) で再試行していた。両方向に
+誤っている: 指示より早い再試行は throttle された account を叩き続けて throttle を延長し、
+かといって指示どおりに眠れば server が選んだ無制限の待機が fenced section の中に入り、
+budget が約束した上限が嘘になる。
+
+修正は「budget 内なら指示どおり、超えるなら止まることで従う」:
+
+- `Retry-After` (delta-seconds のみ) がその attempt の budgeted worst
+  (`worstDelayForAttempt` — `worstCaseBackoffTotalMs()` が合算しているのと同じ式) 以下なら
+  その値どおりに眠る
+- 超えるなら再試行を打ち切り 429/503 応答をそのまま返す。呼び出し側は RETRYABLE に写像し、
+  待機は obligation の durable backoff (分単位・fence と claim の外) が担う
+- HTTP-date 形式は解釈しない。clock skew が任意長 sleep になるため「指示なし」= 従来の
+  指数 backoff
+- `maxRetries()` / `worstCaseBackoffTotalMs()` は不変 — budget の不変条件は構成的に保たれ、
+  server の行儀に依存しない
+
+mutation binding 確認済み — Retry-After を再び無視させると挙動テスト 2 件だけが落ちる。
+
 ## v2.3.81 — 4b rehearsal 第 2 回: gate を非空虚に実証 + 標準インストールで §2 が PASS 不能だった欠陥
 
 第 1 回 rehearsal は機構を実証したが gate は実証していなかった — cursors は ERROR、

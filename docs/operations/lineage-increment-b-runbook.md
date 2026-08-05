@@ -156,6 +156,23 @@ mvn test -Dgroups=atlas-integration -Dsurefire.excludedGroups= \
 | B-E3 | **属性 round trip (Purview)** | 同上 | B-E2 の後、`nemaki_folder_dataset` を 1 件読む | `repositoryId` / `objectId` / `active` / `sourceState` が保存されている |
 | B-E4 | **大規模 backfill の再開性** | 10,000 folder 以上の repository | `maxBatches=1` で複数回、途中で core を再起動 | `processed` が単調増加し、最終的に `successful: true`。folder 数と `processed` が一致 |
 
+### 前提の更新 (2026-08-06)
+
+**当面、利用可能な Purview 環境は無い。** この前提の下での方針:
+
+- **実装は公開技術情報を根拠に進めてよい。** Microsoft Learn の Purview REST API 仕様
+  (Atlas 互換 surface・AAD client credentials・throttling ガイダンス) に基づく実装・修正は
+  live 環境なしで行い、決定的な単体テストで固定する。適用済みの例:
+  - AAD v2.0 client-credentials + scope `https://purview.azure.net/.default` (実装済み)
+  - `atlasBasePath` の設定化 — classic `catalog/api/atlas/v2` と新 `datamap/` surface の両対応 (実装済み)
+  - **429/503 の `Retry-After` 尊重 (v2.3.82)** — budget 内なら指示どおり眠り、超えるなら
+    この pass の再試行を打ち切って応答を返す。長い待機は obligation の durable backoff
+    (分単位・fence の外) が担う。HTTP-date 形式は clock skew が任意長の sleep になるため
+    「指示なし」として扱う
+- **証跡は代替できない。** B-E2〜B-E4 は open のまま残す。公開仕様への準拠は
+  「実 Purview で動く」ことの証明ではなく、mock・Atlas・公開文書のどれも live 証跡の
+  代わりにならない。環境が得られた時点で本表の手順をそのまま実行する。
+
 **B-E1 の結果を B-E2 の代わりにしてはならない。** Atlas OSS と Purview は
 error vocabulary も属性型の対応も relationship の意味論も共有しない。
 Atlas が green でも Purview の証跡にはならない。
