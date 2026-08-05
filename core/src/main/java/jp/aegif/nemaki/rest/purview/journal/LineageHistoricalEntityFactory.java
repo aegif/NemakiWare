@@ -229,10 +229,32 @@ public final class LineageHistoricalEntityFactory {
 
     /** The same entity, from a snapshot whichever type authorised it. */
     public static Map<String, Object> observedEntityFrom(LineageWaitingSnapshot snapshot) {
+        return observedEntity(snapshot);
+    }
+
+    /**
+     * The ordinary entity, with its state said out loud.
+     *
+     * <p>Earlier this simply omitted the marker, which was wrong twice over. {@code
+     * nemaki_archive} declares {@code lifecycleState} mandatory, so a live archive could never
+     * be published at all — correct data terminalised as SNAPSHOT_INCOMPLETE for ever. And an
+     * omitted marker is not the same statement as a present one: the read-back had to encode
+     * "this key must be absent" separately, when what an ordinary entity actually asserts is
+     * that the source is ACTIVE.
+     *
+     * <p>Saying it directly makes the read-back compare ACTIVE against PURGED, which is the
+     * comparison that matters, and satisfies the type's mandatory attribute at the same time.
+     */
+    private static Map<String, Object> observedEntity(LineageWaitingSnapshot snapshot) {
         Map<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("qualifiedName", snapshot.catalogQualifiedName());
         attributes.putAll(identityAttributes(snapshot));
         attributes.putAll(CatalogSecretBoundary.sealed(snapshot.attributes()));
+
+        String marker = tombstoneMarkerAttribute(snapshot.endpointKind());
+        if (marker != null) {
+            attributes.put(marker, PurviewEntityPayloadFactory.SOURCE_STATE_ACTIVE);
+        }
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", snapshot.endpointKind().atlasTypeName());
@@ -253,20 +275,9 @@ public final class LineageHistoricalEntityFactory {
      * tags the marker as absent exactly as the read side does when the catalog does not hold it.
      */
     public static String observedPlannedDigest(Map<String, Object> planned, EndpointKind kind) {
-        String marker = tombstoneMarkerAttribute(kind);
-        Map<String, Object> withAssertion = new LinkedHashMap<>(planned);
-        Object attributes = planned.get("attributes");
-        if (marker != null && attributes instanceof Map<?, ?> map && !map.containsKey(marker)) {
-            // Same shape readBackDigest produces for an absent key.
-            Map<String, Object> tagged = new LinkedHashMap<>();
-            map.forEach((k, v) -> tagged.put(String.valueOf(k) + KEY_PRESENT, v));
-            tagged.put(marker + KEY_ABSENT, null);
-            Map<String, Object> shaped = new LinkedHashMap<>();
-            shaped.put("typeName" + KEY_PRESENT, planned.get("typeName"));
-            shaped.put("attributes", tagged);
-            return digestOfTagged(shaped);
-        }
-        return operationDigest(withAssertion);
+        // The marker is now part of the ordinary entity (as ACTIVE), so the plain digest
+        // already encodes it and the read-back compares ACTIVE against whatever is there.
+        return operationDigest(planned);
     }
 
     /** The marker keys an ordinary entity asserts are absent, for the read-back projection. */

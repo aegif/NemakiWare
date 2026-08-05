@@ -133,12 +133,15 @@ class LineageObservedMaterializationTest {
         Map<String, Object> attributes = (Map<String, Object>) entity.get("attributes");
         assertEquals(fixture.kind().atlasTypeName(), entity.get("typeName"));
         assertEquals(fixture.qualifiedName(), attributes.get("qualifiedName"));
-        // The whole point: no marker under either name, and no PURGED anywhere.
-        assertFalse(attributes.containsKey(LineageHistoricalEntityFactory.LIFECYCLE_STATE),
-                "an observation must not carry a tombstone marker");
-        assertFalse(attributes.containsKey(LineageHistoricalEntityFactory.SOURCE_STATE),
-                "an observation must not carry a tombstone marker");
-        assertFalse(attributes.containsValue("PURGED"));
+        // The whole point: never PURGED. The state is said out loud as ACTIVE rather than
+        // omitted — omitting it made nemaki_archive unpublishable (lifecycleState is mandatory
+        // there) and left the read-back having to encode "this key must be absent" instead of
+        // simply comparing ACTIVE against whatever the catalog holds.
+        assertFalse(attributes.containsValue("PURGED"),
+                "an observation must never carry a tombstone marker value");
+        String marker = LineageHistoricalEntityFactory.tombstoneMarkerAttribute(fixture.kind());
+        assertEquals("ACTIVE", attributes.get(marker),
+                "an ordinary entity states that its source is active");
         // Mandatory attributes are satisfied, or this could never be published at all.
         assertEquals(List.of(), observed.missingMandatoryAttributes());
     }
