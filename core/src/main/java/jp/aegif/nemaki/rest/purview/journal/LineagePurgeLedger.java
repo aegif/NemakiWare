@@ -93,4 +93,17 @@ public interface LineagePurgeLedger {
 
     /** Whether the ledger is usable at all, for readiness. */
     boolean available();
+
+    /**
+     * The kinds whose authoritative lifecycle actually writes to this ledger.
+     *
+     * <h2>Why a resolver bean and a marker attribute are not enough</h2>
+     *
+     * <p>Both of those say the machine <em>could</em> record a purge. Neither says anything
+     * writes one. A kind with a resolver, a marker and no lifecycle hook can never reach
+     * {@code SOURCE_PURGED}, so every obligation for a genuinely destroyed source of that kind
+     * retries for ever and every event waiting on it stalls. Readiness has to be able to tell
+     * "wired" from "wireable", and only the code that destroys objects knows which it is.
+     */
+    java.util.Set<EndpointKind> lifecycleCoveredKinds();
 }

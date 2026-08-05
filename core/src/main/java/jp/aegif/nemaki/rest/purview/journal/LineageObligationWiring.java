@@ -282,6 +282,16 @@ public final class LineageObligationWiring {
                     + " SNAPSHOT_INCOMPLETE — add the attribute or declare the kind"
                     + " non-emittable in lineage.emit.disabled-kinds");
         }
+        // A marker attribute and a resolver bean both say the machine COULD record a purge.
+        // Neither says anything does. Without a lifecycle hook writing marks for this kind,
+        // SOURCE_PURGED is unreachable and every obligation for a destroyed source of it
+        // retries for ever — so presence of the parts is not evidence of coverage.
+        if (purgeLedger == null || !purgeLedger.lifecycleCoveredKinds().contains(kind)) {
+            return List.of(kind + " is emittable but no authoritative lifecycle records purges"
+                    + " for it, so SOURCE_PURGED is unreachable and its obligations would retry"
+                    + " for ever — wire the connector's purge/restore to the ledger or declare"
+                    + " the kind non-emittable in lineage.emit.disabled-kinds");
+        }
         return List.of();
     }
 

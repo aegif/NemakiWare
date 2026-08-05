@@ -604,6 +604,37 @@ class LineageProductionAdapterTest {
         }
     }
 
+    /**
+     * A kind nothing records purges for cannot be quietly emittable.
+     *
+     * <p>The marker attribute and the resolver bean both exist for every kind now. Neither
+     * means a purge is ever written, and without one SOURCE_PURGED is unreachable — the
+     * obligations retry for ever and the events waiting on them stall. Readiness must tell
+     * "wireable" from "wired".
+     */
+    @Nested
+    class LedgerLifecycleCoverage {
+
+        @Test
+        @DisplayName("the ledger names the kinds a lifecycle actually writes marks for")
+        void coveredKindsAreTheHookedOnes() {
+            java.util.Set<EndpointKind> covered =
+                    new CouchLineagePurgeLedger(null).lifecycleCoveredKinds();
+            // ContentServiceImpl.destroyArchive / restoreArchive cover exactly these.
+            assertEquals(java.util.Set.of(EndpointKind.CMIS_DOCUMENT, EndpointKind.CMIS_FOLDER,
+                    EndpointKind.ARCHIVE), covered);
+            for (EndpointKind kind : EndpointKind.values()) {
+                if (!covered.contains(kind)) {
+                    // Not an accident: an uncovered kind must be visible as uncovered rather
+                    // than pass because its marker attribute happens to exist.
+                    assertNotNull(LineageHistoricalEntityFactory.tombstoneMarkerAttribute(kind),
+                            kind + " has a marker but no lifecycle — exactly the case the"
+                                    + " readiness gate exists for");
+                }
+            }
+        }
+    }
+
     @Nested
     class Budgets {
 

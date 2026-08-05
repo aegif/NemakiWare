@@ -642,6 +642,10 @@ public class LineageObligationWiringTest {
     private static LineagePurgeLedger availableLedger() {
         LineagePurgeLedger ledger = mock(LineagePurgeLedger.class);
         when(ledger.available()).thenReturn(true);
+        // Every kind covered: the coverage gate has its own test, and here it must not be the
+        // thing under test.
+        when(ledger.lifecycleCoveredKinds())
+                .thenReturn(java.util.Set.of(EndpointKind.values()));
         return ledger;
     }
 }

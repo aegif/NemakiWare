@@ -45,6 +45,24 @@ public final class CouchLineagePurgeLedger implements LineagePurgeLedger {
     }
 
     /**
+     * The kinds a lifecycle hook actually records purges for today.
+     *
+     * <p>{@code ContentServiceImpl.destroyArchive} / {@code restoreArchive} cover the three
+     * repository kinds. The external and artifact kinds are owned by their own connectors, and
+     * until each one records its purges here the ledger cannot answer for them — so they are
+     * NOT listed, and readiness refuses to go green while they are still emittable.
+     *
+     * <p>Deliberately a hard-coded statement of fact rather than something derived: a derived
+     * answer would say "yes" for any kind whose hook exists in some build, and the question is
+     * whether it exists in this one.
+     */
+    @Override
+    public java.util.Set<EndpointKind> lifecycleCoveredKinds() {
+        return java.util.Set.of(EndpointKind.CMIS_DOCUMENT, EndpointKind.CMIS_FOLDER,
+                EndpointKind.ARCHIVE);
+    }
+
+    /**
      * Recorded once. A second purge of the same subject keeps the first mark rather than
      * overwriting it — the first is the one whose incarnation and revision were observed at the
      * moment the object went away.
