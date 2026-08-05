@@ -1,6 +1,6 @@
 # 設計増分 A — Atlas lineage endpoint 型体系と多重AP状態遷移
 
-status: **v2.3.57 — increment A sign-off 済み・**§6-a 再 sign-off 承認済み (2026-08-03)**。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: 4b (**運用証跡待ち** — preflight は実装済み)。**§2 の属性別上限は実装済み (v2.3.26)**。**Slice 4a 実装済み — writer は v1 のまま (barrier 文書が無い＝pristine)**。**増分 B 実装済み (v2.3.35)**。**§2 obligation machine + historical publish 状態機械 + 本番 adapter + N-3 preflight 実装済み (v2.3.56)** — 実 CouchDB IT が mock 不能な本番バグ 3 件を検出 (IT-42〜IT-44)。fence の budget は target/kind 別の型付き `LineageOperationBudget` — 型追加 / 属性追加 / secret 境界 / backfill / lifecycle / reconciliation / runbook。live Atlas は起動できず B-E1〜B-E4 を EXTERNAL_EVIDENCE_REQUIRED として [`lineage-increment-b-runbook.md`](../operations/lineage-increment-b-runbook.md) に固定
+status: **v2.3.57 — increment A sign-off 済み・**§6-a 再 sign-off 承認済み (2026-08-03)**。A-1〜A-1k + A-2 Slice 1a〜3 + producer P-1〜P-3c + D-spool + **D-rest 全 4 slice** (fenced sequencer / v2 遷移 CAS・単調 cursor・schema routing / replay CAS + crash 回収 / 収束 materializer + capability provider + scanner 入口) + chunking 実装済み — writer は v1 のまま・全 D-rest driver は非活性 (readiness gate 既定 false・resolver 既定 unavailable)。残: 4b (**運用証跡待ち** — preflight は実装済み)。**§2 の属性別上限は実装済み (v2.3.26)**。**Slice 4a 実装済み — writer は v1 のまま (barrier 文書が無い＝pristine)**。**増分 B 実装済み (v2.3.35)**。**§2 obligation machine + historical publish 状態機械 + 本番 adapter + N-3 preflight 実装済み (v2.3.56)** — 実 CouchDB IT が mock 不能な本番バグ 3 件 (IT-42〜IT-44)、実 Atlas IT が 2 件 (IT-51 / IT-52) を検出。**v2.3.71〜v2.3.79 で更に 7 件を修正** — 詳細は [changelog](atlas-lineage-endpoints-changelog.md)。うち 3 件は外部レビュー (Codex) 由来、4 件は検査を書く過程で発見。いずれも既存テストが素通りしており、mutation binding で結合を確認済み。fence の budget は target/kind 別の型付き `LineageOperationBudget` — 型追加 / 属性追加 / secret 境界 / backfill / lifecycle / reconciliation / runbook。live Atlas は起動できず B-E1〜B-E4 を EXTERNAL_EVIDENCE_REQUIRED として [`lineage-increment-b-runbook.md`](../operations/lineage-increment-b-runbook.md) に固定
 
 revision 履歴と、過去に閉じた指摘の一覧は
 [`atlas-lineage-endpoints-changelog.md`](atlas-lineage-endpoints-changelog.md) にあります
@@ -2156,6 +2156,10 @@ POST /api/v1/admin/lineage-journal/repair
 | IT-52 | publish 後に marker を読み直す | **本番バグ (v2.3.56 で修正)**。marker 名が type ごとに違い (`lifecycleState` / `sourceState`)、Atlas は未宣言属性を黙って捨てるため、live entity と区別不能な tombstone ができていた |
 | IT-53 | marker を持たない type へ historical publish | `SNAPSHOT_INCOMPLETE` (終端)。書けば「存在する証拠」になる |
 | IT-54 | read-back に catalog 固有属性 (guid 等) が付く | planned key へ射影して除外。除外しないと正しい publish が毎回 CONFLICT になり obligation が永久に解決しない |
+| IT-55 | 保存済み obligation を旧 outcome 名で読み直す | 改名 (`CURRENT_MATERIALIZED` → `LIVE_SOURCE_OBSERVATION_MATERIALIZED`) の legacy alias。`parseOutcome` は未知名で例外を投げるため、alias が無いと改名前の terminal 行が読めなくなる |
+| IT-56 | prepare 中に claim を奪われた状態で settle | external を一切呼ばない。renewal が authorisation であり、superseded された worker が出際に catalog へ書けば引き継いだ worker と競合する |
+| IT-57 | execute 後に final CAS を失う | resolved と報告しない。external write は起きたかもしれないが、起きなかったのは「保持している claim の下で記録する」こと |
+| IT-58 | 自己参照 replay を raw document として書く | `UNDECODABLE_ROW`。`LineageEventV2` の正準コンストラクタが `deliveryId` を delivery から再計算するため、自分を指す row は自分の id を describe しなくなる。**このケースは v2.3.75 まで `assumeTrue` で恒久 skip され、0 assertion で緑を報告していた** |
 
 ### Atlas-enabled E2E 受入表 (v3.3 release gate)
 
