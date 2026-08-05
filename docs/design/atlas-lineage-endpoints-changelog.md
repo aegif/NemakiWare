@@ -12,6 +12,28 @@
 
 ---
 
+## v2.3.77 — lease 分離: 経路ごとに「実際に走っている lease」で判定する
+
+budget 検査は全経路を subject fence lease と比較していた。しかし **OBSERVED と CURRENT は
+historical machine に入らない** — obligation の claim の下だけで走る。両者を subject fence と
+比べるのは、その経路が一度も保持しない lease と比べることだった。両定数が同じ 5 分を持つため
+数値上は見えず、片方を変えた瞬間に検査が意味を失う形になっていた。
+
+さらに **final CAS が budget に入っていなかった**。CAS は external 呼出の「後」に来て、
+なお authorise した claim の内側に着地する必要がある。lease 切れ後に着地した CAS は、
+既に他の worker が所有する obligation に結果を書く。catalog と話す部分だけ budget して
+commit する部分を無視していた。
+
+- `Route` に `storeOperations()` (全経路 1) と `insideSubjectFence()` を追加
+- 全経路: execute + final CAS が **obligation claim lease** に収まること
+- HISTORICAL のみ: 加えて **subject fence lease** にも収まること
+- 違反文はどちらの lease の話かを明示する
+
+mutation binding 確認済み — 判定を 1 本の lease へ戻すと新テストだけが落ちる。
+
+補足: `toStringIsSafe` は「read timeout の 600 を含まない」という部分文字列検査だったが、
+worst case は和であり入力の数字を自由に含みうるため偶然で成立していた。厳密一致に変更。
+
 ## v2.3.75 — live-source 経路は自分の read が作った entity を publish する
 
 外部レビュー (Codex) Finding 2。**catalog に恒久的に古い内容が残り、誰も訂正しない**経路。

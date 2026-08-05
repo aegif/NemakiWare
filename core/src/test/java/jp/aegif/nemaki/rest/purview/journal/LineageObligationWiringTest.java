@@ -536,6 +536,41 @@ public class LineageObligationWiringTest {
     }
 
     /**
+     * Two leases bound two different things, and each route is asked about the right one.
+     *
+     * <p>The subject fence bounds the historical machine's inner section. The obligation claim
+     * bounds the whole execute plus the CAS that records its outcome — and the observed and
+     * current routes never enter the machine at all, so asking them about the subject fence was
+     * asking about a lease they never hold. Invisible today only because the two constants carry
+     * the same number, which is exactly the kind of agreement that stops being true silently.
+     */
+    @Test
+    @DisplayName("each route is judged against the lease it actually runs under")
+    public void routesAreJudgedAgainstTheirOwnLease() {
+        Assembly assembly = new Assembly();
+        // Far too slow for either lease, so every reachable route reports.
+        assembly.budgets = (target, kind) -> java.util.Optional.of(
+                new LineageOperationBudget(target, kind, 60_000L, 60_000L, 3, 30_000L, 10_000L,
+                        30_000L));
+        List<String> violations = assembly.build().violations(TARGETS);
+
+        // The claim lease is named for every route, including the two that never take a fence.
+        assertTrue(violations.stream().anyMatch(v -> v.contains("OBSERVED")
+                        && v.contains("obligation claim lease")),
+                violations.toString());
+        assertTrue(violations.stream().anyMatch(v -> v.contains("CURRENT")
+                        && v.contains("obligation claim lease")),
+                violations.toString());
+        // And the subject fence is named only for the route that holds one.
+        assertTrue(violations.stream().anyMatch(v -> v.contains("HISTORICAL")
+                        && v.contains("subject fence lease")),
+                violations.toString());
+        assertFalse(violations.stream().anyMatch(v -> v.contains("subject fence lease")
+                        && (v.contains("OBSERVED") || v.contains("CURRENT"))),
+                "a route that never enters the machine must not be judged against its fence");
+    }
+
+    /**
      * The number that matters is the section's, not the largest request's.
      *
      * <p>This is the case the earlier single-read-timeout check passed: every individual call
