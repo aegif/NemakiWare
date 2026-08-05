@@ -40,7 +40,10 @@ public class MetadataCatalogConnectionResolver {
                     purviewConfig.getClientSecret(),
                     "", "",
                     purviewConfig.getConnectTimeoutMs(),
-                    purviewConfig.getReadTimeoutMs());
+                    purviewConfig.getReadTimeoutMs(),
+                    purviewConfig.getCollection());
+            // Atlas OSS has no collection concept in its API; its collection config feeds
+            // other machinery and must not leak into request URIs.
             case ATLAS -> new PurviewConnectionRequest(
                     atlasConfig.getEndpoint(),
                     "api/atlas/v2",
@@ -68,7 +71,8 @@ public class MetadataCatalogConnectionResolver {
                     purviewConfig.getClientSecret(),
                     "", "",
                     purviewConfig.getConnectTimeoutMs(),
-                    purviewConfig.getReadTimeoutMs());
+                    purviewConfig.getReadTimeoutMs(),
+                    purviewConfig.getCollection());
             case ATLAS -> new PurviewConnectionRequest(
                     atlasConfig.getEndpoint(),
                     atlasBasePath,

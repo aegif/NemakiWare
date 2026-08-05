@@ -102,6 +102,7 @@ public class MetadataCatalogConnectionResolverTest {
             when(purviewConfig.getClientSecret()).thenReturn("secret-123");
             when(purviewConfig.getConnectTimeoutMs()).thenReturn(5000);
             when(purviewConfig.getReadTimeoutMs()).thenReturn(30000);
+            when(purviewConfig.getCollection()).thenReturn("NemakiWare");
 
             PurviewConnectionRequest request = resolver.buildConnectionRequest();
 
@@ -111,6 +112,9 @@ public class MetadataCatalogConnectionResolverTest {
             assertEquals("tenant-123", request.getTenantId());
             assertEquals("client-123", request.getClientId());
             assertEquals("secret-123", request.getClientSecret());
+            // Entity writes are collection-scoped in Purview; a request that dropped this
+            // would file every entity in the root collection (or 403 under least privilege).
+            assertEquals("NemakiWare", request.getCollectionId());
         }
 
         @Test
@@ -130,6 +134,8 @@ public class MetadataCatalogConnectionResolverTest {
             assertTrue(request.isBasicAuth());
             assertEquals("admin", request.getBasicUsername());
             assertEquals("admin", request.getBasicPassword());
+            // Atlas OSS has no collection concept; nothing may leak into its URIs.
+            assertEquals("", request.getCollectionId());
         }
 
         @Test

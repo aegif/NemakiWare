@@ -379,11 +379,32 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
         return URI.create(String.format(TOKEN_URL_TEMPLATE, urlEncodePathSegment(request.getTenantId())));
     }
 
-    private URI buildEntityBulkUri(PurviewConnectionRequest request) {
+    URI buildEntityBulkUri(PurviewConnectionRequest request) {
         String uri = trimTrailingSlash(request.getEndpoint()) + "/"
                 + trimSlashes(request.getAtlasBasePath()) + "/" + ENTITY_BULK_PATH;
         if (request.isPurviewDataMap()) {
             uri = uri + "?api-version=" + DATAMAP_API_VERSION;
+            // Entity writes are collection-scoped in Purview, and a write that names no
+            // collection lands in the root one. With a service principal holding Data Curator
+            // on the configured collection only — the runbook's least-privilege setup — that
+            // write is a 403; with root-level rights it silently files every entity somewhere
+            // other than where configuration said. Naming the collection is the only shape in
+            // which both the permission model and the configuration mean what they say.
+            //
+            // Only on entity create/update: the public API scopes collectionId to these
+            // operations, and reads and relationship routes do not take it.
+            if (request.hasCollection()) {
+                uri = uri + "&collectionId=" + urlEncode(request.getCollectionId());
+            }
+        } else if (request.hasCollection()) {
+            // The classic catalog/... surface has no collectionId parameter, so the configured
+            // collection cannot be honoured there — entities will land in the root collection.
+            // Said out loud on every write rather than once, because every one of these writes
+            // is landing somewhere configuration says it should not.
+            logger.warn("A Purview collection is configured but the classic '{}' surface cannot"
+                    + " honour collection placement — entities will land in the root collection."
+                    + " Use the datamap/ base path (purview.atlas.base-path)",
+                    request.getAtlasBasePath());
         }
         return URI.create(uri);
     }

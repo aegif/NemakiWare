@@ -165,6 +165,14 @@ mvn test -Dgroups=atlas-integration -Dsurefire.excludedGroups= \
   live 環境なしで行い、決定的な単体テストで固定する。適用済みの例:
   - AAD v2.0 client-credentials + scope `https://purview.azure.net/.default` (実装済み)
   - `atlasBasePath` の設定化 — classic `catalog/api/atlas/v2` と新 `datamap/` surface の両対応 (実装済み)
+  - **collection 配置 (v2.3.83)** — entity 書込み (`entity/bulk`) は Data Map surface で
+    `collectionId` を送る。無指定の書込みは root collection に落ちるため、設定した
+    collection だけに Data Curator を持つ最小権限 SP では 403、root 権限では
+    「設定した collection に何も入らない」のどちらかが必ず起きていた。注意 2 点:
+    (1) `purview.collection` は collection の**参照名** (immutable name) であって
+    friendly 表示名ではない。(2) classic `catalog/` surface に collectionId パラメータは
+    存在しないため、collection 配置には `datamap/` base path が必要 — classic + collection
+    設定時は警告を出し root 配置で続行する
   - **429/503 の `Retry-After` 尊重 (v2.3.82)** — budget 内なら指示どおり眠り、超えるなら
     この pass の再試行を打ち切って応答を返す。長い待機は obligation の durable backoff
     (分単位・fence の外) が担う。HTTP-date 形式は clock skew が任意長の sleep になるため
