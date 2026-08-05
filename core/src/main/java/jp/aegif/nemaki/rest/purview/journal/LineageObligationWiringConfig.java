@@ -225,6 +225,65 @@ public class LineageObligationWiringConfig {
                 identity, System::currentTimeMillis);
     }
 
+    /** The reverse lookup, over the same database and strict-IO rules as the journal. */
+    @Bean
+    public LineageWaitingSnapshotResolver lineageWaitingSnapshotResolver(
+            ObjectProvider<LineageJournalStore> journalStore) {
+        LineageJournalStore store = journalStore.getIfAvailable();
+        return store instanceof LineageStoreSupport support
+                ? new LineageWaitingSnapshotResolver(new CouchLineageWaitingEventSource(support))
+                : null;
+    }
+
+    /**
+     * The observed-entity materializer for the target this node's catalog client answers for.
+     *
+     * <p>Bound the same way as the probe and the historical publisher: it answers for its own
+     * target and refuses every other, so a write cannot be recorded against a catalog it did
+     * not reach.
+     */
+    @Bean
+    public LineageObservedEntityMaterializer lineageObservedEntityMaterializer(
+            ObjectProvider<LineageTargetSink> sinks,
+            ObjectProvider<jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver>
+                    connectionResolver,
+            ObjectProvider<jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient>
+                    entityRegistryClient) {
+        var resolver = connectionResolver.getIfAvailable();
+        var client = entityRegistryClient.getIfAvailable();
+        if (resolver == null || client == null) {
+            return null;
+        }
+        for (LineageTargetSink sink : sinks.orderedStream().toList()) {
+            String target = sink == null ? null : sink.targetName();
+            if (hasCatalogClient(resolver, target)) {
+                return new CatalogObservedEntityMaterializer(target, resolver, client);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The ABSENT branch, wired to the same instances everything else got.
+     *
+     * <p>Set onto the service rather than constructor-injected: the settler and the service
+     * would otherwise be constructor arguments of each other. Readiness compares the references
+     * by identity, so a second settler or a second machine cannot hide behind a null check.
+     */
+    @Bean
+    public LineageCatalogAbsenceSettler lineageCatalogAbsenceSettler(
+            LineageCatalogObligationService service,
+            ObjectProvider<LineageWaitingSnapshotResolver> waitingSnapshotResolver,
+            LineageHistoricalPublishMachine historicalMachine,
+            ObjectProvider<LineageObservedEntityMaterializer> observedMaterializer,
+            LineageSourceDispositionRegistry sourceResolvers) {
+        LineageCatalogAbsenceSettler settler = new PolicyRoutedAbsenceSettler(
+                waitingSnapshotResolver.getIfAvailable(), historicalMachine,
+                observedMaterializer.getIfAvailable(), sourceResolvers);
+        service.setAbsenceSettler(settler);
+        return settler;
+    }
+
     @Bean
     public LineageObligationScanner lineageObligationScanner(
             LineageCatalogObligationService service) {

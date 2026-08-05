@@ -285,14 +285,69 @@ public class LineageCatalogObligationService {
                     // contains its stable key, and evidence is read back in admin routes.
                     LineageEndpoint.shortDigest(obligation.catalogQualifiedName()))
                     ? Settlement.RESOLVED : Settlement.LOST;
-            // ABSENT is retryable too: the authoritative publisher may simply not have run
-            // yet. Only the snapshot being unusable is terminal, and nothing here can
-            // establish that — building the historical entity is what discovers it, and that
-            // is the piece this slice does not yet have.
-            case ABSENT -> store.release(claim, "the catalog does not hold the entity yet",
+            case ABSENT -> settleAbsent(claim, obligation);
+            case UNKNOWN -> store.release(claim, "the catalog did not answer",
                     clockMs.getAsLong(), BACKOFF_BASE_MS, BACKOFF_MAX_MS)
                     ? Settlement.RELEASED : Settlement.LOST;
-            case UNKNOWN -> store.release(claim, "the catalog did not answer",
+        };
+    }
+
+    /**
+     * The catalog does not hold the entity. Route it, but only under a claim still held.
+     *
+     * <h2>Renew immediately before the external call, and use the renewed claim after</h2>
+     *
+     * <p>The snapshot and source lookups can take as long as a journal read and a repository
+     * read together, and the claim's lease is running the whole time. A worker whose lease
+     * expired during those lookups has already been superseded — writing to the catalog on its
+     * way out would race the worker that took over, and settling on the old token would land its
+     * answer on top of that worker's.
+     *
+     * <p>So the renewal is the authorisation, not a formality: without it nothing external is
+     * called at all, and the renewed claim is what the final CAS uses. A failed renew, a stale
+     * claim and a lost CAS are all reported as LOST — never as a settlement that happened.
+     */
+    private Settlement settleAbsent(LineageCatalogObligationStore.Claim claim,
+            LineageCatalogObligation obligation) {
+        LineageCatalogAbsenceSettler settler = this.absenceSettler;
+        if (settler == null) {
+            // Unwired: the old behaviour, which writes nothing. Readiness refuses to activate
+            // a node in this state, so this is a safe interim rather than a supported one.
+            return store.release(claim, "the catalog does not hold the entity yet",
+                    clockMs.getAsLong(), BACKOFF_BASE_MS, BACKOFF_MAX_MS)
+                    ? Settlement.RELEASED : Settlement.LOST;
+        }
+        java.util.Optional<LineageCatalogObligationStore.Claim> renewed =
+                store.renew(claim, DEFAULT_LEASE, clockMs.getAsLong());
+        if (renewed.isEmpty()) {
+            // The lease is gone. Someone else owns this obligation now; touching the catalog
+            // would race them.
+            return Settlement.LOST;
+        }
+        LineageCatalogObligationStore.Claim held = renewed.get();
+
+        LineageCatalogAbsenceSettler.Verdict verdict;
+        try {
+            verdict = settler.settle(obligation);
+        } catch (RuntimeException e) {
+            logger.warn("The catalog-absence settler failed: {}", e.getClass().getSimpleName());
+            verdict = LineageCatalogAbsenceSettler.Verdict.RETRY;
+        }
+        return switch (verdict) {
+            case RESOLVED -> store.resolve(held,
+                    LineageCatalogObligation.Outcome.SOURCE_PURGED,
+                    "the catalog now holds the entity this obligation owed",
+                    LineageEndpoint.shortDigest(obligation.catalogQualifiedName()))
+                    ? Settlement.RESOLVED : Settlement.LOST;
+            case SNAPSHOT_INCOMPLETE -> recordSnapshotIncomplete(held,
+                    "the snapshot cannot reconstruct the entity")
+                    ? Settlement.GAVE_UP : Settlement.LOST;
+            // RETRY and INDETERMINATE both leave the obligation open. They are different
+            // statements about why, and the release reason keeps them distinguishable.
+            default -> store.release(held,
+                    verdict == LineageCatalogAbsenceSettler.Verdict.INDETERMINATE
+                            ? "nothing could be established about the waiting event"
+                            : "the catalog does not hold the entity yet",
                     clockMs.getAsLong(), BACKOFF_BASE_MS, BACKOFF_MAX_MS)
                     ? Settlement.RELEASED : Settlement.LOST;
         };

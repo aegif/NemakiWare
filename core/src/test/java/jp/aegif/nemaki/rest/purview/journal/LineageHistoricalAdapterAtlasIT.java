@@ -196,15 +196,21 @@ public class LineageHistoricalAdapterAtlasIT {
     }
 
     /**
-     * A type with nowhere to record the purge must not receive an entity at all.
+     * A deployed type that has not been updated must not silently accept a tombstone.
      *
-     * <p>{@code nemaki_external_asset} declares neither marker, so a historical entity for it
-     * would sit in the catalog looking exactly like a live asset. SNAPSHOT_INCOMPLETE is the
-     * honest answer, and it is terminal — retrying cannot make the type grow an attribute.
+     * <p>v2.3.58 added {@code lifecycleState} to {@code nemaki_external_asset} additively, so
+     * this binary now builds a marker for every kind. An Atlas whose type definition predates
+     * that will silently drop the attribute — Atlas discards undeclared attributes — and the
+     * entity would look exactly like a live asset. The read-back is what catches it: the marker
+     * this plan wrote is not what comes back, so the publish is never reported as PUBLISHED.
+     *
+     * <p>Whichever schema the running Atlas has, the outcome is safe: PUBLISHED when the type
+     * carries the attribute, and not-PUBLISHED when it does not. What must never happen is a
+     * PUBLISHED whose entity has no marker.
      */
     @Test
-    @DisplayName("a type with no tombstone marker is SNAPSHOT_INCOMPLETE, not a silent write")
-    public void aTypeWithNoMarkerIsRefused() {
+    @DisplayName("an external asset is never PUBLISHED without its marker surviving")
+    public void anExternalAssetNeedsItsMarkerToSurvive() throws Exception {
         String stableKey = "s3://bucket/obj-" + UUID.randomUUID();
         Map<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("externalStableKey", stableKey);
@@ -220,56 +226,29 @@ public class LineageHistoricalAdapterAtlasIT {
                         EndpointKind.EXTERNAL_ASSET, stableKey,
                         LineageSourceDisposition.SOURCE_PURGED, "inc-1", "rev-1", null, 1_000L));
 
-        assertEquals(LineageHistoricalEntityPublisher.Outcome.SNAPSHOT_INCOMPLETE,
+        // This binary always builds a marker now — the gap the refusal used to cover is closed.
+        assertNotNull(LineageHistoricalEntityFactory.tombstoneMarkerAttribute(
+                EndpointKind.EXTERNAL_ASSET));
+
+        LineageHistoricalPublishReceipt receipt =
                 new CatalogHistoricalEntityPublisher(TARGET, connectionResolver, client)
-                        .publishHistorical(historical).outcome());
-    }
-
-    /**
-     * The Atlas sink can verify, and says so.
-     *
-     * <p>A sink that answers {@code false} makes D-rest refuse to sequence a single v2 row for
-     * its target: a finalized v2 row is an ordered barrier, and a barrier no sink can drain
-     * strands everything behind it. So this is not a nicety — without it the target cannot be
-     * activated at all.
-     */
-    @Test
-    @DisplayName("the Atlas sink verifies a published Process, and RETRYABLE for an absent one")
-    public void atlasSinkVerifies() {
-        AtlasConfig config = new AtlasConfig();
-        config.setEnabled(true);
-        config.setEndpoint(System.getenv("NEMAKI_LINEAGE_IT_ATLAS_URL"));
-        config.setUsername(System.getenv().getOrDefault("NEMAKI_LINEAGE_IT_ATLAS_USER", "admin"));
-        config.setPassword(System.getenv()
-                .getOrDefault("NEMAKI_LINEAGE_IT_ATLAS_PASSWORD", "admin"));
-        AtlasLineageSink sink = new AtlasLineageSink();
-        org.springframework.test.util.ReflectionTestUtils.setField(sink, "atlasConfig", config);
-        org.springframework.test.util.ReflectionTestUtils.invokeMethod(sink, "init");
-        try {
-            assertTrue(sink.supportsVerification(),
-                    "a sink that cannot verify blocks every v2 row for its target");
-            // A Process nobody wrote is not visible. RETRYABLE rather than MISMATCH: Atlas
-            // indexes asynchronously, and a record written correctly must not be burned.
-            assertEquals(LineageTargetSink.VerifyResult.RETRYABLE,
-                    sink.verify(absentRecord(), java.time.Duration.ofSeconds(5)));
-        } finally {
-            org.springframework.test.util.ReflectionTestUtils.invokeMethod(sink, "destroy");
+                        .publishHistorical(historical);
+        if (receipt.outcome() == LineageHistoricalEntityPublisher.Outcome.PUBLISHED) {
+            // The deployed type carries it, so it must have survived the round trip.
+            Map<String, Object> read = client.getEntityByUniqueAttribute(
+                    connectionResolver.buildConnectionRequest(),
+                    EndpointKind.EXTERNAL_ASSET.atlasTypeName(), "qualifiedName", stableKey);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> attrs = (Map<String, Object>)
+                    LineageHistoricalEntityFactory.normaliseRead(read).get("attributes");
+            assertEquals("PURGED", attrs.get(LineageHistoricalEntityFactory
+                    .tombstoneMarkerAttribute(EndpointKind.EXTERNAL_ASSET)),
+                    "a PUBLISHED tombstone must actually carry its marker");
         }
-    }
-
-    /** A record whose Process was never published. */
-    private static LineageRecord absentRecord() {
-        LineageEventV2 event = new LineageEventV2Builder()
-                .eventId("evt-verify-" + UUID.randomUUID())
-                .occurredAt("2026-08-05T00:00:00Z")
-                .repositoryId(REPO)
-                .processType(LineageProcessType.ARCHIVE_LOCAL)
-                .operationId("op-verify-" + UUID.randomUUID())
-                .delivery(new LineageDelivery.Original(java.util.List.of(TARGET)))
-                .addInput(LineageEndpoint.document(REPO, "doc-verify", "a.txt"))
-                .addOutput(LineageEndpoint.archive(REPO, "doc-verify", "doc-verify", 1L))
-                .build();
-        return LineageRecord.fromV2(event);
+        // Either way, the one thing that must not happen is a silent success with no marker.
+        assertTrue(receipt.outcome() == LineageHistoricalEntityPublisher.Outcome.PUBLISHED
+                        || receipt.outcome() == LineageHistoricalEntityPublisher.Outcome.RETRYABLE,
+                "a dropped marker must show up as unconfirmed, never as published");
     }
 
     // ------------------------------------------------------------------

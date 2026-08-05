@@ -72,8 +72,14 @@ public class LineageWaitingSnapshotResolver {
          * @param supersededCount how many older observations there were; a count, never their
          *        content — an operator needs to know an object has history without reading it
          */
-        record LatestWaitingSnapshot(LineageWaitingSnapshot snapshot, int supersededCount)
-                implements Resolution { }
+        /**
+         * @param provenance the winning candidate's observation provenance — carried through
+         *        rather than dropped, because the historical machine orders intents by it and
+         *        re-deriving it later would mean pairing a snapshot with another delivery's
+         *        observation
+         */
+        record LatestWaitingSnapshot(LineageWaitingSnapshot snapshot, int supersededCount,
+                LineageObservationProvenance provenance) implements Resolution { }
 
         /**
          * No event is waiting on this task.
@@ -237,6 +243,7 @@ public class LineageWaitingSnapshotResolver {
         }
 
         Candidate latest = observations.get(observations.size() - 1);
-        return new Resolution.LatestWaitingSnapshot(latest.snapshot(), observations.size() - 1);
+        return new Resolution.LatestWaitingSnapshot(latest.snapshot(),
+                observations.size() - 1, latest.provenance());
     }
 }
