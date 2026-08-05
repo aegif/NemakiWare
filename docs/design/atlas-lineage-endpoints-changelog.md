@@ -12,6 +12,30 @@
 
 ---
 
+## v2.3.83 — Purview collection 配置: entity 書込みが collectionId を送っていなかった (公開仕様ベース)
+
+`purview.collection` (既定 "NemakiWare") は設定・admin 表示・schema state には流れていたが、
+**entity 書込み URI には決して到達しなかった**。公開仕様では collectionId 無しの書込みは
+root collection に落ちる。帰結は二択で、どちらも必ず起きる:
+
+- 設定した collection だけに Data Curator を持つ最小権限 SP (runbook の前提) → 書込みは 403。
+  B-E2 は最初の write で落ちる
+- root 権限の SP → 書込みは成功するが root collection に入り、設定した collection には
+  何も入らない。権限スコープの意図が黙って壊れる
+
+修正: `PurviewConnectionRequest` に collectionId を追加 (加法的 constructor)、resolver は
+PURVIEW のときだけ `purviewConfig.getCollection()` を通す (Atlas OSS の API に collection の
+概念は無く、URI に漏らしてはならない)。`buildEntityBulkUri` は Data Map surface でのみ
+`&collectionId=` を付ける — 公開 API が collectionId を entity create/update に限定している
+ため、read と relationship 経路には付けない。classic `catalog/` surface + collection 設定は
+警告して root 配置で続行 (classic に相当パラメータが存在しないため)。
+
+`purview.collection` の値は collection の**参照名** (immutable name)。friendly 表示名では
+一致しない — runbook に明記。
+
+mutation binding 確認済み — 付与を落とすと URI テスト 2 件だけが落ちる。resolver の
+pass-through も別途固定 (黙って落とされないように)。
+
 ## v2.3.82 — Purview throttling: Retry-After を budget 内で尊重する (公開仕様ベース)
 
 前提: 当面 Purview 環境は無く、公開技術情報を根拠に実装を進める (live 証跡 B-E2〜B-E4 は
