@@ -7,11 +7,16 @@
 #     leaves atlas with none. The rehearsal is against the local Atlas, so atlas is the one
 #     that must be active.
 #
-#   * TIMEOUTS THAT FIT INSIDE THE SUBJECT FENCE. With the defaults (5s connect, 30s read)
-#     the worst-case fenced section is 2 catalog calls x 4 attempts x 35s plus backoff plus
-#     the source re-check = ~302s, against a 300s fence lease. Readiness refuses that, and it
-#     is right to: a publish still in flight when the fence expires can be overwritten by
-#     another intent. 2s/10s brings the section to ~118s, inside the 150s margin.
+#   * TIMEOUTS THAT FIT BOTH LEASES, PER ROUTE. The budget counts what each route actually
+#     does — three catalog calls (pre-read, write, read-back), each retryable 3 times with
+#     7.7s total backoff, plus the route's repository reads, the final CAS and 5s client
+#     overhead — and requires the worst reachable route to fit inside the obligation claim
+#     lease AND (for the historical route) the subject fence lease, each 300s with a 150s
+#     margin. The worst route here is an external kind's observed materialisation, whose
+#     source re-check is budgeted remote (30s): with 1s/6s it comes to
+#     3x4x7s + 23.1s + 30s + 5s = ~142s, inside the 150s bound. The 2s/10s this file used
+#     to carry was computed under the old two-call model and its true worst case is ~202s —
+#     readiness now refuses it, and it is right to.
 #
 #   * JOURNALED MODE AND A SPOOL, owned by the Tomcat user. A named volume is created root-
 #     owned, and the container runs as uid 999 — the write/link/fsync probe then fails and the
@@ -31,7 +36,7 @@ services:
     environment:
       # Replaces the atlas overlay's JAVA_TOOL_OPTIONS wholesale (same key), so purview.enabled
       # is genuinely absent rather than overridden to false somewhere further down.
-      - JAVA_TOOL_OPTIONS=-Datlas.enabled=true -Datlas.endpoint=http://atlas:21000 -Datlas.username=${ATLAS_USER:-admin} -Datlas.password=${ATLAS_PASSWORD:-admin} -Datlas.connect.timeout.ms=2000 -Datlas.read.timeout.ms=10000 -Dlineage.mode=journaled -Dlineage.targets=atlas -Dlineage.spool.dir=/var/lineage-spool -Dlineage.drest.enabled=true
+      - JAVA_TOOL_OPTIONS=-Datlas.enabled=true -Datlas.endpoint=http://atlas:21000 -Datlas.username=${ATLAS_USER:-admin} -Datlas.password=${ATLAS_PASSWORD:-admin} -Datlas.connect.timeout.ms=1000 -Datlas.read.timeout.ms=6000 -Dlineage.mode=journaled -Dlineage.targets=atlas -Dlineage.spool.dir=/var/lineage-spool -Dlineage.drest.enabled=true
     volumes:
       - lineage_spool:/var/lineage-spool
     user: root

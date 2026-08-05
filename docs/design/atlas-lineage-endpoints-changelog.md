@@ -12,6 +12,46 @@
 
 ---
 
+## v2.3.81 — 4b rehearsal 第 2 回: gate を非空虚に実証 + 標準インストールで §2 が PASS 不能だった欠陥
+
+第 1 回 rehearsal は機構を実証したが gate は実証していなかった — cursors は ERROR、
+allowlist は空で condition 9 は「充足」ではなく「skip」だった。第 2 回で両方を閉じた。
+**activate / rollback とも未実行、writer は v1 のまま。**
+
+### 本番バグ: cursor preflight は標準インストールで構造的に PASS できなかった
+
+初期化 dump は `system.version` を `system_config_001` として seed し、
+`Patch_SystemFolderSetup` は同じ論理 key を導出 id (`system_config_system_version`) で作る。
+存在確認が**文書 id のみ**だったため、標準手順のインストールは必ず同一 key を 2 箇所に持ち、
+strict legacy reader は選択を拒否して (これは正しい)、§2 cursors は全 repository で ERROR に
+なる。gate は「議論はできるが充足はできない」状態だった。
+
+patch を論理 key での存在確認に変え、過去の実行が作った複製を次回起動時に自己修復する —
+消すのは**自分の文書だけ**で、dump の seed や運用者の文書には触れない。検査側は一切
+緩めていない。決定関数 `duplicateToDelete` は単体テストで固定
+(foreign 複製は解消しない、単独保持はどの id でも健全)。
+
+副作用として self-heal 後の `system.version` は dump の値で確定する。旧動作でも
+「最初に書かれた値で凍結」だったので、意味論の変更ではなく決定化である。
+
+### 承認対象 artifact は WAR ではなく image (image-based deployment)
+
+image build が `WEB-INF/classes/nemakiware.properties` / `nemakiware-basetype.properties` を
+書き換えるため、WAR 単体の digest は実行 tree と一致しない — そして condition 9 はそれを
+**正しく拒否した** (負の対照: 非メンバー digest を承認した状態で
+`blockingConditions = ["condition 9: ..."]`)。image 自身の展開 tree を、同じ image の別
+コンテナで out-of-process 測定すると node の実測と完全一致する。macOS ホストでの CLI は
+`SecureDirectoryStream` 不在で測定自体を拒否 (文書化済みの fail-closed)。
+
+### overlay の timeout は旧 budget モデルの計算だった
+
+2s/10s は catalog 2 回モデルで「~118s で収まる」とされたが、経路別の正しいモデルでは
+実 worst case ~202s で 150s 上限に収まらない。readiness の拒否は検査が働いた結果であり、
+1s/6s (~142s worst route) に修正した。
+
+最終状態: `EXTERNAL_EVIDENCE_REQUIRED` / cursors PASS / obligations PASS /
+`measuredBinaryDigest == 全 ack == 全 allowlist == CLI digest` / `blockingConditions = []`。
+
 ## v2.3.79 — Slice 4: kind x disposition マトリクスと、そこで見つかった誤 terminal
 
 全 EndpointKind × 全 source disposition を、期待値の表ではなく**不変条件**で検査する。
