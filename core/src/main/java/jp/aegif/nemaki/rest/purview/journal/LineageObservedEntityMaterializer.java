@@ -67,6 +67,16 @@ public interface LineageObservedEntityMaterializer {
      */
     Outcome materialize(ObservedEntitySnapshot observed);
 
+    /**
+     * Materialise the current entity of a source proven to exist.
+     *
+     * <p>Same shape — pre-read, publish, exact post-read — over a snapshot whose constructor
+     * demanded a positive {@code SOURCE_EXISTS} verdict rather than a non-purgeable policy.
+     * Separate method because the two inputs are separate types on purpose: one cannot be
+     * passed where the other is expected.
+     */
+    Outcome materializeCurrent(VerifiedCurrentEntitySnapshot current);
+
     /** The catalog this materializer writes to. Answers for it and refuses every other. */
     String targetName();
 }

@@ -317,31 +317,48 @@ public class LineageCatalogObligationService {
                     clockMs.getAsLong(), BACKOFF_BASE_MS, BACKOFF_MAX_MS)
                     ? Settlement.RELEASED : Settlement.LOST;
         }
+        // 1. Read-only. The route is decided here, while the lease may well expire.
+        LineageAbsencePlan plan;
+        try {
+            plan = settler.prepare(obligation);
+        } catch (RuntimeException e) {
+            logger.warn("The catalog-absence settler failed to prepare: {}",
+                    e.getClass().getSimpleName());
+            plan = new LineageAbsencePlan.NoWrite.Retry("prepare failed");
+        }
+
+        // 2. Renew immediately before anything external, and only then. A worker whose lease
+        // expired during the lookups has been superseded; writing on its way out would race
+        // the worker that took over, and settling on the old token would land its answer on
+        // top of that worker's.
         java.util.Optional<LineageCatalogObligationStore.Claim> renewed =
                 store.renew(claim, DEFAULT_LEASE, clockMs.getAsLong());
         if (renewed.isEmpty()) {
-            // The lease is gone. Someone else owns this obligation now; touching the catalog
-            // would race them.
+            // Nothing external is called at all — not even for a plan that would have written.
             return Settlement.LOST;
         }
         LineageCatalogObligationStore.Claim held = renewed.get();
 
         LineageCatalogAbsenceSettler.Verdict verdict;
         try {
-            verdict = settler.settle(obligation);
+            verdict = settler.execute(plan);
         } catch (RuntimeException e) {
             logger.warn("The catalog-absence settler failed: {}", e.getClass().getSimpleName());
             verdict = LineageCatalogAbsenceSettler.Verdict.RETRY;
         }
-        return switch (verdict) {
-            case RESOLVED -> store.resolve(held,
-                    LineageCatalogObligation.Outcome.SOURCE_PURGED,
+        if (verdict.resolves()) {
+            // The renewed claim, and the route's own outcome: a tombstone and an observation
+            // must not leave the same durable record.
+            return store.resolve(held, verdict.outcome(),
                     "the catalog now holds the entity this obligation owed",
                     LineageEndpoint.shortDigest(obligation.catalogQualifiedName()))
                     ? Settlement.RESOLVED : Settlement.LOST;
+        }
+        return switch (verdict) {
             case SNAPSHOT_INCOMPLETE -> recordSnapshotIncomplete(held,
                     "the snapshot cannot reconstruct the entity")
                     ? Settlement.GAVE_UP : Settlement.LOST;
+            case RESOLVED_PURGED, RESOLVED_OBSERVED, RESOLVED_CURRENT -> Settlement.LOST;
             // RETRY and INDETERMINATE both leave the obligation open. They are different
             // statements about why, and the release reason keeps them distinguishable.
             default -> store.release(held,

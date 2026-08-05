@@ -227,12 +227,20 @@ final class LineageWaitingCandidates {
 
         // The v2 event schema carries no origin evidence digest field — neither the event nor
         // LineageDelivery.Replay(originalDeliveryId, target, generation) has one — so there is
-        // no self-reported claim to check. What CAN be checked, and is stronger, is that the
-        // replay's own payload reproduces the origin's snapshot for this endpoint: the digest
-        // is recomputed from the ORIGIN row and compared against the one recomputed from the
-        // replay's. Equal means the replay really re-delivers that observation; different
-        // means it carries content the origin never observed, which is not a weaker replay but
-        // a contradiction.
+        // no self-reported claim to check.
+        //
+        // What is checked instead is SEMANTIC EQUIVALENCE: the digest recomputed from the
+        // ORIGIN row is compared against the one recomputed from the replay's own payload.
+        // Equal means the replay really re-delivers that observation; different means it
+        // carries content the origin never observed.
+        //
+        // This is NOT stronger than an independently stored origin digest, and must not be
+        // described as such. Both sides are read from the journal, so a writer able to modify
+        // the origin row and the replay row together can make them agree on content neither
+        // originally had. A digest recorded at replay-creation time and never rewritten would
+        // resist that; this does not. It is the strongest check the current schema permits,
+        // and closing the gap means recording the origin digest at creation — see the REPAIR
+        // note for the same requirement.
         String originDigest = originEvidenceDigest(origin, snapshot);
         if (originDigest == null) {
             // The origin does not carry this endpoint. A replay may legitimately cover a

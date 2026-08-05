@@ -97,15 +97,15 @@ public final class PolicyRoutedAbsenceSettler implements LineageCatalogAbsenceSe
     }
 
     @Override
-    public Verdict settle(LineageCatalogObligation obligation) {
+    public LineageAbsencePlan prepare(LineageCatalogObligation obligation) {
         if (obligation == null || waitingSnapshotResolver == null) {
-            return Verdict.RETRY;
+            return new LineageAbsencePlan.NoWrite.Retry("no obligation or resolver");
         }
         var classified = LineagePurgeLifecyclePolicy.of(obligation.endpointKind());
         if (classified.isEmpty()) {
             // A kind nobody has established either destroys its source or does not. Neither
-            // branch is safe to take, and readiness already refuses to activate over it.
-            return Verdict.INDETERMINATE;
+            // branch is safe, and readiness already refuses to activate over it.
+            return new LineageAbsencePlan.NoWrite.Indeterminate("unclassified purge lifecycle");
         }
 
         LineageWaitingSnapshotResolver.Resolution resolution =
@@ -115,18 +115,105 @@ public final class PolicyRoutedAbsenceSettler implements LineageCatalogAbsenceSe
             // unreadable row is no verdict on theirs.
             corruptionCounts.computeIfAbsent(corrupt.reason(), r -> new LongAdder()).increment();
             logger.warn("A waiting row for an obligation is corrupt: {}", corrupt.reason());
-            return Verdict.INDETERMINATE;
+            return new LineageAbsencePlan.NoWrite.Indeterminate(corrupt.reason());
         }
         if (!(resolution
                 instanceof LineageWaitingSnapshotResolver.Resolution.LatestWaitingSnapshot
                         latest)) {
-            // NoWaitingEvent or Indeterminate. Neither is a licence to write anything.
-            return Verdict.INDETERMINATE;
+            return new LineageAbsencePlan.NoWrite.Indeterminate("no usable waiting snapshot");
         }
 
         return classified.get().policy() == LineagePurgeLifecyclePolicy.LEDGERED
-                ? settleLedgered(obligation, latest)
-                : settleObserved(obligation, latest);
+                ? planLedgered(obligation, latest)
+                : planObserved(obligation, latest);
+    }
+
+    @Override
+    public Verdict execute(LineageAbsencePlan plan) {
+        if (plan == null) {
+            return Verdict.RETRY;
+        }
+        // Consumed as it was decided. The route is not re-derived here: it was chosen before
+        // the caller renewed the claim, and choosing again would reopen that window.
+        return switch (plan) {
+            case LineageAbsencePlan.NoWrite.Retry ignored -> Verdict.RETRY;
+            case LineageAbsencePlan.NoWrite.Indeterminate ignored -> Verdict.INDETERMINATE;
+            case LineageAbsencePlan.NoWrite.SnapshotIncomplete ignored ->
+                    Verdict.SNAPSHOT_INCOMPLETE;
+            case LineageAbsencePlan.HistoricalPurgedPlan historical ->
+                    executeHistorical(historical);
+            case LineageAbsencePlan.ObservedPlan observed -> executeObserved(observed);
+            case LineageAbsencePlan.CurrentSourcePlan current -> executeCurrent(current);
+        };
+    }
+
+    private Verdict executeHistorical(LineageAbsencePlan.HistoricalPurgedPlan plan) {
+        if (historicalMachine == null) {
+            return Verdict.RETRY;
+        }
+        LineageHistoricalPublishMachine.Verdict published;
+        try {
+            published = historicalMachine.publish(plan.obligation(), plan.historical(),
+                    plan.provenance(), plan.mandatoryAttributes());
+        } catch (RuntimeException e) {
+            logger.warn("The historical publish machine failed: {}",
+                    e.getClass().getSimpleName());
+            return Verdict.RETRY;
+        }
+        return switch (published) {
+            case RESOLVED_PURGED -> Verdict.RESOLVED_PURGED;
+            case SNAPSHOT_INCOMPLETE -> Verdict.SNAPSHOT_INCOMPLETE;
+            // COMPENSATING, COMPENSATED, SUPERSEDED and RETRY all mean unfinished.
+            default -> Verdict.RETRY;
+        };
+    }
+
+    private Verdict executeObserved(LineageAbsencePlan.ObservedPlan plan) {
+        return materialize(plan.observed(), Verdict.RESOLVED_OBSERVED);
+    }
+
+    private Verdict executeCurrent(LineageAbsencePlan.CurrentSourcePlan plan) {
+        // The same materialisation shape — pre-read, publish, exact post-read — over a
+        // snapshot whose constructor demanded a positive live-source verdict.
+        return materializeCurrent(plan.current());
+    }
+
+    private Verdict materialize(ObservedEntitySnapshot observed, Verdict onSuccess) {
+        if (observedMaterializer == null) {
+            return Verdict.RETRY;
+        }
+        LineageObservedEntityMaterializer.Outcome outcome;
+        try {
+            outcome = observedMaterializer.materialize(observed);
+        } catch (RuntimeException e) {
+            logger.warn("Observed materialisation failed: {}", e.getClass().getSimpleName());
+            return Verdict.RETRY;
+        }
+        return switch (outcome) {
+            case MATCHED, MATERIALIZED -> onSuccess;
+            case SNAPSHOT_INCOMPLETE -> Verdict.SNAPSHOT_INCOMPLETE;
+            // CONFLICT is not terminal: something else owns that name, and a later pass may
+            // find it corrected.
+            default -> Verdict.RETRY;
+        };
+    }
+
+    private Verdict materializeCurrent(VerifiedCurrentEntitySnapshot current) {
+        if (observedMaterializer == null) {
+            return Verdict.RETRY;
+        }
+        LineageObservedEntityMaterializer.Outcome outcome;
+        try {
+            outcome = observedMaterializer.materializeCurrent(current);
+        } catch (RuntimeException e) {
+            logger.warn("Current materialisation failed: {}", e.getClass().getSimpleName());
+            return Verdict.RETRY;
+        }
+        return switch (outcome) {
+            case MATCHED, MATERIALIZED -> Verdict.RESOLVED_CURRENT;
+            case SNAPSHOT_INCOMPLETE -> Verdict.SNAPSHOT_INCOMPLETE;
+            default -> Verdict.RETRY;
+        };
     }
 
     /**
@@ -136,10 +223,10 @@ public final class PolicyRoutedAbsenceSettler implements LineageCatalogAbsenceSe
      * destroying code wrote, and the historical machine owns the intent, the subject fence, the
      * read-back and the compensation. Publishing directly would skip all of them.
      */
-    private Verdict settleLedgered(LineageCatalogObligation obligation,
+    private LineageAbsencePlan planLedgered(LineageCatalogObligation obligation,
             LineageWaitingSnapshotResolver.Resolution.LatestWaitingSnapshot latest) {
         if (historicalMachine == null || sourceResolvers == null) {
-            return Verdict.RETRY;
+            return new LineageAbsencePlan.NoWrite.Retry("no historical machine or resolver");
         }
         LineageSourceDispositionResolver.SourceEvidence evidence;
         try {
@@ -148,20 +235,30 @@ public final class PolicyRoutedAbsenceSettler implements LineageCatalogAbsenceSe
         } catch (RuntimeException e) {
             logger.warn("An authoritative source lookup failed: {}",
                     e.getClass().getSimpleName());
-            return Verdict.RETRY;
+            return new LineageAbsencePlan.NoWrite.Retry("the source lookup failed");
         }
         if (evidence == null || evidence.disposition() == null) {
-            return Verdict.RETRY;
+            return new LineageAbsencePlan.NoWrite.Retry("no source verdict");
         }
         switch (evidence.disposition()) {
             case SOURCE_EXISTS -> {
-                // The source is there, so the authoritative publisher owes the entity. Nothing
-                // for this machine to write; the obligation retries until that publisher runs.
-                return Verdict.RETRY;
+                // Not an infinite wait any more. The authoritative publisher may never run for
+                // this subject, and the obligation would otherwise retry for ever on a source
+                // sitting in the repository. A separate type demands the positive verdict.
+                try {
+                    return new LineageAbsencePlan.CurrentSourcePlan(
+                            new VerifiedCurrentEntitySnapshot(latest.snapshot(), evidence,
+                                    obligation.taskKey()));
+                } catch (IllegalArgumentException refused) {
+                    logger.warn("A live-source materialisation was refused for a {} obligation",
+                            obligation.endpointKind());
+                    return new LineageAbsencePlan.NoWrite.Indeterminate(
+                            "the live-source snapshot was refused");
+                }
             }
             case SOURCE_UNKNOWN -> {
-                // Not established. Never a licence to tombstone.
-                return Verdict.RETRY;
+                // Not established. Never a licence to write anything.
+                return new LineageAbsencePlan.NoWrite.Retry("the source could not be established");
             }
             default -> {
                 // SOURCE_PURGED, and only reachable through a ledger mark.
@@ -176,70 +273,33 @@ public final class PolicyRoutedAbsenceSettler implements LineageCatalogAbsenceSe
             historical = java.util.Optional.empty();
         }
         if (historical.isEmpty()) {
-            // The type refused it — a snapshot that cannot reconstruct the entity, or evidence
-            // that does not authorise a tombstone. Only the first is terminal, and the two are
-            // told apart by whether the snapshot is actually short.
             return latest.snapshot().hasAll(LineageHistoricalEntityFactory
                     .mandatoryAttributes(obligation.endpointKind()))
-                    ? Verdict.RETRY : Verdict.SNAPSHOT_INCOMPLETE;
+                    ? new LineageAbsencePlan.NoWrite.Retry("the historical snapshot was refused")
+                    : new LineageAbsencePlan.NoWrite.SnapshotIncomplete(
+                            "the snapshot cannot reconstruct the entity");
         }
-
-        LineageHistoricalPublishMachine.Verdict published;
-        try {
-            published = historicalMachine.publish(obligation, historical.get(),
-                    latest.provenance(), LineageHistoricalEntityFactory
-                            .mandatoryAttributes(obligation.endpointKind()));
-        } catch (RuntimeException e) {
-            logger.warn("The historical publish machine failed: {}",
-                    e.getClass().getSimpleName());
-            return Verdict.RETRY;
-        }
-        return switch (published) {
-            case RESOLVED_PURGED -> Verdict.RESOLVED;
-            case SNAPSHOT_INCOMPLETE -> Verdict.SNAPSHOT_INCOMPLETE;
-            // COMPENSATING, COMPENSATED, SUPERSEDED and RETRY all mean the obligation is not
-            // finished. None of them is terminal.
-            default -> Verdict.RETRY;
-        };
+        return new LineageAbsencePlan.HistoricalPurgedPlan(obligation, historical.get(),
+                latest.provenance(),
+                LineageHistoricalEntityFactory.mandatoryAttributes(obligation.endpointKind()));
     }
 
     /**
      * A kind NemakiWare never destroys: materialise what the event observed.
      *
      * <p>No source lookup, because there is no purge to establish — and asking would invite
-     * treating a failed lookup as evidence of one. The claim is only that a durable event saw
-     * this endpoint.
+     * treating a failed lookup as evidence of one.
      */
-    private Verdict settleObserved(LineageCatalogObligation obligation,
+    private LineageAbsencePlan planObserved(LineageCatalogObligation obligation,
             LineageWaitingSnapshotResolver.Resolution.LatestWaitingSnapshot latest) {
-        if (observedMaterializer == null) {
-            return Verdict.RETRY;
-        }
-        ObservedEntitySnapshot observed;
         try {
-            observed = new ObservedEntitySnapshot(latest.snapshot(), obligation.taskKey());
+            return new LineageAbsencePlan.ObservedPlan(
+                    new ObservedEntitySnapshot(latest.snapshot(), obligation.taskKey()));
         } catch (IllegalArgumentException refused) {
-            // The type refused it: wrong policy, wrong subject, unverified evidence. None of
-            // those improve by retrying, but none of them is the snapshot being short either —
-            // INDETERMINATE keeps the obligation open and visible.
             logger.warn("An observed snapshot was refused for a {} obligation",
                     obligation.endpointKind());
-            return Verdict.INDETERMINATE;
+            return new LineageAbsencePlan.NoWrite.Indeterminate(
+                    "the observed snapshot was refused");
         }
-        LineageObservedEntityMaterializer.Outcome outcome;
-        try {
-            outcome = observedMaterializer.materialize(observed);
-        } catch (RuntimeException e) {
-            logger.warn("Observed materialisation failed: {}", e.getClass().getSimpleName());
-            return Verdict.RETRY;
-        }
-        return switch (outcome) {
-            // Only these two mean the catalog holds the right entity, confirmed by a read.
-            case MATCHED, MATERIALIZED -> Verdict.RESOLVED;
-            case SNAPSHOT_INCOMPLETE -> Verdict.SNAPSHOT_INCOMPLETE;
-            // CONFLICT is not terminal: something else owns that name, and a later pass may
-            // find it corrected. RETRYABLE is not terminal by definition.
-            default -> Verdict.RETRY;
-        };
     }
 }

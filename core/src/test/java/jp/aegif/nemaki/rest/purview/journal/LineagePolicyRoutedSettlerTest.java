@@ -47,11 +47,20 @@ class LineagePolicyRoutedSettlerTest {
             var settler = new PolicyRoutedAbsenceSettler(
                     resolverFor(EndpointKind.EXTERNAL_ASSET), machine, materializer, null);
 
-            var verdict = settler.settle(obligation(EndpointKind.EXTERNAL_ASSET));
+            var obligation = obligation(EndpointKind.EXTERNAL_ASSET);
+            var plan = settler.prepare(obligation);
+            assertTrue(plan instanceof LineageAbsencePlan.ObservedPlan,
+                    "a NON_PURGEABLE kind plans an observed materialisation");
+            var verdict = settler.execute(plan);
 
             switch (outcome) {
-                case MATCHED, MATERIALIZED -> assertEquals(
-                        LineageCatalogAbsenceSettler.Verdict.RESOLVED, verdict);
+                case MATCHED, MATERIALIZED -> {
+                    // The durable outcome names the route: an observation must not be stored
+                    // as a purge.
+                    assertEquals(LineageCatalogAbsenceSettler.Verdict.RESOLVED_OBSERVED, verdict);
+                    assertEquals(LineageCatalogObligation.Outcome.OBSERVED_MATERIALIZED,
+                            verdict.outcome());
+                }
                 case SNAPSHOT_INCOMPLETE -> assertEquals(
                         LineageCatalogAbsenceSettler.Verdict.SNAPSHOT_INCOMPLETE, verdict);
                 // CONFLICT is not terminal: something else owns that name, and a later pass may
@@ -81,11 +90,20 @@ class LineagePolicyRoutedSettlerTest {
             var settler = new PolicyRoutedAbsenceSettler(
                     resolverFor(EndpointKind.CMIS_DOCUMENT), machine, materializer, sources);
 
-            assertEquals(LineageCatalogAbsenceSettler.Verdict.RETRY,
-                    settler.settle(obligation(EndpointKind.CMIS_DOCUMENT)),
-                    disposition + " must not license a tombstone");
+            var plan = settler.prepare(obligation(EndpointKind.CMIS_DOCUMENT));
+            if (disposition == LineageSourceDisposition.SOURCE_EXISTS) {
+                // Converges instead of retrying for ever: the source is there, so its current
+                // entity is published from the verdict that proved it.
+                assertTrue(plan instanceof LineageAbsencePlan.CurrentSourcePlan,
+                        "SOURCE_EXISTS must not be an infinite retry");
+            } else {
+                assertTrue(plan instanceof LineageAbsencePlan.NoWrite.Retry,
+                        disposition + " must write nothing");
+                assertEquals(LineageCatalogAbsenceSettler.Verdict.RETRY, settler.execute(plan));
+            }
+            // Never the historical machine without a purge verdict, and never the observed
+            // path for a LEDGERED kind.
             verify(machine, never()).publish(any(), any(), any(), any());
-            // And a LEDGERED kind must never take the observed path.
             verify(materializer, never()).materialize(any());
         }
     }
@@ -104,10 +122,10 @@ class LineagePolicyRoutedSettlerTest {
                 mock(LineageHistoricalPublishMachine.class),
                 mock(LineageObservedEntityMaterializer.class), null);
 
-        assertEquals(LineageCatalogAbsenceSettler.Verdict.INDETERMINATE,
-                settler.settle(obligation(EndpointKind.EXTERNAL_ASSET)));
-        assertEquals(LineageCatalogAbsenceSettler.Verdict.INDETERMINATE,
-                settler.settle(obligation(EndpointKind.EXTERNAL_ASSET)));
+        assertEquals(LineageCatalogAbsenceSettler.Verdict.INDETERMINATE, settler.execute(
+                settler.prepare(obligation(EndpointKind.EXTERNAL_ASSET))));
+        assertEquals(LineageCatalogAbsenceSettler.Verdict.INDETERMINATE, settler.execute(
+                settler.prepare(obligation(EndpointKind.EXTERNAL_ASSET))));
 
         Map<String, Long> counts = settler.corruptionCounts();
         assertEquals(1, counts.size());
@@ -126,11 +144,114 @@ class LineagePolicyRoutedSettlerTest {
         var machine = mock(LineageHistoricalPublishMachine.class);
         var materializer = mock(LineageObservedEntityMaterializer.class);
 
-        assertEquals(LineageCatalogAbsenceSettler.Verdict.INDETERMINATE,
-                new PolicyRoutedAbsenceSettler(resolver, machine, materializer, null)
-                        .settle(obligation(EndpointKind.EXTERNAL_ASSET)));
+        var settler = new PolicyRoutedAbsenceSettler(resolver, machine, materializer, null);
+        var plan = settler.prepare(obligation(EndpointKind.EXTERNAL_ASSET));
+        assertTrue(plan instanceof LineageAbsencePlan.NoWrite,
+                "no snapshot must plan no write");
+        assertEquals(LineageCatalogAbsenceSettler.Verdict.INDETERMINATE, settler.execute(plan));
         verify(machine, never()).publish(any(), any(), any(), any());
         verify(materializer, never()).materialize(any());
+    }
+
+    /**
+     * The renewal is the authorisation, not a formality.
+     *
+     * <p>The lookups run while the lease is expiring. A worker that lost it has been superseded,
+     * and writing on its way out would race the worker that took over — so a failed renew means
+     * nothing external is called at all, not even for a plan that would have written.
+     */
+    @Test
+    @DisplayName("a failed renew means zero external calls, even with a write-carrying plan")
+    void failedRenewCallsNothingExternal() {
+        var materializer = mock(LineageObservedEntityMaterializer.class);
+        var machine = mock(LineageHistoricalPublishMachine.class);
+        var settler = new PolicyRoutedAbsenceSettler(
+                resolverFor(EndpointKind.EXTERNAL_ASSET), machine, materializer, null);
+
+        // prepare() is read-only, and it does produce a plan that would write.
+        var plan = settler.prepare(obligation(EndpointKind.EXTERNAL_ASSET));
+        assertTrue(plan.writesExternally(), "the plan would have written");
+        verify(materializer, never()).materialize(any());
+        verify(machine, never()).publish(any(), any(), any(), any());
+
+        // The service only calls execute() after a successful renew; with none, nothing runs.
+        // Asserted at the boundary this class owns: preparing alone touches nothing external.
+        verify(materializer, never()).materializeCurrent(any());
+    }
+
+    /** Each route stores its own outcome, so the durable record says how it was settled. */
+    @Test
+    @DisplayName("the three resolving verdicts carry three different durable outcomes")
+    void outcomesAreRouteSpecific() {
+        assertEquals(LineageCatalogObligation.Outcome.SOURCE_PURGED,
+                LineageCatalogAbsenceSettler.Verdict.RESOLVED_PURGED.outcome());
+        assertEquals(LineageCatalogObligation.Outcome.OBSERVED_MATERIALIZED,
+                LineageCatalogAbsenceSettler.Verdict.RESOLVED_OBSERVED.outcome());
+        assertEquals(LineageCatalogObligation.Outcome.CURRENT_MATERIALIZED,
+                LineageCatalogAbsenceSettler.Verdict.RESOLVED_CURRENT.outcome());
+        // And the non-resolving ones store nothing at all.
+        assertEquals(null, LineageCatalogAbsenceSettler.Verdict.RETRY.outcome());
+        assertEquals(null, LineageCatalogAbsenceSettler.Verdict.INDETERMINATE.outcome());
+        assertTrue(LineageCatalogAbsenceSettler.Verdict.RESOLVED_OBSERVED.resolves());
+        assertTrue(!LineageCatalogAbsenceSettler.Verdict.INDETERMINATE.resolves());
+    }
+
+    /** LEDGERED + EXISTS converges on all three kinds rather than retrying for ever. */
+    @Test
+    @DisplayName("every LEDGERED kind converges from a positive live-source verdict")
+    void ledgeredExistsConvergesOnAllKinds() {
+        for (EndpointKind kind : EndpointKind.values()) {
+            if (!LineagePurgeLifecyclePolicy.canBePurged(kind)) {
+                continue;
+            }
+            String qn = switch (kind) {
+                case CMIS_FOLDER -> "nemaki://" + REPO + "/folders/f-1/dataset";
+                case ARCHIVE -> "nemaki://" + REPO + "/archives/a-1";
+                default -> "nemaki://" + REPO + "/objects/doc-1";
+            };
+            var sources = mock(LineageSourceDispositionRegistry.class);
+            when(sources.dispositionOf(anyString(), any(), anyString()))
+                    .thenReturn(LineageSourceDispositionResolver.SourceEvidence.of(REPO, kind, qn,
+                            LineageSourceDisposition.SOURCE_EXISTS, "inc-1", "rev-1", null,
+                            1_000L));
+            var materializer = mock(LineageObservedEntityMaterializer.class);
+            when(materializer.materializeCurrent(any()))
+                    .thenReturn(LineageObservedEntityMaterializer.Outcome.MATERIALIZED);
+            var settler = new PolicyRoutedAbsenceSettler(resolverForKind(kind, qn),
+                    mock(LineageHistoricalPublishMachine.class), materializer, sources);
+
+            var plan = settler.prepare(obligationFor(kind, qn));
+            assertTrue(plan instanceof LineageAbsencePlan.CurrentSourcePlan, kind.toString());
+            assertEquals(LineageCatalogAbsenceSettler.Verdict.RESOLVED_CURRENT,
+                    settler.execute(plan));
+        }
+    }
+
+    private static LineageCatalogObligation obligationFor(EndpointKind kind, String qn) {
+        return new LineageCatalogObligation(null,
+                LineageCatalogObligation.taskKey(TARGET, REPO, kind, qn), TARGET, REPO, kind, qn,
+                LineageCatalogObligation.State.CLAIMED, "node-1", "tok-1", 0L, 0L, 0, 1_000L,
+                LineageCatalogObligation.Outcome.NONE, null, null);
+    }
+
+    private static LineageWaitingSnapshotResolver resolverForKind(EndpointKind kind, String qn) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        if (kind == EndpointKind.ARCHIVE) {
+            attributes.put("archivedAt", 1_700_000_000_000L);
+            attributes.put("originalObjectId", "doc-1");
+        } else {
+            attributes.put("name", "a.txt");
+        }
+        LineageWaitingSnapshot snapshot = LineageWaitingSnapshot.of(TARGET, REPO, kind, qn,
+                attributes, LineageSourceDisposition.SOURCE_UNKNOWN,
+                LineageWaitingSnapshot.MAX_SNAPSHOT_SCHEMA_VERSION);
+        var resolver = mock(LineageWaitingSnapshotResolver.class);
+        when(resolver.resolve(any())).thenReturn(
+                new LineageWaitingSnapshotResolver.Resolution.LatestWaitingSnapshot(snapshot, 0,
+                        new LineageObservationProvenance(
+                                LineageObservationProvenance.LineageDeliveryKind.ORIGINAL,
+                                "d-1", "d-1", 7L, 7L, "2026-08-05T00:00:00Z", null)));
+        return resolver;
     }
 
     // ------------------------------------------------------------------

@@ -224,7 +224,11 @@ public final class LineageHistoricalEntityFactory {
      * no evidence of destruction, no claim that the object exists now.
      */
     public static Map<String, Object> observedEntityFor(ObservedEntitySnapshot observed) {
-        LineageWaitingSnapshot snapshot = observed.snapshot();
+        return observedEntityFrom(observed.snapshot());
+    }
+
+    /** The same entity, from a snapshot whichever type authorised it. */
+    public static Map<String, Object> observedEntityFrom(LineageWaitingSnapshot snapshot) {
         Map<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("qualifiedName", snapshot.catalogQualifiedName());
         attributes.putAll(identityAttributes(snapshot));

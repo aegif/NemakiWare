@@ -43,39 +43,78 @@ public interface LineageCatalogAbsenceSettler {
     /** What the settler managed to establish. Four answers; none of them is a boolean. */
     enum Verdict {
         /**
-         * The catalog now holds the right entity, confirmed by reading it back. The obligation
-         * may be resolved.
+         * The catalog now holds the right entity, confirmed by reading it back.
+         *
+         * <p>Carries the outcome to record, so the durable answer says which route settled it.
+         * A generic "resolved" would store the same thing for a tombstone and for an
+         * observation, and nothing later could tell them apart.
          */
-        RESOLVED,
+        RESOLVED_PURGED(LineageCatalogObligation.Outcome.SOURCE_PURGED),
+        /** Settled by materialising what the event observed. */
+        RESOLVED_OBSERVED(LineageCatalogObligation.Outcome.OBSERVED_MATERIALIZED),
+        /** Settled by publishing the current entity of a source proven to exist. */
+        RESOLVED_CURRENT(LineageCatalogObligation.Outcome.CURRENT_MATERIALIZED),
         /**
          * Nothing terminal happened. Includes every failure, every UNKNOWN, every lost CAS and
          * every conflict — all of which may succeed later, so burning the obligation would turn
          * a transient problem into a permanently unprojectable event.
          */
-        RETRY,
+        RETRY(null),
         /**
          * The snapshot cannot reconstruct the entity, and no amount of retrying will change
          * that. The only terminal verdict.
          */
-        SNAPSHOT_INCOMPLETE,
+        SNAPSHOT_INCOMPLETE(LineageCatalogObligation.Outcome.SNAPSHOT_INCOMPLETE),
         /**
          * Nothing could be established at all — the waiting snapshot could not be read, or it
          * was corrupt. Distinct from RETRY because the cause is not the catalog: it is the
          * journal, and an operator needs to see the difference.
          */
-        INDETERMINATE
+        INDETERMINATE(null);
+
+        private final LineageCatalogObligation.Outcome outcome;
+
+        Verdict(LineageCatalogObligation.Outcome outcome) {
+            this.outcome = outcome;
+        }
+
+        /** What to store, or null when the obligation stays open. */
+        public LineageCatalogObligation.Outcome outcome() {
+            return outcome;
+        }
+
+        /** Whether the catalog was confirmed to hold the right entity. */
+        public boolean resolves() {
+            return this == RESOLVED_PURGED || this == RESOLVED_OBSERVED
+                    || this == RESOLVED_CURRENT;
+        }
     }
 
     /**
-     * Settle one obligation whose catalog entity is absent.
+     * Decide what to write. Reads only — nothing outside this process is changed.
      *
-     * <p>Must not itself resolve the obligation — the caller owns the claim and the CAS, and a
-     * settler writing the obligation document would race the worker that holds it.
+     * <p>Separated from {@link #execute} so the caller can renew the obligation's claim between
+     * them. The lookups this performs — the waiting view, a replay's origin point-read, the
+     * authoritative source — all take time, and the lease is running throughout. Without a
+     * renewal in between, a worker whose lease expired during the lookups would still write to
+     * the catalog on its way out and race the worker that took over.
      *
      * @param obligation the claimed obligation; its own target, repository and kind decide
      *        everything, never a caller-supplied default
+     * @return the frozen decision; never null
      */
-    Verdict settle(LineageCatalogObligation obligation);
+    LineageAbsencePlan prepare(LineageCatalogObligation obligation);
+
+    /**
+     * Carry out a plan. The only method that touches anything external.
+     *
+     * <p>Consumes the plan without re-deriving the route: the branch was chosen before the
+     * renewal, and choosing it again afterwards would reopen the window the renewal closes.
+     *
+     * <p>Must not resolve the obligation — the caller owns the claim and the CAS, and a settler
+     * writing the obligation document would race the worker that holds it.
+     */
+    Verdict execute(LineageAbsencePlan plan);
 
     /**
      * The waiting-snapshot resolver this settler uses. Identity only; readiness never calls it.

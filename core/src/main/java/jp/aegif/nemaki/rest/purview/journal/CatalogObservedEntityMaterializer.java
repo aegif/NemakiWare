@@ -60,6 +60,18 @@ public final class CatalogObservedEntityMaterializer implements LineageObservedE
     }
 
     @Override
+    public Outcome materializeCurrent(VerifiedCurrentEntitySnapshot current) {
+        if (current == null || !boundTarget.equals(current.target())) {
+            return Outcome.RETRYABLE;
+        }
+        // Same payload shape as an observation: the attributes the event carried, no tombstone
+        // marker. What differs is upstream — the snapshot's constructor demanded a positive
+        // live-source verdict — so the write itself needs no second policy branch.
+        return publishAndConfirm(current.attributeSource(),
+                current.snapshot().endpointKind());
+    }
+
+    @Override
     public Outcome materialize(ObservedEntitySnapshot observed) {
         if (observed == null || !boundTarget.equals(observed.target())) {
             // Answering for another target would attribute a write to a catalog never reached.
@@ -69,15 +81,30 @@ public final class CatalogObservedEntityMaterializer implements LineageObservedE
             return Outcome.RETRYABLE;
         }
 
-        Map<String, Object> planned = LineageHistoricalEntityFactory.observedEntityFor(observed);
-        List<String> missing = LineageHistoricalEntityFactory.missingMandatoryAttributes(
-                planned, observed.snapshot().endpointKind());
+        return publishAndConfirm(observed.snapshot(), observed.snapshot().endpointKind());
+    }
+
+    /**
+     * Pre-read, publish only if absent, then read back exactly.
+     *
+     * <p>Shared by both routes because the write is the same write: an ordinary entity built
+     * from what the event carried. The difference between them is which constructor authorised
+     * it, and that has already happened by the time this runs.
+     */
+    private Outcome publishAndConfirm(LineageWaitingSnapshot snapshot, EndpointKind kind) {
+        if (connectionResolver == null || entityRegistryClient == null) {
+            return Outcome.RETRYABLE;
+        }
+        Map<String, Object> planned =
+                LineageHistoricalEntityFactory.observedEntityFrom(snapshot);
+        List<String> missing =
+                LineageHistoricalEntityFactory.missingMandatoryAttributes(planned, kind);
         if (!missing.isEmpty()) {
             // The catalog rejects a write missing these in full, so retrying cannot help — the
             // event simply never carried them. Names only: a value here is the identity the
             // secret boundary exists to keep out of records.
             logger.warn("An observed {} snapshot cannot be materialised: mandatory attribute(s)"
-                    + " {} are absent", observed.snapshot().endpointKind(), missing);
+                    + " {} are absent", kind, missing);
             return Outcome.SNAPSHOT_INCOMPLETE;
         }
         String plannedDigest = LineageHistoricalEntityFactory.operationDigest(planned);
@@ -85,7 +112,7 @@ public final class CatalogObservedEntityMaterializer implements LineageObservedE
         // 1. Read BEFORE writing. A crash between a successful write and the obligation being
         // resolved leaves the next pass here, and without this it would write again over
         // whatever is now there.
-        switch (readBack(observed, planned, plannedDigest)) {
+        switch (readBack(snapshot, planned, plannedDigest)) {
             case MATCH -> {
                 return Outcome.MATCHED;
             }
@@ -118,18 +145,18 @@ public final class CatalogObservedEntityMaterializer implements LineageObservedE
         }
 
         // 2. Read AFTER writing. A 2xx says the request was accepted, not that it is there.
-        return readBack(observed, planned, plannedDigest) == LineageHistoricalReadBack.MATCH
+        return readBack(snapshot, planned, plannedDigest) == LineageHistoricalReadBack.MATCH
                 ? Outcome.MATERIALIZED : Outcome.RETRYABLE;
     }
 
     /** Whether the catalog holds exactly this plan's content, projected onto its own keys. */
-    private LineageHistoricalReadBack readBack(ObservedEntitySnapshot observed,
+    private LineageHistoricalReadBack readBack(LineageWaitingSnapshot snapshot,
             Map<String, Object> planned, String plannedDigest) {
         try {
             Map<String, Object> read = entityRegistryClient.getEntityByUniqueAttribute(
                     connectionResolver.buildConnectionRequest(),
-                    observed.snapshot().endpointKind().atlasTypeName(), "qualifiedName",
-                    observed.snapshot().catalogQualifiedName());
+                    snapshot.endpointKind().atlasTypeName(), "qualifiedName",
+                    snapshot.catalogQualifiedName());
             if (read == null || read.isEmpty()) {
                 return LineageHistoricalReadBack.ABSENT;
             }
