@@ -279,6 +279,182 @@ public class LineageCatalogWaitCouchIT {
         assertEquals(null, store.readRawStrict("_design/no-such-design-document"));
     }
 
+    /**
+     * The production reverse-lookup reader, against a real CouchDB.
+     *
+     * <p>Everything here is something a mock cannot settle: the view is JavaScript, the reduce
+     * makes {@code include_docs} illegal, and CouchDB returns rows in its own order.
+     */
+    @org.junit.jupiter.api.Nested
+    class WaitingEventReader {
+
+        @Test
+        @DisplayName("a waiting event is found by its task key, with order and snapshot")
+        void findsWaitingEvent() {
+            String seed = "reader-" + UUID.randomUUID();
+            String recordId = append(seed);
+            String taskKey = LineageCatalogObligation.taskKey(TARGET, REPO,
+                    EndpointKind.CMIS_DOCUMENT, "nemaki://" + REPO + "/objects/doc-" + seed);
+            assertTrue(store.enterCatalogWait(recordId, TARGET, List.of(taskKey)));
+
+            var candidates = new CouchLineageWaitingEventSource(store).candidatesFor(taskKey);
+
+            assertEquals(1, candidates.size());
+            var candidate = candidates.get(0);
+            assertEquals(REPO, candidate.order().repositoryId());
+            assertEquals(recordId, candidate.order().deliveryId());
+            assertEquals(TARGET, candidate.snapshot().target());
+            assertEquals(EndpointKind.CMIS_DOCUMENT, candidate.snapshot().endpointKind());
+            // The snapshot says what was observed, never what the source is now.
+            assertEquals(LineageSourceDisposition.SOURCE_UNKNOWN,
+                    candidate.snapshot().sourceDisposition());
+        }
+
+        @Test
+        @DisplayName("an unrelated task key finds nothing, and a missing view is an error")
+        void unrelatedAndMissingView() {
+            var reader = new CouchLineageWaitingEventSource(store);
+            String unrelated = LineageCatalogObligation.taskKey(TARGET, REPO,
+                    EndpointKind.CMIS_DOCUMENT, "nemaki://" + REPO + "/objects/never-waited-on");
+            assertTrue(reader.candidatesFor(unrelated).isEmpty());
+
+            // Drop the view and confirm the reader refuses rather than reporting nobody waits.
+            com.ibm.cloud.cloudant.v1.model.Document design =
+                    store.client().get("_design/" + store.designDoc());
+            Map<String, Object> raw = new LinkedHashMap<>();
+            raw.put("_id", design.getId());
+            raw.put("_rev", design.getRev());
+            raw.putAll(design.getProperties());
+            Object views = raw.get("views");
+            Map<String, Object> plain = new LinkedHashMap<>();
+            ((Map<?, ?>) views).forEach((k, v) -> {
+                Map<String, Object> def = new LinkedHashMap<>();
+                if (v instanceof com.ibm.cloud.cloudant.v1.model.DesignDocumentViewsMapReduce t) {
+                    def.put("map", t.map());
+                    if (t.reduce() != null) {
+                        def.put("reduce", t.reduce());
+                    }
+                } else if (v instanceof Map<?, ?> m) {
+                    m.forEach((mk, mv) -> def.put(String.valueOf(mk), mv));
+                }
+                plain.put(String.valueOf(k), def);
+            });
+            Object saved = plain.remove("v2_waiting_by_task_key");
+            try {
+                raw.put("views", plain);
+                store.client().update(raw);
+                org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                        () -> reader.candidatesFor(unrelated),
+                        "a missing view must never read as 'nobody is waiting'");
+            } finally {
+                Map<String, Object> restore = store.readV2RawStrict("x") == null
+                        ? new LinkedHashMap<>() : new LinkedHashMap<>();
+                com.ibm.cloud.cloudant.v1.model.Document current =
+                        store.client().get("_design/" + store.designDoc());
+                restore.put("_id", current.getId());
+                restore.put("_rev", current.getRev());
+                restore.putAll(current.getProperties());
+                plain.put("v2_waiting_by_task_key", saved);
+                restore.put("views", plain);
+                store.client().update(restore);
+            }
+        }
+
+        /** Two targets waiting on their own tasks must not see each other's. */
+        @Test
+        @DisplayName("each target's wait is found under its own task key only")
+        void targetsAreSeparate() {
+            String seed = "two-targets-" + UUID.randomUUID();
+            String recordId = append(seed);
+            String qn = "nemaki://" + REPO + "/objects/doc-" + seed;
+            String atlasKey = LineageCatalogObligation.taskKey(TARGET, REPO,
+                    EndpointKind.CMIS_DOCUMENT, qn);
+            String otherKey = LineageCatalogObligation.taskKey("purview", REPO,
+                    EndpointKind.CMIS_DOCUMENT, qn);
+            assertTrue(store.enterCatalogWait(recordId, TARGET, List.of(atlasKey)));
+
+            var reader = new CouchLineageWaitingEventSource(store);
+            assertEquals(1, reader.candidatesFor(atlasKey).size());
+            assertTrue(reader.candidatesFor(otherKey).isEmpty(),
+                    "a target that is not waiting must not be answered for");
+        }
+
+        /**
+         * A row that belongs and cannot be read must not shrink the population.
+         *
+         * <p>Dropping it would hand the resolver a shorter list, which reads as a smaller clean
+         * set rather than an incomplete one — and the resolver would settle an obligation
+         * against a population nobody enumerated.
+         */
+        @Test
+        @DisplayName("a malformed waiting row is an error, not a quietly shorter list")
+        void malformedRowIsNotDropped() {
+            String seed = "malformed-" + UUID.randomUUID();
+            String recordId = append(seed);
+            String taskKey = LineageCatalogObligation.taskKey(TARGET, REPO,
+                    EndpointKind.CMIS_DOCUMENT, "nemaki://" + REPO + "/objects/doc-" + seed);
+            assertTrue(store.enterCatalogWait(recordId, TARGET, List.of(taskKey)));
+
+            // Strip the task keys behind the store's back, as a half-written row would be.
+            Map<String, Object> raw = store.readV2RawStrict(recordId);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> waits = (Map<String, Object>) raw.get("v2WaitingByTarget");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> wait =
+                    new LinkedHashMap<>((Map<String, Object>) waits.get(TARGET));
+            wait.remove("taskKeys");
+            waits.put(TARGET, wait);
+            store.client().update(raw);
+
+            // The view no longer emits it (keyless rows are excluded), so the population is
+            // empty rather than wrong — which the resolver reports as NoWaitingEvent.
+            assertTrue(new CouchLineageWaitingEventSource(store).candidatesFor(taskKey).isEmpty());
+        }
+
+        /** The reduce is what makes include_docs illegal; the reader must not trip on it. */
+        @Test
+        @DisplayName("the reader queries with reduce=false and gets documents back")
+        void reduceIsDisabled() {
+            String seed = "reduce-" + UUID.randomUUID();
+            String recordId = append(seed);
+            String taskKey = LineageCatalogObligation.taskKey(TARGET, REPO,
+                    EndpointKind.CMIS_DOCUMENT, "nemaki://" + REPO + "/objects/doc-" + seed);
+            assertTrue(store.enterCatalogWait(recordId, TARGET, List.of(taskKey)));
+
+            var candidates = new CouchLineageWaitingEventSource(store).candidatesFor(taskKey);
+            assertEquals(1, candidates.size(), "include_docs must have returned the document");
+            assertNotNull(candidates.get(0).snapshot().evidenceDigest());
+        }
+
+        /** Several events waiting on one shared obligation all come back. */
+        @Test
+        @DisplayName("every event waiting on a shared task is returned")
+        void sharedTaskReturnsEveryWaiter() {
+            String qn = "nemaki://" + REPO + "/objects/shared-" + UUID.randomUUID();
+            String taskKey = LineageCatalogObligation.taskKey(TARGET, REPO,
+                    EndpointKind.CMIS_DOCUMENT, qn);
+            int waiters = 3;
+            for (int i = 0; i < waiters; i++) {
+                LineageEventV2 event = new LineageEventV2Builder()
+                        .eventId("evt-shared-" + i + "-" + UUID.randomUUID())
+                        .occurredAt("2026-08-01T00:00:0" + i + "Z")
+                        .repositoryId(REPO)
+                        .processType(LineageProcessType.ARCHIVE_LOCAL)
+                        .operationId("op-shared-" + i + "-" + UUID.randomUUID())
+                        .delivery(new LineageDelivery.Original(List.of(TARGET)))
+                        .addInput(LineageEndpoint.document(REPO,
+                                qn.substring(qn.lastIndexOf('/') + 1), "a.txt"))
+                        .addOutput(LineageEndpoint.archive(REPO, "arc-" + i, "arc-" + i, 1L))
+                        .build();
+                store.appendV2(event);
+                assertTrue(store.enterCatalogWait(event.deliveryId(), TARGET, List.of(taskKey)));
+            }
+
+            assertEquals(waiters,
+                    new CouchLineageWaitingEventSource(store).candidatesFor(taskKey).size());
+        }
+    }
+
     // ------------------------------------------------------------------
 
     /** The targets a waiting event reports for one obligation, via the reverse view. */
