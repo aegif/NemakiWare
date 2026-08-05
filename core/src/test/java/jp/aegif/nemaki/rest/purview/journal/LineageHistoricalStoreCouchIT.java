@@ -491,6 +491,170 @@ public class LineageHistoricalStoreCouchIT {
      * <p>Counting rows of the listing and reading the reduce are two independent code paths over
      * one population. If they disagree, one of them is lying to a preflight.
      */
+    /**
+     * The two moments a settlement can be lost, against a real server.
+     *
+     * <p>Both are CAS outcomes, and a CAS is a property of CouchDB's own {@code _rev} handling —
+     * an in-memory fake would be asserting that the test implements the rule. What is being
+     * pinned is not that the store returns false, but what the service does with it: nothing
+     * external before the renewal, and never a success report after a lost CAS.
+     */
+    @Nested
+    class ClaimFencing {
+
+        /**
+         * A settler scoped to one obligation.
+         *
+         * <p>The database is shared by the whole class and {@code runOnce} claims every
+         * claimable row, so counting globally would count whatever other tests happened to
+         * leave behind — a number that changes with execution order. Only the obligation under
+         * test is scripted or counted; the rest get a plain retry.
+         *
+         * <p>The correlation is safe because {@code runOnce} handles one obligation at a time:
+         * the execute that follows a prepare belongs to it.
+         */
+        private final class ScriptedSettler implements LineageCatalogAbsenceSettler {
+            private final String taskKey;
+            private final Runnable duringPrepare;
+            private final Runnable duringExecute;
+            private final Verdict verdict;
+            private boolean preparingSubject;
+            int prepared;
+            int executed;
+
+            ScriptedSettler(String taskKey, Runnable duringPrepare, Runnable duringExecute,
+                    Verdict verdict) {
+                this.taskKey = taskKey;
+                this.duringPrepare = duringPrepare;
+                this.duringExecute = duringExecute;
+                this.verdict = verdict;
+            }
+
+            @Override
+            public LineageAbsencePlan prepare(LineageCatalogObligation obligation) {
+                preparingSubject = taskKey.equals(obligation.taskKey());
+                if (!preparingSubject) {
+                    return new LineageAbsencePlan.NoWrite.Retry("not the subject");
+                }
+                prepared++;
+                if (duringPrepare != null) {
+                    duringPrepare.run();
+                }
+                return new LineageAbsencePlan.NoWrite.Retry("scripted");
+            }
+
+            @Override
+            public Verdict execute(LineageAbsencePlan plan) {
+                if (!preparingSubject) {
+                    return Verdict.RETRY;
+                }
+                executed++;
+                if (duringExecute != null) {
+                    duringExecute.run();
+                }
+                return verdict;
+            }
+
+            @Override
+            public LineageWaitingSnapshotResolver waitingSnapshotResolverRef() {
+                return null;
+            }
+
+            @Override
+            public LineageHistoricalPublishMachine historicalMachineRef() {
+                return null;
+            }
+
+            @Override
+            public LineageObservedEntityMaterializerRegistry observedMaterializersRef() {
+                return null;
+            }
+        }
+
+        private LineageCatalogObligationService serviceOver(
+                CouchLineageCatalogObligationStore store, LineageCatalogAbsenceSettler settler) {
+            LineageDrestReadiness readiness =
+                    org.mockito.Mockito.mock(LineageDrestReadiness.class);
+            org.mockito.Mockito.when(readiness.evaluate())
+                    .thenReturn(new LineageDrestReadiness.Readiness(true, List.of()));
+            // ABSENT, so every pass takes the settle-absent route this is about.
+            LineageCatalogEntityProbe probe =
+                    (target, repositoryId, kind, qn) -> LineageCatalogEntityProbe.Presence.ABSENT;
+            LineageNodeIdentity identity =
+                    org.mockito.Mockito.mock(LineageNodeIdentity.class);
+            org.mockito.Mockito.when(identity.nodeId()).thenReturn("it-node");
+            LineageCatalogObligationService service = new LineageCatalogObligationService(store,
+                    probe, readiness, identity, () -> 10_000L);
+            service.setAbsenceSettler(settler);
+            return service;
+        }
+
+        /** Replaces the stored claim token, as another worker taking the obligation would. */
+        private void stealClaim(String documentId) {
+            com.ibm.cloud.cloudant.v1.model.Document raw = journal.client().get(documentId);
+            Map<String, Object> patched = new LinkedHashMap<>();
+            patched.put("_id", raw.getId());
+            patched.put("_rev", raw.getRev());
+            patched.putAll(raw.getProperties());
+            patched.put("token", "taken-by-someone-else");
+            journal.client().update(patched);
+        }
+
+        /**
+         * A claim lost while prepare was reading must call nothing outside this process.
+         *
+         * <p>prepare's lookups take as long as a journal read and a repository read together,
+         * and the lease runs throughout. A worker superseded during them has already been
+         * replaced; writing to the catalog on its way out would race the worker that took over.
+         */
+        @Test
+        @DisplayName("a claim lost during prepare calls nothing external")
+        void lostClaimDuringPrepareCallsNothing() {
+            CouchLineageCatalogObligationStore store =
+                    new CouchLineageCatalogObligationStore(journal);
+            LineageCatalogObligation created = store.createIfAbsent(obligation("fence-prepare"));
+            ScriptedSettler settler = new ScriptedSettler(created.taskKey(),
+                    () -> stealClaim(created.documentId()), null,
+                    LineageCatalogAbsenceSettler.Verdict.RESOLVED_OBSERVED);
+
+            serviceOver(store, settler).runOnce(50);
+
+            assertEquals(1, settler.prepared, "prepare runs — it is read-only");
+            assertEquals(0, settler.executed,
+                    "the renewal is the authorisation: nothing external without it");
+            LineageCatalogObligation after = store.read(created.taskKey()).orElseThrow();
+            assertEquals(LineageCatalogObligation.Outcome.NONE, after.outcome(),
+                    "the obligation must be left for whoever holds it now");
+            assertNotEquals(LineageCatalogObligation.State.RESOLVED, after.state());
+        }
+
+        /**
+         * A resolving verdict whose final CAS loses is not a resolution.
+         *
+         * <p>The external write may well have happened; what did not happen is this worker
+         * recording it under a claim it still held. Reporting that as resolved would close an
+         * obligation on the strength of a token somebody else now owns.
+         */
+        @Test
+        @DisplayName("a final CAS lost after execute is not reported as resolved")
+        void lostFinalCasIsNotASettlement() {
+            CouchLineageCatalogObligationStore store =
+                    new CouchLineageCatalogObligationStore(journal);
+            LineageCatalogObligation created = store.createIfAbsent(obligation("fence-cas"));
+            ScriptedSettler settler = new ScriptedSettler(created.taskKey(), null,
+                    () -> stealClaim(created.documentId()),
+                    LineageCatalogAbsenceSettler.Verdict.RESOLVED_OBSERVED);
+
+            serviceOver(store, settler).runOnce(50);
+
+            assertEquals(1, settler.executed);
+            LineageCatalogObligation after = store.read(created.taskKey()).orElseThrow();
+            assertEquals(LineageCatalogObligation.Outcome.NONE, after.outcome());
+            assertNotEquals(LineageCatalogObligation.State.RESOLVED, after.state(),
+                    "the obligation must stay open for its current owner");
+        }
+    }
+
     @Nested
     class ReduceRegression {
 

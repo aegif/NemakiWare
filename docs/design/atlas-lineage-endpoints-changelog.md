@@ -12,6 +12,29 @@
 
 ---
 
+## v2.3.78 — claim fencing の実 CouchDB IT (Slice 3.1)
+
+settlement を失う 2 つの瞬間を実サーバで固定する。どちらも CAS の結果であり、CAS は
+CouchDB 自身の `_rev` 扱いの性質なので、in-memory fake ではテスト自身がその規則を
+実装していることを主張するだけになる。
+
+- **prepare 中に claim を奪われたら external を一切呼ばない** — prepare の lookup は
+  journal read と repository read を合わせた時間がかかり、その間 lease は走り続ける。
+  superseded された worker が出際に catalog へ書けば、引き継いだ worker と競合する
+- **execute 後の final CAS を失ったら resolved と報告しない** — external write は実際に
+  起きたかもしれないが、起きなかったのは「まだ保持している claim の下でそれを記録する」
+  ことである。他人が持つ token の上で obligation を閉じてはならない
+
+mutation binding 確認済み — renewal の gate を外すと前者だけが落ちる。**既存の単体テストは
+この変異を捕捉しなかった**ので、IT が実際にカバレッジを足している。
+
+### テスト分離の落とし穴
+
+最初の版は `runOnce` の返り値 (claimed/resolved の合計) を assert していたが、DB は
+クラス全体で共有され `runOnce` は claimable な行を全部拾う。他テストが残した obligation を
+数えるため、実行順で数字が変わる形になっていた。settler を対象 obligation にスコープし、
+assert も対象行の状態だけを見るようにした。
+
 ## v2.3.77 — lease 分離: 経路ごとに「実際に走っている lease」で判定する
 
 budget 検査は全経路を subject fence lease と比較していた。しかし **OBSERVED と CURRENT は
