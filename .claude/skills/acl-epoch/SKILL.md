@@ -43,6 +43,8 @@ leader-gated の crash-recovery sweep が 5 分ごとに走ります。
 |---|---|
 | quarantine の出口 | `POST /v1/admin/acl-epoch/quarantine/{repo}/{docId}/repair` |
 | 初期 epoch stamp | `POST /v1/admin/acl-epoch/migration/{repositoryId}` |
+| stamp の verdict 確認 | `GET /v1/admin/acl-epoch/migration/{repositoryId}` |
+| 孤児 Solr 文書の掃除 | `DELETE /v1/admin/acl-epoch/migration/{repo}/orphans?confirm=true` |
 | outbox の crash recovery | `POST /v1/admin/acl-epoch/scan/{repositoryId}` |
 
 scan は cron / init を持たず**明示実行のみ**。`clearMarkerAfterReconcile` は
@@ -59,9 +61,14 @@ applyAcl / move / reconcile re-drive は必ず epoch fence 経由
 ### デプロイごとの運用義務
 
 ゲート 2 は 1 回で終わりません。**全再索引の後で**リポジトリごとに stamp を実行します
-(逆順だと再索引が stamp を捨てます)。`verdict` が `COMPLETE` /
+(逆順だと再索引が stamp を捨てます — content writer は既存 ACL group を preserve する
+仕組みなので、作り直した索引には preserve するものが無い)。`verdict` が `COMPLETE` /
 `COMPLETE_EXCEPT_ORPHANS` なら完了。後者の残数は CouchDB に実体が無い孤児 Solr 文書で、
 stamp 不能かつ ACL write の対象にもならないため配線を妨げません。
+
+**未 stamp でも壊れはしません** — 各文書の初回 ACL 書込みが bootstrap するので、
+影響は reconcile が一時的に増えることだけです。忘れたまま本番投入しても
+データは壊れませんが、収束は遅れます。
 
 ### migration の verdict を読むこと (生カウントではなく)
 
