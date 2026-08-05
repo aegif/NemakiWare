@@ -88,9 +88,8 @@ public interface LineageCatalogAbsenceSettler {
     /**
      * The observed-entity materializer this settler drives, for the NON_PURGEABLE branch.
      *
-     * <p>Typed as {@link Object} until the materializer exists, so the identity check can be
-     * written now and cannot be satisfied by an accident later: readiness compares it against
-     * the registered instance, and a null on either side is a violation.
+     * <p>Readiness compares it against the registered instance by identity; a null on either
+     * side is a violation.
      */
-    Object observedMaterializerRef();
+    LineageObservedEntityMaterializer observedMaterializerRef();
 }

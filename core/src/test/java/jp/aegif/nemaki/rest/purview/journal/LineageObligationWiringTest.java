@@ -123,7 +123,8 @@ public class LineageObligationWiringTest {
             when(settler.waitingSnapshotResolverRef())
                     .thenReturn(mock(LineageWaitingSnapshotResolver.class));
             when(settler.historicalMachineRef()).thenReturn(forMachine);
-            when(settler.observedMaterializerRef()).thenReturn(new Object());
+            when(settler.observedMaterializerRef())
+                    .thenReturn(mock(LineageObservedEntityMaterializer.class));
             return settler;
         }
 

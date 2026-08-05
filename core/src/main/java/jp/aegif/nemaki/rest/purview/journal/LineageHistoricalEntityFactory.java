@@ -210,6 +210,38 @@ public final class LineageHistoricalEntityFactory {
     }
 
     /**
+     * The ordinary entity for an observed endpoint — no tombstone marker anywhere.
+     *
+     * <h2>Built directly, never by subtraction</h2>
+     *
+     * <p>It would be shorter to call {@link #entityFor} and remove the marker afterwards, and
+     * that is exactly the implementation to avoid: the tombstone would exist for the duration of
+     * one method, and any future path that returned early, logged the intermediate map or
+     * reordered the steps would publish it. This assembles the entity from the same primitives
+     * without the marker ever being present.
+     *
+     * <p>What it asserts is only that a durable event observed this endpoint. No source state,
+     * no evidence of destruction, no claim that the object exists now.
+     */
+    public static Map<String, Object> observedEntityFor(ObservedEntitySnapshot observed) {
+        LineageWaitingSnapshot snapshot = observed.snapshot();
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("qualifiedName", snapshot.catalogQualifiedName());
+        attributes.putAll(identityAttributes(snapshot));
+        attributes.putAll(CatalogSecretBoundary.sealed(snapshot.attributes()));
+
+        Map<String, Object> entity = new LinkedHashMap<>();
+        entity.put("typeName", snapshot.endpointKind().atlasTypeName());
+        entity.put("attributes", attributes);
+        return entity;
+    }
+
+    /** The digest of what an observed materialisation intends to write. */
+    public static String plannedObservedDigest(ObservedEntitySnapshot observed) {
+        return operationDigest(observedEntityFor(observed));
+    }
+
+    /**
      * The canonical digest of an entity payload.
      *
      * <p>Sorted by attribute name, so two builds of the same content hash the same however the
