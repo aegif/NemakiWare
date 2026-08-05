@@ -195,11 +195,98 @@ public class PurviewHttpRetryHandlerTest {
     }
 
     @SuppressWarnings("unchecked")
+    /**
+     * A Retry-After beyond this attempt's budgeted worst ends the sequence, fast.
+     *
+     * <p>Sleeping it would overrun the fence budget; retrying sooner than instructed would
+     * re-hammer a throttled account. Handing the response back is the only move that honours
+     * both, and the long wait then happens at the obligation's durable backoff instead.
+     */
+    @Test
+    public void testRetryAfterBeyondBudgetStopsRetrying() throws Exception {
+        int[] callCount = {0};
+        long started = System.nanoTime();
+        HttpResponse<String> result = handler.sendWithRetry(() -> {
+            callCount[0]++;
+            return mockResponse(429, "Too Many Requests",
+                    java.util.Map.of("Retry-After", java.util.List.of("9999")));
+        }, null, null);
+
+        assertEquals(429, result.statusCode(), "the throttle response is returned, not hidden");
+        assertEquals(1, callCount[0], "no further attempt may be made in this pass");
+        long elapsedMs = (System.nanoTime() - started) / 1_000_000L;
+        assertTrue(elapsedMs < 500, "and no sleep either, got " + elapsedMs + "ms");
+    }
+
+    /** A Retry-After that fits under the attempt's budgeted worst is slept exactly. */
+    @Test
+    public void testRetryAfterWithinBudgetIsHonoured() throws Exception {
+        int[] callCount = {0};
+        long started = System.nanoTime();
+        HttpResponse<String> result = handler.sendWithRetry(() -> {
+            callCount[0]++;
+            if (callCount[0] == 1) {
+                return mockResponse(429, "Too Many Requests",
+                        java.util.Map.of("Retry-After", java.util.List.of("1")));
+            }
+            return mockResponse(200, "ok");
+        }, null, null);
+
+        assertEquals(200, result.statusCode());
+        assertEquals(2, callCount[0]);
+        long elapsedMs = (System.nanoTime() - started) / 1_000_000L;
+        assertTrue(elapsedMs >= 950, "the server's 1s must actually be waited, got "
+                + elapsedMs + "ms");
+    }
+
+    /**
+     * The HTTP-date form reads as no instruction, never as a sleep.
+     *
+     * <p>Honouring a date would turn clock skew into an arbitrary wait — the unbounded sleep
+     * the budget forbids — so the ordinary backoff applies instead.
+     */
+    @Test
+    public void testRetryAfterDateFormFallsBackToBackoff() throws Exception {
+        int[] callCount = {0};
+        HttpResponse<String> result = handler.sendWithRetry(() -> {
+            callCount[0]++;
+            if (callCount[0] == 1) {
+                return mockResponse(503, "Service Unavailable", java.util.Map.of("Retry-After",
+                        java.util.List.of("Wed, 21 Oct 2026 07:28:00 GMT")));
+            }
+            return mockResponse(200, "ok");
+        }, null, null);
+
+        assertEquals(200, result.statusCode());
+        assertEquals(2, callCount[0], "an unusable header must not stop the ordinary retry");
+    }
+
+    /**
+     * The budget total and the per-attempt caps are one formula, not two.
+     *
+     * <p>The lineage operation budget reads {@code worstCaseBackoffTotalMs()}; the Retry-After
+     * cap reads {@code worstDelayForAttempt()}. If they drifted apart, an honoured server delay
+     * could exceed what the budget promised.
+     */
+    @Test
+    public void testWorstCaseTotalIsTheSumOfPerAttemptWorsts() {
+        long total = 0;
+        for (int attempt = 1; attempt <= PurviewHttpRetryHandler.maxRetries(); attempt++) {
+            total += PurviewHttpRetryHandler.worstDelayForAttempt(attempt);
+        }
+        assertEquals(PurviewHttpRetryHandler.worstCaseBackoffTotalMs(), total);
+    }
+
     private HttpResponse<String> mockResponse(int statusCode, String body) {
+        return mockResponse(statusCode, body, java.util.Map.of());
+    }
+
+    private HttpResponse<String> mockResponse(int statusCode, String body,
+            java.util.Map<String, java.util.List<String>> headers) {
         return new HttpResponse<>() {
             @Override public int statusCode() { return statusCode; }
             @Override public String body() { return body; }
-            @Override public java.net.http.HttpHeaders headers() { return java.net.http.HttpHeaders.of(java.util.Map.of(), (a, b) -> true); }
+            @Override public java.net.http.HttpHeaders headers() { return java.net.http.HttpHeaders.of(headers, (a, b) -> true); }
             @Override public java.util.Optional<HttpResponse<String>> previousResponse() { return java.util.Optional.empty(); }
             @Override public java.net.http.HttpRequest request() { return null; }
             @Override public java.util.Optional<javax.net.ssl.SSLSession> sslSession() { return java.util.Optional.empty(); }
