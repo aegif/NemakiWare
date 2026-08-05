@@ -107,12 +107,15 @@ public final class CatalogObservedEntityMaterializer implements LineageObservedE
                     + " {} are absent", kind, missing);
             return Outcome.SNAPSHOT_INCOMPLETE;
         }
-        String plannedDigest = LineageHistoricalEntityFactory.operationDigest(planned);
+        // Includes the assertion that no tombstone marker is present: an entity carrying one
+        // must not read back as this plan's content.
+        String plannedDigest =
+                LineageHistoricalEntityFactory.observedPlannedDigest(planned, kind);
 
         // 1. Read BEFORE writing. A crash between a successful write and the obligation being
         // resolved leaves the next pass here, and without this it would write again over
         // whatever is now there.
-        switch (readBack(snapshot, planned, plannedDigest)) {
+        switch (readBack(snapshot, planned, plannedDigest, kind)) {
             case MATCH -> {
                 return Outcome.MATCHED;
             }
@@ -145,13 +148,13 @@ public final class CatalogObservedEntityMaterializer implements LineageObservedE
         }
 
         // 2. Read AFTER writing. A 2xx says the request was accepted, not that it is there.
-        return readBack(snapshot, planned, plannedDigest) == LineageHistoricalReadBack.MATCH
-                ? Outcome.MATERIALIZED : Outcome.RETRYABLE;
+        return readBack(snapshot, planned, plannedDigest, kind)
+                == LineageHistoricalReadBack.MATCH ? Outcome.MATERIALIZED : Outcome.RETRYABLE;
     }
 
     /** Whether the catalog holds exactly this plan's content, projected onto its own keys. */
     private LineageHistoricalReadBack readBack(LineageWaitingSnapshot snapshot,
-            Map<String, Object> planned, String plannedDigest) {
+            Map<String, Object> planned, String plannedDigest, EndpointKind kind) {
         try {
             Map<String, Object> read = entityRegistryClient.getEntityByUniqueAttribute(
                     connectionResolver.buildConnectionRequest(),
@@ -160,7 +163,8 @@ public final class CatalogObservedEntityMaterializer implements LineageObservedE
             if (read == null || read.isEmpty()) {
                 return LineageHistoricalReadBack.ABSENT;
             }
-            String actual = LineageHistoricalEntityFactory.readBackDigest(read, planned);
+            String actual = LineageHistoricalEntityFactory.readBackDigest(read, planned,
+                    LineageHistoricalEntityFactory.markerAbsenceAssertion(kind));
             if (actual == null) {
                 // A response this code cannot project is an unread, not a mismatch.
                 return LineageHistoricalReadBack.UNKNOWN;

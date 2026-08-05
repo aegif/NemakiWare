@@ -242,7 +242,37 @@ public final class LineageHistoricalEntityFactory {
 
     /** The digest of what an observed materialisation intends to write. */
     public static String plannedObservedDigest(ObservedEntitySnapshot observed) {
-        return operationDigest(observedEntityFor(observed));
+        return observedPlannedDigest(observedEntityFor(observed),
+                observed.snapshot().endpointKind());
+    }
+
+    /**
+     * The digest of an ordinary entity, including its assertion that no marker is present.
+     *
+     * <p>Both sides of the read-back comparison must encode the same keys, so the planned side
+     * tags the marker as absent exactly as the read side does when the catalog does not hold it.
+     */
+    public static String observedPlannedDigest(Map<String, Object> planned, EndpointKind kind) {
+        String marker = tombstoneMarkerAttribute(kind);
+        Map<String, Object> withAssertion = new LinkedHashMap<>(planned);
+        Object attributes = planned.get("attributes");
+        if (marker != null && attributes instanceof Map<?, ?> map && !map.containsKey(marker)) {
+            // Same shape readBackDigest produces for an absent key.
+            Map<String, Object> tagged = new LinkedHashMap<>();
+            map.forEach((k, v) -> tagged.put(String.valueOf(k) + KEY_PRESENT, v));
+            tagged.put(marker + KEY_ABSENT, null);
+            Map<String, Object> shaped = new LinkedHashMap<>();
+            shaped.put("typeName" + KEY_PRESENT, planned.get("typeName"));
+            shaped.put("attributes", tagged);
+            return digestOfTagged(shaped);
+        }
+        return operationDigest(withAssertion);
+    }
+
+    /** The marker keys an ordinary entity asserts are absent, for the read-back projection. */
+    public static java.util.List<String> markerAbsenceAssertion(EndpointKind kind) {
+        String marker = tombstoneMarkerAttribute(kind);
+        return marker == null ? java.util.List.of() : java.util.List.of(marker);
     }
 
     /**
@@ -326,6 +356,28 @@ public final class LineageHistoricalEntityFactory {
      */
     public static String readBackDigest(Map<String, Object> readEntity,
             Map<String, Object> planned) {
+        return readBackDigest(readEntity, planned, null);
+    }
+
+    /**
+     * The same, with keys whose <em>absence</em> the plan asserts.
+     *
+     * <h2>The false MATCH this closes</h2>
+     *
+     * <p>The projection compares only the keys the plan set. An observed entity deliberately
+     * sets no tombstone marker — so an entity in the catalog with identical attributes
+     * <em>plus</em> {@code lifecycleState=PURGED} projected to the same digest, the pre-read
+     * said MATCH, and the obligation was resolved while the catalog still held a tombstone for
+     * a source nobody said was gone.
+     *
+     * <p>Not setting a key is a claim about that key, so it has to be in the comparison. Named
+     * keys are projected whether or not the plan holds them, and an absent one hashes under its
+     * absent tag — which is exactly what an observed plan expects and a tombstone is not.
+     *
+     * @param assertedAbsent keys the plan asserts the entity must not carry; may be null
+     */
+    public static String readBackDigest(Map<String, Object> readEntity,
+            Map<String, Object> planned, java.util.Collection<String> assertedAbsent) {
         if (readEntity == null || planned == null) {
             return null;
         }
@@ -339,8 +391,18 @@ public final class LineageHistoricalEntityFactory {
             return null;
         }
         Map<String, Object> projected = new LinkedHashMap<>();
+        java.util.List<String> comparedKeys = new ArrayList<>();
         for (Map.Entry<?, ?> e : plannedMap.entrySet()) {
-            String key = String.valueOf(e.getKey());
+            comparedKeys.add(String.valueOf(e.getKey()));
+        }
+        if (assertedAbsent != null) {
+            for (String key : assertedAbsent) {
+                if (key != null && !comparedKeys.contains(key)) {
+                    comparedKeys.add(key);
+                }
+            }
+        }
+        for (String key : comparedKeys) {
             // Absent is not null: a key the catalog does not have must not project to the same
             // digest as a key it holds as null. The distinction rides on the key's tag.
             boolean present = readAttributes.containsKey(key);

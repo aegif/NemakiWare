@@ -74,7 +74,12 @@ public final class CouchLineageWaitingEventSource
         support.ensureDatabase();
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("key", taskKey);
-        params.put("limit", MAX_CANDIDATES);
+        // One more than the cap, so a full page is distinguishable from a truncated one. A
+        // truncated population read as complete is the same defect as an empty one read as
+        // "nobody is waiting": the resolver would pick a "latest" snapshot from a subset it
+        // does not know is a subset, and for a non-purgeable source nothing downstream would
+        // correct it.
+        params.put("limit", MAX_CANDIDATES + 1);
         // reduce=false is REQUIRED: the view carries a _count reduce for the status routes, and
         // CouchDB rejects include_docs on a reduce query outright.
         params.put("reduce", false);
@@ -89,6 +94,13 @@ public final class CouchLineageWaitingEventSource
             return List.of();
         }
 
+        if (result.getRows().size() > MAX_CANDIDATES) {
+            // Refused rather than truncated. INDETERMINATE via the resolver's own catch: this
+            // says nothing about the data, and the next pass may find a smaller population.
+            logger.warn("More than {} events wait on one obligation; refusing to reason over a"
+                    + " truncated population", MAX_CANDIDATES);
+            throw new IllegalStateException("the waiting population exceeds the readable bound");
+        }
         List<LineageWaitingSnapshotResolver.Candidate> candidates = new ArrayList<>();
         for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : result.getRows()) {
             com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();

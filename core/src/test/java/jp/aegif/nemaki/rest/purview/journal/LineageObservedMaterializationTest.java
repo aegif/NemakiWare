@@ -219,6 +219,33 @@ class LineageObservedMaterializationTest {
     // Materialisation
     // ------------------------------------------------------------------
 
+    /**
+     * A tombstone must never read back as an ordinary entity.
+     *
+     * <p>The projection compares the keys the plan set, and an observed plan deliberately sets
+     * no marker — so an entity with identical attributes plus {@code PURGED} projected to the
+     * same digest, the pre-read said MATCH, and the obligation resolved while the catalog still
+     * held a tombstone for a source nobody said was gone. Not setting a key is a claim about
+     * that key, so it is in the comparison.
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("acceptedKinds")
+    @DisplayName("an entity carrying a tombstone marker is CONFLICT, never MATCHED")
+    void aTombstoneIsNeverAnObservedMatch(KindFixture fixture) throws Exception {
+        ObservedEntitySnapshot observed = observed(fixture);
+        Map<String, Object> tombstoned =
+                withMarker(LineageHistoricalEntityFactory.observedEntityFor(observed),
+                        fixture.kind());
+        PurviewEntityRegistryClient client = mock(PurviewEntityRegistryClient.class);
+        when(client.getEntityByUniqueAttribute(any(), anyString(), anyString(), anyString()))
+                .thenReturn(tombstoned);
+
+        assertEquals(LineageObservedEntityMaterializer.Outcome.CONFLICT,
+                materializer(client).materialize(observed),
+                "a tombstone must not be accepted as this plan's content");
+        verify(client, never()).bulkCreateOrUpdateEntities(any(), any());
+    }
+
     @ParameterizedTest(name = "{0}")
     @MethodSource("acceptedKinds")
     @DisplayName("the catalog already holding it is MATCHED, and nothing is written")
