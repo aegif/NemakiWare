@@ -326,6 +326,34 @@ public final class LineageObligationWiring {
             violations.add("the projector's obligation collaborator uses a different service"
                     + " instance than the one readiness knows about");
         }
+        // The ABSENT branch is the only one that writes. Until it is wired the consumer just
+        // releases and retries — safe, but an obligation whose authoritative publisher will
+        // never run would retry for ever, so this is not a machine that may be activated.
+        if (service != null) {
+            LineageCatalogAbsenceSettler settler = service.settlerRef();
+            if (settler == null) {
+                violations.add("no catalog-absence settler is wired: an obligation whose"
+                        + " catalog entity is missing would retry for ever");
+            } else {
+                if (settler.waitingSnapshotResolverRef() == null) {
+                    violations.add("the catalog-absence settler has no waiting-snapshot"
+                            + " resolver, so it cannot read what an event observed");
+                }
+                if (settler.historicalMachineRef() == null
+                        || (historicalMachine != null
+                                && settler.historicalMachineRef() != historicalMachine)) {
+                    // Identity, not presence: a settler driving a different machine than the
+                    // one readiness knows about would publish through intents nobody recovers.
+                    violations.add("the catalog-absence settler drives a different historical"
+                            + " publish machine than the one wired here");
+                }
+                if (settler.observedMaterializerRef() == null) {
+                    violations.add("the catalog-absence settler has no observed-entity"
+                            + " materializer, so a source NemakiWare never destroys could never"
+                            + " be published");
+                }
+            }
+        }
         if (service != null && store != null && service.storeRef() != store) {
             violations.add("the obligation service reads a different store than the one wired"
                     + " here — the two halves would address different documents");

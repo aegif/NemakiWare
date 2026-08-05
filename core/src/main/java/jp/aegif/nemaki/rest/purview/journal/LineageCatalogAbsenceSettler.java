@@ -1,0 +1,96 @@
+/**
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ */
+package jp.aegif.nemaki.rest.purview.journal;
+
+/**
+ * What to do about an obligation whose catalog entity is not there.
+ *
+ * <h2>Why this is its own contract</h2>
+ *
+ * <p>ABSENT is the only branch that can end an obligation by <em>writing</em> something. Every
+ * other branch reads: PRESENT resolves, a failed probe retries. So this is where the two
+ * lifecycles diverge — a source NemakiWare destroyed becomes a tombstone, and a source it never
+ * owned becomes the ordinary entity the event observed — and it is where a mistake is permanent.
+ * Naming it separately keeps that divergence in one readable place instead of inside a switch in
+ * the consumer loop.
+ *
+ * <h2>Absent until wired, and refused while absent</h2>
+ *
+ * <p>Until an implementation is registered the consumer keeps doing what it did before: release
+ * and retry. That is safe — nothing is written — but it is also not a working machine, because
+ * an obligation whose authoritative publisher is never going to run would retry for ever. So
+ * readiness refuses activation while this is unwired, and refuses it again if the pieces it
+ * delegates to are not the same instances the rest of the context got. A half-wired settler
+ * that resolved obligations against one store while the projector waited on another would be
+ * invisible to a null check and fatal in production.
+ */
+public interface LineageCatalogAbsenceSettler {
+
+    /** What the settler managed to establish. Four answers; none of them is a boolean. */
+    enum Verdict {
+        /**
+         * The catalog now holds the right entity, confirmed by reading it back. The obligation
+         * may be resolved.
+         */
+        RESOLVED,
+        /**
+         * Nothing terminal happened. Includes every failure, every UNKNOWN, every lost CAS and
+         * every conflict — all of which may succeed later, so burning the obligation would turn
+         * a transient problem into a permanently unprojectable event.
+         */
+        RETRY,
+        /**
+         * The snapshot cannot reconstruct the entity, and no amount of retrying will change
+         * that. The only terminal verdict.
+         */
+        SNAPSHOT_INCOMPLETE,
+        /**
+         * Nothing could be established at all — the waiting snapshot could not be read, or it
+         * was corrupt. Distinct from RETRY because the cause is not the catalog: it is the
+         * journal, and an operator needs to see the difference.
+         */
+        INDETERMINATE
+    }
+
+    /**
+     * Settle one obligation whose catalog entity is absent.
+     *
+     * <p>Must not itself resolve the obligation — the caller owns the claim and the CAS, and a
+     * settler writing the obligation document would race the worker that holds it.
+     *
+     * @param obligation the claimed obligation; its own target, repository and kind decide
+     *        everything, never a caller-supplied default
+     */
+    Verdict settle(LineageCatalogObligation obligation);
+
+    /**
+     * The waiting-snapshot resolver this settler uses. Identity only; readiness never calls it.
+     */
+    LineageWaitingSnapshotResolver waitingSnapshotResolverRef();
+
+    /** The historical publish machine this settler drives, for the LEDGERED branch. */
+    LineageHistoricalPublishMachine historicalMachineRef();
+
+    /**
+     * The observed-entity materializer this settler drives, for the NON_PURGEABLE branch.
+     *
+     * <p>Typed as {@link Object} until the materializer exists, so the identity check can be
+     * written now and cannot be satisfied by an accident later: readiness compares it against
+     * the registered instance, and a null on either side is a violation.
+     */
+    Object observedMaterializerRef();
+}

@@ -114,9 +114,25 @@ public class LineageObligationWiringTest {
         LineageOperationBudgetProvider budgets = FixedOperationBudgets.healthy();
         LineagePurgeLedger purgeLedger = availableLedger();
 
+        /** False to leave the ABSENT branch unwired, which is a violation by design. */
+        boolean withSettler = true;
+
+        /** A settler whose collaborators are the assembly's own instances. */
+        LineageCatalogAbsenceSettler settlerFor(LineageHistoricalPublishMachine forMachine) {
+            LineageCatalogAbsenceSettler settler = mock(LineageCatalogAbsenceSettler.class);
+            when(settler.waitingSnapshotResolverRef())
+                    .thenReturn(mock(LineageWaitingSnapshotResolver.class));
+            when(settler.historicalMachineRef()).thenReturn(forMachine);
+            when(settler.observedMaterializerRef()).thenReturn(new Object());
+            return settler;
+        }
+
         LineageObligationWiring build() {
             LineageCatalogObligationService wired =
                     service != null ? service : serviceOver(store);
+            if (wired != null && wired.settlerRef() == null && withSettler) {
+                wired.setAbsenceSettler(settlerFor(machine));
+            }
             return new LineageObligationWiring(store, probes, publishers, wired,
                     withScanner ? new LineageObligationScannerImpl(wired) : null,
                     withProjector ? new LineageObligationProjectorCollaboratorImpl(wired) : null,
@@ -627,6 +643,53 @@ public class LineageObligationWiringTest {
         Assembly assembly = new Assembly();
         assembly.budgets = FixedOperationBudgets.unresolvable();
         assertEquals(List.of(), assembly.build().violations(Set.of()));
+    }
+
+    /**
+     * The ABSENT branch is the only one that writes, so it may not be missing.
+     *
+     * <p>An unwired settler is safe — the consumer just releases and retries — but it is not a
+     * working machine: an obligation whose authoritative publisher will never run would retry
+     * for ever, and the events waiting on it would never move.
+     */
+    @Test
+    @DisplayName("an unwired catalog-absence settler is a violation")
+    public void unwiredSettlerIsRed() {
+        Assembly assembly = new Assembly();
+        assembly.withSettler = false;
+        assertTrue(assembly.build().violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("no catalog-absence settler is wired")));
+    }
+
+    /**
+     * Presence is not enough, for the same reason as the scanner and the projector.
+     *
+     * <p>A settler publishing through a different historical machine than the one wired here
+     * writes intents that this node's recovery never looks at — nothing is null, and a crash
+     * mid-publish is unrecoverable.
+     */
+    @Test
+    @DisplayName("a settler driving a different historical machine is a violation")
+    public void settlerMustShareTheMachine() {
+        Assembly assembly = new Assembly();
+        assembly.service = serviceOver(assembly.store);
+        assembly.service.setAbsenceSettler(
+                assembly.settlerFor(mock(LineageHistoricalPublishMachine.class)));
+        assertTrue(assembly.build().violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("different historical publish machine")));
+    }
+
+    @Test
+    @DisplayName("a settler missing either collaborator is a violation, named")
+    public void settlerCollaboratorsAreNamed() {
+        Assembly assembly = new Assembly();
+        assembly.service = serviceOver(assembly.store);
+        LineageCatalogAbsenceSettler partial = mock(LineageCatalogAbsenceSettler.class);
+        when(partial.historicalMachineRef()).thenReturn(assembly.machine);
+        assembly.service.setAbsenceSettler(partial);
+        List<String> violations = assembly.build().violations(TARGETS);
+        assertTrue(violations.stream().anyMatch(v -> v.contains("waiting-snapshot")));
+        assertTrue(violations.stream().anyMatch(v -> v.contains("observed-entity")));
     }
 
     /** The check must be meaningful while D-rest is off — that is when it is most useful. */

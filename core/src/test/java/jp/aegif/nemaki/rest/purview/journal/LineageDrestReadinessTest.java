@@ -110,7 +110,7 @@ public class LineageDrestReadinessTest {
                 new LineageObligationProjectorCollaboratorImpl(service),
                 mock(LineageHistoricalPublishIntentStore.class),
                 mock(LineageHistoricalCompensationStore.class),
-                mock(LineageHistoricalPublishMachine.class), everyKindResolvable(),
+                machineWithSettler(service), everyKindResolvable(),
                 mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
                 availableLedger(), java.util.Set.of());
     }
@@ -167,7 +167,7 @@ public class LineageDrestReadinessTest {
                 new LineageObligationProjectorCollaboratorImpl(service),
                 mock(LineageHistoricalPublishIntentStore.class),
                 mock(LineageHistoricalCompensationStore.class),
-                mock(LineageHistoricalPublishMachine.class), everyKindResolvable(),
+                machineWithSettler(service), everyKindResolvable(),
                 mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
                 availableLedger(), java.util.Set.of()));
 
@@ -404,5 +404,25 @@ public class LineageDrestReadinessTest {
         when(ledger.lifecycleCoveredKinds())
                 .thenReturn(java.util.Set.of(EndpointKind.values()));
         return ledger;
+    }
+
+    /**
+     * A historical machine, with a settler on the service that drives the same one.
+     *
+     * <p>The ABSENT branch has its own tests; here it must simply not be the thing under test.
+     * The identity has to match, because that is exactly what readiness checks.
+     */
+    private static LineageHistoricalPublishMachine machineWithSettler(
+            LineageCatalogObligationService service) {
+        LineageHistoricalPublishMachine machine = mock(LineageHistoricalPublishMachine.class);
+        LineageCatalogAbsenceSettler settler = mock(LineageCatalogAbsenceSettler.class);
+        when(settler.waitingSnapshotResolverRef())
+                .thenReturn(mock(LineageWaitingSnapshotResolver.class));
+        when(settler.historicalMachineRef()).thenReturn(machine);
+        when(settler.observedMaterializerRef()).thenReturn(new Object());
+        if (service != null) {
+            service.setAbsenceSettler(settler);
+        }
+        return machine;
     }
 }

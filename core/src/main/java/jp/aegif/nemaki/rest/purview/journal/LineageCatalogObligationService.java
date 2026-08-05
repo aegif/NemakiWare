@@ -165,6 +165,25 @@ public class LineageCatalogObligationService {
     }
 
     /**
+     * The ABSENT branch, when one is wired.
+     *
+     * <p>Settable rather than constructor-injected: the settler needs this service's own store
+     * and clock, so the two cannot both be constructor arguments of each other. Readiness
+     * compares this reference with the registered bean by identity, which is what stops a
+     * deployment driving two different settlers.
+     */
+    private volatile LineageCatalogAbsenceSettler absenceSettler;
+
+    public void setAbsenceSettler(LineageCatalogAbsenceSettler absenceSettler) {
+        this.absenceSettler = absenceSettler;
+    }
+
+    /** The settler this service uses. Identity only; readiness never calls through it. */
+    public LineageCatalogAbsenceSettler settlerRef() {
+        return absenceSettler;
+    }
+
+    /**
      * Whether the obligation is readable from the store — a read-back, not a write result.
      *
      * <p>{@code createIfAbsent} returns what the write path produced. That is not the same
