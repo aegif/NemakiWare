@@ -227,4 +227,65 @@ public interface LineageSourceDispositionResolver {
      */
     SourceEvidence dispositionOf(String repositoryId, EndpointKind kind,
             String catalogQualifiedName);
+
+    /**
+     * A verdict and, when the subject is live and projectable, the catalog entity from the
+     * <em>same</em> read.
+     *
+     * <h2>Why both have to come from one read</h2>
+     *
+     * <p>The live-source route publishes an entity and records that it did. Building that entity
+     * from the event's observation while authorising the write with a freshly-read verdict binds
+     * nothing: the event may have observed revision R1 while the verdict describes R2, and
+     * {@code LineageWaitingSnapshot} carries no revision to compare against. The write then
+     * succeeds, reads back, and resolves the obligation — leaving content in the catalog that
+     * describes an instance the verdict was never about, on a route that exists precisely because
+     * the authoritative publisher may never come along to correct it.
+     *
+     * <p>Taking the attributes from the same object the verdict was made from does not make the
+     * entity permanently current — nothing here can promise that. It makes the one assertion the
+     * machine actually gets to make a true one: this is what the repository held at the moment
+     * this execution read it.
+     *
+     * <h2>Why a default that projects nothing</h2>
+     *
+     * <p>A resolver for a source NemakiWare does not own cannot project one — the external system
+     * owns the attributes, and inventing them here would publish content this node never observed.
+     * Those resolvers keep answering the disposition question and decline the projection, and the
+     * caller is required to treat a missing projection as "do not write", never as "write the
+     * event's copy instead".
+     *
+     * @param projection null when this resolver cannot build one; never a guess
+     */
+    record LiveSourceObservation(SourceEvidence evidence,
+            java.util.Map<String, Object> projection) {
+
+        public LiveSourceObservation {
+            if (evidence == null) {
+                throw new IllegalArgumentException("a live observation needs its verdict");
+            }
+            // A projection without a positive verdict is content nobody established was there.
+            if (projection != null
+                    && evidence.disposition() != LineageSourceDisposition.SOURCE_EXISTS) {
+                throw new IllegalArgumentException(
+                        "only a live source may carry a catalog projection");
+            }
+            projection = projection == null ? null : java.util.Map.copyOf(projection);
+        }
+
+        /** Whether this observation can license a current-entity write. */
+        public boolean publishable() {
+            return projection != null && !projection.isEmpty();
+        }
+    }
+
+    /**
+     * The disposition alone, for resolvers that cannot project. Overridden by those that can, so
+     * the projection costs no extra read and no extra budgeted operation.
+     */
+    default LiveSourceObservation observeLive(String repositoryId, EndpointKind kind,
+            String catalogQualifiedName) {
+        return new LiveSourceObservation(
+                dispositionOf(repositoryId, kind, catalogQualifiedName), null);
+    }
 }
