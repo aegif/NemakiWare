@@ -289,7 +289,13 @@ public class PurviewSchemaPayloadFactory {
                 attribute("contentHash", "string", true),
                 attribute("originalFileName", "string", true),
                 // §2's truncation evidence (v2.3.26) — see nemaki_document.
-                attribute("originalFileNameOriginalSha256", "string", true)));
+                attribute("originalFileNameOriginalSha256", "string", true),
+                // v2.3.58 (additive, optional): where a historical entity records that its
+                // source was destroyed. Without it these types had nowhere to say so, and Atlas
+                // silently drops an undeclared attribute — a tombstone written anyway would be
+                // indistinguishable from a live object, which is worse than no entity at all.
+                // Optional, so every entity already published stays valid.
+                attribute("lifecycleState", "string", true)));
         return entityDef;
     }
 
@@ -311,7 +317,13 @@ public class PurviewSchemaPayloadFactory {
                 attribute("artifactKind", "string", false),
                 attribute("objectCount", "long", true),
                 // name itself is inherited from Asset; only its evidence companion is declared.
-                attribute("nameOriginalSha256", "string", true)));
+                attribute("nameOriginalSha256", "string", true),
+                // v2.3.58 (additive, optional): where a historical entity records that its
+                // source was destroyed. Without it these types had nowhere to say so, and Atlas
+                // silently drops an undeclared attribute — a tombstone written anyway would be
+                // indistinguishable from a live object, which is worse than no entity at all.
+                // Optional, so every entity already published stays valid.
+                attribute("lifecycleState", "string", true)));
         return entityDef;
     }
 

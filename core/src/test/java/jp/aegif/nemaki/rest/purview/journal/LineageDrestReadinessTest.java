@@ -112,7 +112,7 @@ public class LineageDrestReadinessTest {
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), everyKindResolvable(),
                 mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
-                availableLedger());
+                availableLedger(), java.util.Set.of());
     }
 
     /** A source resolver for every kind, so the per-kind readiness check passes. */
@@ -169,7 +169,7 @@ public class LineageDrestReadinessTest {
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), everyKindResolvable(),
                 mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
-                availableLedger()));
+                availableLedger(), java.util.Set.of()));
 
         LineageDrestReadiness.Readiness verdict = readiness.evaluate();
 

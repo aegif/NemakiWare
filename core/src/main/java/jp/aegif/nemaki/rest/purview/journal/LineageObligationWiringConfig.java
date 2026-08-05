@@ -330,11 +330,14 @@ public class LineageObligationWiringConfig {
             LineageSourceDispositionRegistry sourceResolvers,
             ObjectProvider<LineageCurrentEntityRepublisher> republisher,
             LineageOperationBudgetProvider budgets,
-            ObjectProvider<LineagePurgeLedger> purgeLedger) {
+            ObjectProvider<LineagePurgeLedger> purgeLedger,
+            ObjectProvider<LineageConfig> lineageConfig) {
+        var config = lineageConfig.getIfAvailable();
         return new LineageObligationWiring(store.getIfAvailable(), probes, historicalPublishers,
                 service, scanner, projectorCollaborator, intentStore.getIfAvailable(),
                 compensationStore.getIfAvailable(), historicalMachine, sourceResolvers,
-                republisher.getIfAvailable(), budgets, purgeLedger.getIfAvailable());
+                republisher.getIfAvailable(), budgets, purgeLedger.getIfAvailable(),
+                config == null ? java.util.Set.of() : config.getNonEmittableKinds());
     }
 
     /**

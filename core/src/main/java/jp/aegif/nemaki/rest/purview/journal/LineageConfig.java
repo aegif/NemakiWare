@@ -191,6 +191,16 @@ public class LineageConfig {
      * <p>Expiry ends the EVENT's wait only. The obligation is shared with every other event
      * waiting on the same catalog entity and is never touched by it.
      */
+    /**
+     * Endpoint kinds this deployment must not emit lineage for.
+     *
+     * <p>An escape hatch for a kind whose catalog type cannot record a purge: declaring it here
+     * stops the producer creating events for it, which is honest. The alternative — emitting
+     * them and letting every one terminalise as SNAPSHOT_INCOMPLETE — is refused by readiness.
+     */
+    @Value("${lineage.emit.disabled-kinds:}")
+    private String disabledKinds;
+
     @Value("${lineage.catalog-wait.max-age-hours:24}")
     private int catalogWaitMaxAgeHours;
 
@@ -320,6 +330,26 @@ public class LineageConfig {
     }
 
     /** §8-b verify: absolute cap from verifyingSince; exceeded → FAILED (no retry consumed). */
+    /**
+     * The kinds this node will not emit. Unknown names are ignored rather than fatal: a typo
+     * must not stop the node starting, and readiness still refuses any kind left emittable
+     * that cannot be tombstoned.
+     */
+    public java.util.Set<EndpointKind> getNonEmittableKinds() {
+        if (disabledKinds == null || disabledKinds.isBlank()) {
+            return java.util.Set.of();
+        }
+        java.util.Set<EndpointKind> kinds = new java.util.LinkedHashSet<>();
+        for (String name : disabledKinds.split(",")) {
+            try {
+                kinds.add(EndpointKind.valueOf(name.trim().toUpperCase(java.util.Locale.ROOT)));
+            } catch (IllegalArgumentException unknown) {
+                // Ignored on purpose — see the javadoc.
+            }
+        }
+        return kinds;
+    }
+
     public int getCatalogWaitMaxAgeHours() {
         return catalogWaitMaxAgeHours;
     }

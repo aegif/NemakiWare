@@ -19,6 +19,7 @@ package jp.aegif.nemaki.rest.purview.journal;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -125,11 +126,12 @@ class LineageProductionAdapterTest {
                     .tombstoneMarkerAttribute(EndpointKind.ARCHIVE));
             assertEquals("sourceState", LineageHistoricalEntityFactory
                     .tombstoneMarkerAttribute(EndpointKind.CMIS_FOLDER));
-            for (EndpointKind kind : java.util.List.of(EndpointKind.EXTERNAL_ASSET,
-                    EndpointKind.CLOUD_OBJECT, EndpointKind.COLD_STORAGE,
-                    EndpointKind.IMPORT_ARTIFACT, EndpointKind.EXPORT_ARTIFACT)) {
-                assertNull(LineageHistoricalEntityFactory.tombstoneMarkerAttribute(kind),
-                        kind + "'s Atlas type declares neither marker");
+            // v2.3.58: the three types that declared neither marker gained lifecycleState
+            // additively, so every emittable kind can now be tombstoned. A kind with no marker
+            // would send well-formed snapshots to SNAPSHOT_INCOMPLETE for ever.
+            for (EndpointKind kind : EndpointKind.values()) {
+                assertNotNull(LineageHistoricalEntityFactory.tombstoneMarkerAttribute(kind),
+                        kind + " must have somewhere to record that its source was destroyed");
             }
         }
 
@@ -137,6 +139,7 @@ class LineageProductionAdapterTest {
         @Test
         @DisplayName("a kind with no marker is reported as missing a mandatory attribute")
         void noMarkerIsIncomplete() {
+            // Its mandatory identity attributes are still required; only the marker gap closed.
             assertFalse(LineageHistoricalEntityFactory.missingMandatoryAttributes(
                     Map.of("attributes", Map.of()), EndpointKind.EXTERNAL_ASSET).isEmpty());
             assertTrue(LineageHistoricalEntityFactory.missingMandatoryAttributes(

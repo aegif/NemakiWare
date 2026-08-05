@@ -121,7 +121,7 @@ public class LineageObligationWiringTest {
                     withScanner ? new LineageObligationScannerImpl(wired) : null,
                     withProjector ? new LineageObligationProjectorCollaboratorImpl(wired) : null,
                     intentStore, compensationStore, machine, sources, republisher, budgets,
-                    purgeLedger);
+                    purgeLedger, java.util.Set.of());
         }
     }
 
@@ -175,7 +175,7 @@ public class LineageObligationWiringTest {
         LineageObligationWiring wiring = new LineageObligationWiring(assembly.store,
                 assembly.probes, assembly.publishers, null, null, null, assembly.intentStore,
                 assembly.compensationStore, assembly.machine, assembly.sources,
-                assembly.republisher, assembly.budgets, assembly.purgeLedger);
+                assembly.republisher, assembly.budgets, assembly.purgeLedger, java.util.Set.of());
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("obligation service")));
@@ -274,7 +274,7 @@ public class LineageObligationWiringTest {
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
                 mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
-                availableLedger());
+                availableLedger(), java.util.Set.of());
 
         assertTrue(wiring.sharesService(service));
         assertFalse(wiring.sharesService(serviceOver(store)));
@@ -302,7 +302,7 @@ public class LineageObligationWiringTest {
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
                 mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
-                availableLedger());
+                availableLedger(), java.util.Set.of());
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("scanner drives a different service")),
@@ -323,7 +323,7 @@ public class LineageObligationWiringTest {
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
                 mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
-                availableLedger());
+                availableLedger(), java.util.Set.of());
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("projector's obligation collaborator")),
@@ -346,7 +346,7 @@ public class LineageObligationWiringTest {
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
                 mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
-                availableLedger());
+                availableLedger(), java.util.Set.of());
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("different store")),

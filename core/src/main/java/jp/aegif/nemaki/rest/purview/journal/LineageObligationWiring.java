@@ -69,6 +69,7 @@ public final class LineageObligationWiring {
     private final LineageCurrentEntityRepublisher republisher;
     private final LineageOperationBudgetProvider budgets;
     private final LineagePurgeLedger purgeLedger;
+    private final java.util.Set<EndpointKind> nonEmittableKinds;
 
     public LineageObligationWiring(LineageCatalogObligationStore store,
             LineageCatalogProbeRegistry probes,
@@ -81,7 +82,8 @@ public final class LineageObligationWiring {
             LineageHistoricalPublishMachine historicalMachine,
             LineageSourceDispositionRegistry sourceResolvers,
             LineageCurrentEntityRepublisher republisher,
-            LineageOperationBudgetProvider budgets, LineagePurgeLedger purgeLedger) {
+            LineageOperationBudgetProvider budgets, LineagePurgeLedger purgeLedger,
+            java.util.Set<EndpointKind> nonEmittableKinds) {
         this.store = store;
         this.probes = probes;
         this.historicalPublishers = historicalPublishers;
@@ -95,6 +97,8 @@ public final class LineageObligationWiring {
         this.republisher = republisher;
         this.budgets = budgets;
         this.purgeLedger = purgeLedger;
+        this.nonEmittableKinds = nonEmittableKinds == null ? java.util.Set.of()
+                : java.util.Set.copyOf(nonEmittableKinds);
     }
 
     /**
@@ -247,8 +251,38 @@ public final class LineageObligationWiring {
             if (!sourceResolvers.canResolve(kind)) {
                 violations.add("no authoritative source resolver is wired for " + kind);
             }
+            violations.addAll(historicalCapabilityViolations(kind));
         }
         return violations;
+    }
+
+    /**
+     * A kind that can be emitted must be able to receive a historical entity.
+     *
+     * <h2>The configuration this forbids</h2>
+     *
+     * <p>An emittable kind whose Atlas type has nowhere to record that the source was destroyed
+     * sends every well-formed snapshot to {@code SNAPSHOT_INCOMPLETE} — a terminal verdict, on
+     * correct data, for ever. That is not a machine that occasionally cannot finish; it is a
+     * machine guaranteed never to finish for that kind, and readiness must not be green over it.
+     *
+     * <p>The way out is either to give the type the attribute (which v2.3.58 did for the three
+     * that lacked it) or to declare the kind non-emittable with
+     * {@code lineage.emit.disabled-kinds}, which stops the producer creating the events in the
+     * first place. What is refused is the third option: emitting them and terminalising them.
+     */
+    private List<String> historicalCapabilityViolations(EndpointKind kind) {
+        if (nonEmittableKinds != null && nonEmittableKinds.contains(kind)) {
+            // Declared non-emittable: nothing will ever wait on it, so nothing can be stranded.
+            return List.of();
+        }
+        if (LineageHistoricalEntityFactory.tombstoneMarkerAttribute(kind) == null) {
+            return List.of(kind + " is emittable but its catalog type declares no tombstone"
+                    + " marker, so every well-formed snapshot of it would end"
+                    + " SNAPSHOT_INCOMPLETE — add the attribute or declare the kind"
+                    + " non-emittable in lineage.emit.disabled-kinds");
+        }
+        return List.of();
     }
 
     /**
