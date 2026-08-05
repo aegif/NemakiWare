@@ -428,7 +428,8 @@ and `POST /barrier/rollback` was not called.**
 | activate | **not called** |
 | rollback | **not called** |
 
-Not green in the rehearsal, and why:
+Not green in the rehearsal, and why. Both are honest reports of a disposable environment,
+not defects — but neither may be carried into a production activation:
 
 - `cursors.verdict = FAIL` — the legacy cursor store is absent in this disposable environment,
   so the check reports ERROR rather than clean. It is reporting honestly: it cannot establish
@@ -438,6 +439,23 @@ Not green in the rehearsal, and why:
   deliberately skips an empty allowlist, so the barrier does not block; the preflight reports
   the policy as `empty-allowlist-not-acceptable-in-production`, which is correct for production
   and expected here.
+
+### Closing both before a production activation
+
+A rehearsal that leaves these two open has demonstrated the machine, not the gate. What is
+still unproven is precisely the part that stops the wrong binary activating, so it has to be
+closed against a real environment rather than argued about:
+
+1. **`cursors.verdict = PASS`** — provision the legacy cursor store (or record the migration
+   off it) so the check can establish the residue rather than report that it cannot. Do NOT
+   satisfy this by relaxing the check: an equality that calls an unrecognised shape clean is
+   the failure mode the ERROR exists to prevent.
+2. **`approvedBinaryDigests` non-empty** — compute the digest with the CLI, out of process,
+   and approve exactly that value. The ACK digest must equal the CLI-computed digest, and
+   condition 9 must then be reported as satisfied by membership rather than skipped.
+
+Only when both are green, and `blockingConditions = []` still holds, has the pre-activate
+state been demonstrated. `POST /barrier/activate` remains out of scope for a rehearsal.
 
 ## 6. Evidence to file
 
