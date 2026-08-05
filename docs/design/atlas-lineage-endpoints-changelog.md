@@ -12,6 +12,87 @@
 
 ---
 
+## v2.3.75 — live-source 経路は自分の read が作った entity を publish する
+
+外部レビュー (Codex) Finding 2。**catalog に恒久的に古い内容が残り、誰も訂正しない**経路。
+
+live-source 経路は event が観測した属性を publish しながら、write を authorise するのは
+新しく読んだ verdict だった。両者が同じ instance の話かを検査する術は無い —
+`LineageWaitingSnapshot` に observed revision が無く、比較対象が存在しない。
+
+event が R1 を観測し、source が R2 へ更新された後に obligation が処理されると、prepare も
+execute も `SOURCE_EXISTS(R2)` を見て `stillAuthorised` は通り、**R1 の内容が publish されて
+resolve される**。resolved な obligation を再訪する経路は無く、この経路はそもそも
+authoritative publisher が走らない前提で存在するので、誰も訂正しない。
+
+対策は Codex 推奨の強化版 (a): **verdict の元になった object そのものから属性を作る**。
+追加の外部呼び出しは無い — recheck は元から行われ budget 済みで、それが payload も返す。
+
+- `LiveSourceObservation(evidence, projection)`。`SOURCE_EXISTS` 以外で projection を持つ
+  組合せは型が構築を拒否する
+- `observeLive()` の default は disposition だけを返し projection を辞退する。外部 kind の
+  属性は所有する側のもので、ここで捏造すれば観測していない内容を publish することになる
+- **projection が無ければ RETRY**。snapshot の属性へは fallback しない。その代入こそが
+  「ある revision の内容を別の revision の authorisation で publish する」欠陥そのもの
+- `publishAndConfirm` は subject の qualifiedName を受け取り、payload がそれを名指して
+  いなければ CONFLICT (別名義の下に書いて obligation を resolve させない)
+
+`SourceEvidence` は変更していない。`evidenceDigest` は stored comparison を鍵付けするため
+凍結されており、projection を足すと digest 定義が変わる。
+
+### 永続 outcome の改名
+
+`CURRENT_MATERIALIZED` → `LIVE_SOURCE_OBSERVATION_MATERIALIZED`。この経路が establish
+するのは「実行時点で repository が live instance を返し、その同じ read から作った entity を
+catalog が読み返した」ことだけで、durable な currentness ではない。terminal な決定の永続記録は
+過大に言う場所として最も悪い — 後から読む人には、実際には少なく意味していたと知る術が無い。
+
+`parseOutcome` は未知の値で例外を投げるため、**legacy 名を受理する alias が必須**。落とすと
+改名前に書かれた terminal obligation が読めなくなり、それは過大な名前より悪い。実 CouchDB IT
+(`legacyOutcomeNameStillDecodes`) で固定。
+
+### 併せて: 恒久 skip だった IT
+
+`selfReferentialReplayIsCorrupt` は `assumeTrue` で毎回 skip していた。`deliveryId` は
+tagged union hash で ORIGINAL と REPLAY が衝突することは設計上あり得ないため、この
+assumption は永久に偽 — **0 assertion で緑を報告し続けていた**。
+
+corruption を実 CouchDB へ直接書いて到達させた結果、自己参照は `replayProvenance` の guard
+ではなく **decode 層**で拒否されると判明した。`LineageEventV2` の正準コンストラクタが
+`deliveryId` を delivery から再計算するので、自分を指す row は自分の id を describe しなく
+なり decode できない。実際に成立する事実 (`UNDECODABLE_ROW`) を固定し、内側の guard が
+到達不能である理由をテストに明記した。
+
+---
+
+## v2.3.73 — 補償 republish はどの CMIS kind でも成功し得なかった
+
+誤って publish された tombstone を上書きするのが補償 republish の唯一の役目だが、書いていた
+属性がその型の宣言と食い違っており、Atlas は書込み全体を拒否する。補償は永久に RETRYABLE を
+返し、tombstone は catalog に残り続けていた。
+
+- `nemaki_document` は `lifecycleState` だけを宣言する。`buildDocumentEntity` は正しく
+  `lifecycleState=ACTIVE` を入れていたが、その上に `sourceState` を追加していた
+- CMIS_FOLDER の subject は DataSet proxy (`nemaki_folder_dataset`) なのに
+  `buildFolderEntity` を使っていた。これは `nemaki_folder` を `.../objects/{id}` に作る —
+  修復対象とは別の型・別の qualifiedName であり、tombstone はそのまま残る
+
+既存テストが素通ししていた理由も同じで、payload factory を mock していたため型が宣言する
+属性と突き合わせていなかった。
+
+---
+
+## v2.3.72 — fence budget を経路別にする
+
+budget は fenced section を一律「catalog 2 回 + source recheck 1 回」と数えていたが、どの経路も
+その形をしていない。実測は OBSERVED = catalog 3 / repo 0、CURRENT = 3 / 1、HISTORICAL = 3 / 3。
+
+過小計上は危険な方向である。個々の request は lease に収まったまま section が fence を超える
+構成 — この検査が弾くために作られたもの — をそのまま通す。readiness は到達経路ごとに検査し、
+違反に経路名を含める。Codex が同じ欠陥を High severity で独立に検出している。
+
+---
+
 ## v2.3.71 — observed materializer の target 別化 (外部レビュー指摘)
 
 3 つの adapter のうち probe と historical publisher は target をキーとした registry だったが、

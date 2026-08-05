@@ -53,7 +53,7 @@ public interface LineageCatalogAbsenceSettler {
         /** Settled by materialising what the event observed. */
         RESOLVED_OBSERVED(LineageCatalogObligation.Outcome.OBSERVED_MATERIALIZED),
         /** Settled by publishing the current entity of a source proven to exist. */
-        RESOLVED_CURRENT(LineageCatalogObligation.Outcome.CURRENT_MATERIALIZED),
+        RESOLVED_CURRENT(LineageCatalogObligation.Outcome.LIVE_SOURCE_OBSERVATION_MATERIALIZED),
         /**
          * Nothing terminal happened. Includes every failure, every UNKNOWN, every lost CAS and
          * every conflict — all of which may succeed later, so burning the obligation would turn

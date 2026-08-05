@@ -244,7 +244,7 @@ class LineagePolicyRoutedSettlerTest {
                 LineageCatalogAbsenceSettler.Verdict.RESOLVED_PURGED.outcome());
         assertEquals(LineageCatalogObligation.Outcome.OBSERVED_MATERIALIZED,
                 LineageCatalogAbsenceSettler.Verdict.RESOLVED_OBSERVED.outcome());
-        assertEquals(LineageCatalogObligation.Outcome.CURRENT_MATERIALIZED,
+        assertEquals(LineageCatalogObligation.Outcome.LIVE_SOURCE_OBSERVATION_MATERIALIZED,
                 LineageCatalogAbsenceSettler.Verdict.RESOLVED_CURRENT.outcome());
         // And the non-resolving ones store nothing at all.
         assertEquals(null, LineageCatalogAbsenceSettler.Verdict.RETRY.outcome());

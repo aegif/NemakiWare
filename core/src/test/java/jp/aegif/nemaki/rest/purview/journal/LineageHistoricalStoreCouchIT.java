@@ -520,6 +520,38 @@ public class LineageHistoricalStoreCouchIT {
         }
 
         /**
+         * A row stored under the old outcome name must still be readable.
+         *
+         * <p>{@code CURRENT_MATERIALIZED} was renamed for claiming more than its route
+         * establishes. The decoder throws on a name it does not know, so without the alias a
+         * terminal obligation written before the rename would become unreadable — and an
+         * unreadable terminal row is worse than the overstated name ever was.
+         *
+         * <p>Written here as a raw document, because that is the only way the old name can
+         * exist: nothing in this build produces it any more.
+         */
+        @Test
+        @DisplayName("the pre-rename outcome name still decodes")
+        void legacyOutcomeNameStillDecodes() {
+            CouchLineageCatalogObligationStore store =
+                    new CouchLineageCatalogObligationStore(journal);
+            LineageCatalogObligation created = store.createIfAbsent(obligation("legacy-outcome"));
+
+            com.ibm.cloud.cloudant.v1.model.Document raw =
+                    journal.client().get(created.documentId());
+            java.util.Map<String, Object> patched = new java.util.LinkedHashMap<>();
+            patched.put("_id", raw.getId());
+            patched.put("_rev", raw.getRev());
+            patched.putAll(raw.getProperties());
+            patched.put("outcome", "CURRENT_MATERIALIZED");
+            journal.client().update(patched);
+
+            assertEquals(LineageCatalogObligation.Outcome.LIVE_SOURCE_OBSERVATION_MATERIALIZED,
+                    store.read(created.taskKey()).orElseThrow().outcome(),
+                    "the old name must map to the renamed outcome, not fail the read");
+        }
+
+        /**
          * The obligation store has the same views, the same reduce, and had the same bug.
          *
          * <p>Its count route is the one a preflight reads, so its two paths are compared
