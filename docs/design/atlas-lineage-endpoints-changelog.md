@@ -12,6 +12,31 @@
 
 ---
 
+## v2.3.57 — activation を不能にしていた本番バグ 1 件
+
+`readRawStrict` が `_design/lineage` を Cloudant SDK の `getDocument` へ直接渡していた。
+SDK は `_` 始まりの id を `IllegalArgumentException` で拒否するため、
+`viewSignatureViolations()` は**全 deployment で常に**「design document unreadable」を返し、
+D-rest readiness は永久に red、つまり **4b activation は一度も成立し得なかった**。
+
+fail-closed 側の欠陥なので誤って activate されることは無かったが、activate できないという
+点で同じく致命的である。wrapper の design document API へ経路を分けた。実 CouchDB IT
+(`designDocumentIsReadable`) で固定。
+
+その他 (実 Atlas 環境で判明):
+
+- probe/publisher の登録条件が `supportsVerification()` (lineage Process の verify 可否) に
+  結びついており、catalog が到達可能な target に adapter が付かなかった。active backend で
+  判定するよう変更
+- `AtlasLineageSink` に `verify()` が無かった。false のままだと D-rest はこの target の
+  v2 行を 1 件も sequence できない (drain できない barrier が後続を全て止める)
+- preflight の configured target が sink bean 列挙だったため、Spring が構築しただけの
+  sink を数え、誰も設定していない target の adapter を要求していた。`lineage.targets` へ
+- target が 0 件のとき PASS を返していた。per-target/per-kind 検査が全て空ループになるので、
+  「機械が ready」を空ループの強さで主張することになる
+
+---
+
 ## v2.3.56 — 本番 adapter・N-3 preflight・実 Atlas が検出した 2 件
 
 ### 実 Atlas IT が検出した本番バグ (mock 不能)

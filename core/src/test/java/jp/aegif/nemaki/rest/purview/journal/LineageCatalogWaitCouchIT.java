@@ -240,6 +240,45 @@ public class LineageCatalogWaitCouchIT {
                 "corruption must not be offered to a resolver as work");
     }
 
+    /**
+     * The deployed design document must be readable, or activation is impossible.
+     *
+     * <p>{@code viewSignatureViolations()} compares the deployed views against this binary's.
+     * It reads through {@code readRawStrict}, which handed {@code _design/lineage} straight to
+     * the SDK — and the SDK refuses any id starting with {@code _}. So the check reported
+     * "design document unreadable" on every deployment, D-rest readiness was permanently red,
+     * and 4b could never be activated. Only a real CouchDB shows this: a mock returns whatever
+     * it was told to.
+     */
+    @Test
+    @DisplayName("the deployed design document is readable, so the view check can actually run")
+    public void designDocumentIsReadable() {
+        Map<String, Object> design = store.readRawStrict("_design/" + store.designDoc());
+        assertNotNull(design, "the design document must be readable after provisioning");
+        assertEquals("_design/" + store.designDoc(), design.get("_id"));
+        assertTrue(design.get("views") instanceof Map, "and must carry its views");
+
+        // The check it exists for: with the document readable, the only violations left are
+        // real differences, not an unreadable document.
+        List<String> violations = store.viewSignatureViolations();
+        assertTrue(violations.stream().noneMatch(v -> v.contains("unreadable")),
+                "the deployed design document must not read as unreadable: " + violations);
+        // And every view this binary defines must be FOUND. The SDK returns its own typed view
+        // model rather than a Map, and reading those as maps reported every view as missing
+        // from a design document that had all of them — the same activation block, one layer on.
+        assertTrue(violations.stream().noneMatch(v -> v.contains("missing from deployed")),
+                "the provisioned design document has every view: " + violations);
+        assertEquals(List.of(), violations,
+                "a freshly provisioned database must match this binary exactly");
+    }
+
+    /** A document that is genuinely absent is null, not an error. */
+    @Test
+    @DisplayName("an absent design document is null rather than a failure")
+    public void absentDesignDocumentIsNull() {
+        assertEquals(null, store.readRawStrict("_design/no-such-design-document"));
+    }
+
     // ------------------------------------------------------------------
 
     /** The targets a waiting event reports for one obligation, via the reverse view. */

@@ -31,7 +31,7 @@ services:
     environment:
       # Replaces the atlas overlay's JAVA_TOOL_OPTIONS wholesale (same key), so purview.enabled
       # is genuinely absent rather than overridden to false somewhere further down.
-      - JAVA_TOOL_OPTIONS=-Datlas.enabled=true -Datlas.endpoint=http://atlas:21000 -Datlas.username=${ATLAS_USER:-admin} -Datlas.password=${ATLAS_PASSWORD:-admin} -Datlas.connect.timeout.ms=2000 -Datlas.read.timeout.ms=10000 -Dlineage.mode=journaled -Dlineage.targets=atlas -Dlineage.spool.dir=/var/lineage-spool
+      - JAVA_TOOL_OPTIONS=-Datlas.enabled=true -Datlas.endpoint=http://atlas:21000 -Datlas.username=${ATLAS_USER:-admin} -Datlas.password=${ATLAS_PASSWORD:-admin} -Datlas.connect.timeout.ms=2000 -Datlas.read.timeout.ms=10000 -Dlineage.mode=journaled -Dlineage.targets=atlas -Dlineage.spool.dir=/var/lineage-spool -Dlineage.drest.enabled=true
     volumes:
       - lineage_spool:/var/lineage-spool
     user: root
