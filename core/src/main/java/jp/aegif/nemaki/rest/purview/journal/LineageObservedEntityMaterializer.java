@@ -74,8 +74,18 @@ public interface LineageObservedEntityMaterializer {
      * demanded a positive {@code SOURCE_EXISTS} verdict rather than a non-purgeable policy.
      * Separate method because the two inputs are separate types on purpose: one cannot be
      * passed where the other is expected.
+     *
+     * <p>The attributes come from {@code projection}, not from the snapshot. The snapshot holds
+     * what the <em>event</em> observed, which may be an older revision than the verdict that
+     * authorises this write — and nothing in the v2 schema records which revision the event saw,
+     * so the two cannot be compared. Publishing the projection makes the write assert only what
+     * this execution's own repository read established.
+     *
+     * @param projection the catalog entity built from the same read as the authorising verdict;
+     *        callers must not pass the snapshot's own attributes in its place
      */
-    Outcome materializeCurrent(VerifiedCurrentEntitySnapshot current);
+    Outcome materializeCurrent(VerifiedCurrentEntitySnapshot current,
+            java.util.Map<String, Object> projection);
 
     /** The catalog this materializer writes to. Answers for it and refuses every other. */
     String targetName();

@@ -174,7 +174,7 @@ class LineagePolicyRoutedSettlerTest {
         var foreign = mock(LineageObservedEntityMaterializer.class);
         when(foreign.materialize(any()))
                 .thenReturn(LineageObservedEntityMaterializer.Outcome.MATERIALIZED);
-        when(foreign.materializeCurrent(any()))
+        when(foreign.materializeCurrent(any(), any()))
                 .thenReturn(LineageObservedEntityMaterializer.Outcome.MATERIALIZED);
         var elsewhere = new LineageObservedEntityMaterializerRegistry(Map.of("purview", foreign));
         var machine = mock(LineageHistoricalPublishMachine.class);
@@ -189,10 +189,14 @@ class LineagePolicyRoutedSettlerTest {
 
         String qn = "nemaki://" + REPO + "/objects/doc-1";
         var sources = mock(LineageSourceDispositionRegistry.class);
-        when(sources.dispositionOf(anyString(), any(), anyString()))
-                .thenReturn(LineageSourceDispositionResolver.SourceEvidence.of(REPO,
-                        EndpointKind.CMIS_DOCUMENT, qn, LineageSourceDisposition.SOURCE_EXISTS,
-                        "inc-1", "rev-1", null, 1_000L));
+        var licensed = LineageSourceDispositionResolver.SourceEvidence.of(REPO,
+                EndpointKind.CMIS_DOCUMENT, qn, LineageSourceDisposition.SOURCE_EXISTS,
+                "inc-1", "rev-1", null, 1_000L);
+        when(sources.dispositionOf(anyString(), any(), anyString())).thenReturn(licensed);
+        // Publishable on purpose: the refusal under test must be the target lookup, not a
+        // missing projection, or the test would pass for the wrong reason.
+        when(sources.observeLive(anyString(), any(), anyString()))
+                .thenReturn(live(licensed, qn));
         var currentSettler = new PolicyRoutedAbsenceSettler(
                 resolverForKind(EndpointKind.CMIS_DOCUMENT, qn), machine, elsewhere, sources);
         var currentPlan = currentSettler.prepare(obligationFor(EndpointKind.CMIS_DOCUMENT, qn));
@@ -202,7 +206,7 @@ class LineagePolicyRoutedSettlerTest {
                 "a current-source plan must not resolve against another target's catalog");
 
         verify(foreign, never()).materialize(any());
-        verify(foreign, never()).materializeCurrent(any());
+        verify(foreign, never()).materializeCurrent(any(), any());
         verify(machine, never()).publish(any(), any(), any(), any());
     }
 
@@ -229,7 +233,7 @@ class LineagePolicyRoutedSettlerTest {
 
         // The service only calls execute() after a successful renew; with none, nothing runs.
         // Asserted at the boundary this class owns: preparing alone touches nothing external.
-        verify(materializer, never()).materializeCurrent(any());
+        verify(materializer, never()).materializeCurrent(any(), any());
     }
 
     /** Each route stores its own outcome, so the durable record says how it was settled. */
@@ -249,6 +253,61 @@ class LineagePolicyRoutedSettlerTest {
         assertTrue(!LineageCatalogAbsenceSettler.Verdict.INDETERMINATE.resolves());
     }
 
+    /**
+     * What gets written is this execution's read, never the event's older copy.
+     *
+     * <p>The event's attributes and the authorising verdict can describe different revisions,
+     * and nothing in the v2 schema records which revision the event saw — so publishing the
+     * event's copy asserts content for an instance the verdict was never about, on a route
+     * whose result nothing revisits.
+     */
+    @Test
+    @DisplayName("the live projection is published, and its absence writes nothing at all")
+    void publishesTheProjectionAndNeverTheEventsCopy() {
+        String qn = "nemaki://" + REPO + "/objects/doc-1";
+        var evidence = LineageSourceDispositionResolver.SourceEvidence.of(REPO,
+                EndpointKind.CMIS_DOCUMENT, qn, LineageSourceDisposition.SOURCE_EXISTS,
+                "inc-1", "rev-1", null, 1_000L);
+
+        // 1. A projection is offered: exactly that map reaches the materializer.
+        Map<String, Object> projection = Map.of("typeName", "nemaki_document",
+                "attributes", Map.of("qualifiedName", qn, "name", "as-read-now.txt"));
+        var sources = mock(LineageSourceDispositionRegistry.class);
+        when(sources.dispositionOf(anyString(), any(), anyString())).thenReturn(evidence);
+        when(sources.observeLive(anyString(), any(), anyString())).thenReturn(
+                new LineageSourceDispositionResolver.LiveSourceObservation(evidence, projection));
+        var materializer = mock(LineageObservedEntityMaterializer.class);
+        when(materializer.materializeCurrent(any(), any()))
+                .thenReturn(LineageObservedEntityMaterializer.Outcome.MATERIALIZED);
+        var settler = new PolicyRoutedAbsenceSettler(
+                resolverForKind(EndpointKind.CMIS_DOCUMENT, qn),
+                mock(LineageHistoricalPublishMachine.class), registryOf(materializer), sources);
+
+        assertEquals(LineageCatalogAbsenceSettler.Verdict.RESOLVED_CURRENT,
+                settler.execute(settler.prepare(obligationFor(EndpointKind.CMIS_DOCUMENT, qn))));
+        var published = org.mockito.ArgumentCaptor.forClass(Map.class);
+        verify(materializer).materializeCurrent(any(), published.capture());
+        assertEquals(projection, published.getValue(),
+                "the entity written must be the one this execution's own read produced");
+
+        // 2. A live source this node cannot project writes nothing — and specifically does not
+        // substitute the snapshot's own attributes, which is the defect being closed.
+        var unprojectable = mock(LineageSourceDispositionRegistry.class);
+        when(unprojectable.dispositionOf(anyString(), any(), anyString())).thenReturn(evidence);
+        when(unprojectable.observeLive(anyString(), any(), anyString())).thenReturn(
+                new LineageSourceDispositionResolver.LiveSourceObservation(evidence, null));
+        var untouched = mock(LineageObservedEntityMaterializer.class);
+        var refusing = new PolicyRoutedAbsenceSettler(
+                resolverForKind(EndpointKind.CMIS_DOCUMENT, qn),
+                mock(LineageHistoricalPublishMachine.class), registryOf(untouched), unprojectable);
+
+        assertEquals(LineageCatalogAbsenceSettler.Verdict.RETRY,
+                refusing.execute(refusing.prepare(obligationFor(EndpointKind.CMIS_DOCUMENT, qn))),
+                "an unprojectable live source must not resolve the obligation");
+        verify(untouched, never()).materializeCurrent(any(), any());
+        verify(untouched, never()).materialize(any());
+    }
+
     /** LEDGERED + EXISTS converges on all three kinds rather than retrying for ever. */
     @Test
     @DisplayName("every LEDGERED kind converges from a positive live-source verdict")
@@ -263,12 +322,13 @@ class LineagePolicyRoutedSettlerTest {
                 default -> "nemaki://" + REPO + "/objects/doc-1";
             };
             var sources = mock(LineageSourceDispositionRegistry.class);
-            when(sources.dispositionOf(anyString(), any(), anyString()))
-                    .thenReturn(LineageSourceDispositionResolver.SourceEvidence.of(REPO, kind, qn,
-                            LineageSourceDisposition.SOURCE_EXISTS, "inc-1", "rev-1", null,
-                            1_000L));
+            var evidence = LineageSourceDispositionResolver.SourceEvidence.of(REPO, kind, qn,
+                    LineageSourceDisposition.SOURCE_EXISTS, "inc-1", "rev-1", null, 1_000L);
+            when(sources.dispositionOf(anyString(), any(), anyString())).thenReturn(evidence);
+            when(sources.observeLive(anyString(), any(), anyString()))
+                    .thenReturn(live(evidence, qn));
             var materializer = mock(LineageObservedEntityMaterializer.class);
-            when(materializer.materializeCurrent(any()))
+            when(materializer.materializeCurrent(any(), any()))
                     .thenReturn(LineageObservedEntityMaterializer.Outcome.MATERIALIZED);
             var settler = new PolicyRoutedAbsenceSettler(resolverForKind(kind, qn),
                     mock(LineageHistoricalPublishMachine.class), registryOf(materializer), sources);
@@ -313,13 +373,16 @@ class LineagePolicyRoutedSettlerTest {
 
         for (Case scenario : cases) {
             var sources = mock(LineageSourceDispositionRegistry.class);
-            when(sources.dispositionOf(anyString(), any(), anyString()))
-                    .thenReturn(prepared)
+            when(sources.dispositionOf(anyString(), any(), anyString())).thenReturn(prepared);
+            // The write-time read is where the disagreement shows up. Each recheck is offered
+            // with a publishable projection, so what refuses the write is the authorisation
+            // check rather than an absent payload.
+            when(sources.observeLive(anyString(), any(), anyString()))
                     .thenAnswer(invocation -> {
                         if (scenario.throwsUp()) {
                             throw new IllegalStateException("source unreachable");
                         }
-                        return scenario.recheck();
+                        return live(scenario.recheck(), qn);
                     });
             var materializer = mock(LineageObservedEntityMaterializer.class);
             var settler = new PolicyRoutedAbsenceSettler(
@@ -331,7 +394,7 @@ class LineagePolicyRoutedSettlerTest {
             assertEquals(LineageCatalogAbsenceSettler.Verdict.RETRY, settler.execute(plan),
                     scenario.name() + " must not authorise a write");
             // Zero catalog calls: the write was licensed by a verdict that no longer holds.
-            verify(materializer, never()).materializeCurrent(any());
+            verify(materializer, never()).materializeCurrent(any(), any());
             verify(materializer, never()).materialize(any());
         }
     }
@@ -351,8 +414,10 @@ class LineagePolicyRoutedSettlerTest {
         var sources = mock(LineageSourceDispositionRegistry.class);
         when(sources.dispositionOf(anyString(), any(), anyString()))
                 .thenReturn(prepared).thenReturn(later);
+        when(sources.observeLive(anyString(), any(), anyString()))
+                .thenReturn(live(later, qn));
         var materializer = mock(LineageObservedEntityMaterializer.class);
-        when(materializer.materializeCurrent(any()))
+        when(materializer.materializeCurrent(any(), any()))
                 .thenReturn(LineageObservedEntityMaterializer.Outcome.MATERIALIZED);
         var settler = new PolicyRoutedAbsenceSettler(
                 resolverForKind(EndpointKind.CMIS_DOCUMENT, qn),
@@ -361,7 +426,7 @@ class LineagePolicyRoutedSettlerTest {
         var plan = settler.prepare(obligationFor(EndpointKind.CMIS_DOCUMENT, qn));
         assertEquals(LineageCatalogAbsenceSettler.Verdict.RESOLVED_CURRENT,
                 settler.execute(plan));
-        verify(materializer).materializeCurrent(any());
+        verify(materializer).materializeCurrent(any(), any());
     }
 
     private static LineageCatalogObligation obligationFor(EndpointKind kind, String qn) {
@@ -392,6 +457,18 @@ class LineagePolicyRoutedSettlerTest {
     }
 
     // ------------------------------------------------------------------
+
+    /**
+     * An observation as the live route now receives it: the verdict, and for a live source the
+     * catalog projection built from the same read. A non-live verdict carries none.
+     */
+    private static LineageSourceDispositionResolver.LiveSourceObservation live(
+            LineageSourceDispositionResolver.SourceEvidence evidence, String qn) {
+        return new LineageSourceDispositionResolver.LiveSourceObservation(evidence,
+                evidence.disposition() == LineageSourceDisposition.SOURCE_EXISTS
+                        ? Map.of("typeName", "t", "attributes", Map.of("qualifiedName", qn))
+                        : null);
+    }
 
     /** A registry holding one materializer, keyed to the only target these tests obligate. */
     private static LineageObservedEntityMaterializerRegistry registryOf(
