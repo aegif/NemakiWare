@@ -160,9 +160,15 @@ public class HttpPurviewSchemaRegistryClient implements PurviewSchemaRegistryCli
         return URI.create(String.format(TOKEN_URL_TEMPLATE, urlEncodePathSegment(request.getTenantId())));
     }
 
-    private URI buildSchemaUri(PurviewConnectionRequest request) {
-        return URI.create(trimTrailingSlash(request.getEndpoint()) + "/"
-                + trimSlashes(request.getAtlasBasePath()) + "/" + TYPE_DEFS_PATH);
+    URI buildSchemaUri(PurviewConnectionRequest request) {
+        // Required on the Data Map surface — without it the typedef apply fails with a
+        // request-shape error, which is the first step of the runbook and would read as a
+        // credentials problem. Same constant as the entity client, so the three clients that
+        // speak this surface cannot drift apart again.
+        return URI.create(PurviewDataMapApi.withApiVersion(
+                trimTrailingSlash(request.getEndpoint()) + "/"
+                        + trimSlashes(request.getAtlasBasePath()) + "/" + TYPE_DEFS_PATH,
+                request));
     }
 
     private String formatBodyExcerpt(String body) {

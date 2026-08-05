@@ -165,6 +165,12 @@ mvn test -Dgroups=atlas-integration -Dsurefire.excludedGroups= \
   live 環境なしで行い、決定的な単体テストで固定する。適用済みの例:
   - AAD v2.0 client-credentials + scope `https://purview.azure.net/.default` (実装済み)
   - `atlasBasePath` の設定化 — classic `catalog/api/atlas/v2` と新 `datamap/` surface の両対応 (実装済み)
+  - **api-version の client 間統一 (v2.3.84)** — GA Data Map surface は全操作で
+    `api-version` 必須だが、entity client だけが送り、接続 probe と typedef apply
+    (= B-E2 の手順 1) は送っていなかった。実行順で先に走る側だけが request-shape エラーで
+    落ち、credentials 問題に見える。定数と付与を `PurviewDataMapApi` に一元化し、
+    3 client が再び乖離できない形にした。403 は RBAC の判定であり再試行しないことも
+    handler テストで固定
   - **collection 配置 (v2.3.83)** — entity 書込み (`entity/bulk`) は Data Map surface で
     `collectionId` を送る。無指定の書込みは root collection に落ちるため、設定した
     collection だけに Data Curator を持つ最小権限 SP では 403、root 権限では

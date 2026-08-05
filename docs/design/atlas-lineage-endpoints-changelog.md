@@ -12,6 +12,29 @@
 
 ---
 
+## v2.3.84 — Data Map surface の api-version が client 間で乖離していた (公開仕様ベース)
+
+GA Data Map REST API (2023-09-01) は `/datamap` 配下の全操作で `api-version` を必須とする。
+entity client は 4 builder すべてで送っていたが、**接続 probe と typedef apply は送って
+いなかった**。GA surface では実行順で先に走る 2 つ — probe、そして runbook 手順 1 の
+schema apply — だけが request-shape エラーで落ち、entity 書込みは通る split-brain になる。
+落ち方は credentials 問題に見えるため、診断も誤誘導される。
+
+version 定数と付与ロジックを `PurviewDataMapApi` に一元化し、3 client が同じ helper を
+通るようにした。各 client に自分のコピーを持たせたことが乖離の原因なので、修正は
+「揃える」ではなく「二度と別々に持てなくする」。classic `catalog/` surface と Atlas OSS は
+version parameter を取らないため従来どおり素の URI。
+
+併せて 403 の非再試行を handler テストで固定した。403 は RBAC の判定 (collection の
+Data Curator 不足など) であり、何回試しても role assignment は変わらない — 修正は
+運用者の操作である。handler は元から 429/5xx だけを再試行しており、これは pin。
+
+mutation binding 確認済み — helper を no-op にすると probe / schema / entity の
+URI テスト 5 件が 4 つの test class にまたがって落ちる。
+
+error vocabulary 監査の残り所見 (非欠陥): bulk 応答の空 body / mutated 0 件は
+success 扱いだが、lineage 経路では read-back が権威なので false-green にならない。
+
 ## v2.3.83 — Purview collection 配置: entity 書込みが collectionId を送っていなかった (公開仕様ベース)
 
 `purview.collection` (既定 "NemakiWare") は設定・admin 表示・schema state には流れていたが、

@@ -63,4 +63,39 @@ public class HttpPurviewApiClientTest {
 
         assertEquals("Bearer mock-token", header);
     }
+
+    /**
+     * The Data Map surface requires api-version on every operation, the probe included.
+     *
+     * <p>Without it the probe fails with a request-shape error while the entity client — which
+     * sends the parameter — works, and the resulting "connection failed" points at credentials
+     * that are fine.
+     */
+    @org.junit.jupiter.api.Test
+    public void testProbeUriCarriesApiVersionOnDataMapSurface() {
+        HttpPurviewApiClient client = new HttpPurviewApiClient();
+        PurviewConnectionRequest request = new PurviewConnectionRequest(
+                "https://example.purview.azure.com", "datamap/api/atlas/v2", "oauth2",
+                "t", "c", "s", "", "", 5000, 30000);
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "https://example.purview.azure.com/datamap/api/atlas/v2/types/typedefs/headers"
+                        + "?api-version=" + PurviewDataMapApi.API_VERSION,
+                client.buildProbeUri(request).toString());
+    }
+
+    /** The classic surface and Atlas OSS take no version parameter; their URIs stay bare. */
+    @org.junit.jupiter.api.Test
+    public void testProbeUriStaysBareOffTheDataMapSurface() {
+        HttpPurviewApiClient client = new HttpPurviewApiClient();
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "https://example.purview.azure.com/catalog/api/atlas/v2/types/typedefs/headers",
+                client.buildProbeUri(new PurviewConnectionRequest(
+                        "https://example.purview.azure.com", "catalog/api/atlas/v2", "oauth2",
+                        "t", "c", "s", "", "", 5000, 30000)).toString());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "http://localhost:21000/api/atlas/v2/types/typedefs/headers",
+                client.buildProbeUri(new PurviewConnectionRequest(
+                        "http://localhost:21000", "api/atlas/v2", "basic",
+                        "", "", "", "u", "p", 5000, 30000)).toString());
+    }
 }

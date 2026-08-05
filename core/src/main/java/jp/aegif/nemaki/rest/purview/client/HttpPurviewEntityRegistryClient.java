@@ -33,7 +33,6 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
     private static final String ENTITY_UNIQUE_ATTRIBUTE_PATH = "entity/uniqueAttribute/type";
     private static final String RELATIONSHIP_PATH = "relationship";
     private static final String RELATIONSHIP_GUID_PATH = "relationship/guid";
-    private static final String DATAMAP_API_VERSION = "2023-09-01";
     private static final int MAX_BODY_EXCERPT_LENGTH = 200;
 
     private final HttpClient httpClient;
@@ -383,7 +382,7 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
         String uri = trimTrailingSlash(request.getEndpoint()) + "/"
                 + trimSlashes(request.getAtlasBasePath()) + "/" + ENTITY_BULK_PATH;
         if (request.isPurviewDataMap()) {
-            uri = uri + "?api-version=" + DATAMAP_API_VERSION;
+            uri = PurviewDataMapApi.withApiVersion(uri, request);
             // Entity writes are collection-scoped in Purview, and a write that names no
             // collection lands in the root one. With a service principal holding Data Curator
             // on the configured collection only — the runbook's least-privilege setup — that
@@ -418,18 +417,14 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
                 + trimSlashes(request.getAtlasBasePath()) + "/" + ENTITY_UNIQUE_ATTRIBUTE_PATH + "/"
                 + urlEncodePathSegment(typeName)
                 + "?attr:" + attributeName + "=" + urlEncode(attributeValue);
-        if (request.isPurviewDataMap()) {
-            uri = uri + "&api-version=" + DATAMAP_API_VERSION;
-        }
+        uri = PurviewDataMapApi.withApiVersion(uri, request);
         return URI.create(uri);
     }
 
     private URI buildRelationshipUri(PurviewConnectionRequest request) {
         String uri = trimTrailingSlash(request.getEndpoint()) + "/"
                 + trimSlashes(request.getAtlasBasePath()) + "/" + RELATIONSHIP_PATH;
-        if (request.isPurviewDataMap()) {
-            uri = uri + "?api-version=" + DATAMAP_API_VERSION;
-        }
+        uri = PurviewDataMapApi.withApiVersion(uri, request);
         return URI.create(uri);
     }
 
@@ -437,9 +432,7 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
         String uri = trimTrailingSlash(request.getEndpoint()) + "/"
                 + trimSlashes(request.getAtlasBasePath()) + "/" + RELATIONSHIP_GUID_PATH + "/"
                 + urlEncodePathSegment(relationshipGuid);
-        if (request.isPurviewDataMap()) {
-            uri = uri + "?api-version=" + DATAMAP_API_VERSION;
-        }
+        uri = PurviewDataMapApi.withApiVersion(uri, request);
         return URI.create(uri);
     }
 
