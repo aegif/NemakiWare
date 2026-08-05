@@ -409,6 +409,25 @@ bumps and the ACKs are cleared, so a fresh ACK is required.
 
 ---
 
+## 5.7 ACTIVATION — 2026-08-06, local environment, operator-authorized
+
+`POST /barrier/activate` was executed for the first time, on the local environment, under an
+explicit operator decision (the environments in scope are local and the standing demo; there is
+no production deployment). The §3 items remain production obligations and were not claimed.
+
+| step | result |
+|---|---|
+| stale-ACK gate | the ACK from §5.6 had expired; activation was **refused by condition 5** until a fresh ACK — the freshness gate demonstrated live |
+| activate | HTTP 200, `state = ACTIVE`, `writeSchemaVersion = 2`, `minReaderSchemaVersion = 2` — one-way |
+| first v2 write | `EXPORT_ZIP_FOLDER` via the spool → convergent materialisation → `lineage_event_v2` (schemaVersion 2, ORIGINAL) |
+| sequencer | explicit run: `finalized = 1, backlog = 0, health = FENCED_OK` |
+| projection | entered `WAITING_FOR_CATALOG` with two obligations: `CMIS_FOLDER` and `EXPORT_ARTIFACT`, both PENDING |
+| **defect found** | **nothing drives the obligation scanner** — no schedule, no admin route. The §2 machine could create obligations but never work them off; every waiting event would age out to terminal UNRESOLVED. Fixed on the spot (v2.3.85): scheduled passes in the projection loop + `POST /obligations/run` |
+| obligations | after the fix: `CMIS_FOLDER → RESOLVED (LIVE_SOURCE_OBSERVATION_MATERIALIZED)` — the live-source route's first live run; `EXPORT_ARTIFACT → RESOLVED (SOURCE_EXISTS)` on the pass after the process publish created it |
+| event | `atlas: PUBLISHED` (read-back verified) |
+| Atlas | `nemaki_folder_dataset` present with `sourceState = ACTIVE`; `nemaki_export_artifact` present, ACTIVE |
+| redeploy under ACTIVE | the barrier survives; a new binary is admitted by **capability** (`read:v2`), not by digest — the allowlist ratchets activation, not steady-state deploys. Re-arming an ACTIVE barrier is refused (`writeSchemaVersion == 1` required), by design |
+
 ## 5.6 Dry-run (rehearsal, second pass) — 2026-08-05, same environment, non-vacuous gate
 
 The first rehearsal (§5.5) demonstrated the machine but left the gate unproven: the cursor

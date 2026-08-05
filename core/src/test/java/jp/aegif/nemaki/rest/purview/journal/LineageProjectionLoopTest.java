@@ -344,6 +344,50 @@ class LineageProjectionLoopTest {
         verify(mockStore).findByRepositoryAndSequenceRange("canopy", 0, 50);
     }
 
+    /**
+     * The scheduled obligation pass exists because entering a catalog wait CREATES an
+     * obligation while nothing else ever worked one off — every waiting event aged out to
+     * terminal UNRESOLVED with the machine idle. These pin the driver's three behaviours.
+     */
+    @Test
+    void obligationPassRunsTheScanner() throws Exception {
+        LineageObligationScanner scanner = mock(LineageObligationScanner.class);
+        when(scanner.runBoundedPass(anyInt()))
+                .thenReturn(new LineageCatalogObligationService.Pass(1, 1, 0, 0, 0));
+        setField(loop, "obligationScanner", scanner);
+
+        loop.runObligationPass();
+
+        verify(scanner).runBoundedPass(0);
+    }
+
+    /** A node refused as a reader must not touch DB-global state, obligations included. */
+    @Test
+    void obligationPassSkipsWhenRefused() throws Exception {
+        LineageObligationScanner scanner = mock(LineageObligationScanner.class);
+        LineageReaderAdmission admission = mock(LineageReaderAdmission.class);
+        when(admission.evaluate()).thenReturn(new LineageReaderAdmission.Admission(
+                LineageReaderAdmission.Decision.REFUSED, List.of("v1-only reader"), null));
+        setField(loop, "obligationScanner", scanner);
+        setField(loop, "readerAdmission", admission);
+
+        loop.runObligationPass();
+
+        verify(scanner, never()).runBoundedPass(anyInt());
+    }
+
+    /** No scanner wired is a quiet no-op, and a throwing scanner does not kill the schedule. */
+    @Test
+    void obligationPassSurvivesAbsenceAndFailure() throws Exception {
+        loop.runObligationPass(); // no scanner — must not throw
+
+        LineageObligationScanner scanner = mock(LineageObligationScanner.class);
+        when(scanner.runBoundedPass(anyInt())).thenThrow(new IllegalStateException("db down"));
+        setField(loop, "obligationScanner", scanner);
+        assertDoesNotThrow(loop::runObligationPass,
+                "a failed pass must leave the schedule alive for the next one");
+    }
+
     private static void setField(Object target, String fieldName, Object value) throws Exception {
         Field field = target.getClass().getDeclaredField(fieldName);
         field.setAccessible(true);
