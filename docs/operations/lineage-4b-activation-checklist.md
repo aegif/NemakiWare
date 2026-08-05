@@ -409,6 +409,36 @@ bumps and the ACKs are cleared, so a fresh ACK is required.
 
 ---
 
+## 5.5 Dry-run (rehearsal) — 2026-08-05, local disposable environment
+
+Executed with `docker-compose-4b-dryrun.yml` against local CouchDB 3.x, Solr and Apache Atlas,
+using the real production adapters (no placeholders). **`POST /barrier/activate` was not called,
+and `POST /barrier/rollback` was not called.**
+
+| condition | result |
+|---|---|
+| real adapters, no placeholder | probe / historical publisher / read-back / republisher / per-kind source resolver / purge ledger all wired from production beans |
+| readiness green | `drestReadiness.ready = true`, `violations = []` |
+| preflight obligation section | `catalogObligations.verdict = PASS`, `blockingConditions = []`, `configuredTargets = [atlas]` |
+| spool | `verdict = PASS` (real path, FileStore, write/link/fsync probe) |
+| independent artifact digest | `ack.binaryDigest == measuredBinaryDigest` |
+| prepare | `applied = true`, `state = PREPARING`, `generation = 1` |
+| ack | `applied = true`, all 6 required capabilities present including `catalog:obligations` |
+| activation conditions 1–11 | `blockingConditions = []` on the pre-activate `GET /barrier` |
+| activate | **not called** |
+| rollback | **not called** |
+
+Not green in the rehearsal, and why:
+
+- `cursors.verdict = FAIL` — the legacy cursor store is absent in this disposable environment,
+  so the check reports ERROR rather than clean. It is reporting honestly: it cannot establish
+  the residue is clean, and equality with `normalize()` would call an unrecognised shape clean.
+  A real environment either has the legacy store or has migrated off it.
+- `approvedBinaryDigests = []` — nobody has approved a digest in a rehearsal. Condition 9
+  deliberately skips an empty allowlist, so the barrier does not block; the preflight reports
+  the policy as `empty-allowlist-not-acceptable-in-production`, which is correct for production
+  and expected here.
+
 ## 6. Evidence to file
 
 1. `/preflight` response (before, and after activation)
