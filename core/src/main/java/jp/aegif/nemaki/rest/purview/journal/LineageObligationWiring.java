@@ -219,10 +219,17 @@ public final class LineageObligationWiring {
                             + " budgeted)");
                     continue;
                 }
-                if (!budget.fitsInside(fenceLeaseMs, safetyMarginMs)) {
-                    long worst = budget.worstCaseMs();
+                // Per reachable route, and the route is named. A LEDGERED kind can take either
+                // the current-source route or the historical one, and which it takes is decided
+                // by evidence read long after the fence is taken — so both have to fit, and an
+                // operator has to be told which one does not.
+                for (LineageOperationBudget.Route route : budget.reachableRoutes()) {
+                    if (budget.fitsInside(route, fenceLeaseMs, safetyMarginMs)) {
+                        continue;
+                    }
+                    long worst = budget.worstCaseMs(route);
                     violations.add("the worst-case fenced section for target '" + target
-                            + "' kind " + kind + " ("
+                            + "' kind " + kind + " on the " + route + " route ("
                             + (worst == Long.MAX_VALUE ? "unbounded" : worst + "ms")
                             + ") plus the safety margin (" + safetyMarginMs
                             + "ms) does not fit inside the subject fence lease (" + fenceLeaseMs

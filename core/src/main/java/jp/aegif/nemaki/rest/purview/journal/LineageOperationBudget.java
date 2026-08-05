@@ -50,14 +50,76 @@ public record LineageOperationBudget(
         long sourceRecheckMs) {
 
     /**
-     * Catalog calls inside one fenced section: the historical publish, and the read-back that
-     * confirms it.
+     * What one fenced section actually costs, counted per route.
      *
-     * <p>Two, not one. A budget that counted a single call would pass a configuration whose
-     * section takes twice as long as it is allowed to. The source re-check is counted separately
-     * because it runs against the repository, not the catalog, with its own cost.
+     * <h2>Why one number for every route was wrong</h2>
+     *
+     * <p>The earlier model charged every section two catalog calls and one source re-check. No
+     * route costs that. Every route does a pre-read, a write and a post-read — three — and the
+     * routes differ again in how many times they ask the repository. Under-counting is the
+     * dangerous direction: it passes exactly the configurations this check exists to reject,
+     * because the section overruns the fence while every individual request fits inside it.
+     *
+     * <p>Counted from the code that runs, not from the design:
+     *
+     * <ul>
+     *   <li>{@code OBSERVED} — {@code CatalogObservedEntityMaterializer.publishAndConfirm}:
+     *       read-back, bulk publish, read-back. Nothing asks the repository; the policy already
+     *       said this source is never destroyed.</li>
+     *   <li>{@code CURRENT} — the same three, preceded by the live-source re-check that
+     *       {@code PolicyRoutedAbsenceSettler.executeCurrent} takes immediately before writing.</li>
+     *   <li>{@code HISTORICAL} — {@code LineageHistoricalPublishMachine.publish}: a source
+     *       re-check, a read-back, the publish, a second source re-check afterwards, and then the
+     *       compensating republish, which is one more catalog write plus one repository read for
+     *       the content it republishes. The longest reachable path, because a budget that assumed
+     *       the short one would be a budget for the case that never needed it.</li>
+     * </ul>
+     *
+     * @param catalogOperations calls through the catalog client, each retryable with backoff
+     * @param repositoryOperations reads against the repository — source re-checks and the
+     *        compensating republish's content read. Charged at {@code sourceRecheckMs} each.
      */
-    static final int CATALOG_OPERATIONS_PER_CRITICAL_SECTION = 2;
+    public enum Route {
+        OBSERVED(3, 0),
+        CURRENT(3, 1),
+        HISTORICAL(3, 3);
+
+        private final int catalogOperations;
+        private final int repositoryOperations;
+
+        Route(int catalogOperations, int repositoryOperations) {
+            this.catalogOperations = catalogOperations;
+            this.repositoryOperations = repositoryOperations;
+        }
+
+        public int catalogOperations() {
+            return catalogOperations;
+        }
+
+        public int repositoryOperations() {
+            return repositoryOperations;
+        }
+    }
+
+    /**
+     * The routes an obligation for this kind can actually take.
+     *
+     * <p>A LEDGERED kind can end up on either the current-source route or the historical one,
+     * and which it takes is decided by evidence read at prepare time — so both must fit. A kind
+     * NemakiWare never destroys only has the observed route.
+     *
+     * <p>An unclassified kind gets every route. Not a default: readiness already refuses to
+     * activate over an unclassified kind, and charging it the cheapest route would be the one
+     * answer that could turn that red green.
+     */
+    public java.util.Set<Route> reachableRoutes() {
+        if (kind == null || LineagePurgeLifecyclePolicy.of(kind).isEmpty()) {
+            return java.util.EnumSet.allOf(Route.class);
+        }
+        return LineagePurgeLifecyclePolicy.canBePurged(kind)
+                ? java.util.EnumSet.of(Route.CURRENT, Route.HISTORICAL)
+                : java.util.EnumSet.of(Route.OBSERVED);
+    }
 
     /**
      * Whether every component is known and bounded.
@@ -73,40 +135,66 @@ public record LineageOperationBudget(
     }
 
     /**
-     * The worst case for the whole fenced section.
+     * The worst case for one fenced section on this route.
      *
      * <p>{@code Long.MAX_VALUE} when it cannot be computed — unbounded retries, or arithmetic
      * that would overflow. Both mean "does not fit", which is the fail-closed answer; returning
      * a small number on overflow would turn an absurd configuration into a passing one.
      */
-    public long worstCaseMs() {
-        if (!bounded()) {
+    public long worstCaseMs(Route route) {
+        if (!bounded() || route == null) {
             return Long.MAX_VALUE;
         }
         try {
             long perAttempt = Math.addExact(connectTimeoutMs, readTimeoutMs);
             long attempts = Math.addExact((long) maxRetries, 1L);
             long perOperation = Math.multiplyExact(perAttempt, attempts);
-            long catalogOperations = Math.multiplyExact(perOperation,
-                    (long) CATALOG_OPERATIONS_PER_CRITICAL_SECTION);
+            long catalogCalls = (long) route.catalogOperations();
+            long catalogOperations = Math.multiplyExact(perOperation, catalogCalls);
             long withBackoff = Math.addExact(catalogOperations,
-                    Math.multiplyExact(retryBackoffTotalMs,
-                            (long) CATALOG_OPERATIONS_PER_CRITICAL_SECTION));
-            long withSourceRecheck = Math.addExact(withBackoff, sourceRecheckMs);
-            return Math.addExact(withSourceRecheck, clientOverheadMs);
+                    Math.multiplyExact(retryBackoffTotalMs, catalogCalls));
+            long repositoryTime = Math.multiplyExact(sourceRecheckMs,
+                    (long) route.repositoryOperations());
+            return Math.addExact(Math.addExact(withBackoff, repositoryTime), clientOverheadMs);
         } catch (ArithmeticException overflow) {
             return Long.MAX_VALUE;
         }
     }
 
     /**
-     * Whether this budget leaves a real margin inside {@code fenceLeaseMs}.
+     * The worst case across every route this kind can reach.
+     *
+     * <p>The number to compare against the fence when only one may be reported, because the route
+     * is not known until the evidence is read — well after the fence is taken.
+     */
+    public long worstCaseMs() {
+        long worst = 0L;
+        for (Route route : reachableRoutes()) {
+            long candidate = worstCaseMs(route);
+            if (candidate == Long.MAX_VALUE) {
+                return Long.MAX_VALUE;
+            }
+            worst = Math.max(worst, candidate);
+        }
+        return worst;
+    }
+
+    /**
+     * Whether this route leaves a real margin inside {@code fenceLeaseMs}.
      *
      * <p>Strictly less than: at equality the section can still be running at the instant the
      * fence expires, which is the case the margin exists to exclude.
      */
+    public boolean fitsInside(Route route, long fenceLeaseMs, long safetyMarginMs) {
+        return fitsInside(worstCaseMs(route), fenceLeaseMs, safetyMarginMs);
+    }
+
+    /** Whether every reachable route fits. One failing route is enough to fail. */
     public boolean fitsInside(long fenceLeaseMs, long safetyMarginMs) {
-        long worst = worstCaseMs();
+        return fitsInside(worstCaseMs(), fenceLeaseMs, safetyMarginMs);
+    }
+
+    private static boolean fitsInside(long worst, long fenceLeaseMs, long safetyMarginMs) {
         if (worst == Long.MAX_VALUE || fenceLeaseMs <= 0 || safetyMarginMs < 0) {
             return false;
         }

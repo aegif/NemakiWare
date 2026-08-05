@@ -40,6 +40,7 @@ import org.junit.jupiter.api.Test;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
+import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver;
 import jp.aegif.nemaki.rest.purview.client.PurviewConnectionRequest;
 import jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult;
@@ -535,7 +536,7 @@ class LineageProductionAdapterTest {
     class Republisher {
 
         @Test
-        @DisplayName("a repair writes the live object with sourceState ACTIVE")
+        @DisplayName("a document repair writes lifecycleState — the attribute its type declares")
         void repairsWithTheLiveObject() throws Exception {
             String subject = LineageSourceDispositionResolver.SourceEvidence.subjectDigest(REPO,
                     EndpointKind.CMIS_DOCUMENT, QUALIFIED_NAME);
@@ -561,9 +562,62 @@ class LineageProductionAdapterTest {
                     new CatalogCurrentEntityRepublisher(resolver(), client, payloadFactory,
                             contentService, ledger)
                             .republishCurrent(TARGET, REPO, EndpointKind.CMIS_DOCUMENT, subject));
+            // lifecycleState, not sourceState. nemaki_document declares only the former, and
+            // Atlas rejects a write carrying an attribute the type does not declare — so the
+            // earlier sourceState made every document compensation fail, for ever, against a
+            // tombstone nothing else was going to correct.
+            assertEquals(PurviewEntityPayloadFactory.SOURCE_STATE_ACTIVE,
+                    ((Map<?, ?>) built.get("attributes"))
+                            .get(LineageHistoricalEntityFactory.LIFECYCLE_STATE));
+            assertNull(((Map<?, ?>) built.get("attributes"))
+                            .get(LineageHistoricalEntityFactory.SOURCE_STATE),
+                    "a nemaki_document must not carry sourceState");
+        }
+
+        /**
+         * A folder subject is the DataSet proxy, and the repair has to write that.
+         *
+         * <p>{@code buildFolderEntity} produces a {@code nemaki_folder} at the object's own
+         * qualified name — a different type at a different name from the tombstone being
+         * repaired, so the tombstone survived the repair that reported success.
+         */
+        @Test
+        @DisplayName("a folder repair writes the DataSet proxy, not the folder")
+        void repairsAFolderThroughItsDatasetProxy() throws Exception {
+            String qualifiedName = "nemaki://" + REPO + "/folders/" + OBJECT_ID + "/dataset";
+            String subject = LineageSourceDispositionResolver.SourceEvidence.subjectDigest(REPO,
+                    EndpointKind.CMIS_FOLDER, qualifiedName);
+            LineagePurgeLedger ledger = mock(LineagePurgeLedger.class);
+            when(ledger.find(REPO, EndpointKind.CMIS_FOLDER, subject))
+                    .thenReturn(Optional.of(new LineagePurgeLedger.PurgeMark(REPO,
+                            EndpointKind.CMIS_FOLDER, subject, OBJECT_ID, "rev-1", 900L,
+                            1_000L)));
+            ContentService contentService = mock(ContentService.class);
+            Content live = new Folder();
+            live.setId(OBJECT_ID);
+            when(contentService.getContent(REPO, OBJECT_ID)).thenReturn(live);
+            PurviewEntityPayloadFactory payloadFactory = mock(PurviewEntityPayloadFactory.class);
+            Map<String, Object> built = new LinkedHashMap<>();
+            built.put("typeName", EndpointKind.CMIS_FOLDER.atlasTypeName());
+            built.put("attributes", new LinkedHashMap<>(Map.of("qualifiedName", qualifiedName)));
+            when(payloadFactory.buildFolderDatasetEntity(REPO, live,
+                    PurviewEntityPayloadFactory.SOURCE_STATE_ACTIVE)).thenReturn(built);
+            PurviewEntityRegistryClient client = mock(PurviewEntityRegistryClient.class);
+            when(client.bulkCreateOrUpdateEntities(any(), any()))
+                    .thenReturn(PurviewEntityPublishResult.success(1, "ok"));
+
+            assertEquals(LineageCurrentEntityRepublisher.Outcome.REPUBLISHED,
+                    new CatalogCurrentEntityRepublisher(resolver(), client, payloadFactory,
+                            contentService, ledger)
+                            .republishCurrent(TARGET, REPO, EndpointKind.CMIS_FOLDER, subject));
+            // The folder's own entity is never built: it is not this subject.
+            verify(payloadFactory, never()).buildFolderEntity(anyString(), any());
             assertEquals(PurviewEntityPayloadFactory.SOURCE_STATE_ACTIVE,
                     ((Map<?, ?>) built.get("attributes"))
                             .get(LineageHistoricalEntityFactory.SOURCE_STATE));
+            assertNull(((Map<?, ?>) built.get("attributes"))
+                            .get(LineageHistoricalEntityFactory.LIFECYCLE_STATE),
+                    "a nemaki_folder_dataset must not carry lifecycleState");
         }
 
         /** A mark that does not reproduce the digest could be about a different object. */
