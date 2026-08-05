@@ -125,10 +125,12 @@ public interface LineageCatalogAbsenceSettler {
     LineageHistoricalPublishMachine historicalMachineRef();
 
     /**
-     * The observed-entity materializer this settler drives, for the NON_PURGEABLE branch.
+     * The observed-entity materializers this settler drives, for the NON_PURGEABLE branch and
+     * for a LEDGERED source proven to still exist.
      *
-     * <p>Readiness compares it against the registered instance by identity; a null on either
-     * side is a violation.
+     * <p>A registry rather than one instance: the settler picks by the plan's own target, so a
+     * node publishing to two catalogs cannot materialise into the wrong one. Readiness asks it
+     * per configured target; a null registry, or one that answers for no target, is a violation.
      */
-    LineageObservedEntityMaterializer observedMaterializerRef();
+    LineageObservedEntityMaterializerRegistry observedMaterializersRef();
 }

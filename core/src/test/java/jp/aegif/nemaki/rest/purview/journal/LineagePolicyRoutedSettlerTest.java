@@ -45,7 +45,8 @@ class LineagePolicyRoutedSettlerTest {
             when(materializer.materialize(any())).thenReturn(outcome);
             var machine = mock(LineageHistoricalPublishMachine.class);
             var settler = new PolicyRoutedAbsenceSettler(
-                    resolverFor(EndpointKind.EXTERNAL_ASSET), machine, materializer, null);
+                    resolverFor(EndpointKind.EXTERNAL_ASSET), machine,
+                    registryOf(materializer), null);
 
             var obligation = obligation(EndpointKind.EXTERNAL_ASSET);
             var plan = settler.prepare(obligation);
@@ -88,7 +89,8 @@ class LineagePolicyRoutedSettlerTest {
             var machine = mock(LineageHistoricalPublishMachine.class);
             var materializer = mock(LineageObservedEntityMaterializer.class);
             var settler = new PolicyRoutedAbsenceSettler(
-                    resolverFor(EndpointKind.CMIS_DOCUMENT), machine, materializer, sources);
+                    resolverFor(EndpointKind.CMIS_DOCUMENT), machine,
+                    registryOf(materializer), sources);
 
             var plan = settler.prepare(obligation(EndpointKind.CMIS_DOCUMENT));
             if (disposition == LineageSourceDisposition.SOURCE_EXISTS) {
@@ -120,7 +122,7 @@ class LineagePolicyRoutedSettlerTest {
                         CorruptWaitingEventException.Reason.UNDECODABLE_ROW.message()));
         var settler = new PolicyRoutedAbsenceSettler(resolver,
                 mock(LineageHistoricalPublishMachine.class),
-                mock(LineageObservedEntityMaterializer.class), null);
+                registryOf(mock(LineageObservedEntityMaterializer.class)), null);
 
         assertEquals(LineageCatalogAbsenceSettler.Verdict.INDETERMINATE, settler.execute(
                 settler.prepare(obligation(EndpointKind.EXTERNAL_ASSET))));
@@ -144,13 +146,64 @@ class LineagePolicyRoutedSettlerTest {
         var machine = mock(LineageHistoricalPublishMachine.class);
         var materializer = mock(LineageObservedEntityMaterializer.class);
 
-        var settler = new PolicyRoutedAbsenceSettler(resolver, machine, materializer, null);
+        var settler = new PolicyRoutedAbsenceSettler(resolver, machine,
+                registryOf(materializer), null);
         var plan = settler.prepare(obligation(EndpointKind.EXTERNAL_ASSET));
         assertTrue(plan instanceof LineageAbsencePlan.NoWrite,
                 "no snapshot must plan no write");
         assertEquals(LineageCatalogAbsenceSettler.Verdict.INDETERMINATE, settler.execute(plan));
         verify(machine, never()).publish(any(), any(), any(), any());
         verify(materializer, never()).materialize(any());
+    }
+
+    /**
+     * A materializer registered for a different catalog is not this plan's materializer.
+     *
+     * <p>The failure this pins is silent by construction: the write would succeed, the read-back
+     * would confirm it, and the obligation would resolve — with the entity in the wrong catalog
+     * and the one its task key names still empty. Nothing re-opens a resolved obligation, so
+     * there is no later pass that discovers this.
+     *
+     * <p>RETRY rather than a resolution, and zero calls on the foreign materializer.
+     */
+    @Test
+    @DisplayName("a materializer for another target is never used, on either write route")
+    void foreignTargetMaterializerIsNeverUsed() {
+        // Registered under a target these obligations do not name. Both routes must refuse it
+        // rather than fall back to "the only one there is".
+        var foreign = mock(LineageObservedEntityMaterializer.class);
+        when(foreign.materialize(any()))
+                .thenReturn(LineageObservedEntityMaterializer.Outcome.MATERIALIZED);
+        when(foreign.materializeCurrent(any()))
+                .thenReturn(LineageObservedEntityMaterializer.Outcome.MATERIALIZED);
+        var elsewhere = new LineageObservedEntityMaterializerRegistry(Map.of("purview", foreign));
+        var machine = mock(LineageHistoricalPublishMachine.class);
+
+        var observedSettler = new PolicyRoutedAbsenceSettler(
+                resolverFor(EndpointKind.EXTERNAL_ASSET), machine, elsewhere, null);
+        var observedPlan = observedSettler.prepare(obligation(EndpointKind.EXTERNAL_ASSET));
+        assertTrue(observedPlan instanceof LineageAbsencePlan.ObservedPlan);
+        assertEquals(LineageCatalogAbsenceSettler.Verdict.RETRY,
+                observedSettler.execute(observedPlan),
+                "an observed plan must not resolve against another target's catalog");
+
+        String qn = "nemaki://" + REPO + "/objects/doc-1";
+        var sources = mock(LineageSourceDispositionRegistry.class);
+        when(sources.dispositionOf(anyString(), any(), anyString()))
+                .thenReturn(LineageSourceDispositionResolver.SourceEvidence.of(REPO,
+                        EndpointKind.CMIS_DOCUMENT, qn, LineageSourceDisposition.SOURCE_EXISTS,
+                        "inc-1", "rev-1", null, 1_000L));
+        var currentSettler = new PolicyRoutedAbsenceSettler(
+                resolverForKind(EndpointKind.CMIS_DOCUMENT, qn), machine, elsewhere, sources);
+        var currentPlan = currentSettler.prepare(obligationFor(EndpointKind.CMIS_DOCUMENT, qn));
+        assertTrue(currentPlan instanceof LineageAbsencePlan.CurrentSourcePlan);
+        assertEquals(LineageCatalogAbsenceSettler.Verdict.RETRY,
+                currentSettler.execute(currentPlan),
+                "a current-source plan must not resolve against another target's catalog");
+
+        verify(foreign, never()).materialize(any());
+        verify(foreign, never()).materializeCurrent(any());
+        verify(machine, never()).publish(any(), any(), any(), any());
     }
 
     /**
@@ -166,7 +219,7 @@ class LineagePolicyRoutedSettlerTest {
         var materializer = mock(LineageObservedEntityMaterializer.class);
         var machine = mock(LineageHistoricalPublishMachine.class);
         var settler = new PolicyRoutedAbsenceSettler(
-                resolverFor(EndpointKind.EXTERNAL_ASSET), machine, materializer, null);
+                resolverFor(EndpointKind.EXTERNAL_ASSET), machine, registryOf(materializer), null);
 
         // prepare() is read-only, and it does produce a plan that would write.
         var plan = settler.prepare(obligation(EndpointKind.EXTERNAL_ASSET));
@@ -218,7 +271,7 @@ class LineagePolicyRoutedSettlerTest {
             when(materializer.materializeCurrent(any()))
                     .thenReturn(LineageObservedEntityMaterializer.Outcome.MATERIALIZED);
             var settler = new PolicyRoutedAbsenceSettler(resolverForKind(kind, qn),
-                    mock(LineageHistoricalPublishMachine.class), materializer, sources);
+                    mock(LineageHistoricalPublishMachine.class), registryOf(materializer), sources);
 
             var plan = settler.prepare(obligationFor(kind, qn));
             assertTrue(plan instanceof LineageAbsencePlan.CurrentSourcePlan, kind.toString());
@@ -271,7 +324,7 @@ class LineagePolicyRoutedSettlerTest {
             var materializer = mock(LineageObservedEntityMaterializer.class);
             var settler = new PolicyRoutedAbsenceSettler(
                     resolverForKind(EndpointKind.CMIS_DOCUMENT, qn),
-                    mock(LineageHistoricalPublishMachine.class), materializer, sources);
+                    mock(LineageHistoricalPublishMachine.class), registryOf(materializer), sources);
 
             var plan = settler.prepare(obligationFor(EndpointKind.CMIS_DOCUMENT, qn));
             assertTrue(plan instanceof LineageAbsencePlan.CurrentSourcePlan);
@@ -303,7 +356,7 @@ class LineagePolicyRoutedSettlerTest {
                 .thenReturn(LineageObservedEntityMaterializer.Outcome.MATERIALIZED);
         var settler = new PolicyRoutedAbsenceSettler(
                 resolverForKind(EndpointKind.CMIS_DOCUMENT, qn),
-                mock(LineageHistoricalPublishMachine.class), materializer, sources);
+                mock(LineageHistoricalPublishMachine.class), registryOf(materializer), sources);
 
         var plan = settler.prepare(obligationFor(EndpointKind.CMIS_DOCUMENT, qn));
         assertEquals(LineageCatalogAbsenceSettler.Verdict.RESOLVED_CURRENT,
@@ -339,6 +392,12 @@ class LineagePolicyRoutedSettlerTest {
     }
 
     // ------------------------------------------------------------------
+
+    /** A registry holding one materializer, keyed to the only target these tests obligate. */
+    private static LineageObservedEntityMaterializerRegistry registryOf(
+            LineageObservedEntityMaterializer materializer) {
+        return new LineageObservedEntityMaterializerRegistry(Map.of(TARGET, materializer));
+    }
 
     private static String qualifiedName(EndpointKind kind) {
         return kind == EndpointKind.EXTERNAL_ASSET ? "s3://bucket/obj-1"

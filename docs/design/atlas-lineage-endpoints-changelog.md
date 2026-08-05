@@ -12,6 +12,31 @@
 
 ---
 
+## v2.3.71 — observed materializer の target 別化 (外部レビュー指摘)
+
+3 つの adapter のうち probe と historical publisher は target をキーとした registry だったが、
+**observed entity materializer だけが単一インスタンス**だった。`hasCatalogClient` が active
+backend 1 つにしか束縛しないため、実運用では偶然 1 target しか無く問題が表面化しない。
+
+しかし 2 target を publish する構成では、片方の obligation が **もう片方の catalog に対して
+settle される**。書込みは成功し、read-back も一致し、obligation は RESOLVED になる —
+task key が名指す catalog は空のまま。resolved な obligation を再訪する経路は無いので、
+これは**後から発見されない**種類の誤りである。
+
+readiness も同じ理由で問いを立てられなかった。target 別に訊く先が無いので
+「adapter は揃っている」と報告し続ける — green preflight を通り抜ける典型形。
+
+`LineageObservedEntityMaterializerRegistry` を新設し、probe / publisher と同形にした。
+settler は**plan 自身の snapshot が持つ target** で引く (呼び出し側が渡す値ではない)。
+「登録が 1 つしか無ければそれを使う」fallback は**置かない** — それが元の欠陥そのもの。
+引けなければ RETRY で、readiness が target 名を挙げて red にする。
+
+固定: `foreignTargetMaterializerIsNeverUsed` (observed / current-source 両経路で、別 target の
+materializer が 1 度も呼ばれず RETRY になること)、`missingObservedMaterializerIsRed`
+(per-target readiness)。mutation binding 確認済み — fallback を戻すと前者だけが落ちる。
+
+---
+
 ## v2.3.57 — activation を不能にしていた本番バグ 1 件
 
 `readRawStrict` が `_design/lineage` を Cloudant SDK の `getDocument` へ直接渡していた。

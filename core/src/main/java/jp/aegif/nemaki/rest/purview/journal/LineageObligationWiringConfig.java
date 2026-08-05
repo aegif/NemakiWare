@@ -236,31 +236,37 @@ public class LineageObligationWiringConfig {
     }
 
     /**
-     * The observed-entity materializer for the target this node's catalog client answers for.
+     * One observed-entity materializer per target that this node's catalog client answers for.
      *
-     * <p>Bound the same way as the probe and the historical publisher: it answers for its own
-     * target and refuses every other, so a write cannot be recorded against a catalog it did
-     * not reach.
+     * <p>Derived from the same sinks as the probes and the historical publishers, and bound the
+     * same way: a materializer answers for its own target and refuses every other, so a write
+     * cannot be recorded against a catalog it did not reach.
+     *
+     * <p>Every matching sink is registered, not the first one. Returning the first was what made
+     * this a single instance, and a single instance is only correct while exactly one target is
+     * configured — a condition nothing checked and nothing enforced.
      */
     @Bean
-    public LineageObservedEntityMaterializer lineageObservedEntityMaterializer(
+    public LineageObservedEntityMaterializerRegistry lineageObservedEntityMaterializerRegistry(
             ObjectProvider<LineageTargetSink> sinks,
             ObjectProvider<jp.aegif.nemaki.rest.purview.MetadataCatalogConnectionResolver>
                     connectionResolver,
             ObjectProvider<jp.aegif.nemaki.rest.purview.client.PurviewEntityRegistryClient>
                     entityRegistryClient) {
+        Map<String, LineageObservedEntityMaterializer> byTarget = new LinkedHashMap<>();
         var resolver = connectionResolver.getIfAvailable();
         var client = entityRegistryClient.getIfAvailable();
         if (resolver == null || client == null) {
-            return null;
+            return new LineageObservedEntityMaterializerRegistry(byTarget);
         }
         for (LineageTargetSink sink : sinks.orderedStream().toList()) {
             String target = sink == null ? null : sink.targetName();
-            if (hasCatalogClient(resolver, target)) {
-                return new CatalogObservedEntityMaterializer(target, resolver, client);
+            if (!hasCatalogClient(resolver, target)) {
+                continue;
             }
+            byTarget.put(target, new CatalogObservedEntityMaterializer(target, resolver, client));
         }
-        return null;
+        return new LineageObservedEntityMaterializerRegistry(byTarget);
     }
 
     /**
@@ -275,11 +281,11 @@ public class LineageObligationWiringConfig {
             LineageCatalogObligationService service,
             ObjectProvider<LineageWaitingSnapshotResolver> waitingSnapshotResolver,
             LineageHistoricalPublishMachine historicalMachine,
-            ObjectProvider<LineageObservedEntityMaterializer> observedMaterializer,
+            ObjectProvider<LineageObservedEntityMaterializerRegistry> observedMaterializers,
             LineageSourceDispositionRegistry sourceResolvers) {
         LineageCatalogAbsenceSettler settler = new PolicyRoutedAbsenceSettler(
                 waitingSnapshotResolver.getIfAvailable(), historicalMachine,
-                observedMaterializer.getIfAvailable(), sourceResolvers);
+                observedMaterializers.getIfAvailable(), sourceResolvers);
         service.setAbsenceSettler(settler);
         return settler;
     }

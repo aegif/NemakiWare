@@ -52,7 +52,7 @@ public final class PolicyRoutedAbsenceSettler implements LineageCatalogAbsenceSe
 
     private final LineageWaitingSnapshotResolver waitingSnapshotResolver;
     private final LineageHistoricalPublishMachine historicalMachine;
-    private final LineageObservedEntityMaterializer observedMaterializer;
+    private final LineageObservedEntityMaterializerRegistry observedMaterializers;
     private final LineageSourceDispositionRegistry sourceResolvers;
 
     /**
@@ -66,11 +66,11 @@ public final class PolicyRoutedAbsenceSettler implements LineageCatalogAbsenceSe
 
     public PolicyRoutedAbsenceSettler(LineageWaitingSnapshotResolver waitingSnapshotResolver,
             LineageHistoricalPublishMachine historicalMachine,
-            LineageObservedEntityMaterializer observedMaterializer,
+            LineageObservedEntityMaterializerRegistry observedMaterializers,
             LineageSourceDispositionRegistry sourceResolvers) {
         this.waitingSnapshotResolver = waitingSnapshotResolver;
         this.historicalMachine = historicalMachine;
-        this.observedMaterializer = observedMaterializer;
+        this.observedMaterializers = observedMaterializers;
         this.sourceResolvers = sourceResolvers;
     }
 
@@ -85,8 +85,8 @@ public final class PolicyRoutedAbsenceSettler implements LineageCatalogAbsenceSe
     }
 
     @Override
-    public LineageObservedEntityMaterializer observedMaterializerRef() {
-        return observedMaterializer;
+    public LineageObservedEntityMaterializerRegistry observedMaterializersRef() {
+        return observedMaterializers;
     }
 
     /** Corruption counts by fixed reason. A copy; callers cannot reset the machine's view. */
@@ -199,12 +199,13 @@ public final class PolicyRoutedAbsenceSettler implements LineageCatalogAbsenceSe
     }
 
     private Verdict materialize(ObservedEntitySnapshot observed, Verdict onSuccess) {
-        if (observedMaterializer == null) {
+        LineageObservedEntityMaterializer materializer = materializerFor(observed.target());
+        if (materializer == null) {
             return Verdict.RETRY;
         }
         LineageObservedEntityMaterializer.Outcome outcome;
         try {
-            outcome = observedMaterializer.materialize(observed);
+            outcome = materializer.materialize(observed);
         } catch (RuntimeException e) {
             logger.warn("Observed materialisation failed: {}", e.getClass().getSimpleName());
             return Verdict.RETRY;
@@ -219,12 +220,13 @@ public final class PolicyRoutedAbsenceSettler implements LineageCatalogAbsenceSe
     }
 
     private Verdict materializeCurrent(VerifiedCurrentEntitySnapshot current) {
-        if (observedMaterializer == null) {
+        LineageObservedEntityMaterializer materializer = materializerFor(current.target());
+        if (materializer == null) {
             return Verdict.RETRY;
         }
         LineageObservedEntityMaterializer.Outcome outcome;
         try {
-            outcome = observedMaterializer.materializeCurrent(current);
+            outcome = materializer.materializeCurrent(current);
         } catch (RuntimeException e) {
             logger.warn("Current materialisation failed: {}", e.getClass().getSimpleName());
             return Verdict.RETRY;
@@ -234,6 +236,31 @@ public final class PolicyRoutedAbsenceSettler implements LineageCatalogAbsenceSe
             case SNAPSHOT_INCOMPLETE -> Verdict.SNAPSHOT_INCOMPLETE;
             default -> Verdict.RETRY;
         };
+    }
+
+    /**
+     * The materializer for exactly the target the plan's own snapshot names.
+     *
+     * <p>The target comes from the snapshot, which derived its task key from it, so it is the
+     * same target the obligation was claimed under rather than anything a caller supplied.
+     *
+     * <p>No fallback to "the only one registered". A node with one materializer and two
+     * configured targets would otherwise write the second target's entities into the first
+     * target's catalog and resolve the obligation, leaving the catalog its task key actually
+     * names empty — and nothing downstream re-opens a resolved obligation. RETRY instead: the
+     * absence is a wiring condition, correctable by configuration, and readiness names it.
+     */
+    private LineageObservedEntityMaterializer materializerFor(String target) {
+        if (observedMaterializers == null) {
+            return null;
+        }
+        LineageObservedEntityMaterializer materializer =
+                observedMaterializers.materializerFor(target);
+        if (materializer == null) {
+            logger.warn("No observed-entity materializer is registered for the plan's target;"
+                    + " nothing was written");
+        }
+        return materializer;
     }
 
     /**

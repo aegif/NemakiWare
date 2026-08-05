@@ -419,8 +419,9 @@ public class LineageDrestReadinessTest {
         when(settler.waitingSnapshotResolverRef())
                 .thenReturn(mock(LineageWaitingSnapshotResolver.class));
         when(settler.historicalMachineRef()).thenReturn(machine);
-        when(settler.observedMaterializerRef())
-                    .thenReturn(mock(LineageObservedEntityMaterializer.class));
+        when(settler.observedMaterializersRef())
+                .thenReturn(new LineageObservedEntityMaterializerRegistry(
+                        java.util.Map.of("atlas", mock(LineageObservedEntityMaterializer.class))));
         if (service != null) {
             service.setAbsenceSettler(settler);
         }

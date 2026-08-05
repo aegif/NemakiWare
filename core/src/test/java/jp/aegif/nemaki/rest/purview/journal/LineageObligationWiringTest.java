@@ -78,6 +78,14 @@ public class LineageObligationWiringTest {
         return new LineageHistoricalPublisherRegistry(byTarget);
     }
 
+    private LineageObservedEntityMaterializerRegistry materializersFor(String... targets) {
+        Map<String, LineageObservedEntityMaterializer> byTarget = new java.util.LinkedHashMap<>();
+        for (String target : targets) {
+            byTarget.put(target, mock(LineageObservedEntityMaterializer.class));
+        }
+        return new LineageObservedEntityMaterializerRegistry(byTarget);
+    }
+
     /**
      * A service over a known store, so the wiring's identity comparisons have something real
      * to compare. Not a mock: {@code storeRef()} has to return the store that was passed in.
@@ -117,14 +125,17 @@ public class LineageObligationWiringTest {
         /** False to leave the ABSENT branch unwired, which is a violation by design. */
         boolean withSettler = true;
 
+        /** Which targets the settler can materialise into. Narrow it to test the gate. */
+        String[] materializerTargets = {"atlas", "purview"};
+
         /** A settler whose collaborators are the assembly's own instances. */
         LineageCatalogAbsenceSettler settlerFor(LineageHistoricalPublishMachine forMachine) {
             LineageCatalogAbsenceSettler settler = mock(LineageCatalogAbsenceSettler.class);
             when(settler.waitingSnapshotResolverRef())
                     .thenReturn(mock(LineageWaitingSnapshotResolver.class));
             when(settler.historicalMachineRef()).thenReturn(forMachine);
-            when(settler.observedMaterializerRef())
-                    .thenReturn(mock(LineageObservedEntityMaterializer.class));
+            when(settler.observedMaterializersRef())
+                    .thenReturn(materializersFor(materializerTargets));
             return settler;
         }
 
@@ -232,6 +243,25 @@ public class LineageObligationWiringTest {
         List<String> violations = wiring.violations(TARGETS);
         assertEquals(1, violations.size(), violations.toString());
         assertTrue(violations.get(0).contains("historical entity publisher"));
+        assertTrue(violations.get(0).contains("purview"));
+    }
+
+    /**
+     * The third adapter, asked per target for the same reason as the other two.
+     *
+     * <p>This is what a single materializer instance made unaskable. A node holding one and
+     * publishing to two targets passed readiness, and the second target's obligations would have
+     * been settled against the catalog the first one names — resolved, so never revisited.
+     */
+    @Test
+    @DisplayName("a missing observed-entity materializer is a violation naming the target")
+    public void missingObservedMaterializerIsRed() {
+        Assembly assembly = new Assembly();
+        assembly.materializerTargets = new String[] {"atlas"};
+
+        List<String> violations = assembly.build().violations(TARGETS);
+        assertEquals(1, violations.size(), violations.toString());
+        assertTrue(violations.get(0).contains("observed-entity materializer"));
         assertTrue(violations.get(0).contains("purview"));
     }
 

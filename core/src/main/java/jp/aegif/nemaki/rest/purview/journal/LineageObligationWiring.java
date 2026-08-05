@@ -347,10 +347,10 @@ public final class LineageObligationWiring {
                     violations.add("the catalog-absence settler drives a different historical"
                             + " publish machine than the one wired here");
                 }
-                if (settler.observedMaterializerRef() == null) {
+                if (settler.observedMaterializersRef() == null) {
                     violations.add("the catalog-absence settler has no observed-entity"
-                            + " materializer, so a source NemakiWare never destroys could never"
-                            + " be published");
+                            + " materializer registry, so a source NemakiWare never destroys"
+                            + " could never be published");
                 }
             }
         }
@@ -376,6 +376,7 @@ public final class LineageObligationWiring {
             // so the empty case is a decision rather than a loop that happened not to run.
             return violations;
         }
+        LineageObservedEntityMaterializerRegistry materializers = observedMaterializers();
         for (String target : targets) {
             if (probes == null || !probes.canProbe(target)) {
                 violations.add("no catalog probe is wired for target '" + target + "'");
@@ -386,8 +387,22 @@ public final class LineageObligationWiring {
                 violations.add("no historical entity publisher is wired for target '"
                         + target + "'");
             }
+            if (materializers == null || !materializers.canMaterialize(target)) {
+                // The third adapter, asked per target for the same reason as the other two. A
+                // node holding one materializer and two configured targets used to pass here,
+                // and the second target's obligations would have been settled against the
+                // catalog the first one names.
+                violations.add("no observed-entity materializer is wired for target '"
+                        + target + "'");
+            }
         }
         return violations;
+    }
+
+    /** The settler's materializer registry, or null when there is no settler to ask. */
+    private LineageObservedEntityMaterializerRegistry observedMaterializers() {
+        LineageCatalogAbsenceSettler settler = service == null ? null : service.settlerRef();
+        return settler == null ? null : settler.observedMaterializersRef();
     }
 
     /** The service the scanner and the projector must both be using — identity, not equality. */
