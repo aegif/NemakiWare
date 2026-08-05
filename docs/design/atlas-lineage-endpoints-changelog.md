@@ -12,6 +12,41 @@
 
 ---
 
+## v2.3.79 — Slice 4: kind x disposition マトリクスと、そこで見つかった誤 terminal
+
+全 EndpointKind × 全 source disposition を、期待値の表ではなく**不変条件**で検査する。
+セルごとに期待値を書き並べるのは実装の写しであり、コードと表を一緒に変えたときに必ず通る
+— まさに routing を間違える瞬間に通ってしまう。kind は `EndpointKind.values()` から取るので、
+後から追加された kind は誰かが思い出す前にマトリクスへ入る。
+
+固定した不変条件:
+
+- NemakiWare が destroy しない kind は tombstone へ routing されない。逆向きも同様で、
+  historical machine に到達すらしない (その kind の purge mark は補償 cleanup 由来しか
+  ありえず、それに従えば外部システムにある実体を tombstone にする)
+- destroy する kind は event 自身の copy からは settle されない
+- 各経路は自分の outcome だけを保存し、他経路のものは保存しない
+- 変化していない状態に対する再実行は同じ決定に達する (crash からの再開は「第二の意見」では
+  ないため)
+- 何も書かない plan は catalog にも machine にも触れない
+
+### 見つかった欠陥: 完全な snapshot が terminal に落ちていた
+
+`planLedgered` は `HistoricalEntitySnapshot.from()` が拒否したとき、
+`snapshot.hasAll(mandatoryAttributes(kind))` で「retryable か terminal か」を分けていた。
+
+しかし mandatory な名前は **catalog type が要求するもの**で、その幾つかは factory が導出する
+— CMIS document の `repositoryId` / `objectId` は subject から作られ、snapshot の attribute map
+には `name` しか無い。よって raw snapshot への `hasAll()` は **LEDGERED 全 kind で常に false**
+であり、retryable 側の分岐は到達不能だった。
+
+結果として、from() が何らかの理由で拒否すると (snapshot と新しい evidence の一時的な不一致
+など) 完全な snapshot でも `SNAPSHOT_INCOMPLETE` — **唯一取り消せない判定** — に落ちる。
+obligation は焼かれ、それを待つ全イベントが恒久的に projection 不能になる。
+
+snapshot が組み立てる entity に対して問うよう修正した。mutation binding 確認済み — raw
+snapshot へ問い直すと新テストだけが落ち、既存 75 件は素通りする。
+
 ## v2.3.78 — claim fencing の実 CouchDB IT (Slice 3.1)
 
 settlement を失う 2 つの瞬間を実サーバで固定する。どちらも CAS の結果であり、CAS は
