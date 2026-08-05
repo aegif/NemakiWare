@@ -62,9 +62,17 @@ public final class RepositorySourceDispositionResolver
     private final ContentService contentService;
     private final LineagePurgeLedger purgeLedger;
     private final LongSupplier clockMs;
+    private final jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory payloadFactory;
 
+    /** Without a payload factory the verdicts are unchanged and no projection is offered. */
     public RepositorySourceDispositionResolver(EndpointKind boundKind,
             ContentService contentService, LineagePurgeLedger purgeLedger, LongSupplier clockMs) {
+        this(boundKind, contentService, purgeLedger, clockMs, null);
+    }
+
+    public RepositorySourceDispositionResolver(EndpointKind boundKind,
+            ContentService contentService, LineagePurgeLedger purgeLedger, LongSupplier clockMs,
+            jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory payloadFactory) {
         if (boundKind == null) {
             throw new IllegalArgumentException("a source resolver must name its endpoint kind");
         }
@@ -72,6 +80,7 @@ public final class RepositorySourceDispositionResolver
         this.contentService = contentService;
         this.purgeLedger = purgeLedger;
         this.clockMs = clockMs;
+        this.payloadFactory = payloadFactory;
     }
 
     @Override
@@ -82,24 +91,43 @@ public final class RepositorySourceDispositionResolver
     @Override
     public SourceEvidence dispositionOf(String repositoryId, EndpointKind kind,
             String catalogQualifiedName) {
+        return observeLive(repositoryId, kind, catalogQualifiedName).evidence();
+    }
+
+    /**
+     * The verdict and, for a live object, its catalog entity — from the one read.
+     *
+     * <p>{@code dispositionOf} is this with the projection dropped, so a caller that wants both
+     * pays for one repository read, not two. That matters beyond efficiency: two reads could
+     * straddle a modification and produce a verdict about one instance with attributes from
+     * another, which is the defect this exists to close.
+     */
+    @Override
+    public LiveSourceObservation observeLive(String repositoryId, EndpointKind kind,
+            String catalogQualifiedName) {
         long now = clockMs.getAsLong();
         if (kind != boundKind) {
             // Asked about a kind this resolver does not answer for. An answer here would be
             // attributed to a lookup it never performed.
-            return SourceEvidence.unknown(now);
+            return unknownObservation(now);
         }
         if (repositoryId == null || repositoryId.isBlank()
                 || catalogQualifiedName == null || catalogQualifiedName.isBlank()) {
-            return SourceEvidence.unknown(now);
+            return unknownObservation(now);
         }
 
         // 1. Is it live? A positive read is the strongest answer and needs nothing else.
         try {
             Optional<LiveObject> live = liveObject(repositoryId, kind, catalogQualifiedName);
             if (live.isPresent()) {
-                return SourceEvidence.of(repositoryId, kind, catalogQualifiedName,
-                        LineageSourceDisposition.SOURCE_EXISTS, live.get().incarnation(),
-                        live.get().revision(), null, now);
+                SourceEvidence evidence = SourceEvidence.of(repositoryId, kind,
+                        catalogQualifiedName, LineageSourceDisposition.SOURCE_EXISTS,
+                        live.get().incarnation(), live.get().revision(), null, now);
+                // Built from the same object the verdict was made from. A failure here yields
+                // no projection rather than a partial one: the caller must refuse to write, not
+                // fall back to the event's older copy.
+                return new LiveSourceObservation(evidence,
+                        projectionOf(repositoryId, kind, live.get()));
             }
         } catch (RuntimeException e) {
             // A repository read that failed establishes nothing — least of all that the object
@@ -107,13 +135,13 @@ public final class RepositorySourceDispositionResolver
             // could hold an old mark for an object this read could not check.
             logger.warn("Live-object check for a {} subject failed: {}", kind,
                     e.getClass().getSimpleName());
-            return SourceEvidence.unknown(now);
+            return unknownObservation(now);
         }
 
         // 2. Not found live. That is NOT purged — ask the ledger, which is the only thing that
         // can say the object was destroyed rather than merely not found.
         if (purgeLedger == null) {
-            return SourceEvidence.unknown(now);
+            return unknownObservation(now);
         }
         Optional<LineagePurgeLedger.PurgeMark> mark;
         try {
@@ -123,27 +151,73 @@ public final class RepositorySourceDispositionResolver
         } catch (RuntimeException e) {
             logger.warn("Purge ledger read for a {} subject failed: {}", kind,
                     e.getClass().getSimpleName());
-            return SourceEvidence.unknown(now);
+            return unknownObservation(now);
         }
         if (!LineagePurgeLifecyclePolicy.canBePurged(kind)) {
             // NemakiWare never destroys a source of this kind, so no mark for it can be
             // authoritative. Refusing here rather than trusting the ledger means a mark
             // written by mistake — from a compensating cleanup, say — can never tombstone
             // an object that is still there.
-            return SourceEvidence.unknown(now);
+            return unknownObservation(now);
         }
         if (mark.isEmpty() || !mark.get().authoritative()) {
             // No mark, or one a restore superseded. Both mean nobody can attest destruction.
-            return SourceEvidence.unknown(now);
+            return unknownObservation(now);
         }
         LineagePurgeLedger.PurgeMark purge = mark.get();
-        return SourceEvidence.of(repositoryId, kind, catalogQualifiedName,
-                LineageSourceDisposition.SOURCE_PURGED, purge.incarnation(), purge.revision(),
-                null, now);
+        // A purge verdict never carries a projection: there is nothing live to project.
+        return new LiveSourceObservation(SourceEvidence.of(repositoryId, kind,
+                catalogQualifiedName, LineageSourceDisposition.SOURCE_PURGED, purge.incarnation(),
+                purge.revision(), null, now), null);
     }
 
-    /** A live object and the two identifiers that pin which instance of it was seen. */
-    private record LiveObject(String incarnation, String revision) { }
+    private static LiveSourceObservation unknownObservation(long now) {
+        return new LiveSourceObservation(SourceEvidence.unknown(now), null);
+    }
+
+    /**
+     * The catalog entity for the object this read returned, or null.
+     *
+     * <p>Built by the same factory the ordinary catalog sync uses, and per kind by the type the
+     * subject actually is — a folder subject is its DataSet proxy, not the folder. A second
+     * mapping here would let the live-source route and the steady state disagree, and the
+     * disagreement would look like drift nobody caused.
+     *
+     * <p>Null rather than a partial entity when anything is missing. The caller treats null as
+     * "do not write"; the one thing it must never do is fall back to the event's older copy,
+     * which is the substitution this whole mechanism exists to prevent.
+     */
+    private java.util.Map<String, Object> projectionOf(String repositoryId, EndpointKind kind,
+            LiveObject live) {
+        if (payloadFactory == null) {
+            return null;
+        }
+        try {
+            java.util.Map<String, Object> entity = switch (kind) {
+                case CMIS_DOCUMENT -> live.content() == null ? null
+                        : payloadFactory.buildDocumentEntity(repositoryId, live.content());
+                case CMIS_FOLDER -> live.content() == null ? null
+                        : payloadFactory.buildFolderDatasetEntity(repositoryId, live.content(),
+                                jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory
+                                        .SOURCE_STATE_ACTIVE);
+                case ARCHIVE -> live.archive() == null ? null
+                        : payloadFactory.buildArchiveEntity(repositoryId, live.archive());
+                // Every other kind is owned by its own connector. Projecting one here would
+                // publish attributes this node never observed.
+                default -> null;
+            };
+            return entity == null || entity.isEmpty() ? null : entity;
+        } catch (RuntimeException e) {
+            // Class name only: a payload build failure echoes the object's own attributes.
+            logger.warn("Could not project a live {} subject for publication: {}", kind,
+                    e.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    /** A live object, the identifiers that pin which instance was seen, and the object itself. */
+    private record LiveObject(String incarnation, String revision, Content content,
+            Archive archive) { }
 
     /**
      * Whether the repository holds the object now.
@@ -165,7 +239,8 @@ public final class RepositorySourceDispositionResolver
             case CMIS_DOCUMENT, CMIS_FOLDER -> {
                 Content content = contentService.getContent(repositoryId, objectId);
                 yield content == null ? Optional.empty()
-                        : Optional.of(new LiveObject(objectId, revisionOf(content)));
+                        : Optional.of(new LiveObject(objectId, revisionOf(content), content,
+                                null));
             }
             case ARCHIVE -> {
                 // An archive's "live" state is the archive row itself: the object is in the
@@ -174,7 +249,7 @@ public final class RepositorySourceDispositionResolver
                 yield archive == null ? Optional.empty()
                         : Optional.of(new LiveObject(objectId,
                                 archive.getLastRevision() == null ? "0"
-                                        : archive.getLastRevision()));
+                                        : archive.getLastRevision(), null, archive));
             }
             default -> Optional.empty();
         };

@@ -338,15 +338,20 @@ public class LineageObligationWiringConfig {
     public LineageSourceDispositionRegistry lineageSourceDispositionRegistry(
             ObjectProvider<KindBoundSourceResolver> resolvers,
             ObjectProvider<jp.aegif.nemaki.businesslogic.ContentService> contentService,
-            ObjectProvider<LineagePurgeLedger> purgeLedger) {
+            ObjectProvider<LineagePurgeLedger> purgeLedger,
+            ObjectProvider<jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory>
+                    payloadFactory) {
         Map<EndpointKind, LineageSourceDispositionResolver> byKind =
                 new java.util.EnumMap<>(EndpointKind.class);
         var content = contentService.getIfAvailable();
         var ledger = purgeLedger.getIfAvailable();
+        // The same factory the ordinary sync and the compensation use, so a live-source
+        // publication lands on the content the next ordinary sync would write.
+        var payloads = payloadFactory.getIfAvailable();
         if (ledger != null) {
             for (EndpointKind kind : EndpointKind.values()) {
                 byKind.put(kind, new RepositorySourceDispositionResolver(kind, content, ledger,
-                        System::currentTimeMillis));
+                        System::currentTimeMillis, payloads));
             }
         }
         // An explicitly declared resolver wins: a connector that owns a kind's lifecycle knows

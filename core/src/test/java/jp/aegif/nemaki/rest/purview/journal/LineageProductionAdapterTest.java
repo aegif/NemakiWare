@@ -21,11 +21,13 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -374,6 +376,107 @@ class LineageProductionAdapterTest {
             assertEquals("ct-7", evidence.revision());
             assertTrue(evidence.describesSubject(REPO, EndpointKind.CMIS_DOCUMENT,
                     QUALIFIED_NAME));
+        }
+
+        /**
+         * The verdict and the attributes have to come from the same object.
+         *
+         * <p>Publishing the event's copy while authorising with a fresh verdict binds nothing:
+         * the event may have observed an earlier revision, and the waiting snapshot carries no
+         * revision to compare. One read, both answers.
+         */
+        @Test
+        @DisplayName("a live observation carries the projection built from the same read")
+        void liveObservationProjectsFromTheSameRead() {
+            ContentService contentService = mock(ContentService.class);
+            Document live = new Document();
+            live.setId(OBJECT_ID);
+            live.setChangeToken("ct-7");
+            when(contentService.getContent(REPO, OBJECT_ID)).thenReturn(live);
+            PurviewEntityPayloadFactory payloads = mock(PurviewEntityPayloadFactory.class);
+            Map<String, Object> built = Map.of("typeName", "nemaki_document",
+                    "attributes", Map.of("qualifiedName", QUALIFIED_NAME));
+            when(payloads.buildDocumentEntity(REPO, live)).thenReturn(built);
+
+            var observation = new RepositorySourceDispositionResolver(EndpointKind.CMIS_DOCUMENT,
+                    contentService, emptyLedger(), () -> 5_000L, payloads)
+                    .observeLive(REPO, EndpointKind.CMIS_DOCUMENT, QUALIFIED_NAME);
+
+            assertTrue(observation.publishable());
+            assertEquals(built, observation.projection());
+            assertEquals("ct-7", observation.evidence().revision());
+            // Exactly one repository read serves both answers.
+            verify(contentService, times(1)).getContent(REPO, OBJECT_ID);
+        }
+
+        /** A folder subject is its DataSet proxy, so that is what gets projected. */
+        @Test
+        @DisplayName("a live folder projects the DataSet proxy, not the folder")
+        void liveFolderProjectsTheDatasetProxy() {
+            String folderQn = "nemaki://" + REPO + "/folders/" + OBJECT_ID + "/dataset";
+            ContentService contentService = mock(ContentService.class);
+            Content live = new Folder();
+            live.setId(OBJECT_ID);
+            when(contentService.getContent(REPO, OBJECT_ID)).thenReturn(live);
+            PurviewEntityPayloadFactory payloads = mock(PurviewEntityPayloadFactory.class);
+            Map<String, Object> built = Map.of("typeName",
+                    EndpointKind.CMIS_FOLDER.atlasTypeName(),
+                    "attributes", Map.of("qualifiedName", folderQn));
+            when(payloads.buildFolderDatasetEntity(REPO, live,
+                    PurviewEntityPayloadFactory.SOURCE_STATE_ACTIVE)).thenReturn(built);
+
+            var observation = new RepositorySourceDispositionResolver(EndpointKind.CMIS_FOLDER,
+                    contentService, emptyLedger(), () -> 5_000L, payloads)
+                    .observeLive(REPO, EndpointKind.CMIS_FOLDER, folderQn);
+
+            assertEquals(built, observation.projection());
+            verify(payloads, never()).buildFolderEntity(anyString(), any());
+        }
+
+        /** Nothing live, nothing to project — and never the event's copy as a substitute. */
+        @Test
+        @DisplayName("a verdict that is not EXISTS carries no projection")
+        void nonLiveVerdictsProjectNothing() {
+            ContentService contentService = mock(ContentService.class);
+            when(contentService.getContent(REPO, OBJECT_ID)).thenReturn(null);
+            PurviewEntityPayloadFactory payloads = mock(PurviewEntityPayloadFactory.class);
+
+            var unknown = new RepositorySourceDispositionResolver(EndpointKind.CMIS_DOCUMENT,
+                    contentService, emptyLedger(), () -> 5_000L, payloads)
+                    .observeLive(REPO, EndpointKind.CMIS_DOCUMENT, QUALIFIED_NAME);
+            assertEquals(LineageSourceDisposition.SOURCE_UNKNOWN,
+                    unknown.evidence().disposition());
+            assertNull(unknown.projection());
+            assertFalse(unknown.publishable());
+
+            // And the type refuses the combination outright, so no future path can build one.
+            assertThrows(IllegalArgumentException.class,
+                    () -> new LineageSourceDispositionResolver.LiveSourceObservation(
+                            LineageSourceDispositionResolver.SourceEvidence.unknown(1L),
+                            Map.of("typeName", "nemaki_document")));
+        }
+
+        /**
+         * A resolver that cannot project must not be made to look as if it can.
+         *
+         * <p>An external kind's attributes belong to the system that owns it. The default
+         * answers the disposition question and declines the projection, and the caller is
+         * required to read that as "do not write".
+         */
+        @Test
+        @DisplayName("a non-projecting resolver answers the verdict and declines the projection")
+        void defaultObserveLiveProjectsNothing() {
+            LineageSourceDispositionResolver external = (repositoryId, kind, qn)
+                    -> LineageSourceDispositionResolver.SourceEvidence.of(REPO,
+                            EndpointKind.EXTERNAL_ASSET, "s3://bucket/obj-1",
+                            LineageSourceDisposition.SOURCE_EXISTS, "inc", "rev", null, 1L);
+
+            var observation = external.observeLive(REPO, EndpointKind.EXTERNAL_ASSET,
+                    "s3://bucket/obj-1");
+            assertEquals(LineageSourceDisposition.SOURCE_EXISTS,
+                    observation.evidence().disposition());
+            assertNull(observation.projection());
+            assertFalse(observation.publishable());
         }
 
         /**
