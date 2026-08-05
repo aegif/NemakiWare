@@ -44,7 +44,8 @@ final class LineageWaitingCandidates {
             String taskKey) {
         LineageEventV2 event = row == null ? null : row.event();
         if (event == null) {
-            throw new IllegalStateException("a waiting row carries no event");
+            throw new CorruptWaitingEventException(
+                    CorruptWaitingEventException.Reason.INCONSISTENT_WAITING_METADATA);
         }
         LineageEndpoint matched = endpointForTask(event, target, taskKey);
         if (matched == null) {
@@ -64,7 +65,8 @@ final class LineageWaitingCandidates {
         } catch (RuntimeException rejected) {
             // The snapshot's own constructor refuses anything it cannot vouch for — a
             // non-scalar attribute, a secret-bearing value, a digest that does not verify.
-            throw new IllegalStateException("a waiting row's snapshot is unusable");
+            throw new CorruptWaitingEventException(
+                    CorruptWaitingEventException.Reason.SNAPSHOT_SELF_VERIFICATION_FAILED);
         }
 
         return new LineageWaitingSnapshotResolver.Candidate(

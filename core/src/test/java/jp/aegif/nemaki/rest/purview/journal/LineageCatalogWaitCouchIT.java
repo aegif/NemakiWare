@@ -18,6 +18,7 @@ package jp.aegif.nemaki.rest.purview.journal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -424,6 +425,64 @@ public class LineageCatalogWaitCouchIT {
             var candidates = new CouchLineageWaitingEventSource(store).candidatesFor(taskKey);
             assertEquals(1, candidates.size(), "include_docs must have returned the document");
             assertNotNull(candidates.get(0).snapshot().evidenceDigest());
+        }
+
+        /**
+         * The two failures the resolver must never merge.
+         *
+         * <p>A row that contradicts itself will do so again on every pass — retrying it for
+         * ever hides it, so it must reach an operator as CORRUPT. A missing view says nothing
+         * about the data, so the next pass may succeed and it must stay INDETERMINATE. Before
+         * the typed exception both arrived as a bare RuntimeException and both became
+         * INDETERMINATE, which is safe but silent.
+         */
+        @Test
+        @DisplayName("a corrupt row resolves CORRUPT; a missing view resolves INDETERMINATE")
+        void corruptionAndUnavailabilityAreDifferent() {
+            String seed = "classify-" + UUID.randomUUID();
+            String recordId = append(seed);
+            String qn = "nemaki://" + REPO + "/objects/doc-" + seed;
+            String taskKey = LineageCatalogObligation.taskKey(TARGET, REPO,
+                    EndpointKind.CMIS_DOCUMENT, qn);
+            assertTrue(store.enterCatalogWait(recordId, TARGET, List.of(taskKey)));
+
+            LineageCatalogObligation obligation = new LineageCatalogObligation(null, taskKey,
+                    TARGET, REPO, EndpointKind.CMIS_DOCUMENT, qn,
+                    LineageCatalogObligation.State.PENDING, null, null, 0L, 0L, 0, 1_000L,
+                    LineageCatalogObligation.Outcome.NONE, null, null);
+            var resolver = new LineageWaitingSnapshotResolver(
+                    new CouchLineageWaitingEventSource(store));
+
+            // Healthy first, so the difference below is the injected fault and nothing else.
+            // Not asserted as a snapshot: a freshly appended row is UNSEQUENCED, which is
+            // INDETERMINATE by contract. What matters is that it is not CORRUPT — the row is
+            // readable, it simply has no place in the order yet.
+            assertFalse(resolver.resolve(obligation)
+                            instanceof LineageWaitingSnapshotResolver.Resolution.Corrupt,
+                    "a readable but unsequenced row is not corruption");
+
+            // A row that belongs and cannot be believed: the schema version says 2, the type
+            // says v2, and the payload no longer decodes.
+            Map<String, Object> raw = store.readV2RawStrict(recordId);
+            raw.put("inputs", "not-a-list");
+            store.client().update(raw);
+            var corrupt = resolver.resolve(obligation);
+            assertInstanceOf(LineageWaitingSnapshotResolver.Resolution.Corrupt.class, corrupt,
+                    "a self-contradicting row must reach an operator, not retry for ever");
+            assertFalse(((LineageWaitingSnapshotResolver.Resolution.Corrupt) corrupt).reason()
+                    .contains(qn), "no qualified name in a corruption reason");
+            assertFalse(((LineageWaitingSnapshotResolver.Resolution.Corrupt) corrupt).reason()
+                    .contains(taskKey), "no task key in a corruption reason");
+
+            // The store being unavailable is a different statement about a different thing.
+            var noView = new LineageWaitingSnapshotResolver(
+                    taskKeyIgnored -> {
+                        throw new IllegalStateException("lineage view is unavailable");
+                    });
+            assertInstanceOf(
+                    LineageWaitingSnapshotResolver.Resolution.Indeterminate.class,
+                    noView.resolve(obligation),
+                    "an unavailable view says nothing about the data");
         }
 
         /** Several events waiting on one shared obligation all come back. */

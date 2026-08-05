@@ -95,8 +95,8 @@ public final class CouchLineageWaitingEventSource
             if (doc == null) {
                 // include_docs asked for the document and the row has none. Not a filter: the
                 // row exists, so something is waiting and this cannot read it.
-                throw new IllegalStateException("a waiting row carried no document even though"
-                        + " include_docs was requested");
+                throw new CorruptWaitingEventException(
+                        CorruptWaitingEventException.Reason.ROW_WITHOUT_DOCUMENT);
             }
             String target = row.getValue() instanceof String s ? s : null;
             Map<String, Object> raw = new LinkedHashMap<>();
@@ -149,7 +149,8 @@ public final class CouchLineageWaitingEventSource
             // endpoint attributes and qualified names.
             logger.warn("A waiting v2 row could not be decoded: {}",
                     malformed.getClass().getSimpleName());
-            throw new IllegalStateException("a waiting v2 row is undecodable");
+            throw new CorruptWaitingEventException(
+                    CorruptWaitingEventException.Reason.UNDECODABLE_ROW);
         }
         return LineageWaitingCandidates.from(decoded, target, taskKey);
     }
@@ -169,7 +170,8 @@ public final class CouchLineageWaitingEventSource
         if (!(keys instanceof List<?> list) || list.isEmpty()) {
             // An empty waiting set on a row the view emitted is a contradiction, and the view
             // is written not to emit one. Refused rather than silently dropped.
-            throw new IllegalStateException("a waiting row carries no task keys");
+            throw new CorruptWaitingEventException(
+                    CorruptWaitingEventException.Reason.EMPTY_TASK_KEYS);
         }
         return list.contains(taskKey);
     }

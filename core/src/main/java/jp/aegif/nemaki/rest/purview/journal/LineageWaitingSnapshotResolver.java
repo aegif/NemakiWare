@@ -138,9 +138,17 @@ public class LineageWaitingSnapshotResolver {
         List<Candidate> candidates;
         try {
             candidates = source.candidatesFor(obligation.taskKey());
+        } catch (CorruptWaitingEventException corrupt) {
+            // A row that contradicts itself will contradict itself again on every future pass.
+            // Retrying it for ever would hide it; CORRUPT puts it in front of an operator. The
+            // wording is the exception's own constant — nothing from the document.
+            logger.warn("Waiting-event lookup found a corrupt row: {}", corrupt.reason());
+            return new Resolution.Corrupt(corrupt.getMessage());
         } catch (RuntimeException e) {
-            // A query that failed established nothing. Class name only: a store message can
-            // echo a document, and a v2 document carries endpoint attributes.
+            // Everything else — a missing view, a CouchDB that did not answer, an origin row
+            // that could not be read — says nothing about the data, so the next pass may well
+            // succeed. Class name only: a store message can echo a document, and a v2 document
+            // carries endpoint attributes.
             logger.warn("Waiting-event lookup failed: {}", e.getClass().getSimpleName());
             return new Resolution.Indeterminate("the waiting-event lookup failed");
         }
