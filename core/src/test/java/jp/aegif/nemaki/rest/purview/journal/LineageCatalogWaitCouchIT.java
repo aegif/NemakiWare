@@ -485,6 +485,116 @@ public class LineageCatalogWaitCouchIT {
                     "an unavailable view says nothing about the data");
         }
 
+        /**
+         * A replay's observation comes from its origin, never from its own delivery.
+         *
+         * <p>Using the replay's own sequence would let re-delivering a week-old purge outrank a
+         * restore that happened yesterday. There is deliberately no fallback: a replay whose
+         * origin cannot be established is not a weaker observation, it is none.
+         */
+        @Test
+        @DisplayName("a replay whose origin is unsequenced or absent is not usable")
+        void replayWithoutEstablishedOriginIsUnusable() {
+            String seed = "replay-" + UUID.randomUUID();
+            String objectId = "doc-" + seed;
+            String qn = "nemaki://" + REPO + "/objects/" + objectId;
+            String taskKey = LineageCatalogObligation.taskKey(TARGET, REPO,
+                    EndpointKind.CMIS_DOCUMENT, qn);
+
+            // A replay pointing at an origin that is not in the journal at all.
+            LineageEventV2 replay = new LineageEventV2Builder()
+                    .eventId("evt-" + seed)
+                    .occurredAt("2026-08-05T00:00:00Z")
+                    .repositoryId(REPO)
+                    .processType(LineageProcessType.ARCHIVE_LOCAL)
+                    .operationId("op-" + seed)
+                    .delivery(new LineageDelivery.Replay("no-such-origin-" + seed, TARGET, 1L))
+                    .addInput(LineageEndpoint.document(REPO, objectId, "a.txt"))
+                    .addOutput(LineageEndpoint.archive(REPO, objectId, objectId, 1L))
+                    .build();
+            store.appendV2(replay);
+            assertTrue(store.enterCatalogWait(replay.deliveryId(), TARGET, List.of(taskKey)));
+
+            var candidates = new CouchLineageWaitingEventSource(store).candidatesFor(taskKey);
+            assertEquals(1, candidates.size());
+            assertFalse(candidates.get(0).provenance().usable(),
+                    "an origin nobody can read establishes no observation");
+            assertEquals(LineageObservationProvenance.LineageDeliveryKind.REPLAY,
+                    candidates.get(0).provenance().deliveryKind());
+            // Unestablished, not corrupt: the resolver must not blame the data for an absence.
+            LineageCatalogObligation obligation = new LineageCatalogObligation(null, taskKey,
+                    TARGET, REPO, EndpointKind.CMIS_DOCUMENT, qn,
+                    LineageCatalogObligation.State.PENDING, null, null, 0L, 0L, 0, 1_000L,
+                    LineageCatalogObligation.Outcome.NONE, null, null);
+            assertFalse(new LineageWaitingSnapshotResolver(
+                            new CouchLineageWaitingEventSource(store)).resolve(obligation)
+                            instanceof LineageWaitingSnapshotResolver.Resolution.Corrupt,
+                    "an unreadable origin is INDETERMINATE, not corruption");
+        }
+
+        /** A replay of itself has no observation behind it, and following it would loop. */
+        @Test
+        @DisplayName("a self-referential replay is corrupt")
+        void selfReferentialReplayIsCorrupt() {
+            String seed = "cycle-" + UUID.randomUUID();
+            String objectId = "doc-" + seed;
+            String qn = "nemaki://" + REPO + "/objects/" + objectId;
+            String taskKey = LineageCatalogObligation.taskKey(TARGET, REPO,
+                    EndpointKind.CMIS_DOCUMENT, qn);
+            LineageEventV2 probe = new LineageEventV2Builder()
+                    .eventId("evt-" + seed)
+                    .occurredAt("2026-08-05T00:00:00Z")
+                    .repositoryId(REPO)
+                    .processType(LineageProcessType.ARCHIVE_LOCAL)
+                    .operationId("op-" + seed)
+                    .delivery(new LineageDelivery.Original(List.of(TARGET)))
+                    .addInput(LineageEndpoint.document(REPO, objectId, "a.txt"))
+                    .addOutput(LineageEndpoint.archive(REPO, objectId, objectId, 1L))
+                    .build();
+            // Build a replay whose origin is its own delivery id.
+            LineageEventV2 selfReplay = new LineageEventV2Builder()
+                    .eventId("evt-" + seed)
+                    .occurredAt("2026-08-05T00:00:00Z")
+                    .repositoryId(REPO)
+                    .processType(LineageProcessType.ARCHIVE_LOCAL)
+                    .operationId("op-" + seed)
+                    .delivery(new LineageDelivery.Replay(probe.deliveryId(), TARGET, 1L))
+                    .addInput(LineageEndpoint.document(REPO, objectId, "a.txt"))
+                    .addOutput(LineageEndpoint.archive(REPO, objectId, objectId, 1L))
+                    .build();
+            org.junit.jupiter.api.Assumptions.assumeTrue(
+                    selfReplay.deliveryId().equals(probe.deliveryId()),
+                    "this check needs the replay's own delivery id to equal its origin's");
+            store.appendV2(selfReplay);
+            assertTrue(store.enterCatalogWait(selfReplay.deliveryId(), TARGET, List.of(taskKey)));
+
+            org.junit.jupiter.api.Assertions.assertThrows(CorruptWaitingEventException.class,
+                    () -> new CouchLineageWaitingEventSource(store).candidatesFor(taskKey));
+        }
+
+        /**
+         * A repair cannot establish an observation, and says so rather than guessing.
+         *
+         * <p>The dead-letter store holds v1 {@code LineageEvent} — a format that cannot
+         * reconstruct v2 identity — and its reader returns null for absence and for failure
+         * alike. Nothing else records a repair's original observation, so reconstructing one
+         * would mean guessing the order that decides purge against restore.
+         */
+        @Test
+        @DisplayName("a repair delivery establishes no observation")
+        void repairEstablishesNothing() {
+            // LineageDelivery.Repair is constructed only by the decoder — no producer creates
+            // one — so this asserts the closed door rather than a reachable path.
+            assertTrue(java.util.Arrays.stream(LineageDelivery.class.getDeclaredClasses())
+                            .anyMatch(c -> "Repair".equals(c.getSimpleName())),
+                    "the variant exists");
+            var provenance = new LineageObservationProvenance(
+                    LineageObservationProvenance.LineageDeliveryKind.REPAIR, "d-1", null, 5L, 0L,
+                    "2026-08-05T00:00:00Z", null);
+            assertFalse(provenance.usable(),
+                    "a repair with no established origin must never order an observation");
+        }
+
         /** Several events waiting on one shared obligation all come back. */
         @Test
         @DisplayName("every event waiting on a shared task is returned")

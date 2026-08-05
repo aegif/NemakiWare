@@ -40,8 +40,19 @@ final class LineageWaitingCandidates {
      * @throws IllegalStateException when the row belongs and cannot be turned into a usable
      *         candidate; the resolver reports that as CORRUPT rather than as a smaller set
      */
+    @FunctionalInterface
+    interface OriginLookup {
+        /**
+         * The origin v2 row, or null when it is genuinely not there.
+         *
+         * @throws RuntimeException when it could not be read — the caller must turn that into
+         *         INDETERMINATE, never into "no origin"
+         */
+        LineageJournalRowV2 read(String deliveryId);
+    }
+
     static LineageWaitingSnapshotResolver.Candidate from(LineageJournalRowV2 row, String target,
-            String taskKey) {
+            String taskKey, OriginLookup origins) {
         LineageEventV2 event = row == null ? null : row.event();
         if (event == null) {
             throw new CorruptWaitingEventException(
@@ -72,7 +83,7 @@ final class LineageWaitingCandidates {
         return new LineageWaitingSnapshotResolver.Candidate(
                 new LineageJournalOrder(event.repositoryId(), event.sequenceNumber(),
                         event.deliveryId()),
-                provenanceOf(event), snapshot);
+                provenanceOf(event, origins, snapshot), snapshot);
     }
 
     /**
@@ -117,31 +128,180 @@ final class LineageWaitingCandidates {
      * delivery's own sequence would make re-delivering an old observation look like a new one,
      * which is how a stale purge outranks a later restore.
      */
-    private static LineageObservationProvenance provenanceOf(LineageEventV2 event) {
+    private static LineageObservationProvenance provenanceOf(LineageEventV2 event,
+            OriginLookup origins, LineageWaitingSnapshot snapshot) {
         LineageDelivery delivery = event.delivery();
         if (delivery instanceof LineageDelivery.Replay replay) {
-            // The row names its origin delivery, but not that origin's observation sequence or
-            // evidence digest — those live on the origin's own row. Left null deliberately:
-            // LineageObservationProvenance.usable() then refuses this candidate, which is the
-            // safe answer. A replay whose origin evidence nobody can name must not authorise a
-            // tombstone, and inventing the delivery's own sequence in its place is exactly how
-            // a re-delivered old observation outranks a later restore.
-            return new LineageObservationProvenance(
-                    LineageObservationProvenance.LineageDeliveryKind.REPLAY, event.deliveryId(),
-                    replay.originalDeliveryId(), event.sequenceNumber(), 0L,
-                    event.occurredAt(), null);
+            return replayProvenance(event, replay, origins, snapshot);
         }
-        if (delivery instanceof LineageDelivery.Repair repair) {
-            // Same reasoning: a repair points at the dead letter it came from, not at the
-            // original observation's evidence.
+        if (delivery instanceof LineageDelivery.Repair) {
+            // No lossless provenance source exists for a repair. The dead-letter store holds v1
+            // LineageEvent — a format its own comments record as unable to reconstruct v2
+            // identity — and its reader returns null for absence and for failure alike, so it
+            // cannot even distinguish "not there" from "could not read". Nothing else records
+            // a repair's original observation.
+            //
+            // Reconstructing from it would mean guessing the observation order that decides
+            // whether a purge or a restore wins. Left unestablished on purpose: the provenance
+            // is returned with no origin evidence, usable() refuses it, and the resolver
+            // reports INDETERMINATE. It is also unreachable today — LineageDelivery.Repair is
+            // constructed only by the decoder, never by a producer — so this is a closed door
+            // rather than a broken path.
             return new LineageObservationProvenance(
                     LineageObservationProvenance.LineageDeliveryKind.REPAIR, event.deliveryId(),
-                    repair.deadLetterId(), event.sequenceNumber(), 0L, event.occurredAt(), null);
+                    null, event.sequenceNumber(), 0L, event.occurredAt(), null);
         }
         // An original delivery is its own observation.
         return new LineageObservationProvenance(
                 LineageObservationProvenance.LineageDeliveryKind.ORIGINAL, event.deliveryId(),
                 event.deliveryId(), event.sequenceNumber(), event.sequenceNumber(),
                 event.occurredAt(), null);
+    }
+
+    /**
+     * A replay's observation, taken from the delivery it replays.
+     *
+     * <h2>Why every field comes from the origin</h2>
+     *
+     * <p>A replay re-delivers an observation someone already made. Its own sequence is when it
+     * was re-sent, not when the source was seen — using it would let re-delivering a week-old
+     * purge outrank a restore that happened yesterday. So the observation sequence and the
+     * evidence digest are read from the origin row, and there is deliberately no fallback: a
+     * replay whose origin cannot be established is not a weaker observation, it is no
+     * observation at all.
+     */
+    private static LineageObservationProvenance replayProvenance(LineageEventV2 event,
+            LineageDelivery.Replay replay, OriginLookup origins,
+            LineageWaitingSnapshot snapshot) {
+        String originId = replay.originalDeliveryId();
+        if (originId == null || originId.isBlank()) {
+            throw new CorruptWaitingEventException(
+                    CorruptWaitingEventException.Reason.BROKEN_ORIGIN_CHAIN);
+        }
+        if (originId.equals(event.deliveryId())) {
+            // A replay of itself has no observation behind it, and following it would loop.
+            throw new CorruptWaitingEventException(
+                    CorruptWaitingEventException.Reason.BROKEN_ORIGIN_CHAIN);
+        }
+        if (origins == null) {
+            // Nothing to ask. Unestablished rather than corrupt: the caller simply did not
+            // supply a way to read the journal.
+            return unusableReplay(event, originId);
+        }
+
+        LineageJournalRowV2 originRow;
+        try {
+            originRow = origins.read(originId);
+        } catch (RuntimeException unreadable) {
+            // A read that failed says nothing about the origin. INDETERMINATE, via an
+            // unusable provenance — never CORRUPT, which would blame the data for an outage.
+            return unusableReplay(event, originId);
+        }
+        if (originRow == null || originRow.event() == null) {
+            // Genuinely absent — retention, or not replicated yet. Also unestablished.
+            return unusableReplay(event, originId);
+        }
+        LineageEventV2 origin = originRow.event();
+
+        if (!originId.equals(origin.deliveryId())) {
+            throw new CorruptWaitingEventException(
+                    CorruptWaitingEventException.Reason.BROKEN_ORIGIN_CHAIN);
+        }
+        if (!event.repositoryId().equals(origin.repositoryId())) {
+            // An observation from another repository cannot order this one, and an entity
+            // rebuilt across repositories is wrong in a way nothing downstream detects.
+            throw new CorruptWaitingEventException(
+                    CorruptWaitingEventException.Reason.BROKEN_ORIGIN_CHAIN);
+        }
+        if (!(origin.delivery() instanceof LineageDelivery.Original)) {
+            // The chain is bounded at one hop by contract: a replay's origin must be a
+            // first-hand observation. Following replays of replays would need a depth limit
+            // and a cycle check on a structure nothing guarantees is acyclic.
+            throw new CorruptWaitingEventException(
+                    CorruptWaitingEventException.Reason.BROKEN_ORIGIN_CHAIN);
+        }
+        if (origin.sequenceNumber() == 0L) {
+            // UNSEQUENCED: the origin has no place in the order yet, so it cannot supply one.
+            return unusableReplay(event, originId);
+        }
+
+        // The v2 event schema carries no origin evidence digest field — neither the event nor
+        // LineageDelivery.Replay(originalDeliveryId, target, generation) has one — so there is
+        // no self-reported claim to check. What CAN be checked, and is stronger, is that the
+        // replay's own payload reproduces the origin's snapshot for this endpoint: the digest
+        // is recomputed from the ORIGIN row and compared against the one recomputed from the
+        // replay's. Equal means the replay really re-delivers that observation; different
+        // means it carries content the origin never observed, which is not a weaker replay but
+        // a contradiction.
+        String originDigest = originEvidenceDigest(origin, snapshot);
+        if (originDigest == null) {
+            // The origin does not carry this endpoint. A replay may legitimately cover a
+            // different subset, so this is unestablished rather than corrupt.
+            return unusableReplay(event, originId);
+        }
+        if (!originDigest.matches("[0-9a-f]{64}")) {
+            return unusableReplay(event, originId);
+        }
+        if (!constantTimeEquals(snapshot.evidenceDigest(), originDigest)) {
+            throw new CorruptWaitingEventException(
+                    CorruptWaitingEventException.Reason.ORIGIN_EVIDENCE_MISMATCH);
+        }
+        return new LineageObservationProvenance(
+                LineageObservationProvenance.LineageDeliveryKind.REPLAY, event.deliveryId(),
+                originId, event.sequenceNumber(), origin.sequenceNumber(), event.occurredAt(),
+                originDigest);
+    }
+
+    /** A replay whose origin could not be established. {@code usable()} refuses it. */
+    private static LineageObservationProvenance unusableReplay(LineageEventV2 event,
+            String originId) {
+        return new LineageObservationProvenance(
+                LineageObservationProvenance.LineageDeliveryKind.REPLAY, event.deliveryId(),
+                originId, event.sequenceNumber(), 0L, event.occurredAt(), null);
+    }
+
+    /**
+     * The origin's snapshot evidence for the same endpoint, rebuilt from the origin's own row.
+     *
+     * @return null when the origin does not carry that endpoint — unestablished, not corrupt:
+     *         a replay may legitimately be about a different subset
+     */
+    private static String originEvidenceDigest(LineageEventV2 origin,
+            LineageWaitingSnapshot snapshot) {
+        java.util.List<LineageEndpoint> all = new java.util.ArrayList<>();
+        if (origin.inputs() != null) {
+            all.addAll(origin.inputs());
+        }
+        if (origin.outputs() != null) {
+            all.addAll(origin.outputs());
+        }
+        for (LineageEndpoint endpoint : all) {
+            if (endpoint.kind() != snapshot.endpointKind()
+                    || !endpoint.catalogQualifiedName().equals(
+                            snapshot.catalogQualifiedName())) {
+                continue;
+            }
+            try {
+                return LineageWaitingSnapshot.of(snapshot.target(), origin.repositoryId(),
+                        endpoint.kind(), endpoint.catalogQualifiedName(),
+                        attributesOf(endpoint), LineageSourceDisposition.SOURCE_UNKNOWN,
+                        snapshot.snapshotSchemaVersion()).evidenceDigest();
+            } catch (RuntimeException unusable) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /** Constant time: neither side is secret, but a digest comparison should not leak either. */
+    private static boolean constantTimeEquals(String a, String b) {
+        if (a == null || b == null || a.length() != b.length()) {
+            return false;
+        }
+        int diff = 0;
+        for (int i = 0; i < a.length(); i++) {
+            diff |= a.charAt(i) ^ b.charAt(i);
+        }
+        return diff == 0;
     }
 }

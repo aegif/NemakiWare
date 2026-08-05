@@ -152,7 +152,16 @@ public final class CouchLineageWaitingEventSource
             throw new CorruptWaitingEventException(
                     CorruptWaitingEventException.Reason.UNDECODABLE_ROW);
         }
-        return LineageWaitingCandidates.from(decoded, target, taskKey);
+        // The origin lookup is a strict point-read: a failure propagates so the resolver can
+        // report INDETERMINATE, and absence is null so a replay of a retained-away origin is
+        // unestablished rather than corrupt.
+        return LineageWaitingCandidates.from(decoded, target, taskKey, this::readOrigin);
+    }
+
+    /** One origin v2 row by delivery id, strictly. */
+    private LineageJournalRowV2 readOrigin(String deliveryId) {
+        Map<String, Object> raw = support.readV2RawStrict(deliveryId);
+        return raw == null ? null : support.decodeV2Strict(raw);
     }
 
     /** Whether this target's waiting set really contains the task the view emitted it for. */
