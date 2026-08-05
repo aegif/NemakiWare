@@ -12,6 +12,43 @@
 
 ---
 
+## v2.3.85 — ACTIVATION (local) と、実走が掘り当てた「§2 機構に driver が無い」
+
+運用者の明示判断の下、local 環境で `POST /barrier/activate` を初実行した
+(`writeSchemaVersion = 2` / `minReaderSchemaVersion = 2`、one-way)。期限切れ ACK は
+condition 5 が正しく拒否し、鮮度ゲートの実働も確認した。
+
+### 本番バグ: obligation scanner を誰も呼んでいない
+
+初の v2 event (EXPORT_ZIP_FOLDER) は spool → 収束 materialisation → journal → sequencer
+(FENCED_OK) → projection と流れ、`WAITING_FOR_CATALOG` で CMIS_FOLDER と EXPORT_ARTIFACT の
+obligation 2 件を作って待機した — そして**そこで止まった**。
+
+`LineageObligationScanner` の契約は自ら「drives obligations forward on a schedule」と
+宣言しているのに、schedule も admin route も存在せず、`runBoundedPass` の本番呼出しは
+ゼロだった。projector は catalog wait に入るとき obligation を**作る**が、誰も働かない。
+全待機イベントは max age で terminal UNRESOLVED に落ちる — この機構が防ぐために作られた
+結末そのものが、機構が遊んでいる横で起きる。
+
+修正: projection loop に定期 pass を追加 (service 側が red gate で INERT なので未 ready
+ノードでも安全)、REFUSED reader は DB-global 状態に触れない admission 規則も projection と
+同一。運用診断用に `POST /obligations/run` (sequencer と同型、red gate は 409 + violations)。
+
+### 修正後の初 end-to-end
+
+- CMIS_FOLDER → **RESOLVED (LIVE_SOURCE_OBSERVATION_MATERIALIZED)** — Finding 2 で
+  作り直した live-source 経路 (同一 read の projection・改名済み outcome) の初実走
+- EXPORT_ARTIFACT → RESOLVED (SOURCE_EXISTS) — process publish が entity を作り、
+  次パスの probe が PRESENT を確認する設計どおりの収束
+- event は `atlas: PUBLISHED` (read-back 検証済み)。Atlas に `nemaki_folder_dataset`
+  (sourceState ACTIVE) と `nemaki_export_artifact` が実在
+
+### ACTIVE 下の redeploy
+
+barrier は redeploy を生き延び、新 binary は **capability (`read:v2`) で admit** される —
+digest allowlist は activation の ratchet であって定常運用の enforcement ではない。
+ACTIVE な barrier の re-arm は `writeSchemaVersion == 1` を要求して拒否される (設計どおり)。
+
 ## v2.3.84 — Data Map surface の api-version が client 間で乖離していた (公開仕様ベース)
 
 GA Data Map REST API (2023-09-01) は `/datamap` 配下の全操作で `api-version` を必須とする。

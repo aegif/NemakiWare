@@ -704,6 +704,47 @@ public class LineageJournalController {
         return ResponseEntity.ok(response);
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private jp.aegif.nemaki.rest.purview.journal.LineageObligationScanner obligationScanner;
+
+    /**
+     * Manual obligation pass. The scheduled passes in the projection loop are the ordinary
+     * driver; this exists so an operator can force one during diagnosis and see exactly what a
+     * pass did. Refuses with 409 while the aggregate D-rest readiness gate is not green,
+     * naming the violations — running the settler under a red gate would write catalog
+     * entities on a node that has not proven its wiring.
+     */
+    @PostMapping("/obligations/run")
+    public ResponseEntity<Map<String, Object>> runObligations(
+            @org.springframework.web.bind.annotation.RequestParam(value = "limit",
+                    required = false, defaultValue = "0") int limit) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+        ResponseEntity<Map<String, Object>> notAdmitted = requireAdmittedReader();
+        if (notAdmitted != null) return notAdmitted;
+        if (obligationScanner == null) {
+            return badRequest("obligation scanner unavailable");
+        }
+        Map<String, Object> response = new LinkedHashMap<>();
+        var readiness = drestReadinessBean == null ? null : drestReadinessBean.evaluate();
+        if (readiness == null || !readiness.ready()) {
+            response.put("enabled", false);
+            response.put("violations", readiness == null ? java.util.List.of("readiness"
+                    + " unavailable") : readiness.violations());
+            response.put("message", "D-rest readiness gate is not green — the settler must not"
+                    + " write catalog entities under a red gate");
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+        }
+        var pass = obligationScanner.runBoundedPass(limit);
+        response.put("enabled", true);
+        response.put("claimed", pass.claimed());
+        response.put("resolved", pass.resolved());
+        response.put("released", pass.released());
+        response.put("gaveUp", pass.gaveUp());
+        response.put("reclaimed", pass.reclaimed());
+        return ResponseEntity.ok(response);
+    }
+
     /** Read-only sequencer status; available while disabled (diagnostics). */
     @GetMapping("/sequencer/{repositoryId}")
     public ResponseEntity<Map<String, Object>> sequencerStatus(

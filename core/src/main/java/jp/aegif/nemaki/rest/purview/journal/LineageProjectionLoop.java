@@ -68,6 +68,9 @@ public class LineageProjectionLoop {
     private LineageReaderAdmission readerAdmission;
 
     @Autowired(required = false)
+    private LineageObligationScanner obligationScanner;
+
+    @Autowired(required = false)
     private LineageSpoolMachinery spoolMachinery;
 
     /**
@@ -126,7 +129,51 @@ public class LineageProjectionLoop {
                 CONFIG_CHECK_INTERVAL_SECONDS,
                 TimeUnit.SECONDS);
 
+        // Obligation passes. The scanner's own contract says "drives obligations forward on a
+        // schedule", and this is the schedule: without it the projector could CREATE
+        // obligations (entering a catalog wait does) while nothing ever worked them off, so
+        // every waiting event aged out to UNRESOLVED — terminal — with the machine that was
+        // built to prevent exactly that sitting idle. Found live, on the first activated
+        // pipeline: the first v2 event waited on two PENDING obligations nobody was going to
+        // claim. Gating is the service's (INERT under a red readiness gate), so scheduling
+        // this is safe on a node that is not ready yet.
+        scheduler.scheduleWithFixedDelay(
+                this::runObligationPass,
+                pollInterval,
+                pollInterval,
+                TimeUnit.SECONDS);
+
         logger.info("Lineage projection loop initialized (pollInterval={}s)", pollInterval);
+    }
+
+    /**
+     * One bounded obligation pass, with the same admission rule as projection.
+     *
+     * <p>A node refused as a reader must not touch DB-global state — settling an obligation
+     * writes catalog entities and resolves documents other nodes wait on. UNDETERMINED is left
+     * to the service's own readiness gate, which refuses to run anything under a red gate.
+     */
+    void runObligationPass() {
+        try {
+            if (obligationScanner == null) {
+                return;
+            }
+            LineageReaderAdmission.Admission admission = readerAdmission == null
+                    ? null : readerAdmission.evaluate();
+            if (admission != null
+                    && admission.decision() == LineageReaderAdmission.Decision.REFUSED) {
+                return;
+            }
+            LineageCatalogObligationService.Pass pass = obligationScanner.runBoundedPass(0);
+            if (pass != null && !pass.idle()) {
+                logger.info("Obligation pass: claimed={} resolved={} released={} gaveUp={}"
+                        + " reclaimed={}", pass.claimed(), pass.resolved(), pass.released(),
+                        pass.gaveUp(), pass.reclaimed());
+            }
+        } catch (Exception e) {
+            // Class name only: an obligation failure can echo catalog identities.
+            logger.warn("Obligation pass failed: {}", e.getClass().getSimpleName());
+        }
     }
 
     /**
