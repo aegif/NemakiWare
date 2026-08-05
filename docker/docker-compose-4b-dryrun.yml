@@ -1,0 +1,43 @@
+# 4b dry-run overlay — disposable environments only.
+#
+# What it changes, and why each one is needed for the rehearsal rather than for production:
+#
+#   * ATLAS ONLY. The catalog client answers for one active backend, so a node that enables
+#     both purview and atlas binds its probe and its historical publisher to purview and
+#     leaves atlas with none. The rehearsal is against the local Atlas, so atlas is the one
+#     that must be active.
+#
+#   * TIMEOUTS THAT FIT INSIDE THE SUBJECT FENCE. With the defaults (5s connect, 30s read)
+#     the worst-case fenced section is 2 catalog calls x 4 attempts x 35s plus backoff plus
+#     the source re-check = ~302s, against a 300s fence lease. Readiness refuses that, and it
+#     is right to: a publish still in flight when the fence expires can be overwritten by
+#     another intent. 2s/10s brings the section to ~118s, inside the 150s margin.
+#
+#   * JOURNALED MODE AND A SPOOL, owned by the Tomcat user. A named volume is created root-
+#     owned, and the container runs as uid 999 — the write/link/fsync probe then fails and the
+#     preflight is red for a reason that has nothing to do with lineage. The spool is the hot
+#     path after activation, so this has to be right rather than worked around.
+#
+# It does NOT enable D-rest writes and does NOT activate the barrier. `POST /barrier/activate`
+# is out of scope for a rehearsal by design — the point is to reach the instant before it.
+#
+# Usage (with the base file and the atlas file):
+#   COUCHDB_USER=admin COUCHDB_PASSWORD=password \
+#   docker compose -f docker-compose-simple.yml -f docker-compose-atlas.yml \
+#                  -f docker-compose-4b-dryrun.yml up -d --build --force-recreate --no-deps core
+
+services:
+  core:
+    environment:
+      # Replaces the atlas overlay's JAVA_TOOL_OPTIONS wholesale (same key), so purview.enabled
+      # is genuinely absent rather than overridden to false somewhere further down.
+      - JAVA_TOOL_OPTIONS=-Datlas.enabled=true -Datlas.endpoint=http://atlas:21000 -Datlas.username=${ATLAS_USER:-admin} -Datlas.password=${ATLAS_PASSWORD:-admin} -Datlas.connect.timeout.ms=2000 -Datlas.read.timeout.ms=10000 -Dlineage.mode=journaled -Dlineage.targets=atlas -Dlineage.spool.dir=/var/lineage-spool -Dlineage.drest.enabled=true
+    volumes:
+      - lineage_spool:/var/lineage-spool
+    user: root
+    # Root only for the rehearsal, and only to make a named volume writable. A real deployment
+    # gives the spool path to the service user instead; running the application as root is not
+    # something this checklist is recommending.
+
+volumes:
+  lineage_spool:

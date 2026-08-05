@@ -206,10 +206,12 @@ NEMAKI_ATLAS_IMAGE=nemakiware-atlas:2.3.0-arm64 NEMAKI_ATLAS_PLATFORM=linux/arm6
   「lineage のバグ」に見える。削除できるのは retention 経路のみで、対象は `PURGED` かつ
   参照 Process 0 件かつ retention 経過のもの。
 - **既存 entity の qualifiedName を変えない。** 変えると過去の lineage が参照先を失う。
-- **§2 の obligation machine を実装しない。** `PENDING` / `CLAIMED` / `RESOLVED` /
-  `UNRESOLVED` と projector の `WAITING_FOR_CATALOG` は、待避する側の projector が
-  この build では非活性 (writer は v1、D-rest driver は全て off) なので、
-  今作ると消費者の無い状態機械になる。projector を活性化する作業と一緒に入れる。
+- **~~§2 の obligation machine を実装しない。~~ 撤回 (v2.3.37〜v2.3.55)。** 当時の理由は
+  「projector が非活性なので消費者の無い状態機械になる」だったが、4b は deployment を
+  伴わない flag flip なので、活性化した瞬間に producer・consumer・recovery が揃って
+  いなければならない。非活性のうちに実装し検証するのが唯一の順序である。
+  現状は [`docs/design/lineage-obligation-handoff.md`](../design/lineage-obligation-handoff.md)
+  を参照。
 
 ---
 
@@ -218,3 +220,4 @@ NEMAKI_ATLAS_IMAGE=nemakiware-atlas:2.3.0-arm64 NEMAKI_ATLAS_PLATFORM=linux/arm6
 - 設計: [`docs/design/atlas-lineage-endpoints.md`](../design/atlas-lineage-endpoints.md) §3
 - 変更履歴: [`docs/design/atlas-lineage-endpoints-changelog.md`](../design/atlas-lineage-endpoints-changelog.md)
 - 4b activation (別件・未実施): [`lineage-4b-activation-checklist.md`](lineage-4b-activation-checklist.md)
+- §2 obligation machine の現状: [`docs/design/lineage-obligation-handoff.md`](../design/lineage-obligation-handoff.md)

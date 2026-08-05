@@ -72,8 +72,14 @@ public class LineageWaitingSnapshotResolver {
          * @param supersededCount how many older observations there were; a count, never their
          *        content — an operator needs to know an object has history without reading it
          */
-        record LatestWaitingSnapshot(LineageWaitingSnapshot snapshot, int supersededCount)
-                implements Resolution { }
+        /**
+         * @param provenance the winning candidate's observation provenance — carried through
+         *        rather than dropped, because the historical machine orders intents by it and
+         *        re-deriving it later would mean pairing a snapshot with another delivery's
+         *        observation
+         */
+        record LatestWaitingSnapshot(LineageWaitingSnapshot snapshot, int supersededCount,
+                LineageObservationProvenance provenance) implements Resolution { }
 
         /**
          * No event is waiting on this task.
@@ -138,9 +144,17 @@ public class LineageWaitingSnapshotResolver {
         List<Candidate> candidates;
         try {
             candidates = source.candidatesFor(obligation.taskKey());
+        } catch (CorruptWaitingEventException corrupt) {
+            // A row that contradicts itself will contradict itself again on every future pass.
+            // Retrying it for ever would hide it; CORRUPT puts it in front of an operator. The
+            // wording is the exception's own constant — nothing from the document.
+            logger.warn("Waiting-event lookup found a corrupt row: {}", corrupt.reason());
+            return new Resolution.Corrupt(corrupt.getMessage());
         } catch (RuntimeException e) {
-            // A query that failed established nothing. Class name only: a store message can
-            // echo a document, and a v2 document carries endpoint attributes.
+            // Everything else — a missing view, a CouchDB that did not answer, an origin row
+            // that could not be read — says nothing about the data, so the next pass may well
+            // succeed. Class name only: a store message can echo a document, and a v2 document
+            // carries endpoint attributes.
             logger.warn("Waiting-event lookup failed: {}", e.getClass().getSimpleName());
             return new Resolution.Indeterminate("the waiting-event lookup failed");
         }
@@ -229,6 +243,7 @@ public class LineageWaitingSnapshotResolver {
         }
 
         Candidate latest = observations.get(observations.size() - 1);
-        return new Resolution.LatestWaitingSnapshot(latest.snapshot(), observations.size() - 1);
+        return new Resolution.LatestWaitingSnapshot(latest.snapshot(),
+                observations.size() - 1, latest.provenance());
     }
 }

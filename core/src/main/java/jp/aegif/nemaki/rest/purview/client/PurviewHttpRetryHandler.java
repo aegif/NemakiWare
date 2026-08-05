@@ -15,6 +15,36 @@ public class PurviewHttpRetryHandler {
     private static final long BASE_RETRY_DELAY_MS = 1000L;
     private static final long MAX_RETRY_DELAY_MS = 300000L;
     private static final int MAX_RETRIES = 3;
+    /** Symmetric jitter applied to every backoff delay, as a fraction of that delay. */
+    private static final double JITTER_FRACTION = 0.1;
+
+    /**
+     * How many attempts follow the first one.
+     *
+     * <p>Exposed so that anything budgeting a request reads the retry policy this handler
+     * actually applies, rather than a second copy of the number that can drift away from it.
+     * The lineage subject fence depends on that: a budget computed from a stale constant would
+     * claim a safety margin the running code does not respect.
+     */
+    public static int maxRetries() {
+        return MAX_RETRIES;
+    }
+
+    /**
+     * The worst-case total sleep across every retry of one request.
+     *
+     * <p>Jitter is symmetric, so the worst case takes the positive side of it. Computed from the
+     * same {@link #calculateBackoffDelay} shape the handler runs, minus the randomness.
+     */
+    public static long worstCaseBackoffTotalMs() {
+        long total = 0L;
+        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            long delay = Math.min(BASE_RETRY_DELAY_MS * (long) Math.pow(2, attempt - 1),
+                    MAX_RETRY_DELAY_MS);
+            total += delay + (long) Math.ceil(delay * JITTER_FRACTION);
+        }
+        return total;
+    }
 
     @FunctionalInterface
     public interface HttpOperation {
@@ -84,8 +114,8 @@ public class PurviewHttpRetryHandler {
         long delay = BASE_RETRY_DELAY_MS * (long) Math.pow(2, attemptNumber - 1);
         delay = Math.min(delay, MAX_RETRY_DELAY_MS);
 
-        // Jitter ±10%
-        long jitter = (long) (delay * 0.1 * (2 * Math.random() - 1));
+        // Jitter ±JITTER_FRACTION
+        long jitter = (long) (delay * JITTER_FRACTION * (2 * Math.random() - 1));
         delay += jitter;
 
         return Math.max(delay, 0);

@@ -88,9 +88,11 @@ public class CouchLineageHistoricalCompensationStore
         params.put("reduce", false);
         params.put("include_docs", true);
         com.ibm.cloud.cloudant.v1.model.ViewResult result =
-                support.client().queryView(support.designDoc(), "historicalCompensationsByState",
-                        params);
-        if (result == null || result.getRows() == null) {
+                LineageStoreDecoding.requireViewResult(
+                        support.client().queryView(support.designDoc(),
+                                "historicalCompensationsByState", params),
+                        "historicalCompensationsByState");
+        if (result.getRows() == null) {
             return List.of();
         }
         for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : result.getRows()) {
@@ -184,5 +186,20 @@ public class CouchLineageHistoricalCompensationStore
 
     private static String asString(Object value) {
         return value instanceof String s ? s : null;
+    }
+
+    @Override
+    public java.util.Map<LineageHistoricalCompensation.State,
+            LineageCatalogObligationStore.StateCount> countByState() {
+        support.ensureDatabase();
+        java.util.Map<LineageHistoricalCompensation.State,
+                LineageCatalogObligationStore.StateCount> counts =
+                new java.util.EnumMap<>(LineageHistoricalCompensation.State.class);
+        for (LineageHistoricalCompensation.State state
+                : LineageHistoricalCompensation.State.values()) {
+            counts.put(state, LineageStoreDecoding.reduceCount(support,
+                    "historicalCompensationsByState", state.name(), null));
+        }
+        return counts;
     }
 }

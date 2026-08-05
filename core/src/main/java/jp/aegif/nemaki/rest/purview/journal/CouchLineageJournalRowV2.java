@@ -53,6 +53,22 @@ public final class CouchLineageJournalRowV2 {
     static final String REPLAY_REASON = "reason";
     static final String FIELD_CLAIM_BY_TARGET = "v2ClaimByTarget";
     static final String FIELD_REASON_BY_TARGET = "v2TerminalReasonByTarget";
+    /**
+     * What a WAITING_FOR_CATALOG row is waiting for, per target.
+     *
+     * <p>Its own map rather than a field inside the claim bundle: the claim is released before
+     * the wait begins, so a waiting row has no claim to carry it.
+     */
+    static final String FIELD_WAITING_BY_TARGET = "v2WaitingByTarget";
+    /**
+     * Both names match the already-provisioned {@code v2_waiting_by_task_key} view, which
+     * emits {@code w[target].taskKeys}. The codec follows the view rather than the other way
+     * round: a rename here would need every deployment's design document rebuilt before the
+     * reverse lookup worked again, and the lookup is what tells an operator which events a
+     * given obligation is holding up.
+     */
+    static final String WAIT_TASK_KEYS = "taskKeys";
+    static final String WAIT_SINCE = "waitingSinceMs";
     static final String CLAIM_TOKEN = "token";
     static final String CLAIM_CLAIMED_AT = "claimedAtMs";
     static final String CLAIM_LEASE_EXPIRES = "leaseExpiresAtMs";
@@ -214,6 +230,16 @@ public final class CouchLineageJournalRowV2 {
                 FIELD_CLAIM_BY_TARGET);
         Map<String, Object> reasons = requireMapOrNull(doc.get(FIELD_REASON_BY_TARGET),
                 FIELD_REASON_BY_TARGET);
+        Map<String, Object> waits = requireMapOrNull(doc.get(FIELD_WAITING_BY_TARGET),
+                FIELD_WAITING_BY_TARGET);
+        if (waits != null) {
+            for (String t : waits.keySet()) {
+                if (statuses == null || !statuses.containsKey(t)) {
+                    throw new IllegalArgumentException("v2 row '" + doc.get("_id")
+                            + "' has a catalog wait for target '" + t + "' but no status");
+                }
+            }
+        }
         if (claims != null) {
             for (String t : claims.keySet()) {
                 if (statuses == null || !statuses.containsKey(t)) {
@@ -269,6 +295,30 @@ public final class CouchLineageJournalRowV2 {
                         CLAIM_VERIFYING_SINCE);
                 retryCount = exactLongOrNull(claim.get(CLAIM_RETRY_COUNT), CLAIM_RETRY_COUNT);
             }
+            Map<String, Object> wait = waits == null ? null
+                    : requireMapOrNull(waits.get(target),
+                            FIELD_WAITING_BY_TARGET + "." + target);
+            java.util.List<String> waitingTaskKeys = null;
+            Long waitingSince = null;
+            if (wait != null) {
+                Object keys = wait.get(WAIT_TASK_KEYS);
+                if (keys != null) {
+                    if (!(keys instanceof java.util.List<?> raw)) {
+                        throw new IllegalArgumentException("waitingTaskKeys for target '"
+                                + target + "' must be a list");
+                    }
+                    java.util.List<String> decoded = new java.util.ArrayList<>();
+                    for (Object key : raw) {
+                        if (!(key instanceof String ks) || ks.isBlank()) {
+                            throw new IllegalArgumentException("waitingTaskKeys for target '"
+                                    + target + "' must contain non-blank strings");
+                        }
+                        decoded.add(ks);
+                    }
+                    waitingTaskKeys = decoded;
+                }
+                waitingSince = exactLongOrNull(wait.get(WAIT_SINCE), WAIT_SINCE);
+            }
             LineageTargetLifecycle.TerminalReason terminalReason = null;
             if (reason != null) {
                 Object r = reason.get(REASON_REASON);
@@ -286,7 +336,8 @@ public final class CouchLineageJournalRowV2 {
             }
             try {
                 out.put(target, new LineageTargetLifecycle(status, token, claimedAt,
-                        leaseExpires, verifyingSince, retryCount, terminalReason));
+                        leaseExpires, verifyingSince, retryCount, terminalReason,
+                        waitingTaskKeys, waitingSince));
             } catch (IllegalArgumentException ex) {
                 throw new IllegalArgumentException("v2 row '" + doc.get("_id") + "' target '"
                         + target + "': " + ex.getMessage());
@@ -421,5 +472,64 @@ public final class CouchLineageJournalRowV2 {
             r.put(REASON_AT, reason.atMs());
             reasons.put(target, r);
         }
+    }
+    /**
+     * Enter the catalog wait: status, the full task-key set and the wait start, in one write.
+     *
+     * <p>One mutation, so the CAS that stores it either stores all of it or none of it. A row
+     * that reached {@code WAITING_FOR_CATALOG} without its keys would wait for something
+     * nothing can name; a row with keys but no start could never expire.
+     *
+     * <p>{@code waitingSinceMs} is written only when absent. A row that waits, resumes and
+     * waits again keeps its ORIGINAL start — resetting it on every round would let a row that
+     * has been stuck for days present itself as freshly waiting and never reach max age.
+     */
+    static void applyCatalogWait(Map<String, Object> raw, String target,
+                                 java.util.List<String> taskKeys, long nowMs) {
+        mutableChild(raw, FIELD_STATUS_BY_TARGET)
+                .put(target, LineagePublishStatus.WAITING_FOR_CATALOG.name());
+        Map<String, Object> waits = mutableChild(raw, FIELD_WAITING_BY_TARGET);
+        Object existing = waits.get(target);
+        Long existingSince = null;
+        if (existing instanceof Map<?, ?> previous) {
+            Object since = previous.get(WAIT_SINCE);
+            if (since instanceof Number n) {
+                existingSince = n.longValue();
+            }
+        }
+        Map<String, Object> wait = new java.util.LinkedHashMap<>();
+        // Sorted and deduped, so two projectors computing the same obligations produce
+        // byte-identical rows and a CAS retry cannot look like a different decision.
+        wait.put(WAIT_TASK_KEYS, java.util.List.copyOf(new java.util.TreeSet<>(taskKeys)));
+        wait.put(WAIT_SINCE, existingSince != null ? existingSince : nowMs);
+        waits.put(target, wait);
+    }
+
+    /**
+     * Leave the catalog wait, keeping the wait start.
+     *
+     * <p>The keys go because they are answered. The start stays because the next wait must
+     * measure from the first one — see {@link #applyCatalogWait}.
+     */
+    static void applyCatalogWaitCleared(Map<String, Object> raw, String target,
+                                        LineagePublishStatus next,
+                                        LineageTargetLifecycle.TerminalReason reason) {
+        applyStatusOnly(raw, target, next, reason);
+        Map<String, Object> waits = mutableChild(raw, FIELD_WAITING_BY_TARGET);
+        Object existing = waits.get(target);
+        Long existingSince = null;
+        if (existing instanceof Map<?, ?> previous) {
+            Object since = previous.get(WAIT_SINCE);
+            if (since instanceof Number n) {
+                existingSince = n.longValue();
+            }
+        }
+        if (existingSince == null) {
+            waits.remove(target);
+            return;
+        }
+        Map<String, Object> wait = new java.util.LinkedHashMap<>();
+        wait.put(WAIT_SINCE, existingSince);
+        waits.put(target, wait);
     }
 }

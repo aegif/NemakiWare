@@ -973,6 +973,35 @@ public class LineageJournalController {
     @Autowired(required = false)
     private jp.aegif.nemaki.rest.purview.journal.LineageSpoolMachinery preflightSpoolMachinery;
 
+    // The §2 obligation machine, for the preflight's own section. Every one is optional so a
+    // node without the machine still answers — as a FAIL that names what is missing, never as
+    // an omission that reads as fine.
+
+    @Autowired(required = false)
+    private jp.aegif.nemaki.rest.purview.journal.LineageCatalogObligationStore
+            preflightObligationStore;
+
+    @Autowired(required = false)
+    private jp.aegif.nemaki.rest.purview.journal.LineageHistoricalPublishIntentStore
+            preflightIntentStore;
+
+    @Autowired(required = false)
+    private jp.aegif.nemaki.rest.purview.journal.LineageHistoricalCompensationStore
+            preflightCompensationStore;
+
+    @Autowired(required = false)
+    private jp.aegif.nemaki.rest.purview.journal.LineageObligationWiring preflightWiring;
+
+    @Autowired(required = false)
+    private jp.aegif.nemaki.rest.purview.journal.LineageOperationBudgetProvider preflightBudgets;
+
+    @Autowired(required = false)
+    private jp.aegif.nemaki.rest.purview.journal.LineagePurgeLedger preflightPurgeLedger;
+
+    @Autowired(required = false)
+    private java.util.List<jp.aegif.nemaki.rest.purview.journal.LineageTargetSink>
+            preflightTargetSinks;
+
     /**
      * The stored {@code cloud-metadata-snapshot} cursors, as verdicts (4b acceptance).
      *
@@ -1174,6 +1203,11 @@ public class LineageJournalController {
         }
         response.put("barrier", barrier);
 
+        // --- the §2 obligation machine
+        Map<String, Object> obligations = obligationPreflight();
+        response.put("catalogObligations", obligations);
+        fail |= !((java.util.List<?>) obligations.get("blockingConditions")).isEmpty();
+
         // --- named, not omitted: an omission reads as "fine"
         response.put("notCheckableByThisApplication", java.util.List.of(
                 "old-AP absence (scale-to-one): old binaries are already deployed and carry no"
@@ -1190,5 +1224,298 @@ public class LineageJournalController {
                 + " under notCheckableByThisApplication are measurable only outside the"
                 + " application, so a green deployment still needs their evidence.");
         return ResponseEntity.ok(response);
+    }
+
+    // ==================== §2 obligation machine preflight (v2.3.55) ====
+
+    /**
+     * Everything a 4b decision needs to know about the obligation machine.
+     *
+     * <h2>Counts are never green zeros</h2>
+     *
+     * <p>Every count carries whether it is exact. A store that could not be read, a view that is
+     * missing and a reduce that answered something unreadable all come back as a lower bound —
+     * because the alternative is a zero, and a zero here reads as "no backlog, nothing to
+     * worry about" on exactly the deployment that cannot answer.
+     *
+     * <h2>Ordinary work is not a blocking condition</h2>
+     *
+     * <p>PENDING and CLAIMED obligations are the machine doing its job. They are reported with
+     * their oldest waiting age so an operator can judge, but they do not block activation —
+     * refusing to activate while any obligation is outstanding would mean never activating on a
+     * system that is in use.
+     */
+    private Map<String, Object> obligationPreflight() {
+        Map<String, Object> section = new LinkedHashMap<>();
+        java.util.List<String> blocking = new java.util.ArrayList<>();
+
+        // --- obligation counts
+        if (preflightObligationStore == null) {
+            section.put("obligations", Map.of("verdict", "UNWIRED"));
+            blocking.add("the catalog obligation store is not wired");
+        } else {
+            Map<String, Object> counts = new LinkedHashMap<>();
+            boolean anyInexact = false;
+            long unresolved = 0L;
+            try {
+                var byState = preflightObligationStore.countByState();
+                for (var entry : byState.entrySet()) {
+                    counts.put(entry.getKey().name(), countView(entry.getValue()));
+                    anyInexact |= entry.getValue().truncated();
+                    if (entry.getKey()
+                            == jp.aegif.nemaki.rest.purview.journal.LineageCatalogObligation
+                                    .State.UNRESOLVED) {
+                        unresolved = entry.getValue().count();
+                    }
+                }
+            } catch (RuntimeException e) {
+                counts.put("error", e.getClass().getSimpleName());
+                anyInexact = true;
+            }
+            counts.put("allExact", !anyInexact);
+            section.put("obligations", counts);
+            if (anyInexact) {
+                blocking.add("obligation counts could not be established exactly");
+            }
+            if (unresolved > 0) {
+                // Terminal-unresolved obligations mean events that can never be projected.
+                blocking.add("there are " + unresolved + " terminally UNRESOLVED obligation(s)");
+            }
+        }
+
+        // --- intent counts, fences, and the states that cannot converge
+        if (preflightIntentStore == null) {
+            section.put("historicalIntents", Map.of("verdict", "UNWIRED"));
+            blocking.add("the historical publish intent store is not wired");
+        } else {
+            Map<String, Object> counts = new LinkedHashMap<>();
+            boolean anyInexact = false;
+            long compensationRequired = 0L;
+            try {
+                var byState = preflightIntentStore.countByState();
+                for (var entry : byState.entrySet()) {
+                    counts.put(entry.getKey().name(), countView(entry.getValue()));
+                    anyInexact |= entry.getValue().truncated();
+                    if (entry.getKey() == jp.aegif.nemaki.rest.purview.journal
+                            .LineageHistoricalPublishIntent.State.COMPENSATION_REQUIRED) {
+                        compensationRequired = entry.getValue().count();
+                    }
+                }
+            } catch (RuntimeException e) {
+                counts.put("error", e.getClass().getSimpleName());
+                anyInexact = true;
+            }
+            counts.put("allExact", !anyInexact);
+            section.put("historicalIntents", counts);
+            if (anyInexact) {
+                blocking.add("historical intent counts could not be established exactly");
+            }
+            if (compensationRequired > 0) {
+                // A catalog holds an entity that disagrees with the repository, and nothing
+                // has put it right yet.
+                blocking.add("there are " + compensationRequired
+                        + " intent(s) awaiting compensation");
+            }
+            Map<String, Object> fences = new LinkedHashMap<>();
+            try {
+                var counted = preflightIntentStore.countFences(System.currentTimeMillis(), 10_000);
+                fences.put("active", counted.truncated() ? null : counted.active());
+                fences.put("expired", counted.truncated() ? null : counted.expired());
+                fences.put("exact", !counted.truncated());
+                if (counted.truncated()) {
+                    blocking.add("subject fence counts could not be established");
+                }
+            } catch (RuntimeException e) {
+                fences.put("exact", false);
+                fences.put("error", e.getClass().getSimpleName());
+                blocking.add("subject fence counts could not be established");
+            }
+            section.put("subjectFences", fences);
+        }
+
+        // --- compensation counts
+        if (preflightCompensationStore == null) {
+            section.put("compensations", Map.of("verdict", "UNWIRED"));
+            blocking.add("the historical compensation store is not wired");
+        } else {
+            Map<String, Object> counts = new LinkedHashMap<>();
+            boolean anyInexact = false;
+            long pending = 0L;
+            try {
+                var byState = preflightCompensationStore.countByState();
+                for (var entry : byState.entrySet()) {
+                    counts.put(entry.getKey().name(), countView(entry.getValue()));
+                    anyInexact |= entry.getValue().truncated();
+                    if (entry.getKey() != jp.aegif.nemaki.rest.purview.journal
+                            .LineageHistoricalCompensation.State.RESOLVED) {
+                        pending += entry.getValue().count();
+                    }
+                }
+            } catch (RuntimeException e) {
+                counts.put("error", e.getClass().getSimpleName());
+                anyInexact = true;
+            }
+            counts.put("allExact", !anyInexact);
+            section.put("compensations", counts);
+            if (anyInexact) {
+                blocking.add("compensation counts could not be established exactly");
+            }
+            if (pending > 0) {
+                blocking.add("there are " + pending + " unresolved compensation(s): a catalog"
+                        + " still holds an entity that disagrees with the repository");
+            }
+        }
+
+        // --- oldest waiting obligation, so ordinary backlog is visible without blocking
+        section.put("oldestWaitingAgeMs", oldestWaitingAgeMs(section, blocking));
+
+        // --- adapters, resolvers and budgets, per target and per kind
+        java.util.Set<String> targets = configuredTargetNames();
+        section.put("configuredTargets", targets);
+        if (targets.isEmpty()) {
+            // Nothing was checked. Reporting PASS here would say "the machine is ready" on the
+            // strength of an empty loop — the per-target adapter checks, the per-kind resolver
+            // checks and every budget are all skipped when there is no target. A node with no
+            // lineage targets genuinely owes nothing, but it also cannot be activated for
+            // lineage, so this is stated rather than left to look green.
+            section.put("configuredTargetsNote", "no lineage target is enabled on this node, so"
+                    + " no per-target adapter, per-kind resolver or operation budget was"
+                    + " checked; this section says nothing about activation readiness");
+            blocking.add("no lineage target is enabled, so the obligation machine cannot be"
+                    + " shown ready for any catalog");
+        }
+        if (preflightWiring == null) {
+            section.put("wiring", Map.of("verdict", "UNWIRED"));
+            blocking.add("the obligation wiring descriptor is not wired, so no adapter can be"
+                    + " shown to exist");
+        } else {
+            java.util.List<String> violations = preflightWiring.violations(targets);
+            section.put("wiring", Map.of("violations", violations));
+            // Every wiring violation is a missing adapter, an unprovable source, or a budget
+            // that does not fit — all of them blocking by construction.
+            blocking.addAll(violations);
+        }
+        // Which kinds can actually receive a tombstone. Named per kind rather than summarised:
+        // a type with nowhere to record the purge would otherwise be discovered only when its
+        // obligations started ending SNAPSHOT_INCOMPLETE in production.
+        Map<String, Object> tombstonable = new LinkedHashMap<>();
+        for (var kind : jp.aegif.nemaki.rest.purview.journal.EndpointKind.values()) {
+            String marker = jp.aegif.nemaki.rest.purview.journal.LineageHistoricalEntityFactory
+                    .tombstoneMarkerAttribute(kind);
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("atlasType", kind.atlasTypeName());
+            entry.put("markerAttribute", marker);
+            entry.put("historicalEntitySupported", marker != null);
+            tombstonable.put(kind.name(), entry);
+        }
+        section.put("historicalEntitySupportByKind", tombstonable);
+        section.put("purgeLedger", Map.of("available",
+                preflightPurgeLedger != null && preflightPurgeLedger.available()));
+        section.put("operationBudgets", budgetView(targets));
+
+        section.put("blockingConditions", blocking);
+        section.put("verdict", blocking.isEmpty() ? "PASS" : "FAIL");
+        return section;
+    }
+
+    /** A count with its own confidence attached — never a bare number. */
+    private static Map<String, Object> countView(
+            jp.aegif.nemaki.rest.purview.journal.LineageCatalogObligationStore.StateCount count) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("count", count.count());
+        view.put("exact", !count.truncated());
+        view.put("basis", count.truncated() ? "lowerBound" : "exact");
+        return view;
+    }
+
+    /**
+     * How long the oldest outstanding obligation has been waiting.
+     *
+     * <p>Reported rather than blocked on: an obligation that is PENDING is the machine working.
+     * The age is what tells an operator whether it is working or stuck.
+     *
+     * @return null when it cannot be established, with a blocking condition recorded — null is
+     *         not zero, and zero would read as "nothing is waiting"
+     */
+    private Long oldestWaitingAgeMs(Map<String, Object> section,
+            java.util.List<String> blocking) {
+        if (preflightObligationStore == null) {
+            return null;
+        }
+        try {
+            long now = System.currentTimeMillis();
+            Long oldest = null;
+            for (var state : java.util.List.of(
+                    jp.aegif.nemaki.rest.purview.journal.LineageCatalogObligation.State.PENDING,
+                    jp.aegif.nemaki.rest.purview.journal.LineageCatalogObligation.State.CLAIMED)) {
+                for (var obligation : preflightObligationStore.findByState(state, 1_000)) {
+                    long age = now - obligation.createdAtMs();
+                    if (oldest == null || age > oldest) {
+                        oldest = age;
+                    }
+                }
+            }
+            return oldest;
+        } catch (RuntimeException e) {
+            blocking.add("the oldest waiting obligation age could not be established: "
+                    + e.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    /**
+     * The targets this node publishes lineage to.
+     *
+     * <p>From {@code lineage.targets}, the same list D-rest readiness uses. Enumerating the sink
+     * beans instead reported every sink Spring happened to construct — including one for a
+     * backend this deployment does not publish to — and the preflight then demanded adapters for
+     * a target nobody configured.
+     */
+    private java.util.Set<String> configuredTargetNames() {
+        java.util.List<String> configured =
+                lineageConfig == null ? null : lineageConfig.getTargets();
+        return configured == null ? java.util.Set.of()
+                : new java.util.LinkedHashSet<>(configured);
+    }
+
+    /**
+     * The worst-case fenced section per target and kind, as numbers an operator can check.
+     *
+     * <p>Reported alongside the wiring violations rather than instead of them: the violation
+     * says a budget does not fit, and this says by how much.
+     */
+    private Map<String, Object> budgetView(java.util.Set<String> targets) {
+        Map<String, Object> byTarget = new LinkedHashMap<>();
+        if (preflightBudgets == null) {
+            byTarget.put("verdict", "UNWIRED");
+            return byTarget;
+        }
+        long lease = jp.aegif.nemaki.rest.purview.journal.LineageHistoricalPublishMachine
+                .INTENT_LEASE.toMillis();
+        byTarget.put("subjectFenceLeaseMs", lease);
+        byTarget.put("safetyMarginMs", jp.aegif.nemaki.rest.purview.journal
+                .LineageObligationWiring.fenceSafetyMarginMs(lease));
+        for (String target : targets) {
+            Map<String, Object> byKind = new LinkedHashMap<>();
+            for (var kind : jp.aegif.nemaki.rest.purview.journal.EndpointKind.values()) {
+                try {
+                    var budget = preflightBudgets.budgetFor(target, kind);
+                    if (budget.isEmpty()) {
+                        byKind.put(kind.name(), Map.of("resolvable", false));
+                        continue;
+                    }
+                    long worst = budget.get().worstCaseMs();
+                    byKind.put(kind.name(), Map.of("resolvable", true,
+                            "worstCaseMs", worst == Long.MAX_VALUE ? -1L : worst,
+                            "bounded", budget.get().bounded()));
+                } catch (RuntimeException e) {
+                    // A configuration read that throws is not a small budget.
+                    byKind.put(kind.name(), Map.of("resolvable", false,
+                            "error", e.getClass().getSimpleName()));
+                }
+            }
+            byTarget.put(target, byKind);
+        }
+        return byTarget;
     }
 }

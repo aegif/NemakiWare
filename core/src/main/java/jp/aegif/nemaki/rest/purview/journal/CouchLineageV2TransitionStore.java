@@ -223,6 +223,106 @@ final class CouchLineageV2TransitionStore {
         return support.updateStrictCas(raw);
     }
 
+    /**
+     * Enter the catalog wait, writing the whole waiting set in the same CAS.
+     *
+     * <h2>Why the projector has no claim to release here</h2>
+     *
+     * <p>The frozen §8-b table reaches {@code WAITING_FOR_CATALOG} from {@code PENDING}, not
+     * from {@code PROJECTING}, and the lifecycle contract says a waiting row carries no claim
+     * bundle. So the probe runs <em>before</em> the claim: a row that turns out to be waiting
+     * never took one. That is stronger than releasing a claim afterwards — there is no window
+     * in which a waiting row is also claimed, and no retry is consumed for a wait.
+     *
+     * <h2>Why the keys are not a separate write</h2>
+     *
+     * <p>A row that reached the waiting state without its keys would be unresumable: nothing
+     * would know what it waits for, and the resume check has nothing to ask about. One CAS, or
+     * the row stays {@code PENDING} and the next pass recomputes the same deterministic keys.
+     *
+     * @param taskKeys every obligation this target must see resolved; must be non-empty and
+     *        already confirmed durable by the caller
+     * @return false if another writer moved the row first — the caller must not treat that as
+     *         a wait
+     */
+    boolean enterCatalogWait(String recordId, String target, java.util.List<String> taskKeys) {
+        if (recordId == null || recordId.isBlank() || target == null || target.isBlank()) {
+            throw new IllegalArgumentException("recordId and target are required");
+        }
+        if (taskKeys == null || taskKeys.isEmpty()) {
+            // Waiting for nothing never ends: nothing can resolve an empty set, so the row
+            // would sit in WAITING until max age and expire for a reason that never existed.
+            throw new IllegalArgumentException("entering the catalog wait requires at least one"
+                    + " obligation task key");
+        }
+        for (String key : taskKeys) {
+            if (key == null || key.isBlank()) {
+                throw new IllegalArgumentException("a waiting task key must not be blank");
+            }
+        }
+        support.ensureDatabase();
+        Map<String, Object> raw = support.readV2RawStrict(recordId);
+        if (raw == null) {
+            return false;
+        }
+        LineageJournalRowV2 row = support.decodeV2Strict(raw);
+        LineageTargetLifecycle current = row.targetLifecycles().get(target);
+        LineagePublishStatus status = current == null
+                ? LineagePublishStatus.PENDING : current.status();
+        if (status != LineagePublishStatus.PENDING) {
+            return false;
+        }
+        CouchLineageJournalRowV2.applyCatalogWait(raw, target, taskKeys,
+                Instant.now().toEpochMilli());
+        return support.updateStrictCas(raw);
+    }
+
+    /**
+     * Leave the catalog wait for {@code PENDING}, keeping the original wait start.
+     *
+     * <p>Only the caller's verdict decides this; the store refuses any source status other than
+     * {@code WAITING_FOR_CATALOG} so a resume can never be applied to a row that has already
+     * moved on.
+     */
+    boolean resumeFromCatalogWait(String recordId, String target) {
+        return leaveCatalogWait(recordId, target, LineagePublishStatus.PENDING, null);
+    }
+
+    /**
+     * Expire the wait — for this event only.
+     *
+     * <p>The obligation is shared by every event waiting on the same catalog entity, so this
+     * must not touch it. One event giving up says nothing about the others, and burning the
+     * obligation here would take them all down with it.
+     */
+    boolean expireCatalogWait(String recordId, String target,
+            LineageTargetLifecycle.TerminalReason reason) {
+        if (reason == null) {
+            throw new IllegalArgumentException("expiring a catalog wait requires a durable"
+                    + " reason — UNRESOLVED without evidence is unauditable");
+        }
+        return leaveCatalogWait(recordId, target, LineagePublishStatus.UNRESOLVED, reason);
+    }
+
+    private boolean leaveCatalogWait(String recordId, String target, LineagePublishStatus next,
+            LineageTargetLifecycle.TerminalReason reason) {
+        if (recordId == null || recordId.isBlank() || target == null || target.isBlank()) {
+            throw new IllegalArgumentException("recordId and target are required");
+        }
+        support.ensureDatabase();
+        Map<String, Object> raw = support.readV2RawStrict(recordId);
+        if (raw == null) {
+            return false;
+        }
+        LineageJournalRowV2 row = support.decodeV2Strict(raw);
+        LineageTargetLifecycle current = row.targetLifecycles().get(target);
+        if (current == null || current.status() != LineagePublishStatus.WAITING_FOR_CATALOG) {
+            return false;
+        }
+        CouchLineageJournalRowV2.applyCatalogWaitCleared(raw, target, next, reason);
+        return support.updateStrictCas(raw);
+    }
+
     boolean renewClaim(String recordId, String target, String claimToken,
             java.time.Duration lease) {
         if (claimToken == null || claimToken.isBlank() || lease == null

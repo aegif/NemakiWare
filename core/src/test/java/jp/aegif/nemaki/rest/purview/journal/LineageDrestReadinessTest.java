@@ -110,8 +110,9 @@ public class LineageDrestReadinessTest {
                 new LineageObligationProjectorCollaboratorImpl(service),
                 mock(LineageHistoricalPublishIntentStore.class),
                 mock(LineageHistoricalCompensationStore.class),
-                mock(LineageHistoricalPublishMachine.class), everyKindResolvable(),
-                mock(LineageCurrentEntityRepublisher.class), 30_000L);
+                machineWithSettler(service), everyKindResolvable(),
+                mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
+                availableLedger(), java.util.Set.of());
     }
 
     /** A source resolver for every kind, so the per-kind readiness check passes. */
@@ -166,8 +167,9 @@ public class LineageDrestReadinessTest {
                 new LineageObligationProjectorCollaboratorImpl(service),
                 mock(LineageHistoricalPublishIntentStore.class),
                 mock(LineageHistoricalCompensationStore.class),
-                mock(LineageHistoricalPublishMachine.class), everyKindResolvable(),
-                mock(LineageCurrentEntityRepublisher.class), 30_000L));
+                machineWithSettler(service), everyKindResolvable(),
+                mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
+                availableLedger(), java.util.Set.of()));
 
         LineageDrestReadiness.Readiness verdict = readiness.evaluate();
 
@@ -391,5 +393,38 @@ public class LineageDrestReadinessTest {
         LineageDrestReadiness.Readiness verdict = readiness.evaluate();
         assertFalse(verdict.ready());
         assertTrue(verdict.violations().stream().anyMatch(v -> v.contains("dataplex")));
+    }
+
+    /** A purge ledger that is present and usable — the ledger has its own tests. */
+    private static LineagePurgeLedger availableLedger() {
+        LineagePurgeLedger ledger = mock(LineagePurgeLedger.class);
+        when(ledger.available()).thenReturn(true);
+        // Every kind covered: the coverage gate has its own test, and here it must not be the
+        // thing under test.
+        when(ledger.lifecycleCoveredKinds())
+                .thenReturn(java.util.Set.of(EndpointKind.values()));
+        return ledger;
+    }
+
+    /**
+     * A historical machine, with a settler on the service that drives the same one.
+     *
+     * <p>The ABSENT branch has its own tests; here it must simply not be the thing under test.
+     * The identity has to match, because that is exactly what readiness checks.
+     */
+    private static LineageHistoricalPublishMachine machineWithSettler(
+            LineageCatalogObligationService service) {
+        LineageHistoricalPublishMachine machine = mock(LineageHistoricalPublishMachine.class);
+        LineageCatalogAbsenceSettler settler = mock(LineageCatalogAbsenceSettler.class);
+        when(settler.waitingSnapshotResolverRef())
+                .thenReturn(mock(LineageWaitingSnapshotResolver.class));
+        when(settler.historicalMachineRef()).thenReturn(machine);
+        when(settler.observedMaterializersRef())
+                .thenReturn(new LineageObservedEntityMaterializerRegistry(
+                        java.util.Map.of("atlas", mock(LineageObservedEntityMaterializer.class))));
+        if (service != null) {
+            service.setAbsenceSettler(settler);
+        }
+        return machine;
     }
 }

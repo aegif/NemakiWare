@@ -82,6 +82,32 @@ public interface LineageV2TransitionStore {
      * @return {@code true} iff renewed
      * @throws LineageSequencingStore.SequencingStorageException on infrastructure failure
      */
+    /**
+     * Enter the catalog wait for one target, storing the whole waiting set in the same CAS.
+     *
+     * <p>The caller must have confirmed every obligation durable first. A partial set stored
+     * here is a row that resumes when only some of its obligations are answered.
+     *
+     * @return false when another writer moved the row first
+     */
+    boolean enterCatalogWait(String recordId, String target, java.util.List<String> taskKeys);
+
+    /**
+     * Return a waiting row to {@code PENDING}, keeping its original {@code waitingSinceMs}.
+     *
+     * <p>Only legal from {@code WAITING_FOR_CATALOG}, and only when every task resolved.
+     */
+    boolean resumeFromCatalogWait(String recordId, String target);
+
+    /**
+     * Give up on this event's wait, leaving the shared obligation untouched.
+     *
+     * <p>{@code UNRESOLVED} for the event only. The obligation belongs to every event waiting
+     * on the same catalog entity.
+     */
+    boolean expireCatalogWait(String recordId, String target,
+            LineageTargetLifecycle.TerminalReason reason);
+
     boolean renewClaim(String recordId, String target, String claimToken, Duration lease);
 
     /**

@@ -69,6 +69,19 @@ public class LineageHistoricalPublishMachineTest {
 
     /** Honours _rev CAS, token fencing and state guards, like the real store must. */
     private static final class FakeIntentStore implements LineageHistoricalPublishIntentStore {
+
+        // Counting is the preflight's concern, not this machine's; the stores' own tests and
+        // the CouchDB IT cover it.
+        @Override
+        public java.util.Map<LineageHistoricalPublishIntent.State,
+                LineageCatalogObligationStore.StateCount> countByState() {
+            throw new UnsupportedOperationException("not exercised by the machine");
+        }
+
+        @Override
+        public FenceCounts countFences(long nowMs, int limit) {
+            throw new UnsupportedOperationException("not exercised by the machine");
+        }
         final Map<String, LineageHistoricalPublishIntent> byId = new LinkedHashMap<>();
         final Map<String, SubjectFence> fences = new LinkedHashMap<>();
         boolean failWrites;
@@ -271,6 +284,12 @@ public class LineageHistoricalPublishMachineTest {
 
     private static final class FakeCompensationStore
             implements LineageHistoricalCompensationStore {
+
+        @Override
+        public java.util.Map<LineageHistoricalCompensation.State,
+                LineageCatalogObligationStore.StateCount> countByState() {
+            throw new UnsupportedOperationException("not exercised by the machine");
+        }
         final Map<String, LineageHistoricalCompensation> byId = new LinkedHashMap<>();
         boolean failWrites;
         boolean failMarkResolved;

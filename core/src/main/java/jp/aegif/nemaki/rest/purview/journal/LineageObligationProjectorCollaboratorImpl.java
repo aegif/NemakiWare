@@ -49,6 +49,11 @@ public class LineageObligationProjectorCollaboratorImpl
     }
 
     @Override
+    public boolean isDurable(String taskKey) {
+        return service != null && service.isDurable(taskKey);
+    }
+
+    @Override
     public LineageCatalogObligationService.Verdict verdictFor(List<String> taskKeys) {
         if (service == null) {
             // No machine means nothing can be established — never a resume.

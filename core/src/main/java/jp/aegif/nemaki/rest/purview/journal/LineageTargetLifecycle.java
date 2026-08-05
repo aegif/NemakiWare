@@ -54,7 +54,9 @@ public record LineageTargetLifecycle(
         Long leaseExpiresAtMs,
         Long verifyingSinceMs,
         Long retryCount,
-        TerminalReason terminalReason
+        TerminalReason terminalReason,
+        java.util.List<String> waitingTaskKeys,
+        Long waitingSinceMs
 ) {
 
     /** Durable reason payload for UNPROJECTABLE / REJECTED / UNRESOLVED (§8-b v2.3). */
@@ -85,6 +87,19 @@ public record LineageTargetLifecycle(
                 throw new IllegalArgumentException("terminal reason atMs must be positive");
             }
         }
+    }
+
+    /**
+     * The pre-N-2b shape, for every call site that predates catalog waiting.
+     *
+     * <p>Kept so that adding two components to a nine-year-old record does not turn every
+     * unrelated construction into an edit that has to decide what "no waiting" looks like.
+     */
+    public LineageTargetLifecycle(LineagePublishStatus status, String claimToken,
+            Long claimedAtMs, Long leaseExpiresAtMs, Long verifyingSinceMs, Long retryCount,
+            TerminalReason terminalReason) {
+        this(status, claimToken, claimedAtMs, leaseExpiresAtMs, verifyingSinceMs, retryCount,
+                terminalReason, null, null);
     }
 
     public LineageTargetLifecycle {
@@ -119,11 +134,50 @@ public record LineageTargetLifecycle(
             throw new IllegalArgumentException("verifyingSinceMs requires the claim bundle —"
                     + " VERIFYING is only reachable through a claim");
         }
+        // The waiting set is normalised at construction, not at the call site: deduped and
+        // sorted so that two projectors computing the same obligations write byte-identical
+        // rows, and made immutable so nothing can add a key to a row that is already stored.
+        if (waitingTaskKeys != null) {
+            java.util.TreeSet<String> normalised = new java.util.TreeSet<>();
+            for (String key : waitingTaskKeys) {
+                if (key == null || key.isBlank()) {
+                    throw new IllegalArgumentException(
+                            "a waiting task key must not be null or blank");
+                }
+                normalised.add(key);
+            }
+            if (normalised.isEmpty()) {
+                // An empty set is not "waiting for nothing" — it is a row that would wait for
+                // ever, because nothing can ever resolve it. Refused rather than stored.
+                throw new IllegalArgumentException("waitingTaskKeys must not be empty; a row"
+                        + " with no obligation to wait on must not be WAITING_FOR_CATALOG");
+            }
+            waitingTaskKeys = java.util.List.copyOf(normalised);
+        }
+        if (waitingSinceMs != null && waitingSinceMs <= 0) {
+            throw new IllegalArgumentException("waitingSinceMs must be positive");
+        }
+        boolean waitingKeys = waitingTaskKeys != null;
         boolean reason = terminalReason != null;
         switch (status) {
-            case PENDING, WAITING_FOR_CATALOG -> require(!bundle && !lease && !verifying && !reason,
-                    status + " carries no claim bundle, lease, verify marker, or reason");
-            case PROJECTING -> require(bundle && lease && !verifying && !reason,
+            case WAITING_FOR_CATALOG -> {
+                require(!bundle && !lease && !verifying && !reason,
+                        "WAITING_FOR_CATALOG carries no claim bundle, lease, verify marker,"
+                                + " or reason — the claim is released before the wait begins");
+                // Both, or the row cannot be resumed: without the keys nothing knows what it
+                // waits for, and without the timestamp nothing can ever expire it.
+                require(waitingKeys && waitingSinceMs != null,
+                        "WAITING_FOR_CATALOG requires waitingTaskKeys and waitingSinceMs");
+            }
+            case PENDING -> {
+                require(!bundle && !lease && !verifying && !reason,
+                        "PENDING carries no claim bundle, lease, verify marker, or reason");
+                // waitingSinceMs survives the return to PENDING on purpose: a row that waits,
+                // resumes and waits again must keep its ORIGINAL wait start, or max-age would
+                // restart on every round and the row could never expire.
+                require(!waitingKeys, "PENDING carries no waiting task keys");
+            }
+            case PROJECTING -> require(bundle && lease && !verifying && !reason && !waitingKeys,
                     "PROJECTING requires a live claim (bundle + lease) and no verify marker");
             case VERIFYING -> require(bundle && lease && verifying && !reason,
                     "VERIFYING requires a live claim and verifyingSinceMs");
@@ -139,8 +193,9 @@ public record LineageTargetLifecycle(
             case REJECTED -> require(reason && !lease && !verifying,
                     "REJECTED requires a durable reason, no lease, no verify marker"
                             + " (bundle present iff gate-rejected after a claim)");
-            case UNRESOLVED -> require(!bundle && !lease && !verifying && reason,
-                    "UNRESOLVED requires a durable reason and no claim fields");
+            case UNRESOLVED -> require(!bundle && !lease && !verifying && reason && !waitingKeys,
+                    "UNRESOLVED requires a durable reason and no claim fields; the waiting set"
+                            + " is dropped because the event, not the obligation, expired");
             case DISCARDED -> require(!lease && !reason,
                     "DISCARDED carries no live lease and no reason (bundle optional; if"
                             + " present, complete)");

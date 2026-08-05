@@ -69,7 +69,7 @@ public class LineageHistoricalPublishMachine {
     /** Domain for the pre-computed operation digest. */
     static final String OPERATION_DOMAIN = "LINEAGE_HISTORICAL_OPERATION_V1";
 
-    static final Duration INTENT_LEASE = Duration.ofMinutes(5);
+    public static final Duration INTENT_LEASE = Duration.ofMinutes(5);
 
     private final LineageHistoricalPublishIntentStore intents;
     private final LineageHistoricalCompensationStore compensations;

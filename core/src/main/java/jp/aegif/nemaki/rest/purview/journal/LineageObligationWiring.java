@@ -67,7 +67,9 @@ public final class LineageObligationWiring {
     private final LineageHistoricalPublishMachine historicalMachine;
     private final LineageSourceDispositionRegistry sourceResolvers;
     private final LineageCurrentEntityRepublisher republisher;
-    private final long catalogRequestTimeoutMs;
+    private final LineageOperationBudgetProvider budgets;
+    private final LineagePurgeLedger purgeLedger;
+    private final java.util.Set<EndpointKind> nonEmittableKinds;
 
     public LineageObligationWiring(LineageCatalogObligationStore store,
             LineageCatalogProbeRegistry probes,
@@ -80,7 +82,8 @@ public final class LineageObligationWiring {
             LineageHistoricalPublishMachine historicalMachine,
             LineageSourceDispositionRegistry sourceResolvers,
             LineageCurrentEntityRepublisher republisher,
-            long catalogRequestTimeoutMs) {
+            LineageOperationBudgetProvider budgets, LineagePurgeLedger purgeLedger,
+            java.util.Set<EndpointKind> nonEmittableKinds) {
         this.store = store;
         this.probes = probes;
         this.historicalPublishers = historicalPublishers;
@@ -92,17 +95,20 @@ public final class LineageObligationWiring {
         this.historicalMachine = historicalMachine;
         this.sourceResolvers = sourceResolvers;
         this.republisher = republisher;
-        this.catalogRequestTimeoutMs = catalogRequestTimeoutMs;
+        this.budgets = budgets;
+        this.purgeLedger = purgeLedger;
+        this.nonEmittableKinds = nonEmittableKinds == null ? java.util.Set.of()
+                : java.util.Set.copyOf(nonEmittableKinds);
     }
 
     /**
-     * The margin between the slowest catalog call and the fence that guards it.
+     * The margin between the slowest fenced section and the fence that guards it.
      *
-     * <p>A request that can outlast the fence is a request that can still be writing when
-     * another intent takes the subject and writes it too. Half the lease, so a call that runs
-     * to its full timeout still leaves time to renew before expiry.
+     * <p>Half the lease. A section that ran to its full budget would then still have half the
+     * lease left to renew in — and a renewal that has to win a race against its own expiry is
+     * not a renewal.
      */
-    static final double FENCE_SAFETY_FACTOR = 0.5;
+    public static final double FENCE_SAFETY_FACTOR = 0.5;
 
     /**
      * What is missing or inconsistent, named. Empty means assembled.
@@ -140,35 +146,90 @@ public final class LineageObligationWiring {
             // problem rather than a fix for one.
             violations.add("no current-entity republisher is wired");
         }
+        if (purgeLedger == null || !purgeLedger.available()) {
+            // Without it nothing can ever say SOURCE_PURGED, because absence is not evidence.
+            // Every obligation for a genuinely purged source would then retry for ever, and
+            // the events waiting on it would never terminalise.
+            violations.add("no authoritative purge ledger is wired, so no source can be shown"
+                    + " to have been destroyed and no historical entity can ever be published");
+        }
         violations.addAll(collaboratorViolations());
         violations.addAll(targetViolations(configuredTargets));
         violations.addAll(kindViolations());
-        violations.addAll(timeoutViolations());
+        violations.addAll(budgetViolations(configuredTargets));
         return violations;
     }
 
     /**
-     * The catalog request must not be able to outlive the fence protecting it.
+     * Every configured target and endpoint kind must have a budget that fits inside the fence.
      *
-     * <p>If it can, a call still in flight when the fence expires is a call that may be writing
-     * the same entity another intent has just taken the subject for — and neither writer knows
-     * about the other. Checked here rather than left to configuration review, because the two
-     * values are set in different places and nothing else compares them.
+     * <h2>What is being budgeted</h2>
+     *
+     * <p>Not one HTTP request — the whole fenced critical section: the authoritative source
+     * re-check, the historical publish, the read-back that confirms it, each with its connect
+     * and read timeouts, its retries and the total sleep between them, plus the client's own
+     * overhead. The earlier check compared a single read timeout against the lease, which passed
+     * configurations whose section takes several times as long as it is allowed to.
+     *
+     * <h2>Why per target and per kind</h2>
+     *
+     * <p>Atlas and Purview are configured independently, and a section's cost also depends on
+     * the kind, because each kind's authoritative source resolver talks to a different backend.
+     * A single number could only be right for one combination and would be a guess for the rest.
+     *
+     * <h2>Read now, not at startup</h2>
+     *
+     * <p>The provider is asked on every evaluation, so a timeout an administrator raises past
+     * the lease turns the gate red at the next readiness call rather than at the next restart.
      */
-    private List<String> timeoutViolations() {
+    private List<String> budgetViolations(Set<String> configuredTargets) {
         List<String> violations = new ArrayList<>();
-        long fenceLeaseMs = LineageHistoricalPublishMachine.INTENT_LEASE.toMillis();
-        if (catalogRequestTimeoutMs <= 0) {
-            violations.add("the catalog request timeout is not configured, so it cannot be"
-                    + " shown to fit inside the subject fence lease");
+        Set<String> targets = configuredTargets == null ? Set.of() : configuredTargets;
+        if (targets.isEmpty()) {
+            // Nothing is published, so no section is fenced. Consistent with targetViolations.
             return violations;
         }
-        long safeLimit = (long) (fenceLeaseMs * FENCE_SAFETY_FACTOR);
-        if (catalogRequestTimeoutMs >= safeLimit) {
-            violations.add("the catalog request timeout (" + catalogRequestTimeoutMs
-                    + "ms) leaves no safe margin inside the subject fence lease ("
-                    + fenceLeaseMs + "ms): a call may still be writing when another intent"
-                    + " takes the subject");
+        if (budgets == null) {
+            violations.add("no operation budget provider is wired, so no target can be shown to"
+                    + " finish inside the subject fence lease");
+            return violations;
+        }
+        long fenceLeaseMs = LineageHistoricalPublishMachine.INTENT_LEASE.toMillis();
+        long safetyMarginMs = fenceSafetyMarginMs(fenceLeaseMs);
+        for (String target : targets) {
+            for (EndpointKind kind : EndpointKind.values()) {
+                java.util.Optional<LineageOperationBudget> resolved;
+                try {
+                    resolved = budgets.budgetFor(target, kind);
+                } catch (RuntimeException unreadable) {
+                    // An exception is not a small budget. Fail closed, and do not echo the
+                    // message: configuration errors can carry endpoints and credentials.
+                    resolved = java.util.Optional.empty();
+                }
+                if (resolved == null || resolved.isEmpty()) {
+                    violations.add("no operation budget is resolvable for target '" + target
+                            + "' kind " + kind + ", so its fenced section cannot be shown to"
+                            + " finish inside the subject fence lease");
+                    continue;
+                }
+                LineageOperationBudget budget = resolved.get();
+                if (!budget.bounded()) {
+                    violations.add("the operation budget for target '" + target + "' kind "
+                            + kind + " is not bounded (unknown or unlimited retries cannot be"
+                            + " budgeted)");
+                    continue;
+                }
+                if (!budget.fitsInside(fenceLeaseMs, safetyMarginMs)) {
+                    long worst = budget.worstCaseMs();
+                    violations.add("the worst-case fenced section for target '" + target
+                            + "' kind " + kind + " ("
+                            + (worst == Long.MAX_VALUE ? "unbounded" : worst + "ms")
+                            + ") plus the safety margin (" + safetyMarginMs
+                            + "ms) does not fit inside the subject fence lease (" + fenceLeaseMs
+                            + "ms): a publish may still be in flight when another intent takes"
+                            + " the subject");
+                }
+            }
         }
         return violations;
     }
@@ -190,8 +251,58 @@ public final class LineageObligationWiring {
             if (!sourceResolvers.canResolve(kind)) {
                 violations.add("no authoritative source resolver is wired for " + kind);
             }
+            violations.addAll(historicalCapabilityViolations(kind));
         }
         return violations;
+    }
+
+    /**
+     * A kind that can be emitted must be able to receive a historical entity.
+     *
+     * <h2>The configuration this forbids</h2>
+     *
+     * <p>An emittable kind whose Atlas type has nowhere to record that the source was destroyed
+     * sends every well-formed snapshot to {@code SNAPSHOT_INCOMPLETE} — a terminal verdict, on
+     * correct data, for ever. That is not a machine that occasionally cannot finish; it is a
+     * machine guaranteed never to finish for that kind, and readiness must not be green over it.
+     *
+     * <p>The way out is either to give the type the attribute (which v2.3.58 did for the three
+     * that lacked it) or to declare the kind non-emittable with
+     * {@code lineage.emit.disabled-kinds}, which stops the producer creating the events in the
+     * first place. What is refused is the third option: emitting them and terminalising them.
+     */
+    private List<String> historicalCapabilityViolations(EndpointKind kind) {
+        if (nonEmittableKinds != null && nonEmittableKinds.contains(kind)) {
+            // Declared non-emittable: nothing will ever wait on it, so nothing can be stranded.
+            return List.of();
+        }
+        if (LineageHistoricalEntityFactory.tombstoneMarkerAttribute(kind) == null) {
+            return List.of(kind + " is emittable but its catalog type declares no tombstone"
+                    + " marker, so every well-formed snapshot of it would end"
+                    + " SNAPSHOT_INCOMPLETE — add the attribute or declare the kind"
+                    + " non-emittable in lineage.emit.disabled-kinds");
+        }
+        // A marker attribute and a resolver bean both say the machine COULD record a purge.
+        // Neither says anything does, and "no mark" has two opposite causes — a missing hook,
+        // or a source NemakiWare never destroys. The classification is what separates them.
+        var classified = LineagePurgeLifecyclePolicy.of(kind);
+        if (classified.isEmpty()) {
+            return List.of(kind + " is emittable but its purge lifecycle is unclassified — a"
+                    + " kind nobody has established either destroys its source or does not"
+                    + " must not be activated over");
+        }
+        if (classified.get().policy() == LineagePurgeLifecyclePolicy.LEDGERED
+                && (purgeLedger == null
+                        || !purgeLedger.lifecycleCoveredKinds().contains(kind))) {
+            // Classified as ours to destroy, but nothing records it: SOURCE_PURGED is
+            // unreachable and every obligation for a destroyed source retries for ever.
+            return List.of(kind + " is LEDGERED but no authoritative lifecycle records purges"
+                    + " for it, so SOURCE_PURGED is unreachable and its obligations would"
+                    + " retry for ever");
+        }
+        // NON_PURGEABLE_BY_NEMAKI needs no hook — inventing one would mean writing a mark from
+        // a compensating cleanup, which describes a failed operation rather than a purge.
+        return List.of();
     }
 
     /**
@@ -215,6 +326,34 @@ public final class LineageObligationWiring {
             violations.add("the projector's obligation collaborator uses a different service"
                     + " instance than the one readiness knows about");
         }
+        // The ABSENT branch is the only one that writes. Until it is wired the consumer just
+        // releases and retries — safe, but an obligation whose authoritative publisher will
+        // never run would retry for ever, so this is not a machine that may be activated.
+        if (service != null) {
+            LineageCatalogAbsenceSettler settler = service.settlerRef();
+            if (settler == null) {
+                violations.add("no catalog-absence settler is wired: an obligation whose"
+                        + " catalog entity is missing would retry for ever");
+            } else {
+                if (settler.waitingSnapshotResolverRef() == null) {
+                    violations.add("the catalog-absence settler has no waiting-snapshot"
+                            + " resolver, so it cannot read what an event observed");
+                }
+                if (settler.historicalMachineRef() == null
+                        || (historicalMachine != null
+                                && settler.historicalMachineRef() != historicalMachine)) {
+                    // Identity, not presence: a settler driving a different machine than the
+                    // one readiness knows about would publish through intents nobody recovers.
+                    violations.add("the catalog-absence settler drives a different historical"
+                            + " publish machine than the one wired here");
+                }
+                if (settler.observedMaterializersRef() == null) {
+                    violations.add("the catalog-absence settler has no observed-entity"
+                            + " materializer registry, so a source NemakiWare never destroys"
+                            + " could never be published");
+                }
+            }
+        }
         if (service != null && store != null && service.storeRef() != store) {
             violations.add("the obligation service reads a different store than the one wired"
                     + " here — the two halves would address different documents");
@@ -237,6 +376,7 @@ public final class LineageObligationWiring {
             // so the empty case is a decision rather than a loop that happened not to run.
             return violations;
         }
+        LineageObservedEntityMaterializerRegistry materializers = observedMaterializers();
         for (String target : targets) {
             if (probes == null || !probes.canProbe(target)) {
                 violations.add("no catalog probe is wired for target '" + target + "'");
@@ -247,8 +387,22 @@ public final class LineageObligationWiring {
                 violations.add("no historical entity publisher is wired for target '"
                         + target + "'");
             }
+            if (materializers == null || !materializers.canMaterialize(target)) {
+                // The third adapter, asked per target for the same reason as the other two. A
+                // node holding one materializer and two configured targets used to pass here,
+                // and the second target's obligations would have been settled against the
+                // catalog the first one names.
+                violations.add("no observed-entity materializer is wired for target '"
+                        + target + "'");
+            }
         }
         return violations;
+    }
+
+    /** The settler's materializer registry, or null when there is no settler to ask. */
+    private LineageObservedEntityMaterializerRegistry observedMaterializers() {
+        LineageCatalogAbsenceSettler settler = service == null ? null : service.settlerRef();
+        return settler == null ? null : settler.observedMaterializersRef();
     }
 
     /** The service the scanner and the projector must both be using — identity, not equality. */
@@ -259,5 +413,16 @@ public final class LineageObligationWiring {
     /** The store registered here. */
     public LineageCatalogObligationStore store() {
         return store;
+    }
+
+    /**
+     * The margin a fenced section must fit inside, in milliseconds.
+     *
+     * <p>Exposed so a preflight reports the number this class actually enforces. Recomputing
+     * the product at the call site would let a report and a gate drift apart, and the report is
+     * what an operator uses to decide the gate is right.
+     */
+    public static long fenceSafetyMarginMs(long fenceLeaseMs) {
+        return (long) (fenceLeaseMs * FENCE_SAFETY_FACTOR);
     }
 }

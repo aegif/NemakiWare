@@ -164,6 +164,49 @@ public class LineageCatalogObligationService {
         return Optional.of(stored.taskKey());
     }
 
+    /**
+     * The ABSENT branch, when one is wired.
+     *
+     * <p>Settable rather than constructor-injected: the settler needs this service's own store
+     * and clock, so the two cannot both be constructor arguments of each other. Readiness
+     * compares this reference with the registered bean by identity, which is what stops a
+     * deployment driving two different settlers.
+     */
+    private volatile LineageCatalogAbsenceSettler absenceSettler;
+
+    public void setAbsenceSettler(LineageCatalogAbsenceSettler absenceSettler) {
+        this.absenceSettler = absenceSettler;
+    }
+
+    /** The settler this service uses. Identity only; readiness never calls through it. */
+    public LineageCatalogAbsenceSettler settlerRef() {
+        return absenceSettler;
+    }
+
+    /**
+     * Whether the obligation is readable from the store — a read-back, not a write result.
+     *
+     * <p>{@code createIfAbsent} returns what the write path produced. That is not the same
+     * statement as "a later pass will find this document": a create that raced, or a write that
+     * was accepted and then lost, both return a value. A projection is only allowed to depend
+     * on an obligation whose document has actually been read.
+     *
+     * <p>False on any failure, including a store that could not be read. The caller's response
+     * to false is to change nothing and recompute the same deterministic key next pass, which
+     * is safe under both readings.
+     */
+    public boolean isDurable(String taskKey) {
+        if (taskKey == null || taskKey.isBlank() || store == null) {
+            return false;
+        }
+        try {
+            return store.read(taskKey).isPresent();
+        } catch (RuntimeException e) {
+            logger.warn("Obligation read-back failed: {}", e.getClass().getSimpleName());
+            return false;
+        }
+    }
+
     // ------------------------------------------------------------------
     // Consumer
     // ------------------------------------------------------------------
@@ -242,14 +285,86 @@ public class LineageCatalogObligationService {
                     // contains its stable key, and evidence is read back in admin routes.
                     LineageEndpoint.shortDigest(obligation.catalogQualifiedName()))
                     ? Settlement.RESOLVED : Settlement.LOST;
-            // ABSENT is retryable too: the authoritative publisher may simply not have run
-            // yet. Only the snapshot being unusable is terminal, and nothing here can
-            // establish that — building the historical entity is what discovers it, and that
-            // is the piece this slice does not yet have.
-            case ABSENT -> store.release(claim, "the catalog does not hold the entity yet",
+            case ABSENT -> settleAbsent(claim, obligation);
+            case UNKNOWN -> store.release(claim, "the catalog did not answer",
                     clockMs.getAsLong(), BACKOFF_BASE_MS, BACKOFF_MAX_MS)
                     ? Settlement.RELEASED : Settlement.LOST;
-            case UNKNOWN -> store.release(claim, "the catalog did not answer",
+        };
+    }
+
+    /**
+     * The catalog does not hold the entity. Route it, but only under a claim still held.
+     *
+     * <h2>Renew immediately before the external call, and use the renewed claim after</h2>
+     *
+     * <p>The snapshot and source lookups can take as long as a journal read and a repository
+     * read together, and the claim's lease is running the whole time. A worker whose lease
+     * expired during those lookups has already been superseded — writing to the catalog on its
+     * way out would race the worker that took over, and settling on the old token would land its
+     * answer on top of that worker's.
+     *
+     * <p>So the renewal is the authorisation, not a formality: without it nothing external is
+     * called at all, and the renewed claim is what the final CAS uses. A failed renew, a stale
+     * claim and a lost CAS are all reported as LOST — never as a settlement that happened.
+     */
+    private Settlement settleAbsent(LineageCatalogObligationStore.Claim claim,
+            LineageCatalogObligation obligation) {
+        LineageCatalogAbsenceSettler settler = this.absenceSettler;
+        if (settler == null) {
+            // Unwired: the old behaviour, which writes nothing. Readiness refuses to activate
+            // a node in this state, so this is a safe interim rather than a supported one.
+            return store.release(claim, "the catalog does not hold the entity yet",
+                    clockMs.getAsLong(), BACKOFF_BASE_MS, BACKOFF_MAX_MS)
+                    ? Settlement.RELEASED : Settlement.LOST;
+        }
+        // 1. Read-only. The route is decided here, while the lease may well expire.
+        LineageAbsencePlan plan;
+        try {
+            plan = settler.prepare(obligation);
+        } catch (RuntimeException e) {
+            logger.warn("The catalog-absence settler failed to prepare: {}",
+                    e.getClass().getSimpleName());
+            plan = new LineageAbsencePlan.NoWrite.Retry("prepare failed");
+        }
+
+        // 2. Renew immediately before anything external, and only then. A worker whose lease
+        // expired during the lookups has been superseded; writing on its way out would race
+        // the worker that took over, and settling on the old token would land its answer on
+        // top of that worker's.
+        java.util.Optional<LineageCatalogObligationStore.Claim> renewed =
+                store.renew(claim, DEFAULT_LEASE, clockMs.getAsLong());
+        if (renewed.isEmpty()) {
+            // Nothing external is called at all — not even for a plan that would have written.
+            return Settlement.LOST;
+        }
+        LineageCatalogObligationStore.Claim held = renewed.get();
+
+        LineageCatalogAbsenceSettler.Verdict verdict;
+        try {
+            verdict = settler.execute(plan);
+        } catch (RuntimeException e) {
+            logger.warn("The catalog-absence settler failed: {}", e.getClass().getSimpleName());
+            verdict = LineageCatalogAbsenceSettler.Verdict.RETRY;
+        }
+        if (verdict.resolves()) {
+            // The renewed claim, and the route's own outcome: a tombstone and an observation
+            // must not leave the same durable record.
+            return store.resolve(held, verdict.outcome(),
+                    "the catalog now holds the entity this obligation owed",
+                    LineageEndpoint.shortDigest(obligation.catalogQualifiedName()))
+                    ? Settlement.RESOLVED : Settlement.LOST;
+        }
+        return switch (verdict) {
+            case SNAPSHOT_INCOMPLETE -> recordSnapshotIncomplete(held,
+                    "the snapshot cannot reconstruct the entity")
+                    ? Settlement.GAVE_UP : Settlement.LOST;
+            case RESOLVED_PURGED, RESOLVED_OBSERVED, RESOLVED_CURRENT -> Settlement.LOST;
+            // RETRY and INDETERMINATE both leave the obligation open. They are different
+            // statements about why, and the release reason keeps them distinguishable.
+            default -> store.release(held,
+                    verdict == LineageCatalogAbsenceSettler.Verdict.INDETERMINATE
+                            ? "nothing could be established about the waiting event"
+                            : "the catalog does not hold the entity yet",
                     clockMs.getAsLong(), BACKOFF_BASE_MS, BACKOFF_MAX_MS)
                     ? Settlement.RELEASED : Settlement.LOST;
         };

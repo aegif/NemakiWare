@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Map;
@@ -77,6 +78,14 @@ public class LineageObligationWiringTest {
         return new LineageHistoricalPublisherRegistry(byTarget);
     }
 
+    private LineageObservedEntityMaterializerRegistry materializersFor(String... targets) {
+        Map<String, LineageObservedEntityMaterializer> byTarget = new java.util.LinkedHashMap<>();
+        for (String target : targets) {
+            byTarget.put(target, mock(LineageObservedEntityMaterializer.class));
+        }
+        return new LineageObservedEntityMaterializerRegistry(byTarget);
+    }
+
     /**
      * A service over a known store, so the wiring's identity comparisons have something real
      * to compare. Not a mock: {@code storeRef()} has to return the store that was passed in.
@@ -109,17 +118,38 @@ public class LineageObligationWiringTest {
         LineageHistoricalPublishMachine machine = mock(LineageHistoricalPublishMachine.class);
         LineageSourceDispositionRegistry sources = sourcesForEveryKind();
         LineageCurrentEntityRepublisher republisher = mock(LineageCurrentEntityRepublisher.class);
-        /** Comfortably inside half the five-minute fence lease. */
-        long catalogRequestTimeoutMs = 30_000L;
+        /** Comfortably inside half the five-minute fence lease, for every target and kind. */
+        LineageOperationBudgetProvider budgets = FixedOperationBudgets.healthy();
+        LineagePurgeLedger purgeLedger = availableLedger();
+
+        /** False to leave the ABSENT branch unwired, which is a violation by design. */
+        boolean withSettler = true;
+
+        /** Which targets the settler can materialise into. Narrow it to test the gate. */
+        String[] materializerTargets = {"atlas", "purview"};
+
+        /** A settler whose collaborators are the assembly's own instances. */
+        LineageCatalogAbsenceSettler settlerFor(LineageHistoricalPublishMachine forMachine) {
+            LineageCatalogAbsenceSettler settler = mock(LineageCatalogAbsenceSettler.class);
+            when(settler.waitingSnapshotResolverRef())
+                    .thenReturn(mock(LineageWaitingSnapshotResolver.class));
+            when(settler.historicalMachineRef()).thenReturn(forMachine);
+            when(settler.observedMaterializersRef())
+                    .thenReturn(materializersFor(materializerTargets));
+            return settler;
+        }
 
         LineageObligationWiring build() {
             LineageCatalogObligationService wired =
                     service != null ? service : serviceOver(store);
+            if (wired != null && wired.settlerRef() == null && withSettler) {
+                wired.setAbsenceSettler(settlerFor(machine));
+            }
             return new LineageObligationWiring(store, probes, publishers, wired,
                     withScanner ? new LineageObligationScannerImpl(wired) : null,
                     withProjector ? new LineageObligationProjectorCollaboratorImpl(wired) : null,
-                    intentStore, compensationStore, machine, sources, republisher,
-                    catalogRequestTimeoutMs);
+                    intentStore, compensationStore, machine, sources, republisher, budgets,
+                    purgeLedger, java.util.Set.of());
         }
     }
 
@@ -173,7 +203,7 @@ public class LineageObligationWiringTest {
         LineageObligationWiring wiring = new LineageObligationWiring(assembly.store,
                 assembly.probes, assembly.publishers, null, null, null, assembly.intentStore,
                 assembly.compensationStore, assembly.machine, assembly.sources,
-                assembly.republisher, assembly.catalogRequestTimeoutMs);
+                assembly.republisher, assembly.budgets, assembly.purgeLedger, java.util.Set.of());
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("obligation service")));
@@ -213,6 +243,25 @@ public class LineageObligationWiringTest {
         List<String> violations = wiring.violations(TARGETS);
         assertEquals(1, violations.size(), violations.toString());
         assertTrue(violations.get(0).contains("historical entity publisher"));
+        assertTrue(violations.get(0).contains("purview"));
+    }
+
+    /**
+     * The third adapter, asked per target for the same reason as the other two.
+     *
+     * <p>This is what a single materializer instance made unaskable. A node holding one and
+     * publishing to two targets passed readiness, and the second target's obligations would have
+     * been settled against the catalog the first one names — resolved, so never revisited.
+     */
+    @Test
+    @DisplayName("a missing observed-entity materializer is a violation naming the target")
+    public void missingObservedMaterializerIsRed() {
+        Assembly assembly = new Assembly();
+        assembly.materializerTargets = new String[] {"atlas"};
+
+        List<String> violations = assembly.build().violations(TARGETS);
+        assertEquals(1, violations.size(), violations.toString());
+        assertTrue(violations.get(0).contains("observed-entity materializer"));
         assertTrue(violations.get(0).contains("purview"));
     }
 
@@ -271,7 +320,8 @@ public class LineageObligationWiringTest {
                 mock(LineageHistoricalPublishIntentStore.class),
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
-                mock(LineageCurrentEntityRepublisher.class), 30_000L);
+                mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
+                availableLedger(), java.util.Set.of());
 
         assertTrue(wiring.sharesService(service));
         assertFalse(wiring.sharesService(serviceOver(store)));
@@ -298,7 +348,8 @@ public class LineageObligationWiringTest {
                 mock(LineageHistoricalPublishIntentStore.class),
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
-                mock(LineageCurrentEntityRepublisher.class), 30_000L);
+                mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
+                availableLedger(), java.util.Set.of());
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("scanner drives a different service")),
@@ -318,7 +369,8 @@ public class LineageObligationWiringTest {
                 mock(LineageHistoricalPublishIntentStore.class),
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
-                mock(LineageCurrentEntityRepublisher.class), 30_000L);
+                mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
+                availableLedger(), java.util.Set.of());
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("projector's obligation collaborator")),
@@ -340,7 +392,8 @@ public class LineageObligationWiringTest {
                 mock(LineageHistoricalPublishIntentStore.class),
                 mock(LineageHistoricalCompensationStore.class),
                 mock(LineageHistoricalPublishMachine.class), sourcesForEveryKind(),
-                mock(LineageCurrentEntityRepublisher.class), 30_000L);
+                mock(LineageCurrentEntityRepublisher.class), FixedOperationBudgets.healthy(),
+                availableLedger(), java.util.Set.of());
 
         assertTrue(wiring.violations(TARGETS).stream()
                 .anyMatch(v -> v.contains("different store")),
@@ -471,33 +524,203 @@ public class LineageObligationWiringTest {
      * another intent takes the subject and writes it too.
      */
     @Test
-    @DisplayName("a catalog timeout that does not fit inside the fence lease is a violation")
-    public void timeoutMustFitInsideTheFenceLease() {
+    @DisplayName("a section that does not fit inside the fence lease is a violation")
+    public void budgetMustFitInsideTheFenceLease() {
         Assembly tooLong = new Assembly();
         // The fence lease is five minutes; a five-minute request leaves no margin at all.
-        tooLong.catalogRequestTimeoutMs =
-                LineageHistoricalPublishMachine.INTENT_LEASE.toMillis();
+        tooLong.budgets = new FixedOperationBudgets(
+                LineageHistoricalPublishMachine.INTENT_LEASE::toMillis, null);
         assertTrue(tooLong.build().violations(TARGETS).stream()
-                .anyMatch(v -> v.contains("no safe margin")),
+                .anyMatch(v -> v.contains("does not fit inside the subject fence lease")),
                 tooLong.build().violations(TARGETS).toString());
+    }
 
-        // Exactly at the safety factor is still refused — the margin must be a margin.
-        Assembly borderline = new Assembly();
-        borderline.catalogRequestTimeoutMs = (long)
-                (LineageHistoricalPublishMachine.INTENT_LEASE.toMillis()
-                        * LineageObligationWiring.FENCE_SAFETY_FACTOR);
-        assertTrue(borderline.build().violations(TARGETS).stream()
-                .anyMatch(v -> v.contains("no safe margin")));
+    /**
+     * The number that matters is the section's, not the largest request's.
+     *
+     * <p>This is the case the earlier single-read-timeout check passed: every individual call
+     * fits comfortably, and the section they belong to does not.
+     */
+    @Test
+    @DisplayName("retries and the second catalog call can push a fitting timeout over the lease")
+    public void retriesCanPushAFittingTimeoutOver() {
+        long lease = LineageHistoricalPublishMachine.INTENT_LEASE.toMillis();
+        long margin = (long) (lease * LineageObligationWiring.FENCE_SAFETY_FACTOR);
+        long readTimeout = 60_000L;
+        // On its own the read timeout is inside the lease with room to spare.
+        assertTrue(readTimeout + margin < lease);
+
+        Assembly assembly = new Assembly();
+        assembly.budgets = (target, kind) -> java.util.Optional.of(
+                new LineageOperationBudget(target, kind, 2_000L, readTimeout, 3,
+                        7_700L, 5_000L, 2_000L));
+        assertTrue(assembly.build().violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("does not fit inside the subject fence lease")),
+                "the whole section must be budgeted, not its largest single request");
+    }
+
+    /** Read timeout alone fits; publish plus read-back does not. */
+    @Test
+    @DisplayName("one call fits, two do not")
+    public void secondCatalogCallIsCounted() {
+        long lease = LineageHistoricalPublishMachine.INTENT_LEASE.toMillis();
+        long margin = (long) (lease * LineageObligationWiring.FENCE_SAFETY_FACTOR);
+        // Sized so that one call is inside the margin and two are not.
+        long perCall = margin - 1_000L;
+        Assembly assembly = new Assembly();
+        assembly.budgets = (target, kind) -> java.util.Optional.of(
+                new LineageOperationBudget(target, kind, 1L, perCall - 1L, 0, 0L, 0L, 1_000L));
+        assertTrue(assembly.build().violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("does not fit inside the subject fence lease")));
+    }
+
+    /**
+     * Targets are budgeted separately.
+     *
+     * <p>Atlas and Purview are configured independently. A check that read one number would
+     * pass a node whose second target is configured far more slowly than its first.
+     */
+    @Test
+    @DisplayName("each target is budgeted from its own configuration")
+    public void targetsAreBudgetedIndependently() {
+        Assembly assembly = new Assembly();
+        long lease = LineageHistoricalPublishMachine.INTENT_LEASE.toMillis();
+        assembly.budgets = (target, kind) -> java.util.Optional.of(
+                "purview".equals(target)
+                        // Purview is configured slowly enough to outlast the fence...
+                        ? new LineageOperationBudget(target, kind, 1_000L, lease, 0, 0L, 0L,
+                                1_000L)
+                        // ...while Atlas is fine. A single shared number could not say both.
+                        : new LineageOperationBudget(target, kind, 500L, 1_000L, 0, 0L, 0L,
+                                500L));
+        List<String> violations = assembly.build().violations(Set.of("atlas", "purview"));
+        assertTrue(violations.stream().anyMatch(v -> v.contains("'purview'")), violations
+                .toString());
+        assertTrue(violations.stream().noneMatch(v -> v.contains("'atlas'")),
+                "atlas fits and must not be dragged down by purview's configuration");
     }
 
     /** Unmeasured is not "probably fine". */
     @Test
-    @DisplayName("an unreadable catalog timeout is a violation, not an assumed default")
-    public void unknownTimeoutIsRed() {
+    @DisplayName("an unresolvable budget is a violation, not an assumed default")
+    public void unresolvableBudgetIsRed() {
         Assembly unknown = new Assembly();
-        unknown.catalogRequestTimeoutMs = 0L;
+        unknown.budgets = FixedOperationBudgets.unresolvable();
         assertTrue(unknown.build().violations(TARGETS).stream()
-                .anyMatch(v -> v.contains("not configured")));
+                .anyMatch(v -> v.contains("no operation budget is resolvable")));
+
+        Assembly missingProvider = new Assembly();
+        missingProvider.budgets = null;
+        assertTrue(missingProvider.build().violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("no operation budget provider is wired")));
+    }
+
+    /** A configuration read that throws is not a small budget. */
+    @Test
+    @DisplayName("a provider that throws is red, and its message is not echoed")
+    public void throwingProviderIsRed() {
+        Assembly assembly = new Assembly();
+        assembly.budgets = (target, kind) -> {
+            throw new IllegalStateException("endpoint=https://secret.purview.azure.com");
+        };
+        List<String> violations = assembly.build().violations(TARGETS);
+        assertTrue(violations.stream().anyMatch(v -> v.contains("no operation budget is"
+                + " resolvable")));
+        assertTrue(violations.stream().noneMatch(v -> v.contains("secret.purview.azure.com")),
+                "a configuration error can carry endpoints and credentials");
+    }
+
+    /** Unbounded retries cannot be budgeted, however small the timeouts are. */
+    @Test
+    @DisplayName("unbounded retries are red even with tiny timeouts")
+    public void unboundedRetriesAreRed() {
+        Assembly assembly = new Assembly();
+        assembly.budgets = (target, kind) -> java.util.Optional.of(
+                new LineageOperationBudget(target, kind, 1L, 1L, -1, 0L, 0L, 1L));
+        assertTrue(assembly.build().violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("is not bounded")));
+    }
+
+    /**
+     * Configuration changed after startup must change the verdict.
+     *
+     * <p>A timeout captured when the context was built would leave the gate green on a
+     * deployment that is no longer safe, until someone restarted it.
+     */
+    @Test
+    @DisplayName("a timeout raised after startup turns a fresh evaluation red")
+    public void configurationChangeIsSeenImmediately() {
+        long[] readTimeoutMs = {1_000L};
+        Assembly assembly = new Assembly();
+        assembly.budgets = new FixedOperationBudgets(() -> readTimeoutMs[0], null);
+        LineageObligationWiring wiring = assembly.build();
+        assertEquals(List.of(), wiring.violations(TARGETS));
+
+        // An administrator raises the read timeout past the fence lease.
+        readTimeoutMs[0] = LineageHistoricalPublishMachine.INTENT_LEASE.toMillis();
+        assertTrue(wiring.violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("does not fit inside the subject fence lease")),
+                "the same instance must re-read the configuration, not its startup snapshot");
+
+        // And back again, so the gate is not one-way.
+        readTimeoutMs[0] = 1_000L;
+        assertEquals(List.of(), wiring.violations(TARGETS));
+    }
+
+    /** With nothing configured to publish to, there is no fenced section to budget. */
+    @Test
+    @DisplayName("no configured target means no budget violation")
+    public void noTargetsNoBudget() {
+        Assembly assembly = new Assembly();
+        assembly.budgets = FixedOperationBudgets.unresolvable();
+        assertEquals(List.of(), assembly.build().violations(Set.of()));
+    }
+
+    /**
+     * The ABSENT branch is the only one that writes, so it may not be missing.
+     *
+     * <p>An unwired settler is safe — the consumer just releases and retries — but it is not a
+     * working machine: an obligation whose authoritative publisher will never run would retry
+     * for ever, and the events waiting on it would never move.
+     */
+    @Test
+    @DisplayName("an unwired catalog-absence settler is a violation")
+    public void unwiredSettlerIsRed() {
+        Assembly assembly = new Assembly();
+        assembly.withSettler = false;
+        assertTrue(assembly.build().violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("no catalog-absence settler is wired")));
+    }
+
+    /**
+     * Presence is not enough, for the same reason as the scanner and the projector.
+     *
+     * <p>A settler publishing through a different historical machine than the one wired here
+     * writes intents that this node's recovery never looks at — nothing is null, and a crash
+     * mid-publish is unrecoverable.
+     */
+    @Test
+    @DisplayName("a settler driving a different historical machine is a violation")
+    public void settlerMustShareTheMachine() {
+        Assembly assembly = new Assembly();
+        assembly.service = serviceOver(assembly.store);
+        assembly.service.setAbsenceSettler(
+                assembly.settlerFor(mock(LineageHistoricalPublishMachine.class)));
+        assertTrue(assembly.build().violations(TARGETS).stream()
+                .anyMatch(v -> v.contains("different historical publish machine")));
+    }
+
+    @Test
+    @DisplayName("a settler missing either collaborator is a violation, named")
+    public void settlerCollaboratorsAreNamed() {
+        Assembly assembly = new Assembly();
+        assembly.service = serviceOver(assembly.store);
+        LineageCatalogAbsenceSettler partial = mock(LineageCatalogAbsenceSettler.class);
+        when(partial.historicalMachineRef()).thenReturn(assembly.machine);
+        assembly.service.setAbsenceSettler(partial);
+        List<String> violations = assembly.build().violations(TARGETS);
+        assertTrue(violations.stream().anyMatch(v -> v.contains("waiting-snapshot")));
+        assertTrue(violations.stream().anyMatch(v -> v.contains("observed-entity")));
     }
 
     /** The check must be meaningful while D-rest is off — that is when it is most useful. */
@@ -507,5 +730,16 @@ public class LineageObligationWiringTest {
         // No readiness, no config, no service.active() — construction and evaluation involve
         // nothing that could recurse back into the gate that consumes this.
         assertEquals(List.of(), complete().violations(TARGETS));
+    }
+
+    /** A purge ledger that is present and usable — the ledger has its own tests. */
+    private static LineagePurgeLedger availableLedger() {
+        LineagePurgeLedger ledger = mock(LineagePurgeLedger.class);
+        when(ledger.available()).thenReturn(true);
+        // Every kind covered: the coverage gate has its own test, and here it must not be the
+        // thing under test.
+        when(ledger.lifecycleCoveredKinds())
+                .thenReturn(java.util.Set.of(EndpointKind.values()));
+        return ledger;
     }
 }

@@ -80,4 +80,77 @@ final class LineageStoreDecoding {
                 : sre.getDebuggingInfo().get("error");
         return "document_too_large".equals(reason) || "document_too_large".equals(error);
     }
+
+    /**
+     * A view result that came back, or a failure — never "there is nothing to do".
+     *
+     * <h2>The production bug this closes</h2>
+     *
+     * <p>{@code CloudantClientWrapper.queryView} returns {@code null} when the design document or
+     * the view is missing, deliberately, because the legacy CMIS DAOs run before provisioning and
+     * want "no data yet". The lineage stores then mapped that {@code null} onto an empty list,
+     * which reads as an entirely different statement: <em>there is no work</em>.
+     *
+     * <p>For this machine that reading is unsafe in three separate ways. The recovery scanner
+     * sees no expired claims and stops recovering. A preflight sees no backlog and reports a
+     * broken deployment as clean. Worst of all, subject arbitration sees no contenders — so
+     * every intent concludes it is the only one holding the subject, and two nodes publish over
+     * each other, which is the exact thing the fence exists to prevent.
+     *
+     * <p>These stores call {@code ensureDatabase()} before every query, so a view that is still
+     * missing afterwards is not a startup race. It is a broken database, and it has to be loud.
+     *
+     * @param viewName named in the message so an operator knows which view to re-provision;
+     *        view names are code identifiers, never data
+     */
+    static com.ibm.cloud.cloudant.v1.model.ViewResult requireViewResult(
+            com.ibm.cloud.cloudant.v1.model.ViewResult result, String viewName) {
+        if (result == null) {
+            throw new IllegalStateException("lineage view '" + viewName + "' is unavailable:"
+                    + " the design document is missing or was not provisioned. Refusing to read"
+                    + " that as an empty result set.");
+        }
+        return result;
+    }
+
+    /**
+     * An exact count from a view's own reduce, or a lower bound when it cannot be read.
+     *
+     * <p>Never a clean zero on failure. Zero is the one answer that makes a backlogged or
+     * broken deployment look finished, so an unreadable reduce degrades to {@code lowerBound(0)}
+     * and a preflight can tell "nothing there" from "could not tell".
+     *
+     * @param extraParams merged into the query, for ranged counts
+     */
+    static LineageCatalogObligationStore.StateCount reduceCount(LineageStoreSupport support,
+            String viewName, Object key, java.util.Map<String, Object> extraParams) {
+        try {
+            java.util.Map<String, Object> params = new java.util.LinkedHashMap<>();
+            if (key != null) {
+                params.put("key", key);
+            }
+            params.put("reduce", true);
+            params.put("group", false);
+            if (extraParams != null) {
+                params.putAll(extraParams);
+            }
+            com.ibm.cloud.cloudant.v1.model.ViewResult result =
+                    support.client().queryView(support.designDoc(), viewName, params);
+            if (result == null) {
+                // The view is missing. Not an exact zero — see requireViewResult.
+                return LineageCatalogObligationStore.StateCount.lowerBound(0L);
+            }
+            if (result.getRows() == null || result.getRows().isEmpty()) {
+                // _count over no matching keys returns no rows, which is an exact zero.
+                return LineageCatalogObligationStore.StateCount.exact(0L);
+            }
+            Object value = result.getRows().get(0).getValue();
+            if (!(value instanceof Number n)) {
+                return LineageCatalogObligationStore.StateCount.lowerBound(0L);
+            }
+            return LineageCatalogObligationStore.StateCount.exact(n.longValue());
+        } catch (RuntimeException e) {
+            return LineageCatalogObligationStore.StateCount.lowerBound(0L);
+        }
+    }
 }

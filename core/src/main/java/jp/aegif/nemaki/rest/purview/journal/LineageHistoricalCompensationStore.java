@@ -43,4 +43,13 @@ public interface LineageHistoricalCompensationStore {
 
     /** Marks one failed, by CAS, so it stays visible rather than being retried silently. */
     boolean markFailed(LineageHistoricalCompensation compensation, String reason);
+
+    /**
+     * Exact counts per state, from the view's own reduce.
+     *
+     * <p>A compensation left PENDING means a catalog still holds an entity that disagrees with
+     * the repository, so a preflight must be able to see how many there are.
+     */
+    java.util.Map<LineageHistoricalCompensation.State,
+            LineageCatalogObligationStore.StateCount> countByState();
 }

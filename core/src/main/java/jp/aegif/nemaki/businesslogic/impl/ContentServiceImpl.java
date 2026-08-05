@@ -3892,7 +3892,56 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public void restoreArchive(String repositoryId, String archiveId) throws ParentNoLongerExistException {
+		// Read before restoring, for the same reason the destroy path reads before destroying:
+		// afterwards the archive row is gone and nothing says which subjects came back.
+		Archive archive = null;
+		try {
+			archive = getArchive(repositoryId, archiveId);
+		} catch (RuntimeException e) {
+			log.warn("Could not read archive " + archiveId + " before restoring it; a stale"
+					+ " lineage purge mark could survive the restore", e);
+		}
 		archiveDelegate.restoreArchive(repositoryId, archiveId);
+		invalidateLineagePurge(repositoryId, archiveId, archive);
+	}
+
+	/**
+	 * Stop any purge mark authorising a tombstone, because the object is back.
+	 *
+	 * <p>After the restore succeeded — invalidating first would let a restore that then failed
+	 * leave the ledger claiming an object exists when it does not. Never throws, for the same
+	 * reason as the destroy path. A mark that survives a restore is the dangerous direction, so
+	 * a failure here is logged loudly.
+	 */
+	private void invalidateLineagePurge(String repositoryId, String archiveId, Archive archive) {
+		if (lineagePurgeLedger == null || archive == null) {
+			return;
+		}
+		try {
+			long now = System.currentTimeMillis();
+			invalidateLineagePurgeFor(repositoryId,
+					jp.aegif.nemaki.rest.purview.journal.EndpointKind.ARCHIVE, archiveId, now);
+			String originalId = archive.getOriginalId();
+			if (originalId != null && !originalId.isBlank()) {
+				boolean folder = Boolean.TRUE.equals(archive.isFolder());
+				invalidateLineagePurgeFor(repositoryId,
+						folder ? jp.aegif.nemaki.rest.purview.journal.EndpointKind.CMIS_FOLDER
+								: jp.aegif.nemaki.rest.purview.journal.EndpointKind.CMIS_DOCUMENT,
+						originalId, now);
+			}
+		} catch (RuntimeException e) {
+			log.warn("Could not invalidate the lineage purge mark for archive " + archiveId
+					+ "; a restored object could still read as PURGED", e);
+		}
+	}
+
+	private void invalidateLineagePurgeFor(String repositoryId,
+			jp.aegif.nemaki.rest.purview.journal.EndpointKind kind, String objectId, long atMs) {
+		String qualifiedName = lineageQualifiedName(repositoryId, kind, objectId);
+		String subjectDigest = jp.aegif.nemaki.rest.purview.journal
+				.LineageSourceDispositionResolver.SourceEvidence.subjectDigest(repositoryId, kind,
+						qualifiedName);
+		lineagePurgeLedger.invalidateOnRestore(repositoryId, kind, subjectDigest, atMs);
 	}
 
 	@Override
@@ -3925,7 +3974,82 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	public void destroyArchive(String repositoryId, String archiveId) {
+		// Read before destroying: afterwards there is nothing left to say what was destroyed,
+		// and the lineage purge ledger's whole value is that it names the incarnation and
+		// revision that went away. Without it a later "not found" is indistinguishable from a
+		// stale replica, and a catalog tombstone would rest on an absence.
+		Archive archive = null;
+		try {
+			archive = getArchive(repositoryId, archiveId);
+		} catch (RuntimeException e) {
+			log.warn("Could not read archive " + archiveId + " before destroying it; the"
+					+ " lineage purge ledger will have no mark for it", e);
+		}
 		archiveDelegate.destroyArchive(repositoryId, archiveId);
+		recordLineagePurge(repositoryId, archiveId, archive);
+	}
+
+	/**
+	 * Record the destruction in the lineage purge ledger.
+	 *
+	 * <p>After the destroy, never before: a mark written first would authorise a tombstone for
+	 * an object whose deletion then failed. Never throws — a lineage concern must not be able
+	 * to fail a repository operation, and a missing mark degrades to UNKNOWN, which refuses to
+	 * publish a tombstone rather than publishing a wrong one.
+	 *
+	 * <p>Three subjects go away at once: the archive itself, and the original object under both
+	 * the document and the folder qualified names. Only the one matching the archive's type is
+	 * recorded, because a mark for a subject that never existed would be a claim about an
+	 * object this code never saw.
+	 */
+	private void recordLineagePurge(String repositoryId, String archiveId, Archive archive) {
+		if (lineagePurgeLedger == null || archive == null) {
+			return;
+		}
+		try {
+			long now = System.currentTimeMillis();
+			String originalId = archive.getOriginalId();
+			String revision = archive.getLastRevision() == null ? "0" : archive.getLastRevision();
+			recordLineagePurgeFor(repositoryId,
+					jp.aegif.nemaki.rest.purview.journal.EndpointKind.ARCHIVE, archiveId,
+					archiveId, revision, now);
+			if (originalId != null && !originalId.isBlank()) {
+				boolean folder = Boolean.TRUE.equals(archive.isFolder());
+				recordLineagePurgeFor(repositoryId,
+						folder ? jp.aegif.nemaki.rest.purview.journal.EndpointKind.CMIS_FOLDER
+								: jp.aegif.nemaki.rest.purview.journal.EndpointKind.CMIS_DOCUMENT,
+						originalId, originalId, revision, now);
+			}
+		} catch (RuntimeException e) {
+			log.warn("Could not record a lineage purge mark for archive " + archiveId
+					+ "; the subject will read as UNKNOWN rather than PURGED", e);
+		}
+	}
+
+	private void recordLineagePurgeFor(String repositoryId,
+			jp.aegif.nemaki.rest.purview.journal.EndpointKind kind, String objectId,
+			String incarnation, String revision, long atMs) {
+		String qualifiedName = lineageQualifiedName(repositoryId, kind, objectId);
+		String subjectDigest = jp.aegif.nemaki.rest.purview.journal
+				.LineageSourceDispositionResolver.SourceEvidence.subjectDigest(repositoryId, kind,
+						qualifiedName);
+		lineagePurgeLedger.recordPurge(repositoryId, kind, subjectDigest, incarnation, revision,
+				atMs);
+	}
+
+	/**
+	 * The qualified name a lineage subject has.
+	 *
+	 * <p>Built from the same three forms {@code LineageEndpoint} produces. A folder is
+	 * referenced through its DataSet proxy, which is a different name from the folder's own.
+	 */
+	private static String lineageQualifiedName(String repositoryId,
+			jp.aegif.nemaki.rest.purview.journal.EndpointKind kind, String objectId) {
+		return switch (kind) {
+			case CMIS_FOLDER -> "nemaki://" + repositoryId + "/folders/" + objectId + "/dataset";
+			case ARCHIVE -> "nemaki://" + repositoryId + "/archives/" + objectId;
+			default -> "nemaki://" + repositoryId + "/objects/" + objectId;
+		};
 	}
 
 	// ///////////////////////////////////////
@@ -3949,6 +4073,21 @@ public class ContentServiceImpl implements ContentService {
 	private GregorianCalendar getTimeStamp() {
 		initDelegates();
 		return helper.getTimeStamp();
+	}
+
+	/**
+	 * The lineage purge ledger, when the lineage machinery is present.
+	 *
+	 * <p>Optional: a deployment without it still destroys and restores archives exactly as
+	 * before. What it loses is the ability to say PURGED later — which reads as UNKNOWN, and
+	 * UNKNOWN never publishes a tombstone.
+	 */
+	@org.springframework.beans.factory.annotation.Autowired(required = false)
+	private jp.aegif.nemaki.rest.purview.journal.LineagePurgeLedger lineagePurgeLedger;
+
+	public void setLineagePurgeLedger(
+			jp.aegif.nemaki.rest.purview.journal.LineagePurgeLedger lineagePurgeLedger) {
+		this.lineagePurgeLedger = lineagePurgeLedger;
 	}
 
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {

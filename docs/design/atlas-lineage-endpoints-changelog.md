@@ -12,6 +12,207 @@
 
 ---
 
+## v2.3.71 — observed materializer の target 別化 (外部レビュー指摘)
+
+3 つの adapter のうち probe と historical publisher は target をキーとした registry だったが、
+**observed entity materializer だけが単一インスタンス**だった。`hasCatalogClient` が active
+backend 1 つにしか束縛しないため、実運用では偶然 1 target しか無く問題が表面化しない。
+
+しかし 2 target を publish する構成では、片方の obligation が **もう片方の catalog に対して
+settle される**。書込みは成功し、read-back も一致し、obligation は RESOLVED になる —
+task key が名指す catalog は空のまま。resolved な obligation を再訪する経路は無いので、
+これは**後から発見されない**種類の誤りである。
+
+readiness も同じ理由で問いを立てられなかった。target 別に訊く先が無いので
+「adapter は揃っている」と報告し続ける — green preflight を通り抜ける典型形。
+
+`LineageObservedEntityMaterializerRegistry` を新設し、probe / publisher と同形にした。
+settler は**plan 自身の snapshot が持つ target** で引く (呼び出し側が渡す値ではない)。
+「登録が 1 つしか無ければそれを使う」fallback は**置かない** — それが元の欠陥そのもの。
+引けなければ RETRY で、readiness が target 名を挙げて red にする。
+
+固定: `foreignTargetMaterializerIsNeverUsed` (observed / current-source 両経路で、別 target の
+materializer が 1 度も呼ばれず RETRY になること)、`missingObservedMaterializerIsRed`
+(per-target readiness)。mutation binding 確認済み — fallback を戻すと前者だけが落ちる。
+
+---
+
+## v2.3.57 — activation を不能にしていた本番バグ 1 件
+
+`readRawStrict` が `_design/lineage` を Cloudant SDK の `getDocument` へ直接渡していた。
+SDK は `_` 始まりの id を `IllegalArgumentException` で拒否するため、
+`viewSignatureViolations()` は**全 deployment で常に**「design document unreadable」を返し、
+D-rest readiness は永久に red、つまり **4b activation は一度も成立し得なかった**。
+
+fail-closed 側の欠陥なので誤って activate されることは無かったが、activate できないという
+点で同じく致命的である。wrapper の design document API へ経路を分けた。実 CouchDB IT
+(`designDocumentIsReadable`) で固定。
+
+その他 (実 Atlas 環境で判明):
+
+- probe/publisher の登録条件が `supportsVerification()` (lineage Process の verify 可否) に
+  結びついており、catalog が到達可能な target に adapter が付かなかった。active backend で
+  判定するよう変更
+- `AtlasLineageSink` に `verify()` が無かった。false のままだと D-rest はこの target の
+  v2 行を 1 件も sequence できない (drain できない barrier が後続を全て止める)
+- preflight の configured target が sink bean 列挙だったため、Spring が構築しただけの
+  sink を数え、誰も設定していない target の adapter を要求していた。`lineage.targets` へ
+- target が 0 件のとき PASS を返していた。per-target/per-kind 検査が全て空ループになるので、
+  「機械が ready」を空ループの強さで主張することになる
+
+---
+
+## v2.3.56 — 本番 adapter・N-3 preflight・実 Atlas が検出した 2 件
+
+### 実 Atlas IT が検出した本番バグ (mock 不能)
+
+| # | 症状 | 影響 |
+|---|---|---|
+| 4 | historical entity が type の必須属性 (`nemaki_document.repositoryId` / `objectId` 等) を設定していない | Atlas が `ATLAS-404-00-007` で write 全体を拒否。**publisher は一度も書けない**。snapshot の kind 別 allowlist は「観測した属性」であって「entity の identity」ではないため、factory が導出して補う |
+| 5 | tombstone marker を `sourceState` 固定で書いていた | `nemaki_document` / `nemaki_archive` は `lifecycleState`、`nemaki_folder_dataset` は `sourceState`、外部 3 type は**どちらも持たない**。Atlas は未宣言属性を**黙って捨てる**ので、live entity と区別不能な tombstone ができていた。mock は与えられた物を保存するだけなので検出不能 |
+
+5 の帰結として、marker を書く場所が無い kind (`nemaki_external_asset` /
+`nemaki_import_artifact` / `nemaki_export_artifact`) は publish を
+`SNAPSHOT_INCOMPLETE` で拒否する。書けば「存在する証拠」として読まれる entity になり、
+entity が無いより悪い。`GET /preflight` の `historicalEntitySupportByKind` が kind ごとに
+表示する。解消には Atlas 型定義への属性追加が必要で、これは別作業。
+
+### purge ledger — tombstone を authorise できる唯一のもの
+
+404・検索 0 件・archive 不在はすべて「見つからなかった」であり、stale replica・遅延 index・
+未作成・そして「今リポジトリに存在する」と両立する。どれを PURGED と読んでも、生きた文書に
+対する恒久 tombstone を書く。
+
+破棄した側が破棄した時点で記録する。restore は delete ではなく supersede。hook は
+`ContentServiceImpl.destroyArchive` / `restoreArchive` の 2 箇所だけで、どちらも
+破棄・復元の**前**に読み**後**に記録する (逆だと失敗した delete が tombstone を authorise
+する)。lineage の都合でリポジトリ操作を失敗させないため例外は投げない。
+
+### adapter
+
+publisher / read-back / republisher は `LineageHistoricalEntityFactory` を共有する。別実装
+だと偶然一致し偶然不一致になり、read-back の答えが何も意味しなくなる。read-back は catalog
+固有属性 (guid・timestamp 等) を planned key へ射影して除外する — 除外しないと正しく
+publish された entity が毎回 CONFLICT になり、obligation は永久に解決しない。
+
+republisher は digest を逆算できないので object id を purge ledger の `incarnation` から
+取り、導出した qualifiedName を再 hash して subject digest と一致することを確認してから
+書く。一致しない mark では repair しない (別 object の entity を壊すため)。
+
+### N-3 preflight
+
+件数は必ず exact/lowerBound を伴う。読めなかったものを 0 と書かない。
+
+target が 1 つも有効でない場合は PASS にしない。per-target/per-kind の検査が全て空ループに
+なるため、「機械が ready」を空ループの強さで主張することになる。
+
+通常の PENDING/CLAIMED は blocking にしない (稼働中のシステムでは永久に activate できない)。
+oldest waiting age を出して運用判断に委ねる。
+
+---
+
+## v2.3.54 — N-2b: projector の WAITING_FOR_CATALOG 統合
+
+### 書込み順序が本体
+
+危険な状態はすべて「途中」である。obligation を一部だけ作成して WAITING へ遷移した行は、
+その一部が解決した時点で復帰し、**他の endpoint に catalog entity が無いまま publish** する。
+key を second write で保存する設計は、その 2 write の間で crash すると復帰不能になる。
+
+固定した順序 (`LineageCatalogWaitCoordinator`):
+
+1. claim 前・publish 前に**全** endpoint を probe (input と output の両方 — input 側の
+   entity が無ければ edge は同じく壊れる)
+2. ABSENT/UNKNOWN 全件の deterministic task key を算出
+3. 全 obligation を create-if-absent し、**read-back で durable を確認**
+   (`createIfAbsent` の戻り値は write path の産物であり「後の pass が見つける」ことの証明ではない)
+4. 完全な key 集合と status を**一つの CAS** で保存
+
+最後の step の手前で止まった場合、行は PENDING のまま。task key は endpoint の純関数なので
+次の pass が同じ集合を再計算して不足分を埋める。**途中で止まっても何も失われない**ことが、
+crash 境界を「安全」にしている (「起きにくい」ではなく)。
+
+### probe は claim の前
+
+凍結済み §8-b の表は WAITING を **PENDING から**到達させ、lifecycle 契約は待機行が claim
+bundle を持たないと定める。probe を先に置けば、待機する行は claim を**そもそも取らない** —
+retry を消費せず、待機と claim が同時に成立する窓も存在しない。
+
+### 待機中に固定したこと
+
+claim しない・publish しない・verify しない・retry を消費しない・cursor を進めない・
+一部 task の RESOLVED では復帰しない・INDETERMINATE では何も変えない・
+`waitingSince` は再待機でも保持・max age 超過は **event だけ** UNRESOLVED
+(共有 obligation は他の event も待っているので触らない)・target ごとに独立。
+
+`INDETERMINATE` を「遅い WAITING」として扱わない。読めなかった store を event への終端判定
+に変換することになるため、max age を通さない。
+
+### codec は view に合わせた
+
+逆引き view `v2_waiting_by_task_key` は配備済みで `doc.v2WaitingByTarget[target].taskKeys`
+を読む。codec 側の名前をこれに合わせた。逆に view を変えると、全 deployment の design
+document を再構築するまで逆引きが無言で 0 件を返し、「この obligation は誰も止めていない」
+と読めてしまう。
+
+### 設定
+
+`lineage.catalog-wait.max-age-hours` (既定 24)。verify poll の分単位ではなく時間単位 —
+待っている相手は別システムが publish する catalog entity である。0 で expiry 無効
+(UNRESOLVED を記録するより停滞を選ぶ deployment のための正当な選択肢)。
+
+---
+
+## v2.3.53 — mock が通していた本番バグ 3 件と、fence が守る区間の budget
+
+### 実 CouchDB IT が検出した本番バグ
+
+いずれも mock では検出不能だった。CouchDB のクエリ意味論と codec を通らないため。
+
+| # | 症状 | 影響 |
+|---|---|---|
+| 1 | `_count` reduce を持つ view への `include_docs` を CouchDB が拒否 (`include_docs is invalid for reduce`) | **document を列挙する呼出しが本番で全て失敗**していた — recovery scanner・arbitration・admin status。obligation store にも同じ欠陥。`reduce=false` を明示して修正 |
+| 2 | `markResolved` が人間可読文を `reason` (enum) へ書いていた | 以後その compensation は **decode 不能**。acted-on な記録が二度と読めない。`outcomeNote` へ分離 |
+| 3 | `CloudantClientWrapper.queryView` は view 欠落時に `null` を返す仕様 (legacy CMIS DAO が provisioning 前に走るため) を、lineage store が空リストへ潰していた | 「仕事がない」と読める。recovery scanner は回収を止め、preflight は壊れた deployment を clean と報告し、**arbitration は「競合なし」＝単独所有と読む** — 2 node が同一 subject を上書きし得た。`LineageStoreDecoding.requireViewResult` で失敗として送出 |
+
+3 は fence の存在意義そのものを無効化する経路であり、これが最も重い。obligation /
+intent / compensation の 3 store は照会前に必ず `ensureDatabase()` を通るため、
+provisioning 後に view が無いのは起動時 race ではなく壊れた database である。
+
+reduce が数値以外を返す場合も `exact 0` にしない (`lowerBound` へ縮退)。0 は唯一
+green に見える答えなので、読めなかったことを 0 と書くのは preflight に対する嘘になる。
+
+### N-1.5D.2.1 — fence が守るのは 1 request ではない
+
+readiness が単一の Purview read timeout を lease と比較していた。これは誰も訊いて
+いない質問への答えで、**個々の request が余裕で収まっていても区間全体は超え得る**。
+
+budget を型付きにし (`LineageOperationBudget`)、区間の worst case を次の合成で表す。
+
+- source disposition の直前再確認 (kind ごと — resolver の backend が異なる)
+- connect timeout + read timeout
+- retry 回数 (負値＝無制限は budget 不能)
+- retry backoff の総時間
+- catalog 呼出し **2 回** (historical publish と publish 後 read-back)
+- target client 固有の余裕
+
+target/kind ごとの `LineageOperationBudgetProvider` に置き換えた。
+
+- **Atlas の timeout を Purview 設定から推測しない**。`buildConnectionRequest()` は
+  *enabled* な backend の設定を返すため、これを budget に使うと Atlas へ publish する
+  node に Purview の数値が入り、どちらも無効なら例外になっていた
+- publisher が実際に使う retry policy を readiness も読む
+  (`PurviewHttpRetryHandler.maxRetries()` / `worstCaseBackoffTotalMs()`) — 定数を
+  複製すると乖離し、動作中のコードが守っていない margin を主張することになる
+- 起動時に固定しない。両 config は `readDynamic*` 経由なので、fresh readiness 評価が
+  即座に red/green を変える
+- 解決不能な target/kind は red。設定の無い target (dataplex) は既定値を借りない
+- 境界の等号は拒否 (`budget + margin < lease`)。等号では fence 失効の瞬間に区間が
+  まだ走っている
+- overflow は「収まらない」。小さい数へ折り返すと異常な設定が通る
+
+---
+
 ## revision
 
 - v2.3.35 — **増分 B 完了**。B-1 型追加 / B-2 属性追加 / B-3 secret 境界 / B-4 backfill /

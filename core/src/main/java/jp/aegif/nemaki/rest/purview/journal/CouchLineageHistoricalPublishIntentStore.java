@@ -176,9 +176,10 @@ public class CouchLineageHistoricalPublishIntentStore
         params.put("reduce", false);
         params.put("include_docs", true);
         com.ibm.cloud.cloudant.v1.model.ViewResult result =
-                support.client().queryView(support.designDoc(), "historicalIntentsByState",
-                        params);
-        if (result == null || result.getRows() == null) {
+                LineageStoreDecoding.requireViewResult(
+                        support.client().queryView(support.designDoc(),
+                                "historicalIntentsByState", params), "historicalIntentsByState");
+        if (result.getRows() == null) {
             return List.of();
         }
         for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : result.getRows()) {
@@ -230,10 +231,14 @@ public class CouchLineageHistoricalPublishIntentStore
         // call fail in production while every mocked test passed.
         params.put("reduce", false);
         params.put("include_docs", true);
+        // A missing view must never read as "nobody else holds this subject" — that is the
+        // one answer that lets two nodes publish over each other.
         com.ibm.cloud.cloudant.v1.model.ViewResult result =
-                support.client().queryView(support.designDoc(),
-                        "historicalIntentsContendingBySubject", params);
-        if (result == null || result.getRows() == null) {
+                LineageStoreDecoding.requireViewResult(
+                        support.client().queryView(support.designDoc(),
+                                "historicalIntentsContendingBySubject", params),
+                        "historicalIntentsContendingBySubject");
+        if (result.getRows() == null) {
             return List.of();
         }
         for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : result.getRows()) {
@@ -422,5 +427,45 @@ public class CouchLineageHistoricalPublishIntentStore
 
     private static String asString(Object value) {
         return value instanceof String s ? s : null;
+    }
+
+    @Override
+    public java.util.Map<LineageHistoricalPublishIntent.State,
+            LineageCatalogObligationStore.StateCount> countByState() {
+        support.ensureDatabase();
+        java.util.Map<LineageHistoricalPublishIntent.State,
+                LineageCatalogObligationStore.StateCount> counts =
+                new java.util.EnumMap<>(LineageHistoricalPublishIntent.State.class);
+        for (LineageHistoricalPublishIntent.State state
+                : LineageHistoricalPublishIntent.State.values()) {
+            counts.put(state, LineageStoreDecoding.reduceCount(support,
+                    "historicalIntentsByState", state.name(), null));
+        }
+        return counts;
+    }
+
+    /**
+     * Active and expired fences, from two ranged reduces over one view.
+     *
+     * <p>Counted rather than listed: a listing would truncate on exactly the busy deployment
+     * where the number matters, and a truncated fence count reads as "few fences" when it means
+     * "too many to enumerate".
+     */
+    @Override
+    public FenceCounts countFences(long nowMs, int limit) {
+        support.ensureDatabase();
+        LineageCatalogObligationStore.StateCount total = LineageStoreDecoding.reduceCount(
+                support, "historicalFencesByLease", null, null);
+        java.util.Map<String, Object> expiredRange = new java.util.LinkedHashMap<>();
+        // Inclusive end: a lease whose instant is exactly now has expired — the holder can no
+        // longer be renewing against it.
+        expiredRange.put("endkey", nowMs);
+        LineageCatalogObligationStore.StateCount expired = LineageStoreDecoding.reduceCount(
+                support, "historicalFencesByLease", null, expiredRange);
+        if (total.truncated() || expired.truncated()) {
+            return new FenceCounts(0L, 0L, true);
+        }
+        long active = Math.max(0L, total.count() - expired.count());
+        return new FenceCounts(active, expired.count(), false);
     }
 }

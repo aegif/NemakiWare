@@ -90,6 +90,22 @@ public record LineageCatalogObligation(
         SOURCE_PURGED,
         /** The catalog did not answer. <b>Retryable</b>, with capped backoff. */
         SOURCE_ERROR,
+        /**
+         * The event's observation was materialised as an ordinary entity.
+         *
+         * <p>For a source NemakiWare never destroys. Distinct from SOURCE_EXISTS: nothing
+         * asked the external system, and distinct from SOURCE_PURGED because no tombstone was
+         * written. Storing either of those instead would make the durable record say something
+         * about the source that nobody established.
+         */
+        OBSERVED_MATERIALIZED,
+        /**
+         * The current entity was published from a positive live-source verdict.
+         *
+         * <p>For a LEDGERED kind whose source the repository confirmed. Distinct from
+         * SOURCE_EXISTS, which records that the authoritative publisher already had it.
+         */
+        CURRENT_MATERIALIZED,
         /** The snapshot cannot reconstruct the entity. The only terminal failure. */
         SNAPSHOT_INCOMPLETE
     }

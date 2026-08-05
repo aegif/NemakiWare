@@ -62,7 +62,7 @@ public class LineageJournalViewCoverageTest {
     private static final Set<String> OBLIGATION_VIEWS =
             Set.of("obligationsByState", "v2_waiting_by_task_key",
                     "historicalIntentsByState", "historicalCompensationsByState",
-                    "historicalIntentsContendingBySubject");
+                    "historicalIntentsContendingBySubject", "historicalFencesByLease");
 
     /**
      * v1-ONLY views (D-rest-2 schema split): every selector that feeds v1 machinery — claim,
@@ -295,6 +295,40 @@ public class LineageJournalViewCoverageTest {
     }
 
     /**
+     * The fence count index sees fences and nothing else.
+     *
+     * <p>Keyed by the lease instant, and only when that is a number: a fence whose lease this
+     * code cannot read must not be counted as active, because "active" is the half a preflight
+     * reports as safe.
+     */
+    @Test
+    public void theFenceIndexSeesOnlyFences() {
+        Map<String, Object> fence = new java.util.LinkedHashMap<>();
+        fence.put("_id", "lineage_historical_fence:abc");
+        fence.put("type", "lineage_historical_fence");
+        fence.put("subjectKey", "subject-1");
+        fence.put("leaseUntilMs", 1_700_000_000_000L);
+
+        assertFalse(emits("historicalFencesByLease", fence).isEmpty());
+        assertEquals(1_700_000_000_000L,
+                ((Number) ((List<?>) emits("historicalFencesByLease", fence).get(0)).get(0))
+                        .longValue(),
+                "the key is the lease instant, so active and expired are one ranged reduce");
+
+        assertTrue(emits("historicalFencesByLease", v1Document()).isEmpty());
+        assertTrue(emits("historicalFencesByLease", v2Document()).isEmpty());
+
+        Map<String, Object> unreadableLease = new java.util.LinkedHashMap<>(fence);
+        unreadableLease.put("leaseUntilMs", "not-a-number");
+        assertTrue(emits("historicalFencesByLease", unreadableLease).isEmpty(),
+                "an unreadable lease must not be counted as an active fence");
+
+        Map<String, Object> noLease = new java.util.LinkedHashMap<>(fence);
+        noLease.remove("leaseUntilMs");
+        assertTrue(emits("historicalFencesByLease", noLease).isEmpty());
+    }
+
+    /**
      * The arbitration index emits every intent that still has a claim on its subject.
      *
      * <p>Including the terminated ones. An intent that already wrote the entity still owns the
@@ -390,6 +424,9 @@ public class LineageJournalViewCoverageTest {
                         "obligationsByState", "v2_waiting_by_task_key",
                         "historicalIntentsByState", "historicalCompensationsByState",
                         "historicalIntentsContendingBySubject",
+                        // The subject fence count (v2.3.55): keyed by lease instant so the
+                        // preflight gets active and expired from two ranged reduces.
+                        "historicalFencesByLease",
                         "by_event_key", "by_repository_and_time", "by_target_status",
                         "by_process_type", "by_occurred_at", "by_repository_and_process_type",
                         "dead_letter_by_time", "dead_letter_by_replayed", "by_target_status_time",

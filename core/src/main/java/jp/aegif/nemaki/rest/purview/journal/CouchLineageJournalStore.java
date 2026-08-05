@@ -472,6 +472,16 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         // and an older observation must not be published over it merely because the newer one
         // finished first. Emitting only the in-flight states let a loser scanned after the
         // winner find itself alone and publish.
+        // historicalFencesByLease — how many subject fences exist and how many have expired.
+        // Keyed by the lease instant so both questions are one ranged reduce rather than a
+        // listing: a preflight that had to enumerate them would report a truncated count on
+        // exactly the busy deployment where the number matters.
+        views.put("historicalFencesByLease", new ViewDefinition(
+                "function(doc) { if (doc.type === 'lineage_historical_fence'"
+                        + " && typeof doc.leaseUntilMs === 'number') {"
+                        + " emit(doc.leaseUntilMs, null); } }",
+                "_count"));
+
         views.put("historicalIntentsContendingBySubject", new ViewDefinition(
                 "function(doc) { if (doc.type === 'lineage_historical_intent' && doc.subjectKey"
                         + " && doc.state && doc.state !== 'SUPERSEDED') { "
@@ -1519,13 +1529,24 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
     @Override
     public Map<String, Object> readRawStrict(String documentId) {
         try {
-            com.ibm.cloud.cloudant.v1.model.Document doc = getLineageClient().getClient()
-                    .getDocument(new com.ibm.cloud.cloudant.v1.model.GetDocumentOptions
-                            .Builder()
-                            .db(getLineageClient().getDatabaseName())
-                            .docId(documentId)
-                            .build())
-                    .execute().getResult();
+            // A design document cannot go to getDocument(): the SDK refuses any id starting
+            // with '_' outright. The wrapper routes those to the design-document API instead.
+            // Without this, viewSignatureViolations() could never read the deployed design
+            // document — it always reported "unreadable", D-rest readiness was permanently red,
+            // and 4b activation was impossible on every deployment.
+            com.ibm.cloud.cloudant.v1.model.Document doc =
+                    documentId != null && documentId.startsWith("_design/")
+                            ? getLineageClient().get(documentId)
+                            : getLineageClient().getClient()
+                                    .getDocument(new com.ibm.cloud.cloudant.v1.model
+                                            .GetDocumentOptions.Builder()
+                                            .db(getLineageClient().getDatabaseName())
+                                            .docId(documentId)
+                                            .build())
+                                    .execute().getResult();
+            if (doc == null) {
+                return null;
+            }
             Map<String, Object> props = new HashMap<>();
             if (doc.getId() != null) props.put("_id", doc.getId());
             if (doc.getRev() != null) props.put("_rev", doc.getRev());
@@ -1658,6 +1679,31 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
      * @return violations (empty = signatures match); "deployment pending" style entries when
      *         the store/DB/design doc is not there yet — never a crash, never a silent pass
      */
+    /**
+     * One deployed view as a plain map, whatever shape the client handed back.
+     *
+     * @return null when there is no view at that name — never an empty map, which would compare
+     *         equal to nothing and report a difference instead of an absence
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> viewAsMap(Object deployedView) {
+        if (deployedView instanceof com.ibm.cloud.cloudant.v1.model.DesignDocumentViewsMapReduce
+                typed) {
+            Map<String, Object> view = new HashMap<>();
+            view.put("map", typed.map());
+            if (typed.reduce() != null) {
+                view.put("reduce", typed.reduce());
+            }
+            return view;
+        }
+        if (deployedView instanceof Map<?, ?> asMap) {
+            Map<String, Object> view = new HashMap<>();
+            asMap.forEach((k, v) -> view.put(String.valueOf(k), v));
+            return view;
+        }
+        return null;
+    }
+
     public List<String> viewSignatureViolations() {
         if (!isActive() || !dbProvisioned.get()) {
             return List.of("lineage store not active / database not provisioned yet");
@@ -1677,8 +1723,12 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         }
         List<String> violations = new ArrayList<>();
         for (var expected : VIEWS.entrySet()) {
-            Object entry = deployed.get(expected.getKey());
-            if (!(entry instanceof Map<?, ?> view)) {
+            // The SDK deserialises views into its own DesignDocumentViewsMapReduce, which is
+            // not a Map. Reading them as maps reported EVERY view as missing from a design
+            // document that had all of them — so the check ran and then said the deployment was
+            // wrong, which is the same activation block one layer along.
+            Map<String, Object> view = viewAsMap(deployed.get(expected.getKey()));
+            if (view == null) {
                 violations.add("view '" + expected.getKey() + "' missing from deployed design"
                         + " document");
                 continue;
@@ -1736,6 +1786,23 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
             LineagePublishStatus expected, LineagePublishStatus next,
             LineageTargetLifecycle.TerminalReason reason) {
         return transitions().transitionV2Unclaimed(recordId, target, expected, next, reason);
+    }
+
+    @Override
+    public boolean enterCatalogWait(String recordId, String target,
+            java.util.List<String> taskKeys) {
+        return transitions().enterCatalogWait(recordId, target, taskKeys);
+    }
+
+    @Override
+    public boolean resumeFromCatalogWait(String recordId, String target) {
+        return transitions().resumeFromCatalogWait(recordId, target);
+    }
+
+    @Override
+    public boolean expireCatalogWait(String recordId, String target,
+            LineageTargetLifecycle.TerminalReason reason) {
+        return transitions().expireCatalogWait(recordId, target, reason);
     }
 
     @Override
