@@ -194,7 +194,12 @@ public final class LineageObligationWiring {
                     + " finish inside the subject fence lease");
             return violations;
         }
+        // Two leases, because two different things are being outlived. The subject fence bounds
+        // the historical machine's inner section; the obligation claim bounds the whole execute
+        // plus the CAS that records its outcome. They carry the same number today, which is
+        // exactly why comparing everything against one of them looked correct.
         long fenceLeaseMs = LineageHistoricalPublishMachine.INTENT_LEASE.toMillis();
+        long claimLeaseMs = LineageCatalogObligationService.DEFAULT_LEASE.toMillis();
         long safetyMarginMs = fenceSafetyMarginMs(fenceLeaseMs);
         for (String target : targets) {
             for (EndpointKind kind : EndpointKind.values()) {
@@ -224,17 +229,31 @@ public final class LineageObligationWiring {
                 // by evidence read long after the fence is taken — so both have to fit, and an
                 // operator has to be told which one does not.
                 for (LineageOperationBudget.Route route : budget.reachableRoutes()) {
-                    if (budget.fitsInside(route, fenceLeaseMs, safetyMarginMs)) {
-                        continue;
-                    }
                     long worst = budget.worstCaseMs(route);
-                    violations.add("the worst-case fenced section for target '" + target
-                            + "' kind " + kind + " on the " + route + " route ("
-                            + (worst == Long.MAX_VALUE ? "unbounded" : worst + "ms")
-                            + ") plus the safety margin (" + safetyMarginMs
-                            + "ms) does not fit inside the subject fence lease (" + fenceLeaseMs
-                            + "ms): a publish may still be in flight when another intent takes"
-                            + " the subject");
+                    String worstText =
+                            worst == Long.MAX_VALUE ? "unbounded" : worst + "ms";
+                    // Every route runs under the obligation's own claim, and the CAS that
+                    // records the outcome runs under it too. A section that outlives the claim
+                    // writes a result for an obligation somebody else now owns.
+                    if (!budget.fitsInside(route, claimLeaseMs,
+                            fenceSafetyMarginMs(claimLeaseMs))) {
+                        violations.add("the worst-case section for target '" + target + "' kind "
+                                + kind + " on the " + route + " route (" + worstText
+                                + ") plus its safety margin does not fit inside the obligation"
+                                + " claim lease (" + claimLeaseMs + "ms): the final CAS may land"
+                                + " after another worker has taken the obligation");
+                    }
+                    // And only the historical route additionally holds the subject fence. The
+                    // other two never enter the machine, so this is not asked of them.
+                    if (route.insideSubjectFence()
+                            && !budget.fitsInside(route, fenceLeaseMs, safetyMarginMs)) {
+                        violations.add("the worst-case fenced section for target '" + target
+                                + "' kind " + kind + " on the " + route + " route (" + worstText
+                                + ") plus the safety margin (" + safetyMarginMs
+                                + "ms) does not fit inside the subject fence lease ("
+                                + fenceLeaseMs + "ms): a publish may still be in flight when"
+                                + " another intent takes the subject");
+                    }
                 }
             }
         }

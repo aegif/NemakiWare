@@ -80,24 +80,54 @@ public record LineageOperationBudget(
      *        compensating republish's content read. Charged at {@code sourceRecheckMs} each.
      */
     public enum Route {
-        OBSERVED(3, 0),
-        CURRENT(3, 1),
-        HISTORICAL(3, 3);
+        OBSERVED(3, 0, false),
+        CURRENT(3, 1, false),
+        HISTORICAL(3, 3, true);
 
         private final int catalogOperations;
-        private final int repositoryOperations;
+        private final int sourceOperations;
+        private final boolean insideSubjectFence;
 
-        Route(int catalogOperations, int repositoryOperations) {
+        Route(int catalogOperations, int sourceOperations, boolean insideSubjectFence) {
             this.catalogOperations = catalogOperations;
-            this.repositoryOperations = repositoryOperations;
+            this.sourceOperations = sourceOperations;
+            this.insideSubjectFence = insideSubjectFence;
         }
 
         public int catalogOperations() {
             return catalogOperations;
         }
 
-        public int repositoryOperations() {
-            return repositoryOperations;
+        /**
+         * Repository operations: the source re-checks, and for the historical route the
+         * compensating republish's own content read.
+         */
+        public int sourceOperations() {
+            return sourceOperations;
+        }
+
+        /**
+         * Plus the store write that records the outcome.
+         *
+         * <p>One for every route. It happens <em>after</em> the external calls and still has to
+         * land inside the claim that authorised them — a CAS that lands after the lease expired
+         * is a worker writing a result for an obligation somebody else now owns. Leaving it out
+         * budgeted the part that talks to the catalog and ignored the part that commits it.
+         */
+        public int storeOperations() {
+            return 1;
+        }
+
+        /**
+         * Whether this route also runs inside the historical machine's subject fence.
+         *
+         * <p>Only the historical one does. The other two never enter the machine: they run under
+         * the obligation's own claim and nothing else. Checking them against the subject fence
+         * was checking them against a lease they never hold — invisible today only because the
+         * two leases happen to carry the same number.
+         */
+        public boolean insideSubjectFence() {
+            return insideSubjectFence;
         }
     }
 
@@ -154,7 +184,7 @@ public record LineageOperationBudget(
             long withBackoff = Math.addExact(catalogOperations,
                     Math.multiplyExact(retryBackoffTotalMs, catalogCalls));
             long repositoryTime = Math.multiplyExact(sourceRecheckMs,
-                    (long) route.repositoryOperations());
+                    (long) (route.sourceOperations() + route.storeOperations()));
             return Math.addExact(Math.addExact(withBackoff, repositoryTime), clientOverheadMs);
         } catch (ArithmeticException overflow) {
             return Long.MAX_VALUE;

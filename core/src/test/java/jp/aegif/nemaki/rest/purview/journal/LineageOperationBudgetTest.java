@@ -47,15 +47,26 @@ class LineageOperationBudgetTest {
     @DisplayName("each route's call counts are what the code actually does")
     void routeCallCountsArePinned() {
         assertEquals(3, LineageOperationBudget.Route.OBSERVED.catalogOperations());
-        assertEquals(0, LineageOperationBudget.Route.OBSERVED.repositoryOperations());
+        assertEquals(0, LineageOperationBudget.Route.OBSERVED.sourceOperations());
 
         assertEquals(3, LineageOperationBudget.Route.CURRENT.catalogOperations());
         // The live-source re-check executeCurrent takes immediately before writing.
-        assertEquals(1, LineageOperationBudget.Route.CURRENT.repositoryOperations());
+        assertEquals(1, LineageOperationBudget.Route.CURRENT.sourceOperations());
 
         assertEquals(3, LineageOperationBudget.Route.HISTORICAL.catalogOperations());
         // A re-check on each side of the publish, plus the compensating republish's content read.
-        assertEquals(3, LineageOperationBudget.Route.HISTORICAL.repositoryOperations());
+        assertEquals(3, LineageOperationBudget.Route.HISTORICAL.sourceOperations());
+
+        // And every route commits its outcome with a store write, after the external calls and
+        // still inside the claim that authorised them.
+        for (LineageOperationBudget.Route route : LineageOperationBudget.Route.values()) {
+            assertEquals(1, route.storeOperations(), route + " must budget its final CAS");
+        }
+
+        // Only the historical route enters the machine that takes the subject fence.
+        assertTrue(LineageOperationBudget.Route.HISTORICAL.insideSubjectFence());
+        assertFalse(LineageOperationBudget.Route.OBSERVED.insideSubjectFence());
+        assertFalse(LineageOperationBudget.Route.CURRENT.insideSubjectFence());
     }
 
     /** Which routes an obligation for a kind can end up on, and therefore what must fit. */
@@ -76,12 +87,14 @@ class LineageOperationBudgetTest {
         // No retries, no backoff, no overhead. A budget that counted two calls would say 2_500
         // for the current route and 3_500 for the historical one.
         LineageOperationBudget b = budget(400, 600, 0, 0, 0, 500);
-        assertEquals(3 * 1_000 + 500, b.worstCaseMs(LineageOperationBudget.Route.CURRENT));
-        assertEquals(3 * 1_000 + 3 * 500,
+        // One re-check plus the final CAS for the current route; three repository reads plus
+        // the CAS for the historical one.
+        assertEquals(3 * 1_000 + 2 * 500, b.worstCaseMs(LineageOperationBudget.Route.CURRENT));
+        assertEquals(3 * 1_000 + 4 * 500,
                 b.worstCaseMs(LineageOperationBudget.Route.HISTORICAL));
         // The reported number is the worst reachable route: the route is not known until the
         // evidence is read, which is long after the fence is taken.
-        assertEquals(3 * 1_000 + 3 * 500, b.worstCaseMs());
+        assertEquals(3 * 1_000 + 4 * 500, b.worstCaseMs());
     }
 
     @Test
@@ -89,9 +102,9 @@ class LineageOperationBudgetTest {
     void includesRetries() {
         // 3 retries => 4 attempts per call, and the backoff is per call as well.
         LineageOperationBudget b = budget(400, 600, 3, 7_000, 0, 500);
-        assertEquals(3 * (1_000 * 4) + 3 * 7_000 + 500,
+        assertEquals(3 * (1_000 * 4) + 3 * 7_000 + 2 * 500,
                 b.worstCaseMs(LineageOperationBudget.Route.CURRENT));
-        assertEquals(3 * (1_000 * 4) + 3 * 7_000 + 3 * 500, b.worstCaseMs());
+        assertEquals(3 * (1_000 * 4) + 3 * 7_000 + 4 * 500, b.worstCaseMs());
     }
 
     @Test
@@ -137,15 +150,15 @@ class LineageOperationBudgetTest {
     @DisplayName("budget + margin == lease is rejected")
     void boundaryEqualityIsRejected() {
         LineageOperationBudget b = budget(500, 500, 0, 0, 0, 1_000);
-        assertEquals(6_000, b.worstCaseMs());
+        assertEquals(7_000, b.worstCaseMs());
         // Exactly equal: the section can still be running at the instant the fence expires.
-        assertFalse(b.fitsInside(10_000, 4_000), "equality must be refused");
+        assertFalse(b.fitsInside(10_000, 3_000), "equality must be refused");
         // One millisecond of real margin is enough to be inside.
-        assertTrue(b.fitsInside(10_001, 4_000));
+        assertTrue(b.fitsInside(10_001, 3_000));
         // And per route: the cheaper route fits at a lease the worst one does not.
-        assertEquals(4_000, b.worstCaseMs(LineageOperationBudget.Route.CURRENT));
-        assertTrue(b.fitsInside(LineageOperationBudget.Route.CURRENT, 10_000, 4_000));
-        assertFalse(b.fitsInside(LineageOperationBudget.Route.HISTORICAL, 10_000, 4_000));
+        assertEquals(5_000, b.worstCaseMs(LineageOperationBudget.Route.CURRENT));
+        assertTrue(b.fitsInside(LineageOperationBudget.Route.CURRENT, 10_000, 3_000));
+        assertFalse(b.fitsInside(LineageOperationBudget.Route.HISTORICAL, 10_000, 3_000));
     }
 
     @Test
@@ -171,11 +184,23 @@ class LineageOperationBudgetTest {
         assertEquals(1_100 + 2_200 + 4_400, PurviewHttpRetryHandler.worstCaseBackoffTotalMs());
     }
 
+    /**
+     * Pinned by exact rendering rather than by the absence of a substring.
+     *
+     * <p>The earlier form asserted that the text did not contain "600", the read timeout. It
+     * held only by luck: the worst case is a sum, and a sum is free to contain any digits its
+     * inputs do. Exact equality says the intended thing — the target, the kind and one derived
+     * total, and nothing else — and any field added later breaks it on purpose.
+     */
     @Test
     @DisplayName("toString carries no endpoint, credential or configuration value")
     void toStringIsSafe() {
-        String rendered = budget(400, 600, 3, 7_000, 5_000, 2_000).toString();
-        assertTrue(rendered.contains("atlas"));
-        assertFalse(rendered.contains("600"), "individual timeouts are not rendered");
+        LineageOperationBudget b = budget(400, 600, 3, 7_000, 5_000, 2_000);
+        // 3 catalog calls x 4 attempts x 1_000, + 3 x 7_000 backoff, + 4 repository operations
+        // x 2_000, + 5_000 overhead.
+        long worst = 3 * 4 * 1_000 + 3 * 7_000 + 4 * 2_000 + 5_000;
+        assertEquals(worst, b.worstCaseMs());
+        assertEquals("LineageOperationBudget[atlas/CMIS_DOCUMENT worstCase=" + worst + "ms]",
+                b.toString());
     }
 }
