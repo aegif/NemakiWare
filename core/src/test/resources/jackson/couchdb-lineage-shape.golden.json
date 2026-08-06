@@ -1,0 +1,1 @@
+{"_id":"golden-lineage-001","type":"lineage_event_v2","schemaVersion":2,"sequenceNumber":9007199254740991,"chunkIndex":0,"active":true,"delivery":{"targets":["atlas"]},"publishStatusByTarget":{"atlas":"PENDING"}}
