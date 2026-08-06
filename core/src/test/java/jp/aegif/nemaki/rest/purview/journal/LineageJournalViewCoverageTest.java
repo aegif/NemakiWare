@@ -29,7 +29,8 @@ import org.junit.jupiter.api.Test;
 import org.mozilla.javascript.Context;
 import org.mozilla.javascript.ScriptableObject;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Every CouchDB view of the lineage design document, executed — not pattern-matched — against a
@@ -46,7 +47,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public class LineageJournalViewCoverageTest {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = ObjectMapperFactory.createDefaultObjectMapper();
 
     private static final Set<String> DEAD_LETTER_VIEWS =
             Set.of("dead_letter_by_time", "dead_letter_by_replayed");
@@ -150,13 +151,13 @@ public class LineageJournalViewCoverageTest {
                         + "var doc = (" + JSON.writeValueAsString(doc) + ");\n"
                         + "(" + mapFunction + ")(doc);\n"
                         + "JSON.stringify(emits);";
-            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            } catch (tools.jackson.core.JacksonException e) {
                 throw new AssertionError(e);
             }
             Object result = cx.evaluateString(scope, script, viewName, 1, null);
             try {
                 return JSON.readValue(Context.toString(result), List.class);
-            } catch (com.fasterxml.jackson.core.JacksonException e) {
+            } catch (tools.jackson.core.JacksonException e) {
                 throw new AssertionError(e);
             }
         } finally {

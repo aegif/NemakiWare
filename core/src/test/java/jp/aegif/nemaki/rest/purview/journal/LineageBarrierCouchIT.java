@@ -37,12 +37,13 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.DeleteDatabaseOptions;
 import com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions;
 import com.ibm.cloud.cloudant.v1.model.PostAllDocsOptions;
 import com.ibm.cloud.sdk.core.security.BasicAuthenticator;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * §6-a's fence against a real CouchDB (A-2 Slice 4a).
@@ -116,7 +117,7 @@ public class LineageBarrierCouchIT {
     private static CouchLineageJournalStore freshStore() {
         String db = "nemaki_lineage_it_" + UUID.randomUUID().toString().replace("-", "");
         databases.add(db);
-        return CouchLineageJournalStore.forDirectClient(cloudant, db, new ObjectMapper());
+        return CouchLineageJournalStore.forDirectClient(cloudant, db, ObjectMapperFactory.createDefaultObjectMapper());
     }
 
     private static String dbOf(CouchLineageJournalStore store) {

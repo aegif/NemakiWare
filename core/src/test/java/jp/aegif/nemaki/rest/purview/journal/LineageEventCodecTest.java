@@ -29,7 +29,8 @@ import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * {@link CouchLineageEventV2} and {@link LineageEventCodec} — the stored form of a v2 row and the
@@ -109,7 +110,7 @@ public class LineageEventCodecTest {
                 .addOutput(LineageEndpoint.exportArtifact(REPO, "op-1", "ZIP", "out.zip", 3L))
                 .build();
 
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
         String json = mapper.writeValueAsString(CouchLineageEventV2.toMap(event));
         @SuppressWarnings("unchecked")
         Map<String, Object> parsed = mapper.readValue(json, Map.class);

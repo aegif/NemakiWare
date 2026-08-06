@@ -33,7 +33,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.DeleteDatabaseOptions;
 import com.ibm.cloud.sdk.core.security.BasicAuthenticator;
@@ -41,6 +41,7 @@ import com.ibm.cloud.sdk.core.security.BasicAuthenticator;
 import jp.aegif.nemaki.rest.purview.journal.LineageSequencingStore.LeaseGrant;
 import jp.aegif.nemaki.rest.purview.journal.LineageSequencingStore.LeaseMissingException;
 import jp.aegif.nemaki.rest.purview.journal.LineageSequencingStore.SequenceCounterException;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * The real-CouchDB half of increment D's gate: the same {@link LineageSequencingStore}
@@ -86,7 +87,7 @@ public class LineageSequencingCouchIT {
         }
         cloudant.setServiceUrl(url);
         dbName = "nemaki_lineage_it_" + UUID.randomUUID().toString().replace("-", "");
-        store = CouchLineageJournalStore.forDirectClient(cloudant, dbName, new ObjectMapper());
+        store = CouchLineageJournalStore.forDirectClient(cloudant, dbName, ObjectMapperFactory.createDefaultObjectMapper());
     }
 
     @AfterAll

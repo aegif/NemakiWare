@@ -21,10 +21,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * JSON ⇄ {@link LineageSpoolPayloadV1}, strict in both directions.
@@ -42,8 +42,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  */
 public final class LineageSpoolCodec {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper()
-            .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+    private static final ObjectMapper MAPPER = tools.jackson.databind.json.JsonMapper.builderWithJackson2Defaults()
+            .enable(tools.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+            .build();
 
     private static final java.util.Set<String> ROOT_FIELDS = java.util.Set.of(
             "spoolSchemaVersion", "spoolRecordId", "repositoryId", "processType",
@@ -85,7 +86,7 @@ public final class LineageSpoolCodec {
         root.put("payloadDigest", payload.payloadDigest());
         try {
             return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(root);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+        } catch (tools.jackson.core.JacksonException e) {
             throw new IllegalStateException("spool payload could not be encoded", e);
         }
     }
@@ -132,7 +133,7 @@ public final class LineageSpoolCodec {
     private static void requireExactFields(JsonNode node, java.util.Set<String> expected,
                                            String what) {
         java.util.Set<String> actual = new java.util.LinkedHashSet<>();
-        node.fieldNames().forEachRemaining(actual::add);
+        node.propertyNames().forEach(actual::add);
         if (!actual.equals(expected)) {
             java.util.Set<String> unknown = new java.util.LinkedHashSet<>(actual);
             unknown.removeAll(expected);

@@ -20,7 +20,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.DeleteDatabaseOptions;
 import com.ibm.cloud.cloudant.v1.model.PutDatabaseOptions;
@@ -28,6 +28,7 @@ import com.ibm.cloud.sdk.core.security.BasicAuthenticator;
 
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * DETERMINISTIC integration test for the 5T principal tri-state, against a REAL CouchDB.
@@ -98,7 +99,7 @@ public class PrincipalLookupTriStateIT {
 
         CloudantClientPool pool = mock(CloudantClientPool.class);
         lenient().when(pool.getClient(REPO))
-                .thenReturn(new CloudantClientWrapper(cloudant, db, new ObjectMapper()));
+                .thenReturn(new CloudantClientWrapper(cloudant, db, ObjectMapperFactory.createDefaultObjectMapper()));
         dao = new jp.aegif.nemaki.dao.impl.couch.PrincipalDaoServiceImpl();
         dao.setConnectorPool(pool);
     }

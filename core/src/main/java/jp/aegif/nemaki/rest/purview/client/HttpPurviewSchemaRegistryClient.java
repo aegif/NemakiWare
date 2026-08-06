@@ -13,8 +13,9 @@ import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 @Component
 public class HttpPurviewSchemaRegistryClient implements PurviewSchemaRegistryClient {
@@ -27,7 +28,7 @@ public class HttpPurviewSchemaRegistryClient implements PurviewSchemaRegistryCli
     private final HttpClient httpClient;
     private final PurviewTokenCache tokenCache;
     private final PurviewHttpRetryHandler retryHandler;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = ObjectMapperFactory.createDefaultObjectMapper();
 
     public HttpPurviewSchemaRegistryClient() {
         this(HttpClient.newBuilder().build(), new PurviewTokenCache(), new PurviewHttpRetryHandler());
@@ -61,7 +62,7 @@ public class HttpPurviewSchemaRegistryClient implements PurviewSchemaRegistryCli
         String requestBody;
         try {
             requestBody = objectMapper.writeValueAsString(payload);
-        } catch (IOException e) {
+        } catch (tools.jackson.core.JacksonException e) {
             throw new PurviewClientException("Failed to serialize Purview schema payload", e);
         }
 
@@ -144,7 +145,7 @@ public class HttpPurviewSchemaRegistryClient implements PurviewSchemaRegistryCli
             String token = accessToken.asText();
             tokenCache.put(request.getTenantId(), request.getClientId(), token, expiresIn);
             return token;
-        } catch (IOException e) {
+        } catch (tools.jackson.core.JacksonException e) {
             throw new PurviewClientException("Failed to parse Purview token response", e);
         }
     }

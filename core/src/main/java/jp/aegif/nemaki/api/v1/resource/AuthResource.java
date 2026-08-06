@@ -740,7 +740,7 @@ public class AuthResource {
                 String json = sb.toString();
                 // Simple JSON parsing via Jackson/Gson would be cleaner, but we use
                 // the same approach as elsewhere in the codebase for consistency
-                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                tools.jackson.databind.ObjectMapper mapper = new tools.jackson.databind.ObjectMapper();
                 return mapper.readValue(json, Map.class);
             }
         } catch (Exception e) {
@@ -785,8 +785,8 @@ public class AuthResource {
                     try (java.io.InputStream is = conn.getInputStream();
                          java.io.InputStreamReader reader = new java.io.InputStreamReader(
                                  is, java.nio.charset.StandardCharsets.UTF_8)) {
-                        com.fasterxml.jackson.databind.ObjectMapper mapper =
-                                new com.fasterxml.jackson.databind.ObjectMapper();
+                        tools.jackson.databind.ObjectMapper mapper =
+                                new tools.jackson.databind.ObjectMapper();
                         @SuppressWarnings("unchecked")
                         Map<String, Object> config = mapper.readValue(reader, Map.class);
                         String userinfoEndpoint = (String) config.get("userinfo_endpoint");
@@ -842,7 +842,7 @@ public class AuthResource {
                     int n;
                     while ((n = reader.read(buf)) != -1) sb.append(buf, 0, n);
 
-                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    tools.jackson.databind.ObjectMapper mapper = new tools.jackson.databind.ObjectMapper();
                     @SuppressWarnings("unchecked")
                     Map<String, Object> discovery = mapper.readValue(sb.toString(), Map.class);
 

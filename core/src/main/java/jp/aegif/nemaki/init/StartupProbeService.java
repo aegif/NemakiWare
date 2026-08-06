@@ -25,12 +25,13 @@ import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import org.springframework.beans.factory.annotation.Autowired;
 
 import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Probes CouchDB connection state at startup and exposes setup-required flag.
@@ -58,7 +59,7 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
     /** Setup token for authenticating Setup API requests during Setup Mode. */
     private final String setupToken = UUID.randomUUID().toString();
 
-    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
 
     /**
      * Required view counts (shared with DatabasePreInitializer).
@@ -110,7 +111,7 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
                         if (id == null || !id.asText().startsWith("_design/")) continue;
                         JsonNode views = doc.get("views");
                         if (views == null || !views.isObject()) continue;
-                        java.util.Iterator<String> names = views.fieldNames();
+                        java.util.Iterator<String> names = views.propertyNames().iterator();
                         while (names.hasNext()) resolved.add(names.next());
                     }
                 }

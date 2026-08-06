@@ -1,6 +1,6 @@
 package jp.aegif.nemaki.rest.ingest;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -9,6 +9,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * REST endpoint for canonical external ingestion.
@@ -23,7 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 @RequestMapping("/v1/repo/{repositoryId}/ingest")
 public class ExternalIngestController {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
 
     @Autowired
     private CanonicalImportService canonicalImportService;

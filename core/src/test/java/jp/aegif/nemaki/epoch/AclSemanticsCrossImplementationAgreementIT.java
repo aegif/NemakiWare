@@ -23,7 +23,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.DeleteDatabaseOptions;
 import com.ibm.cloud.cloudant.v1.model.Document;
@@ -50,6 +50,7 @@ import jp.aegif.nemaki.util.cache.CacheService;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.cache.model.NemakiCache;
 import jp.aegif.nemaki.util.constant.SystemConst;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * The CROSS-IMPLEMENTATION agreement required before the ACL-epoch writer may be wired
@@ -139,7 +140,7 @@ public class AclSemanticsCrossImplementationAgreementIT {
         contentDb = "acl-agreement-it-" + UUID.randomUUID();
         cloudant.putDatabase(new PutDatabaseOptions.Builder().db(contentDb).build()).execute();
 
-        CloudantClientWrapper wrapper = new CloudantClientWrapper(cloudant, contentDb, new ObjectMapper());
+        CloudantClientWrapper wrapper = new CloudantClientWrapper(cloudant, contentDb, ObjectMapperFactory.createDefaultObjectMapper());
         CloudantClientPool pool = mock(CloudantClientPool.class);
         lenient().when(pool.getClient(contentDb)).thenReturn(wrapper);
 

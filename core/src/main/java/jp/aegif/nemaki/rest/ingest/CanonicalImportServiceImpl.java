@@ -43,7 +43,7 @@ import java.util.Map;
 public class CanonicalImportServiceImpl implements CanonicalImportService {
 
     private static final Logger logger = LoggerFactory.getLogger(CanonicalImportServiceImpl.class);
-    private static final com.fasterxml.jackson.databind.ObjectMapper JSON_MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
+    private static final tools.jackson.databind.ObjectMapper JSON_MAPPER = new tools.jackson.databind.ObjectMapper();
 
     /** Idempotency key TTL: 7 days.  After this period the key is considered
      *  expired and a new import with the same key will proceed normally. */
@@ -824,7 +824,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (contextJson == null) return;
 
             Map<String, Object> context = JSON_MAPPER.readValue(contextJson,
-                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                    new tools.jackson.core.type.TypeReference<Map<String, Object>>() {});
             Object sourceAclObj = context.get("sourceAcl");
             if (!(sourceAclObj instanceof List<?> sourceAclList) || sourceAclList.isEmpty()) return;
 
@@ -877,7 +877,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             String existingContextJson = getAspectProperty(existingDoc, "nemaki:externalIntegration", "nemaki:externalContext");
             if (existingContextJson == null) return false;
             Map<String, Object> existingContext = JSON_MAPPER.readValue(existingContextJson,
-                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                    new tools.jackson.core.type.TypeReference<Map<String, Object>>() {});
             // Compare parent-context fields: channelId, threadId, parentPageId, mailboxId
             for (String key : List.of("channelId", "threadId", "parentPageId", "workspaceId", "mailboxId")) {
                 Object existing = existingContext.get(key);

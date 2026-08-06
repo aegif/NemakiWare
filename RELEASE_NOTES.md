@@ -7,6 +7,34 @@ only repository gotchas.
 
 ---
 
+## 3.3.0 追補 — Jackson 3 移行と Spring 7 閉鎖 (2026-08-06)
+
+### Jackson 2 → 3 (`tools.jackson`)
+
+自コードのシリアライズは Jackson 3.2.1 になりました。Jackson 2 は Cloudant SDK・SolrJ・
+CXF・Jersey の JSON provider が必要とするため WAR 内に残りますが、**推移依存としてのみ**です
+(名前空間が異なるため共存できます。annotation は 2 系のものが両者で共有されます)。
+
+**CouchDB に永続される文書の内容と符号化は変わりません。** 移行前に採取した golden で、
+プロパティ集合・値・符号化 (数値の文字列化、日付表現、null の扱い)・読み書き往復の形状が
+同一であることを確認しています。
+
+**REST API の応答で 1 点だけ変わります。** Spring MVC が扱う `/core/api/...` のうち
+POJO を返すエンドポイントは、プロパティの並びが**アルファベット順**になります
+(値・型・日付形式は不変)。JSON オブジェクトのキー順に意味はなく、従来の並びは
+JVM のクラスロード順に依存していて起動ごとに変わりうるものでした (実測で確認)。
+今回の変更で並びは決定的になります。キー順に依存するクライアントがある場合のみ注意してください。
+Jersey が扱う `/core/rest/...` と `/core/api/v1/cmis/...` は Jackson 2 のままで、影響ありません。
+
+### Spring 7 閉鎖
+
+- 全 `org.springframework` モジュールが単一版であることをビルドで強制するようになりました
+  (以前 spring-tx だけが古い版で混入した事故があり、目視でしか気づけませんでした)。
+- 実体のない log4j 1.x 用フラグ (`-Dlog4j.configuration`) を Dockerfile と compose から削除しました。
+  ログは従来どおり Logback です。動作に変化はありません。
+
+---
+
 ## 3.3.0 追補 — 起動ごとの型定義リーク修正とアーカイブ一覧の有界化 (2026-08-06)
 
 ### 起動ごとに propertyDefinitionDetail が漏れていた

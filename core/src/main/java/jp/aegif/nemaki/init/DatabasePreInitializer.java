@@ -277,11 +277,11 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
                     designReader.close();
                     designConn.disconnect();
 
-                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                    com.fasterxml.jackson.databind.JsonNode designDoc = mapper.readTree(designResponseStr);
+                    tools.jackson.databind.ObjectMapper mapper = new tools.jackson.databind.ObjectMapper();
+                    tools.jackson.databind.JsonNode designDoc = mapper.readTree(designResponseStr);
 
                     if (designDoc.has("views")) {
-                        com.fasterxml.jackson.databind.JsonNode viewsNode = designDoc.get("views");
+                        tools.jackson.databind.JsonNode viewsNode = designDoc.get("views");
                         int viewCount = viewsNode.size();
                         boolean isMain = startupProbeService != null
                                 ? startupProbeService.isMainRepository(dbName)
@@ -311,7 +311,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
                         if (!expected.isEmpty()) {
                             // Name-set subset check
                             java.util.Set<String> present = new java.util.HashSet<>();
-                            java.util.Iterator<String> it = viewsNode.fieldNames();
+                            java.util.Iterator<String> it = viewsNode.propertyNames().iterator();
                             while (it.hasNext()) present.add(it.next());
                             java.util.Set<String> missing = new java.util.HashSet<>(expected);
                             missing.removeAll(present);
@@ -505,8 +505,8 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
         }
         
         // Parse JSON dump
-        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-        com.fasterxml.jackson.databind.JsonNode dumpData = mapper.readTree(content.toString());
+        tools.jackson.databind.ObjectMapper mapper = new tools.jackson.databind.ObjectMapper();
+        tools.jackson.databind.JsonNode dumpData = mapper.readTree(content.toString());
         
         if (log.isDebugEnabled()) {
             log.debug("Parsed JSON successfully");
@@ -521,9 +521,9 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
             if (log.isDebugEnabled()) {
                 log.debug("Found array with " + dumpData.size() + " elements");
             }
-            for (com.fasterxml.jackson.databind.JsonNode doc : dumpData) {
+            for (tools.jackson.databind.JsonNode doc : dumpData) {
                 // Handle document directly or extract from document wrapper
-                com.fasterxml.jackson.databind.JsonNode docToInsert = doc;
+                tools.jackson.databind.JsonNode docToInsert = doc;
                 if (doc.has("document")) {
                     docToInsert = doc.get("document");
                 }
@@ -536,7 +536,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
                     }
                     
                     // Remove _rev for new document creation (CouchDB will assign new revision)
-                    com.fasterxml.jackson.databind.node.ObjectNode docCopy = docToInsert.deepCopy();
+                    tools.jackson.databind.node.ObjectNode docCopy = (tools.jackson.databind.node.ObjectNode) docToInsert.deepCopy();
                     docCopy.remove("_rev");
                     
                     int responseCode = putDocument(dbName, docId, mapper.writeValueAsString(docCopy), encodedAuth);
@@ -604,8 +604,8 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
      * while ensuring all dump views are up-to-date (dump views win on conflict).
      */
     private void mergeDesignDocument(String dbName, String docId,
-            com.fasterxml.jackson.databind.node.ObjectNode dumpDoc,
-            com.fasterxml.jackson.databind.ObjectMapper mapper,
+            tools.jackson.databind.node.ObjectNode dumpDoc,
+            tools.jackson.databind.ObjectMapper mapper,
             String encodedAuth) {
         try {
             // Fetch the existing design document (full body, not just HEAD)
@@ -626,7 +626,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
             reader.close();
             conn.disconnect();
 
-            com.fasterxml.jackson.databind.JsonNode existingDoc = mapper.readTree(existingBody);
+            tools.jackson.databind.JsonNode existingDoc = mapper.readTree(existingBody);
             String currentRev = existingDoc.has("_rev") ? existingDoc.get("_rev").asText() : null;
             if (currentRev == null) {
                 log.warn("Existing design document " + docId + " has no _rev, cannot update");
@@ -634,20 +634,20 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
             }
 
             // Start with the existing doc as base, then overlay dump fields
-            com.fasterxml.jackson.databind.node.ObjectNode merged = existingDoc.deepCopy();
+            tools.jackson.databind.node.ObjectNode merged = (tools.jackson.databind.node.ObjectNode) existingDoc.deepCopy();
 
             // Merge "views": existing views are preserved, dump views override by name
             if (dumpDoc.has("views") && dumpDoc.get("views").isObject()) {
-                com.fasterxml.jackson.databind.node.ObjectNode mergedViews;
+                tools.jackson.databind.node.ObjectNode mergedViews;
                 if (merged.has("views") && merged.get("views").isObject()) {
-                    mergedViews = (com.fasterxml.jackson.databind.node.ObjectNode) merged.get("views");
+                    mergedViews = (tools.jackson.databind.node.ObjectNode) merged.get("views");
                 } else {
                     mergedViews = mapper.createObjectNode();
                     merged.set("views", mergedViews);
                 }
                 // Overlay dump views (dump wins on conflict)
-                com.fasterxml.jackson.databind.JsonNode dumpViews = dumpDoc.get("views");
-                var fieldNames = dumpViews.fieldNames();
+                tools.jackson.databind.JsonNode dumpViews = dumpDoc.get("views");
+                var fieldNames = dumpViews.propertyNames().iterator();
                 while (fieldNames.hasNext()) {
                     String viewName = fieldNames.next();
                     mergedViews.set(viewName, dumpViews.get(viewName).deepCopy());
@@ -655,7 +655,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
             }
 
             // Copy non-view, non-metadata fields from dump (e.g. language, filters)
-            var dumpFields = dumpDoc.fieldNames();
+            var dumpFields = dumpDoc.propertyNames().iterator();
             while (dumpFields.hasNext()) {
                 String field = dumpFields.next();
                 if ("_id".equals(field) || "_rev".equals(field) || "views".equals(field)) {
@@ -725,8 +725,8 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
                     findReader.close();
                     findConn.disconnect();
 
-                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                    com.fasterxml.jackson.databind.JsonNode findResult = mapper.readTree(findBody);
+                    tools.jackson.databind.ObjectMapper mapper = new tools.jackson.databind.ObjectMapper();
+                    tools.jackson.databind.JsonNode findResult = mapper.readTree(findBody);
                     int count = findResult.has("docs") ? findResult.get("docs").size() : 0;
 
                     if (count == 0) {

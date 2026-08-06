@@ -28,13 +28,14 @@ import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PreDestroy;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import jp.aegif.nemaki.rag.config.RAGConfig;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * TEI (Text Embeddings Inference) implementation of EmbeddingService.
@@ -89,7 +90,7 @@ public class TeiEmbeddingService implements EmbeddingService {
     @Autowired
     public TeiEmbeddingService(RAGConfig ragConfig) {
         this.ragConfig = ragConfig;
-        this.objectMapper = new ObjectMapper();
+        this.objectMapper = ObjectMapperFactory.createDefaultObjectMapper();
 
         int readTimeoutMs = ragConfig.getTeiReadTimeout();
 
@@ -226,6 +227,12 @@ public class TeiEmbeddingService implements EmbeddingService {
 
         } catch (SocketTimeoutException e) {
             throw EmbeddingException.timeout("TEI request timed out", e);
+        } catch (tools.jackson.core.JacksonException e) {
+            // Jackson 3 exceptions are unchecked, so this no longer arrives via the
+            // IOException arm below; without it a serialization failure would escape the
+            // caller's retry loop entirely instead of being a retryable connection error.
+            throw EmbeddingException.connectionError(
+                    "Failed to serialize TEI embedding request", e);
         } catch (IOException | ParseException e) {
             throw EmbeddingException.connectionError("Failed to connect to TEI service", e);
         }
@@ -246,7 +253,7 @@ public class TeiEmbeddingService implements EmbeddingService {
             }
 
             return embeddings;
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new EmbeddingException("Failed to parse TEI response: " + responseBody, e);
         }
     }

@@ -1,11 +1,12 @@
 package jp.aegif.nemaki.patch;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Patch to narrow userItemsById and groupItemsById view definitions
@@ -42,14 +43,14 @@ public class Patch_NarrowUserGroupViews extends AbstractNemakiPatch {
 		}
 
 		String designDocId = "_design/_repo";
-		ObjectMapper mapper = new ObjectMapper();
+		ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
 
 		JsonNode currentDoc = client.get(JsonNode.class, designDocId);
 		if (currentDoc == null) {
 			throw new RuntimeException("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] Design document not found");
 		}
 
-		ObjectNode updatedDoc = currentDoc.deepCopy();
+		ObjectNode updatedDoc = (ObjectNode) currentDoc.deepCopy();
 		ObjectNode views = (ObjectNode) updatedDoc.get("views");
 		if (views == null) {
 			throw new RuntimeException("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] No views object in design document - database may be uninitialized");
@@ -70,7 +71,7 @@ public class Patch_NarrowUserGroupViews extends AbstractNemakiPatch {
 	private boolean updateViewIfNeeded(ObjectNode views, String viewName, String narrowMap, String repositoryId) {
 		if (!views.has(viewName)) {
 			// View doesn't exist yet; create it
-			ObjectMapper mapper = new ObjectMapper();
+			ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
 			ObjectNode viewDef = mapper.createObjectNode();
 			viewDef.put("map", narrowMap);
 			views.set(viewName, viewDef);
@@ -85,7 +86,7 @@ public class Patch_NarrowUserGroupViews extends AbstractNemakiPatch {
 			return false; // already narrow
 		}
 
-		ObjectMapper mapper = new ObjectMapper();
+		ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
 		ObjectNode viewDef = mapper.createObjectNode();
 		viewDef.put("map", narrowMap);
 		views.set(viewName, viewDef);

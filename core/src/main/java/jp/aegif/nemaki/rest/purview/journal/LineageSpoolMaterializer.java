@@ -27,7 +27,8 @@ import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * The convergent materializer (v2.3.18 ⑦ as amended by v2.3.21): spool fact → parent
@@ -48,7 +49,7 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
 
     private static final Logger logger =
             LoggerFactory.getLogger(LineageSpoolMaterializer.class);
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = ObjectMapperFactory.createDefaultObjectMapper();
 
     /** Per-fact outcome, tallied by the scanner. */
     public enum Outcome { ACKED, ALREADY_ACKED, UNRESOLVED, PARTIAL, FAILED }

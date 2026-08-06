@@ -1528,7 +1528,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     // Fallback to Jackson if OpenCMIS conversion fails
                     log.warn("TypeDefinition OpenCMIS conversion failed, using Jackson fallback: " + 
                         typeDefException.getMessage());
-                    com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    tools.jackson.databind.ObjectMapper objectMapper = new tools.jackson.databind.ObjectMapper();
                     String json = objectMapper.writeValueAsString(result);
                     writer.write(json);
                 }
@@ -1578,7 +1578,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 writer.write(jsonArray.toJSONString());
             } else {
                 // For other types, use Jackson as fallback but this should be rare
-                com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                tools.jackson.databind.ObjectMapper objectMapper = new tools.jackson.databind.ObjectMapper();
                 String json = objectMapper.writeValueAsString(result);
                 writer.write(json);
             }

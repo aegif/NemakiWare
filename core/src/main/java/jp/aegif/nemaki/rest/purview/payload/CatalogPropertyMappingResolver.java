@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rest.purview.payload;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
@@ -16,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Resolves which CMIS custom properties should be synced to catalog backends
@@ -35,7 +36,7 @@ public class CatalogPropertyMappingResolver {
     /** Legacy global key — detected on load, triggers warning, never written to. */
     static final String LEGACY_GLOBAL_KEY = "catalog.sync.propertyMappings";
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final ObjectMapper OBJECT_MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
 
     /**
      * The <em>input</em> half of {@link #rejectionFor}: CMIS properties that may never be

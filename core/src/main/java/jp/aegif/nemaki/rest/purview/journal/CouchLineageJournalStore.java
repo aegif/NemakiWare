@@ -1,6 +1,6 @@
 package jp.aegif.nemaki.rest.purview.journal;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.DatabaseInformation;
 import com.ibm.cloud.cloudant.v1.model.GetDatabaseInformationOptions;

@@ -82,7 +82,6 @@ import org.json.simple.parser.ParseException;
 import org.mindrot.jbcrypt.BCrypt;
 import jp.aegif.nemaki.util.spring.SpringContext;
 
-import com.fasterxml.jackson.core.JsonParser;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.annotation.Autowired;

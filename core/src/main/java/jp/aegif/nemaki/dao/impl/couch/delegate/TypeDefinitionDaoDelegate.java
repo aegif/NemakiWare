@@ -11,7 +11,7 @@ import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.model.ViewResult;
 import com.ibm.cloud.cloudant.v1.model.ViewResultRow;
 
@@ -435,8 +435,9 @@ public class TypeDefinitionDaoDelegate {
 			List<NemakiPropertyDefinitionDetail> details = new ArrayList<NemakiPropertyDefinitionDetail>();
 
 			if (result != null && result.getRows() != null) {
-				com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-				mapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+				tools.jackson.databind.ObjectMapper mapper = tools.jackson.databind.json.JsonMapper.builderWithJackson2Defaults()
+						.configure(tools.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+						.build();
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getDoc() != null) {
 						try {

@@ -21,23 +21,39 @@
  ******************************************************************************/
 package jp.aegif.nemaki.rest.provider;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
-
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+
+import org.springframework.stereotype.Component;
 
 import jakarta.ws.rs.ext.ContextResolver;
 import jakarta.ws.rs.ext.Provider;
 
 /**
- * Jersey JAX-RS provider for unified ObjectMapper configuration
- * 
- * This provider ensures that Jersey uses the same ObjectMapper configuration
- * as the rest of the Spring application, maintaining consistency across
- * all JSON serialization/deserialization operations.
- * 
- * The provider integrates with Spring's dependency injection to obtain
- * the configured ObjectMapper from JacksonConfig.
+ * The mapper Jersey uses for {@code /core/rest/*} — deliberately still Jackson 2.
+ *
+ * <h2>Why this file did not migrate</h2>
+ *
+ * <p>Jersey's JSON support ({@code JacksonFeature} → {@code DefaultJacksonJaxbJsonProvider})
+ * resolves the application's mapper with
+ * {@code getContextResolver(com.fasterxml.jackson.databind.ObjectMapper.class, …)}. A
+ * ContextResolver is matched by its generic type argument, so declaring
+ * {@code ContextResolver<tools.jackson.databind.ObjectMapper>} compiles, wires, and is then
+ * NEVER FOUND: Jersey silently falls back to its own stock Jackson 2 mapper and every
+ * {@code /core/rest/*} response quietly loses this profile — including
+ * {@code WRITE_NUMBERS_AS_STRINGS}, which is a wire contract for existing clients. The
+ * Jackson 2 type IS the interface here; migrating it is not a rename but an unplugging.
+ *
+ * <h2>Why the profile is duplicated rather than injected</h2>
+ *
+ * <p>The Spring {@code ObjectMapper} bean is Jackson 3 now, so there is nothing to inject.
+ * The settings below must mirror {@link jp.aegif.nemaki.config.ObjectMapperFactory}'s nemaki
+ * profile, and {@code JerseyBoundaryMapperParityTest} fails if the two ever disagree about
+ * what they emit — duplication that a test keeps honest, rather than duplication that drifts.
  */
 @Provider
 @Component
@@ -45,22 +61,25 @@ public class NemakiJacksonProvider implements ContextResolver<ObjectMapper> {
 
     private final ObjectMapper objectMapper;
 
-    /**
-     * Constructor with Spring dependency injection
-     * 
-     * @param objectMapper The primary ObjectMapper bean from JacksonConfig
-     */
-    @Autowired
-    public NemakiJacksonProvider(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+    public NemakiJacksonProvider() {
+        this.objectMapper = createJerseyObjectMapper();
     }
 
-    /**
-     * Provides the ObjectMapper instance for Jersey to use
-     * 
-     * @param type The class type being serialized/deserialized
-     * @return The configured ObjectMapper instance
-     */
+    /** The nemaki profile, expressed in Jackson 2 for the Jersey boundary. */
+    public static ObjectMapper createJerseyObjectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        mapper.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
+        mapper.setVisibility(mapper.getSerializationConfig().getDefaultVisibilityChecker()
+                .withFieldVisibility(JsonAutoDetect.Visibility.ANY)
+                .withGetterVisibility(JsonAutoDetect.Visibility.PUBLIC_ONLY)
+                .withSetterVisibility(JsonAutoDetect.Visibility.PUBLIC_ONLY)
+                .withIsGetterVisibility(JsonAutoDetect.Visibility.PUBLIC_ONLY));
+        mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        mapper.configure(JsonGenerator.Feature.WRITE_NUMBERS_AS_STRINGS, true);
+        return mapper;
+    }
+
     @Override
     public ObjectMapper getContext(Class<?> type) {
         return objectMapper;

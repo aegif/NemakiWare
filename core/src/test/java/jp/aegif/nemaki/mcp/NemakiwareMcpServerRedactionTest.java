@@ -28,7 +28,7 @@ class NemakiwareMcpServerRedactionTest {
     @Test
     void handleRequest_nonObjectParamsDoesNotThrow() {
         NemakiwareMcpServer server = new NemakiwareMcpServer(
-                null, null, null, new com.fasterxml.jackson.databind.ObjectMapper(),
+                null, null, null, new tools.jackson.databind.ObjectMapper(),
                 "bedroom", null);
         Map<String, Object> req = new LinkedHashMap<>();
         req.put("jsonrpc", "2.0");

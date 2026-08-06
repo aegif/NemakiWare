@@ -27,12 +27,13 @@ import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.Document;
 import com.ibm.cloud.cloudant.v1.model.GetDocumentOptions;
 import com.ibm.cloud.sdk.core.http.Response;
 import com.ibm.cloud.sdk.core.http.ServiceCall;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * A document read as a {@code Map} must carry {@code _id} and {@code _rev}.
@@ -63,7 +64,7 @@ public class CloudantClientWrapperGetIdTest {
         when(response.getResult()).thenReturn(doc);
         when(call.execute()).thenReturn(response);
         when(client.getDocument(any(GetDocumentOptions.class))).thenReturn(call);
-        return new CloudantClientWrapper(client, DB, new ObjectMapper());
+        return new CloudantClientWrapper(client, DB, ObjectMapperFactory.createDefaultObjectMapper());
     }
 
     private Document lineageEventDocument() {
@@ -188,14 +189,14 @@ public class CloudantClientWrapperGetIdTest {
                 org.mockito.ArgumentCaptor.forClass(com.ibm.cloud.cloudant.v1.model.PostDocumentOptions.class);
         when(client.postDocument(captor.capture())).thenReturn(postCall);
 
-        CloudantClientWrapper wrapper = new CloudantClientWrapper(client, DB, new ObjectMapper());
+        CloudantClientWrapper wrapper = new CloudantClientWrapper(client, DB, ObjectMapperFactory.createDefaultObjectMapper());
 
         Map<String, Object> doc = (Map<String, Object>) wrapper.get(Map.class, DOC_ID, null);
         doc.put("publishStatusByTarget", Map.of("atlas", "PROJECTING"));
         wrapper.update(doc);
 
         String written = new String(captor.getValue().body().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-        Map<String, Object> body = new ObjectMapper().readValue(written, Map.class);
+        Map<String, Object> body = ObjectMapperFactory.createDefaultObjectMapper().readValue(written, Map.class);
 
         assertEquals(Set.of("_id", "_rev", "type", "eventKey", "publishStatusByTarget"), body.keySet(),
                 "the request body must be the document, not the SDK's bean shape");

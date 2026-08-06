@@ -11,11 +11,12 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 import jp.aegif.nemaki.epoch.AclEpochState;
 import jp.aegif.nemaki.epoch.ContentIncarnation;
 import jp.aegif.nemaki.model.Document;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * §11.1 (increment 12 step 0): the ACL-epoch fields must survive the MODEL round-trip.
@@ -38,7 +39,7 @@ import jp.aegif.nemaki.model.Document;
  */
 public class CouchContentEpochRoundTripTest {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
 
     private static Map<String, Object> storedDoc(boolean withEpochFields, Object quarantineMarker,
             String incarnation) {

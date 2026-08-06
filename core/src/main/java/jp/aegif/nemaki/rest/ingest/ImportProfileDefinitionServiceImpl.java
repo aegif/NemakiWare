@@ -1,6 +1,6 @@
 package jp.aegif.nemaki.rest.ingest;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.model.Document;
 import com.ibm.cloud.cloudant.v1.model.DocumentResult;
 import com.ibm.cloud.cloudant.v1.model.FindResult;
@@ -17,11 +17,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 public class ImportProfileDefinitionServiceImpl implements ImportProfileDefinitionService {
 
     private static final Logger logger = LoggerFactory.getLogger(ImportProfileDefinitionServiceImpl.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
 
     private CloudantClientPool connectorPool;
     private ConnectorDefinitionService connectorDefinitionService;

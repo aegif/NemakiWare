@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rest.ingest.fileshare;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -13,6 +13,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Dropbox API connector adapter — lists files and downloads content.
@@ -25,7 +26,7 @@ public class DropboxConnectorAdapter {
     private static final Logger logger = LoggerFactory.getLogger(DropboxConnectorAdapter.class);
     private static final String DROPBOX_API = "https://api.dropboxapi.com/2";
     private static final String DROPBOX_CONTENT = "https://content.dropboxapi.com/2";
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
 
     private final String accessToken;
     private final HttpClient httpClient;

@@ -30,8 +30,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.Attachment;
 import com.ibm.cloud.cloudant.v1.model.DeleteDatabaseOptions;
@@ -51,6 +51,7 @@ import jp.aegif.nemaki.epoch.AclEpochFinalizationService.FinalizeOutcome;
 import jp.aegif.nemaki.epoch.AclEpochFinalizationService.FinalizeResult;
 import jp.aegif.nemaki.epoch.AclEpochFinalizationService.ScanSummary;
 import jp.aegif.nemaki.util.constant.SystemConst;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Integration tests for {@link AclEpochFinalizationService} against a LIVE CouchDB. Each
@@ -120,7 +121,7 @@ public class AclEpochFinalizationServiceIT {
                 .name("idx_aclEpochMutationId").type(PostIndexOptions.Type.JSON).ddoc("acl-epoch-indexes")
                 .build()).execute();
 
-        ObjectMapper om = new ObjectMapper();
+        ObjectMapper om = ObjectMapperFactory.createDefaultObjectMapper();
         CloudantClientWrapper confWrapper = new CloudantClientWrapper(cloudant, SystemConst.NEMAKI_CONF_DB, om);
         CloudantClientWrapper contentWrapper = new CloudantClientWrapper(cloudant, contentDb, om);
         pool = mock(CloudantClientPool.class);
@@ -589,7 +590,7 @@ public class AclEpochFinalizationServiceIT {
 
     private void assertIndexServed(Map<String, Object> selector, String label, String expectedIndex)
             throws Exception {
-        ObjectMapper om = new ObjectMapper();
+        ObjectMapper om = ObjectMapperFactory.createDefaultObjectMapper();
         String body = om.writeValueAsString(Map.of("selector", selector));
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/" + contentDb + "/_explain"))
@@ -1774,7 +1775,7 @@ public class AclEpochFinalizationServiceIT {
     private void recreateAclEpochStateIndex() throws Exception {
         HttpResponse<String> g = rawRequest("GET", "/_design/acl-epoch-indexes", null);
         if (g.statusCode() == 200) {
-            String rev = new ObjectMapper().readTree(g.body()).path("_rev").asText();
+            String rev = ObjectMapperFactory.createDefaultObjectMapper().readTree(g.body()).path("_rev").asText();
             rawRequest("DELETE", "/_design/acl-epoch-indexes?rev=" + rev, null);
         }
         cloudant.postIndex(new PostIndexOptions.Builder()

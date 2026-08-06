@@ -36,12 +36,13 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 import jp.aegif.nemaki.model.Aspect;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.rest.purview.payload.PurviewEntityPayloadFactory;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * §6-a's live-Atlas release gates E-19 and E-20, executable.
@@ -84,7 +85,7 @@ public class PurviewLiveAtlasSecretsIT {
                     + "?authkey=" + QUERY_TOKEN;
 
     private static final String DOCUMENT_TYPE = "nemaki_document";
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = ObjectMapperFactory.createDefaultObjectMapper();
 
     private static String atlasUrl;
     private static String authorization;

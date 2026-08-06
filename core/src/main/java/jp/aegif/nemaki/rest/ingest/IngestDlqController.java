@@ -1,6 +1,6 @@
 package jp.aegif.nemaki.rest.ingest;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Admin REST API for ingest job history and dead-letter queue management.
@@ -20,7 +21,7 @@ import java.util.Map;
 @RequestMapping("/v1/admin/ingest")
 public class IngestDlqController {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
 
     @Autowired
     private IngestJobService ingestJobService;

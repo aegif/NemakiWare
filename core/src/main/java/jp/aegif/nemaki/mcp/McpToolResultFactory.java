@@ -7,8 +7,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Factory for creating MCP tool results.
@@ -43,7 +43,7 @@ public class McpToolResultFactory {
             Map<String, String> errorObj = Map.of("error", errorMessage != null ? errorMessage : "Unknown error");
             String json = objectMapper.writeValueAsString(errorObj);
             return new McpToolResult(false, json, true);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Failed to serialize error message, using fallback: {}", e.getMessage());
             return new McpToolResult(false, "{\"error\": \"Internal error\"}", true);
         }
