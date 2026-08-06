@@ -56,12 +56,24 @@ public class LineageSequencerAdminService {
     }
 
     public SequencerRunOutcome run(String repositoryId) {
+        return run(repositoryId, "admin");
+    }
+
+    /**
+     * One fenced sequencer pass, labelled by whoever drove it.
+     *
+     * <p>The label becomes the lease owner, so an operator reading
+     * {@code /sequencer/{repo}} can tell a scheduled pass from one they triggered by hand.
+     *
+     * @param driverLabel short identifier for the caller, e.g. {@code admin} or {@code loop}
+     */
+    public SequencerRunOutcome run(String repositoryId, String driverLabel) {
         LineageDrestReadiness.Readiness verdict = readiness.evaluate();
         if (!verdict.ready()) {
             return new SequencerRunOutcome(false, verdict.violations(), null);
         }
         LineageSequencingStore store = (LineageSequencingStore) journalStore;
-        String nodeId = "admin-" + java.util.UUID.randomUUID();
+        String nodeId = driverLabel + "-" + java.util.UUID.randomUUID();
         LineageFencedSequencer sequencer = new LineageFencedSequencer(store, lineageMetrics,
                 nodeId,
                 java.time.Duration.ofSeconds(lineageConfig.getSequencerLeaseSeconds()),

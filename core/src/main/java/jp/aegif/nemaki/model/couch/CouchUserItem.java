@@ -52,9 +52,6 @@ public class CouchUserItem extends CouchItem{
 	@JsonSetter(nulls = Nulls.SET)
 	private Boolean admin = false;
 	
-	// Cloudant SDK Documentオブジェクトの動的プロパティを処理
-	private Map<String, Object> additionalProperties = new HashMap<>();
-	
 	public CouchUserItem(){
 		super();
 	}
@@ -128,8 +125,10 @@ public class CouchUserItem extends CouchItem{
 				}
 			}
 
-			// その他のプロパティを保存
-			this.additionalProperties.putAll(properties);
+			// EXTRA properties only, through the base class — this class used to keep a
+			// SECOND, unfiltered map that shadowed the inherited one, so every typed field
+			// was echoed back out on serialization.
+			retainExtraProperties(properties);
 		}
 	}
 	
@@ -140,16 +139,6 @@ public class CouchUserItem extends CouchItem{
 		setAdmin(userItem.isAdmin());
 	}
 	
-	// 動的プロパティを処理するためのメソッド
-	@JsonAnySetter
-	public void setAdditionalProperty(String name, Object value) {
-		this.additionalProperties.put(name, value);
-	}
-	
-	public Map<String, Object> getAdditionalProperties() {
-		return this.additionalProperties;
-	}
-
 	public String getUserId() {
 		return userId;
 	}

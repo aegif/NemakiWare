@@ -59,6 +59,9 @@ public class LineageProjectionLoop {
     private LineageDrestReadiness drestReadiness;
 
     @Autowired(required = false)
+    private LineageSequencerAdminService sequencerAdmin;
+
+    @Autowired(required = false)
     private LineageReplayService replayService;
 
     @Autowired(required = false)
@@ -143,6 +146,18 @@ public class LineageProjectionLoop {
                 pollInterval,
                 TimeUnit.SECONDS);
 
+        // Sequencer passes. Same omission as the obligation scanner above, one stage earlier:
+        // a v2 fact is APPENDED unsequenced, and the projector only ever looks at SEQUENCED
+        // rows — so with nothing finalizing them the whole v2 pipeline sits still while the
+        // journal fills up. Found live: 46 events stuck at UNSEQUENCED with sequenceNumber 0
+        // on an otherwise green node (readiness green, reader ADMITTED, spool acking), because
+        // the only caller of the sequencer was the operator endpoint.
+        scheduler.scheduleWithFixedDelay(
+                this::runSequencerPass,
+                pollInterval,
+                pollInterval,
+                TimeUnit.SECONDS);
+
         logger.info("Lineage projection loop initialized (pollInterval={}s)", pollInterval);
     }
 
@@ -174,6 +189,59 @@ public class LineageProjectionLoop {
             // Class name only: an obligation failure can echo catalog identities.
             logger.warn("Obligation pass failed: {}", e.getClass().getSimpleName());
         }
+    }
+
+    /**
+     * One sequencer pass per repository with unsequenced work, under the projection guards.
+     *
+     * <p>Gated exactly like projection because finalizing a sequence number is DB-global: a
+     * refused reader must not assign one, and a non-leader must not race the leader for the
+     * lease. Readiness is the service's own (it refuses under a red D-rest gate), so this is
+     * inert on a node that is not ready rather than conditional here.
+     */
+    void runSequencerPass() {
+        try {
+            if (sequencerAdmin == null || !(journalStore instanceof LineageV2TransitionStore v2store)) {
+                return;
+            }
+            LineageReaderAdmission.Admission admission = readerAdmission == null
+                    ? null : readerAdmission.evaluate();
+            if (admission != null
+                    && admission.decision() != LineageReaderAdmission.Decision.ADMITTED) {
+                return;
+            }
+            if (leaderElection != null && leaderElection.isEnabled()
+                    && !leaderElection.isLeader("projection")) {
+                return;
+            }
+            for (String repositoryId : sequencerRepositories(v2store)) {
+                LineageSequencerAdminService.SequencerRunOutcome outcome =
+                        sequencerAdmin.run(repositoryId, "loop");
+                if (outcome != null && outcome.ran() && outcome.summary() != null
+                        && outcome.summary().finalized() > 0) {
+                    logger.info("Sequencer pass for '{}': finalized={} backlog={}",
+                            repositoryId, outcome.summary().finalized(),
+                            outcome.summary().backlog());
+                }
+            }
+        } catch (Exception e) {
+            // Class name only: a sequencing failure can echo catalog identities.
+            logger.warn("Sequencer pass failed: {}", e.getClass().getSimpleName());
+        }
+    }
+
+    /** Repositories that may hold unsequenced rows, discovered per configured target. */
+    private Set<String> sequencerRepositories(LineageV2TransitionStore v2store) {
+        Set<String> repositoryIds = new LinkedHashSet<>();
+        for (LineageTargetSink sink : (targetSinks == null ? List.<LineageTargetSink>of() : targetSinks)) {
+            try {
+                repositoryIds.addAll(v2store.findV2NonTerminalRepositoryIds(sink.targetName()));
+            } catch (Exception e) {
+                logger.warn("Sequencer repository discovery failed for '{}': {}",
+                        sink.targetName(), e.getClass().getSimpleName());
+            }
+        }
+        return repositoryIds;
     }
 
     /**
