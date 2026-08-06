@@ -146,6 +146,20 @@ public class ArchiveResource extends ResourceBase {
 		return null;
 	}
 
+	/** The archive page size when the caller names none. */
+	static final int DEFAULT_INDEX_LIMIT = 100;
+
+	/**
+	 * The limit actually applied: the caller's positive choice, or the bounded default.
+	 *
+	 * <p>Zero and negative values count as "none named" rather than "everything" — the
+	 * unbounded read stops being an accident a client can back into and becomes something
+	 * spelled out with skip/limit paging against {@code totalItems}.
+	 */
+	static int effectiveLimit(Integer requested) {
+		return (requested != null && requested > 0) ? requested : DEFAULT_INDEX_LIMIT;
+	}
+
 	@SuppressWarnings("unchecked")
 	@GET
 	@Path("/index")
@@ -175,10 +189,15 @@ public class ArchiveResource extends ResourceBase {
 			if (adminUser) {
 				// DB-level pagination via archivesByArchivedAt view:
 				// CouchDB handles skip/limit/descending natively.
-				// When limit is not provided (0), CouchDB returns all rows — this
-				// preserves backward compatibility for clients that don't paginate.
+				//
+				// The default is BOUNDED. "No limit means all rows" looked like harmless
+				// backward compatibility until an environment with 68,606 accumulated
+				// archives turned the bare call into a 29.5MB / 19-second response — an
+				// unbounded default is a landmine armed by data growth. Explicit limits are
+				// honoured as given; a caller that truly wants everything pages with
+				// skip/limit and totalItems (already in the response) says when to stop.
 				int s = (skip != null && skip > 0) ? skip : 0;
-				int l = (limit != null && limit > 0) ? limit : 0;
+				int l = effectiveLimit(limit);
 				long totalItems = getContentService().getSearchableArchivesCount(repositoryId);
 				List<Archive> archives = getContentService().getSearchableArchivesPaged(
 						repositoryId, s, l, descending);
@@ -248,10 +267,15 @@ public class ArchiveResource extends ResourceBase {
 					return descending ? -cmp : cmp;
 				});
 
-				// Apply pagination after filter + sort
+				// Apply pagination after filter + sort. The RESPONSE is bounded by the same
+				// default as the admin branch — an unbounded default is the same landmine one
+				// privilege level down. What stays unbounded here is the in-memory LOAD of the
+				// user's own archives (the two views are merged and deduped before paging);
+				// bounding that needs the combined (user, archivedAt) view the comment above
+				// describes, which is a follow-up, not this fix.
 				int totalFiltered = filtered.size();
 				int s = (skip != null && skip > 0) ? skip : 0;
-				int l = (limit != null && limit > 0) ? limit : totalFiltered;
+				int l = effectiveLimit(limit);
 				int end = Math.min(s + l, totalFiltered);
 				if (s < totalFiltered) {
 					filtered = filtered.subList(s, end);

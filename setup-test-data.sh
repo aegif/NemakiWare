@@ -1126,10 +1126,12 @@ curl -s -u "$AUTH" -X POST \
 echo "  削除完了"
 
 sleep 1
+# totalItems, not len(archives): the index response is bounded (default limit 100),
+# so counting the returned page would silently misreport large sets.
 ARCHIVE_COUNT=$(curl -s -u "$AUTH" "http://localhost:8080/core/rest/repo/bedroom/archive/index" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
-print(len(d.get('archives', [])))
+print(d.get('totalItems', len(d.get('archives', []))))
 " 2>/dev/null)
 echo "  アーカイブ件数: $ARCHIVE_COUNT"
 green "アーカイブテスト完了"
@@ -1239,7 +1241,8 @@ curl -s -u "$AUTH" "http://localhost:8080/core/rest/repo/bedroom/archive/index" 
 import sys, json
 d = json.load(sys.stdin)
 archives = d.get('archives', [])
-print(f'アーカイブ: {len(archives)}件')
+total = d.get('totalItems', len(archives))
+print(f'アーカイブ: {total}件 (表示は先頭{len(archives)}件)')
 for a in archives:
     print(f'  [archive] {a[\"name\"]} (元パス: {a[\"path\"]})')
 " 2>/dev/null

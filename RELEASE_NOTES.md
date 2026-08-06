@@ -7,6 +7,29 @@ only repository gotchas.
 
 ---
 
+## 3.3.0 追補 — 起動ごとの型定義リーク修正とアーカイブ一覧の有界化 (2026-08-06)
+
+### 起動ごとに propertyDefinitionDetail が漏れていた
+
+システム CMIS プロパティの初期化が存在確認なしに毎起動 detail 文書を作成しており、
+起動を重ねた環境では リポジトリあたり数千件の孤児文書が蓄積、型一覧 API
+(`/rest/repo/{repo}/type/list`) が数秒単位まで劣化していました。初期化は冪等になり、
+不足分だけを一度作成します (リポジトリごとに view 読取 2 回)。蓄積済みの環境は
+アップグレード後もそのまま動きますが、孤児の掃除は型一覧の応答時間を回復させます。
+
+注意: これらの standalone detail は稼働中の型キャッシュ再構築が参照します。
+手動で削除した場合は core の再起動 (初期化が不足分を再作成) まで型プロパティ検査が
+不完全になることがあります。
+
+### `/rest/repo/{repo}/archive/index` の既定応答が有界に
+
+limit 未指定の呼び出しは従来**全件**を返していました (蓄積環境で数十 MB・数十秒に達し、
+実際に QA を停止させた実測あり)。既定は新しい順 100 件になり、`totalItems` で総数を
+判定できます。明示的な limit はこれまでどおり尊重されます。全件が必要なクライアントは
+skip/limit でページングしてください。管理 UI は元からページングしており影響ありません。
+
+---
+
 ## 3.3.0 — Breaking-major dependency uplift + native ARM64 stack + OData repair (2026-07-22)
 
 ### Persistent-format addition (content documents + Solr schema)
