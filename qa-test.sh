@@ -141,6 +141,15 @@ run_http_test "CMIS AtomPub (Bedroom)" "http://localhost:8080/core/atom/bedroom"
 run_http_test "CMIS AtomPub (Canopy)" "http://localhost:8080/core/atom/canopy" "200" "admin:admin"
 run_http_test "CMIS Web Services" "http://localhost:8080/core/services" "200"  # Jakarta EE 11 compatible
 
+# The Jersey JSON provider must still be OUR mapper. Jersey resolves it as
+# ContextResolver<com.fasterxml...ObjectMapper> and matches on the generic type, so a
+# provider declared with the wrong ObjectMapper type is never found — it wires, logs
+# nothing, and Jersey quietly serves every /core/rest/* response with its own stock
+# mapper instead. WRITE_NUMBERS_AS_STRINGS is unique to our profile, so a quoted number
+# here is the one cheap end-to-end proof that the resolver is still plugged in.
+QA_OID=$(curl -s -u admin:admin "http://localhost:8080/core/browser/bedroom/root?cmisselector=children&maxItems=1" 2>/dev/null | jq -r '.objects[0].object.properties."cmis:objectId".value' 2>/dev/null)
+run_test "Jersey ContextResolver active (numbers as strings)" "curl -s -u admin:admin 'http://localhost:8080/core/rest/repo/bedroom/renditions/$QA_OID' | jq -r '.count | type'" "string"
+
 echo
 echo "=== 5. CMIS BROWSER BINDING TESTS ==="
 run_test "Browser Binding Children Query" "curl -s -u admin:admin 'http://localhost:8080/core/browser/bedroom/root?cmisselector=children' | jq -r '.objects | length'" ""

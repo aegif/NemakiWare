@@ -8,7 +8,7 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.model.Document;
 
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;

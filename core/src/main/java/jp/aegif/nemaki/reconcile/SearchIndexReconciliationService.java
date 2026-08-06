@@ -1,6 +1,6 @@
 package jp.aegif.nemaki.reconcile;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions;
 import com.ibm.cloud.cloudant.v1.model.Document;
@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * CouchDB-backed durable queue for {@link SearchIndexAclReindexTask}, redesigned
@@ -54,7 +55,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class SearchIndexReconciliationService {
 
     private static final Logger logger = LoggerFactory.getLogger(SearchIndexReconciliationService.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
     /**
      * A stored task whose epoch obligation is CORRUPT (increment 7a). Deliberately its own type so
      * {@link #toTask}'s catch-all cannot swallow it into a phantom "no such task".

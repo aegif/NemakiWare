@@ -29,7 +29,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.DeleteDatabaseOptions;
 import com.ibm.cloud.cloudant.v1.model.Document;
@@ -46,6 +46,7 @@ import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import jp.aegif.nemaki.epoch.AclEpochIndexWriter.WriteOutcome;
 import jp.aegif.nemaki.epoch.AclEpochIndexWriter.WriteResult;
 import jp.aegif.nemaki.util.constant.SystemConst;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Deterministic concurrency tests for {@link AclEpochIndexWriter} against a LIVE CouchDB AND a LIVE
@@ -162,7 +163,7 @@ public class AclEpochIndexWriterIT {
         contentDb = "epoch-writer-it-" + UUID.randomUUID();
         cloudant.putDatabase(new PutDatabaseOptions.Builder().db(contentDb).build()).execute();
 
-        CloudantClientWrapper wrapper = new CloudantClientWrapper(cloudant, contentDb, new ObjectMapper());
+        CloudantClientWrapper wrapper = new CloudantClientWrapper(cloudant, contentDb, ObjectMapperFactory.createDefaultObjectMapper());
         CloudantClientPool pool = mock(CloudantClientPool.class);
         lenient().when(pool.getClient(contentDb)).thenReturn(wrapper);
 

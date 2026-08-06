@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rest.ingest.record;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Salesforce REST API connector adapter — fetches records and attachments.
@@ -24,7 +25,7 @@ public class SalesforceConnectorAdapter {
 
     private static final Logger logger = LoggerFactory.getLogger(SalesforceConnectorAdapter.class);
     private static final String API_VERSION = "v59.0";
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
 
     private final String instanceUrl;
     private final String accessToken;
@@ -74,7 +75,7 @@ public class SalesforceConnectorAdapter {
             String type = rec.path("attributes").path("type").asText();
             String name = rec.has("Name") ? rec.path("Name").asText() : id;
             Map<String, Object> fields = new LinkedHashMap<>();
-            rec.fields().forEachRemaining(f -> {
+            rec.properties().forEach(f -> {
                 if (!"attributes".equals(f.getKey())) {
                     fields.put(f.getKey(), f.getValue().isTextual() ? f.getValue().asText() : f.getValue().toString());
                 }
@@ -93,7 +94,7 @@ public class SalesforceConnectorAdapter {
         JsonNode rec = MAPPER.readTree(response.body());
         String name = rec.has("Name") ? rec.path("Name").asText() : recordId;
         Map<String, Object> fields = new LinkedHashMap<>();
-        rec.fields().forEachRemaining(f -> {
+        rec.properties().forEach(f -> {
             if (!"attributes".equals(f.getKey())) {
                 fields.put(f.getKey(), f.getValue().isTextual() ? f.getValue().asText() : f.getValue().toString());
             }

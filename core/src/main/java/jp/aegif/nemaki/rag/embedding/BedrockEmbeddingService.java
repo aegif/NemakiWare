@@ -13,10 +13,10 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import jp.aegif.nemaki.rag.config.RAGConfig;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -28,6 +28,7 @@ import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClientBuilder;
 import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelRequest;
 import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelResponse;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Amazon Bedrock implementation of EmbeddingService.
@@ -56,7 +57,7 @@ public class BedrockEmbeddingService implements EmbeddingService {
     @Autowired
     public BedrockEmbeddingService(RAGConfig ragConfig) {
         this.ragConfig = ragConfig;
-        this.objectMapper = new ObjectMapper();
+        this.objectMapper = ObjectMapperFactory.createDefaultObjectMapper();
     }
 
     @PreDestroy
@@ -186,7 +187,7 @@ public class BedrockEmbeddingService implements EmbeddingService {
         } catch (EmbeddingException e) {
             // Re-throw EmbeddingException from parseEmbeddingResponse() as-is
             throw e;
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new EmbeddingException("Failed to serialize Bedrock request", e);
         } catch (Exception e) {
             throw EmbeddingException.connectionError("Bedrock embedding request failed", e);
@@ -213,7 +214,7 @@ public class BedrockEmbeddingService implements EmbeddingService {
             }
 
             return embedding;
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new EmbeddingException("Failed to parse Bedrock response: " + responseBody, e);
         }
     }

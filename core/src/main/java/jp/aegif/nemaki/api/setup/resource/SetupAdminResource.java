@@ -11,9 +11,9 @@ import java.util.logging.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
@@ -24,6 +24,7 @@ import jakarta.ws.rs.core.Response;
 
 import jp.aegif.nemaki.api.setup.model.AdminSetupRequest;
 import jp.aegif.nemaki.init.StartupProbeService;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Admin account setup endpoints.
@@ -35,7 +36,7 @@ import jp.aegif.nemaki.init.StartupProbeService;
 public class SetupAdminResource {
 
     private static final Logger logger = Logger.getLogger(SetupAdminResource.class.getName());
-    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
 
     @Autowired(required = false)
     private StartupProbeService startupProbeService;
@@ -132,7 +133,7 @@ public class SetupAdminResource {
                 return false;
             }
 
-            ObjectNode mutable = adminDoc.deepCopy();
+            ObjectNode mutable = (ObjectNode) adminDoc.deepCopy();
             mutable.put("passwordHash", bcryptHash);
 
             URL url = new URL(dbUrl + "/" + adminDocId);

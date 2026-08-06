@@ -50,13 +50,45 @@ jakarta 移行漏れゼロ、`RestTemplate` 使用ゼロ)。
 | A-5 | HK2 4.0.0 GA 追従 | Jersey 4.0.x が GA の HK2 を取り込んだ版を出したら追従。watch 項目 | 待ち |
 | A-6 | 化石フラグ掃除 | docker/core/Dockerfile の `-Dlog4j.configuration` (log4j 1.x 様式。実体は Logback で無効・無害) を削除 | 極小 |
 
+### 2.1 実施結果 (2026-08-06)
+
+**A-1 完了 — ただし当初案の rule では検出できないことが判明した。**
+計画は `dependencyConvergence` を org.springframework に限定する案だったが、これは
+**この事故を検出できない**。convergence が見るのは「同一 artifact が複数版に分岐したか」で
+あり、spring-tx が単独で 7.0.4 に居座る (他モジュールは 7.0.8) 状態は、各 artifact が
+それぞれ単一版に収束しているため **PASS してしまう** — 実際に rule を入れて確認済み。
+採用したのは `bannedDependencies` で「org.springframework:* を全面禁止し、
+`${org.springframework.version}` のみ許可」する形。spring-tx を 7.0.4 に戻す負のテストで
+落ちること、戻せば通ることの両方を実測した (core/pom.xml)。
+
+**A-2 記録** — Spring 7 の挙動変更 (PathPattern 経路解釈・HttpHeaders・null-safety) は
+本ブランチのフルスイート green を回帰の根拠とする。削除 API の使用ゼロは棚卸し済み。
+
+**A-3 決定 — JSpecify は v3.3 では導入しない。** 既存コードへの一括アノテーションは
+レビュー不能な差分になり、Jackson 移行と同一リリースに載せると原因切り分けが壊れる。
+新規コードから漸進する。
+
+**A-4 決定 — Spring の @Retryable は採用しない。** 既存 retry (PurviewHttpRetryHandler 等)
+は budget 契約 (`worstCaseBackoffTotalMs`) と結合しており、fenced critical section の
+予算計算がフレームワーク側の裁量に移ると budget が読めなくなる。
+
+**A-6 完了 — 1 箇所ではなく 6 箇所あった。** 依存に存在するのは log4j-api 2.24.3 のみ
+(実装 log4j-core も log4j 1.x も無し)、`log4j.properties` の中身は 1.x 構文
+(`log4j.rootLogger=`)、実際のログは Logback (logback.xml) — つまりこのフラグを読む主体は
+classpath 上に存在しない。Dockerfile / Dockerfile.simple と compose 4 本
+(auth-test / ldap / prod / simple) の JVM opts から削除した。1 箇所だけ消して 5 箇所
+残すのは、掃除としてはむしろ状態が悪い。`COPY log4j.properties` と
+nemakiware-*.properties 内の同名エントリは無害な残骸として残置 (削除は別件)。
+
 ## 3. Part B — Jackson 2 → 3 移行 (v3.4 主題の提案)
 
 ### 3.1 事実関係
 
 - Jackson 3 は groupId/namespace が `tools.jackson` に変わる。**annotations は
-  `com.fasterxml.jackson.annotation` のまま** (jackson-annotations 3 系も同パッケージ) —
-  つまり **annotation しか使わないコードは無変更**。
+  `com.fasterxml.jackson.annotation` のまま**。正確には「3 系の同名パッケージ」ではなく、
+  **Jackson 3 の BOM 自身が `com.fasterxml.jackson.core:jackson-annotations` 2.22 を
+  pin している** — annotation 名前空間は設計として 2 系と共有される。
+  つまり **annotation しか使わないコードは無変更** (実測 69 ファイル)。
 - 2 系と 3 系は**classpath 共存可能** (名前空間が違うため)。段階移行が成立する。
 - Spring Framework 7 は Jackson 3 を一級サポートし Jackson 2 統合を deprecated にした。
   削除は 7.x の将来版以降。
@@ -87,6 +119,130 @@ Jackson 2 系を要求する。これらが 3 対応するまで 2 系 jar は W
 | B-2 自コード移行 | 72 ファイルの `com.fasterxml.jackson.(databind\|core\|…)` → `tools.jackson`、ObjectMapper → JsonMapper。Spring MVC converter を Jackson 3 系へ。B-1 の golden を 3 系で再実行 | full suite + golden green |
 | B-3 縮退 | 2 系への直接依存を pom から排除し、enforcer で直接依存を禁止 (推移のみ許容)。WAR 内 2 系 jar は推移由来のみに | enforcer green |
 | B-4 検証 | full suite + TCK + QA + Playwright + 実 CouchDB/Atlas IT。4b barrier 環境での lineage end-to-end 再走 | all green |
+
+### 3.6 実施結果 (2026-08-06)
+
+**B-0/B-1/B-2/B-3 完了。** 実測で計画から動いた点だけ記す。
+
+- **Jackson 3 は 3.2.1**。API 差分は javap で実物を確認して移行した (推測で書かない)。
+  効いたのは `JsonMapper.builderWithJackson2Defaults()` — Jackson 2 互換プロファイルを
+  builder の出発点にできるため、byte 互換の要が「設定を書き写す」ではなく
+  「2 系の既定を引き継いで差分だけ書く」形になる。
+- **mapper は不変化した** (`setVisibility` 等の mutator が消滅)。これを機に、歴史的に
+  二重定義されていた `ObjectMapperFactory` と `JacksonConfig` を、前者に一本化して
+  後者は薄い委譲にした。設定 drift の口を塞ぐのが目的 (§3.5 の三点目)。
+- **移動した API の実測**: `JsonParseException` → `tools.jackson.core.exc.StreamReadException`
+  (`.exc` パッケージ)、`TextNode` → `StringNode`、`JsonNode.fields()/fieldNames()` →
+  `properties()/propertyNames()` (戻りが Iterator から Collection/Set へ)、
+  `deepCopy()` の戻りが `JsonNode` (ObjectNode 代入は cast)、
+  `SerializationFeature.WRITE_DATES_AS_TIMESTAMPS` → `cfg.DateTimeFeature` へ移動、
+  `JsonParser.Feature.STRICT_DUPLICATE_DETECTION` → `StreamReadFeature`、
+  `MapperFeature.USE_STD_BEAN_NAMING` は**削除** (std naming が常時有効)。
+- **例外が unchecked 化した副作用**: `catch (IOException)` が「本体でスローされない」
+  コンパイルエラーになる箇所が 9 つ出た (Purview client 群ほか)。機械的な import 置換では
+  出ず、コンパイラが拾う類のもの。`tools.jackson.core.JacksonException` に置換した。
+- **B-3 は pom では実現できない。** 計画は「2 系への直接依存を pom から排除」だったが、
+  jackson-core/databind 2.x は Cloudant SDK・SolrJ・CXF・Jersey provider のために
+  **正当に宣言されている**。したがって「pom に無いこと」では表現できず、
+  `JacksonMigrationBoundaryTest` で**ソースレベル**の境界を pin した:
+  `com.fasterxml.jackson.(databind|core|dataformat)` を参照してよいのは宣言済みの
+  境界ファイルのみ (Jersey の `ContextResolver<com.fasterxml…ObjectMapper>` 2 本 —
+  Jackson 2 型そのものが契約 — と Yubico POJO を読む WebAuthnResource)。
+  新しい直接参照はテスト失敗になる。
+### 3.7 golden が掘り当てた本質的な事実 — 「byte 一致」は JVM の保証を超えていた
+
+B-1 の golden は生 byte を比較していた。**単独では通り、フルスイート内では落ちた。**
+原因は Jackson ではなく JVM だった:
+
+- HotSpot はクラスのメソッド配列を**メソッド名 Symbol のアドレス順**で保持し、Symbol は
+  プロセス全体でロード順に intern される。したがって `isFolder()` を宣言する任意のクラスが
+  `CouchNodeBase` より先にロードされると、`getDeclaredMethods()` は `isFolder` を
+  `isDocument` より前に返す。**実証済み** — その順序はスイートで観測された並び替え
+  (`document/folder` と `content/attachment` の対の入れ替わり) を正確に再現する。
+- Jackson はアクセサ由来プロパティの順序をこの反射順から導く。**2 系でも 3 系でも同じ。**
+
+つまり「兄弟キーの並び」は JVM が保証しておらず、本製品が持っていたこともない。
+生 byte で固定することは、Jackson の挙動ではなくクラスロード履歴を固定することであり、
+テストは中身と無関係に落ちる。golden は次の形に改めた:
+
+- **Map 由来の文書 (lineage 形状) は byte 厳密**。順序は LinkedHashMap の挿入順で決定的。
+- **POJO 由来は「path = 値」の多重集合で厳密比較**。キー集合・値・**符号化**
+  (数値の文字列化 / 数値、日付表現、null 包含)・入れ子・**重複キーの個数**まで見る。
+  落とすのは兄弟の並びだけ。
+- Jackson 自身の順序判断である `SORT_PROPERTIES_ALPHABETICALLY`
+  (3 系が既定を ON に反転した。enum のバイトコードで確認) は**直接 assert** する。
+- 加えて、rewrite quirk の**安全条件**を明示的に assert する:
+  重複キーは同じ値を持つ (だから last-wins が無害)。これは byte 順の assert では
+  決して見えなかった性質で、旧版より強い。
+
+**byte 互換の結論**: 内容・値・符号化・往復形状は 2 系と同一。並びのみ JVM 依存であり、
+それは移行前から同じだった。
+
+### 3.8 副作用 — Spring MVC の JSON コンバータが自動的に 3 系へ切り替わる
+
+Spring 7 の `DefaultHttpMessageConverters` は `tools.jackson.databind.ObjectMapper` の
+存在を検出すると `JacksonJsonHttpMessageConverter` (3 系) を優先する。既定 mapper は
+`JsonMapper.builder()` — つまり **Jackson 3 素の既定**であり、
+`builderWithJackson2Defaults()` ではない。したがって classpath に 3 系を載せた時点で
+`/core/api/...` (Spring MVC 側) の応答が変わりうる。実応答を移行前後で採取して差分を取った:
+
+| 観点 | 結果 |
+|---|---|
+| 日付表現 | **不変** (ISO-8601)。3 系の `WRITE_DATES_AS_TIMESTAMPS` 既定は false で、Spring の 2 系コンバータも元々無効化していた |
+| 値・型 | **不変** |
+| Map ベースの応答 (users / groups) | **完全一致** |
+| POJO ベースの応答 (connectors / import-profiles) | **プロパティ順がアルファベット順に変化** |
+
+**判断: 受け入れる。** 従来の並びは §3.7 のとおり JVM のクラスロード順依存で、
+起動ごとに変わりうるものだった。アルファベット順は決定的であり、
+JSON オブジェクトのキー順に意味はない。RELEASE_NOTES に明記した。
+固定したい場合は `builderWithJackson2Defaults()` で組んだコンバータを
+`spring-mvc-context.xml` に明示登録すればよい (今回は採らない)。
+
+Jersey 側 (`/core/rest/...`, `/core/api/v1/cmis/...`) は
+`ContextResolver<com.fasterxml…ObjectMapper>` 契約のため 2 系のままで、影響なし。
+
+### 3.9 レビューが掘り当てた欠陥 (自己レビュー, 2026-08-06)
+
+移行差分を敵対的にレビューして 3 件の実欠陥が出た。いずれも**コンパイルが通り、
+フルスイート 4,768 件が green のまま**成立していた種類のもので、記録に値する。
+
+**(1) CRITICAL — Jersey の ContextResolver を移行して黙って引き抜いていた。**
+`NemakiJacksonProvider` を `ContextResolver<tools.jackson…ObjectMapper>` に書き換えていた。
+Jersey は `getContextResolver(com.fasterxml…ObjectMapper.class, …)` で**総称型引数によって**
+解決するため、これは「型名の変更」ではなく「**発見されなくなる**」ことを意味する。
+Spring は @Component として注入し、例外もログも出ず、Jersey は自前の素の Jackson 2 mapper に
+フォールバックする。結果、`/core/rest/*` の全応答が nemaki プロファイルを失い、
+とりわけ `WRITE_NUMBERS_AS_STRINGS`(既存クライアントとの**ワイヤ契約**)が消える。
+Jackson 2 に戻し、プロファイルを 2 系で書き直した。二重定義の drift は
+`JerseyBoundaryMapperParityTest` が bytes 比較で禁じる。
+実機確認: 修正後 `/core/rest/repo/{repo}/renditions/{id}` の `count` は `"0"` (文字列)。
+`qa-test.sh` にこの end-to-end 番人を追加した — provider が外れる失敗は**単体では見えない**ため。
+
+**(2) HIGH — `setSerializationInclusion(NON_NULL)` の意味を半分しか移していなかった。**
+Jackson 2 の同メソッドは `JsonInclude.Value.construct(incl, incl)` に展開され、
+value **と content 両方**の inclusion を設定する。移行は `withValueInclusion` だけを設定して
+おり、content は `USE_DEFAULTS` のまま = **Map の中身の null が抑制されない**。
+これは `CouchNodeBase` の `@JsonAnyGetter` を通って永続に届く: `additionalProperties` 内の
+null が「不在」から「明示的 null」へ変わる。ACL-epoch のマーカーは `containsKey` で読まれ、
+Mango の `{"$exists": true}` は present-null に**マッチする**ため、
+読み書きしただけで quarantine/anomaly 判定と sweep 対象が動きうる。
+`withContentInclusion` を追加。**golden がこれを見逃した理由も欠陥**であり、
+「map 内 null」の fixture (`customAbsent`) を足した。負のテストで両ガードが落ちることを実測済み。
+
+**(3) HIGH — `new ObjectMapper()` は Jackson 3 では意味が変わる。**
+bulk 置換は型だけを書き換えたため、main 58 + test 31 箇所の素の構築が
+**Jackson 3 の既定**を採用していた。`configureForJackson2()` が戻す 16 項目
+(アルファベット順ソート、日付の ISO 化、`FAIL_ON_NULL_FOR_PRIMITIVES`、
+`FAIL_ON_TRAILING_TOKENS`、`USE_GETTERS_AS_SETTERS`…) が一斉に反転する。
+具体例: `ExternalIngestController` はクライアント JSON を primitive 持ちの bean に読むため、
+`{"dryRun": null}` が `false` から**例外**に変わる (しかも 3 系の例外は unchecked なので
+既存の `catch (IOException)` にも掛からない)。
+`ObjectMapperFactory.createDefaultObjectMapper()` (= Jackson 2 互換既定) に統一し、
+`JacksonMigrationBoundaryTest` で素の構築を**禁止**した。
+
+**この 3 件の共通点**: 「コンパイルが通り、テストが緑で、レビューでは同じに読める」変更が
+実際の振る舞いを変えていた。移行の危険は**書き換えた行ではなく、書き換えなかった行**にある。
 
 ### 3.5 リスクと拒否事項
 

@@ -29,7 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.DeleteDatabaseOptions;
 import com.ibm.cloud.sdk.core.security.BasicAuthenticator;
@@ -38,6 +38,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * The catalog wait against a real CouchDB.
@@ -76,7 +77,7 @@ public class LineageCatalogWaitCouchIT {
                 : new Cloudant("lineage-it", null);
         cloudant.setServiceUrl(url);
         dbName = "nemaki_wait_it_" + UUID.randomUUID().toString().replace("-", "");
-        store = CouchLineageJournalStore.forDirectClient(cloudant, dbName, new ObjectMapper());
+        store = CouchLineageJournalStore.forDirectClient(cloudant, dbName, ObjectMapperFactory.createDefaultObjectMapper());
         store.ensureDatabase();
     }
 

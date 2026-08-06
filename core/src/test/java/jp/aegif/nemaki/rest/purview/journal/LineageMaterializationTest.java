@@ -40,10 +40,11 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 import jp.aegif.nemaki.rest.purview.journal.LineageMaterializationDecision.V1Entry;
 import jp.aegif.nemaki.rest.purview.journal.LineageMaterializationDecision.V2Entry;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * D-rest-4 (v2.3.21): frozen identities, decision invariants, deterministic reconstruction,
@@ -62,7 +63,7 @@ public class LineageMaterializationTest {
             byte[] bytes = getClass().getResourceAsStream(
                     "/lineage/identity-golden-vectors.json").readAllBytes();
             @SuppressWarnings("unchecked")
-            Map<String, String> map = new ObjectMapper().readValue(bytes, Map.class);
+            Map<String, String> map = ObjectMapperFactory.createDefaultObjectMapper().readValue(bytes, Map.class);
             return map;
         }
 

@@ -9,9 +9,10 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Thin HTTP helper for direct Atlas REST API calls using Basic Auth.
@@ -19,7 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public class AtlasDirectClient {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private final HttpClient httpClient;
@@ -156,7 +157,7 @@ public class AtlasDirectClient {
         }
         try {
             return MAPPER.readValue(body, MAP_TYPE);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             return Map.of("_rawBody", body);
         }
     }

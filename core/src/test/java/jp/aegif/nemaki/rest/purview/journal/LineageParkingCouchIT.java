@@ -39,10 +39,11 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.DeleteDatabaseOptions;
 import com.ibm.cloud.sdk.core.security.BasicAuthenticator;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * v2.3.22 D1 and v2.3.24 F1, measured against a real CouchDB rather than a mocked verdict.
@@ -110,7 +111,7 @@ public class LineageParkingCouchIT {
         cloudant.setServiceUrl(baseUrl);
         http = HttpClient.newHttpClient();
         dbName = "nemaki_lineage_it_" + UUID.randomUUID().toString().replace("-", "");
-        store = CouchLineageJournalStore.forDirectClient(cloudant, dbName, new ObjectMapper());
+        store = CouchLineageJournalStore.forDirectClient(cloudant, dbName, ObjectMapperFactory.createDefaultObjectMapper());
         spoolDir = Files.createTempDirectory("lineage-parking-it");
 
         // Absent means "CouchDB's built-in default", which is the usual state — restoring it

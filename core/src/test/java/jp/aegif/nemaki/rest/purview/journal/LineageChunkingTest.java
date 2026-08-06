@@ -30,7 +30,8 @@ import java.util.Map;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * §2's chunking (v2.3.22): the partition's determinism and shape safety, the conservative
@@ -245,7 +246,7 @@ public class LineageChunkingTest {
     @Nested
     class SizeRuler {
 
-        private final ObjectMapper mapper = new ObjectMapper();
+        private final ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
 
         private void assertUpperBound(Map<String, Object> document) throws Exception {
             long bound = LineageDocumentSizeRuler.upperBound(document);

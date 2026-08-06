@@ -19,8 +19,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.TextExtractionService;
@@ -151,7 +151,7 @@ public class McpToolsProvider {
                 "NemakiWareにログインしてセッショントークンを取得します",
                 schema
             );
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Failed to generate login tool schema", e);
             // Fallback: use defaultRepository if it's safe (no quotes)
             String safeDefaultRepo = defaultRepository != null && !defaultRepository.contains("\"")
@@ -194,7 +194,7 @@ public class McpToolsProvider {
                 "APIキーを使用してNemakiWareにログインします。クラウド認証ユーザーやプログラムからのアクセスに便利です。",
                 schema
             );
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Failed to generate API key login tool schema", e);
             return new McpToolDefinition(
                 "nemakiware_apikey_login",
@@ -229,7 +229,7 @@ public class McpToolsProvider {
                 "クラウド認証（Google/Microsoft/SAML等）を使用してNemakiWareにログインを開始します。ブラウザで認証後、ログインコードを入力して完了します。",
                 schema
             );
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Failed to generate cloud login tool schema", e);
             return new McpToolDefinition(
                 "nemakiware_cloud_login",
@@ -259,7 +259,7 @@ public class McpToolsProvider {
                 "クラウド認証の完了状態を確認します。認証が完了するまで数秒おきにこのツールを呼び出してください。",
                 schema
             );
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Failed to generate cloud login status tool schema", e);
             return new McpToolDefinition(
                 "nemakiware_cloud_login_status",
@@ -447,7 +447,7 @@ public class McpToolsProvider {
                 String response = objectMapper.writeValueAsString(responseObj);
                 // Note: Login success is already logged by McpAuthenticationHandler
                 return resultFactory.success(response);
-            } catch (JsonProcessingException e) {
+            } catch (JacksonException e) {
                 log.error("Failed to serialize login response", e);
                 return resultFactory.error("Internal error");
             }
@@ -481,7 +481,7 @@ public class McpToolsProvider {
                 log.info("MCP API key login successful for user '{}' in repository '{}'",
                     loginResult.getUserId(), loginResult.getRepositoryId());
                 return resultFactory.success(response);
-            } catch (JsonProcessingException e) {
+            } catch (JacksonException e) {
                 log.error("Failed to serialize login response", e);
                 return resultFactory.error("Internal error");
             }
@@ -519,7 +519,7 @@ public class McpToolsProvider {
             // SECURITY: Don't log the login_code - it's a shared secret
             log.info("MCP cloud login initiated, request_id={}", initResult.getRequestId());
             return resultFactory.success(response);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Failed to serialize cloud login response", e);
             return resultFactory.error("Internal error");
         }
@@ -562,7 +562,7 @@ public class McpToolsProvider {
 
             String response = objectMapper.writeValueAsString(responseObj);
             return resultFactory.success(response);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Failed to serialize cloud login status response", e);
             return resultFactory.error("Internal error");
         }

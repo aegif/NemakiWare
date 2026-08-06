@@ -15,100 +15,117 @@
  *
  * You should have received a copy of the GNU General Public License along with NemakiWare.
  * If not, see <http://www.gnu.org/licenses/>.
- *
- * Contributors:
- *     linzhixing(https://github.com/linzhixing) - initial API and implementation
  ******************************************************************************/
 package jp.aegif.nemaki.config;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.PropertyAccessor;
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
+
+import tools.jackson.core.json.JsonWriteFeature;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.SerializationFeature;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Static Factory for ObjectMapper instances used throughout NemakiWare
+ * The one place NemakiWare's mapper configurations are defined (Jackson 3).
  *
- * This factory provides static methods to create ObjectMapper instances with
- * consistent configuration for different use cases. It's designed to work with
- * both Spring annotations (@Configuration) and XML-based configuration.
+ * <h2>Why every builder starts from {@code builderWithJackson2Defaults()}</h2>
  *
- * The factory ensures that all ObjectMapper instances share the same core
- * configuration patterns while allowing for specialized use cases.
+ * <p>These mappers write CouchDB documents, and the byte shape of a stored document is a
+ * persistent contract — {@code JacksonPersistenceGoldenTest} pins it. Jackson 3 changed
+ * serialization defaults (dates as ISO strings, sorted map entries, and more); starting from
+ * the Jackson 2 compatibility profile keeps the persisted bytes exactly what this codebase
+ * has always written, so the dependency migration is not silently also a format migration.
+ *
+ * <p>Mappers are immutable in Jackson 3, so what used to be scattered
+ * {@code mapper.configure(...)} mutation is builder configuration here — which is also what
+ * stops the three historical copies of each profile (this class and {@code JacksonConfig}
+ * carried near-identical definitions) from drifting apart again: {@code JacksonConfig} now
+ * delegates here.
  */
 public class ObjectMapperFactory {
 
     /**
-     * Create the primary ObjectMapper for application-wide use
-     *
-     * This configuration is optimized for NemakiWare's specific requirements:
-     * - CouchDB/Cloudant document serialization
-     * - Complex inheritance hierarchies (CouchNodeBase, CouchTypeDefinition)
-     * - Mixed @JsonProperty and field access patterns
-     * - CMIS data structure compatibility
+     * The DAO-side profile: field-visible, null-omitting, and — deliberately —
+     * numbers-as-strings, which is how existing documents store them.
      */
     public static ObjectMapper createNemakiObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-
-        // Basic configuration
-        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        mapper.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
-        mapper.configure(JsonGenerator.Feature.WRITE_NUMBERS_AS_STRINGS, true);
-
-        // Visibility configuration - CRITICAL for CouchTypeDefinition
-        // Enable both field and getter/setter access to support mixed patterns
-        mapper.setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
-        mapper.setVisibility(PropertyAccessor.GETTER, JsonAutoDetect.Visibility.PUBLIC_ONLY);
-        mapper.setVisibility(PropertyAccessor.SETTER, JsonAutoDetect.Visibility.PUBLIC_ONLY);
-        mapper.setVisibility(PropertyAccessor.IS_GETTER, JsonAutoDetect.Visibility.PUBLIC_ONLY);
-
-        // CouchDB specific settings
-        mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
-
-        return mapper;
+        return baseBuilder()
+                .configure(JsonWriteFeature.WRITE_NUMBERS_AS_STRINGS, true)
+                .build();
     }
 
     /**
-     * Create specialized ObjectMapper for CouchDB/Cloudant operations
-     *
-     * This is used specifically in CloudantClientWrapper and other DAO components
-     * where strict control over serialization is required.
+     * The profile {@code CloudantClientWrapper} persists every document with. Identical to
+     * the nemaki profile except numbers stay numeric.
      */
     public static ObjectMapper createCouchdbObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
+        return baseBuilder().build();
+    }
 
-        // Core configuration
-        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        mapper.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
-
-        // CRITICAL: Enable all access methods to ensure @JsonProperty works
-        // This fixes the CouchTypeDefinition properties field serialization issue
-        mapper.setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
-        mapper.setVisibility(PropertyAccessor.GETTER, JsonAutoDetect.Visibility.PUBLIC_ONLY);
-        mapper.setVisibility(PropertyAccessor.SETTER, JsonAutoDetect.Visibility.PUBLIC_ONLY);
-        mapper.setVisibility(PropertyAccessor.IS_GETTER, JsonAutoDetect.Visibility.PUBLIC_ONLY);
-
-        // Ensure null values are not serialized to reduce document size
-        mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
-
-        return mapper;
+    /** Human-readable output for logs and debugging; never used for persistence. */
+    public static ObjectMapper createDebugObjectMapper() {
+        return JsonMapper.builderWithJackson2Defaults()
+                .enable(SerializationFeature.INDENT_OUTPUT)
+                .changeDefaultPropertyInclusion(incl -> nonNull(incl))
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+                .build();
     }
 
     /**
-     * Create ObjectMapper for logging and debugging purposes
+     * An unconfigured mapper that still behaves like the Jackson 2 one this code was written
+     * against — the replacement for a bare {@code new ObjectMapper()}.
      *
-     * This provides human-readable JSON output for development and debugging.
+     * <p>In Jackson 3 {@code new ObjectMapper()} means Jackson 3 DEFAULTS, and those differ
+     * from Jackson 2 in sixteen behaviours that {@code configureForJackson2()} exists to undo:
+     * alphabetical property sorting on, dates as ISO strings rather than timestamps,
+     * {@code FAIL_ON_NULL_FOR_PRIMITIVES} and {@code FAIL_ON_TRAILING_TOKENS} on,
+     * {@code USE_GETTERS_AS_SETTERS} and {@code ALLOW_FINAL_FIELDS_AS_MUTATORS} off, and more.
+     * So the migration's most dangerous edit was the one that changed nothing visible: leaving
+     * {@code new ObjectMapper()} in place would have flipped all sixteen at ~60 call sites at
+     * once — one of them ({@code ExternalIngestController}) reads client-supplied JSON into a
+     * bean with primitive fields, where {@code {"dryRun": null}} goes from {@code false} to a
+     * thrown exception.
+     *
+     * <p>Use this for ad-hoc mappers. Persistence goes through the profiles above.
      */
-    public static ObjectMapper createDebugObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
+    public static ObjectMapper createDefaultObjectMapper() {
+        return JsonMapper.builderWithJackson2Defaults().build();
+    }
 
-        mapper.enable(SerializationFeature.INDENT_OUTPUT);
-        mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
-        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    private static JsonMapper.Builder baseBuilder() {
+        return JsonMapper.builderWithJackson2Defaults()
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+                .configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false)
+                // Field access ANY so private fields serialize; accessors stay PUBLIC_ONLY.
+                // This is what makes @JsonProperty-mixed models (CouchTypeDefinition and
+                // friends) keep their historical shape.
+                .changeDefaultVisibility(vc -> vc
+                        .withFieldVisibility(JsonAutoDetect.Visibility.ANY)
+                        .withGetterVisibility(JsonAutoDetect.Visibility.PUBLIC_ONLY)
+                        .withSetterVisibility(JsonAutoDetect.Visibility.PUBLIC_ONLY)
+                        .withIsGetterVisibility(JsonAutoDetect.Visibility.PUBLIC_ONLY))
+                .changeDefaultPropertyInclusion(incl -> nonNull(incl));
+    }
 
-        return mapper;
+    /**
+     * NON_NULL for values AND for container CONTENT — what Jackson 2's
+     * {@code setSerializationInclusion(NON_NULL)} meant.
+     *
+     * <p>Jackson 2 expanded that one argument into {@code JsonInclude.Value.construct(incl,
+     * incl)}, so it governed map/collection entries too. Setting only the value inclusion
+     * leaves content at {@code USE_DEFAULTS}, and {@code MapSerializer} then suppresses
+     * nothing — which reaches persistence through {@code CouchNodeBase}'s
+     * {@code @JsonAnyGetter}: a null in {@code additionalProperties} would start being stored
+     * as an explicit null where it used to be omitted. Presence is load-bearing there
+     * (the ACL-epoch markers are read with {@code containsKey}, and Mango selectors use
+     * {@code $exists}, which matches a present null), so this is a one-word difference
+     * between "same document" and "reclassified document".
+     */
+    private static JsonInclude.Value nonNull(JsonInclude.Value current) {
+        return current
+                .withValueInclusion(JsonInclude.Include.NON_NULL)
+                .withContentInclusion(JsonInclude.Include.NON_NULL);
     }
 }

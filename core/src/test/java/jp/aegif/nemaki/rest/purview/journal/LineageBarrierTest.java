@@ -896,7 +896,7 @@ public class LineageBarrierTest {
             byte[] bytes = getClass().getResourceAsStream(
                     "/lineage/identity-golden-vectors.json").readAllBytes();
             @SuppressWarnings("unchecked")
-            Map<String, String> fixture = new com.fasterxml.jackson.databind.ObjectMapper()
+            Map<String, String> fixture = new tools.jackson.databind.ObjectMapper()
                     .readValue(bytes, Map.class);
             assertEquals(fixture.get("barrierMembershipDigest"),
                     LineageWriteVersionBarrier.membershipDigestOf(List.of(
@@ -917,7 +917,7 @@ public class LineageBarrierTest {
             byte[] bytes = getClass().getResourceAsStream(
                     "/lineage/identity-golden-vectors.json").readAllBytes();
             @SuppressWarnings("unchecked")
-            Map<String, String> fixture = new com.fasterxml.jackson.databind.ObjectMapper()
+            Map<String, String> fixture = new tools.jackson.databind.ObjectMapper()
                     .readValue(bytes, Map.class);
             assertEquals(fixture.get("barrierBinaryDigest"),
                     LineageBinaryDigest.compute(root));

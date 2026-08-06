@@ -173,7 +173,7 @@ public class ArchiveServiceDelegate {
 		// Snapshot ACL for archived content access control
 		try {
 			if (content.getAcl() != null) {
-				com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+				tools.jackson.databind.ObjectMapper mapper = new tools.jackson.databind.ObjectMapper();
 				a.setAclSnapshot(mapper.writeValueAsString(content.getAcl()));
 			}
 		} catch (Exception e) {

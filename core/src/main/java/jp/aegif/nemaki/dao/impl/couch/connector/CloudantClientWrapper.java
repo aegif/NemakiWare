@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.*;
 import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
@@ -2091,8 +2091,8 @@ public class CloudantClientWrapper {
 		// Design document patches expect views to be at root level, not nested in properties
 		// Without this fix, patches lose existing views when updating design documents
 		if (id != null && id.startsWith("_design/") &&
-		    (clazz.equals(com.fasterxml.jackson.databind.JsonNode.class) ||
-		     clazz.equals(com.fasterxml.jackson.databind.node.ObjectNode.class))) {
+		    (clazz.equals(tools.jackson.databind.JsonNode.class) ||
+		     clazz.equals(tools.jackson.databind.node.ObjectNode.class))) {
 			Map<String, Object> properties = doc.getProperties();
 			if (properties != null) {
 				Map<String, Object> completeMap = new HashMap<>();

@@ -18,7 +18,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.DeleteDatabaseOptions;
 import com.ibm.cloud.cloudant.v1.model.GetIndexesInformationOptions;
@@ -29,6 +29,7 @@ import com.ibm.cloud.sdk.core.security.BasicAuthenticator;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import jp.aegif.nemaki.util.constant.SystemConst;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Integration tests for {@link Patch_AclEpochMutationIdMangoIndex} against a LIVE CouchDB
@@ -121,7 +122,7 @@ public class Patch_AclEpochMutationIdMangoIndexIT {
         // A genuine registration failure must propagate (not be swallowed into a recorded success).
         CloudantClientWrapper wrapper =
                 new CloudantClientWrapper(cloudant, "definitely-missing-db-" + UUID.randomUUID(),
-                        new ObjectMapper());
+                        ObjectMapperFactory.createDefaultObjectMapper());
         CloudantClientPool pool = mock(CloudantClientPool.class);
         lenient().when(pool.getClient("ghost")).thenReturn(wrapper);
         PatchUtil util = mock(PatchUtil.class);
@@ -132,7 +133,7 @@ public class Patch_AclEpochMutationIdMangoIndexIT {
     }
 
     private Patch_AclEpochMutationIdMangoIndex patchWithPool() {
-        CloudantClientWrapper wrapper = new CloudantClientWrapper(cloudant, contentDb, new ObjectMapper());
+        CloudantClientWrapper wrapper = new CloudantClientWrapper(cloudant, contentDb, ObjectMapperFactory.createDefaultObjectMapper());
         CloudantClientPool pool = mock(CloudantClientPool.class);
         lenient().when(pool.getClient(contentDb)).thenReturn(wrapper);
         PatchUtil util = mock(PatchUtil.class);

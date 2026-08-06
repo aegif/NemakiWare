@@ -22,13 +22,14 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.sdk.core.security.BasicAuthenticator;
 
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import jp.aegif.nemaki.util.constant.SystemConst;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Integration tests for {@link SearchIndexReconciliationService} against a LIVE
@@ -62,7 +63,7 @@ public class SearchIndexReconciliationServiceIT {
             BasicAuthenticator auth = new BasicAuthenticator.Builder().username(user).password(pass).build();
             cloudant = new Cloudant("cloudant-service", auth);
             cloudant.setServiceUrl(url);
-            confWrapper = new CloudantClientWrapper(cloudant, SystemConst.NEMAKI_CONF_DB, new ObjectMapper());
+            confWrapper = new CloudantClientWrapper(cloudant, SystemConst.NEMAKI_CONF_DB, ObjectMapperFactory.createDefaultObjectMapper());
             // reachability probe: nemaki_conf must exist
             cloudant.getDatabaseInformation(
                     new com.ibm.cloud.cloudant.v1.model.GetDatabaseInformationOptions.Builder()

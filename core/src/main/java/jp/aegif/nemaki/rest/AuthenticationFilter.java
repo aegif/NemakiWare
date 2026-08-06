@@ -31,7 +31,7 @@ import jp.aegif.nemaki.util.constant.SystemConst;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.api.v1.exception.ProblemDetail;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
@@ -49,6 +49,7 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 public class AuthenticationFilter implements Filter {
 
@@ -60,7 +61,7 @@ public class AuthenticationFilter implements Filter {
 	private final String TOKEN_FALSE = "false";
 
 	// ObjectMapper for RFC 7807 ProblemDetail serialization (thread-safe, reusable)
-	private static final ObjectMapper objectMapper = new ObjectMapper();
+	private static final ObjectMapper objectMapper = ObjectMapperFactory.createDefaultObjectMapper();
 
 	private  Log log = LogFactory.getLog(AuthenticationFilter.class);
 

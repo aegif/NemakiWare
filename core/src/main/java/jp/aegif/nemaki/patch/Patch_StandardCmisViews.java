@@ -3,9 +3,10 @@ package jp.aegif.nemaki.patch;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Patch to add all 38 standard CMIS views required by CMIS 1.1 specification.
@@ -39,7 +40,7 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
 
             // Get current design document
             String designDocId = "_design/_repo";
-            ObjectMapper mapper = new ObjectMapper();
+            ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
 
             // Read current design document
             JsonNode currentDoc = client.get(JsonNode.class, designDocId);
@@ -48,7 +49,7 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
             }
 
             // Clone the document as ObjectNode for modification
-            ObjectNode updatedDoc = currentDoc.deepCopy();
+            ObjectNode updatedDoc = (ObjectNode) currentDoc.deepCopy();
             ObjectNode views = (ObjectNode) updatedDoc.get("views");
             if (views == null) {
                 views = mapper.createObjectNode();
@@ -159,7 +160,7 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
 
     private void addViewIfMissing(ObjectNode views, String viewName, String mapFunction, String reduceFunction, String repositoryId) {
         if (!views.has(viewName)) {
-            ObjectMapper mapper = new ObjectMapper();
+            ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
             ObjectNode viewDef = mapper.createObjectNode();
             viewDef.put("map", mapFunction);
             if (reduceFunction != null && !reduceFunction.isEmpty()) {
@@ -178,7 +179,7 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
      * Add or update a view. If the view exists but has a different map or reduce function, update it.
      */
     private void addOrUpdateView(ObjectNode views, String viewName, String mapFunction, String reduceFunction, String repositoryId) {
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
         if (views.has(viewName)) {
             JsonNode existing = views.get(viewName);
             String existingMap = existing.has("map") ? existing.get("map").asText() : "";

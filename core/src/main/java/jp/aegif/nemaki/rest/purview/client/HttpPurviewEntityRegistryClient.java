@@ -18,9 +18,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 @Component
 public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryClient {
@@ -38,7 +39,7 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
     private final HttpClient httpClient;
     private final PurviewTokenCache tokenCache;
     private final PurviewHttpRetryHandler retryHandler;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = ObjectMapperFactory.createDefaultObjectMapper();
 
     public HttpPurviewEntityRegistryClient() {
         this(HttpClient.newBuilder().build(), new PurviewTokenCache(), new PurviewHttpRetryHandler());
@@ -72,7 +73,7 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
         String requestBody;
         try {
             requestBody = objectMapper.writeValueAsString(payload);
-        } catch (IOException e) {
+        } catch (tools.jackson.core.JacksonException e) {
             throw new PurviewClientException("Failed to serialize Purview entity payload", e);
         }
 
@@ -117,7 +118,7 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
             }
             try {
                 return objectMapper.readValue(response.body(), new TypeReference<Map<String, Object>>() {});
-            } catch (IOException e) {
+            } catch (tools.jackson.core.JacksonException e) {
                 throw new PurviewClientException("Failed to parse Purview entity response", e);
             }
         }
@@ -159,7 +160,7 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
         String requestBody;
         try {
             requestBody = objectMapper.writeValueAsString(payload);
-        } catch (IOException e) {
+        } catch (tools.jackson.core.JacksonException e) {
             throw new PurviewClientException("Failed to serialize Purview relationship payload", e);
         }
 
@@ -242,7 +243,7 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
             Map<String, String> entityGuids = new LinkedHashMap<>();
             JsonNode mutatedEntities = json.get("mutatedEntities");
             if (mutatedEntities != null && mutatedEntities.isObject()) {
-                var fields = mutatedEntities.fields();
+                var fields = mutatedEntities.properties().iterator();
                 while (fields.hasNext()) {
                     JsonNode arr = fields.next().getValue();
                     if (arr != null && arr.isArray()) {
@@ -290,7 +291,7 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
                     failedItems,
                     "partial failure: " + failedItems.size() + " entities failed",
                     entityGuids);
-        } catch (IOException e) {
+        } catch (tools.jackson.core.JacksonException e) {
             logger.warn("Could not parse Purview bulk response for {} requested entities", requestedCount, e);
             return PurviewEntityPublishResult.failure(
                     "Purview bulk response parse error: " + e.getMessage());
@@ -362,7 +363,7 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
             String token = accessToken.asText();
             tokenCache.put(request.getTenantId(), request.getClientId(), token, expiresIn);
             return token;
-        } catch (IOException e) {
+        } catch (tools.jackson.core.JacksonException e) {
             throw new PurviewClientException("Failed to parse Purview token response", e);
         }
     }
@@ -454,7 +455,7 @@ public class HttpPurviewEntityRegistryClient implements PurviewEntityRegistryCli
                 }
             }
             return null;
-        } catch (IOException e) {
+        } catch (tools.jackson.core.JacksonException e) {
             return null;
         }
     }

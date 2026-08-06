@@ -26,7 +26,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.DeleteDatabaseOptions;
 import com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions;
@@ -44,6 +44,7 @@ import jp.aegif.nemaki.epoch.AclEffectiveEpochService.AclEpochUnavailableExcepti
 import jp.aegif.nemaki.epoch.AclEffectiveEpochService.DependencyRole;
 import jp.aegif.nemaki.epoch.AclEffectiveEpochService.Snapshot;
 import jp.aegif.nemaki.util.constant.SystemConst;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Integration tests for {@link AclEffectiveEpochService} against a LIVE CouchDB (design §4.1 /
@@ -97,7 +98,7 @@ public class AclEffectiveEpochServiceIT {
         cloudant.putDatabase(new PutDatabaseOptions.Builder().db(contentDb).build()).execute();
 
         CloudantClientWrapper contentWrapper =
-                new CloudantClientWrapper(cloudant, contentDb, new ObjectMapper());
+                new CloudantClientWrapper(cloudant, contentDb, ObjectMapperFactory.createDefaultObjectMapper());
         CloudantClientPool pool = mock(CloudantClientPool.class);
         lenient().when(pool.getClient(contentDb)).thenReturn(contentWrapper);
 

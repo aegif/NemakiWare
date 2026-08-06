@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rest.ingest.chat;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -13,6 +13,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Chatwork API connector adapter — fetches room messages and files.
@@ -34,7 +35,7 @@ public class ChatworkConnectorAdapter {
 
     private static final Logger logger = LoggerFactory.getLogger(ChatworkConnectorAdapter.class);
     private static final String DEFAULT_API = "https://api.chatwork.com/v2";
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
 
     private final String apiToken;
     private final String apiBase;

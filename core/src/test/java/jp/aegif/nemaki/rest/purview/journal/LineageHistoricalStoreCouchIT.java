@@ -29,7 +29,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.DeleteDatabaseOptions;
 import com.ibm.cloud.sdk.core.security.BasicAuthenticator;
@@ -39,6 +39,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * The historical machine's production stores, against a real CouchDB.
@@ -86,7 +87,7 @@ public class LineageHistoricalStoreCouchIT {
                 : new Cloudant("lineage-it", null);
         cloudant.setServiceUrl(url);
         dbName = "nemaki_hist_it_" + UUID.randomUUID().toString().replace("-", "");
-        journal = CouchLineageJournalStore.forDirectClient(cloudant, dbName, new ObjectMapper());
+        journal = CouchLineageJournalStore.forDirectClient(cloudant, dbName, ObjectMapperFactory.createDefaultObjectMapper());
         journal.ensureDatabase();
         intents = new CouchLineageHistoricalPublishIntentStore(journal);
         compensations = new CouchLineageHistoricalCompensationStore(journal);

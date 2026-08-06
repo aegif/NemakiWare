@@ -1282,7 +1282,7 @@ public class AuthTokenResource extends ResourceBase{
 					int n;
 					while ((n = reader.read(buf)) != -1) sb.append(buf, 0, n);
 
-					com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+					tools.jackson.databind.ObjectMapper mapper = new tools.jackson.databind.ObjectMapper();
 					@SuppressWarnings("unchecked")
 					java.util.Map<String, Object> discovery = mapper.readValue(sb.toString(), java.util.Map.class);
 

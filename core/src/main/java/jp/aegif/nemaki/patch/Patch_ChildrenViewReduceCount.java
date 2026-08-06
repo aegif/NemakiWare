@@ -1,11 +1,12 @@
 package jp.aegif.nemaki.patch;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Patch to add _count reduce function to the children view.
@@ -32,14 +33,14 @@ public class Patch_ChildrenViewReduceCount extends AbstractNemakiPatch {
 		}
 
 		String designDocId = "_design/_repo";
-		ObjectMapper mapper = new ObjectMapper();
+		ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
 
 		JsonNode currentDoc = client.get(JsonNode.class, designDocId);
 		if (currentDoc == null) {
 			throw new RuntimeException("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] Design document not found");
 		}
 
-		ObjectNode updatedDoc = currentDoc.deepCopy();
+		ObjectNode updatedDoc = (ObjectNode) currentDoc.deepCopy();
 		ObjectNode views = (ObjectNode) updatedDoc.get("views");
 		if (views == null || !views.has("children")) {
 			throw new RuntimeException("[patch=" + PATCH_NAME + ", repositoryId=" + repositoryId + "] children view not found in design document");

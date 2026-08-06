@@ -1,6 +1,6 @@
 package jp.aegif.nemaki.rest.purview.journal;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Google Dataplex implementation of {@link LineageTargetSink}.
@@ -29,7 +30,7 @@ public class DataplexLineageSink implements LineageTargetSink {
 
     private static final Logger logger = LoggerFactory.getLogger(DataplexLineageSink.class);
     private static final String DATAPLEX_API_BASE = "https://datalineage.googleapis.com";
-    private static final ObjectMapper objectMapper = new ObjectMapper();
+    private static final ObjectMapper objectMapper = ObjectMapperFactory.createDefaultObjectMapper();
 
     @Autowired
     private DataplexConfig dataplexConfig;

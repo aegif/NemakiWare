@@ -60,8 +60,8 @@ import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -80,6 +80,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
 import java.util.logging.Logger;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 @Component
 @Path("/repositories/{repositoryId}/objects")
@@ -792,7 +793,7 @@ public class ObjectResource {
             CallContext callContext = getCallContext();
             
             // Use Jackson ObjectMapper for type-safe parsing
-            ObjectMapper mapper = new ObjectMapper();
+            ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
             
             // Extract and convert objects array from request body
             Object objectsRaw = requestBody.get("objects");

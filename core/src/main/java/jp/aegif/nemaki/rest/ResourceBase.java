@@ -21,9 +21,9 @@
  */
 package jp.aegif.nemaki.rest;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import jp.aegif.nemaki.common.ErrorCode;
 import jp.aegif.nemaki.model.NodeBase;
 import jp.aegif.nemaki.util.constant.CallContextKey;
@@ -35,10 +35,11 @@ import org.springframework.stereotype.Component;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.GregorianCalendar;
 import java.util.TimeZone;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 public class ResourceBase {
 
-	private static final ObjectMapper mapper = new ObjectMapper();
+	private static final ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
 
 	static final String TYPE_GROUP = "group";
 	static final String PARENTID = "/";

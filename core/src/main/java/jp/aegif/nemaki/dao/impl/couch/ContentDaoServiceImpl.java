@@ -43,9 +43,10 @@ import com.ibm.cloud.cloudant.v1.model.ViewResult;
 import com.ibm.cloud.cloudant.v1.model.ViewResultRow;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
 
@@ -176,21 +177,20 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 * This ensures all fields from the object hierarchy are properly serialized
 	 */
 	private ObjectMapper createConfiguredObjectMapper() {
-		ObjectMapper mapper = new ObjectMapper();
 		// Configure Jackson to ignore unknown properties during Cloudant migration
-		mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-		
 		// CRITICAL FIX: PropertyDefinitionCore contamination prevention
 		// CHANGED: Use SETTER access instead of FIELD access to enforce validation
 		// This ensures @JsonCreator constructors and setter methods are called
 		// preventing contamination during deserialization
-		mapper.setVisibility(PropertyAccessor.ALL, Visibility.NONE);
-		mapper.setVisibility(PropertyAccessor.SETTER, Visibility.ANY);     // FIXED: Use SETTER instead of FIELD
-		mapper.setVisibility(PropertyAccessor.CREATOR, Visibility.ANY);    // FIXED: Enable @JsonCreator constructors
-		mapper.setVisibility(PropertyAccessor.GETTER, Visibility.ANY);
-		mapper.setVisibility(PropertyAccessor.IS_GETTER, Visibility.ANY);
-		
-		return mapper;
+		return JsonMapper.builderWithJackson2Defaults()
+				.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+				.changeDefaultVisibility(vc -> vc
+						.withVisibility(PropertyAccessor.ALL, Visibility.NONE)
+						.withVisibility(PropertyAccessor.SETTER, Visibility.ANY)
+						.withVisibility(PropertyAccessor.CREATOR, Visibility.ANY)
+						.withVisibility(PropertyAccessor.GETTER, Visibility.ANY)
+						.withVisibility(PropertyAccessor.IS_GETTER, Visibility.ANY))
+				.build();
 	}
 
 	// ///////////////////////////////////////

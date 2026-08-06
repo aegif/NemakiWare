@@ -18,7 +18,7 @@ import java.util.Map;
 public class SalesforceFetchOrchestrator implements FetchOrchestrator {
 
     private static final Logger logger = LoggerFactory.getLogger(SalesforceFetchOrchestrator.class);
-    private static final com.fasterxml.jackson.databind.ObjectMapper JSON_MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
+    private static final tools.jackson.databind.ObjectMapper JSON_MAPPER = new tools.jackson.databind.ObjectMapper();
 
     private FetchSupport fetchSupport;
     private CheckpointManager checkpointManager;

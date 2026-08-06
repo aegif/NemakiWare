@@ -12,8 +12,8 @@ import java.util.logging.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
@@ -33,6 +33,7 @@ import jp.aegif.nemaki.init.DatabasePreInitializer;
 import jp.aegif.nemaki.init.StartupProbeService;
 import jp.aegif.nemaki.patch.PatchService;
 import jp.aegif.nemaki.util.PasswordPolicyService;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * POST /apply -- one-shot setup: validate settings, run DB init, persist config, clear setupRequired.
@@ -44,7 +45,7 @@ import jp.aegif.nemaki.util.PasswordPolicyService;
 public class SetupApplyResource {
 
     private static final Logger logger = Logger.getLogger(SetupApplyResource.class.getName());
-    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
 
     @Autowired(required = false)
     private StartupProbeService startupProbeService;
@@ -505,7 +506,7 @@ public class SetupApplyResource {
         }
 
         JsonNode adminDoc = mapper.readTree(adminDocBody);
-        com.fasterxml.jackson.databind.node.ObjectNode mutable = adminDoc.deepCopy();
+        tools.jackson.databind.node.ObjectNode mutable = (tools.jackson.databind.node.ObjectNode) adminDoc.deepCopy();
         mutable.put("passwordHash", bcryptHash);
 
         URL url = new URL(dbUrl + "/" + adminDocId);

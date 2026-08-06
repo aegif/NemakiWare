@@ -1,17 +1,18 @@
 package jp.aegif.nemaki.rest.ingest;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
 import java.util.List;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Unit tests for IngestJobRecord and IngestDeadLetterRecord serialization.
  */
 public class IngestJobRecordTest {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
 
     @Test
     public void testJobRecordRoundTrip() throws Exception {

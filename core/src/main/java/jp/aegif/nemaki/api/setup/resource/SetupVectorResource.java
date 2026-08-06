@@ -7,9 +7,9 @@ import java.util.logging.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
@@ -31,6 +31,7 @@ import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClientBuilder;
 import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelRequest;
 import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelResponse;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Vector search setup endpoints: state, test-connection, apply.
@@ -46,7 +47,7 @@ public class SetupVectorResource {
     @Autowired(required = false)
     private PropertyManager propertyManager;
 
-    private final ObjectMapper stateMapper = new ObjectMapper();
+    private final ObjectMapper stateMapper = ObjectMapperFactory.createDefaultObjectMapper();
 
     /**
      * GET /vector/state -- current vector search configuration.
@@ -169,7 +170,7 @@ public class SetupVectorResource {
 
             client = builder.build();
 
-            ObjectMapper mapper = new ObjectMapper();
+            ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
             ObjectNode requestBody = mapper.createObjectNode();
             requestBody.put("inputText", "test");
 

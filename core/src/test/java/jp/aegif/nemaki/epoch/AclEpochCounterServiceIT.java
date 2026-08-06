@@ -22,7 +22,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions;
 import com.ibm.cloud.cloudant.v1.model.Document;
@@ -34,6 +34,7 @@ import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import jp.aegif.nemaki.util.constant.SystemConst;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Integration tests for {@link AclEpochCounterService} against a LIVE CouchDB — the
@@ -65,7 +66,7 @@ public class AclEpochCounterServiceIT {
             BasicAuthenticator auth = new BasicAuthenticator.Builder().username(user).password(pass).build();
             cloudant = new Cloudant("cloudant-service", auth);
             cloudant.setServiceUrl(url);
-            confWrapper = new CloudantClientWrapper(cloudant, SystemConst.NEMAKI_CONF_DB, new ObjectMapper());
+            confWrapper = new CloudantClientWrapper(cloudant, SystemConst.NEMAKI_CONF_DB, ObjectMapperFactory.createDefaultObjectMapper());
             db = confWrapper.getDatabaseName();
             cloudant.getDatabaseInformation(
                     new com.ibm.cloud.cloudant.v1.model.GetDatabaseInformationOptions.Builder()

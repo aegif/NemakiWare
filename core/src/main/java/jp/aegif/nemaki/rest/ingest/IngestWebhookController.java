@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rest.ingest;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.slf4j.Logger;
@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * REST endpoint for receiving inbound webhooks from external sources.
@@ -51,7 +52,7 @@ import java.util.Set;
 public class IngestWebhookController {
 
     private static final Logger logger = LoggerFactory.getLogger(IngestWebhookController.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
 
     /**
      * Microsoft Graph subscription handshake echoes {@code validationToken} without signature verification.

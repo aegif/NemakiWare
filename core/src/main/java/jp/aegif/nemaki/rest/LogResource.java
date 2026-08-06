@@ -23,13 +23,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
-import com.fasterxml.jackson.core.JsonParseException;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonMappingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.core.exc.StreamReadException;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.DatabindException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import jp.aegif.nemaki.util.spring.aspect.log.JsonLogger;
 import net.logstash.logback.marker.Markers;
@@ -61,7 +61,7 @@ public class LogResource extends ResourceBase{
 	@GET
 	@Path("/config")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String get(@Context HttpServletRequest request) throws JsonProcessingException  {
+	public String get(@Context HttpServletRequest request) throws JacksonException  {
 		boolean status = true;
 		ObjectNode result = getMapper().createObjectNode();
 		ArrayNode errMsg = getMapper().createArrayNode();
@@ -91,7 +91,7 @@ public class LogResource extends ResourceBase{
 	@PUT
 	@Path("/config/_update")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String update(@Context HttpServletRequest request) throws JsonParseException, JsonMappingException, IOException {
+	public String update(@Context HttpServletRequest request) throws StreamReadException, DatabindException, IOException {
 		boolean status = true;
 		ObjectNode result = getMapper().createObjectNode();
 		ArrayNode errMsg = getMapper().createArrayNode();
@@ -121,7 +121,7 @@ public class LogResource extends ResourceBase{
 	@PUT
 	@Path("/config/_reload")
 	@Produces(MediaType.APPLICATION_JSON)
-	public String reload(@Context HttpServletRequest request) throws JsonParseException, JsonMappingException, IOException {
+	public String reload(@Context HttpServletRequest request) throws StreamReadException, DatabindException, IOException {
 		boolean status = true;
 		ObjectNode result = getMapper().createObjectNode();
 		ArrayNode errMsg = getMapper().createArrayNode();
