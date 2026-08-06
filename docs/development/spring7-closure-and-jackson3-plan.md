@@ -16,9 +16,9 @@ jakarta 移行漏れゼロ、`RestTemplate` 使用ゼロ)。
 - **Part A — Spring 7 の完了宣言に必要な閉鎖項目** (小粒・v3.3 リリースゲート)
 - **Part B — Jackson 2 → 3 移行** (Java 側で残る唯一の破壊的メジャー。v3.3 を block しない)
 
-推奨: **v3.3 のリリースゲートは Part A 完了 + フルテスト green とし、Part B は
-次リリース (v3.4) の主題に置く**。Spring 7 は Jackson 2 統合を deprecated にしたが
-削除はしていないので、v3.3 を Jackson 3 に blocking させる技術的必然は無い。
+**決定 (2026-08-06, オーナー判断): v3.3 のリリースゲートは Part A + Part B の両方とする。**
+当初案は Part B を v3.4 送りにしていたが、Jackson 3 を上げた状態で 3.3 をリリースする。
+ゲートは「A 完了 + B 完了 + フルテスト (E2E 込み) all green」。
 
 ## 1. 棚卸し (2026-08-06 実測)
 
