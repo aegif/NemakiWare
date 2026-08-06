@@ -89,10 +89,14 @@ run_http_test() {
     echo -n "Testing: $test_name ... "
     total_tests=$((total_tests + 1))
     
+    # `|| true`: under `set -e` a failed curl (timeout, refused) in a bare assignment kills
+    # the whole script BEFORE the comparison below can count it as FAILED — the run then ends
+    # silently in the middle, with no summary and a green-looking exit code. A helper whose
+    # entire job is to record failures must not die on one.
     if [[ -n "$auth" ]]; then
-        status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -u "$auth" "$url" 2>/dev/null)
+        status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -u "$auth" "$url" 2>/dev/null || true)
     else
-        status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$url" 2>/dev/null)
+        status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$url" 2>/dev/null || true)
     fi
     
     if [[ "$status" == "$expected_status" ]]; then
