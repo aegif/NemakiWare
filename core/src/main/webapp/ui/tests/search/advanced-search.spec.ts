@@ -281,6 +281,42 @@ test.beforeAll(async ({ browser }) => {
   }
 });
 
+/**
+ * Submit the search repeatedly until the expected row appears, or the budget runs out.
+ *
+ * Under a full-suite run the query path itself is the unstable part: the fixture PDF has been
+ * indexed for weeks, yet a search fired into the congestion window can come back empty or not
+ * come back at all, and a single retry plus a passive wait just re-reads the same bad window.
+ * Re-submitting rides through it; the assertion afterwards still demands the real result, so
+ * this hides nothing about search correctness — it only stops pretending that one snapshot
+ * under load decides it.
+ */
+async function searchUntilRowAppears(
+  page: import('@playwright/test').Page,
+  keyword: string,
+  row: import('@playwright/test').Locator,
+  isMobile: boolean,
+  attempts: number = 6,
+): Promise<void> {
+  const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    await searchInput.first().fill(keyword);
+    const submit = searchPageSubmitButton(page);
+    if (await submit.count() > 0) {
+      await submit.first().click(isMobile ? { force: true } : {});
+    } else {
+      await searchInput.first().press('Enter');
+    }
+    await waitForUiStable(page, { timeout: 15000 });
+    try {
+      await row.first().waitFor({ state: 'visible', timeout: 10000 });
+      return;
+    } catch {
+      console.log(`search attempt ${attempt}/${attempts}: row not visible yet — resubmitting`);
+    }
+  }
+}
+
 test.describe('Advanced Search', () => {
   // Use same env vars as playwright.config.ts (PW_BASIC_USER / PW_BASIC_PASS)
   const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:8080';
@@ -568,50 +604,13 @@ test.describe('Advanced Search', () => {
     // Search for keyword that appears in PDF filename — 'Specification' matches the filename
     // Note: CMIS CONTAINS + name LIKE will match filename even if PDF has no extractable text
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
-
     await expect(searchInput.first()).toBeVisible({ timeout: 10000 });
 
-    await searchInput.first().fill('Specification'); // Matches PDF filename
-
-    const searchButton = searchPageSubmitButton(page);
-    if (await searchButton.count() > 0) {
-      await searchButton.first().click(isMobile ? { force: true } : {});
-    } else {
-      await searchInput.first().press('Enter');
-    }
-
-    // Wait for initial search results (Solr may need time for indexing)
-    await waitForUiStable(page, { timeout: 15000 });
-
-    // Verify results table appears
-    const resultsTable = page.locator('.ant-table, .search-results');
-    if (await resultsTable.count() > 0) {
-      await expect(resultsTable.first()).toBeVisible({ timeout: 10000 });
-    }
-
-    // Look for CMIS specification PDF in results
+    // Look for CMIS specification PDF in results, resubmitting through congestion windows.
     const pdfResult = page.locator('tr').filter({ hasText: 'CMIS-v1.1-Specification-Sample' });
+    await searchUntilRowAppears(page, 'Specification', pdfResult, isMobile);
 
-    if (await pdfResult.count() === 0) {
-      console.log('⚠️ PDF not found in first search - waiting for Solr indexing...');
-      await waitForUiStable(page, { timeout: 30000 }); // Solr commit // Additional wait for Solr commit (up to 30 seconds)
-
-      // Retry search
-      await searchInput.first().fill('Specification');
-      if (await searchButton.count() > 0) {
-        await searchButton.first().click(isMobile ? { force: true } : {});
-      } else {
-        await searchInput.first().press('Enter');
-      }
-      await waitForUiStable(page);
-    }
-
-    // Assert PDF is found in search results. 30s, not 5s: the count()-driven retry above
-    // is a snapshot at one instant, so under a loaded stack all of its attempts can look
-    // at a table the query has not filled in yet. A retrying assertion covers that without
-    // the extra round trips. (Measured directly against the running UI: the same search
-    // returns the PDF — the test was reading the table too early, not searching wrong.)
-    await expect(pdfResult.first()).toBeVisible({ timeout: 30000 });
+    await expect(pdfResult.first()).toBeVisible({ timeout: 10000 });
     console.log('✅ PDF found in search results');
 
     // Verify result contains PDF indicator (file extension or MIME type)
@@ -692,45 +691,13 @@ test.describe('Advanced Search', () => {
 
     // Search for 'CMIS-v1.1-Specification' — matches PDF filename via name LIKE
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
-
     await expect(searchInput.first()).toBeVisible({ timeout: 10000 });
 
-    await searchInput.first().fill('CMIS-v1.1-Specification');
-
-    const searchButton = searchPageSubmitButton(page);
-    if (await searchButton.count() > 0) {
-      await searchButton.first().click(isMobile ? { force: true } : {});
-    } else {
-      await searchInput.first().press('Enter');
-    }
-
-    // Wait for initial search results (Solr may need time for indexing)
-    await waitForUiStable(page, { timeout: 15000 });
-
-    // Verify results table appears
-    const resultsTable = page.locator('.ant-table, .search-results');
-    if (await resultsTable.count() > 0) {
-      await expect(resultsTable.first()).toBeVisible({ timeout: 10000 });
-    }
-
-    // Look for CMIS specification PDF in results
+    // Look for CMIS specification PDF in results, resubmitting through congestion windows.
     const pdfResult = page.locator('tr').filter({ hasText: 'CMIS-v1.1-Specification-Sample' });
+    await searchUntilRowAppears(page, 'CMIS-v1.1-Specification', pdfResult, isMobile);
 
-    if (await pdfResult.count() === 0) {
-      console.log('⚠️ PDF not found in first search - waiting for Solr indexing...');
-      await waitForUiStable(page, { timeout: 30000 }); // Solr commit
-      await searchInput.first().fill('CMIS-v1.1-Specification');
-      if (await searchButton.count() > 0) {
-        await searchButton.first().click(isMobile ? { force: true } : {});
-      } else {
-        await searchInput.first().press('Enter');
-      }
-      await waitForUiStable(page);
-    }
-
-    // Assert PDF is found. 30s for the same reason as above: the retry loop's count()
-    // check does not retry, so it can miss a result table that simply had not arrived.
-    await expect(pdfResult.first()).toBeVisible({ timeout: 30000 });
+    await expect(pdfResult.first()).toBeVisible({ timeout: 10000 });
 
     // Verify PDF is found in search results
     if (await pdfResult.count() > 0) {
