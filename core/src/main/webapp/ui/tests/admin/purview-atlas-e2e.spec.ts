@@ -501,7 +501,14 @@ function makeLineageEvent(
 ): any {
   const eventId = crypto.randomUUID();
   return {
-    _id: `lineage_event:${eventId}`,
+    // `lineage:` — the prefix CouchLineageJournalStore resolves a recordId with
+    // (CouchLineageEvent.ID_PREFIX). `type` is `lineage_event`, which is what misled this
+    // fixture into using it as the id prefix too. The views index on `type`, so a wrongly
+    // prefixed document is FOUND by the ordered walk and then fails to be CLAIMED: the claim
+    // reads `lineage:{eventId}`, gets a 404, and updatePublishStatus returns 0. Zero-means-stop
+    // halts the walk, so the event — and every later event for that repository — stays PENDING
+    // for ever, with no error, no dead letter and nothing in the logs.
+    _id: `lineage:${eventId}`,
     type: 'lineage_event',
     schemaVersion: 1,
     eventId,
@@ -1043,11 +1050,16 @@ test.describe('Group 5: Cloud Drive Simulation', () => {
 
     const suffix = randomSuffix();
     const eventKey = `test-cloud-upload-${suffix}`;
+    // Real, Atlas-resolvable endpoints on both sides. Made-up qualifiedNames used to be
+    // enough back when the assertion only checked that SOME Process existed; the sink now
+    // fails closed on an endpoint no entity has, and Atlas answers the bulk write with
+    // 404 "Referenced entity ... typeName='DataSet'". The event then never publishes and the
+    // whole serial group stops here.
     const event = makeLineageEvent(
       'CLOUD_SYNC_UPLOAD',
       eventKey,
-      [`nemaki://${REPOSITORY_ID}/objects/test-local-${suffix}`],
-      [`cloud://google/test-file-${suffix}`]
+      [endpointQn!],
+      [endpointQn2!]
     );
 
     await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(event));
@@ -1069,11 +1081,13 @@ test.describe('Group 5: Cloud Drive Simulation', () => {
 
     const suffix = randomSuffix();
     const eventKey = `test-cloud-download-${suffix}`;
+    // Resolvable endpoints, reversed relative to 5.1 so the direction is still the thing
+    // under test. See 5.1 for why made-up names cannot publish.
     const event = makeLineageEvent(
       'CLOUD_SYNC_DOWNLOAD',
       eventKey,
-      [`cloud://google/test-file-${suffix}`],
-      [`nemaki://${REPOSITORY_ID}/objects/test-local-${suffix}`]
+      [endpointQn2!],
+      [endpointQn!]
     );
 
     await injectCouchDoc(request, LINEAGE_DB, registerForTeardown(event));

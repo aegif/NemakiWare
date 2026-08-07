@@ -642,24 +642,29 @@ public class LineageProjectionLoop {
         int i1 = 0;
         int i2 = 0;
         int processed = 0;
+        String stopReason = "batch full";
         while (processed < batchSize) {
             LineageJournalRow v1 = i1 < v1rows.size() ? v1rows.get(i1) : null;
             LineageJournalRowV2 v2 = i2 < v2rows.size() ? v2rows.get(i2) : null;
             if (v1 == null && v2 == null) {
-                return;
+                stopReason = "window exhausted";
+                break;
             }
             long s1 = v1 != null ? v1SequenceOf(v1) : Long.MAX_VALUE;
             long s2 = v2 != null ? v2.event().sequenceNumber() : Long.MAX_VALUE;
             boolean takeV1 = s1 <= s2;
             long seq = takeV1 ? s1 : s2;
             if (seq > bound) {
-                return; // beyond the merge window — the next poll refetches from the cursor
+                stopReason = "beyond the merge window"; // next poll refetches from the cursor
+                break;
             }
             boolean advanced = takeV1
                     ? processV1RowDrest(targetName, sink, repositoryId, v1)
                     : processV2RowDrest(targetName, sink, v2store, repositoryId, v2);
             if (!advanced) {
-                return; // zero-means-stop, uniformly (§8-c)
+                stopReason = (takeV1 ? "v1" : "v2") + " row at sequence " + seq
+                        + " did not advance"; // zero-means-stop, uniformly (§8-c)
+                break;
             }
             if (takeV1) {
                 i1++;
@@ -667,6 +672,16 @@ public class LineageProjectionLoop {
                 i2++;
             }
             processed++;
+        }
+        // A walk that fetched rows and moved none is the failure mode that looks like nothing
+        // at all: no error, no dead letter, the events simply stay PENDING for ever while the
+        // loop keeps polling. It cost a day to find once by reading views by hand; say it out
+        // loud instead. Only when there WAS work, so a quiet pipeline stays quiet.
+        if (processed == 0 && !(v1rows.isEmpty() && v2rows.isEmpty())) {
+            logger.info("Ordered walk made no progress for '{}'/{}: v1Rows={} v2Rows={}"
+                    + " fromSequence={} bound={} — {}", targetName, repositoryId,
+                    v1rows.size(), v2rows.size(), fromSeq,
+                    bound == Long.MAX_VALUE ? "unbounded" : bound, stopReason);
         }
     }
 
