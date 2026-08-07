@@ -94,8 +94,10 @@ public class Patch_McpServiceAccount extends AbstractNemakiPatch {
             boolean wasGenerated = (System.getenv(ENV_MCP_SERVICE_PASSWORD) == null
                     && System.getProperty(PROP_MCP_SERVICE_PASSWORD) == null);
 
-            // Create new MCP service user using UserItem (same as Patch_TestUserInitialization)
-            // Constructor: (id, type, userId, name, password, isAdmin, description)
+            // The last argument is the PARENT FOLDER, not a description — the comment that
+            // said otherwise is why this account was created unfiled. A user item with no
+            // parent is invisible under /.system/users (the children view keys on parentId),
+            // so the account existed and could authenticate but could not be seen or managed.
             UserItem mcpServiceUser = new UserItem(
                 null,                          // id - will be auto-generated
                 NemakiObjectType.nemakiUser,   // type
@@ -103,7 +105,7 @@ public class Patch_McpServiceAccount extends AbstractNemakiPatch {
                 MCP_SERVICE_USER_NAME,         // name
                 password,                      // password (plain text - will be hashed internally)
                 false,                         // isAdmin - NOT an admin
-                null                           // description
+                contentService.getOrCreateSystemSubFolder(repositoryId, "users").getId()
             );
             mcpServiceUser.setDescription("MCP transport-level service account (non-admin)");
 

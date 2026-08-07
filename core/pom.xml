@@ -23,7 +23,7 @@
 		<nemakiware.version>${project.version}</nemakiware.version>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<org.springframework.version>7.0.8</org.springframework.version>
-		<org.apache.chemistry.opencmis.version>2.0.0-RC1-nemakiware</org.apache.chemistry.opencmis.version>
+		<org.apache.chemistry.opencmis.version>2.0.0-RC2-nemakiware</org.apache.chemistry.opencmis.version>
 		<!-- One version per HttpComponents 5 family; the enforcer refuses any other. -->
 		<httpcomponents.client5.version>5.5.1</httpcomponents.client5.version>
 		<httpcomponents.core5.version>5.3.6</httpcomponents.core5.version>

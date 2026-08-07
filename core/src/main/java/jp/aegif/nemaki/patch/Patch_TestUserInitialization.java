@@ -164,7 +164,11 @@ public class Patch_TestUserInitialization extends AbstractNemakiPatch {
                 // Note: This requires ContentService to get system folder structure
                 try {
                     // Create test user with proper constructor (password: test)
-                    UserItem testUser = new UserItem(null, NemakiObjectType.nemakiUser, "testuser", "Test User", "test", false, null);
+                    // Last argument is the parent folder; passing null leaves the user
+                    // unfiled and therefore absent from /.system/users.
+                    UserItem testUser = new UserItem(null, NemakiObjectType.nemakiUser,
+                            "testuser", "Test User", "test", false,
+                            contentService.getOrCreateSystemSubFolder(repositoryId, "users").getId());
                     testUser.setDescription("Test user for QA and development");
 
                     // Set additional properties (firstName, lastName, email)
