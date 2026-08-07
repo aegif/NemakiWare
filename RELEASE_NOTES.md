@@ -7,14 +7,25 @@ only repository gotchas.
 
 ---
 
-## 3.3.0 追補 — OpenCMIS 2.0.0-RC1 採用 (2026-08-07)
+## 3.3.0 追補 — OpenCMIS 2.0.0-RC2 採用 (2026-08-07)
 
-OpenCMIS を自己ビルドの `2.0.0-RC1-nemakiware` に更新しました。Java 21 baseline、
+OpenCMIS を自己ビルドの `2.0.0-RC2-nemakiware` に更新しました。Java 21 baseline、
 クエリスタックの ANTLR4 化、HTTP クライアントの Apache HttpClient 5 化を含みます。
 CMIS の外部仕様に変更はなく、AtomPub / Browser / Web Services の各バインディングは
 従来どおりです (CMIS TCK 38 テスト green)。
 
-アップグレード時の注意はありません。運用者の操作も不要です。
+### ユーザ / グループが `/.system/users` に出ないことがあった
+
+一部の生成経路 (MCP サービスアカウントと初期化時のテストユーザ) が、ユーザ項目を
+親フォルダに紐付けずに作成していました。アカウントは存在して認証もできる一方、
+`/.system/users` の一覧には現れず、管理 UI からも見えません。修正済みです。
+
+**既存環境で見えないユーザ / グループがある場合**、その項目は親フォルダを持たない
+状態で保存されています。新規作成分は自動的に正しく紐付きますが、既存分は
+CouchDB 上で `parentId` を `/.system/users` (グループは `/.system/groups`) の
+オブジェクト ID に設定してください。
+
+アップグレード時のその他の注意はありません。運用者の操作も不要です。
 
 ---
 

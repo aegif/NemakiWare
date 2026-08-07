@@ -42,7 +42,7 @@ CMIS 1.1 準拠のオープンソース ECM。技術スタックは `pom.xml` / 
 
 ### 依存・ランタイム
 
-- **OpenCMIS は `2.0.0-RC1-nemakiware`** (自己ビルドの Jakarta EE 対応版)。
+- **OpenCMIS は `2.0.0-RC2-nemakiware`** (自己ビルドの Jakarta EE 対応版)。
   `1.2.0-SNAPSHOT` は不安定につき**禁止**。1.1.0-nemakiware からの移行で踏んだ罠:
   - クエリ木は ANTLR4 になり、`parseStatement()` の戻りは `CmisTree`。
     **ルートが SELECT ノードそのもの** (1.1.0 では nil ノードが包んでいた)。
