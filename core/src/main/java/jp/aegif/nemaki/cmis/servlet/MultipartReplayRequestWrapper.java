@@ -83,6 +83,14 @@ public class MultipartReplayRequestWrapper extends HttpServletRequestWrapper {
         // the replay instead of the (now drained) socket.
         this.parts = new ArrayList<>(request.getParts());
         this.boundary = "NemakiWareReplay" + UUID.randomUUID().toString().replace("-", "");
+        // Field VALUES are replayed as raw bytes, so OpenCMIS must be told which charset they
+        // are in or it falls back to ISO-8859-1 and every non-ASCII name arrives as mojibake
+        // (a Japanese file name came back as its UTF-8 bytes read one by one). `_charset_` is
+        // the multipart convention OpenCMIS itself implements. The request's own encoding wins
+        // when the client declared one; otherwise UTF-8, which is what the CMIS Browser
+        // Binding specifies and what the container-parsed path effectively used before.
+        String declared = request.getCharacterEncoding();
+        synthetic.put("_charset_", declared != null ? declared : "UTF-8");
     }
 
     /**
@@ -230,14 +238,16 @@ public class MultipartReplayRequestWrapper extends HttpServletRequestWrapper {
 
     /** The parts, lazily: each body streams from the container's own storage. */
     private InputStream buildBody() throws IOException {
-        List<InputStream> segments = new ArrayList<>(parts.size() * 3 + 1);
+        List<InputStream> segments = new ArrayList<>(parts.size() * 3 + synthetic.size() + 1);
+        // Synthetic fields LEAD: OpenCMIS applies `_charset_` to the fields it reads AFTER
+        // that part, so appending it would leave every value decoded with the default.
+        for (java.util.Map.Entry<String, String> e : synthetic.entrySet()) {
+            segments.add(new ByteArrayInputStream(syntheticPart(e.getKey(), e.getValue())));
+        }
         for (Part part : parts) {
             segments.add(new ByteArrayInputStream(partHeader(part)));
             segments.add(part.getInputStream());
             segments.add(new ByteArrayInputStream(CRLF));
-        }
-        for (java.util.Map.Entry<String, String> e : synthetic.entrySet()) {
-            segments.add(new ByteArrayInputStream(syntheticPart(e.getKey(), e.getValue())));
         }
         segments.add(new ByteArrayInputStream(closingBoundary()));
         return new SequenceInputStream(Collections.enumeration(segments));
