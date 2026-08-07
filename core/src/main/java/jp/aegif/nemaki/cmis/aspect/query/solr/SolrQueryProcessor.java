@@ -779,20 +779,38 @@ public class SolrQueryProcessor implements QueryProcessor {
 		return orderBy;
 	}
 
+	/**
+	 * The predicate under WHERE, or null when the statement has none.
+	 *
+	 * <p>The ROOT is the SELECT node itself under OpenCMIS 2.x; under the ANTLR3 grammar it
+	 * was a nil node WRAPPING the SELECT. Only looking one level down — as this did — silently
+	 * returned null on the 2.x shape, and a null predicate means the Solr query falls back to
+	 * {@code *:*}: every LIKE, IN_FOLDER and equality filter was dropped and the query returned
+	 * the whole repository. It failed no parse and logged nothing; the TCK caught it as
+	 * "name should start with 'a' but is 'bDocument'". Both shapes are accepted here.
+	 */
 	private CmisTree extractWhereTree(CmisTree tree){
-		for (int i = 0; i < tree.getChildCount(); i++) {
-			CmisTree selectTree = tree.getChild(i);
-			if ("SELECT".equals(selectTree.getText())) {
-				for(int j=0; j < selectTree.getChildCount(); j++){
-					CmisTree whereTree = selectTree.getChild(j);
-					if("WHERE".equals(whereTree.getText())){
-						return whereTree.getChild(0);
-					}
+		if (tree == null) {
+			return null;
+		}
+		CmisTree selectTree = "SELECT".equals(tree.getText()) ? tree : null;
+		if (selectTree == null) {
+			for (int i = 0; i < tree.getChildCount(); i++) {
+				if ("SELECT".equals(tree.getChild(i).getText())) {
+					selectTree = tree.getChild(i);
+					break;
 				}
-
 			}
 		}
-
+		if (selectTree == null) {
+			return null;
+		}
+		for (int j = 0; j < selectTree.getChildCount(); j++) {
+			CmisTree whereTree = selectTree.getChild(j);
+			if ("WHERE".equals(whereTree.getText())) {
+				return whereTree.getChild(0);
+			}
+		}
 		return null;
 	}
 

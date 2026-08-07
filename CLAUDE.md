@@ -42,8 +42,18 @@ CMIS 1.1 準拠のオープンソース ECM。技術スタックは `pom.xml` / 
 
 ### 依存・ランタイム
 
-- **OpenCMIS は `1.1.0-nemakiware` 固定** (自己ビルドの Jakarta EE 対応版)。
-  `1.2.0-SNAPSHOT` は不安定につき**禁止**。
+- **OpenCMIS は `2.0.0-RC1-nemakiware`** (自己ビルドの Jakarta EE 対応版)。
+  `1.2.0-SNAPSHOT` は不安定につき**禁止**。1.1.0-nemakiware からの移行で踏んだ罠:
+  - クエリ木は ANTLR4 になり、`parseStatement()` の戻りは `CmisTree`。
+    **ルートが SELECT ノードそのもの** (1.1.0 では nil ノードが包んでいた)。
+    子だけを見る抽出は WHERE を取りこぼし、Solr 側が `*:*` に落ちて**全件返す** —
+    parse は成功しログも出ないので、TCK でしか気づけません。
+  - **HttpComponents 5 はファミリで動く**。client-bindings が httpclient5 5.5.1 を
+    持ち込むので core5 も 5.3.6 に揃える。ずれると Tomcat 起動時に
+    `NoSuchMethodError` でアプリが上がりません (enforcer で検出)。
+  - Browser binding の multipart は `MultipartReplayRequestWrapper` が再生します。
+    servlet がルーティングのため body を先に読む必要があり、1.1.0-nemakiware は
+    フォーク側パッチで救っていましたが、2.0 系にそれはありません。
 - **Virtual Threads**: ThreadPoolExecutor の構造 (キューサイズ・CallerRunsPolicy 等) は
   バックプレッシャー維持のため**変更不可**。ThreadFactory のみ
   `Thread.ofVirtual().name(...).factory()` に統一。`ScheduledExecutorService`

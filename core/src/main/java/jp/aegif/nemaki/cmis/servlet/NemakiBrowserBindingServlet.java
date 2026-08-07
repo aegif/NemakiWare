@@ -130,13 +130,17 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 return;
             }
 
-            String contentType = request.getContentType();
-            if (contentType != null && contentType.regionMatches(true, 0, "multipart/", 0, 10)) {
+            if (MultipartReplayRequestWrapper.isMultipart(request)) {
                 try {
-                    // Force multipart parsing here (same trigger as the code below):
-                    // getParameter parses the body, and a malformed part filename
-                    // (NUL/control char) throws InvalidFileNameException during it.
-                    request.getParameter("cmisaction");
+                    // The container parses the body ONCE, here, and everything downstream —
+                    // this servlet's own routing lookups AND OpenCMIS's MultipartParser —
+                    // reads the replay instead. Without it the two compete for a single-use
+                    // stream: whoever asks second gets an empty body, and OpenCMIS answers
+                    // "Invalid multipart request!" for every upload.
+                    //
+                    // A malformed part filename (NUL / control char) still surfaces on this
+                    // first parse, which is what the catch below translates to a 400.
+                    request = new MultipartReplayRequestWrapper(request);
                 } catch (Throwable t) {
                     if (isInvalidMultipartFilename(t)) {
                         log.warn("Rejected multipart upload with an invalid part filename: " + t.getMessage());
@@ -377,6 +381,14 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 // TCK tests use "folderId" parameter for document creation, but NemakiWare expects "objectId"
                 String folderId = org.apache.chemistry.opencmis.server.shared.HttpUtils.getStringParameter(request, "folderId");
                 if (folderId != null && !folderId.isEmpty()) {
+                    // Put the mapping in the BODY, not just in a getParameter override.
+                    // OpenCMIS answers parameters for a multipart request from the fields IT
+                    // parsed, so a wrapper that only overrides getParameter is invisible to it
+                    // and the create fails with "folderId must be set". The override below
+                    // still serves this servlet's own lookups.
+                    if (request instanceof MultipartReplayRequestWrapper replay) {
+                        replay.addSyntheticField("objectId", folderId);
+                    }
                     // Create a request wrapper to inject objectId parameter
                     final String folderIdValue = folderId;
                     finalRequest = new HttpServletRequestWrapper(request) {

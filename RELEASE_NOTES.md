@@ -7,6 +7,17 @@ only repository gotchas.
 
 ---
 
+## 3.3.0 追補 — OpenCMIS 2.0.0-RC1 採用 (2026-08-07)
+
+OpenCMIS を自己ビルドの `2.0.0-RC1-nemakiware` に更新しました。Java 21 baseline、
+クエリスタックの ANTLR4 化、HTTP クライアントの Apache HttpClient 5 化を含みます。
+CMIS の外部仕様に変更はなく、AtomPub / Browser / Web Services の各バインディングは
+従来どおりです (CMIS TCK 38 テスト green)。
+
+アップグレード時の注意はありません。運用者の操作も不要です。
+
+---
+
 ## 3.3.0 追補 — Jackson 3 移行と Spring 7 閉鎖 (2026-08-06)
 
 ### Jackson 2 → 3 (`tools.jackson`)
