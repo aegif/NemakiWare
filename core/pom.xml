@@ -23,7 +23,10 @@
 		<nemakiware.version>${project.version}</nemakiware.version>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<org.springframework.version>7.0.8</org.springframework.version>
-		<org.apache.chemistry.opencmis.version>1.1.0-nemakiware</org.apache.chemistry.opencmis.version>
+		<org.apache.chemistry.opencmis.version>2.0.0-RC1-nemakiware</org.apache.chemistry.opencmis.version>
+		<!-- One version per HttpComponents 5 family; the enforcer refuses any other. -->
+		<httpcomponents.client5.version>5.5.1</httpcomponents.client5.version>
+		<httpcomponents.core5.version>5.3.6</httpcomponents.core5.version>
 		<opencmis.github.packages.url>https://maven.pkg.github.com/aegif/chemistry-opencmis-nemakiware</opencmis.github.packages.url>
 		<opencmis.github.packages.repository.id>github-opencmis</opencmis.github.packages.repository.id>
 		<jersey.version>4.0.0</jersey.version>
@@ -684,10 +687,20 @@
 		
 		<!-- Jakarta EE compatible HTTP Client for Solr -->
 		<!-- HTTP Client 5.x dependencies moved down to avoid duplication -->
+		<!-- HttpComponents 5 moves as ONE family. OpenCMIS 2.0.0-RC1's default HTTP
+		     invoker brings httpclient5 5.5.1, whose parent requires httpcore5 5.3.6;
+		     leaving httpcore5 at 5.2.4 made the whole application fail to start with
+		     NoSuchMethodError on DefaultHttpRequestWriterFactory(Http1Config) — added in
+		     httpcore5 5.3. The enforcer below now refuses a mixed family outright. -->
 		<dependency>
 			<groupId>org.apache.httpcomponents.core5</groupId>
 			<artifactId>httpcore5-h2</artifactId>
-			<version>5.2.4</version>
+			<version>${httpcomponents.core5.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.httpcomponents.core5</groupId>
+			<artifactId>httpcore5</artifactId>
+			<version>${httpcomponents.core5.version}</version>
 		</dependency>
 		
 		<!-- The custom jp.aegif.nemaki.solr module (NemakiCoreAdminHandler +
@@ -716,7 +729,14 @@
 		<dependency>
 			<groupId>org.apache.httpcomponents.client5</groupId>
 			<artifactId>httpclient5-cache</artifactId>
-			<version>5.3.1</version>
+			<version>${httpcomponents.client5.version}</version>
+		</dependency>
+		<!-- Declared explicitly at the version OpenCMIS 2.0.0-RC1 brings, so the family
+		     version is stated here rather than inherited from whichever dependency wins. -->
+		<dependency>
+			<groupId>org.apache.httpcomponents.client5</groupId>
+			<artifactId>httpclient5</artifactId>
+			<version>${httpcomponents.client5.version}</version>
 		</dependency>
 		
 		<!-- Jakarta Web Services implementation for 1.2.0-nemakiware OpenCMIS compatibility -->
@@ -1198,6 +1218,21 @@
 										<include>org.springframework:*:${org.springframework.version}</include>
 									</includes>
 									<message>All org.springframework modules must be exactly ${org.springframework.version} — align the skewed module in dependencyManagement (spring-tx-style transitive leak).</message>
+								</bannedDependencies>
+								<!-- Same rule, second family. httpclient5 5.5.1 beside httpcore5 5.2.4
+								     did not fail to resolve, did not fail to compile, and did not fail
+								     any unit test — it failed at Tomcat startup with NoSuchMethodError,
+								     which is the most expensive place to find a version skew. -->
+								<bannedDependencies>
+									<excludes>
+										<exclude>org.apache.httpcomponents.client5:*</exclude>
+										<exclude>org.apache.httpcomponents.core5:*</exclude>
+									</excludes>
+									<includes>
+										<include>org.apache.httpcomponents.client5:*:${httpcomponents.client5.version}</include>
+										<include>org.apache.httpcomponents.core5:*:${httpcomponents.core5.version}</include>
+									</includes>
+									<message>HttpComponents 5 must move as one family: client5 = ${httpcomponents.client5.version}, core5 = ${httpcomponents.core5.version}. A mixed family surfaces as NoSuchMethodError at startup, not at build time.</message>
 								</bannedDependencies>
 							</rules>
 						</configuration>

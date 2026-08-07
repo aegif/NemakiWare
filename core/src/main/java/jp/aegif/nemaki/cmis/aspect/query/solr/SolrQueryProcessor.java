@@ -43,7 +43,7 @@ import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
 
-import org.antlr.runtime.tree.Tree;
+import org.apache.chemistry.opencmis.server.support.query.CmisTree;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.ObjectList;
@@ -245,8 +245,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 			}
 		}
 		
-		// Get where caluse as Tree
-		Tree whereTree = null;
+		// Get where caluse as CmisTree
+		CmisTree whereTree = null;
 		try {
 			if (logger.isDebugEnabled()) {
 				logger.debug("About to call util.processStatement()");
@@ -255,7 +255,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 			if (logger.isDebugEnabled()) {
 				logger.debug("processStatement() completed");
 			}
-			Tree tree = util.parseStatement();
+			CmisTree tree = util.parseStatement();
 			if (logger.isDebugEnabled()) {
 				logger.debug("parseStatement() completed");
 			}
@@ -300,7 +300,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 		// Build solr statement of WHERE
 		String whereQueryString = "";
-		if (whereTree == null || whereTree.isNil()) {
+		// ANTLR3's Tree.isNil() was `token == null || token.getType() == INVALID_TOKEN_TYPE`,
+		// and INVALID_TOKEN_TYPE is 0. CmisTree (the ANTLR4 stack) exposes no isNil, so the
+		// same condition is spelled out: a node with no token type is the nil root.
+		if (whereTree == null || whereTree.getType() == 0) {
 			// CRITICAL FIX (2025-12-18): Try to parse secondary type properties manually
 			// when OpenCMIS parsing fails (e.g., due to FailedPredicateException)
 			String manualWhereQuery = parseSecondaryTypeWhereClause(repositoryId, statement);
@@ -776,12 +779,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 		return orderBy;
 	}
 
-	private Tree extractWhereTree(Tree tree){
+	private CmisTree extractWhereTree(CmisTree tree){
 		for (int i = 0; i < tree.getChildCount(); i++) {
-			Tree selectTree = tree.getChild(i);
+			CmisTree selectTree = tree.getChild(i);
 			if ("SELECT".equals(selectTree.getText())) {
 				for(int j=0; j < selectTree.getChildCount(); j++){
-					Tree whereTree = selectTree.getChild(j);
+					CmisTree whereTree = selectTree.getChild(j);
 					if("WHERE".equals(whereTree.getText())){
 						return whereTree.getChild(0);
 					}

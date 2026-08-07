@@ -32,7 +32,7 @@ import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import java.util.List;
 import java.util.ArrayList;
-import org.antlr.runtime.tree.Tree;
+import org.apache.chemistry.opencmis.server.support.query.CmisTree;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.commons.lang3.StringUtils;
@@ -231,7 +231,7 @@ public class SolrUtil implements ApplicationContextAware {
 		return "dynamic.property." + cmisColName.replace(":", "\\:").replace("\\\\:", "\\:");
 	}
 
-	public String convertToString(Tree propertyNode) {
+	public String convertToString(CmisTree propertyNode) {
 		List<String> _string = new ArrayList<String>();
 		for (int i = 0; i < propertyNode.getChildCount(); i++) {
 			_string.add(propertyNode.getChild(i).toString());

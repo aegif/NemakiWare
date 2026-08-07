@@ -36,7 +36,7 @@ import jp.aegif.nemaki.model.Folder;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-import org.antlr.runtime.tree.Tree;
+import org.apache.chemistry.opencmis.server.support.query.CmisTree;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
@@ -91,7 +91,7 @@ public class SolrPredicateWalker{
 		this.contentService = contentService;
 	}
 
-	public Query walkPredicate(Tree node) {
+	public Query walkPredicate(CmisTree node) {
 		switch (node.getType()) {
 		// Boolean walks
 		case CmisQlStrictLexer.NOT:
@@ -158,20 +158,20 @@ public class SolrPredicateWalker{
 	// //////////////////////////////////////////////////////////////////////////////
 	// Definition of Boolean walks
 	// //////////////////////////////////////////////////////////////////////////////
-	private BooleanQuery walkNot(Tree node) {
+	private BooleanQuery walkNot(CmisTree node) {
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 			builder.add(walkPredicate(node), Occur.MUST_NOT);
 		return builder.build();
 	}
 
-	private BooleanQuery walkOr(Tree leftNode, Tree rightNode) {
+	private BooleanQuery walkOr(CmisTree leftNode, CmisTree rightNode) {
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 			builder.add(walkPredicate(leftNode), Occur.SHOULD);
 			builder.add(walkPredicate(rightNode), Occur.SHOULD);
 		return builder.build();
 	}
 
-	private BooleanQuery walkAnd(Tree leftNode, Tree rightNode) {
+	private BooleanQuery walkAnd(CmisTree leftNode, CmisTree rightNode) {
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 			builder.add(walkPredicate(leftNode), Occur.MUST);
 			builder.add(walkPredicate(rightNode), Occur.MUST);
@@ -181,41 +181,41 @@ public class SolrPredicateWalker{
 	// //////////////////////////////////////////////////////////////////////////////
 	// Definition of Comparison walks
 	// //////////////////////////////////////////////////////////////////////////////
-	private Query walkEquals(Tree leftNode, Tree rightNode) {
+	private Query walkEquals(CmisTree leftNode, CmisTree rightNode) {
 		HashMap<String, String> map = walkCompareInternal(leftNode, rightNode);
 		Term term = new Term(map.get(FLD), map.get(CND));
 		Query q = new TermQuery(term);
 		return q;
 	}
 
-	private Query walkNotEquals(Tree leftNode, Tree rightNode) {
+	private Query walkNotEquals(CmisTree leftNode, CmisTree rightNode) {
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 			builder.add(walkEquals(leftNode, rightNode), Occur.MUST_NOT);
 		return builder.build();
 	}
 
-	private Query walkGreaterThan(Tree leftNode, Tree rightNode) {
+	private Query walkGreaterThan(CmisTree leftNode, CmisTree rightNode) {
 		HashMap<String, String> map = walkCompareInternal(leftNode, rightNode);
 		TermRangeQuery t = new TermRangeQuery(map.get(FLD),
 				new BytesRef(map.get(CND)), null, false, false);
 		return t;
 	}
 
-	private Query walkGreaterOrEquals(Tree leftNode, Tree rightNode) {
+	private Query walkGreaterOrEquals(CmisTree leftNode, CmisTree rightNode) {
 		HashMap<String, String> map = walkCompareInternal(leftNode, rightNode);
 		TermRangeQuery t = new TermRangeQuery(map.get(FLD),
 				new BytesRef(map.get(CND)), null, true, false);
 		return t;
 	}
 
-	private Query walkLessThan(Tree leftNode, Tree rightNode) {
+	private Query walkLessThan(CmisTree leftNode, CmisTree rightNode) {
 		HashMap<String, String> map = walkCompareInternal(leftNode, rightNode);
 		TermRangeQuery t = new TermRangeQuery(map.get(FLD), null,
 				new BytesRef(map.get(CND)), false, false);
 		return t;
 	}
 
-	private Query walkLessOrEquals(Tree leftNode, Tree rightNode) {
+	private Query walkLessOrEquals(CmisTree leftNode, CmisTree rightNode) {
 		HashMap<String, String> map = walkCompareInternal(leftNode, rightNode);
 		TermRangeQuery t = new TermRangeQuery(map.get(FLD), null,
 				new BytesRef(map.get(CND)), false, true);
@@ -234,8 +234,8 @@ public class SolrPredicateWalker{
 	 * @return map containing field name (FLD) and condition value (CND)
 	 * @throws IllegalStateException if literal type is not compatible with property type
 	 */
-	private HashMap<String, String> walkCompareInternal(Tree leftNode,
-			Tree rightNode) {
+	private HashMap<String, String> walkCompareInternal(CmisTree leftNode,
+			CmisTree rightNode) {
 		HashMap<String, String> map = new HashMap<String, String>();
 
 		String left = solrUtil.convertToString(leftNode);
@@ -261,7 +261,7 @@ public class SolrPredicateWalker{
 	 * @param literalNode the literal value node (right-hand side of comparison)
 	 * @throws IllegalStateException if types are not compatible
 	 */
-	private void validateLiteralType(Tree columnNode, Tree literalNode) {
+	private void validateLiteralType(CmisTree columnNode, CmisTree literalNode) {
 		int literalType = literalNode.getType();
 		
 		// Skip validation for non-literal types (e.g., column references, expressions)
@@ -298,7 +298,7 @@ public class SolrPredicateWalker{
 	 * @param listNode the IN_LIST node containing literal elements
 	 * @throws IllegalStateException if any element's type is not compatible
 	 */
-	private void validateInListLiteralTypes(ColumnReference colRef, Tree listNode) {
+	private void validateInListLiteralTypes(ColumnReference colRef, CmisTree listNode) {
 		if (listNode.getType() != CmisQlStrictLexer.IN_LIST) {
 			return;
 		}
@@ -318,7 +318,7 @@ public class SolrPredicateWalker{
 			// Validate each element in the list
 			int childCount = listNode.getChildCount();
 			for (int i = 0; i < childCount; i++) {
-				Tree child = listNode.getChild(i);
+				CmisTree child = listNode.getChild(i);
 				int literalType = child.getType();
 				
 				// Skip non-literal types using the common utility method
@@ -337,7 +337,7 @@ public class SolrPredicateWalker{
 		}
 	}
 
-	private Query walkLike(Tree colNode, Tree stringNode) {
+	private Query walkLike(CmisTree colNode, CmisTree stringNode) {
 		// Check for CMIS SQL specification
 		Object rVal = walkExpr(stringNode);
 		if (!(rVal instanceof String)) {
@@ -368,7 +368,7 @@ public class SolrPredicateWalker{
 		return q;
 	}
 
-	private Query walkNotLike(Tree colNode, Tree stringNode) {
+	private Query walkNotLike(CmisTree colNode, CmisTree stringNode) {
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 		builder.add(walkLike(colNode, stringNode), Occur.MUST_NOT);
 		return builder.build();
@@ -377,7 +377,7 @@ public class SolrPredicateWalker{
 	// //////////////////////////////////////////////////////////////////////////////
 	// Definition of multiple value type walks
 	// //////////////////////////////////////////////////////////////////////////////
-	private Query walkIn(Tree colNode, Tree listNode) {
+	private Query walkIn(CmisTree colNode, CmisTree listNode) {
 		// Check for CMIS SQL specification
 		ColumnReference colRef = getColumnReference(colNode);
 
@@ -397,13 +397,13 @@ public class SolrPredicateWalker{
 		return builder.build();
 	}
 
-	private Query walkNotIn(Tree colNode, Tree listNode) {
+	private Query walkNotIn(CmisTree colNode, CmisTree listNode) {
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 			builder.add(walkIn(colNode, listNode), Occur.MUST_NOT);
 		return builder.build();
 	}
 
-	private Query walkInAny(Tree leftNode, Tree rightNode) {
+	private Query walkInAny(CmisTree leftNode, CmisTree rightNode) {
 		// Check for CMIS SQL specification
 		ColumnReference colRef = getColumnReference(leftNode);
 		PropertyDefinition<?> pd = colRef.getPropertyDefinition();
@@ -429,14 +429,14 @@ public class SolrPredicateWalker{
 		return builder.build();
 	}
 
-	private Query walkNotInAny(Tree leftNode, Tree rightNode) {
+	private Query walkNotInAny(CmisTree leftNode, CmisTree rightNode) {
 		// CRITICAL FIX (2025-12-19): Build proper NOT query for multi-valued NOT IN clause
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 		builder.add(walkInAny(leftNode, rightNode), Occur.MUST_NOT);
 		return builder.build();
 	}
 
-	private Query walkIsNull(Tree colNode) {
+	private Query walkIsNull(CmisTree colNode) {
 		String field = safeWalkExprToString(colNode);
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 		// Lucene 9.x: Use TermRangeQuery.newStringRange() for wildcard range
@@ -445,7 +445,7 @@ public class SolrPredicateWalker{
 		return builder.build();
 	}
 
-	private Query walkIsNotNull(Tree colNode) {
+	private Query walkIsNotNull(CmisTree colNode) {
 		String field = safeWalkExprToString(colNode);
 		// Lucene 9.x: Use TermRangeQuery.newStringRange() for wildcard range
 		TermRangeQuery q = TermRangeQuery.newStringRange(field, null, null, false, false);
@@ -455,7 +455,7 @@ public class SolrPredicateWalker{
 	// //////////////////////////////////////////////////////////////////////////////
 	// Definition of getChildren type walks
 	// //////////////////////////////////////////////////////////////////////////////
-	private Query walkInFolder(Tree qualNode, Tree paramNode) {
+	private Query walkInFolder(CmisTree qualNode, CmisTree paramNode) {
 		// Extract folder ID safely handling ArrayList cases
 		String folderId = null;
 		Object lit = walkExpr(paramNode);
@@ -491,7 +491,7 @@ public class SolrPredicateWalker{
 		return q;
 	}
 
-	private Query walkInTree(Tree qualNode, Tree paramNode) {
+	private Query walkInTree(CmisTree qualNode, CmisTree paramNode) {
 		// OpenCMIS correctly returns ArrayList for IN_TREE parameters
 		// Extract folder ID from the ArrayList structure
 		Object lit = walkExpr(paramNode);
@@ -586,7 +586,7 @@ public class SolrPredicateWalker{
 	// Definition of full-text search type walk
 	// //////////////////////////////////////////////////////////////////////////////
 	// Wildcards of CONTAINS() is the same as those of Solr, so leave them as they are.
-	private Query walkContains(Tree qualNode, Tree queryNode) {
+	private Query walkContains(CmisTree qualNode, CmisTree queryNode) {
 		if (qualNode != null) {
 			//Qualifier isn't needed as long as JOIN isn't supported
 			//String qualifier = walkExpr(qualNode).toString();
@@ -602,7 +602,7 @@ public class SolrPredicateWalker{
 		return walkSearchExpr(queryNode);
 	}
 
-	private Query walkSearchExpr(Tree node) {
+	private Query walkSearchExpr(CmisTree node) {
 		switch (node.getType()) {
 		case TextSearchLexer.TEXT_AND:
 			return walkTextAnd(node);
@@ -630,7 +630,7 @@ public class SolrPredicateWalker{
 	 *   CONTAINS('word1 word2')   → AND of individual words (each analyzed per-field)
 	 *   CONTAINS('"word1 word2"') → exact phrase search
 	 */
-	private Query walkContainsStringLit(Tree node) {
+	private Query walkContainsStringLit(CmisTree node) {
 		// Raw text; buildDualFieldQuery does the Solr metacharacter escaping.
 		String text = node.toString();
 
@@ -660,34 +660,34 @@ public class SolrPredicateWalker{
 		return buildDualFieldQuery(text);
 	}
 
-	private Query walkTextAnd(Tree node) {
+	private Query walkTextAnd(CmisTree node) {
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 		for (int i = 0; i < node.getChildCount(); i++) {
-			Tree child = node.getChild(i);
+			CmisTree child = node.getChild(i);
 			builder.add(walkSearchExpr(child), Occur.MUST);
 		}
 		return builder.build();
 	}
 
-	private Query walkTextOr(Tree node) {
+	private Query walkTextOr(CmisTree node) {
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 		for (int i = 0; i < node.getChildCount(); i++) {
-			Tree child = node.getChild(i);
+			CmisTree child = node.getChild(i);
 			builder.add(walkSearchExpr(child), Occur.SHOULD);
 		}
 		return builder.build();
 	}
 
-	private Query walkTextMinus(Tree node) {
+	private Query walkTextMinus(CmisTree node) {
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 		for (int i = 0; i < node.getChildCount(); i++) {
-			Tree child = node.getChild(i);
+			CmisTree child = node.getChild(i);
 			builder.add(walkSearchExpr(child), Occur.MUST);
 		}
 		return builder.build();
 	}
 
-	private Query walkTextWord(Tree node) {
+	private Query walkTextWord(CmisTree node) {
 		// Pass the RAW word to buildDualFieldQuery, which is the single place that
 		// escapes Solr query-string metacharacters. (Pre-escaping here for ':'
 		// used to double-escape once buildDualFieldQuery also escaped backslashes.)
@@ -784,7 +784,7 @@ public class SolrPredicateWalker{
 		}
 	}
 
-	private Query walkTextPhrase(Tree node) {
+	private Query walkTextPhrase(CmisTree node) {
 		// Raw text; buildDualFieldQuery does the Solr metacharacter escaping.
 		String termString = node.toString();
 
@@ -802,7 +802,7 @@ public class SolrPredicateWalker{
 	// Definition of walkExpr and its subwalks
 	// These are used from various walks to evaluate a node value.
 	// //////////////////////////////////////////////////////////////////////////////
-	private Object walkExpr(Tree node) {
+	private Object walkExpr(CmisTree node) {
 		switch (node.getType()) {
 		case CmisQlStrictLexer.BOOL_LIT:
 			return walkBoolean(node);
@@ -823,12 +823,12 @@ public class SolrPredicateWalker{
 		}
 	}
 
-	private Object walkBoolean(Tree node) {
+	private Object walkBoolean(CmisTree node) {
 		String s = node.getText();
 		return Boolean.valueOf(s);
 	}
 
-	private Object walkNumber(Tree node) {
+	private Object walkNumber(CmisTree node) {
 		String s = node.getText();
 		if (s.contains(".") || s.contains("e") || s.contains("E")) {
 			return Double.valueOf(s);
@@ -837,20 +837,20 @@ public class SolrPredicateWalker{
 		}
 	}
 
-	private Object walkString(Tree node) {
+	private Object walkString(CmisTree node) {
 		String s = node.getText();
 		s = s.substring(1, s.length() - 1);
 		//return "\"" + ClientUtils.escapeQueryChars(s) + "\"";
 		return ClientUtils.escapeQueryChars(s);
 	}
 
-	private Object walkTimestamp(Tree node) {
+	private Object walkTimestamp(CmisTree node) {
 		String s = node.getText();
 		s = s.substring(s.indexOf('\'') + 1, s.length() - 1);
 		return s;
 	}
 
-	private Object walkList(Tree node) {
+	private Object walkList(CmisTree node) {
 		int n = node.getChildCount();
 		List<Object> res = new ArrayList<Object>(n);
 		for (int i = 0; i < n; i++) {
@@ -859,17 +859,17 @@ public class SolrPredicateWalker{
 		return res;
 	}
 
-	private Object walkCol(Tree node) {
+	private Object walkCol(CmisTree node) {
 		return null;
 	}
 
-	private Object walkId(Tree node) {
+	private Object walkId(CmisTree node) {
 		String s;
 		s = node.toStringTree();
 		return s;
 	}
 
-	private Object walkOtherExpr(Tree node) {
+	private Object walkOtherExpr(CmisTree node) {
 		throw new CmisRuntimeException("Unknown node type: " + node.getType()
 				+ " (" + node.getText() + ")");
 	}
@@ -926,7 +926,7 @@ public class SolrPredicateWalker{
 		return res.toString();
 	}
 
-	private ColumnReference getColumnReference(Tree columnNode) {
+	private ColumnReference getColumnReference(CmisTree columnNode) {
 		CmisSelector sel = queryObject.getColumnReference(columnNode
 				.getTokenStartIndex());
 		if (null == sel) {
@@ -943,7 +943,7 @@ public class SolrPredicateWalker{
 	/**
 	 * Safely convert walkExpr result to String, handling ArrayList cases
 	 */
-	private String safeWalkExprToString(Tree node) {
+	private String safeWalkExprToString(CmisTree node) {
 		Object result = walkExpr(node);
 		if (result instanceof String) {
 			return (String) result;

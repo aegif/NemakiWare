@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Method;
 
-import org.antlr.runtime.tree.CommonTree;
+import org.apache.chemistry.opencmis.server.support.query.CmisCommonTree;
 import org.apache.chemistry.opencmis.server.support.query.TextSearchLexer;
 import org.apache.lucene.search.Query;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,26 +30,24 @@ public class SolrPredicateWalkerMultilingualTest {
     public void setUp() throws Exception {
         walker = new SolrPredicateWalker(null, null, null, null);
 
-        walkTextWordMethod = SolrPredicateWalker.class.getDeclaredMethod("walkTextWord", org.antlr.runtime.tree.Tree.class);
+        walkTextWordMethod = SolrPredicateWalker.class.getDeclaredMethod("walkTextWord", org.apache.chemistry.opencmis.server.support.query.CmisTree.class);
         walkTextWordMethod.setAccessible(true);
 
-        walkTextPhraseMethod = SolrPredicateWalker.class.getDeclaredMethod("walkTextPhrase", org.antlr.runtime.tree.Tree.class);
+        walkTextPhraseMethod = SolrPredicateWalker.class.getDeclaredMethod("walkTextPhrase", org.apache.chemistry.opencmis.server.support.query.CmisTree.class);
         walkTextPhraseMethod.setAccessible(true);
 
         detectScriptMethod = SolrPredicateWalker.class.getDeclaredMethod("detectScript", String.class);
         detectScriptMethod.setAccessible(true);
     }
 
-    private CommonTree createWordNode(String text) {
-        CommonTree node = new CommonTree();
-        node.token = new org.antlr.runtime.CommonToken(TextSearchLexer.TEXT_SEARCH_WORD_LIT, text);
-        return node;
+    // OpenCMIS 2.0.0-RC1 replaced the ANTLR3 tree with its own CmisTree abstraction;
+    // CmisCommonTree is the concrete node, carrying the same lexer token types.
+    private CmisCommonTree createWordNode(String text) {
+        return new CmisCommonTree(TextSearchLexer.TEXT_SEARCH_WORD_LIT, text);
     }
 
-    private CommonTree createPhraseNode(String text) {
-        CommonTree node = new CommonTree();
-        node.token = new org.antlr.runtime.CommonToken(TextSearchLexer.TEXT_SEARCH_PHRASE_STRING_LIT, text);
-        return node;
+    private CmisCommonTree createPhraseNode(String text) {
+        return new CmisCommonTree(TextSearchLexer.TEXT_SEARCH_PHRASE_STRING_LIT, text);
     }
 
     // ========================================
@@ -121,7 +119,7 @@ public class SolrPredicateWalkerMultilingualTest {
 
     @Test
     public void testWalkTextWordLatinOnly() throws Exception {
-        CommonTree node = createWordNode("hello");
+        CmisCommonTree node = createWordNode("hello");
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
 
@@ -131,7 +129,7 @@ public class SolrPredicateWalkerMultilingualTest {
 
     @Test
     public void testWalkTextWordLatinOnlyRunning() throws Exception {
-        CommonTree node = createWordNode("running");
+        CmisCommonTree node = createWordNode("running");
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
 
@@ -146,7 +144,7 @@ public class SolrPredicateWalkerMultilingualTest {
 
     @Test
     public void testWalkTextWordCjkOnly() throws Exception {
-        CommonTree node = createWordNode("検索");
+        CmisCommonTree node = createWordNode("検索");
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
 
@@ -160,7 +158,7 @@ public class SolrPredicateWalkerMultilingualTest {
 
     @Test
     public void testWalkTextWordMixed() throws Exception {
-        CommonTree node = createWordNode("test検索");
+        CmisCommonTree node = createWordNode("test検索");
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
 
@@ -174,7 +172,7 @@ public class SolrPredicateWalkerMultilingualTest {
 
     @Test
     public void testWalkTextWordUnderscore() throws Exception {
-        CommonTree node = createWordNode("TEST_KEYWORD_123");
+        CmisCommonTree node = createWordNode("TEST_KEYWORD_123");
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
 
@@ -188,7 +186,7 @@ public class SolrPredicateWalkerMultilingualTest {
 
     @Test
     public void testWalkTextPhraseLatinOnly() throws Exception {
-        CommonTree node = createPhraseNode("'hello world'");
+        CmisCommonTree node = createPhraseNode("'hello world'");
         Query query = (Query) walkTextPhraseMethod.invoke(walker, node);
         String queryStr = query.toString();
 
@@ -202,7 +200,7 @@ public class SolrPredicateWalkerMultilingualTest {
 
     @Test
     public void testWalkTextPhraseCjkOnly() throws Exception {
-        CommonTree node = createPhraseNode("'日本語フレーズ'");
+        CmisCommonTree node = createPhraseNode("'日本語フレーズ'");
         Query query = (Query) walkTextPhraseMethod.invoke(walker, node);
         String queryStr = query.toString();
 
@@ -216,7 +214,7 @@ public class SolrPredicateWalkerMultilingualTest {
 
     @Test
     public void testWalkTextPhraseMixed() throws Exception {
-        CommonTree node = createPhraseNode("'test document テスト'");
+        CmisCommonTree node = createPhraseNode("'test document テスト'");
         Query query = (Query) walkTextPhraseMethod.invoke(walker, node);
         String queryStr = query.toString();
 
@@ -231,7 +229,7 @@ public class SolrPredicateWalkerMultilingualTest {
     @Test
     public void testWalkTextWordLatinReturnsBooleanQueryWithBothFields() throws Exception {
         // "test" is Latin-only → BooleanQuery with text + text_en (SHOULD)
-        CommonTree node = createWordNode("test");
+        CmisCommonTree node = createWordNode("test");
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
 
@@ -242,7 +240,7 @@ public class SolrPredicateWalkerMultilingualTest {
     @Test
     public void testWalkTextWordCjkReturnsSingleTermQuery() throws Exception {
         // "検索" is CJK-only → single TermQuery (text only)
-        CommonTree node = createWordNode("検索");
+        CmisCommonTree node = createWordNode("検索");
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
 
@@ -253,7 +251,7 @@ public class SolrPredicateWalkerMultilingualTest {
     @Test
     public void testWalkTextPhraseLatinReturnsBooleanQueryWithBothFields() throws Exception {
         // "multi word phrase" is Latin-only → BooleanQuery with text + text_en
-        CommonTree node = createPhraseNode("'multi word phrase'");
+        CmisCommonTree node = createPhraseNode("'multi word phrase'");
         Query query = (Query) walkTextPhraseMethod.invoke(walker, node);
         String queryStr = query.toString();
 
@@ -271,7 +269,7 @@ public class SolrPredicateWalkerMultilingualTest {
     public void testLatinQueryCoversTextFieldForAuthorSearch() throws Exception {
         // author は text にのみ copyField される。
         // Latin-only クエリが text フィールドを含むことで author 検索が可能であることを確認。
-        CommonTree node = createWordNode("smith");
+        CmisCommonTree node = createWordNode("smith");
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
 
@@ -282,7 +280,7 @@ public class SolrPredicateWalkerMultilingualTest {
     @Test
     public void testLatinPhraseCoversTextFieldForResourcenameSearch() throws Exception {
         // resourcename は text にのみ copyField される。
-        CommonTree node = createPhraseNode("'annual report'");
+        CmisCommonTree node = createPhraseNode("'annual report'");
         Query query = (Query) walkTextPhraseMethod.invoke(walker, node);
         String queryStr = query.toString();
 
@@ -313,7 +311,7 @@ public class SolrPredicateWalkerMultilingualTest {
 
     @Test
     public void testContainsWithBareDoubleQuoteIsEscaped() throws Exception {
-        CommonTree node = createWordNode("\"");
+        CmisCommonTree node = createWordNode("\"");
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
         assertBalancedQuotes(queryStr);
@@ -322,7 +320,7 @@ public class SolrPredicateWalkerMultilingualTest {
 
     @Test
     public void testContainsWithEmbeddedQuoteIsEscaped() throws Exception {
-        CommonTree node = createWordNode("foo\"bar");
+        CmisCommonTree node = createWordNode("foo\"bar");
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
         assertBalancedQuotes(queryStr);
@@ -331,7 +329,7 @@ public class SolrPredicateWalkerMultilingualTest {
 
     @Test
     public void testContainsWithBackslashIsEscaped() throws Exception {
-        CommonTree node = createWordNode("a\\b");
+        CmisCommonTree node = createWordNode("a\\b");
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
         assertBalancedQuotes(queryStr);
@@ -343,7 +341,7 @@ public class SolrPredicateWalkerMultilingualTest {
         // A colon is literal inside a quoted phrase; it must NOT be turned into
         // "a\\:b" (literal backslash + colon). Regression for the earlier
         // escapeString(':' -> '\:') + backslash-doubling double-escape.
-        CommonTree node = createWordNode("a:b");
+        CmisCommonTree node = createWordNode("a:b");
         Query query = (Query) walkTextWordMethod.invoke(walker, node);
         String queryStr = query.toString();
         assertBalancedQuotes(queryStr);
