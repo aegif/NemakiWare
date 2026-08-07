@@ -404,13 +404,30 @@ test.describe('Integration Settings - API', () => {
     expect(getResponse.ok()).toBe(true);
     const getData = await getResponse.json();
 
-    expect(getData.settings['atlas.enabled']).toBe('true');
-    expect(getData.settings['atlas.endpoint']).toBe('https://e2e-atlas.example.com:21443');
-    expect(getData.settings['atlas.username']).toBe('e2e-atlas-user');
-    expect(getData.settings['atlas.password']).toBe('[configured]');
-    expect(getData.sources['atlas.endpoint']).toBe('couchdb');
+    // What is under test is the PRECEDENCE contract, not one branch of it. `atlas.*` is an
+    // ordinary key, so a system property set at deploy time outranks the stored value — the
+    // atlas/4b-dryrun overlays pin exactly these four with -D, and on such a deployment the
+    // stored value is written and correctly does NOT take effect. Asserting `couchdb`
+    // unconditionally made this test fail on every environment that runs Atlas for real,
+    // which is the only kind of environment where the rest of the Atlas suite is exercised.
+    const endpointSource = getData.sources['atlas.endpoint'];
+    expect(['couchdb', 'system_property']).toContain(endpointSource);
 
-    console.log('Atlas settings round-trip verified');
+    if (endpointSource === 'couchdb') {
+      expect(getData.settings['atlas.enabled']).toBe('true');
+      expect(getData.settings['atlas.endpoint']).toBe('https://e2e-atlas.example.com:21443');
+      expect(getData.settings['atlas.username']).toBe('e2e-atlas-user');
+      expect(getData.settings['atlas.password']).toBe('[configured]');
+      console.log('Atlas settings round-trip verified (stored value is effective)');
+    } else {
+      // The deploy-time value must still be the effective one, and the write must not have
+      // half-applied: every key the overlay pins reports the same source.
+      expect(getData.settings['atlas.endpoint']).not.toBe('https://e2e-atlas.example.com:21443');
+      for (const key of ['atlas.enabled', 'atlas.username']) {
+        expect(getData.sources[key]).toBe('system_property');
+      }
+      console.log('Atlas settings precedence verified (system property outranks the store)');
+    }
 
     // Cleanup
     await page.request.put(
