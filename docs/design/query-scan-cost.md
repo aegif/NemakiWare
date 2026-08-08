@@ -322,3 +322,119 @@ Solr 10 は `sort=content_length desc` / `sort=name asc` を docValues 無しで
 - `SolrQueryProcessor.java:560` が `getFiltered` の**前**に全件ロックを取る
 - `getChildren` の filter+orderBy 無音 no-op (§5-7。0-d で直る)
 - DESC の null-first (§5-3) を修正するかどうかの互換性判断
+
+---
+
+# 付録 A: 実測で確定した事実 (2026-08-08, 親エージェントによる実行)
+
+以下は**サブエージェントの主張ではなく、稼働中の `nb33` スタックに対して実際に
+実行して得た結果**です。上の本文 (§1–§10) はまだレビュー結果を反映しきっておらず、
+矛盾する箇所は**この付録が正**です。
+
+再現環境: `docker compose -p nb33 -f docker/docker-compose-simple.yml`、
+core 3.3.0、bedroom = CouchDB 17,109 doc / Solr 2,457 doc、caller は admin、
+Browser binding。
+
+## A-1. 案 0 の前提は正しい — 本体を落とさずに真の長さが取れる
+
+640 バイトの添付を持つ文書を 1 件作って観察した結果:
+
+| 参照先 | 値 |
+|---|---|
+| CouchDB `_attachments.content.length` | **43** (gzip 後) |
+| `?att_encoding_info=true` の `encoded_length` | 43 |
+| 添付ノード文書の**トップレベル `length` / `actualLength`** | **640** |
+| 実際に取得した本体 | 640 バイト |
+| CMIS が申告する `cmis:contentStreamLength` | **640** (正しい) |
+
+`CouchAttachmentNode.getActualLength()` は `_attachments` 側の値が gzip で
+信用できないとき、**添付ノード文書自身が持つ `length` にフォールバック**します。
+この値は upload 時に非圧縮サイズから設定されています。
+
+→ **`setCmisAttachmentProperties` に必要な length / mimeType / fileName は、
+metadata の doc GET 1 回で完結します。本体ダウンロード 2 回は不要です。**
+`_attachments` の 43 をそのまま使う実装にしてはいけない、という制約付きで
+案 0 の前提は成立します。
+
+## A-2. データ消失経路は実在する (機構は確認、削除自体は未実行)
+
+同じ probe 文書に対し compile 経路 (`getObject`) と読み取り経路
+(`getContentStream`) を 3 往復ずつ流しても、添付ノードの `_rev` は
+**動きませんでした** (`2-7e37...` のまま)。`setStream` が走っていないからです。
+
+走らない理由は `contentBytes` が埋まっているからで、**それを埋めているのが
+案 0 で外そうとしている本体ダウンロードそのもの**です。外すと
+`getInputStream()` が null を返し、`ContentServiceImpl.java:3573-3581` が
+`setStream` を呼び、`_attachments` を含まない update で添付が消えます。
+
+→ **案 0 は単独では出せません。** `setStream` のガード撤去 (または
+`CouchAttachmentNode(AttachmentNode)` で `_attachments` スタブを保持) を
+**先に**入れることが着手前提です。
+
+## A-3. 案 F0 は成立する。ただし tie-breaker が結論を決める
+
+既定順序 `cmis:creationDate DESC` を Solr の `sort` に載せ、現行の
+in-memory ソート結果と objectId 列を突き合わせた結果:
+
+| 対象 | 件数 | 結果 |
+|---|---|---|
+| `bench-doc-000%` (同着 0 組) | 216 | `sort=creation_date desc` で **216/216 完全一致** |
+
+同着を含む集合で測り直すと、**tie-breaker の選択で結果が割れます**:
+
+| Solr の sort | 現行順との一致 |
+|---|---|
+| `creation_date desc` | **一致** (0/115 相違) — ただし同着は Lucene の内部 docid 順に依存 |
+| `creation_date desc, modified desc` | **一致** (0/115 相違) |
+| `creation_date desc, object_id asc` | **不一致** (4/115 相違) |
+| `creation_date desc, object_id desc` | **不一致** (2/115 相違) |
+
+理由は明快です。現行の `SortUtil` は `Collections.sort` による**安定ソート**で、
+入力は Solr の `modified desc` です。つまり同着は `modified desc` 順に並びます。
+Solr 側で再現するなら**第 2 キーは `modified desc`** でなければなりません。
+
+→ **`object_id asc` を tie-breaker にすると順序が変わります** (この標本で 3.5%)。
+tie-breaker を付けないと Lucene の内部 docid 順に依存し、
+**segment merge / 再索引で並びが変わりうる**ためページングの安定性を損ないます。
+案 F0 を採るなら `sort = <ORDER BY のキー>, modified desc` が正解です。
+
+## A-4. `fl` の指定漏れは 1 行で 36 倍
+
+実装は `fl` を指定しておらず (`setFields` / `CommonParams.FL` の出現 0 件)、
+読むのは `object_id` だけです (`SolrQueryProcessor.java:538`)。
+216 ヒットのクエリを実装と同じパラメータで叩いた結果:
+
+| | 転送量 | 所要 |
+|---|---|---|
+| 現行 (fl 指定なし) | **298,018 B** | 5.9–12.2 ms |
+| `fl=object_id` | **8,267 B** | 4.3–4.6 ms |
+
+**36 倍の削減。** `rows` は `aclScanCap` (既定 10,000) まで広がるので、
+大きなクエリほど効きます。意味論の変更なし。
+
+## A-5. ソート対象フィールドの実効定義
+
+| field | type | docValues | multiValued | sortMissingLast |
+|---|---|---|---|---|
+| `creation_date` | pdate | true | false | **true** |
+| `name` | string | true | false | true |
+| `object_id` | string | true | false | true |
+| `modified` | date | true | false | **未指定** |
+| `content_length` | long | true | false | **未指定** |
+| `_root_` | string | **false** | false | true |
+
+`sortMissingLast` が field ごとに揃っていません。`modified` を tie-breaker に
+使う場合、欠損値の位置が `creation_date` と異なる可能性があります (要確認)。
+
+bedroom で `creation_date` を持たない文書は **2,457 件中 3 件**、いずれも
+`nemaki:user` です。`FROM cmis:document` のクエリは踏みませんが、
+`FROM cmis:item` は踏みます。
+
+## A-6. この付録が本文に要求する訂正
+
+- §3 案 0 の「本体取得を `getContentStream` 側へ移す」→ **metadata 専用の読み取りにし、
+  `setStream` ガードの撤去を着手前提にする** (A-1, A-2)
+- §3 案 F の docValues に関する記述 → A-5 の実効定義に差し替え
+- §4 の順序 → 案 F0 を候補に加えたうえで、第 0 段に **0-e (`fl=object_id`)** を追加 (A-4)
+- §6 に **V12: 同着を含む集合での objectId 列一致** を追加。tie-breaker を
+  `modified desc` とすることの妥当性を、同着を人為的に作った fixture で検証する (A-3)
