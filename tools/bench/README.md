@@ -173,6 +173,76 @@ cost 10 の状態で取ったスレッドダンプでは 16 本中 15 本が
 子 50 件 525 ms に対し子 143 件 1209 ms)。`getChildrenCount` の
 reduce クエリも毎回 1 往復増えますが、全件取得する以上その答えは取得結果から分かります。
 
+## OpenCMIS 2.0 はどれだけ効いたか
+
+3.2.8 = `1.1.0-nemakiware` / 3.3.0 = `2.0.0-RC2-nemakiware` なので、この 2 つの比較が
+そのままアップリフトの評価になります。ただし cost 12 の BCrypt が容量の 6 割を
+食っている状態では差が埋もれるため、**両者とも子 50 件 + cost 10** に揃えて測りました
+(Solr 文書数は 3.2.8 が 2,322、3.3.0 が 2,238 で 3.2.8 がわずかに不利)。
+
+| c=16 | 混合 | getObject | getChildren | query | content |
+|---|---|---|---|---|---|
+| 3.2.8 | **113.7 rps** | 69–71 ms | 309–319 ms | **79–81 ms** | 69–72 ms |
+| 3.3.0 | **104.0 rps** | 72–75 ms | 302–307 ms | **146–150 ms** | 71–75 ms |
+
+差は 8.5%。そのほぼ全部が `query` です。`getChildren` は同じ、`getObject` /
+`content` は 4% 程度。**直列 (c=1) では 3.3 のほうが速い** — 同じクエリ 20 本が
+3.2.8 で 2.06 秒、3.3.0 で 1.50 秒。つまり 1 リクエストの仕事は増えておらず、
+同時実行時にだけ差が出ます。
+
+`query` の差は OpenCMIS ではありません。**3.3 の ACL-in-Solr が `numItems` を
+正確に返すようになった**ためです (同じクエリで 3.2.8 は `numItems: 25` =
+ページ長、3.3.0 は `numItems: 216` = 実際の総数)。総数を出すには全ヒットを
+ACL 判定する必要があり、`SolrQueryProcessor.queryWithinScanCap` (3.3 で新設) が
+それを行います。結果、`TypeManagerImpl.getTypeDefinition` の呼び出しが
+**1 クエリあたり 26 回 → 241 回 (9.2 倍)** に増えます。
+
+**OpenCMIS 2.0 の寄与は getObject / content の +4% 程度が上限**で、それも
+バージョン差以外の要因と区別がつく大きさではありません。
+
+## 直列化点は 3 つ、いずれも JVM ローカル
+
+`getTypeDefinition` が 9 倍呼ばれること自体は本来なら安いはずでした。高くつくのは
+この 2 つが**呼ばれるたびに**走るからです。
+
+- `TypeManagerImpl.java:2890` — `log.warn("INHERITANCE DEBUG: ...")` が
+  `isDebugEnabled()` ガード無しで置かれており、コンソール appender へ書きます。
+  スレッドダンプでは 16 本中 11–12 本がこの書き込みで待っていました
+  (`ConsoleTarget` → `SystemLogHandler` → `FileOutputStream.writeBytes`)。
+  **3.2.8 にも同じ行があります** — 3.3 は呼ばれる回数が 9 倍なだけです。
+- `TypeManagerImpl.cleanupTimedOutTypes()` — `getTypeDefinition` の先頭で毎回呼ばれ、
+  掃除対象が無くても `synchronized (initLock)` に入ります。**プロセス全体で 1 つの
+  monitor** です。Virtual Thread は `synchronized` の中でブロックするとキャリアを
+  pin するため、ここは特に相性が悪い (ダンプに `ForkJoinPool.tryCompensate` が出ます)。
+
+なお `JsonLogger` (Spring AOP) が CMIS 呼び出しの入出力を丸ごと INFO で吐いており、
+**1 クエリあたり約 11,700 行 / 500 KB** に達します。ただしログレベルを WARN に
+落としても 3.2.8 は 113.7 → 113.1 rps、3.3.0 は 104.0 → 106.7 rps で、
+この負荷では律速ではありませんでした (`INHERITANCE DEBUG` は WARN なので残ります)。
+
+**3 つとも JVM ローカルです。** CouchDB のビュー呼び出しは 5–40 ms、Solr も余裕が
+あり、共有バックエンドは飽和していません。つまり**現状のボトルネックは AP を
+増やせばほぼ線形に緩和します**。
+
+## 冷起動 — 新しい replica は即座には使えない
+
+core 再起動後の挙動 (3.3.0)。
+
+| 投入の仕方 | 結果 |
+|---|---|
+| 逐次 1 本ずつ | 最初の応答まで 10.3 秒、t+17 秒で定常 (query 87 ms) |
+| いきなり 16 並列 | t+14 秒に投入すると **全員が 8.3 秒**待たされる |
+
+`docker-compose-simple.yml` の core healthcheck は
+`exec 3<>/dev/tcp/127.0.0.1/8080` — **TCP が繋がるかだけ**を見ます。ポートは
+アプリが要求を捌けるようになる前に開くので、これを LB の readiness に使うと
+暖まっていない replica にトラフィックが入ります。
+
+`/core/api/v1/health` は OpenAPI 上「認証不要」と書かれていますが、実際には
+**資格情報を付けても 401** を返します (未認証も 401)。現状 LB から使える
+無認証エンドポイントは `/core/rest/all/repositories` (4.8 ms) だけで、
+これは依存関係の状態を見ません。
+
 ## 比較対象を古いタグから作るときの落とし穴
 
 - **3.0.0-RC2 は JDK 17 でしか通らない。** `Thread.stop()` を呼んでおり、
