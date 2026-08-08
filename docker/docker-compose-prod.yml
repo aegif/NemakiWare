@@ -80,7 +80,11 @@ services:
       # image, uncomment and provide your own file:
       # - ./config/nemakiware.properties:/usr/local/tomcat/conf/nemakiware.properties:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/core"]
+      # Readiness, not liveness: /core answers as soon as the webapp is deployed, but the first
+      # CMIS call still waits ~10s for the type cache, and concurrent requests arriving in that
+      # window were measured queueing 8.3s behind it. /rest/all/readiness builds the cache and
+      # returns 503 until it has, so an orchestrator does not route to a cold instance.
+      test: ["CMD", "curl", "-f", "http://localhost:8080/core/rest/all/readiness"]
       interval: 30s
       timeout: 10s
       retries: 5

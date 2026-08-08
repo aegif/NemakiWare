@@ -54,6 +54,12 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	private final jp.aegif.nemaki.security.LoginThrottle loginThrottle =
 			new jp.aegif.nemaki.security.LoginThrottle();
 
+	// CMIS has no session: credentials arrive on every request, so without this the server
+	// re-runs BCrypt per request (measured at 96.8% of all CPU). Successes only, keyed on the
+	// stored hash so a password change invalidates by itself.
+	private final jp.aegif.nemaki.security.VerifiedPasswordCache passwordCache =
+			new jp.aegif.nemaki.security.VerifiedPasswordCache();
+
 	private ContentService contentService;
 	private ContentDaoService contentDaoService;
 	private PrincipalService principalService;
@@ -397,11 +403,22 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 			if (log.isDebugEnabled()) {
 				log.debug("Password field is not blank, attempting match with upgrade");
 			}
-			
+
+			// This same password was verified against this same stored hash moments ago. Redoing
+			// the BCrypt would produce the identical answer for ~225ms of CPU (cost 12), on every
+			// request, because CMIS clients re-send credentials each time. The stored hash is part
+			// of the cache key, so a password change makes the entry stop matching on its own.
+			if (passwordCache.isVerified(repositoryId, userId, u.getPassowrd(), password)) {
+				if (log.isDebugEnabled()) {
+					log.debug("Password match SUCCESS (recently verified)");
+				}
+				return u;
+			}
+
 			// 新しいアップグレード対応認証を使用
-			AuthenticationUtil.PasswordMatchResult result = 
+			AuthenticationUtil.PasswordMatchResult result =
 				AuthenticationUtil.passwordMatchesWithUpgrade(password, u.getPassowrd());
-			
+
 			if (result.matches()) {
 				if (log.isDebugEnabled()) {
 					log.debug("Password match SUCCESS");
@@ -428,6 +445,11 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 					}
 				}
 				
+				// Remember the verification that just ran — after any upgrade, so the key carries
+				// the hash now on the account rather than the one it replaced. Failures are
+				// deliberately not remembered: LoginThrottle has to keep seeing every one of them.
+				passwordCache.remember(repositoryId, userId, u.getPassowrd(), password);
+
 				log.debug(String.format( "[%s][%s]Get authenticated user successfully ! , Is admin?  : %s", repositoryId, userId , u.isAdmin()));
 				return u;
 			} else {

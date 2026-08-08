@@ -233,15 +233,74 @@ core 再起動後の挙動 (3.3.0)。
 | 逐次 1 本ずつ | 最初の応答まで 10.3 秒、t+17 秒で定常 (query 87 ms) |
 | いきなり 16 並列 | t+14 秒に投入すると **全員が 8.3 秒**待たされる |
 
-`docker-compose-simple.yml` の core healthcheck は
-`exec 3<>/dev/tcp/127.0.0.1/8080` — **TCP が繋がるかだけ**を見ます。ポートは
+core の healthcheck はポートに繋がるかどうかしか見ていませんでした。ポートは
 アプリが要求を捌けるようになる前に開くので、これを LB の readiness に使うと
 暖まっていない replica にトラフィックが入ります。
 
-`/core/api/v1/health` は OpenAPI 上「認証不要」と書かれていますが、実際には
-**資格情報を付けても 401** を返します (未認証も 401)。現状 LB から使える
-無認証エンドポイントは `/core/rest/all/repositories` (4.8 ms) だけで、
-これは依存関係の状態を見ません。
+> **訂正**: 詳細ヘルスの URL は `/core/api/v1/health` ではなく
+> **`/core/api/v1/cmis/health`** です (Jersey app が `/api/v1/cmis/*` に mount されている)。
+> 正しい URL なら資格情報付きで 200 を返します。前者は存在しないパスで、
+> `/api/*` の認証フィルタが 401 を返していたものです。
+
+## 改善 (2026-08-08)
+
+4 か所直しました。いずれも「毎リクエスト同じ仕事を繰り返す」類です。
+
+| | 変更 |
+|---|---|
+| 認証 | `VerifiedPasswordCache` — 検証済みの (repo, user, 保存ハッシュ, パスワード) を既定 30 秒記憶。成功のみ。保存ハッシュがキーに入るのでパスワード変更で自動失効 |
+| 型定義 | `TypeManagerImpl:2890` のガード無し WARN と、同メソッド内の無条件 debug 3 本を `isDebugEnabled()` の内側へ |
+| 型定義 | `cleanupTimedOutTypes()` に `pendingDeletions == 0` の早期 return。削除中が無ければ `initLock` を取らない |
+| CouchDB | `getChildren` / `getChildrenPaged` の `include_docs=true` を廃止し、view の value (＝文書そのもの) を使う |
+| CouchDB | `CloudantClientPool.getClient()` の毎回 INFO をガード |
+
+**cost 12 のまま、子 50 件のコーパスで 40.4 → 129.2 rps (3.2 倍)**
+(127.8 / 129.7 / 130.0)。
+
+| c=16 p50 | 改善前 | 改善後 |
+|---|---|---|
+| getObject | 313 ms | **2 ms** |
+| content | 314 ms | **2 ms** |
+| query | 445 ms | **23 ms** |
+| getChildren | 474 ms | 413 ms |
+| スループット | 40.4 rps | **129.2 rps** |
+
+### 次の律速は getChildren、ただし CouchDB ではない
+
+`getChildren` だけが残りました。他が 2–23 ms なので、混合負荷の所要時間は
+ほぼこれで決まります (Little の法則で 16/0.121 s ≒ 132 rps、実測 129 とほぼ一致)。
+
+CouchDB 側は余裕があります。同じ view を curl で叩くと c=16 で p50 45 ms /
+**356 rps** 出るのに、`getChildren` は c=16 で 38 rps しか出ません。CouchDB の
+アクセスログでは 1 リクエストにつき view POST が 2 回 (reduce の件数 2 ms と
+本体 37–40 ms)。curl の GET が 4.7 ms なので、SDK 経由の 37 ms 側に
+まだ説明のつかない差があります。ここが次の一手です。
+
+### readiness
+
+`GET /core/rest/all/readiness` を新設 (無認証、`{"status":"ready"}` / 503)。
+基底型定義を解決するので、**実際に型キャッシュを構築してから** ready を返します。
+compose の core healthcheck をこれに向けました。
+
+| プローブ | 再起動後、合格するまで |
+|---|---|
+| TCP connect (旧) | **0.0 秒** |
+| `/rest/all/readiness` (新) | 10.8 秒 |
+
+詳細ヘルス (`/api/v1/cmis/health`) は認証必須のまま据え置き。LB に渡すのは
+真偽値だけで足り、デプロイの内訳を無認証で晒す必要はありません。
+
+### 残っている既知の問題
+
+- **アイドル後・再起動直後の最初の 16 並列バーストで `query` が 60 秒
+  タイムアウトする**ことがあります (`getObject` / `content` は正常のまま)。
+  再現性あり。readiness はこれを LB から隠しますが、原因は未特定です。
+- **TCK `QueryTestGroup` の 2 件が落ちます** (4,805 件中)。いずれも
+  「作成直後に query して 0 件」で、Solr の非同期索引が追いつく前に問い合わせる
+  ものです。手動では文書・フォルダとも約 2 秒で索引され query できることを確認済み。
+  サーバが速くなったぶん create→query の間隔が縮み、元からあった競合が
+  出やすくなった可能性があります。**リリース前にクリーン環境
+  (`ci-complete-setup.sh`) で確認が必要**です。
 
 ## 比較対象を古いタグから作るときの落とし穴
 

@@ -107,7 +107,12 @@ public class AuthenticationFilter implements Filter {
 			// Bypass authentication for public /rest/all/* endpoints
 			// - /rest/all/repositories: needed for login page
 			// - /rest/all/build-info: non-sensitive server metadata for version display
-			if (requestURI != null && (requestURI.contains("/rest/all/repositories") || requestURI.contains("/rest/all/build-info"))) {
+			// - /rest/all/readiness: load-balancer probe; a load balancer has no credentials, and
+			//   the answer is a bare {"status":...} with no deployment detail in it. The detailed
+			//   check stays authenticated at /api/v1/cmis/health.
+			if (requestURI != null && (requestURI.contains("/rest/all/repositories")
+					|| requestURI.contains("/rest/all/build-info")
+					|| requestURI.contains("/rest/all/readiness"))) {
 				log.debug("Bypassing authentication for public /rest/all/* URI: " + requestURI);
 				chain.doFilter(req, res);
 				return;

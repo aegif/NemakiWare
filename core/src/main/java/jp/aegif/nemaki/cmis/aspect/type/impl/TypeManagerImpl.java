@@ -147,10 +147,19 @@ public class TypeManagerImpl implements TypeManager {
 	
 	// CRITICAL FIX: Track types being deleted to prevent infinite recursion during cache refresh
 	private final Set<String> typesBeingDeleted = new HashSet<>();
-	
+
 	// ENHANCEMENT: Track deletion timestamps for timeout-based cleanup
 	private final Map<String, Long> typesDeletionTimestamps = new HashMap<>();
-	
+
+	// Both maps above are guarded by initLock. This counter is not — it exists so that
+	// cleanupTimedOutTypes(), which every getTypeDefinition() call runs, can decide there is
+	// nothing to clean WITHOUT taking the process-wide monitor. Deleting a type is rare and
+	// getTypeDefinition is on every response, so the common case must not serialise: on virtual
+	// threads a `synchronized` block that blocks pins its carrier, and the profile showed the
+	// ForkJoinPool compensating for exactly that. Mutated only under initLock; read unguarded,
+	// where a stale zero merely defers a cleanup whose deadline is five minutes away.
+	private volatile int pendingDeletions = 0;
+
 	// TIMEOUT: Maximum time a type can remain in "being deleted" state (5 minutes)
 	private static final long DELETION_TIMEOUT_MS = 5 * 60 * 1000L;
 
@@ -518,7 +527,8 @@ public class TypeManagerImpl implements TypeManager {
 			long currentTime = System.currentTimeMillis();
 			typesBeingDeleted.add(typeId);
 			typesDeletionTimestamps.put(typeId, currentTime);
-			
+			pendingDeletions = typesDeletionTimestamps.size();
+
 			log.debug("NEMAKI TYPE DELETION: Marked type as being deleted: " + typeId + " at timestamp: " + currentTime);
 			log.debug("NEMAKI TYPE DELETION: Total types currently being deleted: " + typesBeingDeleted.size());
 			log.debug("NEMAKI TYPE DELETION: Types being deleted: " + typesBeingDeleted);
@@ -538,7 +548,8 @@ public class TypeManagerImpl implements TypeManager {
 		synchronized (initLock) {
 			boolean wasRemoved = typesBeingDeleted.remove(typeId);
 			Long timestamp = typesDeletionTimestamps.remove(typeId);
-			
+			pendingDeletions = typesDeletionTimestamps.size();
+
 			if (wasRemoved) {
 				long duration = timestamp != null ? System.currentTimeMillis() - timestamp : 0;
 				log.debug("NEMAKI TYPE DELETION: Successfully unmarked type being deleted: " + typeId + " (duration: " + duration + "ms)");
@@ -555,10 +566,18 @@ public class TypeManagerImpl implements TypeManager {
 	 * This prevents memory leaks and race condition deadlocks
 	 */
 	public void cleanupTimedOutTypes() {
+		// Nothing is being deleted, which is the state this server is in essentially always.
+		// Taking initLock to discover that would serialise every getTypeDefinition() call — and
+		// getTypeDefinition() runs once per object in every response. The read is unguarded on
+		// purpose: pendingDeletions is volatile, and the worst a stale zero can do is postpone a
+		// cleanup whose deadline is DELETION_TIMEOUT_MS (five minutes) away.
+		if (pendingDeletions == 0) {
+			return;
+		}
 		synchronized (initLock) {
 			long currentTime = System.currentTimeMillis();
 			List<String> timedOutTypes = new ArrayList<>();
-			
+
 			// Find types that have exceeded timeout duration
 			for (Map.Entry<String, Long> entry : typesDeletionTimestamps.entrySet()) {
 				String typeId = entry.getKey();
@@ -582,7 +601,8 @@ public class TypeManagerImpl implements TypeManager {
 					typesBeingDeleted.remove(typeId);
 					typesDeletionTimestamps.remove(typeId);
 				}
-				
+				pendingDeletions = typesDeletionTimestamps.size();
+
 				log.debug("NEMAKI TYPE DELETION: Cleanup complete - remaining types being deleted: " + typesBeingDeleted.size());
 			}
 		}
@@ -2886,8 +2906,16 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		if (log.isDebugEnabled()) {
 				log.debug("*** THIS INSTANCE: " + this.hashCode() + " ***");
 			}
-		log.debug("OBJECT_IDENTITY: getTypeDefinition called for " + typeId); // (important-comment)
-		log.warn("INHERITANCE DEBUG: getTypeDefinition method called for repositoryId=" + repositoryId + ", typeId=" + typeId);
+		// Both of the lines that used to sit here ran on every call — an unguarded debug that
+		// still concatenates, and a WARN that a production configuration actually emits. This
+		// method is called once per object in every compiled response (241 times for a single
+		// 25-row query once ACL-in-Solr started counting the full result set), and the console
+		// appender is a process-wide serialisation point: a thread dump under load found 11 of
+		// 16 request threads queued inside that one write. Diagnostics belong behind isDebug.
+		if (log.isDebugEnabled()) {
+			log.debug("OBJECT_IDENTITY: getTypeDefinition called for repositoryId=" + repositoryId
+					+ ", typeId=" + typeId); // (important-comment)
+		}
 		if (log.isDebugEnabled()) {
 				log.debug("*** ClassLoader: " + this.getClass().getClassLoader() + " ***");
 			}
@@ -2951,10 +2979,14 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			return null;
 		}
 		
-		log.debug("NEMAKI TYPE DEBUG: Total types in cache for repository " + repositoryId + ": " + types.size());
+		if (log.isDebugEnabled()) {
+			log.debug("NEMAKI TYPE DEBUG: Total types in cache for repository " + repositoryId + ": " + types.size());
+		}
 		
 		// List all type IDs in cache for debugging
-		log.debug("NEMAKI TYPE DEBUG: Available type IDs in cache: " + types.keySet());
+		if (log.isDebugEnabled()) {
+			log.debug("NEMAKI TYPE DEBUG: Available type IDs in cache: " + types.keySet());
+		}
 		
 		TypeDefinitionContainer tc = types.get(typeId);
 		if (tc == null) {
@@ -3003,7 +3035,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			return null;
 		}
 		
-		log.debug("NEMAKI TYPE DEBUG: Found type '" + typeId + "' in cache successfully");
+		if (log.isDebugEnabled()) {
+			log.debug("NEMAKI TYPE DEBUG: Found type '" + typeId + "' in cache successfully");
+		}
 
 		TypeDefinition typeDefinition = tc.getTypeDefinition();
 		

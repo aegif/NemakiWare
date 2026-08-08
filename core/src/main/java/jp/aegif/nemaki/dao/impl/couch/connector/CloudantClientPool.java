@@ -318,7 +318,12 @@ public class CloudantClientPool {
 
 		CloudantClientWrapper wrapper = pool.get(repositoryId);
 		if (wrapper != null) {
-			log.info("Retrieved Cloudant client for repository '" + repositoryId + "' from pool.");
+			// Every database access goes through here, so an unconditional INFO is a console write
+			// per CouchDB round trip — and the console appender serialises across request threads.
+			// Same defect as TypeManagerImpl's per-call WARN; see TypeManagerHotPathTest.
+			if (log.isDebugEnabled()) {
+				log.debug("Retrieved Cloudant client for repository '" + repositoryId + "' from pool.");
+			}
 			return wrapper;
 		} else {
 			log.error("No Cloudant client found for repository: " + repositoryId);
