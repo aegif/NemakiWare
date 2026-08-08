@@ -1,0 +1,178 @@
+# 大規模組織 (10 階層 / 4 万ユーザ) での ACL-in-Solr のスケーリング
+
+検証: 2026-08-09、`nb33` スタック (3.3.0)。以下の数値はすべて稼働中のサーバでの実測です。
+
+**結論を先に**: 書き込み側 (索引) は問題ありません。**問題は読み取り側で、
+非 admin の CMIS query 1 本ごとに全グループを深さ優先探索しています。**
+グループ 1,013 個で **830 ms / クエリ**、しかもキャッシュされません。
+
+---
+
+## 1. 書き込み側 — user トークンの埋め込みは起きない
+
+`AclSemantics.readerTokens`
+([AclSemantics.java](../../core/src/main/java/jp/aegif/nemaki/acl/AclSemantics.java))
+は **ACE 1 件につきトークンを 1 個**しか出しません。判定順は
+
+1. `cmis:anyone` / `cmis:anonymous` リテラル → `anyone` トークン
+2. principal が **USER** として解決できる → `user:{repo}:{id}`
+3. principal が **GROUP** として解決できる → `group:{repo}:{id}`
+4. どちらでもない → **drop**
+
+**group はメンバー展開されません。** 実測した `readers` の例:
+
+```
+['group:bedroom:GROUP_EVERYONE', 'user:bedroom:system', 'user:bedroom:admin']
+```
+
+4 万人が所属するグループに ACL を与えても、文書に載るのは
+`group:bedroom:<そのグループ>` の**1 トークンだけ**です。
+
+> RELEASE_NOTES が「旧ビルドの索引は member-expanded `user:` トークンを持つ」と
+> 書いているのは **v3.3 以前**の話で、これが全再索引を必須にしている理由の 1 つです。
+> 現行ビルドは展開しません。
+
+したがって **索引サイズ・書き込み費用はユーザ数に依存しません。** 依存するのは
+文書あたりの ACE 数だけです。
+
+---
+
+## 2. 読み取り側 — ここが問題
+
+非 admin のクエリでは `ACLExpander.buildReaderTokenSet` が呼ばれ、その中で
+`PrincipalServiceImpl.getGroupIdsContainingUser`
+([PrincipalServiceImpl.java](../../core/src/main/java/jp/aegif/nemaki/businesslogic/impl/PrincipalServiceImpl.java))
+が走ります。実装はこうです。
+
+```java
+List<Group> groups = getGroups(repositoryId);      // 全グループを列挙
+for (Group g : groups) {
+    if (containsUserInGroup(repositoryId, userId, g, new HashSet<String>())) {
+        groupIds.add(g.getGroupId());
+    }
+}
+```
+
+- **全グループを列挙**し、各々を深さ優先で walk する
+- `visited` は**トップレベルごとにリセット**されるので、同じ部分木を何度も辿る
+- 再帰の各段で `getGroupById` を呼ぶ
+
+計算量は O(G × S) (G = グループ数、S = 部分木サイズ)。**ユーザが 1 つのグループに
+しか属していなくても、全グループを走査します。**
+
+### 実測 — グループ数に対して線形
+
+深さ 10 の鎖を横に並べ、`probeuser` を**最後の 1 本の葉**にだけ入れた状態
+(同一クエリ `SELECT cmis:objectId FROM cmis:document WHERE cmis:name = '...'`):
+
+| グループ数 | probeuser の p50 | admin の p50 |
+|---|---|---|
+| 13 | 20 ms | 5 ms |
+| 263 | 210 ms | 5 ms |
+| 513 | 444 ms | 5 ms |
+| **1,013** | **830 ms** | 6 ms |
+
+**約 0.82 ms / グループ**。admin は fq をバイパスするので影響を受けません。
+
+外挿すると:
+
+| グループ数 | 予想 p50 |
+|---|---|
+| 2,000 | ~1.6 s |
+| 5,000 | ~4.1 s |
+| 10,000 | ~8.2 s |
+
+**クエリ 1 本ごとに、非 admin ユーザ全員が払います。**
+
+### 費用は I/O ではなく CPU
+
+グループ 1,013 個の状態で 1 クエリ (868 ms) の CouchDB 往復は **2 回だけ**:
+
+```
+1 POST /_view/userItemsById
+1 POST /_view/groupItemsById     ← 全グループを 1 回で取得
+```
+
+つまりグループ情報は 1 回の view クエリで取れており、**830 ms は全部インメモリの
+深さ優先探索**です。しかも **2 回目も 757 ms** で、結果はキャッシュされていません。
+
+### 影響範囲は CMIS query だけ
+
+グループ 1,013 個の状態での操作別 p50:
+
+| 操作 | probeuser | admin |
+|---|---|---|
+| `getObject` | 5 ms | 6 ms |
+| `getChildren` | 4 ms | 5 ms |
+| **`query`** | **742 ms** | 4 ms |
+| `repositoryInfo` | 2 ms | 2 ms |
+
+フォルダ閲覧・文書取得は影響を受けません。**検索だけ**です。
+
+---
+
+## 3. 10 階層 / 4 万ユーザの組織で何が起きるか
+
+ユーザ数そのものは効きません。効くのは**グループ数**です。
+
+10 階層の組織で、各階層が平均 4 分岐なら 4^10 ≒ 100 万グループ — 現実にはそこまで
+分岐しませんが、部・課・チーム・プロジェクト・権限グループを合わせて
+**数千オーダー**になるのは珍しくありません。
+
+- グループ 2,000 個 → 検索 1 本あたり **約 1.6 秒**
+- グループ 5,000 個 → 検索 1 本あたり **約 4 秒**
+
+これは Solr に問い合わせる**前**に消える時間で、同時実行すれば CPU を占有します。
+16 並列の検索なら 16 コアを 4 秒間使い切る計算になります。
+
+**深さ (10 階層) 自体は主因ではありません。** 主因はグループの総数です。
+深さは `containsUserInGroup` の再帰段数に効きますが、支配項は
+「全トップレベルグループを走査する」外側のループです。
+
+---
+
+## 4. 対策
+
+### 4-1. 探索の向きを逆にする (推奨)
+
+`joinedDirectGroupsByUserId` という view が**既に存在します**
+([Patch_StandardCmisViews.java:134](../../core/src/main/java/jp/aegif/nemaki/patch/Patch_StandardCmisViews.java))。
+これはユーザ ID から**直接所属するグループ**を引く view です。
+
+現行は「全グループから下向きに user を探す」ですが、これを
+「user から上向きに親グループを辿る」に変えれば、計算量は
+O(G × S) から **O(ユーザが所属するグループ数 × 深さ)** になります。
+10 階層なら 1 ユーザあたり高々数十ノードです。
+
+注意点: 上向きに辿るには「あるグループを含む親グループ」を引く必要があり、
+その逆引き view が要ります (現行の `joinedDirectGroupsByUserId` は
+user → group であって group → 親 group ではない)。
+
+### 4-2. 解決結果をキャッシュする (即効性がある)
+
+`getGroupIdsContainingUser` の結果を短 TTL でキャッシュすれば、
+2 回目以降が消えます。既に `VerifiedPasswordCache` で同じ形を入れており
+(認証結果の短 TTL キャッシュ)、同じ作法が使えます。
+
+失効の考慮: グループのメンバー変更・入れ子変更で無効化が要ります。
+TTL を短く (30〜60 秒) すれば、失効の窓は認証キャッシュと同等になります。
+
+### 4-3. `visited` をトップレベル間で共有しない設計の見直し
+
+現行はコメントで「兄弟トップレベル間で共有すると別経路の一致を落とす」と
+説明されており、これは正しい判断です。ただし
+**「このユーザを含むグループ集合」を 1 回の走査で求める**アルゴリズムに変えれば、
+共有・非共有の問題自体が消えます。
+
+---
+
+## 5. まだ確かめていないこと
+
+- **fq のサイズと Solr の `maxBooleanClauses`**。ユーザが数百グループに所属する場合、
+  fq の OR 句がその数だけ並びます。Solr 10 の既定 `maxBooleanClauses` を超えると
+  クエリが失敗します。要実測
+- `GROUP_EVERYONE` の内部表現 (メンバー列挙か特別扱いか)。4 万人が列挙されていると
+  `getGroups` が返す 1 オブジェクトが巨大になります
+- 分岐のある実際の組織木 (本検証は深さ 10 の**鎖** 100 本)。分岐があると
+  `containsUserInGroup` の walk はさらに増えます
+- RAG / MCP 経由の検索が同じ経路を通るか
