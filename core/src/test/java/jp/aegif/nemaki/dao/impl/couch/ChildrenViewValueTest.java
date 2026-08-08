@@ -140,7 +140,14 @@ class ChildrenViewValueTest {
         for (String method : List.of("public List<Content> getChildren(String repositoryId, String parentId) {",
                 "public List<Content> getChildrenPaged(String repositoryId, String parentId, int skip, int limit) {")) {
             String body = stripComments(bodyOf(src, method));
-            assertFalse(body.contains("include_docs"),
+            // Omitting the key is not enough: CloudantClientWrapper.queryView defaults
+            // include_docs to true when the caller does not set it, so the only way to stop the
+            // second copy is to say false out loud. A version of this test that merely asserted
+            // the token was ABSENT passed against a build that still fetched every document.
+            assertTrue(body.contains("queryParams.put(\"include_docs\", false)"),
+                    method + " must set include_docs=false explicitly; omitting it leaves the"
+                            + " wrapper's default of true in place and the fix is a no-op");
+            assertFalse(body.contains("include_docs\", true"),
                     method + " re-fetches documents the view already emitted");
             assertFalse(body.contains("stale") || body.contains("\"update\""),
                     method + " reads a possibly stale index, where the emitted value may no longer"

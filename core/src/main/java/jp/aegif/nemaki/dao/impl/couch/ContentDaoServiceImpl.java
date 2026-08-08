@@ -1064,11 +1064,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Content> getChildren(String repositoryId, String parentId) {
 		try {
-			// No include_docs: the children view emits the whole document as its value, so asking
-			// for the documents as well makes CouchDB look each one up by id and send a second
-			// copy of it (see convertViewValueToContent).
+			// include_docs=false EXPLICITLY. The children view emits the whole document as its
+			// value, so asking for the documents as well makes CouchDB look each one up by id and
+			// send a second copy of it (see convertViewValueToContent). Omitting the key is NOT
+			// enough: CloudantClientWrapper.queryView defaults it back to true when the caller
+			// does not say otherwise, so leaving it out is a no-op on the wire.
 			Map<String, Object> queryParams = new HashMap<String, Object>();
 			queryParams.put("key", parentId);
+			queryParams.put("include_docs", false);
 			queryParams.put("reduce", false);
 
 			if (log.isDebugEnabled()) {
@@ -1109,9 +1112,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Content> getChildrenPaged(String repositoryId, String parentId, int skip, int limit) {
 		try {
-			// Same as getChildren: the view value already is the document.
+			// Same as getChildren: the view value already is the document, and include_docs must
+			// be set to false EXPLICITLY (the wrapper defaults it to true when omitted).
 			Map<String, Object> queryParams = new HashMap<String, Object>();
 			queryParams.put("key", parentId);
+			queryParams.put("include_docs", false);
 			queryParams.put("reduce", false);
 			queryParams.put("skip", skip);
 			queryParams.put("limit", limit);
