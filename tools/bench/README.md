@@ -290,17 +290,72 @@ compose の core healthcheck をこれに向けました。
 詳細ヘルス (`/api/v1/cmis/health`) は認証必須のまま据え置き。LB に渡すのは
 真偽値だけで足り、デプロイの内訳を無認証で晒す必要はありません。
 
-### 残っている既知の問題
+## 追加調査 (2026-08-08)
 
-- **アイドル後・再起動直後の最初の 16 並列バーストで `query` が 60 秒
-  タイムアウトする**ことがあります (`getObject` / `content` は正常のまま)。
-  再現性あり。readiness はこれを LB から隠しますが、原因は未特定です。
-- **TCK `QueryTestGroup` の 2 件が落ちます** (4,805 件中)。いずれも
-  「作成直後に query して 0 件」で、Solr の非同期索引が追いつく前に問い合わせる
-  ものです。手動では文書・フォルダとも約 2 秒で索引され query できることを確認済み。
-  サーバが速くなったぶん create→query の間隔が縮み、元からあった競合が
-  出やすくなった可能性があります。**リリース前にクリーン環境
-  (`ci-complete-setup.sh`) で確認が必要**です。
+### TCK の 2 件は「速くなったせいで出た」— 機能退行ではない
+
+同じバイナリのまま**認証キャッシュだけ無効化** (`-Dnemakiware.security.passwordCache.seconds=0`)
+して TCK `QueryTestGroup` を走らせると **6/6 通ります**。ただし所要時間は
+**98 秒 → 2,292 秒**。
+
+つまり失敗の条件はコード差ではなく速度です。TCK は作成した直後に query しますが、
+NemakiWare の検索は非同期索引なので即座には見えません。BCrypt 225 ms という
+偶然の遅延がその窓を埋めていたということです。
+
+create → query で見えるようになるまでを実測すると **1,671 ms** (n=10, 1,648–1,746)。
+内訳は、
+
+| | |
+|---|---|
+| create → Solr に届くまで (強制 commit で確認) | 642 ms |
+| commit / searcher 待ち (`SolrUtil` の `setCommitWithin(1000)`) | 1,029 ms |
+
+Solr 側の `autoSoftCommit.maxTime` は 3000 ms ですが、単文書の索引は
+`commitWithin(1000)` を付けるのでそちらが効いています。
+
+**判断が要る点**: 1.7 秒の検索遅延を仕様として受け入れて TCK 側を待たせるか、
+`commitWithin` を縮めて窓を狭めるか。後者は searcher の再オープンが増えるので
+書込み負荷とのトレードオフです。
+
+### 「60 秒ストール」はストールではなく N+1
+
+再起動 → アイドル後の最初の 16 並列 query が 50–90 秒返らない件。スレッドダンプでは
+16 本すべてが `CloudantClientWrapper.get` / `getAttachment` で待っており、一見
+ハングに見えます。しかし**その 50 秒間に CouchDB は 18,313 リクエストを受けています**。
+止まっていたのではなく、走り切れていなかっただけです。
+
+クエリ 1 本 (`maxItems=25`、一致 216 件) あたりの CouchDB 往復数:
+
+| | 往復数 | 所要 |
+|---|---|---|
+| cold (core 再起動直後) | **1,318** | 2.4 s |
+| warm (2 回目) | **0** | 0.1 s |
+
+内訳は `GET /bedroom/<id>` 668 + `GET /bedroom/<id>/content` 432 +
+`GET /bedroom/<id>?att_encoding_info=true` 216。216 は一致件数そのものです。
+
+つまり **25 行しか返さないのに、一致した 216 件すべてを content stream まで含めて
+実体化**しています。呼び出し元は 2 か所:
+
+- `CompileServiceImpl.compileDocumentProperties` → `setCmisAttachmentProperties`
+  → `getAttachmentRef` — `cmis:contentStreamLength` 等のために添付を取りに行く
+- `CompileServiceImpl.compileAllowableActions` → `ContentService.getVersionSeries`
+  — 1 件につきもう 1 往復
+
+要求されたプロパティは `cmis:objectId, cmis:name` だけです。
+
+EhCache が温まっていれば 0 往復になるので普段は見えません。冷えているとき
+(再起動直後・ローリングデプロイ直後) だけ牙を剥きます。**往復数はページ長ではなく
+一致件数に比例する**ので、1 万件ヒットするクエリなら 6 万往復になります。
+
+3.3 の ACL-in-Solr が全ヒットを走査するようになったこと自体は仕様準拠の改善ですが、
+**走査に必要なのは 1 件ごとの許可判定だけで、ObjectData の完全な組み立ては
+ページ内の 25 件にしか要りません。** ここが次の一手です。
+
+### リリース前に必要なこと
+
+クリーン環境 (`ci-complete-setup.sh`) での TCK 確認。上の通り 2 件の失敗は
+機能退行ではありませんが、**クリーン環境でも同じ結論になるかは未確認**です。
 
 ## 比較対象を古いタグから作るときの落とし穴
 
