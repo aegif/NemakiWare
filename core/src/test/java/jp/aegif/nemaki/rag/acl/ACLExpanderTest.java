@@ -324,7 +324,12 @@ public class ACLExpanderTest {
 
     @Test
     public void testBuildReaderFilterQueryAddsAdminTokenForCurrentAdmin() {
-        when(principalService.getGroupIdsContainingUser(REPO_ID, "root")).thenReturn(new HashSet<>());
+        // ContentService 側を stub する。ACLExpander は PrincipalService ではなく
+        // ContentService からグループを解決する — PermissionServiceImpl (認可の実ゲート) と
+        // 同じ実装を使うため、かつ PrincipalService 版が全グループ走査でキャッシュを持たないため。
+        // 詳細は ACLExpander.resolveGroupIds の javadoc と
+        // docs/design/acl-group-resolution-scaling.md §7。
+        when(contentService.getGroupIdsContainingUser(REPO_ID, "root")).thenReturn(new HashSet<>());
         User admin = mock(User.class);
         when(admin.isAdmin()).thenReturn(Boolean.TRUE);
         when(principalService.getUserById(REPO_ID, "root")).thenReturn(admin);
@@ -337,7 +342,7 @@ public class ACLExpanderTest {
 
     @Test
     public void testBuildReaderFilterQueryOmitsAdminTokenForNonAdmin() {
-        when(principalService.getGroupIdsContainingUser(REPO_ID, "user1")).thenReturn(new HashSet<>());
+        when(contentService.getGroupIdsContainingUser(REPO_ID, "user1")).thenReturn(new HashSet<>());
         User plain = mock(User.class);
         when(plain.isAdmin()).thenReturn(Boolean.FALSE);
         when(principalService.getUserById(REPO_ID, "user1")).thenReturn(plain);
@@ -354,7 +359,7 @@ public class ACLExpanderTest {
     public void testBuildReaderTokenSetIncludesAnyoneUserGroupsAndAdmin() {
         Set<String> groups = new HashSet<>();
         groups.add("grp1");
-        when(principalService.getGroupIdsContainingUser(REPO_ID, "root")).thenReturn(groups);
+        when(contentService.getGroupIdsContainingUser(REPO_ID, "root")).thenReturn(groups);
         User admin = mock(User.class);
         when(admin.isAdmin()).thenReturn(Boolean.TRUE);
         when(principalService.getUserById(REPO_ID, "root")).thenReturn(admin);
@@ -369,7 +374,7 @@ public class ACLExpanderTest {
 
     @Test
     public void testBuildReaderTokenSetOmitsAdminForNonAdmin() {
-        when(principalService.getGroupIdsContainingUser(REPO_ID, "user1")).thenReturn(new HashSet<>());
+        when(contentService.getGroupIdsContainingUser(REPO_ID, "user1")).thenReturn(new HashSet<>());
         User plain = mock(User.class);
         when(plain.isAdmin()).thenReturn(Boolean.FALSE);
         when(principalService.getUserById(REPO_ID, "user1")).thenReturn(plain);
@@ -424,7 +429,7 @@ public class ACLExpanderTest {
 
     @Test
     public void testBuildReaderFilterQueryBasic() {
-        when(principalService.getGroupIdsContainingUser(REPO_ID, "user1"))
+        when(contentService.getGroupIdsContainingUser(REPO_ID, "user1"))
                 .thenReturn(new HashSet<>());
 
         String query = aclExpander.buildReaderFilterQuery(REPO_ID, "user1");
@@ -441,7 +446,7 @@ public class ACLExpanderTest {
         Set<String> groups = new HashSet<>();
         groups.add("group1");
         groups.add("group2");
-        when(principalService.getGroupIdsContainingUser(REPO_ID, "user1"))
+        when(contentService.getGroupIdsContainingUser(REPO_ID, "user1"))
                 .thenReturn(groups);
 
         String query = aclExpander.buildReaderFilterQuery(REPO_ID, "user1");
@@ -455,7 +460,7 @@ public class ACLExpanderTest {
 
     @Test
     public void testBuildReaderFilterQueryWithNullGroups() {
-        when(principalService.getGroupIdsContainingUser(REPO_ID, "user1"))
+        when(contentService.getGroupIdsContainingUser(REPO_ID, "user1"))
                 .thenReturn(null);
 
         String query = aclExpander.buildReaderFilterQuery(REPO_ID, "user1");
@@ -467,7 +472,7 @@ public class ACLExpanderTest {
 
     @Test
     public void testBuildReaderFilterQueryColonEscaping() {
-        when(principalService.getGroupIdsContainingUser(REPO_ID, "user1"))
+        when(contentService.getGroupIdsContainingUser(REPO_ID, "user1"))
                 .thenReturn(new HashSet<>());
 
         String query = aclExpander.buildReaderFilterQuery(REPO_ID, "user1");
