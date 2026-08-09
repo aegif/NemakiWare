@@ -569,14 +569,26 @@ public class AttachmentDaoDelegate {
 				long oldLength = can.getLength();
 				String oldName = can.getName();
 
-				// STAGE 1: Update metadata first
-				// CouchDB preserves existing _attachments stubs when not mentioned in the update body.
+				// STAGE 1: Update metadata first.
+				//
+				// The comment that used to sit here claimed CouchDB preserves existing
+				// _attachments stubs when they are not mentioned in the update body. It does not:
+				// this update serialises the POJO and POSTs it, and a body without _attachments
+				// REPLACES the document, dropping the binary. That is why stage 2 has to re-upload
+				// it, and why a read landing between the two stages finds a document with no
+				// attachment at all and fails with "Content stream InputStream is null!" — an
+				// intermittent HTTP 500 on an ordinary read, reproduced against a live server
+				// during back-to-back appends.
+				//
+				// Carrying the stub forward closes that window: CouchDB keeps the existing binary
+				// when the body declares it as a stub, so the document is never attachment-less.
+				// Stage 2 then replaces the binary as before.
 				boolean metadataUpdated = false;
 				if (contentStream.getMimeType() != null || contentStream.getLength() >= 0 || contentStream.getFileName() != null) {
 					can.setMimeType(contentStream.getMimeType());
 					can.setLength(contentStream.getLength());
 					can.setName(contentStream.getFileName());
-					client.update(can);
+					client.updatePreservingAttachments(can, currentDoc);
 					metadataUpdated = true;
 					log.debug("STAGE1: Updated attachment metadata for: " + attachment.getId());
 				}

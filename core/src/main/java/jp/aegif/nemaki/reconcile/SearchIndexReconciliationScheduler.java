@@ -140,7 +140,7 @@ public class SearchIndexReconciliationScheduler {
         if (claimed.isEmpty()) {
             return;
         }
-        int reconciled = 0, retried = 0, failed = 0, quarantineBlocked = 0;
+        int reconciled = 0, retried = 0, failed = 0, quarantineBlocked = 0, pendingBlocked = 0;
         for (SearchIndexAclReindexTask task : claimed) {
             boolean clean;
             try {
@@ -176,6 +176,24 @@ public class SearchIndexReconciliationScheduler {
                         task, backoffMillis(QUARANTINE_BACKOFF_ATTEMPT));
                 quarantineBlocked++;
                 continue;
+            } catch (jp.aegif.nemaki.cmis.service.impl.SearchIndexRefreshPendingException pe) {
+                // The whole re-drive was deferred by the ACL-epoch pending gate: an ancestor is
+                // mid-mutation and the finalizer will advance its marker on its own. Retain the
+                // task on the ordinary backoff WITHOUT charging an attempt — otherwise a subtree
+                // under sustained ACL churn burns all maxAttempts on gates that clear by
+                // themselves and is abandoned as terminal FAILED, leaving those descendants with
+                // stale readers until someone runs a manual retry.
+                //
+                // Unlike a quarantine (which needs a human and therefore waits at the cap), a
+                // pending gate normally clears within one finalization, so the normal backoff is
+                // used rather than QUARANTINE_BACKOFF_ATTEMPT.
+                logger.info("Reconcile deferred for {} / {}: {} node(s) behind the ACL-epoch "
+                        + "pending gate — task RETAINED without consuming an attempt",
+                        task.getRepositoryId(), task.getObjectId(), pe.getBlockedNodes());
+                reconciliationService.retryLaterWithoutCountingAnAttempt(
+                        task, backoffMillis(Math.min(task.getAttempts() + 1, PURGE_BACKOFF_CAP_ATTEMPT)));
+                pendingBlocked++;
+                continue;
             } catch (Exception e) {
                 logger.warn("Reconcile re-drive threw for {} / {}: {}",
                         task.getRepositoryId(), task.getObjectId(), e.getMessage());
@@ -202,6 +220,12 @@ public class SearchIndexReconciliationScheduler {
                 reconciliationService.retryLater(task, backoff);
                 retried++;
             }
+        }
+        if (pendingBlocked > 0) {
+            logger.info("Search-index reconciliation poll: {} task(s) deferred by the ACL-epoch "
+                    + "pending gate — retained, not counted as attempts. A count that keeps rising "
+                    + "with nothing converging means a marker is stuck and needs investigation.",
+                    pendingBlocked);
         }
         if (quarantineBlocked > 0) {
             logger.info("Search-index reconciliation poll: {} task(s) blocked by a quarantined "

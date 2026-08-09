@@ -1688,28 +1688,32 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	// ///////////////////////////////////////
 	// Attachment
 	// ///////////////////////////////////////
+	/**
+	 * NOT cached, deliberately.
+	 *
+	 * <p>An {@link AttachmentNode} carries a live {@link java.io.InputStream} over the binary,
+	 * and a stream can be read once. Memoising the node therefore hands the SECOND caller an
+	 * already-consumed stream, which reads as empty rather than failing. Two consequences, both
+	 * observed:
+	 *
+	 * <ul>
+	 * <li><b>Appending destroyed content.</b> {@code appendAttachment} builds the new binary as
+	 *     {@code SequenceInputStream(existing, newChunk)}. With an exhausted "existing" the
+	 *     concatenation is just the new chunk, so appending {@code "line 2"} to {@code "line 1"}
+	 *     left {@code "line 2"} alone — verified in CouchDB itself, not merely in the response.
+	 *     This is what the TCK's small-buffer append test has been failing on.</li>
+	 * <li><b>Connections were pinned.</b> A cached node whose stream is never read holds its
+	 *     CouchDB connection for the lifetime of the cache entry, which is the shape of the
+	 *     connection growth measured under concurrent attachment reads.</li>
+	 * </ul>
+	 *
+	 * <p>The cache was never buying much: it saved one metadata GET while the binary transfer —
+	 * the actual cost — happened anyway. Caching metadata separately from the stream would be a
+	 * larger change to the {@code AttachmentNode} contract and is not needed to make this correct.
+	 */
 	@Override
 	public AttachmentNode getAttachment(String repositoryId, String attachmentId) {
-		NemakiCache<AttachmentNode> attachmentCache = nemakiCachePool.get(repositoryId).getAttachmentCache();
-		AttachmentNode v = attachmentCache.get(attachmentId);
-
-		AttachmentNode an = null;
-		if (v != null) {
-			an = v;
-
-		} else {
-			an = nonCachedContentDaoService.getAttachment(repositoryId, attachmentId);
-			if (an == null) {
-				return null;
-			} else {
-				attachmentCache.put(attachmentId, an);
-			}
-		}
-
-		return an;
-		// throw new
-		// UnsupportedOperationException(Thread.currentThread().getStackTrace()[0].getMethodName()
-		// + ":this method is only for non-cahced service.");
+		return nonCachedContentDaoService.getAttachment(repositoryId, attachmentId);
 	}
 
 	@Override
@@ -1739,11 +1743,27 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public void updateAttachment(String repositoryId, AttachmentNode attachment, ContentStream contentStream) {
 		NemakiCache<AttachmentNode> attachmentCache = nemakiCachePool.get(repositoryId).getAttachmentCache();
-		AttachmentNode v = attachmentCache.get(attachment.getId());
-		if (v != null) {
+		// Evict BEFORE and AFTER, and the "after" in a finally.
+		//
+		// Evicting only before the write was a read-through race. The underlying write is a
+		// multi-step CouchDB operation (metadata document, then the binary as an attachment), and
+		// any read landing inside it — including the re-index this very call triggers downstream —
+		// misses the cache, loads the PRE-write node, and puts it back. From then on the cache
+		// serves the previous content length, and since the CMIS content response is bounded by
+		// that length the body is silently truncated to the previous chunk boundary. Reproduced
+		// against a live server: appending to a checked-out document and reading it back within
+		// ~50ms returned the previous chunk while CouchDB already held the appended bytes; with a
+		// 50ms pause it never reproduced. It is what the TCK's small-buffer append test
+		// (bufferSize 8 and 0, i.e. many back-to-back appends) has been failing on.
+		//
+		// The eviction after the write is the one that matters, and it must happen even when the
+		// write throws — a failed write can still have advanced the stored state.
+		attachmentCache.remove(attachment.getId());
+		try {
+			nonCachedContentDaoService.updateAttachment(repositoryId, attachment, contentStream);
+		} finally {
 			attachmentCache.remove(attachment.getId());
 		}
-		nonCachedContentDaoService.updateAttachment(repositoryId, attachment, contentStream);
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////

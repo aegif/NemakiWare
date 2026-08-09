@@ -1753,6 +1753,55 @@ public class CloudantClientWrapper {
 	 * Update document (compatible with Ektorp update method)
 	 * This method implements Ektorp-style object state management - trusts object revision completely
 	 */
+	/**
+	 * Update a document while keeping any binary attachments it already has.
+	 *
+	 * <p>{@link #update(Object)} serialises the POJO and posts it, which REPLACES the stored
+	 * document. If the POJO has no {@code _attachments} — and none of the model classes do — the
+	 * binary is deleted as a side effect of a metadata update. Callers that update metadata on a
+	 * document with an attachment must use this instead, or the attachment disappears until they
+	 * re-upload it, and any read landing in that window fails.
+	 *
+	 * <p>CouchDB keeps an existing binary when the body declares it as a stub
+	 * ({@code {"stub": true}}), which is what this copies across from {@code currentDoc}.
+	 *
+	 * @param currentDoc the document as most recently read, the source of the stubs; when null or
+	 *     attachment-less this behaves exactly like {@link #update(Object)}
+	 */
+	public void updatePreservingAttachments(Object document,
+			com.ibm.cloud.cloudant.v1.model.Document currentDoc) {
+		try {
+			if (currentDoc == null || currentDoc.getAttachments() == null
+					|| currentDoc.getAttachments().isEmpty()) {
+				update(document);
+				return;
+			}
+			ObjectMapper mapper = getObjectMapper();
+			@SuppressWarnings("unchecked")
+			Map<String, Object> documentMap = mapper.convertValue(document, Map.class);
+			Map<String, Object> stubs = new java.util.LinkedHashMap<>();
+			for (Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Attachment> e
+					: currentDoc.getAttachments().entrySet()) {
+				Map<String, Object> stub = new java.util.LinkedHashMap<>();
+				stub.put("stub", Boolean.TRUE);
+				if (e.getValue().contentType() != null) {
+					stub.put("content_type", e.getValue().contentType());
+				}
+				// The revpos MUST match what CouchDB holds, or it rejects the stub.
+				if (e.getValue().revpos() != null) {
+					stub.put("revpos", e.getValue().revpos());
+				}
+				stubs.put(e.getKey(), stub);
+			}
+			documentMap.put("_attachments", stubs);
+			update(documentMap);
+		} catch (Exception e) {
+			log.error("updatePreservingAttachments failed, falling back to a plain update: "
+					+ e.getMessage(), e);
+			update(document);
+		}
+	}
+
 	public void update(Object document) {
 		try {
 			ObjectMapper mapper = getObjectMapper();

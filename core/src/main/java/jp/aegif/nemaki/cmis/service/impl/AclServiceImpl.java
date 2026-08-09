@@ -456,14 +456,20 @@ public class AclServiceImpl implements AclService {
 				content.aclEpochFieldAsString(jp.aegif.nemaki.epoch.AclEpochState.FIELD_MUTATION_ID);
 		final Long epochE = (epochMutationId != null) ? finalizeAndAck(repositoryId, content.getId()) : null;
 
+		final Thread movedSubmittingThread = Thread.currentThread();
 		ragAclExecutor.submit(() -> {
+			// Same executor, same queue: a move refresh can also be forced inline when the queue
+			// is full, so it is registered and flagged the same way (see PropagationProgress).
+			PropagationProgress movedProgress = PropagationProgress.begin(repositoryId,
+					content.getId(), -1, Thread.currentThread() == movedSubmittingThread);
 			try {
 				// isRoot=true: the moved object itself was already re-indexed by
 				// ContentServiceImpl.move; re-index only the inheriting descendants.
 				// syncConfirm=false: async best-effort with enqueue-on-failure.
 				updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,
-						new java.util.HashSet<>(), true, reconcile, null, false, null, epochE);
-				log.info("Moved-subtree search index ACL refresh triggered for: " + content.getId());
+						new java.util.HashSet<>(), true, reconcile, null, false, null, epochE,
+						movedProgress);
+				log.info("Moved-subtree search index ACL refresh COMPLETED for: " + content.getId());
 				// NO inline settle on the move path: no synchronous own-node write ran here, so the
 				// marker was never cleared — consuming the task would strand RECONCILE_ENQUEUED.
 				// The retained task's re-drive performs the terminus (one re-drive per move,
@@ -476,6 +482,8 @@ public class AclServiceImpl implements AclService {
 							jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.TRAVERSAL_FAILURE,
 							epochE);
 				}
+			} finally {
+				movedProgress.end();
 			}
 		});
 	}
@@ -518,17 +526,26 @@ public class AclServiceImpl implements AclService {
 		final jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconcile = reconciliationService;
 
 		final long submittedAtNanos = System.nanoTime();
+		// Whether the task ends up running inline on THIS thread (CallerRunsPolicy, queue full)
+		// is only knowable from inside the task: compare the running thread with the submitting
+		// one. It matters because an inline run overtakes everything already queued, which is
+		// exactly when the FIFO assumption behind the progress estimate stops holding.
+		final Thread submittingThread = Thread.currentThread();
 		ragAclExecutor.submit(() -> {
+			boolean inlineOnCaller = Thread.currentThread() == submittingThread;
+			PropagationProgress progress = PropagationProgress.begin(
+					repositoryId, content.getId(), subtreeNodes, inlineOnCaller);
 			// START marker. Without it the only INFO on this path is the completion line below,
 			// so "a propagation is running right now" was not observable at all (E1).
 			log.info("Search index ACL refresh STARTED: repository=" + repositoryId
 					+ " root=" + content.getId()
 					+ (subtreeNodes >= 0 ? " expectedNodes=" + subtreeNodes : "")
-					+ " queuedForMs=" + ((System.nanoTime() - submittedAtNanos) / 1_000_000L));
+					+ " queuedForMs=" + ((System.nanoTime() - submittedAtNanos) / 1_000_000L)
+					+ (inlineOnCaller ? " INLINE-ON-REQUEST-THREAD (queue full)" : ""));
 			try {
 				// syncConfirm=false: async best-effort with enqueue-on-failure.
 				updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,
-						new java.util.HashSet<>(), true, reconcile, null, false, null, epochE);
+						new java.util.HashSet<>(), true, reconcile, null, false, null, epochE, progress);
 				// This line used to read "triggered", but it is emitted AFTER the recursive walk
 				// returns — an operator watching the log read a completion as a start.
 				log.info("Search index ACL refresh COMPLETED: repository=" + repositoryId
@@ -547,6 +564,8 @@ public class AclServiceImpl implements AclService {
 							jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.TRAVERSAL_FAILURE,
 							epochE);
 				}
+			} finally {
+				progress.end();
 			}
 		});
 	}
@@ -876,12 +895,20 @@ public class AclServiceImpl implements AclService {
 			log.warn("Reconcile: descendant cache eviction failed for " + objectId + ": " + e.getMessage());
 			return false;
 		}
-		java.util.concurrent.atomic.AtomicInteger failures = new java.util.concurrent.atomic.AtomicInteger(0);
+		RefreshCounters counters = new RefreshCounters();
+		// The re-drive runs on the reconciliation poller, not on the refresh executor, so it is
+		// never an inline caller-run. Node count is unknown up front here (the eviction BFS above
+		// counted it, but this path does not carry it), so no estimate is offered — only the fact
+		// that a re-drive is in flight, which is itself what an operator is missing today.
+		PropagationProgress redriveProgress =
+				PropagationProgress.begin(repositoryId, objectId, -1, false);
+		try {
 		// syncConfirm=true: writes are forced synchronous so a Solr failure is counted
 		// (the task is only completed/deleted when the re-drive is genuinely clean).
 		try {
 			updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,
-					new java.util.HashSet<>(), false, null, failures, true, leaseStillHeld, null);
+					new java.util.HashSet<>(), false, null, counters, true, leaseStillHeld, null,
+					redriveProgress);
 		} catch (LeaseLostException e) {
 			// Lost the lease to a reclaiming worker mid-flight — stop writing and let
 			// the reclaimer own it (not clean, so the task is not completed here).
@@ -891,7 +918,13 @@ public class AclServiceImpl implements AclService {
 		// NOTE: an AclEpochQuarantineBlockedException deliberately PROPAGATES out of this method —
 		// the scheduler's §5.1 branch retains the task under capped backoff without consuming an
 		// attempt; catching it here would flatten it into an ordinary failure and burn attempts.
-		if (failures.get() != 0) {
+		if (counters.blockedOnlyByPendingGates()) {
+			// Every failure was "an ancestor is mid-mutation" — not this task's fault and not
+			// fixed by spending an attempt. Surface it as the typed signal the scheduler retains
+			// on, mirroring the quarantine branch.
+			throw new SearchIndexRefreshPendingException(objectId, counters.pendingBlocks());
+		}
+		if (counters.failures() != 0) {
 			return false;
 		}
 		// §11.4 re-drive terminus: this clean re-drive satisfied whatever obligation the PRE-read
@@ -900,6 +933,9 @@ public class AclServiceImpl implements AclService {
 		// FAILURE makes the re-drive NOT clean: completing the task while the marker survives would
 		// strand a RECONCILE_ENQUEUED document with no task (§11.6 row 5's inverse).
 		return epochTerminusAfterCleanReDrive(repositoryId, objectId, content);
+		} finally {
+			redriveProgress.end();
+		}
 	}
 
 	/** Returns true when the terminus is settled (cleared / abandoned / nothing to do). */
@@ -950,8 +986,8 @@ public class AclServiceImpl implements AclService {
 			jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil solrUtil,
 			java.util.Set<String> visitedIds, boolean isRoot,
 			jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconcile,
-			java.util.concurrent.atomic.AtomicInteger failureCounter, boolean syncConfirm,
-			java.util.function.BooleanSupplier leaseStillHeld, Long epochObligation) {
+			RefreshCounters counters, boolean syncConfirm,
+			java.util.function.BooleanSupplier leaseStillHeld, Long epochObligation, PropagationProgress progress) {
 		if (content == null || visitedIds.contains(content.getId())) {
 			return;
 		}
@@ -971,7 +1007,7 @@ public class AclServiceImpl implements AclService {
 			reconcile.enqueue(repositoryId, content.getId(),
 					jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.INDEX_WRITE_FAILURE,
 					epochObligation);
-			if (failureCounter != null) failureCounter.incrementAndGet();
+			if (counters != null) counters.recordFailure();
 		};
 
 		// CMIS content readers: refresh the Solr `readers` field so the query-time
@@ -994,9 +1030,22 @@ public class AclServiceImpl implements AclService {
 				// (re-drive) or the async root-enqueue (refresh) — NEVER be flattened into a counted
 				// per-node failure, which would burn attempts toward terminal-FAILED.
 				throw qbe;
+			} catch (jp.aegif.nemaki.epoch.AclEffectiveEpochService.AclEpochPendingException pe) {
+				// The PENDING GATE is a "come back in a moment", not a failure: an ancestor is
+				// mid-mutation, and the finalizer will advance its marker without anyone's help.
+				// It used to fall into the generic branch below and consume one of the ten
+				// attempts, so a chain under sustained ACL churn could exhaust the budget and be
+				// abandoned as terminal FAILED — leaving those descendants' readers stale until
+				// a human noticed. Same treatment as a quarantine block: record the work so it is
+				// retried, but count it separately so the scheduler can retain without charging
+				// an attempt.
+				log.info("Pending gate deferred readers refresh for " + content.getId()
+						+ " (dependency " + pe.dependencyId + " is " + pe.state + ")");
+				recordPendingBlockedNode(reconcile, counters, repositoryId, content.getId(),
+						epochObligation);
 			} catch (Exception e) {
 				log.warn("Failed to refresh content readers for " + content.getId() + ": " + e.getMessage());
-				recordNodeFailure(reconcile, failureCounter, repositoryId, content.getId(),
+				recordNodeFailure(reconcile, counters, repositoryId, content.getId(),
 						jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE,
 						epochObligation);
 			}
@@ -1014,7 +1063,7 @@ public class AclServiceImpl implements AclService {
 				throw lle;
 			} catch (Exception e) {
 				log.warn("Failed to update RAG ACL for document " + content.getId() + ": " + e.getMessage());
-				recordNodeFailure(reconcile, failureCounter, repositoryId, content.getId(),
+				recordNodeFailure(reconcile, counters, repositoryId, content.getId(),
 						jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE,
 						epochObligation);
 			}
@@ -1049,7 +1098,7 @@ public class AclServiceImpl implements AclService {
 				throw qbe; // §5.1: reach the scheduler's retention branch, never a counted failure
 			} catch (Exception e) {
 				log.warn("Failed to refresh relationship readers for " + content.getId() + ": " + e.getMessage());
-				recordNodeFailure(reconcile, failureCounter, repositoryId, content.getId(),
+				recordNodeFailure(reconcile, counters, repositoryId, content.getId(),
 						jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.RELATIONSHIP_REFRESH_FAILURE,
 						epochObligation);
 			}
@@ -1063,6 +1112,13 @@ public class AclServiceImpl implements AclService {
 		// live ACL) but must not silently take down siblings. Best-effort: results
 		// stay correct, only search visibility of the failed node lags until the
 		// reconciliation poll (or the next ACL touch) re-drives it.
+		// This node's own refresh is done (successfully or not — a failed node is still a node
+		// the traversal will not revisit). Counted before recursing so the progress reflects
+		// breadth already covered rather than jumping only when a whole subtree finishes.
+		if (progress != null) {
+			progress.nodeDone();
+		}
+
 		if (content.isFolder()) {
 			List<Content> children = null;
 			try {
@@ -1070,7 +1126,7 @@ public class AclServiceImpl implements AclService {
 			} catch (Exception e) {
 				log.warn("Failed to list children of " + content.getId()
 						+ " during search-index ACL refresh (subtree skipped): " + e.getMessage());
-				recordNodeFailure(reconcile, failureCounter, repositoryId, content.getId(),
+				recordNodeFailure(reconcile, counters, repositoryId, content.getId(),
 						jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.TRAVERSAL_FAILURE,
 						epochObligation);
 			}
@@ -1079,8 +1135,8 @@ public class AclServiceImpl implements AclService {
 					try {
 						if (contentService.getAclInheritedWithDefault(repositoryId, child)) {
 							updateSearchIndexACLRecursively(repositoryId, child, ragService, expander,
-									solrUtil, visitedIds, false, reconcile, failureCounter, syncConfirm,
-									leaseStillHeld, epochObligation);
+									solrUtil, visitedIds, false, reconcile, counters, syncConfirm,
+									leaseStillHeld, epochObligation, progress);
 						}
 					} catch (LeaseLostException lle) {
 						// A descendant lost the reconciliation lease — propagate so the
@@ -1093,7 +1149,7 @@ public class AclServiceImpl implements AclService {
 					} catch (Exception e) {
 						log.warn("Failed to refresh search-index ACL for child " + child.getId()
 								+ " (continuing with siblings): " + e.getMessage());
-						recordNodeFailure(reconcile, failureCounter, repositoryId, child.getId(),
+						recordNodeFailure(reconcile, counters, repositoryId, child.getId(),
 								jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE,
 								epochObligation);
 					}
@@ -1104,15 +1160,33 @@ public class AclServiceImpl implements AclService {
 
 	/** Record a per-node ACL-refresh failure: enqueue for reconciliation and/or count it. */
 	private void recordNodeFailure(jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconcile,
-			java.util.concurrent.atomic.AtomicInteger failureCounter, String repositoryId, String objectId,
+			RefreshCounters counters, String repositoryId, String objectId,
 			String reason, Long epochObligation) {
 		if (reconcile != null) {
 			reconcile.enqueue(repositoryId, objectId, reason, epochObligation);
 		}
-		if (failureCounter != null) {
-			failureCounter.incrementAndGet();
+		if (counters != null) {
+			counters.recordFailure();
 		}
 	}
+
+	/**
+	 * A node deferred by the pending gate: queued for re-drive exactly like a failure, but
+	 * tallied separately so the caller can retain the task without spending an attempt.
+	 */
+	private void recordPendingBlockedNode(
+			jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconcile,
+			RefreshCounters counters, String repositoryId, String objectId, Long epochObligation) {
+		if (counters != null) {
+			counters.recordPendingBlock();
+		}
+		if (reconcile != null) {
+			reconcile.enqueue(repositoryId, objectId,
+					jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.NODE_REFRESH_FAILURE,
+					epochObligation);
+		}
+	}
+
 
 	/**
 	 * Synchronously clear ACL caches for a content item and all its descendants that inherit ACL.

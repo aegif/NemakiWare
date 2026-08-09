@@ -1273,24 +1273,44 @@ public class ObjectServiceImpl implements ObjectService {
 			exceptionService.constraint(movingId, "Cannot move a folder into itself");
 		}
 
-		// Hold the write lock of BOTH the moved object and the destination, taken in id order.
+		// Two locks, and for a FOLDER a third that serialises folder moves repository-wide.
 		//
-		// Ordering is what makes it deadlock-free; holding both is what makes the cycle guard
-		// below sound. With only the moved object locked, two concurrent moves — A into B's
-		// subtree and B into A's subtree — each evaluate their guard against a hierarchy where
-		// the other move has not landed yet, both pass, and the pair commits a cycle. A cycle
-		// here is not cosmetic: the ACL inheritance walk climbs parents, so a self-ancestor
-		// folder makes every effective-ACL computation under it unanswerable.
+		// Locking the moved object and the destination is not enough to make the cycle guard
+		// below sound. Concurrent moves of A under a descendant of B and of B under a descendant
+		// of A hold {A, B_child} and {B, A_child} — disjoint sets, so neither excludes the other,
+		// and each evaluates its guard against a hierarchy where the other move has not landed.
+		// Both pass, both commit, and the pair forms a cycle. Widening the lock set does not fix
+		// it either: the set that would have to be held is the whole ancestor chain, which is
+		// exactly what the other move is changing.
+		//
+		// So folder moves take a repository-scoped write lock and run one at a time. This is a
+		// rare administrative operation, and a cycle is not cosmetic — the ACL inheritance walk
+		// climbs parents, so a self-ancestor folder makes every effective-ACL computation beneath
+		// it unanswerable. Non-folder moves cannot create a cycle (a document has no children)
+		// and are deliberately left concurrent.
+		//
+		// The repository lock is taken FIRST and released LAST, so its ordering relative to the
+		// per-object locks is fixed and cannot deadlock against them.
+		Content moving = contentService.getContent(repositoryId, movingId);
+		exceptionService.objectNotFound(DomainType.OBJECT, moving, movingId);
+		Lock hierarchyLock = (moving != null && moving.isFolder())
+				? threadLockService.getWriteLock(repositoryId, FOLDER_HIERARCHY_LOCK_KEY) : null;
 		Lock firstLock = threadLockService.getWriteLock(repositoryId,
 				movingId.compareTo(targetFolderId) <= 0 ? movingId : targetFolderId);
 		Lock secondLock = threadLockService.getWriteLock(repositoryId,
 				movingId.compareTo(targetFolderId) <= 0 ? targetFolderId : movingId);
 		try {
+			if (hierarchyLock != null) {
+				hierarchyLock.lock();
+			}
 			firstLock.lock();
 			secondLock.lock();
 			// //////////////////
 			// General Exception
 			// //////////////////
+			// Re-read UNDER the locks: the pre-lock read above only decided whether this is a
+			// folder move. Anything the guard depends on must come from a state no concurrent
+			// move can still change.
 			Content content = contentService.getContent(repositoryId, movingId);
 			exceptionService.objectNotFound(DomainType.OBJECT, content, movingId);
 			Folder source = contentService.getFolder(repositoryId, sourceFolderId);
@@ -1330,8 +1350,17 @@ public class ObjectServiceImpl implements ObjectService {
 		} finally {
 			secondLock.unlock();
 			firstLock.unlock();
+			if (hierarchyLock != null) {
+				hierarchyLock.unlock();
+			}
 		}
 	}
+
+	/**
+	 * Pseudo-object id under which folder moves serialise per repository. Not a real object, so
+	 * it can never collide with one — object ids are hex, this is not.
+	 */
+	private static final String FOLDER_HIERARCHY_LOCK_KEY = "__folder-hierarchy__";
 
 	/**
 	 * Refuse to move {@code movingId} underneath itself.
