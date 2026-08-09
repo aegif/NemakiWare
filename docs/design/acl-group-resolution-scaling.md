@@ -2,9 +2,13 @@
 
 検証: 2026-08-09、`nb33` スタック (3.3.0)。以下の数値はすべて稼働中のサーバでの実測です。
 
-**結論を先に**: 書き込み側 (索引) は問題ありません。**問題は読み取り側で、
-非 admin の CMIS query 1 本ごとに全グループを深さ優先探索しています。**
-グループ 1,013 個で **830 ms / クエリ**、しかもキャッシュされません。
+**結論を先に**: 書き込み側 (索引) は問題ありません。問題は読み取り側で、
+非 admin の CMIS query 1 本ごとに全グループを深さ優先探索していました。
+グループ 1,013 個で 830 ms / クエリ、キャッシュ無し。
+
+> **解決済み (2026-08-09)**: 原因は「実装が 2 つあり、`ACLExpander` だけが遅い方を
+> 使っていた」ことでした。§7 を参照。**グループ 2,908 個で 17 ms** になり、
+> グループ数への依存も消えています。以下 §1–§6 は調査当時の記録です。
 
 ---
 
@@ -190,3 +194,43 @@ TTL を短く (30〜60 秒) すれば、失効の窓は認証キャッシュと�
 - 分岐のある実際の組織木 (本検証は深さ 10 の**鎖** 100 本)。分岐があると
   `containsUserInGroup` の walk はさらに増えます
 - RAG / MCP 経由の検索が同じ経路を通るか
+
+---
+
+## 7. 解決 — 実装が 2 つあり、遅い方を使っていた (2026-08-09)
+
+新しい view もアルゴリズムも要りませんでした。`getGroupIdsContainingUser` は
+**2 つの独立した実装**を持っており、製品の大半は速い方を使っていたのに、
+ACL-in-Solr の `ACLExpander` だけが遅い方を呼んでいました。
+
+| | 実装 | 使っている場所 |
+|---|---|---|
+| 速い | `ContentService` → `UserGroupServiceDelegate` → `getJoinedGroupByUserId`。**逆引き view (`joinedDirectGroupsByGroupId`) で上向きに辿り、`joinedGroupCache` でキャッシュ** | `PermissionServiceImpl` (5 か所)、`CompileServiceImpl`、`NavigationServiceImpl`、`McpToolsProvider` |
+| 遅い | `PrincipalService` → 全グループ列挙 + 各々を DFS。**どの層にもキャッシュ無し** | **`ACLExpander` のみ** (2 か所) |
+
+§4-1 に「逆引き view の新設が要る」と書いたのは**誤り**でした。
+`joinedDirectGroupsByGroupId` は `Patch_StandardCmisViews.java:136` に既存で、
+上向き探索も `UserGroupDaoDelegate.checkIndirectGroup` に実装済みです。
+
+`ACLExpander` は `contentService` を既に注入されているので、2 か所の呼び先を
+差し替えるだけで済みました。
+
+### 速度だけの問題ではない
+
+**認可の実ゲートである `PermissionServiceImpl` は速い方を使っています。**
+Solr の `readers` fq を別実装から計算していたということは、両者が食い違えば
+「Solr が返すもの」と「in-memory が通すもの」がずれるということです。
+整合性の観点でも、同じ実装を使うべきでした。
+
+### 実測
+
+| | グループ数 | probeuser の query p50 |
+|---|---|---|
+| 変更前 | 1,013 | 830 ms |
+| **変更後** | **2,908** | **17 ms** |
+
+グループ数が 2.9 倍の状態で 49 分の 1 です。外挿していた
+「5,000 グループで約 4 秒」は解消しました。
+
+10 階層の推移所属が維持されていることも確認済み (鎖の頂点にだけ read を与えた
+文書が、葉に居るユーザから見える)。

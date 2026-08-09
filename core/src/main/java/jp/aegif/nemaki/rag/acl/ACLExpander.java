@@ -176,6 +176,34 @@ public class ACLExpander {
     }
 
 
+
+    /**
+     * The groups that contain this user, transitively.
+     *
+     * <p>Deliberately {@link ContentService}, not {@link PrincipalService}. Both interfaces expose
+     * a method of this name and both are transitive, but they are different implementations:
+     *
+     * <ul>
+     * <li>{@code ContentService} resolves upward from the user through the
+     *     {@code joinedDirectGroupsByGroupId} view and caches the answer per user
+     *     ({@code joinedGroupCache}). Cost is proportional to the groups the user is actually in.
+     * <li>{@code PrincipalService} enumerates EVERY group in the repository and depth-first walks
+     *     each one looking for the user, with no cache at any layer. Cost is proportional to the
+     *     total number of groups whether the user is in one of them or a thousand.
+     * </ul>
+     *
+     * <p>Two reasons to use the first. Measured, the second costs about 0.82 ms per group in the
+     * repository — 830 ms per query at 1,013 groups — and it runs on every non-admin CMIS query,
+     * which is why search was two orders of magnitude slower than {@code getObject} on the same
+     * data. And {@code PermissionServiceImpl}, the in-memory authorization gate that this reader
+     * filter is supposed to agree with, already resolves membership through {@code ContentService}:
+     * computing the Solr {@code readers} filter from a second implementation invites the two to
+     * disagree.
+     */
+    private Set<String> resolveGroupIds(String repositoryId, String userId) {
+        return contentService.getGroupIdsContainingUser(repositoryId, userId);
+    }
+
     /**
      * Format a user ID as a repository-scoped reader token
      * ({@code user:{repositoryId}:{userId}}).
@@ -244,7 +272,7 @@ public class ACLExpander {
         tokens.add(formatAnyoneReader(repositoryId));
         if (userId != null) {
             tokens.add(formatUserReader(repositoryId, userId));
-            Set<String> groupIds = principalService.getGroupIdsContainingUser(repositoryId, userId);
+            Set<String> groupIds = resolveGroupIds(repositoryId, userId);
             if (groupIds != null) {
                 for (String groupId : groupIds) {
                     tokens.add(formatGroupReader(repositoryId, groupId));
@@ -320,7 +348,7 @@ public class ACLExpander {
         // resolved live and transitively over nested groups (cycle-safe: the
         // recursion carries a visited set, so an A->B->A cycle can no longer
         // StackOverflow the reader-filter build for a non-member searcher).
-        Set<String> groupIds = principalService.getGroupIdsContainingUser(repositoryId, userId);
+        Set<String> groupIds = resolveGroupIds(repositoryId, userId);
         if (groupIds != null) {
             for (String groupId : groupIds) {
                 String sanitizedGroupId = SolrQuerySanitizer.escape(groupId);
