@@ -107,12 +107,20 @@ public class AuthenticationFilter implements Filter {
 			// Bypass authentication for public /rest/all/* endpoints
 			// - /rest/all/repositories: needed for login page
 			// - /rest/all/build-info: non-sensitive server metadata for version display
-			// - /rest/all/readiness: load-balancer probe; a load balancer has no credentials, and
-			//   the answer is a bare {"status":...} with no deployment detail in it. The detailed
-			//   check stays authenticated at /api/v1/cmis/health.
+			//
+			// NOTE on /rest/all/readiness (the load-balancer probe): it is NOT listed here, and
+			// must not be. web.xml maps this filter to specific /rest/* patterns and readiness is
+			// not among them, so the filter never runs for it — adding a case here would be dead
+			// code that only widens the substring match below. Verified: an unauthenticated GET
+			// of /rest/all/readiness returns 200 with no entry in this list.
+			//
+			// These two use contains() rather than the pathInfo comparison used elsewhere in this
+			// filter (see the ingest-webhook case). That is tolerable only because the servlet
+			// container normalises the path before getRequestURI() and query strings are not part
+			// of it — probed with "?x=", ";", and "../" forms, all of which still returned 401 on
+			// protected paths. Do not add entries to this list without re-checking that.
 			if (requestURI != null && (requestURI.contains("/rest/all/repositories")
-					|| requestURI.contains("/rest/all/build-info")
-					|| requestURI.contains("/rest/all/readiness"))) {
+					|| requestURI.contains("/rest/all/build-info"))) {
 				log.debug("Bypassing authentication for public /rest/all/* URI: " + requestURI);
 				chain.doFilter(req, res);
 				return;

@@ -17,6 +17,7 @@
 package jp.aegif.nemaki.rest;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -52,15 +53,27 @@ class ReadinessProbeWiringTest {
     private static final String PATH = "/rest/all/readiness";
     private static final Path DOCKER = Path.of("../docker");
 
+    /**
+     * What actually decides whether the probe needs credentials is web.xml, not the filter body.
+     *
+     * <p>The first version of this test asserted that {@code AuthenticationFilter.java} contained
+     * the readiness path — which passed against a build where that string sat in a bypass branch
+     * the filter never reached, because web.xml does not map the filter to this path at all. A
+     * source-contains assertion on the wrong file proves nothing; this checks the mapping.
+     */
     @Test
-    @DisplayName("認証フィルタが readiness を素通しする (LB は資格情報を持たない)")
-    void theFilterLetsAnUnauthenticatedProbeThrough() throws IOException {
-        String src = Files.readString(
-                Path.of("src/main/java/jp/aegif/nemaki/rest/AuthenticationFilter.java"),
+    @DisplayName("readiness が認証フィルタの url-pattern に含まれていない (LB は資格情報を持たない)")
+    void theFilterIsNotMappedOntoTheProbe() throws IOException {
+        String webXml = Files.readString(Path.of("src/main/webapp/WEB-INF/web.xml"),
                 StandardCharsets.UTF_8);
-        assertTrue(src.contains(PATH),
-                "AuthenticationFilter must bypass " + PATH + ", or every probe answers 401 and the"
-                        + " instance never joins the pool");
+        assertFalse(webXml.contains(PATH),
+                "web.xml must not map restAuthenticationFilter onto " + PATH + " — the probe has no"
+                        + " credentials to offer. If a mapping is added, the filter needs an"
+                        + " explicit bypass and this test needs to check that instead.");
+        // /rest/all/* is not blanket-mapped: the filter is attached to specific sub-paths
+        // (/rest/all/log/*, /rest/all/build-info). A blanket /rest/all/* would swallow readiness.
+        assertFalse(webXml.contains("<url-pattern>/rest/all/*</url-pattern>"),
+                "a blanket /rest/all/* mapping would put the probe behind authentication");
     }
 
     @Test

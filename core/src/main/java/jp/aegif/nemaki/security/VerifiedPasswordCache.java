@@ -51,8 +51,12 @@ import javax.crypto.spec.SecretKeySpec;
  *     as it does today, because the allowedAuthMethods gate runs before this cache is consulted.
  * <li><b>Only successes are cached.</b> A wrong password always pays for a real BCrypt, so
  *     {@link LoginThrottle} still sees every failure and brute force is not accelerated.
- * <li><b>Keys are HMACs under a per-JVM random secret</b>, so nothing derived from a password
- *     is stored, and the key from one process means nothing in another.
+ * <li><b>Keys are HMACs under a per-JVM random secret</b>, so the password is not recoverable
+ *     from what is held and a key from one process means nothing in another. Note what this does
+ *     NOT claim: the HMAC input includes the plaintext, so an attacker who can both read the heap
+ *     and guess candidate passwords can confirm a guess with one HMAC instead of one BCrypt. That
+ *     is a real reduction against a heap-reading attacker — but such an attacker already has the
+ *     live {@code CallContext} passwords of every in-flight request, so it is not the weak point.
  * <li><b>Bounded.</b> Over capacity the cache drops expired entries and, failing that, empties
  *     itself. Losing an entry costs one BCrypt, so the failure mode is slow, never wrong.
  * </ul>

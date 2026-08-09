@@ -624,7 +624,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	/**
 	 * Gson hands back {@code LazilyParsedNumber} for JSON numbers, which Jackson would treat as
 	 * an unknown bean rather than a number. The document path already did this for created and
-	 * modified; the view-value path sees every field, so it does it for all of them.
+	 * modified; the view-value path sees every top-level field, so it does it for all of those.
+	 *
+	 * <p>TOP LEVEL ONLY — this does not recurse. Numbers nested inside {@code acl},
+	 * {@code aspects} or {@code subTypeProperties} keep Gson's type. That is deliberate rather
+	 * than an oversight: the nested structures are deserialised by the Couch model classes' own
+	 * setters, which take the value as {@code Object} and do their own conversion, so a
+	 * {@code LazilyParsedNumber} there is handled where it lands. If a future field needs a
+	 * numeric primitive at depth, this has to grow a recursive pass.
 	 */
 	private static Object normalizeJsonNumber(Object value) {
 		if (value instanceof Number && value.getClass().getName().contains("LazilyParsedNumber")) {
