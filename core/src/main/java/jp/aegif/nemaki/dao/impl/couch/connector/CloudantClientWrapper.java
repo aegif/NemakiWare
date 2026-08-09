@@ -1796,9 +1796,15 @@ public class CloudantClientWrapper {
 			documentMap.put("_attachments", stubs);
 			update(documentMap);
 		} catch (Exception e) {
-			log.error("updatePreservingAttachments failed, falling back to a plain update: "
-					+ e.getMessage(), e);
-			update(document);
+			// NO fallback to update(document). That is precisely the path this method exists to
+			// avoid: it posts a body without _attachments, so CouchDB drops the binary and the
+			// document is attachment-less until someone re-uploads it. Falling back would turn a
+			// stub-construction problem into silent data loss, and the caller — which is midway
+			// through a metadata-then-binary sequence — would carry on believing stage 1 was fine.
+			// Failing here lets that caller's compensating rollback run instead.
+			throw new IllegalStateException("Could not update " + document.getClass().getSimpleName()
+					+ " while preserving its attachments; refusing to fall back to an update that"
+					+ " would delete them", e);
 		}
 	}
 
