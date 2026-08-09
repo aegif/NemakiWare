@@ -465,9 +465,13 @@ public class UserGroupDaoDelegate {
 				}
 			}
 
-			// CRITICAL FIX: Add maximum iteration limit and visited tracking
-			int maxIterations = 50; // Prevent runaway loops
+			// Bound on WORK, not a cycle guard — cycles are already impossible here because
+			// visitedGroups never re-admits a group to the frontier. Each iteration climbs one
+			// level, so this caps the resolvable nesting depth at maxIterations + 1.
+			// Reaching it means the answer is INCOMPLETE: see TruncatedGroupResolution.
+			int maxIterations = 50;
 			int iterations = 0;
+			boolean truncated = false;
 
 			while(groupIdsToCheck.size() > 0 && iterations < maxIterations) {
 				List<String> newGroupIds = checkIndirectGroup(repositoryId, groupIdsToCheck);
@@ -484,13 +488,23 @@ public class UserGroupDaoDelegate {
 
 				iterations++;
 
-				// Log potential infinite loop detection
-				if (iterations >= maxIterations) {
-					log.warn("Group hierarchy traversal reached maximum iterations (" + maxIterations + ") for user " + userId + " - possible circular group references");
+				// Still work left when the budget ran out => the membership below is a prefix
+				// of the real one, and every ACE granted through an unreached ancestor group
+				// will be silently ignored by the authorization gate.
+				if (iterations >= maxIterations && !groupIdsToCheck.isEmpty()) {
+					truncated = true;
+					log.warn("Group hierarchy traversal INCOMPLETE for user " + userId
+							+ ": stopped at " + maxIterations + " levels with "
+							+ groupIdsToCheck.size() + " group(s) still unexplored. "
+							+ "Permissions granted through ancestor groups above that depth will "
+							+ "NOT take effect. Flatten the group nesting for this account.");
 				}
 			}
 
 			//unique result
+			if (truncated) {
+				return new jp.aegif.nemaki.dao.TruncatedGroupResolution(resultGroupIds, maxIterations);
+			}
 			return resultGroupIds;
 		} catch (Exception e) {
 			log.error("Error getting joined groups for user: " + userId + ", error: " + e.getMessage());

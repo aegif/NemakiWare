@@ -878,7 +878,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 		if (joinedGroup == null){
 			return null;
-		}else{
+		} else if (jp.aegif.nemaki.dao.TruncatedGroupResolution.isTruncated(joinedGroup)) {
+			// Do not memoise an incomplete membership — it would make a temporary
+			// misconfiguration into a durable authorization error. See TruncatedGroupResolution.
+			return joinedGroup;
+		} else {
 			joinedGroupCache.put(userId,joinedGroup);
 		}
 
@@ -1168,6 +1172,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		Document updated = nonCachedContentDaoService.update(repositoryId, document);
 		nemakiCachePool.get(repositoryId).getContentCache().put(updated.getId(), updated);
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
+		// The stored ACL may have changed. AclService.applyAcl evicts aclCache itself (and walks
+		// descendants), but it is not the only writer: the importers and the canonical ingest
+		// pipeline set ACEs and call contentService.update directly, deliberately bypassing
+		// applyAcl's permission check and epoch bookkeeping. Without this eviction their ACL
+		// writes leave a stale effective ACL memoised here, in the SAME JVM, and that memo is
+		// what the authorization gate reads. It bites new objects too: indexing an object on
+		// create populates aclCache via calculateAcl before the importer applies its ACL.
+		// Cost is one warm recomputation (~1.7ms) on the next authorization of this object.
+		// Descendants are intentionally NOT walked — every bypassing path writes ACLs onto
+		// documents and relationships only, never folders, so nothing inherits from here.
+		nemakiCachePool.get(repositoryId).getAclCache().remove(updated.getId());
 
 		return updated;
 	}
@@ -1196,6 +1211,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		Folder updated = nonCachedContentDaoService.update(repositoryId, folder);
 		nemakiCachePool.get(repositoryId).getContentCache().put(updated.getId(), updated);
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
+		// The stored ACL may have changed. AclService.applyAcl evicts aclCache itself (and walks
+		// descendants), but it is not the only writer: the importers and the canonical ingest
+		// pipeline set ACEs and call contentService.update directly, deliberately bypassing
+		// applyAcl's permission check and epoch bookkeeping. Without this eviction their ACL
+		// writes leave a stale effective ACL memoised here, in the SAME JVM, and that memo is
+		// what the authorization gate reads. It bites new objects too: indexing an object on
+		// create populates aclCache via calculateAcl before the importer applies its ACL.
+		// Cost is one warm recomputation (~1.7ms) on the next authorization of this object.
+		// Descendants are intentionally NOT walked — every bypassing path writes ACLs onto
+		// documents and relationships only, never folders, so nothing inherits from here.
+		nemakiCachePool.get(repositoryId).getAclCache().remove(updated.getId());
 
 		return updated;
 	}
@@ -1232,6 +1258,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		Relationship updated = nonCachedContentDaoService.update(repositoryId, relationship);
 		nemakiCachePool.get(repositoryId).getContentCache().put(updated.getId(), updated);
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
+		// The stored ACL may have changed. AclService.applyAcl evicts aclCache itself (and walks
+		// descendants), but it is not the only writer: the importers and the canonical ingest
+		// pipeline set ACEs and call contentService.update directly, deliberately bypassing
+		// applyAcl's permission check and epoch bookkeeping. Without this eviction their ACL
+		// writes leave a stale effective ACL memoised here, in the SAME JVM, and that memo is
+		// what the authorization gate reads. It bites new objects too: indexing an object on
+		// create populates aclCache via calculateAcl before the importer applies its ACL.
+		// Cost is one warm recomputation (~1.7ms) on the next authorization of this object.
+		// Descendants are intentionally NOT walked — every bypassing path writes ACLs onto
+		// documents and relationships only, never folders, so nothing inherits from here.
+		nemakiCachePool.get(repositoryId).getAclCache().remove(updated.getId());
 		return updated;
 	}
 
@@ -1240,6 +1277,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		Policy updated = nonCachedContentDaoService.update(repositoryId, policy);
 		nemakiCachePool.get(repositoryId).getContentCache().put(updated.getId(), updated);
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
+		// The stored ACL may have changed. AclService.applyAcl evicts aclCache itself (and walks
+		// descendants), but it is not the only writer: the importers and the canonical ingest
+		// pipeline set ACEs and call contentService.update directly, deliberately bypassing
+		// applyAcl's permission check and epoch bookkeeping. Without this eviction their ACL
+		// writes leave a stale effective ACL memoised here, in the SAME JVM, and that memo is
+		// what the authorization gate reads. It bites new objects too: indexing an object on
+		// create populates aclCache via calculateAcl before the importer applies its ACL.
+		// Cost is one warm recomputation (~1.7ms) on the next authorization of this object.
+		// Descendants are intentionally NOT walked — every bypassing path writes ACLs onto
+		// documents and relationships only, never folders, so nothing inherits from here.
+		nemakiCachePool.get(repositoryId).getAclCache().remove(updated.getId());
 		return updated;
 	}
 
@@ -1248,6 +1296,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		Item updated = nonCachedContentDaoService.update(repositoryId, item);
 		nemakiCachePool.get(repositoryId).getContentCache().put(updated.getId(), updated);
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
+		// The stored ACL may have changed. AclService.applyAcl evicts aclCache itself (and walks
+		// descendants), but it is not the only writer: the importers and the canonical ingest
+		// pipeline set ACEs and call contentService.update directly, deliberately bypassing
+		// applyAcl's permission check and epoch bookkeeping. Without this eviction their ACL
+		// writes leave a stale effective ACL memoised here, in the SAME JVM, and that memo is
+		// what the authorization gate reads. It bites new objects too: indexing an object on
+		// create populates aclCache via calculateAcl before the importer applies its ACL.
+		// Cost is one warm recomputation (~1.7ms) on the next authorization of this object.
+		// Descendants are intentionally NOT walked — every bypassing path writes ACLs onto
+		// documents and relationships only, never folders, so nothing inherits from here.
+		nemakiCachePool.get(repositoryId).getAclCache().remove(updated.getId());
 		return updated;
 	}
 

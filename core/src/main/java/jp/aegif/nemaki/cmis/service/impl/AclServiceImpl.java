@@ -249,25 +249,46 @@ public class AclServiceImpl implements AclService {
 			}
 
 			jp.aegif.nemaki.model.Acl nemakiAcl = new jp.aegif.nemaki.model.Acl();
-			//REPOSITORYDETERMINED or PROPAGATE is considered as PROPAGATE
-			boolean objectOnly = (aclPropagation == AclPropagation.OBJECTONLY)? true : false;
+
+			// Every ACE stored here is BY DEFINITION direct: applyAcl writes to this object's
+			// own ACL. CMIS 1.1 §2.1.12.1 defines direct=TRUE as "the ACE is directly assigned
+			// to the object". The previous code passed `aclPropagation == OBJECTONLY` into this
+			// slot, which inverted the meaning (a PROPAGATE request stored direct=false).
+			//
+			// That was harmless in practice and the fix needs no data migration, for two reasons
+			// worth recording so nobody "restores" the old behaviour:
+			//   1. The flag is never persisted. CouchContent.convertToCouchAcl writes only
+			//      principal + permissions, and CouchAcl.convert reconstructs every entry with
+			//      direct=true ("DB-stored ACL is only localACE(direct = true)").
+			//   2. The wire value is recomputed. CompileServiceImpl.compileAcl derives isDirect
+			//      from list membership (localAces → true, inheritedAces → false), not from this
+			//      field. Verified on a live stack: granting via PROPAGATE on an
+			//      inheritance-broken folder and then issuing an add/remove applyACL does NOT
+			//      drop the earlier ACE.
+			// What the inversion did corrupt was the in-memory value while it was still in
+			// flight — the orphan passthrough in AclSemantics (parentId == null, or a parent
+			// read that failed in non-strict mode) hands the stored flag straight to the
+			// direct/inherited classification, and ZipExporter writes it out verbatim.
+			//
+			// AclPropagation itself is deliberately not consulted: see the note above the
+			// aclPropagation validation in ExceptionServiceImpl.
 	
 			if(breakingInheritance){
 				jp.aegif.nemaki.model.Acl currentAcl = contentService.calculateAcl(repositoryId, content);
 
 				for(jp.aegif.nemaki.model.Ace localAce : currentAcl.getLocalAces()){
-					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(localAce.getPrincipalId(), localAce.getPermissions(), objectOnly);
+					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(localAce.getPrincipalId(), localAce.getPermissions(), true);
 					nemakiAcl.getLocalAces().add(nemakiAce);
 				}
 
 				for(jp.aegif.nemaki.model.Ace inheritedAce : currentAcl.getInheritedAces()){
-					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(inheritedAce.getPrincipalId(), inheritedAce.getPermissions(), objectOnly);
+					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(inheritedAce.getPrincipalId(), inheritedAce.getPermissions(), true);
 					nemakiAcl.getLocalAces().add(nemakiAce);
 				}
 			} else {
 				for(Ace ace : acl.getAces()){
 					if(ace.isDirect()){
-						jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(ace.getPrincipalId(), ace.getPermissions(), objectOnly);
+						jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(ace.getPrincipalId(), ace.getPermissions(), true);
 						nemakiAcl.getLocalAces().add(nemakiAce);
 					}
 				}
@@ -301,7 +322,7 @@ public class AclServiceImpl implements AclService {
 
 			// CRITICAL FIX (2025-01-23): Synchronously clear ACL caches for this object and all descendants
 			// that inherit ACL. This prevents race conditions where child documents show stale permissions.
-			clearCachesRecursively(repositoryId, content);
+			int subtreeNodes = clearCachesRecursively(repositoryId, content);
 
 			// ── ACL-epoch Phase 2 + own-node fenced write + ACK (§11.4). Never fails the
 			// request: the ACL change is committed and authoritative; every early stop lands in
@@ -314,7 +335,7 @@ public class AclServiceImpl implements AclService {
 			// the TASK only, and ONLY when the sync half actually cleared the marker — otherwise
 			// the task must survive for the re-drive, whose terminus clears and completes.
 			updateRAGIndexACLAsync(repositoryId, content, epochE,
-					(epochCycle != null && epochCycle.cleared) ? epochMutationId : null);
+					(epochCycle != null && epochCycle.cleared) ? epochMutationId : null, subtreeNodes);
 
 			return getAcl(callContext, repositoryId, objectId, false, null);
 		}finally{
@@ -465,11 +486,21 @@ public class AclServiceImpl implements AclService {
 	 * Uses the shared ragAclExecutor to prevent thread leak.
 	 */
 	private void updateRAGIndexACLAsync(String repositoryId, Content content) {
-		updateRAGIndexACLAsync(repositoryId, content, null, null);
+		updateRAGIndexACLAsync(repositoryId, content, null, null, -1);
 	}
 
 	private void updateRAGIndexACLAsync(String repositoryId, Content content, Long epochE,
 			String epochMutationId) {
+		updateRAGIndexACLAsync(repositoryId, content, epochE, epochMutationId, -1);
+	}
+
+	/**
+	 * @param subtreeNodes size of the inheriting subtree as counted by the synchronous cache
+	 *     eviction, or -1 when this path did not count it. Logged so an operator can see how
+	 *     much work the asynchronous refresh is about to do.
+	 */
+	private void updateRAGIndexACLAsync(String repositoryId, Content content, Long epochE,
+			String epochMutationId, int subtreeNodes) {
 		// Get search services from the Spring context (optional dependencies).
 		RAGIndexingService ragService = getRagIndexingService();
 		ACLExpander expander = getAclExpander();
@@ -486,12 +517,24 @@ public class AclServiceImpl implements AclService {
 		final RAGIndexingService ragRef = ragEnabled ? ragService : null;
 		final jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconcile = reconciliationService;
 
+		final long submittedAtNanos = System.nanoTime();
 		ragAclExecutor.submit(() -> {
+			// START marker. Without it the only INFO on this path is the completion line below,
+			// so "a propagation is running right now" was not observable at all (E1).
+			log.info("Search index ACL refresh STARTED: repository=" + repositoryId
+					+ " root=" + content.getId()
+					+ (subtreeNodes >= 0 ? " expectedNodes=" + subtreeNodes : "")
+					+ " queuedForMs=" + ((System.nanoTime() - submittedAtNanos) / 1_000_000L));
 			try {
 				// syncConfirm=false: async best-effort with enqueue-on-failure.
 				updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,
 						new java.util.HashSet<>(), true, reconcile, null, false, null, epochE);
-				log.info("Search index ACL update triggered for: " + content.getId());
+				// This line used to read "triggered", but it is emitted AFTER the recursive walk
+				// returns — an operator watching the log read a completion as a start.
+				log.info("Search index ACL refresh COMPLETED: repository=" + repositoryId
+						+ " root=" + content.getId()
+						+ (subtreeNodes >= 0 ? " nodes=" + subtreeNodes : "")
+						+ " elapsedMs=" + ((System.nanoTime() - submittedAtNanos) / 1_000_000L));
 				// §11.4 inline settle, deferred to SUBTREE COMPLETION (not the sync request):
 				// settling before the async refresh finished would let a crash in the window
 				// lose the descendants with no task left to recover them. Per-node failures
@@ -1078,7 +1121,7 @@ public class AclServiceImpl implements AclService {
 	 * CRITICAL FIX (2025-01-23): Changed from async to sync execution to prevent race conditions
 	 * where users see stale cached ACL data on child documents after changing parent permissions.
 	 */
-	private void clearCachesRecursively(String repositoryId, Content content) {
+	private int clearCachesRecursively(String repositoryId, Content content) {
 		java.util.Set<String> visitedIds = new java.util.HashSet<>();
 		java.util.Queue<Content> queue = new java.util.LinkedList<>();
 		queue.offer(content);
@@ -1107,7 +1150,13 @@ public class AclServiceImpl implements AclService {
 			}
 		}
 
-		log.debug("Synchronously cleared ACL caches for " + visitedIds.size() + " items");
+		// INFO, not debug: this count is the size of the inheriting subtree, and it is the
+		// ONLY place the server knows it before the asynchronous readers refresh starts. An
+		// operator asking "is this repository busy, and with how much work?" has nothing else
+		// to read — see docs/design/v3.3-release-blockers.md E2.
+		log.info("ACL cache eviction (sync): repository=" + repositoryId + " root=" + content.getId()
+				+ " inheritingSubtreeNodes=" + visitedIds.size());
+		return visitedIds.size();
 	}
 
 	private class ClearCacheTask implements Runnable{

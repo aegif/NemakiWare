@@ -1265,21 +1265,41 @@ public class ObjectServiceImpl implements ObjectService {
 			String targetFolderId, ExtensionsData extension) {
 
 		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
+		exceptionService.invalidArgumentRequiredString("sourceFolderId", sourceFolderId);
+		exceptionService.invalidArgumentRequiredString("targetFolderId", targetFolderId);
 
-		Lock lock = threadLockService.getWriteLock(repositoryId, objectId.getValue());
+		final String movingId = objectId.getValue();
+		if (movingId.equals(targetFolderId)) {
+			exceptionService.constraint(movingId, "Cannot move a folder into itself");
+		}
+
+		// Hold the write lock of BOTH the moved object and the destination, taken in id order.
+		//
+		// Ordering is what makes it deadlock-free; holding both is what makes the cycle guard
+		// below sound. With only the moved object locked, two concurrent moves — A into B's
+		// subtree and B into A's subtree — each evaluate their guard against a hierarchy where
+		// the other move has not landed yet, both pass, and the pair commits a cycle. A cycle
+		// here is not cosmetic: the ACL inheritance walk climbs parents, so a self-ancestor
+		// folder makes every effective-ACL computation under it unanswerable.
+		Lock firstLock = threadLockService.getWriteLock(repositoryId,
+				movingId.compareTo(targetFolderId) <= 0 ? movingId : targetFolderId);
+		Lock secondLock = threadLockService.getWriteLock(repositoryId,
+				movingId.compareTo(targetFolderId) <= 0 ? targetFolderId : movingId);
 		try {
-			lock.lock();
+			firstLock.lock();
+			secondLock.lock();
 			// //////////////////
 			// General Exception
 			// //////////////////
-			exceptionService.invalidArgumentRequiredString("sourceFolderId", sourceFolderId);
-			exceptionService.invalidArgumentRequiredString("targetFolderId", targetFolderId);
-			Content content = contentService.getContent(repositoryId, objectId.getValue());
-			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId.getValue());
+			Content content = contentService.getContent(repositoryId, movingId);
+			exceptionService.objectNotFound(DomainType.OBJECT, content, movingId);
 			Folder source = contentService.getFolder(repositoryId, sourceFolderId);
 			exceptionService.objectNotFound(DomainType.OBJECT, source, sourceFolderId);
 			Folder target = contentService.getFolder(repositoryId, targetFolderId);
 			exceptionService.objectNotFound(DomainType.OBJECT, target, targetFolderId);
+			if (content.isFolder()) {
+				rejectMoveIntoOwnSubtree(repositoryId, movingId, target);
+			}
 			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_MOVE_OBJECT, content);
 			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_MOVE_SOURCE, source);
 			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_MOVE_TARGET, target);
@@ -1308,7 +1328,45 @@ public class ObjectServiceImpl implements ObjectService {
 			// Invalidate IN_TREE folder hierarchy cache (folder may have been moved)
 			solrUtil.invalidateFolderHierarchyCache(repositoryId);
 		} finally {
-			lock.unlock();
+			secondLock.unlock();
+			firstLock.unlock();
+		}
+	}
+
+	/**
+	 * Refuse to move {@code movingId} underneath itself.
+	 *
+	 * <p>Walks from the destination up to the root. The walk carries its own visited set and hop
+	 * budget because the store may ALREADY contain a cycle (nothing prevented one before this
+	 * guard existed) — a guard that hangs on the damage it is meant to prevent is worse than none.
+	 * Hitting either bound is reported as a constraint violation rather than ignored: the move
+	 * cannot be shown to be safe, so it does not proceed.
+	 */
+	private void rejectMoveIntoOwnSubtree(String repositoryId, String movingId, Folder target) {
+		java.util.Set<String> visited = new java.util.HashSet<>();
+		Content cursor = target;
+		int hops = 0;
+		while (cursor != null) {
+			if (movingId.equals(cursor.getId())) {
+				exceptionService.constraint(movingId,
+						"Cannot move a folder into its own subtree (destination is a descendant)");
+			}
+			if (!visited.add(cursor.getId())) {
+				exceptionService.constraint(movingId,
+						"Cannot verify the move: the folder hierarchy above the destination"
+								+ " contains a cycle");
+			}
+			if (++hops > jp.aegif.nemaki.acl.AclSemantics.MAX_ANCESTOR_HOPS) {
+				exceptionService.constraint(movingId,
+						"Cannot verify the move: the folder hierarchy above the destination is"
+								+ " deeper than " + jp.aegif.nemaki.acl.AclSemantics.MAX_ANCESTOR_HOPS
+								+ " levels");
+			}
+			String parentId = cursor.getParentId();
+			if (parentId == null) {
+				return;
+			}
+			cursor = contentService.getFolder(repositoryId, parentId);
 		}
 	}
 

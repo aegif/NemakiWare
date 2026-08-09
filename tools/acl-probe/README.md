@@ -1,6 +1,6 @@
 # acl-probe — ACL 伝播・意味論の再測定スクリプト
 
-[docs/design/v3.4-improvement-plan.md](../../docs/design/v3.4-improvement-plan.md) §7
+[docs/design/v3.3-release-blockers.md](../../docs/design/v3.3-release-blockers.md) §7
 (合格再判定) の測定資産。改善の before/after を同じ手順で測り直すために置いてある。
 2026-08-09 の baseline 数値は同文書 §1 に記録済み。
 

@@ -217,13 +217,38 @@ public final class AclSemantics {
      *       the nearer node wins.</li>
      * </ol>
      */
+    /**
+     * Hop budget for the upward walk, matching {@code AclEffectiveEpochService}'s
+     * {@code DEFAULT_MAX_ANCESTOR_HOPS}. The two implement the same inheritance semantics and
+     * must agree on where they stop; this side previously had neither a bound nor cycle
+     * detection, so a parent/child cycle in the store would recurse until the stack blew.
+     */
+    public static final int MAX_ANCESTOR_HOPS = 128;
+
     public static List<Ace> effectiveAces(ChainNode node, boolean strict,
                                           String anyoneId, String anonymousId) {
-        return effectiveAcesInternal(node, new ArrayList<Ace>(), strict, anyoneId, anonymousId);
+        return effectiveAcesInternal(node, new ArrayList<Ace>(), strict, anyoneId, anonymousId,
+                new java.util.HashSet<String>(), 0);
     }
 
     private static List<Ace> effectiveAcesInternal(ChainNode node, List<Ace> result, boolean strict,
-                                                   String anyoneId, String anonymousId) {
+                                                   String anyoneId, String anonymousId,
+                                                   java.util.Set<String> visited, int hops) {
+        // Fail CLOSED on an impossible chain, the same way the epoch walk does. Degrading to
+        // "just this node's local ACEs" would silently drop every inherited grant AND every
+        // inherited restriction, and the caller cannot tell the difference from a legitimately
+        // isolated object. Throwing surfaces the broken hierarchy instead of quietly answering
+        // with an ACL nobody configured.
+        if (hops > MAX_ANCESTOR_HOPS) {
+            throw new IllegalStateException("ACL inheritance exceeded " + MAX_ANCESTOR_HOPS
+                    + " ancestor hops at " + node.id()
+                    + " — the folder hierarchy is deeper than supported or contains a cycle");
+        }
+        if (node.id() != null && !visited.add(node.id())) {
+            throw new IllegalStateException("ACL inheritance cycle detected at " + node.id()
+                    + " — a folder is its own ancestor");
+        }
+
         List<Ace> aces = node.localAces();
 
         if (node.root() || !node.inherited()) {
@@ -247,7 +272,8 @@ public final class AclSemantics {
             return aces;
         }
         return mergeAces(aces,
-                effectiveAcesInternal(parent, new ArrayList<Ace>(), strict, anyoneId, anonymousId),
+                effectiveAcesInternal(parent, new ArrayList<Ace>(), strict, anyoneId, anonymousId,
+                        visited, hops + 1),
                 anyoneId, anonymousId);
     }
 
