@@ -4,9 +4,9 @@
 以下はすべて稼働中のサーバでの実測です。
 
 **要旨**: `POST /search-engine/reindex/folder/{folderId}` は対象サブツリーの
-`effective_acl_epoch` を**消します**。`readers` は残るので検索の認可自体は
+`effective_acl_epoch` を**消します**。`readers` は再計算されるので検索の認可自体は
 壊れませんが、**そのサブツリーは ACL-epoch fence の外に出ます**。
-警告も verdict の変化もありません。
+verdict は検出しますが (§2-1)、**警告は出ず、運用手順にも組み込まれていません**。
 
 ---
 
@@ -34,7 +34,12 @@
 
 ### 2-1. 全再索引とは扱いが違う
 
-全再索引 (`POST /search-engine/reindex`) は API 自身が応答で警告します:
+> **訂正 (2026-08-09)**: 初出時、下の JSON を「全再索引の応答」と書きましたが誤りです。
+> これは **`POST /v1/admin/acl-epoch/migration/{repositoryId}`** (初期 epoch stamp の起動)
+> の応答本体です (`AclEpochMigrationController.java:71-76`)。全再索引の応答には
+> この警告はありません。**警告が出るのは stamp 側だけ**、という点はむしろ主張を補強します。
+
+epoch stamp の API は応答で次のように警告します:
 
 ```json
 {"status":"started","note":"Run this AFTER the mandatory full reindex —
@@ -49,9 +54,12 @@ stamp の verdict で完了を確認します。**手順に組み込まれてい
 
 - 応答に警告なし
 - 運用手順に「folder reindex の後に stamp し直す」という記述なし
-- `GET /v1/admin/acl-epoch/migration/{repo}` の verdict は
-  リポジトリ全体を見るので、50 件が抜けても `COMPLETE` から動かない可能性がある
-  (本検証では stamp 直後が `INCOMPLETE` だったため、この点は**未確認**)
+- ~~`GET /v1/admin/acl-epoch/migration/{repo}` の verdict は 50 件が抜けても
+  `COMPLETE` から動かない可能性がある~~ → **誤り。verdict は検出します。**
+  `remainingUnfenced` を前回 run のカウンタではなく**毎回 Solr から生で数え直す**ので
+  (`AclEpochMigrationController.java:92-101`)、folder reindex で epoch が消えれば
+  verdict は `COMPLETE` に戻りません。**検出はされる — されないのは「警告」と
+  「手順への組み込み」です。**
 
 ### 2-2. 日常操作である
 
@@ -60,12 +68,16 @@ folder reindex は「このフォルダだけ索引がおかしい」ときに�
 
 ### 2-3. 何が失われるか
 
-`readers` は残るので**検索の認可は壊れません** (fail-closed も維持)。
+`readers` は「残る」のではなく、batch 経路が `expandToReaders` から
+**毎回再計算して上書き**します (`SolrUtil.java:1384-1396`)。結果として値は
+正しいので**検索の認可は壊れません** (fail-closed も維持)。
 失われるのは **epoch fence** — すなわち
 
 - 並行する `applyAcl` の fenced write を、CAS も epoch 比較も持たない batch add が
   **後勝ちで踏み潰せる**
-- 古い書き込みを拒否する仕組みが、そのサブツリーだけ無効になる
+- 古い書き込みを拒否する仕組みが、そのサブツリーだけ無効になる。
+  ただし**恒久的ではなく「その文書の次の ACL 書き込みまで」**です
+  (applyAcl / reconcile の書き込み経路は bootstrap 許容で epoch を再付与する)
 
 CLAUDE.md は「applyAcl / move / reconcile re-drive は**必ず** epoch fence を通ります。
 切替スイッチはありません」と書いていますが、**batch reindex はその「必ず」の外**です。
@@ -90,6 +102,9 @@ stamp を実行すると 80 秒ほどで 4,720 件に付きました。
 
 1. **batch 経路を fenced writer に通す** (`AclEpochIndexWriter`)。最低限、
    add の前に realtime GET → `ContentWriterFence.preserveAclGroup` → `_version_` CAS。
+   **落ちているのは ACL group だけではありません** — `content_incarnation` /
+   `content_generation` を stamp するのは `applyContentFence` (`SolrUtil.java:942-945`)
+   だけで、batch が通る `createSolrDocument` の 2 引数版はこれも通りません。
 2. 当面の運用回避: **folder reindex の直後に
    `POST /v1/admin/acl-epoch/migration/{repo}` を再実行し、verdict を確認する**。
    これを手順書に書く。
@@ -99,9 +114,9 @@ stamp を実行すると 80 秒ほどで 4,720 件に付きました。
 
 ## 5. まだ確かめていないこと
 
-- verdict がこの欠落を検出するか (folder reindex 後に `GET migration` の verdict が
-  `COMPLETE` のままか)。本検証では stamp 直後から `INCOMPLETE` だったため未確認
 - epoch scanner / reconciliation キューが自動で stamp し直すか。
   観測した範囲 (数分) では復旧しなかった
-- RAG 索引側の folder reindex (`/rag/reindex/folder/{folderId}`) が同じ挙動か
+- ~~RAG 索引側の folder reindex が同じ挙動か~~ → **別経路**。
+  `RAGIndexMaintenanceServiceImpl` → `ragIndexingService.indexDocument` で
+  書き込む Solr コアも文書も異なるため、この欠陥の対象外 (要再確認)
 - 「後勝ちで踏み潰せる」ことの実演 (並行 applyAcl と folder reindex のレース)

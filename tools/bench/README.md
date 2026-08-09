@@ -251,7 +251,7 @@ core の healthcheck はポートに繋がるかどうかしか見ていませ�
 | 認証 | `VerifiedPasswordCache` — 検証済みの (repo, user, 保存ハッシュ, パスワード) を既定 30 秒記憶。成功のみ。保存ハッシュがキーに入るのでパスワード変更で自動失効 |
 | 型定義 | `TypeManagerImpl:2890` のガード無し WARN と、同メソッド内の無条件 debug 3 本を `isDebugEnabled()` の内側へ |
 | 型定義 | `cleanupTimedOutTypes()` に `pendingDeletions == 0` の早期 return。削除中が無ければ `initLock` を取らない |
-| CouchDB | `getChildren` / `getChildrenPaged` の `include_docs=true` を廃止し、view の value (＝文書そのもの) を使う |
+| CouchDB | `getChildren` / `getChildrenPaged` を view の value (＝文書そのもの) から組み立てるようにした。**ただし電文上は no-op だった** — 下の注記を参照 |
 | CouchDB | `CloudantClientPool.getClient()` の毎回 INFO をガード |
 
 **cost 12 のまま、子 50 件のコーパスで 40.4 → 129.2 rps (3.2 倍)**
@@ -264,6 +264,24 @@ core の healthcheck はポートに繋がるかどうかしか見ていませ�
 | query | 445 ms | **23 ms** |
 | getChildren | 474 ms | 413 ms |
 | スループット | 40.4 rps | **129.2 rps** |
+
+### 訂正: include_docs の廃止は測定時点では効いていなかった (2026-08-09)
+
+上表の 40.4 → 129.2 rps に **`include_docs` の変更は寄与していません**。
+`queryParams` からキーを消しただけでは足りず、`CloudantClientWrapper.queryView` は
+未指定かつ `reduce != true` のとき `builder.includeDocs(true)` を付け直します
+(`:832-835`)。したがって測定時の電文には従来どおり文書の 2 つ目のコピーが
+載っていました。129.2 rps は**認証キャッシュと `TypeManagerImpl` の 2 件による**ものです。
+
+`include_docs=false` を明示する修正を入れ (`66acc663d`)、再ビルドして電文を確認しました:
+
+| | 応答サイズ (子 50 件) |
+|---|---|
+| `include_docs=true` (旧電文) | 92,795 B |
+| `include_docs=false` (新電文) | 48,595 B |
+
+直後の「SDK 経由の 37 ms に説明のつかない差がある」という記述も、この
+`include_docs` が原因でした。**SDK の謎ではありません。**
 
 ### 次の律速は getChildren、ただし CouchDB ではない
 
