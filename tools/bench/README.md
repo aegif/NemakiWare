@@ -173,6 +173,31 @@ cost 10 の状態で取ったスレッドダンプでは 16 本中 15 本が
 子 50 件 525 ms に対し子 143 件 1209 ms)。`getChildrenCount` の
 reduce クエリも毎回 1 往復増えますが、全件取得する以上その答えは取得結果から分かります。
 
+
+### 最終実測 — 全修正投入後 (2026-08-09)
+
+`include_docs=false` が実際に効くようになった後の数字です。コーパスは 129.2 rps を
+測ったときと**同一** (bench-folder-* 10 個 × 子 50 件 = 500、`bench-doc-000%` の
+一致 216 件) で、認証も cost 12 のままです。
+
+| | 混合 c=16 | getObject | getChildren | query | content |
+|---|---|---|---|---|---|
+| 調査開始時 | 40.4 rps | 313 ms | 474 ms | 445 ms | 314 ms |
+| 認証キャッシュ + TypeManagerImpl | 129.2 rps | 2 ms | 413 ms | 23 ms | 2 ms |
+| **+ `include_docs=false` が実効** | **449 rps** (439–462) | 4 ms | **77 ms** | 40 ms | 3 ms |
+
+**合計 11 倍。** 最後の 3.5 倍は `getChildren` が 413 → 77 ms になったことによります
+(children view の応答が 92,795 B → 48,595 B)。
+
+`query` が 23 → 40 ms に増えているのは退行ではなく、この間に Solr の文書数が
+2,238 → 4,793 に増えたためです (グループ検証で作成した文書)。CMIS 側のコーパスは
+同一ですが、Solr 側は同一ではありません。
+
+なお `ACLExpander` のグループ解決の修正 (`ee53a6299`) は**この表には現れません**。
+ベンチは admin で走り、admin は readers fq をバイパスするためです。効果は
+非 admin の検索に出ます (グループ 2,908 個で 830 ms → 17 ms、
+[`acl-group-resolution-scaling.md`](../../docs/design/acl-group-resolution-scaling.md) §7)。
+
 ## OpenCMIS 2.0 はどれだけ効いたか
 
 3.2.8 = `1.1.0-nemakiware` / 3.3.0 = `2.0.0-RC2-nemakiware` なので、この 2 つの比較が
