@@ -101,6 +101,14 @@ public class AclEpochMigrationController {
             body.put("verdict", v.name());
             body.put("fenced", v == AclEpochMigrationService.Verdict.COMPLETE
                     || v == AclEpochMigrationService.Verdict.COMPLETE_EXCEPT_ORPHANS);
+            if (v == AclEpochMigrationService.Verdict.PARTIALLY_FENCED_NO_RUN_RECORD) {
+                body.put("note", "Part of the index carries epochs and part does not, and this JVM "
+                        + "has no record of a stamp run (the record is in-memory and is lost on "
+                        + "restart). A partial population is equally consistent with an unfinished "
+                        + "migration, a partial reindex, or ordinary ACL writes bootstrapping "
+                        + "documents one at a time — all of which want the same next step: run the "
+                        + "stamp. Reindex FIRST if a reindex is pending, THEN stamp.");
+            }
             if (v == AclEpochMigrationService.Verdict.EMPTY_INDEX) {
                 body.put("note", "This repository has NO CMIS objects in the index. Nothing was "
                         + "stamped because there was nothing to stamp — most likely the mandatory "

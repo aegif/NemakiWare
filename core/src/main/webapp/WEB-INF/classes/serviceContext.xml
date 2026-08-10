@@ -547,6 +547,16 @@
         <property name="repositoryInfoMap" ref="repositoryInfoMap" />
     </bean>
 
+    <!--
+      Lets an over-cap query tell "too broad" (reject) from "temporarily over-counting because a
+      permission change is still landing" (answer with what can be confirmed). Consulted only at
+      the point of rejection, so the cheap-reject path is unchanged.
+    -->
+    <bean id="aclPropagationStaleness"
+          class="jp.aegif.nemaki.cmis.aspect.query.solr.AclPropagationStaleness">
+        <property name="reconciliationService" ref="searchIndexReconciliationService" />
+    </bean>
+
     <bean id="crossReplicaCacheInvalidator"
           class="jp.aegif.nemaki.util.cache.CrossReplicaCacheInvalidator"
           init-method="start" destroy-method="stop">
@@ -761,6 +771,7 @@
     </bean>
 
     <bean id="queryProcessor" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrQueryProcessor">
+        <property name="propagationStaleness" ref="aclPropagationStaleness" />
         <property name="contentService">
             <ref bean="ContentService" />
         </property>

@@ -192,11 +192,12 @@ Read the `verdict`, not the raw count:
 
 | verdict | meaning |
 |---|---|
-| `COMPLETE` | every CMIS object in the index carries an epoch |
+| `COMPLETE` | every CMIS object in the index carries an epoch. Reported from the live index, so it is still `COMPLETE` after a restart even though the in-memory run record is gone |
 | `COMPLETE_EXCEPT_ORPHANS` | done; the residual is index entries whose CouchDB content was deleted and which can never be stamped |
 | `EMPTY_INDEX` | the repository has NO CMIS objects indexed — almost always "the full reindex has not been run yet". **Not** done |
 | `INCOMPLETE` | documents remain that could have been fenced — repair any reported quarantine blockers, then re-run |
-| `NOT_RUN` / `RUNNING` / `FAILED` / `UNKNOWN` | no conclusion available |
+| `PARTIALLY_FENCED_NO_RUN_RECORD` | part of the index carries epochs and part does not, with no run record in this JVM. Ordinary ACL writes bootstrap epochs one document at a time, so this does **not** prove a migration ran — run the stamp (reindex first if one is pending) |
+| `NOT_RUN` / `RUNNING` / `FAILED` / `UNKNOWN` | no conclusion available. `NOT_RUN` now means "no run record AND nothing in the index is fenced"; a finished migration no longer degrades to `NOT_RUN` on restart |
 
 An unknown repository id is a 404 listing the configured ids — never a completed migration.
 

@@ -79,6 +79,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 	// ACL-in-Solr: builds the query-time readers fq from the caller's principals.
 	private jp.aegif.nemaki.rag.acl.ACLExpander aclExpander;
 	private ExceptionService exceptionService;
+
+	/**
+	 * Answers "is a permission change still landing in this repository?". Optional: when it is not
+	 * wired the over-cap behaviour is exactly what it always was (reject with 400).
+	 */
+	private AclPropagationStaleness propagationStaleness;
 	private ThreadLockService threadLockService;
 	private SolrUtil solrUtil;
 	private static final Log logger = LogFactory
@@ -516,8 +522,22 @@ public class SolrQueryProcessor implements QueryProcessor {
 		// A CmisInvalidArgumentException from the guard is a 400 that propagates
 		// out; its message never echoes the pre-ACL count.
 		QueryResponse resp = null;
+		boolean truncatedByScanCap = false;
 		try {
-			resp = queryWithinScanCap(solrClient, solrQuery, aclScanCap);
+			final String repoForStaleness = repositoryId;
+			CappedResult capped = queryWithinScanCap(solrClient, solrQuery, aclScanCap,
+					() -> propagationStaleness != null
+							&& propagationStaleness.isPropagationUnconverged(repoForStaleness));
+			resp = capped.response;
+			truncatedByScanCap = capped.truncated;
+			if (truncatedByScanCap) {
+				AclPropagationStaleness.recordDegradedQuery();
+				logger.warn("Query in " + repositoryId + " matched more than the " + aclScanCap
+						+ "-row ACL scan limit while a permission change is still propagating;"
+						+ " answering with the rows that could be confirmed instead of rejecting."
+						+ " numItems is a lower bound and hasMoreItems reflects only what is"
+						+ " reachable.");
+			}
 		} catch (SolrServerException | IOException e) {
 			logger.error("Solr query failed: " + e.getMessage(), e);
 			exceptionService.invalidArgument("Solr query execution failed: " + e.getMessage());
@@ -637,6 +657,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 						callContext, repositoryId, pageContents, filter, requestedWithAliasKey,
 						includeAllowableActions, includeRelationships, renditionFilter, false,
 						maxItems, skipCount, false, "NONE", totalAuthorized);
+				if (truncatedByScanCap) {
+					markTruncated(result);
+				}
 
 				return result;
 				
@@ -733,22 +756,82 @@ public class SolrQueryProcessor implements QueryProcessor {
 	 * so {@code SolrQueryProcessorScanCapTest} can drive it with a mock
 	 * {@link SolrClient}.
 	 */
-	static QueryResponse queryWithinScanCap(SolrClient solrClient, SolrQuery solrQuery, int aclScanCap)
+	static CappedResult queryWithinScanCap(SolrClient solrClient, SolrQuery solrQuery,
+			int aclScanCap, java.util.function.BooleanSupplier mayDegrade)
 			throws SolrServerException, IOException {
 		// Phase 1: rows=0 count probe.
 		solrQuery.set(CommonParams.START, 0);
 		solrQuery.set(CommonParams.ROWS, 0);
+		boolean degraded = false;
 		if (exceedsScanCap(numFoundOf(solrClient.query(solrQuery)), aclScanCap)) {
-			throw scanCapExceeded(aclScanCap);
+			// Over the cap. Ordinarily that is a query too broad to authorize in memory and it is
+			// refused here, before any body transfer. There is one case where the count is not
+			// evidence of breadth: while a permission change is still propagating, the index still
+			// carries the revoked principal's tokens, so the pre-gate count is inflated by rows the
+			// in-memory gate is about to remove. Rejecting then makes a revocation look like a
+			// broken search.
+			//
+			// The question is asked ONLY here — on a request that was going to fail — so the
+			// cheap-reject path is untouched for every query that is genuinely too broad.
+			if (!mayDegrade.getAsBoolean()) {
+				throw scanCapExceeded(aclScanCap);
+			}
+			degraded = true;
 		}
-		// Phase 2: fetch up to the cap.
+		// Phase 2: fetch up to the cap. Bounded either way, so the degraded path costs no more
+		// than a query that was within the cap.
 		solrQuery.set(CommonParams.ROWS, aclScanCap);
 		QueryResponse resp = solrClient.query(solrQuery);
 		// Race-window re-check (documents added between the probe and the fetch).
-		if (exceedsScanCap(numFoundOf(resp), aclScanCap)) {
-			throw scanCapExceeded(aclScanCap);
+		if (!degraded && exceedsScanCap(numFoundOf(resp), aclScanCap)) {
+			if (!mayDegrade.getAsBoolean()) {
+				throw scanCapExceeded(aclScanCap);
+			}
+			degraded = true;
 		}
-		return resp;
+		return new CappedResult(resp, degraded);
+	}
+
+	/**
+	 * A cap-bounded fetch, and whether it is all there is.
+	 *
+	 * <p>{@code truncated} means the match set was larger than the ACL scan cap and the server
+	 * chose to answer with what it could confirm rather than refuse. The rows are correct — the
+	 * in-memory gate still runs — but they are a prefix, so the caller must not present the count
+	 * as a total or claim more pages than it can actually serve.
+	 */
+	static final class CappedResult {
+		final QueryResponse response;
+		final boolean truncated;
+
+		CappedResult(QueryResponse response, boolean truncated) {
+			this.response = response;
+			this.truncated = truncated;
+		}
+	}
+
+	/**
+	 * Tell the caller the page is a prefix, not the whole answer.
+	 *
+	 * <p>{@code hasMoreItems} already says only what this server can actually serve: it is
+	 * computed from the slice against the confirmed set, so once the caller reaches the end of the
+	 * cap-bounded window it goes false rather than promising pages that cannot be fetched. What
+	 * that alone cannot say is WHY the answer stops there, which is the difference between "you
+	 * have seen everything" and "narrow your query". The extension carries that, and the count
+	 * stays a lower bound rather than a fabricated total.
+	 */
+	private static void markTruncated(ObjectList result) {
+		if (result == null) {
+			return;
+		}
+		List<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement> exts =
+				new ArrayList<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement>();
+		if (result.getExtensions() != null) {
+			exts.addAll(result.getExtensions());
+		}
+		exts.add(new org.apache.chemistry.opencmis.commons.impl.dataobjects.CmisExtensionElementImpl(
+				null, "truncatedByAclScanLimit", null, "true"));
+		result.setExtensions(exts);
 	}
 
 	private static long numFoundOf(QueryResponse resp) {
@@ -1169,6 +1252,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 	public void setExceptionService(ExceptionService exceptionService) {
 		this.exceptionService = exceptionService;
+	}
+
+	public void setPropagationStaleness(AclPropagationStaleness propagationStaleness) {
+		this.propagationStaleness = propagationStaleness;
 	}
 
 	public void setSolrUtil(SolrUtil solrUtil) {

@@ -531,9 +531,19 @@ public class UserGroupDaoDelegate {
 				// as List so the Cloudant SDK serializes them as JSON arrays. Passing a String
 				// ("[\"id\",0]") sends a JSON string key which never matches an array key, so
 				// nested-group expansion silently returned nothing.
+				// Read depth 0 ONLY. The view emits the SAME parent document twenty times per
+				// edge, under keys [groupId, 0] .. [groupId, 19]; asking for the whole range
+				// transfers twenty copies of every parent and throws nineteen of them away in the
+				// dedupe below. One key is enough because the twenty rows are identical.
+				//
+				// The duplicate emits are not fixed here on purpose: changing the map function
+				// forces CouchDB to rebuild the whole view, which on a large repository is an
+				// outage-shaped operation for a saving the consumer can take unilaterally. If the
+				// view is ever rewritten to emit once, this stays correct — a scalar key would
+				// need the range dropped, which the compile would catch.
 				Map<String, Object> queryParams = new HashMap<String, Object>();
 				queryParams.put("startkey", Arrays.asList(groupId, 0));
-				queryParams.put("endkey", Arrays.asList(groupId, 19));
+				queryParams.put("endkey", Arrays.asList(groupId, 0));
 
 				try {
 					ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "joinedDirectGroupsByGroupId", queryParams);

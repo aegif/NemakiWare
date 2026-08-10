@@ -98,7 +98,7 @@ public class SolrQueryProcessorScanCapTest {
 		SolrQuery q = new SolrQuery();
 
 		CmisInvalidArgumentException ex = assertThrows(CmisInvalidArgumentException.class,
-				() -> SolrQueryProcessor.queryWithinScanCap(client, q, 10000));
+				() -> SolrQueryProcessor.queryWithinScanCap(client, q, 10000, () -> false));
 
 		// Only ONE query was issued (no cap-sized body fetch on rejection)...
 		verify(client, times(1)).query(any(SolrParams.class));
@@ -110,6 +110,52 @@ public class SolrQueryProcessorScanCapTest {
 				"rejection message must not echo the pre-ACL numFound");
 	}
 
+	/**
+	 * While a permission change is propagating the index still carries the revoked principal's
+	 * tokens, so the pre-gate count is inflated by rows the in-memory gate is about to remove.
+	 * Rejecting then makes a revocation look like a broken search. The degradation is gated on
+	 * that signal alone — a query that is genuinely too broad is still refused.
+	 */
+	@Test
+	public void overCapDegradesOnlyWhileAPermissionChangeIsPropagating() throws Exception {
+		List<Integer> rowsSeen = new ArrayList<>();
+		SolrClient client = clientReturning(rowsSeen, 10001, 10001);
+		SolrQuery q = new SolrQuery();
+
+		SolrQueryProcessor.CappedResult r =
+				SolrQueryProcessor.queryWithinScanCap(client, q, 10000, () -> true);
+
+		assertTrue(r.truncated, "the caller must be told the rows are a prefix");
+		verify(client, times(2)).query(any(SolrParams.class));
+		assertEquals(0, rowsSeen.get(0), "the cheap rows=0 probe still runs first");
+		assertEquals(10000, rowsSeen.get(1), "the fetch stays bounded by the cap");
+	}
+
+	@Test
+	public void overCapStillRejectsWhenNothingIsPropagating() throws Exception {
+		List<Integer> rowsSeen = new ArrayList<>();
+		SolrClient client = clientReturning(rowsSeen, 10001);
+		SolrQuery q = new SolrQuery();
+
+		assertThrows(CmisInvalidArgumentException.class,
+				() -> SolrQueryProcessor.queryWithinScanCap(client, q, 10000, () -> false));
+		verify(client, times(1)).query(any(SolrParams.class));
+	}
+
+	@Test
+	public void withinCapIsNeverMarkedTruncated() throws Exception {
+		List<Integer> rowsSeen = new ArrayList<>();
+		SolrClient client = clientReturning(rowsSeen, 42, 42);
+		SolrQuery q = new SolrQuery();
+
+		SolrQueryProcessor.CappedResult r =
+				SolrQueryProcessor.queryWithinScanCap(client, q, 10000, () -> true);
+
+		assertFalse(r.truncated,
+				"a query within the cap is complete; marking it truncated because something"
+						+ " unrelated is propagating would make every client distrust every page");
+	}
+
 	@Test
 	public void withinCapFetchesWithRowsCapAfterTheProbe() throws Exception {
 		List<Integer> rowsSeen = new ArrayList<>();
@@ -117,7 +163,7 @@ public class SolrQueryProcessorScanCapTest {
 		SolrClient client = clientReturning(rowsSeen, 42, 42);
 		SolrQuery q = new SolrQuery();
 
-		QueryResponse resp = SolrQueryProcessor.queryWithinScanCap(client, q, 10000);
+		QueryResponse resp = SolrQueryProcessor.queryWithinScanCap(client, q, 10000, () -> false).response;
 
 		verify(client, times(2)).query(any(SolrParams.class));
 		assertEquals(0, rowsSeen.get(0), "phase 1 is the rows=0 probe");
@@ -133,7 +179,7 @@ public class SolrQueryProcessorScanCapTest {
 		SolrQuery q = new SolrQuery();
 
 		assertThrows(CmisInvalidArgumentException.class,
-				() -> SolrQueryProcessor.queryWithinScanCap(client, q, 10000));
+				() -> SolrQueryProcessor.queryWithinScanCap(client, q, 10000, () -> false));
 
 		// Both phases ran (probe passed, fetch happened), then the re-check rejected.
 		verify(client, times(2)).query(any(SolrParams.class));
@@ -146,7 +192,7 @@ public class SolrQueryProcessorScanCapTest {
 		SolrClient client = clientReturning(rowsSeen, 10000, 10000);
 		SolrQuery q = new SolrQuery();
 
-		QueryResponse resp = SolrQueryProcessor.queryWithinScanCap(client, q, 10000);
+		QueryResponse resp = SolrQueryProcessor.queryWithinScanCap(client, q, 10000, () -> false).response;
 		verify(client, times(2)).query(any(SolrParams.class));
 		assertEquals(10000L, resp.getResults().getNumFound());
 	}

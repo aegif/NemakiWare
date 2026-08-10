@@ -457,6 +457,32 @@ public class SearchIndexReconciliationService {
         return find(selector, capped);
     }
 
+    /**
+     * Is there work outstanding for THIS repository that has not run yet?
+     *
+     * <p>Deliberately narrower than {@link #list}: filtered by repository, and only the statuses
+     * that mean "still to be done". A {@code FAILED} task is terminal and awaiting a human, so
+     * counting it would assert "a permission change is still landing" for ever; a task belonging
+     * to another repository says nothing about this one. Used by the query path to tell a
+     * genuinely over-broad query from one whose count is temporarily inflated by a propagation.
+     */
+    public boolean hasOutstandingWork(String repositoryId) {
+        if (repositoryId == null || repositoryId.isBlank()) {
+            return false;
+        }
+        for (String status : new String[] { SearchIndexAclReindexTask.Status.PENDING,
+                SearchIndexAclReindexTask.Status.LEASED }) {
+            List<SearchIndexAclReindexTask> found = find(Map.of(
+                    "type", SearchIndexAclReindexTask.DOC_TYPE,
+                    "repositoryId", repositoryId,
+                    "status", status), 1);
+            if (!found.isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public SearchIndexAclReindexTask getByTaskId(String taskId) {
         List<SearchIndexAclReindexTask> r = find(
                 Map.of("type", SearchIndexAclReindexTask.DOC_TYPE, "taskId", taskId), 1);

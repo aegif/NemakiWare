@@ -58,6 +58,8 @@ import org.springframework.beans.factory.annotation.Autowired;
  *     without this counter a stuck marker is invisible.</li>
  * <li>{@code groupResolutionTruncations} rising means some account sits below a group chain deeper
  *     than the traversal limit and is silently missing permissions granted above that depth.</li>
+ * <li>{@code queriesDegradedByAclScanLimit} rising while nothing is propagating means queries are
+ *     being answered with partial result sets for a reason that no longer applies.</li>
  * </ul>
  *
  * <p>Read-only and admin-gated. Under {@code /v1/admin/*}, so the shared CSRF interceptor applies
@@ -88,6 +90,11 @@ public class SearchIndexObservabilityController {
         body.put("inlineRunsOnRequestThreads", PropagationProgress.callerRunsTotal());
         body.put("pendingGateBlocks", RefreshCounters.pendingBlocksTotal());
         body.put("groupResolutionTruncations", TruncatedGroupResolution.truncationCount());
+        // Queries that were answered with a confirmed prefix instead of a 400, because a
+        // permission change was still propagating. A count that keeps climbing after propagation
+        // should have settled means something is not converging.
+        body.put("queriesDegradedByAclScanLimit",
+                jp.aegif.nemaki.cmis.aspect.query.solr.AclPropagationStaleness.degradedQueryCount());
         body.put("activePropagations", PropagationProgress.active().size());
         body.put("note", "Counters are per-JVM and reset on restart. In a multi-replica"
                 + " deployment, read them from every replica.");

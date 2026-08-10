@@ -219,8 +219,25 @@ public class AclEpochMigrationService {
 
     /** What the numbers MEAN for the wiring decision — see {@link #verdict}. */
     public enum Verdict {
-        /** No run recorded for this repository in this JVM. */
+        /**
+         * No run recorded for this repository IN THIS JVM, and the index shows no sign of ever
+         * having been stamped. Genuinely "not run".
+         */
         NOT_RUN,
+
+        /**
+         * No run recorded in this JVM, and the index is PARTLY fenced: some documents carry an
+         * epoch and some do not.
+         *
+         * <p>Deliberately NOT called "stamped elsewhere". A partial population proves only that
+         * something wrote epochs, and ordinary ACL writes bootstrap them one document at a time —
+         * so this state is equally consistent with "a migration ran and did not finish", "a
+         * partial reindex wiped some", and "no migration ever ran but the repository has been in
+         * use". All three want the same next step: run the stamp. What it must NOT be confused
+         * with is a fully fenced repository, which is why the fully-fenced case below is reported
+         * as COMPLETE regardless of who did it.
+         */
+        PARTIALLY_FENCED_NO_RUN_RECORD,
         RUNNING,
         /** The run hit a run-level fault (Solr down, a bean missing). Nothing can be concluded. */
         FAILED,
@@ -261,7 +278,20 @@ public class AclEpochMigrationService {
      */
     public Verdict verdict(String repositoryId, long remainingUnfenced, long indexedCmisObjects) {
         Progress p = runs.get(repositoryId);
-        if (p == null) return Verdict.NOT_RUN;
+        if (p == null) {
+            // No in-memory record. The run record is lost on restart, so "this JVM has not run it"
+            // is not evidence about the repository — the INDEX is. Read that instead.
+            if (indexedCmisObjects == 0) return Verdict.EMPTY_INDEX;
+            if (remainingUnfenced == 0) {
+                // Every indexed document carries an epoch. That is what COMPLETE asserts, and it
+                // is true no matter which process established it. Reporting anything else here is
+                // what made a finished migration read as unfinished after a restart — and the
+                // `fenced` boolean derived from it read false, so scripts could never confirm it.
+                return Verdict.COMPLETE;
+            }
+            return (remainingUnfenced < indexedCmisObjects)
+                    ? Verdict.PARTIALLY_FENCED_NO_RUN_RECORD : Verdict.NOT_RUN;
+        }
         if ("RUNNING".equals(p.status)) return Verdict.RUNNING;
         if ("FAILED".equals(p.status)) return Verdict.FAILED;
         // BEFORE the zero-remaining check: an empty index also has zero remaining, and calling that

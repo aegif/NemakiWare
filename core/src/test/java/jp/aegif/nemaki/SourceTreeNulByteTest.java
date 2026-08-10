@@ -58,21 +58,32 @@ class SourceTreeNulByteTest {
             "node_modules", "target", "dist", "build", ".git",
             "coverage", "playwright-report", "test-results");
 
-    /** Walk up from the module directory to the repository root. */
-    private static Path repositoryRoot() {
+    /**
+     * Walk up from the module directory to the project root.
+     *
+     * <p>Anchored on the root {@code pom.xml}, not on {@code .git}: verification builds run from a
+     * mirror of the tree that deliberately omits git metadata (see tools/verify), and a test that
+     * cannot find its subject there fails for a reason that has nothing to do with what it checks.
+     */
+    private static Path projectRoot() {
         Path p = Path.of("").toAbsolutePath();
-        while (p != null && !Files.isDirectory(p.resolve(".git"))) {
+        while (p != null) {
+            if (Files.isRegularFile(p.resolve("pom.xml"))
+                    && Files.isDirectory(p.resolve("core"))) {
+                return p;
+            }
             p = p.getParent();
         }
-        return p;
+        return null;
     }
 
     @Test
     @DisplayName("ソースツリーに NUL バイトが 1 つも無い (git が binary 扱いして diff が消える)")
     void noSourceFileContainsANulByte() throws IOException {
-        Path root = repositoryRoot();
+        Path root = projectRoot();
         assertTrue(root != null && Files.isDirectory(root),
-                "could not locate the repository root — this test needs it to scan the tree");
+                "could not locate the project root (a directory with pom.xml and core/) — this test"
+                        + " needs it to scan the tree");
 
         List<String> offenders = new ArrayList<>();
         int scanned = scan(root, offenders);

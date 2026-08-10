@@ -229,6 +229,10 @@ public class CrossReplicaCacheInvalidator {
             // repository-wide content clear for them is cheap.
             cache.getContentCache().removeAll();
             cache.getObjectDataCache().removeAll();
+            // The readers projection memoises principal KIND outside CacheService, keyed on the
+            // LOCAL generation — which a remote change does not advance. Without this the memo's
+            // short TTL is not a backstop, it is the only invalidation there is.
+            jp.aegif.nemaki.acl.PrincipalLookupCache.invalidateAll();
             record(seenPrincipal, repositoryId, remote.principalByNode);
             logger.info("User/group change detected on another replica — dropped the principal,"
                     + " content and object-data caches for {}", repositoryId);

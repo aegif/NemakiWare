@@ -382,10 +382,44 @@ public class AclEpochMigrationServiceTest {
         assertEquals(AclEpochMigrationService.Verdict.INCOMPLETE, svc.verdict("bedroom", 1, 10));
     }
 
-    /** Before any run there is nothing to conclude — not "complete because Solr looks empty". */
+    /**
+     * Before any run there is nothing to conclude — not "complete because Solr looks empty".
+     *
+     * <p>What "no run" means was split, because the in-memory record is lost on restart and the
+     * old single answer made a COMPLETED migration report NOT_RUN afterwards. An operator acting
+     * on that would stamp a live repository again, which rolls the high-watermark back. The index
+     * is the durable evidence, so it decides: epochs present means someone stamped it.
+     */
     @Test
-    public void aRepositoryNeverRunIsNOT_RUN_evenAtZeroRemaining() {
-        assertEquals(AclEpochMigrationService.Verdict.NOT_RUN, svc.verdict("never-touched", 0, 10));
+    public void aRepositoryNeverRunAndNeverStampedIsNOT_RUN() {
+        // Nothing is fenced (remaining == indexed): no evidence of any stamp.
+        assertEquals(AclEpochMigrationService.Verdict.NOT_RUN, svc.verdict("never-touched", 10, 10));
+    }
+
+    /**
+     * A fully fenced index IS complete, whoever established it. Reporting anything else after a
+     * restart is what made the derived {@code fenced} boolean read false for a finished migration,
+     * so no script could ever confirm one.
+     */
+    @Test
+    public void aFullyFencedIndexWithNoRunRecordIsCOMPLETE() {
+        assertEquals(AclEpochMigrationService.Verdict.COMPLETE, svc.verdict("restarted", 0, 10));
+    }
+
+    /**
+     * A PARTLY fenced index says much less. Ordinary ACL writes bootstrap epochs one document at a
+     * time, so this is equally consistent with an unfinished migration, a partial reindex, or a
+     * repository that has simply been in use — all of which want a stamp run.
+     */
+    @Test
+    public void aPartlyFencedIndexWithNoRunRecordIsNotClaimedToHaveBeenMigrated() {
+        assertEquals(AclEpochMigrationService.Verdict.PARTIALLY_FENCED_NO_RUN_RECORD,
+                svc.verdict("restarted", 3, 10));
+    }
+
+    @Test
+    public void anEmptyIndexWithNoRunIsStillEMPTY_INDEX() {
+        assertEquals(AclEpochMigrationService.Verdict.EMPTY_INDEX, svc.verdict("fresh", 0, 0));
     }
 
     /**
