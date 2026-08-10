@@ -10,6 +10,7 @@
 # This mirrors the working tree to a directory the IDE does not watch and builds there.
 #
 #   tools/verify/build-outside-ide.sh test     # full suite
+#   tools/verify/build-outside-ide.sh test -Dtest=SomeTest   # extra args go to Maven
 #   tools/verify/build-outside-ide.sh war      # package and copy to docker/core/core.war
 #
 # CompiledClassesAreUsableTest fails the build if a poisoned class is present, so a normal
@@ -19,6 +20,9 @@ set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DST="${NEMAKI_VERIFY_DIR:-/tmp/nemaki-verify}"
 ACTION="${1:-test}"
+# Anything after the action is passed straight to Maven (e.g. -Dtest=Foo for a single class).
+shift $(( $# > 0 ? 1 : 0 ))
+MVN_ARGS=("$@")
 
 echo "Mirroring $SRC -> $DST (excluding build output and git metadata)"
 rsync -a --delete \
@@ -26,6 +30,15 @@ rsync -a --delete \
   --exclude '.git/' \
   --exclude 'node_modules/' \
   "$SRC/" "$DST/"
+
+# The mirror's target/ is NOT rsynced (it would be pointless traffic), so it survives from the
+# previous run — and `rsync -a` PRESERVES SOURCE MTIMES, so a restored source file can be OLDER
+# than a class compiled from different content. Maven's incremental compile then skips it and the
+# stale class is what the tests run against. That produced a confident, reproducible, and entirely
+# wrong result once already (a security regression test "failing" against code that had the fix).
+# Removing the output directory costs about a minute of recompilation and removes the whole class
+# of error.
+rm -rf "$DST/core/target"
 
 cd "$DST"
 
@@ -35,13 +48,17 @@ case "$ACTION" in
   # does not survive being mirrored. The UI is not what this build exists to verify.
   test)
     mvn -o -pl core resources:resources compiler:compile \
-                    resources:testResources compiler:testCompile surefire:test
+                    resources:testResources compiler:testCompile surefire:test \
+                    ${MVN_ARGS[@]+"${MVN_ARGS[@]}"}
     ;;
   war)
     # The WAR needs the UI, so this one DOES run the full lifecycle — and therefore needs the
     # frontend toolchain, which the mirror cannot provide. Build the WAR in the real tree, then
     # verify the packaged classes are not poisoned before shipping it.
-    (cd "$SRC" && mvn -o clean -q && mvn -o -pl core -am package -DskipTests)
+    # -Dmaven.test.skip (not -DskipTests): skip test COMPILATION too. The tests are verified in
+    # the mirror; compiling them here achieves nothing and is the step the IDE's language server
+    # breaks, with errors that look like the source is wrong when only the class files are.
+    (cd "$SRC" && mvn -o clean -q && mvn -o -pl core -am package -Dmaven.test.skip=true)
     if unzip -p "$SRC/core/target/core.war" 'WEB-INF/classes/*.class' 2>/dev/null \
         | grep -qa "Unresolved compilation problem"; then
       echo "REFUSING to ship: the WAR contains classes the IDE's language server broke." >&2

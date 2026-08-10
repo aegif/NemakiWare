@@ -63,6 +63,7 @@ public final class PropagationProgress {
 
     private static final Map<String, PropagationProgress> ACTIVE = new ConcurrentHashMap<>();
     private static final AtomicLong CALLER_RUNS = new AtomicLong();
+    private static final AtomicLong DEFERRED_FROM_REQUEST_THREAD = new AtomicLong();
 
     private final String repositoryId;
     private final String rootId;
@@ -121,6 +122,24 @@ public final class PropagationProgress {
 
     public static long callerRunsTotal() {
         return CALLER_RUNS.get();
+    }
+
+    /**
+     * How many of those inline hand-backs were turned into a queued reconciliation instead of
+     * being walked on the request thread.
+     *
+     * <p>Read together with {@link #callerRunsTotal()}: the two rising in step is the healthy
+     * shape (the refresh queue saturated, and every overflow was moved to the durable queue rather
+     * than charged to a user's request). Caller-runs rising while this stays flat means the
+     * reconciliation service is not wired, and requests really are doing the traversal.
+     */
+    public static long deferredFromRequestThreadTotal() {
+        return DEFERRED_FROM_REQUEST_THREAD.get();
+    }
+
+    /** Records that an inline task handed its subtree to the durable reconciliation queue. */
+    public static void recordDeferredFromRequestThread() {
+        DEFERRED_FROM_REQUEST_THREAD.incrementAndGet();
     }
 
     public long elapsedMs() {

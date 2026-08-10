@@ -507,6 +507,54 @@ public class AclServiceImpl implements AclService {
 	}
 
 	/**
+	 * Hand a search-index refresh that landed on a request thread to the durable queue.
+	 *
+	 * <p>Package-private so it can be tested on its own: the branch it implements only fires when
+	 * a {@code ThreadPoolExecutor} is saturated, which is not a state a unit test can arrange
+	 * around the surrounding closure.
+	 *
+	 * @return {@code true} if the caller should return without walking the subtree. {@code false}
+	 *         means there is no durable queue to hand the work to, so the caller must walk it
+	 *         inline after all — losing the work outright would be worse than a slow request.
+	 */
+	static boolean deferInlineRefreshToReconciliation(String repositoryId, String rootId,
+			Long epochE, jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconcile) {
+		if (reconcile == null) {
+			log.warn("Search index ACL refresh for " + rootId + " is running INLINE on a request"
+					+ " thread and cannot be deferred (no reconciliation service) — this request"
+					+ " will block until the subtree is refreshed.");
+			return false;
+		}
+		// Same reason code as a mid-traversal failure: from the queue's point of view this is the
+		// same obligation — "this root's descendants were not refreshed, re-drive them" — and the
+		// epoch is carried so the re-drive is fenced exactly as the original would have been.
+		//
+		// enqueueOrThrow, not the fail-soft enqueue: returning true here is a claim that the work
+		// is now somebody else's, and the caller acts on it by returning. If the write did not
+		// land, that claim would turn a slow request into a lost refresh. On failure we fall back
+		// to walking inline — the outcome this method exists to avoid, but the safe one.
+		try {
+			reconcile.enqueueOrThrow(repositoryId, rootId,
+					jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.TRAVERSAL_FAILURE,
+					jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Operation.ACL_REINDEX,
+					// Same convention as the fail-soft overload: no known obligation is 0, and the
+					// merge is monotonic-max, so this can never lower an obligation already recorded.
+					epochE == null ? 0L : epochE.longValue());
+		} catch (Exception e) {
+			log.warn("Could not defer the search index ACL refresh for " + rootId
+					+ " to the reconciliation queue (" + e.getClass().getSimpleName()
+					+ ") — walking the subtree on this request thread instead so the refresh is"
+					+ " not lost.");
+			return false;
+		}
+		PropagationProgress.recordDeferredFromRequestThread();
+		log.warn("Search index ACL refresh DEFERRED for " + rootId + ": the refresh queue is full"
+				+ " and this task fell back onto a request thread. Queued for reconciliation"
+				+ " instead of walking the subtree inline.");
+		return true;
+	}
+
+	/**
 	 * Asynchronously update RAG index ACL for a document/folder and its descendants.
 	 * This ensures that RAG search results reflect the latest permission changes.
 	 * Uses the shared ragAclExecutor to prevent thread leak.
@@ -560,6 +608,31 @@ public class AclServiceImpl implements AclService {
 					+ (subtreeNodes >= 0 ? " expectedNodes=" + subtreeNodes : "")
 					+ " queuedForMs=" + ((System.nanoTime() - submittedAtNanos) / 1_000_000L)
 					+ (inlineOnCaller ? " INLINE-ON-REQUEST-THREAD (queue full)" : ""));
+
+			// The refresh queue is full, so this task was handed back to the REQUEST thread by
+			// CallerRunsPolicy. Walking the subtree here is the one thing that turns "a permission
+			// change is propagating" into "the application is slow": an ordinary user's request
+			// would sit rewriting someone else's descendants, for as long as that takes.
+			//
+			// Yielding cooperatively does not help — the queue is full, so a re-submitted
+			// continuation is handed straight back to this same thread. Deferring the whole
+			// subtree to the durable queue does: the work is not lost, the re-drive owns it, and
+			// the request returns. It costs a re-walk from the root, which is the right trade
+			// against holding a user's request.
+			//
+			// Settling here would be actively wrong, not merely premature: the terminus consumes
+			// the queue TASK (settleIfCovered), so settling straight after enqueueing would delete
+			// the obligation we just created and the subtree would never be refreshed. The outbox
+			// marker was already cleared synchronously inside the mutation request, so skipping
+			// the terminus strands nothing. Convergence is the scheduler completing the task on a
+			// successful re-drive; a newer mutation's terminus may also consume it, which is
+            // correct — a later epoch's traversal covers this one.
+			if (inlineOnCaller
+					&& deferInlineRefreshToReconciliation(repositoryId, content.getId(), epochE,
+							reconcile)) {
+				progress.end();
+				return;
+			}
 			try {
 				// syncConfirm=false: async best-effort with enqueue-on-failure.
 				updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,

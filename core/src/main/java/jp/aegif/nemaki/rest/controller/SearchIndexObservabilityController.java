@@ -50,9 +50,12 @@ import org.springframework.beans.factory.annotation.Autowired;
  * <p>Three of these counters are the ones that turn a symptom into a diagnosis:
  *
  * <ul>
- * <li>{@code inlineRunsOnRequestThreads} rising means the queue is saturating and ordinary
- *     requests are now doing propagation work — the exact mechanism by which one big permission
- *     change slows the whole application down.</li>
+ * <li>{@code inlineRunsOnRequestThreads} rising means the refresh queue is saturating and the
+ *     executor is handing tasks back to request threads. Compare it with
+ *     {@code deferredToReconciliation}: when the two rise together, every overflow was moved to
+ *     the durable queue and no request walked a subtree. Caller-runs rising while deferrals stay
+ *     flat is the bad shape — requests really are doing propagation work, which is the mechanism
+ *     by which one big permission change slows the whole application down.</li>
  * <li>{@code pendingGateBlocks} rising while nothing converges means an ACL-epoch marker is stuck.
  *     Those tasks are retained forever without consuming a retry attempt (deliberately), so
  *     without this counter a stuck marker is invisible.</li>
@@ -88,6 +91,7 @@ public class SearchIndexObservabilityController {
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("inlineRunsOnRequestThreads", PropagationProgress.callerRunsTotal());
+        body.put("deferredToReconciliation", PropagationProgress.deferredFromRequestThreadTotal());
         body.put("pendingGateBlocks", RefreshCounters.pendingBlocksTotal());
         body.put("groupResolutionTruncations", TruncatedGroupResolution.truncationCount());
         // Queries that were answered with a confirmed prefix instead of a 400, because a

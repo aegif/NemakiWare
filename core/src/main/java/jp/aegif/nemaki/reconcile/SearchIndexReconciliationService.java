@@ -19,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -257,25 +258,94 @@ public class SearchIndexReconciliationService {
      * replica won) simply drops the candidate. Returns the entries actually claimed
      * (each carrying the post-claim {@code _rev} for a later CAS complete/retry/fail).
      */
+    /**
+     * Claim the next batch of due work, oldest first.
+     *
+     * <p>Deliberately NOT filtered by operation. A purge claimed here is handled correctly (the
+     * scheduler dispatches on the task's operation), and leaving the query unfiltered means no
+     * class of task can be orphaned if the dedicated purge lane is ever unwired or wedged. The
+     * purge lane exists so that a purge does not WAIT behind a subtree walk, not because this
+     * lane is unable to run one.
+     */
     public List<SearchIndexAclReindexTask> claimDue(int batchSize, String nodeId, long leaseMillis) {
         long now = System.currentTimeMillis();
-        List<SearchIndexAclReindexTask> candidates = new ArrayList<>();
-        // Expired LEASED first: these are tasks a crashed/stalled worker abandoned, so
-        // they must be recovered promptly — and taking them first prevents them from
-        // being starved under a sustained PENDING backlog (a full batch of PENDING
-        // would otherwise never leave room for expired-lease reclaim).
-        candidates.addAll(findSortedAsc(
+        // Insertion-ordered and keyed by document id. The two fills can overlap if a document
+        // changes status between them, and a duplicate reaching the claim loop would waste a slot:
+        // the second compare-and-swap loses on a stale rev, so the batch comes back short exactly
+        // when a backlog makes a full batch matter most.
+        Map<String, SearchIndexAclReindexTask> candidates = new LinkedHashMap<>();
+
+        // Expired LEASED first: these are tasks a crashed/stalled worker abandoned, so they must
+        // be recovered promptly — and taking them before fresh PENDING prevents them from being
+        // starved under a sustained backlog (a full batch of PENDING would otherwise never leave
+        // room for expired-lease reclaim).
+        collectInto(candidates, batchSize, findSortedAsc(
                 Map.of("type", SearchIndexAclReindexTask.DOC_TYPE,
                         "status", SearchIndexAclReindexTask.Status.LEASED,
                         "leaseExpiresAt", Map.of("$lte", now)),
                 "leaseExpiresAt", batchSize));
         if (candidates.size() < batchSize) {
-            candidates.addAll(findSortedAsc(
+            // A FULL batch is requested rather than the shortfall: the rows may overlap what is
+            // already collected, and asking for only the shortfall would under-fill by however
+            // many turned out to be duplicates. Over-asking costs one bounded Mango page.
+            collectInto(candidates, batchSize, findSortedAsc(
                     Map.of("type", SearchIndexAclReindexTask.DOC_TYPE,
                             "status", SearchIndexAclReindexTask.Status.PENDING,
                             "nextAttemptAt", Map.of("$lte", now)),
-                    "nextAttemptAt", batchSize - candidates.size()));
+                    "nextAttemptAt", batchSize));
         }
+        return claimAll(candidates.values(), batchSize, nodeId, leaseMillis, now);
+    }
+
+    /**
+     * Claim due {@code RAG_PURGE} tasks only — the dedicated revocation lane.
+     *
+     * <h2>Why a lane and not a quota</h2>
+     *
+     * <p>A purge removes a RAG block that a reader has just lost access to; until it runs, that
+     * block is still usable as an existence-and-similarity oracle by someone whose access was
+     * revoked. It is an outstanding security obligation, and the only one in this queue.
+     *
+     * <p>Reserving a slice of the shared batch is not enough, and the reason is the unit of
+     * blocking. The shared poller processes its claimed batch SERIALLY, and one of those tasks can
+     * be a re-drive that walks an entire subtree — minutes to hours. A purge that arrives one
+     * second after that batch was claimed cannot be claimed at all until the walk finishes, no
+     * matter how much of the batch was reserved for it. The reservation protects the claim, and
+     * the claim is not where the waiting happens.
+     *
+     * <p>A separate poll thread does protect it: a purge is a bounded, idempotent delete, so this
+     * lane never blocks for long, and it is never behind a subtree walk. Both lanes claim from the
+     * same queue through the same {@code _rev} compare-and-swap, so a task cannot be processed
+     * twice if the two ever pick the same document.
+     */
+    public List<SearchIndexAclReindexTask> claimDuePurges(int batchSize, String nodeId, long leaseMillis) {
+        long now = System.currentTimeMillis();
+        Map<String, SearchIndexAclReindexTask> candidates = new LinkedHashMap<>();
+        // Expired leases FIRST, exactly as the shared lane does. Filling from PENDING first looks
+        // harmless until purges arrive steadily: a full batch of fresh ones on every poll means a
+        // purge abandoned by a crashed worker is never even looked at. That is a security
+        // obligation stuck behind an unbounded stream of newer ones, and nothing else recovers it
+        // promptly — the shared lane would, but only into a mixed batch.
+        collectInto(candidates, batchSize, findSortedAsc(
+                Map.of("type", SearchIndexAclReindexTask.DOC_TYPE,
+                        "status", SearchIndexAclReindexTask.Status.LEASED,
+                        "operation", SearchIndexAclReindexTask.Operation.RAG_PURGE,
+                        "leaseExpiresAt", Map.of("$lte", now)),
+                "leaseExpiresAt", batchSize));
+        if (candidates.size() < batchSize) {
+            collectInto(candidates, batchSize, findSortedAsc(
+                    Map.of("type", SearchIndexAclReindexTask.DOC_TYPE,
+                            "status", SearchIndexAclReindexTask.Status.PENDING,
+                            "operation", SearchIndexAclReindexTask.Operation.RAG_PURGE,
+                            "nextAttemptAt", Map.of("$lte", now)),
+                    "nextAttemptAt", batchSize));
+        }
+        return claimAll(candidates.values(), batchSize, nodeId, leaseMillis, now);
+    }
+
+    /** Take the lease on each candidate by CAS, keeping the ones that were actually won. */
+    private List<SearchIndexAclReindexTask> claimAll(Collection<SearchIndexAclReindexTask> candidates,
+            int batchSize, String nodeId, long leaseMillis, long now) {
         List<SearchIndexAclReindexTask> claimed = new ArrayList<>();
         for (SearchIndexAclReindexTask task : candidates) {
             if (claimed.size() >= batchSize) break;
@@ -287,9 +357,26 @@ public class SearchIndexReconciliationService {
             if (newRev != null) {
                 claimed.add(task); // couchRev updated by putCas
             }
-            // else: another replica claimed / a new event superseded — skip.
+            // else: another replica (or the other lane) claimed / a new event superseded — skip.
         }
         return claimed;
+    }
+
+    /**
+     * Add tasks to the batch in order, skipping ones already collected, up to {@code limit}.
+     *
+     * <p>A task with no id cannot be de-duplicated; it is kept rather than dropped, because
+     * processing something twice is recoverable and losing it is not.
+     */
+    private static void collectInto(Map<String, SearchIndexAclReindexTask> into, int limit,
+            List<SearchIndexAclReindexTask> found) {
+        for (SearchIndexAclReindexTask task : found) {
+            if (into.size() >= limit) return;
+            String id = task.getCouchId();
+            // \u0001 rather than a literal control character: a real NUL byte in a source file
+            // makes git treat it as binary and its diffs vanish (SourceTreeNulByteTest).
+            into.putIfAbsent(id != null ? id : "\u0001anonymous-" + into.size(), task);
+        }
     }
 
     // ── ACK / retry / fail (CAS on the claim rev) ──────────────────
@@ -618,7 +705,8 @@ public class SearchIndexReconciliationService {
 
     /** PUT the task at its deterministic id with its captured rev (CAS). Returns the new rev, or null on 409. */
     @SuppressWarnings("unchecked")
-    private String putCas(SearchIndexAclReindexTask task) {
+    /** Package-private for the same reason as {@link #findSortedAsc}. */
+    String putCas(SearchIndexAclReindexTask task) {
         CloudantClientWrapper client = getConfClient();
         Cloudant cloudant = client.getClient();
         String db = client.getDatabaseName();
@@ -687,7 +775,12 @@ public class SearchIndexReconciliationService {
         return toTasks(r);
     }
 
-    private List<SearchIndexAclReindexTask> findSortedAsc(Map<String, Object> selector, String sortField, int limit) {
+    /**
+     * Package-private, not private, so a test in this package can substitute the CouchDB round
+     * trip. The selection policy in {@link #claimDue} — a reserved purge slice ahead of the
+     * re-drive backlog — is the part worth testing, and it is not reachable otherwise.
+     */
+    List<SearchIndexAclReindexTask> findSortedAsc(Map<String, Object> selector, String sortField, int limit) {
         if (limit <= 0) return List.of();
         CloudantClientWrapper client = getConfClient();
         Cloudant cloudant = client.getClient();

@@ -307,6 +307,22 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
     public void purgeDocumentBlocks(String repositoryId, String documentId) throws RAGIndexingException {
         // NOTE: deliberately NO isEnabled() gate — see the interface contract. A
         // disabled RAG must not silently keep a PWC block alive until re-enablement.
+        //
+        // The per-ragId stripe is taken here for the same reason indexToSolr and
+        // updateDocumentACL take it, and the consequence of omitting it is worse than
+        // over-serializing. updateDocumentACL is a READ-REBUILD-WRITE: it snapshots the parent
+        // and every chunk, then re-adds the whole block with new readers. A delete landing
+        // between that read and that write is undone by the write — the block is REBUILT from
+        // the in-memory snapshot, and a purge that already verified "absent" has been silently
+        // reversed. That block is precisely the existence-and-similarity oracle the purge
+        // exists to remove, so the failure is a security one and it is invisible: the purge
+        // reports success.
+        //
+        // Under the lock the interleaving cannot occur: the rebuild either reads nothing (and
+        // returns early as "not indexed") or completes before the delete.
+        String ragId = toRagId(documentId);
+        java.util.concurrent.locks.Lock lock = ragBlockLocks.get(ragId);
+        lock.lock();
         try {
             SolrClient solrClient = solrClientProvider.getClient();
             solrClient.deleteByQuery("nemaki", purgeScopeQuery(repositoryId, documentId));
@@ -314,6 +330,8 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             log.info("RAG purged blocks for document {} (repository {})", documentId, repositoryId);
         } catch (Exception e) {
             throw new RAGIndexingException("Failed to purge RAG blocks for: " + documentId, e);
+        } finally {
+            lock.unlock();
         }
     }
 

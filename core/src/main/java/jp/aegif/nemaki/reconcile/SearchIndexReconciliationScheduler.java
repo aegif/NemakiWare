@@ -7,6 +7,7 @@ import jp.aegif.nemaki.util.PropertyManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -63,6 +64,12 @@ public class SearchIndexReconciliationScheduler {
     private String nodeId = "node-" + UUID.randomUUID();
 
     private volatile ScheduledExecutorService scheduler;
+    /**
+     * The revocation lane. Its own thread, because the shared lane's unit of work is a subtree
+     * walk that can hold that thread for hours; a purge queued behind one would wait just as long
+     * as it did before this queue had any prioritisation at all.
+     */
+    private volatile ScheduledExecutorService purgeScheduler;
 
     public void setReconciliationService(SearchIndexReconciliationService s) { this.reconciliationService = s; }
     public void setAclService(AclService s) { this.aclService = s; }
@@ -100,12 +107,32 @@ public class SearchIndexReconciliationScheduler {
         });
         scheduler.scheduleWithFixedDelay(this::pollSafe,
                 pollIntervalSeconds, pollIntervalSeconds, TimeUnit.SECONDS);
+        purgeScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "SearchIndexReconcile-purge");
+            t.setDaemon(true);
+            return t;
+        });
+        // Offset by half an interval so the two lanes do not routinely hit CouchDB together.
+        purgeScheduler.scheduleWithFixedDelay(this::pollPurgesSafe,
+                Math.max(1, pollIntervalSeconds / 2), pollIntervalSeconds, TimeUnit.SECONDS);
         logger.info("Search-index reconciliation scheduler started (interval={}s, maxAttempts={}, lease={}s, node={}, leaderElection={})",
                 pollIntervalSeconds, maxAttempts, leaseSeconds, nodeId,
                 (leaderElection != null && leaderElection.isEnabled()) ? "enabled" : "disabled");
     }
 
     public void stop() {
+        if (purgeScheduler != null) {
+            purgeScheduler.shutdown();
+            try {
+                if (!purgeScheduler.awaitTermination(10, TimeUnit.SECONDS)) {
+                    purgeScheduler.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                purgeScheduler.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+            purgeScheduler = null;
+        }
         if (scheduler != null) {
             scheduler.shutdown();
             try {
@@ -129,6 +156,31 @@ public class SearchIndexReconciliationScheduler {
         }
     }
 
+    private void pollPurgesSafe() {
+        try {
+            pollPurges();
+        } catch (Exception e) {
+            logger.warn("Search-index purge poll failed (will retry next interval): {}", e.getMessage());
+        }
+    }
+
+    /**
+     * One poll cycle of the revocation lane. Package-private so it can be unit-driven.
+     *
+     * <p>Claims only {@code RAG_PURGE}; the shared lane still handles purges it happens to claim,
+     * so this lane going quiet degrades latency rather than correctness.
+     */
+    void pollPurges() {
+        if (leaderElection != null && leaderElection.isEnabled() && !leaderElection.isLeader(LEADER_ROLE)) {
+            return;
+        }
+        List<SearchIndexAclReindexTask> claimed =
+                reconciliationService.claimDuePurges(batchSize, nodeId, leaseSeconds * 1000L);
+        if (!claimed.isEmpty()) {
+            processClaimed(claimed);
+        }
+    }
+
     /** One poll cycle. Package-private so it can be unit-driven. */
     void poll() {
         if (leaderElection != null && leaderElection.isEnabled() && !leaderElection.isLeader(LEADER_ROLE)) {
@@ -140,6 +192,27 @@ public class SearchIndexReconciliationScheduler {
         if (claimed.isEmpty()) {
             return;
         }
+        processClaimed(claimed);
+    }
+
+    /**
+     * Drive one claimed batch to completion. Shared by both lanes: the per-task handling is
+     * identical and dispatches on the task's own operation, so the lane a task arrived through
+     * must not change what happens to it.
+     */
+    private void processClaimed(List<SearchIndexAclReindexTask> claimed) {
+        // PURGES FIRST, whatever order they were claimed in.
+        //
+        // The shared lane claims without filtering on operation, so a batch can be
+        // [long ACL_REINDEX, RAG_PURGE]. Both are LEASED the moment they are claimed, which puts
+        // the purge out of reach of the dedicated lane — and then the serial loop below would run
+        // it after a subtree walk that can take hours. The lane separation would have bought
+        // nothing for that purge. Ordering the batch costs nothing and removes the case: a purge
+        // that ends up in a mixed batch is still the first thing done with it.
+        claimed = new ArrayList<>(claimed);
+        claimed.sort(java.util.Comparator.comparingInt(t ->
+                SearchIndexAclReindexTask.Operation.RAG_PURGE.equals(t.getEffectiveOperation())
+                        ? 0 : 1));
         int reconciled = 0, retried = 0, failed = 0, quarantineBlocked = 0, pendingBlocked = 0;
         for (SearchIndexAclReindexTask task : claimed) {
             boolean clean;

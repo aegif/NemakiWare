@@ -30,7 +30,13 @@ import java.util.List;
 public class Patch_SearchIndexReconcileMangoIndex extends AbstractNemakiPatch {
 
     private static final Log log = LogFactory.getLog(Patch_SearchIndexReconcileMangoIndex.class);
-    private static final String PATCH_NAME = "SearchIndexReconcileMangoIndex-20260724c";
+    // Suffix bumped when the index set changes. NOTE: for THIS patch the bump is belt-and-braces
+    // rather than the mechanism — AbstractNemakiPatch.apply() calls applySystemPatch() before any
+    // isApplied() check and PatchService does not gate on the name either, so the index
+    // registration runs on every startup regardless. postIndex is idempotent, so re-running is
+    // free. The suffix is kept because the per-repository half of a patch IS name-deduped, and a
+    // reader should not have to know which half they are looking at to trust the name.
+    private static final String PATCH_NAME = "SearchIndexReconcileMangoIndex-20260810d";
 
     private record IndexSpec(String name, List<String> fields) {
         IndexSpec(String name, String... fields) {
@@ -46,7 +52,14 @@ public class Patch_SearchIndexReconcileMangoIndex extends AbstractNemakiPatch {
             // metrics: oldest PENDING by createdAt (age since first enqueued)
             new IndexSpec("idx_type_sirStatus_created", "type", "status", "createdAt"),
             // admin retry/delete by opaque taskId (dedupe/CAS use the deterministic _id, no index)
-            new IndexSpec("idx_type_sirTaskId", "type", "taskId")
+            new IndexSpec("idx_type_sirTaskId", "type", "taskId"),
+            // The revocation lane selects on OPERATION as well. Without an operation-aware index
+            // CouchDB would answer it from the status index above and post-filter, scanning the
+            // whole due range to find the rare purges hidden in a large re-drive backlog — load
+            // placed on the same CouchDB that is serving application requests, which is the one
+            // thing this whole area of work exists to avoid.
+            new IndexSpec("idx_type_sirStatus_op_next", "type", "status", "operation", "nextAttemptAt"),
+            new IndexSpec("idx_type_sirStatus_op_lease", "type", "status", "operation", "leaseExpiresAt")
     );
 
     @Override
