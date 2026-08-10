@@ -23,9 +23,12 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -43,9 +46,11 @@ import jp.aegif.nemaki.util.cache.model.NemakiCache;
 class CrossReplicaCacheInvalidatorTest {
 
     private static final String REPO = "repo";
+    private static final String OTHER = "other-replica";
 
     private AtomicInteger aclCleared;
     private AtomicInteger contentCleared;
+    private AtomicInteger objectDataCleared;
     private AtomicInteger userCleared;
     private AtomicInteger groupCleared;
     private AtomicInteger joinedCleared;
@@ -58,6 +63,7 @@ class CrossReplicaCacheInvalidatorTest {
         PrincipalGeneration.resetForTests();
         aclCleared = new AtomicInteger();
         contentCleared = new AtomicInteger();
+        objectDataCleared = new AtomicInteger();
         userCleared = new AtomicInteger();
         groupCleared = new AtomicInteger();
         joinedCleared = new AtomicInteger();
@@ -66,6 +72,8 @@ class CrossReplicaCacheInvalidatorTest {
         org.mockito.Mockito.doAnswer(i -> aclCleared.incrementAndGet()).when(aclCache).removeAll();
         NemakiCache<Content> contentCache = mock(NemakiCache.class);
         org.mockito.Mockito.doAnswer(i -> contentCleared.incrementAndGet()).when(contentCache).removeAll();
+        NemakiCache<ObjectData> objectDataCache = mock(NemakiCache.class);
+        org.mockito.Mockito.doAnswer(i -> objectDataCleared.incrementAndGet()).when(objectDataCache).removeAll();
         NemakiCache<UserItem> userCache = mock(NemakiCache.class);
         org.mockito.Mockito.doAnswer(i -> userCleared.incrementAndGet()).when(userCache).removeAll();
         NemakiCache<GroupItem> groupCache = mock(NemakiCache.class);
@@ -76,6 +84,7 @@ class CrossReplicaCacheInvalidatorTest {
         CacheService cache = mock(CacheService.class);
         when(cache.getAclCache()).thenReturn(aclCache);
         when(cache.getContentCache()).thenReturn(contentCache);
+        when(cache.getObjectDataCache()).thenReturn(objectDataCache);
         when(cache.getUserItemCache()).thenReturn(userCache);
         when(cache.getGroupItemCache()).thenReturn(groupCache);
         when(cache.getJoinedGroupCache()).thenReturn(joinedCache);
@@ -84,16 +93,22 @@ class CrossReplicaCacheInvalidatorTest {
         when(pool.get(anyString())).thenReturn(cache);
     }
 
-    /** A store whose returned high-watermarks the test controls. */
+    /**
+     * A store the test drives directly. It returns ONLY other replicas' entries, exactly as the
+     * CouchDB implementation does — the exclusion of self lives in the store, which is what lets
+     * the invalidator avoid comparing values that are not comparable.
+     */
     private static final class FakeStore implements CrossReplicaCacheInvalidator.GenerationStore {
-        long acl;
-        long principal;
+        final Map<String, Long> acl = new LinkedHashMap<>();
+        final Map<String, Long> principal = new LinkedHashMap<>();
+        long lastPublishedAcl = -1;
 
         @Override
-        public CrossReplicaCacheInvalidator.Generations publishAndRead(String repositoryId,
+        public CrossReplicaCacheInvalidator.ReplicaGenerations publishAndRead(String repositoryId,
                 long localAcl, long localPrincipal) {
-            return new CrossReplicaCacheInvalidator.Generations(Math.max(acl, localAcl),
-                    Math.max(principal, localPrincipal));
+            lastPublishedAcl = localAcl;
+            return new CrossReplicaCacheInvalidator.ReplicaGenerations(
+                    new LinkedHashMap<>(acl), new LinkedHashMap<>(principal));
         }
 
         @Override
@@ -103,21 +118,47 @@ class CrossReplicaCacheInvalidatorTest {
     }
 
     @Test
-    @DisplayName("他レプリカの ACL 変更を検知して ACL/content キャッシュを落とす")
+    @DisplayName("他レプリカの ACL 変更を検知して ACL/content/objectData を落とす")
     void anAclChangeElsewhereClearsTheAclCaches() {
         FakeStore store = new FakeStore();
         CrossReplicaCacheInvalidator inv = new CrossReplicaCacheInvalidator(pool, store);
 
         inv.pollOnce();
-        assertEquals(0, aclCleared.get(), "nothing has changed yet");
+        assertEquals(0, aclCleared.get(), "no other replica has published anything yet");
 
-        store.acl = 7; // another replica advanced it
+        store.acl.put(OTHER, 7L);
         inv.pollOnce();
         assertEquals(1, aclCleared.get());
         assertEquals(1, contentCleared.get());
+        assertEquals(1, objectDataCleared.get(),
+                "objectDataCache holds compiled CMIS objects including their ACLs; a local ACL"
+                        + " change evicts it too, so leaving it here would be asymmetric");
         assertEquals(0, userCleared.get(),
                 "an ACL change must not drop the principal caches — different counter,"
                         + " different invalidation");
+    }
+
+    /**
+     * The defect a reviewer found in the first version: it compared the maximum generation across
+     * replicas against this replica's OWN counter, so a replica whose own counter had run ahead
+     * stopped reacting to everyone else.
+     */
+    @Test
+    @DisplayName("自分の世代が他レプリカ以上でも、他レプリカの変更を取りこぼさない")
+    void aBusyReplicaStillSeesOtherReplicasChanges() {
+        FakeStore store = new FakeStore();
+        CrossReplicaCacheInvalidator inv = new CrossReplicaCacheInvalidator(pool, store);
+
+        // This replica has done a hundred ACL writes of its own.
+        for (int i = 0; i < 100; i++) {
+            AclCacheGeneration.advance(REPO);
+        }
+        store.acl.put(OTHER, 1L); // the other replica has done one
+        inv.pollOnce();
+
+        assertEquals(1, aclCleared.get(),
+                "the counters are independent per-process write counts. Comparing ours against"
+                        + " theirs made a busy replica permanently blind to the others");
     }
 
     @Test
@@ -126,7 +167,7 @@ class CrossReplicaCacheInvalidatorTest {
         FakeStore store = new FakeStore();
         CrossReplicaCacheInvalidator inv = new CrossReplicaCacheInvalidator(pool, store);
 
-        store.principal = 3;
+        store.principal.put(OTHER, 3L);
         inv.pollOnce();
         assertEquals(1, userCleared.get());
         assertEquals(1, groupCleared.get());
@@ -141,7 +182,6 @@ class CrossReplicaCacheInvalidatorTest {
         FakeStore store = new FakeStore();
         CrossReplicaCacheInvalidator inv = new CrossReplicaCacheInvalidator(pool, store);
 
-        // This replica performs the ACL change; its own eviction already ran precisely.
         AclCacheGeneration.advance(REPO);
         AclCacheGeneration.advance(REPO);
         inv.pollOnce();
@@ -149,6 +189,8 @@ class CrossReplicaCacheInvalidatorTest {
         assertEquals(0, aclCleared.get(),
                 "reacting to our own writes would clear the whole repository's caches on every"
                         + " ACL write — worst exactly during the bulk changes this must survive");
+        assertEquals(2, store.lastPublishedAcl,
+                "our own counter must still be published so the OTHER replicas react to it");
     }
 
     @Test
@@ -157,11 +199,28 @@ class CrossReplicaCacheInvalidatorTest {
         FakeStore store = new FakeStore();
         CrossReplicaCacheInvalidator inv = new CrossReplicaCacheInvalidator(pool, store);
 
-        store.acl = 5;
+        store.acl.put(OTHER, 5L);
         inv.pollOnce();
         inv.pollOnce();
         inv.pollOnce();
         assertEquals(1, aclCleared.get(), "the poll is level-triggered, not edge-repeated");
+    }
+
+    @Test
+    @DisplayName("他レプリカ再起動でカウンタが戻っても、変化として検知する")
+    void aRemoteRestartIsTreatedAsNews() {
+        FakeStore store = new FakeStore();
+        CrossReplicaCacheInvalidator inv = new CrossReplicaCacheInvalidator(pool, store);
+
+        store.acl.put(OTHER, 42L);
+        inv.pollOnce();
+        assertEquals(1, aclCleared.get());
+
+        store.acl.put(OTHER, 1L); // that replica restarted and started counting again
+        inv.pollOnce();
+        assertEquals(2, aclCleared.get(),
+                "a decrease is still a change. Requiring an increase would make everything that"
+                        + " replica does after a restart invisible until it passed its old count");
     }
 
     @Test
@@ -170,7 +229,7 @@ class CrossReplicaCacheInvalidatorTest {
         CrossReplicaCacheInvalidator inv = new CrossReplicaCacheInvalidator(pool,
                 new CrossReplicaCacheInvalidator.GenerationStore() {
                     @Override
-                    public CrossReplicaCacheInvalidator.Generations publishAndRead(String r,
+                    public CrossReplicaCacheInvalidator.ReplicaGenerations publishAndRead(String r,
                             long a, long p) {
                         throw new IllegalStateException("CouchDB unavailable");
                     }

@@ -32,8 +32,10 @@ import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
  *
  * <h2>Why the write can be sloppy and the read cannot</h2>
  *
- * <p>The document holds a per-replica entry, and the value each replica cares about is the maximum
- * across all of them. That makes a lost update harmless in one direction and not the other:
+ * <p>The document holds one entry per replica. Each replica publishes its own and reads everyone
+ * else's — never a maximum across them, because the counters are independent per-process write
+ * counts and comparing one replica's against another's says nothing. That makes a lost update
+ * harmless in one direction and not the other:
  *
  * <ul>
  * <li>A <b>lost publish</b> (two replicas writing at once, one losing the revision race) only
@@ -46,9 +48,8 @@ import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
  * </ul>
  *
  * <p>The counters are JVM-local and reset to zero when a replica restarts, so a restarted replica
- * publishes a lower number than it did before. That is why every replica reads the MAXIMUM and
- * tracks what it has already acted on: a number going backwards can never cause a missed
- * invalidation, only a redundant one that the acted-on watermark then suppresses.
+ * publishes a lower number than it did before. The reader treats any CHANGE to a node's value as
+ * news, not only an increase, so a reset causes one redundant clear rather than a missed one.
  */
 public class CouchGenerationStore implements CrossReplicaCacheInvalidator.GenerationStore {
 
@@ -78,7 +79,7 @@ public class CouchGenerationStore implements CrossReplicaCacheInvalidator.Genera
 
     @SuppressWarnings("unchecked")
     @Override
-    public CrossReplicaCacheInvalidator.Generations publishAndRead(String repositoryId,
+    public CrossReplicaCacheInvalidator.ReplicaGenerations publishAndRead(String repositoryId,
             long localAcl, long localPrincipal) {
         if (connectorPool == null) {
             return null;
@@ -90,15 +91,19 @@ public class CouchGenerationStore implements CrossReplicaCacheInvalidator.Genera
                 ? new LinkedHashMap<>((Map<String, Object>) doc.get("replicas"))
                 : new LinkedHashMap<>();
 
-        long maxAcl = localAcl;
-        long maxPrincipal = localPrincipal;
+        // OTHER replicas only. Excluding ourselves here — rather than compensating for it later
+        // with a comparison against our own counter — is what lets the invalidator both ignore our
+        // own writes and never miss anyone else's. The counters are independent per-process write
+        // counts, so any comparison BETWEEN replicas' values is meaningless.
+        Map<String, Long> aclByNode = new LinkedHashMap<>();
+        Map<String, Long> principalByNode = new LinkedHashMap<>();
         for (Map.Entry<String, Object> e : replicas.entrySet()) {
             if (nodeId.equals(e.getKey()) || !(e.getValue() instanceof Map)) {
                 continue;
             }
             Map<String, Object> entry = (Map<String, Object>) e.getValue();
-            maxAcl = Math.max(maxAcl, nonNegative(entry.get("acl")));
-            maxPrincipal = Math.max(maxPrincipal, nonNegative(entry.get("principal")));
+            aclByNode.put(e.getKey(), nonNegative(entry.get("acl")));
+            principalByNode.put(e.getKey(), nonNegative(entry.get("principal")));
         }
 
         Map<String, Object> mine = new LinkedHashMap<>();
@@ -115,7 +120,7 @@ public class CouchGenerationStore implements CrossReplicaCacheInvalidator.Genera
             logger.debug("Cache generation publish lost the revision race for {}: {}",
                     repositoryId, e.getMessage());
         }
-        return new CrossReplicaCacheInvalidator.Generations(maxAcl, maxPrincipal);
+        return new CrossReplicaCacheInvalidator.ReplicaGenerations(aclByNode, principalByNode);
     }
 
     private Map<String, Object> readDoc(CloudantClientWrapper client) {

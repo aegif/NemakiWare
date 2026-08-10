@@ -16,12 +16,13 @@
  */
 package jp.aegif.nemaki.util.cache;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,31 +40,41 @@ import org.slf4j.LoggerFactory;
  * own memo. Removing {@code timeToIdleSeconds} bounded that at the time-to-live, but a ceiling of
  * an hour is not propagation.
  *
- * <h2>How this works, and what it deliberately does not do</h2>
+ * <h2>Why the comparison is per remote replica, not against a shared maximum</h2>
  *
- * <p>Each replica publishes its own generation counters into a shared CouchDB document and reads
- * back the maximum seen across replicas. When the maximum exceeds what this replica has already
- * acted on, it drops the affected caches. No new store, no broadcast channel, no leader: a
- * monotonic number per repository is enough, because the only question being asked is "has
- * anything changed that I have not seen".
+ * <p>The first version of this class compared the maximum generation seen across replicas against
+ * this replica's OWN counter, so that a replica would not clear its caches in response to its own
+ * writes (which have already evicted precisely what they had to). A reviewer showed that breaks:
+ * the counters are independent per-process write counts, not a shared clock, so "mine is 101 and
+ * the maximum is 101" says nothing about whose 101 it is. A replica that writes frequently keeps
+ * its own counter ahead of everyone else's and therefore stops reacting to other replicas
+ * ENTIRELY — not an edge case, a systematic failure that grows with how busy the replica is.
+ *
+ * <p>So each remote replica is tracked separately: its published value is remembered, and any
+ * CHANGE to it means that replica did something this one has not accounted for. Own writes never
+ * enter the comparison because the store excludes this node from what it returns, which keeps both
+ * properties at once — no clearing on our own writes, and no way to miss another replica's.
+ *
+ * <p>Tracking a change rather than an increase also survives a remote restart, which resets that
+ * replica's counter to zero: a decrease is still a change, so it clears (once) instead of being
+ * mistaken for "nothing new". The cost of that over-clear is one repopulation; the cost of the
+ * alternative is serving revoked permissions.
+ *
+ * <h2>What gets dropped</h2>
  *
  * <p>The two counters are kept apart on purpose:
  *
  * <ul>
- * <li><b>ACL generation</b> → drop the effective-ACL and content caches.</li>
- * <li><b>Principal generation</b> → drop the user, group and joined-group caches. ACL changes do
- *     not advance it and it does not advance the ACL one; a password change and a folder
- *     permission change invalidate genuinely different things, and a single counter would either
- *     over-clear on every write or silently miss one of them.</li>
+ * <li><b>ACL generation</b> → the effective-ACL, content and object-data caches — the same three
+ *     that a local ACL change evicts through {@code removeCmisAndContentCache}. Dropping only two
+ *     of them would leave authorization decisions memoised in the third.</li>
+ * <li><b>Principal generation</b> → the user, group and joined-group caches. ACL changes do not
+ *     advance it and it does not advance the ACL one; a password change and a folder permission
+ *     change invalidate genuinely different things.</li>
  * </ul>
  *
- * <p>The clearing is coarse — whole caches for the repository, not individual entries. That is the
- * right trade here: ACL and principal writes are rare compared with reads, and an entry-level
- * protocol would need the identities of the changed objects, which is the thing a counter
- * deliberately does not carry.
- *
  * <p>Bounded staleness after this: one poll interval, plus the time for the writing replica's own
- * publish to land. It is a real bound and it is stated, which the previous behaviour was not.
+ * publish to land.
  */
 public class CrossReplicaCacheInvalidator {
 
@@ -75,9 +86,9 @@ public class CrossReplicaCacheInvalidator {
     private final NemakiCachePool cachePool;
     private final GenerationStore store;
 
-    /** Last generation this replica has already reacted to, per repository. */
-    private final Map<String, AtomicLong> actedOnAcl = new ConcurrentHashMap<>();
-    private final Map<String, AtomicLong> actedOnPrincipal = new ConcurrentHashMap<>();
+    /** repository → (remote node id → the value we last accounted for). */
+    private final Map<String, Map<String, Long>> seenAcl = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, Long>> seenPrincipal = new ConcurrentHashMap<>();
 
     private volatile ScheduledExecutorService scheduler;
     private volatile boolean enabled = true;
@@ -88,21 +99,28 @@ public class CrossReplicaCacheInvalidator {
      * CouchDB, and so a future implementation can change where the counters live.
      */
     public interface GenerationStore {
-        /** Publishes this replica's counters and returns the maximum seen across all replicas. */
-        Generations publishAndRead(String repositoryId, long localAcl, long localPrincipal);
+        /**
+         * Publishes this replica's counters and returns what the OTHER replicas have published.
+         *
+         * <p>The returned maps must NOT include this replica's own entry: excluding it at the
+         * source is what makes "do not react to our own writes" hold without any comparison
+         * against local state.
+         */
+        ReplicaGenerations publishAndRead(String repositoryId, long localAcl, long localPrincipal);
 
         /** Repositories to poll. */
         java.util.Collection<String> repositoryIds();
     }
 
-    /** A pair of high-watermarks. */
-    public static final class Generations {
-        public final long acl;
-        public final long principal;
+    /** What the other replicas have published, per node. */
+    public static final class ReplicaGenerations {
+        public final Map<String, Long> aclByNode;
+        public final Map<String, Long> principalByNode;
 
-        public Generations(long acl, long principal) {
-            this.acl = acl;
-            this.principal = principal;
+        public ReplicaGenerations(Map<String, Long> aclByNode, Map<String, Long> principalByNode) {
+            this.aclByNode = aclByNode == null ? Map.of() : Collections.unmodifiableMap(aclByNode);
+            this.principalByNode = principalByNode == null ? Map.of()
+                    : Collections.unmodifiableMap(principalByNode);
         }
     }
 
@@ -158,36 +176,56 @@ public class CrossReplicaCacheInvalidator {
     }
 
     private void pollRepository(String repositoryId) {
-        long localAcl = AclCacheGeneration.current(repositoryId);
-        long localPrincipal = PrincipalGeneration.current(repositoryId);
-        Generations seen = store.publishAndRead(repositoryId, localAcl, localPrincipal);
-        if (seen == null) {
+        ReplicaGenerations remote = store.publishAndRead(repositoryId,
+                AclCacheGeneration.current(repositoryId), PrincipalGeneration.current(repositoryId));
+        if (remote == null) {
             return;
         }
 
-        AtomicLong acl = actedOnAcl.computeIfAbsent(repositoryId, k -> new AtomicLong(localAcl));
-        if (seen.acl > acl.get() && seen.acl > localAcl) {
-            // Strictly greater than our OWN counter too: our own writes already evicted precisely
-            // what they had to, so reacting to them here would clear the whole repository's caches
-            // for no reason — and would do it on every write, exactly when the cache matters most.
+        if (absorb(seenAcl, repositoryId, remote.aclByNode)) {
             CacheService cache = cachePool.get(repositoryId);
             cache.getAclCache().removeAll();
             cache.getContentCache().removeAll();
-            acl.set(seen.acl);
-            logger.info("ACL change detected on another replica (generation {}) — dropped the"
-                    + " effective-ACL and content caches for {}", seen.acl, repositoryId);
+            // Same three caches a local ACL change evicts (removeCmisAndContentCache). Leaving
+            // objectDataCache behind would keep compiled CMIS objects — including their ACLs —
+            // memoised after the other two were dropped.
+            cache.getObjectDataCache().removeAll();
+            logger.info("ACL change detected on another replica — dropped the effective-ACL,"
+                    + " content and object-data caches for {}", repositoryId);
         }
 
-        AtomicLong principal =
-                actedOnPrincipal.computeIfAbsent(repositoryId, k -> new AtomicLong(localPrincipal));
-        if (seen.principal > principal.get() && seen.principal > localPrincipal) {
+        if (absorb(seenPrincipal, repositoryId, remote.principalByNode)) {
             CacheService cache = cachePool.get(repositoryId);
             cache.getUserItemCache().removeAll();
             cache.getGroupItemCache().removeAll();
             cache.getJoinedGroupCache().removeAll();
-            principal.set(seen.principal);
-            logger.info("User/group change detected on another replica (generation {}) — dropped"
-                    + " the principal caches for {}", seen.principal, repositoryId);
+            logger.info("User/group change detected on another replica — dropped the principal"
+                    + " caches for {}", repositoryId);
         }
+    }
+
+    /**
+     * Records the values just read and reports whether any of them moved.
+     *
+     * <p>A node seen for the first time counts as movement: this replica cannot know what that
+     * node did before it started looking, so the safe reading of "unknown" is "something changed".
+     * That costs one clear per newly-observed replica.
+     */
+    private static boolean absorb(Map<String, Map<String, Long>> state, String repositoryId,
+            Map<String, Long> current) {
+        Map<String, Long> known = state.computeIfAbsent(repositoryId,
+                k -> new ConcurrentHashMap<>());
+        boolean moved = false;
+        for (Map.Entry<String, Long> e : current.entrySet()) {
+            Long previous = known.get(e.getKey());
+            if (previous == null || !previous.equals(e.getValue())) {
+                moved = true;
+            }
+            known.put(e.getKey(), e.getValue());
+        }
+        // A node that disappeared (decommissioned replica) is dropped without clearing: whatever
+        // it changed was already accounted for while it was publishing.
+        known.keySet().retainAll(new LinkedHashMap<>(current).keySet());
+        return moved;
     }
 }
