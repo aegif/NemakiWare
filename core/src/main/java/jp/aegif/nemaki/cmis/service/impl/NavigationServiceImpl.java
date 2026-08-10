@@ -86,8 +86,15 @@ public class NavigationServiceImpl implements NavigationService {
 
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
 		
+		// The folder's lock is held for the folder's OWN compile and released before the children
+		// are listed. It used to stay held across the whole listing, which put it outside the
+		// ordered set the children are taken as — and a lock held outside a set cannot be ordered
+		// against it. The live detector caught precisely that: two listings of different folders,
+		// each holding its own folder and reaching for a child of the other, in opposite orders.
+		// getChildrenInternal now takes the folder together with its children as one ordered set,
+		// so the folder is still locked while the listing is built.
 		Lock parentLock = threadLockService.getReadLock(repositoryId, folderId);
-		
+
 		try{
 			parentLock.lock();
 			
@@ -113,12 +120,31 @@ public class NavigationServiceImpl implements NavigationService {
 					includeAllowableActions, includeRelationships, renditionFilter, false);
 			parentObjectData.setValue(_parent);
 
-			return getChildrenInternal(callContext, repositoryId, folderId, filter,
-					orderBy, includeAllowableActions, includeRelationships,
-					renditionFilter, includePathSegments, maxItems, skipCount, false);
 		}finally{
 			parentLock.unlock();
 		}
+
+		return getChildrenInternal(callContext, repositoryId, folderId, filter,
+				orderBy, includeAllowableActions, includeRelationships,
+				renditionFilter, includePathSegments, maxItems, skipCount, false);
+	}
+
+	/**
+	 * The folder's id followed by its children's, as one list to be ordered together.
+	 *
+	 * <p>The folder is included deliberately. Locking it separately, before or around the set,
+	 * leaves its position in the global acquisition order undefined — which is exactly how two
+	 * listings of different folders ended up waiting on each other.
+	 */
+	private static List<String> withFolder(String folderId, List<Content> contents) {
+		List<String> ids = new ArrayList<>((contents == null ? 0 : contents.size()) + 1);
+		ids.add(folderId);
+		if (contents != null) {
+			for (Content content : contents) {
+				ids.add(content.getId());
+			}
+		}
+		return ids;
 	}
 
 	private ObjectInFolderList getChildrenInternal(CallContext callContext,
@@ -172,7 +198,10 @@ public class NavigationServiceImpl implements NavigationService {
 			// Used for small folders (accurate global sort) or when client specifies explicit orderBy
 			List<Content> contents = contentService.getChildren(repositoryId, folderId);
 
-			List<Lock> locks = threadLockService.readLocks(repositoryId, contents);
+			// The folder itself belongs in this set, not outside it: an ordering is a property of
+			// a set, and a lock taken before it is not ordered against anything in it.
+			List<Lock> locks = threadLockService.orderedLocks(repositoryId,
+					withFolder(folderId, contents), false);
 
 			try {
 				threadLockService.bulkLock(locks);
@@ -277,7 +306,9 @@ public class NavigationServiceImpl implements NavigationService {
 				hasMore = false;
 			}
 
-			List<Lock> locks = threadLockService.readLocks(repositoryId, pageContents);
+			// Same as the legacy branch: the folder is part of the set, not held around it.
+			List<Lock> locks = threadLockService.orderedLocks(repositoryId,
+					withFolder(folderId, pageContents), false);
 
 			try {
 				threadLockService.bulkLock(locks);
@@ -422,11 +453,18 @@ public class NavigationServiceImpl implements NavigationService {
 		
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
 		
-		Lock childLock = threadLockService.getReadLock(repositoryId, folderId);
-		
+		// The child's parent is resolved BEFORE anything is locked, so both locks can be taken as
+		// one ordered set. Nesting them — child first, then parent — is what the live detector
+		// caught here: another request holding those two stripes the other way round waits on this
+		// one and neither ever finishes. Ordering is only a property of a whole set; a lock taken
+		// outside the set cannot be ordered against it.
+		Folder parentPreview = contentService.getParent(repositoryId, folderId);
+		List<Lock> locks = threadLockService.orderedLocks(repositoryId,
+				parentPreview == null ? java.util.List.of(folderId)
+						: java.util.List.of(folderId, parentPreview.getId()),
+				false);
+		threadLockService.bulkLock(locks);
 		try{
-			childLock.lock();
-
 			// //////////////////
 			// General Exception
 			// //////////////////
@@ -441,24 +479,18 @@ public class NavigationServiceImpl implements NavigationService {
 			// CMIS 1.1 §2.2.3.3: Root folder has no parent — must reject before lock
 			exceptionService.invalidArgumentRootFolder(repositoryId, folder);
 
+			// Re-read under the locks. The preview above decided WHAT to lock; this decides what
+			// to answer, and a move that landed in between must not be served from the stale one.
 			Folder parent = contentService.getParent(repositoryId, folderId);
 			exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parent);
-			
-			Lock parentLock = threadLockService.getReadLock(repositoryId, parent.getId());
-			try{
-				parentLock.lock();
 
-				// //////////////////
-				// Body of the method
-				// //////////////////
-				return compileService.compileObjectData(callContext, repositoryId,
-						parent, filter, true, IncludeRelationships.NONE, null, true);
-				
-			}finally{
-				parentLock.unlock();
-			}
+			// //////////////////
+			// Body of the method
+			// //////////////////
+			return compileService.compileObjectData(callContext, repositoryId,
+					parent, filter, true, IncludeRelationships.NONE, null, true);
 		}finally{
-			childLock.unlock();
+			threadLockService.bulkUnlock(locks);
 		}
 	}
 
@@ -470,11 +502,16 @@ public class NavigationServiceImpl implements NavigationService {
 
 		exceptionService.invalidArgumentRequired("objectId", objectId);
 		
-		Lock childLock = threadLockService.getReadLock(repositoryId, objectId);
-		
+		// Same shape as getFolderParent: resolve the parent first so the two locks are ONE ordered
+		// set. Taking the child's and then the parent's leaves the order to whichever object each
+		// request happens to start from, and the detector caught exactly that pair inverted here.
+		Folder parentPreview = contentService.getParent(repositoryId, objectId);
+		List<Lock> locks = threadLockService.orderedLocks(repositoryId,
+				parentPreview == null ? java.util.List.of(objectId)
+						: java.util.List.of(objectId, parentPreview.getId()),
+				false);
+		threadLockService.bulkLock(locks);
 		try{
-			childLock.lock();
-			
 			// //////////////////
 			// General Exception
 			// //////////////////
@@ -484,16 +521,14 @@ public class NavigationServiceImpl implements NavigationService {
 					repositoryId, PermissionMapping.CAN_GET_PARENTS_FOLDER, content);
 
 
-			//Get parent
+			//Get parent — re-read under the locks, not reused from the preview above.
 			Folder parent = contentService.getParent(repositoryId, objectId);
 			if (parent == null) {
 				// Root folder or orphaned object - no parent exists
 				return new ArrayList<ObjectParentData>();
 			}
-			Lock parentLock = threadLockService.getReadLock(repositoryId, parent.getId());
 
-			try{
-				parentLock.lock();
+			{
 				
 				// //////////////////
 				// Specific Exception
@@ -516,13 +551,9 @@ public class NavigationServiceImpl implements NavigationService {
 				}
 
 				return Collections.singletonList((ObjectParentData) result);
-				
-			}finally{
-				parentLock.unlock();
 			}
-			
 		}finally{
-			childLock.unlock();
+			threadLockService.bulkUnlock(locks);
 		}
 	}
 

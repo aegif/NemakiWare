@@ -100,6 +100,13 @@ public class SearchIndexObservabilityController {
         body.put("queriesDegradedByAclScanLimit",
                 jp.aegif.nemaki.cmis.aspect.query.solr.AclPropagationStaleness.degradedQueryCount());
         body.put("activePropagations", PropagationProgress.active().size());
+        // Lock-ordering findings. `lockOrderUpgrades` above zero means a thread has already parked
+        // forever (ReentrantReadWriteLock cannot upgrade a read hold to a write hold), and every
+        // later request for that stripe queues behind it — the repository stops. `inversions` is a
+        // warning rather than a failure: two orders were observed that CAN deadlock, and reporting
+        // the possibility is the point, because the alternative is learning it from an outage.
+        body.put("lockOrderUpgrades", jp.aegif.nemaki.util.lock.LockOrderMonitor.upgradeCount());
+        body.put("lockOrderInversions", jp.aegif.nemaki.util.lock.LockOrderMonitor.inversionCount());
         body.put("note", "Counters are per-JVM and reset on restart. In a multi-replica"
                 + " deployment, read them from every replica.");
         return ResponseEntity.ok(body);
@@ -113,6 +120,31 @@ public class SearchIndexObservabilityController {
      * inline. It is reported rather than hidden because the overload case, where the estimate
      * breaks, is exactly the case an operator is most likely to be looking at.
      */
+    /**
+     * Lock acquisition orders observed to be unsafe, with the two objects named.
+     *
+     * <p>A thread dump taken after a repository has stopped shows which LINES are parked but not
+     * which OBJECTS — and because the locks are striped, the pair need not be related, so the
+     * identities cannot be inferred from the code. This reports them as they are observed, before
+     * anything has to hang.
+     */
+    @GetMapping("/lock-order")
+    public ResponseEntity<?> lockOrder() {
+        if (!isAdmin()) {
+            return forbidden();
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("upgrades", jp.aegif.nemaki.util.lock.LockOrderMonitor.upgradeCount());
+        body.put("inversions", jp.aegif.nemaki.util.lock.LockOrderMonitor.inversionCount());
+        List<Map<String, Object>> findings = jp.aegif.nemaki.util.lock.LockOrderMonitor.findings();
+        body.put("findings", findings);
+        body.put("note", findings.isEmpty()
+                ? "No unsafe lock order has been observed on this replica since it started."
+                : "Each finding names two objects and the two orders seen. An 'upgrade' has already"
+                        + " deadlocked a thread; an 'inversion' can.");
+        return ResponseEntity.ok(body);
+    }
+
     @GetMapping("/propagation")
     public ResponseEntity<?> propagation() {
         if (!isAdmin()) {
