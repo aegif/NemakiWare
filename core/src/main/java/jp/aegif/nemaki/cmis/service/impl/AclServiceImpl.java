@@ -322,7 +322,25 @@ public class AclServiceImpl implements AclService {
 
 			// CRITICAL FIX (2025-01-23): Synchronously clear ACL caches for this object and all descendants
 			// that inherit ACL. This prevents race conditions where child documents show stale permissions.
-			int subtreeNodes = clearCachesRecursively(repositoryId, content);
+			// B4: the move path already treats an eviction failure as a reconciliation obligation;
+			// applyAcl used to let it escape with the ACL committed, epoch Phase 2 not run and the
+			// subtree only partly evicted — a state nothing would come back to. A failure here
+			// means descendants may still serve the old effective ACL, so it must be queued.
+			// The index refresh is NOT submitted in that case: refreshing readers from caches we
+			// could not evict would write the stale values into Solr and make them durable.
+			int subtreeNodes;
+			try {
+				subtreeNodes = clearCachesRecursively(repositoryId, content);
+			} catch (Exception evictionFailure) {
+				log.warn("applyAcl: descendant cache eviction failed for " + content.getId()
+						+ " — deferring the search-index refresh to reconciliation: "
+						+ evictionFailure.getMessage());
+				if (reconciliationService != null) {
+					reconciliationService.enqueue(repositoryId, content.getId(),
+							jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.CACHE_EVICTION_FAILURE);
+				}
+				return getAcl(callContext, repositoryId, objectId, false, null);
+			}
 
 			// ── ACL-epoch Phase 2 + own-node fenced write + ACK (§11.4). Never fails the
 			// request: the ACL change is committed and authoritative; every early stop lands in
@@ -1196,6 +1214,12 @@ public class AclServiceImpl implements AclService {
 	 * where users see stale cached ACL data on child documents after changing parent permissions.
 	 */
 	private int clearCachesRecursively(String repositoryId, Content content) {
+		// Advance the generation BEFORE evicting anything. Every caller of this method has just
+		// committed an ACL-affecting write, so any effective-ACL computation already in flight is
+		// suspect. Doing it first means a reader that finishes mid-sweep is declined by the
+		// compare-and-put in AclServiceDelegate rather than republishing behind us.
+		jp.aegif.nemaki.util.cache.AclCacheGeneration.advance(repositoryId);
+
 		java.util.Set<String> visitedIds = new java.util.HashSet<>();
 		java.util.Queue<Content> queue = new java.util.LinkedList<>();
 		queue.offer(content);

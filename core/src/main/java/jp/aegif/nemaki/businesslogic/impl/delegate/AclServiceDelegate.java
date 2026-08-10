@@ -65,12 +65,32 @@ public class AclServiceDelegate {
 		Acl acl = strict ? null : aclCache.get(content.getId());
 
 		if (acl == null) {
+			// Date the computation BEFORE reading any ancestor. applyAcl evicts this object's
+			// memo and its descendants' while holding only a read lock, and the eviction walk
+			// locks nothing, so a computation that started before the change can finish after the
+			// sweep and republish a stale answer that nothing will remove again. Recording the
+			// generation up front lets the put below decline instead.
+			long generation = jp.aegif.nemaki.util.cache.AclCacheGeneration.current(repositoryId);
 			acl = resolveAcl(repositoryId, content, strict);
 			if (!strict) {
-				aclCache.put(content.getId(), acl);
+				putIfStillCurrent(repositoryId, aclCache, content.getId(), acl, generation);
 			}
 		}
 		return acl;
+	}
+
+	/**
+	 * Publish a computed effective ACL only if no ACL write landed while it was being computed.
+	 *
+	 * <p>Declining costs one recomputation on the next read. Publishing a stale answer costs an
+	 * authorization decision made against permissions that no longer exist, for as long as the
+	 * entry lives.
+	 */
+	private void putIfStillCurrent(String repositoryId, NemakiCache<Acl> aclCache, String objectId,
+			Acl acl, long observedGeneration) {
+		if (jp.aegif.nemaki.util.cache.AclCacheGeneration.isStillCurrent(repositoryId, observedGeneration)) {
+			aclCache.put(objectId, acl);
+		}
 	}
 
 	public Map<String, Content> getContentsByIds(String repositoryId, List<String> objectIds) {
@@ -97,8 +117,9 @@ public class AclServiceDelegate {
 				continue;
 			}
 
+			long generation = jp.aegif.nemaki.util.cache.AclCacheGeneration.current(repositoryId);
 			Acl acl = resolveAcl(repositoryId, content, false);
-			aclCache.put(contentId, acl);
+			putIfStillCurrent(repositoryId, aclCache, contentId, acl, generation);
 			result.put(contentId, acl);
 		}
 

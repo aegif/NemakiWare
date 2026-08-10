@@ -1120,6 +1120,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public UserItem create(String repositoryId, UserItem userItem) {
 		UserItem created = nonCachedContentDaoService.create(repositoryId, userItem);
+		jp.aegif.nemaki.util.cache.PrincipalGeneration.advance(repositoryId);
 		nemakiCachePool.get(repositoryId).getContentCache().put(created.getId(), created);
 		nemakiCachePool.get(repositoryId).getUserItemCache().put(created.getUserId(), created);
 		addToTreeCache(repositoryId, created);
@@ -1129,6 +1130,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public GroupItem create(String repositoryId, GroupItem groupItem) {
 		GroupItem created = nonCachedContentDaoService.create(repositoryId, groupItem);
+		jp.aegif.nemaki.util.cache.PrincipalGeneration.advance(repositoryId);
 		nemakiCachePool.get(repositoryId).getContentCache().put(created.getId(), created);
 		nemakiCachePool.get(repositoryId).getGroupItemCache().put(created.getGroupId(), created);
 		// A new group with members (users or nested groups) changes those members'
@@ -1313,6 +1315,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public UserItem update(String repositoryId, UserItem userItem) {
 		UserItem updated = nonCachedContentDaoService.update(repositoryId, userItem);
+		jp.aegif.nemaki.util.cache.PrincipalGeneration.advance(repositoryId);
 		nemakiCachePool.get(repositoryId).getContentCache().put(updated.getId(), updated);
 		nemakiCachePool.get(repositoryId).getUserItemCache().put(updated.getUserId(), updated);
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
@@ -1322,6 +1325,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public GroupItem update(String repositoryId, GroupItem groupItem) {
 		GroupItem updated = nonCachedContentDaoService.update(repositoryId, groupItem);
+		jp.aegif.nemaki.util.cache.PrincipalGeneration.advance(repositoryId);
 		nemakiCachePool.get(repositoryId).getContentCache().put(updated.getId(), updated);
 		nemakiCachePool.get(repositoryId).getGroupItemCache().put(updated.getGroupId(), updated);
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
@@ -1498,6 +1502,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 			
 			String objectType = content.getObjectType();
+			if ("nemaki:user".equals(objectType) || "nemaki:group".equals(objectType)) {
+				// Deleting a principal is a revocation. Replicas that did not perform it keep
+				// serving the old membership (and, for a user, the old password hash and admin
+				// flag) until their entries expire, so the generation has to move here too — the
+				// create/update paths alone would miss the one change that removes access.
+				jp.aegif.nemaki.util.cache.PrincipalGeneration.advance(repositoryId);
+			}
 			if ("nemaki:user".equals(objectType)) {
 				UserItem item = getUserItem(repositoryId, objectId);
 				if (item != null) {

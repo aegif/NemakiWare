@@ -87,7 +87,10 @@ public class AttachmentDaoDelegate {
 						if (latestDoc != null && latestDoc.getRev() != null) {
 							can.setRevision(latestDoc.getRev());
 						}
-						client.update(can);
+						// Preserve any existing binary across the metadata write. Stage 2 below
+						// re-uploads it only when this node actually carries a stream; when it does
+						// not, a plain update here would delete the stored binary outright.
+						client.updatePreservingAttachments(can, latestDoc);
 						Document updatedDoc = client.get(attachmentNode.getId());
 						stage1RevisionAfterUpdate = updatedDoc != null ? updatedDoc.getRev() : null;
 						log.debug("STAGE 1: Updated attachment metadata for: " + attachmentNode.getId() + " (new revision: " + stage1RevisionAfterUpdate + ")");
@@ -622,7 +625,11 @@ public class AttachmentDaoDelegate {
 								can.setMimeType(oldMimeType);
 								can.setLength(oldLength);
 								can.setName(oldName);
-								client.update(can);
+								// Attachment-preserving, like stage 1. A plain update here would post a
+								// body without _attachments and delete the binary — so the compensation
+								// for "the new binary failed to upload" would be "the OLD binary is gone
+								// too", which is worse than the failure it is compensating for.
+								client.updatePreservingAttachments(can, latestDoc);
 								log.info("Rollback successful: metadata restored for " + attachment.getId());
 							} else {
 								// Cannot get latest rev — rollback impossible
@@ -642,13 +649,17 @@ public class AttachmentDaoDelegate {
 					throw new RuntimeException("Failed to upload binary content for attachment " + attachment.getId(), binaryEx);
 				}
 			} else {
-				// Metadata-only update (no binary content change)
+				// Metadata-only update (no binary content change).
+				//
+				// "No binary change" is exactly why this must preserve the stub: a plain update
+				// posts a body without _attachments, so a path whose whole point is to leave the
+				// binary alone would silently delete it.
 				if (contentStream != null) {
 					can.setMimeType(contentStream.getMimeType());
 					can.setLength(contentStream.getLength());
 					can.setName(contentStream.getFileName());
 				}
-				client.update(can);
+				client.updatePreservingAttachments(can, currentDoc);
 				log.debug("Updated attachment metadata (no binary) for: " + attachment.getId());
 			}
 

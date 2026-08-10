@@ -534,6 +534,26 @@
         <property name="leaderElection" ref="leaderElection" />
     </bean>
 
+    <!--
+      Cross-replica cache invalidation (P3-1-2 / P3-1-3).
+
+      Cache eviction is otherwise entirely JVM-local: a replica that did not perform an ACL
+      change, a password change or a group removal keeps answering from its own memo until the
+      entry expires. Deliberately NOT leader-gated — every replica must drop its own caches, so
+      this is the one scheduled task where "only the leader runs it" would be exactly wrong.
+    -->
+    <bean id="couchGenerationStore" class="jp.aegif.nemaki.util.cache.CouchGenerationStore">
+        <property name="connectorPool" ref="connectorPool" />
+        <property name="repositoryInfoMap" ref="repositoryInfoMap" />
+    </bean>
+
+    <bean id="crossReplicaCacheInvalidator"
+          class="jp.aegif.nemaki.util.cache.CrossReplicaCacheInvalidator"
+          init-method="start" destroy-method="stop">
+        <constructor-arg ref="nemakiCachePool" />
+        <constructor-arg ref="couchGenerationStore" />
+    </bean>
+
 
     <!-- CMIS Service Beans(Utility) -->
     <bean id="AuthenticationService" class="org.springframework.aop.framework.ProxyFactoryBean" scope="singleton">
