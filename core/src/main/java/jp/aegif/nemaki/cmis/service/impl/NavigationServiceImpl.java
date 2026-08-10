@@ -130,6 +130,41 @@ public class NavigationServiceImpl implements NavigationService {
 	}
 
 	/**
+	 * Fail if the object's parent changed between choosing the lock set and reading it.
+	 *
+	 * <p>The parent is resolved once unlocked (to decide what to lock) and once locked (to decide
+	 * what to answer). Those normally agree. When they do not, the object was moved in between and
+	 * the parent now being compiled is one whose lock was never taken — so the answer would be
+	 * built from an object nothing is holding still. That is the defect the ordered set exists to
+	 * remove, so it must not be reintroduced by carrying on regardless.
+	 */
+	private void requireStillTheLockedParent(Folder locked, Folder actual, String objectId) {
+		if (locked != null && actual != null && locked.getId().equals(actual.getId())) {
+			return;
+		}
+		throw new org.apache.chemistry.opencmis.commons.exceptions.CmisUpdateConflictException(
+				"Object " + objectId + " was moved while its parent was being read; the parent"
+						+ " that would be returned is not the one this request locked. Retry.");
+	}
+
+	/**
+	 * Fail if the folder disappeared while its lock was not held.
+	 *
+	 * <p>{@code getChildren} verifies and compiles the folder under its own lock, releases it, and
+	 * only then takes the folder together with its children as one ordered set. That release is
+	 * what makes the ordering possible — a lock held outside a set is not ordered against it — but
+	 * it opens a window, and a listing built after the folder was deleted in that window would be
+	 * an answer about something that no longer exists.
+	 */
+	private void requireFolderStillPresent(String repositoryId, String folderId) {
+		Content folder = contentService.getContent(repositoryId, folderId);
+		if (folder == null) {
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException(
+					"Folder " + folderId + " was deleted while its children were being listed");
+		}
+	}
+
+	/**
 	 * The folder's id followed by its children's, as one list to be ordered together.
 	 *
 	 * <p>The folder is included deliberately. Locking it separately, before or around the set,
@@ -205,6 +240,11 @@ public class NavigationServiceImpl implements NavigationService {
 
 			try {
 				threadLockService.bulkLock(locks);
+
+				// The folder's lock was released between its own compile and here, so confirm it
+				// still exists before listing what is supposedly inside it. Without this, a folder
+				// deleted in that window is listed as though it were still there.
+				requireFolderStillPresent(repositoryId, folderId);
 
 				contents = permissionService.getFiltered(callContext, repositoryId, contents);
 
@@ -312,6 +352,8 @@ public class NavigationServiceImpl implements NavigationService {
 
 			try {
 				threadLockService.bulkLock(locks);
+
+				requireFolderStillPresent(repositoryId, folderId);
 
 				// Compile with skipCount=0 (already handled), maxItems=size, orderBy=null
 				// Passing null lets SortUtil apply the configured default orderBy within the page.
@@ -483,6 +525,11 @@ public class NavigationServiceImpl implements NavigationService {
 			// to answer, and a move that landed in between must not be served from the stale one.
 			Folder parent = contentService.getParent(repositoryId, folderId);
 			exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parent);
+			// ...and if it MOVED in that window, the parent we are about to compile is not the one
+			// we locked. Answering anyway would be compiling an object with no lock held on it,
+			// which is the thing this method was just restructured to guarantee. A conflict is the
+			// honest answer: the client asked about a placement that changed while it was asking.
+			requireStillTheLockedParent(parentPreview, parent, folderId);
 
 			// //////////////////
 			// Body of the method
@@ -527,6 +574,7 @@ public class NavigationServiceImpl implements NavigationService {
 				// Root folder or orphaned object - no parent exists
 				return new ArrayList<ObjectParentData>();
 			}
+			requireStillTheLockedParent(parentPreview, parent, objectId);
 
 			{
 				

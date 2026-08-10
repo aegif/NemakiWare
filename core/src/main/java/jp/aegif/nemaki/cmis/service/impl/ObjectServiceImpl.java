@@ -1295,16 +1295,17 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.objectNotFound(DomainType.OBJECT, moving, movingId);
 		Lock hierarchyLock = (moving != null && moving.isFolder())
 				? threadLockService.getWriteLock(repositoryId, FOLDER_HIERARCHY_LOCK_KEY) : null;
-		Lock firstLock = threadLockService.getWriteLock(repositoryId,
-				movingId.compareTo(targetFolderId) <= 0 ? movingId : targetFolderId);
-		Lock secondLock = threadLockService.getWriteLock(repositoryId,
-				movingId.compareTo(targetFolderId) <= 0 ? targetFolderId : movingId);
+		// Ordered by STRIPE, not by object id. The locks are striped, so the id order says nothing
+		// about the order the underlying locks are actually taken in — two moves could sort their
+		// ids one way and hit the stripes the other. orderedLocks also collapses the pair when
+		// both ids land on one stripe, which a hand-written pair would take twice and release once.
+		List<Lock> objectLocks = threadLockService.orderedLocks(repositoryId,
+				java.util.List.of(movingId, targetFolderId), true);
 		try {
 			if (hierarchyLock != null) {
 				hierarchyLock.lock();
 			}
-			firstLock.lock();
-			secondLock.lock();
+			threadLockService.bulkLock(objectLocks);
 			// //////////////////
 			// General Exception
 			// //////////////////
@@ -1348,8 +1349,7 @@ public class ObjectServiceImpl implements ObjectService {
 			// Invalidate IN_TREE folder hierarchy cache (folder may have been moved)
 			solrUtil.invalidateFolderHierarchyCache(repositoryId);
 		} finally {
-			secondLock.unlock();
-			firstLock.unlock();
+			threadLockService.bulkUnlock(objectLocks);
 			if (hierarchyLock != null) {
 				hierarchyLock.unlock();
 			}

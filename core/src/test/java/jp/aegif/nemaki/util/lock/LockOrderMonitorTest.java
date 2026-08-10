@@ -17,10 +17,10 @@
 package jp.aegif.nemaki.util.lock;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -42,13 +42,12 @@ import jp.aegif.nemaki.util.lock.impl.ThreadLockServiceImpl;
  * call. A thread dump names the LINES but not the OBJECTS, and these locks are STRIPED — 4096 of
  * them for every object in every repository — so the two ends of a cycle need not be related in
  * any way a reader of the code could predict. Choosing a fix from the code alone means fixing a
- * hypothesis.
+ * hypothesis, and the first hypothesis here turned out to be wrong.
  *
- * <p>The two failures below are what the detector has to catch. An upgrade is certain and
- * immediate: {@code ReentrantReadWriteLock} refuses to turn a read hold into a write hold, so the
- * thread parks forever and, because a queued writer stops later readers, so does every request for
- * that stripe. An inversion is a possibility rather than an event — which is exactly why it is
- * worth reporting, since the alternative is waiting for the outage that proves it.
+ * <p>The failures below are what the detector has to catch, and what the lock service has to
+ * survive. An upgrade never succeeds: {@code ReentrantReadWriteLock} refuses to turn a read hold
+ * into a write hold. An inversion is a possibility rather than an event — which is exactly why it
+ * is worth reporting, since the alternative is waiting for the outage that proves it.
  */
 class LockOrderMonitorTest {
 
@@ -67,28 +66,29 @@ class LockOrderMonitorTest {
 
         // Both acquisitions on ONE thread: that is what an upgrade is. Two threads contending for
         // the same stripe is ordinary and resolves; one thread asking to write what it already
-        // reads never resolves, because ReentrantReadWriteLock has no upgrade path. The thread is
-        // a daemon and is deliberately abandoned — it can never be woken.
+        // reads never succeeds, because ReentrantReadWriteLock has no upgrade path.
         Thread t = new Thread(() -> {
             Lock read = service.getReadLock("bedroom", "obj-a");
             Lock write = service.getWriteLock("bedroom", "obj-a");
             read.lock();
             readTaken.countDown();
-            write.lock(); // never returns
+            try {
+                write.lock();
+            } catch (RuntimeException expected) {
+                // Bounded now, so it ends as a timeout rather than a hang.
+            }
         }, "upgrade-attempt");
         t.setDaemon(true);
         t.start();
 
         assertTrue(readTaken.await(5, TimeUnit.SECONDS), "the read lock should be taken");
-        t.join(2000);
+        // Deliberately not waiting for the bound to expire: the report is written BEFORE the
+        // acquisition, and that is the property that matters — an acquisition that never succeeds
+        // cannot report itself afterwards.
+        Thread.sleep(300);
 
-        assertEquals(Thread.State.WAITING, t.getState(),
-                "this is not a slow acquisition, it is a permanent one — if the thread finished,"
-                        + " the test is no longer describing the failure it exists for");
         assertEquals(1, LockOrderMonitor.upgradeCount(),
-                "the upgrade must be reported. It has to be reported BEFORE the acquisition, since"
-                        + " the acquisition never returns and a report written after it would"
-                        + " never be written at all");
+                "the upgrade must be reported, and reported before the acquisition is attempted");
     }
 
     @Test
@@ -99,14 +99,11 @@ class LockOrderMonitorTest {
         String a = "obj-a";
         String b = distinctStripeId(a);
 
-        CountDownLatch firstHeld = new CountDownLatch(1);
         CountDownLatch done = new CountDownLatch(1);
-
         Thread forward = new Thread(() -> {
             Lock la = service.getReadLock("bedroom", a);
             Lock lb = service.getReadLock("bedroom", b);
             la.lock();
-            firstHeld.countDown();
             lb.lock();
             lb.unlock();
             la.unlock();
@@ -116,8 +113,8 @@ class LockOrderMonitorTest {
         forward.start();
         assertTrue(done.await(5, TimeUnit.SECONDS), "the forward order should not block");
 
-        // Now the same pair, the other way round. Nothing deadlocks here — read locks are shared —
-        // but the ORDER is what makes a deadlock possible once a writer queues between them.
+        // The same pair, the other way round. Nothing deadlocks here — read locks are shared — but
+        // the ORDER is what makes a deadlock possible once a writer queues between them.
         Lock lb = service.getReadLock("bedroom", b);
         Lock la = service.getReadLock("bedroom", a);
         lb.lock();
@@ -131,6 +128,41 @@ class LockOrderMonitorTest {
         assertTrue(LockOrderMonitor.findings().stream()
                         .anyMatch(f -> "inversion".equals(f.get("kind"))),
                 "the finding must name the pair, since a dump taken later cannot recover it");
+    }
+
+    @Test
+    @DisplayName("非隣接のロック順 (A→B→C を保持した状態の A→C) も検出する")
+    void anEdgeBetweenNonAdjacentHeldLocksIsDetected() {
+        String a = "obj-a";
+        String b = distinctStripeId(a);
+        String c = thirdStripeId(a, b);
+
+        // Establish C-before-A somewhere.
+        Lock lc = service.getReadLock("bedroom", c);
+        Lock la0 = service.getReadLock("bedroom", a);
+        lc.lock();
+        la0.lock();
+        la0.unlock();
+        lc.unlock();
+
+        long before = LockOrderMonitor.inversionCount();
+
+        // Now A, then B, then C on one thread. A model that compared only the most recently held
+        // lock would see B→C and record nothing about A→C — and A→C is the pair that inverts.
+        // That shape, an outer lock held across an inner ordered set, is what the live outage was.
+        Lock la = service.getReadLock("bedroom", a);
+        Lock lb = service.getReadLock("bedroom", b);
+        Lock lc2 = service.getReadLock("bedroom", c);
+        la.lock();
+        lb.lock();
+        lc2.lock();
+        lc2.unlock();
+        lb.unlock();
+        la.unlock();
+
+        assertTrue(LockOrderMonitor.inversionCount() > before,
+                "a head-only edge model cannot see this, so it could not be used to claim which"
+                        + " sites exist — only which sites it happens to be able to notice");
     }
 
     @Test
@@ -164,7 +196,7 @@ class LockOrderMonitorTest {
                         + " taking it twice would leave a hold that bulkUnlock never releases");
 
         List<String> reversed = new ArrayList<>(ids);
-        java.util.Collections.reverse(reversed);
+        Collections.reverse(reversed);
         assertEquals(locks.size(), service.orderedLocks("bedroom", reversed, false).size(),
                 "the same set must produce the same locks whatever order it arrives in");
 
@@ -176,13 +208,13 @@ class LockOrderMonitorTest {
 
     @Test
     @DisplayName("ページ読みを逆順で走らせても検出が出ない (orderedLocks が揃えるため)")
-    void twoPagesReadInOppositeOrdersNoLongerInvert() throws Exception {
+    void twoPagesReadInOppositeOrdersNoLongerInvert() {
         List<String> page = new ArrayList<>();
         for (int i = 0; i < 8; i++) {
             page.add("row-" + i);
         }
         List<String> reversed = new ArrayList<>(page);
-        java.util.Collections.reverse(reversed);
+        Collections.reverse(reversed);
 
         runLocked(service.orderedLocks("bedroom", page, false));
         runLocked(service.orderedLocks("bedroom", reversed, false));
@@ -191,6 +223,24 @@ class LockOrderMonitorTest {
                 "this is the whole reason ordering happens inside the lock service rather than at"
                         + " the thirty-odd call sites: the callers pass whatever order their data"
                         + " arrived in, and Solr does not promise one");
+    }
+
+    @Test
+    @DisplayName("取得に失敗した後の finally の unlock が本当の失敗を握り潰さない")
+    void aFinallyBlockAfterAFailedAcquisitionDoesNotMaskTheRealFailure() {
+        // Callers universally write lock(); try { ... } finally { unlock(); }. When the
+        // acquisition fails, that finally still runs. Unlocking something never taken throws
+        // IllegalMonitorStateException, which would replace the timeout with a meaningless error
+        // and lose the reason — the diagnosis this whole area exists to produce.
+        Lock never = service.getReadLock("bedroom", "obj-never-taken");
+        never.unlock();
+        never.unlock();
+
+        List<Lock> set = service.orderedLocks("bedroom", List.of("x", "y"), false);
+        service.bulkUnlock(set);
+
+        // Reaching here at all is the assertion: nothing threw.
+        assertEquals(0, LockOrderMonitor.upgradeCount());
     }
 
     private void runLocked(List<Lock> locks) {
@@ -212,10 +262,22 @@ class LockOrderMonitorTest {
         for (int i = 0; i < 10_000; i++) {
             String candidate = "obj-b" + i;
             if (service.stripeOf("bedroom", candidate) != target) {
-                assertNotEquals(target, service.stripeOf("bedroom", candidate));
                 return candidate;
             }
         }
         throw new IllegalStateException("could not find an id on a different stripe");
+    }
+
+    private String thirdStripeId(String x, String y) {
+        int sx = service.stripeOf("bedroom", x);
+        int sy = service.stripeOf("bedroom", y);
+        for (int i = 0; i < 10_000; i++) {
+            String candidate = "obj-c" + i;
+            int s = service.stripeOf("bedroom", candidate);
+            if (s != sx && s != sy) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException("could not find a third stripe");
     }
 }

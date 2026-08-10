@@ -29,14 +29,31 @@ package jp.aegif.nemaki.util.lock;
  *
  * <p>Giving up turns that into a request that fails and can be retried, while everything holding
  * locks lets go. It is a worse outcome than the operation succeeding and a much better one than
- * the server stopping. The exception carries the objects involved so the pair is named rather than
- * inferred.
+ * the server stopping.
+ *
+ * <p>It extends {@code CmisServiceUnavailableException} so clients are told 503 — temporarily
+ * unavailable, try again — rather than 500. A plain runtime exception would reach the bindings as
+ * an undifferentiated server error, which a client cannot distinguish from a real fault and will
+ * not retry; and retrying is precisely the right response here.
+ *
+ * <p>{@link #getObjects()} names the locks that could not be taken. A dump captured afterwards
+ * cannot recover them, and inferring them from the code is what went wrong the first time.
  */
-public class LockAcquisitionTimeoutException extends RuntimeException {
+public class LockAcquisitionTimeoutException
+		extends org.apache.chemistry.opencmis.commons.exceptions.CmisServiceUnavailableException {
 
 	private static final long serialVersionUID = 1L;
 
-	public LockAcquisitionTimeoutException(String message) {
+	private final java.util.List<String> objects;
+
+	public LockAcquisitionTimeoutException(String message, java.util.List<String> objects) {
 		super(message);
+		this.objects = objects == null ? java.util.List.of()
+				: java.util.List.copyOf(objects);
+	}
+
+	/** The (repository, object) keys of the locks involved, in acquisition order. */
+	public java.util.List<String> getObjects() {
+		return objects;
 	}
 }

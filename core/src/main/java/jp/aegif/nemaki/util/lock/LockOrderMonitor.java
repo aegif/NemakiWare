@@ -163,24 +163,29 @@ public final class LockOrderMonitor {
         if (held.size() >= MAX_TRACKED_DEPTH) {
             return;
         }
-        Held top = held.peek();
-        if (top == null) {
-            return;
-        }
-        String forward = top.stripe + ">" + stripe;
-        String backward = stripe + ">" + top.stripe;
-        String opposite = EDGES.get(backward);
-        if (opposite != null) {
-            report("inversion", top.key, key,
-                    "stripe " + top.stripe + " then " + stripe + " here (" + top.key + " then "
-                            + key + "), but " + stripe + " then " + top.stripe + " elsewhere ("
-                            + opposite + "). Two threads interleaving these can wait on each other"
-                            + " forever, and because a queued writer blocks later readers, every"
-                            + " request touching either stripe stops as well",
-                    INVERSIONS);
-        }
-        if (EDGES.size() < MAX_EDGES) {
-            EDGES.putIfAbsent(forward, top.key + " then " + key);
+        // EVERY held lock, not just the most recent.
+        //
+        // A cycle does not care how deep the stack was when the two ends were taken. With A then B
+        // then C held, comparing only the top records B→C and misses A→C entirely — and A→C is
+        // exactly the shape that matters here, where an outer lock is held across an inner ordered
+        // set. Reporting "these are the sites" from a head-only model would be reporting the sites
+        // the model can see, which is not the same claim.
+        for (Held h : held) {
+            String forward = h.stripe + ">" + stripe;
+            String backward = stripe + ">" + h.stripe;
+            String opposite = EDGES.get(backward);
+            if (opposite != null) {
+                report("inversion", h.key, key,
+                        "stripe " + h.stripe + " then " + stripe + " here (" + h.key + " then "
+                                + key + "), but " + stripe + " then " + h.stripe + " elsewhere ("
+                                + opposite + "). Two threads interleaving these can wait on each"
+                                + " other forever, and because a queued writer blocks later"
+                                + " readers, every request touching either stripe stops as well",
+                        INVERSIONS);
+            }
+            if (EDGES.size() < MAX_EDGES) {
+                EDGES.putIfAbsent(forward, h.key + " then " + key);
+            }
         }
     }
 

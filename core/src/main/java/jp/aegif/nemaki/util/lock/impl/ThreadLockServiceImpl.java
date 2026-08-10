@@ -51,6 +51,9 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 	private static final int STRIPES = 4096;
 	private static final int MASK = STRIPES - 1;
 
+	private static final org.slf4j.Logger LOG =
+			org.slf4j.LoggerFactory.getLogger(ThreadLockServiceImpl.class);
+
 	private final ReadWriteLock[] locks = new ReadWriteLock[STRIPES];
 
 	public ThreadLockServiceImpl() {
@@ -139,42 +142,75 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 	}
 
 	/**
-	 * How long a whole set is allowed to take before the attempt is abandoned.
+	 * How long ONE attempt at a set may take before everything held is dropped and it is tried
+	 * again.
 	 *
-	 * <p>Long enough that ordinary contention — a writer finishing a document update — is simply
-	 * waited out, short enough that a cycle is broken while the client is still there. The point
-	 * is not to be quick; it is to be finite.
+	 * <p>This is the cycle breaker, and it is the release rather than the delay that breaks it: a
+	 * partial hold is what lets a cycle persist, so letting go periodically lets the other side
+	 * finish. It is a budget for the whole set, not per lock — per lock would let a two-hundred-row
+	 * page take two hundred times as long, which under shifting contention is indistinguishable
+	 * from the hang this exists to prevent.
 	 */
-	private static final long ACQUIRE_TIMEOUT_MS = 10_000L;
+	private static final long ACQUIRE_ATTEMPT_MS = 30_000L;
 
-	/** Attempts before the request is failed. Each releases everything it holds first. */
-	private static final int ACQUIRE_ATTEMPTS = 3;
+	/**
+	 * How long a set may keep retrying before the request is failed.
+	 *
+	 * <p>Separate from the attempt budget on purpose, and the reason is a mistake made here first:
+	 * with a fixed three attempts the concurrency suite began failing ordinary reads, because a
+	 * folder under sustained write load takes longer than three short attempts to read — nothing
+	 * was deadlocked, it was busy. Retrying is how a cycle is broken; the total is how long a
+	 * caller is willing to be busy. Conflating them makes contention look like deadlock.
+	 */
+	private static final long ACQUIRE_TOTAL_MS = 300_000L;
+
+	/**
+	 * The bound on a SINGLE lock, which is a deadlock breaker and nothing else.
+	 *
+	 * <p>Deliberately far above any realistic wait. A set can be abandoned and retried cheaply, so
+	 * a short budget there is a reasonable back-off; a single lock has no alternative to waiting,
+	 * and cutting it short converts ordinary contention into failed requests. That is not
+	 * hypothetical — at 30s the concurrency suite began failing document creates, because a
+	 * hundred threads writing into one folder legitimately queue on that folder for longer than
+	 * that. A deadlock, by contrast, is permanent, so any finite bound breaks it; five minutes
+	 * separates "this will never finish" from "this is busy".
+	 *
+	 * <p>Anything approaching it is logged well before it expires, so heavy contention is visible
+	 * without being fatal.
+	 */
+	private static final long SINGLE_LOCK_DEADLINE_MS = 300_000L;
+
+	/** How long a single acquisition may take before it is worth telling an operator about. */
+	private static final long SINGLE_LOCK_WARN_MS = 15_000L;
 
 	@Override
 	public void bulkLock(List<Lock> locks) {
 		if (CollectionUtils.isEmpty(locks)) {
 			return;
 		}
-		// Bounded waiting, and RELEASE EVERYTHING on the way out.
+		// Bounded waiting, and RELEASE EVERYTHING between attempts.
 		//
 		// Sorting by stripe (see orderedLocks) removes cycles among the locks in one set, but not
 		// cycles that close through a lock the caller already holds from an outer scope — a
-		// listing holds its folder's lock while taking its children's, and two listings whose
-		// stripes overlap can then wait on each other. Nothing inside this method can see that
-		// outer hold, so this method cannot order its way out of it. What it can do is refuse to
-		// wait forever: whoever times out drops the set, which lets the other side finish.
-		for (int attempt = 1; attempt <= ACQUIRE_ATTEMPTS; attempt++) {
+		// descendants walk holds each level while it takes the next. Nothing inside this method
+		// can see that outer hold, so this method cannot order its way out of it. What it can do
+		// is let go periodically: whoever releases lets the other side proceed.
+		long giveUpAt = System.nanoTime() + ACQUIRE_TOTAL_MS * 1_000_000L;
+		boolean warned = false;
+		for (int attempt = 1;; attempt++) {
+			long attemptDeadline = System.nanoTime() + ACQUIRE_ATTEMPT_MS * 1_000_000L;
 			List<Lock> taken = new ArrayList<>(locks.size());
 			boolean complete = true;
 			for (Lock lock : locks) {
+				long remaining = attemptDeadline - System.nanoTime();
 				boolean got;
 				try {
-					got = lock.tryLock(ACQUIRE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+					got = remaining > 0 && lock.tryLock(remaining, TimeUnit.NANOSECONDS);
 				} catch (InterruptedException e) {
 					Thread.currentThread().interrupt();
 					releaseQuietly(taken);
 					throw new LockAcquisitionTimeoutException(
-							"Interrupted while acquiring object locks");
+							"Interrupted while acquiring object locks", describe(locks));
 				}
 				if (!got) {
 					complete = false;
@@ -183,28 +219,50 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 				taken.add(lock);
 			}
 			if (complete) {
+				if (warned) {
+					LOG.warn("Took {} object lock(s) after {} attempt(s)", locks.size(), attempt);
+				}
 				return;
 			}
 			// Partial holds are what make a cycle persist, so drop them before trying again.
 			releaseQuietly(taken);
-			if (attempt < ACQUIRE_ATTEMPTS) {
-				try {
-					// Both sides backing off in lockstep would re-collide forever. The jitter is
-					// derived from the thread id rather than a random source so a given thread
-					// backs off consistently and the behaviour stays reproducible in tests.
-					Thread.sleep(20L * attempt + (Thread.currentThread().threadId() % 25));
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-					throw new LockAcquisitionTimeoutException(
-							"Interrupted while backing off from object lock contention");
-				}
+			if (System.nanoTime() >= giveUpAt) {
+				break;
+			}
+			if (!warned) {
+				warned = true;
+				// "Busy", not "broken". Only the throw below means the latter.
+				LOG.warn("Could not take {} object lock(s) in {}s; releasing and retrying up to"
+						+ " {}s in total. Objects: {}", locks.size(), ACQUIRE_ATTEMPT_MS / 1000,
+						ACQUIRE_TOTAL_MS / 1000, describe(locks));
+			}
+			try {
+				// Both sides backing off in lockstep would re-collide forever. The jitter is
+				// derived from the thread id rather than a random source so a given thread backs
+				// off consistently and the behaviour stays reproducible in tests.
+				Thread.sleep(20L * Math.min(attempt, 10)
+						+ (Thread.currentThread().threadId() % 25));
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new LockAcquisitionTimeoutException(
+						"Interrupted while backing off from object lock contention",
+						describe(locks));
 			}
 		}
 		throw new LockAcquisitionTimeoutException("Could not take " + locks.size()
-				+ " object lock(s) within " + (ACQUIRE_TIMEOUT_MS * ACQUIRE_ATTEMPTS / 1000)
-				+ "s — another request is holding one of them and may be waiting on this one."
-				+ " Failing this request so both sides can make progress; retry it."
-				+ " See the search-index lock-order endpoint for the pairs involved.");
+				+ " object lock(s) within " + (ACQUIRE_TOTAL_MS / 1000)
+				+ "s — another request holds one of them and is very likely waiting on this one."
+				+ " Failing so both sides can make progress; this request is safe to retry."
+				+ " Objects: " + describe(locks), describe(locks));
+	}
+
+	/** The keys behind a list of locks, so a failure names them instead of counting them. */
+	private static List<String> describe(List<Lock> locks) {
+		List<String> keys = new ArrayList<>(locks.size());
+		for (Lock lock : locks) {
+			keys.add(lock instanceof MonitoredLock ? ((MonitoredLock) lock).key : "?");
+		}
+		return keys;
 	}
 
 	private static void releaseQuietly(List<Lock> taken) {
@@ -221,6 +279,10 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 	public void bulkUnlock(List<Lock> locks) {
 		// Reverse order, so a nested hold unwinds the way it was taken. With distinct stripes the
 		// order does not matter; it does the moment anything nests.
+		//
+		// Safe to call after a FAILED bulkLock: each wrapper knows whether it was actually taken,
+		// so the finally-block every caller writes cannot turn a timeout into an
+		// IllegalMonitorStateException and lose the reason.
 		for (int i = locks.size() - 1; i >= 0; i--) {
 			locks.get(i).unlock();
 		}
@@ -259,8 +321,18 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 	private static final class MonitoredLock implements Lock {
 		private final Lock delegate;
 		private final int stripe;
-		private final String key;
+		final String key;
 		private final String mode;
+		/**
+		 * How many times THIS wrapper actually took the lock.
+		 *
+		 * <p>Callers universally write {@code lock(); try { ... } finally { unlock(); }}. When the
+		 * acquisition fails, that {@code finally} still runs — and unlocking something never taken
+		 * throws {@code IllegalMonitorStateException}, which would replace the timeout with a
+		 * meaningless error and lose the diagnosis. Counting here makes the release tolerant
+		 * without making every caller aware of it.
+		 */
+		private int holds;
 
 		MonitoredLock(Lock delegate, int stripe, String key, String mode) {
 			this.delegate = delegate;
@@ -271,10 +343,46 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 
 		@Override
 		public void lock() {
-			// Reported BEFORE blocking: an upgrade never returns, so a report written afterwards
-			// would never be written at all.
+			// BOUNDED, even for a single lock.
+			//
+			// Ordering a set cannot help a cycle formed by two single acquisitions — a delete
+			// holding a parent and reaching for a child, against a move holding the child and
+			// reaching for the parent. Those never enter bulkLock, so a bound that lived only
+			// there would leave the repository just as capable of stopping. A bound here covers
+			// every acquisition in the system, including the ones nobody has converted yet.
 			LockOrderMonitor.beforeAcquire(stripe, key, mode);
-			delegate.lock();
+			boolean got;
+			long startedAt = System.nanoTime();
+			try {
+				got = delegate.tryLock(SINGLE_LOCK_WARN_MS, TimeUnit.MILLISECONDS);
+				if (!got) {
+					// Not a failure yet — say so, and keep waiting up to the deadlock bound. The
+					// distinction matters: this line means "busy", and only the throw below means
+					// "this was never going to finish".
+					LOG.warn("Waiting over {}s for the {} lock on {} — heavy contention. Will give"
+							+ " up at {}s so a deadlock cannot hold this request forever.",
+							SINGLE_LOCK_WARN_MS / 1000, mode, key,
+							SINGLE_LOCK_DEADLINE_MS / 1000);
+					got = delegate.tryLock(SINGLE_LOCK_DEADLINE_MS - SINGLE_LOCK_WARN_MS,
+							TimeUnit.MILLISECONDS);
+				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new LockAcquisitionTimeoutException(
+						"Interrupted while acquiring " + key, List.of(key));
+			}
+			if (!got) {
+				throw new LockAcquisitionTimeoutException("Could not take the " + mode
+						+ " lock on " + key + " within " + (SINGLE_LOCK_DEADLINE_MS / 1000)
+						+ "s — another request holds it and is very likely waiting on something"
+						+ " this request holds. Failing so both sides can make progress; this"
+						+ " request is safe to retry.", List.of(key));
+			}
+			if (System.nanoTime() - startedAt > SINGLE_LOCK_WARN_MS * 1_000_000L) {
+				LOG.warn("Took the {} lock on {} after {}ms of waiting", mode, key,
+						(System.nanoTime() - startedAt) / 1_000_000L);
+			}
+			holds++;
 			LockOrderMonitor.acquired(stripe, key, mode);
 		}
 
@@ -282,12 +390,14 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 		public void lockInterruptibly() throws InterruptedException {
 			LockOrderMonitor.beforeAcquire(stripe, key, mode);
 			delegate.lockInterruptibly();
+			holds++;
 			LockOrderMonitor.acquired(stripe, key, mode);
 		}
 
 		@Override
 		public boolean tryLock() {
 			if (delegate.tryLock()) {
+				holds++;
 				LockOrderMonitor.acquired(stripe, key, mode);
 				return true;
 			}
@@ -298,6 +408,7 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 		public boolean tryLock(long time, TimeUnit unit) throws InterruptedException {
 			LockOrderMonitor.beforeAcquire(stripe, key, mode);
 			if (delegate.tryLock(time, unit)) {
+				holds++;
 				LockOrderMonitor.acquired(stripe, key, mode);
 				return true;
 			}
@@ -306,6 +417,12 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 
 		@Override
 		public void unlock() {
+			if (holds <= 0) {
+				// Never taken (or already released): a caller's finally-block running after a
+				// failed acquisition. Silently correct — see the `holds` field.
+				return;
+			}
+			holds--;
 			delegate.unlock();
 			LockOrderMonitor.released(stripe);
 		}
