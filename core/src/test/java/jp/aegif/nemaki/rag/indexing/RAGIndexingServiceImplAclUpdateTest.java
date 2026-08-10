@@ -51,6 +51,8 @@ public class RAGIndexingServiceImplAclUpdateTest {
     private static final String REPO_ID = "test-repo";
     private static final String DOC_ID = "doc-123";
     private static final String RAG_ID = RAGIndexingServiceImpl.toRagId(DOC_ID);
+    /** Deliberately different from the version the searcher-read parent carries (1234567L). */
+    private static final long REALTIME_VERSION = 999_888_777L;
 
     @Mock private RAGConfig ragConfig;
     @Mock private EmbeddingService embeddingService;
@@ -73,6 +75,15 @@ public class RAGIndexingServiceImplAclUpdateTest {
         when(embeddingService.isHealthy()).thenReturn(true);
         when(ragConfig.getAclChunkUpdateLimit()).thenReturn(2); // small page size to exercise paging
         when(solrClientProvider.getClient()).thenReturn(solrClient);
+
+        // The block rebuild fences its write on a REALTIME GET of the parent's _version_ (a
+        // searcher-read version lags the soft commit and would 409 spuriously). Absent means
+        // "deleted while we were rebuilding" and the write is abandoned, so these tests have to
+        // say the block is still there.
+        SolrDocument version = new SolrDocument();
+        version.setField("_version_", REALTIME_VERSION);
+        when(solrClient.getById(anyString(), anyString(), any(SolrParams.class)))
+                .thenReturn(version);
 
         // Capture all UpdateRequests flowing through SolrClient.request()
         // (UpdateRequest.process and SolrClient.commit both funnel through request())
@@ -179,7 +190,13 @@ public class RAGIndexingServiceImplAclUpdateTest {
         assertEquals(RAG_ID, parent.getFieldValue("id"));
         assertEquals("document", parent.getFieldValue("doc_type"));
         assertNotNull(parent.getFieldValue("document_vector"), "document vector must be preserved");
-        assertNull(parent.getFieldValue("_version_"), "_version_ must not be copied");
+        // The rebuild fences its write on the parent's version so a concurrent purge on another
+        // replica cannot be undone. The version has to come from the REALTIME GET: the parent
+        // above was read through a searcher, which lags the soft commit, and CASing on that stale
+        // value fails writes that should have succeeded (this was tried once and reverted).
+        assertEquals(REALTIME_VERSION, parent.getFieldValue("_version_"),
+                "the block add must carry the realtime version as its compare-and-swap token,"
+                        + " not the stale one copied off the searcher-read parent");
         assertEquals(newReaders, new ArrayList<>(parent.getFieldValues("readers")),
                 "parent readers must be replaced");
 

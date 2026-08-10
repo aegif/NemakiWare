@@ -103,6 +103,10 @@ class RagPurgeVsAclRebuildRaceTest {
     /** Opened once the rebuild has read the block and is about to assemble its write. */
     private final CountDownLatch rebuildHasRead = new CountDownLatch(1);
 
+    /** Whether the block is currently in the index, as the realtime GET would see it. */
+    private final java.util.concurrent.atomic.AtomicBoolean blockExists =
+            new java.util.concurrent.atomic.AtomicBoolean(true);
+
     @BeforeEach
     void setUp() throws Exception {
         service = new RAGIndexingServiceImpl(ragConfig, embeddingService, chunkingService,
@@ -126,8 +130,21 @@ class RagPurgeVsAclRebuildRaceTest {
 
         when(solrClient.deleteByQuery(anyString(), anyString())).thenAnswer(invocation -> {
             solrOps.add("delete");
+            blockExists.set(false);
             return null;
         });
+
+        // Realtime GET: reads the update log, so unlike the searcher query below it reflects the
+        // delete immediately. That difference is the entire reason the fence uses it.
+        when(solrClient.getById(anyString(), anyString(), any(SolrParams.class)))
+                .thenAnswer(invocation -> {
+                    if (!blockExists.get()) {
+                        return null;
+                    }
+                    SolrDocument v = new SolrDocument();
+                    v.setField("_version_", 1234567890L);
+                    return v;
+                });
         when(solrClient.commit(anyString())).thenAnswer(invocation -> null);
 
         when(solrClient.query(eq("nemaki"), any(SolrParams.class))).thenAnswer(invocation -> {
@@ -174,6 +191,50 @@ class RagPurgeVsAclRebuildRaceTest {
         doc.setField("chunk_vector", Arrays.asList(0.4f, 0.5f));
         doc.addField("readers", "user:bedroom:alice");
         return doc;
+    }
+
+    /** A second service instance: a different JVM's worth of state, sharing one Solr. */
+    private RAGIndexingServiceImpl otherReplica() {
+        return new RAGIndexingServiceImpl(ragConfig, embeddingService, chunkingService,
+                textExtractionService, contentService, aclExpander, solrClientProvider);
+    }
+
+    @Test
+    @DisplayName("別レプリカの purge でも復活しない (ストライプが効かない構成)")
+    void aPurgeOnAnotherReplicaStillCannotBeUndone() throws Exception {
+        // The per-ragId stripe is a field of the service instance, so two instances share none of
+        // it — which is exactly the multi-replica situation. Nothing orders these two operations;
+        // only the realtime-GET version fence stands between them and a resurrected block.
+        RAGIndexingServiceImpl replicaB = otherReplica();
+        List<Throwable> failures = Collections.synchronizedList(new ArrayList<>());
+
+        Thread rebuild = new Thread(() -> {
+            try {
+                service.updateDocumentACL(REPO_ID, DOC_ID, List.of("user:bedroom:bob"));
+            } catch (Throwable t) {
+                failures.add(t);
+            }
+        }, "acl-rebuild-replica-a");
+
+        Thread purge = new Thread(() -> {
+            try {
+                assertTrue(rebuildHasRead.await(5, TimeUnit.SECONDS), "rebuild never read");
+                replicaB.purgeDocumentBlocks(REPO_ID, DOC_ID);
+            } catch (Throwable t) {
+                failures.add(t);
+            }
+        }, "rag-purge-replica-b");
+
+        rebuild.start();
+        purge.start();
+        rebuild.join(15_000);
+        purge.join(15_000);
+
+        assertEquals(List.of(), failures, "neither operation should have thrown");
+        assertEquals(List.of("delete"), solrOps,
+                "the rebuild must NOT have added the block back. Across replicas there is no lock"
+                        + " to stop it, so the realtime-GET fence has to: it sees the block is"
+                        + " gone and abandons the write. Order seen: " + solrOps);
     }
 
     @Test

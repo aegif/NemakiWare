@@ -428,14 +428,31 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
                 // last page fetch and RIGHT BEFORE the block-replacing add, so a worker
                 // whose lease was reclaimed during the (possibly long) rebuild does not
                 // land a stale block.
-                // NOTE: a parent `_version_` CAS on the block add was ATTEMPTED but
-                // reverted — the parent was read via a searcher query (subject to the
-                // commitWithin soft-commit lag), so its `_version_` can be stale and would
-                // spuriously 409 (or CAS on an out-of-date value). A correct RAG block CAS
-                // needs a realtime GET of the parent + a durable ACL epoch; tracked in
-                // CLAUDE.md as the remaining RAG-unification item. Concurrent RAG block
-                // writers are still ordered ONLY by the JVM-local per-ragId lock (single-
-                // replica), NOT across replicas.
+                // CROSS-REPLICA FENCE. The per-ragId lock above is JVM-local, so on more than
+                // one replica it orders nothing: another node can delete this block (a RAG_PURGE
+                // for a revoked reader) between the read above and the add below, and the add —
+                // which re-creates the whole block from the pre-delete snapshot — would silently
+                // put back exactly what the purge removed.
+                //
+                // A `_version_` CAS was attempted here before and reverted, for a good reason:
+                // the parent above comes from a SEARCHER query, which lags the soft commit, so
+                // its `_version_` is often stale and CASing on it produced spurious conflicts.
+                // The fix is not to abandon the CAS but to get an authoritative version — a
+                // REALTIME GET reads the update log and is not subject to that lag.
+                //
+                // Semantics relied on: a positive `_version_` means "the document must exist with
+                // exactly this version". A concurrent block write bumps it; a purge removes the
+                // document entirely. Either way the add is rejected instead of resurrecting.
+                Long fenceVersion = realtimeVersion(solrClient, ragId);
+                if (fenceVersion == null) {
+                    // The block is gone as of the realtime read — a purge won the race while we
+                    // were rebuilding. Re-adding here IS the resurrection, so stop.
+                    log.info("RAG ACL update abandoned for {} (ragId={}): the block no longer"
+                            + " exists — it was deleted while the rebuild was in flight", documentId, ragId);
+                    return;
+                }
+                parentDoc.setField("_version_", fenceVersion);
+
                 if (leaseStillHeld != null && !leaseStillHeld.getAsBoolean()) {
                     throw new RAGIndexingException("Reconciliation lease lost before RAG block add for "
                             + documentId + " — aborting (reclaimer owns the write)");
@@ -456,6 +473,30 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         } catch (Exception e) {
             throw new RAGIndexingException("Failed to update ACL for document: " + documentId, e);
         }
+    }
+
+    /**
+     * The parent block's current {@code _version_} from Solr's REALTIME GET, or {@code null} if it
+     * does not exist right now.
+     *
+     * <p>Realtime GET reads the update log rather than the searcher, so it sees writes that have
+     * not been soft-committed yet. That distinction is the whole point: a searcher-read version is
+     * routinely stale, and CASing on a stale version fails requests that should have succeeded.
+     *
+     * <p>A failure to read is reported as an exception rather than as "absent": treating "we could
+     * not tell" as "it is gone" would abandon a legitimate ACL update, and treating it as "it is
+     * there" would need a version we do not have.
+     */
+    private Long realtimeVersion(SolrClient solrClient, String ragId) throws Exception {
+        org.apache.solr.common.params.ModifiableSolrParams params =
+                new org.apache.solr.common.params.ModifiableSolrParams();
+        params.set("fl", "_version_");
+        SolrDocument doc = solrClient.getById("nemaki", ragId, params);
+        if (doc == null) {
+            return null;
+        }
+        Object v = doc.getFieldValue("_version_");
+        return v instanceof Number ? ((Number) v).longValue() : null;
     }
 
     /**
