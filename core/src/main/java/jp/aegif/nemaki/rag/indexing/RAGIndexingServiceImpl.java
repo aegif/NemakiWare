@@ -386,6 +386,13 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
                     return;
                 }
 
+                // The version the SNAPSHOT below is built from. Compared against the realtime
+                // version just before the write: a CAS token proves nothing about the data it is
+                // attached to unless the two came from the same revision.
+                Object snapshotVersionRaw = parentDocs.get(0).getFieldValue("_version_");
+                Long snapshotVersion = snapshotVersionRaw instanceof Number
+                        ? ((Number) snapshotVersionRaw).longValue() : null;
+
                 // 2. Fetch ALL chunk documents (paged) and convert page-by-page. A partial
                 //    fetch would silently drop the tail chunks on rebuild, so unlike the
                 //    previous partial-update strategy the limit is used as a page size only.
@@ -446,10 +453,29 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
                 Long fenceVersion = realtimeVersion(solrClient, ragId);
                 if (fenceVersion == null) {
                     // The block is gone as of the realtime read — a purge won the race while we
-                    // were rebuilding. Re-adding here IS the resurrection, so stop.
+                    // were rebuilding. Re-adding here IS the resurrection, so stop. No exception:
+                    // there is nothing left to update, and a retry would only find it gone again.
                     log.info("RAG ACL update abandoned for {} (ragId={}): the block no longer"
                             + " exists — it was deleted while the rebuild was in flight", documentId, ragId);
                     return;
+                }
+                if (snapshotVersion == null || !snapshotVersion.equals(fenceVersion)) {
+                    // THE SNAPSHOT IS NOT THE THING BEING FENCED.
+                    //
+                    // Attaching the current version to a snapshot read earlier would launder a
+                    // stale rebuild through a CAS that only proves "nothing changed in the last
+                    // few microseconds". Another replica could have written a newer block between
+                    // the read and the GET; Solr would accept our write, because the version we
+                    // present really is current, and the newer readers and chunks would be
+                    // replaced by older ones. That restores access somebody just lost.
+                    //
+                    // Throw rather than return: the caller records a per-node failure and the
+                    // reconciliation queue re-drives this object once the write we lost to has
+                    // settled. Returning quietly would report an ACL update that never happened.
+                    throw new RAGIndexingException("RAG block for " + documentId + " changed while"
+                            + " its ACL rebuild was in flight (snapshot version " + snapshotVersion
+                            + ", current " + fenceVersion + ") — abandoning the stale rebuild;"
+                            + " reconciliation will re-drive it");
                 }
                 parentDoc.setField("_version_", fenceVersion);
 
@@ -470,6 +496,12 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             } finally {
                 lock.unlock();
             }
+        } catch (RAGIndexingException e) {
+            // Already specific — the fence and the lease guard both throw this with the reason in
+            // the message. Re-wrapping would bury it: several callers log only getMessage(), and
+            // "Failed to update ACL for document: X" tells an operator nothing about whether to
+            // wait for a retry or go looking for a problem.
+            throw e;
         } catch (Exception e) {
             throw new RAGIndexingException("Failed to update ACL for document: " + documentId, e);
         }

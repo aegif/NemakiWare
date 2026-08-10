@@ -107,6 +107,15 @@ class RagPurgeVsAclRebuildRaceTest {
     private final java.util.concurrent.atomic.AtomicBoolean blockExists =
             new java.util.concurrent.atomic.AtomicBoolean(true);
 
+    /** The version the SEARCHER hands out — what the rebuild's snapshot is taken at. */
+    private static final long SEARCHER_VERSION = 1_000L;
+    /** What the realtime GET reports. Moved by a test to stand for another replica's write. */
+    private final java.util.concurrent.atomic.AtomicLong realtimeVersion =
+            new java.util.concurrent.atomic.AtomicLong(SEARCHER_VERSION);
+    /** Set by a test to make the block-replacing add fail the way Solr fails a lost CAS. */
+    private final java.util.concurrent.atomic.AtomicBoolean addConflicts =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
     @BeforeEach
     void setUp() throws Exception {
         service = new RAGIndexingServiceImpl(ragConfig, embeddingService, chunkingService,
@@ -120,6 +129,11 @@ class RagPurgeVsAclRebuildRaceTest {
             SolrRequest<?> req = invocation.getArgument(0);
             if (req instanceof UpdateRequest u) {
                 if (u.getDocuments() != null && !u.getDocuments().isEmpty()) {
+                    if (addConflicts.get()) {
+                        throw new org.apache.solr.common.SolrException(
+                                org.apache.solr.common.SolrException.ErrorCode.CONFLICT,
+                                "version conflict for " + RAG_ID + " expected=1000 actual=-1");
+                    }
                     solrOps.add("add");
                 } else if (u.getDeleteQuery() != null && !u.getDeleteQuery().isEmpty()) {
                     solrOps.add("delete");
@@ -142,7 +156,7 @@ class RagPurgeVsAclRebuildRaceTest {
                         return null;
                     }
                     SolrDocument v = new SolrDocument();
-                    v.setField("_version_", 1234567890L);
+                    v.setField("_version_", realtimeVersion.get());
                     return v;
                 });
         when(solrClient.commit(anyString())).thenAnswer(invocation -> null);
@@ -176,6 +190,7 @@ class RagPurgeVsAclRebuildRaceTest {
         doc.setField("repository_id", REPO_ID);
         doc.setField("object_id", DOC_ID);
         doc.setField("document_vector", Arrays.asList(0.1f, 0.2f));
+        doc.setField("_version_", SEARCHER_VERSION);
         doc.addField("readers", "user:bedroom:alice");
         return doc;
     }
@@ -235,6 +250,39 @@ class RagPurgeVsAclRebuildRaceTest {
                 "the rebuild must NOT have added the block back. Across replicas there is no lock"
                         + " to stop it, so the realtime-GET fence has to: it sees the block is"
                         + " gone and abandons the write. Order seen: " + solrOps);
+    }
+
+    @Test
+    @DisplayName("別レプリカが先に書いていたら、古い snapshot を新しい版で書き込まない")
+    void aSnapshotIsNeverLaunderedThroughACurrentVersionToken() {
+        // Replica B wrote a newer block after this rebuild took its snapshot. The realtime GET
+        // now reports B's version — attaching it to OUR older snapshot would make Solr accept the
+        // write (the token really is current) and replace B's readers and chunks with stale ones.
+        // A CAS proves nothing unless the token and the data come from the same revision.
+        realtimeVersion.set(SEARCHER_VERSION + 1);
+
+        RAGIndexingException thrown = org.junit.jupiter.api.Assertions.assertThrows(
+                RAGIndexingException.class,
+                () -> service.updateDocumentACL(REPO_ID, DOC_ID, List.of("user:bedroom:bob")));
+
+        assertTrue(solrOps.isEmpty(), "nothing may be written from a stale snapshot: " + solrOps);
+        assertTrue(String.valueOf(thrown.getMessage()).contains("changed while"),
+                "the failure must say why, so reconciliation's retry is not a mystery: "
+                        + thrown.getMessage());
+    }
+
+    @Test
+    @DisplayName("Solr が CAS を弾いたら成功と報告しない")
+    void aLostCasIsReportedAsAFailure() {
+        // The purge can also land AFTER the realtime GET and before the add. Solr rejects the add
+        // with a 409; swallowing that would report an ACL update that never happened, and nothing
+        // would re-drive the object.
+        addConflicts.set(true);
+
+        org.junit.jupiter.api.Assertions.assertThrows(RAGIndexingException.class,
+                () -> service.updateDocumentACL(REPO_ID, DOC_ID, List.of("user:bedroom:bob")));
+
+        assertTrue(solrOps.isEmpty(), "the conflicting add must not be recorded as done");
     }
 
     @Test

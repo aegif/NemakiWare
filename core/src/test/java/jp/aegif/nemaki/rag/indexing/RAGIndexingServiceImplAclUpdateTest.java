@@ -51,8 +51,9 @@ public class RAGIndexingServiceImplAclUpdateTest {
     private static final String REPO_ID = "test-repo";
     private static final String DOC_ID = "doc-123";
     private static final String RAG_ID = RAGIndexingServiceImpl.toRagId(DOC_ID);
-    /** Deliberately different from the version the searcher-read parent carries (1234567L). */
-    private static final long REALTIME_VERSION = 999_888_777L;
+    /** MUST equal the version the searcher-read parent carries: a mismatch means the snapshot is
+     *  stale and the rebuild is abandoned rather than written under a borrowed token. */
+    private static final long REALTIME_VERSION = 1234567L;
 
     @Mock private RAGConfig ragConfig;
     @Mock private EmbeddingService embeddingService;
@@ -195,8 +196,10 @@ public class RAGIndexingServiceImplAclUpdateTest {
         // above was read through a searcher, which lags the soft commit, and CASing on that stale
         // value fails writes that should have succeeded (this was tried once and reverted).
         assertEquals(REALTIME_VERSION, parent.getFieldValue("_version_"),
-                "the block add must carry the realtime version as its compare-and-swap token,"
-                        + " not the stale one copied off the searcher-read parent");
+                "the block add must carry the version as its compare-and-swap token — and the"
+                        + " code only gets here because the realtime version MATCHED the version"
+                        + " the snapshot was read at, so the token and the data are the same"
+                        + " revision");
         assertEquals(newReaders, new ArrayList<>(parent.getFieldValues("readers")),
                 "parent readers must be replaced");
 
