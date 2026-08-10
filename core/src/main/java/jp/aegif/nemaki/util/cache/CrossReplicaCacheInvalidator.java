@@ -163,16 +163,31 @@ public class CrossReplicaCacheInvalidator {
 
     /** One poll cycle. Package-visible so a test can drive it deterministically. */
     void pollOnce() {
-        for (String repositoryId : store.repositoryIds()) {
-            try {
-                pollRepository(repositoryId);
-            } catch (Exception e) {
-                // Never let one repository's failure stop the others, and never let a transient
-                // CouchDB blip kill the scheduled task — a dead poller degrades silently back to
-                // the unbounded behaviour this exists to remove.
-                logger.warn("Cache generation poll failed for {}: {}", repositoryId, e.getMessage());
+        // The OUTER try matters as much as the inner one. scheduleWithFixedDelay cancels the task
+        // for good if a run throws, so an exception from store.repositoryIds() itself — outside
+        // any per-repository handler — would silently end cross-replica invalidation for the
+        // lifetime of the process, with no error after the first and nothing to notice it by.
+        try {
+            for (String repositoryId : store.repositoryIds()) {
+                try {
+                    pollRepository(repositoryId);
+                } catch (Exception e) {
+                    // One repository's failure must not stop the others.
+                    logger.warn("Cache generation poll failed for {}: {}", repositoryId, e.getMessage());
+                }
             }
+            consecutiveFailures = 0;
+        } catch (Exception | StackOverflowError e) {
+            long n = ++consecutiveFailures;
+            logger.warn("Cache generation poll cycle failed ({} in a row): {}", n, e.getMessage());
         }
+    }
+
+    /** Consecutive whole-cycle failures; surfaced so a wedged poller is visible. */
+    private volatile long consecutiveFailures = 0;
+
+    public long getConsecutiveFailures() {
+        return consecutiveFailures;
     }
 
     private void pollRepository(String repositoryId) {
@@ -182,7 +197,14 @@ public class CrossReplicaCacheInvalidator {
             return;
         }
 
-        if (absorb(seenAcl, repositoryId, remote.aclByNode)) {
+        // CLEAR FIRST, RECORD AFTER — in that order, and only on success.
+        //
+        // Recording before clearing looks harmless because the clear "cannot fail", but if it
+        // does (or fails part-way) the next poll sees no movement and the eviction is never
+        // retried: the replica keeps serving the stale authorization decisions for ever, and the
+        // only trace is one warning. Acknowledging work that did not happen is the one mistake a
+        // convergence mechanism must not make.
+        if (movedFrom(seenAcl, repositoryId, remote.aclByNode)) {
             CacheService cache = cachePool.get(repositoryId);
             cache.getAclCache().removeAll();
             cache.getContentCache().removeAll();
@@ -190,17 +212,26 @@ public class CrossReplicaCacheInvalidator {
             // objectDataCache behind would keep compiled CMIS objects — including their ACLs —
             // memoised after the other two were dropped.
             cache.getObjectDataCache().removeAll();
+            record(seenAcl, repositoryId, remote.aclByNode);
             logger.info("ACL change detected on another replica — dropped the effective-ACL,"
                     + " content and object-data caches for {}", repositoryId);
         }
 
-        if (absorb(seenPrincipal, repositoryId, remote.principalByNode)) {
+        if (movedFrom(seenPrincipal, repositoryId, remote.principalByNode)) {
             CacheService cache = cachePool.get(repositoryId);
             cache.getUserItemCache().removeAll();
             cache.getGroupItemCache().removeAll();
             cache.getJoinedGroupCache().removeAll();
-            logger.info("User/group change detected on another replica — dropped the principal"
-                    + " caches for {}", repositoryId);
+            // A UserItem / GroupItem is also a Content: the local update path refreshes it in
+            // contentCache and removes it from objectDataCache, and deletion removes it from both.
+            // Without these two a remote principal change leaves the OLD principal object — or a
+            // deleted one — reachable by object id here. Principal writes are rare, so paying a
+            // repository-wide content clear for them is cheap.
+            cache.getContentCache().removeAll();
+            cache.getObjectDataCache().removeAll();
+            record(seenPrincipal, repositoryId, remote.principalByNode);
+            logger.info("User/group change detected on another replica — dropped the principal,"
+                    + " content and object-data caches for {}", repositoryId);
         }
     }
 
@@ -211,21 +242,32 @@ public class CrossReplicaCacheInvalidator {
      * node did before it started looking, so the safe reading of "unknown" is "something changed".
      * That costs one clear per newly-observed replica.
      */
-    private static boolean absorb(Map<String, Map<String, Long>> state, String repositoryId,
+    private static boolean movedFrom(Map<String, Map<String, Long>> state, String repositoryId,
             Map<String, Long> current) {
         Map<String, Long> known = state.computeIfAbsent(repositoryId,
                 k -> new ConcurrentHashMap<>());
-        boolean moved = false;
         for (Map.Entry<String, Long> e : current.entrySet()) {
             Long previous = known.get(e.getKey());
             if (previous == null || !previous.equals(e.getValue())) {
-                moved = true;
+                return true;
             }
-            known.put(e.getKey(), e.getValue());
         }
-        // A node that disappeared (decommissioned replica) is dropped without clearing: whatever
-        // it changed was already accounted for while it was publishing.
+        return false;
+    }
+
+    /**
+     * Marks the values as accounted for. Called ONLY after the corresponding caches were actually
+     * cleared, so a failed clear leaves the movement outstanding and the next poll retries it.
+     *
+     * <p>Nodes absent from {@code current} are forgotten rather than kept: a decommissioned
+     * replica's last value has already been acted on, and forgetting it means that if the same id
+     * ever reappears it is treated as new — which errs towards an extra clear, not a missed one.
+     */
+    private static void record(Map<String, Map<String, Long>> state, String repositoryId,
+            Map<String, Long> current) {
+        Map<String, Long> known = state.computeIfAbsent(repositoryId,
+                k -> new ConcurrentHashMap<>());
+        known.putAll(current);
         known.keySet().retainAll(new LinkedHashMap<>(current).keySet());
-        return moved;
     }
 }

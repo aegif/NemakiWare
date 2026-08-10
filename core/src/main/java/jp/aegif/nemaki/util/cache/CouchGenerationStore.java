@@ -58,6 +58,12 @@ public class CouchGenerationStore implements CrossReplicaCacheInvalidator.Genera
     static final String DOC_TYPE = "cacheGeneration";
     private static final String DOC_ID = "cache-generation";
 
+    /**
+     * How long a replica may go without publishing before its entry is removed. Comfortably more
+     * than the poll interval, so a temporarily unreachable replica is not evicted mid-hiccup.
+     */
+    private static final long STALE_REPLICA_MS = 60 * 60 * 1000L;
+
     private CloudantClientPool connectorPool;
     private RepositoryInfoMap repositoryInfoMap;
 
@@ -102,25 +108,91 @@ public class CouchGenerationStore implements CrossReplicaCacheInvalidator.Genera
                 continue;
             }
             Map<String, Object> entry = (Map<String, Object>) e.getValue();
-            aclByNode.put(e.getKey(), nonNegative(entry.get("acl")));
-            principalByNode.put(e.getKey(), nonNegative(entry.get("principal")));
+            // Omit the node entirely on a bad value rather than substituting 0. Substituting
+            // would read as "that replica has done nothing", which is the one interpretation
+            // that produces no invalidation; omitting makes it look departed, so its next valid
+            // publish is treated as new and clears. Fail towards an extra clear.
+            Long acl = generationOrNull(entry.get("acl"));
+            Long principal = generationOrNull(entry.get("principal"));
+            if (acl != null) {
+                aclByNode.put(e.getKey(), acl);
+            }
+            if (principal != null) {
+                principalByNode.put(e.getKey(), principal);
+            }
         }
 
+        // Publish, and RETRY ONCE against a re-read revision.
+        //
+        // "A lost publish only costs one poll" was not true as written. update(Map) swallows the
+        // conflict and returns null, so the catch below never saw a failure; and with fixed-delay
+        // pollers the same replica can lose the revision race every cycle, which makes the delay
+        // unbounded rather than one poll. One retry against a fresh revision breaks that pattern,
+        // and a persistent failure is reported at WARN so a replica whose changes are never
+        // reaching the others is visible instead of silent.
+        // Prune BEFORE writing. Pruning the in-memory map afterwards changes nothing that is
+        // stored — the write has already happened — so the entries survive every cycle. (Which is
+        // exactly what the first version of this did, and what checking the document revealed.)
+        pruneStaleReplicas(replicas);
+        if (!publish(client, doc, replicas, localAcl, localPrincipal)) {
+            Map<String, Object> fresh = readDoc(client);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> freshReplicas = fresh.get("replicas") instanceof Map
+                    ? new LinkedHashMap<>((Map<String, Object>) fresh.get("replicas"))
+                    : new LinkedHashMap<>();
+            pruneStaleReplicas(freshReplicas);
+            if (!publish(client, fresh, freshReplicas, localAcl, localPrincipal)) {
+                logger.warn("Could not publish cache generations for {} — this replica's ACL and"
+                        + " principal changes are not yet visible to the others", repositoryId);
+            }
+        }
+        return new CrossReplicaCacheInvalidator.ReplicaGenerations(aclByNode, principalByNode);
+    }
+
+    /** @return true when the write landed. update(Map) returns null on any failure. */
+    private boolean publish(CloudantClientWrapper client, Map<String, Object> doc,
+            Map<String, Object> replicas, long localAcl, long localPrincipal) {
         Map<String, Object> mine = new LinkedHashMap<>();
         mine.put("acl", localAcl);
         mine.put("principal", localPrincipal);
+        mine.put("heartbeatMs", System.currentTimeMillis());
         replicas.put(nodeId, mine);
         doc.put("_id", DOC_ID);
         doc.put("type", DOC_TYPE);
         doc.put("replicas", replicas);
         try {
-            client.update(doc);
+            return client.update(doc) != null;
         } catch (Exception e) {
-            // Best effort by design — see the class comment. A lost publish costs one poll.
-            logger.debug("Cache generation publish lost the revision race for {}: {}",
-                    repositoryId, e.getMessage());
+            logger.debug("Cache generation publish failed: {}", e.getMessage());
+            return false;
         }
-        return new CrossReplicaCacheInvalidator.ReplicaGenerations(aclByNode, principalByNode);
+    }
+
+    /**
+     * Drops entries whose replica has not published for a long time.
+     *
+     * <p>The node id is a fresh UUID per process, so without this every restart adds an entry
+     * that is never removed. That is not only untidy: the document is read and rewritten on every
+     * poll by every replica, so an ever-growing map eventually makes those writes fail on size
+     * limits — at which point invalidation stops propagating altogether.
+     *
+     * <p>Entries with no heartbeat are pruned too. They can only be leftovers from a build that
+     * did not publish one, and every live replica republishes within a poll interval, so the
+     * worst case is that a still-running replica loses its entry and is then re-observed as a new
+     * node — one extra cache clear during the upgrade, in exchange for not carrying dead entries
+     * for the life of the deployment.
+     */
+    @SuppressWarnings("unchecked")
+    private void pruneStaleReplicas(Map<String, Object> replicas) {
+        long cutoff = System.currentTimeMillis() - STALE_REPLICA_MS;
+        replicas.entrySet().removeIf(e -> {
+            if (nodeId.equals(e.getKey()) || !(e.getValue() instanceof Map)) {
+                return false;
+            }
+            Object hb = ((Map<String, Object>) e.getValue()).get("heartbeatMs");
+            Long at = generationOrNull(hb);
+            return at == null || at < cutoff;
+        });
     }
 
     private Map<String, Object> readDoc(CloudantClientWrapper client) {
@@ -141,21 +213,21 @@ public class CouchGenerationStore implements CrossReplicaCacheInvalidator.Genera
     }
 
     /**
-     * A generation value, or 0 when it is absent or unusable.
+     * A generation value, or {@code null} when it is absent or unusable.
      *
-     * <p>An unusable value is logged rather than swallowed: it means some replica is publishing
-     * garbage, and the visible symptom would otherwise be "invalidation quietly stopped working".
+     * <p>Unusable is logged rather than swallowed: it means some replica is publishing garbage,
+     * and the visible symptom would otherwise be "invalidation quietly stopped working".
      */
-    private static long nonNegative(Object value) {
+    private static Long generationOrNull(Object value) {
         if (value == null) {
-            return 0L;
+            return null;
         }
         try {
             long v = new java.math.BigDecimal(value.toString()).longValueExact();
-            return v < 0 ? 0L : v;
+            return v < 0 ? null : v;
         } catch (ArithmeticException | NumberFormatException e) {
             logger.warn("Ignoring a non-integral cache generation value: {}", value);
-            return 0L;
+            return null;
         }
     }
 }

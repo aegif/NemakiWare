@@ -55,12 +55,15 @@ class CrossReplicaCacheInvalidatorTest {
     private AtomicInteger groupCleared;
     private AtomicInteger joinedCleared;
     private NemakiCachePool pool;
+    private final java.util.concurrent.atomic.AtomicBoolean failNextAclClear =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
 
     @SuppressWarnings("unchecked")
     @BeforeEach
     void setUp() {
         AclCacheGeneration.resetForTests();
         PrincipalGeneration.resetForTests();
+        failNextAclClear.set(false);
         aclCleared = new AtomicInteger();
         contentCleared = new AtomicInteger();
         objectDataCleared = new AtomicInteger();
@@ -71,7 +74,12 @@ class CrossReplicaCacheInvalidatorTest {
         NemakiCache<Acl> aclCache = mock(NemakiCache.class);
         org.mockito.Mockito.doAnswer(i -> aclCleared.incrementAndGet()).when(aclCache).removeAll();
         NemakiCache<Content> contentCache = mock(NemakiCache.class);
-        org.mockito.Mockito.doAnswer(i -> contentCleared.incrementAndGet()).when(contentCache).removeAll();
+        org.mockito.Mockito.doAnswer(i -> {
+            if (failNextAclClear.get()) {
+                throw new IllegalStateException("ehcache unavailable");
+            }
+            return contentCleared.incrementAndGet();
+        }).when(contentCache).removeAll();
         NemakiCache<ObjectData> objectDataCache = mock(NemakiCache.class);
         org.mockito.Mockito.doAnswer(i -> objectDataCleared.incrementAndGet()).when(objectDataCache).removeAll();
         NemakiCache<UserItem> userCache = mock(NemakiCache.class);
@@ -221,6 +229,71 @@ class CrossReplicaCacheInvalidatorTest {
         assertEquals(2, aclCleared.get(),
                 "a decrease is still a change. Requiring an increase would make everything that"
                         + " replica does after a restart invisible until it passed its old count");
+    }
+
+    /**
+     * The mistake this pins is the one a convergence mechanism must never make: acknowledging
+     * work that did not happen. Recording the remote values before clearing looks harmless
+     * because a cache clear "cannot fail" — but if it does, the next poll sees no movement, the
+     * eviction is never retried, and the replica serves stale authorization decisions for ever.
+     */
+    @Test
+    @DisplayName("clear が失敗したら記録せず、次の poll で再試行する")
+    void aFailedClearIsRetriedRatherThanAcknowledged() {
+        FakeStore store = new FakeStore();
+        CrossReplicaCacheInvalidator inv = new CrossReplicaCacheInvalidator(pool, store);
+
+        failNextAclClear.set(true);
+        store.acl.put(OTHER, 9L);
+        try {
+            inv.pollOnce();
+        } catch (Exception ignored) {
+            // pollOnce swallows per-repository failures; either way the state must not advance.
+        }
+        assertEquals(0, contentCleared.get(), "the clear did not complete");
+
+        failNextAclClear.set(false);
+        inv.pollOnce();
+        assertEquals(1, contentCleared.get(),
+                "the outstanding movement must still be there on the next poll — recording it"
+                        + " before the clear succeeded would have lost it permanently");
+    }
+
+    @Test
+    @DisplayName("principal 変更で content/objectData も落とす (principal も Content なので)")
+    void aPrincipalChangeAlsoDropsTheContentCaches() {
+        FakeStore store = new FakeStore();
+        CrossReplicaCacheInvalidator inv = new CrossReplicaCacheInvalidator(pool, store);
+
+        store.principal.put(OTHER, 2L);
+        inv.pollOnce();
+        assertEquals(1, contentCleared.get(),
+                "a UserItem/GroupItem is also a Content; the local update path refreshes it in"
+                        + " contentCache, so a remote change must drop it here");
+        assertEquals(1, objectDataCleared.get());
+    }
+
+    @Test
+    @DisplayName("repositoryIds() が投げてもポーラは死なない (fixed-delay は例外でタスクを止める)")
+    void aFailureListingRepositoriesDoesNotKillThePoller() {
+        CrossReplicaCacheInvalidator inv = new CrossReplicaCacheInvalidator(pool,
+                new CrossReplicaCacheInvalidator.GenerationStore() {
+                    @Override
+                    public CrossReplicaCacheInvalidator.ReplicaGenerations publishAndRead(String r,
+                            long a, long p) {
+                        return null;
+                    }
+
+                    @Override
+                    public Collection<String> repositoryIds() {
+                        throw new IllegalStateException("repository map not ready");
+                    }
+                });
+        inv.pollOnce();
+        inv.pollOnce();
+        assertEquals(2, inv.getConsecutiveFailures(),
+                "the cycle must survive and count the failures — scheduleWithFixedDelay cancels"
+                        + " the task for good if a run throws, and nothing would notice");
     }
 
     @Test

@@ -789,6 +789,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             try {
                 content.setAclInherited(false);
                 contentService.update(callContext, repositoryId, content);
+                // This path writes an ACL without going through AclService, so nothing else
+                // advances the cache generation — and other replicas would keep serving the
+                // pre-import permissions until their entries expired. Bumping here rather than
+                // in the DAO keeps ordinary content updates from clearing every replica.
+                jp.aegif.nemaki.util.cache.AclCacheGeneration.advance(repositoryId);
                 logger.info("ACL inheritance disabled for imported document {}", objectId);
             } catch (Exception e) {
                 logger.warn("Failed to break ACL inheritance for {}: {}", objectId, e.getMessage());
@@ -860,6 +865,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 acl.setLocalAces(localAces);
                 content.setAcl(acl);
                 contentService.update(callContext, repositoryId, content);
+                // This path writes an ACL without going through AclService, so nothing else
+                // advances the cache generation — and other replicas would keep serving the
+                // pre-import permissions until their entries expired. Bumping here rather than
+                // in the DAO keeps ordinary content updates from clearing every replica.
+                jp.aegif.nemaki.util.cache.AclCacheGeneration.advance(repositoryId);
                 logger.info("Applied {} source ACEs to imported document {}", localAces.size(), objectId);
             }
         } catch (Exception e) {
