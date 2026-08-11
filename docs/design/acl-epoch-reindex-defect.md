@@ -6,7 +6,15 @@
 **要旨**: `POST /search-engine/reindex/folder/{folderId}` は対象サブツリーの
 `effective_acl_epoch` を**消します**。`readers` は再計算されるので検索の認可自体は
 壊れませんが、**そのサブツリーは ACL-epoch fence の外に出ます**。
-verdict は検出しますが (§2-1)、**警告は出ず、運用手順にも組み込まれていません**。
+そして **自動では戻りません** (§5 で確定)。
+
+**現状 (2026-08-12)**:
+
+- verdict は検出します (§2-1)。
+- 応答に警告を出すようにしました (`note`)。手順も「必須」に格上げ済み
+  (`.claude/skills/acl-epoch/SKILL.md`)。初出時は**警告なし・手順にも未組込**でした。
+- **根本修正 (batch 経路を fenced writer に通す) は未了**です。上記は緩和であって
+  修正ではありません — reindex を打つたびに stamp を打ち直す運用が要ります。
 
 ---
 

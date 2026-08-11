@@ -365,11 +365,16 @@ public class UserGroupDaoDelegate {
 		Set<String> seen = new HashSet<String>();
 		int rows = 0;
 		for (ViewResultRow row : result.getRows()) {
-			if (row.getValue() == null) {
-				continue;
-			}
 			rows++;
 			Object value = row.getValue();
+			// A null value is treated as a malformed row, not skipped. Skipping meant a result
+			// set of all-null rows read as "no parents" and succeeded — the same
+			// indistinguishability between "nothing references it" and "could not tell" that
+			// every other branch here refuses.
+			if (value == null) {
+				throw new CmisRuntimeException(
+						"A reverse-lookup row for " + subject + " has a null value");
+			}
 			if (!(value instanceof Map)) {
 				throw new CmisRuntimeException("Unexpected row shape in the reverse-lookup view"
 						+ " for " + subject + ": " + value.getClass().getName());

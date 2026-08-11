@@ -537,7 +537,14 @@ public class AclEffectiveEpochService {
     public Map<String, Object> quarantineMetrics() {
         return Map.of(
                 "quarantineBlockedTasks", quarantineBlockedCount.get(),
-                "quarantineBlockingIds", List.copyOf(quarantineBlockersSeen));
+                "quarantineBlockingIds", List.copyOf(quarantineBlockersSeen),
+                // Uncached CouchDB document reads performed by the authoritative walk since
+                // start-up. The walk is deliberately cache-bypassing (§4.6), so this is the
+                // floor cost of fencing, and it is the number ledger item A3 is about: the
+                // claim there is 2x(1+ancestors) per node, from snapshot and revalidation each
+                // reading the whole ancestor chain. Divide the delta across a propagation by
+                // the nodes touched to check that against the actual shape of a repository.
+                "authoritativeReads", authoritativeReadCount.get());
     }
 
     /** Forget a repaired blocker, so a LATER re-quarantine of the same document logs again. */
@@ -546,6 +553,8 @@ public class AclEffectiveEpochService {
     }
 
     private final java.util.concurrent.atomic.AtomicLong quarantineBlockedCount =
+            new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong authoritativeReadCount =
             new java.util.concurrent.atomic.AtomicLong();
     private final Set<String> quarantineBlockersSeen =
             java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -1043,6 +1052,12 @@ public class AclEffectiveEpochService {
      * (a read error must never be mistaken for "deleted").
      */
     private Document read(String repositoryId, String docId, String what) {
+        // Counted so the cost of the authoritative walk can be measured directly. It cannot be
+        // measured from CouchDB's server-wide database_reads: on an idle dev stack that counter
+        // still moves at ~6 reads/s from schedulers, and one ACL propagation over 26 nodes is
+        // ~185 reads spread across a 300s settle — the background swamps the signal and the
+        // subtraction goes negative. A counter on the exact call site has no such problem.
+        authoritativeReadCount.incrementAndGet();
         CloudantClientWrapper client = contentClient(repositoryId);
         try {
             return client.getClient().getDocument(new GetDocumentOptions.Builder()
