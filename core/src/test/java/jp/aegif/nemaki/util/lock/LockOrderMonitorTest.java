@@ -17,6 +17,7 @@
 package jp.aegif.nemaki.util.lock;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -87,8 +88,12 @@ class LockOrderMonitorTest {
                 read.unlock();
             }
         }, "upgrade-attempt");
+        t.setDaemon(true); // must not pin the suite for the full bound if fast-fail regresses
         t.start();
         t.join(10_000);
+        assertFalse(t.isAlive(),
+                "the refusal is immediate; a thread still alive here means the acquisition is"
+                        + " WAITING, i.e. fast-fail has regressed to waiting out the bound");
 
         assertTrue(outcome.get() instanceof LockAcquisitionTimeoutException,
                 "the certain self-deadlock must be refused with the retryable lock exception,"
@@ -146,8 +151,10 @@ class LockOrderMonitorTest {
                 read.unlock();
             }
         }, "downgrade-then-upgrade");
+        t.setDaemon(true);
         t.start();
         t.join(10_000);
+        assertFalse(t.isAlive(), "the refusal is immediate — see the upgrade test");
 
         assertTrue(outcome.get() instanceof LockAcquisitionTimeoutException,
                 "with only the read left held this IS a certain self-deadlock and must be"

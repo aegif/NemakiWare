@@ -145,6 +145,34 @@ class ParentLockRetryTest {
     }
 
     @Test
+    @DisplayName("ロック取得後の再読で例外が出てもロックはリークしない")
+    void anExceptionDuringTheLockedRereadReleasesTheLocks() {
+        Folder parent = folder("parent");
+        // Preview succeeds; the locked re-read throws (a transient CouchDB failure). Without the
+        // release, the child's and parent's READ holds would stay attached to an unwound thread
+        // forever — one backend hiccup becoming indefinite write failure on those stripes, which
+        // is precisely the unbounded outcome this whole area exists to remove.
+        when(contentService.getParent(eq("bedroom"), eq("child")))
+                .thenReturn(parent)
+                .thenThrow(new IllegalStateException("couchdb hiccup"));
+
+        assertThrows(IllegalStateException.class,
+                () -> service.lockObjectAndCurrentParent("bedroom", "child"),
+                "the backend failure itself must propagate, not be swallowed");
+
+        List<Lock> writeSet = lockService.orderedLocks("bedroom",
+                List.of("child", "parent"), true);
+        for (Lock l : writeSet) {
+            assertTrue(l.tryLock(),
+                    "a read hold leaked through the exception path — writes to this stripe would"
+                            + " now fail until restart");
+        }
+        for (int i = writeSet.size() - 1; i >= 0; i--) {
+            writeSet.get(i).unlock();
+        }
+    }
+
+    @Test
     @DisplayName("収束した hold の locks は解放後に他者が取得できる")
     void heldLocksAreReleasable() {
         Folder parent = folder("parent");

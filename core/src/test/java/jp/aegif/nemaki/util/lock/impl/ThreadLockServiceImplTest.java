@@ -131,7 +131,11 @@ class ThreadLockServiceImplTest {
     @DisplayName("bulkLock はタイムアウト時に部分取得を全解放してから投げる")
     void aBulkTimeoutReleasesEverythingItTook() throws Exception {
         String free = "obj-free";
-        String contended = distinctStripeId(fast, free, "obj-contended");
+        // The contended stripe must sort AFTER the free one: bulkLock acquires in stripe order,
+        // so only that arrangement makes it actually HOLD the free lock while blocking on the
+        // contended one. The other way round it blocks first, holds nothing, and the
+        // release-everything assertion passes without testing a release.
+        String contended = higherStripeId(fast, free, "obj-contended");
         CountDownLatch release = holdWriteElsewhere(fast, contended);
         try {
             List<Lock> set = fast.orderedLocks("bedroom", List.of(free, contended), true);
@@ -275,15 +279,15 @@ class ThreadLockServiceImplTest {
         return out;
     }
 
-    /** An id (prefixed) whose stripe differs from {@code other}'s. */
-    private static String distinctStripeId(ThreadLockServiceImpl svc, String other, String prefix) {
+    /** An id (prefixed) whose stripe is strictly GREATER than {@code other}'s. */
+    private static String higherStripeId(ThreadLockServiceImpl svc, String other, String prefix) {
         int target = svc.stripeOf("bedroom", other);
-        for (int i = 0; i < 10_000; i++) {
+        for (int i = 0; i < 100_000; i++) {
             String candidate = prefix + i;
-            if (svc.stripeOf("bedroom", candidate) != target) {
+            if (svc.stripeOf("bedroom", candidate) > target) {
                 return candidate;
             }
         }
-        throw new IllegalStateException("could not find an id on a different stripe");
+        throw new IllegalStateException("could not find an id on a higher stripe");
     }
 }

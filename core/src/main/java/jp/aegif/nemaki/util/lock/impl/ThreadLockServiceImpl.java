@@ -72,6 +72,8 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 	/** At most one contention WARN per stripe per this interval — hot stripes must not flood. */
 	private static final long WARN_INTERVAL_MS = 60_000L;
 	private static final AtomicLongArray WARN_STAMPS = new AtomicLongArray(STRIPES);
+	private static final java.util.concurrent.atomic.AtomicLong NAMED_WARN_STAMP =
+			new java.util.concurrent.atomic.AtomicLong();
 
 	private final ReadWriteLock[] locks = new ReadWriteLock[STRIPES];
 
@@ -139,9 +141,20 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 		return repositoryId + "/" + objectId;
 	}
 
+	/**
+	 * The named locks that exist. A closed list, not a pattern.
+	 *
+	 * <p>Named-lock status must not be reachable from request data: object ids arrive from
+	 * clients, they are locked BEFORE existence validation, and a pattern match would let any
+	 * request minting {@code __x__} ids grow the named-lock map without bound — a permanent
+	 * allocation per distinct id. A client-supplied id that merely looks internal hashes into the
+	 * stripes like every other id.
+	 */
+	private static final java.util.Set<String> NAMED_LOCK_KEYS = java.util.Set.of(
+			"__folder-hierarchy__");
+
 	private static boolean isNamedKey(String objectId) {
-		return objectId != null && objectId.length() > 4
-				&& objectId.startsWith("__") && objectId.endsWith("__");
+		return objectId != null && NAMED_LOCK_KEYS.contains(objectId);
 	}
 
 	@Override
@@ -290,12 +303,18 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 						+ " {}s in total. Objects: {}", locks.size(), acquireAttemptMs / 1000,
 						acquireTotalMs / 1000, describe(locks));
 			}
+			long backoffMs = 20L * Math.min(attempt, 10)
+					+ (Thread.currentThread().threadId() % 25);
+			if (giveUpAt - System.nanoTime() <= backoffMs * 1_000_000L) {
+				// Sleeping through the total deadline would overshoot the documented bound; the
+				// bound is only worth documenting if it is the real one.
+				break;
+			}
 			try {
 				// Both sides backing off in lockstep would re-collide forever. The jitter is
 				// derived from the thread id rather than a random source so a given thread backs
 				// off consistently and the behaviour stays reproducible in tests.
-				Thread.sleep(20L * Math.min(attempt, 10)
-						+ (Thread.currentThread().threadId() % 25));
+				Thread.sleep(backoffMs);
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 				throw new LockAcquisitionTimeoutException(
@@ -472,8 +491,15 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 		 * hundred identical lines say less than one.
 		 */
 		private void warnRateLimited(String message) {
+			// Named locks share one stamp: the locks are few but their QUEUES are not — the
+			// hierarchy lock can have hundreds of waiters crossing the threshold together, which
+			// is exactly the flood the per-stripe stamps exist to prevent.
 			if (stripe >= STRIPES) {
-				LOG.warn(message); // named locks are few; no need to rate-limit
+				long now = System.currentTimeMillis();
+				long prev = NAMED_WARN_STAMP.get();
+				if (now - prev >= WARN_INTERVAL_MS && NAMED_WARN_STAMP.compareAndSet(prev, now)) {
+					LOG.warn(message);
+				}
 				return;
 			}
 			long now = System.currentTimeMillis();
@@ -488,6 +514,12 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 			// Same bound as lock(): an unbounded acquisition path on the shared lock type would
 			// quietly re-admit the permanent-deadlock failure mode for whoever calls it next,
 			// which is exactly how the last unbounded path was found — by a reviewer, not a test.
+			//
+			// Interruption first: the method's contract is to answer an already-pending interrupt
+			// with InterruptedException, and the upgrade refusal below must not preempt that.
+			if (Thread.interrupted()) {
+				throw new InterruptedException();
+			}
 			if (LockOrderMonitor.beforeAcquire(stripe, key, mode)) {
 				throw refuseUpgrade();
 			}

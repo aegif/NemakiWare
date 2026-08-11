@@ -162,10 +162,24 @@ public class NavigationServiceImpl implements NavigationService {
 							: java.util.List.of(objectId, preview.getId()),
 					false);
 			threadLockService.bulkLock(locks);
-			Folder actual = contentService.getParent(repositoryId, objectId);
-			boolean sameParent = (preview == null && actual == null)
-					|| (preview != null && actual != null
-							&& preview.getId().equals(actual.getId()));
+			boolean sameParent;
+			Folder actual;
+			try {
+				// The guard spans everything between acquiring and the decision — the re-read
+				// hits CouchDB and can fail like any read, and even the comparison can throw on
+				// malformed data (a folder with a null id). Without the release, one transient
+				// error here would leave the child's and parent's READ holds attached to a thread
+				// that has already unwound — permanently, which is indefinite write failure on
+				// those stripes. Exactly the unbounded outcome this whole area exists to remove,
+				// arriving through its own helper.
+				actual = contentService.getParent(repositoryId, objectId);
+				sameParent = (preview == null && actual == null)
+						|| (preview != null && actual != null && preview.getId() != null
+								&& preview.getId().equals(actual.getId()));
+			} catch (RuntimeException | Error e) {
+				threadLockService.bulkUnlock(locks);
+				throw e;
+			}
 			if (sameParent) {
 				return new ParentLockHold(locks, actual);
 			}

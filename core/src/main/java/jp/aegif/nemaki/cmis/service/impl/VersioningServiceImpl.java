@@ -263,6 +263,22 @@ public class VersioningServiceImpl implements VersioningService {
 					+ " instead of failing a request whose mutation already succeeded. ("
 					+ e.getMessage() + ")");
 			nemakiCachePool.get(repositoryId).removeCmisCache(latestId);
+			// The unlocked eviction can lose a race the locked one could not: a reader that read
+			// the OLD version before the mutation committed may put it into the cache AFTER the
+			// line above, and the stale entry then survives. (The locked eviction ordered itself
+			// after all in-flight readers of this stripe.) A second eviction after those readers'
+			// requests have long finished narrows that window from "until the cache TTL" to a few
+			// seconds; the TTL remains the backstop, not the plan.
+			java.util.concurrent.CompletableFuture.runAsync(
+					() -> {
+						try {
+							nemakiCachePool.get(repositoryId).removeCmisCache(latestId);
+						} catch (RuntimeException ignore) {
+							// Best-effort; the TTL backstop covers a failed re-eviction.
+						}
+					},
+					java.util.concurrent.CompletableFuture.delayedExecutor(5,
+							java.util.concurrent.TimeUnit.SECONDS));
 		}
 	}
 

@@ -35,7 +35,10 @@ public class ApiExceptionMapper implements ExceptionMapper<Throwable> {
             // not retry a problem+json internal-error. Walk the cause chain and restore the
             // status. (Wrap sites that drop the cause cannot be rescued here; most pass it.)
             if (problemDetail != null && problemDetail.getStatus() == 500) {
-                for (Throwable t = exception.getCause(); t != null; t = t.getCause()) {
+                // Depth-bounded: a malformed Throwable graph with a cause cycle must degrade to
+                // "no match", not hang the exception mapper of all places.
+                Throwable t = exception.getCause();
+                for (int depth = 0; t != null && depth < 16; t = t.getCause(), depth++) {
                     if (t instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisServiceUnavailableException) {
                         problemDetail = ProblemDetail.serviceUnavailable(t.getMessage());
                         break;
