@@ -96,7 +96,10 @@ public class ContentServiceImplUserUpdateDeleteTest {
         when(g2.getUsers()).thenReturn(new ArrayList<>(List.of("keep")));
 
         doReturn(user).when(service).getUserItemById(REPO, "u1");
-        doReturn(List.of(g1, g2)).when(service).getGroupItems(REPO);
+        // The cleanup asks the reverse-lookup view which groups list "u1", rather than fetching
+        // every group in the repository and scanning its member list. g2 is deliberately absent
+        // from that answer, and the assertions below still require it to be left untouched.
+        doReturn(List.of("g1")).when(service).getGroupIdsDirectlyContainingUser(REPO, "u1");
         // membership cleanup re-fetches each referencing group for a revision-bearing doc
         doReturn(g1).when(service).getGroupItemById(REPO, "g1");
 

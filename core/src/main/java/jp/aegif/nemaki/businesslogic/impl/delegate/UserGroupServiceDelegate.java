@@ -65,6 +65,23 @@ public class UserGroupServiceDelegate {
 		return contentDaoService.getGroupItems(repositoryId);
 	}
 
+	/**
+	 * The ids of the groups that DIRECTLY contain {@code groupId} (reverse-lookup view).
+	 *
+	 * <p>"Directly" is load-bearing and is why the name is not the shorter one: this class
+	 * already has {@code getGroupIdsContainingUser}, which answers a different question —
+	 * the TRANSITIVE set a user belongs to, including anonymous/anyone, used to build ACL
+	 * tokens. These two are for referential cleanup on delete, and must not be confused with it.
+	 */
+	public List<String> getGroupIdsDirectlyContainingGroup(String repositoryId, String groupId) {
+		return contentDaoService.getGroupIdsDirectlyContainingGroup(repositoryId, groupId);
+	}
+
+	/** The ids of the groups that DIRECTLY list {@code userId} as a member. See above. */
+	public List<String> getGroupIdsDirectlyContainingUser(String repositoryId, String userId) {
+		return contentDaoService.getGroupIdsDirectlyContainingUser(repositoryId, userId);
+	}
+
 	public List<GroupItem> getGroupItems(String repositoryId, int skip, int limit) {
 		return contentDaoService.getGroupItems(repositoryId, skip, limit);
 	}

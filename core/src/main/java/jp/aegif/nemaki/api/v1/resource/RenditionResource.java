@@ -381,14 +381,25 @@ public class RenditionResource {
                 throw ApiException.invalidArgument("Document has no content");
             }
             
+            // Ref first, body later. Every one of these endpoints used to open the
+            // attachment body BEFORE testing convertibility, then return early for an
+            // unsupported MIME type without closing it — one leaked CouchDB connection per
+            // rejected request, and the MIME type it was testing came from the document,
+            // not from the body. Same defect as createPreviewAtomic; fixing that one alone
+            // left these three.
+            AttachmentNode attachmentRef = contentService.getAttachmentRef(repositoryId, attachmentId);
+            if (attachmentRef == null) {
+                throw ApiException.objectNotFound(attachmentId, repositoryId);
+            }
+
+            String mimeType = attachmentRef.getMimeType();
+            if (!renditionManager.checkConvertible(mimeType)) {
+                throw ApiException.invalidArgument("MIME type not supported for conversion: " + mimeType + ". Supported types: " + SUPPORTED_MIME_TYPES);
+            }
+
             AttachmentNode attachment = contentService.getAttachment(repositoryId, attachmentId);
             if (attachment == null) {
                 throw ApiException.objectNotFound(attachmentId, repositoryId);
-            }
-            
-            String mimeType = attachment.getMimeType();
-            if (!renditionManager.checkConvertible(mimeType)) {
-                throw ApiException.invalidArgument("MIME type not supported for conversion: " + mimeType + ". Supported types: " + SUPPORTED_MIME_TYPES);
             }
             
             ContentStream contentStream = new ContentStreamImpl(

@@ -28,6 +28,7 @@ import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import jp.aegif.nemaki.util.test.JavaSource;
 
 /**
  * {@code applyAcl} stores ACEs that are, by definition, direct.
@@ -52,20 +53,18 @@ import org.junit.jupiter.api.Test;
 class AclDirectFlagAndPropagationTest {
 
     private static String read(String relativePath) throws Exception {
-        return Files.readString(Path.of(relativePath), StandardCharsets.UTF_8);
+        return JavaSource.read(relativePath);
     }
 
     @Test
     @DisplayName("applyAcl が保存する Ace は常に direct=true (伝播値を流し込まない)")
     void applyAclStoresDirectAces() throws Exception {
         String src = read("src/main/java/jp/aegif/nemaki/cmis/service/impl/AclServiceImpl.java");
-        int start = src.indexOf("public Acl applyAcl(CallContext callContext");
-        assertTrue(start > 0, "applyAcl not found — this test needs updating");
-        // Bounded by the NEXT method, not by a character count. A fixed 6000-char window silently
-        // stopped covering the constructions as soon as the method grew, and reported "found 0"
-        // as though the code had changed.
-        int end = src.indexOf("\n\t@Override", start);
-        String body = end > start ? src.substring(start, end) : src.substring(start);
+        // Bounded by brace matching, with comments stripped. The two boundaries tried before —
+        // a fixed character count, then the next @Override — each silently stopped describing
+        // this method: one truncated it, the other ran past it into methods with no annotation.
+        String body = JavaSource.withoutComments(
+                JavaSource.methodBody(src, "public Acl applyAcl(CallContext callContext"));
 
         Pattern aceCtor = Pattern.compile(
                 "new jp\\.aegif\\.nemaki\\.model\\.Ace\\([^;]*?,\\s*([A-Za-z0-9_]+)\\s*\\)");
@@ -77,19 +76,20 @@ class AclDirectFlagAndPropagationTest {
                     "applyAcl must store direct=true; passing the propagation flag here inverts"
                             + " the CMIS meaning of isDirect");
         }
-        assertEquals(3, found,
-                "expected the three Ace constructions in applyAcl (the no-ACEs break fallback"
-                        + " copies local and inherited entries; the ordinary path applies the"
-                        + " requested ones) — found " + found);
+        assertEquals(1, found,
+                "applyAcl now has exactly one Ace construction: the requested entries. The two"
+                        + " others belonged to a 'break with no ACL supplied, keep the current"
+                        + " effective ACL' fallback that was unreachable — breakingInheritance is"
+                        + " only ever set from acl.getExtensions(), so a null ACL never got"
+                        + " there. Found " + found);
     }
 
     @Test
     @DisplayName("永続層は direct を保存せず、読み戻しで true に再生成する")
     void theFlagIsNotPersisted() throws Exception {
         String couchContent = read("src/main/java/jp/aegif/nemaki/model/couch/CouchContent.java");
-        int start = couchContent.indexOf("private CouchAcl convertToCouchAcl");
-        assertTrue(start > 0, "convertToCouchAcl not found");
-        String method = couchContent.substring(start, couchContent.indexOf("\n\t}", start));
+        String method = JavaSource.withoutComments(
+                JavaSource.methodBody(couchContent, "private CouchAcl convertToCouchAcl"));
         assertFalse(method.contains("isDirect") || method.contains("direct"),
                 "convertToCouchAcl must not persist the direct flag — if it starts doing so,"
                         + " the no-migration claim in AclServiceImpl's comment stops holding");

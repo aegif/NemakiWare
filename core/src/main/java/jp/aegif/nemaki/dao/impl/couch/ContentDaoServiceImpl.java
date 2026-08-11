@@ -1549,6 +1549,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public List<String> getGroupIdsDirectlyContainingGroup(String repositoryId, String groupId) {
+		return userGroupDao.getGroupIdsDirectlyContainingGroup(repositoryId, groupId);
+	}
+
+	@Override
+	public List<String> getGroupIdsDirectlyContainingUser(String repositoryId, String userId) {
+		return userGroupDao.getGroupIdsDirectlyContainingUser(repositoryId, userId);
+	}
+
+	@Override
 	public List<GroupItem> getGroupItems(String repositoryId) {
 		return userGroupDao.getGroupItems(repositoryId);
 	}

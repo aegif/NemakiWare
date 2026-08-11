@@ -101,7 +101,7 @@ public class ArchiveServiceDelegate {
 			// Set mimeType and contentStreamLength from AttachmentNode
 			if (document.getAttachmentNodeId() != null) {
 				try {
-					AttachmentNode attachment = contentDaoService.getAttachment(repositoryId, document.getAttachmentNodeId());
+					AttachmentNode attachment = contentDaoService.getAttachmentRef(repositoryId, document.getAttachmentNodeId());
 					if (attachment != null) {
 						a.setMimeType(attachment.getMimeType());
 						// Use actual content size from CouchDB (not metadata which may be stale/compressed)

@@ -364,6 +364,19 @@ public interface ContentService {
 	GroupItem getGroupItemByIdFresh(String repositoryId, String groupId);
 
 	List<GroupItem> getGroupItems(String repositoryId);
+
+	/**
+	 * The ids of the groups that DIRECTLY contain {@code groupId}.
+	 *
+	 * <p>Distinct from {@link #getGroupIdsContainingUser}, which answers the TRANSITIVE set for
+	 * ACL token building. These two exist for referential cleanup on delete: a deleted group or
+	 * user has to be stripped from whoever lists it, and finding that by enumerating every group
+	 * in the repository was O(all groups) per delete.
+	 */
+	List<String> getGroupIdsDirectlyContainingGroup(String repositoryId, String groupId);
+
+	/** The ids of the groups that DIRECTLY list {@code userId} as a member. See above. */
+	List<String> getGroupIdsDirectlyContainingUser(String repositoryId, String userId);
 	List<GroupItem> getGroupItems(String repositoryId, int skip, int limit);
 	int getGroupItemCount(String repositoryId);
 

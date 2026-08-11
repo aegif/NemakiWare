@@ -476,6 +476,16 @@ public interface ContentDaoService {
 	GroupItem getGroupItemByIdFresh(String repositoryId, String groupId);
 
 	List<GroupItem> getGroupItems(String repositoryId);
+
+	/**
+	 * The ids of the groups that directly contain {@code groupId}, from the reverse-lookup
+	 * view. Deleting a group must strip it from its parents; finding them by listing every
+	 * group in the repository is what made that O(all groups).
+	 */
+	List<String> getGroupIdsDirectlyContainingGroup(String repositoryId, String groupId);
+
+	/** The ids of the groups that directly list {@code userId} as a member. */
+	List<String> getGroupIdsDirectlyContainingUser(String repositoryId, String userId);
 	List<GroupItem> getGroupItems(String repositoryId, int skip, int limit);
 	int getGroupItemCount(String repositoryId);
 	List<String> getJoinedGroupByUserId(String repositoryId, String userId);

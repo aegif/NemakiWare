@@ -78,6 +78,8 @@ public class StubContentDaoServiceBase implements ContentDaoService {
     @Override public GroupItem getGroupItemByIdFresh(String r, String id) { return null; }
     @Override public List<GroupItem> getGroupItems(String r) { return Collections.emptyList(); }
     @Override public List<GroupItem> getGroupItems(String r, int skip, int limit) { return Collections.emptyList(); }
+    @Override public List<String> getGroupIdsDirectlyContainingGroup(String r, String groupId) { return Collections.emptyList(); }
+    @Override public List<String> getGroupIdsDirectlyContainingUser(String r, String userId) { return Collections.emptyList(); }
     @Override public int getGroupItemCount(String r) { return 0; }
     @Override public List<String> getJoinedGroupByUserId(String r, String userId) { return Collections.emptyList(); }
     @Override public PatchHistory getPatchHistoryByName(String r, String name) { return null; }

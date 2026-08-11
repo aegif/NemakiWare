@@ -202,22 +202,26 @@ public class JodRenditionManagerImpl implements RenditionManager {
 			InputStream inputStream) throws IOException {
 
 		File file = File.createTempFile(prefix, suffix);
-		try {
-			OutputStream out = new FileOutputStream(file);
+		// try-with-resources, because the previous form closed both streams only on the way
+		// out of the happy path: a read failure mid-copy left the caller's InputStream open,
+		// and that stream is an attachment body — a live CouchDB connection held until GC.
+		try (InputStream in = inputStream;
+				OutputStream out = new FileOutputStream(file)) {
 
 			int read = 0;
 			byte[] bytes = new byte[1024];
 
-			while ((read = inputStream.read(bytes)) != -1) {
+			while ((read = in.read(bytes)) != -1) {
 				out.write(bytes, 0, read);
 			}
-			inputStream.close();
 			out.flush();
-			out.close();
 		} catch (IOException e) {
-			if (log.isDebugEnabled()) {
-				log.debug("IOException in convertInputStreamToFile: " + e.getMessage());
-			}
+			// The truncated file is still returned, as before — changing that would change
+			// what callers see on an I/O failure. But it is no longer invisible: at debug
+			// level a partial conversion looked exactly like a successful one.
+			log.warn("convertInputStreamToFile failed after " + file.length()
+					+ " bytes; the rendition will be built from a TRUNCATED copy of "
+					+ prefix + suffix + ": " + e.getMessage(), e);
 		}
 
 		return file;

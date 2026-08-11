@@ -217,38 +217,80 @@ public class CloudDirectorySyncServiceImplTest {
 		assertEquals("microsoft", microsoft.getProvider());
 	}
 
+	/**
+	 * Concurrent callers for one repository+provider must share the running sync.
+	 *
+	 * <p>The property under test is conditional: {@code startSync} returns the existing result
+	 * only while its status is still RUNNING, and the async body flips that to COMPLETED as soon
+	 * as it finishes. With a mocked provider the body finishes in microseconds, so a caller that
+	 * arrives late legitimately starts a NEW sync and legitimately gets a different object.
+	 *
+	 * <p>Releasing four threads from a latch does not make them overlap — it makes them likely to
+	 * overlap on an idle machine. This test asserted the overlap without arranging it, and duly
+	 * failed once under load in a full-suite run (a probe was running on the same host) while
+	 * passing in isolation. Retrying it would have hidden a test defect behind "flaky".
+	 *
+	 * <p>So the overlap is now arranged rather than hoped for. The first caller's sync body is
+	 * HELD at its first property read until the later callers have been served, which makes
+	 * "the first sync is still running when they arrive" a fact of the test. Note that racing
+	 * four threads was not merely unreliable, it was not even reaching the code it meant to
+	 * exercise: instrumenting the body showed it had not started at all within the original
+	 * test's window, so the assertion was passing because the executor happened to be slow.
+	 */
 	@Test
 	public void testStartSync_ConcurrentSameKey_OnlyOneRuns() throws Exception {
+		CountDownLatch bodyEntered = new CountDownLatch(1);
+		CountDownLatch releaseBody = new CountDownLatch(1);
+		AtomicInteger syncBodiesEntered = new AtomicInteger(0);
+
 		lenient().when(propertyManager.readValue(anyString())).thenReturn(null);
-		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
-		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_PROVIDERS)).thenReturn("google");
+		lenient().when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_PROVIDERS))
+				.thenReturn("google");
+		// isProviderEnabled reads this first, and only the async body calls it — so blocking
+		// here pins the sync in RUNNING without delaying any caller. The waits are bounded, so
+		// a wrong assumption about who reads what fails this test rather than hanging the suite.
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED))
+				.thenAnswer(invocation -> {
+					syncBodiesEntered.incrementAndGet();
+					bodyEntered.countDown();
+					releaseBody.await(10, TimeUnit.SECONDS);
+					return "true";
+				});
 
-		int threadCount = 4;
-		CountDownLatch startLatch = new CountDownLatch(1);
-		CountDownLatch doneLatch = new CountDownLatch(threadCount);
-		AtomicInteger distinctResults = new AtomicInteger(0);
-		CloudSyncResult[] results = new CloudSyncResult[threadCount];
+		CloudSyncResult first = service.startDeltaSync(TEST_REPO, "google");
+		assertNotNull(first);
+		assertEquals(CloudSyncResult.Status.RUNNING, first.getStatus());
+		assertTrue(bodyEntered.await(10, TimeUnit.SECONDS),
+				"the sync body must have started, or nothing is being held and the callers below"
+						+ " would be racing a completed sync — exactly the defect this replaced");
 
-		for (int i = 0; i < threadCount; i++) {
+		// Now the sync is provably in flight. Every further caller for the same key must be
+		// handed that same running sync rather than starting another.
+		int laterCallers = 3;
+		CountDownLatch doneLatch = new CountDownLatch(laterCallers);
+		CloudSyncResult[] results = new CloudSyncResult[laterCallers];
+		for (int i = 0; i < laterCallers; i++) {
 			final int idx = i;
 			new Thread(() -> {
 				try {
-					startLatch.await();
 					results[idx] = service.startDeltaSync(TEST_REPO, "google");
-				} catch (Exception e) {
-					// ignore
 				} finally {
 					doneLatch.countDown();
 				}
 			}).start();
 		}
+		assertTrue(doneLatch.await(10, TimeUnit.SECONDS), "callers should not block on a sync");
 
-		startLatch.countDown(); // release all threads
-		assertTrue(doneLatch.await(5, TimeUnit.SECONDS), "Threads should complete within 5s");
-
-		// All threads should get the same result object
-		for (int i = 1; i < threadCount; i++) {
-			assertSame(results[0], results[i], "All concurrent callers should get the same result");
+		try {
+			for (int i = 0; i < laterCallers; i++) {
+				assertSame(first, results[i],
+						"a caller arriving while a sync is running must share it, not start another");
+			}
+			assertEquals(1, syncBodiesEntered.get(),
+					"exactly one sync body may run for a repository+provider; sharing the result"
+							+ " object is how that is observed, but the count is the property");
+		} finally {
+			releaseBody.countDown();
 		}
 	}
 

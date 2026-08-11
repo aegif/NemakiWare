@@ -112,7 +112,7 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             // Execute weighted KNN search (the live-ACL gate is applied inside,
             // BEFORE the topK trim, so a dropped stale hit does not shrink the page).
             return executeWeightedKnnSearch(repositoryId, userId, queryVector, aclFilter,
-                    null, topK, minScore, propertyBoost, contentBoost);
+                    null, null, topK, minScore, propertyBoost, contentBoost);
 
         } catch (EmbeddingException e) {
             log.error("Failed to generate query embedding", e);
@@ -123,8 +123,29 @@ public class VectorSearchServiceImpl implements VectorSearchService {
     @Override
     public List<VectorSearchResult> searchInFolder(String repositoryId, String userId, String query,
                                                    String folderId, int topK) throws VectorSearchException {
+        return searchInFolder(repositoryId, userId, query, folderId, topK, null, null, null);
+    }
+
+    @Override
+    public List<VectorSearchResult> searchInFolder(String repositoryId, String userId, String query,
+                                                   String folderId, int topK, Float minScore,
+                                                   Float propertyBoost, Float contentBoost)
+            throws VectorSearchException {
         if (!isEnabled()) {
             throw new VectorSearchException("Vector search is not enabled");
+        }
+
+        // Rejected BEFORE embedding the query: with both weights at zero neither half runs, so
+        // the embedding is work done for a search that cannot return anything. Same guard as
+        // searchWithBoost, applied to the effective values so a configuration of 0/0 fails the
+        // same way an explicit request does.
+        float effectivePropertyBoost =
+                propertyBoost != null ? propertyBoost : ragConfig.getPropertyBoost();
+        float effectiveContentBoost =
+                contentBoost != null ? contentBoost : ragConfig.getContentBoost();
+        if (effectivePropertyBoost == 0.0f && effectiveContentBoost == 0.0f) {
+            throw new VectorSearchException(
+                    "At least one of propertyBoost or contentBoost must be greater than 0");
         }
 
         try {
@@ -134,14 +155,55 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             // Build ACL filter
             String aclFilter = aclExpander.buildReaderFilterQuery(repositoryId, userId);
 
-            // Build folder filter (using Block Join to parent)
-            String sanitizedFolderId = SolrQuerySanitizer.escape(folderId);
-            String folderFilter = "{!parent which='doc_type:document'}parent_id:" + sanitizedFolderId;
+            // Folder scoping needs TWO different filters, because the two halves of a
+            // weighted search run over documents with different shapes.
+            //
+            // Only the parent document carries parent_id (the folder). A chunk carries
+            // parent_document_id — the document it belongs to — and nothing about the folder.
+            // Field values verified against the live index: a parent is
+            // {id: "rag:<objectId>", object_id: "<objectId>", parent_id: "<folderId>"} and a
+            // chunk is {id: "<objectId>_chunk_N", parent_document_id: "<objectId>"}. So the
+            // chunk filter joins through object_id, NOT through id — the "rag:" prefix on the
+            // parent's id would match nothing.
+            //
+            // Two wrong versions preceded this, both of which Solr answered rather than
+            // rejected, which is why each needed measuring rather than reasoning about:
+            //
+            //   1. {!parent which='doc_type:document'}parent_id:X — a to-parent Block Join
+            //      whose inner query runs against CHILDREN. It searched the chunks for a field
+            //      only the parent has. Measured: 1 document returned for a folder holding 2,
+            //      and through the API, documents from OTHER folders entirely.
+            //   2. A plain parent_id:X on both halves. Correct for the property half, and it
+            //      matches ZERO chunks, so folder-scoped search lost every content-based hit —
+            //      the same silent wrongness pointing the other way. Measured on this index:
+            //      the folder held 2 documents / 1,144 chunks; the plain filter matched 0 of
+            //      the chunks, the join below matched all 1,144.
+            // Quoted, not merely escaped. escape() covers Solr punctuation but not whitespace or
+            // boolean keywords, so a folder id of `foo OR bar` parsed as several clauses instead
+            // of one term value — broadening the filter or failing to parse, depending on the
+            // default field. Ids are normally uuids, but they can be imported, and a folder
+            // filter is exactly the wrong place to rely on "the input is well-formed".
+            String sanitizedFolderId = SolrQuerySanitizer.escapeAndQuote(folderId);
+            String documentFolderFilter = "parent_id:" + sanitizedFolderId;
+            // The inner query of the join needs its OWN repository restriction. The outer
+            // filters (doc_type:chunk, repository_id:..., the ACL filter) constrain the CHUNKS
+            // the join returns; they say nothing about which parent documents the join reads
+            // object_id values FROM. Without this, a folder id matching a parent in another
+            // repository would contribute that parent's object_id to the join set. Object ids
+            // are CouchDB uuids so a natural collision is implausible, but import/export can
+            // carry ids between repositories, which is exactly the case where "implausible"
+            // stops being an argument.
+            String chunkFolderFilter = "{!join from=object_id to=parent_document_id}"
+                    + "(doc_type:document AND repository_id:"
+                    + SolrQuerySanitizer.escapeAndQuote(repositoryId)
+                    + " AND parent_id:" + sanitizedFolderId + ")";
 
             // Execute weighted KNN search (live-ACL gate applied inside, before trim).
+            // null means "use the server's value"; anything the caller supplied is honoured.
             return executeWeightedKnnSearch(repositoryId, userId, queryVector, aclFilter,
-                    folderFilter, topK, ragConfig.getSearchSimilarityThreshold(),
-                    ragConfig.getPropertyBoost(), ragConfig.getContentBoost());
+                    chunkFolderFilter, documentFolderFilter, topK,
+                    minScore != null ? minScore : ragConfig.getSearchSimilarityThreshold(),
+                    effectivePropertyBoost, effectiveContentBoost);
 
         } catch (EmbeddingException e) {
             throw new VectorSearchException("Failed to generate query embedding", e);
@@ -397,8 +459,15 @@ public class VectorSearchServiceImpl implements VectorSearchService {
      *
      * KNN queries are executed in parallel for better performance.
      */
+    /**
+     * @param chunkFilter extra filter for the chunk (content) half, or null
+     * @param documentFilter extra filter for the property half, or null. Separate from
+     *     chunkFilter because chunks and parent documents carry different fields: one filter
+     *     applied to both is necessarily wrong for one of them, silently and without an error.
+     */
     private List<VectorSearchResult> executeWeightedKnnSearch(String repositoryId, String userId, float[] queryVector,
-                                                               String aclFilter, String additionalFilter,
+                                                               String aclFilter, String chunkFilter,
+                                                               String documentFilter,
                                                                int topK, float minScore,
                                                                float propertyBoost, float contentBoost)
             throws VectorSearchException {
@@ -424,7 +493,7 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             if (chunkSearchEnabled) {
                 chunkSearchFuture = CompletableFuture.runAsync(() -> {
                     try {
-                        searchChunkVectors(solrClient, repositoryId, vectorStr, aclFilter, additionalFilter,
+                        searchChunkVectors(solrClient, repositoryId, vectorStr, aclFilter, chunkFilter,
                                 topK * ragConfig.getChunkSearchTopKMultiplier(), documentScores, contentBoost);
                     } catch (Exception e) {
                         log.error("Chunk vector search failed", e);
@@ -437,7 +506,7 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             if (propertySearchEnabled) {
                 propertySearchFuture = CompletableFuture.runAsync(() -> {
                     try {
-                        searchPropertyVectors(solrClient, repositoryId, vectorStr, aclFilter, additionalFilter,
+                        searchPropertyVectors(solrClient, repositoryId, vectorStr, aclFilter, documentFilter,
                                 topK * ragConfig.getPropertySearchTopKMultiplier(), documentScores, propertyBoost);
                     } catch (Exception e) {
                         log.error("Property vector search failed", e);

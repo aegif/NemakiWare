@@ -774,7 +774,9 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         }
 
         try {
-            AttachmentNode attachment = contentService.getAttachment(repositoryId, attachmentId);
+            // Ref, not the node: this runs once per indexed document, and getAttachment opens
+            // the body to answer a question about its mime type.
+            AttachmentNode attachment = contentService.getAttachmentRef(repositoryId, attachmentId);
             return attachment != null ? attachment.getMimeType() : null;
         } catch (Exception e) {
             return null;

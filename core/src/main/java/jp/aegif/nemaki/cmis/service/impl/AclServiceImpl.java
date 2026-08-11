@@ -197,6 +197,12 @@ public class AclServiceImpl implements AclService {
 	public Acl applyAcl(CallContext callContext, String repositoryId, String objectId,
 			Acl acl, AclPropagation aclPropagation) {
 		exceptionService.invalidArgumentRequired("objectId", objectId);
+		// The ACL is required. acl.getExtensions() is dereferenced unconditionally below, so a
+		// null here has always been an NPE — a 500 for what is a malformed request. The
+		// "a null ACL cannot reach the break branch" reasoning covers the BREAK flag only
+		// (breakingInheritance is derived from those same extensions); it says nothing about a
+		// non-breaking call that simply omits the ACL. Reject it as the client error it is.
+		exceptionService.invalidArgumentRequired("acl", acl);
 
 		// WRITE, not read. This method reads the object's current ACL, decides the new one from
 		// it (inheritance flag, add/remove semantics resolved by the caller) and writes it back —
@@ -289,14 +295,30 @@ public class AclServiceImpl implements AclService {
 			// THE REQUESTED ACEs WIN, breaking inheritance or not.
 			//
 			// This branch used to ignore acl.getAces() entirely when inheritance was being
-			// broken: it copied the CURRENT effective ACL (local + inherited) into the new local
-			// list and threw the request away. Since this repository's own UI sends the new ACE
-			// list and inherited=false in ONE applyAcl (PermissionResource), "break inheritance
-			// and set the permissions to this" silently became "break inheritance and keep
-			// exactly the permissions you had" — a principal the administrator had just removed
-			// stayed, with a success response. Silent over-permission is the worst shape an ACL
-			// bug can take, because nothing in the response or the UI says it happened.
-			List<Ace> requested = acl == null || acl.getAces() == null
+			// broken: it copied the CURRENT effective ACL into the new local list and threw the
+			// request away. A caller that sent "detach, and here is the ACL I want" got "detach,
+			// and keep exactly what you had" — with a success response. A removal the caller had
+			// asked for simply was not there.
+			//
+			// On a break, EVERY requested ACE is taken, whatever its direct flag says. After the
+			// break there is no inheritance, so every surviving entry is local by definition, and
+			// the flag on the way in describes where the entry came FROM, not where it should go.
+			// Filtering to direct=true here (a first attempt at this fix) broke the product's own
+			// Break Inheritance button, which sends the effective ACL back unchanged — inherited
+			// entries included, flagged direct=false — and would have had it silently drop every
+			// inherited grant. Detaching a folder is not a request to revoke everyone.
+			//
+			// The non-breaking path keeps the direct-only filter: with inheritance still in
+			// effect, inherited entries are not this object's to store, and writing them locally
+			// would freeze a copy that then stops tracking the ancestor.
+			//
+			// There is no "break, but keep what I had" case, and no branch pretending to offer
+			// one. breakingInheritance is only ever set from acl.getExtensions(), which is
+			// dereferenced unconditionally above — so a null ACL cannot reach this point at all,
+			// and `breakingInheritance && acl == null` was unreachable code with a comment
+			// describing behaviour that could not occur. Breaking inheritance always means
+			// "these entries are now the ACL".
+			List<Ace> requested = acl.getAces() == null
 					? java.util.Collections.<Ace>emptyList() : acl.getAces();
 			List<Ace> requestedDirect = new ArrayList<>();
 			for (Ace ace : requested) {
@@ -304,35 +326,36 @@ public class AclServiceImpl implements AclService {
 					requestedDirect.add(ace);
 				}
 			}
+			List<Ace> toStore = breakingInheritance ? requested : requestedDirect;
 
-			if (breakingInheritance && requestedDirect.isEmpty()) {
-				// Breaking inheritance with NOTHING to put in its place. Two readings are
-				// possible and the wire cannot tell them apart — "detach this object, keep what
-				// it effectively has" and "detach it and leave it with no permissions at all".
-				// The first is preserved (it is what this code has always done, and what the
-				// operation is normally for); the second would silently lock everyone out of a
-				// subtree, which is not a thing to infer from an absent field. An administrator
-				// who really wants an empty ACL can send the break and the empty set as two
-				// steps, and see the intermediate state.
-				log.info("applyAcl on " + objectId + ": breaking inheritance with no ACEs supplied"
-						+ " — materialising the current effective ACL locally. Send the desired"
-						+ " ACEs with the break to set them instead.");
-				jp.aegif.nemaki.model.Acl currentAcl = contentService.calculateAcl(repositoryId, content);
-
-				for(jp.aegif.nemaki.model.Ace localAce : currentAcl.getLocalAces()){
-					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(localAce.getPrincipalId(), localAce.getPermissions(), true);
-					nemakiAcl.getLocalAces().add(nemakiAce);
+			if (breakingInheritance && requested.isEmpty()) {
+				// An EMPTY list with a break is honoured as an empty ACL, not read as "keep
+				// what you had". CMIS defines applyACL as setting the ACL to the entries
+				// given, and this case is reachable from a real operation: the add/remove
+				// overload computes the resulting list, so removing an object's last ACE
+				// while detaching it arrives here as an empty list. Reading that as "keep
+				// current" would undo the removal and answer success — the silent
+				// over-permission this whole branch was fixed for. The object is left
+				// readable only by administrators, which is recoverable and visible;
+				// a revocation that did not happen is neither.
+				log.warn("applyAcl on " + objectId + ": inheritance broken with an EMPTY ACE"
+						+ " list — the object will have no local permissions and no inherited"
+						+ " ones. Only administrators will be able to read it.");
+			}
+			// Duplicate principals are stored as sent, but the read path keys by principal
+			// (Acl.buildMap) so only the LAST entry's permissions survive a round trip — a
+			// silent narrowing or widening the caller never asked for. The product's own UI
+			// cannot produce this (getMergedAces already collapses by principal), but a direct
+			// CMIS caller can, so say so rather than let it happen invisibly.
+			java.util.Set<String> seenPrincipals = new java.util.HashSet<>();
+			for(Ace ace : toStore){
+				if (!seenPrincipals.add(ace.getPrincipalId())) {
+					log.warn("applyAcl on " + objectId + ": the requested ACL lists principal '"
+							+ ace.getPrincipalId() + "' more than once. Only the last entry's"
+							+ " permissions will survive a read — send one ACE per principal.");
 				}
-
-				for(jp.aegif.nemaki.model.Ace inheritedAce : currentAcl.getInheritedAces()){
-					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(inheritedAce.getPrincipalId(), inheritedAce.getPermissions(), true);
-					nemakiAcl.getLocalAces().add(nemakiAce);
-				}
-			} else {
-				for(Ace ace : requestedDirect){
-					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(ace.getPrincipalId(), ace.getPermissions(), true);
-					nemakiAcl.getLocalAces().add(nemakiAce);
-				}
+				jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(ace.getPrincipalId(), ace.getPermissions(), true);
+				nemakiAcl.getLocalAces().add(nemakiAce);
 			}
 
 			convertSystemPrinciaplId(repositoryId, nemakiAcl);

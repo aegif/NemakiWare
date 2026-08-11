@@ -851,6 +851,19 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public List<String> getGroupIdsDirectlyContainingGroup(String repositoryId, String groupId) {
+		// Not cached: this is read once per group deletion, and a stale answer would leave a
+		// dangling nested-group reference behind — the exact thing the caller exists to prevent.
+		return nonCachedContentDaoService.getGroupIdsDirectlyContainingGroup(repositoryId, groupId);
+	}
+
+	@Override
+	public List<String> getGroupIdsDirectlyContainingUser(String repositoryId, String userId) {
+		// Not cached, for the same reason as the group twin.
+		return nonCachedContentDaoService.getGroupIdsDirectlyContainingUser(repositoryId, userId);
+	}
+
+	@Override
 	public List<GroupItem> getGroupItems(String repositoryId) {
 		return nonCachedContentDaoService.getGroupItems(repositoryId);
 	}

@@ -343,6 +343,106 @@ public class UserGroupDaoDelegate {
 		}
 	}
 
+	/**
+	 * The ids of the groups that directly contain {@code groupId}.
+	 *
+	 * <p>Answers "who nests this group" from the reverse-lookup view instead of enumerating
+	 * every group in the repository. Deleting a group has to strip it from its parents, and the
+	 * only way that was being found was to fetch ALL groups WITH their documents and scan each
+	 * one's nested list — 2,978 groups fetched to find the handful that matter, measured at
+	 * 6.2 s per deletion on the dev stack. The view already existed and was already used by the
+	 * read path.
+	 *
+	 * <p>The composite key handling matches {@code checkIndirectGroup}: the view emits array
+	 * keys {@code [groupId, n]} for n in 0..19 — the same parent document twenty times per edge
+	 * — so the range is pinned to depth 0 and the keys must be passed as {@code List} or the
+	 * SDK sends a JSON string that matches no array key and the query silently returns nothing.
+	 */
+	/**
+	 * The ids of the groups that directly list {@code userId} as a member.
+	 *
+	 * <p>The user-side twin of {@link #getGroupIdsDirectlyContainingGroup}: deleting a user has to strip
+	 * it from every group that lists it, and that was also being found by fetching ALL groups
+	 * with their documents. The view exists ({@code joinedDirectGroupsByUserId}) and the
+	 * membership read path already uses it — with a scalar {@code key}, unlike the group view's
+	 * composite array keys.
+	 */
+	public List<String> getGroupIdsDirectlyContainingUser(String repositoryId, String userId) {
+		List<String> parents = new ArrayList<String>();
+		if (userId == null || userId.isEmpty()) {
+			return parents;
+		}
+		Map<String, Object> queryParams = new HashMap<String, Object>();
+		queryParams.put("key", userId);
+		try {
+			ViewResult result = connectorPool.getClient(repositoryId)
+					.queryView("_repo", "joinedDirectGroupsByUserId", queryParams);
+			if (result.getRows() == null) {
+				return parents;
+			}
+			Set<String> seen = new HashSet<String>();
+			for (ViewResultRow row : result.getRows()) {
+				if (row.getValue() == null) {
+					continue;
+				}
+				try {
+					@SuppressWarnings("unchecked")
+					Map<String, Object> doc = (Map<String, Object>) row.getValue();
+					Object parentId = doc.get("groupId");
+					if (parentId instanceof String && seen.add((String) parentId)) {
+						parents.add((String) parentId);
+					}
+				} catch (Exception e) {
+					log.warn("Error parsing group membership for user " + userId + ": " + e.getMessage());
+				}
+			}
+		} catch (Exception e) {
+			// Same reason as the group twin: a view failure must not read as "no memberships".
+			throw new IllegalStateException(
+					"Could not resolve the groups containing user " + userId, e);
+		}
+		return parents;
+	}
+
+	public List<String> getGroupIdsDirectlyContainingGroup(String repositoryId, String groupId) {
+		List<String> parents = new ArrayList<String>();
+		if (groupId == null || groupId.isEmpty()) {
+			return parents;
+		}
+		Map<String, Object> queryParams = new HashMap<String, Object>();
+		queryParams.put("startkey", Arrays.asList(groupId, 0));
+		queryParams.put("endkey", Arrays.asList(groupId, 0));
+		try {
+			ViewResult result = connectorPool.getClient(repositoryId)
+					.queryView("_repo", "joinedDirectGroupsByGroupId", queryParams);
+			if (result.getRows() == null) {
+				return parents;
+			}
+			Set<String> seen = new HashSet<String>();
+			for (ViewResultRow row : result.getRows()) {
+				if (row.getValue() == null) {
+					continue;
+				}
+				try {
+					@SuppressWarnings("unchecked")
+					Map<String, Object> doc = (Map<String, Object>) row.getValue();
+					Object parentId = doc.get("groupId");
+					if (parentId instanceof String && seen.add((String) parentId)) {
+						parents.add((String) parentId);
+					}
+				} catch (Exception e) {
+					log.warn("Error parsing nested-group parent for " + groupId + ": " + e.getMessage());
+				}
+			}
+		} catch (Exception e) {
+			// Deliberately NOT swallowed into "no parents": that would let a view failure look
+			// like "nothing references this group" and leave dangling references behind.
+			throw new IllegalStateException(
+					"Could not resolve the groups containing " + groupId, e);
+		}
+		return parents;
+	}
+
 	public List<GroupItem> getGroupItems(String repositoryId) {
 		try {
 			// Use ViewQuery to get all group items from groupItemsById view

@@ -769,28 +769,35 @@ public class ContentServiceImpl implements ContentService {
 	 * references it, so deleting a group never leaves dangling references behind.
 	 */
 	private void removeGroupFromAllNestedGroups(String repositoryId, String groupId) {
-		List<jp.aegif.nemaki.model.GroupItem> allGroups = getGroupItems(repositoryId);
-		if (allGroups == null) {
+		// Ask the reverse-lookup view who nests this group, instead of listing every group in
+		// the repository (with include_docs) and scanning each one's nested list. The view
+		// already existed and the read path already used it; only this writer did not.
+		// Measured on the dev stack with 2,978 groups: 6.2 s per deletion before, and the cost
+		// was in the enumeration, not in the updates — a repository with one group that nests
+		// the target paid the same as one with a hundred.
+		//
+		// A view failure throws rather than returning an empty list: "nobody references it" and
+		// "we could not find out" must not be the same answer here, because the difference is a
+		// dangling nested-group reference left behind by a delete that reported success.
+		List<String> parents = getGroupIdsDirectlyContainingGroup(repositoryId, groupId);
+		if (parents == null || parents.isEmpty()) {
 			return;
 		}
-		for (jp.aegif.nemaki.model.GroupItem listed : allGroups) {
-			List<String> nested = listed.getGroups();
-			if (nested != null && nested.contains(groupId)) {
-				// the list-view instance carries no revision; re-fetch a full,
-				// revision-bearing document before persisting the update
-				jp.aegif.nemaki.model.GroupItem g = getGroupItemById(repositoryId, listed.getGroupId());
-				if (g == null) {
-					continue;
-				}
-				List<String> current = g.getGroups();
-				if (current == null || !current.contains(groupId)) {
-					continue;
-				}
-				List<String> updated = new ArrayList<>(current);
-				updated.remove(groupId);
-				g.setGroups(updated);
-				update(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, g);
+		for (String parentId : parents) {
+			// Re-fetch a full, revision-bearing document before persisting the update; the view
+			// value carries no revision.
+			jp.aegif.nemaki.model.GroupItem g = getGroupItemById(repositoryId, parentId);
+			if (g == null) {
+				continue;
 			}
+			List<String> current = g.getGroups();
+			if (current == null || !current.contains(groupId)) {
+				continue;
+			}
+			List<String> updated = new ArrayList<>(current);
+			updated.remove(groupId);
+			g.setGroups(updated);
+			update(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, g);
 		}
 	}
 
@@ -847,28 +854,26 @@ public class ContentServiceImpl implements ContentService {
 	 * so deleting a user never leaves dangling references behind.
 	 */
 	private void removeUserFromAllGroups(String repositoryId, String userId) {
-		List<jp.aegif.nemaki.model.GroupItem> allGroups = getGroupItems(repositoryId);
-		if (allGroups == null) {
+		// Reverse-lookup view, not an enumeration of every group — same change and same reason
+		// as removeGroupFromAllNestedGroups below. Deleting a user had the identical cost.
+		List<String> parents = getGroupIdsDirectlyContainingUser(repositoryId, userId);
+		if (parents == null || parents.isEmpty()) {
 			return;
 		}
-		for (jp.aegif.nemaki.model.GroupItem listed : allGroups) {
-			List<String> members = listed.getUsers();
-			if (members != null && members.contains(userId)) {
-				// the list-view instance carries no revision; re-fetch a full,
-				// revision-bearing document before persisting the update
-				jp.aegif.nemaki.model.GroupItem g = getGroupItemById(repositoryId, listed.getGroupId());
-				if (g == null) {
-					continue;
-				}
-				List<String> current = g.getUsers();
-				if (current == null || !current.contains(userId)) {
-					continue;
-				}
-				List<String> updated = new ArrayList<>(current);
-				updated.remove(userId);
-				g.setUsers(updated);
-				update(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, g);
+		for (String parentId : parents) {
+			// the view value carries no revision; re-fetch a full, revision-bearing document
+			jp.aegif.nemaki.model.GroupItem g = getGroupItemById(repositoryId, parentId);
+			if (g == null) {
+				continue;
 			}
+			List<String> current = g.getUsers();
+			if (current == null || !current.contains(userId)) {
+				continue;
+			}
+			List<String> updated = new ArrayList<>(current);
+			updated.remove(userId);
+			g.setUsers(updated);
+			update(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, g);
 		}
 	}
 
@@ -1021,6 +1026,16 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public List<GroupItem> getGroupItems(String repositoryId) {
 		return userGroupDelegate.getGroupItems(repositoryId);
+	}
+
+	@Override
+	public List<String> getGroupIdsDirectlyContainingGroup(String repositoryId, String groupId) {
+		return userGroupDelegate.getGroupIdsDirectlyContainingGroup(repositoryId, groupId);
+	}
+
+	@Override
+	public List<String> getGroupIdsDirectlyContainingUser(String repositoryId, String userId) {
+		return userGroupDelegate.getGroupIdsDirectlyContainingUser(repositoryId, userId);
 	}
 
 	@Override
@@ -3337,13 +3352,12 @@ public class ContentServiceImpl implements ContentService {
 				String attachmentId = version.getAttachmentNodeId();
 				// Get attachment info before deletion
 				try {
-					AttachmentNode attachment = contentDaoService.getAttachment(repositoryId, attachmentId);
+					// getAttachmentRef, because "we only need metadata here" is exactly what it is
+					// for. The previous form downloaded the whole attachment and closed it
+					// immediately — no leak, but a full binary transfer per version, moments
+					// before deleting that binary.
+					AttachmentNode attachment = contentDaoService.getAttachmentRef(repositoryId, attachmentId);
 					if (attachment != null) {
-						// Close the InputStream immediately — we only need metadata here
-						InputStream is = attachment.getInputStream();
-						if (is != null) {
-							try { is.close(); } catch (Exception ignore) {}
-						}
 						mimeType = attachment.getMimeType();
 						// Use actual binary size from CouchDB, falling back to metadata length
 						Long actualSize = getAttachmentActualSize(repositoryId, attachmentId);
@@ -3451,13 +3465,9 @@ public class ContentServiceImpl implements ContentService {
 			Long contentStreamLength = null;
 			if (version.getAttachmentNodeId() != null) {
 				try {
-					AttachmentNode attachment = contentDaoService.getAttachment(repositoryId, version.getAttachmentNodeId());
+					// Metadata only — see the note on the sibling path above.
+					AttachmentNode attachment = contentDaoService.getAttachmentRef(repositoryId, version.getAttachmentNodeId());
 					if (attachment != null) {
-						// Close the InputStream immediately — we only need metadata here
-						InputStream is = attachment.getInputStream();
-						if (is != null) {
-							try { is.close(); } catch (Exception ignore) {}
-						}
 						mimeType = attachment.getMimeType();
 						Long actualSize = getAttachmentActualSize(repositoryId, version.getAttachmentNodeId());
 						contentStreamLength = (actualSize != null) ? actualSize : attachment.getLength();
@@ -4272,8 +4282,10 @@ public class ContentServiceImpl implements ContentService {
 		// Create attachment using existing method (already handles _rev properly)
 		String attachmentId = createAttachment(callContext, repositoryId, contentStream);
 		
-		// ATOMIC VERIFICATION: Ensure attachment exists and is accessible
-		AttachmentNode verification = getAttachment(repositoryId, attachmentId);
+		// ATOMIC VERIFICATION: Ensure attachment exists and is accessible.
+		// Ref, not the full node: this asks whether the document is there, and getAttachment
+		// would answer that by opening the body — a connection nobody in this method reads.
+		AttachmentNode verification = getAttachmentRef(repositoryId, attachmentId);
 		if (verification == null) {
 			throw new CmisRuntimeException("Atomic attachment creation failed - attachment not accessible: " + attachmentId);
 		}
@@ -4290,18 +4302,25 @@ public class ContentServiceImpl implements ContentService {
 			Document document, String attachmentId) {
 		log.debug("Creating preview atomically for attachment: {}", attachmentId);
 		
-		// Use the already-created and verified attachment
+		// Existence first, without a body.
+		if (getAttachmentRef(repositoryId, attachmentId) == null) {
+			throw new CmisRuntimeException("Atomic preview creation failed - attachment not found: " + attachmentId);
+		}
+
+		// Convertibility is decided by the REQUEST's mime type, so it can be decided before
+		// anything is opened. The original order opened the body first and then dropped it
+		// unread whenever the type had no rendition — which is most uploads.
+		if (!renditionManager.checkConvertible(contentStream.getMimeType())) {
+			return;
+		}
+
 		AttachmentNode an = getAttachment(repositoryId, attachmentId);
 		if (an == null) {
 			throw new CmisRuntimeException("Atomic preview creation failed - attachment not found: " + attachmentId);
 		}
-		
 		ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(),
 				contentStream.getBigLength(), contentStream.getMimeType(), an.getInputStream());
-
-		if (renditionManager.checkConvertible(previewCS.getMimeType())) {
-			createPreview(callContext, repositoryId, previewCS, document);
-		}
+		createPreview(callContext, repositoryId, previewCS, document);
 	}
 	
 	/**
@@ -4326,8 +4345,8 @@ public class ContentServiceImpl implements ContentService {
 		// Copy attachment using existing method
 		String attachmentId = copyAttachment(callContext, repositoryId, originalAttachmentId);
 		
-		// ATOMIC VERIFICATION: Ensure copied attachment exists and is accessible
-		AttachmentNode verification = getAttachment(repositoryId, attachmentId);
+		// ATOMIC VERIFICATION: Ensure copied attachment exists and is accessible (metadata only)
+		AttachmentNode verification = getAttachmentRef(repositoryId, attachmentId);
 		if (verification == null) {
 			throw new CmisRuntimeException("Atomic attachment copy failed - attachment not accessible: " + attachmentId);
 		}
