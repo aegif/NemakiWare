@@ -36,12 +36,20 @@ import jp.aegif.nemaki.util.lock.ThreadLockService;
  *
  * <h2>Named locks</h2>
  *
- * <p>A key of the form {@code __name__} is a NAMED lock: it gets a dedicated lock outside the
- * stripe array instead of hashing into it. The repository-wide folder-hierarchy lock is one.
- * Hashing it into the stripes would silently make it the same lock as ~1/4096 of all real
+ * <p>A key listed in {@code NAMED_LOCK_KEYS} — currently only the repository-wide
+ * folder-hierarchy lock — gets a dedicated lock outside the stripe array instead of hashing into
+ * it. Hashing it into the stripes would silently make it the same lock as ~1/4096 of all real
  * objects, and a lock that is deliberately taken FIRST and held across an ordered set must not be
  * a lock that also appears INSIDE other requests' ordered sets — that is the outer-hold shape
  * that took the repository down. A dedicated instance removes the collision by construction.
+ *
+ * <p><b>Adding a pseudo-key requires adding it to that list.</b> Membership is an explicit
+ * allowlist rather than a name pattern precisely because object ids arrive from clients and are
+ * locked before existence validation: a pattern would let any request mint permanent named-lock
+ * entries. The cost of the allowlist is that a new pseudo-key which is merely NAMED like one
+ * silently gets a striped lock — and if that key is used the way the hierarchy lock is (taken
+ * first, held across an ordered set), it re-creates the ordering hazard. So: new pseudo-key, new
+ * list entry.
  *
  * <h2>Bounds</h2>
  *
@@ -77,7 +85,7 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 
 	private final ReadWriteLock[] locks = new ReadWriteLock[STRIPES];
 
-	/** Dedicated locks for {@code __name__} keys, with monitor identities above the stripe range. */
+	/** Dedicated locks for allowlisted named keys, with monitor identities above the stripe range. */
 	private final ConcurrentHashMap<String, NamedLock> namedLocks = new ConcurrentHashMap<>();
 	private final AtomicInteger nextNamedStripe = new AtomicInteger(STRIPES);
 

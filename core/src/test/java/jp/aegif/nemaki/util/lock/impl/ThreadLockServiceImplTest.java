@@ -130,12 +130,15 @@ class ThreadLockServiceImplTest {
     @Test
     @DisplayName("bulkLock はタイムアウト時に部分取得を全解放してから投げる")
     void aBulkTimeoutReleasesEverythingItTook() throws Exception {
-        String free = "obj-free";
-        // The contended stripe must sort AFTER the free one: bulkLock acquires in stripe order,
-        // so only that arrangement makes it actually HOLD the free lock while blocking on the
-        // contended one. The other way round it blocks first, holds nothing, and the
-        // release-everything assertion passes without testing a release.
-        String contended = higherStripeId(fast, free, "obj-contended");
+        // Roles assigned BY STRIPE ORDER, not by name. bulkLock acquires in stripe order, so only
+        // "free sorts before contended" makes it actually HOLD the free lock while blocking on the
+        // contended one; the other way round it blocks first, holds nothing, and the
+        // release-everything assertion passes without testing any release. Deriving the roles
+        // from the stripes (rather than hunting for an id that fits fixed roles) keeps this true
+        // even if the hash ever changes.
+        String[] pair = lowerAndHigherStripeIds(fast, "obj-a", "obj-b");
+        String free = pair[0];
+        String contended = pair[1];
         CountDownLatch release = holdWriteElsewhere(fast, contended);
         try {
             List<Lock> set = fast.orderedLocks("bedroom", List.of(free, contended), true);
@@ -271,6 +274,30 @@ class ThreadLockServiceImplTest {
         return got.get();
     }
 
+    @Test
+    @DisplayName("許可リストに無い __…__ id は専用ロックにならない (リクエスト由来の無制限確保を防ぐ)")
+    void aNonAllowlistedNamedLookingKeyStaysStriped() {
+        // Named-lock status was once decided by a NAME PATTERN. Object ids come from clients and
+        // are locked BEFORE existence validation, so any request could mint a permanent
+        // dedicated-lock entry by inventing __anything__ ids. The allowlist closed that — and
+        // this is the assertion that would have caught it: a key that merely LOOKS internal must
+        // hash into the fixed stripes like every other id.
+        Lock attacker = fast.getWriteLock("bedroom", "__not-allowlisted__");
+        assertTrue(ThreadLockServiceImpl.stripeIdOf(attacker) < 4096,
+                "a non-allowlisted __…__ key must be striped, not given a dedicated lock");
+
+        List<Lock> viaSet = fast.orderedLocks("bedroom", List.of("__also-not-allowlisted__"), true);
+        assertEquals(1, viaSet.size());
+        assertTrue(ThreadLockServiceImpl.stripeIdOf(viaSet.get(0)) < 4096,
+                "orderedLocks must apply the same allowlist as get(); a gap in either one"
+                        + " reopens the unbounded allocation");
+
+        // The one real named key still gets its dedicated identity.
+        assertTrue(ThreadLockServiceImpl.stripeIdOf(
+                        fast.getWriteLock("bedroom", "__folder-hierarchy__")) >= 4096,
+                "the allowlisted key must still be dedicated");
+    }
+
     private static List<Integer> stripesOf(List<Lock> locks) {
         List<Integer> out = new ArrayList<>(locks.size());
         for (Lock lock : locks) {
@@ -279,15 +306,17 @@ class ThreadLockServiceImplTest {
         return out;
     }
 
-    /** An id (prefixed) whose stripe is strictly GREATER than {@code other}'s. */
-    private static String higherStripeId(ThreadLockServiceImpl svc, String other, String prefix) {
-        int target = svc.stripeOf("bedroom", other);
-        for (int i = 0; i < 100_000; i++) {
-            String candidate = prefix + i;
-            if (svc.stripeOf("bedroom", candidate) > target) {
-                return candidate;
+    /** Two ids on distinct stripes, returned as {lower-stripe, higher-stripe}. */
+    private static String[] lowerAndHigherStripeIds(ThreadLockServiceImpl svc, String a, String b) {
+        for (int i = 0; i < 10_000; i++) {
+            String candidate = b + i;
+            int sa = svc.stripeOf("bedroom", a);
+            int sb = svc.stripeOf("bedroom", candidate);
+            if (sa == sb) {
+                continue;
             }
+            return sa < sb ? new String[] { a, candidate } : new String[] { candidate, a };
         }
-        throw new IllegalStateException("could not find an id on a higher stripe");
+        throw new IllegalStateException("could not find two ids on distinct stripes");
     }
 }

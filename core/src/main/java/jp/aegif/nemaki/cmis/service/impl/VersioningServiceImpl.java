@@ -269,16 +269,61 @@ public class VersioningServiceImpl implements VersioningService {
 			// after all in-flight readers of this stripe.) A second eviction after those readers'
 			// requests have long finished narrows that window from "until the cache TTL" to a few
 			// seconds; the TTL remains the backstop, not the plan.
-			java.util.concurrent.CompletableFuture.runAsync(
-					() -> {
-						try {
-							nemakiCachePool.get(repositoryId).removeCmisCache(latestId);
-						} catch (RuntimeException ignore) {
-							// Best-effort; the TTL backstop covers a failed re-eviction.
-						}
-					},
-					java.util.concurrent.CompletableFuture.delayedExecutor(5,
-							java.util.concurrent.TimeUnit.SECONDS));
+			scheduleReEviction(repositoryId, latestId);
+		}
+	}
+
+	/**
+	 * Seconds to wait before the second, best-effort eviction.
+	 *
+	 * <p>Heuristic, not a correctness bound: it needs to outlast the in-flight reads that could
+	 * still repopulate the stale entry, and those are single requests. A reader slower than this
+	 * still wins, and the cache TTL is what covers that.
+	 */
+	private static final long RE_EVICTION_DELAY_SECONDS = 5;
+
+	/**
+	 * Lazily created scheduler for the re-eviction above.
+	 *
+	 * <p>Its own daemon thread rather than {@code CompletableFuture.delayedExecutor}, which runs
+	 * on the JVM-wide delayed scheduler and the common ForkJoinPool: work queued there outlives
+	 * this application's control, can execute after Spring has closed the caches during a
+	 * redeploy, and briefly pins the web application's classloader. Created on first use, so an
+	 * installation that never hits a lock timeout never starts the thread. Matches the daemon
+	 * single-thread pattern the other schedulers in this codebase use.
+	 */
+	private static volatile java.util.concurrent.ScheduledExecutorService reEvictionScheduler;
+
+	private static java.util.concurrent.ScheduledExecutorService reEvictionScheduler() {
+		java.util.concurrent.ScheduledExecutorService local = reEvictionScheduler;
+		if (local == null) {
+			synchronized (VersioningServiceImpl.class) {
+				local = reEvictionScheduler;
+				if (local == null) {
+					local = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+						Thread t = new Thread(r, "cmis-latest-cache-reevict");
+						t.setDaemon(true);
+						return t;
+					});
+					reEvictionScheduler = local;
+				}
+			}
+		}
+		return local;
+	}
+
+	private void scheduleReEviction(String repositoryId, String latestId) {
+		try {
+			reEvictionScheduler().schedule(() -> {
+				try {
+					nemakiCachePool.get(repositoryId).removeCmisCache(latestId);
+				} catch (RuntimeException ignore) {
+					// Best-effort; the TTL backstop covers a failed re-eviction, and a shutdown
+					// racing this task must not produce noise.
+				}
+			}, RE_EVICTION_DELAY_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
+		} catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
+			log.debug("Re-eviction not scheduled (shutting down): " + latestId);
 		}
 	}
 
