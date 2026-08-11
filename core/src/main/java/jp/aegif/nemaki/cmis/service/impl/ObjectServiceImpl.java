@@ -1248,8 +1248,21 @@ public class ObjectServiceImpl implements ObjectService {
 						objectIdAndChangeToken.getId(), content.getId(), String.valueOf(content.getChangeToken()));
 				return result;
 			} catch (Exception e) {
-				// Don't throw an error
-				// Don't return any BulkUpdateObjectIdAndChangetoken
+				// Per-object isolation is the CMIS contract for bulkUpdateProperties — absence
+				// from the result set IS the failure notification — but absence with no log line
+				// anywhere made real failures undiagnosable: one object on a congested stripe
+				// would silently miss the update and nothing recorded why. Now the reason is on
+				// record; a lock timeout is called out as retryable so a batch operator knows to
+				// re-run rather than to investigate the object.
+				if (e instanceof jp.aegif.nemaki.util.lock.LockAcquisitionTimeoutException) {
+					log.warn("bulkUpdateProperties: skipped " + objectIdAndChangeToken.getId()
+							+ " — object lock timed out (transient contention; re-running the"
+							+ " bulk update for this object should succeed): " + e.getMessage());
+				} else {
+					log.warn("bulkUpdateProperties: skipped " + objectIdAndChangeToken.getId()
+							+ ": " + e.getMessage());
+				}
+				// Don't throw; don't return a BulkUpdateObjectIdAndChangeToken for this object.
 			} finally {
 				lock.unlock();
 			}
@@ -1289,8 +1302,13 @@ public class ObjectServiceImpl implements ObjectService {
 		// it unanswerable. Non-folder moves cannot create a cycle (a document has no children)
 		// and are deliberately left concurrent.
 		//
-		// The repository lock is taken FIRST and released LAST, so its ordering relative to the
-		// per-object locks is fixed and cannot deadlock against them.
+		// The repository lock is taken FIRST and released LAST. That rule only orders it against
+		// other acquirers of the SAME lock, which is why the key is a NAMED lock (see
+		// ThreadLockServiceImpl): a name that merely hashed into the 4096 stripes would be the
+		// same lock as ~1/4096 of all real objects, and those objects appear inside other
+		// requests' ordered sets — putting this "always first" lock in the middle of somebody
+		// else's ordering, which is the outer-hold shape that took the repository down. As a
+		// dedicated instance it collides with nothing, so first-and-last is genuinely safe.
 		Content moving = contentService.getContent(repositoryId, movingId);
 		exceptionService.objectNotFound(DomainType.OBJECT, moving, movingId);
 		Lock hierarchyLock = (moving != null && moving.isFolder())
@@ -1459,9 +1477,11 @@ public class ObjectServiceImpl implements ObjectService {
 		fdd.setIds(failedIds);
 
 		if (!failedIds.isEmpty()) {
-			log.warn("[deleteTree] Orphan objects detected: folderId=" + folder.getId()
-				+ ", folderName=" + folder.getName() + ", orphanIds=" + failedIds
-				+ ", action=Check archive management or query CouchDB directly for cleanup");
+			log.warn("[deleteTree] Objects not deleted: folderId=" + folder.getId()
+				+ ", folderName=" + folder.getName() + ", ids=" + failedIds
+				+ ". See the per-object WARNs above for the reasons — lock timeouts are transient"
+				+ " (re-run deleteTree); only failures that persist across re-runs warrant"
+				+ " archive-management or CouchDB-level investigation.");
 		}
 
 		return fdd;
@@ -1516,6 +1536,7 @@ public class ObjectServiceImpl implements ObjectService {
 								objectServiceInternal.deleteObjectInternal(callContext, repositoryId, child, allVersions, true);
 								return null; // success
 							} catch (Exception e) {
+								logDeleteTreeFailure(child.getId(), e);
 								return child.getId(); // failure
 							}
 						}));
@@ -1540,7 +1561,27 @@ public class ObjectServiceImpl implements ObjectService {
 		try {
 			objectServiceInternal.deleteObjectInternal(callContext, repositoryId, node, allVersions, true);
 		} catch (Exception e) {
+			logDeleteTreeFailure(node.getId(), e);
 			failedIds.add(node.getId());
+		}
+	}
+
+	/**
+	 * Say WHY a node survived a deleteTree, and say it accurately.
+	 *
+	 * <p>Every failure here lands in {@code failedToDelete} (the CMIS contract), but the summary
+	 * log used to present all of them as orphans needing manual CouchDB cleanup. A lock timeout is
+	 * not that: it is transient contention, and the correct operator action is to run deleteTree
+	 * again, not to hand-edit the database. Presenting a retryable event as a repair job is how a
+	 * bounded failure turns into an operational incident.
+	 */
+	private void logDeleteTreeFailure(String objectId, Exception e) {
+		if (e instanceof jp.aegif.nemaki.util.lock.LockAcquisitionTimeoutException) {
+			log.warn("[deleteTree] Skipped " + objectId + ": object lock timed out (transient"
+					+ " contention — re-running deleteTree should delete it; no manual cleanup"
+					+ " is needed): " + e.getMessage());
+		} else {
+			log.warn("[deleteTree] Failed to delete " + objectId + ": " + e.getMessage());
 		}
 	}
 

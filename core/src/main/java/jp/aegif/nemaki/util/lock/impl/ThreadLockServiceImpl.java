@@ -2,7 +2,10 @@ package jp.aegif.nemaki.util.lock.impl;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -16,7 +19,7 @@ import jp.aegif.nemaki.util.lock.LockOrderMonitor;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
 
 /**
- * Per-object read/write locks, striped.
+ * Per-object read/write locks, striped, with every acquisition bounded.
  *
  * <h2>Striping, and what it means for lock order</h2>
  *
@@ -31,11 +34,24 @@ import jp.aegif.nemaki.util.lock.ThreadLockService;
  * index, so any two threads asking for an overlapping set take the shared stripes in the same
  * order and cannot wait on each other. Sites that take several locks should use it.
  *
- * <p>The stripe index is computed here rather than taken from Guava's {@code Striped}: Guava
- * exposes {@code bulkGet} (which sorts) but not the index itself, and {@code bulkGet} returns
- * stripes without saying which key each came from — unusable when some of the set is wanted for
- * reading and some for writing. Owning the mapping also lets a lock report its own stripe, which
- * is what makes {@link LockOrderMonitor} able to name the pair in a finding.
+ * <h2>Named locks</h2>
+ *
+ * <p>A key of the form {@code __name__} is a NAMED lock: it gets a dedicated lock outside the
+ * stripe array instead of hashing into it. The repository-wide folder-hierarchy lock is one.
+ * Hashing it into the stripes would silently make it the same lock as ~1/4096 of all real
+ * objects, and a lock that is deliberately taken FIRST and held across an ordered set must not be
+ * a lock that also appears INSIDE other requests' ordered sets — that is the outer-hold shape
+ * that took the repository down. A dedicated instance removes the collision by construction.
+ *
+ * <h2>Bounds</h2>
+ *
+ * <p>Every acquisition path is time-bounded, so a cycle — through any pair of sites, converted or
+ * not — ends as one failed, retryable request instead of a stopped repository. The bounds
+ * distinguish retrying (which breaks cycles, because everything held is released between
+ * attempts) from total patience (how long ordinary contention is waited out); conflating the two
+ * made contention look like deadlock twice while this was being built. A read-to-write upgrade on
+ * a stripe the thread does not also hold for writing can never succeed, so it is refused
+ * immediately rather than after the bound.
  */
 public class ThreadLockServiceImpl implements ThreadLockService {
 
@@ -43,10 +59,9 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 	 * Must stay a power of two: the index is a mask, not a modulo.
 	 *
 	 * <p>Kept at the previous value so the memory and contention profile does not change with this
-	 * work. The locks are now allocated eagerly rather than through weak references; 4096
-	 * {@code ReentrantReadWriteLock}s is a few hundred kilobytes, and a stripe that cannot be
-	 * collected is a stripe whose identity is stable — which an ordering built on the stripe index
-	 * needs.
+	 * work. The locks are allocated eagerly; 4096 {@code ReentrantReadWriteLock}s is a few hundred
+	 * kilobytes, and a stripe that cannot be collected is a stripe whose identity is stable —
+	 * which an ordering built on the stripe index needs.
 	 */
 	private static final int STRIPES = 4096;
 	private static final int MASK = STRIPES - 1;
@@ -54,9 +69,52 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 	private static final org.slf4j.Logger LOG =
 			org.slf4j.LoggerFactory.getLogger(ThreadLockServiceImpl.class);
 
+	/** At most one contention WARN per stripe per this interval — hot stripes must not flood. */
+	private static final long WARN_INTERVAL_MS = 60_000L;
+	private static final AtomicLongArray WARN_STAMPS = new AtomicLongArray(STRIPES);
+
 	private final ReadWriteLock[] locks = new ReadWriteLock[STRIPES];
 
+	/** Dedicated locks for {@code __name__} keys, with monitor identities above the stripe range. */
+	private final ConcurrentHashMap<String, NamedLock> namedLocks = new ConcurrentHashMap<>();
+	private final AtomicInteger nextNamedStripe = new AtomicInteger(STRIPES);
+
+	private record NamedLock(ReadWriteLock lock, int stripeId) {
+	}
+
+	/** One attempt at a whole set; everything held is released when it expires. */
+	private final long acquireAttemptMs;
+	/** Total patience for a set across attempts. */
+	private final long acquireTotalMs;
+	/** The bound on a single lock — a deadlock breaker, far above any realistic wait. */
+	private final long singleLockDeadlineMs;
+	/** When a single acquisition is worth telling an operator about (not a failure). */
+	private final long singleLockWarnMs;
+
 	public ThreadLockServiceImpl() {
+		// 30s per set attempt / 300s total / 300s single / 15s warn. The single-lock bound is
+		// deliberately the same as the set total: a single lock has no alternative to waiting,
+		// and cutting it short converts ordinary contention into failed requests — at 30s the
+		// concurrency suite failed document creates, because a hundred threads writing into one
+		// folder legitimately queue on that folder for longer than that. A deadlock, by contrast,
+		// is permanent, so any finite bound breaks it.
+		this(30_000L, 300_000L, 300_000L, 15_000L);
+	}
+
+	/**
+	 * Bound-tuning constructor.
+	 *
+	 * <p>Public because the timeout behaviour is untestable at production values — a test cannot
+	 * wait five minutes to see a throw — and a bound that has never been seen to fire is exactly
+	 * the kind of net that turns out to be missing when it is finally needed. Production wiring
+	 * uses the default constructor.
+	 */
+	public ThreadLockServiceImpl(long acquireAttemptMs, long acquireTotalMs,
+			long singleLockDeadlineMs, long singleLockWarnMs) {
+		this.acquireAttemptMs = acquireAttemptMs;
+		this.acquireTotalMs = acquireTotalMs;
+		this.singleLockDeadlineMs = singleLockDeadlineMs;
+		this.singleLockWarnMs = Math.min(singleLockWarnMs, singleLockDeadlineMs);
 		for (int i = 0; i < STRIPES; i++) {
 			locks[i] = new ReentrantReadWriteLock();
 		}
@@ -81,8 +139,20 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 		return repositoryId + "/" + objectId;
 	}
 
+	private static boolean isNamedKey(String objectId) {
+		return objectId != null && objectId.length() > 4
+				&& objectId.startsWith("__") && objectId.endsWith("__");
+	}
+
 	@Override
 	public ReadWriteLock get(String repositoryId, String objectId) {
+		if (isNamedKey(objectId)) {
+			NamedLock named = namedLocks.computeIfAbsent(key(repositoryId, objectId),
+					k -> new NamedLock(new ReentrantReadWriteLock(),
+							nextNamedStripe.getAndIncrement()));
+			return new MonitoredReadWriteLock(named.lock(), named.stripeId(),
+					key(repositoryId, objectId));
+		}
 		int stripe = stripeOf(repositoryId, objectId);
 		return new MonitoredReadWriteLock(locks[stripe], stripe, key(repositoryId, objectId));
 	}
@@ -117,71 +187,42 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 		}
 		// Sort by stripe, and drop duplicates: two ids on one stripe are ONE lock, and taking it
 		// twice would be a reentrant acquisition that the matching bulkUnlock releases only once,
-		// leaking a hold for the life of the thread.
+		// leaking a hold for the life of the thread. Named keys sort after all object stripes.
 		List<int[]> ordered = new ArrayList<>(objectIds.size());
+		List<ReadWriteLock> raw = new ArrayList<>(objectIds.size());
 		List<String> keys = new ArrayList<>(objectIds.size());
 		java.util.Set<Integer> seen = new java.util.HashSet<>();
 		for (String id : objectIds) {
 			if (id == null) {
 				continue;
 			}
-			int stripe = stripeOf(repositoryId, id);
+			int stripe;
+			ReadWriteLock lock;
+			if (isNamedKey(id)) {
+				NamedLock named = namedLocks.computeIfAbsent(key(repositoryId, id),
+						k -> new NamedLock(new ReentrantReadWriteLock(),
+								nextNamedStripe.getAndIncrement()));
+				stripe = named.stripeId();
+				lock = named.lock();
+			} else {
+				stripe = stripeOf(repositoryId, id);
+				lock = locks[stripe];
+			}
 			if (!seen.add(stripe)) {
 				continue;
 			}
 			ordered.add(new int[] { stripe, keys.size() });
+			raw.add(lock);
 			keys.add(key(repositoryId, id));
 		}
 		ordered.sort((a, b) -> Integer.compare(a[0], b[0]));
 		for (int[] entry : ordered) {
-			ReadWriteLock rw = new MonitoredReadWriteLock(locks[entry[0]], entry[0],
+			ReadWriteLock rw = new MonitoredReadWriteLock(raw.get(entry[1]), entry[0],
 					keys.get(entry[1]));
 			result.add(write ? rw.writeLock() : rw.readLock());
 		}
 		return result;
 	}
-
-	/**
-	 * How long ONE attempt at a set may take before everything held is dropped and it is tried
-	 * again.
-	 *
-	 * <p>This is the cycle breaker, and it is the release rather than the delay that breaks it: a
-	 * partial hold is what lets a cycle persist, so letting go periodically lets the other side
-	 * finish. It is a budget for the whole set, not per lock — per lock would let a two-hundred-row
-	 * page take two hundred times as long, which under shifting contention is indistinguishable
-	 * from the hang this exists to prevent.
-	 */
-	private static final long ACQUIRE_ATTEMPT_MS = 30_000L;
-
-	/**
-	 * How long a set may keep retrying before the request is failed.
-	 *
-	 * <p>Separate from the attempt budget on purpose, and the reason is a mistake made here first:
-	 * with a fixed three attempts the concurrency suite began failing ordinary reads, because a
-	 * folder under sustained write load takes longer than three short attempts to read — nothing
-	 * was deadlocked, it was busy. Retrying is how a cycle is broken; the total is how long a
-	 * caller is willing to be busy. Conflating them makes contention look like deadlock.
-	 */
-	private static final long ACQUIRE_TOTAL_MS = 300_000L;
-
-	/**
-	 * The bound on a SINGLE lock, which is a deadlock breaker and nothing else.
-	 *
-	 * <p>Deliberately far above any realistic wait. A set can be abandoned and retried cheaply, so
-	 * a short budget there is a reasonable back-off; a single lock has no alternative to waiting,
-	 * and cutting it short converts ordinary contention into failed requests. That is not
-	 * hypothetical — at 30s the concurrency suite began failing document creates, because a
-	 * hundred threads writing into one folder legitimately queue on that folder for longer than
-	 * that. A deadlock, by contrast, is permanent, so any finite bound breaks it; five minutes
-	 * separates "this will never finish" from "this is busy".
-	 *
-	 * <p>Anything approaching it is logged well before it expires, so heavy contention is visible
-	 * without being fatal.
-	 */
-	private static final long SINGLE_LOCK_DEADLINE_MS = 300_000L;
-
-	/** How long a single acquisition may take before it is worth telling an operator about. */
-	private static final long SINGLE_LOCK_WARN_MS = 15_000L;
 
 	@Override
 	public void bulkLock(List<Lock> locks) {
@@ -195,28 +236,41 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 		// descendants walk holds each level while it takes the next. Nothing inside this method
 		// can see that outer hold, so this method cannot order its way out of it. What it can do
 		// is let go periodically: whoever releases lets the other side proceed.
-		long giveUpAt = System.nanoTime() + ACQUIRE_TOTAL_MS * 1_000_000L;
+		long giveUpAt = System.nanoTime() + acquireTotalMs * 1_000_000L;
 		boolean warned = false;
 		for (int attempt = 1;; attempt++) {
-			long attemptDeadline = System.nanoTime() + ACQUIRE_ATTEMPT_MS * 1_000_000L;
+			// Each attempt is capped by the TOTAL deadline too, so the last attempt cannot run
+			// past it — without the cap an attempt started just before the total expired would
+			// overshoot the documented bound by a whole attempt.
+			long attemptDeadline = Math.min(
+					System.nanoTime() + acquireAttemptMs * 1_000_000L, giveUpAt);
 			List<Lock> taken = new ArrayList<>(locks.size());
 			boolean complete = true;
-			for (Lock lock : locks) {
-				long remaining = attemptDeadline - System.nanoTime();
-				boolean got;
-				try {
-					got = remaining > 0 && lock.tryLock(remaining, TimeUnit.NANOSECONDS);
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-					releaseQuietly(taken);
-					throw new LockAcquisitionTimeoutException(
-							"Interrupted while acquiring object locks", describe(locks));
+			try {
+				for (Lock lock : locks) {
+					long remaining = attemptDeadline - System.nanoTime();
+					boolean got;
+					try {
+						got = remaining > 0 && lock.tryLock(remaining, TimeUnit.NANOSECONDS);
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						releaseQuietly(taken);
+						throw new LockAcquisitionTimeoutException(
+								"Interrupted while acquiring object locks", describe(locks));
+					}
+					if (!got) {
+						complete = false;
+						break;
+					}
+					taken.add(lock);
 				}
-				if (!got) {
-					complete = false;
-					break;
-				}
-				taken.add(lock);
+			} catch (LockAcquisitionTimeoutException e) {
+				// tryLock refuses a certain self-deadlock (this thread already reads one of the
+				// stripes and the set wants to write it) by throwing. Waiting out the total budget
+				// on an acquisition that can never succeed would be worse than failing now — but
+				// the partial holds must not leak on the way out.
+				releaseQuietly(taken);
+				throw e;
 			}
 			if (complete) {
 				if (warned) {
@@ -233,8 +287,8 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 				warned = true;
 				// "Busy", not "broken". Only the throw below means the latter.
 				LOG.warn("Could not take {} object lock(s) in {}s; releasing and retrying up to"
-						+ " {}s in total. Objects: {}", locks.size(), ACQUIRE_ATTEMPT_MS / 1000,
-						ACQUIRE_TOTAL_MS / 1000, describe(locks));
+						+ " {}s in total. Objects: {}", locks.size(), acquireAttemptMs / 1000,
+						acquireTotalMs / 1000, describe(locks));
 			}
 			try {
 				// Both sides backing off in lockstep would re-collide forever. The jitter is
@@ -250,7 +304,7 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 			}
 		}
 		throw new LockAcquisitionTimeoutException("Could not take " + locks.size()
-				+ " object lock(s) within " + (ACQUIRE_TOTAL_MS / 1000)
+				+ " object lock(s) within " + (acquireTotalMs / 1000)
 				+ "s — another request holds one of them and is very likely waiting on this one."
 				+ " Failing so both sides can make progress; this request is safe to retry."
 				+ " Objects: " + describe(locks), describe(locks));
@@ -288,8 +342,18 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 		}
 	}
 
+	/** Test seam: the key a monitored lock was built for, or null for foreign locks. */
+	static String keyOf(Lock lock) {
+		return lock instanceof MonitoredLock ? ((MonitoredLock) lock).key : null;
+	}
+
+	/** Test seam: the stripe identity a monitored lock reports to the monitor, or -1. */
+	static int stripeIdOf(Lock lock) {
+		return lock instanceof MonitoredLock ? ((MonitoredLock) lock).stripe : -1;
+	}
+
 	/** Pairs a stripe's real lock with the identity needed to report an ordering problem. */
-	private static final class MonitoredReadWriteLock implements ReadWriteLock {
+	private final class MonitoredReadWriteLock implements ReadWriteLock {
 		private final ReadWriteLock delegate;
 		private final int stripe;
 		private final String key;
@@ -312,13 +376,14 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 	}
 
 	/**
-	 * A lock that tells {@link LockOrderMonitor} what it is and when it is taken.
+	 * A lock that tells {@link LockOrderMonitor} what it is and when it is taken, and never waits
+	 * beyond its bound.
 	 *
 	 * <p>Wrapping here rather than instrumenting each call site is the point: there are more than
 	 * thirty acquisition sites across the services, and a rule enforced at thirty places is a rule
 	 * that will be missed at the thirty-first.
 	 */
-	private static final class MonitoredLock implements Lock {
+	private final class MonitoredLock implements Lock {
 		private final Lock delegate;
 		private final int stripe;
 		final String key;
@@ -330,7 +395,9 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 		 * acquisition fails, that {@code finally} still runs — and unlocking something never taken
 		 * throws {@code IllegalMonitorStateException}, which would replace the timeout with a
 		 * meaningless error and lose the diagnosis. Counting here makes the release tolerant
-		 * without making every caller aware of it.
+		 * without making every caller aware of it; the monitor counts the no-ops so a genuine
+		 * wrong-wrapper unlock (which now LEAKS the hold instead of releasing it, unlike the
+		 * pre-wrapper implementation) still has a visible symptom.
 		 */
 		private int holds;
 
@@ -339,6 +406,17 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 			this.stripe = stripe;
 			this.key = key;
 			this.mode = mode;
+		}
+
+		private LockAcquisitionTimeoutException refuseUpgrade() {
+			return new LockAcquisitionTimeoutException("Refusing the " + mode + " lock on " + key
+					+ ": this thread already holds that stripe for READING and"
+					+ " ReentrantReadWriteLock cannot upgrade, so the acquisition could only end"
+					+ " at its timeout — while stalling every later reader of the stripe behind"
+					+ " the queued writer. This is a lock-usage bug at the call site (see the"
+					+ " lock-order finding just logged), not contention; retrying will fail the"
+					+ " same way until the caller stops requesting a write under its own read.",
+					List.of(key));
 		}
 
 		@Override
@@ -350,20 +428,22 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 			// reaching for the parent. Those never enter bulkLock, so a bound that lived only
 			// there would leave the repository just as capable of stopping. A bound here covers
 			// every acquisition in the system, including the ones nobody has converted yet.
-			LockOrderMonitor.beforeAcquire(stripe, key, mode);
+			if (LockOrderMonitor.beforeAcquire(stripe, key, mode)) {
+				throw refuseUpgrade();
+			}
 			boolean got;
 			long startedAt = System.nanoTime();
 			try {
-				got = delegate.tryLock(SINGLE_LOCK_WARN_MS, TimeUnit.MILLISECONDS);
+				got = delegate.tryLock(singleLockWarnMs, TimeUnit.MILLISECONDS);
 				if (!got) {
 					// Not a failure yet — say so, and keep waiting up to the deadlock bound. The
 					// distinction matters: this line means "busy", and only the throw below means
 					// "this was never going to finish".
-					LOG.warn("Waiting over {}s for the {} lock on {} — heavy contention. Will give"
-							+ " up at {}s so a deadlock cannot hold this request forever.",
-							SINGLE_LOCK_WARN_MS / 1000, mode, key,
-							SINGLE_LOCK_DEADLINE_MS / 1000);
-					got = delegate.tryLock(SINGLE_LOCK_DEADLINE_MS - SINGLE_LOCK_WARN_MS,
+					warnRateLimited("Waiting over " + (singleLockWarnMs / 1000) + "s for the "
+							+ mode + " lock on " + key + " — heavy contention. Will give up at "
+							+ (singleLockDeadlineMs / 1000)
+							+ "s so a deadlock cannot hold this request forever.");
+					got = delegate.tryLock(singleLockDeadlineMs - singleLockWarnMs,
 							TimeUnit.MILLISECONDS);
 				}
 			} catch (InterruptedException e) {
@@ -373,29 +453,59 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 			}
 			if (!got) {
 				throw new LockAcquisitionTimeoutException("Could not take the " + mode
-						+ " lock on " + key + " within " + (SINGLE_LOCK_DEADLINE_MS / 1000)
+						+ " lock on " + key + " within " + (singleLockDeadlineMs / 1000)
 						+ "s — another request holds it and is very likely waiting on something"
 						+ " this request holds. Failing so both sides can make progress; this"
 						+ " request is safe to retry.", List.of(key));
 			}
-			if (System.nanoTime() - startedAt > SINGLE_LOCK_WARN_MS * 1_000_000L) {
-				LOG.warn("Took the {} lock on {} after {}ms of waiting", mode, key,
-						(System.nanoTime() - startedAt) / 1_000_000L);
+			if (System.nanoTime() - startedAt > singleLockWarnMs * 1_000_000L) {
+				warnRateLimited("Took the " + mode + " lock on " + key + " after "
+						+ ((System.nanoTime() - startedAt) / 1_000_000L) + "ms of waiting");
 			}
 			holds++;
 			LockOrderMonitor.acquired(stripe, key, mode);
 		}
 
+		/**
+		 * At most one contention WARN per stripe per {@link #WARN_INTERVAL_MS}: hundreds of
+		 * requests queueing behind one long writer all cross the threshold together, and a
+		 * hundred identical lines say less than one.
+		 */
+		private void warnRateLimited(String message) {
+			if (stripe >= STRIPES) {
+				LOG.warn(message); // named locks are few; no need to rate-limit
+				return;
+			}
+			long now = System.currentTimeMillis();
+			long prev = WARN_STAMPS.get(stripe);
+			if (now - prev >= WARN_INTERVAL_MS && WARN_STAMPS.compareAndSet(stripe, prev, now)) {
+				LOG.warn(message);
+			}
+		}
+
 		@Override
 		public void lockInterruptibly() throws InterruptedException {
-			LockOrderMonitor.beforeAcquire(stripe, key, mode);
-			delegate.lockInterruptibly();
+			// Same bound as lock(): an unbounded acquisition path on the shared lock type would
+			// quietly re-admit the permanent-deadlock failure mode for whoever calls it next,
+			// which is exactly how the last unbounded path was found — by a reviewer, not a test.
+			if (LockOrderMonitor.beforeAcquire(stripe, key, mode)) {
+				throw refuseUpgrade();
+			}
+			if (!delegate.tryLock(singleLockDeadlineMs, TimeUnit.MILLISECONDS)) {
+				throw new LockAcquisitionTimeoutException("Could not take the " + mode
+						+ " lock on " + key + " within " + (singleLockDeadlineMs / 1000)
+						+ "s. Failing so both sides can make progress; safe to retry.",
+						List.of(key));
+			}
 			holds++;
 			LockOrderMonitor.acquired(stripe, key, mode);
 		}
 
 		@Override
 		public boolean tryLock() {
+			// No waiting, so no upgrade refusal needed: a certain upgrade simply fails the try,
+			// which is already the contract. Still worth reporting, hence beforeAcquire.
+			LockOrderMonitor.beforeAcquire(stripe, key, mode);
 			if (delegate.tryLock()) {
 				holds++;
 				LockOrderMonitor.acquired(stripe, key, mode);
@@ -406,7 +516,13 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 
 		@Override
 		public boolean tryLock(long time, TimeUnit unit) throws InterruptedException {
-			LockOrderMonitor.beforeAcquire(stripe, key, mode);
+			if (LockOrderMonitor.beforeAcquire(stripe, key, mode)) {
+				// A certain self-deadlock: waiting out `time` cannot change the outcome, and
+				// inside bulkLock it would burn the whole retry budget on an acquisition that can
+				// never succeed. Thrown rather than returned as false so the caller's failure
+				// carries the reason; bulkLock releases its partial holds and rethrows.
+				throw refuseUpgrade();
+			}
 			if (delegate.tryLock(time, unit)) {
 				holds++;
 				LockOrderMonitor.acquired(stripe, key, mode);
@@ -418,13 +534,17 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 		@Override
 		public void unlock() {
 			if (holds <= 0) {
-				// Never taken (or already released): a caller's finally-block running after a
-				// failed acquisition. Silently correct — see the `holds` field.
+				// Never taken (or already released) THROUGH THIS WRAPPER. Normal after a failed
+				// acquisition (the caller's finally-block still runs); counted because the other
+				// cause — unlocking through a different wrapper than the one that locked — now
+				// leaks the hold instead of releasing it, and the counter is that bug's only
+				// visible symptom.
+				LockOrderMonitor.unlockWithoutHold();
 				return;
 			}
 			holds--;
 			delegate.unlock();
-			LockOrderMonitor.released(stripe);
+			LockOrderMonitor.released(stripe, mode);
 		}
 
 		@Override

@@ -380,7 +380,24 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
                 parentQuery.setRows(1);
                 SolrDocumentList parentDocs = solrClient.query("nemaki", parentQuery).getResults();
                 if (parentDocs == null || parentDocs.isEmpty()) {
-                    // Not indexed (yet) — nothing to update; the next indexing run embeds fresh ACL
+                    // The SEARCHER says the block is absent — but the searcher lags the soft
+                    // commit (commitWithin, default 10s), so "absent" has two very different
+                    // causes and only the realtime GET can tell them apart. Genuinely absent:
+                    // nothing to update, the next indexing run embeds fresh readers — skip. In
+                    // the update log but not yet searchable: the block EXISTS and its readers are
+                    // about to be wrong, and skipping here silently drops a GRANT — the newly
+                    // permitted user stays filtered out of RAG search until the next content
+                    // reindex, with no reconciliation task to ever converge it. Same lag, same
+                    // remedy as the snapshot/realtime version mismatch below: fail so the caller
+                    // records a per-node failure and the re-drive retries after the commit.
+                    Long inUpdateLog = realtimeVersion(solrClient, ragId);
+                    if (inUpdateLog != null) {
+                        throw new RAGIndexingException("RAG block for " + documentId
+                                + " exists in the update log but is not yet searchable"
+                                + " (soft-commit lag) — its readers cannot be rebuilt from the"
+                                + " searcher; failing so reconciliation re-drives after the"
+                                + " commit");
+                    }
                     log.debug("RAG ACL update skipped, document not in RAG index: {} (ragId={})",
                             documentId, ragId);
                     return;

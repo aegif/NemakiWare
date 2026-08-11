@@ -29,6 +29,24 @@ public class ApiExceptionMapper implements ExceptionMapper<Throwable> {
         
         if (exception instanceof ApiException) {
             problemDetail = ((ApiException) exception).getProblemDetail();
+            // Resources catch broadly and wrap into internalError(detail, cause). When the cause
+            // is a bounded-lock 503, presenting it as a 500 destroys the one thing the exception
+            // exists to say — "temporary, retry" — and integration clients that retry on 503 will
+            // not retry a problem+json internal-error. Walk the cause chain and restore the
+            // status. (Wrap sites that drop the cause cannot be rescued here; most pass it.)
+            if (problemDetail != null && problemDetail.getStatus() == 500) {
+                for (Throwable t = exception.getCause(); t != null; t = t.getCause()) {
+                    if (t instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisServiceUnavailableException) {
+                        problemDetail = ProblemDetail.serviceUnavailable(t.getMessage());
+                        break;
+                    }
+                }
+            }
+        } else if (exception instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisServiceUnavailableException) {
+            // Cannot rely on mapCmisException: CmisServiceUnavailableException(String) leaves
+            // getCode() at ZERO, which the code-based mapping reads as "not a client error" and
+            // turns into a 500. The type, not the code, carries the meaning here.
+            problemDetail = ProblemDetail.serviceUnavailable(exception.getMessage());
         } else if (exception instanceof CmisObjectNotFoundException) {
             problemDetail = ProblemDetail.objectNotFound(
                     extractObjectId((CmisObjectNotFoundException) exception),

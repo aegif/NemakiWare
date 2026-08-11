@@ -1334,6 +1334,18 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     response.sendError(HttpServletResponse.SC_CONFLICT, "CMIS constraint: " + e.getMessage());
                 }
                 return null;
+            } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisServiceUnavailableException e) {
+                // A bounded lock acquisition gave up. 503, NOT 500: OpenCMIS clients map 500 to
+                // CmisRuntimeException (a fault, do not retry) and 503 to "temporarily
+                // unavailable, retry" — and retrying is exactly right here. Every other route in
+                // this servlet already preserves that distinction; content download must not be
+                // the one path that loses it.
+                log.warn("Content stream for " + objectId + " temporarily unavailable: " + e.getMessage());
+                if (!response.isCommitted()) {
+                    response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE,
+                        "Temporarily unavailable, retry: " + e.getMessage());
+                }
+                return null;
             } catch (Exception e) {
                 log.debug("Service exception getting content stream for " + objectId + ": " + e.getMessage());
                 if (!response.isCommitted()) {

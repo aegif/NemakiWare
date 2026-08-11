@@ -136,12 +136,32 @@ public class SearchIndexObservabilityController {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("upgrades", jp.aegif.nemaki.util.lock.LockOrderMonitor.upgradeCount());
         body.put("inversions", jp.aegif.nemaki.util.lock.LockOrderMonitor.inversionCount());
+        // Acquisitions only PARTIALLY edge-checked because more than the comparison window was
+        // already held. Zero inversions is only as strong as this number is small: the detector
+        // compares a new acquisition against the OLDEST holds (the outer scopes, which is the
+        // shape that took the repository down), so what truncation drops is inner-set pairs —
+        // but a reader of "0" deserves to know how much was not looked at.
+        body.put("depthLimitedAcquisitions",
+                jp.aegif.nemaki.util.lock.LockOrderMonitor.depthLimitedCount());
+        // unlock() calls that had nothing to release. Nonzero after acquisition timeouts is
+        // normal (the caller's finally still runs); growth WITHOUT timeouts means some code path
+        // unlocks through a different wrapper than the one that locked — which silently LEAKS
+        // the hold, and this counter is that bug's only symptom.
+        body.put("unlocksWithoutHold",
+                jp.aegif.nemaki.util.lock.LockOrderMonitor.unlockWithoutHoldCount());
+        body.put("findingsCapReached",
+                jp.aegif.nemaki.util.lock.LockOrderMonitor.findingsCapReached());
         List<Map<String, Object>> findings = jp.aegif.nemaki.util.lock.LockOrderMonitor.findings();
         body.put("findings", findings);
-        body.put("note", findings.isEmpty()
+        body.put("note", (findings.isEmpty()
                 ? "No unsafe lock order has been observed on this replica since it started."
-                : "Each finding names two objects and the two orders seen. An 'upgrade' has already"
-                        + " deadlocked a thread; an 'inversion' can.");
+                : "Each finding names one STRIPE pair (with the first observed objects as the"
+                        + " example) and the two orders seen. An 'upgrade' was refused before it"
+                        + " could self-deadlock; an 'inversion' can deadlock, which the"
+                        + " acquisition bounds turn into a failed request rather than a stopped"
+                        + " repository.")
+                + " All data is per-JVM since process start; an inversion recorded once stays"
+                + " listed even if the code path that produced it no longer runs.");
         return ResponseEntity.ok(body);
     }
 

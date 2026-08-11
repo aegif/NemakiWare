@@ -220,11 +220,40 @@ public class RAGIndexingServiceImplAclUpdateTest {
     @Test
     public void aclUpdateDoesNothingWhenDocumentNotIndexed() throws Exception {
         stubQueries(null, new ArrayList<>());
+        // "Genuinely absent" means the realtime GET agrees: the searcher AND the update log both
+        // say no document. Only then is skipping correct.
+        when(solrClient.getById(anyString(), anyString(), any(SolrParams.class)))
+                .thenReturn(null);
 
         service.updateDocumentACL(REPO_ID, DOC_ID, Arrays.asList("user:test-repo:alice"));
 
         assertNull(findDeleteRequest(), "no delete when document is not in the RAG index");
         assertNull(findAddRequest(), "no add when document is not in the RAG index");
+    }
+
+    @Test
+    public void aclUpdateFailsWhenBlockExistsButIsNotYetSearchable() throws Exception {
+        // The searcher says absent, but the realtime GET finds the block in the update log: the
+        // block was written moments ago and the soft commit has not exposed it yet. Skipping here
+        // silently drops a GRANT — the newly permitted user stays filtered out of RAG search
+        // until the next content reindex, and no reconciliation task ever converges it. The only
+        // correct move is to fail so the caller records a per-node failure and the re-drive
+        // retries after the commit, exactly like the snapshot/realtime version mismatch.
+        stubQueries(null, new ArrayList<>());
+        // (the class-level stub already answers the realtime GET with a version)
+
+        try {
+            service.updateDocumentACL(REPO_ID, DOC_ID, Arrays.asList("user:test-repo:alice"));
+            org.junit.jupiter.api.Assertions.fail(
+                    "a block in the update log but not yet searchable must not be skipped as"
+                            + " 'not indexed' — that silently drops the readers update");
+        } catch (RAGIndexingException expected) {
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    String.valueOf(expected.getMessage()).contains("not yet searchable"),
+                    "the reason must say soft-commit lag so the retry is not a mystery: "
+                            + expected.getMessage());
+        }
+        assertNull(findAddRequest(), "nothing may be written from a snapshot that could not be read");
     }
 
     @Test

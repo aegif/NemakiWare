@@ -32,6 +32,8 @@ import org.junit.jupiter.api.Test;
 
 import jp.aegif.nemaki.util.lock.impl.ThreadLockServiceImpl;
 
+// (LockAcquisitionTimeoutException is in this package)
+
 /**
  * Finding an unsafe lock order before it stops the repository.
  *
@@ -60,35 +62,98 @@ class LockOrderMonitorTest {
     }
 
     @Test
-    @DisplayName("read を持ったまま write を取ろうとしたら (自己デッドロック) 検出する")
-    void aReadHoldFollowedByAWriteRequestIsReported() throws Exception {
-        CountDownLatch readTaken = new CountDownLatch(1);
+    @DisplayName("read を持ったまま write を取ろうとしたら即時に拒否される (自己デッドロック)")
+    void aReadHoldFollowedByAWriteRequestIsRefusedImmediately() throws Exception {
+        java.util.concurrent.atomic.AtomicReference<Throwable> outcome =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicLong elapsedMs = new java.util.concurrent.atomic.AtomicLong(-1);
 
         // Both acquisitions on ONE thread: that is what an upgrade is. Two threads contending for
         // the same stripe is ordinary and resolves; one thread asking to write what it already
-        // reads never succeeds, because ReentrantReadWriteLock has no upgrade path.
+        // reads never succeeds, because ReentrantReadWriteLock has no upgrade path. Waiting out
+        // the bound would stall every later reader of the stripe behind the queued writer for the
+        // whole bound — for an outcome known before the wait began. So it must fail NOW.
         Thread t = new Thread(() -> {
             Lock read = service.getReadLock("bedroom", "obj-a");
             Lock write = service.getWriteLock("bedroom", "obj-a");
             read.lock();
-            readTaken.countDown();
+            long start = System.nanoTime();
             try {
                 write.lock();
-            } catch (RuntimeException expected) {
-                // Bounded now, so it ends as a timeout rather than a hang.
+            } catch (Throwable thrown) {
+                outcome.set(thrown);
+            } finally {
+                elapsedMs.set((System.nanoTime() - start) / 1_000_000L);
+                read.unlock();
             }
         }, "upgrade-attempt");
-        t.setDaemon(true);
         t.start();
+        t.join(10_000);
 
-        assertTrue(readTaken.await(5, TimeUnit.SECONDS), "the read lock should be taken");
-        // Deliberately not waiting for the bound to expire: the report is written BEFORE the
-        // acquisition, and that is the property that matters — an acquisition that never succeeds
-        // cannot report itself afterwards.
-        Thread.sleep(300);
+        assertTrue(outcome.get() instanceof LockAcquisitionTimeoutException,
+                "the certain self-deadlock must be refused with the retryable lock exception,"
+                        + " got: " + outcome.get());
+        assertTrue(elapsedMs.get() >= 0 && elapsedMs.get() < 5_000,
+                "refused IMMEDIATELY — burning the acquisition bound on an outcome known in"
+                        + " advance stalls the whole stripe: " + elapsedMs.get() + "ms");
+        assertEquals(1, LockOrderMonitor.upgradeCount(), "and reported as an upgrade");
+    }
 
-        assertEquals(1, LockOrderMonitor.upgradeCount(),
-                "the upgrade must be reported, and reported before the acquisition is attempted");
+    @Test
+    @DisplayName("write→read→write の合法な降格パターンは upgrade と誤報しない")
+    void aLegalDowngradePatternIsNotReportedAsAnUpgrade() {
+        // After WRITE then READ of the same stripe (the documented RRWL downgrade idiom), the
+        // thread still owns the write lock, so a further write request is reentrant and MUST
+        // succeed. A monitor that only looked at the newest same-stripe entry would see the read
+        // and cry upgrade — and with the refusal above, that false alarm would turn a legal
+        // acquisition into a spurious failure.
+        Lock write = service.getWriteLock("bedroom", "obj-a");
+        Lock read = service.getReadLock("bedroom", "obj-a");
+        Lock writeAgain = service.getWriteLock("bedroom", "obj-a");
+        write.lock();
+        read.lock();
+        writeAgain.lock();
+        writeAgain.unlock();
+        read.unlock();
+        write.unlock();
+
+        assertEquals(0, LockOrderMonitor.upgradeCount(),
+                "a reentrant write under an existing write hold is legal, whatever reads sit"
+                        + " between them");
+    }
+
+    @Test
+    @DisplayName("mode を無視した解放で write の会計が残らない (非 LIFO 解放)")
+    void releasingTheWriteHoldFirstKeepsTheAccountingRight() throws Exception {
+        // Hold WRITE and READ of one stripe, release the WRITE first (non-LIFO). A mode-blind
+        // removal would take the read entry and leave a phantom write hold — which then hides a
+        // REAL upgrade: with only the read actually held, a write request truly can never
+        // succeed, and the monitor must still say so.
+        java.util.concurrent.atomic.AtomicReference<Throwable> outcome =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        Thread t = new Thread(() -> {
+            Lock write = service.getWriteLock("bedroom", "obj-a");
+            Lock read = service.getReadLock("bedroom", "obj-a");
+            write.lock();
+            read.lock();
+            write.unlock(); // non-LIFO: the write goes first, the read stays
+            Lock writeAgain = service.getWriteLock("bedroom", "obj-a");
+            try {
+                writeAgain.lock();
+            } catch (Throwable thrown) {
+                outcome.set(thrown);
+            } finally {
+                read.unlock();
+            }
+        }, "downgrade-then-upgrade");
+        t.start();
+        t.join(10_000);
+
+        assertTrue(outcome.get() instanceof LockAcquisitionTimeoutException,
+                "with only the read left held this IS a certain self-deadlock and must be"
+                        + " refused — a phantom write entry from mode-blind release accounting"
+                        + " would have suppressed it: " + outcome.get());
+        assertEquals(1, LockOrderMonitor.upgradeCount());
     }
 
     @Test

@@ -153,17 +153,11 @@ public class VersioningServiceImpl implements VersioningService {
 		contentService.cancelCheckOut(callContext, repositoryId, pwcId, extension);
 
 			//remove cache
-			
+
 			Document latest = contentService.getDocumentOfLatestVersion(repositoryId, document.getVersionSeriesId());
 			//Latest document does not exit when pwc is created as the first version
 			if(latest != null){
-				Lock latestLock = threadLockService.getWriteLock(repositoryId, latest.getId());
-				try{
-					latestLock.lock();
-					nemakiCachePool.get(repositoryId).removeCmisCache(latest.getId());
-				}finally{
-					latestLock.unlock();
-				}
+				evictLatestVersionCache(repositoryId, latest.getId());
 			}
 		}finally{
 			lock.unlock();
@@ -235,16 +229,40 @@ public class VersioningServiceImpl implements VersioningService {
 			Document latest = contentService
 					.getDocumentOfLatestVersion(repositoryId, pwc.getVersionSeriesId());
 			if(latest != null){
-				Lock latestLock = threadLockService.getWriteLock(repositoryId, latest.getId());
-				try{
-					latestLock.lock();
-					nemakiCachePool.get(repositoryId).removeCmisCache(latest.getId());
-				}finally{
-					latestLock.unlock();
-				}
+				evictLatestVersionCache(repositoryId, latest.getId());
 			}
 		}finally{
 			lock.unlock();
+		}
+	}
+
+	/**
+	 * Evict the latest version's CMIS cache after a checkIn / cancelCheckOut has COMMITTED.
+	 *
+	 * <p>This runs on the wrong side of the point of no return for an acquisition failure to
+	 * propagate: the version series has already durably changed, so throwing here would send the
+	 * client a retryable failure ("safe to retry") for an operation that in fact succeeded — the
+	 * retry then finds the PWC gone and fails confusingly, and the client never learns the first
+	 * attempt worked. Eviction is an idempotent cache remove; doing it without the lock risks at
+	 * worst a racing reader repopulating the entry, which the eviction-under-lock never prevented
+	 * either (repopulation happens after any eviction). So on a lock timeout: evict anyway, warn,
+	 * and report the mutation's success.
+	 */
+	private void evictLatestVersionCache(String repositoryId, String latestId) {
+		Lock latestLock = threadLockService.getWriteLock(repositoryId, latestId);
+		try {
+			latestLock.lock();
+			try {
+				nemakiCachePool.get(repositoryId).removeCmisCache(latestId);
+			} finally {
+				latestLock.unlock();
+			}
+		} catch (jp.aegif.nemaki.util.lock.LockAcquisitionTimeoutException e) {
+			log.warn("Could not take the lock to refresh the latest-version cache for " + latestId
+					+ " after a committed versioning operation — evicting without the lock"
+					+ " instead of failing a request whose mutation already succeeded. ("
+					+ e.getMessage() + ")");
+			nemakiCachePool.get(repositoryId).removeCmisCache(latestId);
 		}
 	}
 

@@ -129,22 +129,53 @@ public class NavigationServiceImpl implements NavigationService {
 				renditionFilter, includePathSegments, maxItems, skipCount, false);
 	}
 
+	/** The verified lock set for an object and its CURRENT parent, plus that parent (may be null). */
+	record ParentLockHold(List<Lock> locks, Folder parent) {
+	}
+
+	/** Re-previews after a mismatch this many times before giving up with a conflict. */
+	private static final int PARENT_LOCK_RETRIES = 2;
+
 	/**
-	 * Fail if the object's parent changed between choosing the lock set and reading it.
+	 * Lock an object together with its current parent as one ordered set, retrying while a
+	 * concurrent move keeps changing which parent that is.
 	 *
 	 * <p>The parent is resolved once unlocked (to decide what to lock) and once locked (to decide
-	 * what to answer). Those normally agree. When they do not, the object was moved in between and
-	 * the parent now being compiled is one whose lock was never taken — so the answer would be
-	 * built from an object nothing is holding still. That is the defect the ordered set exists to
-	 * remove, so it must not be reintroduced by carrying on regardless.
+	 * what to answer). Those normally agree, but a request that arrives while a move holds the
+	 * child's lock previews the OLD parent and only gets its locks after the move commits — at
+	 * which point the re-read shows the new one. Failing that with a conflict outright, as the
+	 * first version of this method did, turned "a read that waited politely for a move" into a
+	 * deterministic 409, when the correct answer was one re-preview away; the pre-restructure
+	 * nested-lock code answered it, at the price of the lock-order inversion that code was
+	 * removed for. So: drop the set, preview again, relock. Answering WITHOUT the retry is not an
+	 * option either way — the changed parent's lock was never taken, and compiling an object
+	 * nothing holds still is the defect the ordered set exists to remove.
+	 *
+	 * <p>The retry is bounded; an object being moved in a sustained loop eventually gets the
+	 * conflict, which by then is describing reality.
 	 */
-	private void requireStillTheLockedParent(Folder locked, Folder actual, String objectId) {
-		if (locked != null && actual != null && locked.getId().equals(actual.getId())) {
-			return;
+	ParentLockHold lockObjectAndCurrentParent(String repositoryId, String objectId) {
+		for (int attempt = 0;; attempt++) {
+			Folder preview = contentService.getParent(repositoryId, objectId);
+			List<Lock> locks = threadLockService.orderedLocks(repositoryId,
+					preview == null ? java.util.List.of(objectId)
+							: java.util.List.of(objectId, preview.getId()),
+					false);
+			threadLockService.bulkLock(locks);
+			Folder actual = contentService.getParent(repositoryId, objectId);
+			boolean sameParent = (preview == null && actual == null)
+					|| (preview != null && actual != null
+							&& preview.getId().equals(actual.getId()));
+			if (sameParent) {
+				return new ParentLockHold(locks, actual);
+			}
+			threadLockService.bulkUnlock(locks);
+			if (attempt >= PARENT_LOCK_RETRIES) {
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisUpdateConflictException(
+						"Object " + objectId + " kept being moved while its parent was being"
+								+ " read; the answer would not match any locked state. Retry.");
+			}
 		}
-		throw new org.apache.chemistry.opencmis.commons.exceptions.CmisUpdateConflictException(
-				"Object " + objectId + " was moved while its parent was being read; the parent"
-						+ " that would be returned is not the one this request locked. Retry.");
 	}
 
 	/**
@@ -211,7 +242,12 @@ public class NavigationServiceImpl implements NavigationService {
 		if (totalCount == 0) {
 			List<Content> probe = contentService.getChildrenPaged(repositoryId, folderId, 0, FULL_FETCH_THRESHOLD + 1);
 			if (probe.isEmpty()) {
-				// Folder is genuinely empty
+				// "No children" and "no folder" look identical from here, and this is the branch a
+				// deleted folder actually takes: deleteTree removes the children before the folder,
+				// so by the time the folder is gone its child count is zero. Without this check a
+				// folder deleted in getChildren's unlocked window would be answered with an empty
+				// 200 listing instead of the 404 the pre-restructure code gave.
+				requireFolderStillPresent(repositoryId, folderId);
 				ObjectInFolderListImpl emptyResult = new ObjectInFolderListImpl();
 				emptyResult.setObjects(new ArrayList<ObjectInFolderData>());
 				emptyResult.setNumItems(BigInteger.ZERO);
@@ -495,17 +531,13 @@ public class NavigationServiceImpl implements NavigationService {
 		
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
 		
-		// The child's parent is resolved BEFORE anything is locked, so both locks can be taken as
-		// one ordered set. Nesting them — child first, then parent — is what the live detector
-		// caught here: another request holding those two stripes the other way round waits on this
-		// one and neither ever finishes. Ordering is only a property of a whole set; a lock taken
-		// outside the set cannot be ordered against it.
-		Folder parentPreview = contentService.getParent(repositoryId, folderId);
-		List<Lock> locks = threadLockService.orderedLocks(repositoryId,
-				parentPreview == null ? java.util.List.of(folderId)
-						: java.util.List.of(folderId, parentPreview.getId()),
-				false);
-		threadLockService.bulkLock(locks);
+		// The child and its CURRENT parent are locked as one ordered set. Nesting them — child
+		// first, then parent — is what the live detector caught here: another request holding
+		// those two stripes the other way round waits on this one and neither ever finishes.
+		// Ordering is only a property of a whole set; a lock taken outside the set cannot be
+		// ordered against it. The helper retries while a concurrent move changes the parent, so
+		// the answer always describes a placement whose locks are actually held.
+		ParentLockHold hold = lockObjectAndCurrentParent(repositoryId, folderId);
 		try{
 			// //////////////////
 			// General Exception
@@ -521,15 +553,8 @@ public class NavigationServiceImpl implements NavigationService {
 			// CMIS 1.1 §2.2.3.3: Root folder has no parent — must reject before lock
 			exceptionService.invalidArgumentRootFolder(repositoryId, folder);
 
-			// Re-read under the locks. The preview above decided WHAT to lock; this decides what
-			// to answer, and a move that landed in between must not be served from the stale one.
-			Folder parent = contentService.getParent(repositoryId, folderId);
+			Folder parent = hold.parent();
 			exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parent);
-			// ...and if it MOVED in that window, the parent we are about to compile is not the one
-			// we locked. Answering anyway would be compiling an object with no lock held on it,
-			// which is the thing this method was just restructured to guarantee. A conflict is the
-			// honest answer: the client asked about a placement that changed while it was asking.
-			requireStillTheLockedParent(parentPreview, parent, folderId);
 
 			// //////////////////
 			// Body of the method
@@ -537,7 +562,7 @@ public class NavigationServiceImpl implements NavigationService {
 			return compileService.compileObjectData(callContext, repositoryId,
 					parent, filter, true, IncludeRelationships.NONE, null, true);
 		}finally{
-			threadLockService.bulkUnlock(locks);
+			threadLockService.bulkUnlock(hold.locks());
 		}
 	}
 
@@ -549,15 +574,12 @@ public class NavigationServiceImpl implements NavigationService {
 
 		exceptionService.invalidArgumentRequired("objectId", objectId);
 		
-		// Same shape as getFolderParent: resolve the parent first so the two locks are ONE ordered
-		// set. Taking the child's and then the parent's leaves the order to whichever object each
-		// request happens to start from, and the detector caught exactly that pair inverted here.
-		Folder parentPreview = contentService.getParent(repositoryId, objectId);
-		List<Lock> locks = threadLockService.orderedLocks(repositoryId,
-				parentPreview == null ? java.util.List.of(objectId)
-						: java.util.List.of(objectId, parentPreview.getId()),
-				false);
-		threadLockService.bulkLock(locks);
+		// Same shape as getFolderParent: the object and its CURRENT parent as one ordered set,
+		// re-previewed while a concurrent move keeps changing which parent that is. Taking the
+		// child's lock and then the parent's leaves the order to whichever object each request
+		// happens to start from, and the detector caught exactly that pair inverted here.
+		ParentLockHold hold = lockObjectAndCurrentParent(repositoryId, objectId);
+		List<Lock> locks = hold.locks();
 		try{
 			// //////////////////
 			// General Exception
@@ -568,16 +590,15 @@ public class NavigationServiceImpl implements NavigationService {
 					repositoryId, PermissionMapping.CAN_GET_PARENTS_FOLDER, content);
 
 
-			//Get parent — re-read under the locks, not reused from the preview above.
-			Folder parent = contentService.getParent(repositoryId, objectId);
+			Folder parent = hold.parent();
 			if (parent == null) {
-				// Root folder or orphaned object - no parent exists
+				// Root folder or orphaned object - no parent exists. The helper verified this
+				// under the object's lock, so it is the locked truth, not a stale preview.
 				return new ArrayList<ObjectParentData>();
 			}
-			requireStillTheLockedParent(parentPreview, parent, objectId);
 
 			{
-				
+
 				// //////////////////
 				// Specific Exception
 				// //////////////////
