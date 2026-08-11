@@ -224,15 +224,35 @@ public class CouchAttachmentNode extends CouchNodeBase{
 		return mimeType;
 	}
 	
-	public AttachmentNode convert(){
+	/**
+	 * Metadata only — no attachment body is fetched.
+	 *
+	 * <p>Name, length and MIME type all come from the document that was already read, so this
+	 * costs nothing beyond the conversion. {@link #convert()} additionally opens the binary
+	 * stream and hands ownership of it to the caller; anything that only inspects metadata must
+	 * use THIS method, or it leaks one CouchDB connection per call and downloads the whole
+	 * attachment to learn what it already had.
+	 */
+	public AttachmentNode convertRef(){
 		AttachmentNode a = new AttachmentNode(super.convert());
-		
+
 		a.setName(getName());
-		// CRITICAL FIX: Use actual length from CouchDB _attachments instead of stored field
+		// Use actual length from CouchDB _attachments instead of the stored field
 		a.setLength(getActualLength());
-		// CRITICAL FIX: Use actual MIME type from CouchDB _attachments instead of stored field
+		// Use actual MIME type from CouchDB _attachments instead of the stored field
 		a.setMimeType(getActualMimeType());
-		
+
+		return a;
+	}
+
+	/**
+	 * Metadata AND an open binary stream, which the caller then owns and must close.
+	 *
+	 * <p>Callers that do not read the body want {@link #convertRef()}.
+	 */
+	public AttachmentNode convert(){
+		AttachmentNode a = convertRef();
+
 		// CRITICAL FIX FOR JAVA 17 MIGRATION: Set InputStream from CouchDB attachment
 		// This was broken during Java 17/Jakarta EE migration - InputStream was never retrieved
 		try {

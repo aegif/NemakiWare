@@ -49,7 +49,7 @@ public class AttachmentDaoDelegate {
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			CouchAttachmentNode can = client.get(CouchAttachmentNode.class, attachmentId);
-			return can == null ? null : can.convert();
+			return can == null ? null : can.convertRef();
 		} catch (Exception e) {
 			log.error("Error getting attachment metadata: " + attachmentId + " in repository: "
 					+ repositoryId, e);
@@ -64,7 +64,12 @@ public class AttachmentDaoDelegate {
 			CouchAttachmentNode can = client.get(CouchAttachmentNode.class, attachmentId);
 
 			if (can != null) {
-				AttachmentNode result = can.convert();
+				// convertRef, NOT convert: convert() opens the body itself (searching every
+				// repository for it), and this method then opened it a SECOND time and replaced
+				// the first stream without closing it. Every attachment read leaked exactly one
+				// connection, and downloaded the attachment twice to do it. The open happens once,
+				// here, where the repository is already known.
+				AttachmentNode result = can.convertRef();
 
 				try {
 					Object attachmentObj = client.getAttachment(attachmentId, "content");
