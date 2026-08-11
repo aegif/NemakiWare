@@ -242,7 +242,8 @@ class ThreadLockServiceImplTest {
         // safe if nobody else's ordered set contains the same underlying lock — which hashing
         // into 4096 shared stripes cannot guarantee (~1/4096 of all objects would BE this lock).
         // Named keys get a dedicated instance, so holding it must exclude no object whatsoever.
-        Lock hierarchy = fast.getWriteLock("bedroom", "__folder-hierarchy__");
+        Lock hierarchy = fast.getNamedWriteLock("bedroom",
+                jp.aegif.nemaki.util.lock.ThreadLockService.NamedLock.FOLDER_HIERARCHY);
         hierarchy.lock();
         try {
             for (int i = 0; i < 64; i++) {
@@ -275,27 +276,36 @@ class ThreadLockServiceImplTest {
     }
 
     @Test
-    @DisplayName("許可リストに無い __…__ id は専用ロックにならない (リクエスト由来の無制限確保を防ぐ)")
-    void aNonAllowlistedNamedLookingKeyStaysStriped() {
+    @DisplayName("named lock は objectId から到達できない (enum 経由のみ)")
+    void aNamedLockIsUnreachableFromAnObjectId() {
         // Named-lock status was once decided by a NAME PATTERN. Object ids come from clients and
         // are locked BEFORE existence validation, so any request could mint a permanent
         // dedicated-lock entry by inventing __anything__ ids. The allowlist closed that — and
         // this is the assertion that would have caught it: a key that merely LOOKS internal must
         // hash into the fixed stripes like every other id.
-        Lock attacker = fast.getWriteLock("bedroom", "__not-allowlisted__");
-        assertTrue(ThreadLockServiceImpl.stripeIdOf(attacker) < 4096,
-                "a non-allowlisted __…__ key must be striped, not given a dedicated lock");
+        // Even the REAL named key, supplied as an object id, must be an ordinary striped lock.
+        // It was once reachable this way, and the consequence was not merely an extra map entry:
+        // named identities sort LAST in an ordered set, so a request naming the hierarchy lock as
+        // its target folder acquired the repository-wide lock in the MIDDLE of its set — the
+        // exact inversion of the first-and-last rule every legitimate folder move relies on.
+        Lock viaId = fast.getWriteLock("bedroom", "__folder-hierarchy__");
+        assertTrue(ThreadLockServiceImpl.stripeIdOf(viaId) < 4096,
+                "an object id must never select a named lock, whatever it is called");
 
-        List<Lock> viaSet = fast.orderedLocks("bedroom", List.of("__also-not-allowlisted__"), true);
+        List<Lock> viaSet = fast.orderedLocks("bedroom", List.of("__folder-hierarchy__"), true);
         assertEquals(1, viaSet.size());
         assertTrue(ThreadLockServiceImpl.stripeIdOf(viaSet.get(0)) < 4096,
-                "orderedLocks must apply the same allowlist as get(); a gap in either one"
-                        + " reopens the unbounded allocation");
+                "orderedLocks must not select a named lock either; a gap in either entry point"
+                        + " reopens the inversion");
 
-        // The one real named key still gets its dedicated identity.
-        assertTrue(ThreadLockServiceImpl.stripeIdOf(
-                        fast.getWriteLock("bedroom", "__folder-hierarchy__")) >= 4096,
-                "the allowlisted key must still be dedicated");
+        // The named lock is reached only through the enum, and is genuinely dedicated.
+        Lock named = fast.getNamedWriteLock("bedroom",
+                jp.aegif.nemaki.util.lock.ThreadLockService.NamedLock.FOLDER_HIERARCHY);
+        assertTrue(ThreadLockServiceImpl.stripeIdOf(named) >= 4096,
+                "the enum-reached named lock must be dedicated, outside the stripe range");
+        assertTrue(ThreadLockServiceImpl.stripeIdOf(named)
+                        != ThreadLockServiceImpl.stripeIdOf(viaId),
+                "and must not be the same lock the id path returns");
     }
 
     private static List<Integer> stripesOf(List<Lock> locks) {

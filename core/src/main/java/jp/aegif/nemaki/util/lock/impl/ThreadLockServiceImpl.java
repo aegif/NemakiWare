@@ -36,20 +36,18 @@ import jp.aegif.nemaki.util.lock.ThreadLockService;
  *
  * <h2>Named locks</h2>
  *
- * <p>A key listed in {@code NAMED_LOCK_KEYS} — currently only the repository-wide
- * folder-hierarchy lock — gets a dedicated lock outside the stripe array instead of hashing into
- * it. Hashing it into the stripes would silently make it the same lock as ~1/4096 of all real
+ * <p>{@link ThreadLockService.NamedLock} values — currently only the repository-wide
+ * folder-hierarchy lock — get a dedicated lock outside the stripe array instead of hashing into
+ * it. Hashing one into the stripes would silently make it the same lock as ~1/4096 of all real
  * objects, and a lock that is deliberately taken FIRST and held across an ordered set must not be
  * a lock that also appears INSIDE other requests' ordered sets — that is the outer-hold shape
  * that took the repository down. A dedicated instance removes the collision by construction.
  *
- * <p><b>Adding a pseudo-key requires adding it to that list.</b> Membership is an explicit
- * allowlist rather than a name pattern precisely because object ids arrive from clients and are
- * locked before existence validation: a pattern would let any request mint permanent named-lock
- * entries. The cost of the allowlist is that a new pseudo-key which is merely NAMED like one
- * silently gets a striped lock — and if that key is used the way the hierarchy lock is (taken
- * first, held across an ordered set), it re-creates the ordering hazard. So: new pseudo-key, new
- * list entry.
+ * <p>They are reached ONLY through {@link #getNamedWriteLock}, which takes the enum. An object id
+ * — client-supplied, and locked before existence validation — can never select one. An earlier
+ * version keyed them off the id string, which let a request name the hierarchy lock as its target
+ * folder and acquire it in the MIDDLE of an ordered set (named identities sort last), inverting
+ * the very first-and-last rule the lock depends on.
  *
  * <h2>Bounds</h2>
  *
@@ -150,32 +148,25 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 	}
 
 	/**
-	 * The named locks that exist. A closed list, not a pattern.
+	 * Object ids NEVER reach a named lock.
 	 *
-	 * <p>Named-lock status must not be reachable from request data: object ids arrive from
-	 * clients, they are locked BEFORE existence validation, and a pattern match would let any
-	 * request minting {@code __x__} ids grow the named-lock map without bound — a permanent
-	 * allocation per distinct id. A client-supplied id that merely looks internal hashes into the
-	 * stripes like every other id.
+	 * <p>They arrive from clients and are locked before existence validation, so any mapping from
+	 * an id to a named lock is a mapping from request data to repository-wide serialization. The
+	 * named locks are reached only through {@link #getNamedWriteLock}, whose argument is an enum.
 	 */
-	private static final java.util.Set<String> NAMED_LOCK_KEYS = java.util.Set.of(
-			"__folder-hierarchy__");
-
-	private static boolean isNamedKey(String objectId) {
-		return objectId != null && NAMED_LOCK_KEYS.contains(objectId);
+	@Override
+	public ReadWriteLock get(String repositoryId, String objectId) {
+		int stripe = stripeOf(repositoryId, objectId);
+		return new MonitoredReadWriteLock(locks[stripe], stripe, key(repositoryId, objectId));
 	}
 
 	@Override
-	public ReadWriteLock get(String repositoryId, String objectId) {
-		if (isNamedKey(objectId)) {
-			NamedLock named = namedLocks.computeIfAbsent(key(repositoryId, objectId),
-					k -> new NamedLock(new ReentrantReadWriteLock(),
-							nextNamedStripe.getAndIncrement()));
-			return new MonitoredReadWriteLock(named.lock(), named.stripeId(),
-					key(repositoryId, objectId));
-		}
-		int stripe = stripeOf(repositoryId, objectId);
-		return new MonitoredReadWriteLock(locks[stripe], stripe, key(repositoryId, objectId));
+	public Lock getNamedWriteLock(String repositoryId, ThreadLockService.NamedLock name) {
+		String namedKey = key(repositoryId, name.key());
+		NamedLock named = namedLocks.computeIfAbsent(namedKey,
+				k -> new NamedLock(new ReentrantReadWriteLock(),
+						nextNamedStripe.getAndIncrement()));
+		return new MonitoredReadWriteLock(named.lock(), named.stripeId(), namedKey).writeLock();
 	}
 
 	@Override
@@ -217,18 +208,8 @@ public class ThreadLockServiceImpl implements ThreadLockService {
 			if (id == null) {
 				continue;
 			}
-			int stripe;
-			ReadWriteLock lock;
-			if (isNamedKey(id)) {
-				NamedLock named = namedLocks.computeIfAbsent(key(repositoryId, id),
-						k -> new NamedLock(new ReentrantReadWriteLock(),
-								nextNamedStripe.getAndIncrement()));
-				stripe = named.stripeId();
-				lock = named.lock();
-			} else {
-				stripe = stripeOf(repositoryId, id);
-				lock = locks[stripe];
-			}
+			int stripe = stripeOf(repositoryId, id);
+			ReadWriteLock lock = locks[stripe];
 			if (!seen.add(stripe)) {
 				continue;
 			}

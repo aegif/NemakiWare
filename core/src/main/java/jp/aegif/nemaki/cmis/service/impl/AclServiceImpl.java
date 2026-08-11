@@ -197,7 +197,19 @@ public class AclServiceImpl implements AclService {
 			Acl acl, AclPropagation aclPropagation) {
 		exceptionService.invalidArgumentRequired("objectId", objectId);
 
-		Lock lock = threadLockService.getReadLock(repositoryId, objectId);
+		// WRITE, not read. This method reads the object's current ACL, decides the new one from
+		// it (inheritance flag, add/remove semantics resolved by the caller) and writes it back —
+		// a read-modify-write. Under a READ lock two concurrent applyAcl calls on the same object
+		// both proceed, both compute from the same pre-state, and the second write silently
+		// discards the first. On an ordinary property that would be an annoying lost update; on
+		// an ACL it is a permission grant or revocation that the client was told succeeded and
+		// that is not in the repository.
+		//
+		// The lock is not held across the asynchronous descendant refresh, so making it exclusive
+		// serializes applyAcl on the same object only — concurrent applyAcl on DIFFERENT objects
+		// is unaffected, and reads of this object wait the same amount they already waited for
+		// the write itself.
+		Lock lock = threadLockService.getWriteLock(repositoryId, objectId);
 
 		try{
 			lock.lock();

@@ -93,6 +93,24 @@ class ParentLockRetryTest {
         } finally {
             lockService.bulkUnlock(hold.locks());
         }
+
+        // The ABANDONED attempt's locks matter as much as the kept ones: attempt 0 took child and
+        // parent-old, then dropped them to re-preview. Without that release, every retried read
+        // would leak two permanent READ holds — and a leaked read hold blocks writes to those
+        // stripes until the process restarts. Only asserting the returned parent would let that
+        // regression through, which is exactly how it shipped once already.
+        assertNoLeftoverHolds("child", "parent-old", "parent-new");
+    }
+
+    /** Fails if any of the named objects still has a lock held by anyone. */
+    private void assertNoLeftoverHolds(String... objectIds) {
+        List<Lock> writeSet = lockService.orderedLocks("bedroom", List.of(objectIds), true);
+        for (Lock l : writeSet) {
+            assertTrue(l.tryLock(), "a lock leaked: " + List.of(objectIds));
+        }
+        for (int i = writeSet.size() - 1; i >= 0; i--) {
+            writeSet.get(i).unlock();
+        }
     }
 
     @Test
@@ -107,6 +125,9 @@ class ParentLockRetryTest {
                 () -> service.lockObjectAndCurrentParent("bedroom", "child"),
                 "unbounded retries against a move loop would be a livelock; the conflict is the"
                         + " honest bounded answer");
+
+        // Giving up must not give up while still holding: the 409 path releases too.
+        assertNoLeftoverHolds("child");
     }
 
     @Test

@@ -1312,13 +1312,16 @@ public class ObjectServiceImpl implements ObjectService {
 		Content moving = contentService.getContent(repositoryId, movingId);
 		exceptionService.objectNotFound(DomainType.OBJECT, moving, movingId);
 		Lock hierarchyLock = (moving != null && moving.isFolder())
-				? threadLockService.getWriteLock(repositoryId, FOLDER_HIERARCHY_LOCK_KEY) : null;
+				? threadLockService.getNamedWriteLock(repositoryId,
+						jp.aegif.nemaki.util.lock.ThreadLockService.NamedLock.FOLDER_HIERARCHY)
+				: null;
 		// Ordered by STRIPE, not by object id. The locks are striped, so the id order says nothing
 		// about the order the underlying locks are actually taken in — two moves could sort their
 		// ids one way and hit the stripes the other. orderedLocks also collapses the pair when
 		// both ids land on one stripe, which a hand-written pair would take twice and release once.
 		List<Lock> objectLocks = threadLockService.orderedLocks(repositoryId,
 				java.util.List.of(movingId, targetFolderId), true);
+		Content moved = null;
 		try {
 			if (hierarchyLock != null) {
 				hierarchyLock.lock();
@@ -1351,34 +1354,45 @@ public class ObjectServiceImpl implements ObjectService {
 
 			nemakiCachePool.get(repositoryId).removeCmisCache(content.getId());
 
-			// ACL-in-Solr: refresh the readers of inheriting descendants of the
-			// moved folder (their inherited ACL changed with the new ancestor
-			// chain); the moved object itself is refreshed by ContentServiceImpl.move.
-			// Resolved lazily to avoid a construction-time dependency cycle.
-			try {
-				jp.aegif.nemaki.cmis.service.AclService aclService =
-						jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
-								.getBean("AclService", jp.aegif.nemaki.cmis.service.AclService.class);
-				aclService.refreshMovedSubtreeSearchIndexAcl(repositoryId, content);
-			} catch (Exception e) {
-				log.warn("moveObject: descendant readers refresh failed: " + e.getMessage());
-			}
-
 			// Invalidate IN_TREE folder hierarchy cache (folder may have been moved)
 			solrUtil.invalidateFolderHierarchyCache(repositoryId);
+
+			moved = content;
 		} finally {
 			threadLockService.bulkUnlock(objectLocks);
 			if (hierarchyLock != null) {
 				hierarchyLock.unlock();
 			}
 		}
+
+		// ACL-in-Solr: refresh the readers of inheriting descendants of the moved folder (their
+		// inherited ACL changed with the new ancestor chain); the moved object itself is refreshed
+		// by ContentServiceImpl.move. Resolved lazily to avoid a construction-time dependency
+		// cycle.
+		//
+		// OUTSIDE the locks, deliberately. This walks the moved subtree, and for a folder move the
+		// hierarchy lock is repository-wide — holding it across an unbounded walk serializes every
+		// folder move in the repository behind one subtree traversal, which with bounded
+		// acquisition means the next folder move fails with a 503 rather than merely waiting. It
+		// also contradicts the isolation this release is about: no request thread should walk
+		// somebody else's subtree, least of all while holding a repository-wide lock.
+		//
+		// Nothing here needs the locks: the refresh recomputes each descendant's readers from the
+		// authoritative ACL and is epoch-fenced, so a concurrent change simply wins. What the
+		// locks protected was the move DECISION (the cycle guard reading a hierarchy no other move
+		// can be changing), and that has already committed above.
+		if (moved != null) {
+			try {
+				jp.aegif.nemaki.cmis.service.AclService aclService =
+						jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
+								.getBean("AclService", jp.aegif.nemaki.cmis.service.AclService.class);
+				aclService.refreshMovedSubtreeSearchIndexAcl(repositoryId, moved);
+			} catch (Exception e) {
+				log.warn("moveObject: descendant readers refresh failed: " + e.getMessage());
+			}
+		}
 	}
 
-	/**
-	 * Pseudo-object id under which folder moves serialise per repository. Not a real object, so
-	 * it can never collide with one — object ids are hex, this is not.
-	 */
-	private static final String FOLDER_HIERARCHY_LOCK_KEY = "__folder-hierarchy__";
 
 	/**
 	 * Refuse to move {@code movingId} underneath itself.

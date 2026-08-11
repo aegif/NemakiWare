@@ -451,8 +451,18 @@ public class NavigationServiceImpl implements NavigationService {
 
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
 		
+		// The folder's lock covers the folder's OWN validation and compile, and is released before
+		// the tree walk — the same narrowing getChildren needed, and for the same reason: held
+		// across the walk it sits OUTSIDE every ordered set the walk takes, and a lock outside a
+		// set is not ordered against it. The live detector attributed 161 of 162 remaining
+		// inversions to this method for exactly that reason. Each level of the walk still locks
+		// its folder together with its children (getChildrenInternal takes {folder} ∪ {children}).
 		Lock parentLock = threadLockService.getReadLock(repositoryId, folderId);
-		
+		ObjectData _folder;
+		int d;
+		boolean iaa;
+		boolean ips;
+
 		try{
 			parentLock.lock();
 			
@@ -473,27 +483,27 @@ public class NavigationServiceImpl implements NavigationService {
 			// Body of the method
 			// //////////////////
 			// check depth
-			int d = (depth == null ? 2 : depth.intValue());
+			d = (depth == null ? 2 : depth.intValue());
 
 			// set defaults if values not set
-			boolean iaa = (includeAllowableActions == null ? false
+			iaa = (includeAllowableActions == null ? false
 					: includeAllowableActions.booleanValue());
-			boolean ips = (includePathSegment == null ? false : includePathSegment
+			ips = (includePathSegment == null ? false : includePathSegment
 					.booleanValue());
 
 			// Set ObjectData of the starting folder for ObjectInfo
-			ObjectData _folder = compileService.compileObjectData(
+			_folder = compileService.compileObjectData(
 					callContext, repositoryId, folder, filter,
 					includeAllowableActions, includeRelationships, renditionFilter, false);
 			anscestorObjectData.setValue(_folder);
 
-			// get the tree.
-			return getDescendantsInternal(callContext, repositoryId, _folder, filter, iaa,
-					false, includeRelationships, null, ips, 0, d, foldersOnly);
-			
 		}finally{
 			parentLock.unlock();
 		}
+
+		// get the tree.
+		return getDescendantsInternal(callContext, repositoryId, _folder, filter, iaa,
+				false, includeRelationships, null, ips, 0, d, foldersOnly);
 	}
 
 	private List<ObjectInFolderContainer> getDescendantsInternal(

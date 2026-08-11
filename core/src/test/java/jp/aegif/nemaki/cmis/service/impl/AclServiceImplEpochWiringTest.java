@@ -79,6 +79,11 @@ public class AclServiceImplEpochWiringTest {
         ThreadLockService locks = mock(ThreadLockService.class);
         lenient().when(locks.getReadLock(anyString(), anyString()))
                 .thenAnswer(inv -> new ReentrantReadWriteLock().readLock());
+        // applyAcl takes the WRITE lock: it is a read-modify-write on the object's ACL, and a
+        // shared lock let two concurrent calls compute from the same pre-state and lose one of
+        // the two grants. Stubbed here so this wiring test exercises the real path.
+        lenient().when(locks.getWriteLock(anyString(), anyString()))
+                .thenAnswer(inv -> new ReentrantReadWriteLock().writeLock());
 
         CompileService compile = mock(CompileService.class);
 

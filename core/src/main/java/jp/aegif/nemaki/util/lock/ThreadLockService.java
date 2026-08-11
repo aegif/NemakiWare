@@ -24,6 +24,34 @@ public interface ThreadLockService {
 	 * @param write {@code true} for write locks, {@code false} for read locks
 	 */
 	public List<Lock> orderedLocks(String repositoryId, List<String> objectIds, boolean write);
+
+	/**
+	 * A repository-scoped lock that is NOT an object lock.
+	 *
+	 * <p>Taken as an enum rather than a string id on purpose. The only such lock, the folder
+	 * hierarchy lock, is designed to be acquired FIRST and released LAST — a rule that holds only
+	 * while nobody else can acquire it in the middle of their own ordering. When it was reachable
+	 * through the ordinary object-id path, a client could name it as an object id and get exactly
+	 * that: the lock taken in the middle of an ordered set (named locks sort last), inverting the
+	 * rule against every legitimate folder move. An enum cannot arrive over the wire.
+	 */
+	public Lock getNamedWriteLock(String repositoryId, NamedLock name);
+
+	/** The repository-scoped locks that exist. */
+	public enum NamedLock {
+		/** Serialises folder moves repository-wide so the move cycle guard is sound. */
+		FOLDER_HIERARCHY("__folder-hierarchy__");
+
+		private final String key;
+
+		NamedLock(String key) {
+			this.key = key;
+		}
+
+		public String key() {
+			return key;
+		}
+	}
 	public void bulkLock(List<Lock> locks);
 	public void bulkUnlock(List<Lock> locks);
 }

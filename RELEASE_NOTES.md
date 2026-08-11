@@ -7,6 +7,46 @@ only repository gotchas.
 
 ---
 
+## 3.3.0 追補 — 権限伝播とロック順の是正 (2026-08-11)
+
+### ロック競合が 500 ではなく 503 で返るようになりました (**クライアント影響あり**)
+
+オブジェクトロックの取得に**上限**が入りました。これまで、まれな条件下でロックの
+待ち合わせが循環すると**リポジトリ全体が再起動まで応答を止める**ことがありました
+(実際に発生。詳細は [`docs/design/v3.3-release-blockers.md`](docs/design/v3.3-release-blockers.md)
+の A6 節)。上限により、この故障は「リポジトリ停止」から「**そのリクエスト 1 本が
+失敗する**」に格下げされます。
+
+- 返るのは **HTTP 503** (`CmisServiceUnavailableException`)。**再試行して構いません**。
+  500 (恒久的な障害) と区別してください。
+- AtomPub / Browser binding / `/api/v1` のいずれでも 503 になります。ただし
+  `/api/v1` の一部 (原因例外を伝播しない 29 箇所) では 500 のままです。
+- 通常運用では発生しません。全テストスイート 1 周でも発火ゼロで、
+  発火するのは 300 秒待っても取れない極端な輻輳時のみです。
+- 移動やチェックイン等で**別リクエストと衝突した読み取り**は、409
+  (`CmisUpdateConflictException`) を返すことがあります。こちらも再試行対象です。
+
+### 管理エンドポイントを 3 本追加
+
+いずれも管理者のみ。読み取り専用です。
+
+| パス | 用途 |
+|---|---|
+| `GET /core/api/v1/admin/search-index/metrics` | 伝播の各種カウンタ (要求スレッドへの流出、耐久キューへの委譲、pending gate、グループ解決の打ち切り 等) |
+| `GET /core/api/v1/admin/search-index/propagation` | 実行中の伝播と、信頼できる場合のみの ETA |
+| `GET /core/api/v1/admin/search-index/lock-order` | 危険なロック順の検出結果 (upgrade / inversion) |
+
+「上位フォルダの権限変更にどれくらいかかるか」「今それで詰まっているのか」を
+管理者が判断するための情報です。
+
+### 権限剥奪の索引削除に専用レーン
+
+RAG ブロックの削除 (剥奪に伴うもの) が、大規模な権限変更の再索引バックログの後ろで
+待たされないよう、専用のポーリングレーンに分離しました。利用者から見た挙動の変化は
+ありません (剥奪後に検索から消えるまでの時間が短くなります)。
+
+---
+
 ## 3.3.0 追補 — OpenCMIS 2.0.0-RC2 採用 (2026-08-07)
 
 OpenCMIS を自己ビルドの `2.0.0-RC2-nemakiware` に更新しました。Java 21 baseline、
@@ -349,7 +389,11 @@ conformance checklist (Minimal + Intermediate) passes 21/21. See
   rejected with **HTTP 400** *before* the getContent/ACL/ObjectData/lock work,
   with a message telling the caller to narrow the query or raise the cap. Within
   the cap the whole authorized set is materialized, so `numItems` is the **exact**
-  authorized total and `hasMoreItems` (`skip+max < total`) is honest. Pinned by
+  authorized total and `hasMoreItems` (`skip+max < total`) is honest — *except* while
+  a permission change is still propagating, when the query may deliberately return a
+  confirmed prefix rather than a 400 (see the `truncatedByAclScanLimit` extension in
+  3.3.0). In that degraded window `numItems` is a lower bound; the extension flag is
+  how a client tells the two apart. Pinned by
   `SolrQueryProcessorScanCapTest` (cap allowed, cap+1 rejected) and verified live
   (cap=2: broad query → 400, narrow → 200; default cap: honest `hasMoreItems`,
   exact `numItems`).

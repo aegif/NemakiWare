@@ -55,7 +55,16 @@ class ConcurrentFolderMoveCycleTest {
     private final Map<String, String> parentOf = new ConcurrentHashMap<>();
     private final ThreadLockServiceImpl locks = new ThreadLockServiceImpl();
     private static final String REPO = "r";
-    private static final String HIERARCHY_KEY = "__folder-hierarchy__";
+    /**
+     * Reached the way production reaches it — through the enum, not an object id.
+     *
+     * <p>Using the id string here would simulate a DIFFERENT lock: object ids are always striped,
+     * so the simulation would serialise on whatever stripe that name happens to hash to rather
+     * than on the dedicated repository-wide lock the real move takes. The algorithm proof would
+     * still hold, but it would be a proof about code that is not the code being shipped.
+     */
+    private static final jp.aegif.nemaki.util.lock.ThreadLockService.NamedLock HIERARCHY_LOCK =
+            jp.aegif.nemaki.util.lock.ThreadLockService.NamedLock.FOLDER_HIERARCHY;
 
     private boolean isDescendantOfMoving(String movingId, String destination) {
         String cursor = destination;
@@ -102,7 +111,7 @@ class ConcurrentFolderMoveCycleTest {
     private Runnable mover(String movingId, String destination, boolean serialise,
             CountDownLatch bothChecked, AtomicInteger rejected) {
         return () -> {
-            Lock hierarchy = serialise ? locks.getWriteLock(REPO, HIERARCHY_KEY) : null;
+            Lock hierarchy = serialise ? locks.getNamedWriteLock(REPO, HIERARCHY_LOCK) : null;
             String firstKey = movingId.compareTo(destination) <= 0 ? movingId : destination;
             String secondKey = movingId.compareTo(destination) <= 0 ? destination : movingId;
             Lock first = locks.getWriteLock(REPO, firstKey);
@@ -179,8 +188,12 @@ class ConcurrentFolderMoveCycleTest {
         int at = src.indexOf("public void moveObject(");
         assertTrue(at > 0, "moveObject not found");
         String body = src.substring(at, src.indexOf("\n\t@Override", at));
-        assertTrue(body.contains("FOLDER_HIERARCHY_LOCK_KEY"),
-                "folder moves must serialise repository-wide");
+        // The named-lock enum, not a string id: an id-keyed hierarchy lock was reachable from
+        // client-supplied object ids, which let a request acquire the repository-wide lock in the
+        // MIDDLE of its own ordered set and invert the first-and-last rule this serialisation
+        // depends on.
+        assertTrue(body.contains("NamedLock.FOLDER_HIERARCHY"),
+                "folder moves must serialise repository-wide, through the enum API");
         assertTrue(body.contains("moving.isFolder()"),
                 "only folder moves need serialising — a document has no children and cannot"
                         + " create a cycle, so it must stay concurrent");
