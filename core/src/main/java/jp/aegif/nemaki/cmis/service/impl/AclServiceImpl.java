@@ -20,6 +20,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.cmis.service.impl;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.locks.Lock;
@@ -285,7 +286,37 @@ public class AclServiceImpl implements AclService {
 			// AclPropagation itself is deliberately not consulted: see the note above the
 			// aclPropagation validation in ExceptionServiceImpl.
 	
-			if(breakingInheritance){
+			// THE REQUESTED ACEs WIN, breaking inheritance or not.
+			//
+			// This branch used to ignore acl.getAces() entirely when inheritance was being
+			// broken: it copied the CURRENT effective ACL (local + inherited) into the new local
+			// list and threw the request away. Since this repository's own UI sends the new ACE
+			// list and inherited=false in ONE applyAcl (PermissionResource), "break inheritance
+			// and set the permissions to this" silently became "break inheritance and keep
+			// exactly the permissions you had" — a principal the administrator had just removed
+			// stayed, with a success response. Silent over-permission is the worst shape an ACL
+			// bug can take, because nothing in the response or the UI says it happened.
+			List<Ace> requested = acl == null || acl.getAces() == null
+					? java.util.Collections.<Ace>emptyList() : acl.getAces();
+			List<Ace> requestedDirect = new ArrayList<>();
+			for (Ace ace : requested) {
+				if (ace.isDirect()) {
+					requestedDirect.add(ace);
+				}
+			}
+
+			if (breakingInheritance && requestedDirect.isEmpty()) {
+				// Breaking inheritance with NOTHING to put in its place. Two readings are
+				// possible and the wire cannot tell them apart — "detach this object, keep what
+				// it effectively has" and "detach it and leave it with no permissions at all".
+				// The first is preserved (it is what this code has always done, and what the
+				// operation is normally for); the second would silently lock everyone out of a
+				// subtree, which is not a thing to infer from an absent field. An administrator
+				// who really wants an empty ACL can send the break and the empty set as two
+				// steps, and see the intermediate state.
+				log.info("applyAcl on " + objectId + ": breaking inheritance with no ACEs supplied"
+						+ " — materialising the current effective ACL locally. Send the desired"
+						+ " ACEs with the break to set them instead.");
 				jp.aegif.nemaki.model.Acl currentAcl = contentService.calculateAcl(repositoryId, content);
 
 				for(jp.aegif.nemaki.model.Ace localAce : currentAcl.getLocalAces()){
@@ -298,11 +329,9 @@ public class AclServiceImpl implements AclService {
 					nemakiAcl.getLocalAces().add(nemakiAce);
 				}
 			} else {
-				for(Ace ace : acl.getAces()){
-					if(ace.isDirect()){
-						jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(ace.getPrincipalId(), ace.getPermissions(), true);
-						nemakiAcl.getLocalAces().add(nemakiAce);
-					}
+				for(Ace ace : requestedDirect){
+					jp.aegif.nemaki.model.Ace nemakiAce = new jp.aegif.nemaki.model.Ace(ace.getPrincipalId(), ace.getPermissions(), true);
+					nemakiAcl.getLocalAces().add(nemakiAce);
 				}
 			}
 

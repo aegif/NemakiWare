@@ -906,8 +906,11 @@ public class ExceptionServiceImpl implements ExceptionService,
 			return; // Cannot validate content stream requirement without type definition
 		}
 		if (td.getContentStreamAllowed() == ContentStreamAllowed.REQUIRED) {
+			// Existence check only — the metadata path. The stream-opening variant handed this
+			// check an InputStream it discarded without closing, so every create or update of a
+			// content-required type leaked a CouchDB connection and pulled down the attachment.
 			if (document.getAttachmentNodeId() == null
-					|| contentService.getAttachment(repositoryId, document
+					|| contentService.getAttachmentRef(repositoryId, document
 							.getAttachmentNodeId()) == null) {
 				constraint(document.getId(),
 						"This document type does not allow no content stream");

@@ -125,3 +125,23 @@ stamp 不能かつ ACL write の対象にもならないため配線を妨げま
 - **改行コード**: CRLF のソースファイルがあります。編集で LF に変換していないか
   `git show --stat` で必ず確認 (過去に 6 行の変更が 248 行の diff になりました)。
 - **テストが何を主張していないかを、テスト自身に書く。**
+
+## folder reindex を打ったら、直後に stamp を打ち直す (C8)
+
+`POST .../search-engine/reindex/folder` は対象サブツリーを **fence の外に出します**。
+`indexDocumentsBatch` が `createSolrDocument` の 2 引数版を使うため、単発経路にある
+`applyContentFence` / epoch stamp を通らないからです。API 応答にも警告は出ません。
+
+つまり、管理者が日常的に押すこのボタンは、**そのサブツリーの ACL-epoch を静かに剥がします**。
+打ったら必ず:
+
+```
+POST /api/v1/admin/acl-epoch/{repo}/stamp
+GET  /api/v1/admin/acl-epoch/{repo}/verdict
+```
+
+`verdict` が `COMPLETE` / `COMPLETE_EXCEPT_ORPHANS` であることを確認してください。
+`EMPTY_INDEX` は「再索引がまだ」の意味です (完了ではありません)。
+
+**根本修正は未了**です (欠陥は `SolrUtil.java` の `indexDocumentsBatch`)。それまでは
+この手順が唯一の防波堤なので、reindex/folder を運用に組み込むなら手順もセットにすること。

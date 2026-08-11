@@ -2315,6 +2315,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public AttachmentNode getAttachmentRef(String repositoryId, String attachmentId) {
+		return attachmentDao.getAttachmentRef(repositoryId, attachmentId);
+	}
+
+	@Override
 	public void setStream(String repositoryId, AttachmentNode attachmentNode) {
 		attachmentDao.setStream(repositoryId, attachmentNode);
 	}

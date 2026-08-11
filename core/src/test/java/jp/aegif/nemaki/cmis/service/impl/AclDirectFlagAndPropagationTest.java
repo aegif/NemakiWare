@@ -61,7 +61,11 @@ class AclDirectFlagAndPropagationTest {
         String src = read("src/main/java/jp/aegif/nemaki/cmis/service/impl/AclServiceImpl.java");
         int start = src.indexOf("public Acl applyAcl(CallContext callContext");
         assertTrue(start > 0, "applyAcl not found — this test needs updating");
-        String body = src.substring(start, start + 6000);
+        // Bounded by the NEXT method, not by a character count. A fixed 6000-char window silently
+        // stopped covering the constructions as soon as the method grew, and reported "found 0"
+        // as though the code had changed.
+        int end = src.indexOf("\n\t@Override", start);
+        String body = end > start ? src.substring(start, end) : src.substring(start);
 
         Pattern aceCtor = Pattern.compile(
                 "new jp\\.aegif\\.nemaki\\.model\\.Ace\\([^;]*?,\\s*([A-Za-z0-9_]+)\\s*\\)");
@@ -74,8 +78,9 @@ class AclDirectFlagAndPropagationTest {
                             + " the CMIS meaning of isDirect");
         }
         assertEquals(3, found,
-                "expected the three Ace constructions in applyAcl (break-inheritance local,"
-                        + " break-inheritance inherited, ordinary) — found " + found);
+                "expected the three Ace constructions in applyAcl (the no-ACEs break fallback"
+                        + " copies local and inherited entries; the ordinary path applies the"
+                        + " requested ones) — found " + found);
     }
 
     @Test

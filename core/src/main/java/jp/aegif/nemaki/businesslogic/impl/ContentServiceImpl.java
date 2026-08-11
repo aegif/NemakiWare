@@ -3599,7 +3599,10 @@ public class ContentServiceImpl implements ContentService {
 		final long retryDelayMs = 25;
 		
 		for (int attempt = 1; attempt <= maxRetries; attempt++) {
-			AttachmentNode an = contentDaoService.getAttachment(repositoryId, attachmentId);
+			// The metadata-only path. This method has always been documented as "without stream",
+			// but it called the stream-opening one — so every caller that trusted the contract
+			// leaked a connection and pulled the whole attachment down.
+			AttachmentNode an = contentDaoService.getAttachmentRef(repositoryId, attachmentId);
 			if (an != null) {
 				return an;
 			}

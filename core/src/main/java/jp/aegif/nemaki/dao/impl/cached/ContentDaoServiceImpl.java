@@ -1728,6 +1728,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public AttachmentNode getAttachmentRef(String repositoryId, String attachmentId) {
+		// Deliberately not cached, for the same reason getAttachment is not: an AttachmentNode is
+		// a mutable holder whose stream is single-use. The metadata read is a single document GET.
+		return nonCachedContentDaoService.getAttachmentRef(repositoryId, attachmentId);
+	}
+
+	@Override
 	public void setStream(String repositoryId, AttachmentNode attachmentNode) {
 		nonCachedContentDaoService.setStream(repositoryId, attachmentNode);
 

@@ -1996,7 +1996,11 @@ public class SolrUtil implements ApplicationContextAware {
 				return 0L;
 			}
 
-			AttachmentNode attachment = contentService.getAttachment(repositoryId, attachmentId);
+			// Metadata only. This ran for every document being indexed and downloaded the whole
+			// attachment body to read a number stored on the document — leaking the connection
+			// each time, because nothing here ever closed the stream. A full reindex touches
+			// every document, which is how it turned into 1,289 established connections.
+			AttachmentNode attachment = contentService.getAttachmentRef(repositoryId, attachmentId);
 			if (attachment == null) {
 				log.debug("getContentLength: Attachment not found: {}", attachmentId);
 				return 0L;

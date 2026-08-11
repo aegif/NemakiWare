@@ -195,6 +195,14 @@ There is no enable/disable setting: the pre-epoch path has been removed. A pre-r
 startup.
 
 **Per deployment, in this order:** full reindex → initial-epoch migration
+
+> **Watch CouchDB connections while the reindex runs.** A connection leak on the
+> attachment-read path is only partly fixed (see F3 in
+> [`docs/design/v3.3-release-blockers.md`](docs/design/v3.3-release-blockers.md)): the paths that
+> downloaded whole attachments just to read their length or existence are closed, but a full test
+> pass still produces about 5,000 leak warnings from a source not yet identified. A measured
+> reindex of 2,510 documents took established connections from 3 to 1,289 and held them for
+> roughly ninety seconds afterwards. At production scale, monitor and split the run if needed.
 (`verdict` COMPLETE / COMPLETE_EXCEPT_ORPHANS). Skipping the migration is not fatal — each
 document's first ACL write fences it — but it produces a reconciliation burst instead of a quiet
 upgrade.

@@ -86,6 +86,15 @@ CMIS 1.1 準拠のオープンソース ECM。技術スタックは `pom.xml` / 
   POST /api/v1/cmis/repositories/{repo}/search-engine/rag/reindex   # RAG 有効時
   ```
 
+  **実行前に CouchDB の接続数を監視できる状態にしてください。** 添付読み出し経路に
+  接続リークが残っています (F3)。判明した 4 箇所は塞ぎましたが、全スイート 1 周で
+  なお約 5,000 件の `A connection to http://couchdb:5984/ was leaked` が出ており、
+  **未特定の発生源が残っています**。実測では 2,510 文書の再索引で ESTABLISHED が
+  3 → 1,289 に増え、完了後も約 90 秒張り付きました。数万〜数十万文書の本番規模では
+  接続 / FD を枯渇させうるので、`ss -s` 等で監視し、必要ならリポジトリ単位や
+  時間帯で分割実行してください。詳細は
+  [`docs/design/v3.3-release-blockers.md`](docs/design/v3.3-release-blockers.md) の F3。
+
   理由と影響範囲: [`docs/history/development-log.md`](docs/history/development-log.md) の
   「ACL-in-Solr」節。
 - 非 root TEI 採用時は root 所有の `tei_cache` volume を再作成 (初回モデル再 DL)。

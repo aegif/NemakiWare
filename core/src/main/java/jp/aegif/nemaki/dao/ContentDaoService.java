@@ -658,6 +658,16 @@ public interface ContentDaoService {
 	AttachmentNode getAttachment(String repositoryId, String attachmentId);
 
 	/**
+	 * The attachment's metadata only — no binary stream is opened.
+	 *
+	 * <p>Use this for existence checks and length. {@link #getAttachment} opens the body and
+	 * transfers ownership of the stream to the caller; a caller that only inspects metadata leaks
+	 * a connection per call and downloads the whole attachment to learn nothing it did not
+	 * already have.
+	 */
+	AttachmentNode getAttachmentRef(String repositoryId, String attachmentId);
+
+	/**
 	 * Set InputStream
 	 * for non-cached service only
 	 * @param repositoryId TODO

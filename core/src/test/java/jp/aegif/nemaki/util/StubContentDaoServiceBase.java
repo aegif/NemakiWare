@@ -121,6 +121,7 @@ public class StubContentDaoServiceBase implements ContentDaoService {
 
     // Attachment
     @Override public AttachmentNode getAttachment(String r, String id) { return null; }
+    @Override public AttachmentNode getAttachmentRef(String r, String id) { return null; }
     @Override public void setStream(String r, AttachmentNode a) {}
     @Override public Rendition getRendition(String r, String id) { return null; }
     @Override public String createRendition(String r, Rendition rend, ContentStream cs) { return null; }

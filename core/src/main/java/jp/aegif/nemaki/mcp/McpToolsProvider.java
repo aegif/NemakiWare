@@ -774,8 +774,12 @@ public class McpToolsProvider {
                 return resultFactory.error("Document has no content");
             }
 
-            AttachmentNode attachment = contentService.getAttachment(repositoryId, attachmentNodeId);
-            if (attachment == null) {
+            // Metadata first: the MIME check below rejects most documents, and fetching the body
+            // before deciding meant every rejected document downloaded its attachment and leaked
+            // the connection — the early return happens before the try-with-resources that would
+            // have closed it.
+            AttachmentNode attachmentRef = contentService.getAttachmentRef(repositoryId, attachmentNodeId);
+            if (attachmentRef == null) {
                 // Log details for debugging, but return generic message
                 log.warn("Document content not found: {} (id: {}, user: {})",
                         document.getName(), document.getId(), userId);
@@ -783,8 +787,8 @@ public class McpToolsProvider {
             }
 
             // 4. Extract text from the document
-            String mimeType = attachment.getMimeType();
-            String fileName = attachment.getName();
+            String mimeType = attachmentRef.getMimeType();
+            String fileName = attachmentRef.getName();
 
             // Check if the MIME type is supported for text extraction
             if (!textExtractionService.isSupported(mimeType)) {
@@ -792,6 +796,13 @@ public class McpToolsProvider {
                 log.warn("Unsupported document type for text extraction: {} (id: {}, mimeType: {})",
                         document.getName(), document.getId(), mimeType);
                 return resultFactory.error("Document type is not supported for text extraction");
+            }
+
+            AttachmentNode attachment = contentService.getAttachment(repositoryId, attachmentNodeId);
+            if (attachment == null) {
+                log.warn("Document content disappeared before extraction: {} (id: {})",
+                        document.getName(), document.getId());
+                return resultFactory.error("Document content not found");
             }
 
             String extractedText;
