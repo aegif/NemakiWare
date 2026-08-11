@@ -15,6 +15,8 @@ import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.model.ViewResult;
 import com.ibm.cloud.cloudant.v1.model.ViewResultRow;
 
+import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
+
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import jp.aegif.nemaki.model.GroupItem;
@@ -344,6 +346,55 @@ public class UserGroupDaoDelegate {
 	}
 
 	/**
+	 * Reads the parent group ids out of a reverse-lookup view result.
+	 *
+	 * <p>Shared by the two callers below so the failure policy is stated once. A row that
+	 * cannot be parsed FAILS THE WHOLE CALL rather than being logged and skipped: the callers
+	 * use this to strip a deleted principal from everyone who references it, so a partial list
+	 * means a delete that reports success and leaves a dangling reference — the same outcome
+	 * this method exists to prevent, arrived at more quietly. It is the identical argument that
+	 * makes a view failure an exception rather than an empty list.
+	 *
+	 * @param subject the id being looked up, for the message only
+	 */
+	private List<String> parentGroupIdsFrom(ViewResult result, String subject) {
+		List<String> parents = new ArrayList<String>();
+		if (result == null || result.getRows() == null) {
+			return parents;
+		}
+		Set<String> seen = new HashSet<String>();
+		int rows = 0;
+		for (ViewResultRow row : result.getRows()) {
+			if (row.getValue() == null) {
+				continue;
+			}
+			rows++;
+			Object value = row.getValue();
+			if (!(value instanceof Map)) {
+				throw new CmisRuntimeException("Unexpected row shape in the reverse-lookup view"
+						+ " for " + subject + ": " + value.getClass().getName());
+			}
+			@SuppressWarnings("unchecked")
+			Object parentId = ((Map<String, Object>) value).get("groupId");
+			if (!(parentId instanceof String) || ((String) parentId).isEmpty()) {
+				throw new CmisRuntimeException("A reverse-lookup row for " + subject
+						+ " carries no usable groupId");
+			}
+			if (seen.add((String) parentId)) {
+				parents.add((String) parentId);
+			}
+		}
+		if (rows > 0 && parents.isEmpty()) {
+			// Belt and braces: if the shape ever changes such that every row parses to nothing
+			// without throwing, "no parents" would again be indistinguishable from "could not
+			// tell", which is exactly the confusion being designed out here.
+			throw new CmisRuntimeException("The reverse-lookup view returned " + rows
+					+ " rows for " + subject + " but none yielded a group id");
+		}
+		return parents;
+	}
+
+	/**
 	 * The ids of the groups that directly contain {@code groupId}.
 	 *
 	 * <p>Answers "who nests this group" from the reverse-lookup view instead of enumerating
@@ -357,90 +408,54 @@ public class UserGroupDaoDelegate {
 	 * keys {@code [groupId, n]} for n in 0..19 — the same parent document twenty times per edge
 	 * — so the range is pinned to depth 0 and the keys must be passed as {@code List} or the
 	 * SDK sends a JSON string that matches no array key and the query silently returns nothing.
+	 * That duplicate emit is F4 in the release ledger; this pinning is what makes it harmless
+	 * here, so if the map function is ever rewritten to emit once, drop the range.
 	 */
-	/**
-	 * The ids of the groups that directly list {@code userId} as a member.
-	 *
-	 * <p>The user-side twin of {@link #getGroupIdsDirectlyContainingGroup}: deleting a user has to strip
-	 * it from every group that lists it, and that was also being found by fetching ALL groups
-	 * with their documents. The view exists ({@code joinedDirectGroupsByUserId}) and the
-	 * membership read path already uses it — with a scalar {@code key}, unlike the group view's
-	 * composite array keys.
-	 */
-	public List<String> getGroupIdsDirectlyContainingUser(String repositoryId, String userId) {
-		List<String> parents = new ArrayList<String>();
-		if (userId == null || userId.isEmpty()) {
-			return parents;
-		}
-		Map<String, Object> queryParams = new HashMap<String, Object>();
-		queryParams.put("key", userId);
-		try {
-			ViewResult result = connectorPool.getClient(repositoryId)
-					.queryView("_repo", "joinedDirectGroupsByUserId", queryParams);
-			if (result.getRows() == null) {
-				return parents;
-			}
-			Set<String> seen = new HashSet<String>();
-			for (ViewResultRow row : result.getRows()) {
-				if (row.getValue() == null) {
-					continue;
-				}
-				try {
-					@SuppressWarnings("unchecked")
-					Map<String, Object> doc = (Map<String, Object>) row.getValue();
-					Object parentId = doc.get("groupId");
-					if (parentId instanceof String && seen.add((String) parentId)) {
-						parents.add((String) parentId);
-					}
-				} catch (Exception e) {
-					log.warn("Error parsing group membership for user " + userId + ": " + e.getMessage());
-				}
-			}
-		} catch (Exception e) {
-			// Same reason as the group twin: a view failure must not read as "no memberships".
-			throw new IllegalStateException(
-					"Could not resolve the groups containing user " + userId, e);
-		}
-		return parents;
-	}
-
 	public List<String> getGroupIdsDirectlyContainingGroup(String repositoryId, String groupId) {
-		List<String> parents = new ArrayList<String>();
 		if (groupId == null || groupId.isEmpty()) {
-			return parents;
+			return new ArrayList<String>();
 		}
 		Map<String, Object> queryParams = new HashMap<String, Object>();
 		queryParams.put("startkey", Arrays.asList(groupId, 0));
 		queryParams.put("endkey", Arrays.asList(groupId, 0));
 		try {
-			ViewResult result = connectorPool.getClient(repositoryId)
-					.queryView("_repo", "joinedDirectGroupsByGroupId", queryParams);
-			if (result.getRows() == null) {
-				return parents;
-			}
-			Set<String> seen = new HashSet<String>();
-			for (ViewResultRow row : result.getRows()) {
-				if (row.getValue() == null) {
-					continue;
-				}
-				try {
-					@SuppressWarnings("unchecked")
-					Map<String, Object> doc = (Map<String, Object>) row.getValue();
-					Object parentId = doc.get("groupId");
-					if (parentId instanceof String && seen.add((String) parentId)) {
-						parents.add((String) parentId);
-					}
-				} catch (Exception e) {
-					log.warn("Error parsing nested-group parent for " + groupId + ": " + e.getMessage());
-				}
-			}
+			return parentGroupIdsFrom(connectorPool.getClient(repositoryId)
+					.queryView("_repo", "joinedDirectGroupsByGroupId", queryParams), groupId);
+		} catch (CmisRuntimeException e) {
+			throw e;
 		} catch (Exception e) {
 			// Deliberately NOT swallowed into "no parents": that would let a view failure look
 			// like "nothing references this group" and leave dangling references behind.
-			throw new IllegalStateException(
-					"Could not resolve the groups containing " + groupId, e);
+			throw new CmisRuntimeException(
+					"Could not resolve the groups containing " + groupId + ": " + e.getMessage(), e);
 		}
-		return parents;
+	}
+
+	/**
+	 * The ids of the groups that directly list {@code userId} as a member.
+	 *
+	 * <p>The user-side twin of {@link #getGroupIdsDirectlyContainingGroup}: deleting a user has
+	 * to strip it from every group that lists it, and that was also being found by fetching ALL
+	 * groups with their documents. The view exists ({@code joinedDirectGroupsByUserId}) and the
+	 * membership read path already uses it — with a scalar {@code key}, unlike the group view's
+	 * composite array keys.
+	 */
+	public List<String> getGroupIdsDirectlyContainingUser(String repositoryId, String userId) {
+		if (userId == null || userId.isEmpty()) {
+			return new ArrayList<String>();
+		}
+		Map<String, Object> queryParams = new HashMap<String, Object>();
+		queryParams.put("key", userId);
+		try {
+			return parentGroupIdsFrom(connectorPool.getClient(repositoryId)
+					.queryView("_repo", "joinedDirectGroupsByUserId", queryParams), userId);
+		} catch (CmisRuntimeException e) {
+			throw e;
+		} catch (Exception e) {
+			// Same reason as the group twin: a view failure must not read as "no memberships".
+			throw new CmisRuntimeException(
+					"Could not resolve the groups containing user " + userId + ": " + e.getMessage(), e);
+		}
 	}
 
 	public List<GroupItem> getGroupItems(String repositoryId) {

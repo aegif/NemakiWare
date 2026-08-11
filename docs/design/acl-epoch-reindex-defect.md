@@ -114,8 +114,27 @@ stamp を実行すると 80 秒ほどで 4,720 件に付きました。
 
 ## 5. まだ確かめていないこと
 
-- epoch scanner / reconciliation キューが自動で stamp し直すか。
-  観測した範囲 (数分) では復旧しなかった
+- ~~epoch scanner / reconciliation キューが自動で stamp し直すか。
+  観測した範囲 (数分) では復旧しなかった~~ → **確定: 自動では戻らない (2026-08-12)**
+
+  「数分では戻らなかった」は「まだ戻っていないだけ」とも読めたので、
+  運用手順を「必須」と書くか「推奨」と書くかが決まらなかった。**コードから答えが出る**:
+
+  `AclEpochScanScheduler` は 300 秒ごとに `AclEpochFinalizationService.scan` を呼ぶが、
+  その**全パスの選択条件は CouchDB 側の** `aclEpochState`
+  (PENDING_EPOCH / FINALIZED_NEEDS_RECONCILE) か `aclEpochMutationId` の存在である
+  (`AclEpochFinalizationService.java:321-360`)。folder reindex が消すのは
+  **Solr の `effective_acl_epoch` フィールド**であって、CouchDB 文書は一切触られない
+  — 状態は settled のまま。**したがってどのパスもその文書を選ばない。**
+
+  実測で裏取り (`tools/acl-probe/epoch_folder_reindex_recovery.py`):
+  子 236 件のうち 186 件が fenced のフォルダを reindex →
+  **5 秒で 0/236**、以後 **961 秒 (スキャナ周期 300 秒 × 3 回超) 経っても 0/236**。
+  観測期間中のピークも 0。遅いのではなく**構造的に戻らない**。
+
+  **したがって §4-2 の運用回避は「推奨」ではなく「必須」。** 応答にも警告を入れた
+  (`SearchEngineResource.reindexFolder` が `note` を返す。
+  `FolderReindexEpochWarningTest` で固定)。
 - ~~RAG 索引側の folder reindex が同じ挙動か~~ → **別経路**。
   `RAGIndexMaintenanceServiceImpl` → `ragIndexingService.indexDocument` で
   書き込む Solr コアも文書も異なるため、この欠陥の対象外 (要再確認)

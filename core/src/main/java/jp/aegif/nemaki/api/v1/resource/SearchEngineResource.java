@@ -490,6 +490,23 @@ public class SearchEngineResource {
             response.setRepositoryId(repositoryId);
             response.setFolderId(folderId);
             response.setRecursive(recursive);
+            // A folder reindex takes this subtree OUT of the ACL-epoch fence: the batch write
+            // path does not carry effective_acl_epoch, so the field is dropped for every
+            // document it touches. `readers` is recomputed, so search authorization itself is
+            // not broken — which is exactly why this is easy to miss.
+            //
+            // It does NOT come back on its own. Every pass of the epoch scanner selects on the
+            // CouchDB fields aclEpochState / aclEpochMutationId, and a reindex changes neither;
+            // it drops a SOLR field while the CouchDB document stays settled, so no pass can
+            // select these documents. Measured 2026-08-12: 186 of 236 children fenced, 0 within
+            // five seconds of the reindex, still 0 after three 300s scanner cycles.
+            //
+            // The stamp endpoint warns about exactly this for the full-reindex path and the
+            // runbook covers it. This endpoint said nothing, which is how a folder reindex
+            // silently left a subtree unfenced.
+            response.setNote("This subtree is now OUTSIDE the ACL-epoch fence and does NOT"
+                    + " recover on its own. Re-run POST /api/v1/admin/acl-epoch/migration/"
+                    + repositoryId + " after this reindex completes, and check the verdict.");
             
             Map<String, LinkInfo> links = new HashMap<>();
             links.put("self", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId + "/search-engine/reindex/folder/" + folderId));
@@ -1034,7 +1051,10 @@ public class SearchEngineResource {
         
         @Schema(description = "HATEOAS links")
         private Map<String, LinkInfo> links;
-        
+
+        @Schema(description = "Operational warning, when the operation has a required follow-up")
+        private String note;
+
         public boolean isSuccess() { return success; }
         public void setSuccess(boolean success) { this.success = success; }
         public String getMessage() { return message; }
@@ -1047,6 +1067,8 @@ public class SearchEngineResource {
         public void setFolderId(String folderId) { this.folderId = folderId; }
         public Boolean getRecursive() { return recursive; }
         public void setRecursive(Boolean recursive) { this.recursive = recursive; }
+        public String getNote() { return note; }
+        public void setNote(String note) { this.note = note; }
         public Map<String, LinkInfo> getLinks() { return links; }
         public void setLinks(Map<String, LinkInfo> links) { this.links = links; }
     }

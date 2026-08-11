@@ -130,15 +130,24 @@ stamp 不能かつ ACL write の対象にもならないため配線を妨げま
 
 `POST .../search-engine/reindex/folder` は対象サブツリーを **fence の外に出します**。
 `indexDocumentsBatch` が `createSolrDocument` の 2 引数版を使うため、単発経路にある
-`applyContentFence` / epoch stamp を通らないからです。API 応答にも警告は出ません。
+`applyContentFence` / epoch stamp を通らないからです。
 
-つまり、管理者が日常的に押すこのボタンは、**そのサブツリーの ACL-epoch を静かに剥がします**。
+つまり、管理者が日常的に押すこのボタンは、**そのサブツリーの ACL-epoch を剥がします**。
+**自動では戻りません** — スキャナは CouchDB の `aclEpochState` を見て対象を選ぶのに対し、
+reindex が消すのは Solr のフィールドで CouchDB 文書は settled のままなので、
+どのパスもその文書を選ばないためです (2026-08-12 実測: 3 周期・961 秒でも 0/236)。
+3.3 からは応答の `note` にも警告が出ます。
+
 打ったら必ず:
 
 ```
-POST /api/v1/admin/acl-epoch/{repo}/stamp
-GET  /api/v1/admin/acl-epoch/{repo}/verdict
+POST /api/v1/admin/acl-epoch/migration/{repo}    # stamp を起動
+GET  /api/v1/admin/acl-epoch/migration/{repo}    # verdict を確認
 ```
+
+**パスに注意**: かつてここには `.../acl-epoch/{repo}/stamp` と `.../verdict` と書いてあり、
+**そのとおり叩くと 404 になります** (実測)。起動も確認も同じ `migration/{repo}` で、
+POST と GET の違いだけです。
 
 `verdict` が `COMPLETE` / `COMPLETE_EXCEPT_ORPHANS` であることを確認してください。
 `EMPTY_INDEX` は「再索引がまだ」の意味です (完了ではありません)。
