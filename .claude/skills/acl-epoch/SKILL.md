@@ -132,13 +132,18 @@ stamp 不能かつ ACL write の対象にもならないため配線を妨げま
 `indexDocumentsBatch` が `createSolrDocument` の 2 引数版を使うため、単発経路にある
 `applyContentFence` / epoch stamp を通らないからです。
 
-つまり、管理者が日常的に押すこのボタンは、**そのサブツリーの ACL-epoch を剥がします**。
-**自動では戻りません** — スキャナは CouchDB の `aclEpochState` を見て対象を選ぶのに対し、
-reindex が消すのは Solr のフィールドで CouchDB 文書は settled のままなので、
-どのパスもその文書を選ばないためです (2026-08-12 実測: 3 周期・961 秒でも 0/236)。
-3.3 からは応答の `note` にも警告が出ます。
+**2026-08-12 に根本修正しました。** batch 経路も単発経路と同じ機構で fence を通ります
+(realtime GET → authoritative incarnation → ACL group は Solr の値を保存 → 文書ごとの
+`_version_` CAS)。実測: 修正前に 186/236 → 0/236 になっていた同じフォルダが 186/186 のまま、
+5,611 文書の全再帰 reindex 後も verdict は `COMPLETE` / 0 unfenced。
 
-打ったら必ず:
+**以下は歴史的経緯** (修正前の挙動)。剥がれた epoch は**自動では戻りませんでした** —
+スキャナは CouchDB の `aclEpochState` で対象を選ぶのに対し、reindex が消すのは Solr の
+フィールドで CouchDB 文書は settled のままなので、どのパスもその文書を選ばないためです
+(実測: 3 周期・961 秒でも 0/236)。**古いビルドを運用しているなら下記の打ち直しは必須です。**
+
+修正後も、bulk 操作のあとに確認する習慣は残す価値があります
+(`readers` は成否に関わらず再計算されるので、外からは見分けがつかないため):
 
 ```
 POST /api/v1/admin/acl-epoch/migration/{repo}    # stamp を起動

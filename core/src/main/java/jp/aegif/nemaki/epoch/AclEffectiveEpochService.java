@@ -538,12 +538,16 @@ public class AclEffectiveEpochService {
         return Map.of(
                 "quarantineBlockedTasks", quarantineBlockedCount.get(),
                 "quarantineBlockingIds", List.copyOf(quarantineBlockersSeen),
-                // Uncached CouchDB document reads performed by the authoritative walk since
-                // start-up. The walk is deliberately cache-bypassing (§4.6), so this is the
-                // floor cost of fencing, and it is the number ledger item A3 is about: the
-                // claim there is 2x(1+ancestors) per node, from snapshot and revalidation each
-                // reading the whole ancestor chain. Divide the delta across a propagation by
-                // the nodes touched to check that against the actual shape of a repository.
+                // OBSERVATION ONLY, and unrelated to quarantine despite sharing this endpoint:
+                // uncached CouchDB document reads performed by the authoritative walk. Per JVM,
+                // resets to zero on restart, and never used for any decision — it rides here
+                // because this is where the walk's own numbers already surface.
+                //
+                // The walk is deliberately cache-bypassing (§4.6), so this is the floor cost of
+                // fencing, and it is the number ledger item A3 is about: the claim there is
+                // 2x(1+ancestors) per node, from snapshot and revalidation each reading the
+                // whole ancestor chain. Divide the delta across a propagation by the nodes
+                // touched to check that against the actual shape of a repository.
                 "authoritativeReads", authoritativeReadCount.get());
     }
 

@@ -24,24 +24,27 @@ import org.junit.jupiter.api.Test;
 import jp.aegif.nemaki.util.test.JavaSource;
 
 /**
- * A folder reindex must tell the caller that it just unfenced the subtree.
+ * A folder reindex must preserve the ACL-epoch fence, and say so.
  *
  * <h2>What this is protecting</h2>
  *
- * <p>{@code POST /search-engine/reindex/folder/{id}} drops {@code effective_acl_epoch} from
- * every document it touches: the batch write path does not carry the field. {@code readers} is
- * recomputed, so search authorization keeps working — which is precisely why nobody notices
- * that the subtree has left the ACL-epoch fence.
+ * <p>{@code POST /search-engine/reindex/folder/{id}} USED to drop
+ * {@code effective_acl_epoch} from every document it touched: the batch write path built a full
+ * replacement document without the field and without a {@code _version_} CAS. {@code readers}
+ * was recomputed, so search authorization kept working — which is precisely why nobody noticed
+ * that the subtree had left the ACL-epoch fence.
  *
- * <p>Measured 2026-08-12 on the dev stack: a folder with 186 of 236 children fenced had 0
- * fenced within five seconds of the reindex, and was still at 0 after three 300-second scanner
- * cycles. That is not slowness. Every pass of {@code AclEpochFinalizationService.scan} selects
- * on the CouchDB fields {@code aclEpochState} / {@code aclEpochMutationId}, and a reindex
- * changes neither — it drops a SOLR field while the CouchDB document stays settled. No pass can
- * ever select these documents, so the epoch never returns without an explicit stamp.
+ * <p>Measured 2026-08-12, before the fix: a folder with 186 of 236 children fenced had 0 fenced
+ * within five seconds of the reindex, and was still at 0 after three 300-second scanner cycles.
+ * That was not slowness — every pass of {@code AclEpochFinalizationService.scan} selects on the
+ * CouchDB fields {@code aclEpochState} / {@code aclEpochMutationId}, and a reindex changes
+ * neither, so no pass could ever select those documents.
  *
- * <p>The equivalent hazard on the full-reindex path is warned about at the stamp endpoint and
- * written into the runbook. This endpoint said nothing at all.
+ * <p>The batch path is fenced now (same machinery as the single-document write). The same folder
+ * stays 186/186, and a full recursive reindex of 5,611 documents leaves the migration verdict at
+ * COMPLETE with 0 unfenced. The note survives in a weaker form, pointing at the verdict: because
+ * {@code readers} is recomputed either way, a damaged index and a healthy one look identical
+ * from the outside, and the verdict is the only thing that tells them apart.
  *
  * <h2>Why a source test</h2>
  *
@@ -59,26 +62,26 @@ class FolderReindexEpochWarningTest {
     }
 
     @Test
-    @DisplayName("folder reindex の応答は epoch fence が外れることを警告する")
-    void theResponseWarnsThatTheSubtreeIsUnfenced() throws Exception {
+    @DisplayName("folder reindex の応答は epoch fence について触れる")
+    void theResponseMentionsTheFence() throws Exception {
         String body = reindexFolderBody();
 
         assertTrue(body.contains("response.setNote("),
-                "the response must carry the warning: a caller who is told only 'reindex"
-                        + " started' has no way to learn that the subtree just left the fence");
+                "the response must carry the note: a caller told only 'reindex started' has no"
+                        + " way to know whether the fence survived, and no reason to look");
         assertTrue(body.contains("acl-epoch/migration/"),
-                "and it must name the follow-up. 'Something is wrong' without 'run this' is how"
-                        + " the full-reindex hazard stayed in a design document instead of a"
-                        + " runbook");
+                "and it must name the endpoint. 'Check the verdict' without 'here' is how the"
+                        + " full-reindex hazard stayed in a design document instead of a runbook");
     }
 
     @Test
-    @DisplayName("警告は「自然に直る」と読める書き方をしない")
-    void theWarningDoesNotImplySelfHealing() throws Exception {
-        String body = reindexFolderBody().toLowerCase();
+    @DisplayName("応答は verdict の確認に誘導する")
+    void theNoteDirectsTheOperatorToTheVerdict() throws Exception {
+        String body = reindexFolderBody();
 
-        assertTrue(body.contains("not") && body.contains("recover"),
-                "the measured fact is that it does NOT recover on its own; wording that leaves"
-                        + " that open invites an operator to wait instead of acting");
+        assertTrue(body.contains("verdict"),
+                "readers are recomputed whether or not the fence survived, so a damaged index"
+                        + " and a healthy one look the same from outside. The verdict is the"
+                        + " only thing that separates them, so the note must point at it");
     }
 }

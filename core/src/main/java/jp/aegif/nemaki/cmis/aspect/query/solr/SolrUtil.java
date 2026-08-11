@@ -425,7 +425,66 @@ public class SolrUtil implements ApplicationContextAware {
 			
 			for (Content content : contents) {
 				try {
+					// FENCED, like the single-document path (C8). A batch add used to be a plain
+					// full-document replace: it recomputed `readers` (so search authorization kept
+					// working, which is why nobody noticed) while DROPPING effective_acl_epoch and
+					// the content-fence fields, and it carried no _version_ CAS. Two consequences,
+					// both silent — the subtree left the ACL-epoch fence, and a concurrent
+					// applyAcl's fenced write could be overwritten last-write-wins by a reindex
+					// that had no idea it was competing.
+					//
+					// Same machinery as indexDocumentInternal, not a second implementation: the
+					// generation comes from the content's own _rev, the incarnation is resolved
+					// authoritatively (a read, and a write only the first time), and the ACL group
+					// is preserved from what Solr already holds rather than re-asserted here — the
+					// ACL axis has its own writer and its own fence, and a reindex has no new ACL
+					// information to contribute.
+					long myGen = parseRevGeneration(content.getRevision());
+					SolrDocument cur = null;
+					String incarnation = null;
+					Long versionField = null; // null => plain add, fail-open (unknown generation)
+
+					if (myGen > 0) {
+						cur = readVersionAndGeneration(repositoryId, content.getId());
+						jp.aegif.nemaki.epoch.ContentIncarnation.ContentStore store = contentStore();
+						if (store != null) {
+							incarnation = jp.aegif.nemaki.epoch.ContentIncarnation.resolve(
+									repositoryId, content.getId(), store);
+						}
+						jp.aegif.nemaki.epoch.ContentWriterFence.Decision decision =
+								jp.aegif.nemaki.epoch.ContentWriterFence.decide(cur, incarnation, myGen);
+						if (decision == jp.aegif.nemaki.epoch.ContentWriterFence.Decision.SKIP_STALE) {
+							// A strictly-fresher content write already landed. Leaving it alone is
+							// the correct outcome, and it is not a failure — but it is NOT counted
+							// as indexed either, or the caller's verify pass would take the count
+							// as evidence this document was written.
+							log.debug("Batch fence: skipping {} — Solr holds a newer generation",
+									content.getId());
+							continue;
+						}
+						if (decision == jp.aegif.nemaki.epoch.ContentWriterFence.Decision.FAIL_CLOSED) {
+							// No authoritative incarnation: stamping anyway is what the fence
+							// exists to prevent. Drop it from the batch WITHOUT counting it, so
+							// verifyAndReindexMissing picks it up on the individual (also fenced)
+							// path instead of the whole batch failing for one document.
+							log.warn("Batch fence: no authoritative content_incarnation for {} —"
+									+ " excluded from this batch, will be retried individually",
+									content.getId());
+							continue;
+						}
+						if (cur == null) {
+							versionField = -1L; // create-if-absent
+						} else {
+							long version = toLongOrDefault(cur.getFieldValue("_version_"), 0L);
+							versionField = (version != 0L) ? Long.valueOf(version) : null;
+						}
+					}
+
 					SolrInputDocument doc = createSolrDocument(repositoryId, content);
+					applyContentFence(doc, cur, incarnation, myGen, repositoryId, content.getId());
+					if (versionField != null) {
+						doc.addField("_version_", versionField);
+					}
 					updateRequest.add(doc);
 					indexedContents.add(content);
 					successCount++;
@@ -445,7 +504,11 @@ public class SolrUtil implements ApplicationContextAware {
 						}
 					}
 				} else {
-					// Throw exception to trigger fallback to individual indexing in caller
+					// Throw exception to trigger fallback to individual indexing in caller.
+					// With per-document CAS this now also covers the case where a concurrent
+					// fenced ACL write moved a _version_ mid-batch: Solr fails the whole request,
+					// and the caller re-does these documents one at a time on the path that
+					// re-reads and retries. The concurrent writer winning is the intended outcome.
 					log.error("Batch indexing failed with status: " + response.getStatus());
 					throw new RuntimeException("Solr batch indexing failed with status: " + response.getStatus());
 				}

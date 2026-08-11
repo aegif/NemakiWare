@@ -490,23 +490,25 @@ public class SearchEngineResource {
             response.setRepositoryId(repositoryId);
             response.setFolderId(folderId);
             response.setRecursive(recursive);
-            // A folder reindex takes this subtree OUT of the ACL-epoch fence: the batch write
-            // path does not carry effective_acl_epoch, so the field is dropped for every
-            // document it touches. `readers` is recomputed, so search authorization itself is
-            // not broken — which is exactly why this is easy to miss.
+            // This USED to take the subtree out of the ACL-epoch fence: the batch write path
+            // built a full replacement document without effective_acl_epoch and without a
+            // _version_ CAS, so every document it touched lost its epoch and a concurrent
+            // applyAcl could be overwritten last-write-wins. `readers` was recomputed, so
+            // search authorization kept working — which is exactly why it was easy to miss.
             //
-            // It does NOT come back on its own. Every pass of the epoch scanner selects on the
-            // CouchDB fields aclEpochState / aclEpochMutationId, and a reindex changes neither;
-            // it drops a SOLR field while the CouchDB document stays settled, so no pass can
-            // select these documents. Measured 2026-08-12: 186 of 236 children fenced, 0 within
-            // five seconds of the reindex, still 0 after three 300s scanner cycles.
+            // The batch path is fenced as of 2026-08-12 (same machinery as the single-document
+            // write: realtime GET, authoritative incarnation, ACL group preserved from what
+            // Solr holds, per-document _version_ CAS). Verified: the same folder that went
+            // 186 -> 0 fenced children before the fix stays 186/186, and a full recursive
+            // reindex of 5,611 documents leaves the migration verdict at COMPLETE 0 unfenced.
             //
-            // The stamp endpoint warns about exactly this for the full-reindex path and the
-            // runbook covers it. This endpoint said nothing, which is how a folder reindex
-            // silently left a subtree unfenced.
-            response.setNote("This subtree is now OUTSIDE the ACL-epoch fence and does NOT"
-                    + " recover on its own. Re-run POST /api/v1/admin/acl-epoch/migration/"
-                    + repositoryId + " after this reindex completes, and check the verdict.");
+            // The note stays, weaker: checking the verdict after a bulk operation is cheap and
+            // it is the only thing that distinguishes "fenced" from "looks fine". Documents
+            // whose _rev yields no generation still take the fail-open path.
+            response.setNote("The ACL-epoch fence is preserved by this operation. Confirm with"
+                    + " GET /api/v1/admin/acl-epoch/migration/" + repositoryId
+                    + " once it completes — the verdict is what distinguishes a fenced index"
+                    + " from one that merely looks correct.");
             
             Map<String, LinkInfo> links = new HashMap<>();
             links.put("self", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId + "/search-engine/reindex/folder/" + folderId));

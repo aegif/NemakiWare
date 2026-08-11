@@ -8,13 +8,19 @@
 壊れませんが、**そのサブツリーは ACL-epoch fence の外に出ます**。
 そして **自動では戻りません** (§5 で確定)。
 
-**現状 (2026-08-12)**:
+**現状 (2026-08-12): 根本修正済み。**
 
-- verdict は検出します (§2-1)。
-- 応答に警告を出すようにしました (`note`)。手順も「必須」に格上げ済み
-  (`.claude/skills/acl-epoch/SKILL.md`)。初出時は**警告なし・手順にも未組込**でした。
-- **根本修正 (batch 経路を fenced writer に通す) は未了**です。上記は緩和であって
-  修正ではありません — reindex を打つたびに stamp を打ち直す運用が要ります。
+- **batch 経路を fence した** (§4-1)。単発経路と同じ機構 — realtime GET →
+  authoritative な incarnation → ACL group は Solr が保持している値を保存 →
+  文書ごとの `_version_` CAS。**別実装ではない**。
+- 実測: 修正前は 186/236 → **0/236** だった同じフォルダが **186/186 のまま**。
+  5,611 文書の全再帰 reindex 後も verdict は **`COMPLETE` / 0 unfenced**。
+- 応答の `note` は残したが**弱めた** — 「fence が外れた、stamp を打ち直せ」から
+  「fence は保たれる、verdict で確認を」へ。`readers` は成否に関わらず再計算されるので
+  **壊れた索引と健全な索引は外から見分けがつかない**。verdict だけが区別する。
+- verdict は引き続き検出します (§2-1)。
+- **残差**: `_rev` から generation が取れない文書は従来どおり fail-open の plain add。
+  通常の CouchDB 文書では起きないが、fence の外にいる唯一の形。
 
 ---
 
