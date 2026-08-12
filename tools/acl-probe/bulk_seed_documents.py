@@ -36,7 +36,7 @@ PREFIX = "f3bulk"
 # workers aimed at one folder serialise on it. Spreading the load across folders is what
 # makes concurrency real here. Measured on the dev stack: 500-per-folder gave ~1 doc/s
 # with 16 workers regardless of whether RAG was on.
-PER_FOLDER = 25
+PER_FOLDER = 25  # --per-folder で上書き可
 
 BODY = (b"F3 scale fixture. The northern division reported growth while the southern "
         b"division contracted. Margins narrowed on freight costs across the quarter.")
@@ -116,6 +116,13 @@ def main():
     workers = 12
     if "--workers" in sys.argv:
         workers = int(sys.argv[sys.argv.index("--workers") + 1])
+    global PER_FOLDER
+    if "--per-folder" in sys.argv:
+        # The folders are created one at a time before the documents start, so a large run with
+        # the default 25 spends its first stretch doing nothing but createFolder. Spreading the
+        # load across folders mattered when the parent-folder lock was suspected; V1 showed the
+        # real serialisation was elsewhere, so a bigger bucket is free.
+        PER_FOLDER = int(sys.argv[sys.argv.index("--per-folder") + 1])
 
     tag = uuid.uuid4().hex[:4]
     # One container under the root; every batch folder goes inside it.
