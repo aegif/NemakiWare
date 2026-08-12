@@ -812,8 +812,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			// Query countByObjectType view to check if content exists
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			ViewResult result = client.queryView("_repo", "countByObjectType", objectTypeId);
-			
-			return result.getRows() != null && !result.getRows().isEmpty();
+
+			// A key that matches nothing comes back as null, not as an empty result — that is the
+			// documented contract of the keyed overload, and "no instances of this type" is the
+			// common case here rather than an exceptional one. Dereferencing it threw an NPE that
+			// the catch below turned into false: the right answer, reached by throwing and logging
+			// an error every time. getChildrenNames already guards the same way.
+			if (result == null || result.getRows() == null) {
+				return false;
+			}
+			return !result.getRows().isEmpty();
 		} catch (Exception e) {
 			log.error("Error checking content existence for objectTypeId: " + objectTypeId + " in repository: " + repositoryId, e);
 			return false;
