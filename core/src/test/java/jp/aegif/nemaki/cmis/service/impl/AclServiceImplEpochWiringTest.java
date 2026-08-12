@@ -150,7 +150,7 @@ public class AclServiceImplEpochWiringTest {
     @Test
     public void theSAMEPutCarriesPENDINGAndAFreshMutationId() throws Exception {
         when(finalization.finalizePending(anyString(), anyString())).thenReturn(finalized(7L));
-        when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any()))
+        when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any(), any()))
                 .thenReturn(outcome(AclEpochIndexWriter.WriteResult.UPDATED));
         when(finalization.clearMarkerAfterReconcile(anyString(), anyString(), anyString()))
                 .thenReturn(AclEpochFinalizationService.ClearResult.CLEARED);
@@ -183,7 +183,7 @@ public class AclServiceImplEpochWiringTest {
         order.verify(contentService).updateInternal(eq("bedroom"), any(), eq(true));
         order.verify(finalization).finalizePending("bedroom", "obj-2");
         order.verify(finalization).ackFinalized("bedroom", "obj-2");
-        order.verify(writer).writeAllowingBootstrap(eq("bedroom"), eq("obj-2"), any(), any());
+        order.verify(writer).writeAllowingBootstrap(eq("bedroom"), eq("obj-2"), any(), any(), any());
         order.verify(finalization).clearMarkerAfterReconcile(eq("bedroom"), eq("obj-2"), anyString());
 
         // TERMINUS half 2 (async): the task is consumed AFTER the clear — D5's order preserved
@@ -200,7 +200,7 @@ public class AclServiceImplEpochWiringTest {
     @Test
     public void anUnclearedMarkerKeepsTheTask() throws Exception {
         when(finalization.finalizePending(anyString(), anyString())).thenReturn(finalized(7L));
-        when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any()))
+        when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any(), any()))
                 .thenThrow(new RuntimeException("pending gate"));
         Document content = doc("obj-9");
         applyAclOn(content);
@@ -225,12 +225,12 @@ public class AclServiceImplEpochWiringTest {
     @Test
     public void everyAclGroupWriteGoesThroughTheEpochWriter() throws Exception {
         Document content = doc("obj-4");
-        when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any()))
+        when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any(), any()))
                 .thenReturn(outcome(AclEpochIndexWriter.WriteResult.UPDATED));
 
         svc.writeContentReaders(solrUtil, "bedroom", content, null);
 
-        verify(writer).writeAllowingBootstrap(eq("bedroom"), eq("obj-4"), any(), any());
+        verify(writer).writeAllowingBootstrap(eq("bedroom"), eq("obj-4"), any(), any(), any());
         // Increment 14: the pre-epoch generation fence is GONE — there is no second ACL writer to
         // fall back to, so this is the only path an ACL group can be written through.
     }
@@ -238,7 +238,7 @@ public class AclServiceImplEpochWiringTest {
     @Test
     public void dispatch_NOT_INDEXEDFallsBackToTheStrictFullIndex() throws Exception {
         Document content = doc("obj-5");
-        when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any()))
+        when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any(), any()))
                 .thenReturn(outcome(AclEpochIndexWriter.WriteResult.NOT_INDEXED));
         svc.writeContentReaders(solrUtil, "bedroom", content, null);
         verify(solrUtil).indexDocument(eq("bedroom"), eq(content), eq(true), eq(true), any(), eq(true));
@@ -274,7 +274,7 @@ public class AclServiceImplEpochWiringTest {
     @Test
     public void aCleanReDriveClearsTheMarkerScopedToThePreReadMutationId() throws Exception {
         reDriveContent(AclEpochState.RECONCILE_ENQUEUED);
-        when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any()))
+        when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any(), any()))
                 .thenReturn(outcome(AclEpochIndexWriter.WriteResult.UPDATED));
 
         assertTrue(svc.reindexSearchIndexAclForObject("bedroom", "obj-7"));
@@ -289,7 +289,7 @@ public class AclServiceImplEpochWiringTest {
     @Test
     public void aFailedClearKeepsTheTask() throws Exception {
         reDriveContent(AclEpochState.RECONCILE_ENQUEUED);
-        when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any()))
+        when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any(), any()))
                 .thenReturn(outcome(AclEpochIndexWriter.WriteResult.UPDATED));
         when(finalization.clearMarkerAfterReconcile(anyString(), anyString(), anyString()))
                 .thenThrow(new RuntimeException("contention"));
@@ -303,7 +303,7 @@ public class AclServiceImplEpochWiringTest {
     @Test
     public void aQuarantineBlockPropagatesToTheSchedulerInsteadOfBurningAttempts() throws Exception {
         reDriveContent(AclEpochState.RECONCILE_ENQUEUED);
-        when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any()))
+        when(writer.writeAllowingBootstrap(anyString(), anyString(), any(), any(), any()))
                 .thenThrow(new AclEpochQuarantineBlockedException("blocked", "anc-1"));
 
         assertThrows(AclEpochQuarantineBlockedException.class,

@@ -931,6 +931,252 @@ public class AclEffectiveEpochServiceIT {
 
     // ── fixtures / helpers ─────────────────────────────────────────
 
+
+    // ── A3: per-traversal ancestor memo (design §4.6) ──────────────────────────────────────
+
+    /** Every field a later step consumes, rendered so a mismatch names itself. */
+    private static String fingerprint(Snapshot s) {
+        // Every field a later step consumes — review found the first version omitted state,
+        // kind, the relationship endpoints and, worst, localAces: the readers projection is
+        // computed FROM those, so a memo that returned the right topology with the wrong ACL
+        // would have produced identical fingerprints and a different answer.
+        StringBuilder b = new StringBuilder("epoch=").append(s.effectiveEpoch).append(" deps=[");
+        for (AclEffectiveEpochService.Dependency d : s.dependencies) {
+            b.append(d.id).append('/').append(d.role).append('/').append(d.rev)
+             .append('/').append(d.sourceEpoch).append('/').append(d.exists)
+             .append('/').append(d.parentId).append('/').append(d.aclInherited)
+             .append('/').append(d.state).append('/').append(d.kind)
+             .append('/').append(d.sourceId).append('/').append(d.targetId)
+             .append('/').append(aces(d)).append(' ');
+        }
+        return b.append(']').toString();
+    }
+
+    /** The dependency's own ACL, rendered stably. */
+    private static String aces(AclEffectiveEpochService.Dependency d) {
+        if (d.localAces == null) {
+            return "-";
+        }
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (jp.aegif.nemaki.model.Ace a : d.localAces) {
+            out.add(a.getPrincipalId() + ":" + a.getPermissions());
+        }
+        java.util.Collections.sort(out);
+        return out.toString();
+    }
+
+    /**
+     * A memoised traversal must produce the SAME snapshot as an un-memoised one.
+     *
+     * <p>Compared on the whole dependency set — id, role, {@code _rev}, source epoch, existence,
+     * parent and inheritance flag — not just the effective epoch. The epoch is a max over the
+     * chain, so it survives a walk that recorded the wrong ancestors; the dependency list is what
+     * revalidation and the readers projection actually consume, and it is where a memo that
+     * returned a document under the wrong role or skipped a link would show up.
+     */
+    @Test
+    void aMemoisedTraversalProducesTheSameSnapshot() {
+        seedFolder("root", null, false, 3L);
+        seedFolder("mid", "root", true, 9L);
+        seedDocument("a", "mid", true, 4L);
+        seedDocument("b", "mid", true, 5L);
+
+        AclEffectiveEpochService.TraversalMemo memo = new AclEffectiveEpochService.TraversalMemo();
+        // 'a' first populates the memo with mid + root; 'b' should then be served from it.
+        Snapshot cachedA = svc.snapshot(contentDb, "a", memo);
+        Snapshot cachedB = svc.snapshot(contentDb, "b", memo);
+
+        assertEquals(fingerprint(svc.snapshot(contentDb, "a")), fingerprint(cachedA));
+        assertEquals(fingerprint(svc.snapshot(contentDb, "b")), fingerprint(cachedB));
+        assertTrue(memo.hits() > 0,
+                "the second walk must actually have been served from the memo, or this test"
+                        + " proves only that two uncached walks agree");
+    }
+
+    /**
+     * The SELF read is never memoised, so the map stays ancestor-sized.
+     *
+     * <p>Memoising the target would make the map O(subtree): the re-drive snapshots every
+     * descendant. The claim "it holds the ancestor set, not the descendants" is what makes this
+     * safe to enable on a 100k-descendant propagation, so it is asserted rather than assumed.
+     */
+    @Test
+    void theMemoHoldsAncestorsNotTargets() {
+        seedFolder("root", null, false, 1L);
+        seedFolder("mid", "root", true, 1L);
+        for (int i = 0; i < 10; i++) {
+            seedDocument("leaf-" + i, "mid", true, 1L);
+        }
+
+        AclEffectiveEpochService.TraversalMemo memo = new AclEffectiveEpochService.TraversalMemo();
+        for (int i = 0; i < 10; i++) {
+            svc.snapshot(contentDb, "leaf-" + i, memo);
+        }
+
+        assertEquals(2, memo.size(),
+                "only mid and root belong in the memo; ten targets would mean it grows with the"
+                        + " subtree instead of the ancestor chain");
+    }
+
+    /**
+     * A folder-heavy tree must not let the memo grow without bound.
+     *
+     * <p>The narrow test above uses ten leaves under ONE chain, and review pointed out that such
+     * a shape cannot reveal the real growth: every visited FOLDER becomes an ancestor the moment
+     * one of its children is snapshotted. A root holding N folders with a document each therefore
+     * retains ~N raw documents — the very case a 100k-node propagation hits, where an
+     * OutOfMemoryError would abandon the traversal rather than merely slow it.
+     *
+     * <p>The cap is set low here so the bound is exercised without seeding 50,000 folders; what
+     * is being asserted is that a bound EXISTS and holds, not the production number.
+     */
+    @Test
+    void aBranchedTreeCannotGrowTheMemoWithoutBound() {
+        seedFolder("root", null, false, 1L);
+        int branches = 40;
+        int cap = 8;
+        for (int i = 0; i < branches; i++) {
+            seedFolder("br-" + i, "root", true, 1L);
+            seedDocument("doc-" + i, "br-" + i, true, 1L);
+        }
+
+        AclEffectiveEpochService.TraversalMemo memo = new AclEffectiveEpochService.TraversalMemo(cap);
+        for (int i = 0; i < branches; i++) {
+            svc.snapshot(contentDb, "doc-" + i, memo);
+        }
+
+        assertTrue(memo.size() <= cap,
+                "every branch folder becomes an ancestor, so without a bound this would hold "
+                        + branches + " entries; it holds " + memo.size());
+        assertTrue(memo.evictions() > 0, "and the bound must actually have been exercised");
+        // The shared root is what everything reuses, so the optimisation still pays off.
+        assertTrue(memo.hits() > 0,
+                "an LRU must still serve the hot shared ancestor; a cache that only evicts is"
+                        + " just overhead");
+    }
+
+    /**
+     * A mid-mutation ancestor must NOT be memoised.
+     *
+     * <p>The pending gate throws on {@code PENDING_EPOCH}, and the finalizer is actively moving
+     * that document — memoising it caches a value already known to be about to change. The cost
+     * is not a wrong answer but a stalled traversal: every later descendant under that ancestor
+     * would keep hitting the gate for the rest of the traversal, even after CouchDB settled it.
+     * Without the memo those descendants re-read and made progress, so caching it would be a
+     * convergence regression introduced by an optimisation.
+     */
+    @Test
+    void aPendingAncestorIsNotMemoisedSoTheTraversalCanRecover() {
+        seedRaw("root", "{\"type\":\"cmis:folder\",\"aclInherited\":false,\"aclEpochState\":\"PENDING_EPOCH\","
+                + "\"aclEpochMutationId\":\"" + AclEpochState.newMutationId() + "\"}");
+        seedDocument("leaf", "root", true, 4L);
+        seedDocument("leaf2", "root", true, 4L);
+
+        AclEffectiveEpochService.TraversalMemo memo = new AclEffectiveEpochService.TraversalMemo();
+        assertThrows(AclEpochPendingException.class, () -> svc.snapshot(contentDb, "leaf", memo));
+        assertEquals(0, memo.size(),
+                "the pending ancestor must not be in the memo: it is the one document guaranteed"
+                        + " to change, and keeping it stalls the rest of the traversal");
+
+        // The finalizer settles it, exactly as it would mid-traversal.
+        seedFolder("root", null, false, 7L);
+
+        Snapshot s = svc.snapshot(contentDb, "leaf2", memo);
+        assertEquals(7L, s.effectiveEpoch,
+                "the next descendant in the SAME traversal must see the settled ancestor; a"
+                        + " memoised PENDING would have thrown here instead");
+    }
+
+    /**
+     * Revalidation must still refuse a snapshot whose ancestor changed — memo or no memo.
+     *
+     * <p>This is the test that matters. The memo's whole safety argument is that step 4 re-reads
+     * the authoritative source before each CAS, so a stale reused ancestor is caught there. If
+     * revalidation is ever changed to consult the memo, the fence loses its only detection
+     * mechanism and every other test in this file still passes.
+     */
+    @Test
+    void revalidationStillDetectsAnAncestorChangedMidTraversal() {
+        seedFolder("root", null, false, 3L);
+        seedFolder("mid", "root", true, 9L);
+        seedDocument("leaf", "mid", true, 4L);
+
+        seedDocument("leaf2", "mid", true, 4L);
+
+        AclEffectiveEpochService.TraversalMemo memo = new AclEffectiveEpochService.TraversalMemo();
+        svc.snapshot(contentDb, "leaf", memo);              // populates the memo
+        long before = memo.hits();
+        Snapshot withMemo = svc.snapshot(contentDb, "leaf2", memo); // built FROM the memo
+        assertTrue(memo.hits() > before,
+                "this snapshot has to be the one assembled from cached ancestors, or the test"
+                        + " below proves nothing about memo-built snapshots");
+        Snapshot withoutMemo = svc.snapshot(contentDb, "leaf2");
+        assertTrue(svc.revalidate(withMemo), "unchanged sources revalidate");
+
+        // An ancestor moves under us, exactly as a concurrent applyAcl would do.
+        seedFolder("mid", "root", true, 11L);
+
+        assertFalse(svc.revalidate(withMemo),
+                "revalidation reads CouchDB directly; a snapshot built from a memo must be"
+                        + " refused just the same, or the memo has silently disabled the fence");
+        assertFalse(svc.revalidate(withoutMemo),
+                "and the un-memoised snapshot is refused identically — the detection does not"
+                        + " depend on how the snapshot was built");
+    }
+
+    /**
+     * After a refused revalidation, the traversal must be able to make progress.
+     *
+     * <p>Detection alone is not enough. The writer's response to a refusal is to restart the
+     * walk, and a memo that still holds the rejected ancestor hands the restart the very value
+     * that was just refused — the same snapshot, the same refusal, for ever. Invalidation is
+     * what turns "we noticed" into "we converged", so it is part of the contract, not an
+     * implementation detail.
+     */
+    @Test
+    void afterInvalidationTheRestartSeesTheNewAncestor() {
+        seedFolder("root", null, false, 3L);
+        seedFolder("mid", "root", true, 9L);
+        seedDocument("leaf", "mid", true, 4L);
+
+        AclEffectiveEpochService.TraversalMemo memo = new AclEffectiveEpochService.TraversalMemo();
+        Snapshot first = svc.snapshot(contentDb, "leaf", memo);
+        assertEquals(9L, first.effectiveEpoch);
+
+        seedFolder("mid", "root", true, 11L);
+        assertFalse(svc.revalidate(first), "the change is detected");
+
+        // Without this the next line would return 9 for ever.
+        memo.invalidateAll();
+
+        Snapshot second = svc.snapshot(contentDb, "leaf", memo);
+        assertEquals(11L, second.effectiveEpoch,
+                "the restart must see the NEW ancestor epoch; a memo that survived the refusal"
+                        + " would keep serving 9 and the writer could never finish");
+        assertTrue(svc.revalidate(second), "and the fresh snapshot now revalidates");
+    }
+
+    /**
+     * A memo that is NOT invalidated reproduces the non-convergence, so the test above is known
+     * to be testing something.
+     */
+    @Test
+    void withoutInvalidationTheRestartWouldSeeTheStaleAncestor() {
+        seedFolder("root", null, false, 3L);
+        seedFolder("mid", "root", true, 9L);
+        seedDocument("leaf", "mid", true, 4L);
+
+        AclEffectiveEpochService.TraversalMemo memo = new AclEffectiveEpochService.TraversalMemo();
+        svc.snapshot(contentDb, "leaf", memo);
+        seedFolder("mid", "root", true, 11L);
+
+        Snapshot again = svc.snapshot(contentDb, "leaf", memo); // deliberately NOT invalidated
+        assertEquals(9L, again.effectiveEpoch,
+                "this is the loop the invalidation exists to break: the walk keeps producing the"
+                        + " snapshot revalidation just rejected");
+        assertFalse(svc.revalidate(again), "and it would be rejected again, for ever");
+    }
+
     private void seedFolder(String id, String parentId, boolean inherits, long epoch) {
         Map<String, Object> p = new LinkedHashMap<>();
         p.put("type", "cmis:folder");   // the real persisted base-type discriminator

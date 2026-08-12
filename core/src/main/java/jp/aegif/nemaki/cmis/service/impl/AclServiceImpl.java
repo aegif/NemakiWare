@@ -550,7 +550,7 @@ public class AclServiceImpl implements AclService {
 				// syncConfirm=false: async best-effort with enqueue-on-failure.
 				updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,
 						new java.util.HashSet<>(), true, reconcile, null, false, null, epochE,
-						movedProgress);
+						movedProgress, new jp.aegif.nemaki.epoch.AclEffectiveEpochService.TraversalMemo());
 				log.info("Moved-subtree search index ACL refresh COMPLETED for: " + content.getId());
 				// NO inline settle on the move path: no synchronous own-node write ran here, so the
 				// marker was never cleared — consuming the task would strand RECONCILE_ENQUEUED.
@@ -700,7 +700,8 @@ public class AclServiceImpl implements AclService {
 			try {
 				// syncConfirm=false: async best-effort with enqueue-on-failure.
 				updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,
-						new java.util.HashSet<>(), true, reconcile, null, false, null, epochE, progress);
+						new java.util.HashSet<>(), true, reconcile, null, false, null, epochE, progress,
+						new jp.aegif.nemaki.epoch.AclEffectiveEpochService.TraversalMemo());
 				// This line used to read "triggered", but it is emitted AFTER the recursive walk
 				// returns — an operator watching the log read a completion as a start.
 				log.info("Search index ACL refresh COMPLETED: repository=" + repositoryId
@@ -960,7 +961,8 @@ public class AclServiceImpl implements AclService {
 	 * and no flag selecting between them.
 	 */
 	private void writeContentReadersEpochFenced(jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil solrUtil,
-			String repositoryId, Content content, Runnable onWriteFailed) throws Exception {
+			String repositoryId, Content content, Runnable onWriteFailed,
+			jp.aegif.nemaki.epoch.AclEffectiveEpochService.TraversalMemo memo) throws Exception {
 		jp.aegif.nemaki.epoch.AclEpochIndexWriter writer = aclEpochIndexWriter;
 		ACLExpander expander = getAclExpander();
 		if (writer == null || expander == null || solrUtil == null) {
@@ -969,7 +971,7 @@ public class AclServiceImpl implements AclService {
 			throw new IllegalStateException("ACL-epoch wiring is ON but writer/expander/solr are unavailable");
 		}
 		jp.aegif.nemaki.epoch.AclEpochIndexWriter.WriteOutcome outcome = writer.writeAllowingBootstrap(
-				repositoryId, content.getId(), solrUtil.getSolrClient(), expander.principalResolver());
+				repositoryId, content.getId(), solrUtil.getSolrClient(), expander.principalResolver(), memo);
 		if (outcome.result == jp.aegif.nemaki.epoch.AclEpochIndexWriter.WriteResult.NOT_INDEXED) {
 			// Not in Solr at all — same fallback as the generation path: strict full index
 			// (create-if-absent). The fresh document is then unfenced until its next ACL-group
@@ -981,11 +983,20 @@ public class AclServiceImpl implements AclService {
 
 	void writeContentReaders(jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil solrUtil,
 			String repositoryId, Content content, Runnable onWriteFailed) throws Exception {
+		writeContentReaders(solrUtil, repositoryId, content, onWriteFailed, null);
+	}
+
+	/**
+	 * As above, reusing one traversal's ancestor reads (A3). A null memo is today's behaviour.
+	 */
+	void writeContentReaders(jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil solrUtil,
+			String repositoryId, Content content, Runnable onWriteFailed,
+			jp.aegif.nemaki.epoch.AclEffectiveEpochService.TraversalMemo memo) throws Exception {
 		// UNIFIED write path: BOTH the async applyAcl/move refresh AND the reconciliation
 		// re-drive write the ACL group through the SAME epoch-fenced atomic CAS. Two writers
 		// with two fences would be two answers to "which ACL state is newer", and the older
 		// one would eventually win a race with no convergence event behind it.
-		writeContentReadersEpochFenced(solrUtil, repositoryId, content, onWriteFailed);
+		writeContentReadersEpochFenced(solrUtil, repositoryId, content, onWriteFailed, memo);
 	}
 
 	@Override
@@ -1063,7 +1074,7 @@ public class AclServiceImpl implements AclService {
 		try {
 			updateSearchIndexACLRecursively(repositoryId, content, ragRef, expander, solrUtil,
 					new java.util.HashSet<>(), false, null, counters, true, leaseStillHeld, null,
-					redriveProgress);
+					redriveProgress, new jp.aegif.nemaki.epoch.AclEffectiveEpochService.TraversalMemo());
 		} catch (LeaseLostException e) {
 			// Lost the lease to a reclaiming worker mid-flight — stop writing and let
 			// the reclaimer own it (not clean, so the task is not completed here).
@@ -1142,7 +1153,9 @@ public class AclServiceImpl implements AclService {
 			java.util.Set<String> visitedIds, boolean isRoot,
 			jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconcile,
 			RefreshCounters counters, boolean syncConfirm,
-			java.util.function.BooleanSupplier leaseStillHeld, Long epochObligation, PropagationProgress progress) {
+			java.util.function.BooleanSupplier leaseStillHeld, Long epochObligation,
+			PropagationProgress progress,
+			jp.aegif.nemaki.epoch.AclEffectiveEpochService.TraversalMemo memo) {
 		if (content == null || visitedIds.contains(content.getId())) {
 			return;
 		}
@@ -1177,7 +1190,7 @@ public class AclServiceImpl implements AclService {
 		if (solrUtil != null) {
 			try {
 				checkpointLease(leaseStillHeld);
-				writeContentReaders(solrUtil, repositoryId, content, onWriteFailed);
+				writeContentReaders(solrUtil, repositoryId, content, onWriteFailed, memo);
 			} catch (LeaseLostException lle) {
 				throw lle;
 			} catch (jp.aegif.nemaki.epoch.AclEpochQuarantineBlockedException qbe) {
@@ -1244,7 +1257,7 @@ public class AclServiceImpl implements AclService {
 						// with thousands of relationships must not let a lease-lost worker
 						// keep writing for the whole batch (finer than per-node fencing).
 						checkpointLease(leaseStillHeld);
-						writeContentReaders(solrUtil, repositoryId, rel, onWriteFailed);
+						writeContentReaders(solrUtil, repositoryId, rel, onWriteFailed, memo);
 					}
 				}
 			} catch (LeaseLostException lle) {
@@ -1291,7 +1304,7 @@ public class AclServiceImpl implements AclService {
 						if (contentService.getAclInheritedWithDefault(repositoryId, child)) {
 							updateSearchIndexACLRecursively(repositoryId, child, ragService, expander,
 									solrUtil, visitedIds, false, reconcile, counters, syncConfirm,
-									leaseStillHeld, epochObligation, progress);
+									leaseStillHeld, epochObligation, progress, memo);
 						}
 					} catch (LeaseLostException lle) {
 						// A descendant lost the reconciliation lease — propagate so the

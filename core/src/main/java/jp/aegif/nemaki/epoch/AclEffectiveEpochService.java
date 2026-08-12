@@ -1086,10 +1086,7 @@ public class AclEffectiveEpochService {
      *
      * <ul>
      *   <li><b>Ancestors and relationship endpoints only.</b> The SELF read at the top of each
-     *       snapshot is NOT memoised. Memoising it would make this O(subtree) — the re-drive
-     *       snapshots every descendant, so every descendant would be retained, each with its
-     *       local ACL. Restricted to ancestors, the map holds the ancestor set, which does not
-     *       grow with the number of descendants.</li>
+     *       snapshot is NOT memoised, so a leaf document is never retained for its own sake.</li>
      *   <li><b>Absences are not memoised.</b> A recorded ABSENCE that is later created under the
      *       same id is exactly the case a negative dependency exists to catch; keeping it out of
      *       the map removes a whole invalidation case rather than getting it subtly wrong.</li>
@@ -1118,14 +1115,60 @@ public class AclEffectiveEpochService {
      * traversal's re-reads on an event (a concurrent ACL change mid-traversal) that is rare, and
      * degrades to today's behaviour rather than to a wrong answer.
      *
+     * <h2>It is BOUNDED, because excluding the target is not enough</h2>
+     *
+     * <p>An earlier version of this class claimed that skipping the SELF read kept the map at the
+     * size of the ancestor chain. That is false for a folder-heavy tree, and review caught it:
+     * every visited FOLDER becomes an ancestor as soon as one of its children is snapshotted. A
+     * root holding 50,000 folders with one document each retains ~50,001 raw CouchDB documents —
+     * property maps and ACLs included — for the whole traversal, with nothing trimming them.
+     * Unbounded growth during a 100k-node propagation risks an {@link OutOfMemoryError}, which
+     * the traversal's {@code catch (Exception)} does not catch and which would abandon the
+     * propagation part-way. A read cache must not be able to do that.
+     *
+     * <p>So it is an LRU with a hard cap. The access pattern makes that nearly free: what gets
+     * reused is the upper chain shared by everything, which stays hot, while the per-branch
+     * folders that caused the growth are exactly the entries with one hit each. Eviction costs a
+     * re-read, never a wrong answer.
+     *
      * <p>NOT thread-safe and NOT shared: one instance belongs to one traversal on one thread. A
      * {@code ThreadLocal} would be the obvious shortcut and is the one thing that must not be
      * done — on a pooled executor it outlives the traversal and starts serving unrelated work.
      */
     public static final class TraversalMemo {
-        private final java.util.Map<String, Document> byId = new java.util.HashMap<>();
+        /**
+         * Entries retained. Deep enough to hold any realistic ancestor chain many times over
+         * (the hop cap is far below this), small enough that the worst case is bounded memory
+         * rather than the repository's folder count.
+         */
+        static final int DEFAULT_MAX_ENTRIES = 2_048;
+
+        private final int maxEntries;
+        private final java.util.LinkedHashMap<String, Document> byId;
         private long hits;
         private long invalidations;
+        private long evictions;
+
+        public TraversalMemo() {
+            this(DEFAULT_MAX_ENTRIES);
+        }
+
+        TraversalMemo(int maxEntries) {
+            this.maxEntries = Math.max(1, maxEntries);
+            // access-order LRU: the shared upper chain stays, transient per-branch folders go
+            this.byId = new java.util.LinkedHashMap<String, Document>(16, 0.75f, true) {
+                private static final long serialVersionUID = 1L;
+
+                @Override
+                protected boolean removeEldestEntry(java.util.Map.Entry<String, Document> eldest) {
+                    if (size() > TraversalMemo.this.maxEntries) {
+                        TraversalMemo.this.evictions++;
+                        return true;
+                    }
+                    return false;
+                }
+            };
+        }
 
         Document get(String id) {
             Document d = byId.get(id);
@@ -1139,6 +1182,10 @@ public class AclEffectiveEpochService {
             if (doc != null) {
                 byId.put(id, doc);
             }
+        }
+
+        public long evictions() {
+            return evictions;
         }
 
         /** Drop everything. MUST be called whenever a revalidation refuses the snapshot. */
@@ -1175,10 +1222,38 @@ public class AclEffectiveEpochService {
             }
         }
         Document doc = read(repositoryId, docId, what);
-        if (memo != null) {
+        if (memo != null && isMemoisable(doc)) {
             memo.put(docId, doc); // put() ignores null: absences are deliberately not memoised
         }
         return doc;
+    }
+
+    /**
+     * Whether a document may be reused for the rest of this traversal.
+     *
+     * <p>A dependency in {@code PENDING_EPOCH} or {@code FINALIZED_NEEDS_RECONCILE} is mid-mutation:
+     * the pending gate throws on it, and the finalizer is actively moving it. Memoising one is
+     * memoising a value already known to be about to change, and the cost is not a wrong answer
+     * but a stalled traversal — the gate would then throw for EVERY later descendant under that
+     * ancestor, for the whole traversal, even after CouchDB has settled it. Before the memo those
+     * descendants re-read and made progress.
+     *
+     * <p>Read from the raw properties rather than through {@code AclEpochFields.validate}: this
+     * runs before the walk has decided anything about the document, and a malformed marker must
+     * still reach the validator that reports it properly rather than being swallowed here.
+     */
+    private static boolean isMemoisable(Document doc) {
+        if (doc == null) {
+            return false;
+        }
+        Object state = doc.getProperties() == null
+                ? null : doc.getProperties().get(AclEpochState.FIELD_STATE);
+        if (state == null) {
+            return true; // state-less = ordinary settled content
+        }
+        String v = state.toString();
+        return !AclEpochState.PENDING_EPOCH.equals(v)
+                && !AclEpochState.FINALIZED_NEEDS_RECONCILE.equals(v);
     }
 
     private Document read(String repositoryId, String docId, String what) {

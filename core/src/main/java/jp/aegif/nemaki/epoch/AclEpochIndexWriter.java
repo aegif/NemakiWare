@@ -319,6 +319,14 @@ public class AclEpochIndexWriter {
                     // THAT (§4.3), so every conflicting writer converges on the last-finalized state.
                     logger.info("ACL epoch write: equal epoch {} with divergent readers on {} — "
                             + "recomputing authoritatively", myEpoch, objectId);
+                    // The memo must be dropped here too. This branch exists to RECOMPUTE from the
+                    // authoritative sources so that conflicting writers converge on one answer; a
+                    // memo would hand the next walk the same ancestors and it would produce the
+                    // same readers, turning the recompute into a replay and the convergence
+                    // mechanism into a loop that resolves nothing.
+                    if (memo != null) {
+                        memo.invalidateAll();
+                    }
                     forceWriteAfterEqualEpochDivergence = true;
                     continue;
                 }
