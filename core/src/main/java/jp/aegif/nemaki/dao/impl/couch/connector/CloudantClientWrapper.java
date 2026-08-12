@@ -1213,6 +1213,44 @@ public class CloudantClientWrapper {
 	/**
 	 * Bridge method to replace Ektorp's ViewQuery - query view without specific class
 	 * WITH EXPLICIT UPDATE CONTROL for cache bypass
+	 *
+	 * <p>The key is sent to CouchDB. This method used to fetch the ENTIRE view — every row in
+	 * the repository, with {@code include_docs=true} — and then keep the matching rows in Java.
+	 * The cost of asking about one folder was therefore proportional to the whole repository,
+	 * and it was paid on the createDocument hot path: CMIS name-uniqueness calls
+	 * {@code getChildrenNames}, which lands here. Measured on the dev stack at 2,722 rows, one
+	 * create pulled 2.6 MB / 0.90 s where the keyed query is 0.28 MB / 0.095 s, and sixteen
+	 * concurrent creates degraded to ~11 s each (about 1.4 creates/second in total, no better
+	 * than serial). The same defect had already been found and fixed in the typed overload
+	 * {@link #queryView(String, String, String, Class)} — it was simply never applied here.
+	 *
+	 * <p>Returning {@code null} when nothing matches is deliberate and unchanged: callers such
+	 * as {@code getUserItemById} treat null as "no such row", and a server-side query answers an
+	 * unmatched key with an empty row list rather than a 404.
+	 *
+	 * <h2>Why {@code include_docs} is not requested</h2>
+	 *
+	 * <p>Every caller of this overload reads {@code row.getValue()}; none calls {@code getDoc()}.
+	 * The views behind them already emit what the caller wants as the value — {@code userItemsById}
+	 * and the WebAuthn views emit the whole document, {@code childrenNames} emits the name — so the
+	 * fetched documents were built and discarded.
+	 *
+	 * <p>More than wasteful: CouchDB REJECTS {@code include_docs} on a reduce view
+	 * ({@code query_parse_error: `include_docs` is invalid for reduce}). {@code countByObjectType}
+	 * has a reduce function, so {@code existContent} threw on every call and answered false from
+	 * its catch block — it could never report that a type had instances. Dropping
+	 * {@code include_docs} makes the reduce query legal, and a reduce query keyed by type answers
+	 * with one row when instances exist and none when they do not, which is the question asked.
+	 *
+	 * <p>Scope of that repair, stated precisely because it is narrower than it looks:
+	 * {@code existContent} now works, but its only consumer,
+	 * {@code ExceptionServiceImpl.constraintObjectsStillExist}, has no callers. The live
+	 * {@code deleteType} path goes through {@code TypeManagerImpl.checkTypeDependencies}, whose
+	 * instance check {@code checkTypeHasInstances} is a stub returning false ("not yet
+	 * implemented"). So deleting a type that still has instances is still permitted — verified on
+	 * the running server with {@code tools/acl-probe/type_delete_constraint_probe.py} after this
+	 * fix. Closing that gap means wiring the stub to {@code existContent}, which is a deliberate
+	 * behaviour change and not part of this one.
 	 */
 	public ViewResult queryView(String designDoc, String viewName, String key, boolean forceUpdate) {
 		try {
@@ -1223,40 +1261,26 @@ public class CloudantClientWrapper {
 				.db(databaseName)
 				.ddoc(designDoc.replace("_design/", ""))
 				.view(viewName)
-				.includeDocs(true) // CRITICAL: Must get actual docs, not cached emit values
 				.update(forceUpdate ? "true" : "false"); // Force view index update when forceUpdate=true
-			
-			// First try without key to test basic view access
-			ViewResult result = client.postView(builder.build()).execute().getResult();
-			
+
 			if (key != null) {
-				// Filter results by key client-side
-				List<ViewResultRow> filteredRows = new ArrayList<>();
-				for (ViewResultRow row : result.getRows()) {
-					if (row.getKey() != null && key.equals(row.getKey().toString().replace("\"", ""))) {
-						filteredRows.add(row);
-					}
-				}
-				
-				// CRITICAL FIX: Return null if no matching key found (proper CouchDB behavior)
-				log.debug("SECURITY FIX: Executed view query " + designDoc + "/" + viewName + " with key: " + key + " (filtered " + filteredRows.size() + " from " + result.getRows().size() + " results)");
-				
-				if (filteredRows.isEmpty()) {
-					// No matching key found - return null to indicate no results
-					log.debug("SECURITY FIX: No matching key found for: " + key + " - returning null");
-					return null;
-				} else {
-					// Create a ViewResult with only the matching rows
-					// Since we cannot create new ViewResult, we modify the existing one
-					result.getRows().clear();
-					result.getRows().addAll(filteredRows);
-					return result;
-				}
+				builder.key(key);
 			}
-			
-			log.debug("Executed view query " + designDoc + "/" + viewName + " (returned " + result.getRows().size() + " results)");
+
+			ViewResult result = client.postView(builder.build()).execute().getResult();
+			int rows = result.getRows() == null ? 0 : result.getRows().size();
+
+			if (key != null) {
+				log.debug("Executed view query " + designDoc + "/" + viewName + " with key: " + key
+						+ " (" + rows + " rows)");
+				// Preserve the previous contract: no rows for this key means null, not an empty
+				// result. Callers branch on null.
+				return rows == 0 ? null : result;
+			}
+
+			log.debug("Executed view query " + designDoc + "/" + viewName + " (returned " + rows + " results)");
 			return result;
-			
+
 		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
 			log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found - returning null. This is normal during initial startup.");
 			return null;
