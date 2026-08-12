@@ -315,6 +315,51 @@ public class AclEpochIndexWriterIT {
     }
 
     /**
+     * A dependency going mid-mutation must also drop the memo.
+     *
+     * <p>The walk refuses to memoise a document that is ALREADY pending, but this is the other
+     * order: the ancestor was settled when it was cached and went pending afterwards. The cached
+     * copy is settled, so it does not trip the pending gate — every sibling in this traversal
+     * would rebuild the same stale snapshot and pay a full revalidation just to be told "pending"
+     * again, for as long as the mutation is in flight. Nothing wrong is written either way; what
+     * is being pinned is that the traversal does not spin on a value it already knows is moving.
+     */
+    @Test
+    void aDependencyGoingPendingDropsTheMemo() throws Exception {
+        seedFolder("root", null, false, 5L);
+        seedDocument(solrId, "root", true, 2L);
+        indexSolrDoc(solrId, "n", "/root/n", "b");
+
+        AclEffectiveEpochService.TraversalMemo memo = new AclEffectiveEpochService.TraversalMemo();
+        assertEquals(WriteResult.UPDATED, writerReturning(List.of("group:g1"))
+                .writeAllowingBootstrap(contentDb, solrId, solr, RESOLVER, memo).result);
+        assertTrue(memo.size() > 0, "the ancestor must be cached, or there is nothing to drop");
+        long before = memo.invalidations();
+
+        // The ancestor goes mid-mutation AFTER it was cached settled. Written through put(),
+        // which carries the _rev — seedRaw does a bare PUT and would 409 on an existing document.
+        Map<String, Object> pending = new LinkedHashMap<>();
+        pending.put("type", "cmis:folder");
+        pending.put("objectType", "cmis:folder");
+        pending.put("document", false);
+        pending.put("name", "root");
+        pending.put(AclEffectiveEpochService.FIELD_ACL_INHERITED, false);
+        pending.put(AclEpochState.FIELD_SOURCE_EPOCH, 5L);
+        pending.put(AclEpochState.FIELD_STATE, AclEpochState.PENDING_EPOCH);
+        pending.put(AclEpochState.FIELD_MUTATION_ID, AclEpochState.newMutationId());
+        put("root", pending);
+
+        assertThrows(AclEffectiveEpochService.AclEpochPendingException.class,
+                () -> writerReturning(List.of("group:g1"))
+                        .writeAllowingBootstrap(contentDb, solrId, solr, RESOLVER, memo));
+        assertTrue(memo.invalidations() > before,
+                "the pending exception leaves through a different door than a refused"
+                        + " revalidation, and that door must drop the memo too — otherwise the"
+                        + " settled-before-pending copy keeps rebuilding the same dead snapshot");
+        assertEquals(0, memo.size(), "and the memo is actually empty afterwards");
+    }
+
+    /**
      * The equal-epoch recompute must be a recompute, not a replay of the same cached ancestors.
      *
      * <p>That branch exists so conflicting writers converge on one authoritatively recomputed

@@ -276,7 +276,22 @@ public class AclEpochIndexWriter {
             List<String> storedReaders = normalizeStoredReaders(stringList(current.getFieldValues(FIELD_READERS)));
 
             // ── step 4: revalidate every recorded dependency; ANY change restarts ──
-            if (!effectiveEpochService.revalidate(snapshot)) {
+            boolean stillValid;
+            try {
+                stillValid = effectiveEpochService.revalidate(snapshot);
+            } catch (AclEffectiveEpochService.AclEpochPendingException pe) {
+                // A dependency went mid-mutation between the walk and here. Nothing is written,
+                // so this is not a wrong answer — but the memo may still hold that dependency as
+                // it was BEFORE it went pending, and a settled copy does not trip the pending
+                // gate. Every sibling in this traversal would then rebuild the same stale
+                // snapshot and pay a full revalidation to be told "pending" again, for as long
+                // as the mutation is in flight. Dropping it now costs one re-read and skips that.
+                if (memo != null) {
+                    memo.invalidateAll();
+                }
+                throw pe;
+            }
+            if (!stillValid) {
                 if (logger.isDebugEnabled()) {
                     logger.debug("ACL epoch write: dependencies changed under {} — restarting", objectId);
                 }
