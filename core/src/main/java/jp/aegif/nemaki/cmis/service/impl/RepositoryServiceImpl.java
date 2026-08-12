@@ -491,6 +491,14 @@ public class RepositoryServiceImpl implements RepositoryService,
 			try {
 				typeManager.deleteTypeDefinition(repositoryId, typeId);
 				log.debug("typeManager.deleteTypeDefinition completed successfully");
+			} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisBaseException cmisException) {
+				// A CMIS exception already IS the answer the client must get: the binding maps its
+				// type to the HTTP status. Wrapping it in CmisRuntimeException — which the catch
+				// below did to everything — turned every deliberate refusal into a 500. The one
+				// that matters here is the constraint raised when the type still has instances:
+				// "you may not delete this yet" was being reported as "the server broke".
+				log.info("Type deletion refused for typeId: " + typeId + ": " + cmisException.getMessage());
+				throw cmisException;
 			} catch (Exception deletionException) {
 				log.error("Type deletion failed for typeId: " + typeId, deletionException);
 				// SpotBugs: NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE - Add null check for getMessage()

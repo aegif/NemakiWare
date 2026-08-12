@@ -110,6 +110,11 @@
         <property name="repositoryInfoMap">
             <ref bean="repositoryInfoMap" />
         </property>
+        <!-- The DAO, not contentService: contentService already refs TypeManager, and closing
+             that cycle around this non-lazy init-method bean is asking for startup trouble. -->
+        <property name="contentDaoService">
+            <ref bean="ContentDaoService" />
+        </property>
     </bean>
 
     <!-- CMIS Service Beans -->

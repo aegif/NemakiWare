@@ -36,6 +36,7 @@ import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
 
 import jp.aegif.nemaki.businesslogic.TypeService;
+import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
@@ -111,6 +112,12 @@ public class TypeManagerImpl implements TypeManager {
 	private RepositoryInfoMap repositoryInfoMap;
 	private TypeService typeService;
 	private PropertyManager propertyManager;
+	/**
+	 * The DAO, not {@code ContentService}: {@code contentService} already depends on this bean, so
+	 * injecting it here would close a Spring cycle around a non-lazy bean with an init-method.
+	 * {@code existContent} lives on the DAO interface anyway.
+	 */
+	private ContentDaoService contentDaoService;
 
 	/**
 	 * Constant
@@ -4155,10 +4162,41 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 *
 	 * Implementation note: Requires ContentDaoService injection and a new query method.
 	 */
+	/**
+	 * Does any object of this type still exist?
+	 *
+	 * <p>CMIS requires {@code deleteType} to be refused while instances remain. This used to be a
+	 * stub returning false — "not yet implemented" — so a populated type could always be deleted,
+	 * leaving objects whose type definition was gone. It is now answered from the
+	 * {@code countByObjectType} view.
+	 *
+	 * <p>That view could not be queried at all until 2026-08-12: it has a reduce function, and the
+	 * DAO's keyed view helper unconditionally asked for {@code include_docs}, which CouchDB rejects
+	 * on a reduce view. {@code existContent} therefore threw on every call and answered false from
+	 * its catch block. Wiring this method up before that was fixed would have looked like it
+	 * worked and changed nothing.
+	 *
+	 * <p><b>Unwired means refuse, not allow.</b> If the DAO is missing, the honest answer is "this
+	 * cannot be determined", and answering false would silently restore the very hole this closes.
+	 * Type deletion is a rare administrative operation, so failing it loudly on a misconfigured
+	 * deployment is the cheaper mistake — {@code checkTypeDependencies} turns the throw into a
+	 * dependency issue, which becomes a constraint error naming the cause.
+	 *
+	 * <p>There is deliberately no {@code tck:}-prefix exemption. One exists in
+	 * {@code ExceptionServiceImpl.constraintObjectsStillExist} (which has no callers), and copying
+	 * it here would mean any real repository that happened to name a type {@code tck:something}
+	 * silently lost the protection. A rule that a client can opt out of by choosing a type name is
+	 * not a constraint.
+	 */
 	private boolean checkTypeHasInstances(String repositoryId, String typeId) {
-		// Instance checking not yet implemented - requires ContentDaoService dependency
-		log.debug("checkTypeHasInstances: Instance checking not implemented, returning false for typeId=" + typeId);
-		return false;
+		if (contentDaoService == null) {
+			throw new IllegalStateException("Cannot determine whether type '" + typeId
+					+ "' still has instances: the content DAO is not wired. Refusing the deletion"
+					+ " rather than assuming the type is empty.");
+		}
+		boolean exists = contentDaoService.existContent(repositoryId, typeId);
+		log.debug("checkTypeHasInstances: typeId=" + typeId + " hasInstances=" + exists);
+		return exists;
 	}
 
 	/**
@@ -4307,6 +4345,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		PropertyDefinition<?> pdf = tdf.getPropertyDefinitions()
 				.get(propertyId);
 		return pdf.getDefaultValue().get(0);
+	}
+
+	public void setContentDaoService(ContentDaoService contentDaoService) {
+		this.contentDaoService = contentDaoService;
 	}
 
 	public void setTypeService(TypeService typeService) {
