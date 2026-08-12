@@ -127,6 +127,14 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- F4: joinedDirectGroupsByGroupId emitted the same row 20x per edge (3.3.0). -->
+				<!-- Key SHAPE is unchanged ([id, 0]), so no consumer changes with it.          -->
+				<!-- Applying it rebuilds every view in _design/_repo: maintenance window.      -->
+				<bean class="jp.aegif.nemaki.patch.Patch_JoinedGroupsSingleEmit">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 				<!-- Initial users and groups: testgroup, testuser with firstName/lastName -->
 				<!-- Enhanced version with proper user properties -->
 				<bean class="jp.aegif.nemaki.patch.Patch_TestUserInitialization">
@@ -474,6 +482,12 @@
 	</bean>
 
 	<bean id="patch_ChildrenViewReduceCount" class="jp.aegif.nemaki.patch.Patch_ChildrenViewReduceCount">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<bean id="patch_JoinedGroupsSingleEmit" class="jp.aegif.nemaki.patch.Patch_JoinedGroupsSingleEmit">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>
