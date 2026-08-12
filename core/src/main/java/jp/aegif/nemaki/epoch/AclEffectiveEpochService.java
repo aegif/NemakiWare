@@ -511,8 +511,21 @@ public class AclEffectiveEpochService {
      * @throws AclEpochAnomalyException     corrupt epoch data / cycle / hop-cap exceeded (repair)
      */
     public Snapshot snapshot(String repositoryId, String objectId) {
+        return snapshot(repositoryId, objectId, null);
+    }
+
+    /**
+     * As {@link #snapshot(String, String)}, reusing {@code memo}'s ancestor reads within one
+     * traversal (design §4.6). A {@code null} memo is exactly today's behaviour — every caller
+     * that does not opt in reads everything fresh, so this cannot change anything by accident.
+     *
+     * <p>The caller owns the memo's lifetime AND its invalidation: whoever revalidates must call
+     * {@link TraversalMemo#invalidateAll()} when a revalidation refuses, or the next snapshot
+     * serves the same stale ancestor and the writer cannot make progress.
+     */
+    public Snapshot snapshot(String repositoryId, String objectId, TraversalMemo memo) {
         try {
-            return snapshotInternal(repositoryId, objectId);
+            return snapshotInternal(repositoryId, objectId, memo);
         } catch (AclEpochQuarantineBlockedException e) {
             // §5.1 item 2. Re-stated with the object it was serving, counted, and logged ONCE PER
             // BLOCKING ANCESTOR — a quarantined folder can block thousands of descendants, and a log
@@ -563,7 +576,7 @@ public class AclEffectiveEpochService {
     private final Set<String> quarantineBlockersSeen =
             java.util.concurrent.ConcurrentHashMap.newKeySet();
 
-    private Snapshot snapshotInternal(String repositoryId, String objectId) {
+    private Snapshot snapshotInternal(String repositoryId, String objectId, TraversalMemo memo) {
         if (repositoryId == null || repositoryId.isBlank()) {
             throw new IllegalArgumentException("repositoryId is required");
         }
@@ -575,6 +588,8 @@ public class AclEffectiveEpochService {
         // walking with a different stop rule than the projection.
         String rootFolderId = requireRootFolderId(repositoryId);
 
+        // The SELF read is NOT memoised — see TraversalMemo: doing so would retain every
+        // descendant the re-drive visits, turning an ancestor-sized map into a subtree-sized one.
         Document target = read(repositoryId, objectId, "target");
         if (target == null) {
             return null; // genuinely deleted
@@ -594,13 +609,13 @@ public class AclEffectiveEpochService {
             // and the relationship's own epoch. toDependency() has already guaranteed both endpoint
             // ids are present and well-formed.
             long src = walkChain(repositoryId, self.sourceId, DependencyRole.RELATIONSHIP_SOURCE,
-                    deps, seen, rootFolderId);
+                    deps, seen, rootFolderId, memo);
             long tgt = walkChain(repositoryId, self.targetId, DependencyRole.RELATIONSHIP_TARGET,
-                    deps, seen, rootFolderId);
+                    deps, seen, rootFolderId, memo);
             effective = Math.max(self.sourceEpoch, Math.max(src, tgt));
         } else {
             effective = Math.max(self.sourceEpoch,
-                    walkAncestors(repositoryId, self, DependencyRole.ANCESTOR, deps, seen, rootFolderId));
+                    walkAncestors(repositoryId, self, DependencyRole.ANCESTOR, deps, seen, rootFolderId, memo));
         }
 
         if (logger.isDebugEnabled()) {
@@ -619,14 +634,15 @@ public class AclEffectiveEpochService {
      * reader union in {@code SolrUtil.relationshipReaders}; a read failure throws.
      */
     private long walkChain(String repositoryId, String endpointId, DependencyRole role,
-                           List<Dependency> deps, Set<String> seen, String rootFolderId) {
+                           List<Dependency> deps, Set<String> seen, String rootFolderId,
+                           TraversalMemo memo) {
         if (endpointId == null || endpointId.isBlank()) {
             return 0L;
         }
         if (seen.contains(endpointId)) {
             return 0L; // already recorded (e.g. a self-relationship); its epoch is already folded in
         }
-        Document doc = read(repositoryId, endpointId, "relationship endpoint");
+        Document doc = readAncestor(repositoryId, endpointId, "relationship endpoint", memo);
         if (doc == null) {
             // DANGLING: contributes nothing to the epoch, but the absence is RECORDED so
             // revalidation can prove it is still absent (review 3a [P1]).
@@ -640,7 +656,7 @@ public class AclEffectiveEpochService {
         Dependency d = toDependency(doc, role);
         deps.add(d);
         seen.add(d.id);
-        return Math.max(d.sourceEpoch, walkAncestors(repositoryId, d, role, deps, seen, rootFolderId));
+        return Math.max(d.sourceEpoch, walkAncestors(repositoryId, d, role, deps, seen, rootFolderId, memo));
     }
 
     /**
@@ -652,7 +668,8 @@ public class AclEffectiveEpochService {
      * fails closed instead of looping.
      */
     private long walkAncestors(String repositoryId, Dependency start, DependencyRole role,
-                               List<Dependency> deps, Set<String> seen, String rootFolderId) {
+                               List<Dependency> deps, Set<String> seen, String rootFolderId,
+                               TraversalMemo memo) {
         long max = 0L;
         Dependency node = start;
         int added = 0;
@@ -684,7 +701,7 @@ public class AclEffectiveEpochService {
                 throw new AclEpochAnomalyException("ACL inheritance chain from " + start.id
                         + " exceeds " + maxAncestorHops + " hops — refusing to compute an effective epoch");
             }
-            Document parentDoc = read(repositoryId, parentId, "inheriting parent");
+            Document parentDoc = readAncestor(repositoryId, parentId, "inheriting parent", memo);
             if (parentDoc == null) {
                 // An inheriting object MUST have a readable parent — dropping the inherited grants
                 // would compute an under-visible fence value (strict calculateAcl contract).
@@ -1055,6 +1072,115 @@ public class AclEffectiveEpochService {
      * Tri-state: the document, {@code null} for a genuine 404, and a throw for any other failure
      * (a read error must never be mistaken for "deleted").
      */
+
+    /**
+     * Per-traversal reuse of ANCESTOR and RELATIONSHIP-ENDPOINT reads (design §4.6, ledger A3).
+     *
+     * <p>The authoritative walk is cache-bypassing on purpose, and that is not negotiable: an ACL
+     * writer computing from a stale cache could stamp a max-epoch wrong readers set and fence out
+     * the correct writer. What §4.6 DOES permit is narrower — "within ONE traversal, a child may
+     * reuse the ancestor chain read by its parent; per-node revalidation still applies before each
+     * node's CAS". Everything below exists to stay inside that sentence.
+     *
+     * <h2>What is memoised, and what is deliberately not</h2>
+     *
+     * <ul>
+     *   <li><b>Ancestors and relationship endpoints only.</b> The SELF read at the top of each
+     *       snapshot is NOT memoised. Memoising it would make this O(subtree) — the re-drive
+     *       snapshots every descendant, so every descendant would be retained, each with its
+     *       local ACL. Restricted to ancestors, the map holds the ancestor set, which does not
+     *       grow with the number of descendants.</li>
+     *   <li><b>Absences are not memoised.</b> A recorded ABSENCE that is later created under the
+     *       same id is exactly the case a negative dependency exists to catch; keeping it out of
+     *       the map removes a whole invalidation case rather than getting it subtly wrong.</li>
+     *   <li><b>Roles are not memoised.</b> The payload is the raw CouchDB document; the caller
+     *       rebuilds its {@code Dependency} with ITS role. {@code Dependency.role} drives
+     *       {@code isAncestorOfSameChain}, so handing a relationship-source role to a target
+     *       chain would turn a legitimate shared ancestor into a reported cycle.</li>
+     * </ul>
+     *
+     * <h2>Why it is a map and not a chain prefix</h2>
+     *
+     * <p>"A child's ancestor chain is a prefix of its parent's" is false here: inheritance breaks
+     * stop the walk part-way, and a relationship has TWO endpoint chains. A map keyed by id
+     * depends on none of that — only on "this document was already read in this traversal".
+     *
+     * <h2>Invalidation is mandatory, not an optimisation detail</h2>
+     *
+     * <p>Without {@link #invalidateAll()} on a failed revalidation this makes the writer LOOP:
+     * snapshot serves a stale ancestor from the map, revalidate reads CouchDB and correctly
+     * refuses, the writer restarts, and snapshot serves the same stale ancestor again. Detecting
+     * the change without being able to move past it is worse than not caching at all.
+     *
+     * <p>The whole map is cleared rather than the differing ids. Surgical invalidation needs to
+     * know exactly which dependencies changed, and a subset computed slightly wrong is a silent
+     * stale read — the failure this class must not be able to cause. Clearing costs one
+     * traversal's re-reads on an event (a concurrent ACL change mid-traversal) that is rare, and
+     * degrades to today's behaviour rather than to a wrong answer.
+     *
+     * <p>NOT thread-safe and NOT shared: one instance belongs to one traversal on one thread. A
+     * {@code ThreadLocal} would be the obvious shortcut and is the one thing that must not be
+     * done — on a pooled executor it outlives the traversal and starts serving unrelated work.
+     */
+    public static final class TraversalMemo {
+        private final java.util.Map<String, Document> byId = new java.util.HashMap<>();
+        private long hits;
+        private long invalidations;
+
+        Document get(String id) {
+            Document d = byId.get(id);
+            if (d != null) {
+                hits++;
+            }
+            return d;
+        }
+
+        void put(String id, Document doc) {
+            if (doc != null) {
+                byId.put(id, doc);
+            }
+        }
+
+        /** Drop everything. MUST be called whenever a revalidation refuses the snapshot. */
+        public void invalidateAll() {
+            byId.clear();
+            invalidations++;
+        }
+
+        public long hits() {
+            return hits;
+        }
+
+        public long size() {
+            return byId.size();
+        }
+
+        public long invalidations() {
+            return invalidations;
+        }
+    }
+
+    /**
+     * Read an ancestor / endpoint, reusing this traversal's earlier read of the same document.
+     *
+     * <p>A memo hit does NOT go through {@link #read}, so it does not increment
+     * {@code authoritativeReads} — that counter has to keep meaning "documents actually fetched"
+     * or the before/after measurement of this optimisation measures nothing.
+     */
+    private Document readAncestor(String repositoryId, String docId, String what, TraversalMemo memo) {
+        if (memo != null) {
+            Document cached = memo.get(docId);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        Document doc = read(repositoryId, docId, what);
+        if (memo != null) {
+            memo.put(docId, doc); // put() ignores null: absences are deliberately not memoised
+        }
+        return doc;
+    }
+
     private Document read(String repositoryId, String docId, String what) {
         // Counted so the cost of the authoritative walk can be measured directly. It cannot be
         // measured from CouchDB's server-wide database_reads: on an idle dev stack that counter

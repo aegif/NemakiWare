@@ -205,11 +205,31 @@ public class AclEpochIndexWriter {
      */
     public WriteOutcome writeAllowingBootstrap(String repositoryId, String objectId, SolrClient solrClient,
                                                AclSemantics.PrincipalResolver resolver) throws Exception {
-        return run(repositoryId, objectId, solrClient, resolver, true);
+        return writeAllowingBootstrap(repositoryId, objectId, solrClient, resolver, null);
+    }
+
+    /**
+     * As above, reusing {@code memo}'s ancestor reads across the objects of ONE traversal.
+     *
+     * <p>A null memo is exactly today's behaviour. When one is supplied this method owns its
+     * invalidation: a refused revalidation clears it before restarting, because the restart
+     * re-runs the walk and would otherwise be handed the same stale ancestor that was just
+     * rejected — detecting the change but never getting past it.
+     */
+    public WriteOutcome writeAllowingBootstrap(String repositoryId, String objectId, SolrClient solrClient,
+                                               AclSemantics.PrincipalResolver resolver,
+                                               AclEffectiveEpochService.TraversalMemo memo) throws Exception {
+        return run(repositoryId, objectId, solrClient, resolver, true, memo);
     }
 
     private WriteOutcome run(String repositoryId, String objectId, SolrClient solrClient,
-                             AclSemantics.PrincipalResolver resolver, boolean bootstrap)
+                             AclSemantics.PrincipalResolver resolver, boolean bootstrap) throws Exception {
+        return run(repositoryId, objectId, solrClient, resolver, bootstrap, null);
+    }
+
+    private WriteOutcome run(String repositoryId, String objectId, SolrClient solrClient,
+                             AclSemantics.PrincipalResolver resolver, boolean bootstrap,
+                             AclEffectiveEpochService.TraversalMemo memo)
             throws Exception {
         if (effectiveEpochService == null) {
             throw new AclEpochWiringException("effectiveEpochService not wired on AclEpochIndexWriter");
@@ -232,7 +252,8 @@ public class AclEpochIndexWriter {
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             // ── steps 1-2: authoritative walk (+ pending gate) and compute ──
-            AclEffectiveEpochService.Snapshot snapshot = effectiveEpochService.snapshot(repositoryId, objectId);
+            AclEffectiveEpochService.Snapshot snapshot =
+                    effectiveEpochService.snapshot(repositoryId, objectId, memo);
             if (snapshot == null) {
                 return new WriteOutcome(WriteResult.SKIPPED_DELETED, 0L, null, attempt);
             }
@@ -258,6 +279,14 @@ public class AclEpochIndexWriter {
             if (!effectiveEpochService.revalidate(snapshot)) {
                 if (logger.isDebugEnabled()) {
                     logger.debug("ACL epoch write: dependencies changed under {} — restarting", objectId);
+                }
+                // MANDATORY with a memo (ledger A3): the restart re-runs the walk, and an
+                // un-invalidated memo would hand it the very ancestor revalidation just rejected
+                // — the same snapshot, the same refusal, forever. Everything is dropped rather
+                // than the differing ids: computing that subset slightly wrong is a silent stale
+                // read, which is the one failure this must not be able to cause.
+                if (memo != null) {
+                    memo.invalidateAll();
                 }
                 forceWriteAfterEqualEpochDivergence = false; // the payload is stale; recompute clean
                 continue;
