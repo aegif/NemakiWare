@@ -420,20 +420,33 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         }
         
         try {
-            int successCount = solrUtil.indexDocumentsBatch(repositoryId, batch, BATCH_COMMIT_WITHIN_MS, skipRAGIndexing);
+            jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.BatchOutcome outcome =
+                    solrUtil.indexDocumentsBatch(repositoryId, batch, BATCH_COMMIT_WITHIN_MS, skipRAGIndexing);
+            int successCount = outcome.written;
             indexedCount.addAndGet(successCount);
             status.setIndexedCount(indexedCount.get());
-            
-            // Track errors for documents that failed during document creation
-            int failedCount = batch.size() - successCount;
+
+            // Documents the content fence skipped because Solr already holds a strictly newer
+            // generation are NOT failures — leaving them alone is the correct outcome. They used
+            // to land in the error total purely because it was computed by subtraction, which put
+            // clean no-ops into the reindex error count.
+            int failedCount = batch.size() - successCount - outcome.skippedStale;
             if (failedCount > 0) {
                 errorCount.addAndGet(failedCount);
                 if (errors.size() < 100) {
-                    errors.add("Batch indexing: " + failedCount + " documents failed in batch of " + batch.size());
+                    errors.add("Batch indexing: " + failedCount + " documents failed in batch of "
+                            + batch.size()
+                            + (outcome.fenceBlocked > 0
+                                    ? " (" + outcome.fenceBlocked + " blocked by the content fence"
+                                            + " and enqueued for reconciliation)"
+                                    : ""));
                 }
             }
-            
-            log.info("Batch indexed " + successCount + "/" + batch.size() + " documents, total: " + indexedCount.get());
+
+            log.info("Batch indexed " + successCount + "/" + batch.size() + " documents"
+                    + (outcome.skippedStale > 0 ? ", " + outcome.skippedStale + " already newer" : "")
+                    + (outcome.fenceBlocked > 0 ? ", " + outcome.fenceBlocked + " fence-blocked" : "")
+                    + ", total: " + indexedCount.get());
             
             // Verify batch indexing and re-index any silently dropped documents
             verifyAndReindexMissing(repositoryId, batch, indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount, skipRAGIndexing);

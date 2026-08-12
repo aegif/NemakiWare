@@ -38,6 +38,25 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 public class SolrIndexMaintenanceServiceImplReindexTest {
+
+    /**
+     * A batch that wrote {@code written} documents and skipped nothing.
+     *
+     * <p>The constructor is package-private on purpose (the outcome is produced by SolrUtil, not
+     * by callers), and this test lives in a different package, so it is built reflectively rather
+     * than by widening the production API for a stub.
+     */
+    private static jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.BatchOutcome batchOutcome(int written) {
+        try {
+            java.lang.reflect.Constructor<jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.BatchOutcome> c =
+                    jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.BatchOutcome.class
+                            .getDeclaredConstructor(int.class, int.class, int.class);
+            c.setAccessible(true);
+            return c.newInstance(written, 0, 0);
+        } catch (Exception e) {
+            throw new IllegalStateException("BatchOutcome shape changed", e);
+        }
+    }
     
     private static final String TEST_REPO_ID = "test-repo";
     private static final String ROOT_FOLDER_ID = "root-folder-id";
@@ -144,7 +163,8 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
         
         List<Content> children = Arrays.asList(doc1, doc2);
         when(contentService.getChildren(TEST_REPO_ID, ROOT_FOLDER_ID)).thenReturn(children);
-        when(solrUtil.indexDocumentsBatch(eq(TEST_REPO_ID), anyList(), anyInt(), anyBoolean())).thenReturn(2);
+        when(solrUtil.indexDocumentsBatch(eq(TEST_REPO_ID), anyList(), anyInt(), anyBoolean()))
+                .thenReturn(batchOutcome(2));
 
         boolean started = service.startFullReindex(TEST_REPO_ID);
         assertTrue(started);
@@ -299,7 +319,8 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
         when(contentService.getFolder(TEST_REPO_ID, "sub-folder-1")).thenReturn(subFolder);
         when(contentService.getChildren(TEST_REPO_ID, "sub-folder-1")).thenReturn(new ArrayList<>());
         
-        when(solrUtil.indexDocumentsBatch(eq(TEST_REPO_ID), anyList(), anyInt(), anyBoolean())).thenReturn(1);
+        when(solrUtil.indexDocumentsBatch(eq(TEST_REPO_ID), anyList(), anyInt(), anyBoolean()))
+                .thenReturn(batchOutcome(1));
 
         boolean started = service.startFullReindex(TEST_REPO_ID);
         assertTrue(started);

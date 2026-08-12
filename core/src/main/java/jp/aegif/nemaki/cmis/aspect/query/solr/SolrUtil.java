@@ -390,7 +390,32 @@ public class SolrUtil implements ApplicationContextAware {
 	 * @param commitWithinMs commit within milliseconds (default 5000 for batch operations)
 	 * @return number of successfully indexed documents
 	 */
-	public int indexDocumentsBatch(String repositoryId, List<Content> contents, int commitWithinMs) {
+	/**
+	 * What a batch actually did. An int return could not distinguish "correctly not written"
+	 * from "failed": the fence skips a document whose Solr copy is already newer, and counting
+	 * that as a failure put a clean no-op into the reindex error total.
+	 */
+	public static final class BatchOutcome {
+		/** Documents handed to Solr. */
+		public final int written;
+		/** Skipped because Solr already holds a strictly newer generation — a correct no-op. */
+		public final int skippedStale;
+		/**
+		 * Excluded because the content fence could not establish an authoritative incarnation.
+		 * These are NOT retried by the caller's verification pass (that only re-indexes documents
+		 * MISSING from Solr, and these usually exist), so each one is handed to reconciliation
+		 * here instead of being silently dropped.
+		 */
+		public final int fenceBlocked;
+
+		BatchOutcome(int written, int skippedStale, int fenceBlocked) {
+			this.written = written;
+			this.skippedStale = skippedStale;
+			this.fenceBlocked = fenceBlocked;
+		}
+	}
+
+	public BatchOutcome indexDocumentsBatch(String repositoryId, List<Content> contents, int commitWithinMs) {
 		return indexDocumentsBatch(repositoryId, contents, commitWithinMs, false);
 	}
 
@@ -403,21 +428,23 @@ public class SolrUtil implements ApplicationContextAware {
 	 * @param skipRAGIndexing if true, skip RAG re-indexing after batch Solr update
 	 * @return number of successfully indexed documents
 	 */
-	public int indexDocumentsBatch(String repositoryId, List<Content> contents, int commitWithinMs, boolean skipRAGIndexing) {
+	public BatchOutcome indexDocumentsBatch(String repositoryId, List<Content> contents, int commitWithinMs, boolean skipRAGIndexing) {
 		if (contents == null || contents.isEmpty()) {
-			return 0;
+			return new BatchOutcome(0, 0, 0);
 		}
 		
 		log.info("Batch indexing " + contents.size() + " documents for repository: " + repositoryId);
 		
 		SolrClient solrClient = null;
 		int successCount = 0;
+		int skippedStale = 0;
+		int fenceBlocked = 0;
 		List<Content> indexedContents = new ArrayList<>();
 		try {
 			solrClient = getSolrClient();
 			if (solrClient == null) {
 				log.warn("Solr client is null, skipping batch indexing");
-				return 0;
+				return new BatchOutcome(0, 0, 0);
 			}
 			
 			UpdateRequest updateRequest = new UpdateRequest();
@@ -455,21 +482,27 @@ public class SolrUtil implements ApplicationContextAware {
 								jp.aegif.nemaki.epoch.ContentWriterFence.decide(cur, incarnation, myGen);
 						if (decision == jp.aegif.nemaki.epoch.ContentWriterFence.Decision.SKIP_STALE) {
 							// A strictly-fresher content write already landed. Leaving it alone is
-							// the correct outcome, and it is not a failure — but it is NOT counted
-							// as indexed either, or the caller's verify pass would take the count
-							// as evidence this document was written.
+							// the CORRECT outcome, not a failure and not an index — counted on its
+							// own so the caller does not have to infer it from a subtraction.
 							log.debug("Batch fence: skipping {} — Solr holds a newer generation",
 									content.getId());
+							skippedStale++;
 							continue;
 						}
 						if (decision == jp.aegif.nemaki.epoch.ContentWriterFence.Decision.FAIL_CLOSED) {
 							// No authoritative incarnation: stamping anyway is what the fence
-							// exists to prevent. Drop it from the batch WITHOUT counting it, so
-							// verifyAndReindexMissing picks it up on the individual (also fenced)
-							// path instead of the whole batch failing for one document.
+							// exists to prevent.
+							//
+							// This is NOT picked up by the caller's verification pass. That pass
+							// re-indexes documents MISSING from Solr, and a fence-blocked document
+							// usually exists there already — so excluding it and saying nothing
+							// would drop it silently. Hand it to reconciliation, the same way
+							// applyContentFence does for an indexed document with no ACL group.
 							log.warn("Batch fence: no authoritative content_incarnation for {} —"
-									+ " excluded from this batch, will be retried individually",
+									+ " excluded from this batch and enqueued for reconciliation",
 									content.getId());
+							enqueueReadersReconcile(repositoryId, content.getId(), null);
+							fenceBlocked++;
 							continue;
 						}
 						if (cur == null) {
@@ -524,7 +557,7 @@ public class SolrUtil implements ApplicationContextAware {
 			throw new RuntimeException("Solr batch indexing failed: " + e.getMessage(), e);
 		}
 
-		return successCount;
+		return new BatchOutcome(successCount, skippedStale, fenceBlocked);
 	}
 
 	/**
@@ -551,9 +584,11 @@ public class SolrUtil implements ApplicationContextAware {
 		//      absent), retrying on 409 by re-reading + re-evaluating the generation.
 		// This closes the "reconcile succeeds + task deleted, then an old normal writer
 		// lands stale readers with no further convergence event" hole. Batch indexing
-		// (full reindex) stays a plain add — it clears the index first, so there is no
-		// stale generation to fence. A 0/unknown generation is fail-open (plain add) to
-		// preserve behaviour for docs without a parsable _rev.
+		// (indexDocumentsBatch) runs the SAME sequence as of 2026-08-12 — it used to be a
+		// plain add on the theory that a full reindex clears the index first, which was not
+		// true of the folder-scoped reindex and cost the subtree its ACL-epoch fence (C8).
+		// A 0/unknown generation is fail-open (plain add) to preserve behaviour for docs
+		// without a parsable _rev, on both paths.
 		long myGen = parseRevGeneration(content.getRevision());
 		int attempt = 0;
 		while (true) {
