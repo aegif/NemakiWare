@@ -501,7 +501,9 @@ public class SolrUtil implements ApplicationContextAware {
 							log.warn("Batch fence: no authoritative content_incarnation for {} —"
 									+ " excluded from this batch and enqueued for reconciliation",
 									content.getId());
-							enqueueReadersReconcile(repositoryId, content.getId(), null);
+							enqueueReconcile(repositoryId, content.getId(),
+									"CONTENT_INCARNATION_UNRESOLVED: batch reindex could not"
+											+ " establish an authoritative content_incarnation");
 							fenceBlocked++;
 							continue;
 						}
@@ -1162,18 +1164,30 @@ public class SolrUtil implements ApplicationContextAware {
 	 * not come here at all — it rethrows so the task is counted and retried.
 	 */
 	private void enqueueReadersReconcile(String repositoryId, String objectId, Exception cause) {
+		enqueueReconcile(repositoryId, objectId,
+				"READERS_COMPUTATION_FAILURE: " + (cause == null ? "unknown" : cause.getMessage()));
+	}
+
+	/**
+	 * Enqueue with an explicit reason.
+	 *
+	 * <p>The readers-flavoured helper above stamps {@code READERS_COMPUTATION_FAILURE: unknown}
+	 * when handed a null cause, which mis-describes anything that is not a readers computation —
+	 * a content-incarnation failure enqueued through it would send an operator looking at the
+	 * wrong subsystem. Callers whose reason is known say so.
+	 */
+	private void enqueueReconcile(String repositoryId, String objectId, String reason) {
 		try {
 			jp.aegif.nemaki.reconcile.SearchIndexReconciliationService queue = reconciliationQueue();
 			if (queue == null) {
-				log.warn("Readers-computation failure for {} could NOT be enqueued: reconciliation "
-						+ "queue is not wired; the empty readers set will persist until the next ACL "
-						+ "change or a full reindex", objectId);
+				log.warn("{} for {} could NOT be enqueued: reconciliation queue is not wired; the "
+						+ "document will stay as it is until the next ACL change or a full reindex",
+						reason, objectId);
 				return;
 			}
-			queue.enqueue(repositoryId, objectId,
-					"READERS_COMPUTATION_FAILURE: " + (cause == null ? "unknown" : cause.getMessage()));
+			queue.enqueue(repositoryId, objectId, reason);
 		} catch (Exception e) {
-			log.warn("Failed to enqueue readers-computation failure for {}: {}", objectId, e.getMessage());
+			log.warn("Failed to enqueue reconciliation for {} ({}): {}", objectId, reason, e.getMessage());
 		}
 	}
 

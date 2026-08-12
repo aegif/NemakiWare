@@ -47,15 +47,96 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
      * than by widening the production API for a stub.
      */
     private static jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.BatchOutcome batchOutcome(int written) {
+        return batchOutcome(written, 0, 0);
+    }
+
+    private static jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.BatchOutcome batchOutcome(
+            int written, int skippedStale, int fenceBlocked) {
         try {
             java.lang.reflect.Constructor<jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.BatchOutcome> c =
                     jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.BatchOutcome.class
                             .getDeclaredConstructor(int.class, int.class, int.class);
             c.setAccessible(true);
-            return c.newInstance(written, 0, 0);
+            return c.newInstance(written, skippedStale, fenceBlocked);
         } catch (Exception e) {
             throw new IllegalStateException("BatchOutcome shape changed", e);
         }
+    }
+
+    /**
+     * A document the content fence correctly declined to overwrite is not a failure.
+     *
+     * <p>SKIP_STALE means Solr already holds a strictly newer generation, so leaving it alone is
+     * the right outcome. The error total used to be computed as {@code batch.size() - written},
+     * which had no way to tell that apart from a document that genuinely failed — so a healthy
+     * reindex reported errors, and an operator reading the status could not tell whether
+     * anything was actually wrong.
+     */
+    @Test
+    public void skippedStaleDocumentsAreNotCountedAsErrors() throws Exception {
+        when(contentService.getFolder(TEST_REPO_ID, ROOT_FOLDER_ID)).thenReturn(rootFolder);
+        when(rootFolder.getId()).thenReturn(ROOT_FOLDER_ID);
+        when(rootFolder.getName()).thenReturn("Root");
+
+        Document doc1 = mock(Document.class);
+        when(doc1.getId()).thenReturn("doc-1");
+        Document doc2 = mock(Document.class);
+        when(doc2.getId()).thenReturn("doc-2");
+        when(contentService.getChildren(TEST_REPO_ID, ROOT_FOLDER_ID))
+                .thenReturn(Arrays.asList(doc1, doc2));
+
+        // Derived from the ACTUAL batch rather than assuming how the reindex splits it: every
+        // document is correctly skipped as already-newer, nothing is written. Hard-coding the
+        // counts made this test depend on the batching, not on the accounting rule it is about.
+        when(solrUtil.indexDocumentsBatch(eq(TEST_REPO_ID), anyList(), anyInt(), anyBoolean()))
+                .thenAnswer(inv -> {
+                    int size = ((List<?>) inv.getArgument(1)).size();
+                    return batchOutcome(0, size, 0);
+                });
+
+        assertTrue(service.startFullReindex(TEST_REPO_ID));
+        awaitReindexCompletion(TEST_REPO_ID, 5);
+
+        ReindexStatus status = service.getReindexStatus(TEST_REPO_ID);
+        assertEquals(0, status.getErrorCount(),
+                "every document was correctly skipped, so there are no errors; the old"
+                        + " subtraction counted each skip as a failure");
+    }
+
+    /**
+     * A fence-blocked document IS an error, and is reported as one.
+     *
+     * <p>FAIL_CLOSED means no authoritative content_incarnation could be established, so the
+     * document was excluded rather than stamped. Unlike SKIP_STALE this needs attention: the
+     * verification pass only re-indexes documents MISSING from Solr, and a fence-blocked one
+     * usually exists there, so nothing else will pick it up. (SolrUtil hands it to
+     * reconciliation for that reason; here we only assert the accounting.)
+     */
+    @Test
+    public void fenceBlockedDocumentsAreCountedAsErrors() throws Exception {
+        when(contentService.getFolder(TEST_REPO_ID, ROOT_FOLDER_ID)).thenReturn(rootFolder);
+        when(rootFolder.getId()).thenReturn(ROOT_FOLDER_ID);
+        when(rootFolder.getName()).thenReturn("Root");
+
+        Document doc1 = mock(Document.class);
+        when(doc1.getId()).thenReturn("doc-1");
+        when(contentService.getChildren(TEST_REPO_ID, ROOT_FOLDER_ID))
+                .thenReturn(Arrays.asList(doc1));
+
+        // Every document blocked by the fence, derived from the actual batch.
+        when(solrUtil.indexDocumentsBatch(eq(TEST_REPO_ID), anyList(), anyInt(), anyBoolean()))
+                .thenAnswer(inv -> {
+                    int size = ((List<?>) inv.getArgument(1)).size();
+                    return batchOutcome(0, 0, size);
+                });
+
+        assertTrue(service.startFullReindex(TEST_REPO_ID));
+        awaitReindexCompletion(TEST_REPO_ID, 5);
+
+        ReindexStatus status = service.getReindexStatus(TEST_REPO_ID);
+        assertTrue(status.getErrorCount() > 0,
+                "fence-blocked documents are not retried by anything downstream, so a reindex"
+                        + " that reported no errors would be the wrong answer");
     }
     
     private static final String TEST_REPO_ID = "test-repo";
