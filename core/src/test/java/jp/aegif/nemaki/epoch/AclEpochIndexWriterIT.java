@@ -227,6 +227,50 @@ public class AclEpochIndexWriterIT {
         assertEquals(contentDb, after.getFieldValue("repository_id"));
     }
 
+    // ── A3: the writer owns the traversal memo's invalidation ──────
+
+    /**
+     * A refused revalidation must leave the writer able to finish.
+     *
+     * <p>This is the contract the IT for {@code AclEffectiveEpochService} cannot pin: that test
+     * calls {@code memo.invalidateAll()} itself, so it passes whether or not production does.
+     * The invalidation lives in {@link AclEpochIndexWriter}, and if it were dropped the writer
+     * would loop — snapshot serves the stale ancestor from the memo, revalidate reads CouchDB and
+     * correctly refuses, restart gets the same stale ancestor — until the attempt budget runs out.
+     *
+     * <p>The sequence needs no hooks. Priming the memo with one successful write and then moving
+     * the ancestor in CouchDB puts the second call in exactly that position: its first attempt
+     * computes from the memo's stale ancestor, revalidation refuses, and only invalidation lets
+     * the restart see the new epoch.
+     */
+    @Test
+    void aRefusedRevalidationInvalidatesTheMemoSoTheWriterConverges() throws Exception {
+        seedFolder("root", null, false, 5L);
+        seedDocument(solrId, "root", true, 2L);
+        indexSolrDoc(solrId, "n", "/root/n", "b");
+
+        AclEffectiveEpochService.TraversalMemo memo = new AclEffectiveEpochService.TraversalMemo();
+        WriteOutcome first = writerReturning(List.of("group:g1"))
+                .writeAllowingBootstrap(contentDb, solrId, solr, RESOLVER, memo);
+        assertEquals(WriteResult.UPDATED, first.result);
+        assertEquals(5L, first.epoch, "max(self=2, root=5)");
+        assertTrue(memo.size() > 0, "the memo must now hold the ancestor, or nothing is primed");
+
+        // The ancestor moves, exactly as a concurrent applyAcl would move it.
+        seedFolder("root", null, false, 9L);
+
+        WriteOutcome second = writerReturning(List.of("group:g1"))
+                .writeAllowingBootstrap(contentDb, solrId, solr, RESOLVER, memo);
+        assertEquals(WriteResult.UPDATED, second.result);
+        assertEquals(9L, second.epoch,
+                "the restart must compute from the NEW ancestor; 5 here would mean the memo"
+                        + " survived the refusal and the writer wrote what revalidation rejected");
+        assertTrue(second.attempts >= 2,
+                "and it must have taken a restart to get there — one attempt would mean the"
+                        + " stale ancestor was never served, so this test proved nothing");
+        assertEquals(9L, num(get(solrId), "effective_acl_epoch"), "and that is what Solr holds");
+    }
+
     @Test
     void notIndexedWhenTheSolrDocumentDoesNotExist() throws Exception {
         seedFolder("root", null, false, 1L);
@@ -268,6 +312,37 @@ public class AclEpochIndexWriterIT {
                 .write(contentDb, solrId, solr, RESOLVER);
         assertEquals(WriteResult.SKIPPED_IDEMPOTENT, o.result,
                 "an order-only difference must be idempotent, not an endless divergence");
+    }
+
+    /**
+     * The equal-epoch recompute must be a recompute, not a replay of the same cached ancestors.
+     *
+     * <p>That branch exists so conflicting writers converge on one authoritatively recomputed
+     * answer. With a traversal memo and no invalidation the second walk is handed the same
+     * ancestors and produces the same readers — the "recompute" resolves nothing and the
+     * convergence mechanism becomes a loop that writes the payload it was supposed to re-derive.
+     * The counter is what distinguishes the two, since both end in a successful write.
+     */
+    @Test
+    void theEqualEpochRecomputeDropsTheMemoSoItIsNotAReplay() throws Exception {
+        seedFolder("root", null, false, 7L);
+        seedDocument(solrId, "root", true, 1L);
+        indexSolrDoc(solrId, "n", "/n", "b");
+        setAclGroup(solrId, List.of("user:stored-only"), 7L);
+
+        AclEffectiveEpochService.TraversalMemo memo = new AclEffectiveEpochService.TraversalMemo();
+        AtomicInteger computeCalls = new AtomicInteger();
+        WriteOutcome o = writerComputing(snapshot -> {
+            computeCalls.incrementAndGet();
+            return List.of("user:authoritative");
+        }).writeAllowingBootstrap(contentDb, solrId, solr, RESOLVER, memo);
+
+        assertEquals(WriteResult.UPDATED, o.result);
+        assertTrue(computeCalls.get() >= 2, "the divergence still forces a second walk");
+        assertTrue(memo.invalidations() > 0,
+                "and that walk must start from a cleared memo — otherwise it re-reads the same"
+                        + " cached ancestors, derives the same readers, and the authoritative"
+                        + " recompute is a replay of the value it was meant to re-derive");
     }
 
     @Test
