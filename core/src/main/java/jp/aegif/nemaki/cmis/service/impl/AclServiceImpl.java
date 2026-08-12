@@ -542,9 +542,25 @@ public class AclServiceImpl implements AclService {
 		ragAclExecutor.submit(() -> {
 			// Same executor, same queue: a move refresh can also be forced inline when the queue
 			// is full, so it is registered and flagged the same way (see PropagationProgress).
+			boolean movedInlineOnCaller = Thread.currentThread() == movedSubmittingThread;
 			PropagationProgress movedProgress = PropagationProgress.begin(repositoryId,
-					content.getId(), -1, Thread.currentThread() == movedSubmittingThread);
+					content.getId(), -1, movedInlineOnCaller);
 			try {
+				// Defer exactly as the applyACL path does. This branch used to be MISSING here:
+				// the caller-run condition was computed and reported through PropagationProgress,
+				// but nothing acted on it, so a saturated queue still made a move request walk the
+				// whole moved subtree on its own request thread — the precise thing criterion 2
+				// forbids, reached through a different entry point. Flagging it for observability
+				// is not the same as not doing it.
+				//
+				// Settling is not a concern on this path, and less so than on applyACL: the move
+				// path deliberately never settles inline (the retained task's re-drive performs
+				// the terminus), and deferral leaves exactly that task behind. The reason code is
+				// the same TRAVERSAL_FAILURE this block's own catch already enqueues.
+				if (movedInlineOnCaller && deferInlineRefreshToReconciliation(
+						repositoryId, content.getId(), epochE, reconcile)) {
+					return;
+				}
 				// isRoot=true: the moved object itself was already re-indexed by
 				// ContentServiceImpl.move; re-index only the inheriting descendants.
 				// syncConfirm=false: async best-effort with enqueue-on-failure.
