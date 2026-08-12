@@ -806,6 +806,25 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		return result;
 	}
 
+	/**
+	 * Are there objects of this type?
+	 *
+	 * <p>Answering false when the question could not be answered is not available here. The
+	 * consumer is the CMIS guard that refuses to delete a type while instances remain
+	 * ({@code TypeManagerImpl.checkTypeHasInstances}), and that guard is fail-closed: an
+	 * unwired DAO refuses the deletion rather than assuming the type is empty. A CouchDB or view
+	 * failure is the same class of ignorance, so swallowing it and returning false would restore
+	 * exactly that hole for as long as the outage lasts — a type could be deleted with its objects
+	 * still in the repository because the database was briefly unreachable.
+	 *
+	 * <p>So a failure propagates. {@code checkTypeDependencies} catches it and reports it as a
+	 * dependency issue, which becomes a constraint error naming the cause: the deletion is refused
+	 * and the operator is told why, instead of succeeding on a false premise.
+	 *
+	 * <p>"No instances" is NOT a failure and must not travel this path: the keyed view overload
+	 * answers an unmatched key with {@code null}, which is the ordinary case here and is handled
+	 * before it can become an exception.
+	 */
 	@Override
 	public boolean existContent(String repositoryId, String objectTypeId) {
 		try {
@@ -823,8 +842,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 			return !result.getRows().isEmpty();
 		} catch (Exception e) {
-			log.error("Error checking content existence for objectTypeId: " + objectTypeId + " in repository: " + repositoryId, e);
-			return false;
+			log.error("Could not determine whether objects of type " + objectTypeId
+					+ " still exist in repository " + repositoryId
+					+ " — reporting the failure rather than answering 'no'", e);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"Could not determine whether objects of type '" + objectTypeId
+							+ "' still exist: " + e.getMessage(), e);
 		}
 	}
 

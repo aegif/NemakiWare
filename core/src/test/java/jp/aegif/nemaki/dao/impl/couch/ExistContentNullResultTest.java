@@ -18,6 +18,7 @@ package jp.aegif.nemaki.dao.impl.couch;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -127,6 +128,34 @@ public class ExistContentNullResultTest {
 
         assertFalse(daoAnswering(result).existContent(REPO, "nemaki:whatever"));
         assertEquals(0, errorsLogged());
+    }
+
+    /**
+     * A failure must NOT be reported as "no instances".
+     *
+     * <p>This is the same reasoning that makes an unwired DAO refuse the deletion rather than
+     * assume the type is empty: a CouchDB or view outage is the same class of ignorance. Answering
+     * false during an outage would let a populated type be deleted because the database happened
+     * to be unreachable — the exact hole the constraint exists to close, reopened for the duration.
+     *
+     * <p>{@code checkTypeDependencies} turns the throw into a dependency issue, so the operator
+     * gets a refusal naming the cause instead of a success on a false premise.
+     */
+    @Test
+    public void aFailureIsReportedRatherThanAnsweredAsNoInstances() {
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(anyString(), anyString(), anyString()))
+                .thenThrow(new IllegalStateException("CouchDB is unreachable"));
+        CloudantClientPool pool = mock(CloudantClientPool.class);
+        when(pool.getClient(anyString())).thenReturn(client);
+        ContentDaoServiceImpl dao = new ContentDaoServiceImpl();
+        dao.setConnectorPool(pool);
+
+        assertThrows(org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException.class,
+                () -> dao.existContent(REPO, "nemaki:whatever"),
+                "swallowing the failure and returning false lets a populated type be deleted "
+                        + "while the database is down");
+        assertEquals(1, errorsLogged(), "the operator still needs the cause in the log");
     }
 
     /** An empty row list means the key matched nothing. Still false, still not an error. */

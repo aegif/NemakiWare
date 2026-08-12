@@ -107,6 +107,26 @@ public class SearchIndexObservabilityController {
         // the possibility is the point, because the alternative is learning it from an outage.
         body.put("lockOrderUpgrades", jp.aegif.nemaki.util.lock.LockOrderMonitor.upgradeCount());
         body.put("lockOrderInversions", jp.aegif.nemaki.util.lock.LockOrderMonitor.inversionCount());
+        // Ancestor-snapshot reuse inside one propagation traversal. The cap
+        // (traversalMemoMaxEntries) was chosen by argument, not measurement, and a memo dies with
+        // its traversal — so without these totals nobody could ever tell whether it was generous,
+        // tight, or beside the point.
+        //
+        // Read traversalMemoEvictions FIRST. Zero means every traversal's working set fitted and
+        // the cap costs nothing; a rising count means real trees are thrashing it and the reuse
+        // the memo exists for is being discarded, which shows up as more CouchDB reads per node.
+        // traversalMemoPeakEntries is the largest working set actually seen: the headroom between
+        // it and the cap is what the number is really worth.
+        body.put("traversalMemoHits",
+                jp.aegif.nemaki.epoch.AclEffectiveEpochService.TraversalMemo.totalHits());
+        body.put("traversalMemoEvictions",
+                jp.aegif.nemaki.epoch.AclEffectiveEpochService.TraversalMemo.totalEvictions());
+        body.put("traversalMemoInvalidations",
+                jp.aegif.nemaki.epoch.AclEffectiveEpochService.TraversalMemo.totalInvalidations());
+        body.put("traversalMemoPeakEntries",
+                jp.aegif.nemaki.epoch.AclEffectiveEpochService.TraversalMemo.peakSize());
+        body.put("traversalMemoMaxEntries",
+                jp.aegif.nemaki.epoch.AclEffectiveEpochService.TraversalMemo.maxEntriesConfigured());
         body.put("note", "Counters are per-JVM and reset on restart. In a multi-replica"
                 + " deployment, read them from every replica.");
         return ResponseEntity.ok(body);

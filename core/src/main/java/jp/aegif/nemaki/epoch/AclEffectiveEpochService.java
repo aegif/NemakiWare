@@ -1143,6 +1143,45 @@ public class AclEffectiveEpochService {
          */
         static final int DEFAULT_MAX_ENTRIES = 2_048;
 
+        /**
+         * Process-wide totals, so the cap can be judged from a running server instead of guessed.
+         *
+         * <p>A memo lives for one traversal, so its own counters die with it and nobody could ever
+         * see whether {@value #DEFAULT_MAX_ENTRIES} was generous, tight, or irrelevant. The number
+         * that decides it is EVICTIONS: zero of them means every traversal's working set fitted and
+         * the cap costs nothing, while a rising count means real trees are thrashing it and the
+         * ancestor reuse this memo exists for is being thrown away.
+         */
+        private static final java.util.concurrent.atomic.AtomicLong TOTAL_HITS =
+                new java.util.concurrent.atomic.AtomicLong();
+        private static final java.util.concurrent.atomic.AtomicLong TOTAL_EVICTIONS =
+                new java.util.concurrent.atomic.AtomicLong();
+        private static final java.util.concurrent.atomic.AtomicLong TOTAL_INVALIDATIONS =
+                new java.util.concurrent.atomic.AtomicLong();
+        /** The largest a single traversal's memo ever got — the working set the cap must cover. */
+        private static final java.util.concurrent.atomic.AtomicLong PEAK_SIZE =
+                new java.util.concurrent.atomic.AtomicLong();
+
+        public static long totalHits() {
+            return TOTAL_HITS.get();
+        }
+
+        public static long totalEvictions() {
+            return TOTAL_EVICTIONS.get();
+        }
+
+        public static long totalInvalidations() {
+            return TOTAL_INVALIDATIONS.get();
+        }
+
+        public static long peakSize() {
+            return PEAK_SIZE.get();
+        }
+
+        public static int maxEntriesConfigured() {
+            return DEFAULT_MAX_ENTRIES;
+        }
+
         private final int maxEntries;
         private final java.util.LinkedHashMap<String, Document> byId;
         private long hits;
@@ -1163,6 +1202,7 @@ public class AclEffectiveEpochService {
                 protected boolean removeEldestEntry(java.util.Map.Entry<String, Document> eldest) {
                     if (size() > TraversalMemo.this.maxEntries) {
                         TraversalMemo.this.evictions++;
+                        TOTAL_EVICTIONS.incrementAndGet();
                         return true;
                     }
                     return false;
@@ -1174,6 +1214,7 @@ public class AclEffectiveEpochService {
             Document d = byId.get(id);
             if (d != null) {
                 hits++;
+                TOTAL_HITS.incrementAndGet();
             }
             return d;
         }
@@ -1181,6 +1222,7 @@ public class AclEffectiveEpochService {
         void put(String id, Document doc) {
             if (doc != null) {
                 byId.put(id, doc);
+                PEAK_SIZE.accumulateAndGet(byId.size(), Math::max);
             }
         }
 
@@ -1192,6 +1234,7 @@ public class AclEffectiveEpochService {
         public void invalidateAll() {
             byId.clear();
             invalidations++;
+            TOTAL_INVALIDATIONS.incrementAndGet();
         }
 
         public long hits() {
