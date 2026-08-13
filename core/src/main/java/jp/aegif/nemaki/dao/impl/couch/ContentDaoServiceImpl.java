@@ -1443,6 +1443,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				}
 			}
 
+			// NOT cross-checked against Mango, and the reason is worth writing down: an empty
+			// answer here is OVERWHELMINGLY the normal case — most folders have no children, and
+			// this runs on every create and rename. A previous pass added a Mango fallback for
+			// the "view is silently empty" case; with no index on parentId that is a full
+			// collection scan per empty folder, and it hung the CMIS TCK outright.
+			//
+			// So the silent-empty hole stays open HERE: if the childrenNames view is rebuilding,
+			// the uniqueness check can let a duplicate name through. A thrown failure still fails
+			// closed (see the catch below). Closing the rest needs an index on parentId, or a
+			// cheap repository-wide "are the views answering" signal cached across calls — not a
+			// per-call scan.
 			return names;
 		} catch (Exception e) {
 			// NOT an empty list. The only consumer is the CMIS name-uniqueness check

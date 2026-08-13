@@ -225,8 +225,12 @@ public class PatchUtil {
 	 * <p>{@code Patch_JoinedGroupsSingleEmit} rewrites that very design document during a v3.3.0
 	 * upgrade, so this is not a hypothetical window — it is the one the documented upgrade opens.
 	 *
-	 * <p>Rather than repair fourteen existence checks one at a time, this gate refuses to apply
-	 * ANY patch to a repository whose views are not currently answering. The test is the same
+	 * <p>Rather than repair fourteen existence checks one at a time, this gate refuses to apply a
+	 * patch to a repository whose views are not currently answering. <b>It is not universal:</b>
+	 * {@code applySystemPatch()} runs before any per-repository gating, and a patch that overrides
+	 * {@code apply()} (currently {@code Patch_WebAuthnCredentialViews}) bypasses it. Neither
+	 * exception mutates repository objects today, but a future one would slip past — so this is a
+	 * gate on the ordinary path, not a guarantee about every path. The test is the same
 	 * shape as the reindex wipe guard: <b>if the database holds documents but a core view returns
 	 * nothing at all, the views are not built</b>. A genuinely fresh repository has neither, so it
 	 * is not blocked.
@@ -247,6 +251,17 @@ public class PatchUtil {
 				// anything either.
 				return true;
 			}
+			// A MISSING view is not the same as a SILENT one, and conflating them deadlocks the
+			// system: Patch_StandardCmisViews is the patch that CREATES childrenNames, and it is
+			// gated like every other patch. A legacy repository that has content but not that
+			// view would fail the gate, so the patch that would repair it never runs — on this
+			// startup or any other. Absence is a job for the patches; only a view that EXISTS and
+			// answers nothing means the views are not to be trusted.
+			if (!cmisViewExists(client, "childrenNames")) {
+				log.warn("Repository '" + repositoryId + "' has no _repo/childrenNames view yet."
+						+ " Letting patches run — installing that view is a patch's job.");
+				return true;
+			}
 			// childrenNames, NOT children: `children` carries a _count reduce, and queryViewCount
 			// reads total_rows, which a reduce response does not carry — so it answers 0 for a
 			// perfectly healthy repository. That mistake was caught on the running stack, where
@@ -256,7 +271,7 @@ public class PatchUtil {
 				return true;
 			}
 			log.error("Refusing to apply patches to repository '" + repositoryId + "': it holds "
-					+ documents + " documents but the _repo/children view returned no rows at all."
+					+ documents + " documents but the _repo/childrenNames view returned no rows at all."
 					+ " The views are not answering (a design document being rebuilt replies 200"
 					+ " with zero rows), and every patch that checks 'does this already exist?'"
 					+ " through a view would create a duplicate. Patches will be reconsidered on"
@@ -266,6 +281,24 @@ public class PatchUtil {
 			log.error("Refusing to apply patches to repository '" + repositoryId
 					+ "': could not establish whether its views are answering", e);
 			return false;
+		}
+	}
+
+	/** Is this view declared in {@code _design/_repo}? Read from the design document itself. */
+	private boolean cmisViewExists(CloudantClientWrapper client, String viewName) {
+		try {
+			tools.jackson.databind.JsonNode design =
+					client.get(tools.jackson.databind.JsonNode.class, "_design/_repo");
+			if (design == null) {
+				return false;
+			}
+			tools.jackson.databind.JsonNode views = design.get("views");
+			return views != null && views.has(viewName);
+		} catch (Exception e) {
+			// Cannot tell — treat the view as present so the "exists but silent" branch decides.
+			// Guessing "absent" here would wave patches through on exactly the unreadable
+			// repository this gate exists to protect.
+			return true;
 		}
 	}
 

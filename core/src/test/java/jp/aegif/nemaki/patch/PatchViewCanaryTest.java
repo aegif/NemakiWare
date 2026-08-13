@@ -60,17 +60,46 @@ class PatchViewCanaryTest {
     private static final String REPO = "bedroom";
 
     private PatchUtil utilWith(long docCount, long viewRows) {
+        return utilWith(docCount, viewRows, true);
+    }
+
+    private PatchUtil utilWith(long docCount, long viewRows, boolean viewDeclared) {
         CloudantClientWrapper client = mock(CloudantClientWrapper.class);
         DatabaseInformation info = mock(DatabaseInformation.class);
         when(info.getDocCount()).thenReturn(docCount);
         when(client.getDatabaseInfo()).thenReturn(info);
         when(client.queryViewCount(anyString(), anyString())).thenReturn(viewRows);
+        // The gate reads the design document to tell "this view was never installed" from
+        // "this view exists and is answering nothing". Both branches must be exercised.
+        tools.jackson.databind.node.ObjectNode design =
+                jp.aegif.nemaki.config.ObjectMapperFactory.createDefaultObjectMapper()
+                        .createObjectNode();
+        tools.jackson.databind.node.ObjectNode views = design.putObject("views");
+        if (viewDeclared) {
+            views.putObject("childrenNames");
+        }
+        when(client.get(org.mockito.ArgumentMatchers.eq(tools.jackson.databind.JsonNode.class),
+                anyString())).thenReturn(design);
         CloudantClientPool pool = mock(CloudantClientPool.class);
         when(pool.getClient(anyString())).thenReturn(client);
 
         PatchUtil util = new PatchUtil();
         util.setConnectorPool(pool);
         return util;
+    }
+
+    /**
+     * A view that was never installed must NOT block patching — installing it IS a patch's job.
+     *
+     * <p>Without this distinction the gate deadlocks: {@code Patch_StandardCmisViews} creates
+     * {@code childrenNames}, and it is gated like every other patch, so a populated legacy
+     * repository missing that view could never be repaired — not on this startup nor any later
+     * one, because "try again next time" cannot change a state nothing is allowed to fix.
+     */
+    @Test
+    void aMissingCanaryViewDoesNotBlockThePatchThatInstallsIt() {
+        assertTrue(utilWith(5615, 0, false).cmisViewsAreAnswering(REPO),
+                "the view does not exist yet — refusing here would stop the patch that creates it");
     }
 
     /** The failure that actually happened: a populated repository whose views say nothing. */

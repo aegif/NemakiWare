@@ -786,6 +786,16 @@ public class SearchEngineResource {
                             + " stragglers problem. Nothing was deleted; see the server log."
                     : removed + " orphaned index entries removed");
             response.setRepositoryId(repositoryId);
+            if (removed < 0) {
+                // A refusal is not a success. Returning 200 with success=false invites automation
+                // to treat "nothing was deleted because the repository looks unreadable" as a
+                // completed cleanup.
+                Map<String, LinkInfo> refusedLinks = new HashMap<>();
+                refusedLinks.put("health", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId
+                        + "/search-engine/health/details"));
+                response.setLinks(refusedLinks);
+                return Response.status(Response.Status.CONFLICT).entity(response).build();
+            }
 
             Map<String, LinkInfo> links = new HashMap<>();
             links.put("self", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId

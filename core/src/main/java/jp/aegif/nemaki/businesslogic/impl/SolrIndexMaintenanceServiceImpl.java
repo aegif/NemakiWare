@@ -1100,11 +1100,36 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             if (solrClient == null) {
                 return -1;
             }
+            // CONFIRM EACH ONE DIRECTLY. getIndexDiscrepancies builds its "exists in CouchDB" set
+            // by walking the folder tree, and the `children` view only emits documents whose
+            // latestVersion is true — so historical versions and live private working copies are
+            // indexed but absent from that walk. Deleting on tree membership alone would remove
+            // the index entries of objects that are perfectly alive; "orphaned" from that routine
+            // means "not in the tree", which is a weaker statement than "not in the database".
+            //
+            // A direct read by id is the only thing that answers the question actually being
+            // asked. It costs one CouchDB GET per candidate, and candidates are supposed to be
+            // few — if they are not, the guard above has already refused.
             List<String> ids = new ArrayList<>();
+            int stillAlive = 0;
             for (DiscrepancyDocumentInfo info : orphans) {
-                if (info.getObjectId() != null) {
-                    ids.add(info.getObjectId());
+                String id = info.getObjectId();
+                if (id == null) {
+                    continue;
                 }
+                if (contentService.getContent(repositoryId, id) != null) {
+                    stillAlive++;
+                    continue;
+                }
+                ids.add(id);
+            }
+            if (stillAlive > 0) {
+                log.info("purge-orphans in " + repositoryId + ": " + stillAlive + " of "
+                        + orphans.size() + " candidates are still present in CouchDB (versions or"
+                        + " working copies that the folder walk does not reach) and were kept.");
+            }
+            if (ids.isEmpty()) {
+                return 0;
             }
             solrClient.deleteById(ids);
             solrClient.commit();
