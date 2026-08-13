@@ -73,9 +73,23 @@ public class PatchUtil {
 			return applied;
 			
 		} catch (Exception e) {
-			org.apache.commons.logging.LogFactory.getLog(PatchUtil.class).error("Error checking patch history for '" + name + "': " + e.getMessage(), e);
-			// In case of error, assume patch is not applied to allow re-execution
-			return false;
+			// "I could not check" is NOT "not applied". Assuming the latter re-runs the patch,
+			// and patches are not all idempotent: bedroom grew a second `.system` folder and a
+			// second history record for system-folder-setup-20250805 that way. A duplicate
+			// system folder breaks CMIS path resolution — two objects answer to /.system and
+			// the one fetched by path stops matching the one fetched by id.
+			//
+			// Reporting APPLIED skips the patch for this startup instead. That is the cheap
+			// mistake: a patch that really has not run yet will be applied on the next startup,
+			// once whatever made the history unreadable (a design document mid-rebuild, most
+			// likely) has settled. Running a non-idempotent patch twice cannot be undone by
+			// waiting.
+			org.apache.commons.logging.LogFactory.getLog(PatchUtil.class).error(
+					"Could not determine whether patch '" + name + "' is applied in repository '"
+							+ repositoryId + "' — SKIPPING it this time rather than risking a"
+							+ " second application. It will be reconsidered on the next startup.",
+					e);
+			return true;
 		}
 	}
 

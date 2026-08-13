@@ -1609,6 +1609,22 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	/**
+	 * The recorded history for this patch, or {@code null} if there is none.
+	 *
+	 * <p><b>A failure is not "none".</b> This used to answer {@code null} for both "no such
+	 * record" and "the query did not work", and {@code PatchUtil.isApplied} reads {@code null} as
+	 * "not applied yet" — so an unreadable history made every patch look unapplied and run again.
+	 * That is not hypothetical: bedroom ended up with TWO history records for
+	 * {@code system-folder-setup-20250805} and TWO {@code .system} folders, the second created
+	 * 2026-08-13. Duplicate system folders break CMIS path resolution (the TCK's rootFolderTest
+	 * fails on exactly that), and a non-idempotent patch running twice can do worse.
+	 *
+	 * <p>The failure is easy to walk into: the {@code patch} view lives in {@code _design/_repo},
+	 * the same design document that {@code Patch_JoinedGroupsSingleEmit} rewrites — and while
+	 * CouchDB rebuilds a design document its views answer with zero rows and HTTP 200, so there is
+	 * not even an exception unless the query itself fails.
+	 */
 	public PatchHistory getPatchHistoryByName(String repositoryId, String name) {
 		try {
 			// Use existing 'patch' view to get patch history by name
@@ -1647,8 +1663,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			
 			return null;
 		} catch (Exception e) {
-			log.error("Error getting patch history by name: " + name + ", error: " + e.getMessage());
-			return null;
+			// Deliberately NOT null: null means "no such record", which the caller turns into
+			// "apply this patch". Answering that when the truth is "I could not look" is how a
+			// patch runs a second time.
+			log.error("Error getting patch history by name: " + name + ", error: " + e.getMessage(), e);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"Could not read patch history for '" + name + "' in repository '"
+							+ repositoryId + "': " + e.getMessage(), e);
 		}
 	}
 

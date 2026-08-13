@@ -104,8 +104,27 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
             // Create SystemCallContext for operations
             SystemCallContext callContext = new SystemCallContext(repositoryId);
             
-            // Check if System folder already exists
-            Folder existingSystemFolder = findExistingSystemFolder(contentService, repositoryId, rootFolderId);
+            // Check if System folder already exists.
+            //
+            // FIRST from the configuration, which records the id this patch assigned last time and
+            // is read by a direct document lookup. findExistingSystemFolder below asks the
+            // `children` view — and a view whose design document is being rebuilt answers with
+            // ZERO ROWS and HTTP 200, so "no system folder here" is exactly what a healthy-looking
+            // failure says. This patch then creates a second one. That happened: bedroom held two
+            // `.system` folders, the second created 2026-08-13, which breaks CMIS path resolution
+            // because two objects answer to /.system.
+            //
+            // The configuration cannot be silenced the same way: it is a document read by id, not
+            // a view query. If it names a folder that still exists, there is nothing to do.
+            Folder existingSystemFolder = findConfiguredSystemFolder(contentService, repositoryId);
+            if (existingSystemFolder != null) {
+                log.info("System folder already recorded in configuration with ID: "
+                        + existingSystemFolder.getId() + " — nothing to create");
+                setSystemFolderConfiguration(repositoryId, existingSystemFolder.getId());
+                log.info("System Folder Setup Patch completed successfully for repository: " + repositoryId);
+                return;
+            }
+            existingSystemFolder = findExistingSystemFolder(contentService, repositoryId, rootFolderId);
             
             if (existingSystemFolder == null) {
                 log.info("Creating System folder for repository: " + repositoryId);
@@ -135,6 +154,65 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
         }
     }
     
+    /**
+     * The system folder id recorded in the configuration, or null if none is recorded.
+     *
+     * <p>Reads {@code nemaki_conf} through {@code _all_docs} — not a view, and not even the same
+     * database as the one whose design document gets rewritten during an upgrade. That is the
+     * whole point: this lookup cannot be turned into a silent empty answer by a rebuild.
+     */
+    private String readConfiguredSystemFolderId(String repositoryId) {
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper confClient =
+            patchUtil.getConnectorPool().getClient("nemaki_conf");
+        if (confClient == null) {
+            return null;
+        }
+        java.util.List<com.ibm.cloud.cloudant.v1.model.Document> holders =
+            findConfigurationDocumentsByKey(confClient, "system.folder", repositoryId);
+        for (com.ibm.cloud.cloudant.v1.model.Document doc : holders) {
+            java.util.Map<String, Object> props = doc.getProperties();
+            if (props == null) {
+                continue;
+            }
+            Object value = props.get("value");
+            if (value != null && !value.toString().trim().isEmpty()) {
+                return value.toString();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The system folder this patch recorded last time, if it is still there.
+     *
+     * <p>Deliberately does NOT go through a view. The configuration entry holds the id, and an id
+     * is read straight from the document store — which is the one lookup a design-document rebuild
+     * cannot turn into a silent empty answer. Returns null when nothing is recorded (a genuinely
+     * first run) or when the recorded folder has since been deleted, and in both cases the caller
+     * falls back to the view-based search.
+     */
+    private Folder findConfiguredSystemFolder(ContentService contentService, String repositoryId) {
+        try {
+            String recordedId = readConfiguredSystemFolderId(repositoryId);
+            if (recordedId == null || recordedId.trim().isEmpty()) {
+                return null;
+            }
+            Folder folder = contentService.getFolder(repositoryId, recordedId);
+            if (folder == null) {
+                log.warn("Configuration names system folder " + recordedId + " for repository "
+                        + repositoryId + " but it no longer exists — falling back to a search");
+                return null;
+            }
+            return folder;
+        } catch (Exception e) {
+            // Unknown, not absent. Fall back to the search rather than creating a duplicate on a
+            // guess; the search has its own (weaker) protection.
+            log.warn("Could not read the configured system folder id for repository "
+                    + repositoryId + ": " + e.getMessage());
+            return null;
+        }
+    }
+
     /**
      * Find existing System folder in the root directory
      * This prevents duplicate creation and handles the case where multiple System folders exist.
