@@ -186,6 +186,39 @@ public class ExistContentNullResultTest {
                         + "makes a populated type deletable while the view is rebuilding");
     }
 
+    /**
+     * A type still applied as a SECONDARY type is in use, even though no object names it as its
+     * primary type.
+     *
+     * <p>{@code countByObjectType} keys on {@code doc.objectType} — the primary type — while a
+     * secondary type lives in the separate {@code secondaryIds} array. So every view-based check
+     * answers "no instances" for a secondary type that documents are actively using, and deleting
+     * it strips a type definition out from under live objects. RELEASE_NOTES carried this as a
+     * known limitation until it was closed.
+     */
+    @Test
+    public void aTypeStillAppliedAsASecondaryTypeCountsAsInUse() {
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(anyString(), anyString(), anyString())).thenReturn(null);
+        java.util.Map<String, Object> user = new java.util.HashMap<>();
+        user.put("_id", "a-document-tagged-with-it");
+        // No object has it as a PRIMARY type; one has it as a secondary type.
+        when(client.findRawBySelector(any(java.util.Map.class), org.mockito.ArgumentMatchers.anyInt()))
+                .thenAnswer(inv -> {
+                    java.util.Map<String, Object> selector =
+                            (java.util.Map<String, Object>) inv.getArgument(0);
+                    return selector.containsKey("secondaryIds") ? List.of(user) : List.of();
+                });
+        CloudantClientPool pool = mock(CloudantClientPool.class);
+        when(pool.getClient(anyString())).thenReturn(client);
+        ContentDaoServiceImpl dao = new ContentDaoServiceImpl();
+        dao.setConnectorPool(pool);
+
+        assertTrue(dao.existContent(REPO, "nemaki:taggable"),
+                "nothing has it as a primary type, but documents carry it as a secondary type — "
+                        + "reporting it unused lets the definition be deleted out from under them");
+    }
+
     /** An empty row list means the key matched nothing. Still false, still not an error. */
     @Test
     public void anEmptyRowListIsNotAnError() {

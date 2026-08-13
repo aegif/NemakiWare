@@ -846,7 +846,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			// error at all. Reading either as "this type has no instances" reopens the very hole
 			// this method exists to close — a populated type would become deletable for as long as
 			// the rebuild lasts, which is precisely the window a v3.3.0 upgrade creates.
-			return confirmNoInstances(repositoryId, objectTypeId);
+			return confirmNoInstances(repositoryId, objectTypeId)
+					|| isUsedAsSecondaryType(repositoryId, objectTypeId);
 		} catch (Exception e) {
 			log.error("Could not determine whether objects of type " + objectTypeId
 					+ " still exist in repository " + repositoryId
@@ -854,6 +855,45 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
 					"Could not determine whether objects of type '" + objectTypeId
 							+ "' still exist: " + e.getMessage(), e);
+		}
+	}
+
+	/**
+	 * Is this type applied to anything as a SECONDARY type?
+	 *
+	 * <p>{@code countByObjectType} keys on {@code doc.objectType}, which is the PRIMARY type only.
+	 * A secondary type is recorded in the separate {@code secondaryIds} array, so a secondary type
+	 * that documents are actively using answers "no instances" through every view-based check —
+	 * and deleting it strips a type definition out from under live objects.
+	 *
+	 * <p>Asked through Mango because there is no view keyed on {@code secondaryIds}. That is
+	 * acceptable here and nowhere else in this class: type deletion is a rare administrative
+	 * operation, not a per-request path. (An earlier attempt put a Mango fallback on
+	 * {@code getChildrenNames}, which runs on every create, and it hung the CMIS TCK.)
+	 */
+	private boolean isUsedAsSecondaryType(String repositoryId, String typeId) {
+		try {
+			Map<String, Object> elemMatch = new HashMap<String, Object>();
+			elemMatch.put("$eq", typeId);
+			Map<String, Object> secondaryIds = new HashMap<String, Object>();
+			secondaryIds.put("$elemMatch", elemMatch);
+			Map<String, Object> selector = new HashMap<String, Object>();
+			selector.put("secondaryIds", secondaryIds);
+			List<Map<String, Object>> found =
+					connectorPool.getClient(repositoryId).findRawBySelector(selector, 1);
+			if (found == null || found.isEmpty()) {
+				return false;
+			}
+			log.info("Type '" + typeId + "' is still applied as a secondary type in repository '"
+					+ repositoryId + "' (for example " + found.get(0).get("_id") + ")");
+			return true;
+		} catch (Exception e) {
+			// Unknown, not unused. The caller is deciding whether a deletion may proceed.
+			log.error("Could not determine whether '" + typeId + "' is in use as a secondary type"
+					+ " in repository '" + repositoryId + "'", e);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"Could not determine whether type '" + typeId
+							+ "' is still applied as a secondary type: " + e.getMessage(), e);
 		}
 	}
 

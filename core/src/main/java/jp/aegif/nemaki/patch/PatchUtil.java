@@ -127,7 +127,20 @@ public class PatchUtil {
 				log.debug("Patch history for '" + name + "' successfully created/updated");
 			}
 		} catch (Exception e) {
+			// Do NOT swallow. If the patch ran but its history did not persist, the patch is
+			// "not applied" as far as the next startup can tell — so it runs again. For the
+			// fourteen patches whose existence checks go through a view, a second run is how
+			// duplicates appear (bedroom grew a second .system folder exactly once, and a second
+			// history record for the same patch name alongside it).
+			//
+			// Propagating makes AbstractNemakiPatch.apply record the repository as failed and log
+			// it, so the operator sees "this patch did not complete" instead of a silent line in
+			// an error log that nothing acts on.
 			log.error("Error creating patch history for '" + name + "': " + e.getMessage(), e);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"Patch '" + name + "' was applied to repository '" + repositoryId
+							+ "' but its history could not be recorded, so it would be applied"
+							+ " again on the next startup: " + e.getMessage(), e);
 		}
 	}
 
