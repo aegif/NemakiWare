@@ -1166,6 +1166,9 @@
         <property name="contentService" ref="ContentService" />
         <property name="solrUtil" ref="solrUtil" />
         <property name="repositoryInfoMap" ref="repositoryInfoMap" />
+        <!-- purge-orphans confirms each candidate with existsStrict, which distinguishes a 404
+             from an unreadable database. ContentService cannot: it answers null for both. -->
+        <property name="connectorPool" ref="connectorPool" />
     </bean>
 
     <!-- User/Group Search Service (Solr-based with CouchDB fallback) -->

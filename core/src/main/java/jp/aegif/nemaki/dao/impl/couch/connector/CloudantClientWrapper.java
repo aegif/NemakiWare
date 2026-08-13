@@ -1105,6 +1105,33 @@ public class CloudantClientWrapper {
 	}
 
 	/**
+	 * Does this document exist? <b>Throws rather than guessing.</b>
+	 *
+	 * <p>{@link #exists(String)} and {@link #get(Class, String)} both answer "no" for a document
+	 * that could not be read — they catch everything and return false/null. That is fine for
+	 * callers who only want a best effort, and wrong for anyone about to DELETE something on the
+	 * strength of the answer: during a CouchDB outage every object looks absent.
+	 *
+	 * <p>Only a genuine 404 means absent here. Anything else propagates, so the caller can refuse
+	 * to act rather than act on a guess.
+	 */
+	public boolean existsStrict(String id) {
+		try {
+			client.headDocument(new HeadDocumentOptions.Builder()
+					.db(databaseName)
+					.docId(id)
+					.build()).execute();
+			return true;
+		} catch (NotFoundException e) {
+			return false;
+		} catch (Exception e) {
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"Could not determine whether document '" + id + "' exists in database '"
+							+ databaseName + "': " + e.getMessage(), e);
+		}
+	}
+
+	/**
 	 * Get database information
 	 */
 	public DatabaseInformation getDatabaseInfo() {

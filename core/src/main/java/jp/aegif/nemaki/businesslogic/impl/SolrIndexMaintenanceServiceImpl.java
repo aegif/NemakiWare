@@ -25,6 +25,8 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.SolrIndexMaintenanceService;
 import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
+import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Folder;
 
@@ -89,6 +91,12 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
     private ContentService contentService;
     private SolrUtil solrUtil;
     private RepositoryInfoMap repositoryInfoMap;
+    /** Needed for existsStrict: the confirmation must be able to fail rather than guess. */
+    private CloudantClientPool connectorPool;
+
+    public void setConnectorPool(CloudantClientPool connectorPool) {
+        this.connectorPool = connectorPool;
+    }
 
     private final Map<String, ReindexStatus> reindexStatuses = new ConcurrentHashMap<>();
     private final Map<String, AtomicBoolean> cancelFlags = new ConcurrentHashMap<>();
@@ -1100,24 +1108,33 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             if (solrClient == null) {
                 return -1;
             }
-            // CONFIRM EACH ONE DIRECTLY. getIndexDiscrepancies builds its "exists in CouchDB" set
-            // by walking the folder tree, and the `children` view only emits documents whose
-            // latestVersion is true — so historical versions and live private working copies are
-            // indexed but absent from that walk. Deleting on tree membership alone would remove
-            // the index entries of objects that are perfectly alive; "orphaned" from that routine
-            // means "not in the tree", which is a weaker statement than "not in the database".
+            // CONFIRM EACH ONE DIRECTLY, AND ONLY ON A 404. getIndexDiscrepancies builds its
+            // "exists in CouchDB" set by walking the folder tree, and the `children` view only
+            // emits documents whose latestVersion is true — so historical versions and live
+            // private working copies are indexed but absent from that walk. "Orphaned" from that
+            // routine means "not in the tree", which is a weaker statement than "not in the
+            // database".
             //
-            // A direct read by id is the only thing that answers the question actually being
-            // asked. It costs one CouchDB GET per candidate, and candidates are supposed to be
-            // few — if they are not, the guard above has already refused.
+            // The confirmation must distinguish absent from unreadable. contentService.getContent
+            // and CloudantClientWrapper.get both answer null for a document that could not be
+            // read (they catch everything), so confirming with either would make every version
+            // and working copy look absent during a CouchDB outage — the same "failure means no"
+            // that this whole series of fixes exists to remove, reintroduced in the guard against
+            // it. existsStrict throws instead, and a throw aborts the entire purge.
             List<String> ids = new ArrayList<>();
             int stillAlive = 0;
+            CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+            if (client == null) {
+                log.error("Refusing to purge orphans in " + repositoryId
+                        + ": no CouchDB client, so no candidate can be confirmed");
+                return -1;
+            }
             for (DiscrepancyDocumentInfo info : orphans) {
                 String id = info.getObjectId();
                 if (id == null) {
                     continue;
                 }
-                if (contentService.getContent(repositoryId, id) != null) {
+                if (client.existsStrict(id)) {
                     stillAlive++;
                     continue;
                 }

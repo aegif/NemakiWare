@@ -1405,6 +1405,36 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	/**
+	 * Does the {@code childrenNames} view have any rows at all in this repository?
+	 *
+	 * <p>Reads the view's own row total (limit 0), not documents — so this is a header read, not a
+	 * scan. Used only to tell "this folder is empty" from "the view is empty", which is the
+	 * difference between a normal create and a uniqueness check running blind.
+	 *
+	 * <p>A repository with nothing in it legitimately has zero rows; it also has no names to
+	 * collide with, so treating it as alive is harmless.
+	 */
+	private boolean childrenNamesViewIsAlive(String repositoryId) {
+		try {
+			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			if (client == null) {
+				return true;
+			}
+			if (client.queryViewCount("_repo", "childrenNames") > 0) {
+				return true;
+			}
+			// Zero rows for the whole view: either a genuinely empty repository (fine) or a view
+			// that is not answering (not fine). The database's own document count separates them.
+			com.ibm.cloud.cloudant.v1.model.DatabaseInformation info = client.getDatabaseInfo();
+			return info == null || info.getDocCount() == null || info.getDocCount() <= 10L;
+		} catch (Exception e) {
+			// Cannot tell — say alive. The catch below already fails closed on a thrown query,
+			// and blocking every create because this probe failed would be worse than the hole.
+			return true;
+		}
+	}
+
+	/**
 	 * Extract the object ID from a ViewResultRow, handling both Map and Document types.
 	 */
 	private String extractObjectId(ViewResultRow row) {
@@ -1443,17 +1473,25 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				}
 			}
 
-			// NOT cross-checked against Mango, and the reason is worth writing down: an empty
-			// answer here is OVERWHELMINGLY the normal case — most folders have no children, and
-			// this runs on every create and rename. A previous pass added a Mango fallback for
-			// the "view is silently empty" case; with no index on parentId that is a full
-			// collection scan per empty folder, and it hung the CMIS TCK outright.
+			// An empty list is "this folder has no children" ONLY if the view is working. A view
+			// being rebuilt answers 200 with zero rows, and the consumer here is the CMIS
+			// name-uniqueness check, which reads "no names" as "no conflict".
 			//
-			// So the silent-empty hole stays open HERE: if the childrenNames view is rebuilding,
-			// the uniqueness check can let a duplicate name through. A thrown failure still fails
-			// closed (see the catch below). Closing the rest needs an index on parentId, or a
-			// cheap repository-wide "are the views answering" signal cached across calls — not a
-			// per-call scan.
+			// But the test cannot be "this parent returned nothing" — a folder with no children
+			// is the most ordinary state there is, and this runs on every create and rename. A
+			// previous pass cross-checked THAT condition with Mango; with no index on parentId it
+			// is a full collection scan per empty folder, and it hung the CMIS TCK outright.
+			//
+			// The distinguishing question is repository-wide: if childrenNames returns even one
+			// row for the whole view, the view is alive and this parent's emptiness is real. Only
+			// when the ENTIRE view is empty is there reason to doubt it — and that check reads
+			// the view's own row total, not the documents.
+			if (names.isEmpty() && !childrenNamesViewIsAlive(repositoryId)) {
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+						"The childrenNames view returned nothing for the entire repository "
+								+ repositoryId + ", so the existing names under " + parentId
+								+ " cannot be established and name uniqueness cannot be checked.");
+			}
 			return names;
 		} catch (Exception e) {
 			// NOT an empty list. The only consumer is the CMIS name-uniqueness check
