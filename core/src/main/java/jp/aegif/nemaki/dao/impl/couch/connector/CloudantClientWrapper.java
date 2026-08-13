@@ -1230,10 +1230,14 @@ public class CloudantClientWrapper {
 	 *
 	 * <h2>Why {@code include_docs} is not requested</h2>
 	 *
-	 * <p>Every caller of this overload reads {@code row.getValue()}; none calls {@code getDoc()}.
-	 * The views behind them already emit what the caller wants as the value — {@code userItemsById}
-	 * and the WebAuthn views emit the whole document, {@code childrenNames} emits the name — so the
-	 * fetched documents were built and discarded.
+	 * <p>No caller of this overload needs the fetched documents. Five read
+	 * {@code row.getValue()} — the views already emit what they want as the value
+	 * ({@code userItemsById} and the WebAuthn views emit the whole document, {@code childrenNames}
+	 * emits the name) — and the sixth, {@code getGroupItemById}, reads {@code row.getId()} and then
+	 * re-reads the document directly on purpose, because a view's copy can be stale. A row's id is
+	 * present without {@code include_docs}, so that caller is unaffected too. (An earlier version
+	 * of this comment said "five callers, all getValue()"; the count and the claim were both
+	 * wrong, though the conclusion happened to hold.)
 	 *
 	 * <p>More than wasteful: CouchDB REJECTS {@code include_docs} on a reduce view
 	 * ({@code query_parse_error: `include_docs` is invalid for reduce}). {@code countByObjectType}
@@ -1242,15 +1246,13 @@ public class CloudantClientWrapper {
 	 * {@code include_docs} makes the reduce query legal, and a reduce query keyed by type answers
 	 * with one row when instances exist and none when they do not, which is the question asked.
 	 *
-	 * <p>Scope of that repair, stated precisely because it is narrower than it looks:
-	 * {@code existContent} now works, but its only consumer,
-	 * {@code ExceptionServiceImpl.constraintObjectsStillExist}, has no callers. The live
-	 * {@code deleteType} path goes through {@code TypeManagerImpl.checkTypeDependencies}, whose
-	 * instance check {@code checkTypeHasInstances} is a stub returning false ("not yet
-	 * implemented"). So deleting a type that still has instances is still permitted — verified on
-	 * the running server with {@code tools/acl-probe/type_delete_constraint_probe.py} after this
-	 * fix. Closing that gap means wiring the stub to {@code existContent}, which is a deliberate
-	 * behaviour change and not part of this one.
+	 * <p>Scope of that repair, as it stands now: {@code existContent} works, and
+	 * {@code TypeManagerImpl.checkTypeHasInstances} was wired to it two commits later, so the CMIS
+	 * {@code deleteType} path does refuse a populated type. (When this comment was first written
+	 * that check was still a stub and the deletion was permitted; the probe
+	 * {@code tools/acl-probe/type_delete_constraint_probe.py} now exits 0.) Two gaps remain and are
+	 * deliberate: the NemakiWare-specific REST delete used by the admin UI bypasses the check by
+	 * design, and secondary types are not covered because the view keys on the primary type.
 	 */
 	public ViewResult queryView(String designDoc, String viewName, String key, boolean forceUpdate) {
 		try {

@@ -24,8 +24,10 @@ only repository gotchas.
 | 修正前 | 11.85 秒 | 約 1.2 件/秒 |
 | 修正後 | 0.44 秒 | 約 6.5 件/秒 |
 
-同じ経路を**ログイン**も通ります (`userItemsById`)。ユーザ数の多い環境では、
-ログインのたびに全ユーザ文書が転送されていました。**設定変更や再索引は不要**で、
+同じ経路を**ログイン**も通ります (`userItemsById`)。ただしログインには 1 時間有効の
+ユーザキャッシュがあるため、この転送が起きるのは**キャッシュミスのとき**です
+(当初「ログインのたび」と書いていましたが誤りでした)。ユーザ数の多い環境では、
+その 1 回の転送が全ユーザ文書分になります。**設定変更や再索引は不要**で、
 アップグレードするだけで解消します。
 
 ### 移動時の権限反映が、混雑中でもリクエストを止めなくなりました
@@ -40,6 +42,10 @@ only repository gotchas.
 
 混雑していない通常時の動作は変わりません。
 
+> **この変更が対象にしているのは、待ち行列に投入した後の索引書き換えだけです。**
+> その手前で走るキャッシュ退避 (継承サブツリー全体の走査) は、今もリクエストスレッドで
+> 同期実行されます。したがって**非常に大きなフォルダの移動は依然として時間がかかります**。
+
 ### インスタンスが残っているタイプは削除できなくなりました (**挙動変更**)
 
 CMIS では、あるタイプのオブジェクトがまだ存在する間、そのタイプ定義の削除は拒否される
@@ -51,6 +57,14 @@ CMIS では、あるタイプのオブジェクトがまだ存在する間、そ
 - **影響**: これまで通っていた `deleteType` が失敗するようになります。タイプを削除する
   前に、そのタイプのオブジェクトをすべて削除してください。
 - 子タイプを持つタイプの削除は従来どおり拒否されます (こちらは以前から動作していました)。
+- **この検査が入るのは CMIS バインディング (AtomPub / Browser / Web Services) の
+  `deleteType` です。** 管理画面が使う NemakiWare 独自の REST 削除
+  (`DELETE /core/rest/repo/{repo}/type/delete/{typeId}`) は従来どおり削除できます。
+  この API は元々「CMIS 非準拠。既存文書は基底型の挙動にフォールバックする」という警告を
+  応答に含んでおり、意図的な管理用の抜け道です。**管理画面から型を消す場合は、
+  インスタンスが残っていないかをご自身で確認してください。**
+- **secondary type は対象外です。** 検査は主タイプ (`cmis:objectTypeId`) だけを見るため、
+  文書に適用中の secondary type は今も削除できます。
 
 ### 全再索引が、索引を消したまま「完了」と報告することがなくなりました (**重要**)
 
@@ -84,6 +98,11 @@ CMIS では、あるタイプのオブジェクトがまだ存在する間、そ
 `deleteType` は、拒否を含むあらゆる例外を「サーバ内部エラー」として包み直していたため、
 **意図した拒否がすべて 500** で返っていました。CMIS の例外はそのまま返すようにしたので、
 上記の制約違反は 409、引数不正は 400 と、本来の状態コードになります。
+
+> 1 段内側では、制約違反と引数不正**以外**の失敗が今も
+> `CmisObjectNotFoundException` (404) に包まれます。つまり「削除に失敗した」が
+> 「そもそも存在しない」として返る場合があります。これは今回の変更前からの挙動で、
+> 別途対応します。
 
 ---
 
@@ -371,13 +390,16 @@ startup.
 
 **Per deployment, in this order:** full reindex → initial-epoch migration
 
-> **Watch CouchDB connections while the reindex runs.** A connection leak on the
-> attachment-read path is only partly fixed (see F3 in
-> [`docs/design/v3.3-release-blockers.md`](docs/design/v3.3-release-blockers.md)): the paths that
-> downloaded whole attachments just to read their length or existence are closed, but a full test
-> pass still produces about 5,000 leak warnings from a source not yet identified. A measured
-> reindex of 2,510 documents took established connections from 3 to 1,289 and held them for
-> roughly ninety seconds afterwards. At production scale, monitor and split the run if needed.
+> **接続リークは解消済みです (2026-08-13 更新)。** 修正前は 2,510 文書の再索引で
+> ESTABLISHED が 3 → 1,289 まで増え、完了後も約 90 秒張り付き、テスト 1 周で約 5,000 件の
+> leak 警告が出ていました。**97,693 オブジェクトまで実測**して、再索引中のピーク 5
+> (アイドル時 3)・leak 警告 0 件を確認しています (この観測は**再索引を完走させておらず**、
+> 約 1.4 時間・370 サンプルの部分観測です)。**20 万以上は未実測**なので、その規模では
+> 引き続き接続数を監視し、必要なら分割してください。詳細は F3 in
+> [`docs/design/v3.3-release-blockers.md`](docs/design/v3.3-release-blockers.md)。
+>
+> **所要時間にご注意ください。** 10 万文書規模の全再索引は **10 時間級**かかります
+> (処理レートが規模とともに 10.3 → 2.6 件/秒に低下。台帳 RX1)。
 (`verdict` COMPLETE / COMPLETE_EXCEPT_ORPHANS). Skipping the migration is not fatal — each
 document's first ACL write fences it — but it produces a reconciliation burst instead of a quiet
 upgrade.

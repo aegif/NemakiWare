@@ -4154,15 +4154,6 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 
 	/**
-	 * Check if the type has existing instances in the repository.
-	 *
-	 * Current limitation: Returns false (no instances) without actual checking.
-	 * For production use, this should query ContentDaoService to find documents/folders
-	 * using this type (e.g., contentDaoService.getContentByType(repositoryId, typeId)).
-	 *
-	 * Implementation note: Requires ContentDaoService injection and a new query method.
-	 */
-	/**
 	 * Does any object of this type still exist?
 	 *
 	 * <p>CMIS requires {@code deleteType} to be refused while instances remain. This used to be a
@@ -4181,6 +4172,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * Type deletion is a rare administrative operation, so failing it loudly on a misconfigured
 	 * deployment is the cheaper mistake — {@code checkTypeDependencies} turns the throw into a
 	 * dependency issue, which becomes a constraint error naming the cause.
+	 *
+	 * <p><b>Primary types only.</b> The {@code countByObjectType} view keys on
+	 * {@code doc.objectType}, and a secondary type is applied through the separate
+	 * {@code secondaryIds} field — so a secondary type that documents are currently using still
+	 * answers false here and can be deleted. That gap is known and not closed by this method.
 	 *
 	 * <p>There is deliberately no {@code tck:}-prefix exemption. One exists in
 	 * {@code ExceptionServiceImpl.constraintObjectsStillExist} (which has no callers), and copying
