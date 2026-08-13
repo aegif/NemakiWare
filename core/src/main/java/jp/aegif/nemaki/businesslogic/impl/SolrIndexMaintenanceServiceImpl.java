@@ -67,6 +67,25 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
     /** Commit within milliseconds for batch operations */
     private static final int BATCH_COMMIT_WITHIN_MS = 5000;
 
+    /**
+     * Below this many already-indexed objects the wipe guard does not apply.
+     *
+     * <p>A repository that holds almost nothing has almost nothing to lose, and a first-ever
+     * reindex of a fresh repository legitimately starts from an empty index. The guard exists to
+     * stop a catastrophic wipe, not to police small numbers.
+     */
+    private static final int ENUMERATION_GUARD_FLOOR = 20;
+
+    /**
+     * How much smaller than the live index the enumeration may be before it is treated as broken.
+     *
+     * <p>Deliberately generous: the guard must fire on "found 1 of 164" (the reproduced failure)
+     * without firing on an operator who genuinely deleted most of a repository and is rebuilding.
+     * A tenth is far outside what ordinary deletion produces, because deletions already remove
+     * their own index entries as they happen.
+     */
+    private static final int ENUMERATION_GUARD_FACTOR = 10;
+
     private ContentService contentService;
     private SolrUtil solrUtil;
     private RepositoryInfoMap repositoryInfoMap;
@@ -137,6 +156,47 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 AtomicLong totalCount = new AtomicLong(1); // root folder itself
                 countDocumentsRecursive(repositoryId, rootFolder.getId(), totalCount);
                 status.setTotalDocuments(totalCount.get());
+
+                // ── Refuse to destroy an index we cannot rebuild ────────────────────────────
+                // The enumeration below CANNOT tell "this folder has no children" from "the
+                // children could not be read": ContentDaoServiceImpl.getChildren catches and
+                // returns an empty list, and countDocumentsRecursive swallows too. Propagating
+                // the exception would not help either — a CouchDB view whose map function fails
+                // answers HTTP 200 with zero rows, so there is no exception to propagate. That
+                // was reproduced: with the `children` view returning empty, a full reindex of a
+                // 164-object repository reported totalDocuments=1, indexedCount=1, errorCount=0,
+                // status=completed, and left one document in Solr. The data was intact in
+                // CouchDB; only the search index was destroyed, and nothing said so.
+                //
+                // The only thing that catches it is a yardstick the same failure cannot silence:
+                // what the index ALREADY holds. Finding almost nothing to re-index, while about
+                // to delete a great deal, is not a reindex — it is a wipe.
+                long alreadyIndexed = countIndexedCmisObjects(repositoryId);
+                if (alreadyIndexed < 0) {
+                    status.setStatus("error");
+                    status.setErrorMessage("Refusing to reindex: Solr could not be queried for the"
+                            + " current object count, so there is no way to tell a working"
+                            + " enumeration from a silently empty one. Nothing was cleared.");
+                    status.setEndTime(System.currentTimeMillis());
+                    return;
+                }
+                if (alreadyIndexed >= ENUMERATION_GUARD_FLOOR
+                        && totalCount.get() * ENUMERATION_GUARD_FACTOR < alreadyIndexed) {
+                    String msg = "Refusing to reindex: the folder walk found only "
+                            + totalCount.get() + " object(s) while the index currently holds "
+                            + alreadyIndexed + ". That gap means the enumeration is not seeing the"
+                            + " repository (a CouchDB view that is rebuilding answers with zero"
+                            + " rows and no error), and clearing the index now would destroy it"
+                            + " with nothing to put back. Nothing was cleared. If the repository"
+                            + " really did shrink this much, clear the index explicitly with"
+                            + " POST /api/v1/cmis/repositories/" + repositoryId
+                            + "/search-engine/clear and then reindex.";
+                    log.error(msg);
+                    status.setStatus("error");
+                    status.setErrorMessage(msg);
+                    status.setEndTime(System.currentTimeMillis());
+                    return;
+                }
 
                 // Clear existing index
                 clearIndex(repositoryId);
@@ -973,6 +1033,42 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         } catch (Exception e) {
             log.error("Error deleting document from index: " + objectId, e);
             return false;
+        }
+    }
+
+    /**
+     * How many CMIS objects the index currently holds for this repository, or {@code -1} if Solr
+     * could not answer.
+     *
+     * <p>{@code -doc_type:[* TO *]} is the canonical way this codebase separates CMIS objects from
+     * RAG documents and chunks (the RAG side is the only writer of {@code doc_type}); the same
+     * negative test is used by {@code AclEpochMigrationService}. Counting the whole repository
+     * instead would make the number swing with RAG chunk counts and turn the guard into noise.
+     *
+     * <p>Returns -1 rather than 0 when the query FAILS, so the caller can tell "the index is
+     * empty" from "I do not know" — a guard that reads a failure as an empty index would wave
+     * through exactly the case it exists to stop. An absent client is different and answers 0:
+     * {@code clearIndex} needs that same client and deletes nothing without it, so there is no
+     * index to protect and refusing would only block deployments where Solr is not wired.
+     */
+    private long countIndexedCmisObjects(String repositoryId) {
+        try {
+            SolrClient solrClient = solrUtil.getSolrClient();
+            if (solrClient == null) {
+                // Not "unknown" — nothing to protect. clearIndex needs the same client and
+                // returns false without deleting anything when it is absent, so there is no
+                // index for this guard to save. Refusing here would only block reindexes in
+                // configurations where Solr is not wired at all.
+                return 0;
+            }
+            SolrQuery query = new SolrQuery("repository_id:"
+                    + ClientUtils.escapeQueryChars(repositoryId) + " AND -doc_type:[* TO *]");
+            query.setRows(0);
+            return solrClient.query(query).getResults().getNumFound();
+        } catch (Exception e) {
+            log.error("Could not count indexed objects for repository " + repositoryId
+                    + " — treating it as unknown rather than as an empty index", e);
+            return -1;
         }
     }
 
