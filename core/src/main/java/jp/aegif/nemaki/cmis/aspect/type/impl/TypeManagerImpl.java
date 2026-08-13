@@ -4081,12 +4081,19 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			invalidateTypeDefinitionCache(repositoryId);
 			
 			log.info("deleteTypeDefinition: Successfully deleted and invalidated cache for typeId=" + typeId);
-		} catch (CmisConstraintException | CmisInvalidArgumentException e) {
-			// Re-throw constraint and validation exceptions without wrapping
+		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisBaseException e) {
+			// Every CMIS exception already carries the status the client must see. This used to
+			// list only constraint and invalidArgument, so the rest — including a genuine
+			// CmisObjectNotFoundException from further down — fell into the catch below.
 			throw e;
 		} catch (Exception e) {
+			// NOT "not found". Wrapping an arbitrary failure (CouchDB unreachable, a view
+			// timing out) in CmisObjectNotFoundException tells the client HTTP 404, which reads
+			// as "the type is already gone" — so a caller that treats 404 as success moves on
+			// believing a deletion happened that did not. A failure to delete is a server error.
 			log.error("deleteTypeDefinition: Failed to delete typeId=" + typeId + " in repository=" + repositoryId, e);
-			throw new CmisObjectNotFoundException("Failed to delete type definition: " + typeId, e);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"Failed to delete type definition: " + typeId, e);
 		}
 	}
 

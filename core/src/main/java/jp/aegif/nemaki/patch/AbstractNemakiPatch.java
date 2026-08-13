@@ -32,6 +32,17 @@ public abstract class AbstractNemakiPatch {
 			if (log.isDebugEnabled()) {
 				log.debug("[patch=" + getName() + "] Processing repository: " + repositoryId);
 			}
+			// One gate for all patches. Most existence checks in this package run through a
+			// _design/_repo view, and a view being rebuilt answers 200 with zero rows — so
+			// "already exists?" comes back "no" and the patch creates a duplicate with a
+			// generated id that no conflict can stop. See PatchUtil.cmisViewsAreAnswering.
+			if (!patchUtil.cmisViewsAreAnswering(repositoryId)) {
+				log.error("[patch=" + getName() + ", repositoryId=" + repositoryId
+						+ "] skipped: the repository's views are not answering, so an existence"
+						+ " check cannot be trusted. It will be applied on a later startup.");
+				allSucceeded = false;
+				continue;
+			}
 			boolean isApplied = patchUtil.isApplied(repositoryId, getName());
 			if(isApplied){
 				if (log.isDebugEnabled()) {

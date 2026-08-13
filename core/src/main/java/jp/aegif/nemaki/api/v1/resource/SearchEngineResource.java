@@ -747,6 +747,65 @@ public class SearchEngineResource {
     }
     
     @POST
+    @Path("/purge-orphans")
+    @Operation(
+            summary = "Purge orphaned index entries",
+            description = "Removes search-index entries whose object no longer exists in CouchDB. "
+                    + "Refuses when the discrepancy is large enough to suggest the repository "
+                    + "could not be read, rather than a handful of stragglers."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Purge attempted",
+                    content = @io.swagger.v3.oas.annotations.media.Content(
+                            mediaType = MediaType.APPLICATION_JSON,
+                            schema = @Schema(implementation = OperationResponse.class)
+                    )
+            )
+    })
+    public Response purgeOrphans(
+            @Parameter(description = "Repository ID", required = true, example = "bedroom")
+            @PathParam("repositoryId") String repositoryId) {
+
+        logger.info("API v1: Purging orphaned index entries for repository " + repositoryId);
+
+        checkAdminAuthorization();
+
+        try {
+            if (solrIndexMaintenanceService == null) {
+                throw ApiException.internalError("Solr index maintenance service is not available");
+            }
+
+            long removed = solrIndexMaintenanceService.purgeOrphanedIndexEntries(repositoryId);
+
+            OperationResponse response = new OperationResponse();
+            response.setSuccess(removed >= 0);
+            response.setMessage(removed < 0
+                    ? "Refused: the index and the repository disagree too much for this to be a"
+                            + " stragglers problem. Nothing was deleted; see the server log."
+                    : removed + " orphaned index entries removed");
+            response.setRepositoryId(repositoryId);
+
+            Map<String, LinkInfo> links = new HashMap<>();
+            links.put("self", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId
+                    + "/search-engine/purge-orphans"));
+            links.put("health", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId
+                    + "/search-engine/health/details"));
+            response.setLinks(links);
+
+            return Response.ok(response).build();
+
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.severe("Error purging orphaned index entries: " + e.getMessage());
+            throw ApiException.internalError("Failed to purge orphaned index entries: "
+                    + e.getMessage(), e);
+        }
+    }
+
+    @POST
     @Path("/optimize")
     @Operation(
             summary = "Optimize index",

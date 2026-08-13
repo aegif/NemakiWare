@@ -1630,7 +1630,13 @@ public class SolrUtil implements ApplicationContextAware {
 				} catch (Exception retryEx) {
 					throw new RuntimeException("Solr deletion retry failed: " + retryEx.getMessage(), retryEx);
 				}
-			}, documentId, 1);
+			}, documentId, 1, () -> log.error(
+					"Solr deletion PERMANENTLY failed for document {} in repository {}. The object"
+					+ " is gone from CouchDB but still in the search index, so queries will keep"
+					+ " returning it. It is listed by GET /api/v1/cmis/repositories/{}/search-engine"
+					+ "/health/details as orphanedInSolr and can be removed with POST .../search-"
+					+ "engine/purge-orphans — a full reindex is not required.",
+					documentId, repositoryId, repositoryId));
 			return null;
 		});
 	}

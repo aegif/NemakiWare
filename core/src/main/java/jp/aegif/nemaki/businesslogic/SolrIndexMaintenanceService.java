@@ -243,6 +243,16 @@ public interface SolrIndexMaintenanceService {
     IndexDiscrepancyResult getIndexDiscrepancies(String repositoryId);
 
     /**
+     * Remove index entries whose object no longer exists in CouchDB.
+     *
+     * <p>Refuses (returning -1) when the discrepancy looks like an unreadable repository rather
+     * than a handful of stragglers — the same guard the full reindex uses, for the same reason.
+     *
+     * @return entries removed, or -1 if refused
+     */
+    long purgeOrphanedIndexEntries(String repositoryId);
+
+    /**
      * Execute a raw Solr query.
      *
      * @param repositoryId the repository ID

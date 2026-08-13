@@ -36,6 +36,14 @@ public class PatchUtil {
 	private static final Log log = LogFactory.getLog(PatchUtil.class);
 	protected PropertyManager propertyManager;
 	protected CloudantClientPool connectorPool;
+
+	/**
+	 * Below this many documents a repository is treated as fresh rather than broken.
+	 *
+	 * <p>A brand-new repository legitimately has empty views and nothing to lose; the seed data
+	 * puts it well above this within the first patch run.
+	 */
+	private static final long VIEW_CANARY_FLOOR = 10L;
 	protected ContentService contentService;
 	protected ContentDaoService contentDaoService;
 	protected RepositoryInfoMap repositoryInfoMap;
@@ -202,6 +210,63 @@ public class PatchUtil {
 
 	public void setPropertyManager(PropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
+	}
+
+	/**
+	 * Are this repository's CMIS views answering truthfully right now?
+	 *
+	 * <p>Fourteen of the forty-one patches decide "does this already exist?" by querying a view in
+	 * {@code _design/_repo}, and then create the missing thing with a CouchDB-generated id. Both
+	 * halves matter: a view being rebuilt answers <b>HTTP 200 with zero rows and no exception</b>
+	 * (measured), so the check says "absent"; and because the create has no stable id, CouchDB
+	 * cannot reject the duplicate with a conflict. That is how {@code bedroom} grew a second
+	 * {@code .system} folder and a second patch-history record on 2026-08-13.
+	 *
+	 * <p>{@code Patch_JoinedGroupsSingleEmit} rewrites that very design document during a v3.3.0
+	 * upgrade, so this is not a hypothetical window — it is the one the documented upgrade opens.
+	 *
+	 * <p>Rather than repair fourteen existence checks one at a time, this gate refuses to apply
+	 * ANY patch to a repository whose views are not currently answering. The test is the same
+	 * shape as the reindex wipe guard: <b>if the database holds documents but a core view returns
+	 * nothing at all, the views are not built</b>. A genuinely fresh repository has neither, so it
+	 * is not blocked.
+	 *
+	 * <p>Failing this way costs one startup: the patch is applied on the next one, once the
+	 * rebuild has finished. Applying a non-idempotent patch twice cannot be undone by waiting.
+	 */
+	public boolean cmisViewsAreAnswering(String repositoryId) {
+		try {
+			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			if (client == null) {
+				return false;
+			}
+			long documents = client.getDatabaseInfo() == null
+					? 0L : client.getDatabaseInfo().getDocCount();
+			if (documents <= VIEW_CANARY_FLOOR) {
+				// Too small to tell a fresh repository from a broken one — and too small to lose
+				// anything either.
+				return true;
+			}
+			// childrenNames, NOT children: `children` carries a _count reduce, and queryViewCount
+			// reads total_rows, which a reduce response does not carry — so it answers 0 for a
+			// perfectly healthy repository. That mistake was caught on the running stack, where
+			// this gate refused 312 times against a database that was fine.
+			long viewRows = client.queryViewCount("_repo", "childrenNames");
+			if (viewRows > 0) {
+				return true;
+			}
+			log.error("Refusing to apply patches to repository '" + repositoryId + "': it holds "
+					+ documents + " documents but the _repo/children view returned no rows at all."
+					+ " The views are not answering (a design document being rebuilt replies 200"
+					+ " with zero rows), and every patch that checks 'does this already exist?'"
+					+ " through a view would create a duplicate. Patches will be reconsidered on"
+					+ " the next startup.");
+			return false;
+		} catch (Exception e) {
+			log.error("Refusing to apply patches to repository '" + repositoryId
+					+ "': could not establish whether its views are answering", e);
+			return false;
+		}
 	}
 
 	public CloudantClientPool getConnectorPool() {

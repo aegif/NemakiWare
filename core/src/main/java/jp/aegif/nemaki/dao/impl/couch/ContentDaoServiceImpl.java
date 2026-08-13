@@ -837,10 +837,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			// common case here rather than an exceptional one. Dereferencing it threw an NPE that
 			// the catch below turned into false: the right answer, reached by throwing and logging
 			// an error every time. getChildrenNames already guards the same way.
-			if (result == null || result.getRows() == null) {
-				return false;
+			if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
+				return true;
 			}
-			return !result.getRows().isEmpty();
+			// "No rows" is the answer ONLY if the view could answer. queryView returns null both
+			// when the key matched nothing AND when the design document or view is absent, and a
+			// view whose design document is being rebuilt replies HTTP 200 with zero rows and no
+			// error at all. Reading either as "this type has no instances" reopens the very hole
+			// this method exists to close — a populated type would become deletable for as long as
+			// the rebuild lasts, which is precisely the window a v3.3.0 upgrade creates.
+			return confirmNoInstances(repositoryId, objectTypeId);
 		} catch (Exception e) {
 			log.error("Could not determine whether objects of type " + objectTypeId
 					+ " still exist in repository " + repositoryId
@@ -849,6 +855,31 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					"Could not determine whether objects of type '" + objectTypeId
 							+ "' still exist: " + e.getMessage(), e);
 		}
+	}
+
+	/**
+	 * Second opinion on "this type has no instances", from outside the map/reduce views.
+	 *
+	 * <p>Mango ({@code _find}) does not read {@code _design/_repo}, so it cannot be emptied by the
+	 * same rebuild that empties {@code countByObjectType}. Only reached when the view already said
+	 * nothing, so the common case still costs one view query.
+	 *
+	 * @return false if nothing of this type exists, true if something does
+	 */
+	private boolean confirmNoInstances(String repositoryId, String objectTypeId) {
+		Map<String, Object> selector = new HashMap<String, Object>();
+		selector.put("objectType", objectTypeId);
+		List<Map<String, Object>> found =
+				connectorPool.getClient(repositoryId).findRawBySelector(selector, 1);
+		if (found == null || found.isEmpty()) {
+			return false;
+		}
+		log.warn("The countByObjectType view reported no instances of '" + objectTypeId
+				+ "' in repository '" + repositoryId + "', but a direct query found one ("
+				+ found.get(0).get("_id") + "). Reporting that the type IS in use — the view is"
+				+ " probably being rebuilt, and trusting it would have allowed the type to be"
+				+ " deleted with its objects still in place.");
+		return true;
 	}
 
 	@Override
@@ -1414,8 +1445,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 			return names;
 		} catch (Exception e) {
+			// NOT an empty list. The only consumer is the CMIS name-uniqueness check
+			// (ExceptionServiceImpl.nameConstraintViolation on create, ContentServiceImpl on
+			// rename), and an empty list there means "no name conflicts" — so a CouchDB blip
+			// would silently let a duplicate name through. The same fail-open shape that let
+			// existContent report a populated type as empty.
 			log.error("Error getting children names for parent: " + parentId + " in repository: " + repositoryId, e);
-			return new ArrayList<String>();
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"Could not read the existing names under " + parentId + " in repository "
+							+ repositoryId + ", so name uniqueness cannot be checked: "
+							+ e.getMessage(), e);
 		}
 	}
 

@@ -17,6 +17,7 @@
 package jp.aegif.nemaki.cmis.service.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -24,6 +25,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 
 import org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.junit.jupiter.api.BeforeEach;
@@ -101,5 +103,29 @@ class DeleteTypeConstraintPropagationTest {
         CmisRuntimeException thrown = assertThrows(CmisRuntimeException.class,
                 () -> svc.deleteType(mock(CallContext.class), REPO, TYPE, null));
         assertEquals("Type deletion failed: CouchDB is unreachable", thrown.getMessage());
+    }
+
+    /**
+     * A failure must not reach the client as 404.
+     *
+     * <p>{@code TypeManagerImpl.deleteTypeDefinition} used to wrap every non-constraint exception
+     * in {@code CmisObjectNotFoundException}, so "CouchDB is unreachable" arrived as "this type
+     * does not exist". A client that treats 404 as "already deleted" then moves on believing a
+     * deletion happened that did not. Making the layer above pass CMIS exceptions through
+     * unchanged (which is right) would have carried that lie all the way out — so the wrap itself
+     * had to go.
+     */
+    @Test
+    void aFailureIsNotDisguisedAsAMissingType() {
+        assertFalse(CmisObjectNotFoundException.class.isAssignableFrom(CmisRuntimeException.class),
+                "sanity: these are different statuses");
+        doThrow(new IllegalStateException("CouchDB is unreachable"))
+                .when(typeManager).deleteTypeDefinition(anyString(), anyString());
+
+        Exception thrown = assertThrows(Exception.class,
+                () -> svc.deleteType(mock(CallContext.class), REPO, TYPE, null));
+        assertFalse(thrown instanceof CmisObjectNotFoundException,
+                "a failed deletion reported as 404 reads as 'already gone' — got: "
+                        + thrown.getClass().getSimpleName());
     }
 }

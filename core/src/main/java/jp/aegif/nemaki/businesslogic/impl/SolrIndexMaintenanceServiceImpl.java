@@ -603,11 +603,33 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 return;
             }
             
-            SolrQuery query = new SolrQuery(queryString);
-            query.setRows(0); // We only need the count
-            QueryResponse response = solrClient.query(query);
-            long foundCount = response.getResults().getNumFound();
-            
+            // A REALTIME GET, not a search. The batch was submitted with commitWithin, so a
+            // searcher cannot see it yet — and during a full reindex the index was just cleared,
+            // so there is no older visible copy to find either. A search here therefore reported
+            // essentially the WHOLE batch as "silently dropped" and re-indexed every document
+            // individually, one commitWithin=1000 write at a time. Every document was built twice
+            // (including its CouchDB attachment reads) and the constant soft commits made it worse
+            // as the index grew: reindex throughput decayed from 10.3 to 2.6 documents/second
+            // between 26k and 98k objects.
+            //
+            // /get reads the transaction log, so it sees uncommitted documents and answers the
+            // question that was actually being asked: did Solr accept this document?
+            List<String> batchIds = new ArrayList<>(batch.size());
+            for (Content content : batch) {
+                batchIds.add(content.getId());
+            }
+            java.util.Set<String> existingIds = new java.util.HashSet<>();
+            for (org.apache.solr.common.SolrDocument doc : solrClient.getById(batchIds)) {
+                Object id = doc.getFieldValue("object_id");
+                if (id == null) {
+                    id = doc.getFieldValue("id");
+                }
+                if (id != null) {
+                    existingIds.add(id.toString());
+                }
+            }
+            long foundCount = existingIds.size();
+
             if (foundCount < batch.size()) {
                 // Some documents were silently dropped - identify and re-index them
                 int missingCount = batch.size() - (int) foundCount;
@@ -616,19 +638,6 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 // Track silent drop count
                 silentDropCount.addAndGet(missingCount);
                 status.setSilentDropCount(silentDropCount.get());
-                
-                // Get the IDs that exist in Solr
-                query.setRows(batch.size());
-                query.setFields("object_id");
-                response = solrClient.query(query);
-                
-                java.util.Set<String> existingIds = new java.util.HashSet<>();
-                for (org.apache.solr.common.SolrDocument doc : response.getResults()) {
-                    Object objectId = doc.getFieldValue("object_id");
-                    if (objectId != null) {
-                        existingIds.add(objectId.toString());
-                    }
-                }
                 
                 // Re-index missing documents individually
                 int batchReindexedCount = 0;
@@ -1033,6 +1042,77 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         } catch (Exception e) {
             log.error("Error deleting document from index: " + objectId, e);
             return false;
+        }
+    }
+
+    /**
+     * Delete index entries whose object no longer exists in CouchDB.
+     *
+     * <p>These accumulate because removing a document from the index is asynchronous with an
+     * IN-MEMORY retry: {@code SolrUtil.deleteDocument} hands the delete to an executor and, on
+     * failure, schedules a bounded retry that lives only in this JVM. The CouchDB delete has
+     * already committed by then, so if the process dies inside that window — or the retries run
+     * out — the document is gone from the repository and still answering queries. Three such
+     * entries were found in {@code bedroom}: deleted private working copies that a CMIS query
+     * still returned, which is how the TCK's Query Smoke Test started failing.
+     *
+     * <p>{@code checkIndexHealth} could already SEE them ({@code orphanedInSolr}); there was no
+     * way to remove them short of a full reindex, which at 100k documents is a ten-hour operation.
+     *
+     * <p><b>Guarded exactly like a full reindex.</b> "In Solr but not in CouchDB" is computed from
+     * a folder-tree walk, and that walk cannot tell an empty repository from an unreadable one —
+     * a CouchDB view being rebuilt answers HTTP 200 with zero rows. Without the guard, running
+     * this against a rebuilding view would classify EVERY document as orphaned and delete the
+     * whole index. That is the same failure the reindex guard exists to stop, wearing a different
+     * hat.
+     *
+     * @return the number of entries removed, or -1 if the operation was refused
+     */
+    @Override
+    public long purgeOrphanedIndexEntries(String repositoryId) {
+        long alreadyIndexed = countIndexedCmisObjects(repositoryId);
+        if (alreadyIndexed < 0) {
+            log.error("Refusing to purge orphans in " + repositoryId
+                    + ": Solr could not be queried for the current object count");
+            return -1;
+        }
+        IndexDiscrepancyResult discrepancies = getIndexDiscrepancies(repositoryId);
+        if (discrepancies == null || discrepancies.getOrphanedInSolr() == null) {
+            log.error("Refusing to purge orphans in " + repositoryId
+                    + ": the discrepancy check did not produce a result");
+            return -1;
+        }
+        List<DiscrepancyDocumentInfo> orphans = discrepancies.getOrphanedInSolr();
+        long survivors = alreadyIndexed - orphans.size();
+        if (alreadyIndexed >= ENUMERATION_GUARD_FLOOR
+                && survivors * ENUMERATION_GUARD_FACTOR < alreadyIndexed) {
+            log.error("Refusing to purge orphans in " + repositoryId + ": " + orphans.size()
+                    + " of " + alreadyIndexed + " indexed objects look orphaned, which is not a"
+                    + " handful of stragglers — it is what an unreadable repository looks like."
+                    + " Nothing was deleted.");
+            return -1;
+        }
+        if (orphans.isEmpty()) {
+            return 0;
+        }
+        try {
+            SolrClient solrClient = solrUtil.getSolrClient();
+            if (solrClient == null) {
+                return -1;
+            }
+            List<String> ids = new ArrayList<>();
+            for (DiscrepancyDocumentInfo info : orphans) {
+                if (info.getObjectId() != null) {
+                    ids.add(info.getObjectId());
+                }
+            }
+            solrClient.deleteById(ids);
+            solrClient.commit();
+            log.info("Purged " + ids.size() + " orphaned index entries from " + repositoryId);
+            return ids.size();
+        } catch (Exception e) {
+            log.error("Failed to purge orphaned index entries for " + repositoryId, e);
+            return -1;
         }
     }
 

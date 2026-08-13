@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -156,6 +157,33 @@ public class ExistContentNullResultTest {
                 "swallowing the failure and returning false lets a populated type be deleted "
                         + "while the database is down");
         assertEquals(1, errorsLogged(), "the operator still needs the cause in the log");
+    }
+
+    /**
+     * A silently empty view must not be read as "this type has no instances".
+     *
+     * <p>`queryView` answers null both when the key matched nothing AND when the design document
+     * or view is absent, and a view being rebuilt replies HTTP 200 with zero rows and no error.
+     * Reading any of those as "no instances" lets a populated type be deleted for as long as the
+     * rebuild lasts — which is exactly the window a v3.3.0 upgrade opens, because
+     * {@code Patch_JoinedGroupsSingleEmit} rewrites that design document.
+     */
+    @Test
+    public void aSilentlyEmptyViewDoesNotMeanTheTypeIsUnused() {
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(anyString(), anyString(), anyString())).thenReturn(null);
+        java.util.Map<String, Object> instance = new java.util.HashMap<>();
+        instance.put("_id", "an-object-of-this-type");
+        when(client.findRawBySelector(any(java.util.Map.class), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of(instance));
+        CloudantClientPool pool = mock(CloudantClientPool.class);
+        when(pool.getClient(anyString())).thenReturn(client);
+        ContentDaoServiceImpl dao = new ContentDaoServiceImpl();
+        dao.setConnectorPool(pool);
+
+        assertTrue(dao.existContent(REPO, "nemaki:typeInUse"),
+                "the view could not see the instances but they exist — answering false here "
+                        + "makes a populated type deletable while the view is rebuilding");
     }
 
     /** An empty row list means the key matched nothing. Still false, still not an error. */
