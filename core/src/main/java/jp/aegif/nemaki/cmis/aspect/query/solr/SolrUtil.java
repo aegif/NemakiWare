@@ -99,6 +99,15 @@ public class SolrUtil implements ApplicationContextAware {
 
 	// BTL-004: Shared SolrClient instance — HttpSolrClient is thread-safe
 	private volatile SolrClient sharedSolrClient;
+
+	/**
+	 * The HTTP executor backing {@link #sharedSolrClient}. Ours to shut down, because supplying
+	 * one to the builder makes SolrJ stop shutting it down itself.
+	 */
+	private volatile java.util.concurrent.ExecutorService sharedSolrHttpExecutor;
+
+	/** Guarded by {@code solrClientLock}. Once set, no further client is created. */
+	private boolean solrClientDestroyed;
 	private final Object solrClientLock = new Object();
 
 	// BTL-009: Dedicated executor for async Solr operations.
@@ -173,25 +182,43 @@ public class SolrUtil implements ApplicationContextAware {
 			if (client != null) {
 				return client;
 			}
+			if (solrClientDestroyed) {
+				// Building one here would leave a client nothing closes, and destroy() may already
+				// have shut down the executor it would be handed. Null is this method's documented
+				// answer for "no client available".
+				log.warn("SolrUtil has been destroyed — not creating a new Solr client");
+				return null;
+			}
 			String url = getSolrUrl();
 			if (url == null) {
 				log.error("Solr URL is null — cannot create SolrClient");
 				return null;
 			}
 			log.info("Creating shared Solr client for URL: " + url);
+			java.util.concurrent.ExecutorService httpExecutor = null;
 			try {
 				// Force HTTP/1.1: the JDK client defaults to HTTP/2, which against
 				// Solr 10 / Jetty 12 throws intermittent "RST_STREAM: Protocol
 				// error" on update/block-join requests.
+				//
+				// withExecutor is not optional: SolrJ's default is a 4-thread pool shared by the
+				// thread writing a request body into a pipe and the thread draining it, which
+				// deadlocks permanently at four concurrent large updates. See SolrHttpExecutor.
+				httpExecutor = jp.aegif.nemaki.util.SolrHttpExecutor.create("solr-http-cmis");
 				HttpJdkSolrClient newClient = new HttpJdkSolrClient.Builder(url)
 					.useHttp1_1(true)
+					.withExecutor(httpExecutor)
 					.withConnectionTimeout(30000, java.util.concurrent.TimeUnit.MILLISECONDS)
 					.withRequestTimeout(30000, java.util.concurrent.TimeUnit.MILLISECONDS)
 					.build();
+				// Supplying an executor makes SolrJ leave its shutdown to us (destroy()).
+				sharedSolrHttpExecutor = httpExecutor;
 				sharedSolrClient = newClient;
 				log.info("Shared HttpJdkSolrClient created successfully for URL: " + url);
 				return newClient;
 			} catch (Exception e) {
+				// The executor exists whether or not build() succeeded; nothing else references it.
+				jp.aegif.nemaki.util.SolrHttpExecutor.shutdown(httpExecutor);
 				log.error("HttpJdkSolrClient creation failed: " + e.getMessage(), e);
 				return null;
 			}
@@ -1995,9 +2022,22 @@ public class SolrUtil implements ApplicationContextAware {
 			Thread.currentThread().interrupt();
 		}
 
-		SolrClient client = sharedSolrClient;
-		if (client != null) {
+		// Detach the client and its executor together, under the lock creation uses, and refuse
+		// further creation inside it. Otherwise teardown can interleave with a concurrent
+		// getSolrClient(): destroy() clears the field, the getter builds a replacement, and
+		// destroy() then shuts down the REPLACEMENT's executor while leaking the original's —
+		// leaving a published client whose transport is dead.
+		SolrClient client;
+		java.util.concurrent.ExecutorService httpExecutor;
+		synchronized (solrClientLock) {
+			solrClientDestroyed = true;
+			client = sharedSolrClient;
+			httpExecutor = sharedSolrHttpExecutor;
 			sharedSolrClient = null;
+			sharedSolrHttpExecutor = null;
+		}
+
+		if (client != null) {
 			try {
 				client.close();
 				log.info("Shared SolrClient closed successfully");
@@ -2005,6 +2045,9 @@ public class SolrUtil implements ApplicationContextAware {
 				log.warn("Error closing shared SolrClient: " + e.getMessage());
 			}
 		}
+
+		// After the client, so in-flight requests can finish writing their bodies.
+		jp.aegif.nemaki.util.SolrHttpExecutor.shutdown(httpExecutor);
 	}
 
 	/**

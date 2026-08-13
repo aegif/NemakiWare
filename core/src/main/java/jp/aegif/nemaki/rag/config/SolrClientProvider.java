@@ -48,6 +48,15 @@ public class SolrClientProvider {
     private volatile SolrClient solrClient;
     private final Object lock = new Object();
 
+    /**
+     * The HTTP executor backing {@link #solrClient}. Ours to shut down, because supplying one to
+     * the builder makes SolrJ stop shutting it down itself.
+     */
+    private volatile java.util.concurrent.ExecutorService httpExecutor;
+
+    /** Guarded by {@link #lock}. Once set, no further client is created. */
+    private boolean destroyed;
+
     @PostConstruct
     public void init() {
         log.info("SolrClientProvider initialized - Solr URL: {}://{}:{}/solr",
@@ -63,6 +72,12 @@ public class SolrClientProvider {
     public SolrClient getClient() {
         if (solrClient == null) {
             synchronized (lock) {
+                if (destroyed) {
+                    // Creating one here would build a client nothing will ever close, and — worse
+                    // — cleanup() may already have shut down the executor it would be handed.
+                    throw new IllegalStateException(
+                            "SolrClientProvider has been destroyed; no new Solr client will be created");
+                }
                 if (solrClient == null) {
                     solrClient = createSolrClient();
                     log.info("Created shared HttpSolrClient for RAG operations");
@@ -87,8 +102,15 @@ public class SolrClientProvider {
     private SolrClient createSolrClient() {
         String url = String.format("%s://%s:%d/solr", solrProtocol, solrHost, solrPort);
 
+        // withExecutor is not optional. SolrJ's default is a 4-thread pool shared by the thread
+        // writing a request body into a pipe and the thread draining it, so four concurrent
+        // updates deadlock it permanently. RAG bodies always exceed the 1 KiB pipe buffer because
+        // they carry float embedding vectors, so this client reaches that state first — measured.
+        // See SolrHttpExecutor.
+        httpExecutor = jp.aegif.nemaki.util.SolrHttpExecutor.create("solr-http-rag");
         return new HttpJdkSolrClient.Builder(url)
                 .useHttp1_1(true)
+                .withExecutor(httpExecutor)
                 .withConnectionTimeout(CONNECTION_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .withRequestTimeout(SOCKET_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .withIdleTimeout(IDLE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
@@ -104,16 +126,38 @@ public class SolrClientProvider {
         return String.format("%s://%s:%d/solr", solrProtocol, solrHost, solrPort);
     }
 
+    /**
+     * Terminal teardown.
+     *
+     * <p>The client and its executor are detached together under the same lock creation uses, and
+     * {@code destroyed} is set inside it. Without that, teardown can interleave with a concurrent
+     * {@link #getClient()}: cleanup clears the field, the getter builds a replacement, and cleanup
+     * then shuts down the REPLACEMENT's executor while leaking the original's — leaving a
+     * published client whose transport is dead. Closing happens outside the lock so a slow close
+     * does not block getters that are about to be refused anyway.
+     */
     @PreDestroy
     public void cleanup() {
-        if (solrClient != null) {
+        SolrClient client;
+        java.util.concurrent.ExecutorService executor;
+        synchronized (lock) {
+            destroyed = true;
+            client = solrClient;
+            executor = httpExecutor;
+            solrClient = null;
+            httpExecutor = null;
+        }
+
+        if (client != null) {
             try {
                 log.info("Closing shared SolrClient...");
-                solrClient.close();
+                client.close();
                 log.info("SolrClient closed successfully");
             } catch (Exception e) {
                 log.error("Error closing SolrClient", e);
             }
         }
+        // After the client, so in-flight requests can finish writing their bodies.
+        jp.aegif.nemaki.util.SolrHttpExecutor.shutdown(executor);
     }
 }

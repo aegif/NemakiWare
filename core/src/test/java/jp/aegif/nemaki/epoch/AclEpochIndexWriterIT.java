@@ -62,6 +62,7 @@ public class AclEpochIndexWriterIT {
 
     private static Cloudant cloudant;
     private static SolrClient solr;
+    private static java.util.concurrent.ExecutorService solrHttpExecutor;
     private static boolean available;
 
     private String contentDb;
@@ -144,7 +145,15 @@ public class AclEpochIndexWriterIT {
             cloudant.getDatabaseInformation(
                     new com.ibm.cloud.cloudant.v1.model.GetDatabaseInformationOptions.Builder()
                             .db(SystemConst.NEMAKI_CONF_DB).build()).execute();
-            solr = new HttpJdkSolrClient.Builder(solrUrl).useHttp1_1(true).build();
+            // Same executor as production: SolrJ's default is a 4-thread pool shared by the
+            // request-body writer and the pipe reader, which deadlocks at four concurrent large
+            // updates. This fixture is serial today, but leaving it on the default would make the
+            // trap reappear the first time someone parallelises it. See SolrHttpExecutor.
+            solrHttpExecutor = jp.aegif.nemaki.util.SolrHttpExecutor.create("solr-http-epoch-it");
+            solr = new HttpJdkSolrClient.Builder(solrUrl)
+                    .useHttp1_1(true)
+                    .withExecutor(solrHttpExecutor)
+                    .build();
             solr.ping();
             available = true;
         } catch (Exception e) {
@@ -155,6 +164,21 @@ public class AclEpochIndexWriterIT {
             throw new IllegalStateException("nemaki.test.couchdb.required=true but CouchDB and/or Solr "
                     + "are not reachable — the ACL epoch index-writer IT cannot run");
         }
+    }
+
+    @org.junit.jupiter.api.AfterAll
+    static void closeSolr() {
+        if (solr != null) {
+            try {
+                solr.close();
+            } catch (Exception e) {
+                // nothing left to do in teardown
+            }
+            solr = null;
+        }
+        // The executor is ours to stop: supplying one makes SolrJ stop shutting it down itself.
+        jp.aegif.nemaki.util.SolrHttpExecutor.shutdown(solrHttpExecutor);
+        solrHttpExecutor = null;
     }
 
     @BeforeEach

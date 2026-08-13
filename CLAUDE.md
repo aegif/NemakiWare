@@ -54,6 +54,13 @@ CMIS 1.1 準拠のオープンソース ECM。技術スタックは `pom.xml` / 
   - Browser binding の multipart は `MultipartReplayRequestWrapper` が再生します。
     servlet がルーティングのため body を先に読む必要があり、1.1.0-nemakiware は
     フォーク側パッチで救っていましたが、2.0 系にそれはありません。
+- **`SolrClient` を新設するときは必ず `SolrHttpExecutor.create()` を `withExecutor()` に
+  渡すこと。** SolrJ の既定エグゼキュータは実質 4 スレッドで、しかも 1 リクエストが
+  「ボディを書く側」と「パイプを読む側」で 2 枠を同時に使います。**同時 4 本で恒久
+  デッドロック**し、回復は JVM 再起動のみ。単発では症状が出ないので気づけません
+  (RAG はベクトルを載せるため必ず踏みます)。現在の生成箇所は `SolrUtil.getSolrClient` と
+  `SolrClientProvider.createSolrClient` の 2 つ。詳細は `SolrHttpExecutor` の javadoc と
+  [`docs/design/v3.3-release-blockers.md`](docs/design/v3.3-release-blockers.md) の SX1。
 - **Virtual Threads**: ThreadPoolExecutor の構造 (キューサイズ・CallerRunsPolicy 等) は
   バックプレッシャー維持のため**変更不可**。ThreadFactory のみ
   `Thread.ofVirtual().name(...).factory()` に統一。`ScheduledExecutorService`
