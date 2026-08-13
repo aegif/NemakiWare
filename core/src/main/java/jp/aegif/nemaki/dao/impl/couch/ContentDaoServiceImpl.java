@@ -1661,7 +1661,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				}
 			}
 			
-			return null;
+			// The view found nothing. That is the answer ONLY if the view was able to answer.
+			// A design document being rebuilt replies HTTP 200 with zero rows and no exception
+			// (measured), which is indistinguishable here from "this patch has never run" — and
+			// the caller turns that into "apply it again". So confirm with a lookup that does
+			// not go through _design/_repo at all before reporting absence.
+			return confirmPatchHistoryAbsent(repositoryId, name);
+		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException e) {
+			throw e;
 		} catch (Exception e) {
 			// Deliberately NOT null: null means "no such record", which the caller turns into
 			// "apply this patch". Answering that when the truth is "I could not look" is how a
@@ -1671,6 +1678,39 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					"Could not read patch history for '" + name + "' in repository '"
 							+ repositoryId + "': " + e.getMessage(), e);
 		}
+	}
+
+	/**
+	 * Second opinion on "this patch has no history", from outside the map/reduce views.
+	 *
+	 * <p>Mango ({@code _find}) does not read {@code _design/_repo}, so a rebuild of that document
+	 * cannot make this answer empty the way it makes the {@code patch} view answer empty. Only
+	 * reached when the view already said nothing, so the normal startup path still costs one view
+	 * query — and on a genuinely fresh repository, where this DOES run for every patch, the
+	 * database is small.
+	 *
+	 * @return the history the view missed, or {@code null} if it really is absent
+	 */
+	private PatchHistory confirmPatchHistoryAbsent(String repositoryId, String name) {
+		Map<String, Object> selector = new HashMap<String, Object>();
+		selector.put("type", "patch");
+		selector.put("name", name);
+		List<Map<String, Object>> found =
+				connectorPool.getClient(repositoryId).findRawBySelector(selector, 2);
+		if (found == null || found.isEmpty()) {
+			return null;
+		}
+		Map<String, Object> doc = found.get(0);
+		log.warn("The 'patch' view reported no history for '" + name + "' in repository '"
+				+ repositoryId + "', but a direct query found one (" + doc.get("_id")
+				+ "). Treating the patch as applied. The view is probably being rebuilt — had this"
+				+ " gone unnoticed, the patch would have been applied a second time.");
+		PatchHistory history = new PatchHistory(name, Boolean.TRUE.equals(doc.get("applied")));
+		Object id = doc.get("_id");
+		if (id != null) {
+			history.setId(id.toString());
+		}
+		return history;
 	}
 
 	@Override
