@@ -107,14 +107,28 @@ public class SolrClientProvider {
         // updates deadlock it permanently. RAG bodies always exceed the 1 KiB pipe buffer because
         // they carry float embedding vectors, so this client reaches that state first — measured.
         // See SolrHttpExecutor.
-        httpExecutor = jp.aegif.nemaki.util.SolrHttpExecutor.create("solr-http-rag");
-        return new HttpJdkSolrClient.Builder(url)
-                .useHttp1_1(true)
-                .withExecutor(httpExecutor)
-                .withConnectionTimeout(CONNECTION_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                .withRequestTimeout(SOCKET_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                .withIdleTimeout(IDLE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                .build();
+        java.util.concurrent.ExecutorService executor =
+                jp.aegif.nemaki.util.SolrHttpExecutor.create("solr-http-rag");
+        try {
+            SolrClient client = new HttpJdkSolrClient.Builder(url)
+                    .useHttp1_1(true)
+                    .withExecutor(executor)
+                    .withConnectionTimeout(CONNECTION_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                    .withRequestTimeout(SOCKET_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                    .withIdleTimeout(IDLE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                    .build();
+            // Publish only once build() has succeeded. Assigning the field first would leave a
+            // failed attempt's executor in it with no client to close, and the next attempt would
+            // overwrite the field and leak it — an unbounded pool, so the leak is unbounded too.
+            httpExecutor = executor;
+            return client;
+        } catch (RuntimeException | Error e) {
+            // Defence, not a covered path: build() was measured to validate nothing (eight
+            // malformed base URLs, including null and "", all built successfully), so this cannot
+            // be provoked from outside and no test exercises it. Keep it anyway.
+            jp.aegif.nemaki.util.SolrHttpExecutor.shutdown(executor);
+            throw e;
+        }
     }
 
     /**

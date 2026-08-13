@@ -132,6 +132,34 @@ class SolrClientWiringTest {
 						+ "may already have been shut down");
 	}
 
+	/**
+	 * On the success path the field and the client hold the SAME executor.
+	 *
+	 * <p>This is the half of the publish-after-build rule that can be tested. The other half — a
+	 * failed {@code build()} leaving its executor in the field for the next attempt to overwrite —
+	 * has no test here: {@code HttpJdkSolrClient.Builder.build()} was measured to validate nothing
+	 * (eight malformed base URLs, including {@code null} and the empty string, all built fine), so
+	 * the failure cannot be provoked from outside. The guard in {@code createSolrClient} is
+	 * deliberate defence, not dead code — do not remove it because nothing covers it.
+	 */
+	@Test
+	void theFieldAndTheClientHoldTheSameExecutor() throws Exception {
+		SolrClientProvider provider = new SolrClientProvider();
+		set(provider, "solrProtocol", "http");
+		set(provider, "solrHost", "solr");
+		set(provider, "solrPort", 8983);
+		try {
+			SolrClient client = provider.getClient();
+			Field field = SolrClientProvider.class.getDeclaredField("httpExecutor");
+			field.setAccessible(true);
+			org.junit.jupiter.api.Assertions.assertSame(executorOf(client), field.get(provider),
+					"cleanup() shuts down whatever is in the field; if that is not the executor the "
+							+ "client is using, cleanup kills the wrong one and leaks the right one");
+		} finally {
+			provider.cleanup();
+		}
+	}
+
 	/** Same for SolrUtil, whose contract is to answer null rather than throw. */
 	@Test
 	void aDestroyedSolrUtilReturnsNoClient() {

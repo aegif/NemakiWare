@@ -46,7 +46,8 @@ import org.junit.jupiter.api.Timeout;
  * <p>Observed against nb33 on 2026-08-14: all four {@code HttpJdkSolrClient-2-thread-*} in
  * {@code PipedInputStream.awaitSpace}, 42 threads parked in {@code HttpClientImpl.send}, 25 queued
  * on the per-ragId stripe lock, and two thread dumps minutes apart identical down to the frame.
- * The 30-second request timeout never fired, because nothing was waiting on a response.
+ * The configured 30-second request timeout did not break the cycle; <b>why</b> it did not was never
+ * established, and nothing beyond that observation should be asserted here.
  *
  * <h2>Why the test looks like this</h2>
  *
@@ -151,12 +152,20 @@ class SolrHttpExecutorStarvationTest {
 	}
 
 	/**
-	 * Platform threads, deliberately.
+	 * Platform threads, deliberately — but not for the reason first written here.
 	 *
-	 * <p>{@code PipedInputStream.receive} and {@code awaitSpace} are {@code synchronized} methods
-	 * that call {@code Object.wait()}, which pins the carrier on JDK 21. Switching this executor to
-	 * virtual threads to match the rest of the codebase would park pinned carriers and could
-	 * reproduce the starvation the class exists to remove.
+	 * <p>Verified against Temurin 21.0.10: {@code PipedInputStream.receive} is
+	 * {@code synchronized} and {@code awaitSpace} is called while it holds that monitor
+	 * ({@code awaitSpace} is not itself declared {@code synchronized}), and
+	 * {@code Object.wait(long)} goes through {@code jdk.internal.misc.Blocker}, so the ForkJoinPool
+	 * scheduler <b>compensates</b> by adding carriers. Four virtual writers would therefore NOT
+	 * reproduce the four-thread starvation above.
+	 *
+	 * <p>The reason to stay on platform threads is that compensation is itself bounded — the
+	 * default carrier maximum is {@code max(parallelism, 256)} — so virtual threads would move the
+	 * cliff from 4 to a few hundred rather than remove it. The property wanted here is "a reader is
+	 * always schedulable, until the OS refuses to create a thread". If this is ever revisited, that
+	 * ceiling, not pinning, is the thing to argue about.
 	 */
 	@Test
 	@Timeout(30)
@@ -172,8 +181,9 @@ class SolrHttpExecutorStarvationTest {
 			});
 			assertTrue(seen.await(10, TimeUnit.SECONDS), "the task never ran");
 			assertFalse(virtual.get(),
-					"virtual threads pin the carrier on Object.wait() inside synchronized, which is "
-							+ "exactly what PipedInputStream does on every oversized request body");
+					"virtual threads would bound the reader supply at the carrier-compensation "
+							+ "ceiling (default max(parallelism, 256)) instead of at the OS thread "
+							+ "limit — the cliff moves rather than disappears");
 		} finally {
 			executor.shutdownNow();
 		}
