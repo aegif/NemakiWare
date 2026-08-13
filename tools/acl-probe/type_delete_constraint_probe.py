@@ -28,11 +28,12 @@ CouchDB が
 その後 **2026-08-12 にスタブを `existContent` に配線し、このプローブは exit 0 になった**
 (空のタイプ削除は 200、インスタンスが在るタイプは 409)。
 
-**まだ塞がっていない 2 つ** (このプローブは CMIS 経路しか見ていない):
+**まだ塞がっていないもの** (このプローブは CMIS 経路しか見ていない):
 - 管理画面が使う NemakiWare 独自の REST 削除
   (`DELETE /core/rest/repo/{repo}/type/delete/{typeId}`) は検査を通らない。
   これは「CMIS 非準拠」と自ら警告する意図的な抜け道
-- **secondary type** は `countByObjectType` の key (主タイプ) に載らないので対象外
+- ~~**secondary type** は `countByObjectType` の key (主タイプ) に載らないので対象外~~
+  → 2026-08-13 に `secondaryIds` の確認を足して塞いだ
 
 手順は「タイプを作る → そのタイプの文書を 1 件作る → deleteType」。
 期待は **409 (constraint)**。200 が返るなら番人はまだ効いていない。

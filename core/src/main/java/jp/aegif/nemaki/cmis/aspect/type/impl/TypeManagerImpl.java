@@ -4180,10 +4180,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * deployment is the cheaper mistake — {@code checkTypeDependencies} turns the throw into a
 	 * dependency issue, which becomes a constraint error naming the cause.
 	 *
-	 * <p><b>Primary types only.</b> The {@code countByObjectType} view keys on
-	 * {@code doc.objectType}, and a secondary type is applied through the separate
-	 * {@code secondaryIds} field — so a secondary type that documents are currently using still
-	 * answers false here and can be deleted. That gap is known and not closed by this method.
+	 * <p><b>Primary and secondary.</b> The {@code countByObjectType} view keys on
+	 * {@code doc.objectType}, so it sees primary types only; a secondary type is applied through
+	 * the separate {@code secondaryIds} field and used to answer false here, which let a type in
+	 * active use be deleted. {@code existContent} now checks {@code secondaryIds} as well.
 	 *
 	 * <p>There is deliberately no {@code tck:}-prefix exemption. One exists in
 	 * {@code ExceptionServiceImpl.constraintObjectsStillExist} (which has no callers), and copying
