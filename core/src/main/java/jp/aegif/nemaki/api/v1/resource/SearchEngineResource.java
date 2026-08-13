@@ -166,6 +166,13 @@ public class SearchEngineResource {
             response.setIndexedCount(status.getIndexedCount());
             response.setErrorCount(status.getErrorCount());
             response.setSilentDropCount(status.getSilentDropCount());
+            // Where the wall clock went. Reindex throughput falls from ~70 docs/s at 5,615
+            // objects to 2.6 at 97,693 and the cause is not yet known — the double-indexing that
+            // looked like the culprit was removed and measured to make no difference. These make
+            // the next large run answer the question instead of prompting another guess.
+            response.setEnumerationMs(status.getEnumerationMs());
+            response.setIndexingMs(status.getSolrWriteMs());
+            response.setVerificationMs(status.getVerificationMs());
             response.setReindexedCount(status.getReindexedCount());
             response.setStartTime(status.getStartTime());
             response.setEndTime(status.getEndTime());
@@ -963,6 +970,12 @@ public class SearchEngineResource {
         
         @Schema(description = "Number of documents silently dropped")
         private long silentDropCount;
+        @Schema(description = "Milliseconds spent walking the folder tree")
+        private long enumerationMs;
+        @Schema(description = "Milliseconds spent building and submitting documents to Solr, including the CouchDB reads each one needs")
+        private long indexingMs;
+        @Schema(description = "Milliseconds spent verifying each batch after it was submitted")
+        private long verificationMs;
         
         @Schema(description = "Number of documents reindexed")
         private long reindexedCount;
@@ -997,6 +1010,12 @@ public class SearchEngineResource {
         public void setErrorCount(long errorCount) { this.errorCount = errorCount; }
         public long getSilentDropCount() { return silentDropCount; }
         public void setSilentDropCount(long silentDropCount) { this.silentDropCount = silentDropCount; }
+        public long getEnumerationMs() { return enumerationMs; }
+        public void setEnumerationMs(long enumerationMs) { this.enumerationMs = enumerationMs; }
+        public long getIndexingMs() { return indexingMs; }
+        public void setIndexingMs(long indexingMs) { this.indexingMs = indexingMs; }
+        public long getVerificationMs() { return verificationMs; }
+        public void setVerificationMs(long verificationMs) { this.verificationMs = verificationMs; }
         public long getReindexedCount() { return reindexedCount; }
         public void setReindexedCount(long reindexedCount) { this.reindexedCount = reindexedCount; }
         public long getStartTime() { return startTime; }

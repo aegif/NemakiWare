@@ -238,7 +238,11 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 status.setEndTime(System.currentTimeMillis());
 
                 log.info("Full reindex completed for repository: " + repositoryId + 
-                    ", indexed: " + indexedCount.get() + ", errors: " + errorCount.get());
+                    ", indexed: " + indexedCount.get() + ", errors: " + errorCount.get()
+                    + " | where the time went: enumeration=" + status.getEnumerationMs() + "ms"
+                    + " indexing=" + status.getSolrWriteMs() + "ms"
+                    + " verification=" + status.getVerificationMs() + "ms"
+                    + " (wall=" + (System.currentTimeMillis() - status.getStartTime()) + "ms)");
                 
                 // Run health check after completion to verify index integrity
                 if (!cancelFlags.get(repositoryId).get()) {
@@ -423,7 +427,9 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 status.setCurrentFolder(folder.getName());
             }
 
+            long enumStart = System.nanoTime();
             List<Content> children = contentService.getChildren(repositoryId, folderId);
+            status.addEnumerationMs((System.nanoTime() - enumStart) / 1_000_000L);
             
             // Collect documents for batch indexing
             List<Content> batchBuffer = new ArrayList<>();
@@ -488,8 +494,14 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         }
         
         try {
+            long writeStart = System.nanoTime();
             jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.BatchOutcome outcome =
                     solrUtil.indexDocumentsBatch(repositoryId, batch, BATCH_COMMIT_WITHIN_MS, skipRAGIndexing);
+            // Covers the per-document CouchDB reads the Solr document is built from (attachment
+            // metadata, attachment body, content incarnation) as well as the Solr round trip —
+            // they are inside indexDocumentsBatch and cannot be separated without threading a
+            // timer through SolrUtil. Split further only if this turns out to be the hot phase.
+            status.addSolrWriteMs((System.nanoTime() - writeStart) / 1_000_000L);
             int successCount = outcome.written;
             indexedCount.addAndGet(successCount);
             status.setIndexedCount(indexedCount.get());
@@ -517,7 +529,9 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                     + ", total: " + indexedCount.get());
             
             // Verify batch indexing and re-index any silently dropped documents
+            long verifyStart = System.nanoTime();
             verifyAndReindexMissing(repositoryId, batch, indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount, skipRAGIndexing);
+            status.addVerificationMs((System.nanoTime() - verifyStart) / 1_000_000L);
             
         } catch (Exception e) {
             // Fall back to individual indexing on batch failure

@@ -42,6 +42,25 @@ public interface SolrIndexMaintenanceService {
         private long silentDropCount;  // Number of documents detected as silently dropped by Solr
         private long reindexedCount;   // Number of silently dropped documents successfully re-indexed
         private long verificationSkippedCount;  // Number of documents skipped from verification due to query length limits
+        /**
+         * Where the wall clock went, in milliseconds, split by phase.
+         *
+         * <p>Reindex throughput falls from ~70 documents/second at 5,615 objects to 2.6 at 97,693,
+         * and the cause is NOT the double-indexing that was removed (measured A/B at the same
+         * scale: 77s before, 84s after). Without a split, the next large run would again leave
+         * only "it is slow" to reason from — this records which phase actually consumes the time,
+         * so the answer comes from one production-scale run rather than from argument.
+         *
+         * <p>enumerationMs: walking the folder tree (CouchDB view queries).
+         * couchReadMs: per-document CouchDB reads made while building the Solr document
+         * (attachment metadata, attachment body, content incarnation).
+         * solrWriteMs: submitting to Solr, including the fence's realtime GET.
+         * verificationMs: the post-batch existence check.
+         */
+        private long enumerationMs;
+        private long couchReadMs;
+        private long solrWriteMs;
+        private long verificationMs;
         private long startTime;
         private long endTime;
         private String currentFolder;
@@ -76,6 +95,14 @@ public interface SolrIndexMaintenanceService {
         public String getErrorMessage() { return errorMessage; }
         public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
         public List<String> getErrors() { return errors; }
+        public long getEnumerationMs() { return enumerationMs; }
+        public void addEnumerationMs(long ms) { this.enumerationMs += ms; }
+        public long getCouchReadMs() { return couchReadMs; }
+        public void addCouchReadMs(long ms) { this.couchReadMs += ms; }
+        public long getSolrWriteMs() { return solrWriteMs; }
+        public void addSolrWriteMs(long ms) { this.solrWriteMs += ms; }
+        public long getVerificationMs() { return verificationMs; }
+        public void addVerificationMs(long ms) { this.verificationMs += ms; }
         public void setErrors(List<String> errors) { this.errors = errors; }
         public List<String> getWarnings() { return warnings; }
         public void setWarnings(List<String> warnings) { this.warnings = warnings; }
