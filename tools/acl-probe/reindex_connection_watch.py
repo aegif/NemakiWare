@@ -35,7 +35,9 @@ COUCH_CONTAINER = "nb33-couchdb-1"
 POLL_S = 1.0
 IDLE_BEFORE_S = 15
 IDLE_AFTER_S = 120
-MAX_WAIT_S = 3600
+# 26,416 文書の再索引が 2,561 秒 (約 10 文書/秒) だったので、10 万規模では 2.5〜3 時間かかる。
+# 3600 秒だと「完了しなかった」と報告して測定を捨てることになる。--max-wait で上書き可。
+MAX_WAIT_S = 20000
 
 AUTH = "Basic " + __import__("base64").b64encode(b"admin:admin").decode()
 
@@ -95,6 +97,9 @@ def sample(peer_hex, seconds, label):
 
 
 def main():
+    global MAX_WAIT_S
+    if "--max-wait" in sys.argv:
+        MAX_WAIT_S = int(sys.argv[sys.argv.index("--max-wait") + 1])
     ip, peer_hex = couch_peer_hex()
     docs = api("GET", f"/api/v1/admin/acl-epoch/migration/{REPO}").get("indexedCmisObjects")
     print(f"CouchDB at {ip} (peer {peer_hex}); repository holds {docs} indexed objects", flush=True)
