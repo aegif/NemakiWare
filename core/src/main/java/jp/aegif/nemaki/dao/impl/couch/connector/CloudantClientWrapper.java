@@ -1279,7 +1279,8 @@ public class CloudantClientWrapper {
 	 * that check was still a stub and the deletion was permitted; the probe
 	 * {@code tools/acl-probe/type_delete_constraint_probe.py} now exits 0.) Two gaps remain and are
 	 * deliberate: the NemakiWare-specific REST delete used by the admin UI bypasses the check by
-	 * design, and secondary types are not covered because the view keys on the primary type.
+	 * design. (Secondary types were also uncovered — the view keys on the primary type — until
+	 * {@code existContent} was taught to check {@code secondaryIds} as well.)
 	 */
 	public ViewResult queryView(String designDoc, String viewName, String key, boolean forceUpdate) {
 		try {
