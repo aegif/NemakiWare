@@ -1339,6 +1339,12 @@ public class CloudantClientWrapper {
 	 * row still carries its id, so the document is read directly. That costs one request — what
 	 * the old shape cost unconditionally — instead of returning nothing.
 	 *
+	 * <p><b>That fallback has no test.</b> All 48 views reaching this overload emit {@code doc}, so
+	 * nothing exercises it and deleting it leaves the suite green — deliberately not covered, since
+	 * a test written today would only assert that unreachable code runs. <b>If you put a
+	 * scalar-emitting view on this overload, write that test as part of the same change</b>: this
+	 * branch is the only thing between it and an empty result.
+	 *
 	 * @return the document properties, or null if neither route produced one
 	 */
 	@SuppressWarnings("unchecked")
