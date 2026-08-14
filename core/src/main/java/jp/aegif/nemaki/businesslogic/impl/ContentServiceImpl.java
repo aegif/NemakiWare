@@ -3359,9 +3359,7 @@ public class ContentServiceImpl implements ContentService {
 					AttachmentNode attachment = contentDaoService.getAttachmentRef(repositoryId, attachmentId);
 					if (attachment != null) {
 						mimeType = attachment.getMimeType();
-						// Use actual binary size from CouchDB, falling back to metadata length
-						Long actualSize = getAttachmentActualSize(repositoryId, attachmentId);
-						contentStreamLength = (actualSize != null) ? actualSize : attachment.getLength();
+						contentStreamLength = lengthForArchive(repositoryId, attachment, attachmentId);
 					}
 				} catch (Exception e) {
 					log.warn("Failed to get attachment info before deletion: {}", e.getMessage());
@@ -3469,8 +3467,8 @@ public class ContentServiceImpl implements ContentService {
 					AttachmentNode attachment = contentDaoService.getAttachmentRef(repositoryId, version.getAttachmentNodeId());
 					if (attachment != null) {
 						mimeType = attachment.getMimeType();
-						Long actualSize = getAttachmentActualSize(repositoryId, version.getAttachmentNodeId());
-						contentStreamLength = (actualSize != null) ? actualSize : attachment.getLength();
+						contentStreamLength = lengthForArchive(repositoryId, attachment,
+								version.getAttachmentNodeId());
 					}
 				} catch (Exception e) {
 					// ignore
@@ -3572,6 +3570,51 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 		return failureIds;
+	}
+
+	/**
+	 * The content length to record for an attachment that is about to be deleted.
+	 *
+	 * <h2>Why the order was inverted (ledger C4)</h2>
+	 *
+	 * <p>Both deletion paths used to prefer {@code getAttachmentActualSize} and fall back to the
+	 * node they had just fetched. That is backwards: the fetched node already carries the right
+	 * number, and {@code getAttachmentActualSize} pays to re-derive it.
+	 *
+	 * <p>What it pays: a SECOND {@code getDocument} of the same attachment (with
+	 * {@code att_encoding_info}), and for a gzip-stored attachment that second document does not
+	 * even answer the question — CouchDB reports the COMPRESSED size there, so the method falls
+	 * through to <b>downloading the whole binary and counting the bytes</b>. Moments before
+	 * deleting that binary. The comment on the sibling path records that the previous code already
+	 * did a full download here once and that it was removed; this is the same cost by another
+	 * route.
+	 *
+	 * <p>Measured against the live stack on 2026-08-14, on a gzip-stored 1.3 MB PDF attachment:
+	 *
+	 * <pre>
+	 *   _attachments.content.length ............ 1,291,901   (compressed — what the second GET sees)
+	 *   attachment.getLength() ................. 1,337,959   (correct; from the stored length field)
+	 *   bytes actually downloaded .............. 1,337,959
+	 * </pre>
+	 *
+	 * <p>So the node in hand is not merely cheaper, it is the one that is right. Confirmed
+	 * end-to-end: the same document's indexed {@code content_length} in Solr is 1,337,959.
+	 *
+	 * <h2>What the fallback is still for</h2>
+	 *
+	 * <p>{@link AttachmentNode#getLength()} is correct because {@code CouchAttachmentNode} keeps
+	 * the uncompressed length recorded at upload time. An attachment written before that field
+	 * existed has no such value, and there {@code getAttachmentActualSize} — expensive as it is —
+	 * is the only way to get a real number. So it stays, as the fallback rather than the default.
+	 */
+	// Package-private so the test can pin the CONSEQUENCE (the expensive path is not taken when
+	// the node already knows) rather than only the returned number.
+	Long lengthForArchive(String repositoryId, AttachmentNode attachment, String attachmentId) {
+		long known = attachment.getLength();
+		if (known > 0) {
+			return known;
+		}
+		return getAttachmentActualSize(repositoryId, attachmentId);
 	}
 
 	@Override

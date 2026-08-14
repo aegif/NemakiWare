@@ -25,6 +25,7 @@ CouchDB の content など)。
 | **C2** | 同 fallback (`children` 経由) | ✅ 同上。名前フィルタは `row.getDoc()` ではなく**値**を読む |
 | **C3** | `queryView(..., Class)` が常に `includeDocs(true)` | ✅ 値を読む。値が文書でなければ id で読み直す |
 | **B2** | `getAttachment` が本体無しを返すと `setStream` が走る = **読み取り経路の書き込み** | ✅ 呼び出しを外した |
+| **C4** | 削除/アーカイブ経路が `getAttachmentRef` の直後に `getAttachmentActualSize` を優先 | ✅ 優先順を逆にした。**手元の値の方が正しい**ことを実測 (下記) |
 | — | `getChildren` の `include_docs` 二重送信 | ✅ 以前に対応済み (50 子で 40ms/93KB → 5ms/49KB) |
 
 ### C3 の監査結果 (実際の design document で分類、2026-08-14)
@@ -54,6 +55,26 @@ CouchDB の content など)。
 **別の形を emit する view をこの overload に載せるときに、そこまで書くこと。**
 同じ注記を `documentMapFromRow` の javadoc にも置いた。
 
+### C4 の実測 (2026-08-14、gzip 保存の 1.3MB PDF)
+
+指摘は正しかったが、**理由は「冗長だから」ではなく「手元の値の方が正しいから」**だった。
+
+| | 値 |
+|---|---|
+| `_attachments.content.length` (2 通目の GET が見る値) | **1,291,901** (圧縮後) |
+| `attachment.getLength()` (`getAttachmentRef` が返す値) | **1,337,959** |
+| 実際に落としたバイト数 | **1,337,959** |
+| 同じ文書の Solr `content_length` | **1,337,959** |
+
+`getAttachmentActualSize` は `attEncodingInfo` 付きで**同じ文書をもう一度 GET** し、
+gzip では `length` が圧縮後なので**本体を全部落としてバイト数を数える** — 削除する直前に。
+`getAttachmentRef` の値は `CouchAttachmentNode` がアップロード時の非圧縮長を保持しているので
+既に正しい。よって**優先順を逆にした**: 手元の値が使えるならそれ、使えないとき
+(length フィールドが無い旧データ) だけ高価な経路。
+
+**レビューが挙げた懸念「gzip アーカイブが圧縮後サイズを記録し得る」は現実だった** —
+ただし危険なのは削除する側ではなく、**変更前のコードが圧縮後サイズを優先していた**点。
+
 ---
 
 ## 未対応 (レビュー由来。**下記はこちらで未検証**)
@@ -64,7 +85,6 @@ CouchDB の content など)。
 
 | ID | 場所 | 指摘内容 | 素朴に消すと |
 |---|---|---|---|
-| **C4** | バージョン削除 / アーカイブ | `getAttachmentRef` の直後に `getAttachmentActualSize`。非 gzip では同じ文書の GET がもう 1 回、gzip では本体を全部読んでバイト数を数える。`convertRef` は既に `_attachments` とアップロード時の非圧縮長を持っている | gzip アーカイブが圧縮後サイズを記録し得る |
 | **B1** | `replacePwc` / `setContentStream` | 古い本体を開いて読まず、`updateAttachment` が `_rev` のためにまた GET し、プレビューのために今書いた本体をもう一度落とす | プレビューはリクエストの `ContentStream` で足りるはず |
 
 ### 検証読み (T2 型) — 消すと壊れ得る
@@ -90,5 +110,5 @@ CouchDB の content など)。
 
 ## 着手順 (レビュー推奨)
 
-**C1 → B2 → C3** の順で実施済み。残りは上の「未対応」から、
-**C4 → B1 → V3 / V4** の順が素直 (V2 / V5 は判断が要る、T2 は設計判断)。
+**C1 → B2 → C3 → C4** の順で実施済み。残りは上の「未対応」から、
+**B1 → V3 / V4** の順が素直 (V2 / V5 は判断が要る、T2 は設計判断)。
