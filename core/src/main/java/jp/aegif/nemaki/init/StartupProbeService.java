@@ -159,6 +159,31 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
     // Lifecycle
     // ---------------------------------------------------------------
 
+    /**
+     * Stop the application if CouchDB is too old to run on.
+     *
+     * <p>Only reached when the server ANSWERED — an unreachable CouchDB keeps the existing
+     * behaviour (Setup Mode), because a database that is not up yet is a different situation from
+     * one that is up and unsupported.
+     *
+     * <p>Throwing from a {@code ContextRefreshedEvent} listener fails the context refresh, so the
+     * application does not come up. That is the intent: the alternative is what shipped before —
+     * the version was read, shown in {@code /health}, and otherwise ignored, so a 2.x server (the
+     * ordinary shape of a 2.4-era deployment) started fine and broke later as something else.
+     *
+     * <p>Package-private so the test can drive {@code onApplicationEvent} through a stubbed
+     * connection and pin the WIRING, not just the comparison.
+     */
+    void enforceCouchDbVersion(CouchDbConnectionResult conn) {
+        String reported = (conn == null) ? null : conn.getCouchDbVersion();
+        if (CouchDbVersionRequirement.isSatisfiedBy(reported)) {
+            return;
+        }
+        String message = CouchDbVersionRequirement.refusalMessage(reported);
+        log.error(message);
+        throw new IllegalStateException(message);
+    }
+
     @Override
     public void onApplicationEvent(ContextRefreshedEvent event) {
         if (!probed.compareAndSet(false, true)) {
@@ -176,6 +201,9 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
             setupRequired.set(true);
             log.warn("StartupProbeService: CouchDB unreachable (" + conn.getErrorMessage() + ") → setupRequired=true");
         } else {
+            // Before anything else touches it: refuse an unsupported CouchDB.
+            enforceCouchDbVersion(conn);
+
             // CouchDB reachable — check all main repository DBs
             List<RepositoryOverview> repos = probeRepositories(url, user, pass);
             evaluateRepositoryState(repos, "startup");

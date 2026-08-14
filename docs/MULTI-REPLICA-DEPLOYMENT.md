@@ -1,6 +1,6 @@
-# Multi-replica deployment requirements (NemakiWare 3.1.1)
+# Multi-replica deployment requirements (NemakiWare 3.3.0)
 
-> **Default posture**: NemakiWare 3.1.1 is shipped as **single-replica** by
+> **Default posture**: NemakiWare 3.3.0 is shipped as **single-replica** by
 > default. The startup log emits an INFO line confirming that posture so
 > a silently-scaled deployment is at least visible in operator logs.
 > Multi-replica deployments work, but only if the conditions below are
@@ -32,7 +32,40 @@ the one that created the entry will not see it.
 | **Ingest scheduler circuit breaker** | `consecutiveFailures` map keyed by connectorId | `rest/ingest/IngestSchedulerService.java` |
 | **Scheduled delegated profile state** (RC5+) | `inactiveCreatorStreak` (per-profile auto-disable streak counter) + `warnedDelegatedSchedulerProfiles` (WARN-once memo) | `rest/ingest/IngestSchedulerService.java` |
 | **EhCache** (ACL / content / type definition cache) | Local in-memory cache; `cache.clustering.enabled=false` ships disabled | `core/src/main/webapp/WEB-INF/classes/ehcache.yml` + `nemakiware.properties:80` |
+| **Full reindex progress** | `reindexStatuses` — status, counts and phase timings of a running/finished reindex | `businesslogic/impl/SolrIndexMaintenanceServiceImpl.java:101` |
+| **ACL-epoch migration progress** | `runs` — per-repository run record for the stamp pass | `epoch/AclEpochMigrationService.java:92` |
+| **Verified-password cache** | `verified` (key → expiry). The TTL *is* the revocation window, so with N replicas the window is per-replica | `security/VerifiedPasswordCache.java:83` |
+| **Login throttle** | `attempts` keyed per principal — the lockout counter is per-replica, so the effective allowance is N × the configured one | `security/LoginThrottle.java:36` |
+| **RAG block write locks** | `ragBlockLocks` — `Striped.lock(64)`, per JVM. See §1.1 | `rag/indexing/RAGIndexingServiceImpl.java:73` |
 | **Cron schedulers** (Cloud Directory Sync / Ingest / Retention / Lineage) | Each replica has its own scheduler — `LeaderElection` gates execution | `rest/purview/journal/LeaderElection.java`, the three scheduler classes |
+
+### 1.1 RAG block writes are serialised WITHIN a JVM only
+
+`RAGIndexingServiceImpl` writes a RAG document as a Solr **block join** — a parent plus one child
+per chunk. Two operations rebuild that whole block: `indexToSolr` (re-index) and
+`updateDocumentACL` (a read-rebuild-write that re-adds the block with new `readers`). They are
+serialised against each other by `ragBlockLocks`, a Guava `Striped.lock(64)` — **an in-process
+lock**.
+
+**Across replicas there is no such serialisation.** Two replicas can interleave that
+read-rebuild-write for the same document, and because a block-join add REPLACES the whole block,
+the loser's snapshot can overwrite the winner's. The failure that matters is the ACL one: a
+rebuild that read the block before a revocation landed can re-add the pre-revocation `readers`.
+
+The code states this posture at `rag/indexing/RAGIndexingServiceImpl.java:371` ("single-replica
+posture") and points here for the limits — this section is that reference.
+
+**What to do about it in 3.3.0:**
+
+- Treat RAG **re-index and RAG ACL propagation as single-replica operations**. Pin them to one
+  replica, the same way §5 pins the CMIS reindex and the epoch stamp.
+- After a bulk ACL change with RAG enabled, verify rather than assume — the RAG revocation probes
+  under `tools/acl-probe/` (`rag_revocation_paths.py` and friends) exist for exactly this.
+- Ordinary single-document writes arriving on different replicas are not the concern: they carry
+  different `ragId`s and do not contend.
+
+**Not** fixed by the generation-based cache invalidation in L2 below: that clears stale reads, and
+this is a lost write.
 
 State that is NOT JVM-local (safe across replicas without coordination):
 
@@ -69,7 +102,7 @@ To run N≥2 core replicas safely, **all** of the following must hold:
 | **S3** | All non-browser clients of `/api/*` and `/rest/*` send `X-Requested-With: XMLHttpRequest` or a non-Basic `Authorization` header (Bearer / `AUTH_TOKEN` / `X-API-Key`) | This satisfies the CSRF policy enforced by `CsrfValidator` for state-changing methods. **It does NOT survive sticky-cookie eviction** — if the LB drops a target, switches stickiness, or the browser clears the sticky cookie, the JVM-local auth token / passkey challenge / MCP session held on the previous replica is gone, and the user must re-authenticate (or the in-flight SAML / passkey flow fails). React UI complies; review any custom REST client to add the header |
 | **S4** | `auth.token.expiration` (default 24h) and the LB sticky cookie TTL are aligned (LB ≥ NemakiWare token TTL) | Otherwise sticky drops mid-session and the user is silently re-authenticated as a different identity |
 
-### What multi-replica is NOT supported for in 3.1.1
+### What multi-replica is NOT supported for in 3.3.0
 
 | # | Limitation | Workaround |
 |---|------------|------------|
@@ -219,7 +252,7 @@ confirm the LB sticky cookie keeps the session on a single replica.
 
 ---
 
-## 4. What 3.1.1 does NOT promise for multi-replica
+## 4. What 3.3.0 does NOT promise for multi-replica
 
 This release does NOT ship:
 

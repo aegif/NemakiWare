@@ -47,11 +47,12 @@ CouchDB の content など)。
 **なお `Class` overload に届く view は 20 種類**で、48 は design document 中の
 全文書 view の数。当初この 2 つを混同して書いていた (Codex 指摘)。
 
-**ただしその fallback にはテストが無い** (レビュー指摘)。48 view すべてが `doc` を
-emit するので誰も踏まず、消してもスイートは緑のまま。今書いても「到達しないコードが
-動くこと」を assert するだけなので**意図的に書いていない**。
-**スカラー view をこの overload に載せるときに、同じ変更の中で書くこと** — その分岐だけが
-空の結果との間に立っている。同じ注記を `documentMapFromRow` の javadoc にも置いた。
+**フォールバックのテスト範囲は半分**。`aProjectionFallsBackToAReadById` が
+「projection を文書として扱わない」ことは固定している (`_rev` の判別を外すと落ちる)。
+**その後の id 読み直しが正しい文書を返すことは未固定** — モックに返す文書が無いため。
+届く 20 view はいずれも `doc` を emit するので後半は誰も踏まない。
+**別の形を emit する view をこの overload に載せるときに、そこまで書くこと。**
+同じ注記を `documentMapFromRow` の javadoc にも置いた。
 
 ---
 

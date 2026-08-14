@@ -2206,7 +2206,9 @@ public class SolrUtil implements ApplicationContextAware {
 	 *
 	 * <p>The second read was also the less consistent option, not the safer one: two reads can
 	 * straddle a concurrent update, so the indexed body and the indexed length could come from
-	 * different revisions. One node is one snapshot.
+	 * different revisions. This removes ONE of those windows, not all of them —
+	 * {@code AttachmentDaoDelegate.getAttachment} still reads the metadata and then opens the body
+	 * separately, so a concurrent update can still split them. One fewer, not none.
 	 *
 	 * <h2>What had to be preserved</h2>
 	 *
