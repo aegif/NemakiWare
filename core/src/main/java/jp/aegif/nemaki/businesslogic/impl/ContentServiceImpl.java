@@ -3581,16 +3581,20 @@ public class ContentServiceImpl implements ContentService {
 		}
 		
 		AttachmentNode an = contentDaoService.getAttachment(repositoryId, attachmentId);
-		
-		// CRITICAL FIX: Only call setStream if no InputStream exists
-		// setStream() consumes the InputStream, so we need to avoid calling it when retrieving for getContentStream
-		if (an != null && an.getInputStream() == null) {
-			if (log.isDebugEnabled()) {
-				log.debug("AttachmentNode has no InputStream, calling setStream to populate it");
-			}
-			contentDaoService.setStream(repositoryId, an);
-		}
-		
+
+		// A READ DOES NOT WRITE.
+		//
+		// This used to call setStream() whenever the DAO came back without a body, described as
+		// "calling setStream to populate it". setStream cannot do that: it never calls
+		// setInputStream (AttachmentDaoDelegate.setStream, STAGE 2 only UPLOADS a stream the node
+		// already carries, and there is none here). What it actually does is exists() + get() +
+		// updatePreservingAttachments() + get() — three requests and a metadata WRITE, on the read
+		// path, for every attachment whose body could not be opened.
+		//
+		// So the call could not achieve its stated purpose and cost a revision bump per failure.
+		// Callers already handle a null stream; the DAO opens the body once, where the repository
+		// is known (F3), and if that fails the honest answer is a node without a stream.
+
 		if (log.isDebugEnabled()) {
 			log.debug("getAttachment completed - InputStream: " + (an != null && an.getInputStream() != null ? "SUCCESS" : "NULL"));
 		}

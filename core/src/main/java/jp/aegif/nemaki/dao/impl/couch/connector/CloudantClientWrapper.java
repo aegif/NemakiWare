@@ -1165,7 +1165,16 @@ public class CloudantClientWrapper {
 				.db(databaseName)
 				.ddoc(designDoc.replace("_design/", ""))
 				.view(viewName)
-				.includeDocs(true); // Include documents for conversion
+				// include_docs=false: every view this overload is used with is declared
+				// emit(..., doc), so the value already IS the document and asking for the
+				// documents makes CouchDB look each one up by id and send a second copy.
+				// Audited against the live design document on 2026-08-14: of 53 views, 48 emit
+				// doc and 5 emit a scalar (childrenNames, documentsByExpirationDate,
+				// documentsByLastModification, dupLatestVersion, dupVersionSeries) — and none of
+				// those five reaches this overload. documentMapFromRow still falls back to a read
+				// by id if a value ever turns out not to be a document, so a future scalar-emitting
+				// caller degrades to the old cost instead of silently getting nothing.
+				.includeDocs(false);
 			
 			// CRITICAL FIX: Add key to the server-side query instead of client-side filtering
 			if (key != null) {
@@ -1180,19 +1189,10 @@ public class CloudantClientWrapper {
 			ObjectMapper mapper = getObjectMapper();
 			
 			for (ViewResultRow row : result.getRows()) {
-				if (row.getDoc() != null) {
-					// CRITICAL FIX: Manually handle _id and _rev mapping since convertValue doesn't use @JsonCreator
-					com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
-					Map<String, Object> docMap = doc.getProperties();
-					
+				{
+					Map<String, Object> docMap = documentMapFromRow(row);
+
 					if (docMap != null) {
-						// Ensure _id and _rev are properly mapped
-						if (!docMap.containsKey("_id") && doc.getId() != null) {
-							docMap.put("_id", doc.getId());
-						}
-						if (!docMap.containsKey("_rev") && doc.getRev() != null) {
-							docMap.put("_rev", doc.getRev());
-						}
 						
 					log.debug("DEBUG: Document properties keys: " + docMap.keySet());
 					log.debug("DEBUG: _id field value: " + docMap.get("_id"));
@@ -1219,7 +1219,8 @@ public class CloudantClientWrapper {
 						
 						objects.add(obj);
 					} else {
-						log.warn("Document properties are null, skipping object creation");
+						log.warn("No document available for view row " + row.getId()
+								+ " in " + viewPath + ", skipping object creation");
 					}
 				}
 			}
@@ -1324,6 +1325,58 @@ public class CloudantClientWrapper {
 	/**
 	 * Bridge method to replace Ektorp's ViewQuery - query view without key
 	 */
+	/**
+	 * The document behind one view row, taken from the emitted VALUE rather than from a second
+	 * copy fetched with {@code include_docs}.
+	 *
+	 * <p>Every view this is used with is declared {@code emit(..., doc)}, so the value is the
+	 * document — {@code _rev} included. The numbers in it arrive as Gson's
+	 * {@code LazilyParsedNumber}, which Jackson would serialise as an unknown bean rather than a
+	 * number, so they go through the same recursive normalisation the write path uses. Getting
+	 * that wrong does not throw; it produces a document whose dates are silently wrong.
+	 *
+	 * <p>If the value is not a document (a view that emits a scalar, or one rewritten later), the
+	 * row still carries its id, so the document is read directly. That costs one request — what
+	 * the old shape cost unconditionally — instead of returning nothing.
+	 *
+	 * @return the document properties, or null if neither route produced one
+	 */
+	@SuppressWarnings("unchecked")
+	private Map<String, Object> documentMapFromRow(ViewResultRow row) {
+		Object value = row.getValue();
+		if (value instanceof Map) {
+			Map<String, Object> docMap = normalizeDataTypes((Map<String, Object>) value);
+			if (!docMap.containsKey("_id") && row.getId() != null) {
+				docMap.put("_id", row.getId());
+			}
+			if (docMap.containsKey("_id")) {
+				return docMap;
+			}
+		}
+
+		String id = row.getId();
+		if (id == null) {
+			return null;
+		}
+		log.warn("View row " + id + " did not carry a document as its value — reading it by id");
+		com.ibm.cloud.cloudant.v1.model.Document doc = get(id);
+		if (doc == null) {
+			return null;
+		}
+		Map<String, Object> docMap = doc.getProperties();
+		if (docMap == null) {
+			return null;
+		}
+		docMap = normalizeDataTypes(docMap);
+		if (!docMap.containsKey("_id") && doc.getId() != null) {
+			docMap.put("_id", doc.getId());
+		}
+		if (!docMap.containsKey("_rev") && doc.getRev() != null) {
+			docMap.put("_rev", doc.getRev());
+		}
+		return docMap;
+	}
+
 	public <T> List<T> queryView(String designDoc, String viewName, Class<T> clazz) {
 		return queryView(designDoc, viewName, null, clazz);
 	}

@@ -1375,9 +1375,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		compositeKey.put("parentId", parentId);
 		compositeKey.put("name", name);
 
+		// include_docs=false EXPLICITLY, for the reason getChildren documents: childByName is
+		// declared as emit({parentId, name}, doc), so the value IS the document. Asking for the
+		// documents as well makes CouchDB look each one up by id and send a second copy — and
+		// this code then threw BOTH away and issued getContent() for a third. Path resolution
+		// walks one segment at a time, so /a/b/c/d paid that three times per segment.
+		//
+		// Omitting the key is not enough: CloudantClientWrapper.queryView defaults it back to
+		// true when the caller does not say otherwise.
 		Map<String, Object> queryParams = new HashMap<String, Object>();
 		queryParams.put("key", compositeKey);
-		queryParams.put("include_docs", true);
+		queryParams.put("include_docs", false);
 		queryParams.put("reduce", false);
 
 		ViewResult result = client.queryView("_repo", "childByName", queryParams);
@@ -1395,9 +1403,19 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 		if (result.getRows() != null && !result.getRows().isEmpty()) {
 			ViewResultRow row = result.getRows().get(0);
-			String objectId = extractObjectId(row);
+			Content content = convertViewValueToContent(row.getValue());
+			if (content != null) {
+				if (log.isTraceEnabled()) log.trace("getChildByName: found via childByName view: '" + name + "' id=" + content.getId());
+				return content;
+			}
+			// The value was not a document map — the view was rewritten to emit something else.
+			// The row still carries the id whether or not documents were requested, so fall back
+			// to a read rather than reporting the child as absent (that would surface as "path
+			// not found" for an object that exists).
+			String objectId = row.getId();
 			if (objectId != null) {
-				if (log.isTraceEnabled()) log.trace("getChildByName: found via childByName view: '" + name + "' id=" + objectId);
+				log.warn("childByName returned a value that is not a document for '" + name
+						+ "' in repository " + repositoryId + " — falling back to a read by id");
 				return getContent(repositoryId, objectId);
 			}
 		}
@@ -1409,37 +1427,39 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 * Used when childByName view is not available.
 	 */
 	private Content getChildByNameFallback(CloudantClientWrapper client, String repositoryId, String parentId, String name) {
+		// Same correction as getChildren and getChildByNameView: children emits the document as
+		// its value, so include_docs sends a second copy that this method then discarded in
+		// favour of a third read. The name filter therefore has to read the VALUE — reading
+		// row.getDoc() would now see null and match nothing.
 		Map<String, Object> queryParams = new HashMap<String, Object>();
 		queryParams.put("key", parentId);
-		queryParams.put("include_docs", true);
+		queryParams.put("include_docs", false);
 		queryParams.put("reduce", false);
 		ViewResult result = client.queryView("_repo", "children", queryParams);
 
 		if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
 			for (ViewResultRow row : result.getRows()) {
-				String childName = extractName(row);
-				String objectId = extractObjectId(row);
-				if (name.equals(childName) && objectId != null) {
-					if (log.isTraceEnabled()) log.trace("getChildByName fallback: found '" + name + "' id=" + objectId);
-					return getContent(repositoryId, objectId);
+				Content content = convertViewValueToContent(row.getValue());
+				if (content != null) {
+					if (name.equals(content.getName())) {
+						if (log.isTraceEnabled()) log.trace("getChildByName fallback: found '" + name + "' id=" + content.getId());
+						return content;
+					}
+					continue;
+				}
+				// Not a document map. Reading it by id is the only way left to compare the name,
+				// and reporting "no such child" on an unconvertible row would be a false absence.
+				String objectId = row.getId();
+				if (objectId != null) {
+					Content byId = getContent(repositoryId, objectId);
+					if (byId != null && name.equals(byId.getName())) {
+						log.warn("children returned a value that is not a document while resolving '"
+								+ name + "' in repository " + repositoryId
+								+ " — fell back to a read by id");
+						return byId;
+					}
 				}
 			}
-		}
-		return null;
-	}
-
-	/**
-	 * Extract the document name from a ViewResultRow, handling both Map and Document types.
-	 */
-	private String extractName(ViewResultRow row) {
-		if (row.getDoc() == null) return null;
-		Object docObj = row.getDoc();
-		if (docObj instanceof Map) {
-			return (String) ((Map<String, Object>) docObj).get("name");
-		} else if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
-			com.ibm.cloud.cloudant.v1.model.Document doc = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
-			Map<String, Object> props = doc.getProperties();
-			return props != null ? (String) props.get("name") : null;
 		}
 		return null;
 	}
@@ -1472,28 +1492,6 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			// and blocking every create because this probe failed would be worse than the hole.
 			return true;
 		}
-	}
-
-	/**
-	 * Extract the object ID from a ViewResultRow, handling both Map and Document types.
-	 */
-	private String extractObjectId(ViewResultRow row) {
-		if (row.getDoc() == null) return null;
-		Object docObj = row.getDoc();
-		if (docObj instanceof Map) {
-			return (String) ((Map<String, Object>) docObj).get("_id");
-		} else if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
-			com.ibm.cloud.cloudant.v1.model.Document doc = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
-			String id = doc.getId();
-			if (id != null) return id;
-			Map<String, Object> props = doc.getProperties();
-			if (props != null) {
-				id = (String) props.get("_id");
-				if (id == null) id = (String) props.get("id");
-			}
-			return id;
-		}
-		return null;
 	}
 
 	public List<String> getChildrenNames(String repositoryId, String parentId){
