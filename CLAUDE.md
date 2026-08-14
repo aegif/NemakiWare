@@ -54,6 +54,11 @@ CMIS 1.1 準拠のオープンソース ECM。技術スタックは `pom.xml` / 
   - Browser binding の multipart は `MultipartReplayRequestWrapper` が再生します。
     servlet がルーティングのため body を先に読む必要があり、1.1.0-nemakiware は
     フォーク側パッチで救っていましたが、2.0 系にそれはありません。
+- **CouchDB は 3.3 以上でないと起動しません** (バージョンが読めない場合も拒否)。
+  古い CouchDB を指したまま上げると、例外を投げて context refresh が失敗します。
+  下限が 3.0 でなく 3.3 なのは、ACL-epoch scanner の「全件走査しない」保証を
+  3.3.x の挙動に対して立てているからで、3.0〜3.2 は壊れると分かっているのではなく
+  **検証していない**。導出は `CouchDbVersionRequirement` の javadoc。
 - **`SolrClient` を新設するときは必ず `SolrHttpExecutor.create()` を `withExecutor()` に
   渡すこと。** SolrJ の既定エグゼキュータは実質 4 スレッドで、しかも 1 リクエストが
   「ボディを書く側」と「パイプを読む側」で 2 枠を同時に使います。**同時 4 本で恒久
@@ -180,3 +185,5 @@ reconcile re-drive は必ず epoch fence を通ります**。切替スイッチ�
 | クラウド統合 | [`docs/CLOUD_INTEGRATION.md`](docs/CLOUD_INTEGRATION.md) |
 | MCP サーバ | [`docs/MCP-SERVER.md`](docs/MCP-SERVER.md) |
 | Webhook 機能設計 | [`docs/design/webhook-feature-proposal.md`](docs/design/webhook-feature-proposal.md) |
+| v3.3.0 アップグレード運用 | [`docs/operations/v3.3.0-upgrade-runbook.md`](docs/operations/v3.3.0-upgrade-runbook.md) |
+| 「同じものを二度取る往復」の棚卸し | [`docs/design/redundant-round-trips.md`](docs/design/redundant-round-trips.md) |
