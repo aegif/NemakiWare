@@ -100,13 +100,25 @@ CMIS 1.1 準拠のオープンソース ECM。技術スタックは `pom.xml` / 
   アイドル時のピーク 3 と 2 しか違わず、leak 警告 0 件を確認しています
   (**再索引は完走させておらず**、約 1.4 時間・370 サンプルの部分観測)。
   **20 万以上は未実測** (投入 9 時間・再索引 15 時間超のため打ち切り) なので、
-  その規模なら `ss -s` 等で監視し、必要ならリポジトリ単位や時間帯で分割実行
-  してください。**なお 10 万規模では全再索引そのものが 10 時間級**になります
-  (レートが規模とともに 10.3 → 2.6 文書/秒に低下。F3 とは別課題)。詳細は
-  [`docs/design/v3.3-release-blockers.md`](docs/design/v3.3-release-blockers.md) の F3。
+  その規模なら `ss -s` 等で監視してください。**なお 10 万規模では全再索引そのものが
+  10 時間級**になります (レートが規模とともに 10.3 → 2.6 文書/秒に低下。F3 とは別課題)。
+  詳細は [`docs/design/v3.3-release-blockers.md`](docs/design/v3.3-release-blockers.md) の F3。
+
+- **全再索引に再開手段はありません。** 必ず `clearIndex` から始まり、進捗は JVM 内だけ
+  なので、途中で落ちるとやり直しで、**出来ていた分の索引も次の実行が消します**。
+  分割したいときは folder 単位 (`/search-engine/reindex/folder/{id}`) を使います
+  — こちらは索引を消しません。ただし**渡したフォルダ自身は索引されない**
+  (子から始まる) ので補いが要ります。手順は
+  [`docs/operations/v3.3.0-upgrade-runbook.md`](docs/operations/v3.3.0-upgrade-runbook.md)。
+- **`verdict: COMPLETE` は「索引に全文書が在る」ではありません。**「索引に在る文書が
+  全部 stamp 済み」です。完全に空なら `EMPTY_INDEX` で捕まりますが、**部分的に
+  出来ている索引は `COMPLETE` になります**。必ず件数と突き合わせてください。
+- **multi-replica では再索引・stamp を打つレプリカを 1 台に固定**してください
+  (進捗は JVM ローカル)。ただし `verdict` だけはレプリカを跨いでも正しく読めます。
 
   理由と影響範囲: [`docs/history/development-log.md`](docs/history/development-log.md) の
-  「ACL-in-Solr」節。
+  「ACL-in-Solr」節。運用手順は
+  [`docs/operations/v3.3.0-upgrade-runbook.md`](docs/operations/v3.3.0-upgrade-runbook.md)。
 - 非 root TEI 採用時は root 所有の `tei_cache` volume を再作成 (初回モデル再 DL)。
 - dev/eval overlay が 127.0.0.1 bind になりホスト外から到達不可 (常設デモは要確認)。
 
