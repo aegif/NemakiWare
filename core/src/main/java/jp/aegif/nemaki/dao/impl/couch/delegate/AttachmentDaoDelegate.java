@@ -629,9 +629,15 @@ public class AttachmentDaoDelegate {
 
 				// STAGE 2: Upload binary
 				try {
-					// `can` carries the revision stage 1 just produced (or the one it was read
-					// with, when stage 1 did not run), so this no longer re-reads the document it
-					// has just written — ledger V3.
+					// `can` always carries a revision by now, so this no longer re-reads the
+					// document it has just written (ledger V3). Two ways it gets there:
+					//   - stage 1 ran: updatePreservingAttachments / create wrote the new one back;
+					//   - stage 1 did not run: the GET at the top of this method is UNCONDITIONAL
+					//     (it sits above the contentStream gate), so the current revision was
+					//     already loaded there.
+					// It is empty only when that GET found no document or no _rev — and the GET
+					// removed from here would have asked the same document, so nothing that used
+					// to work stops working.
 					String revisionToUse = can.getRevision();
 
 					String attachmentName = "content";

@@ -3624,7 +3624,15 @@ public class ContentServiceImpl implements ContentService {
 		// CouchDB _attachments metadata automatically tracks the correct size after binary upload.
 		// The next getAttachment() call will read the correct length from _attachments metadata.
 
-		// Update Document with new change token
+		// Update Document with new change token.
+		//
+		// THIS RE-READ IS NOT REDUNDANT — do not remove it (ledger V4). appendContentStream holds
+		// a write lock for the duration (ObjectServiceImpl:906-908), but that lock is JVM-local:
+		// another replica can update this content document while the attachment binary — which can
+		// be large — is being written. Without this read the update below would go out with the
+		// revision from the top of the method, CouchDB would answer 409, and a client retrying
+		// appendContentStream would append the same chunk twice. Reading the current document and
+		// adding only the token also preserves whatever property change landed concurrently.
 		Document freshDocument = contentDaoService.getDocument(repositoryId, objectId.getValue());
 		String newChangeToken = String.valueOf(System.currentTimeMillis());
 		freshDocument.setChangeToken(newChangeToken);
