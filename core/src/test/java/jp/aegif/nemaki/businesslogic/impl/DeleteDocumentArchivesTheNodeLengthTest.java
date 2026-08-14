@@ -48,13 +48,12 @@ import jp.aegif.nemaki.util.PropertyManager;
  * <p>This drives {@code deleteDocument} end to end and asserts on the {@link Archive} handed to
  * persistence, which is the last point the number can still be wrong.
  *
- * <p><b>The other deletion site is still not covered.</b> {@code deleteDocumentWithVisited} carries
- * its own copy of the same three lines and is private, reachable only through the
- * {@code *WithVisited} cascade — {@code deleteTree} goes to {@code deleteDocument}, not to it. An
- * attempt to reach it through {@code deleteTree} was written and then deleted: it went through
- * {@code deleteDocument} instead, so reverting the cascade site left it green. A test that does not
- * discriminate is worse than none, because it reads as coverage. Whoever next touches that method
- * has to reach it deliberately.
+ * <p>There WAS a second copy of these three lines, in {@code deleteDocumentWithVisited}. A test
+ * that tried to reach it through {@code deleteTree} passed — and kept passing when that copy was
+ * reverted, because {@code deleteTree} goes to {@code deleteDocument}. The copy turned out to have
+ * no entry point at all: the only caller was {@code deleteTreeWithVisited}, whose only caller was
+ * itself. All three were removed on 2026-08-14 rather than tested, so there is now one
+ * implementation and this test covers it.
  *
  * <h2>The numbers</h2>
  *

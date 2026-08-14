@@ -3061,16 +3061,20 @@ public class ContentServiceImpl implements ContentService {
 		deleteInternal(callContext, repositoryId, objectId, deletedWithParent, mimeType, contentStreamLength, new HashSet<>());
 	}
 
-	private void deleteWithVisited(CallContext callContext, String repositoryId, String objectId, Boolean deletedWithParent,
-			String mimeType, Long contentStreamLength, Set<String> visited) {
-		deleteInternal(callContext, repositoryId, objectId, deletedWithParent, mimeType, contentStreamLength, visited);
-	}
-
 	/**
 	 * Internal delete with cascade support for parentChildRelationship.
 	 * When deleting Document/Folder/Item (NOT Relationship), recursively deletes child objects
 	 * linked via nemaki:parentChildRelationship before deleting relationships and the object.
-	 * Uses visited set to prevent infinite loops on circular references.
+	 *
+	 * <p><b>The {@code visited} set no longer detects anything here.</b> Both remaining callers
+	 * pass a fresh empty set and this method does not call itself, so
+	 * {@code visited.contains(objectId)} cannot be true on entry. Loop detection for the real
+	 * cascade lives in {@code ObjectServiceInternalImpl}, which keeps a thread-local set across
+	 * the whole cascade — the cascade was moved there so each step goes through the permission,
+	 * lock and cache handling that this method does not do. The three private
+	 * {@code *WithVisited} methods that used to recurse through here were removed on 2026-08-14:
+	 * nothing outside their own cycle called them, and the divergent copy of the archive-length
+	 * logic they carried is exactly what made the C4 correction miss a call site.
 	 */
 	private void deleteInternal(CallContext callContext, String repositoryId, String objectId, Boolean deletedWithParent,
 			String mimeType, Long contentStreamLength, Set<String> visited) {
@@ -3416,102 +3420,6 @@ public class ContentServiceImpl implements ContentService {
 		// and Solr index update for promoted versions is handled above
 	}
 
-	/**
-	 * Same as deleteDocument but passes visited set for cascade loop detection.
-	 */
-	private void deleteDocumentWithVisited(CallContext callContext, String repositoryId, String objectId, Boolean allVersions,
-			Boolean deleteWithParent, Set<String> visited) {
-		Document document = (Document) getContent(repositoryId, objectId);
-		if (document == null) {
-			return;
-		}
-		List<Document> versionList = new ArrayList<>();
-		String versionSeriesId = document.getVersionSeriesId();
-
-		if (allVersions) {
-			try {
-				versionList = getAllVersions(callContext, repositoryId, versionSeriesId);
-				if (versionList.isEmpty()) {
-					versionList.add(document);
-				}
-			} catch (Exception e) {
-				versionList.add(document);
-			}
-		} else {
-			versionList.add(document);
-			List<Document> allVersionsInSeries = new ArrayList<>();
-			try {
-				allVersionsInSeries = contentDaoService.getAllVersions(repositoryId, versionSeriesId);
-			} catch (Exception e) {
-				// ignore
-			}
-			List<Document> remainingVersions = new ArrayList<>();
-			for (Document v : allVersionsInSeries) {
-				if (!v.isPrivateWorkingCopy() && !java.util.Objects.equals(v.getId(), objectId)) {
-					remainingVersions.add(v);
-				}
-			}
-			if (remainingVersions.isEmpty()) {
-				allVersions = true;
-			} else {
-				Document nextLatest = null;
-				double highestVersionNumber = -1;
-				for (Document v : remainingVersions) {
-					try {
-						double versionNumber = Double.parseDouble(v.getVersionLabel());
-						if (versionNumber > highestVersionNumber) {
-							highestVersionNumber = versionNumber;
-							nextLatest = v;
-						}
-					} catch (NumberFormatException e) {
-						// ignore
-					}
-				}
-				if (nextLatest != null) {
-					nextLatest.setLatestVersion(true);
-					nextLatest.setLatestMajorVersion(nextLatest.isMajorVersion());
-					contentDaoService.update(repositoryId, nextLatest);
-					nemakiCachePool.get(repositoryId).getObjectDataCache().remove(nextLatest.getId());
-					solrUtil.indexDocument(repositoryId, nextLatest);
-				}
-			}
-		}
-
-		for (Document version : versionList) {
-			String mimeType = null;
-			Long contentStreamLength = null;
-			if (version.getAttachmentNodeId() != null) {
-				try {
-					// Metadata only — see the note on the sibling path above.
-					AttachmentNode attachment = contentDaoService.getAttachmentRef(repositoryId, version.getAttachmentNodeId());
-					if (attachment != null) {
-						mimeType = attachment.getMimeType();
-						contentStreamLength = lengthForArchive(repositoryId, attachment,
-								version.getAttachmentNodeId());
-					}
-				} catch (Exception e) {
-					// ignore
-				}
-				deleteAttachment(callContext, repositoryId, version.getAttachmentNodeId());
-			}
-			if (CollectionUtils.isNotEmpty(version.getRenditionIds())) {
-				for (String renditionId : version.getRenditionIds()) {
-					contentDaoService.delete(repositoryId, renditionId);
-				}
-			}
-			deleteWithVisited(callContext, repositoryId, version.getId(), deleteWithParent, mimeType, contentStreamLength, visited);
-		}
-
-		if (allVersions) {
-			try {
-				contentDaoService.delete(repositoryId, versionSeriesId);
-				nemakiCachePool.get(repositoryId).getObjectDataCache().remove(versionSeriesId);
-			} catch (Exception e) {
-				// ignore
-			}
-		}
-	}
-
 	// deletedWithParent flag controls whether it's deleted with the parent all
 	// together.
 	@Override
@@ -3553,41 +3461,6 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 
-		return failureIds;
-	}
-
-	private List<String> deleteTreeWithVisited(CallContext callContext, String repositoryId, String folderId, Boolean allVersions,
-			Boolean continueOnFailure, Boolean deletedWithParent, Set<String> visited) {
-		List<String> failureIds = new ArrayList<>();
-		List<Content> children = getChildren(repositoryId, folderId);
-		if (!CollectionUtils.isEmpty(children)) {
-			for (Content child : children) {
-				try {
-					if (child.isFolder()) {
-						deleteTreeWithVisited(callContext, repositoryId, child.getId(), allVersions, continueOnFailure, true, visited);
-					} else if (child.isDocument()) {
-						deleteDocumentWithVisited(callContext, repositoryId, child.getId(), allVersions, true, visited);
-					} else {
-						deleteWithVisited(callContext, repositoryId, child.getId(), true, null, null, visited);
-					}
-				} catch (Exception e) {
-					if (continueOnFailure) {
-						failureIds.add(child.getId());
-					} else {
-						throw e;
-					}
-				}
-			}
-		}
-		try {
-			deleteWithVisited(callContext, repositoryId, folderId, deletedWithParent, null, null, visited);
-		} catch (Exception e) {
-			if (continueOnFailure) {
-				failureIds.add(folderId);
-			} else {
-				throw e;
-			}
-		}
 		return failureIds;
 	}
 

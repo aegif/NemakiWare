@@ -96,11 +96,25 @@ gzip では `length` が圧縮後なので**本体を全部落としてバイト
 永続化された `Archive.contentStreamLength` を見るテストを足した (呼び出し側を戻すと
 `expected: <1337959> but was: <1291901>` で落ちる)。
 
-**もう一方 `deleteDocumentWithVisited` は今も未カバー。** private で、`*WithVisited` の
-連鎖からしか到達しない (`deleteTree` は `deleteDocument` の方へ行く)。`deleteTree` 経由で
-届かせるテストを一度書いたが、**`deleteDocument` を通っていただけで、連鎖側を戻しても
-green のままだった**ので削除した。判別しないテストは「カバーされている」と読まれる分だけ
-有害。**同じ 3 行のコピーがそこに残っている**ことを、そのメソッドの javadoc とここに記した。
+**もう一方は「未カバー」ではなく「入口が無い死んだコピー」だった** (レビュー指摘)。
+
+- `deleteDocumentWithVisited` を呼ぶのは `deleteTreeWithVisited` だけ
+- `deleteTreeWithVisited` を呼ぶのは**自分自身の再帰だけ**
+- `deleteWithVisited` も同じ輪の中
+- 本番の cascade は `ObjectServiceInternalImpl:140` → `deleteDocument`
+  (権限・lock・cache を通すために移設済み)。`deleteTree` も `deleteDocument` へ行く
+
+`deleteTree` 経由のテストが連鎖側を戻しても green だったのは**別系統に届かなかったから
+ではなく、別系統に入口が無いから**。判別しないテストを消した判断は正しかったが、
+「次に触る人が意図して到達せよ」と書いたのは**到達口が無いことを隠していた**。
+
+**3 メソッド (136 行) を削除した。** C4 が 1 箇所を取りこぼしたのは、まさにこの分岐した
+コピーが原因なので、テストを足すより消す方が正しい。`deleteInternal` の `visited` は
+両呼び出し元が毎回新しい空 Set を渡すため**もう発火しない**ことを、そのメソッドの
+javadoc に書いた (ループ検出は `ObjectServiceInternalImpl` の thread-local 側にある)。
+
+**訂正**: 前回ここに「そのメソッドの javadoc に記した」と書いたが、実際に書いたのは
+テストの javadoc と本書だけだった。
 
 **併せて、私が入れた退行を 1 件直した** (Codex 指摘)。`known > 0` だけで判定していたため、
 `長さ 0 かつ導出も失敗` のとき旧コードは `0` を記録したのに新コードは `null` を返していた
