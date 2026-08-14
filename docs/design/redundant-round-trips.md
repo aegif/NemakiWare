@@ -38,8 +38,14 @@ CouchDB の content など)。
 - **この 5 つはいずれも `Class` overload を通らない**
   (`dupLatestVersion` / `dupVersionSeries` は Java から未使用)
 
-将来スカラー view がこの overload に来ても、`documentMapFromRow` が id で読み直すので
-**静かに空になるのではなく、旧来のコストに戻るだけ**。
+将来この overload に別の形を emit する view が来ても、`documentMapFromRow` が id で
+読み直すので**静かに間違った答えを返すのではなく、旧来のコストに戻るだけ**。
+判別子は `_id` ではなく **`_rev`** — projection (`{name: doc.name}` など) も Map なので、
+`_id` を補ってしまうと文書に見えてフォールバックが効かなくなる (Codex 指摘)。
+実機で全 view の値が `_id` と `_rev` の両方を持つことを確認済み。
+
+**なお `Class` overload に届く view は 20 種類**で、48 は design document 中の
+全文書 view の数。当初この 2 つを混同して書いていた (Codex 指摘)。
 
 **ただしその fallback にはテストが無い** (レビュー指摘)。48 view すべてが `doc` を
 emit するので誰も踏まず、消してもスイートは緑のまま。今書いても「到達しないコードが

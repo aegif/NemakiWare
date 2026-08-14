@@ -203,6 +203,30 @@ class SolrUtilAttachmentSingleReadTest {
 		verify(contentService, times(1)).getAttachmentRef(REPO, ATTACHMENT);
 	}
 
+	/**
+	 * If the attachment read itself throws, the length must still be sought.
+	 *
+	 * <p>Found in review. The two methods this replaced were independent: {@code extractTextContent}
+	 * swallowed the exception and {@code getContentLength} then made its own metadata call. Merging
+	 * them put both inside one {@code try}, so the catch returned a length of 0 that had never been
+	 * read — silently indexing {@code content_length=0} where the old shape indexed the real value.
+	 */
+	@Test
+	void anAttachmentReadThatThrowsStillLooksUpTheLength() {
+		when(contentService.getAttachment(REPO, ATTACHMENT))
+				.thenThrow(new RuntimeException("CouchDB is unreachable"));
+		AttachmentNode ref = mock(AttachmentNode.class);
+		when(ref.getLength()).thenReturn(LENGTH);
+		when(contentService.getAttachmentRef(REPO, ATTACHMENT)).thenReturn(ref);
+
+		SolrUtil.AttachmentContent result = solrUtil.readAttachment(REPO, ATTACHMENT);
+
+		assertNull(result.text);
+		assertEquals(LENGTH, result.length,
+				"the node was never read, so the length is unknown — the metadata path is the "
+						+ "independent lookup the removed second read used to provide");
+	}
+
 	/** A failed extraction must not take the length down with it, and must still close. */
 	@Test
 	void aFailedExtractionKeepsTheLength() throws Exception {

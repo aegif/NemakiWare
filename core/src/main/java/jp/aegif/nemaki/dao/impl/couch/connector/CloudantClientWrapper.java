@@ -1170,10 +1170,11 @@ public class CloudantClientWrapper {
 				// documents makes CouchDB look each one up by id and send a second copy.
 				// Audited against the live design document on 2026-08-14: of 53 views, 48 emit
 				// doc and 5 emit a scalar (childrenNames, documentsByExpirationDate,
-				// documentsByLastModification, dupLatestVersion, dupVersionSeries) — and none of
-				// those five reaches this overload. documentMapFromRow still falls back to a read
-				// by id if a value ever turns out not to be a document, so a future scalar-emitting
-				// caller degrades to the old cost instead of silently getting nothing.
+				// documentsByLastModification, dupLatestVersion, dupVersionSeries). This overload
+				// is reached by 20 distinct view names, none of them among those five.
+				// documentMapFromRow falls back to a read by id when the value is not a document,
+				// so a future view emitting anything else degrades to the old cost rather than
+				// producing a wrong answer.
 				//
 				// PUTTING A SCALAR-EMITTING VIEW ON THIS OVERLOAD? That fallback is UNTESTED —
 				// nothing today reaches it, so deleting it leaves the suite green. Read
@@ -1343,11 +1344,15 @@ public class CloudantClientWrapper {
 	 * row still carries its id, so the document is read directly. That costs one request — what
 	 * the old shape cost unconditionally — instead of returning nothing.
 	 *
-	 * <p><b>That fallback has no test.</b> All 48 views reaching this overload emit {@code doc}, so
-	 * nothing exercises it and deleting it leaves the suite green — deliberately not covered, since
-	 * a test written today would only assert that unreachable code runs. <b>If you put a
-	 * scalar-emitting view on this overload, write that test as part of the same change</b>: this
-	 * branch is the only thing between it and an empty result.
+	 * <p><b>That fallback has no test.</b> Every view reaching this overload — 20 distinct names
+	 * across the content, principal, type, change and archive DAOs — emits {@code doc}, so nothing
+	 * exercises it and deleting it leaves the suite green. Deliberately not covered: a test written
+	 * today would only assert that unreachable code runs. <b>If you put a view emitting anything
+	 * else on this overload, write that test as part of the same change</b> — this branch is the
+	 * only thing between it and a wrong answer.
+	 *
+	 * <p>(48 is the number of full-document views in the design document, not the number that reach
+	 * this overload. The two were conflated in an earlier version of this note.)
 	 *
 	 * @return the document properties, or null if neither route produced one
 	 */
@@ -1355,12 +1360,21 @@ public class CloudantClientWrapper {
 	private Map<String, Object> documentMapFromRow(ViewResultRow row) {
 		Object value = row.getValue();
 		if (value instanceof Map) {
-			Map<String, Object> docMap = normalizeDataTypes((Map<String, Object>) value);
-			if (!docMap.containsKey("_id") && row.getId() != null) {
-				docMap.put("_id", row.getId());
-			}
-			if (docMap.containsKey("_id")) {
-				return docMap;
+			Map<String, Object> raw = (Map<String, Object>) value;
+			// _rev, not _id, is the discriminator. A PROJECTION such as emit(key, {name: doc.name})
+			// is also a Map, and injecting _id from the row would make it look like a document —
+			// the model would then be built from a fragment and the id fallback below would never
+			// run, which is the opposite of what it is for. Every full document carries _rev
+			// (verified against the live views: emit(key, doc) values contain both _id and _rev),
+			// and no projection would.
+			if (raw.containsKey("_rev")) {
+				Map<String, Object> docMap = normalizeDataTypes(raw);
+				if (!docMap.containsKey("_id") && row.getId() != null) {
+					docMap.put("_id", row.getId());
+				}
+				if (docMap.containsKey("_id")) {
+					return docMap;
+				}
 			}
 		}
 

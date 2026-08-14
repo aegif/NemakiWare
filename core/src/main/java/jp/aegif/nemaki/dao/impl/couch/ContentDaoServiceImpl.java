@@ -1408,10 +1408,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				if (log.isTraceEnabled()) log.trace("getChildByName: found via childByName view: '" + name + "' id=" + content.getId());
 				return content;
 			}
-			// The value was not a document map — the view was rewritten to emit something else.
-			// The row still carries the id whether or not documents were requested, so fall back
-			// to a read rather than reporting the child as absent (that would surface as "path
-			// not found" for an object that exists).
+			// The value was not a Map at all, so convertViewValueToContent could make nothing of
+			// it. The row still carries the id whether or not documents were requested, so fall
+			// back to a read rather than reporting the child as absent (that would surface as
+			// "path not found" for an object that exists).
+			//
+			// NOTE the narrowness: convertViewValueToContent accepts ANY Map, so a view rewritten
+			// to emit a PROJECTION (say {name: doc.name}) would convert into a partial Content and
+			// never reach here. The wrapper's typed path guards that with a _rev check; this path
+			// shares its converter with getChildren and is left alone rather than diverging.
 			String objectId = row.getId();
 			if (objectId != null) {
 				log.warn("childByName returned a value that is not a document for '" + name
@@ -1447,8 +1452,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					}
 					continue;
 				}
-				// Not a document map. Reading it by id is the only way left to compare the name,
-				// and reporting "no such child" on an unconvertible row would be a false absence.
+				// Not a Map at all (see the note above for what this does and does not cover).
+				// Reading it by id is the only way left to compare the name, and reporting
+				// "no such child" on an unconvertible row would be a false absence.
 				String objectId = row.getId();
 				if (objectId != null) {
 					Content byId = getContent(repositoryId, objectId);

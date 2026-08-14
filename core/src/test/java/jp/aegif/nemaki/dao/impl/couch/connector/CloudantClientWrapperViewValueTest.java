@@ -19,6 +19,7 @@ package jp.aegif.nemaki.dao.impl.couch.connector;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -57,8 +58,9 @@ import jp.aegif.nemaki.model.couch.CouchDocument;
  * 93 KB versus 5 ms / 49 KB on a 50-child folder — left behind in the shared typed overload.
  *
  * <p>Audited against the live design document on 2026-08-14: of 53 views, 48 emit {@code doc} and
- * 5 emit a scalar. None of the five reaches this overload, and the conversion falls back to a read
- * by id if a value ever turns out not to be a document.
+ * 5 emit a scalar. This overload is reached by 20 distinct view names, none of them among those
+ * five. When a value is not a document the conversion falls back to a read by id — keyed on
+ * {@code _rev}, since a projection is also a {@code Map} and would otherwise pass for one.
  *
  * <h2>Why a number is in the fixture</h2>
  *
@@ -119,6 +121,37 @@ public class CloudantClientWrapperViewValueTest {
 		assertFalse(Boolean.TRUE.equals(sent.includeDocs()),
 				"the view emits the document as its value; include_docs makes CouchDB send a "
 						+ "second copy of every row");
+	}
+
+	/**
+	 * A projection must not be mistaken for a document.
+	 *
+	 * <p>Found in review: the first version accepted any {@code Map} and injected {@code _id} from
+	 * the row, so a view rewritten to {@code emit(key, {name: doc.name})} would have been converted
+	 * into a PARTIAL model and the id fallback — the thing that is supposed to catch exactly this —
+	 * would never have run. {@code _rev} is the discriminator, because every full document carries
+	 * one and no projection does.
+	 */
+	@Test
+	public void aProjectionFallsBackToAReadById() {
+		Map<String, Object> projection = new LinkedHashMap<>();
+		projection.put("name", "報告書.txt"); // no _rev: this is not a document
+
+		ViewResultRow row = mock(ViewResultRow.class);
+		when(row.getId()).thenReturn(DOC_ID);
+		when(row.getValue()).thenReturn(projection);
+
+		CloudantClientWrapper wrapper = wrapperReturning(new ArrayList<>(List.of(row)));
+
+		// The read by id goes back to the same mocked client, which has no document to answer
+		// with; the point is that the projection was REFUSED rather than converted into a
+		// half-populated object.
+		List<CouchDocument> found =
+				wrapper.queryView("_repo", "versionSeries", "vs-1", CouchDocument.class);
+
+		assertTrue(found == null || found.isEmpty(),
+				"a projection converted into a partial document is worse than no answer — it "
+						+ "looks like a real object with fields silently missing");
 	}
 
 	/**

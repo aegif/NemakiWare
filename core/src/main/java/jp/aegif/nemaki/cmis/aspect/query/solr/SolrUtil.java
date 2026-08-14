@@ -1362,9 +1362,11 @@ public class SolrUtil implements ApplicationContextAware {
 				// gets already carries the length), and then getContentLength fetched the SAME
 				// attachment document a second time just to read that number. Ledger T3.
 				//
-				// Removing the second read is not only cheaper, it is more consistent: two reads
-				// can straddle a concurrent update, so the indexed body and the indexed length
-				// could come from different revisions. One node is one snapshot.
+				// Removing the second read is also the more consistent shape: it removes one of
+				// the windows in which a concurrent update can put the indexed body and the
+				// indexed length on different revisions. It does NOT reduce this to a single
+				// snapshot — AttachmentDaoDelegate.getAttachment still reads the metadata and
+				// then opens the body separately, so one window remains. One fewer, not none.
 				AttachmentContent attachmentContent =
 						readAttachment(repositoryId, document.getAttachmentNodeId());
 				try {
@@ -2267,11 +2269,15 @@ public class SolrUtil implements ApplicationContextAware {
 				return new AttachmentContent(null, length);
 			}
 
-			String mimeType = attachment.getMimeType();
-			String fileName = attachment.getName();
-
-			// From here the stream is open, so every exit closes it.
+			// The stream is open from here, so the try/finally starts BEFORE anything else can
+			// throw. Reading the mime type and file name outside it left a window where a getter
+			// throwing would let the open stream escape — narrow, since these are plain model
+			// accessors, but F3 was a connection leak and "closed on every path" has to be true
+			// rather than nearly true.
 			try {
+				String mimeType = attachment.getMimeType();
+				String fileName = attachment.getName();
+
 				if (mimeType != null && !textExtractionService.isSupported(mimeType)) {
 					if (log.isDebugEnabled()) {
 						log.debug("MIME type {} not supported for text extraction", mimeType);
@@ -2296,9 +2302,16 @@ public class SolrUtil implements ApplicationContextAware {
 				}
 			}
 		} catch (Exception e) {
-			// Unchanged from before this merge: a failed extraction is logged and yields no text.
-			// The length survives if the node was read before the failure.
+			// A failed extraction is logged and yields no text — unchanged from before this merge.
 			log.warn("Failed to extract text content for attachment {}: {}", attachmentId, e.getMessage());
+			if (length == 0L) {
+				// The failure happened before the node was read, so its length is still unknown.
+				// The separate getContentLength call this method replaced was independent and
+				// would have supplied it here; going to the metadata path keeps that parity
+				// instead of silently indexing content_length=0.
+				return new AttachmentContent(null,
+						lengthFromMetadata(contentService, repositoryId, attachmentId));
+			}
 			return new AttachmentContent(null, length);
 		}
 	}

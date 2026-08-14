@@ -3592,8 +3592,13 @@ public class ContentServiceImpl implements ContentService {
 		// path, for every attachment whose body could not be opened.
 		//
 		// So the call could not achieve its stated purpose and cost a revision bump per failure.
-		// Callers already handle a null stream; the DAO opens the body once, where the repository
-		// is known (F3), and if that fails the honest answer is a node without a stream.
+		// The DAO opens the body once, where the repository is known (F3), and if that fails the
+		// honest answer is a node without a stream.
+		//
+		// Not every caller null-checks that stream — appendAttachment hands it straight to a
+		// SequenceInputStream, for one. That is unchanged by this removal: the deleted call could
+		// not have supplied a stream to those callers either. It is a separate gap, listed in
+		// docs/design/redundant-round-trips.md rather than papered over here.
 
 		if (log.isDebugEnabled()) {
 			log.debug("getAttachment completed - InputStream: " + (an != null && an.getInputStream() != null ? "SUCCESS" : "NULL"));
