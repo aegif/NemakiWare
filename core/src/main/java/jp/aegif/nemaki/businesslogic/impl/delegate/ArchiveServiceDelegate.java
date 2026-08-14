@@ -104,13 +104,8 @@ public class ArchiveServiceDelegate {
 					AttachmentNode attachment = contentDaoService.getAttachmentRef(repositoryId, document.getAttachmentNodeId());
 					if (attachment != null) {
 						a.setMimeType(attachment.getMimeType());
-						// Use actual content size from CouchDB (not metadata which may be stale/compressed)
-						Long actualSize = getAttachmentActualSize(repositoryId, document.getAttachmentNodeId());
-						if (actualSize != null && actualSize >= 0) {
-							a.setContentStreamLength(actualSize);
-						} else {
-							a.setContentStreamLength(attachment.getLength());
-						}
+						a.setContentStreamLength(lengthForArchive(contentDaoService, repositoryId,
+								attachment, document.getAttachmentNodeId()));
 					}
 				} catch (Exception e) {
 					log.warn("Failed to get attachment info for archive: {}", e.getMessage());
@@ -628,6 +623,47 @@ public class ArchiveServiceDelegate {
 
 	public void resetColdMoveMetadata(String repositoryId, String archiveId) {
 		contentDaoService.resetColdMoveMetadata(repositoryId, archiveId);
+	}
+
+	/**
+	 * The content length to record for an attachment being archived or deleted.
+	 *
+	 * <h2>Why the node in hand comes first (ledger C4)</h2>
+	 *
+	 * <p>Every caller here has just fetched the attachment with {@code getAttachmentRef}. That node
+	 * already carries the right number, and {@code getAttachmentActualSize} pays to re-derive it: a
+	 * SECOND {@code getDocument} of the same attachment, and — for a gzip-stored attachment, where
+	 * CouchDB reports the COMPRESSED size in {@code _attachments} — a fall-through that
+	 * <b>downloads the whole binary and counts the bytes</b>, moments before that binary is deleted.
+	 *
+	 * <p>Measured against the live stack on 2026-08-14, on a gzip-stored 1.3 MB PDF:
+	 *
+	 * <pre>
+	 *   _attachments.content.length ............ 1,291,901   (compressed — what the second GET sees)
+	 *   attachment.getLength() ................. 1,337,959   (correct)
+	 *   bytes actually downloaded .............. 1,337,959
+	 *   the same document's Solr content_length  1,337,959
+	 * </pre>
+	 *
+	 * <p>So the cheap answer is also the right one. {@code CouchAttachmentNode.getActualLength()}
+	 * gets there by DISCARDING {@code _attachments.length} when the encoding is gzip and falling
+	 * back to the length recorded at upload time. A comment that used to sit at the archive call
+	 * site said the opposite — "not metadata which may be stale/compressed" — and it was the
+	 * metadata that was right.
+	 *
+	 * <h2>What the fallback is still for</h2>
+	 *
+	 * <p>An attachment written before that length field existed has no usable value on the node,
+	 * and there the expensive derivation is the only way to a real number. So it stays — as the
+	 * fallback rather than the default.
+	 */
+	public static Long lengthForArchive(ContentDaoService contentDaoService, String repositoryId,
+			AttachmentNode attachment, String attachmentId) {
+		long known = attachment.getLength();
+		if (known > 0) {
+			return known;
+		}
+		return contentDaoService.getAttachmentActualSize(repositoryId, attachmentId);
 	}
 
 	public Long getAttachmentActualSize(String repositoryId, String attachmentId) {

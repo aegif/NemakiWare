@@ -25,7 +25,8 @@ CouchDB の content など)。
 | **C2** | 同 fallback (`children` 経由) | ✅ 同上。名前フィルタは `row.getDoc()` ではなく**値**を読む |
 | **C3** | `queryView(..., Class)` が常に `includeDocs(true)` | ✅ 値を読む。値が文書でなければ id で読み直す |
 | **B2** | `getAttachment` が本体無しを返すと `setStream` が走る = **読み取り経路の書き込み** | ✅ 呼び出しを外した |
-| **C4** | 削除/アーカイブ経路が `getAttachmentRef` の直後に `getAttachmentActualSize` を優先 | ✅ 優先順を逆にした。**手元の値の方が正しい**ことを実測 (下記) |
+| **C4** | 削除経路 **とアーカイブ書き込み**が `getAttachmentRef` の直後に `getAttachmentActualSize` を優先 | ✅ 優先順を逆にし、実装を 1 本に統合した。**手元の値の方が正しい**ことを実測 (下記) |
+| **B1** (一部) | `replacePwc` が `getAttachment` で**古い本体を落として捨て**、次の行で上書き | ✅ `getAttachmentRef` に変更。`updateAttachment` は本体を使わない |
 | — | `getChildren` の `include_docs` 二重送信 | ✅ 以前に対応済み (50 子で 40ms/93KB → 5ms/49KB) |
 
 ### C3 の監査結果 (実際の design document で分類、2026-08-14)
@@ -75,6 +76,23 @@ gzip では `length` が圧縮後なので**本体を全部落としてバイト
 **レビューが挙げた懸念「gzip アーカイブが圧縮後サイズを記録し得る」は現実だった** —
 ただし危険なのは削除する側ではなく、**変更前のコードが圧縮後サイズを優先していた**点。
 
+#### 直し残しが 1 箇所あった (レビュー指摘)
+
+初回の修正は `ContentServiceImpl` の削除 2 経路だけで、**`ArchiveServiceDelegate.createArchive`
+に同じ形が残っていた**。しかもそこのコメントは実測と逆で
+「Use actual content size from CouchDB (not metadata which may be stale/compressed)」
+— 正しかったのは metadata の方。
+
+**テストが捕まえられなかったのは、ヘルパーを直接呼んでいたから**。呼び出し側を戻しても
+落ちない形のテストだった。実装を `ArchiveServiceDelegate.lengthForArchive` の 1 本に統合し、
+アーカイブ経路は `createArchive` を実際に走らせて**永続化された Archive の
+`contentStreamLength`** を見るテストにした (呼び出し側を戻すと
+`expected: <1337959> but was: <1291901>` で落ちる)。
+
+**併せて訂正**: C4 のコミットメッセージは触った箇所を「deleteContentStream 系」と書いたが誤り。
+実際は `deleteDocument` / `deleteDocumentWithVisited` の 2 箇所で、`deleteContentStream` は
+長さを取っていない。
+
 ---
 
 ## 未対応 (レビュー由来。**下記はこちらで未検証**)
@@ -85,7 +103,18 @@ gzip では `length` が圧縮後なので**本体を全部落としてバイト
 
 | ID | 場所 | 指摘内容 | 素朴に消すと |
 |---|---|---|---|
-| **B1** | `replacePwc` / `setContentStream` | 古い本体を開いて読まず、`updateAttachment` が `_rev` のためにまた GET し、プレビューのために今書いた本体をもう一度落とす | プレビューはリクエストの `ContentStream` で足りるはず |
+
+### B1 の続き — 未対応 2 件 (2026-08-14 に調べた結果)
+
+`replacePwc` の古い本体は切ったが、同じ指摘の残り 2 つは**性質が違う**ので分けた。
+
+| ID | 場所 | 何が残っているか | なぜ今やらないか |
+|---|---|---|---|
+| **B1-a** | `replacePwc` のプレビュー生成 | 書き込んだ直後に `getAttachment` で**同じ本体をもう一度全部落として** byte 配列にする | リクエストの `ContentStream` は `updateAttachment` が消費済みなので、再利用するには**書き込み前にバッファする**必要がある。アップロード経路のメモリ特性が変わる (現在は書き込みがストリーミング)。リリース直前に入れる変更ではない |
+| **B1-b** | 非バージョン文書の更新 (`ContentServiceImpl.java:1531` 付近) | `an = getAttachment(...)` → `updateAttachment(an, ...)` → **その `an.getInputStream()` でプレビューを作る**。このストリームは**更新前**に開かれている | 本体が必要なので `getAttachmentRef` には変えられない。**そして更新前の内容でプレビューを作っている可能性がある** — `replacePwc` は同じ問題を「fresh に読み直す」ことで避けており、こちらだけ避けていない。**未確認**: 実際に旧内容のプレビューが出るかは測っていない。往復の話ではなく正しさの話なので、別途判断が要る |
+
+**`appendAttachment` (`:3759`) は対象外** — 既存の本体と新規を `SequenceInputStream` で連結するので、
+本体の取得は必要。
 
 ### 検証読み (T2 型) — 消すと壊れ得る
 
@@ -110,5 +139,5 @@ gzip では `length` が圧縮後なので**本体を全部落としてバイト
 
 ## 着手順 (レビュー推奨)
 
-**C1 → B2 → C3 → C4** の順で実施済み。残りは上の「未対応」から、
-**B1 → V3 / V4** の順が素直 (V2 / V5 は判断が要る、T2 は設計判断)。
+**C1 → B2 → C3 → C4 → B1 (一部)** の順で実施済み。残りは上の「未対応」から、
+**V3 / V4** の順が素直 (V2 / V5 は判断が要る、B1-a はメモリ特性、B1-b と T2 は設計判断)。

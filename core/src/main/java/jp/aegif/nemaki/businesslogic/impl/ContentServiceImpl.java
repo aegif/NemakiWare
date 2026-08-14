@@ -1437,8 +1437,13 @@ public class ContentServiceImpl implements ContentService {
 
 	public Document replacePwc(CallContext callContext, String repositoryId, Document originalPwc,
 			ContentStream contentStream) {
-		// Update attachment contentStream
-		AttachmentNode an = contentDaoService.getAttachment(repositoryId, originalPwc.getAttachmentNodeId());
+		// Metadata only (ledger B1). updateAttachment builds its CouchAttachmentNode from this
+		// node's FIELDS and re-reads the document for the current _rev
+		// (AttachmentDaoDelegate.updateAttachment:587-595); it never touches getInputStream(). The
+		// previous getAttachment therefore downloaded the entire OLD binary, discarded it, and
+		// then overwrote it on the next line. F3 separated these two calls for exactly this: the
+		// body-opening one is for callers that read the body.
+		AttachmentNode an = contentDaoService.getAttachmentRef(repositoryId, originalPwc.getAttachmentNodeId());
 		contentDaoService.updateAttachment(repositoryId, an, contentStream);
 
 		// Update rendition contentStream
@@ -3575,46 +3580,13 @@ public class ContentServiceImpl implements ContentService {
 	/**
 	 * The content length to record for an attachment that is about to be deleted.
 	 *
-	 * <h2>Why the order was inverted (ledger C4)</h2>
-	 *
-	 * <p>Both deletion paths used to prefer {@code getAttachmentActualSize} and fall back to the
-	 * node they had just fetched. That is backwards: the fetched node already carries the right
-	 * number, and {@code getAttachmentActualSize} pays to re-derive it.
-	 *
-	 * <p>What it pays: a SECOND {@code getDocument} of the same attachment (with
-	 * {@code att_encoding_info}), and for a gzip-stored attachment that second document does not
-	 * even answer the question — CouchDB reports the COMPRESSED size there, so the method falls
-	 * through to <b>downloading the whole binary and counting the bytes</b>. Moments before
-	 * deleting that binary. The comment on the sibling path records that the previous code already
-	 * did a full download here once and that it was removed; this is the same cost by another
-	 * route.
-	 *
-	 * <p>Measured against the live stack on 2026-08-14, on a gzip-stored 1.3 MB PDF attachment:
-	 *
-	 * <pre>
-	 *   _attachments.content.length ............ 1,291,901   (compressed — what the second GET sees)
-	 *   attachment.getLength() ................. 1,337,959   (correct; from the stored length field)
-	 *   bytes actually downloaded .............. 1,337,959
-	 * </pre>
-	 *
-	 * <p>So the node in hand is not merely cheaper, it is the one that is right. Confirmed
-	 * end-to-end: the same document's indexed {@code content_length} in Solr is 1,337,959.
-	 *
-	 * <h2>What the fallback is still for</h2>
-	 *
-	 * <p>{@link AttachmentNode#getLength()} is correct because {@code CouchAttachmentNode} keeps
-	 * the uncompressed length recorded at upload time. An attachment written before that field
-	 * existed has no such value, and there {@code getAttachmentActualSize} — expensive as it is —
-	 * is the only way to get a real number. So it stays, as the fallback rather than the default.
+	 * <p>One implementation, in {@link ArchiveServiceDelegate#lengthForArchive} — the archive
+	 * writer had the same code with the preference the wrong way round, and keeping two copies is
+	 * how that happened. The reasoning and the measurement live there.
 	 */
-	// Package-private so the test can pin the CONSEQUENCE (the expensive path is not taken when
-	// the node already knows) rather than only the returned number.
 	Long lengthForArchive(String repositoryId, AttachmentNode attachment, String attachmentId) {
-		long known = attachment.getLength();
-		if (known > 0) {
-			return known;
-		}
-		return getAttachmentActualSize(repositoryId, attachmentId);
+		return ArchiveServiceDelegate.lengthForArchive(contentDaoService, repositoryId, attachment,
+				attachmentId);
 	}
 
 	@Override
