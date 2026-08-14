@@ -58,7 +58,11 @@ posture") and points here for the limits — this section is that reference.
 **What to do about it in 3.3.0:**
 
 - Treat RAG **re-index and RAG ACL propagation as single-replica operations**. Pin them to one
-  replica, the same way §5 pins the CMIS reindex and the epoch stamp.
+  replica, the same way the CMIS reindex and the initial epoch stamp are pinned — the procedure
+  is [`docs/operations/v3.3.0-upgrade-runbook.md`](operations/v3.3.0-upgrade-runbook.md) §O2
+  ("再索引・初期 stamp は 1 台に固定し、ロードバランサを経由せずそのレプリカを直接叩く").
+  §5 below is a symptom table for missing sticky sessions / leader election and does not cover
+  this.
 - After a bulk ACL change with RAG enabled, verify rather than assume — the RAG revocation probes
   under `tools/acl-probe/` (`rag_revocation_paths.py` and friends) exist for exactly this.
 - Ordinary single-document writes arriving on different replicas are not the concern: they carry
