@@ -184,9 +184,36 @@ createPreview(previewCS, ...)
 |---|---|---|---|---|
 | **T2** | `ContentIncarnation.resolve` (索引の文書ごと) | CouchDB が持っていない UUID を刻まない / 走査と索引の間の削除を検出 | `Content` が既に UUID を持つとき、GET は同じ値を返す。**索引フェーズの約 24%** | `Content.getContentIncarnation()` が非 null のときだけ GET を省く案。**フェンスの正しさの入力なので設計判断が要る** |
 | **V2** | `createAttachmentAtomic` / `copyAttachmentAtomic` | 作成直後の一貫読み | `create()` が既に id と rev を返す。検証は「在るか」を聞く全文書 GET | `create()` の失敗を失敗として扱うなら落とせる |
-| **V3** | `setStream` / `createAttachment` STAGE 2 | binary 添付前に現在の `_rev` が要る | STAGE 1 の結果が既に rev を持つ。捨てているから GET している | STAGE 1 の rev を渡す。GET は fallback に |
+| ~~**V3**~~ | ~~`setStream` / `createAttachment` STAGE 2~~ | **✅ 直した。ただし台帳の記述は当たっていなかった (下記)** |
 | **V4** | `appendAttachment` | update 後の新しい change token | content の GET が 3 回 | `update()` の戻りを使う。`deleteContentStream` は同じ TCK 修正を済ませている |
 | **V5** | `CompileService.getAttachmentWithRetry` | 作成直後の `_rev` 整合 | 既に 2 回リトライする `getAttachmentRef` をさらに 5 回包む | リトライ地点を 1 つに |
+
+#### V3 — 台帳の記述は外れていた。実際の場所は 3 箇所 (2026-08-14)
+
+**「STAGE 2 が STAGE 1 の rev を捨てている」は誤り。** `createAttachment` の STAGE 2 は
+happy path で既に `result.getRev()` を使っており、GET は `documentRevision == null` の
+とき (主に conflict retry の後) だけ。`setStream` の STAGE 2 も手元の rev を使う
+(レビュー指摘)。
+
+**本当に冗長だったのは「書いた直後に、自分が作った rev を知るための GET」** で、3 箇所:
+
+| 場所 | 何を待っていたか |
+|---|---|
+| `setStream` STAGE 1 (update 分岐) | `updatePreservingAttachments` の後 |
+| `setStream` STAGE 1 (create 分岐) | `create(can)` の後 |
+| `updateAttachment` STAGE 2 の入口 | STAGE 1 の書き込みの後 |
+
+**原因は 1 箇所**だった。`create(Object)` と `update(Object)` は新しい rev を
+**渡されたオブジェクトに書き戻す** (`CloudantClientWrapper` が "EKTORP-STYLE" と
+呼んでいる、:1866-1868 と :2023)。`updatePreservingAttachments` だけが、添付 stub を
+持ち回る分岐で `Map` overload を通るため書き戻さず、`DocumentResult` を捨てていた。
+
+`updatePreservingAttachments` も同じように書き戻すようにしたら、3 箇所とも
+`can.getRevision()` で足りるようになった。**API の形は変えていない** (void のまま)。
+
+**テストは書き戻しそのものを縛る。** 呼び出し側は書き込み直後に `can.getRevision()` を
+読むので、書き戻しが静かに止まると **stale な `_rev` でバイナリをアップロード**する —
+ここで見える失敗ではなく conflict やリトライになる。外すとテストが落ちることを確認済み。
 
 ### 残すもの
 
@@ -202,4 +229,4 @@ createPreview(previewCS, ...)
 ## 着手順 (レビュー推奨)
 
 **C1 → B2 → C3 → C4 → B1 (一部)** の順で実施済み。残りは上の「未対応」から、
-**V3 / V4** の順が素直 (V2 / V5 は判断が要る、B1-a はメモリ特性、T2 は設計判断)。
+**V4** が次 (V2 / V5 は判断が要る、B1-a はメモリ特性、T2 は設計判断)。

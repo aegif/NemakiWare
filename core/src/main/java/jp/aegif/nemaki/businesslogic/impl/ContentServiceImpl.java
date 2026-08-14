@@ -3062,11 +3062,14 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	/**
-	 * Internal delete with cascade support for parentChildRelationship.
-	 * When deleting Document/Folder/Item (NOT Relationship), recursively deletes child objects
-	 * linked via nemaki:parentChildRelationship before deleting relationships and the object.
+	 * Archive the object, delete its relationships, and delete it.
 	 *
-	 * <p><b>The {@code visited} set no longer detects anything here.</b> Both remaining callers
+	 * <p>It does NOT cascade. The parentChild cascade was moved to
+	 * {@code ObjectServiceInternalImpl.deleteObjectInternal} so each child goes through the
+	 * permission check, the ThreadLockService and cache invalidation — see the comment at the
+	 * point it used to happen, below.
+	 *
+	 * <p><b>The {@code visited} set no longer detects anything here either.</b> Both remaining callers
 	 * pass a fresh empty set and this method does not call itself, so
 	 * {@code visited.contains(objectId)} cannot be true on entry. Loop detection for the real
 	 * cascade lives in {@code ObjectServiceInternalImpl}, which keeps a thread-local set across

@@ -118,14 +118,17 @@ public class AttachmentDaoDelegate {
 						// Preserve any existing binary across the metadata write. Stage 2 below
 						// re-uploads it only when this node actually carries a stream; when it does
 						// not, a plain update here would delete the stored binary outright.
+						// updatePreservingAttachments hands the new revision back on `can`, so the
+						// GET that used to sit here — to learn the revision this very call had just
+						// produced — is gone (ledger V3).
 						client.updatePreservingAttachments(can, latestDoc);
-						Document updatedDoc = client.get(attachmentNode.getId());
-						stage1RevisionAfterUpdate = updatedDoc != null ? updatedDoc.getRev() : null;
+						stage1RevisionAfterUpdate = can.getRevision();
 						log.debug("STAGE 1: Updated attachment metadata for: " + attachmentNode.getId() + " (new revision: " + stage1RevisionAfterUpdate + ")");
 					} else {
+						// create(Object) already writes the id and revision back onto `can`
+						// (CloudantClientWrapper "EKTORP-STYLE"), so no read-back is needed.
 						client.create(can);
-						Document createdDoc = client.get(attachmentNode.getId());
-						stage1RevisionAfterUpdate = createdDoc != null ? createdDoc.getRev() : null;
+						stage1RevisionAfterUpdate = can.getRevision();
 						log.debug("STAGE 1: Created attachment metadata for: " + attachmentNode.getId() + " (new revision: " + stage1RevisionAfterUpdate + ")");
 					}
 					break;
@@ -626,8 +629,10 @@ public class AttachmentDaoDelegate {
 
 				// STAGE 2: Upload binary
 				try {
-					Document updatedDoc = client.get(attachment.getId());
-					String revisionToUse = updatedDoc != null ? updatedDoc.getRev() : can.getRevision();
+					// `can` carries the revision stage 1 just produced (or the one it was read
+					// with, when stage 1 did not run), so this no longer re-reads the document it
+					// has just written — ledger V3.
+					String revisionToUse = can.getRevision();
 
 					String attachmentName = "content";
 					String contentType = contentStream.getMimeType() != null ?
