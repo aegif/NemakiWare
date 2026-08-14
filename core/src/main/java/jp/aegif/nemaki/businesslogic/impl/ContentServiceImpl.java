@@ -3628,8 +3628,13 @@ public class ContentServiceImpl implements ContentService {
 		Document freshDocument = contentDaoService.getDocument(repositoryId, objectId.getValue());
 		String newChangeToken = String.valueOf(System.currentTimeMillis());
 		freshDocument.setChangeToken(newChangeToken);
-		contentDaoService.update(repositoryId, freshDocument);
-		Document updatedDocument = contentDaoService.getDocument(repositoryId, objectId.getValue());
+
+		// The DAO's update returns the written object with its new revision — it converts the
+		// model it just wrote (ContentDaoServiceImpl:2161-2166), the same return
+		// deleteContentStream already uses for its holder, its Solr index and its change event.
+		// Reading the document back afterwards was a third GET of a document this method had
+		// itself just written. Ledger V4.
+		Document updatedDocument = contentDaoService.update(repositoryId, freshDocument);
 
 		// Update holders with new change token and object ID
 		if (changeToken != null) {

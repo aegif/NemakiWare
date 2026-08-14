@@ -185,7 +185,7 @@ createPreview(previewCS, ...)
 | **T2** | `ContentIncarnation.resolve` (索引の文書ごと) | CouchDB が持っていない UUID を刻まない / 走査と索引の間の削除を検出 | `Content` が既に UUID を持つとき、GET は同じ値を返す。**索引フェーズの約 24%** | `Content.getContentIncarnation()` が非 null のときだけ GET を省く案。**フェンスの正しさの入力なので設計判断が要る** |
 | **V2** | `createAttachmentAtomic` / `copyAttachmentAtomic` | 作成直後の一貫読み | `create()` が既に id と rev を返す。検証は「在るか」を聞く全文書 GET | `create()` の失敗を失敗として扱うなら落とせる |
 | ~~**V3**~~ | ~~`setStream` / `createAttachment` STAGE 2~~ | **✅ 直した。ただし台帳の記述は当たっていなかった (下記)** |
-| **V4** | `appendAttachment` | update 後の新しい change token | content の GET が 3 回 | `update()` の戻りを使う。`deleteContentStream` は同じ TCK 修正を済ませている |
+| **V4** (一部) | `appendAttachment` | update 後の新しい change token | content の GET が 3 回 → **3 通目を切った (下記)。2 通目は保留** |
 | **V5** | `CompileService.getAttachmentWithRetry` | 作成直後の `_rev` 整合 | 既に 2 回リトライする `getAttachmentRef` をさらに 5 回包む | リトライ地点を 1 つに |
 
 #### V3 — 台帳の記述は外れていた。実際の場所は 3 箇所 (2026-08-14)
@@ -215,6 +215,28 @@ happy path で既に `result.getRev()` を使っており、GET は `documentRev
 読むので、書き戻しが静かに止まると **stale な `_rev` でバイナリをアップロード**する —
 ここで見える失敗ではなく conflict やリトライになる。外すとテストが落ちることを確認済み。
 
+#### V4 — 3 通目だけ切った。2 通目は往復ではなく並行性の問題 (2026-08-14)
+
+`appendAttachment` は同じ content 文書を 3 回読んでいた。**3 通は役割が違う** (レビュー指摘)。
+
+| 通 | 何をしていたか | 判断 |
+|---|---|---|
+| 1 | 添付ノードの id を取る | **残す。** 別文書を引くために要る |
+| 2 | `updateAttachment` の後、change token を書く前にもう一度読む | **保留。** 添付の書き込みは**別文書**なので content の `_rev` は動かないはずだが、消すと「入口から update までの並行更新」に窓が広がる。往復ではなく並行性の判断 |
+| 3 | `update()` の後、token / id を読み返す | **✅ 切った** |
+
+3 通目を切れるのは、DAO の `update` が**書いた本人を convert して返す**から
+(`ContentDaoServiceImpl.java:2161-2166`)。`deleteContentStream` は既にこの戻りを
+holder・Solr・change event に使っている。同じ形にしただけ。
+
+**これは CMIS の `appendContentStream`** なので、大きなファイルのチャンク投入では
+チャンクごとに 1 往復ぶん効く。
+
+テストは**両方**を縛る。読み返しが消えたこと (読みの回数) と、holder に入る値が
+`update()` の戻りから来ること — 読みだけ消して古いオブジェクトを使い続ける実装は、
+回数だけの assert なら通ってしまう。戻すと
+`expected: <token-written-by-update> but was: <...>` で落ちる。
+
 ### 残すもの
 
 | 形 | 理由 |
@@ -229,4 +251,4 @@ happy path で既に `result.getRev()` を使っており、GET は `documentRev
 ## 着手順 (レビュー推奨)
 
 **C1 → B2 → C3 → C4 → B1 (一部)** の順で実施済み。残りは上の「未対応」から、
-**V4** が次 (V2 / V5 は判断が要る、B1-a はメモリ特性、T2 は設計判断)。
+残りは **V2 / V5 (判断が要る)、V4 の 2 通目 (並行性)、B1-a (メモリ特性)、T2 (設計判断)**。
