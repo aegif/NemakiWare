@@ -52,15 +52,31 @@ public interface SolrIndexMaintenanceService {
          * so the answer comes from one production-scale run rather than from argument.
          *
          * <p>enumerationMs: walking the folder tree (CouchDB view queries).
-         * couchReadMs: per-document CouchDB reads made while building the Solr document
-         * (attachment metadata, attachment body, content incarnation).
-         * solrWriteMs: submitting to Solr, including the fence's realtime GET.
+         * solrWriteMs: the whole indexing phase — everything below plus loop overhead.
          * verificationMs: the post-batch existence check.
+         *
+         * <p>The indexing phase turned out to be ~90% of a full reindex, so it is split again.
+         * These four sum to just under {@code solrWriteMs}:
+         *
+         * <p>solrRtgMs: the content fence's realtime GET — <b>one Solr round trip per DOCUMENT</b>,
+         * added by this project in C8. The ledger lists it as hypothesis ③, "a regression we
+         * introduced ourselves", so it is measured on its own rather than folded into Solr time.
+         * incarnationMs: resolving the authoritative content incarnation (CouchDB), per document.
+         * buildDocMs: building the Solr document — attachment metadata and body reads plus text
+         * extraction. This is where the attachment-ratio effect should appear if it is real.
+         * solrAddMs: the single Solr round trip that submits the batch.
+         *
+         * <p>couchReadMs is declared but never populated; the CouchDB cost now lives in
+         * incarnationMs and buildDocMs, which say which read.
          */
         private long enumerationMs;
         private long couchReadMs;
         private long solrWriteMs;
         private long verificationMs;
+        private long solrRtgMs;
+        private long incarnationMs;
+        private long buildDocMs;
+        private long solrAddMs;
         private long startTime;
         private long endTime;
         private String currentFolder;
@@ -103,6 +119,14 @@ public interface SolrIndexMaintenanceService {
         public void addSolrWriteMs(long ms) { this.solrWriteMs += ms; }
         public long getVerificationMs() { return verificationMs; }
         public void addVerificationMs(long ms) { this.verificationMs += ms; }
+        public long getSolrRtgMs() { return solrRtgMs; }
+        public void addSolrRtgMs(long ms) { this.solrRtgMs += ms; }
+        public long getIncarnationMs() { return incarnationMs; }
+        public void addIncarnationMs(long ms) { this.incarnationMs += ms; }
+        public long getBuildDocMs() { return buildDocMs; }
+        public void addBuildDocMs(long ms) { this.buildDocMs += ms; }
+        public long getSolrAddMs() { return solrAddMs; }
+        public void addSolrAddMs(long ms) { this.solrAddMs += ms; }
         public void setErrors(List<String> errors) { this.errors = errors; }
         public List<String> getWarnings() { return warnings; }
         public void setWarnings(List<String> warnings) { this.warnings = warnings; }

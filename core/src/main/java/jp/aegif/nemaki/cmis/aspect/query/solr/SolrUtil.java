@@ -435,10 +435,38 @@ public class SolrUtil implements ApplicationContextAware {
 		 */
 		public final int fenceBlocked;
 
+		/**
+		 * Where the batch's time went, in nanoseconds. Reported so the reindex phase breakdown can
+		 * be split without guessing — the enclosing timer showed the indexing phase is ~90% of a
+		 * full reindex, and the next question ("which part of it") cannot be answered from outside
+		 * this method.
+		 *
+		 * <p>{@code solrRtgNs} is per DOCUMENT, not per batch: the content fence reads each
+		 * document's current {@code _version_} out of Solr before adding it. That is the ledger's
+		 * hypothesis ③ — a round trip this project added itself in C8 — so it is measured
+		 * separately rather than folded into the Solr total.
+		 */
+		public final long solrRtgNs;
+		/** Resolving the authoritative content incarnation (CouchDB), per document. */
+		public final long incarnationNs;
+		/** Building the Solr document: attachment metadata + body reads and text extraction. */
+		public final long buildDocNs;
+		/** The one Solr round trip that submits the whole batch. */
+		public final long solrAddNs;
+
 		BatchOutcome(int written, int skippedStale, int fenceBlocked) {
+			this(written, skippedStale, fenceBlocked, 0L, 0L, 0L, 0L);
+		}
+
+		BatchOutcome(int written, int skippedStale, int fenceBlocked,
+				long solrRtgNs, long incarnationNs, long buildDocNs, long solrAddNs) {
 			this.written = written;
 			this.skippedStale = skippedStale;
 			this.fenceBlocked = fenceBlocked;
+			this.solrRtgNs = solrRtgNs;
+			this.incarnationNs = incarnationNs;
+			this.buildDocNs = buildDocNs;
+			this.solrAddNs = solrAddNs;
 		}
 	}
 
@@ -466,6 +494,11 @@ public class SolrUtil implements ApplicationContextAware {
 		int successCount = 0;
 		int skippedStale = 0;
 		int fenceBlocked = 0;
+		// Phase accumulators — see BatchOutcome. Timing only; no control flow depends on these.
+		long solrRtgNs = 0L;
+		long incarnationNs = 0L;
+		long buildDocNs = 0L;
+		long solrAddNs = 0L;
 		List<Content> indexedContents = new ArrayList<>();
 		try {
 			solrClient = getSolrClient();
@@ -499,11 +532,15 @@ public class SolrUtil implements ApplicationContextAware {
 					Long versionField = null; // null => plain add, fail-open (unknown generation)
 
 					if (myGen > 0) {
+						long t = System.nanoTime();
 						cur = readVersionAndGeneration(repositoryId, content.getId());
+						solrRtgNs += System.nanoTime() - t;
 						jp.aegif.nemaki.epoch.ContentIncarnation.ContentStore store = contentStore();
 						if (store != null) {
+							t = System.nanoTime();
 							incarnation = jp.aegif.nemaki.epoch.ContentIncarnation.resolve(
 									repositoryId, content.getId(), store);
+							incarnationNs += System.nanoTime() - t;
 						}
 						jp.aegif.nemaki.epoch.ContentWriterFence.Decision decision =
 								jp.aegif.nemaki.epoch.ContentWriterFence.decide(cur, incarnation, myGen);
@@ -542,7 +579,9 @@ public class SolrUtil implements ApplicationContextAware {
 						}
 					}
 
+					long buildStart = System.nanoTime();
 					SolrInputDocument doc = createSolrDocument(repositoryId, content);
+					buildDocNs += System.nanoTime() - buildStart;
 					applyContentFence(doc, cur, incarnation, myGen, repositoryId, content.getId());
 					if (versionField != null) {
 						doc.addField("_version_", versionField);
@@ -556,7 +595,9 @@ public class SolrUtil implements ApplicationContextAware {
 			}
 			
 			if (successCount > 0) {
+				long addStart = System.nanoTime();
 				UpdateResponse response = updateRequest.process(solrClient);
+				solrAddNs += System.nanoTime() - addStart;
 				if (response.getStatus() == 0) {
 					log.info("Batch indexed " + successCount + " documents successfully");
 					// Trigger RAG indexing for each document if not skipped
@@ -586,7 +627,8 @@ public class SolrUtil implements ApplicationContextAware {
 			throw new RuntimeException("Solr batch indexing failed: " + e.getMessage(), e);
 		}
 
-		return new BatchOutcome(successCount, skippedStale, fenceBlocked);
+		return new BatchOutcome(successCount, skippedStale, fenceBlocked,
+				solrRtgNs, incarnationNs, buildDocNs, solrAddNs);
 	}
 
 	/**
@@ -1314,9 +1356,19 @@ public class SolrUtil implements ApplicationContextAware {
 			if (document.getAttachmentNodeId() != null) {
 				doc.addField("content_id", document.getAttachmentNodeId());
 
-				// Extract text content for full-text search
+				// ONE attachment fetch supplies both the indexed body and content_length.
+				//
+				// There used to be two: extractTextContent opened the attachment (and the node it
+				// gets already carries the length), and then getContentLength fetched the SAME
+				// attachment document a second time just to read that number. Ledger T3.
+				//
+				// Removing the second read is not only cheaper, it is more consistent: two reads
+				// can straddle a concurrent update, so the indexed body and the indexed length
+				// could come from different revisions. One node is one snapshot.
+				AttachmentContent attachmentContent =
+						readAttachment(repositoryId, document.getAttachmentNodeId());
 				try {
-					String textContent = extractTextContent(repositoryId, document.getAttachmentNodeId());
+					String textContent = attachmentContent.text;
 					if (textContent != null && !textContent.trim().isEmpty()) {
 						doc.addField("content", textContent);
 						doc.addField("text", textContent);  // Add text field for CONTAINS queries
@@ -1335,10 +1387,11 @@ public class SolrUtil implements ApplicationContextAware {
 					}
 					log.warn("Failed to extract text content for document {}: {}", content.getId(), e.getMessage());
 				}
-				
-				// Add content_length field for numeric range queries
-				long contentLength = getContentLength(repositoryId, document.getAttachmentNodeId());
-				doc.addField("content_length", contentLength);
+
+				// Length comes from the node that was just read, and survives an extraction that
+				// produced no text (unsupported MIME, empty document): losing the length there is
+				// what the removed second read used to paper over.
+				doc.addField("content_length", attachmentContent.length);
 			}
 			
 			// Versioning fields
@@ -2138,129 +2191,141 @@ public class SolrUtil implements ApplicationContextAware {
 	}
 
 	/**
-	 * Get content length from AttachmentNode.
-	 * Uses ContentService to retrieve the attachment and get its length.
+	 * One attachment read, supplying both the indexed body and {@code content_length}.
 	 *
-	 * @param repositoryId Repository ID
-	 * @param attachmentId Attachment node ID
-	 * @return Content length in bytes, or 0 if not available
-	 */
-	private long getContentLength(String repositoryId, String attachmentId) {
-		if (attachmentId == null || attachmentId.isEmpty()) {
-			return 0L;
-		}
-
-		try {
-			ContentService contentService = getContentServiceSafely();
-			if (contentService == null) {
-				log.debug("getContentLength: ContentService not available, returning 0");
-				return 0L;
-			}
-
-			// Metadata only. This ran for every document being indexed and downloaded the whole
-			// attachment body to read a number stored on the document — leaking the connection
-			// each time, because nothing here ever closed the stream. A full reindex touches
-			// every document, which is how it turned into 1,289 established connections.
-			AttachmentNode attachment = contentService.getAttachmentRef(repositoryId, attachmentId);
-			if (attachment == null) {
-				log.debug("getContentLength: Attachment not found: {}", attachmentId);
-				return 0L;
-			}
-
-			return attachment.getLength();
-		} catch (Exception e) {
-			log.warn("getContentLength: Failed to get content length for attachment {}: {}", attachmentId, e.getMessage());
-			return 0L;
-		}
-	}
-
-	/**
-	 * Extract text content from attachment for full-text search.
-	 * Uses Apache Tika via TextExtractionService to extract text from various document formats
-	 * including PDF, Word, Excel, PowerPoint, and plain text files.
+	 * <h2>Why these were merged</h2>
 	 *
-	 * @param repositoryId Repository ID
-	 * @param attachmentId Attachment node ID
-	 * @return Extracted text content or null if extraction fails
+	 * <p>Indexing a document with an attachment used to fetch that attachment TWICE: once here to
+	 * extract text, and once more in a separate {@code getContentLength} whose only job was to read
+	 * a number the first fetch had already loaded. {@code AttachmentDaoDelegate.getAttachment}
+	 * calls {@code convertRef()} — which sets the length from the CouchDB {@code _attachments}
+	 * metadata — and only then opens the body, so the node returned here always carries the length.
+	 * Ledger T3.
+	 *
+	 * <p>The second read was also the less consistent option, not the safer one: two reads can
+	 * straddle a concurrent update, so the indexed body and the indexed length could come from
+	 * different revisions. One node is one snapshot.
+	 *
+	 * <h2>What had to be preserved</h2>
+	 *
+	 * <p>Deleting the second read naively loses the length in two cases the old shape covered.
+	 * Both are handled here:
+	 *
+	 * <ul>
+	 *   <li><b>Extraction produced no text</b> (unsupported MIME, empty document, Tika failure).
+	 *       The node — and its length — is already in hand, so the length is still reported. Only
+	 *       the text is dropped.
+	 *   <li><b>No {@code TextExtractionService}</b>. Nothing can be extracted, so there is no
+	 *       reason to open a body; this takes the metadata-only path instead. That keeps the F3
+	 *       separation intact (metadata reads must not open attachments) and still yields a length.
+	 * </ul>
+	 *
+	 * <p>The metadata path also serves as the fallback when the body-opening read finds nothing:
+	 * {@code getAttachmentRef} retries briefly for attachments that are not visible yet, which
+	 * {@code getAttachment} does not. That retry only costs a second read when the first one
+	 * already failed, never on the normal path.
+	 *
+	 * <p><b>F3</b>: every stream this opens is closed on every path, including the ones that return
+	 * without extracting.
 	 */
-	private String extractTextContent(String repositoryId, String attachmentId) {
+	// Package-private, not private, so SolrUtilAttachmentSingleReadTest can pin the
+	// single-fetch property directly instead of reaching through createSolrDocument.
+	AttachmentContent readAttachment(String repositoryId, String attachmentId) {
 		if (attachmentId == null || attachmentId.isEmpty()) {
-			return null;
+			return AttachmentContent.NONE;
 		}
 
-		// Check if TextExtractionService is available
+		ContentService contentService = getContentServiceSafely();
+		if (contentService == null) {
+			log.debug("readAttachment: ContentService not available for {}", attachmentId);
+			return AttachmentContent.NONE;
+		}
+
+		// Nothing to extract — read metadata only rather than opening a body that cannot be used.
 		if (textExtractionService == null) {
 			log.warn("TextExtractionService not available - full-text search may not work properly");
-			return null;
+			return new AttachmentContent(null, lengthFromMetadata(contentService, repositoryId, attachmentId));
 		}
 
+		long length = 0L;
 		try {
-			// Get ContentService to retrieve the attachment
-			ContentService contentService = getContentServiceSafely();
-			if (contentService == null) {
-				return null;
-			}
-
-			// Retrieve the attachment node
 			AttachmentNode attachment = contentService.getAttachment(repositoryId, attachmentId);
 			if (attachment == null) {
 				if (log.isDebugEnabled()) {
 					log.debug("Attachment not found: {}", attachmentId);
 				}
-				return null;
+				// getAttachmentRef retries; getAttachment does not. Only reached on failure.
+				return new AttachmentContent(null, lengthFromMetadata(contentService, repositoryId, attachmentId));
 			}
+			length = attachment.getLength();
 
-			// Get the content stream from the AttachmentNode
 			java.io.InputStream contentStream = attachment.getInputStream();
 			if (contentStream == null) {
 				if (log.isDebugEnabled()) {
 					log.debug("No content stream available for attachment: {}", attachmentId);
 				}
-				return null;
+				return new AttachmentContent(null, length);
 			}
 
-			// Get MIME type and filename for better parsing
 			String mimeType = attachment.getMimeType();
 			String fileName = attachment.getName();
 
-			// Check if the MIME type is supported for text extraction
-			if (mimeType != null && !textExtractionService.isSupported(mimeType)) {
-				if (log.isDebugEnabled()) {
-					log.debug("MIME type {} not supported for text extraction", mimeType);
-				}
-				try {
-					contentStream.close();
-				} catch (Exception e) {
-					// Ignore close errors
-				}
-				return null;
-			}
-
+			// From here the stream is open, so every exit closes it.
 			try {
-				// Extract text using Tika via TextExtractionService
-				String extractedText = textExtractionService.extractText(contentStream, mimeType, fileName);
+				if (mimeType != null && !textExtractionService.isSupported(mimeType)) {
+					if (log.isDebugEnabled()) {
+						log.debug("MIME type {} not supported for text extraction", mimeType);
+					}
+					return new AttachmentContent(null, length);
+				}
 
+				String extractedText = textExtractionService.extractText(contentStream, mimeType, fileName);
 				if (extractedText != null && !extractedText.isEmpty()) {
 					if (log.isDebugEnabled()) {
 						log.debug("Successfully extracted {} characters from {} ({})",
 								extractedText.length(), fileName, mimeType);
 					}
-					return extractedText;
-				} else {
-					return null;
+					return new AttachmentContent(extractedText, length);
 				}
+				return new AttachmentContent(null, length);
 			} finally {
-				// Ensure the content stream is closed
 				try {
 					contentStream.close();
 				} catch (Exception e) {
 					// Ignore close errors
 				}
 			}
-
 		} catch (Exception e) {
+			// Unchanged from before this merge: a failed extraction is logged and yields no text.
+			// The length survives if the node was read before the failure.
 			log.warn("Failed to extract text content for attachment {}: {}", attachmentId, e.getMessage());
-			return null;
+			return new AttachmentContent(null, length);
+		}
+	}
+
+	/** The metadata-only read — never opens the attachment body (F3). */
+	private long lengthFromMetadata(ContentService contentService, String repositoryId, String attachmentId) {
+		try {
+			AttachmentNode ref = contentService.getAttachmentRef(repositoryId, attachmentId);
+			return (ref != null) ? ref.getLength() : 0L;
+		} catch (Exception e) {
+			log.warn("Could not read the length of attachment {}: {}", attachmentId, e.getMessage());
+			return 0L;
+		}
+	}
+
+	/** The text to index and the length to index, from a single attachment read. */
+	static final class AttachmentContent {
+		static final AttachmentContent NONE = new AttachmentContent(null, 0L);
+
+		/** Extracted text, or null when there is nothing to index. */
+		final String text;
+		/** The attachment's length, or 0 when no node could be read at all. */
+		final long length;
+
+		AttachmentContent(String text, long length) {
+			this.text = text;
+			this.length = length;
 		}
 	}
 	

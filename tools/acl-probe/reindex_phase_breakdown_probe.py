@@ -122,6 +122,23 @@ def main():
           f"errors={st.get('errorCount')} silentDrop={st.get('silentDropCount')}", flush=True)
     print(f"  {'enumeration (folder walk)':42}: {enum_ms:>8} ms ({enum_ms/wall*100:5.1f}%)", flush=True)
     print(f"  {'indexing (build + couch reads + solr)':42}: {idx_ms:>8} ms ({idx_ms/wall*100:5.1f}%)", flush=True)
+
+    # The indexing phase is ~90% of the wall clock, so it is split again. These four sum to just
+    # under indexingMs; the remainder is loop overhead.
+    rtg = st.get("solrRtgMs") or 0
+    inc = st.get("incarnationMs") or 0
+    bld = st.get("buildDocMs") or 0
+    add = st.get("solrAddMs") or 0
+    for label, value in (("solr realtime GET (per DOCUMENT)", rtg),
+                         ("content incarnation (CouchDB)", inc),
+                         ("build doc (attachments + Tika)", bld),
+                         ("solr add (per BATCH)", add)):
+        share = value / idx_ms * 100 if idx_ms else 0
+        per = value / max(indexed, 1)
+        print(f"    - {label:38}: {value:>8} ms ({share:5.1f}% of indexing, {per:6.2f} ms/doc)",
+              flush=True)
+    print(f"    - {'unattributed (loop overhead)':38}: {idx_ms-rtg-inc-bld-add:>8} ms", flush=True)
+
     print(f"  {'verification':42}: {ver_ms:>8} ms ({ver_ms/wall*100:5.1f}%)", flush=True)
     print(f"  {'wall':42}: {wall:>8} ms", flush=True)
     print(f"  {'unaccounted':42}: {wall-enum_ms-idx_ms-ver_ms:>8} ms", flush=True)
@@ -154,6 +171,8 @@ def main():
     print(json.dumps({"repository": REPO, "indexed": indexed, "wallMs": wall,
                       "enumerationMs": enum_ms, "indexingMs": idx_ms,
                       "verificationMs": ver_ms,
+                      "solrRtgMs": rtg, "incarnationMs": inc,
+                      "buildDocMs": bld, "solrAddMs": add,
                       "indexingMsPerDocument": round(per_doc, 2),
                       "couchBefore": before, "couchAfter": after}, indent=2), flush=True)
 

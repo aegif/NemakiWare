@@ -173,6 +173,10 @@ public class SearchEngineResource {
             response.setEnumerationMs(status.getEnumerationMs());
             response.setIndexingMs(status.getSolrWriteMs());
             response.setVerificationMs(status.getVerificationMs());
+            response.setSolrRtgMs(status.getSolrRtgMs());
+            response.setIncarnationMs(status.getIncarnationMs());
+            response.setBuildDocMs(status.getBuildDocMs());
+            response.setSolrAddMs(status.getSolrAddMs());
             response.setReindexedCount(status.getReindexedCount());
             response.setStartTime(status.getStartTime());
             response.setEndTime(status.getEndTime());
@@ -976,7 +980,15 @@ public class SearchEngineResource {
         private long indexingMs;
         @Schema(description = "Milliseconds spent verifying each batch after it was submitted")
         private long verificationMs;
-        
+        @Schema(description = "Of indexingMs: the content fence's realtime GET — one Solr round trip per document")
+        private long solrRtgMs;
+        @Schema(description = "Of indexingMs: resolving the authoritative content incarnation in CouchDB, per document")
+        private long incarnationMs;
+        @Schema(description = "Of indexingMs: building the Solr document — attachment reads and text extraction")
+        private long buildDocMs;
+        @Schema(description = "Of indexingMs: the single Solr round trip that submits each batch")
+        private long solrAddMs;
+
         @Schema(description = "Number of documents reindexed")
         private long reindexedCount;
         
@@ -1016,6 +1028,14 @@ public class SearchEngineResource {
         public void setIndexingMs(long indexingMs) { this.indexingMs = indexingMs; }
         public long getVerificationMs() { return verificationMs; }
         public void setVerificationMs(long verificationMs) { this.verificationMs = verificationMs; }
+        public long getSolrRtgMs() { return solrRtgMs; }
+        public void setSolrRtgMs(long solrRtgMs) { this.solrRtgMs = solrRtgMs; }
+        public long getIncarnationMs() { return incarnationMs; }
+        public void setIncarnationMs(long incarnationMs) { this.incarnationMs = incarnationMs; }
+        public long getBuildDocMs() { return buildDocMs; }
+        public void setBuildDocMs(long buildDocMs) { this.buildDocMs = buildDocMs; }
+        public long getSolrAddMs() { return solrAddMs; }
+        public void setSolrAddMs(long solrAddMs) { this.solrAddMs = solrAddMs; }
         public long getReindexedCount() { return reindexedCount; }
         public void setReindexedCount(long reindexedCount) { this.reindexedCount = reindexedCount; }
         public long getStartTime() { return startTime; }

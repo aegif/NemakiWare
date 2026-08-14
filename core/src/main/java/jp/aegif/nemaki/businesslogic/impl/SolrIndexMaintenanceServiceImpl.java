@@ -259,6 +259,10 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                     ", indexed: " + indexedCount.get() + ", errors: " + errorCount.get()
                     + " | where the time went: enumeration=" + status.getEnumerationMs() + "ms"
                     + " indexing=" + status.getSolrWriteMs() + "ms"
+                    + " [solrRtg=" + status.getSolrRtgMs() + "ms"
+                    + " incarnation=" + status.getIncarnationMs() + "ms"
+                    + " buildDoc=" + status.getBuildDocMs() + "ms"
+                    + " solrAdd=" + status.getSolrAddMs() + "ms]"
                     + " verification=" + status.getVerificationMs() + "ms"
                     + " (wall=" + (System.currentTimeMillis() - status.getStartTime()) + "ms)");
                 
@@ -515,11 +519,14 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             long writeStart = System.nanoTime();
             jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.BatchOutcome outcome =
                     solrUtil.indexDocumentsBatch(repositoryId, batch, BATCH_COMMIT_WITHIN_MS, skipRAGIndexing);
-            // Covers the per-document CouchDB reads the Solr document is built from (attachment
-            // metadata, attachment body, content incarnation) as well as the Solr round trip —
-            // they are inside indexDocumentsBatch and cannot be separated without threading a
-            // timer through SolrUtil. Split further only if this turns out to be the hot phase.
+            // The whole indexing phase. It DID turn out to be the hot one (~90% of a full
+            // reindex), so indexDocumentsBatch now reports its own split and the four parts are
+            // folded in below. They sum to just under this total; the remainder is loop overhead.
             status.addSolrWriteMs((System.nanoTime() - writeStart) / 1_000_000L);
+            status.addSolrRtgMs(outcome.solrRtgNs / 1_000_000L);
+            status.addIncarnationMs(outcome.incarnationNs / 1_000_000L);
+            status.addBuildDocMs(outcome.buildDocNs / 1_000_000L);
+            status.addSolrAddMs(outcome.solrAddNs / 1_000_000L);
             int successCount = outcome.written;
             indexedCount.addAndGet(successCount);
             status.setIndexedCount(indexedCount.get());
