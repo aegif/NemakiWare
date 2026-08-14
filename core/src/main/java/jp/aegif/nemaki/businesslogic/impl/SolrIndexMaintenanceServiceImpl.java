@@ -206,6 +206,24 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                     return;
                 }
 
+                // Say what is about to be destroyed and what is expected to replace it, on the
+                // way THROUGH the guard as well as on refusal.
+                //
+                // The guard only refuses at a 10x gap and only above 20 indexed objects, so it
+                // passes cases that are still worth seeing: a 90% loss clears it (an enumeration
+                // that sees 11 of 100 satisfies 11*10 > 100), and below 20 objects nothing is
+                // checked at all. Tightening the thresholds was considered and declined — it would
+                // block legitimate bulk deletions and push operators toward the explicit
+                // /search-engine/clear, which has no guard whatsoever. Logging both numbers costs
+                // nothing and makes an unexpected shrink visible after the fact, which is what the
+                // silent case lacked.
+                log.info("Reindex of " + repositoryId + " is about to clear the index: it currently"
+                        + " holds " + alreadyIndexed + " CMIS object(s) and the folder walk found "
+                        + totalCount.get() + " to re-index. A large drop here is worth"
+                        + " investigating even though the guard allowed it (guard refuses only"
+                        + " below a " + ENUMERATION_GUARD_FACTOR + "x gap above "
+                        + ENUMERATION_GUARD_FLOOR + " indexed objects).");
+
                 // Clear existing index
                 clearIndex(repositoryId);
 

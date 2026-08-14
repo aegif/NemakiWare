@@ -62,43 +62,60 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
     protected void applyPerRepositoryPatch(String repositoryId) {
         log.info("Starting System Folder Setup Patch for repository: " + repositoryId);
         
+        // NOT-READY MUST THROW, NEVER RETURN.
+        //
+        // AbstractNemakiPatch.apply() records this patch as applied the instant this method
+        // returns normally (AbstractNemakiPatch.java:57-59), and isApplied then skips it on every
+        // later startup. So returning early because the repository is not initialized yet does not
+        // mean "try again next time" — it means "never again", with a single warn line as the only
+        // trace. That is the shape PX1 came out of.
+        //
+        // Throwing is the safe direction and does NOT risk startup: apply() already catches
+        // (AbstractNemakiPatch.java:63-67), logs, marks the run unsuccessful and moves to the next
+        // repository — and crucially does not write the history, so this patch runs again next
+        // startup. The old comment below ("Don't throw - patch failures should not prevent
+        // application startup") was written against a premise that is not true of apply().
         try {
             ContentService contentService = patchUtil.getContentService();
             if (contentService == null) {
-                log.error("ContentService not available, cannot apply System Folder patch");
-                return;
+                throw new IllegalStateException("ContentService not available for repository "
+                        + repositoryId + " — the system folder was not set up. Retrying next startup.");
             }
-            
+
             if (patchUtil.getRepositoryInfoMap() == null) {
-                log.warn("RepositoryInfoMap not available yet. Skipping System Folder Setup for: " + repositoryId);
-                return;
+                throw new IllegalStateException("RepositoryInfoMap not available yet for repository "
+                        + repositoryId + " — the system folder was not set up. Retrying next startup.");
             }
-            
+
             if (patchUtil.getRepositoryInfoMap().get(repositoryId) == null) {
-                log.warn("Repository info not available for: " + repositoryId + ". Skipping System Folder Setup.");
-                return;
+                throw new IllegalStateException("Repository info not available for " + repositoryId
+                        + " — the system folder was not set up. Retrying next startup.");
             }
-            
+
             String rootFolderId = patchUtil.getRepositoryInfoMap().get(repositoryId).getRootFolderId();
             if (rootFolderId == null) {
-                log.warn("Root folder ID not available for repository: " + repositoryId + ". Skipping System Folder Setup.");
-                return;
+                throw new IllegalStateException("Root folder id not available for repository "
+                        + repositoryId + " — the system folder was not set up. Retrying next startup.");
             }
-            
+
             log.info("Using root folder ID: " + rootFolderId + " for repository: " + repositoryId);
-            
+
             // Verify root folder exists
             try {
                 Folder rootFolder = (Folder) contentService.getContent(repositoryId, rootFolderId);
                 if (rootFolder == null) {
-                    log.warn("Root folder not found for repository: " + repositoryId + ". Repository may not be fully initialized yet.");
-                    return;
+                    throw new IllegalStateException("Root folder " + rootFolderId + " not found for "
+                            + repositoryId + "; the repository is not fully initialized yet — the "
+                            + "system folder was not set up. Retrying next startup.");
                 }
-                
+
                 log.info("Root folder verified for repository: " + repositoryId + ", proceeding with System folder setup");
+            } catch (IllegalStateException e) {
+                throw e;
             } catch (Exception e) {
-                log.warn("Cannot access root folder for repository: " + repositoryId + ". Repository may not be fully initialized yet. Error: " + e.getMessage());
-                return;
+                throw new IllegalStateException("Cannot access root folder " + rootFolderId + " for "
+                        + repositoryId + "; the repository is not fully initialized yet — the system "
+                        + "folder was not set up. Retrying next startup: " + e.getMessage(), e);
             }
             
             // Create SystemCallContext for operations
@@ -137,7 +154,12 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                     setSystemFolderConfiguration(repositoryId, systemFolderId);
                     
                 } else {
-                    log.warn("Failed to create System folder for repository: " + repositoryId);
+                    // Creating it is this patch's entire job. Warning and returning would record
+                    // the patch as applied with no system folder created and no retry — the same
+                    // "never again" as the not-ready branches above.
+                    throw new IllegalStateException("Failed to create the system folder for "
+                            + repositoryId + " (createSystemFolder returned no id). Retrying next "
+                            + "startup.");
                 }
             } else {
                 log.info("System folder already exists with ID: " + existingSystemFolder.getId());
@@ -149,8 +171,14 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
             log.info("System Folder Setup Patch completed successfully for repository: " + repositoryId);
             
         } catch (Exception e) {
+            // Rethrow. Swallowing here is what turns "this failed" into "this is done": apply()
+            // writes the history as soon as this method returns normally, so a swallowed failure is
+            // permanent and invisible. apply() catches this, logs it, and leaves the patch
+            // un-recorded so it runs again next startup — startup is not affected.
             log.error("Error during System Folder Setup Patch for repository: " + repositoryId, e);
-            // Don't throw - patch failures should not prevent application startup
+            throw (e instanceof RuntimeException) ? (RuntimeException) e
+                    : new IllegalStateException("System Folder Setup failed for repository "
+                            + repositoryId + ": " + e.getMessage(), e);
         }
     }
     
