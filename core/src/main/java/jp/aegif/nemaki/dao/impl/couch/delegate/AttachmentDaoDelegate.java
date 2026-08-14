@@ -118,17 +118,17 @@ public class AttachmentDaoDelegate {
 						// Preserve any existing binary across the metadata write. Stage 2 below
 						// re-uploads it only when this node actually carries a stream; when it does
 						// not, a plain update here would delete the stored binary outright.
-						// updatePreservingAttachments hands the new revision back on `can`, so the
-						// GET that used to sit here — to learn the revision this very call had just
-						// produced — is gone (ledger V3).
 						client.updatePreservingAttachments(can, latestDoc);
-						stage1RevisionAfterUpdate = can.getRevision();
+						// Re-read rather than trusting `can`: update(Map) swallows failures and
+						// returns null, so the object cannot tell a successful write from a lost
+						// response. This GET was removed once (ledger V3) and put back.
+						Document updatedDoc = client.get(attachmentNode.getId());
+						stage1RevisionAfterUpdate = updatedDoc != null ? updatedDoc.getRev() : null;
 						log.debug("STAGE 1: Updated attachment metadata for: " + attachmentNode.getId() + " (new revision: " + stage1RevisionAfterUpdate + ")");
 					} else {
-						// create(Object) already writes the id and revision back onto `can`
-						// (CloudantClientWrapper "EKTORP-STYLE"), so no read-back is needed.
 						client.create(can);
-						stage1RevisionAfterUpdate = can.getRevision();
+						Document createdDoc = client.get(attachmentNode.getId());
+						stage1RevisionAfterUpdate = createdDoc != null ? createdDoc.getRev() : null;
 						log.debug("STAGE 1: Created attachment metadata for: " + attachmentNode.getId() + " (new revision: " + stage1RevisionAfterUpdate + ")");
 					}
 					break;
@@ -629,16 +629,13 @@ public class AttachmentDaoDelegate {
 
 				// STAGE 2: Upload binary
 				try {
-					// `can` always carries a revision by now, so this no longer re-reads the
-					// document it has just written (ledger V3). Two ways it gets there:
-					//   - stage 1 ran: updatePreservingAttachments / create wrote the new one back;
-					//   - stage 1 did not run: the GET at the top of this method is UNCONDITIONAL
-					//     (it sits above the contentStream gate), so the current revision was
-					//     already loaded there.
-					// It is empty only when that GET found no document or no _rev — and the GET
-					// removed from here would have asked the same document, so nothing that used
-					// to work stops working.
-					String revisionToUse = can.getRevision();
+					// A SECOND read, on purpose. It is not the same as the unconditional GET at the
+					// top of this method: it happens later, so it can recover from a transient
+					// failure of that one (get() returns null for any error, not just 404) and it
+					// sees a revision advanced in between. Removing it (ledger V3) let a null or
+					// stale _rev reach the binary upload; it was put back.
+					Document updatedDoc = client.get(attachment.getId());
+					String revisionToUse = updatedDoc != null ? updatedDoc.getRev() : can.getRevision();
 
 					String attachmentName = "content";
 					String contentType = contentStream.getMimeType() != null ?

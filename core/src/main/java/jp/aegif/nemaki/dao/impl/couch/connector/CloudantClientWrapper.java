@@ -1925,17 +1925,15 @@ public class CloudantClientWrapper {
 				stubs.put(e.getKey(), stub);
 			}
 			documentMap.put("_attachments", stubs);
-			DocumentResult result = update(documentMap);
+			update(documentMap);
 
-			// Hand the new revision back on the object, exactly as create(Object) and
-			// update(Object) already do ("EKTORP-STYLE"). Only the stub-preserving branch went
-			// through the Map overload, which cannot write back, so every caller had to issue a
-			// GET afterwards purely to learn the revision its own write had just produced —
-			// ledger V3. The early branch above delegates to update(Object) and was already fine.
-			if (result != null && result.getRev() != null
-					&& document instanceof jp.aegif.nemaki.model.couch.CouchNodeBase) {
-				((jp.aegif.nemaki.model.couch.CouchNodeBase) document).setRevision(result.getRev());
-			}
+			// NO write-back of the new revision here, deliberately — see ledger V3, which tried it
+			// and was reverted. update(Map) turns EVERY failure into a null return (it logs and
+			// returns null rather than throwing), so "result was null" and "the write succeeded but
+			// the response was lost" are indistinguishable from in here. Writing the revision back
+			// only on the success-shaped path let callers read the PRE-write revision and treat it
+			// as the revision of a successful write; the GET they used to do could at least
+			// discover what CouchDB actually holds. Callers therefore re-read.
 		} catch (Exception e) {
 			// NO fallback to update(document). That is precisely the path this method exists to
 			// avoid: it posts a body without _attachments, so CouchDB drops the binary and the

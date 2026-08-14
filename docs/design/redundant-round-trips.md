@@ -127,7 +127,7 @@ javadoc に書いた (ループ検出は `ObjectServiceInternalImpl` の thread-
 
 ---
 
-## 未対応 (レビュー由来。**下記はこちらで未検証**)
+## 未対応 — 3.3 では**やらないと決めた** 5 件 (詳細は下の「打ち切り」節)
 
 以下はレビューからの指摘で、**まだコードで裏を取っていない**。着手前に必ず再確認すること。
 
@@ -184,36 +184,41 @@ createPreview(previewCS, ...)
 |---|---|---|---|---|
 | **T2** | `ContentIncarnation.resolve` (索引の文書ごと) | CouchDB が持っていない UUID を刻まない / 走査と索引の間の削除を検出 | `Content` が既に UUID を持つとき、GET は同じ値を返す。**索引フェーズの約 24%** | `Content.getContentIncarnation()` が非 null のときだけ GET を省く案。**フェンスの正しさの入力なので設計判断が要る** |
 | **V2** | `createAttachmentAtomic` / `copyAttachmentAtomic` | 作成直後の一貫読み | `create()` が既に id と rev を返す。検証は「在るか」を聞く全文書 GET | `create()` の失敗を失敗として扱うなら落とせる |
-| ~~**V3**~~ | ~~`setStream` / `createAttachment` STAGE 2~~ | **✅ 直した。ただし台帳の記述は当たっていなかった (下記)** |
-| **V4** (一部) | `appendAttachment` | update 後の新しい change token | content の GET が 3 回 → **3 通目を切った (下記)。2 通目は保留** |
+| **V3** | 書いた直後に自分の rev を知るための GET × 3 | ⛔ **一度直して差し戻した (下記)。切ってはいけない読みだった** |
 | **V5** | `CompileService.getAttachmentWithRetry` | 作成直後の `_rev` 整合 | 既に 2 回リトライする `getAttachmentRef` をさらに 5 回包む | リトライ地点を 1 つに |
 
-#### V3 — 台帳の記述は外れていた。実際の場所は 3 箇所 (2026-08-14)
+#### V3 — 一度切って、差し戻した (2026-08-14)
 
-**「STAGE 2 が STAGE 1 の rev を捨てている」は誤り。** `createAttachment` の STAGE 2 は
-happy path で既に `result.getRev()` を使っており、GET は `documentRevision == null` の
-とき (主に conflict retry の後) だけ。`setStream` の STAGE 2 も手元の rev を使う
-(レビュー指摘)。
+**台帳の元の記述は外れていた。** `createAttachment` の STAGE 2 は happy path で既に
+`result.getRev()` を使っており、GET は `documentRevision == null` のときだけ。
+実際に「書いた直後に、自分が作った rev を知るための GET」だったのは 3 箇所
+(`setStream` STAGE 1 の update / create 分岐、`updateAttachment` STAGE 2 の入口)。
 
-**本当に冗長だったのは「書いた直後に、自分が作った rev を知るための GET」** で、3 箇所:
+`updatePreservingAttachments` が stub 分岐で `Map` overload を通るため rev を書き戻さない
+ことを突き止め、書き戻すようにして 3 箇所を落とした。**が、Codex レビューで Major 3 件が
+出て差し戻した。**
 
-| 場所 | 何を待っていたか |
-|---|---|
-| `setStream` STAGE 1 (update 分岐) | `updatePreservingAttachments` の後 |
-| `setStream` STAGE 1 (create 分岐) | `create(can)` の後 |
-| `updateAttachment` STAGE 2 の入口 | STAGE 1 の書き込みの後 |
+**なぜ切れないか** — 3 つとも「同じ文書をもう一度読む」ように見えて、そうではない。
 
-**原因は 1 箇所**だった。`create(Object)` と `update(Object)` は新しい rev を
-**渡されたオブジェクトに書き戻す** (`CloudantClientWrapper` が "EKTORP-STYLE" と
-呼んでいる、:1866-1868 と :2023)。`updatePreservingAttachments` だけが、添付 stub を
-持ち回る分岐で `Map` overload を通るため書き戻さず、`DocumentResult` を捨てていた。
+1. **`update(Map)` は例外を全部握って `null` を返す** (`CloudantClientWrapper:761-763`)。
+   つまり `updatePreservingAttachments` の中からは「失敗した」と
+   「成功したが応答を失った」が**区別できない**。成功の形のときだけ書き戻すと、
+   呼び出し側は**書き込み前の rev を「成功した書き込みの rev」として扱う**。
+   GET なら CouchDB が実際に持っている rev を見つけられた。
+2. **`updateAttachment` STAGE 2 の GET は「後の時点での再試行」だった。**
+   入口の GET は無条件だが、`get(String)` は 404 以外の失敗も `null` にする
+   (`CloudantClientWrapper:606-608`)。1 通目が一過性に失敗しても、2 通目は成功し得たし、
+   その間に進んだ rev も見えた。**「同じ文書だから等価」は時間と失敗独立性を無視していた。**
+3. **`setStream` STAGE 1 の conflict リトライループは元から機能していない** —
+   Map 版は握り潰し、Object 版は generic な `RuntimeException` に包むので
+   `catch (ConflictException)` に届かない。V3 はそのループが働く前提で安全性を主張していた。
 
-`updatePreservingAttachments` も同じように書き戻すようにしたら、3 箇所とも
-`can.getRevision()` で足りるようになった。**API の形は変えていない** (void のまま)。
+**教訓**: 「書き込みの戻りに載っているか」で切れるかどうかが決まる。V4 の 3 通目は
+`update()` が**書いた本人を返す**ので切れた。V3 は**戻りが void で、失敗が null に化ける**
+ので切れない。形が似ていても別物。
 
-**テストは書き戻しそのものを縛る。** 呼び出し側は書き込み直後に `can.getRevision()` を
-読むので、書き戻しが静かに止まると **stale な `_rev` でバイナリをアップロード**する —
-ここで見える失敗ではなく conflict やリトライになる。外すとテストが落ちることを確認済み。
+差し戻し後は元の 3 GET に戻っている。`updatePreservingAttachments` には
+「書き戻さないのは意図的」と理由つきで書いた。
 
 #### V4 — 3 通目だけ切った。2 通目は往復ではなく並行性の問題 (2026-08-14)
 
@@ -222,7 +227,7 @@ happy path で既に `result.getRev()` を使っており、GET は `documentRev
 | 通 | 何をしていたか | 判断 |
 |---|---|---|
 | 1 | 添付ノードの id を取る | **残す。** 別文書を引くために要る |
-| 2 | `updateAttachment` の後、change token を書く前にもう一度読む | **残す (下記)。** 消すと別レプリカの並行更新でチャンクが二重に付く |
+| 2 | `updateAttachment` の後、change token を書く前にもう一度読む | **残す。** 消すと別レプリカの並行更新でチャンクが二重に付く (下記) |
 | 3 | `update()` の後、token / id を読み返す | **✅ 切った** |
 
 3 通目を切れるのは、DAO の `update` が**書いた本人を convert して返す**から
@@ -250,7 +255,10 @@ content 文書を更新できる。
 2. content の `update()` が stale な `_rev` で **409**
 3. クライアントが `appendContentStream` をリトライすると、**チャンクが二重に付く**
 
-失敗は 409 として見えるので静かな lost update にはならないが、**リトライが壊す**。
+失敗は CouchDB 側では 409 だが、`update(Object)` が generic な `RuntimeException` に
+包むので**クライアントに 409 として届くとは限らない** (Codex 指摘)。静かな lost update に
+はならないものの、**リトライが壊す**。またこの読みは窓を**狭める**だけで閉じない —
+読みと POST の間にも別レプリカは入れる。
 2 通目は本体を書いたあとに最新の content を載せて token だけ足すためのもので、
 並行して入ったプロパティ変更も残る。窓が広いのは添付の書き込みが長いからであって、
 往復をケチる対象ではない (レビュー判断)。
@@ -263,6 +271,29 @@ content 文書を更新できる。
 | RAG の `getMimeType` → `extractText` | 同じゲート。成功時だけメタデータ GET 1 回を払い、拒否時は本体を開かない |
 | compile 時の `getChildren` → 文書ごとの `getAttachmentRef` | **別の文書**。CMIS の `contentStreamLength` は添付ノード側にある |
 | 索引の文書ごとの Solr realtime GET (C8) | 保存済み `_version_` と incarnation が要る。省くと folder reindex が ACL-epoch フェンスを剥がす |
+
+---
+
+## 3.3 としての打ち切り (2026-08-14、オーナー判断)
+
+**往復シリーズはここで止める。** 残っているのは「切ると製品の約束が変わる」か
+「まだ原因が無い性能」だけで、C4〜V4 と同じ作業ではない。
+
+| 件 | 3.3 での扱い | 理由 |
+|---|---|---|
+| **B1-a** | 残す | プレビューのためにアップロードをバッファすることになり、ストリーミングがメモリ特性に変わる。**正しさの穴ではない** (プレビューは書いたあと fresh に読む、`replacePwc` と同じ) |
+| **T2** | 残す | `ContentIncarnation.resolve` は**フェンスの入力**。手元の UUID を信じるのは「CouchDB が持っていない値を Solr に刻まない」を緩めること。索引の 24% と引き換えにするのは 3.3 の ACL-epoch の約束 |
+| **V2** | 残す | `create()` のあとの `getAttachmentRef` は**存在の検証**。V3 は「rev の書き戻し」だったので切れると思えたが、こちらは**載っていない事実を取りに行っている**。Cloudant の read-your-writes をやめる判断が要る |
+| **V5** | 残す | `getAttachmentRef` が既に 2 回リトライし、compile がさらに 5 回包む。一本化は整理だが、**リトライを薄くすると `getObject` の TCK が間欠的に落ちる**種類 |
+| **RX1** | 残す (調査も今はしない) | 正しさに触れない。所要時間は RELEASE_NOTES に記載済み。真因は未特定 (約 88% が CouchDB 読み、④⑤)。SX1 以前の数字は汚染の可能性。次にやるならコードではなく**添付割合を揃えた 2 点の再測** |
+
+**V2 を「`create()` が throw するなら GET は不要」と切るのは、一見 V3 に似ている。**
+V3 は書き込み結果がオブジェクトに載っていた (それでも差し戻した)。V2 の GET は
+**載っていない事実**を取りに行っている。同じ型に見えて違う。
+
+**T2 を「non-null なら省く」のも同様。** 索引は速くなるが、走査で読んだ `Content` と
+CouchDB の間の削除・未永続 UUID を、いま `resolve` が見ている。省くなら
+**フェンスの正典を先に書き換える**こと。
 
 ---
 
