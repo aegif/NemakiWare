@@ -1174,6 +1174,10 @@ public class CloudantClientWrapper {
 				// those five reaches this overload. documentMapFromRow still falls back to a read
 				// by id if a value ever turns out not to be a document, so a future scalar-emitting
 				// caller degrades to the old cost instead of silently getting nothing.
+				//
+				// PUTTING A SCALAR-EMITTING VIEW ON THIS OVERLOAD? That fallback is UNTESTED —
+				// nothing today reaches it, so deleting it leaves the suite green. Read
+				// documentMapFromRow before you rely on it, and write the test in the same change.
 				.includeDocs(false);
 			
 			// CRITICAL FIX: Add key to the server-side query instead of client-side filtering
