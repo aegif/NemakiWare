@@ -645,17 +645,25 @@ public class ArchiveServiceDelegate {
 	 *   the same document's Solr content_length  1,337,959
 	 * </pre>
 	 *
-	 * <p>So the cheap answer is also the right one. {@code CouchAttachmentNode.getActualLength()}
-	 * gets there by DISCARDING {@code _attachments.length} when the encoding is gzip and falling
-	 * back to the length recorded at upload time. A comment that used to sit at the archive call
-	 * site said the opposite — "not metadata which may be stale/compressed" — and it was the
-	 * metadata that was right.
+	 * <p>So for an attachment carrying a usable length the cheap answer is also the right one.
+	 * {@code CouchAttachmentNode.getActualLength()} gets there by DISCARDING
+	 * {@code _attachments.length} when the encoding is gzip and falling back to the length
+	 * recorded at upload time. A comment that used to sit at the archive call site said the
+	 * opposite — "not metadata which may be stale/compressed" — and it was the metadata that was
+	 * right.
+	 *
+	 * <p><b>Not universally, though.</b> {@code CouchAttachmentNode.length} is a primitive
+	 * {@code long}, so a document written before that field existed deserialises as 0 and is
+	 * indistinguishable from a genuinely empty attachment; and an upload whose length the client
+	 * could not state is stored as -1. Neither is "the right number", which is why anything that
+	 * is not strictly positive goes to the derivation first.
 	 *
 	 * <h2>What the fallback is still for</h2>
 	 *
 	 * <p>An attachment written before that length field existed has no usable value on the node,
 	 * and there the expensive derivation is the only way to a real number. So it stays — as the
-	 * fallback rather than the default.
+	 * fallback rather than the default. If IT cannot answer either, a stored 0 is still reported
+	 * (an empty attachment has a length) while a stored negative is reported as unknown.
 	 */
 	public static Long lengthForArchive(ContentDaoService contentDaoService, String repositoryId,
 			AttachmentNode attachment, String attachmentId) {
@@ -663,7 +671,19 @@ public class ArchiveServiceDelegate {
 		if (known > 0) {
 			return known;
 		}
-		return contentDaoService.getAttachmentActualSize(repositoryId, attachmentId);
+
+		Long derived = contentDaoService.getAttachmentActualSize(repositoryId, attachmentId);
+		if (derived != null) {
+			return derived;
+		}
+
+		// The derivation could not answer either. ZERO IS A REAL LENGTH — an empty attachment has
+		// one — so it must still be recorded; the first version of this helper returned null here
+		// and lost it (found in review). A NEGATIVE value is the opposite: it is the sentinel for
+		// "the uploader could not tell us" (AttachmentServiceDelegate records -1 for a
+		// non-resettable stream of unknown length), and writing that into an archive record as if
+		// it were a size would be worse than admitting the size is unknown.
+		return (known == 0) ? Long.valueOf(0L) : null;
 	}
 
 	public Long getAttachmentActualSize(String repositoryId, String attachmentId) {

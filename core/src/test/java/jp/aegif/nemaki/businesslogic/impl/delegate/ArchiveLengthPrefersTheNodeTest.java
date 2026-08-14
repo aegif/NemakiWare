@@ -43,8 +43,12 @@ import jp.aegif.nemaki.dao.ContentDaoService;
  * inverted preference and its own copy of the code, and no test would have noticed: it was found
  * in review, not by the suite.
  *
- * <p>So this one drives {@code createArchive} itself. There is now a single implementation
- * ({@link ArchiveServiceDelegate#lengthForArchive}), and this pins that this call site uses it.
+ * <p>So this one drives {@code createArchive} itself. It pins the OBSERVABLE behaviour of this
+ * call site for a positive-length attachment — not that the call site structurally delegates to
+ * {@link ArchiveServiceDelegate#lengthForArchive}; inline logic that happened to agree would pass
+ * too. Zero, negative and fallback-failure are covered on the helper in
+ * {@code ArchiveLengthUsesTheNodeTest}, and the two deletion call sites are not driven end to end
+ * by anything — they could regress independently while this stays green.
  *
  * <p>The comment that used to sit here read "Use actual content size from CouchDB (not metadata
  * which may be stale/compressed)". Measured on a gzip-stored 1.3 MB PDF, it was backwards: the

@@ -1530,21 +1530,35 @@ public class ContentServiceImpl implements ContentService {
 		log.debug("Repository: {}, Document: {}", repositoryId, original.getId());
 
 		// CRITICAL TCK FIX: Handle both cases - document with/without existing attachment
-		AttachmentNode an = null;
+		//
+		// THE ATTACHMENT IS READ AFTER THE WRITE, NOT BEFORE (ledger B1-b).
+		//
+		// This used to fetch the node with getAttachment (which OPENS the body), hand it to
+		// updateAttachment, and then build the preview from that same node's stream — a stream
+		// opened BEFORE the new bytes were written. The preview was therefore generated from the
+		// PREVIOUS content, and the document was left showing a thumbnail of what it used to be.
+		// replacePwc re-reads a fresh node for exactly this reason; this path did not.
+		//
+		// The write itself needs metadata only (updateAttachment builds its CouchAttachmentNode
+		// from the node's fields and re-reads the document for the current _rev,
+		// AttachmentDaoDelegate:587-595), so it takes getAttachmentRef. The body is opened once,
+		// afterwards, and only if a preview is actually going to be made — with previews off,
+		// nothing downloads the binary at all.
 		if (original.getAttachmentNodeId() != null) {
 			// Case 1: Document already has attachment - update it
-			an = contentDaoService.getAttachment(repositoryId, original.getAttachmentNodeId());
-			contentDaoService.updateAttachment(repositoryId, an, contentStream);
+			AttachmentNode ref = contentDaoService.getAttachmentRef(repositoryId, original.getAttachmentNodeId());
+			contentDaoService.updateAttachment(repositoryId, ref, contentStream);
 		} else {
 			// Case 2: Document created without content - create new attachment
 			String attachmentId = createAttachmentAtomic(callContext, repositoryId, contentStream);
 			original.setAttachmentNodeId(attachmentId);
-			an = contentDaoService.getAttachment(repositoryId, attachmentId);
 			log.debug("Created new attachment for document without content: {}", attachmentId);
 		}
 
 		// Update rendition contentStream if preview is enabled
 		if (isPreviewEnabled()) {
+			// Fetched HERE — after the write — so the stream carries the new content.
+			AttachmentNode an = contentDaoService.getAttachment(repositoryId, original.getAttachmentNodeId());
 			ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(), contentStream.getBigLength(),
 					contentStream.getMimeType(), an.getInputStream());
 

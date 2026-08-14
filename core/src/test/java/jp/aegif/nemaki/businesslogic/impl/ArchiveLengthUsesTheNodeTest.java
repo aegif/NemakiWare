@@ -76,6 +76,42 @@ class ArchiveLengthUsesTheNodeTest {
 	}
 
 	/**
+	 * Zero is a LENGTH, not a missing value.
+	 *
+	 * <p>Found in review: the first version returned the derivation's answer unconditionally when
+	 * the node was not strictly positive, so an empty attachment whose derivation also failed was
+	 * archived with no size at all. The old code recorded 0 there. This is the regression that
+	 * introduced, put back.
+	 */
+	@Test
+	void anEmptyAttachmentIsArchivedAsZeroNotAsUnknown() {
+		ContentDaoService dao = mock(ContentDaoService.class);
+		when(dao.getAttachmentActualSize(REPO, ATTACHMENT)).thenReturn(null);
+		AttachmentNode node = mock(AttachmentNode.class);
+		when(node.getLength()).thenReturn(0L);
+
+		assertEquals(0L, serviceWith(dao).lengthForArchive(REPO, node, ATTACHMENT),
+				"an empty attachment has a length and it is zero — reporting 'unknown' loses it");
+	}
+
+	/**
+	 * The opposite sentinel. {@code AttachmentServiceDelegate} records -1 when the uploader could
+	 * not state a length, and writing that into an archive record as if it were a size would be
+	 * worse than admitting the size is unknown.
+	 */
+	@Test
+	void anUnknownLengthIsNotArchivedAsANegativeNumber() {
+		ContentDaoService dao = mock(ContentDaoService.class);
+		when(dao.getAttachmentActualSize(REPO, ATTACHMENT)).thenReturn(null);
+		AttachmentNode node = mock(AttachmentNode.class);
+		when(node.getLength()).thenReturn(-1L);
+
+		org.junit.jupiter.api.Assertions.assertNull(
+				serviceWith(dao).lengthForArchive(REPO, node, ATTACHMENT),
+				"-1 is the uploader's 'I cannot tell you', not a content length");
+	}
+
+	/**
 	 * The other half. Without it, "never call the expensive path" would pass the test above and
 	 * silently record no size at all for attachments written before the length field existed.
 	 */
