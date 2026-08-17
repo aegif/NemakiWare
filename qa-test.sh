@@ -244,10 +244,12 @@ if [[ "$TEST_MODE" != "fast" ]]; then
         # First trigger some CMIS operations to generate Solr indexing logs if not already present
         curl -s -u admin:admin 'http://localhost:8080/core/browser/bedroom/root?cmisselector=children' > /dev/null 2>&1
         sleep 1  # Give time for async indexing to start
-        
-        # Check if Solr indexing is enabled in application logs
-        # Using proper regex OR pattern without double escaping
-        if docker logs docker-core-1 2>&1 | grep -E 'Solr indexing force setting: true|Starting async Solr indexing|SLF4J TEST: indexDocument called' > /dev/null; then
+
+        # Resolve the core container by name instead of hardcoding docker-core-1:
+        # the compose PROJECT name varies (-p nb33 etc.), and with the old hardcoded
+        # name this check could never pass on such stacks (3.3.1 self-review).
+        CORE_CONTAINER=\$(docker ps --filter 'name=core' --filter 'status=running' --format '{{.Names}}' | head -1)
+        if [ -n \"\$CORE_CONTAINER\" ] && docker logs \"\$CORE_CONTAINER\" 2>&1 | grep -E 'Solr indexing force setting: true|Starting async Solr indexing|SLF4J TEST: indexDocument called' > /dev/null; then
             echo 'PASS'
         else
             echo 'FAIL'
