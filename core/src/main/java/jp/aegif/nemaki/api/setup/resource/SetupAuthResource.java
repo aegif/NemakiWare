@@ -16,6 +16,8 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
 import jp.aegif.nemaki.api.setup.filter.UrlValidator;
+import jp.aegif.nemaki.init.CouchDbConnectionResult;
+import jp.aegif.nemaki.init.StartupProbeService;
 import jp.aegif.nemaki.api.setup.model.AuthConfigRequest;
 import jp.aegif.nemaki.api.setup.model.OidcTestRequest;
 import jp.aegif.nemaki.util.PropertyManager;
@@ -28,6 +30,9 @@ import jp.aegif.nemaki.util.PropertyManager;
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class SetupAuthResource {
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private StartupProbeService startupProbeService;
 
     private static final Logger logger = Logger.getLogger(SetupAuthResource.class.getName());
 
@@ -198,6 +203,23 @@ public class SetupAuthResource {
         String couchUser = System.getProperty("db.couchdb.auth.username", "admin");
         String couchPass = System.getProperty("db.couchdb.auth.password", "password");
         String authHeader = CouchDbConfigWriter.basicAuth(couchUser, couchPass);
+
+        // Same CouchDB floor the main /apply enforces. This endpoint writes nemaki_conf, and
+        // Setup Mode is exactly the situation where the startup gate never ran (CouchDB was down
+        // at boot) — so an unsupported server would otherwise take writes here. Unreachable is
+        // left to the writer's own error handling; only a reachable-but-unsupported server is
+        // refused, mirroring the startup semantics.
+        if (startupProbeService != null) {
+            CouchDbConnectionResult conn = startupProbeService.testConnection(couchUrl, couchUser, couchPass);
+            if (conn != null && conn.isReachable()) {
+                String versionRefusal = startupProbeService.couchDbVersionRefusal(conn);
+                if (versionRefusal != null) {
+                    return Response.status(Response.Status.BAD_REQUEST)
+                            .entity("{\"error\":\"" + CouchDbConfigWriter.escapeJson(versionRefusal) + "\"}")
+                            .build();
+                }
+            }
+        }
 
         try {
             CouchDbConfigWriter.putConfigValue(couchUrl, authHeader, "auth.password.enabled", String.valueOf(req.isPasswordEnabled()));

@@ -155,6 +155,91 @@ class CouchDbVersionSetupModeGateTest {
 				"the operator has to be told what was found: " + response.getEntity());
 	}
 
+	/**
+	 * The auxiliary Setup endpoints write too — {@code /setup/auth/apply} persists auth settings
+	 * into nemaki_conf, {@code /setup/admin/change-password} rewrites admin documents in every
+	 * main repository DB. Both were outside the version gate (3.3.1 #3).
+	 */
+	@Test
+	void authApplyRefusesAnOldCouchDb() throws Exception {
+		jp.aegif.nemaki.api.setup.resource.SetupAuthResource resource =
+				new jp.aegif.nemaki.api.setup.resource.SetupAuthResource();
+		java.lang.reflect.Field f = resource.getClass().getDeclaredField("startupProbeService");
+		f.setAccessible(true);
+		f.set(resource, probeReporting("2.3.1"));
+
+		jp.aegif.nemaki.api.setup.model.AuthConfigRequest request =
+				new jp.aegif.nemaki.api.setup.model.AuthConfigRequest();
+		request.setPasswordEnabled(true);
+
+		Response response = withCredentials(() -> resource.apply(request));
+
+		assertEquals(400, response.getStatus(),
+				"auth settings must not be written into an unsupported CouchDB");
+		assertTrue(String.valueOf(response.getEntity()).contains("2.3.1"),
+				"the operator has to be told what was found: " + response.getEntity());
+	}
+
+	@Test
+	void changePasswordRefusesAnOldCouchDb() throws Exception {
+		jp.aegif.nemaki.api.setup.resource.SetupAdminResource resource =
+				new jp.aegif.nemaki.api.setup.resource.SetupAdminResource();
+		java.lang.reflect.Field f = resource.getClass().getDeclaredField("startupProbeService");
+		f.setAccessible(true);
+		f.set(resource, probeReporting("2.3.1"));
+
+		jp.aegif.nemaki.api.setup.model.AdminSetupRequest request =
+				new jp.aegif.nemaki.api.setup.model.AdminSetupRequest();
+		request.setNewPassword("longenoughpassword");
+
+		Response response = withCredentials(() -> resource.changePassword(request));
+
+		assertEquals(400, response.getStatus(),
+				"admin documents must not be rewritten in an unsupported CouchDB");
+		assertTrue(String.valueOf(response.getEntity()).contains("2.3.1"),
+				"the operator has to be told what was found: " + response.getEntity());
+	}
+
+	/**
+	 * 3.3.1 #11: a PARTIAL admin-password update must not report a bare success. The stubbed
+	 * update succeeds for one repository and fails for the other; the response must carry the
+	 * per-DB outcome and a warning naming what was left on the old password.
+	 */
+	@Test
+	void partialPasswordUpdateIsVisibleInTheResponse() throws Exception {
+		jp.aegif.nemaki.api.setup.resource.SetupAdminResource resource =
+				new jp.aegif.nemaki.api.setup.resource.SetupAdminResource() {
+					@Override
+					protected java.util.List<String> discoverMainRepositoryDbs(
+							String couchUrl, String user, String pass) {
+						return java.util.List.of("bedroom", "canopy");
+					}
+
+					@Override
+					protected boolean updateAdminInDb(String couchUrl, String dbName,
+							String authHeader, String bcryptHash) {
+						return "bedroom".equals(dbName);
+					}
+				};
+		java.lang.reflect.Field f = jp.aegif.nemaki.api.setup.resource.SetupAdminResource.class
+				.getDeclaredField("startupProbeService");
+		f.setAccessible(true);
+		f.set(resource, probeReporting("3.3.3"));
+
+		jp.aegif.nemaki.api.setup.model.AdminSetupRequest request =
+				new jp.aegif.nemaki.api.setup.model.AdminSetupRequest();
+		request.setNewPassword("longenoughpassword");
+
+		Response response = withCredentials(() -> resource.changePassword(request));
+		String body = String.valueOf(response.getEntity());
+
+		assertEquals(200, response.getStatus(), "one updated repository is still a success: " + body);
+		assertTrue(body.contains("\"db\":\"canopy\",\"updated\":false"),
+				"the per-DB outcome must be visible: " + body);
+		assertTrue(body.contains("warning") && body.contains("canopy"),
+				"the repository left on the old password must be named: " + body);
+	}
+
 	/** The case this exists for. */
 	@Test
 	void markCompleteRefusesAnOldCouchDb() throws Exception {

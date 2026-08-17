@@ -67,6 +67,22 @@ public class SetupAdminResource {
         String couchPass = System.getProperty("db.couchdb.auth.password", "password");
         String authHeader = CouchDbConfigWriter.basicAuth(couchUser, couchPass);
 
+        // Same CouchDB floor the main /apply enforces — this endpoint writes admin documents
+        // into every main repository DB. Reachable-but-unsupported is refused; unreachable is
+        // left to the discovery/update calls' own error handling (startup semantics).
+        if (startupProbeService != null) {
+            jp.aegif.nemaki.init.CouchDbConnectionResult conn =
+                    startupProbeService.testConnection(couchUrl, couchUser, couchPass);
+            if (conn != null && conn.isReachable()) {
+                String versionRefusal = startupProbeService.couchDbVersionRefusal(conn);
+                if (versionRefusal != null) {
+                    return Response.status(Response.Status.BAD_REQUEST)
+                            .entity("{\"error\":\"" + CouchDbConfigWriter.escapeJson(versionRefusal) + "\"}")
+                            .build();
+                }
+            }
+        }
+
         try {
             String bcryptHash = org.mindrot.jbcrypt.BCrypt.hashpw(
                     newPassword, org.mindrot.jbcrypt.BCrypt.gensalt());
@@ -76,10 +92,19 @@ public class SetupAdminResource {
             logger.info("changePassword: discovered main repos: " + mainDbs);
 
             int updatedCount = 0;
+            StringBuilder perDb = new StringBuilder();
+            StringBuilder failed = new StringBuilder();
             for (String dbName : mainDbs) {
-                if (updateAdminInDb(couchUrl, dbName, authHeader, bcryptHash)) {
+                boolean ok = updateAdminInDb(couchUrl, dbName, authHeader, bcryptHash);
+                if (ok) {
                     updatedCount++;
+                } else if (failed.length() < 512) {
+                    if (failed.length() > 0) failed.append(", ");
+                    failed.append(dbName);
                 }
+                if (perDb.length() > 0) perDb.append(",");
+                perDb.append("{\"db\":\"").append(CouchDbConfigWriter.escapeJson(dbName))
+                        .append("\",\"updated\":").append(ok).append("}");
             }
 
             if (updatedCount == 0) {
@@ -88,8 +113,19 @@ public class SetupAdminResource {
                         .build();
             }
 
-            logger.info("Admin password updated in " + updatedCount + " repositories");
-            return Response.ok("{\"success\":true}").build();
+            logger.info("Admin password updated in " + updatedCount + "/" + mainDbs.size() + " repositories");
+            // A partial update used to be reported as a bare success, silently — one repo could
+            // keep the OLD admin password with nothing telling the operator. Success semantics
+            // are unchanged (>= 1 updated), but the response now carries the per-DB outcome and
+            // an explicit warning naming what was left behind.
+            StringBuilder body = new StringBuilder("{\"success\":true,\"results\":[").append(perDb).append("]");
+            if (failed.length() > 0) {
+                body.append(",\"warning\":\"admin password NOT updated in: ")
+                        .append(CouchDbConfigWriter.escapeJson(failed.toString()))
+                        .append(" — these repositories still accept the previous password\"");
+            }
+            body.append("}");
+            return Response.ok(body.toString()).build();
         } catch (Exception e) {
             logger.log(Level.SEVERE, "Failed to change admin password", e);
             return Response.serverError()
@@ -101,7 +137,8 @@ public class SetupAdminResource {
     /**
      * Find and update admin user in a single DB. Returns true if admin was found and updated.
      */
-    private boolean updateAdminInDb(String couchUrl, String dbName, String authHeader, String bcryptHash) {
+    // Protected so the gate test can stub the HTTP edges without a container.
+    protected boolean updateAdminInDb(String couchUrl, String dbName, String authHeader, String bcryptHash) {
         try {
             String dbUrl = couchUrl + "/" + dbName;
             String viewUrl = dbUrl + "/_design/_repo/_view/admin?key=\"admin\"&reduce=false";
@@ -162,7 +199,7 @@ public class SetupAdminResource {
     /**
      * Discover main repository DB names using repositories.yml via StartupProbeService.
      */
-    private List<String> discoverMainRepositoryDbs(String couchUrl, String user, String pass) {
+    protected List<String> discoverMainRepositoryDbs(String couchUrl, String user, String pass) {
         if (startupProbeService != null) {
             List<String> allDbs = startupProbeService.discoverNemakiDatabases(couchUrl, user, pass);
             return allDbs.stream()
