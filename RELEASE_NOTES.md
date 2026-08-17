@@ -16,9 +16,12 @@ only repository gotchas.
 
 - **Swagger UI の「Try it out」が動くようになりました** — openapi.json に `servers` が
   無く、実行リクエストがコンテキストパス `/core` を欠いた URL に飛んで全オペレーションが
-  404 でした。さらに認証 cookie が送られず (swagger-client の fetch は credentials を
-  既定で送らない)、CSRF ヘッダも落ちていました。3 点とも修正し、UI からの実行 → 200 を
-  E2E テストで固定しています。
+  404 でした (修正一巡目の server 値もパス二重化で 401 になっており、正は `/core` のみ)。
+  認証は HttpOnly cookie が fetch の既定 (`same-origin`) で送られるため追加対応は不要と
+  実測で確認しています (「credentials が送られない」という当初の診断は誤りでした)。
+  併せて interceptor の AUTH_TOKEN 前提の dead code をアプリ標準ヘッダの merge に整理
+  (state-changing 操作の CSRF は same-origin の Origin ヘッダで既に通るため、これは
+  防御深化)。UI からの GET と POST の実行 → 200 を E2E テストで固定しています。
 - **Setup ウィザードの補助エンドポイントにも CouchDB 3.3 検査** — `/setup/auth/apply`
   (認証設定の保存) と `/setup/admin/change-password` (admin パスワード変更) が、3.3 未満の
   CouchDB に対しても書き込めました。本体の `/apply` と同じ検査で 400 を返します。

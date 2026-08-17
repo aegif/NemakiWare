@@ -37,7 +37,10 @@ import jakarta.ws.rs.ApplicationPath;
         )
     ),
     servers = {
-        @Server(url = "/core/api/v1/cmis", description = "NemakiWare CMIS REST API v1")
+        // Kept in sync with the AUTHORITATIVE value in the programmatic SwaggerConfiguration
+        // below — this annotation is NOT scanned by OpenApiResource (that was 3.3.1 #8's root
+        // cause), so a divergent value here is dead but misleading metadata.
+        @Server(url = "/core", description = "NemakiWare servlet context")
     },
     tags = {
         @Tag(name = "repositories", description = "Repository management operations"),

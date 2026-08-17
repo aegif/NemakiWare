@@ -29,19 +29,19 @@ export const ApiDocs: React.FC<ApiDocsProps> = ({ repositoryId }) => {
   const openApiUrl = '/core/api/v1/cmis/openapi.json';
 
   // Request interceptor: merge the app's standard headers into every Try-it-out request.
-  // getAuthHeaders() carries X-Requested-With (the CSRF bypass header) — the previous version
-  // only copied AUTH_TOKEN, which is never set in cookie-based auth, so state-changing
-  // operations executed from Swagger UI would have been rejected by the CSRF filter (3.3.1 #8).
+  // The previous version only copied AUTH_TOKEN, which is never set in cookie-based auth —
+  // dead code. Auth itself needs nothing here: it rides the HttpOnly cookie, which fetch's
+  // default credentials mode ('same-origin') already sends. X-Requested-With is defense in
+  // depth for state-changing operations: the CSRF filter today also accepts a same-origin
+  // Origin header (which browsers attach to every POST), but this aligns Swagger UI with
+  // the standard headers the rest of the app sends, so a tightened Origin policy would not
+  // silently break Try it out (measured against the live filter, 3.3.1 #8).
   const requestInterceptor = useCallback((req: Record<string, unknown>) => {
     const authService = AuthService.getInstance();
     req.headers = {
       ...((req.headers as Record<string, string>) || {}),
       ...authService.getAuthHeaders()
     };
-    // Auth is an HttpOnly cookie. swagger-client's fetch omits credentials by default, so
-    // every executed request was a 401; the SwaggerUI `withCredentials` prop is not part of
-    // swagger-ui-react's typed surface, so the reliable place to say it is the request itself.
-    req.credentials = 'same-origin';
     return req;
   }, []);
 
