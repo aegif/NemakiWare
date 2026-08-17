@@ -27,7 +27,7 @@
 		<!-- One version per CXF / HttpComponents 5 family; the enforcer refuses any other. -->
 		<org.apache.cxf.version>4.2.3</org.apache.cxf.version>
 		<httpcomponents.client5.version>5.5.1</httpcomponents.client5.version>
-		<httpcomponents.core5.version>5.3.6</httpcomponents.core5.version>
+		<httpcomponents.core5.version>5.4.3</httpcomponents.core5.version>
 		<opencmis.github.packages.url>https://maven.pkg.github.com/aegif/chemistry-opencmis-nemakiware</opencmis.github.packages.url>
 		<opencmis.github.packages.repository.id>github-opencmis</opencmis.github.packages.repository.id>
 		<jersey.version>4.0.0</jersey.version>
