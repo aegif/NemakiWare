@@ -59,11 +59,14 @@ public class PolicyServiceImpl implements PolicyService {
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
 		exceptionService.invalidArgumentRequiredString("policyId", policyId);
 		
-		Lock objectLock = threadLockService.getWriteLock(repositoryId, objectId);
-		Lock policyLock = threadLockService.getReadLock(repositoryId, policyId);
+		// One ordered set rather than a nested pair. The two are taken as WRITE locks even though
+		// the policy only needs reading: orderedLocks takes a single mode, and over-serializing one
+		// policy application is a smaller cost than leaving the pair unordered — an unordered pair
+		// is how a repository stops.
+		List<Lock> locks = threadLockService.orderedLocks(repositoryId,
+				java.util.List.of(objectId, policyId), true);
 		try{
-			objectLock.lock();
-			policyLock.lock();
+			threadLockService.bulkLock(locks);
 			
 			// //////////////////
 			// General Exception
@@ -94,8 +97,7 @@ public class PolicyServiceImpl implements PolicyService {
 			nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
 			
 		}finally{
-			objectLock.unlock();
-			policyLock.unlock();
+			threadLockService.bulkUnlock(locks);
 		}
 	}
 
@@ -106,11 +108,14 @@ public class PolicyServiceImpl implements PolicyService {
 		exceptionService.invalidArgumentRequiredString("objectId", objectId);
 		exceptionService.invalidArgumentRequiredString("policyId", policyId);
 
-		Lock objectLock = threadLockService.getWriteLock(repositoryId, objectId);
-		Lock policyLock = threadLockService.getReadLock(repositoryId, policyId);
+		// One ordered set rather than a nested pair. The two are taken as WRITE locks even though
+		// the policy only needs reading: orderedLocks takes a single mode, and over-serializing one
+		// policy application is a smaller cost than leaving the pair unordered — an unordered pair
+		// is how a repository stops.
+		List<Lock> locks = threadLockService.orderedLocks(repositoryId,
+				java.util.List.of(objectId, policyId), true);
 		try{
-			objectLock.lock();
-			policyLock.lock();
+			threadLockService.bulkLock(locks);
 
 			// //////////////////
 			// General Exception
@@ -132,8 +137,7 @@ public class PolicyServiceImpl implements PolicyService {
 			nemakiCachePool.get(repositoryId).removeCmisCache(objectId);
 			
 		}finally{
-			objectLock.unlock();
-			policyLock.unlock();
+			threadLockService.bulkUnlock(locks);
 		}
 	}
 

@@ -1,12 +1,8 @@
 package jp.aegif.nemaki.rest.purview.journal;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -127,9 +123,10 @@ public final class LineageEventBuilder {
         if (name != null) {
             int maxLen = config.getSnapshotMaxNameLength();
             if (name.length() > maxLen && maxLen > 0) {
-                snapshotAttributes.put("name", name.substring(0, maxLen));
+                snapshotAttributes.put("name",
+                        name.substring(0, EndpointAttribute.truncationLength(name, maxLen)));
                 snapshotAttributes.put("name_truncated", "true");
-                snapshotAttributes.put("name_hash", sha256Hex(name));
+                snapshotAttributes.put("name_hash", LineageDigests.evidenceDigest(name));
             } else {
                 snapshotAttributes.put("name", name);
             }
@@ -154,9 +151,11 @@ public final class LineageEventBuilder {
         if (folderPath != null && config.isSnapshotCapturePath()) {
             int maxLen = config.getSnapshotMaxPathLength();
             if (folderPath.length() > maxLen && maxLen > 0) {
-                snapshotAttributes.put("folderPath", folderPath.substring(0, maxLen));
+                snapshotAttributes.put("folderPath", folderPath.substring(0,
+                        EndpointAttribute.truncationLength(folderPath, maxLen)));
                 snapshotAttributes.put("folderPath_truncated", "true");
-                snapshotAttributes.put("folderPath_hash", sha256Hex(folderPath));
+                snapshotAttributes.put("folderPath_hash",
+                        LineageDigests.evidenceDigest(folderPath));
             } else {
                 snapshotAttributes.put("folderPath", folderPath);
             }
@@ -164,23 +163,15 @@ public final class LineageEventBuilder {
         return this;
     }
 
-    static String truncate(String value, int maxLength) {
-        if (value == null || maxLength <= 0 || value.length() <= maxLength) {
-            return value;
-        }
-        return value.substring(0, maxLength);
-    }
-
-    static String sha256Hex(String value) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] digest = md.digest(value.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException e) {
-            // SHA-256 is guaranteed to be available in all JVMs
-            throw new AssertionError("SHA-256 not available", e);
-        }
-    }
+    // Two helpers used to live here and no longer do.
+    //
+    // truncate(String, int) had no production caller — only four assertions kept it alive — and
+    // it cut at a raw index, so it could split a surrogate pair. Next to §2's surrogate-aware
+    // EndpointAttribute.truncationLength, that is a trap: the two read alike and one corrupts
+    // its last character. Deleted rather than fixed, so there is one truncation rule.
+    //
+    // sha256Hex(String) was the evidence digest under a third name. It is now
+    // LineageDigests.evidenceDigest, which says what the value is for.
 
     public LineageEventBuilder targets(List<String> targets) {
         if (targets != null) {

@@ -346,25 +346,44 @@ public class CloudDriveResource extends ResourceBase {
 		}
 	}
 
-	private void emitLineageEvent(LineageEvent event) {
+	/** The active emitter for this repository, or {@code null} when lineage is off. */
+	private LineageEmitter resolveLineageEmitter(String repositoryId) {
 		try {
 			LineageConfig config = getLineageConfig();
-			if (config == null) return;
-			LineageMode mode = config.getModeForRepository(event.repositoryId());
-			if (mode == LineageMode.DISABLED) return;
-
+			if (config == null) return null;
+			LineageMode mode = config.getModeForRepository(repositoryId);
+			if (mode == LineageMode.DISABLED) return null;
 			LineageJournalStore store = SpringContext.getApplicationContext()
 					.getBean(LineageJournalStore.class);
 			@SuppressWarnings("unchecked")
 			java.util.List<LineageTargetSink> sinks = (java.util.List<LineageTargetSink>)
 					(java.util.List<?>) SpringContext.getApplicationContext()
 					.getBeansOfType(LineageTargetSink.class).values().stream().toList();
-			LineageEmitter emitter = config.createEmitterForMode(mode, store, sinks);
-			if (emitter.isActive()) {
-				emitter.emit(event);
-			}
+			return config.createEmitterForMode(mode, store, sinks);
 		} catch (Exception e) {
-			log.warn("Lineage event emission failed (non-fatal): " + e.getMessage());
+			log.warn("Lineage emitter resolution failed (non-fatal): " + e.getMessage());
+			return null;
+		}
+	}
+
+	/** Lineage-only config read; never throws (fail-open — a producer must not fail the op). */
+	private java.util.List<String> lineageTargets() {
+		try {
+			LineageConfig lc = getLineageConfig();
+			return lc != null ? lc.getTargets() : java.util.List.of();
+		} catch (Exception e) {
+			return java.util.List.of();
+		}
+	}
+
+	/** Lineage-only name read; never throws — a lost name loses one fact, never the operation. */
+	private String readDocumentNameQuietly(String repositoryId, String objectId) {
+		try {
+			Content c = getContentService().getContent(repositoryId, objectId);
+			return c != null ? c.getName() : null;
+		} catch (Exception e) {
+			log.warn("Could not read document name for lineage: " + e.getMessage());
+			return null;
 		}
 	}
 
@@ -462,6 +481,10 @@ public class CloudDriveResource extends ResourceBase {
 				}
 			}
 
+			// §3: the lineage operation id is issued when the business operation starts —
+			// before the mutation, so retries of the emission reuse one identity.
+			final String lineageOperationId = java.util.UUID.randomUUID().toString();
+
 			// SECURITY: Pass user's CallContext to enforce ACL checks
 			String cloudFileId = service.pushToCloud(callContext, repositoryId, objectId, provider, accessToken, existingCloudFileId);
 
@@ -475,20 +498,30 @@ public class CloudDriveResource extends ResourceBase {
 				// Don't fail the push operation just because metadata save failed
 			}
 
-			// Lineage Journal: CLOUD_SYNC_UPLOAD
-			{
-				LineageConfig lc = getLineageConfig();
-				LineageEventBuilder b = new LineageEventBuilder()
-						.repositoryId(repositoryId)
-						.processType(LineageProcessType.CLOUD_SYNC_UPLOAD)
-						.addInputObject(repositoryId, objectId)
-						.addOutput("cloud://" + provider + "/" + cloudFileId)
-						.snapshotAttribute("provider", provider);
-				if (lc != null) {
-					b.targets(lc.getTargets());
-				}
-				emitLineageEvent(b.build());
-			}
+			// Lineage: one version-free fact. Everything lineage-only — config read, name read,
+			// fact construction — runs inside the fail-open boundary; the business path holds
+			// nothing but the UUID issued above.
+			jp.aegif.nemaki.rest.purview.journal.LineageFactEmission.emitSafely(
+					resolveLineageEmitter(repositoryId), () -> {
+				String documentName = readDocumentNameQuietly(repositoryId, objectId);
+				String occurredAt = java.time.Instant.now().toString();
+				return new jp.aegif.nemaki.rest.purview.journal.LineageFact(
+						repositoryId,
+						LineageProcessType.CLOUD_SYNC_UPLOAD,
+						lineageOperationId,
+						occurredAt,
+						java.util.List.of(jp.aegif.nemaki.rest.purview.journal.LineageEndpoint
+								.document(repositoryId, objectId, documentName)),
+						java.util.List.of(jp.aegif.nemaki.rest.purview.journal.LineageEndpoint
+								.cloudObject(repositoryId, provider, cloudFileId)),
+						lineageTargets(),
+						null,
+						new jp.aegif.nemaki.rest.purview.journal.LineageFact.LegacyV1Projection(
+								LineageProcessType.CLOUD_SYNC_UPLOAD,
+								java.util.List.of(LineageEvent.qualifiedName(repositoryId, objectId)),
+								java.util.List.of("cloud://" + provider + "/" + cloudFileId),
+								java.util.Map.of("provider", provider)));
+			}, "repo=" + repositoryId + " op=" + lineageOperationId + " type=CLOUD_SYNC_UPLOAD");
 
 			result.put("cloudFileId", cloudFileId);
 			result.put("cloudFileUrl", service.getCloudFileUrl(provider, cloudFileId));
@@ -633,6 +666,8 @@ public class CloudDriveResource extends ResourceBase {
 			org.apache.chemistry.opencmis.commons.spi.Holder<String> changeTokenHolder =
 				(changeToken != null) ? new org.apache.chemistry.opencmis.commons.spi.Holder<>(changeToken) : null;
 
+			// §3: issued before the mutation this operation performs.
+			final String lineageOperationId = java.util.UUID.randomUUID().toString();
 			objectService.setContentStream(callContext, repositoryId, objectIdHolder, true, newStream, changeTokenHolder, null);
 
 			// Fetch and save comments from the cloud file
@@ -654,20 +689,31 @@ public class CloudDriveResource extends ResourceBase {
 				log.debug("[pullFromCloud] Cloud comments fetch exception detail", e);
 			}
 
-			// Lineage Journal: CLOUD_SYNC_DOWNLOAD
-			{
-				LineageConfig lc = getLineageConfig();
-				LineageEventBuilder b = new LineageEventBuilder()
-						.repositoryId(repositoryId)
-						.processType(LineageProcessType.CLOUD_SYNC_DOWNLOAD)
-						.addInput("cloud://" + provider + "/" + cloudFileId)
-						.addOutputObject(repositoryId, objectIdHolder.getValue())
-						.snapshotAttribute("provider", provider);
-				if (lc != null) {
-					b.targets(lc.getTargets());
-				}
-				emitLineageEvent(b.build());
-			}
+			// Lineage: one version-free fact (pull into an existing document). All lineage-only
+			// work runs inside the fail-open boundary; the holder is read there because checkin
+			// may have moved it to a new version id.
+			jp.aegif.nemaki.rest.purview.journal.LineageFactEmission.emitSafely(
+					resolveLineageEmitter(repositoryId), () -> {
+				String pulledObjectId = objectIdHolder.getValue();
+				String documentName = readDocumentNameQuietly(repositoryId, pulledObjectId);
+				String occurredAt = java.time.Instant.now().toString();
+				return new jp.aegif.nemaki.rest.purview.journal.LineageFact(
+						repositoryId,
+						LineageProcessType.CLOUD_SYNC_DOWNLOAD,
+						lineageOperationId,
+						occurredAt,
+						java.util.List.of(jp.aegif.nemaki.rest.purview.journal.LineageEndpoint
+								.cloudObject(repositoryId, provider, cloudFileId)),
+						java.util.List.of(jp.aegif.nemaki.rest.purview.journal.LineageEndpoint
+								.document(repositoryId, pulledObjectId, documentName)),
+						lineageTargets(),
+						null,
+						new jp.aegif.nemaki.rest.purview.journal.LineageFact.LegacyV1Projection(
+								LineageProcessType.CLOUD_SYNC_DOWNLOAD,
+								java.util.List.of("cloud://" + provider + "/" + cloudFileId),
+								java.util.List.of(LineageEvent.qualifiedName(repositoryId, pulledObjectId)),
+								java.util.Map.of("provider", provider)));
+			}, "repo=" + repositoryId + " op=" + lineageOperationId + " type=CLOUD_SYNC_DOWNLOAD(pull)");
 
 			result.put("objectId", objectIdHolder.getValue());
 			result.put("pulled", true);
@@ -838,6 +884,8 @@ public class CloudDriveResource extends ResourceBase {
 				}
 			}
 
+			// §3: issued before the create/checkin mutation below.
+			final String lineageOperationId = java.util.UUID.randomUUID().toString();
 			String newObjectId;
 			boolean isNewVersion = false;
 
@@ -939,20 +987,30 @@ public class CloudDriveResource extends ResourceBase {
 			result.put("provider", provider);
 			result.put("isNewVersion", isNewVersion);
 
-			// Lineage Journal: CLOUD_SYNC_DOWNLOAD (import from cloud → NemakiWare)
-			{
-				LineageConfig lc = getLineageConfig();
-				LineageEventBuilder b = new LineageEventBuilder()
-						.repositoryId(repositoryId)
-						.processType(LineageProcessType.CLOUD_SYNC_DOWNLOAD)
-						.addInput("cloud://" + provider + "/" + cloudFileId)
-						.addOutputObject(repositoryId, newObjectId)
-						.snapshotAttribute("provider", provider);
-				if (lc != null) {
-					b.targets(lc.getTargets());
-				}
-				emitLineageEvent(b.build());
-			}
+			// Lineage: one version-free fact (import created or versioned a document). The name
+			// is read back from the object that actually exists — creation may have adjusted it —
+			// and every lineage-only step runs inside the fail-open boundary.
+			jp.aegif.nemaki.rest.purview.journal.LineageFactEmission.emitSafely(
+					resolveLineageEmitter(repositoryId), () -> {
+				String documentName = readDocumentNameQuietly(repositoryId, newObjectId);
+				String occurredAt = java.time.Instant.now().toString();
+				return new jp.aegif.nemaki.rest.purview.journal.LineageFact(
+						repositoryId,
+						LineageProcessType.CLOUD_SYNC_DOWNLOAD,
+						lineageOperationId,
+						occurredAt,
+						java.util.List.of(jp.aegif.nemaki.rest.purview.journal.LineageEndpoint
+								.cloudObject(repositoryId, provider, cloudFileId)),
+						java.util.List.of(jp.aegif.nemaki.rest.purview.journal.LineageEndpoint
+								.document(repositoryId, newObjectId, documentName)),
+						lineageTargets(),
+						null,
+						new jp.aegif.nemaki.rest.purview.journal.LineageFact.LegacyV1Projection(
+								LineageProcessType.CLOUD_SYNC_DOWNLOAD,
+								java.util.List.of("cloud://" + provider + "/" + cloudFileId),
+								java.util.List.of(LineageEvent.qualifiedName(repositoryId, newObjectId)),
+								java.util.Map.of("provider", provider)));
+			}, "repo=" + repositoryId + " op=" + lineageOperationId + " type=CLOUD_SYNC_DOWNLOAD(import)");
 
 		} catch (Exception e) {
 			log.error("Error importing from cloud: " + e.getMessage(), e);

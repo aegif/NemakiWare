@@ -21,6 +21,38 @@ import org.junit.jupiter.api.Test;
 
 public class PurviewSchemaPayloadFactoryTest {
 
+    /**
+     * The manifest lists exactly the types the payload creates (v2.3.29).
+     *
+     * <p>Nothing checked this, and the two are edited separately. A type added only to the
+     * payload arrives with an unchanged manifest hash, so a deployment that already applied the
+     * previous schema sees "up to date" and never creates it; a type listed only in the manifest
+     * makes every deployment look stale forever. The per-type {@code anyMatch} assertions above
+     * cannot catch either — they only check the types someone remembered to list here.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void manifestTypeNamesMatchTheTypesThePayloadCreates() {
+        PurviewSchemaManifest manifest = new PurviewSchemaManifestFactory().buildManifest();
+        Map<String, Object> payload =
+                new PurviewSchemaPayloadFactory().buildTypeDefinitionsPayload(manifest);
+
+        assertEquals(new java.util.TreeSet<>(manifest.getCustomTypeNames()),
+                names((List<Map<String, Object>>) payload.get("entityDefs")),
+                "manifest customTypes and payload entityDefs disagree");
+        assertEquals(new java.util.TreeSet<>(manifest.getRelationshipTypeNames()),
+                names((List<Map<String, Object>>) payload.get("relationshipDefs")),
+                "manifest relationshipTypes and payload relationshipDefs disagree");
+    }
+
+    private static java.util.TreeSet<String> names(List<Map<String, Object>> defs) {
+        java.util.TreeSet<String> names = new java.util.TreeSet<>();
+        for (Map<String, Object> def : defs) {
+            names.add((String) def.get("name"));
+        }
+        return names;
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     public void testBuildTypeDefinitionsPayloadIncludesExpectedCustomTypesAndRelationship() {
@@ -44,6 +76,8 @@ public class PurviewSchemaPayloadFactoryTest {
         assertTrue(entityDefs.stream().anyMatch(def -> "nemaki_cloud_sync_process".equals(def.get("name"))));
         assertTrue(entityDefs.stream().anyMatch(def -> "nemaki_import_process".equals(def.get("name"))));
         assertTrue(entityDefs.stream().anyMatch(def -> "nemaki_export_process".equals(def.get("name"))));
+        assertTrue(entityDefs.stream().anyMatch(def -> "nemaki_import_artifact".equals(def.get("name"))));
+        assertTrue(entityDefs.stream().anyMatch(def -> "nemaki_export_artifact".equals(def.get("name"))));
         assertTrue(attributeNames(entityDefs, "nemaki_repository").contains("rootFolderId"));
         assertTrue(attributeNames(entityDefs, "nemaki_folder").contains("parentId"));
         assertTrue(attributeNames(entityDefs, "nemaki_folder").contains("folderPath"));
@@ -66,7 +100,10 @@ public class PurviewSchemaPayloadFactoryTest {
         assertTrue(attributeNames(entityDefs, "nemaki_import_process").contains("objectCount"));
         assertTrue(attributeNames(entityDefs, "nemaki_export_process").contains("targetDescription"));
         assertTrue(attributeNames(entityDefs, "nemaki_export_process").contains("objectCount"));
-        assertEquals(5, relationshipDefs.size());
+        // 6 since increment B added nemaki_folder_has_dataset (v2.3.30). The count is pinned
+        // so a relationship cannot appear or vanish unremarked; manifestTypeNamesMatchThe...
+        // separately pins that the manifest lists the same six.
+        assertEquals(6, relationshipDefs.size());
         assertTrue(relationshipDefs.stream().anyMatch(def -> "nemaki_repository_contains_folder".equals(def.get("name"))));
         assertTrue(relationshipDefs.stream().anyMatch(def -> "nemaki_folder_contains_folder".equals(def.get("name"))));
         assertTrue(relationshipDefs.stream().anyMatch(def -> "nemaki_folder_contains_document".equals(def.get("name"))));
@@ -209,8 +246,15 @@ public class PurviewSchemaPayloadFactoryTest {
         List<Map<String, Object>> entityDefs = (List<Map<String, Object>>) payload.get("entityDefs");
         List<String> docAttrs = attributeNames(entityDefs, "nemaki_document");
 
-        // Should have exactly 16 standard attributes
-        assertEquals(16, docAttrs.size());
+        // 16 standard attributes + §2's two truncation-evidence companions (v2.3.26):
+        // folderPathOriginalSha256 and versionLabelOriginalSha256 must be declared on the type,
+        // or the evidence for a shortened value is the thing Atlas drops.
+        // + 5 for 増分 B (v2.3.31): content facts and version identity.
+        assertEquals(23, docAttrs.size(), docAttrs.toString());
+        assertTrue(docAttrs.containsAll(
+                List.of("folderPathOriginalSha256", "versionLabelOriginalSha256")));
+        assertTrue(docAttrs.containsAll(List.of("mimeType", "contentLength",
+                "versionObjectId", "changeToken", "contentHash")));
     }
 
     @SuppressWarnings("unchecked")

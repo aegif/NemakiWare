@@ -41,6 +41,13 @@ public interface PrincipalDaoService {
 	User getUserById(String repositoryId, String userId);
 
 	/**
+	 * TRI-STATE probe of {@link #getUserById} (increment 5T). Distinguishes "the query was served
+	 * and the user is absent" from "the query could not be served", which the {@code null} return
+	 * of {@link #getUserById} collapses together.
+	 */
+	jp.aegif.nemaki.acl.PrincipalLookup lookupUserById(String repositoryId, String userId);
+
+	/**
 	 * Get a users
 	 * @param repositoryId TODO
 	 * @return
@@ -69,6 +76,9 @@ public interface PrincipalDaoService {
 	 * @return
 	 */
 	Group getGroupById(String repositoryId, String groupId);
+
+	/** TRI-STATE probe of {@link #getGroupById} (increment 5T). See {@link #lookupUserById}. */
+	jp.aegif.nemaki.acl.PrincipalLookup lookupGroupById(String repositoryId, String groupId);
 
 	/**
 	 * Get all the groups

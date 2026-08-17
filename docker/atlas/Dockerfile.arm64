@@ -1,0 +1,119 @@
+FROM ubuntu:20.04
+LABEL maintainer="vadim@clusterside.com"
+
+ARG VERSION=2.3.0
+# Supply-chain: pin the SHA-512 of the Apache Atlas source tarball and verify the
+# download against it, so a tampered mirror / MITM cannot inject a modified
+# source tree. This value is the official checksum published by Apache and was
+# cross-checked against two independent sources that agree:
+#   https://downloads.apache.org/atlas/2.3.0/apache-atlas-2.3.0-sources.tar.gz.sha512
+#   https://archive.apache.org/dist/atlas/2.3.0/apache-atlas-2.3.0-sources.tar.gz.sha512
+# When bumping VERSION, update this to the new release's published .sha512.
+ARG ATLAS_SRC_SHA512=b24c9785f601b4644090ef0b4c16974fc572100b61f04ef2d6c68fdaa45293e902483f3574342a0e70c54f757c509d3d7ec6a85e494599b1018c65d8126d3480
+ARG DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+ENV MAVEN_OPTS="-Xms2g -Xmx2g"
+ENV JAVA_HOME="/usr/lib/jvm/java-8-openjdk-arm64"
+ENV PYTHON="/usr/bin/python3"
+
+RUN mkdir -p /tmp/atlas-src \
+    && mkdir -p /apache-atlas \
+    && mkdir -p /gremlin
+
+COPY pom.xml.patch /tmp/atlas-src/
+COPY settings-arm64.xml /tmp/settings-arm64.xml
+
+RUN --mount=type=cache,target=/root/.m2,id=atlas-m2 apt-get update \
+    && apt-get -y upgrade \
+    && apt-get -y install apt-utils \
+    && apt-get -y install \
+        maven \
+        wget \
+        python \
+        python3 \
+        build-essential \
+        openjdk-8-jdk-headless \
+        patch \
+        unzip \
+    && cd /tmp \
+    && wget https://dlcdn.apache.org/atlas/${VERSION}/apache-atlas-${VERSION}-sources.tar.gz \
+    && echo "${ATLAS_SRC_SHA512}  apache-atlas-${VERSION}-sources.tar.gz" | sha512sum -c - \
+    && tar --strip 1 -xzvf apache-atlas-${VERSION}-sources.tar.gz -C /tmp/atlas-src \
+    && rm apache-atlas-${VERSION}-sources.tar.gz \
+    && cd /tmp/atlas-src \
+    && sed -i 's/http:\/\/repo1.maven.org\/maven2/https:\/\/repo1.maven.org\/maven2/g' pom.xml \
+    && patch -b -f < pom.xml.patch \
+    && sed -i '/atlas-falcon-hook-package.xml/d;/atlas-hbase-hook-package.xml/d;/atlas-hive-hook-package.xml/d;/atlas-impala-hook-package.xml/d;/atlas-kafka-hook-package.xml/d;/atlas-sqoop-hook-package.xml/d;/atlas-storm-hook-package.xml/d' distro/pom.xml \
+    && mvn clean \
+        -s /tmp/settings-arm64.xml \
+        -Dmaven.repo.local=/root/.m2/repository \
+        -Dhttps.protocols=TLSv1.2 \
+        -Dmaven.wagon.http.retryHandler.count=5 \
+        -Dmaven.wagon.httpconnectionManager.ttlSeconds=120 \
+        -Dmaven.wagon.http.connectionTimeout=60000 \
+        -Dmaven.wagon.http.readTimeout=120000 \
+        -Dmaven.wagon.rto=120000 \
+        -DskipTests \
+        -Drat.skip=true \
+        -pl '!addons/hive-bridge,!addons/hive-bridge-shim,!addons/falcon-bridge,!addons/falcon-bridge-shim,!addons/sqoop-bridge,!addons/sqoop-bridge-shim,!addons/storm-bridge,!addons/storm-bridge-shim,!addons/hbase-bridge,!addons/hbase-bridge-shim,!addons/kafka-bridge,!addons/impala-bridge,!addons/impala-bridge-shim,!addons/impala-hook-api' \
+        package -Pdist,embedded-hbase-solr \
+    && tar --strip 1 -xzvf /tmp/atlas-src/distro/target/apache-atlas-${VERSION}-server.tar.gz -C /apache-atlas \
+    && rm -Rf /tmp/atlas-src \
+    && rm -Rf /root/.npm \
+    && apt-get -y --purge remove \
+        maven \
+        unzip \
+    && apt-get -y autoremove \
+    && apt-get -y clean
+
+COPY conf/hbase/hbase-site.xml.template /apache-atlas/conf/hbase/hbase-site.xml.template
+COPY atlas_start.py.patch atlas_config.py.patch /apache-atlas/bin/
+COPY conf/atlas-env.sh /apache-atlas/conf/atlas-env.sh
+COPY conf/gremlin /gremlin/
+
+WORKDIR /apache-atlas/bin
+RUN patch -b -f < atlas_start.py.patch \
+    && patch -b -f < atlas_config.py.patch
+
+WORKDIR /apache-atlas/conf
+RUN sed -i 's/\${atlas.log.dir}/\/apache-atlas\/logs/g' atlas-log4j.xml \
+    && sed -i 's/\${atlas.log.file}/application.log/g' atlas-log4j.xml
+
+# curl is required by the docker-compose healthcheck; ubuntu:20.04 ships none
+# (the amd64 sburn image did). This bakes it in — do NOT rely on installing it
+# into the running container at runtime.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /apache-atlas/bin
+RUN ./atlas_start.py -setup || true
+RUN ./atlas_start.py & \
+    touch /apache-atlas/logs/application.log \
+    && tail -f /apache-atlas/logs/application.log | sed '/Defaulting to local host name/ q' \
+    && sleep 10 \
+    && ./atlas_stop.py \
+    && truncate -s0 /apache-atlas/logs/application.log
+
+# Run as a dedicated non-root user. Atlas and its embedded HBase/Solr all bind
+# unprivileged ports (21000 / 16000 / 9838) and write only under /apache-atlas,
+# so a non-root UID works once it owns the pre-initialised tree (created root-
+# owned by the warmup RUN above; the chown transfers ownership).
+RUN groupadd -r atlas \
+    && useradd -r -g atlas -d /apache-atlas -s /usr/sbin/nologin atlas \
+    && chown -R atlas:atlas /apache-atlas /gremlin
+USER atlas
+
+# Supervise the Atlas server. atlas_start.py daemonises Atlas and returns, so
+# PID 1 must watch the server process and EXIT when it dies. Previously a bare
+# `tail -fF` kept the container reported "Up" even after Atlas had crashed
+# (leaving only embedded HBase alive), masking the outage from Docker's restart
+# policy and the healthcheck. We poll the Atlas server pidfile and exit non-zero
+# once the process is gone so the orchestrator restarts the container.
+CMD ["/bin/bash", "-c", "\
+  /apache-atlas/bin/atlas_start.py; \
+  for i in $(seq 1 60); do [ -f /apache-atlas/logs/atlas.pid ] && break; sleep 5; done; \
+  tail -F /apache-atlas/logs/application.log & \
+  while kill -0 \"$(cat /apache-atlas/logs/atlas.pid 2>/dev/null)\" 2>/dev/null; do sleep 15; done; \
+  echo 'Atlas server process is no longer running - stopping container for restart'; \
+  exit 1"]

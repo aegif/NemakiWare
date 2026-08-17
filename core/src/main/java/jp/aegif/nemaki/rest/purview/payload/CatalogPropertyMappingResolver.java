@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rest.purview.payload;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.model.NemakiPropertyDefinitionCore;
@@ -16,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Resolves which CMIS custom properties should be synced to catalog backends
@@ -35,11 +36,32 @@ public class CatalogPropertyMappingResolver {
     /** Legacy global key — detected on load, triggers warning, never written to. */
     static final String LEGACY_GLOBAL_KEY = "catalog.sync.propertyMappings";
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final ObjectMapper OBJECT_MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
 
     /**
-     * Core entity attribute names used by nemaki_document and nemaki_folder.
-     * Custom catalogName values must not collide with these.
+     * The <em>input</em> half of {@link #rejectionFor}: CMIS properties that may never be
+     * projected, whatever the mapping calls the output.
+     *
+     * <p>The reserved-name rule guards the output side: it stops a mapping from writing over
+     * {@code cloudFileUrl}. It says nothing about a mapping that reads
+     * {@code nemaki:cloudFileUrl} and writes it somewhere innocuous —
+     * {@code nemaki:cloudFileUrl -> legacyCloudUrl} passes the output check, passes the payload
+     * boundary because no such attribute exists yet, and puts the raw URL in Atlas anyway.
+     *
+     * <p>That property really is present on documents: {@code CloudDriveResource} still reads
+     * cloud metadata out of {@code subTypeProperties} as a legacy fallback, so it is stored there
+     * on older documents. The URL is the value increment A-1g removed from the catalog entirely;
+     * a custom mapping must not be a second door to it.
+     */
+    static final Set<String> FORBIDDEN_SOURCE_PROPERTY_IDS = Set.of("nemaki:cloudFileUrl");
+
+    /**
+     * The <em>output</em> half of {@link #rejectionFor}: core entity attribute names used by
+     * {@code nemaki_document} and {@code nemaki_folder}, which a custom mapping may not write
+     * over.
+     *
+     * <p>Both halves are needed. A mapping can carry a forbidden property out under a name that
+     * is not on this list at all, which is what {@link #FORBIDDEN_SOURCE_PROPERTY_IDS} catches.
      */
     static final Set<String> RESERVED_ATTRIBUTE_NAMES = Set.of(
             "qualifiedName", "name", "description", "owner",
@@ -57,6 +79,13 @@ public class CatalogPropertyMappingResolver {
     private volatile Map<String, ResolvedMapping> cachedGlobalUnion;
     private volatile Map<String, Map<String, ResolvedMapping>> cachedPerRepo = new LinkedHashMap<>();
     private volatile Map<String, Map<String, Map<String, PropertyMapping>>> cachedLoadedMappings = new LinkedHashMap<>();
+
+    /** (type, property, name) triples already logged, so the WARN is not repeated per parse. */
+    private final Set<String> warnedRejectedMappings =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private final java.util.concurrent.atomic.AtomicLong rejectedMappingCount =
+            new java.util.concurrent.atomic.AtomicLong();
 
     public CatalogPropertyMappingResolver(IntegrationSettingsService settingsService,
                                           TypeService typeService,
@@ -80,6 +109,10 @@ public class CatalogPropertyMappingResolver {
 
     /**
      * Persisted mapping entry. Only {@code enabled} and {@code catalogName} are stored.
+     *
+     * @param catalogName null only on a <em>disabled</em> mapping whose stored value was absent or
+     *                    not a string. An enabled mapping in that shape is dropped at parse, so
+     *                    nothing that projects ever carries a null here.
      */
     public record PropertyMapping(boolean enabled, String catalogName) {}
 
@@ -211,7 +244,35 @@ public class CatalogPropertyMappingResolver {
                 for (Map.Entry<String, Map<String, Object>> propEntry : typeEntry.getValue().entrySet()) {
                     Map<String, Object> fields = propEntry.getValue();
                     boolean enabled = Boolean.TRUE.equals(fields.get("enabled"));
-                    String catalogName = fields.get("catalogName") instanceof String s ? s : propEntry.getKey();
+                    // Null when the stored value is absent or not a string. It used to fall back
+                    // to the CMIS property id, which invented an output name nobody configured —
+                    // "nemaki:dept" as an Atlas attribute — and did it silently. There is no
+                    // compatibility contract for that fallback, so a malformed value is now a
+                    // configuration error like any other: this one mapping is dropped, the rest
+                    // still project.
+                    boolean catalogNamePresent = fields.containsKey("catalogName");
+                    Object rawCatalogName = fields.get("catalogName");
+                    String catalogName = rawCatalogName instanceof String text ? text : null;
+                    // Enforced on read, not only in saveMappings. saveMappings is one way a
+                    // mapping arrives; a configuration written before this rule existed, a
+                    // restore, a hand-edited CouchDB document and a corrupted value are the
+                    // others, and every one of them reaches the payload through this parse.
+                    // A reserved catalogName lets a custom property overwrite a core attribute
+                    // — including cloudFileUrl, which increment A-1g sets to null precisely so
+                    // that no stored URL reaches the catalog.
+                    // A disabled mapping projects nothing, so it is kept verbatim as the
+                    // operator's configuration — the admin UI still has to show and fix it — and
+                    // is never counted as rejected.
+                    Rejection rejection = enabled
+                            ? rejectionForStored(propEntry.getKey(), catalogName,
+                                    catalogNamePresent, rawCatalogName)
+                            : null;
+                    if (rejection != null) {
+                        warnOnceAboutRejectedMapping(typeEntry.getKey(), propEntry.getKey(),
+                                catalogName, rejection);
+                        // this mapping only; the rest of the projection is unaffected
+                        continue;
+                    }
                     typeMappings.put(propEntry.getKey(), new PropertyMapping(enabled, catalogName));
                 }
                 result.put(typeEntry.getKey(), typeMappings);
@@ -299,6 +360,115 @@ public class CatalogPropertyMappingResolver {
     // ── Write mappings ───────────────────────────────────────────────
 
     /**
+     * Why a mapping may not be projected, or {@code null} if it may.
+     *
+     * <p><b>The one entry point for the live rules</b> — forbidden source property, blank name,
+     * reserved name. Its callers, precisely: {@code saveMappings}, the payload boundary
+     * ({@code appendCustomPropertyValues}), and the admin PUT
+     * ({@code IntegrationSettingsController.updatePropertyMappings}, enabled mappings only —
+     * a disabled mapping may omit its name). The <em>load</em> path calls
+     * {@link #rejectionForStored} instead, which applies these same rules and additionally
+     * distinguishes the two stored-shape defects a live caller cannot produce:
+     * {@code MISSING_CATALOG_NAME} (no field / JSON null) and {@code MALFORMED_CATALOG_NAME}
+     * (a non-string value). One rule set, two entry points, split only by what their inputs can
+     * be malformed as — the previous arrangement (a boolean for load, two booleans for save) is
+     * exactly the split that let the output-name rule be enforced in two places while the input
+     * rule was enforced in none.
+     *
+     * <p>It returns a reason rather than a boolean so that {@link #validateMappings} can still
+     * tell an operator which end of the mapping is wrong without re-deriving it.
+     *
+     * <p>Names are trimmed before comparison because {@code appendCustomPropertyValues} uses the
+     * raw value as the map key: {@code " cloudFileUrl"} would not collide, but a configuration
+     * containing it is a mistake either way.
+     */
+    public static Rejection rejectionFor(String cmisPropertyId, String catalogName) {
+        if (cmisPropertyId != null
+                && FORBIDDEN_SOURCE_PROPERTY_IDS.contains(cmisPropertyId.trim())) {
+            return Rejection.FORBIDDEN_SOURCE_PROPERTY;
+        }
+        if (catalogName == null || catalogName.trim().isEmpty()) {
+            return Rejection.BLANK_CATALOG_NAME;
+        }
+        if (RESERVED_ATTRIBUTE_NAMES.contains(catalogName.trim())) {
+            return Rejection.RESERVED_CATALOG_NAME;
+        }
+        return null;
+    }
+
+    /**
+     * {@link #rejectionFor} plus the two shapes only stored JSON can produce.
+     *
+     * <p>{@code rejectionFor} takes a {@code String} and so cannot distinguish "the field was
+     * absent" from "the field held a number". The parse can, and an operator fixing a
+     * hand-edited document needs to be told which.
+     */
+    private static Rejection rejectionForStored(String cmisPropertyId, String catalogName,
+                                                boolean present, Object raw) {
+        Rejection rejection = rejectionFor(cmisPropertyId, catalogName);
+        if (rejection != Rejection.BLANK_CATALOG_NAME) {
+            return rejection;   // a forbidden input outranks the shape of the output name
+        }
+        if (!present || raw == null) {
+            return Rejection.MISSING_CATALOG_NAME;
+        }
+        return catalogName == null ? Rejection.MALFORMED_CATALOG_NAME : rejection;
+    }
+
+    /** Why {@link #rejectionFor} refused a mapping; each spells its own operator message. */
+    public enum Rejection {
+
+        /** The CMIS property may not leave the repository under any name. */
+        FORBIDDEN_SOURCE_PROPERTY(
+                "that CMIS property is not projected to the catalog under any name"),
+
+        BLANK_CATALOG_NAME("the catalog attribute name is empty"),
+
+        /** The stored configuration has no {@code catalogName} field, or it is JSON null. */
+        MISSING_CATALOG_NAME("the stored configuration has no catalog attribute name"),
+
+        /** The stored {@code catalogName} is a number, object, array or boolean. */
+        MALFORMED_CATALOG_NAME("the stored catalog attribute name is not a string"),
+
+        /** The name belongs to a core entity attribute, which a custom value must not replace. */
+        RESERVED_CATALOG_NAME(
+                "the catalog attribute name is reserved for a core entity attribute");
+
+        private final String reason;
+
+        Rejection(String reason) {
+            this.reason = reason;
+        }
+
+        public String reason() {
+            return reason;
+        }
+    }
+
+    /**
+     * One WARN per (type, property, name), because this runs on every parse of every repository's
+     * configuration and an operator needs to see it without it drowning the log.
+     */
+    private void warnOnceAboutRejectedMapping(String typeId, String cmisPropertyId,
+                                              String catalogName, Rejection rejection) {
+        String key = typeId + "\u0000" + cmisPropertyId + "\u0000" + catalogName;
+        if (warnedRejectedMappings.add(key)) {
+            // the reason comes from the rejection, so a forbidden source property is not
+            // reported as a blank or reserved name
+            logger.warn("Ignoring property mapping '{}.{}' -> catalog attribute '{}': {}."
+                    + " The mapping is skipped; other mappings still project."
+                    + " Remove it via the admin UI.",
+                    typeId, cmisPropertyId, catalogName, rejection.reason());
+        }
+        rejectedMappingCount.incrementAndGet();
+    }
+
+    /** How many mappings have been rejected on load, for operator visibility. */
+    public long getRejectedMappingCount() {
+        return rejectedMappingCount.get();
+    }
+
+    /**
      * Validates that no enabled mapping uses a reserved or blank attribute name.
      *
      * @return list of validation error messages (empty if valid)
@@ -312,13 +482,12 @@ public class CatalogPropertyMappingResolver {
                     continue;
                 }
                 String loc = typeEntry.getKey() + "." + propEntry.getKey();
-                if (m.catalogName() == null || m.catalogName().trim().isEmpty()) {
-                    errors.add("Property " + loc + " has an empty catalog attribute name");
-                    continue;
-                }
-                if (RESERVED_ATTRIBUTE_NAMES.contains(m.catalogName().trim())) {
-                    errors.add("Property " + loc
-                            + " uses reserved catalog attribute name '" + m.catalogName() + "'");
+                // the same entry point load and the payload boundary use, so the three cannot
+                // drift apart; the reason is what makes the message specific
+                Rejection rejection = rejectionFor(propEntry.getKey(), m.catalogName());
+                if (rejection != null) {
+                    errors.add("Property " + loc + " -> '" + m.catalogName() + "': "
+                            + rejection.reason());
                 }
             }
         }

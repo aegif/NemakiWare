@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rest.ingest.note;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -13,6 +13,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Notion API connector adapter — fetches pages and blocks.
@@ -25,7 +26,7 @@ public class NotionConnectorAdapter {
     private static final Logger logger = LoggerFactory.getLogger(NotionConnectorAdapter.class);
     private static final String DEFAULT_API = "https://api.notion.com/v1";
     private static final String NOTION_VERSION = "2022-06-28"; // Stable version; upgrade to newer when needed
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
 
     private final String token;
     private final String apiBase;
@@ -209,7 +210,7 @@ public class NotionConnectorAdapter {
 
     private String extractTitle(JsonNode page) {
         JsonNode props = page.path("properties");
-        for (var field : (Iterable<java.util.Map.Entry<String, JsonNode>>) props::fields) {
+        for (var field : props.properties()) {
             JsonNode prop = field.getValue();
             if ("title".equals(prop.path("type").asText())) {
                 JsonNode titleArray = prop.get("title");

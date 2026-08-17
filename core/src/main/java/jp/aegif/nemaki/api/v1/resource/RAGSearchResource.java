@@ -287,13 +287,26 @@ public class RAGSearchResource {
 
             // Set defaults with topK upper limit
             int topK = request.getTopK() != null ? Math.min(request.getTopK(), MAX_TOP_K) : 10;
-            float minScore = request.getMinScore() != null ? request.getMinScore() : 0.7f;
+            // Default from configuration, not a literal. The 0.7 that used to be hardcoded here
+            // duplicated RAGConfig's default, so an operator who set
+            // rag.search.similarity.threshold changed the folder-scoped path (which reads the
+            // config) and NOT the other two — one endpoint applying two different thresholds
+            // depending on whether folderId happened to be present.
+            float minScore = request.getMinScore() != null
+                    ? request.getMinScore() : ragConfig.getSearchSimilarityThreshold();
 
             // Execute search
             List<VectorSearchResult> results;
             if (request.getFolderId() != null && !request.getFolderId().isEmpty()) {
+                // Pass the caller's weighting through. This branch used to drop propertyBoost,
+                // contentBoost and minScore on the floor: the API accepted them, answered 200,
+                // and searched with the server defaults. Besides being a silent contract
+                // violation, it made the two halves of the search indistinguishable from
+                // outside, so a folder filter that matched no chunks was invisible as long as
+                // the property half returned something.
                 results = vectorSearchService.searchInFolder(
-                        repositoryId, userId, request.getQuery(), request.getFolderId(), topK);
+                        repositoryId, userId, request.getQuery(), request.getFolderId(), topK,
+                        minScore, request.getPropertyBoost(), request.getContentBoost());
             } else if (hasCustomBoost(request)) {
                 // Use weighted search with custom boost values
                 float propertyBoost = request.getPropertyBoost() != null ? request.getPropertyBoost() : 0.3f;
@@ -355,8 +368,14 @@ public class RAGSearchResource {
             @QueryParam("q") String query,
             @Parameter(description = "Maximum results")
             @QueryParam("topK") @DefaultValue("10") int topK,
-            @Parameter(description = "Minimum similarity score (0.0-1.0)")
-            @QueryParam("minScore") @DefaultValue("0.7") float minScore,
+            // Nullable, and NO @DefaultValue: null has to survive to the service so it can
+            // apply rag.search.similarity.threshold. A JAX-RS default of 0.7 made every GET
+            // supply 0.7 explicitly, so an installation that configured a different threshold
+            // silently got 0.7 on folder-scoped GETs — the parameter looked untouched and the
+            // result set changed.
+            @Parameter(description = "Minimum similarity score (0.0-1.0); "
+                    + "defaults to the server's configured threshold")
+            @QueryParam("minScore") Float minScore,
             @Parameter(description = "Folder ID to search within")
             @QueryParam("folderId") String folderId,
             @Parameter(description = "Property boost factor (0.0-1.0, higher = more weight on metadata)")

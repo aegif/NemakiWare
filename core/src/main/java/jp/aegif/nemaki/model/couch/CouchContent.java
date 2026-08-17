@@ -50,6 +50,47 @@ public class CouchContent extends CouchNodeBase{
 	private List<Aspect> aspects = new ArrayList<Aspect>();
 	private List<String> secondaryIds = new ArrayList<String>();
 	private String objectType;
+	/**
+	 * The CONTENT axis' identity (design §8.1, wiring gate 3). Declared HERE, on the shared Couch
+	 * content base, so every content type — document, folder, relationship, policy, item — persists
+	 * it in the SAME CouchDB commit that creates it. Assigning it per-DAO-create method would have
+	 * been five places to keep in step, and one missed would leave a whole type permanently
+	 * incarnation-less.
+	 *
+	 * <p>Persisted at creation and NEVER Solr-first: a Solr-only value would let two concurrent
+	 * writers pick different UUIDs and clobber each other for ever. Pre-migration content acquires
+	 * one via {@code Patch_ContentIncarnationBackfill} or lazily via
+	 * {@code ContentIncarnation.resolve}, whichever wins the _rev CAS.
+	 */
+	private String contentIncarnation;
+
+	/**
+	 * Verbatim carrier for the ACL-epoch outbox fields (§11.1). NOT a bean property — it must
+	 * never serialize as a nested {@code aclEpochFields} object; emission goes through the
+	 * {@code @JsonAnyGetter} map so each key lands at the TOP LEVEL of the stored document,
+	 * presence-faithfully (an explicit null is emitted as an explicit null).
+	 */
+	@com.fasterxml.jackson.annotation.JsonIgnore
+	private java.util.Map<String, Object> aclEpochFields;
+
+	private static final String[] ACL_EPOCH_CARRIER_KEYS = {
+			jp.aegif.nemaki.epoch.AclEpochState.FIELD_STATE,
+			jp.aegif.nemaki.epoch.AclEpochState.FIELD_MUTATION_ID,
+			jp.aegif.nemaki.epoch.AclEpochState.FIELD_SOURCE_EPOCH,
+			jp.aegif.nemaki.epoch.AclEpochState.FIELD_QUARANTINED };
+
+	private static java.util.Map<String, Object> readAclEpochFieldsVerbatim(java.util.Map<String, Object> properties) {
+		java.util.Map<String, Object> out = null;
+		for (String key : ACL_EPOCH_CARRIER_KEYS) {
+			if (properties.containsKey(key)) {
+				if (out == null) {
+					out = new java.util.LinkedHashMap<>();
+				}
+				out.put(key, properties.get(key)); // verbatim: whatever shape is stored, including null
+			}
+		}
+		return out;
+	}
 	private String changeToken;
 
 	public CouchContent(){
@@ -67,6 +108,14 @@ public class CouchContent extends CouchNodeBase{
 			this.description = (String) properties.get("description");
 			this.parentId = (String) properties.get("parentId");
 			this.objectType = (String) properties.get("objectType");
+			// Read back verbatim; the creator must never MINT one, or every read of a
+			// pre-migration document would look like an assignment that was never persisted.
+			Object ci = properties.get(jp.aegif.nemaki.epoch.ContentIncarnation.FIELD);
+			this.contentIncarnation = (ci instanceof String) ? (String) ci : null;
+			// ACL-epoch outbox fields (§11.1): captured PRESENCE-FAITHFULLY and verbatim —
+			// an explicit null is PRESENT (the 2e containsKey contract) and must survive the
+			// round-trip as an explicit null, not degrade to absent.
+			this.aclEpochFields = readAclEpochFieldsVerbatim(properties);
 			this.changeToken = (String) properties.get("changeToken");
 			
 			// Boolean型の処理
@@ -188,6 +237,24 @@ public class CouchContent extends CouchNodeBase{
 		setObjectType(c.getObjectType());
 		setChangeToken(c.getChangeToken());
 
+		// §11.1: the model round-trip used to LOSE contentIncarnation (convert() never copied it
+		// and the model had no field), so the mint below fired on EVERY update — each ordinary
+		// rename silently started a new "lifetime" and the content fence treated it as a restore.
+		// Copy the model's value FIRST; the mint then fires only when the model genuinely has
+		// none: a CREATE (same commit, design §8.1) or the legacy lazy fill.
+		this.contentIncarnation = c.getContentIncarnation();
+		if (this.contentIncarnation == null || this.contentIncarnation.isBlank()) {
+			this.contentIncarnation = jp.aegif.nemaki.epoch.ContentIncarnation.mint();
+		}
+
+		// ACL-epoch outbox fields (§11.1): verbatim, and NEVER minted — absent stays absent.
+		// Emission is routed through the @JsonAnyGetter map so presence (including an explicit
+		// null marker) survives; a bean property could not express present-null.
+		if (c.getAclEpochFields() != null && !c.getAclEpochFields().isEmpty()) {
+			this.aclEpochFields = new java.util.LinkedHashMap<>(c.getAclEpochFields());
+			getAdditionalProperties().putAll(this.aclEpochFields);
+		}
+
 		// COMPREHENSIVE REVISION MANAGEMENT: Preserve revision from Content layer
 		setRevision(c.getRevision());
 	}
@@ -260,6 +327,14 @@ public class CouchContent extends CouchNodeBase{
 		this.secondaryIds = secondaryIds;
 	}
 
+	@com.fasterxml.jackson.annotation.JsonProperty(jp.aegif.nemaki.epoch.ContentIncarnation.FIELD)
+	public String getContentIncarnation() { return contentIncarnation; }
+
+	@com.fasterxml.jackson.annotation.JsonProperty(jp.aegif.nemaki.epoch.ContentIncarnation.FIELD)
+	public void setContentIncarnation(String contentIncarnation) {
+		this.contentIncarnation = contentIncarnation;
+	}
+
 	public String getObjectType() {
 		return objectType;
 	}
@@ -309,6 +384,13 @@ public class CouchContent extends CouchNodeBase{
 		} else {
 			// Set default ACL if none exists
 			c.setAcl(new jp.aegif.nemaki.model.Acl());
+		}
+
+		// §11.1 carriers: without these two copies the model is blind to the stored values and
+		// the next update erases them (epoch fields) or re-mints them (contentIncarnation).
+		c.setContentIncarnation(getContentIncarnation());
+		if (aclEpochFields != null) {
+			c.setAclEpochFields(new java.util.LinkedHashMap<>(aclEpochFields));
 		}
 
 		return c;

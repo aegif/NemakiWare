@@ -218,8 +218,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // This prevents the gray screen issue after login
     // Enhanced version with more aggressive cleanup and retry mechanism
     const cleanupStaleOverlays = () => {
-      // Skip cleanup if any modal is actively open (has visible content)
-      const hasActiveModal = document.querySelector('.ant-modal-wrap:not([style*="display: none"]) .ant-modal-content') !== null;
+      // Skip cleanup if any modal is actively open (has visible content).
+      // antd 6 renamed the modal content wrapper .ant-modal-content →
+      // .ant-modal-container (rc-dialog); match either for safety across versions.
+      const hasActiveModal = document.querySelector('.ant-modal-wrap:not([style*="display: none"]) .ant-modal-container, .ant-modal-wrap:not([style*="display: none"]) .ant-modal-content') !== null;
       if (hasActiveModal) {
         return;
       }

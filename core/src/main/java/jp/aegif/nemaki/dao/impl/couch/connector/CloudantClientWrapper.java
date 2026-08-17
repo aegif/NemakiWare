@@ -2,6 +2,7 @@ package jp.aegif.nemaki.dao.impl.couch.connector;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -10,7 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.Cloudant;
 import com.ibm.cloud.cloudant.v1.model.*;
 import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
@@ -1104,6 +1105,33 @@ public class CloudantClientWrapper {
 	}
 
 	/**
+	 * Does this document exist? <b>Throws rather than guessing.</b>
+	 *
+	 * <p>{@link #exists(String)} and {@link #get(Class, String)} both answer "no" for a document
+	 * that could not be read — they catch everything and return false/null. That is fine for
+	 * callers who only want a best effort, and wrong for anyone about to DELETE something on the
+	 * strength of the answer: during a CouchDB outage every object looks absent.
+	 *
+	 * <p>Only a genuine 404 means absent here. Anything else propagates, so the caller can refuse
+	 * to act rather than act on a guess.
+	 */
+	public boolean existsStrict(String id) {
+		try {
+			client.headDocument(new HeadDocumentOptions.Builder()
+					.db(databaseName)
+					.docId(id)
+					.build()).execute();
+			return true;
+		} catch (NotFoundException e) {
+			return false;
+		} catch (Exception e) {
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"Could not determine whether document '" + id + "' exists in database '"
+							+ databaseName + "': " + e.getMessage(), e);
+		}
+	}
+
+	/**
 	 * Get database information
 	 */
 	public DatabaseInformation getDatabaseInfo() {
@@ -1137,7 +1165,21 @@ public class CloudantClientWrapper {
 				.db(databaseName)
 				.ddoc(designDoc.replace("_design/", ""))
 				.view(viewName)
-				.includeDocs(true); // Include documents for conversion
+				// include_docs=false: every view this overload is used with is declared
+				// emit(..., doc), so the value already IS the document and asking for the
+				// documents makes CouchDB look each one up by id and send a second copy.
+				// Audited against the live design document on 2026-08-14: of 53 views, 48 emit
+				// doc and 5 emit a scalar (childrenNames, documentsByExpirationDate,
+				// documentsByLastModification, dupLatestVersion, dupVersionSeries). This overload
+				// is reached by 20 distinct view names, none of them among those five.
+				// documentMapFromRow falls back to a read by id when the value is not a document,
+				// so a future view emitting anything else degrades to the old cost rather than
+				// producing a wrong answer.
+				//
+				// PUTTING A SCALAR-EMITTING VIEW ON THIS OVERLOAD? That fallback is UNTESTED —
+				// nothing today reaches it, so deleting it leaves the suite green. Read
+				// documentMapFromRow before you rely on it, and write the test in the same change.
+				.includeDocs(false);
 			
 			// CRITICAL FIX: Add key to the server-side query instead of client-side filtering
 			if (key != null) {
@@ -1152,19 +1194,10 @@ public class CloudantClientWrapper {
 			ObjectMapper mapper = getObjectMapper();
 			
 			for (ViewResultRow row : result.getRows()) {
-				if (row.getDoc() != null) {
-					// CRITICAL FIX: Manually handle _id and _rev mapping since convertValue doesn't use @JsonCreator
-					com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
-					Map<String, Object> docMap = doc.getProperties();
-					
+				{
+					Map<String, Object> docMap = documentMapFromRow(row);
+
 					if (docMap != null) {
-						// Ensure _id and _rev are properly mapped
-						if (!docMap.containsKey("_id") && doc.getId() != null) {
-							docMap.put("_id", doc.getId());
-						}
-						if (!docMap.containsKey("_rev") && doc.getRev() != null) {
-							docMap.put("_rev", doc.getRev());
-						}
 						
 					log.debug("DEBUG: Document properties keys: " + docMap.keySet());
 					log.debug("DEBUG: _id field value: " + docMap.get("_id"));
@@ -1191,7 +1224,8 @@ public class CloudantClientWrapper {
 						
 						objects.add(obj);
 					} else {
-						log.warn("Document properties are null, skipping object creation");
+						log.warn("No document available for view row " + row.getId()
+								+ " in " + viewPath + ", skipping object creation");
 					}
 				}
 			}
@@ -1212,6 +1246,47 @@ public class CloudantClientWrapper {
 	/**
 	 * Bridge method to replace Ektorp's ViewQuery - query view without specific class
 	 * WITH EXPLICIT UPDATE CONTROL for cache bypass
+	 *
+	 * <p>The key is sent to CouchDB. This method used to fetch the ENTIRE view — every row in
+	 * the repository, with {@code include_docs=true} — and then keep the matching rows in Java.
+	 * The cost of asking about one folder was therefore proportional to the whole repository,
+	 * and it was paid on the createDocument hot path: CMIS name-uniqueness calls
+	 * {@code getChildrenNames}, which lands here. Measured on the dev stack at 2,722 rows, one
+	 * create pulled 2.6 MB / 0.90 s where the keyed query is 0.28 MB / 0.095 s, and sixteen
+	 * concurrent creates degraded to ~11 s each (about 1.4 creates/second in total, no better
+	 * than serial). The same defect had already been found and fixed in the typed overload
+	 * {@link #queryView(String, String, String, Class)} — it was simply never applied here.
+	 *
+	 * <p>Returning {@code null} when nothing matches is deliberate and unchanged: callers such
+	 * as {@code getUserItemById} treat null as "no such row", and a server-side query answers an
+	 * unmatched key with an empty row list rather than a 404.
+	 *
+	 * <h2>Why {@code include_docs} is not requested</h2>
+	 *
+	 * <p>No caller of this overload needs the fetched documents. Five read
+	 * {@code row.getValue()} — the views already emit what they want as the value
+	 * ({@code userItemsById} and the WebAuthn views emit the whole document, {@code childrenNames}
+	 * emits the name) — and the sixth, {@code getGroupItemById}, reads {@code row.getId()} and then
+	 * re-reads the document directly on purpose, because a view's copy can be stale. A row's id is
+	 * present without {@code include_docs}, so that caller is unaffected too. (An earlier version
+	 * of this comment said "five callers, all getValue()"; the count and the claim were both
+	 * wrong, though the conclusion happened to hold.)
+	 *
+	 * <p>More than wasteful: CouchDB REJECTS {@code include_docs} on a reduce view
+	 * ({@code query_parse_error: `include_docs` is invalid for reduce}). {@code countByObjectType}
+	 * has a reduce function, so {@code existContent} threw on every call and answered false from
+	 * its catch block — it could never report that a type had instances. Dropping
+	 * {@code include_docs} makes the reduce query legal, and a reduce query keyed by type answers
+	 * with one row when instances exist and none when they do not, which is the question asked.
+	 *
+	 * <p>Scope of that repair, as it stands now: {@code existContent} works, and
+	 * {@code TypeManagerImpl.checkTypeHasInstances} was wired to it two commits later, so the CMIS
+	 * {@code deleteType} path does refuse a populated type. (When this comment was first written
+	 * that check was still a stub and the deletion was permitted; the probe
+	 * {@code tools/acl-probe/type_delete_constraint_probe.py} now exits 0.) Two gaps remain and are
+	 * deliberate: the NemakiWare-specific REST delete used by the admin UI bypasses the check by
+	 * design. (Secondary types were also uncovered — the view keys on the primary type — until
+	 * {@code existContent} was taught to check {@code secondaryIds} as well.)
 	 */
 	public ViewResult queryView(String designDoc, String viewName, String key, boolean forceUpdate) {
 		try {
@@ -1222,40 +1297,26 @@ public class CloudantClientWrapper {
 				.db(databaseName)
 				.ddoc(designDoc.replace("_design/", ""))
 				.view(viewName)
-				.includeDocs(true) // CRITICAL: Must get actual docs, not cached emit values
 				.update(forceUpdate ? "true" : "false"); // Force view index update when forceUpdate=true
-			
-			// First try without key to test basic view access
-			ViewResult result = client.postView(builder.build()).execute().getResult();
-			
+
 			if (key != null) {
-				// Filter results by key client-side
-				List<ViewResultRow> filteredRows = new ArrayList<>();
-				for (ViewResultRow row : result.getRows()) {
-					if (row.getKey() != null && key.equals(row.getKey().toString().replace("\"", ""))) {
-						filteredRows.add(row);
-					}
-				}
-				
-				// CRITICAL FIX: Return null if no matching key found (proper CouchDB behavior)
-				log.debug("SECURITY FIX: Executed view query " + designDoc + "/" + viewName + " with key: " + key + " (filtered " + filteredRows.size() + " from " + result.getRows().size() + " results)");
-				
-				if (filteredRows.isEmpty()) {
-					// No matching key found - return null to indicate no results
-					log.debug("SECURITY FIX: No matching key found for: " + key + " - returning null");
-					return null;
-				} else {
-					// Create a ViewResult with only the matching rows
-					// Since we cannot create new ViewResult, we modify the existing one
-					result.getRows().clear();
-					result.getRows().addAll(filteredRows);
-					return result;
-				}
+				builder.key(key);
 			}
-			
-			log.debug("Executed view query " + designDoc + "/" + viewName + " (returned " + result.getRows().size() + " results)");
+
+			ViewResult result = client.postView(builder.build()).execute().getResult();
+			int rows = result.getRows() == null ? 0 : result.getRows().size();
+
+			if (key != null) {
+				log.debug("Executed view query " + designDoc + "/" + viewName + " with key: " + key
+						+ " (" + rows + " rows)");
+				// Preserve the previous contract: no rows for this key means null, not an empty
+				// result. Callers branch on null.
+				return rows == 0 ? null : result;
+			}
+
+			log.debug("Executed view query " + designDoc + "/" + viewName + " (returned " + rows + " results)");
 			return result;
-			
+
 		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
 			log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found - returning null. This is normal during initial startup.");
 			return null;
@@ -1269,6 +1330,77 @@ public class CloudantClientWrapper {
 	/**
 	 * Bridge method to replace Ektorp's ViewQuery - query view without key
 	 */
+	/**
+	 * The document behind one view row, taken from the emitted VALUE rather than from a second
+	 * copy fetched with {@code include_docs}.
+	 *
+	 * <p>Every view this is used with is declared {@code emit(..., doc)}, so the value is the
+	 * document — {@code _rev} included. The numbers in it arrive as Gson's
+	 * {@code LazilyParsedNumber}, which Jackson would serialise as an unknown bean rather than a
+	 * number, so they go through the same recursive normalisation the write path uses. Getting
+	 * that wrong does not throw; it produces a document whose dates are silently wrong.
+	 *
+	 * <p>If the value is not a document (a view that emits a scalar, or one rewritten later), the
+	 * row still carries its id, so the document is read directly. That costs one request — what
+	 * the old shape cost unconditionally — instead of returning nothing.
+	 *
+	 * <p><b>That fallback has no test.</b> Every view reaching this overload — 20 distinct names
+	 * across the content, principal, type, change and archive DAOs — emits {@code doc}, so nothing
+	 * exercises it and deleting it leaves the suite green. Deliberately not covered: a test written
+	 * today would only assert that unreachable code runs. <b>If you put a view emitting anything
+	 * else on this overload, write that test as part of the same change</b> — this branch is the
+	 * only thing between it and a wrong answer.
+	 *
+	 * <p>(48 is the number of full-document views in the design document, not the number that reach
+	 * this overload. The two were conflated in an earlier version of this note.)
+	 *
+	 * @return the document properties, or null if neither route produced one
+	 */
+	@SuppressWarnings("unchecked")
+	private Map<String, Object> documentMapFromRow(ViewResultRow row) {
+		Object value = row.getValue();
+		if (value instanceof Map) {
+			Map<String, Object> raw = (Map<String, Object>) value;
+			// _rev, not _id, is the discriminator. A PROJECTION such as emit(key, {name: doc.name})
+			// is also a Map, and injecting _id from the row would make it look like a document —
+			// the model would then be built from a fragment and the id fallback below would never
+			// run, which is the opposite of what it is for. Every full document carries _rev
+			// (verified against the live views: emit(key, doc) values contain both _id and _rev),
+			// and no projection would.
+			if (raw.containsKey("_rev")) {
+				Map<String, Object> docMap = normalizeDataTypes(raw);
+				if (!docMap.containsKey("_id") && row.getId() != null) {
+					docMap.put("_id", row.getId());
+				}
+				if (docMap.containsKey("_id")) {
+					return docMap;
+				}
+			}
+		}
+
+		String id = row.getId();
+		if (id == null) {
+			return null;
+		}
+		log.warn("View row " + id + " did not carry a document as its value — reading it by id");
+		com.ibm.cloud.cloudant.v1.model.Document doc = get(id);
+		if (doc == null) {
+			return null;
+		}
+		Map<String, Object> docMap = doc.getProperties();
+		if (docMap == null) {
+			return null;
+		}
+		docMap = normalizeDataTypes(docMap);
+		if (!docMap.containsKey("_id") && doc.getId() != null) {
+			docMap.put("_id", doc.getId());
+		}
+		if (!docMap.containsKey("_rev") && doc.getRev() != null) {
+			docMap.put("_rev", doc.getRev());
+		}
+		return docMap;
+	}
+
 	public <T> List<T> queryView(String designDoc, String viewName, Class<T> clazz) {
 		return queryView(designDoc, viewName, null, clazz);
 	}
@@ -1752,6 +1884,69 @@ public class CloudantClientWrapper {
 	 * Update document (compatible with Ektorp update method)
 	 * This method implements Ektorp-style object state management - trusts object revision completely
 	 */
+	/**
+	 * Update a document while keeping any binary attachments it already has.
+	 *
+	 * <p>{@link #update(Object)} serialises the POJO and posts it, which REPLACES the stored
+	 * document. If the POJO has no {@code _attachments} — and none of the model classes do — the
+	 * binary is deleted as a side effect of a metadata update. Callers that update metadata on a
+	 * document with an attachment must use this instead, or the attachment disappears until they
+	 * re-upload it, and any read landing in that window fails.
+	 *
+	 * <p>CouchDB keeps an existing binary when the body declares it as a stub
+	 * ({@code {"stub": true}}), which is what this copies across from {@code currentDoc}.
+	 *
+	 * @param currentDoc the document as most recently read, the source of the stubs; when null or
+	 *     attachment-less this behaves exactly like {@link #update(Object)}
+	 */
+	public void updatePreservingAttachments(Object document,
+			com.ibm.cloud.cloudant.v1.model.Document currentDoc) {
+		try {
+			if (currentDoc == null || currentDoc.getAttachments() == null
+					|| currentDoc.getAttachments().isEmpty()) {
+				update(document);
+				return;
+			}
+			ObjectMapper mapper = getObjectMapper();
+			@SuppressWarnings("unchecked")
+			Map<String, Object> documentMap = mapper.convertValue(document, Map.class);
+			Map<String, Object> stubs = new java.util.LinkedHashMap<>();
+			for (Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Attachment> e
+					: currentDoc.getAttachments().entrySet()) {
+				Map<String, Object> stub = new java.util.LinkedHashMap<>();
+				stub.put("stub", Boolean.TRUE);
+				if (e.getValue().contentType() != null) {
+					stub.put("content_type", e.getValue().contentType());
+				}
+				// The revpos MUST match what CouchDB holds, or it rejects the stub.
+				if (e.getValue().revpos() != null) {
+					stub.put("revpos", e.getValue().revpos());
+				}
+				stubs.put(e.getKey(), stub);
+			}
+			documentMap.put("_attachments", stubs);
+			update(documentMap);
+
+			// NO write-back of the new revision here, deliberately — see ledger V3, which tried it
+			// and was reverted. update(Map) turns EVERY failure into a null return (it logs and
+			// returns null rather than throwing), so "result was null" and "the write succeeded but
+			// the response was lost" are indistinguishable from in here. Writing the revision back
+			// only on the success-shaped path let callers read the PRE-write revision and treat it
+			// as the revision of a successful write; the GET they used to do could at least
+			// discover what CouchDB actually holds. Callers therefore re-read.
+		} catch (Exception e) {
+			// NO fallback to update(document). That is precisely the path this method exists to
+			// avoid: it posts a body without _attachments, so CouchDB drops the binary and the
+			// document is attachment-less until someone re-uploads it. Falling back would turn a
+			// stub-construction problem into silent data loss, and the caller — which is midway
+			// through a metadata-then-binary sequence — would carry on believing stage 1 was fine.
+			// Failing here lets that caller's compensating rollback run instead.
+			throw new IllegalStateException("Could not update " + document.getClass().getSimpleName()
+					+ " while preserving its attachments; refusing to fall back to an update that"
+					+ " would delete them", e);
+		}
+	}
+
 	public void update(Object document) {
 		try {
 			ObjectMapper mapper = getObjectMapper();
@@ -2090,8 +2285,8 @@ public class CloudantClientWrapper {
 		// Design document patches expect views to be at root level, not nested in properties
 		// Without this fix, patches lose existing views when updating design documents
 		if (id != null && id.startsWith("_design/") &&
-		    (clazz.equals(com.fasterxml.jackson.databind.JsonNode.class) ||
-		     clazz.equals(com.fasterxml.jackson.databind.node.ObjectNode.class))) {
+		    (clazz.equals(tools.jackson.databind.JsonNode.class) ||
+		     clazz.equals(tools.jackson.databind.node.ObjectNode.class))) {
 			Map<String, Object> properties = doc.getProperties();
 			if (properties != null) {
 				Map<String, Object> completeMap = new HashMap<>();
@@ -2225,19 +2420,11 @@ public class CloudantClientWrapper {
 			}
 		}
 
-				// Convert immutable Document to mutable Map first, then to target class
-				@SuppressWarnings("unchecked")
-				Map<String, Object> docMap = mapper.convertValue(doc, Map.class);
-				
-				// CRITICAL FIX: Ensure _id and _rev fields are always present in the map
-				// This is essential for Cloudant SDK deletion operations
-				if (doc.getId() != null) {
-					docMap.put("_id", doc.getId());
-				}
-				if (doc.getRev() != null) {
-					docMap.put("_rev", doc.getRev());
-					log.debug("CloudantClientWrapper.get(): Ensured _rev field is present: " + doc.getRev() + " for document: " + doc.getId());
-				} else {
+				// Same shape as the revision overload — see toDocumentMap. This used to overlay
+				// _id/_rev onto the SDK's bean map, which left the document's own fields buried
+				// under a nested `properties` key and the SDK's internals at the top level.
+				Map<String, Object> docMap = toDocumentMap(doc);
+				if (doc.getRev() == null) {
 					log.warn("CloudantClientWrapper.get(): Document " + doc.getId() + " has no _rev field - this may cause deletion issues");
 				}
 				
@@ -2593,6 +2780,43 @@ public class CloudantClientWrapper {
 	}
 
 	/**
+	 * A CouchDB document as a plain map: the document's own fields plus {@code _id}/{@code _rev},
+	 * and nothing else.
+	 *
+	 * <p>The SDK's {@code Document} is a dynamic model serialized by Gson, not Jackson. Converting
+	 * it with Jackson yields the SDK's own bean shape — {@code id}, {@code rev}, a nested
+	 * {@code properties} map, {@code propertyNames} — and NOT the document's fields at the top
+	 * level. Two things went wrong with that map:
+	 *
+	 * <ul>
+	 *   <li>It has no {@code _id}, so {@link #update(Map)} rejects it outright:
+	 *       {@code IllegalArgumentException: Document must have '_id' field for update}. Every
+	 *       read-modify-write in the purview/lineage stores reads through the revision overload,
+	 *       so none of them could write back. {@code LineageProjectionLoop} could not claim a
+	 *       single event — no lineage event was ever projected to the catalog, and it retried the
+	 *       same one every 10 seconds indefinitely.</li>
+	 *   <li>Handing it to {@code update} would persist the SDK's internal keys into the document,
+	 *       and the next read-modify-write would nest {@code properties} inside {@code properties}
+	 *       again. Overlaying the real fields on top of that map is not enough; the map has to be
+	 *       built from the fields alone.</li>
+	 * </ul>
+	 */
+	private Map<String, Object> toDocumentMap(com.ibm.cloud.cloudant.v1.model.Document doc) {
+		Map<String, Object> map = new LinkedHashMap<>();
+		Map<String, Object> properties = doc.getProperties();
+		if (properties != null) {
+			map.putAll(properties);
+		}
+		if (doc.getId() != null) {
+			map.put("_id", doc.getId());
+		}
+		if (doc.getRev() != null) {
+			map.put("_rev", doc.getRev());
+		}
+		return map;
+	}
+
+	/**
 	 * Get document with revision using Cloudant SDK
 	 */
 	public <T> T get(Class<T> clazz, String id, String revision) {
@@ -2610,9 +2834,7 @@ public class CloudantClientWrapper {
 			
 			if (doc != null) {
 				ObjectMapper mapper = getObjectMapper();
-				// Convert immutable Document to mutable Map first, then to target class
-				@SuppressWarnings("unchecked")
-				Map<String, Object> docMap = mapper.convertValue(doc, Map.class);
+				Map<String, Object> docMap = toDocumentMap(doc);
 				log.debug("Retrieved document with ID: " + id + " (revision: " + revision + ")");
 				return mapper.convertValue(docMap, clazz);
 			}

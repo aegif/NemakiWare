@@ -18,6 +18,7 @@ on:
       - 'docker/docker-compose-simple.yml'
       - '.github/workflows/integration-tests.yml'
       - 'scripts/ci-complete-setup.sh'
+      - 'scripts/ci-seed-odata-docs.sh'
   pull_request:
     branches: [ master, main, develop ]
     paths:
@@ -34,6 +35,7 @@ on:
       - 'docker/docker-compose-simple.yml'
       - '.github/workflows/integration-tests.yml'
       - 'scripts/ci-complete-setup.sh'
+      - 'scripts/ci-seed-odata-docs.sh'
 
 permissions:
   contents: read
@@ -67,11 +69,10 @@ jobs:
           mvn clean install -N -DskipTests -q
           mvn clean install -f common/pom.xml -DskipTests -q
           mvn clean install -f cloudant-init/pom.xml -DskipTests -q
-          mvn clean install -f solr/pom.xml -DskipTests -q
       - name: Run unit tests
         run: |
           mvn test \
-            -Dtest='ResourceBaseCsrfProtectionTest,CanonicalImportServiceTest,WebhookServiceTest,WebhookConfigTest,WebhookConfigParserTest,WebhookDeliveryServiceTest,HttpWebhookDispatcherTest,WebhookEventMatcherTest,ChildEventBatchProcessorTest,LiteralTypeValidatorTest,SolrPredicateWalkerMultilingualTest,NavigationPaginationTest,FilesystemImporterTest,ImportExportResourceTest,SlackConnectorAdapterTest,TeamsConnectorAdapterTest,ChatworkConnectorAdapterTest,MattermostConnectorAdapterTest,NotionConnectorAdapterTest,SalesforceConnectorAdapterTest,BoxDropboxAdapterTest' \
+            -Dtest='ResourceBaseCsrfProtectionTest,CanonicalImportServiceTest,WebhookServiceTest,WebhookConfigTest,WebhookConfigParserTest,WebhookDeliveryServiceTest,HttpWebhookDispatcherTest,WebhookEventMatcherTest,ChildEventBatchProcessorTest,LiteralTypeValidatorTest,SolrPredicateWalkerMultilingualTest,SolrQueryProcessorScanCapTest,SolrQueryProcessorAclFilterTest,SolrUtilRelationshipReadersTest,ACLExpanderTest,PrincipalServiceImplCycleTest,SearchIndexReconciliationSchedulerTest,SearchIndexReconciliationFenceGuardTest,RAGIndexingServiceImplPwcTest,RAGIndexingServiceImplAclUpdateTest,AclEpochCounterServiceTest,Patch_AclEpochCounterTest,AclEpochStateTest,AclSemanticsGoldenTest,AclSemanticsCrossPathReportTest,AclSemanticsResolveAclIsRequiredTest,AclEffectiveEpochReadersProjectionTest,ContentWriterFenceTest,SolrUtilReadersFailureTest,CsrfValidatorBrowserBindingTest,NavigationPaginationTest,FilesystemImporterTest,ImportExportResourceTest,SlackConnectorAdapterTest,TeamsConnectorAdapterTest,ChatworkConnectorAdapterTest,MattermostConnectorAdapterTest,NotionConnectorAdapterTest,SalesforceConnectorAdapterTest,BoxDropboxAdapterTest' \
             -f core/pom.xml -Pdevelopment,opencmis-github-packages
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
@@ -105,7 +106,6 @@ jobs:
           mvn clean install -N -DskipTests -q
           mvn clean install -f common/pom.xml -DskipTests -q
           mvn clean install -f cloudant-init/pom.xml -DskipTests -q
-          mvn clean install -f solr/pom.xml -DskipTests -q
           mvn clean package -f core/pom.xml -Pdevelopment,opencmis-github-packages -DskipTests -q
 
       - name: Start NemakiWare Server
@@ -167,7 +167,6 @@ jobs:
           mvn clean install -N -DskipTests -q
           mvn clean install -f common/pom.xml -DskipTests -q
           mvn clean install -f cloudant-init/pom.xml -DskipTests -q
-          mvn clean install -f solr/pom.xml -DskipTests -q
           mvn clean package -f core/pom.xml -Pdevelopment,opencmis-github-packages -DskipTests -q
 
       - name: Start NemakiWare Server
@@ -194,6 +193,148 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with: { name: tck-reports, path: core/target/surefire-reports/, retention-days: 14 }
+
+      - name: Cleanup
+        if: always()
+        run: |
+          cd docker
+          docker compose -f docker-compose-simple.yml down
+          docker system prune -f
+
+  # ── OData binding ITs (require running server) ─────────────
+  # Turns the previously @Disabled OData ITs into a real CI gate. They run
+  # against the live stack with the JUnit @Disabled condition deactivated, after
+  # seeding a few documents so the paging / $orderby regression tests actually
+  # execute (they assumeTrue(total >= 2) and would otherwise skip on a fresh DB).
+  odata-tests:
+    name: OData Binding ITs (Documents/Folders/Olingo-client, 71 tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      MAVEN_USERNAME: ${{ github.actor }}
+      MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      # docker-compose-simple.yml requires these (?:- fail-fast) for up AND down,
+      # so the Cleanup step (compose down) needs them too.
+      COUCHDB_USER: admin
+      COUCHDB_PASSWORD: password
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+          server-id: github-opencmis
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+
+      - name: Build NemakiWare
+        run: |
+          mvn clean install -N -DskipTests -q
+          mvn clean install -f common/pom.xml -DskipTests -q
+          mvn clean install -f cloudant-init/pom.xml -DskipTests -q
+          mvn clean package -f core/pom.xml -Pdevelopment,opencmis-github-packages -DskipTests -q
+
+      - name: Start NemakiWare Server
+        env:
+          COUCHDB_USER: admin
+          COUCHDB_PASSWORD: password
+        run: |
+          cd docker
+          cp ../core/target/core.war core/core.war
+          docker compose -f docker-compose-simple.yml up -d --build
+
+          # Fresh CouchDB → NemakiWare enters Setup Mode (no admin until the
+          # Setup Wizard runs). Drive it via the Setup API so admin:admin works.
+          COMPOSE_FILE=docker-compose-simple.yml bash "$GITHUB_WORKSPACE/scripts/ci-complete-setup.sh"
+
+      - name: Seed OData test documents
+        run: bash "$GITHUB_WORKSPACE/scripts/ci-seed-odata-docs.sh"
+
+      - name: Run OData integration tests
+        run: |
+          mvn test \
+            -Dtest='ODataDocumentsIT,ODataFoldersIT,ODataOlingoClientValidationIT' \
+            -Dnemaki.test.baseUrl=http://localhost:8080/core \
+            -Djunit.jupiter.conditions.deactivate='*' \
+            -f core/pom.xml -Pdevelopment,opencmis-github-packages \
+            -Dmaven.test.failure.ignore=false
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with: { name: odata-reports, path: core/target/surefire-reports/, retention-days: 14 }
+
+      - name: Cleanup
+        if: always()
+        run: |
+          cd docker
+          docker compose -f docker-compose-simple.yml down
+          docker system prune -f
+
+  # ── Search-index ACL reconciliation IT (require running CouchDB/Solr) ─────
+  # Exercises the durable reconciliation queue's concurrency / durability
+  # primitives (deterministic-id dedupe, _rev CAS claim exclusivity, lease loss
+  # detection, complete-vs-concurrent-enqueue, Mango status filter, metrics)
+  # against a LIVE CouchDB. These are the guarantees the Mockito scheduler test
+  # cannot cover. The IT is normally *IT (outside Surefire), and skips locally
+  # when nemaki_conf is unreachable — but here it runs with
+  # nemaki.test.couchdb.required=true, so an unreachable store FAILS the job
+  # instead of silently skipping (no false green).
+  reconcile-it:
+    name: Search-index ACL reconciliation + ACL-epoch counter IT (live CouchDB)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MAVEN_USERNAME: ${{ github.actor }}
+      MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      COUCHDB_USER: admin
+      COUCHDB_PASSWORD: password
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+          server-id: github-opencmis
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+
+      - name: Build NemakiWare
+        run: |
+          mvn clean install -N -DskipTests -q
+          mvn clean install -f common/pom.xml -DskipTests -q
+          mvn clean install -f cloudant-init/pom.xml -DskipTests -q
+          mvn clean package -f core/pom.xml -Pdevelopment,opencmis-github-packages -DskipTests -q
+
+      - name: Start NemakiWare Server
+        env:
+          COUCHDB_USER: admin
+          COUCHDB_PASSWORD: password
+        run: |
+          cd docker
+          cp ../core/target/core.war core/core.war
+          docker compose -f docker-compose-simple.yml up -d --build
+
+          # Fresh CouchDB → Setup Mode. The Setup Wizard creates the repositories and
+          # nemaki_conf, and core startup applies Patch_SearchIndexReconcileMangoIndex
+          # (the Mango indexes the queue's claimDue/list use).
+          COMPOSE_FILE=docker-compose-simple.yml bash "$GITHUB_WORKSPACE/scripts/ci-complete-setup.sh"
+
+      - name: Run reconciliation + ACL-epoch counter IT (fail if CouchDB unreachable)
+        run: |
+          mvn test \
+            -Dtest='SearchIndexReconciliationServiceIT,AclEpochCounterServiceIT,Patch_AclEpochCounterIT,AclEpochFinalizationServiceIT,AclEffectiveEpochServiceIT,AclSemanticsCrossImplementationAgreementIT,Patch_AclEpochMutationIdMangoIndexIT,AclEpochIndexWriterIT,PrincipalLookupTriStateIT' \
+            -Dnemaki.test.couchdb.required=true \
+            -Dnemaki.test.couchdb.url=http://localhost:5984 \
+            -Dnemaki.test.couchdb.user=admin \
+            -Dnemaki.test.couchdb.password=password \
+            -f core/pom.xml -Pdevelopment,opencmis-github-packages \
+            -Dmaven.test.failure.ignore=false
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with: { name: reconcile-it-reports, path: core/target/surefire-reports/, retention-days: 14 }
 
       - name: Cleanup
         if: always()

@@ -11,9 +11,11 @@ import java.util.Set;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.model.ViewResult;
 import com.ibm.cloud.cloudant.v1.model.ViewResultRow;
+
+import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
@@ -343,6 +345,124 @@ public class UserGroupDaoDelegate {
 		}
 	}
 
+	/**
+	 * Reads the parent group ids out of a reverse-lookup view result.
+	 *
+	 * <p>Shared by the two callers below so the failure policy is stated once. A row that
+	 * cannot be parsed FAILS THE WHOLE CALL rather than being logged and skipped: the callers
+	 * use this to strip a deleted principal from everyone who references it, so a partial list
+	 * means a delete that reports success and leaves a dangling reference — the same outcome
+	 * this method exists to prevent, arrived at more quietly. It is the identical argument that
+	 * makes a view failure an exception rather than an empty list.
+	 *
+	 * @param subject the id being looked up, for the message only
+	 */
+	private List<String> parentGroupIdsFrom(ViewResult result, String subject) {
+		List<String> parents = new ArrayList<String>();
+		if (result == null || result.getRows() == null) {
+			return parents;
+		}
+		Set<String> seen = new HashSet<String>();
+		int rows = 0;
+		for (ViewResultRow row : result.getRows()) {
+			rows++;
+			Object value = row.getValue();
+			// A null value is treated as a malformed row, not skipped. Skipping meant a result
+			// set of all-null rows read as "no parents" and succeeded — the same
+			// indistinguishability between "nothing references it" and "could not tell" that
+			// every other branch here refuses.
+			if (value == null) {
+				throw new CmisRuntimeException(
+						"A reverse-lookup row for " + subject + " has a null value");
+			}
+			if (!(value instanceof Map)) {
+				throw new CmisRuntimeException("Unexpected row shape in the reverse-lookup view"
+						+ " for " + subject + ": " + value.getClass().getName());
+			}
+			@SuppressWarnings("unchecked")
+			Object parentId = ((Map<String, Object>) value).get("groupId");
+			if (!(parentId instanceof String) || ((String) parentId).isEmpty()) {
+				throw new CmisRuntimeException("A reverse-lookup row for " + subject
+						+ " carries no usable groupId");
+			}
+			if (seen.add((String) parentId)) {
+				parents.add((String) parentId);
+			}
+		}
+		if (rows > 0 && parents.isEmpty()) {
+			// Belt and braces: if the shape ever changes such that every row parses to nothing
+			// without throwing, "no parents" would again be indistinguishable from "could not
+			// tell", which is exactly the confusion being designed out here.
+			throw new CmisRuntimeException("The reverse-lookup view returned " + rows
+					+ " rows for " + subject + " but none yielded a group id");
+		}
+		return parents;
+	}
+
+	/**
+	 * The ids of the groups that directly contain {@code groupId}.
+	 *
+	 * <p>Answers "who nests this group" from the reverse-lookup view instead of enumerating
+	 * every group in the repository. Deleting a group has to strip it from its parents, and the
+	 * only way that was being found was to fetch ALL groups WITH their documents and scan each
+	 * one's nested list — 2,978 groups fetched to find the handful that matter, measured at
+	 * 6.2 s per deletion on the dev stack. The view already existed and was already used by the
+	 * read path.
+	 *
+	 * <p>The composite key handling matches {@code checkIndirectGroup}: the view emits array
+	 * keys {@code [groupId, n]} for n in 0..19 — the same parent document twenty times per edge
+	 * — so the range is pinned to depth 0 and the keys must be passed as {@code List} or the
+	 * SDK sends a JSON string that matches no array key and the query silently returns nothing.
+	 * That duplicate emit is F4 in the release ledger; this pinning is what makes it harmless
+	 * here, so if the map function is ever rewritten to emit once, drop the range.
+	 */
+	public List<String> getGroupIdsDirectlyContainingGroup(String repositoryId, String groupId) {
+		if (groupId == null || groupId.isEmpty()) {
+			return new ArrayList<String>();
+		}
+		Map<String, Object> queryParams = new HashMap<String, Object>();
+		queryParams.put("startkey", Arrays.asList(groupId, 0));
+		queryParams.put("endkey", Arrays.asList(groupId, 0));
+		try {
+			return parentGroupIdsFrom(connectorPool.getClient(repositoryId)
+					.queryView("_repo", "joinedDirectGroupsByGroupId", queryParams), groupId);
+		} catch (CmisRuntimeException e) {
+			throw e;
+		} catch (Exception e) {
+			// Deliberately NOT swallowed into "no parents": that would let a view failure look
+			// like "nothing references this group" and leave dangling references behind.
+			throw new CmisRuntimeException(
+					"Could not resolve the groups containing " + groupId + ": " + e.getMessage(), e);
+		}
+	}
+
+	/**
+	 * The ids of the groups that directly list {@code userId} as a member.
+	 *
+	 * <p>The user-side twin of {@link #getGroupIdsDirectlyContainingGroup}: deleting a user has
+	 * to strip it from every group that lists it, and that was also being found by fetching ALL
+	 * groups with their documents. The view exists ({@code joinedDirectGroupsByUserId}) and the
+	 * membership read path already uses it — with a scalar {@code key}, unlike the group view's
+	 * composite array keys.
+	 */
+	public List<String> getGroupIdsDirectlyContainingUser(String repositoryId, String userId) {
+		if (userId == null || userId.isEmpty()) {
+			return new ArrayList<String>();
+		}
+		Map<String, Object> queryParams = new HashMap<String, Object>();
+		queryParams.put("key", userId);
+		try {
+			return parentGroupIdsFrom(connectorPool.getClient(repositoryId)
+					.queryView("_repo", "joinedDirectGroupsByUserId", queryParams), userId);
+		} catch (CmisRuntimeException e) {
+			throw e;
+		} catch (Exception e) {
+			// Same reason as the group twin: a view failure must not read as "no memberships".
+			throw new CmisRuntimeException(
+					"Could not resolve the groups containing user " + userId + ": " + e.getMessage(), e);
+		}
+	}
+
 	public List<GroupItem> getGroupItems(String repositoryId) {
 		try {
 			// Use ViewQuery to get all group items from groupItemsById view
@@ -465,9 +585,13 @@ public class UserGroupDaoDelegate {
 				}
 			}
 
-			// CRITICAL FIX: Add maximum iteration limit and visited tracking
-			int maxIterations = 50; // Prevent runaway loops
+			// Bound on WORK, not a cycle guard — cycles are already impossible here because
+			// visitedGroups never re-admits a group to the frontier. Each iteration climbs one
+			// level, so this caps the resolvable nesting depth at maxIterations + 1.
+			// Reaching it means the answer is INCOMPLETE: see TruncatedGroupResolution.
+			int maxIterations = 50;
 			int iterations = 0;
+			boolean truncated = false;
 
 			while(groupIdsToCheck.size() > 0 && iterations < maxIterations) {
 				List<String> newGroupIds = checkIndirectGroup(repositoryId, groupIdsToCheck);
@@ -484,13 +608,23 @@ public class UserGroupDaoDelegate {
 
 				iterations++;
 
-				// Log potential infinite loop detection
-				if (iterations >= maxIterations) {
-					log.warn("Group hierarchy traversal reached maximum iterations (" + maxIterations + ") for user " + userId + " - possible circular group references");
+				// Still work left when the budget ran out => the membership below is a prefix
+				// of the real one, and every ACE granted through an unreached ancestor group
+				// will be silently ignored by the authorization gate.
+				if (iterations >= maxIterations && !groupIdsToCheck.isEmpty()) {
+					truncated = true;
+					log.warn("Group hierarchy traversal INCOMPLETE for user " + userId
+							+ ": stopped at " + maxIterations + " levels with "
+							+ groupIdsToCheck.size() + " group(s) still unexplored. "
+							+ "Permissions granted through ancestor groups above that depth will "
+							+ "NOT take effect. Flatten the group nesting for this account.");
 				}
 			}
 
 			//unique result
+			if (truncated) {
+				return new jp.aegif.nemaki.dao.TruncatedGroupResolution(resultGroupIds, maxIterations);
+			}
 			return resultGroupIds;
 		} catch (Exception e) {
 			log.error("Error getting joined groups for user: " + userId + ", error: " + e.getMessage());
@@ -517,9 +651,19 @@ public class UserGroupDaoDelegate {
 				// as List so the Cloudant SDK serializes them as JSON arrays. Passing a String
 				// ("[\"id\",0]") sends a JSON string key which never matches an array key, so
 				// nested-group expansion silently returned nothing.
+				// Read depth 0 ONLY. The view emits the SAME parent document twenty times per
+				// edge, under keys [groupId, 0] .. [groupId, 19]; asking for the whole range
+				// transfers twenty copies of every parent and throws nineteen of them away in the
+				// dedupe below. One key is enough because the twenty rows are identical.
+				//
+				// The duplicate emits are not fixed here on purpose: changing the map function
+				// forces CouchDB to rebuild the whole view, which on a large repository is an
+				// outage-shaped operation for a saving the consumer can take unilaterally. If the
+				// view is ever rewritten to emit once, this stays correct — a scalar key would
+				// need the range dropped, which the compile would catch.
 				Map<String, Object> queryParams = new HashMap<String, Object>();
 				queryParams.put("startkey", Arrays.asList(groupId, 0));
-				queryParams.put("endkey", Arrays.asList(groupId, 19));
+				queryParams.put("endkey", Arrays.asList(groupId, 0));
 
 				try {
 					ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "joinedDirectGroupsByGroupId", queryParams);

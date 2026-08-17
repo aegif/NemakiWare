@@ -230,5 +230,4 @@ Keycloak OIDC経由の認証を推奨します。
 
 ## 関連ドキュメント
 
-- [LDAP Sync + Keycloak Authentication Guide](../docs/ldap-sync-keycloak-authentication.md)
 - [NemakiWare OIDC設定](../core/src/main/webapp/ui/src/services/oidc.ts)

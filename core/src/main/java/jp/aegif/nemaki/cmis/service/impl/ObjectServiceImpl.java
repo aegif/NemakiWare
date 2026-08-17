@@ -1248,8 +1248,21 @@ public class ObjectServiceImpl implements ObjectService {
 						objectIdAndChangeToken.getId(), content.getId(), String.valueOf(content.getChangeToken()));
 				return result;
 			} catch (Exception e) {
-				// Don't throw an error
-				// Don't return any BulkUpdateObjectIdAndChangetoken
+				// Per-object isolation is the CMIS contract for bulkUpdateProperties — absence
+				// from the result set IS the failure notification — but absence with no log line
+				// anywhere made real failures undiagnosable: one object on a congested stripe
+				// would silently miss the update and nothing recorded why. Now the reason is on
+				// record; a lock timeout is called out as retryable so a batch operator knows to
+				// re-run rather than to investigate the object.
+				if (e instanceof jp.aegif.nemaki.util.lock.LockAcquisitionTimeoutException) {
+					log.warn("bulkUpdateProperties: skipped " + objectIdAndChangeToken.getId()
+							+ " — object lock timed out (transient contention; re-running the"
+							+ " bulk update for this object should succeed): " + e.getMessage());
+				} else {
+					log.warn("bulkUpdateProperties: skipped " + objectIdAndChangeToken.getId()
+							+ ": " + e.getMessage());
+				}
+				// Don't throw; don't return a BulkUpdateObjectIdAndChangeToken for this object.
 			} finally {
 				lock.unlock();
 			}
@@ -1265,21 +1278,70 @@ public class ObjectServiceImpl implements ObjectService {
 			String targetFolderId, ExtensionsData extension) {
 
 		exceptionService.invalidArgumentRequiredHolderString("objectId", objectId);
+		exceptionService.invalidArgumentRequiredString("sourceFolderId", sourceFolderId);
+		exceptionService.invalidArgumentRequiredString("targetFolderId", targetFolderId);
 
-		Lock lock = threadLockService.getWriteLock(repositoryId, objectId.getValue());
+		final String movingId = objectId.getValue();
+		if (movingId.equals(targetFolderId)) {
+			exceptionService.constraint(movingId, "Cannot move a folder into itself");
+		}
+
+		// Two locks, and for a FOLDER a third that serialises folder moves repository-wide.
+		//
+		// Locking the moved object and the destination is not enough to make the cycle guard
+		// below sound. Concurrent moves of A under a descendant of B and of B under a descendant
+		// of A hold {A, B_child} and {B, A_child} — disjoint sets, so neither excludes the other,
+		// and each evaluates its guard against a hierarchy where the other move has not landed.
+		// Both pass, both commit, and the pair forms a cycle. Widening the lock set does not fix
+		// it either: the set that would have to be held is the whole ancestor chain, which is
+		// exactly what the other move is changing.
+		//
+		// So folder moves take a repository-scoped write lock and run one at a time. This is a
+		// rare administrative operation, and a cycle is not cosmetic — the ACL inheritance walk
+		// climbs parents, so a self-ancestor folder makes every effective-ACL computation beneath
+		// it unanswerable. Non-folder moves cannot create a cycle (a document has no children)
+		// and are deliberately left concurrent.
+		//
+		// The repository lock is taken FIRST and released LAST. That rule only orders it against
+		// other acquirers of the SAME lock, which is why the key is a NAMED lock (see
+		// ThreadLockServiceImpl): a name that merely hashed into the 4096 stripes would be the
+		// same lock as ~1/4096 of all real objects, and those objects appear inside other
+		// requests' ordered sets — putting this "always first" lock in the middle of somebody
+		// else's ordering, which is the outer-hold shape that took the repository down. As a
+		// dedicated instance it collides with nothing, so first-and-last is genuinely safe.
+		Content moving = contentService.getContent(repositoryId, movingId);
+		exceptionService.objectNotFound(DomainType.OBJECT, moving, movingId);
+		Lock hierarchyLock = (moving != null && moving.isFolder())
+				? threadLockService.getNamedWriteLock(repositoryId,
+						jp.aegif.nemaki.util.lock.ThreadLockService.NamedLock.FOLDER_HIERARCHY)
+				: null;
+		// Ordered by STRIPE, not by object id. The locks are striped, so the id order says nothing
+		// about the order the underlying locks are actually taken in — two moves could sort their
+		// ids one way and hit the stripes the other. orderedLocks also collapses the pair when
+		// both ids land on one stripe, which a hand-written pair would take twice and release once.
+		List<Lock> objectLocks = threadLockService.orderedLocks(repositoryId,
+				java.util.List.of(movingId, targetFolderId), true);
+		Content moved = null;
 		try {
-			lock.lock();
+			if (hierarchyLock != null) {
+				hierarchyLock.lock();
+			}
+			threadLockService.bulkLock(objectLocks);
 			// //////////////////
 			// General Exception
 			// //////////////////
-			exceptionService.invalidArgumentRequiredString("sourceFolderId", sourceFolderId);
-			exceptionService.invalidArgumentRequiredString("targetFolderId", targetFolderId);
-			Content content = contentService.getContent(repositoryId, objectId.getValue());
-			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId.getValue());
+			// Re-read UNDER the locks: the pre-lock read above only decided whether this is a
+			// folder move. Anything the guard depends on must come from a state no concurrent
+			// move can still change.
+			Content content = contentService.getContent(repositoryId, movingId);
+			exceptionService.objectNotFound(DomainType.OBJECT, content, movingId);
 			Folder source = contentService.getFolder(repositoryId, sourceFolderId);
 			exceptionService.objectNotFound(DomainType.OBJECT, source, sourceFolderId);
 			Folder target = contentService.getFolder(repositoryId, targetFolderId);
 			exceptionService.objectNotFound(DomainType.OBJECT, target, targetFolderId);
+			if (content.isFolder()) {
+				rejectMoveIntoOwnSubtree(repositoryId, movingId, target);
+			}
 			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_MOVE_OBJECT, content);
 			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_MOVE_SOURCE, source);
 			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_MOVE_TARGET, target);
@@ -1294,8 +1356,78 @@ public class ObjectServiceImpl implements ObjectService {
 
 			// Invalidate IN_TREE folder hierarchy cache (folder may have been moved)
 			solrUtil.invalidateFolderHierarchyCache(repositoryId);
+
+			moved = content;
 		} finally {
-			lock.unlock();
+			threadLockService.bulkUnlock(objectLocks);
+			if (hierarchyLock != null) {
+				hierarchyLock.unlock();
+			}
+		}
+
+		// ACL-in-Solr: refresh the readers of inheriting descendants of the moved folder (their
+		// inherited ACL changed with the new ancestor chain); the moved object itself is refreshed
+		// by ContentServiceImpl.move. Resolved lazily to avoid a construction-time dependency
+		// cycle.
+		//
+		// OUTSIDE the locks, deliberately. This walks the moved subtree, and for a folder move the
+		// hierarchy lock is repository-wide — holding it across an unbounded walk serializes every
+		// folder move in the repository behind one subtree traversal, which with bounded
+		// acquisition means the next folder move fails with a 503 rather than merely waiting. It
+		// also contradicts the isolation this release is about: no request thread should walk
+		// somebody else's subtree, least of all while holding a repository-wide lock.
+		//
+		// Nothing here needs the locks: the refresh recomputes each descendant's readers from the
+		// authoritative ACL and is epoch-fenced, so a concurrent change simply wins. What the
+		// locks protected was the move DECISION (the cycle guard reading a hierarchy no other move
+		// can be changing), and that has already committed above.
+		if (moved != null) {
+			try {
+				jp.aegif.nemaki.cmis.service.AclService aclService =
+						jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
+								.getBean("AclService", jp.aegif.nemaki.cmis.service.AclService.class);
+				aclService.refreshMovedSubtreeSearchIndexAcl(repositoryId, moved);
+			} catch (Exception e) {
+				log.warn("moveObject: descendant readers refresh failed: " + e.getMessage());
+			}
+		}
+	}
+
+
+	/**
+	 * Refuse to move {@code movingId} underneath itself.
+	 *
+	 * <p>Walks from the destination up to the root. The walk carries its own visited set and hop
+	 * budget because the store may ALREADY contain a cycle (nothing prevented one before this
+	 * guard existed) — a guard that hangs on the damage it is meant to prevent is worse than none.
+	 * Hitting either bound is reported as a constraint violation rather than ignored: the move
+	 * cannot be shown to be safe, so it does not proceed.
+	 */
+	private void rejectMoveIntoOwnSubtree(String repositoryId, String movingId, Folder target) {
+		java.util.Set<String> visited = new java.util.HashSet<>();
+		Content cursor = target;
+		int hops = 0;
+		while (cursor != null) {
+			if (movingId.equals(cursor.getId())) {
+				exceptionService.constraint(movingId,
+						"Cannot move a folder into its own subtree (destination is a descendant)");
+			}
+			if (!visited.add(cursor.getId())) {
+				exceptionService.constraint(movingId,
+						"Cannot verify the move: the folder hierarchy above the destination"
+								+ " contains a cycle");
+			}
+			if (++hops > jp.aegif.nemaki.acl.AclSemantics.MAX_ANCESTOR_HOPS) {
+				exceptionService.constraint(movingId,
+						"Cannot verify the move: the folder hierarchy above the destination is"
+								+ " deeper than " + jp.aegif.nemaki.acl.AclSemantics.MAX_ANCESTOR_HOPS
+								+ " levels");
+			}
+			String parentId = cursor.getParentId();
+			if (parentId == null) {
+				return;
+			}
+			cursor = contentService.getFolder(repositoryId, parentId);
 		}
 	}
 
@@ -1359,9 +1491,11 @@ public class ObjectServiceImpl implements ObjectService {
 		fdd.setIds(failedIds);
 
 		if (!failedIds.isEmpty()) {
-			log.warn("[deleteTree] Orphan objects detected: folderId=" + folder.getId()
-				+ ", folderName=" + folder.getName() + ", orphanIds=" + failedIds
-				+ ", action=Check archive management or query CouchDB directly for cleanup");
+			log.warn("[deleteTree] Objects not deleted: folderId=" + folder.getId()
+				+ ", folderName=" + folder.getName() + ", ids=" + failedIds
+				+ ". See the per-object WARNs above for the reasons — lock timeouts are transient"
+				+ " (re-run deleteTree); only failures that persist across re-runs warrant"
+				+ " archive-management or CouchDB-level investigation.");
 		}
 
 		return fdd;
@@ -1416,6 +1550,7 @@ public class ObjectServiceImpl implements ObjectService {
 								objectServiceInternal.deleteObjectInternal(callContext, repositoryId, child, allVersions, true);
 								return null; // success
 							} catch (Exception e) {
+								logDeleteTreeFailure(child.getId(), e);
 								return child.getId(); // failure
 							}
 						}));
@@ -1440,7 +1575,27 @@ public class ObjectServiceImpl implements ObjectService {
 		try {
 			objectServiceInternal.deleteObjectInternal(callContext, repositoryId, node, allVersions, true);
 		} catch (Exception e) {
+			logDeleteTreeFailure(node.getId(), e);
 			failedIds.add(node.getId());
+		}
+	}
+
+	/**
+	 * Say WHY a node survived a deleteTree, and say it accurately.
+	 *
+	 * <p>Every failure here lands in {@code failedToDelete} (the CMIS contract), but the summary
+	 * log used to present all of them as orphans needing manual CouchDB cleanup. A lock timeout is
+	 * not that: it is transient contention, and the correct operator action is to run deleteTree
+	 * again, not to hand-edit the database. Presenting a retryable event as a repair job is how a
+	 * bounded failure turns into an operational incident.
+	 */
+	private void logDeleteTreeFailure(String objectId, Exception e) {
+		if (e instanceof jp.aegif.nemaki.util.lock.LockAcquisitionTimeoutException) {
+			log.warn("[deleteTree] Skipped " + objectId + ": object lock timed out (transient"
+					+ " contention — re-running deleteTree should delete it; no manual cleanup"
+					+ " is needed): " + e.getMessage());
+		} else {
+			log.warn("[deleteTree] Failed to delete " + objectId + ": " + e.getMessage());
 		}
 	}
 

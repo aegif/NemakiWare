@@ -15,7 +15,7 @@ import org.mindrot.jbcrypt.BCrypt;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
@@ -27,6 +27,7 @@ import jp.aegif.nemaki.cmis.service.DiscoveryService;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.rag.search.VectorSearchResult;
 import jp.aegif.nemaki.rag.search.VectorSearchService;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * TDD Tests for MCP Tools Provider.
@@ -74,7 +75,7 @@ public class McpToolsProviderTest {
     @BeforeEach
     public void setUp() {
         MockitoAnnotations.openMocks(this);
-        ObjectMapper objectMapper = new ObjectMapper();
+        ObjectMapper objectMapper = ObjectMapperFactory.createDefaultObjectMapper();
         authHandler = new McpAuthenticationHandler(principalService, apiKeyService, TEST_SESSION_TTL_SECONDS);
         resultFactory = new McpToolResultFactory(objectMapper);
         toolsProvider = new McpToolsProvider(authHandler, vectorSearchService, contentService,

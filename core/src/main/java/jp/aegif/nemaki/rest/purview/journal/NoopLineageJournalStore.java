@@ -22,22 +22,27 @@ public class NoopLineageJournalStore implements LineageJournalStore {
     }
 
     @Override
-    public List<LineageEvent> findByRepositoryId(String repositoryId, int limit, int offset) {
+    public void appendV2(LineageEventV2 event) {
+        // no-op
+    }
+
+    @Override
+    public List<LineageJournalRow> findByRepositoryId(String repositoryId, int limit, int offset) {
         return List.of();
     }
 
     @Override
-    public List<LineageEvent> findByProcessType(String repositoryId, LineageProcessType processType, int limit, int offset) {
+    public List<LineageJournalRow> findByProcessType(String repositoryId, LineageProcessType processType, int limit, int offset) {
         return List.of();
     }
 
     @Override
-    public List<LineageEvent> findByProcessType(LineageProcessType processType, int limit, int offset) {
+    public List<LineageJournalRow> findByProcessType(LineageProcessType processType, int limit, int offset) {
         return List.of();
     }
 
     @Override
-    public int updatePublishStatus(String eventId, String target, LineagePublishStatus status) {
+    public int updatePublishStatus(String recordId, String target, LineagePublishStatus status) {
         return 0;
     }
 
@@ -47,7 +52,7 @@ public class NoopLineageJournalStore implements LineageJournalStore {
     }
 
     @Override
-    public int discardEvent(String eventId, String target) {
+    public int discardEvent(String recordId, String target) {
         return 0;
     }
 
@@ -58,12 +63,12 @@ public class NoopLineageJournalStore implements LineageJournalStore {
 
 
     @Override
-    public List<LineageEvent> findAll(int limit, int offset) {
+    public List<LineageJournalRow> findAll(int limit, int offset) {
         return List.of();
     }
 
     @Override
-    public LineageEvent findByEventId(String eventId) {
+    public LineageJournalRow findByRecordId(String recordId) {
         return null;
     }
 
@@ -73,12 +78,12 @@ public class NoopLineageJournalStore implements LineageJournalStore {
     }
 
     @Override
-    public List<LineageEvent> findByTargetAndStatus(String target, LineagePublishStatus status, int limit) {
+    public List<LineageJournalRow> findByTargetAndStatus(String target, LineagePublishStatus status, int limit) {
         return List.of();
     }
 
     @Override
-    public List<LineageEvent> findByTargetAndStatusOldestFirst(String target, LineagePublishStatus status, int limit) {
+    public List<LineageJournalRow> findByTargetAndStatusOldestFirst(String target, LineagePublishStatus status, int limit) {
         return List.of();
     }
 
@@ -88,19 +93,19 @@ public class NoopLineageJournalStore implements LineageJournalStore {
     }
 
     @Override
-    public int getRetryCount(String eventId, String target) {
+    public int getRetryCount(String recordId, String target) {
         return 0;
     }
 
 
 
     @Override
-    public List<LineageEvent> findByDateRange(String start, String end, int limit, int offset) {
+    public List<LineageJournalRow> findByDateRange(String start, String end, int limit, int offset) {
         return List.of();
     }
 
     @Override
-    public List<LineageEvent> findByRepositoryAndSequenceRange(String repositoryId, long fromSequence, int limit) {
+    public List<LineageJournalRow> findByRepositoryAndSequenceRange(String repositoryId, long fromSequence, int limit) {
         return List.of();
     }
 

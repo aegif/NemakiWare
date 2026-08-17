@@ -110,6 +110,11 @@
         <property name="repositoryInfoMap">
             <ref bean="repositoryInfoMap" />
         </property>
+        <!-- The DAO, not contentService: contentService already refs TypeManager, and closing
+             that cycle around this non-lazy init-method bean is asking for startup trouble. -->
+        <property name="contentDaoService">
+            <ref bean="ContentDaoService" />
+        </property>
     </bean>
 
     <!-- CMIS Service Beans -->
@@ -387,6 +392,14 @@
     </bean>
 
     <bean id="aclService" class="jp.aegif.nemaki.cmis.service.impl.AclServiceImpl" destroy-method="destroy">
+        <!-- ACL-epoch production wiring (design §11). ALWAYS ON since 3.3.0: the pre-epoch ACL
+             write path was removed, so there is no off state and no acl.epoch.wiring.enabled to
+             decide anything. A leftover false is ignored and warned about at startup
+             (AclEpochScanScheduler.warnIfObsoleteFlagIsSet). These collaborators are not optional.
+             This comment used to claim the opposite — see RELEASE_NOTES, 3.3.0 breaking changes. -->
+        <property name="propertyManager"><ref bean="propertyManager" /></property>
+        <property name="aclEpochFinalizationService"><ref bean="aclEpochFinalizationService" /></property>
+        <property name="aclEpochIndexWriter"><ref bean="aclEpochIndexWriter" /></property>
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
@@ -408,6 +421,154 @@
         <property name="nemakiCachePool">
             <ref bean="nemakiCachePool" />
         </property>
+        <!-- Durable reconciliation queue for failed async search-index ACL refreshes -->
+        <property name="reconciliationService">
+            <ref bean="searchIndexReconciliationService" />
+        </property>
+        <!-- Content-DB pool for the reconciliation re-drive's authoritative existence probe -->
+        <property name="connectorPool">
+            <ref bean="connectorPool" />
+        </property>
+    </bean>
+
+    <!-- ACL-epoch counter (design acl-epoch-fencing.md §2.1/§8, increment 1).
+         Standalone: seeded by Patch_AclEpochCounter, NOT yet called from any ACL write
+         path (fail-closed staging until the ACL-UPDATE increment). -->
+    <bean id="aclEpochCounterService"
+          class="jp.aegif.nemaki.epoch.AclEpochCounterService">
+        <property name="connectorPool" ref="connectorPool" />
+    </bean>
+
+    <!-- ACL-epoch finalization + crash-recovery scanner (design §2.2/§3, increment 2).
+         Still NO init-method, NO scheduler wiring, NO cron: nothing here runs by itself, and it
+         never touches Solr or the ACL cache.
+
+         Reachable in production, by EXPLICIT admin request only (increments 9 and 11):
+           - repairQuarantined()            <- AclEpochQuarantineController
+           - scan() / finalizePending()     <- AclEpochScanController
+         Both are deliberate. §5.1 (gate 4) requires the quarantine EXIT to exist before the walk
+         goes on any write path; the outbox's crash-recovery half likewise needs a driver before the
+         writer is wired on top of it. Neither is a step towards wiring: the repair only touches a
+         document an operator names that is already quarantined, and a sweep selects nothing at all
+         while no production path creates epoch state.
+
+         Still NOT reachable: clearMarkerAfterReconcile(), which stays a capability with no caller —
+         clearing a marker belongs to the reconcile COMPLETION path, and connecting it there is
+         wiring. AclEpochIndexWriter.write() remains NO-GO. -->
+    <bean id="aclEpochFinalizationService"
+          class="jp.aegif.nemaki.epoch.AclEpochFinalizationService">
+        <property name="connectorPool" ref="connectorPool" />
+        <property name="counterService" ref="aclEpochCounterService" />
+        <!-- Increment 11: WIRED, reversing the earlier "second fail-closed latch" note. The ACK
+             pass of scan() needs it, and scan() now has a caller — the explicit admin endpoint
+             AclEpochScanController. Leaving it unwired would have made that endpoint half-working
+             (every FINALIZED document throwing AclEpochWiringException) rather than fail-closed.
+             This is NOT wiring the writer: the ACK enqueues a reconcile task, which is what the
+             outbox is FOR, and on today's system no production path creates epoch state, so the
+             pass selects nothing. -->
+        <property name="reconciliationService" ref="searchIndexReconciliationService" />
+    </bean>
+
+    <!-- ACL effective-epoch resolution (design §4.1 / §4.2 steps 1,2,4 — increment 3).
+         Standalone: NO init-method, NO scheduler wiring, NO cron. snapshot()/revalidate()
+         have no production callers, and this bean performs NO writes at all — it only
+         READS CouchDB authoritatively (never Solr, reconcile tasks, or the ACL cache).
+         Fail-closed staging until the ACL-UPDATE increment. -->
+    <bean id="aclEffectiveEpochService"
+          class="jp.aegif.nemaki.epoch.AclEffectiveEpochService">
+        <property name="connectorPool" ref="connectorPool" />
+        <!-- REQUIRED: supplies the root-folder id used by BOTH the inheritance-stop rule and the
+             readers projection, plus the configured anyone/anonymous principal ids. Without it
+             snapshot() throws AclEpochWiringException. -->
+        <property name="repositoryInfoMap" ref="repositoryInfoMap" />
+    </bean>
+
+    <!-- Fenced ACL-group writer (design §4.2 steps 3/5/6 + §4.3 — increment 4).
+         Standalone: NO init-method, NO scheduler wiring, NO cron, and no production
+         caller — write() is driven only by tests until the wiring increment. It writes
+         ONLY the ACL group (readers + effective_acl_epoch) as an atomic {set} under a
+         _version_ CAS, and never touches content/path/body. Fail-closed staging. -->
+    <bean id="aclEpochIndexWriter"
+          class="jp.aegif.nemaki.epoch.AclEpochIndexWriter">
+        <property name="effectiveEpochService" ref="aclEffectiveEpochService" />
+    </bean>
+
+    <!-- Repository-wide initial effective_acl_epoch stamp (design §8 — wiring gate 2's operational
+         half, increment 10). Driven ONLY by an explicit admin request
+         (POST /v1/admin/acl-epoch/migration/{repositoryId}): NO init-method, NO scheduler, NO cron,
+         so nothing stamps anything on startup. It is the one production caller of
+         stampInitialEpoch, writes only the ACL group under a _version_ CAS, and must be run AFTER
+         the mandatory full reindex (a later reindex leaves the documents unfenced again). -->
+    <bean id="aclEpochMigrationService"
+          class="jp.aegif.nemaki.epoch.AclEpochMigrationService"
+          destroy-method="stop">
+        <property name="indexWriter" ref="aclEpochIndexWriter" />
+        <property name="solrUtil" ref="solrUtil" />
+        <!-- REQUIRED: without it an unknown repository id reports a COMPLETE migration it never
+             performed (a typo'd id simply matches no Solr document). -->
+        <property name="repositoryInfoMap" ref="repositoryInfoMap" />
+        <!-- The principal resolver is built from this via ACLExpander.principalResolver, so the
+             migration and the RAG token layer share ONE binding of the tri-state lookups. -->
+        <property name="principalService" ref="principalService" />
+        <!-- Orphan verification (increment 13): only a definitive CouchDB 404 qualifies an index
+             entry for deletion, which needs an authoritative read. -->
+        <property name="connectorPool" ref="connectorPool" />
+    </bean>
+
+    <!-- ACL-epoch crash-recovery sweep (design §11.7). Leader-gated like the reconciliation
+         poller. It starts UNCONDITIONALLY: acl.epoch.wiring.enabled no longer gates it (3.3.0),
+         and start() only declines when its collaborators are unwired. -->
+    <bean id="aclEpochScanScheduler" class="jp.aegif.nemaki.epoch.AclEpochScanScheduler"
+          init-method="start" destroy-method="stop">
+        <property name="finalizationService" ref="aclEpochFinalizationService" />
+        <property name="propertyManager" ref="propertyManager" />
+        <property name="leaderElection" ref="leaderElection" />
+        <property name="repositoryInfoMap" ref="repositoryInfoMap" />
+    </bean>
+
+    <!-- Search-index ACL reconciliation: durable CouchDB queue + leader-gated poller -->
+    <bean id="searchIndexReconciliationService"
+          class="jp.aegif.nemaki.reconcile.SearchIndexReconciliationService">
+        <property name="connectorPool" ref="connectorPool" />
+    </bean>
+    <bean id="searchIndexReconciliationScheduler"
+          class="jp.aegif.nemaki.reconcile.SearchIndexReconciliationScheduler"
+          init-method="start" destroy-method="stop">
+        <property name="reconciliationService" ref="searchIndexReconciliationService" />
+        <property name="aclService" ref="AclService" />
+        <property name="propertyManager" ref="propertyManager" />
+        <!-- Multi-replica safety: only the leader drains the shared queue. -->
+        <property name="leaderElection" ref="leaderElection" />
+    </bean>
+
+    <!--
+      Cross-replica cache invalidation (P3-1-2 / P3-1-3).
+
+      Cache eviction is otherwise entirely JVM-local: a replica that did not perform an ACL
+      change, a password change or a group removal keeps answering from its own memo until the
+      entry expires. Deliberately NOT leader-gated — every replica must drop its own caches, so
+      this is the one scheduled task where "only the leader runs it" would be exactly wrong.
+    -->
+    <bean id="couchGenerationStore" class="jp.aegif.nemaki.util.cache.CouchGenerationStore">
+        <property name="connectorPool" ref="connectorPool" />
+        <property name="repositoryInfoMap" ref="repositoryInfoMap" />
+    </bean>
+
+    <!--
+      Lets an over-cap query tell "too broad" (reject) from "temporarily over-counting because a
+      permission change is still landing" (answer with what can be confirmed). Consulted only at
+      the point of rejection, so the cheap-reject path is unchanged.
+    -->
+    <bean id="aclPropagationStaleness"
+          class="jp.aegif.nemaki.cmis.aspect.query.solr.AclPropagationStaleness">
+        <property name="reconciliationService" ref="searchIndexReconciliationService" />
+    </bean>
+
+    <bean id="crossReplicaCacheInvalidator"
+          class="jp.aegif.nemaki.util.cache.CrossReplicaCacheInvalidator"
+          init-method="start" destroy-method="stop">
+        <constructor-arg ref="nemakiCachePool" />
+        <constructor-arg ref="couchGenerationStore" />
     </bean>
 
 
@@ -617,6 +778,7 @@
     </bean>
 
     <bean id="queryProcessor" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrQueryProcessor">
+        <property name="propagationStaleness" ref="aclPropagationStaleness" />
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
@@ -637,6 +799,10 @@
         </property>
         <property name="threadLockService">
             <ref bean="ThreadLockService" />
+        </property>
+        <!-- ACL-in-Solr: readers fq builder (RAG @Component, bean id "ACLExpander") -->
+        <property name="aclExpander">
+            <ref bean="ACLExpander" />
         </property>
     </bean>
 
@@ -1002,6 +1168,9 @@
         <property name="contentService" ref="ContentService" />
         <property name="solrUtil" ref="solrUtil" />
         <property name="repositoryInfoMap" ref="repositoryInfoMap" />
+        <!-- purge-orphans confirms each candidate with existsStrict, which distinguishes a 404
+             from an unreadable database. ContentService cannot: it answers null for both. -->
+        <property name="connectorPool" ref="connectorPool" />
     </bean>
 
     <!-- User/Group Search Service (Solr-based with CouchDB fallback) -->

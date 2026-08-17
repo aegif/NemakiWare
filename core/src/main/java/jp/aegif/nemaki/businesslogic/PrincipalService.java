@@ -56,11 +56,17 @@ public interface PrincipalService {
 	 */
 	User getUserById(String repositoryId, String userId);
 
+	/** TRI-STATE probe of {@link #getUserById} (increment 5T). */
+	jp.aegif.nemaki.acl.PrincipalLookup lookupUserById(String repositoryId, String userId);
+
 	/**
 	 * Get a group, given its identifier.
 	 * @param repositoryId TODO
 	 */
 	Group getGroupById(String repositoryId, String groupId);
+
+	/** TRI-STATE probe of {@link #getGroupById} (increment 5T). */
+	jp.aegif.nemaki.acl.PrincipalLookup lookupGroupById(String repositoryId, String groupId);
 
 	/**
 	 * Create a user, given its user object.

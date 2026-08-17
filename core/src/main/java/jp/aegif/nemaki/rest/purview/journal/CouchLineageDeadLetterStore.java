@@ -150,9 +150,23 @@ public class CouchLineageDeadLetterStore implements LineageDeadLetterStore {
             Boolean alreadyReplayed = (Boolean) doc.get("replayed");
             if (Boolean.TRUE.equals(alreadyReplayed)) return false;
 
-            // Check if the original journal event still exists
-            LineageEvent existing = targetStore.findByEventId(eventId);
-            if (existing != null) {
+            // Check if the original journal row still exists. Every dead letter this store holds
+            // was recorded from a v1 envelope, so its eventId IS the v1 record id; a v2 row under
+            // the same key is impossible today and treated as a mismatch if it ever appears.
+            LineageJournalRow existingRow = targetStore.findByRecordId(eventId);
+            if (existingRow instanceof LineageJournalRow.Undecodable undecodable) {
+                logger.warn("Replay of dead-letter {} skipped: journal row is undecodable ({})",
+                        eventId, undecodable.reason());
+                return false;
+            }
+            if (existingRow instanceof LineageJournalRow.Decoded decoded
+                    && !(decoded.entry().envelope() instanceof LineageJournalEntry.V1)) {
+                logger.warn("Replay of dead-letter {} skipped: journal row is not a v1 envelope",
+                        eventId);
+                return false;
+            }
+            if (existingRow != null) {
+                LineageRecord existing = ((LineageJournalRow.Decoded) existingRow).entry().record();
                 // Original exists — reset FAILED/DISCARDED targets to PENDING
                 boolean anyReset = false;
                 for (Map.Entry<String, LineagePublishStatus> entry : existing.publishStatusByTarget().entrySet()) {

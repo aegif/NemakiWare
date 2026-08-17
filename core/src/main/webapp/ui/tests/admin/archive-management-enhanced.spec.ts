@@ -1,4 +1,4 @@
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
@@ -35,7 +35,7 @@ test.describe('Archive Management Enhanced', () => {
     apiHelper = new ApiHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
     await testHelper.closeMobileSidebar(browserName);
     await testHelper.waitForAntdLoad();
   });
@@ -92,7 +92,7 @@ test.describe('Archive Management Enhanced', () => {
       // Click on pending archives tab — must show Japanese label
       const pendingTab = page.locator('.ant-tabs-tab').filter({ hasText: '期限切れ未アーカイブ' });
       if (await pendingTab.count() === 0) {
-        test.skip('ENV: Pending archives tab not available — feature may not be deployed');
+        test.skip(true, 'ENV: Pending archives tab not available — feature may not be deployed');
         return;
       }
       // Verify Japanese tab label
@@ -104,7 +104,7 @@ test.describe('Archive Management Enhanced', () => {
       const emptyMessage = page.locator('.ant-empty-description').filter({
         hasText: '期限切れ'
       });
-      const pendingTable = page.locator('.ant-tabs-tabpane-active .ant-table');
+      const pendingTable = page.locator('.ant-tabs-content-active .ant-table');
       const hasJapaneseEmpty = await emptyMessage.count() > 0;
       const hasTable = await pendingTable.count() > 0;
       expect(hasJapaneseEmpty || hasTable).toBe(true);
@@ -129,7 +129,7 @@ test.describe('Archive Management Enhanced', () => {
         await waitForUiStable(page);
 
         // Click reload button
-        const reloadButton = page.locator('.ant-tabs-tabpane-active button').filter({ hasText: '再読み込み' });
+        const reloadButton = page.locator('.ant-tabs-content-active button').filter({ hasText: '再読み込み' });
         if (await reloadButton.count() > 0) {
           await reloadButton.click();
           await waitForUiStable(page);
@@ -194,7 +194,7 @@ test.describe('Archive Management Enhanced', () => {
         const emptyMessage = page.locator('.ant-empty-description').filter({
           hasText: 'No pending archives'
         });
-        const pendingTable = page.locator('.ant-tabs-tabpane-active .ant-table');
+        const pendingTable = page.locator('.ant-tabs-content-active .ant-table');
 
         const hasEmptyMessage = await emptyMessage.count() > 0;
         const hasTable = await pendingTable.count() > 0;
@@ -295,8 +295,8 @@ test.describe('Archive Management Enhanced', () => {
 
       // Should show either empty state or table
       const emptyState = page.locator('.ant-empty');
-      const pendingTable = page.locator('.ant-tabs-tabpane-active .ant-table');
-      const warningAlert = page.locator('.ant-tabs-tabpane-active').locator('text=/件の期限切れドキュメント|expired documents pending/i');
+      const pendingTable = page.locator('.ant-tabs-content-active .ant-table');
+      const warningAlert = page.locator('.ant-tabs-content-active').locator('text=/件の期限切れドキュメント|expired documents pending/i');
 
       const hasEmptyState = await emptyState.count() > 0;
       const hasTable = await pendingTable.count() > 0;
@@ -308,7 +308,7 @@ test.describe('Archive Management Enhanced', () => {
       expect(hasEmptyState || hasTable).toBe(true);
 
       // If there's a table, verify reload button works
-      const reloadButton = page.locator('.ant-tabs-tabpane-active button').filter({ hasText: /再読み込み|Reload/i });
+      const reloadButton = page.locator('.ant-tabs-content-active button').filter({ hasText: /再読み込み|Reload/i });
       if (await reloadButton.count() > 0) {
         await reloadButton.click();
         await waitForUiStable(page);
@@ -357,7 +357,7 @@ test.describe('Archive Management Enhanced', () => {
       await waitForUiStable(page);
 
       // Verify table columns
-      const tableHeader = page.locator('.ant-tabs-tabpane-active .ant-table-thead');
+      const tableHeader = page.locator('.ant-tabs-content-active .ant-table-thead');
       if (await tableHeader.count() > 0) {
         const expectedColumns = [
           /実行日時|Started At/i,
@@ -398,7 +398,7 @@ test.describe('Archive Management Enhanced', () => {
       await waitForUiStable(page);
 
       // Click reload to fetch settings
-      const reloadButton = page.locator('.ant-tabs-tabpane-active button').filter({ hasText: /再読み込み|Reload/i });
+      const reloadButton = page.locator('.ant-tabs-content-active button').filter({ hasText: /再読み込み|Reload/i });
       if (await reloadButton.count() > 0) {
         await reloadButton.click();
         await waitForUiStable(page);
@@ -510,7 +510,7 @@ test.describe('Archive Management Enhanced', () => {
       await waitForUiStable(page);
 
       // Check if there are pending archives with extend button
-      const extendButton = page.locator('.ant-tabs-tabpane-active button').filter({
+      const extendButton = page.locator('.ant-tabs-content-active button').filter({
         hasText: /有効期限延長|Extend Expiration/i
       }).first();
 
@@ -812,7 +812,7 @@ test.describe('Archive Management - Restore Edge Cases', () => {
     const localApiHelper = new ApiHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
     await testHelper.closeMobileSidebar(browserName);
     await testHelper.waitForAntdLoad();
 

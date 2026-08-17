@@ -158,7 +158,7 @@
  * - Test folders created in current directory (no specific path required)
  */
 import { test, expect } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 import { cleanupTestData } from '../utils/cleanup-helper';
@@ -181,7 +181,7 @@ test.describe('Permission Management UI - ACL Display', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     // MOBILE FIX: Close sidebar
     await testHelper.closeMobileSidebar(browserName);
@@ -335,11 +335,11 @@ test.describe('Permission Management UI - ACL Display', () => {
           console.log('✅ No error message after clicking permissions button');
         } else {
           // Permissions button IS implemented but may not be visible due to table column rendering or viewport
-          test.skip('ENV: Permissions button not visible in current viewport in DocumentList.tsx');
+          test.skip(true, 'ENV: Permissions button not visible in current viewport in DocumentList.tsx');
         }
       }
     } else {
-      test.skip('ENV: Test folder creation failed');
+      test.skip(true, 'ENV: Test folder creation failed');
     }
 
     // Cleanup: Delete test folder

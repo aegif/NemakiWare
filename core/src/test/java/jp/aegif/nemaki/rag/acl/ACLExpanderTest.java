@@ -56,6 +56,23 @@ public class ACLExpanderTest {
 
     @BeforeEach
     public void setUp() {
+
+        // Increment 5T: the resolver now uses the TRI-STATE probes. Derive them from the
+        // existing getXById stubs so every pre-5T case keeps its meaning (present -> FOUND,
+        // absent -> NOT_FOUND). A test that wants UNAVAILABLE stubs lookup* explicitly. Note what this Answer does
+        // NOT give you: a forgotten getXById stub yields NOT_FOUND (omit), not UNAVAILABLE —
+        // only removing the Answer itself would make the probe return null and fail closed.
+        // Availability is exercised by the ITs, not here.
+        org.mockito.Mockito.lenient().when(principalService.lookupUserById(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(inv -> principalService.getUserById(inv.getArgument(0), inv.getArgument(1)) != null
+                        ? jp.aegif.nemaki.acl.PrincipalLookup.FOUND
+                        : jp.aegif.nemaki.acl.PrincipalLookup.NOT_FOUND);
+        org.mockito.Mockito.lenient().when(principalService.lookupGroupById(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(inv -> principalService.getGroupById(inv.getArgument(0), inv.getArgument(1)) != null
+                        ? jp.aegif.nemaki.acl.PrincipalLookup.FOUND
+                        : jp.aegif.nemaki.acl.PrincipalLookup.NOT_FOUND);
         aclExpander = new ACLExpander(principalService, contentService);
         // Default: contentService.calculateAcl returns the content's ACL
         when(contentService.calculateAcl(eq(REPO_ID), any(Content.class))).thenAnswer(
@@ -74,7 +91,8 @@ public class ACLExpanderTest {
 
         assertNotNull(readers, "Readers should not be null");
         // Null ACL should now default to admin-only for security
-        assertTrue(readers.contains("user:test-repo:admin"), "Null ACL should result in admin-only readers");
+        assertTrue(readers.contains("admin:test-repo"), "Null ACL should fall back to the admin role token");
+        assertFalse(readers.contains("user:test-repo:admin"), "Fallback must be the role token, not an expanded admin user token");
     }
 
     @Test
@@ -88,7 +106,7 @@ public class ACLExpanderTest {
 
         assertNotNull(readers, "Readers should not be null");
         // Empty ACEs should now default to admin-only for security
-        assertTrue(readers.contains("user:test-repo:admin"), "Empty ACEs should result in admin-only readers");
+        assertTrue(readers.contains("admin:test-repo"), "Empty ACEs should fall back to the admin role token");
     }
 
     @Test
@@ -102,7 +120,7 @@ public class ACLExpanderTest {
 
         assertNotNull(readers, "Readers should not be null");
         // Null ACEs should now default to admin-only for security
-        assertTrue(readers.contains("user:test-repo:admin"), "Null ACEs should result in admin-only readers");
+        assertTrue(readers.contains("admin:test-repo"), "Null ACEs should fall back to the admin role token");
     }
 
     @Test
@@ -161,104 +179,62 @@ public class ACLExpanderTest {
 
     @Test
     public void testExpandToReadersWithGroup() {
+        // The index stores ONLY the group token the ACL names — NOT the group's
+        // current members. Membership is resolved at query time
+        // (getGroupIdsContainingUser, transitive), which is revocation-safe: a
+        // removed member's stale user token cannot linger on the document.
         Ace ace = createAce("group1", Arrays.asList("cmis:read"));
         when(content.getAcl()).thenReturn(acl);
         when(acl.getAllAces()).thenReturn(Arrays.asList(ace));
-        
+
         when(principalService.getUserById(REPO_ID, "group1")).thenReturn(null);
-        
+
         Group group1 = mock(Group.class);
         when(group1.getGroupId()).thenReturn("group1");
         when(group1.getUsers()).thenReturn(Arrays.asList("user1", "user2"));
         when(principalService.getGroupById(REPO_ID, "group1")).thenReturn(group1);
-        
-        User user1 = mock(User.class);
-        User user2 = mock(User.class);
-        when(principalService.getUserById(REPO_ID, "user1")).thenReturn(user1);
-        when(principalService.getUserById(REPO_ID, "user2")).thenReturn(user2);
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
         assertNotNull(readers, "Readers should not be null");
         assertTrue(readers.contains("group:test-repo:group1"), "Should contain group:test-repo:group1");
-        assertTrue(readers.contains("user:test-repo:user1"), "Should contain user:test-repo:user1");
-        assertTrue(readers.contains("user:test-repo:user2"), "Should contain user:test-repo:user2");
+        assertFalse(readers.contains("user:test-repo:user1"),
+                "Group members must NOT be expanded into user tokens (revocation hole)");
+        assertFalse(readers.contains("user:test-repo:user2"),
+                "Group members must NOT be expanded into user tokens (revocation hole)");
     }
 
     @Test
-    public void testExpandToReadersWithNestedGroups() {
+    public void testExpandToReadersDoesNotExpandNestedGroups() {
+        // Only the ACL-named group token is indexed; nested subgroups and their
+        // members are resolved transitively at query time, not at index time.
         Ace ace = createAce("parentGroup", Arrays.asList("cmis:read"));
         when(content.getAcl()).thenReturn(acl);
         when(acl.getAllAces()).thenReturn(Arrays.asList(ace));
-        
+
         when(principalService.getUserById(REPO_ID, "parentGroup")).thenReturn(null);
-        
+
         Group parentGroup = mock(Group.class);
         when(parentGroup.getGroupId()).thenReturn("parentGroup");
-        when(parentGroup.getUsers()).thenReturn(Arrays.asList("childGroup", "user1"));
+        when(parentGroup.getUsers()).thenReturn(Arrays.asList("user1"));
+        when(parentGroup.getGroups()).thenReturn(Arrays.asList("childGroup"));
         when(principalService.getGroupById(REPO_ID, "parentGroup")).thenReturn(parentGroup);
-
-        when(principalService.getUserById(REPO_ID, "childGroup")).thenReturn(null);
-
-        Group childGroup = mock(Group.class);
-        when(childGroup.getGroupId()).thenReturn("childGroup");
-        when(childGroup.getUsers()).thenReturn(Arrays.asList("user2"));
-        when(principalService.getGroupById(REPO_ID, "childGroup")).thenReturn(childGroup);
-        
-        User user1 = mock(User.class);
-        User user2 = mock(User.class);
-        when(principalService.getUserById(REPO_ID, "user1")).thenReturn(user1);
-        when(principalService.getUserById(REPO_ID, "user2")).thenReturn(user2);
 
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
         assertNotNull(readers, "Readers should not be null");
-        assertTrue(readers.contains("group:test-repo:parentGroup"), "Should contain group:test-repo:parentGroup");
-        assertTrue(readers.contains("group:test-repo:childGroup"), "Should contain group:test-repo:childGroup");
-        assertTrue(readers.contains("user:test-repo:user1"), "Should contain user:test-repo:user1");
-        assertTrue(readers.contains("user:test-repo:user2"), "Should contain user:test-repo:user2");
+        assertTrue(readers.contains("group:test-repo:parentGroup"), "Should contain the ACL-named group token");
+        assertFalse(readers.contains("group:test-repo:childGroup"),
+                "Nested subgroups must NOT be expanded at index time");
+        assertFalse(readers.contains("user:test-repo:user1"),
+                "Group members must NOT be expanded at index time");
     }
 
     @Test
-    public void testExpandToReadersWithNestedGroupsInGroupsList() {
-        // Nested subgroups are stored in the dedicated groups list (nemaki:groups),
-        // not in the users list. Members reachable only through that list must
-        // still be expanded into readers (regression for the nested-group ACL bug).
-        Ace ace = createAce("divGroup", Arrays.asList("cmis:all"));
-        when(content.getAcl()).thenReturn(acl);
-        when(acl.getAllAces()).thenReturn(Arrays.asList(ace));
-
-        when(principalService.getUserById(REPO_ID, "divGroup")).thenReturn(null);
-
-        Group divGroup = mock(Group.class);
-        when(divGroup.getGroupId()).thenReturn("divGroup");
-        when(divGroup.getUsers()).thenReturn(Arrays.asList("divHead"));
-        when(divGroup.getGroups()).thenReturn(Arrays.asList("secGroup"));
-        when(principalService.getGroupById(REPO_ID, "divGroup")).thenReturn(divGroup);
-
-        Group secGroup = mock(Group.class);
-        when(secGroup.getGroupId()).thenReturn("secGroup");
-        when(secGroup.getUsers()).thenReturn(Arrays.asList("member1"));
-        when(principalService.getGroupById(REPO_ID, "secGroup")).thenReturn(secGroup);
-
-        User divHead = mock(User.class);
-        User member1 = mock(User.class);
-        when(principalService.getUserById(REPO_ID, "divHead")).thenReturn(divHead);
-        when(principalService.getUserById(REPO_ID, "member1")).thenReturn(member1);
-
-        List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
-
-        assertTrue(readers.contains("group:test-repo:divGroup"), "Should contain group:test-repo:divGroup");
-        assertTrue(readers.contains("group:test-repo:secGroup"),
-                "Nested subgroup from the groups list should be included");
-        assertTrue(readers.contains("user:test-repo:divHead"), "Should contain user:test-repo:divHead");
-        assertTrue(readers.contains("user:test-repo:member1"),
-                "Member reachable only via the nested groups list should be included");
-    }
-
-    @Test
-    public void testExpandToReadersNestedGroupsListCycleDoesNotLoop() {
-        // Circular nesting via the groups list must terminate (visited tracking)
+    public void testExpandToReadersIndexesOnlyTheAclNamedGroup() {
+        // Only the ACL-named group is indexed; a nested-group graph (even a cyclic
+        // one) is never traversed at index time, so it cannot loop or leak member
+        // tokens. Transitive membership is a query-time concern.
         Ace ace = createAce("groupA", Arrays.asList("cmis:read"));
         when(content.getAcl()).thenReturn(acl);
         when(acl.getAllAces()).thenReturn(Arrays.asList(ace));
@@ -271,23 +247,11 @@ public class ACLExpanderTest {
         when(groupA.getGroups()).thenReturn(Arrays.asList("groupB"));
         when(principalService.getGroupById(REPO_ID, "groupA")).thenReturn(groupA);
 
-        Group groupB = mock(Group.class);
-        when(groupB.getGroupId()).thenReturn("groupB");
-        when(groupB.getUsers()).thenReturn(Arrays.asList("userB"));
-        when(groupB.getGroups()).thenReturn(Arrays.asList("groupA"));
-        when(principalService.getGroupById(REPO_ID, "groupB")).thenReturn(groupB);
-
-        User userA = mock(User.class);
-        User userB = mock(User.class);
-        when(principalService.getUserById(REPO_ID, "userA")).thenReturn(userA);
-        when(principalService.getUserById(REPO_ID, "userB")).thenReturn(userB);
-
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
-        assertTrue(readers.contains("user:test-repo:userA"));
-        assertTrue(readers.contains("user:test-repo:userB"));
-        assertTrue(readers.contains("group:test-repo:groupA"));
-        assertTrue(readers.contains("group:test-repo:groupB"));
+        assertTrue(readers.contains("group:test-repo:groupA"), "Only the ACL-named group is indexed");
+        assertFalse(readers.contains("group:test-repo:groupB"), "Nested groups are not traversed at index time");
+        assertFalse(readers.contains("user:test-repo:userA"), "Members are not expanded at index time");
     }
 
     @Test
@@ -329,7 +293,7 @@ public class ACLExpanderTest {
         List<String> readers = aclExpander.expandToReaders(REPO_ID, content);
 
         assertNotNull(readers, "Readers should not be null");
-        assertTrue(readers.contains("user:test-repo:admin"), "Should fall back to admin users");
+        assertTrue(readers.contains("admin:test-repo"), "Should fall back to the admin role token");
     }
 
     // ========== formatUserReader and formatGroupReader Tests ==========
@@ -351,11 +315,121 @@ public class ACLExpanderTest {
         assertEquals("anyone:test-repo", ACLExpander.formatAnyoneReader(REPO_ID));
     }
 
+    @Test
+    public void testFormatAdminReader() {
+        assertEquals("admin:test-repo", ACLExpander.formatAdminReader(REPO_ID));
+    }
+
+    // ========== admin role token (query time) ==========
+
+    @Test
+    public void testBuildReaderFilterQueryAddsAdminTokenForCurrentAdmin() {
+        // ContentService 側を stub する。ACLExpander は PrincipalService ではなく
+        // ContentService からグループを解決する — PermissionServiceImpl (認可の実ゲート) と
+        // 同じ実装を使うため、かつ PrincipalService 版が全グループ走査でキャッシュを持たないため。
+        // 詳細は ACLExpander.resolveGroupIds の javadoc と
+        // docs/design/acl-group-resolution-scaling.md §7。
+        when(contentService.getGroupIdsContainingUser(REPO_ID, "root")).thenReturn(new HashSet<>());
+        User admin = mock(User.class);
+        when(admin.isAdmin()).thenReturn(Boolean.TRUE);
+        when(principalService.getUserById(REPO_ID, "root")).thenReturn(admin);
+
+        String query = aclExpander.buildReaderFilterQuery(REPO_ID, "root");
+
+        assertTrue(query.contains("\"admin:test-repo\""),
+                "A current admin's reader filter must include the admin role token");
+    }
+
+    @Test
+    public void testBuildReaderFilterQueryOmitsAdminTokenForNonAdmin() {
+        when(contentService.getGroupIdsContainingUser(REPO_ID, "user1")).thenReturn(new HashSet<>());
+        User plain = mock(User.class);
+        when(plain.isAdmin()).thenReturn(Boolean.FALSE);
+        when(principalService.getUserById(REPO_ID, "user1")).thenReturn(plain);
+
+        String query = aclExpander.buildReaderFilterQuery(REPO_ID, "user1");
+
+        assertFalse(query.contains("\"admin:test-repo\""),
+                "A non-admin (or demoted admin) must NOT receive the admin role token");
+    }
+
+    // ========== buildReaderTokenSet + isReadableByTokens (live-ACL gate) ==========
+
+    @Test
+    public void testBuildReaderTokenSetIncludesAnyoneUserGroupsAndAdmin() {
+        Set<String> groups = new HashSet<>();
+        groups.add("grp1");
+        when(contentService.getGroupIdsContainingUser(REPO_ID, "root")).thenReturn(groups);
+        User admin = mock(User.class);
+        when(admin.isAdmin()).thenReturn(Boolean.TRUE);
+        when(principalService.getUserById(REPO_ID, "root")).thenReturn(admin);
+
+        Set<String> tokens = aclExpander.buildReaderTokenSet(REPO_ID, "root");
+
+        assertTrue(tokens.contains("anyone:test-repo"));
+        assertTrue(tokens.contains("user:test-repo:root"));
+        assertTrue(tokens.contains("group:test-repo:grp1"));
+        assertTrue(tokens.contains("admin:test-repo"), "current admin gets the admin role token");
+    }
+
+    @Test
+    public void testBuildReaderTokenSetOmitsAdminForNonAdmin() {
+        when(contentService.getGroupIdsContainingUser(REPO_ID, "user1")).thenReturn(new HashSet<>());
+        User plain = mock(User.class);
+        when(plain.isAdmin()).thenReturn(Boolean.FALSE);
+        when(principalService.getUserById(REPO_ID, "user1")).thenReturn(plain);
+
+        Set<String> tokens = aclExpander.buildReaderTokenSet(REPO_ID, "user1");
+
+        assertFalse(tokens.contains("admin:test-repo"));
+    }
+
+    @Test
+    public void testIsReadableByTokensTrueWhenLiveReadersIntersect() {
+        // Live ACL grants user1 read; the caller holds user:test-repo:user1.
+        Content doc = mock(Content.class);
+        Acl liveAcl = mock(Acl.class);
+        Ace ace = createAce("user1", Arrays.asList("cmis:read"));
+        when(liveAcl.getAllAces()).thenReturn(Arrays.asList(ace));
+        when(contentService.getContent(REPO_ID, "doc-1")).thenReturn(doc);
+        when(contentService.calculateAcl(REPO_ID, doc)).thenReturn(liveAcl);
+        User user1 = mock(User.class);
+        when(principalService.getUserById(REPO_ID, "user1")).thenReturn(user1);
+
+        Set<String> caller = new HashSet<>(Arrays.asList("user:test-repo:user1"));
+        assertTrue(aclExpander.isReadableByTokens(REPO_ID, "doc-1", caller));
+    }
+
+    @Test
+    public void testIsReadableByTokensFalseWhenLiveReadersDisjoint() {
+        // Live ACL grants only user2; caller holds only user1 -> dropped (this is
+        // the stale-index leak the RAG final gate closes).
+        Content doc = mock(Content.class);
+        Acl liveAcl = mock(Acl.class);
+        Ace ace = createAce("user2", Arrays.asList("cmis:read"));
+        when(liveAcl.getAllAces()).thenReturn(Arrays.asList(ace));
+        when(contentService.getContent(REPO_ID, "doc-1")).thenReturn(doc);
+        when(contentService.calculateAcl(REPO_ID, doc)).thenReturn(liveAcl);
+        User user2 = mock(User.class);
+        when(principalService.getUserById(REPO_ID, "user2")).thenReturn(user2);
+
+        Set<String> caller = new HashSet<>(Arrays.asList("user:test-repo:user1"));
+        assertFalse(aclExpander.isReadableByTokens(REPO_ID, "doc-1", caller));
+    }
+
+    @Test
+    public void testIsReadableByTokensFalseWhenContentMissing() {
+        when(contentService.getContent(REPO_ID, "gone")).thenReturn(null);
+        Set<String> caller = new HashSet<>(Arrays.asList("user:test-repo:user1"));
+        assertFalse(aclExpander.isReadableByTokens(REPO_ID, "gone", caller),
+                "A deleted/missing hit must be dropped (fail-closed)");
+    }
+
     // ========== buildReaderFilterQuery Tests ==========
 
     @Test
     public void testBuildReaderFilterQueryBasic() {
-        when(principalService.getGroupIdsContainingUser(REPO_ID, "user1"))
+        when(contentService.getGroupIdsContainingUser(REPO_ID, "user1"))
                 .thenReturn(new HashSet<>());
 
         String query = aclExpander.buildReaderFilterQuery(REPO_ID, "user1");
@@ -372,7 +446,7 @@ public class ACLExpanderTest {
         Set<String> groups = new HashSet<>();
         groups.add("group1");
         groups.add("group2");
-        when(principalService.getGroupIdsContainingUser(REPO_ID, "user1"))
+        when(contentService.getGroupIdsContainingUser(REPO_ID, "user1"))
                 .thenReturn(groups);
 
         String query = aclExpander.buildReaderFilterQuery(REPO_ID, "user1");
@@ -386,7 +460,7 @@ public class ACLExpanderTest {
 
     @Test
     public void testBuildReaderFilterQueryWithNullGroups() {
-        when(principalService.getGroupIdsContainingUser(REPO_ID, "user1"))
+        when(contentService.getGroupIdsContainingUser(REPO_ID, "user1"))
                 .thenReturn(null);
 
         String query = aclExpander.buildReaderFilterQuery(REPO_ID, "user1");
@@ -398,7 +472,7 @@ public class ACLExpanderTest {
 
     @Test
     public void testBuildReaderFilterQueryColonEscaping() {
-        when(principalService.getGroupIdsContainingUser(REPO_ID, "user1"))
+        when(contentService.getGroupIdsContainingUser(REPO_ID, "user1"))
                 .thenReturn(new HashSet<>());
 
         String query = aclExpander.buildReaderFilterQuery(REPO_ID, "user1");

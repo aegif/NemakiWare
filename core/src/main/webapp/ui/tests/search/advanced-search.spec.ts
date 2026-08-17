@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { gotoSearchPage, searchPageSubmitButton, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 
 // NOTE: no afterAll cleanup here. The PDFs this spec ensures exist
 // (CMIS-v1.1-Specification-Sample.pdf / 日本語ドキュメント.pdf) are SHARED search
@@ -281,6 +281,42 @@ test.beforeAll(async ({ browser }) => {
   }
 });
 
+/**
+ * Submit the search repeatedly until the expected row appears, or the budget runs out.
+ *
+ * Under a full-suite run the query path itself is the unstable part: the fixture PDF has been
+ * indexed for weeks, yet a search fired into the congestion window can come back empty or not
+ * come back at all, and a single retry plus a passive wait just re-reads the same bad window.
+ * Re-submitting rides through it; the assertion afterwards still demands the real result, so
+ * this hides nothing about search correctness — it only stops pretending that one snapshot
+ * under load decides it.
+ */
+async function searchUntilRowAppears(
+  page: import('@playwright/test').Page,
+  keyword: string,
+  row: import('@playwright/test').Locator,
+  isMobile: boolean,
+  attempts: number = 6,
+): Promise<void> {
+  const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    await searchInput.first().fill(keyword);
+    const submit = searchPageSubmitButton(page);
+    if (await submit.count() > 0) {
+      await submit.first().click(isMobile ? { force: true } : {});
+    } else {
+      await searchInput.first().press('Enter');
+    }
+    await waitForUiStable(page, { timeout: 15000 });
+    try {
+      await row.first().waitFor({ state: 'visible', timeout: 10000 });
+      return;
+    } catch {
+      console.log(`search attempt ${attempt}/${attempts}: row not visible yet — resubmitting`);
+    }
+  }
+}
+
 test.describe('Advanced Search', () => {
   // Use same env vars as playwright.config.ts (PW_BASIC_USER / PW_BASIC_PASS)
   const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:8080';
@@ -296,13 +332,10 @@ test.describe('Advanced Search', () => {
     testHelper = new TestHelper(page);
     await authHelper.login();
 
-    // Navigate to search page - wait for menu to be ready first
-    await page.waitForSelector('.ant-menu-item:has-text("検索")', { timeout: 15000 });
-    const searchMenu = page.locator('.ant-menu-item:has-text("検索")');
-    await searchMenu.click();
-
-    // Wait for search page to load with search input visible
-    await page.waitForSelector('input[placeholder*="検索"], input[placeholder*="search"], .ant-input-search input', { timeout: 15000 });
+    // The old wait was for a search INPUT, which both the document list and the search
+    // page have — it was satisfied before the navigation finished. gotoSearchPage waits
+    // for the search page's own submit button and for the document list's to be detached.
+    await gotoSearchPage(page);
 
     await testHelper.closeMobileSidebar(browserName);
   });
@@ -336,7 +369,7 @@ test.describe('Advanced Search', () => {
       await searchInput.first().fill('test');
 
       // Look for search button
-      const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search"), .ant-input-search-button');
+      const searchButton = searchPageSubmitButton(page);
 
       if (await searchButton.count() > 0) {
         await searchButton.first().click(isMobile ? { force: true } : {});
@@ -390,7 +423,7 @@ test.describe('Advanced Search', () => {
     if (await searchInput.count() > 0) {
       await searchInput.first().fill('test-search-query');
 
-      const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+      const searchButton = searchPageSubmitButton(page);
       if (await searchButton.count() > 0) {
         await searchButton.first().click(isMobile ? { force: true } : {});
       } else {
@@ -431,7 +464,7 @@ test.describe('Advanced Search', () => {
     if (await searchInput.count() > 0) {
       await searchInput.first().fill('test');
 
-      const searchButton = page.locator('button:has-text("検索")');
+      const searchButton = searchPageSubmitButton(page);
       if (await searchButton.count() > 0) {
         await searchButton.first().click();
         await waitForUiStable(page);
@@ -502,7 +535,7 @@ test.describe('Advanced Search', () => {
     console.log(`✅ Search keyword entered: "${inputValueBefore}"`);
 
     // Execute search
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.first().click(isMobile ? { force: true } : {});
     } else {
@@ -571,46 +604,13 @@ test.describe('Advanced Search', () => {
     // Search for keyword that appears in PDF filename — 'Specification' matches the filename
     // Note: CMIS CONTAINS + name LIKE will match filename even if PDF has no extractable text
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
-
     await expect(searchInput.first()).toBeVisible({ timeout: 10000 });
 
-    await searchInput.first().fill('Specification'); // Matches PDF filename
-
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
-    if (await searchButton.count() > 0) {
-      await searchButton.first().click(isMobile ? { force: true } : {});
-    } else {
-      await searchInput.first().press('Enter');
-    }
-
-    // Wait for initial search results (Solr may need time for indexing)
-    await waitForUiStable(page, { timeout: 15000 });
-
-    // Verify results table appears
-    const resultsTable = page.locator('.ant-table, .search-results');
-    if (await resultsTable.count() > 0) {
-      await expect(resultsTable.first()).toBeVisible({ timeout: 10000 });
-    }
-
-    // Look for CMIS specification PDF in results
+    // Look for CMIS specification PDF in results, resubmitting through congestion windows.
     const pdfResult = page.locator('tr').filter({ hasText: 'CMIS-v1.1-Specification-Sample' });
+    await searchUntilRowAppears(page, 'Specification', pdfResult, isMobile);
 
-    if (await pdfResult.count() === 0) {
-      console.log('⚠️ PDF not found in first search - waiting for Solr indexing...');
-      await waitForUiStable(page, { timeout: 30000 }); // Solr commit // Additional wait for Solr commit (up to 30 seconds)
-
-      // Retry search
-      await searchInput.first().fill('Specification');
-      if (await searchButton.count() > 0) {
-        await searchButton.first().click(isMobile ? { force: true } : {});
-      } else {
-        await searchInput.first().press('Enter');
-      }
-      await waitForUiStable(page);
-    }
-
-    // Assert PDF is found in search results
-    await expect(pdfResult.first()).toBeVisible({ timeout: 5000 });
+    await expect(pdfResult.first()).toBeVisible({ timeout: 10000 });
     console.log('✅ PDF found in search results');
 
     // Verify result contains PDF indicator (file extension or MIME type)
@@ -647,7 +647,7 @@ test.describe('Advanced Search', () => {
 
     await searchInput.first().fill('xyznonexistentkeywordxyz');
 
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.first().click(isMobile ? { force: true } : {});
     } else {
@@ -691,44 +691,13 @@ test.describe('Advanced Search', () => {
 
     // Search for 'CMIS-v1.1-Specification' — matches PDF filename via name LIKE
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
-
     await expect(searchInput.first()).toBeVisible({ timeout: 10000 });
 
-    await searchInput.first().fill('CMIS-v1.1-Specification');
-
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
-    if (await searchButton.count() > 0) {
-      await searchButton.first().click(isMobile ? { force: true } : {});
-    } else {
-      await searchInput.first().press('Enter');
-    }
-
-    // Wait for initial search results (Solr may need time for indexing)
-    await waitForUiStable(page, { timeout: 15000 });
-
-    // Verify results table appears
-    const resultsTable = page.locator('.ant-table, .search-results');
-    if (await resultsTable.count() > 0) {
-      await expect(resultsTable.first()).toBeVisible({ timeout: 10000 });
-    }
-
-    // Look for CMIS specification PDF in results
+    // Look for CMIS specification PDF in results, resubmitting through congestion windows.
     const pdfResult = page.locator('tr').filter({ hasText: 'CMIS-v1.1-Specification-Sample' });
+    await searchUntilRowAppears(page, 'CMIS-v1.1-Specification', pdfResult, isMobile);
 
-    if (await pdfResult.count() === 0) {
-      console.log('⚠️ PDF not found in first search - waiting for Solr indexing...');
-      await waitForUiStable(page, { timeout: 30000 }); // Solr commit
-      await searchInput.first().fill('CMIS-v1.1-Specification');
-      if (await searchButton.count() > 0) {
-        await searchButton.first().click(isMobile ? { force: true } : {});
-      } else {
-        await searchInput.first().press('Enter');
-      }
-      await waitForUiStable(page);
-    }
-
-    // Assert PDF is found
-    await expect(pdfResult.first()).toBeVisible({ timeout: 5000 });
+    await expect(pdfResult.first()).toBeVisible({ timeout: 10000 });
 
     // Verify PDF is found in search results
     if (await pdfResult.count() > 0) {
@@ -801,7 +770,7 @@ test.describe('Advanced Search', () => {
       console.log('✅ Search result details and navigation verification complete');
     } else {
       // If PDF still not found after retry, skip test (PDF may not be uploaded yet)
-      test.skip('ENV: CMIS specification PDF not found - may not be uploaded or indexed yet');
+      test.skip(true, 'ENV: CMIS specification PDF not found - may not be uploaded or indexed yet');
     }
   });
 
@@ -840,7 +809,7 @@ test.describe('Advanced Search', () => {
     // Test filename search without extension
     await searchInput.first().fill('CMIS-v1.1-Specification-Sample');
 
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.first().click(isMobile ? { force: true } : {});
     } else {
@@ -912,7 +881,7 @@ test.describe('Advanced Search', () => {
       console.log('✅ Filename search verification complete');
     } else {
       // If PDF still not found, skip test (PDF may not be uploaded yet)
-      test.skip('ENV: CMIS specification PDF not found by filename search - may not be uploaded or indexed yet');
+      test.skip(true, 'ENV: CMIS specification PDF not found by filename search - may not be uploaded or indexed yet');
     }
   });
 
@@ -992,7 +961,7 @@ test.describe('Advanced Search', () => {
     // "CMIS" or "Specification" should match the CMIS-v1.1-Specification-Sample.pdf filename
     await searchInput.first().fill('Specification');
 
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.first().click(isMobile ? { force: true } : {});
     } else {
@@ -1059,7 +1028,7 @@ test.describe('Advanced Search', () => {
     // Search for a keyword
     await searchInput.first().fill('repository');
 
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.first().click(isMobile ? { force: true } : {});
     } else {
@@ -1104,7 +1073,7 @@ test.describe('Advanced Search', () => {
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]');
     await expect(searchInput.first()).toBeVisible({ timeout: 10000 });
 
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    const searchButton = searchPageSubmitButton(page);
 
     // Look for any Japanese PDF in results (filename pattern: contains Japanese characters)
     // This regex matches common Japanese characters (Hiragana, Katakana, Kanji) followed by .pdf

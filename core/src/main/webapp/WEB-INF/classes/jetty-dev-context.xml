@@ -15,7 +15,14 @@
     </bean>
     
     <!-- Override QueryProcessor to use real Solr with localhost configuration -->
+    <!-- See serviceContext.xml. Without the reconciliation service this answers "converged",
+         so the dev context keeps the plain reject-on-over-cap behaviour. -->
+    <bean id="aclPropagationStaleness"
+          class="jp.aegif.nemaki.cmis.aspect.query.solr.AclPropagationStaleness">
+    </bean>
+
     <bean id="queryProcessor" class="jp.aegif.nemaki.cmis.aspect.query.solr.SolrQueryProcessor">
+        <property name="propagationStaleness" ref="aclPropagationStaleness" />
         <property name="solrUtil">
             <ref bean="solrUtil" />
         </property>

@@ -127,6 +127,14 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- F4: joinedDirectGroupsByGroupId emitted the same row 20x per edge (3.3.0). -->
+				<!-- Key SHAPE is unchanged ([id, 0]), so no consumer changes with it.          -->
+				<!-- Applying it rebuilds every view in _design/_repo: maintenance window.      -->
+				<bean class="jp.aegif.nemaki.patch.Patch_JoinedGroupsSingleEmit">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 				<!-- Initial users and groups: testgroup, testuser with firstName/lastName -->
 				<!-- Enhanced version with proper user properties -->
 				<bean class="jp.aegif.nemaki.patch.Patch_TestUserInitialization">
@@ -283,6 +291,51 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Mango compound indexes for the search-index ACL reconciliation
+				     queue (searchIndexAclReindexTask) in nemaki_conf. -->
+				<bean class="jp.aegif.nemaki.patch.Patch_SearchIndexReconcileMangoIndex">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- One-time cleanup of first-generation reconciliation docs
+				     (auto-id / ISO timestamps) superseded by the deterministic-id format. -->
+				<bean class="jp.aegif.nemaki.patch.Patch_SearchIndexReconcileV1Cleanup">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- ACL-epoch counter (acl-epoch-fencing.md §2.1/§8, increment 1):
+				     seed acl-epoch-counter::{repo} at 0 if absent + (type) index. -->
+				<bean class="jp.aegif.nemaki.patch.Patch_AclEpochCounter">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- ACL-epoch outbox scanner index (acl-epoch-fencing.md §3, increment 2):
+				     (aclEpochState) Mango index on each content DB. -->
+				<bean class="jp.aegif.nemaki.patch.Patch_ContentIncarnationBackfill">
+					<property name="patchUtil" ref="patchUtil" />
+				</bean>
+				<bean class="jp.aegif.nemaki.patch.Patch_AclEpochStateMangoIndex">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- ACL-epoch: (aclEpochMutationId) index so the scanner can find a document that
+				     LOST its state but kept its mutation id (review 3b [P1]) — invisible to every
+				     aclEpochState-keyed selector otherwise. -->
+				<!-- §8-a v2 (D-rest-1): sequencer lease + fresh-repository counter bootstrap -->
+				<bean class="jp.aegif.nemaki.patch.Patch_LineageSequencerBootstrap">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<bean class="jp.aegif.nemaki.patch.Patch_AclEpochMutationIdMangoIndex">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 			</list>
 		</property>
 	</bean>
@@ -434,6 +487,12 @@
 		</property>
 	</bean>
 
+	<bean id="patch_JoinedGroupsSingleEmit" class="jp.aegif.nemaki.patch.Patch_JoinedGroupsSingleEmit">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
 	<bean id="patch_NarrowUserGroupViews" class="jp.aegif.nemaki.patch.Patch_NarrowUserGroupViews">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
@@ -521,7 +580,39 @@
 	     Previously it existed only as an inline bean inside cmisPatchList (Path A),
 	     so the fallback path (Path B) silently skipped it — the same registration
 	     asymmetry RC4 (R1) fixed for the other patches. -->
+	<bean id="patch_SearchIndexReconcileMangoIndex" class="jp.aegif.nemaki.patch.Patch_SearchIndexReconcileMangoIndex">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+	<bean id="patch_SearchIndexReconcileV1Cleanup" class="jp.aegif.nemaki.patch.Patch_SearchIndexReconcileV1Cleanup">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+	<!-- Top-level bean so NemakiPatchInitializationListener.getBeansOfType() (Path B)
+	     also collects the ACL-epoch counter patch (registration symmetry, per RC4 R1). -->
+	<bean id="patch_AclEpochCounter" class="jp.aegif.nemaki.patch.Patch_AclEpochCounter">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+	<bean id="patch_AclEpochStateMangoIndex" class="jp.aegif.nemaki.patch.Patch_AclEpochStateMangoIndex">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+	<bean id="patch_AclEpochMutationIdMangoIndex" class="jp.aegif.nemaki.patch.Patch_AclEpochMutationIdMangoIndex">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
 	<bean id="patch_ApiKeyMangoIndex" class="jp.aegif.nemaki.patch.Patch_ApiKeyMangoIndex">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+	<bean id="patch_LineageSequencerBootstrap" class="jp.aegif.nemaki.patch.Patch_LineageSequencerBootstrap">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

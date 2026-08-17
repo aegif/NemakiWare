@@ -207,7 +207,7 @@ class CouchLineageDeadLetterStoreTest {
                 Map.of("purview", LineagePublishStatus.FAILED));
 
         LineageJournalStore targetStore = mock(LineageJournalStore.class);
-        when(targetStore.findByEventId("evt-1")).thenReturn(existing);
+        when(targetStore.findByRecordId("evt-1")).thenReturn(new LineageJournalRow.Decoded(LineageJournalEntry.ofV1(existing)));
         when(targetStore.updatePublishStatus("evt-1", "purview", LineagePublishStatus.PENDING)).thenReturn(1);
 
         boolean result = deadLetterStore.replay("evt-1", targetStore);
@@ -250,7 +250,7 @@ class CouchLineageDeadLetterStoreTest {
                 mixedStatus);
 
         LineageJournalStore targetStore = mock(LineageJournalStore.class);
-        when(targetStore.findByEventId("evt-surv-1")).thenReturn(existing);
+        when(targetStore.findByRecordId("evt-surv-1")).thenReturn(new LineageJournalRow.Decoded(LineageJournalEntry.ofV1(existing)));
         when(targetStore.updatePublishStatus("evt-surv-1", "purview", LineagePublishStatus.PENDING)).thenReturn(1);
 
         boolean result = deadLetterStore.replay("evt-surv-1", targetStore);
@@ -295,7 +295,7 @@ class CouchLineageDeadLetterStoreTest {
                 tripleStatus);
 
         LineageJournalStore targetStore = mock(LineageJournalStore.class);
-        when(targetStore.findByEventId("evt-surv-2")).thenReturn(existing);
+        when(targetStore.findByRecordId("evt-surv-2")).thenReturn(new LineageJournalRow.Decoded(LineageJournalEntry.ofV1(existing)));
         when(targetStore.updatePublishStatus(eq("evt-surv-2"), anyString(), eq(LineagePublishStatus.PENDING))).thenReturn(1);
 
         boolean result = deadLetterStore.replay("evt-surv-2", targetStore);
@@ -329,7 +329,7 @@ class CouchLineageDeadLetterStoreTest {
                 Map.of("purview", LineagePublishStatus.PUBLISHED, "atlas", LineagePublishStatus.PUBLISHED));
 
         LineageJournalStore targetStore = mock(LineageJournalStore.class);
-        when(targetStore.findByEventId("evt-surv-3")).thenReturn(existing);
+        when(targetStore.findByRecordId("evt-surv-3")).thenReturn(new LineageJournalRow.Decoded(LineageJournalEntry.ofV1(existing)));
 
         boolean result = deadLetterStore.replay("evt-surv-3", targetStore);
 
@@ -362,7 +362,7 @@ class CouchLineageDeadLetterStoreTest {
         doReturn(dlDoc).when(mockClient).get(eq(Map.class), eq("lineage_dl:evt-1"), isNull());
 
         LineageJournalStore targetStore = mock(LineageJournalStore.class);
-        when(targetStore.findByEventId("evt-1")).thenReturn(null);
+        when(targetStore.findByRecordId("evt-1")).thenReturn(null);
 
         boolean result = deadLetterStore.replay("evt-1", targetStore);
 
@@ -397,7 +397,7 @@ class CouchLineageDeadLetterStoreTest {
         doReturn(dlDoc).when(mockClient).get(eq(Map.class), eq("lineage_dl:evt-3"), isNull());
 
         LineageJournalStore targetStore = mock(LineageJournalStore.class);
-        when(targetStore.findByEventId("evt-3")).thenReturn(null);
+        when(targetStore.findByRecordId("evt-3")).thenReturn(null);
 
         boolean result = deadLetterStore.replay("evt-3", targetStore);
 
@@ -429,7 +429,7 @@ class CouchLineageDeadLetterStoreTest {
         doReturn(dlDoc).when(mockClient).get(eq(Map.class), eq("lineage_dl:evt-2"), isNull());
 
         LineageJournalStore targetStore = mock(LineageJournalStore.class);
-        when(targetStore.findByEventId("evt-2")).thenReturn(null);
+        when(targetStore.findByRecordId("evt-2")).thenReturn(null);
         when(mockConfig.getTargets()).thenReturn(List.of("purview"));
 
         boolean result = deadLetterStore.replay("evt-2", targetStore);
@@ -525,7 +525,7 @@ class CouchLineageDeadLetterStoreTest {
         doReturn(dlDoc).when(mockClient).get(eq(Map.class), eq("lineage_dl:evt-ra-1"), isNull());
 
         LineageJournalStore targetStore = mock(LineageJournalStore.class);
-        when(targetStore.findByEventId("evt-ra-1")).thenReturn(null); // original purged
+        when(targetStore.findByRecordId("evt-ra-1")).thenReturn(null); // original purged
 
         int count = deadLetterStore.replayAll(targetStore);
 

@@ -1,0 +1,230 @@
+name: Lineage Identity Contract
+
+# The lineage identity encoding is versioned: changing it makes every processKey
+# and deliveryId already written to CouchDB unreachable.  Two things guard it,
+# and both have to run or the guarantee is only half there.
+#
+#   - the Java golden test, which compares its own output to the shared fixture
+#   - reference_hash.py, an independent implementation of the same spec, which
+#     compares its output to the same fixture and exits non-zero on any drift
+#
+# The Python half is what backs the claim that a repair or DLQ tool written
+# outside the JVM computes the same ids.  A script that only ever gets run by
+# hand does not back anything, so it runs here.
+#
+# No step reads event-supplied text (titles, branch names, commit messages), so
+# there is nothing here to interpolate into a shell.
+
+on:
+  push:
+    branches:
+      - master
+      - main
+      - develop
+      - 'release/**'
+      # the branches this work actually lands on; without these the cross-language
+      # check would not run until the change reached a release branch
+      - 'deps/**'
+      - 'test/**'
+    paths:
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/journal/**'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/ExternalAssetIdentity.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/PurviewSchemaPayloadFactory.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/PurviewEntityPayloadFactory.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/CatalogPropertyMappingResolver.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/PurviewCloudMetadataSupport.java'
+      - 'core/src/test/java/jp/aegif/nemaki/rest/purview/payload/PurviewEntityPayloadFactoryTest.java'
+      - 'core/src/test/java/jp/aegif/nemaki/rest/purview/payload/CatalogPropertyMappingResolverTest.java'
+      - 'core/src/test/java/jp/aegif/nemaki/rest/purview/journal/**'
+      - 'core/src/test/java/jp/aegif/nemaki/rest/purview/ExternalAssetIdentityTest.java'
+      - 'core/src/test/resources/lineage/**'
+      - '.github/workflows/lineage-identity.yml'
+  pull_request:
+    branches: [ master, main, develop ]
+    paths:
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/journal/**'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/ExternalAssetIdentity.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/PurviewSchemaPayloadFactory.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/PurviewEntityPayloadFactory.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/payload/CatalogPropertyMappingResolver.java'
+      - 'core/src/main/java/jp/aegif/nemaki/rest/purview/PurviewCloudMetadataSupport.java'
+      - 'core/src/test/java/jp/aegif/nemaki/rest/purview/payload/PurviewEntityPayloadFactoryTest.java'
+      - 'core/src/test/java/jp/aegif/nemaki/rest/purview/payload/CatalogPropertyMappingResolverTest.java'
+      - 'core/src/test/java/jp/aegif/nemaki/rest/purview/journal/**'
+      - 'core/src/test/java/jp/aegif/nemaki/rest/purview/ExternalAssetIdentityTest.java'
+      - 'core/src/test/resources/lineage/**'
+      - '.github/workflows/lineage-identity.yml'
+
+permissions:
+  contents: read
+  packages: read   # resolve custom OpenCMIS 1.1.0-nemakiware from GitHub Packages
+
+jobs:
+  identity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      MAVEN_USERNAME: ${{ github.actor }}
+      MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      # Actions are pinned to commit SHAs, as everywhere else in this repository:
+      # a mutable tag is a supply-chain hole, and this workflow guards an identity
+      # contract.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      # No setup-python step and no dependencies: the runner has python3, and the
+      # script uses only hashlib and struct — deliberately, so a reader in any
+      # language can follow the spec without a library, and so this job adds no
+      # third-party action.
+      - name: Reference implementation agrees with the shared fixture
+        run: python3 core/src/test/resources/lineage/reference_hash.py
+
+      # server-id/username/password are what let Maven authenticate to GitHub
+      # Packages for org.apache.chemistry.opencmis:*:1.1.0-nemakiware, which is
+      # published there rather than to Central. Without them the build fails
+      # before a single test runs.
+      - name: Set up JDK 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+          server-id: github-opencmis
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+
+      - name: Build sibling modules
+        run: |
+          mvn clean install -N -DskipTests -q
+          mvn clean install -f common/pom.xml -DskipTests -q
+          mvn clean install -f cloudant-init/pom.xml -DskipTests -q
+
+      # -Popencmis-github-packages is what adds the GitHub Packages repository:
+      # the profile is not active by default, so without it Maven consults only
+      # Central and fails to resolve 1.1.0-nemakiware before any test runs.
+      # The A-2 classes are part of the identity contract: the delivery union delegates to the
+      # frozen formulas, the digest and codec re-verify stored identity, and the read model
+      # carries it. A green run here that never executed them would read as "contract OK"
+      # while binding nothing — which is how the list fell behind once already.
+      - name: Java identity, endpoint and schema-alignment tests
+        run: >
+          mvn -B -f core/pom.xml -Pdevelopment,opencmis-github-packages test
+          -Dtest='LineageCanonicalHashTest,LineageIdentityTest,LineageEndpointTest,LineageEndpointBypassTest,LineageRepositoryScopeTest,EndpointAttributeTest,EndpointKindSchemaAlignmentTest,ExternalAssetNamingCrossPathTest,ExternalAssetIdentityTest,PurviewEntityPayloadFactoryTest,CatalogPropertyMappingResolverTest,LineageDeliveryTest,LineageProcessShapeTest,LineageEventDigestTest,LineageEventV2Test,LineageRecordTest,LineageSinkRecordContractTest,LineageEventCodecTest,LineageJournalViewCoverageTest,LineageV2ReadPathAcceptanceTest,LineageAppendV2AndGateTest,LineageFactTest,ExternalSourceUriTest,IngestLineageEmitterTest,ImportExportLineagePlumbingTest,ImportExportLineageFactTest,LineageSpoolTest,LineageFencedSequencerTest,PatchLineageSequencerBootstrapTest,LineageV2TransitionMachineTest,LineageDrestRoutingTest,LineageDrestReadinessTest,LineageSequencerAdminServiceTest,LineageReplayServiceTest,LineageJournalControllerReplayShapeTest,LineageMaterializationTest,LineageChunkingTest'
+          -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false
+
+  # Increment D's gate: the sequencing-store contract against a real CouchDB. This job is the
+  # unconditional half — locally the IT is env-gated, but here CouchDB is provisioned and the
+  # test MUST execute (failIfNoSpecifiedTests guards against a rename silently skipping it).
+  lineage-couch-it:
+    runs-on: ubuntu-latest
+    env:
+      MAVEN_USERNAME: ${{ github.actor }}
+      MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+    services:
+      couchdb:
+        image: couchdb:3
+        env:
+          COUCHDB_USER: admin
+          COUCHDB_PASSWORD: itpassword
+        ports:
+          - 5984:5984
+        options: >-
+          --health-cmd "curl -sf http://localhost:5984/_up || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          server-id: github-opencmis
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+      - name: Build sibling modules
+        run: |
+          mvn clean install -N -DskipTests -q
+          mvn clean install -f common/pom.xml -DskipTests -q
+          mvn clean install -f cloudant-init/pom.xml -DskipTests -q
+      - name: Sequencing store IT against real CouchDB (must run — never skippable)
+        env:
+          NEMAKI_LINEAGE_IT_COUCHDB_URL: http://127.0.0.1:5984
+          NEMAKI_LINEAGE_IT_COUCHDB_USER: admin
+          NEMAKI_LINEAGE_IT_COUCHDB_PASSWORD: itpassword
+        run: >
+          mvn -B -f core/pom.xml -Pdevelopment,opencmis-github-packages test
+          -Dtest='LineageSequencingCouchIT'
+          -Dlineage.it.required=true
+          -Dsurefire.failIfNoSpecifiedTests=true
+      - name: Barrier IT against real CouchDB (must run — never skippable)
+        env:
+          NEMAKI_LINEAGE_IT_COUCHDB_URL: http://127.0.0.1:5984
+          NEMAKI_LINEAGE_IT_COUCHDB_USER: admin
+          NEMAKI_LINEAGE_IT_COUCHDB_PASSWORD: itpassword
+        run: >
+          mvn -B -f core/pom.xml -Pdevelopment,opencmis-github-packages test
+          -Dtest='LineageBarrierCouchIT'
+          -Dlineage.it.required=true
+          -Dsurefire.failIfNoSpecifiedTests=true
+      # Runs AFTER the sequencing IT and alone: it lowers the node's max_document_size for
+      # the duration of the test, so nothing else may be writing to this CouchDB meanwhile.
+      - name: Parking IT against real CouchDB (must run — never skippable)
+        env:
+          NEMAKI_LINEAGE_IT_COUCHDB_URL: http://127.0.0.1:5984
+          NEMAKI_LINEAGE_IT_COUCHDB_USER: admin
+          NEMAKI_LINEAGE_IT_COUCHDB_PASSWORD: itpassword
+        run: >
+          mvn -B -f core/pom.xml -Pdevelopment,opencmis-github-packages test
+          -Dtest='LineageParkingCouchIT'
+          -Dlineage.it.required=true
+          -Dsurefire.failIfNoSpecifiedTests=true
+
+  # §6-a's live-Atlas release gates E-19/E-20. Apache Atlas is heavy to boot, so this job is
+  # deliberately separate: it must run before Slice 4b (activation), and a skipped gate does
+  # not satisfy it (-Datlas.it.required=true turns a missing URL into a failure).
+  atlas-secrets-it:
+    runs-on: ubuntu-latest
+    env:
+      MAVEN_USERNAME: ${{ github.actor }}
+      MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+    services:
+      atlas:
+        image: sburn/apache-atlas:2.3.0
+        ports:
+          - 21000:21000
+        options: >-
+          --health-cmd "wget -q -O /dev/null --auth-no-challenge --user=admin --password=admin http://localhost:21000/api/atlas/v2/types/typedefs/headers || exit 1"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 20
+          --health-start-period 300s
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          server-id: github-opencmis
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+      - name: Build sibling modules
+        run: |
+          mvn clean install -N -DskipTests -q
+          mvn clean install -f common/pom.xml -DskipTests -q
+          mvn clean install -f cloudant-init/pom.xml -DskipTests -q
+      # The IT installs the nemaki type definitions itself (a fresh Atlas service has none),
+      # using the real PurviewSchemaPayloadFactory — so this job needs no separate schema step
+      # and is re-runnable against a clean service.
+      - name: E-19/E-20 against live Atlas (must run — never skippable)
+        env:
+          NEMAKI_ATLAS_IT_URL: http://127.0.0.1:21000
+          NEMAKI_ATLAS_IT_USER: admin
+          NEMAKI_ATLAS_IT_PASSWORD: admin
+        run: >
+          mvn -B -f core/pom.xml -Pdevelopment,opencmis-github-packages test
+          -Dtest='PurviewLiveAtlasSecretsIT'
+          -Datlas.it.required=true
+          -Dsurefire.failIfNoSpecifiedTests=true

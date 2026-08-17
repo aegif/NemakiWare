@@ -4,6 +4,7 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.dao.ContentDaoService;
+import jp.aegif.nemaki.acl.AclSemantics;
 import jp.aegif.nemaki.model.Ace;
 import jp.aegif.nemaki.model.Acl;
 import jp.aegif.nemaki.model.Content;
@@ -11,10 +12,8 @@ import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.cache.model.NemakiCache;
-import jp.aegif.nemaki.util.constant.PrincipalId;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
-import org.apache.commons.collections4.CollectionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,7 +22,6 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 
 /**
  * Delegate for ACL calculation operations.
@@ -49,33 +47,50 @@ public class AclServiceDelegate {
 	}
 
 	public Acl calculateAcl(String repositoryId, Content content) {
+		return calculateAcl(repositoryId, content, false);
+	}
+
+	/**
+	 * As {@link #calculateAcl(String, Content)} but with a {@code strict} mode for the
+	 * search-index ACL reconciliation re-drive. In strict mode an unreadable inherited
+	 * PARENT (a non-null {@code parentId} whose folder cannot be loaded) THROWS instead
+	 * of silently degrading to local-ACEs-only — a transient parent-read failure would
+	 * otherwise drop every inherited grant, and the reconcile would then CAS-write those
+	 * under-visible readers and delete its task as if clean (no leak, but permanent
+	 * under-visibility until the next ACL touch). Strict also bypasses the ACL cache so
+	 * the walk is always fresh (the reconcile evicts first, but this guarantees it).
+	 */
+	public Acl calculateAcl(String repositoryId, Content content, boolean strict) {
 		NemakiCache<Acl> aclCache = nemakiCachePool.get(repositoryId).getAclCache();
-		Acl acl = aclCache.get(content.getId());
+		Acl acl = strict ? null : aclCache.get(content.getId());
 
 		if (acl == null) {
-			boolean iht = getAclInheritedWithDefault(repositoryId, content);
-			boolean isRootContent = contentService.isRoot(repositoryId, content);
-
-			if (!isRootContent && iht) {
-				List<Ace> aces = new ArrayList<Ace>();
-				List<Ace> result = calculateAclInternal(repositoryId, aces, content);
-
-				acl = new Acl();
-				for (Ace r : result) {
-					if (r.isDirect()) {
-						acl.getLocalAces().add(r);
-					} else {
-						acl.getInheritedAces().add(r);
-					}
-				}
-			} else {
-				acl = content.getAcl();
+			// Date the computation BEFORE reading any ancestor. applyAcl evicts this object's
+			// memo and its descendants' while holding only a read lock, and the eviction walk
+			// locks nothing, so a computation that started before the change can finish after the
+			// sweep and republish a stale answer that nothing will remove again. Recording the
+			// generation up front lets the put below decline instead.
+			long generation = jp.aegif.nemaki.util.cache.AclCacheGeneration.current(repositoryId);
+			acl = resolveAcl(repositoryId, content, strict);
+			if (!strict) {
+				putIfStillCurrent(repositoryId, aclCache, content.getId(), acl, generation);
 			}
-
-			convertSystemPrincipalId(repositoryId, acl.getAllAces());
-			aclCache.put(content.getId(), acl);
 		}
 		return acl;
+	}
+
+	/**
+	 * Publish a computed effective ACL only if no ACL write landed while it was being computed.
+	 *
+	 * <p>Declining costs one recomputation on the next read. Publishing a stale answer costs an
+	 * authorization decision made against permissions that no longer exist, for as long as the
+	 * entry lives.
+	 */
+	private void putIfStillCurrent(String repositoryId, NemakiCache<Acl> aclCache, String objectId,
+			Acl acl, long observedGeneration) {
+		if (jp.aegif.nemaki.util.cache.AclCacheGeneration.isStillCurrent(repositoryId, observedGeneration)) {
+			aclCache.put(objectId, acl);
+		}
 	}
 
 	public Map<String, Content> getContentsByIds(String repositoryId, List<String> objectIds) {
@@ -102,138 +117,72 @@ public class AclServiceDelegate {
 				continue;
 			}
 
-			Acl acl;
-			boolean iht = getAclInheritedWithDefault(repositoryId, content);
-			boolean isRootContent = contentService.isRoot(repositoryId, content);
-
-			if (!isRootContent && iht) {
-				List<Ace> aces = new ArrayList<Ace>();
-				List<Ace> calcResult = calculateAclInternal(repositoryId, aces, content);
-
-				acl = new Acl();
-				for (Ace r : calcResult) {
-					if (r.isDirect()) {
-						acl.getLocalAces().add(r);
-					} else {
-						acl.getInheritedAces().add(r);
-					}
-				}
-			} else {
-				acl = content.getAcl();
-			}
-
-			convertSystemPrincipalId(repositoryId, acl.getAllAces());
-			aclCache.put(contentId, acl);
+			long generation = jp.aegif.nemaki.util.cache.AclCacheGeneration.current(repositoryId);
+			Acl acl = resolveAcl(repositoryId, content, false);
+			putIfStillCurrent(repositoryId, aclCache, contentId, acl, generation);
 			result.put(contentId, acl);
 		}
 
 		return result;
 	}
 
-	private List<Ace> calculateAclInternal(String repositoryId, List<Ace> result, Content content) {
-		Acl contentAcl = content.getAcl();
-		List<Ace> aces = null;
-		if (contentAcl == null) {
-			log.error("Invalid Acl, content ACL is null! [ID=" + content.getId() + "]" + content.getName());
-			aces = new ArrayList<Ace>();
-		} else {
-			aces = contentAcl.getLocalAces();
-		}
-
-		if (contentService.isRoot(repositoryId, content) || !getAclInheritedWithDefault(repositoryId, content)) {
-			List<Ace> rootAces = new ArrayList<Ace>();
-
-			for (Ace ace : aces) {
-				Ace rootAce = deepCopy(ace);
-				rootAce.setDirect(true);
-				rootAces.add(rootAce);
-			}
-			return mergeAcl(repositoryId, result, rootAces);
-		} else {
-			if (content.getParentId() == null) {
-				return aces;
-			} else {
-				Folder parent = contentService.getFolder(repositoryId, content.getParentId());
-				if (parent == null) {
-					return aces;
-				} else {
-					return mergeAcl(repositoryId, aces,
-							calculateAclInternal(repositoryId, new ArrayList<Ace>(), parent));
-				}
-			}
-		}
-	}
-
-	private List<Ace> mergeAcl(String repositoryId, List<Ace> target, List<Ace> source) {
-		HashMap<String, Ace> _result = new HashMap<String, Ace>();
-
-		convertSystemPrincipalId(repositoryId, target);
-
-		HashMap<String, Ace> targetMap = buildAceMap(target);
-		HashMap<String, Ace> sourceMap = buildAceMap(source);
-
-		for (Entry<String, Ace> t : targetMap.entrySet()) {
-			Ace ace = deepCopy(t.getValue());
-			ace.setDirect(true);
-			_result.put(t.getKey(), ace);
-		}
-
-		for (Entry<String, Ace> s : sourceMap.entrySet()) {
-			if (!targetMap.containsKey(s.getKey())) {
-				Ace ace = deepCopy(s.getValue());
-				ace.setDirect(false);
-				_result.put(s.getKey(), ace);
-			}
-		}
-
-		List<Ace> resultList = new ArrayList<Ace>();
-		for (Entry<String, Ace> r : _result.entrySet()) {
-			resultList.add(r.getValue());
-		}
-
-		return resultList;
-	}
-
-	private HashMap<String, Ace> buildAceMap(List<Ace> aces) {
-		HashMap<String, Ace> map = new HashMap<String, Ace>();
-
-		for (Ace ace : aces) {
-			map.put(ace.getPrincipalId(), ace);
-		}
-
-		return map;
-	}
-
-	private Ace deepCopy(Ace ace) {
-		Ace result = new Ace();
-
-		result.setPrincipalId(ace.getPrincipalId());
-		result.setDirect(ace.isDirect());
-		if (CollectionUtils.isEmpty(ace.getPermissions())) {
-			result.setPermissions(new ArrayList<String>());
-		} else {
-			List<String> l = new ArrayList<String>();
-			for (String p : ace.getPermissions()) {
-				l.add(p);
-			}
-			result.setPermissions(l);
-		}
-
-		return result;
-	}
-
-	private void convertSystemPrincipalId(String repositoryId, List<Ace> aces) {
+	/**
+	 * The ONE place the CMIS runtime turns a Content into its effective {@code Acl} — including the
+	 * OUTER root/non-inheriting branch, which used to be duplicated between {@link #calculateAcl}
+	 * and {@link #calculateAcls} (increment 5S step 2). The ACL-epoch side calls the same
+	 * {@link AclSemantics#resolveAcl} over its authoritative chain, so neither the recursion NOR the
+	 * outer branch can drift between the two.
+	 */
+	private Acl resolveAcl(String repositoryId, Content content, boolean strict) {
 		RepositoryInfo info = repositoryInfoMap.get(repositoryId);
+		return AclSemantics.resolveAcl(new CmisChainNode(repositoryId, content), strict,
+				info.getPrincipalIdAnyone(), info.getPrincipalIdAnonymous());
+	}
 
-		for (Ace ace : aces) {
-			if (PrincipalId.ANONYMOUS_IN_DB.equals(ace.getPrincipalId())) {
-				String anonymous = info.getPrincipalIdAnonymous();
-				ace.setPrincipalId(anonymous);
+	/**
+	 * The CMIS-runtime view of one inheritance-chain node (design §5.3, increment 5S).
+	 *
+	 * <p>The TRAVERSAL stays here — a parent is resolved lazily through {@code getFolder}, which
+	 * goes via the CACHED content DAO, exactly as before — while the SHAPE of the recursion lives
+	 * in {@link AclSemantics}. The ACL-epoch side supplies the same interface over documents it
+	 * read authoritatively, so the two sides cannot disagree about when inheritance stops.
+	 *
+	 * <p>{@code getFolder} collapses a genuine 404 and a transient read error into null; that is
+	 * why {@link AclSemantics#effectiveAces} takes {@code strict}.
+	 */
+	private final class CmisChainNode implements AclSemantics.ChainNode {
+		private final String repositoryId;
+		private final Content content;
+
+		CmisChainNode(String repositoryId, Content content) {
+			this.repositoryId = repositoryId;
+			this.content = content;
+		}
+
+		@Override public String id() { return content.getId(); }
+
+		@Override public List<Ace> localAces() {
+			Acl contentAcl = content.getAcl();
+			if (contentAcl == null) {
+				log.error("Invalid Acl, content ACL is null! [ID=" + content.getId() + "]" + content.getName());
+				return new ArrayList<Ace>();
 			}
-			if (PrincipalId.ANYONE_IN_DB.equals(ace.getPrincipalId())) {
-				String anyone = info.getPrincipalIdAnyone();
-				ace.setPrincipalId(anyone);
-			}
+			return contentAcl.getLocalAces();
+		}
+
+		@Override public Acl storedAcl() { return content.getAcl(); }
+
+		@Override public boolean root() { return contentService.isRoot(repositoryId, content); }
+
+		@Override public boolean inherited() {
+			return getAclInheritedWithDefault(repositoryId, content);
+		}
+
+		@Override public String parentId() { return content.getParentId(); }
+
+		@Override public AclSemantics.ChainNode parent() {
+			Folder parent = contentService.getFolder(repositoryId, content.getParentId());
+			return parent == null ? null : new CmisChainNode(repositoryId, parent);
 		}
 	}
 

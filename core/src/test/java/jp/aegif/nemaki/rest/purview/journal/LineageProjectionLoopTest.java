@@ -79,7 +79,7 @@ class LineageProjectionLoopTest {
                 .build();
 
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50))
-                .thenReturn(List.of(event));
+                .thenReturn(rows(event));
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50))
                 .thenReturn(List.of());
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PROJECTING, 50))
@@ -91,13 +91,13 @@ class LineageProjectionLoopTest {
                 .thenReturn(1);
 
         // Publish succeeds
-        when(mockSink.publish(event)).thenReturn(LineageTargetSinkResult.success(1, "OK"));
+        when(mockSink.publish(LineageRecord.fromV1(event))).thenReturn(LineageTargetSinkResult.success(1, "OK"));
 
         loop.pollAndProject();
 
         // Verify: claimed, published, status updated to PUBLISHED
         verify(mockStore).updatePublishStatus(event.eventId(), "purview", LineagePublishStatus.PROJECTING);
-        verify(mockSink).publish(event);
+        verify(mockSink).publish(LineageRecord.fromV1(event));
         verify(mockStore).updatePublishStatus(event.eventId(), "purview", LineagePublishStatus.PUBLISHED);
     }
 
@@ -111,7 +111,7 @@ class LineageProjectionLoopTest {
                 .build();
 
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50))
-                .thenReturn(List.of(event));
+                .thenReturn(rows(event));
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50))
                 .thenReturn(List.of());
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PROJECTING, 50))
@@ -139,7 +139,7 @@ class LineageProjectionLoopTest {
                 .build();
 
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50))
-                .thenReturn(List.of(event));
+                .thenReturn(rows(event));
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50))
                 .thenReturn(List.of());
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PROJECTING, 50))
@@ -148,7 +148,7 @@ class LineageProjectionLoopTest {
 
         when(mockStore.updatePublishStatus(event.eventId(), "purview", LineagePublishStatus.PROJECTING))
                 .thenReturn(1);
-        when(mockSink.publish(event)).thenThrow(new RuntimeException("Connection refused"));
+        when(mockSink.publish(LineageRecord.fromV1(event))).thenThrow(new RuntimeException("Connection refused"));
 
         loop.pollAndProject();
 
@@ -187,7 +187,7 @@ class LineageProjectionLoopTest {
                 Map.of("purview", LineagePublishStatus.FAILED));
 
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50))
-                .thenReturn(List.of(oldEvent));
+                .thenReturn(rows(oldEvent));
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50))
                 .thenReturn(List.of());
         when(mockStore.countNonTerminalByTarget("purview")).thenReturn(1L);
@@ -209,7 +209,7 @@ class LineageProjectionLoopTest {
                 Map.of("purview", LineagePublishStatus.FAILED));
 
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50))
-                .thenReturn(List.of(recentEvent));
+                .thenReturn(rows(recentEvent));
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50))
                 .thenReturn(List.of());
         when(mockStore.countNonTerminalByTarget("purview")).thenReturn(1L);
@@ -229,7 +229,7 @@ class LineageProjectionLoopTest {
                 .build();
 
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50))
-                .thenReturn(List.of(event));
+                .thenReturn(rows(event));
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50))
                 .thenReturn(List.of());
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PROJECTING, 50))
@@ -241,7 +241,7 @@ class LineageProjectionLoopTest {
         when(mockStore.updatePublishStatus(event.eventId(), "purview", LineagePublishStatus.PROJECTING))
                 .thenReturn(1);
         // Publish throws
-        when(mockSink.publish(event)).thenThrow(new RuntimeException("Connection refused"));
+        when(mockSink.publish(LineageRecord.fromV1(event))).thenThrow(new RuntimeException("Connection refused"));
         // Retry count at max
         when(mockStore.getRetryCount(event.eventId(), "purview")).thenReturn(5);
 
@@ -262,7 +262,7 @@ class LineageProjectionLoopTest {
                 .build();
 
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50))
-                .thenReturn(List.of(event));
+                .thenReturn(rows(event));
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50))
                 .thenReturn(List.of());
         when(mockStore.findByTargetAndStatus("purview", LineagePublishStatus.PROJECTING, 50))
@@ -272,7 +272,7 @@ class LineageProjectionLoopTest {
 
         when(mockStore.updatePublishStatus(event.eventId(), "purview", LineagePublishStatus.PROJECTING))
                 .thenReturn(1);
-        when(mockSink.publish(event)).thenThrow(new RuntimeException("Timeout"));
+        when(mockSink.publish(LineageRecord.fromV1(event))).thenThrow(new RuntimeException("Timeout"));
         // Retry count below max
         when(mockStore.getRetryCount(event.eventId(), "purview")).thenReturn(2);
 
@@ -344,9 +344,62 @@ class LineageProjectionLoopTest {
         verify(mockStore).findByRepositoryAndSequenceRange("canopy", 0, 50);
     }
 
+    /**
+     * The scheduled obligation pass exists because entering a catalog wait CREATES an
+     * obligation while nothing else ever worked one off — every waiting event aged out to
+     * terminal UNRESOLVED with the machine idle. These pin the driver's three behaviours.
+     */
+    @Test
+    void obligationPassRunsTheScanner() throws Exception {
+        LineageObligationScanner scanner = mock(LineageObligationScanner.class);
+        when(scanner.runBoundedPass(anyInt()))
+                .thenReturn(new LineageCatalogObligationService.Pass(1, 1, 0, 0, 0));
+        setField(loop, "obligationScanner", scanner);
+
+        loop.runObligationPass();
+
+        verify(scanner).runBoundedPass(0);
+    }
+
+    /** A node refused as a reader must not touch DB-global state, obligations included. */
+    @Test
+    void obligationPassSkipsWhenRefused() throws Exception {
+        LineageObligationScanner scanner = mock(LineageObligationScanner.class);
+        LineageReaderAdmission admission = mock(LineageReaderAdmission.class);
+        when(admission.evaluate()).thenReturn(new LineageReaderAdmission.Admission(
+                LineageReaderAdmission.Decision.REFUSED, List.of("v1-only reader"), null));
+        setField(loop, "obligationScanner", scanner);
+        setField(loop, "readerAdmission", admission);
+
+        loop.runObligationPass();
+
+        verify(scanner, never()).runBoundedPass(anyInt());
+    }
+
+    /** No scanner wired is a quiet no-op, and a throwing scanner does not kill the schedule. */
+    @Test
+    void obligationPassSurvivesAbsenceAndFailure() throws Exception {
+        loop.runObligationPass(); // no scanner — must not throw
+
+        LineageObligationScanner scanner = mock(LineageObligationScanner.class);
+        when(scanner.runBoundedPass(anyInt())).thenThrow(new IllegalStateException("db down"));
+        setField(loop, "obligationScanner", scanner);
+        assertDoesNotThrow(loop::runObligationPass,
+                "a failed pass must leave the schedule alive for the next one");
+    }
+
     private static void setField(Object target, String fieldName, Object value) throws Exception {
         Field field = target.getClass().getDeclaredField(fieldName);
         field.setAccessible(true);
         field.set(target, value);
     }
+
+    private static java.util.List<LineageJournalRow> rows(LineageEvent... events) {
+        java.util.List<LineageJournalRow> rows = new java.util.ArrayList<>();
+        for (LineageEvent event : events) {
+            rows.add(new LineageJournalRow.Decoded(LineageJournalEntry.ofV1(event)));
+        }
+        return rows;
+    }
+
 }

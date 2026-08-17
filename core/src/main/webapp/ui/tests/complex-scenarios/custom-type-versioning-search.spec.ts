@@ -24,7 +24,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { gotoSearchPage, searchPageSubmitButton, waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 
@@ -151,7 +151,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     // Mobile browser fix
     await testHelper.closeMobileSidebar(browserName);
@@ -178,7 +178,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
       await typeManagementItem.click(isMobile ? { force: true } : {});
       await waitForUiStable(page);
     } else {
-      test.skip('ENV: Type Management menu not available');
+      test.skip(true, 'ENV: Type Management menu not available');
       return;
     }
 
@@ -188,7 +188,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     // Click "新規タイプ" button
     const newTypeButton = page.locator('button').filter({ hasText: /新規タイプ|新規.*作成|Create.*Type/ });
     if (await newTypeButton.count() === 0) {
-      test.skip('ENV: Create type button not found - Type Management UI may not be fully implemented');
+      test.skip(true, 'ENV: Create type button not found - Type Management UI may not be fully implemented');
       return;
     }
 
@@ -385,7 +385,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     // Click upload button
     const uploadButton = page.locator('button').filter({ hasText: /アップロード|Upload/ }).first();
     if (await uploadButton.count() === 0) {
-      test.skip('ENV: Upload button not found');
+      test.skip(true, 'ENV: Upload button not found');
       return;
     }
 
@@ -481,15 +481,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     const isMobile = testHelper.isMobile(browserName);
 
     // Navigate to search page
-    const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
-    if (await searchMenu.count() > 0) {
-      await searchMenu.click(isMobile ? { force: true } : {});
-      await waitForUiStable(page);
-    } else {
-      // Fallback: Navigate directly
-      await page.goto('http://localhost:8080/core/ui/#/search');
-      await waitForUiStable(page);
-    }
+    await gotoSearchPage(page);
 
     // Enter search text
     const searchInput = page.locator('input[placeholder*="検索"]').first();
@@ -516,7 +508,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     }
 
     // Click search button
-    const searchButton = page.locator('button.search-button, button:has-text("検索")').first();
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.click(isMobile ? { force: true } : {});
       await waitForUiStable(page);
@@ -552,7 +544,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     // Find and click on the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
-      test.skip('ENV: Test document not found - previous test may have failed');
+      test.skip(true, 'ENV: Test document not found - previous test may have failed');
       return;
     }
 
@@ -585,16 +577,14 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     await waitForUiStable(page);
 
     // Navigate to search and verify old value no longer finds document
-    const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
-    if (await searchMenu.count() > 0) {
-      await searchMenu.click(isMobile ? { force: true } : {});
-      await waitForUiStable(page);
+    await gotoSearchPage(page);
+    {
 
       const searchInput = page.locator('input[placeholder*="検索"]').first();
       if (await searchInput.count() > 0) {
         await searchInput.fill(initialSearchValue);
 
-        const searchButton = page.locator('button.search-button, button:has-text("検索")').first();
+        const searchButton = searchPageSubmitButton(page);
         if (await searchButton.count() > 0) {
           await searchButton.click(isMobile ? { force: true } : {});
           await waitForUiStable(page);
@@ -622,7 +612,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     // Find the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 
@@ -714,16 +704,14 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     }
 
     // Verify search finds document with restored value
-    const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
-    if (await searchMenu.count() > 0) {
-      await searchMenu.click({ force: true });
-      await waitForUiStable(page);
+    await gotoSearchPage(page);
+    {
 
       const searchInput = page.locator('input[placeholder*="検索"]').first();
       if (await searchInput.count() > 0) {
         await searchInput.fill(restoredSearchValue);
 
-        const searchButton = page.locator('button.search-button, button:has-text("検索")').first();
+        const searchButton = searchPageSubmitButton(page);
         if (await searchButton.count() > 0) {
           await searchButton.click(isMobile ? { force: true } : {});
           await waitForUiStable(page);
@@ -749,7 +737,7 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     // Find the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 
@@ -783,17 +771,15 @@ test.describe('Custom Type with Required Properties, Validation, Search, and Ver
     await waitForUiStable(page);
 
     // Verify search behavior after version deletion
-    const searchMenu = page.locator('.ant-menu-item').filter({ hasText: '検索' });
-    if (await searchMenu.count() > 0) {
-      await searchMenu.click(isMobile ? { force: true } : {});
-      await waitForUiStable(page);
+    await gotoSearchPage(page);
+    {
 
       const searchInput = page.locator('input[placeholder*="検索"]').first();
       if (await searchInput.count() > 0) {
         // Search with the restored value (which was in the deleted version)
         await searchInput.fill(restoredSearchValue);
 
-        const searchButton = page.locator('button.search-button, button:has-text("検索")').first();
+        const searchButton = searchPageSubmitButton(page);
         if (await searchButton.count() > 0) {
           await searchButton.click(isMobile ? { force: true } : {});
           await waitForUiStable(page);

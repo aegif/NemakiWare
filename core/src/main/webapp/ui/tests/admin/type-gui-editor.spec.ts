@@ -40,7 +40,7 @@ test.describe('Type GUI Editor', () => {
 
     // Navigate directly to type management page via URL
     await page.goto('http://localhost:8080/core/ui/index.html#/types');
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
   });
 
   test('should display GUI create button', async ({ page }) => {
@@ -218,7 +218,7 @@ test.describe('Type GUI Editor', () => {
     } else {
       // UPDATED (2025-12-26): GUI editor IS implemented in TypeGUIEditor.tsx
       console.log('Create button not found - skipping validation test');
-      test.skip('ENV: Create button not visible');
+      test.skip(true, 'ENV: Create button not visible');
     }
   });
 

@@ -1,0 +1,27 @@
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+  <mirrors>
+    <!-- repo.hortonworks.com's TLS cert expired (Sep 2025) and it 504s;
+         the few artifacts Atlas 2.3.0 still needs from it (e.g.
+         com.twitter:carbonite) are available on clojars. Redirect the dead
+         Hortonworks repo to clojars. -->
+    <mirror>
+      <id>hortonworks-to-clojars</id>
+      <mirrorOf>hortonworks.repo</mirrorOf>
+      <url>https://repo.clojars.org</url>
+    </mirror>
+  </mirrors>
+  <profiles>
+    <profile>
+      <id>extra-repos</id>
+      <repositories>
+        <repository>
+          <id>clojars</id>
+          <url>https://repo.clojars.org</url>
+        </repository>
+      </repositories>
+    </profile>
+  </profiles>
+  <activeProfiles>
+    <activeProfile>extra-repos</activeProfile>
+  </activeProfiles>
+</settings>

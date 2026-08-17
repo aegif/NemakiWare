@@ -6,7 +6,10 @@
 # gated (continue-on-error removed), an expired ignore lets the vuln fail CI,
 # forcing re-review.
 
-[[IgnoredVulns]]
-id = "GHSA-qhr7-h655-pw6r"
-ignoreUntil = 2027-01-31
-reason = "Not applicable: NemakiWare ships no security.json, does not enable Solr BasicAuthPlugin, and never runs `bin/solr auth enable`. No patched solr-core version exists (<= 9.10.1). Solr is not exposed off-host. See SECURITY-EXCEPTIONS.md."
+# (No active OSV ignores.)
+#
+# GHSA-qhr7-h655-pw6r (solr-core Basic-Auth setup tool) was removed on the
+# Solr 10 upgrade: the WAR no longer depends on solr-core at all (the custom
+# jp.aegif.nemaki.solr module that dragged it in was decommissioned), and the
+# runtime image is solr:10.0.0-slim. The advisory no longer applies to any
+# artifact we ship, so the exception is retired rather than renewed.

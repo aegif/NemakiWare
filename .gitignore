@@ -28,6 +28,7 @@ dependency-reduced-pom.xml
 **/cloudant-init.jar
 cloudant-init/target/
 core/target/
+core/target-cli/
 solr/target/
 action/target/
 common/target/
@@ -150,7 +151,10 @@ docker/cmis-tck-filters-docker.properties
 # Legacy UI module removed - React SPA now in core/src/main/webapp/ui/
 
 # Claude AI artifacts
-.claude/
+.claude/*
+# ...but the shared skills ARE part of the repo: they hold the build / test / API
+# procedures that used to sit in CLAUDE.md and must be identical for everyone.
+!.claude/skills/
 # Note: CLAUDE.md is intentionally NOT ignored as it contains project documentation
 
 # Keep important files
@@ -257,3 +261,10 @@ test-data-setup/config.yaml
 # Root node_modules (UI node_modules is handled separately)
 /node_modules/
 core/.factorypath
+
+# Solr runtime data (index / tlog) — never commit
+solr/solr/*/data/
+docker/solr/solr/*/data/
+
+# Codex local workspace (not part of the project)
+.codex/

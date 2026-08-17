@@ -67,6 +67,10 @@ public class PurviewAdminController {
     private final PurviewDeadLetterStateService purviewDeadLetterStateService;
     private final PurviewDeadLetterRetryService purviewDeadLetterRetryService;
     private final PurviewCloudSyncLineageService purviewCloudSyncLineageService;
+    private final jp.aegif.nemaki.rest.purview.lineage.LineageFolderCompanionBackfill
+            folderCompanionBackfill;
+    private final jp.aegif.nemaki.rest.purview.lineage.LineageCatalogReconciliationService
+            lineageCatalogReconciliationService;
 
     private HttpServletRequest httpRequest;
 
@@ -88,7 +92,11 @@ public class PurviewAdminController {
             PurviewStateOverviewService purviewStateOverviewService,
             PurviewDeadLetterStateService purviewDeadLetterStateService,
             PurviewDeadLetterRetryService purviewDeadLetterRetryService,
-            PurviewCloudSyncLineageService purviewCloudSyncLineageService) {
+            PurviewCloudSyncLineageService purviewCloudSyncLineageService,
+            jp.aegif.nemaki.rest.purview.lineage.LineageFolderCompanionBackfill
+                    folderCompanionBackfill,
+            jp.aegif.nemaki.rest.purview.lineage.LineageCatalogReconciliationService
+                    lineageCatalogReconciliationService) {
         this.connectionResolver = connectionResolver;
         this.purviewConnectionService = purviewConnectionService;
         this.purviewSchemaPlannerService = purviewSchemaPlannerService;
@@ -106,6 +114,8 @@ public class PurviewAdminController {
         this.purviewDeadLetterStateService = purviewDeadLetterStateService;
         this.purviewDeadLetterRetryService = purviewDeadLetterRetryService;
         this.purviewCloudSyncLineageService = purviewCloudSyncLineageService;
+        this.folderCompanionBackfill = folderCompanionBackfill;
+        this.lineageCatalogReconciliationService = lineageCatalogReconciliationService;
     }
 
     @Autowired
@@ -215,6 +225,108 @@ public class PurviewAdminController {
         }
         response.putAll(buildJobResponse(bootstrapResult.getJobState()));
         return ResponseEntity.ok(response);
+    }
+
+    // ------------------------------------------------------------------
+    // 増分 B: folder companion の backfill と reconciliation
+    // ------------------------------------------------------------------
+
+    /**
+     * What the backfill would do, without doing any of it.
+     *
+     * <p>{@code GET}, because an operator deciding whether to run this against production is
+     * entitled to ask without the asking being the running.
+     */
+    @GetMapping("/lineage/backfill/folder-dataset/{repositoryId}/plan")
+    public ResponseEntity<Map<String, Object>> planFolderCompanionBackfill(
+            @PathVariable("repositoryId") String repositoryId) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+
+        var plan = folderCompanionBackfill.plan(repositoryId);
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("repositoryId", plan.repositoryId());
+        body.put("folderCount", plan.folderCount());
+        body.put("alreadyProcessed", plan.alreadyPresent());
+        body.put("schemaReady", plan.schemaReady());
+        body.put("catalogReachable", plan.catalogReachable());
+        body.put("refusal", plan.refusal().name());
+        body.put("runnable", plan.runnable());
+        return ResponseEntity.ok(body);
+    }
+
+    /** Where a repository's backfill stands, without touching the catalog. */
+    @GetMapping("/lineage/backfill/folder-dataset/{repositoryId}")
+    public ResponseEntity<Map<String, Object>> folderCompanionBackfillProgress(
+            @PathVariable("repositoryId") String repositoryId) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+
+        return ResponseEntity.ok(backfillBody(folderCompanionBackfill.progress(repositoryId)));
+    }
+
+    /**
+     * Runs a bounded slice of the backfill and returns where it stopped.
+     *
+     * <p>Bounded by {@code maxBatches} so this fits a maintenance window; call it again to
+     * continue from the persisted frontier.
+     */
+    @PostMapping("/lineage/backfill/folder-dataset/{repositoryId}")
+    public ResponseEntity<Map<String, Object>> runFolderCompanionBackfill(
+            @PathVariable("repositoryId") String repositoryId,
+            @RequestParam(name = "maxBatches", defaultValue = "10") int maxBatches) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+
+        return ResponseEntity.ok(
+                backfillBody(folderCompanionBackfill.run(repositoryId, maxBatches)));
+    }
+
+    /**
+     * Reconciles folders against their companions.
+     *
+     * <p>{@code repair=false} by default: the read-only pass is the one an operator runs first,
+     * and a repair should be asked for rather than assumed.
+     */
+    @PostMapping("/lineage/reconcile/folder-dataset/{repositoryId}")
+    public ResponseEntity<Map<String, Object>> reconcileFolderCompanions(
+            @PathVariable("repositoryId") String repositoryId,
+            @RequestParam(name = "maxFolders", defaultValue = "1000") int maxFolders,
+            @RequestParam(name = "repair", defaultValue = "false") boolean repair) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+
+        var report = lineageCatalogReconciliationService.reconcile(repositoryId, maxFolders, repair);
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("repositoryId", report.repositoryId());
+        body.put("checked", report.checked());
+        body.put("inSync", report.inSync());
+        body.put("companionMissing", report.companionMissing());
+        body.put("sourceMissing", report.sourceMissing());
+        body.put("undetermined", report.undetermined());
+        body.put("repaired", report.repaired());
+        body.put("markedOrphan", report.markedOrphan());
+        // Read this, not the individual counts: undetermined counts against clean, because a
+        // pass that could not look has not found nothing wrong.
+        body.put("clean", report.clean());
+        return ResponseEntity.ok(body);
+    }
+
+    private static Map<String, Object> backfillBody(
+            jp.aegif.nemaki.rest.purview.lineage.LineageFolderCompanionBackfill.Progress progress) {
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("repositoryId", progress.repositoryId());
+        body.put("state", progress.state().name());
+        body.put("processed", progress.processed());
+        body.put("created", progress.created());
+        body.put("alreadyPresent", progress.alreadyPresent());
+        body.put("failed", progress.failed());
+        body.put("pendingFrontier", progress.pendingFrontier());
+        body.put("refusal", progress.refusal().name());
+        // COMPLETE alone is not done: a walk that finished with failures is COMPLETE and not
+        // successful, and an operator checking one field must not read it as finished.
+        body.put("successful", progress.successful());
+        return ResponseEntity.ok(body).getBody();
     }
 
     @PostMapping("/full-sync/{repositoryId}")
@@ -378,6 +490,15 @@ public class PurviewAdminController {
         return ResponseEntity.ok(buildJobResponse(purviewJobStateService.getJobState(jobId)));
     }
 
+    private static String sanitizeCursorForResponse(String streamKind, String cursor) {
+        if (jp.aegif.nemaki.rest.purview.publish.CloudMetadataSnapshotFormat.STREAM_KIND
+                .equals(streamKind)) {
+            return jp.aegif.nemaki.rest.purview.publish.CloudMetadataSnapshotFormat
+                    .normalize(cursor);
+        }
+        return cursor;
+    }
+
     @GetMapping("/cursor-state/{repositoryId}/{streamKind}")
     public ResponseEntity<Map<String, Object>> getCursorState(
             @PathVariable("repositoryId") String repositoryId,
@@ -389,7 +510,10 @@ public class PurviewAdminController {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("repositoryId", cursorState.getRepositoryId());
         response.put("streamKind", cursorState.getStreamKind());
-        response.put("cursor", cursorState.getCursor());
+        // The cloud-metadata cursor is a snapshot whose old shape carried raw drive URLs (and
+        // with them any sharing tokens). Stored cursors scrub themselves on the next successful
+        // sync; until then, nothing stored may reach a response unsanitised.
+        response.put("cursor", sanitizeCursorForResponse(streamKind, cursorState.getCursor()));
         response.put("cursorKind", cursorState.getCursorKind());
         response.put("lastRunAt", cursorState.getLastRunAt());
         response.put("lastSuccessAt", cursorState.getLastSuccessAt());
@@ -471,7 +595,11 @@ public class PurviewAdminController {
         response.put("endedAt", jobState.getEndedAt());
         response.put("processedCount", jobState.getProcessedCount());
         response.put("failedCount", jobState.getFailedCount());
-        response.put("checkpoint", jobState.getCheckpoint());
+        // A job checkpoint has no streamKind to gate on, so the sanitiser is applied by shape:
+        // normalize() rewrites only five-field snapshot lines and passes everything else
+        // (change tokens, timestamps) through untouched.
+        response.put("checkpoint", jp.aegif.nemaki.rest.purview.publish
+                .CloudMetadataSnapshotFormat.normalize(jobState.getCheckpoint()));
         response.put("errorSummary", jobState.getErrorSummary());
         return response;
     }
@@ -480,7 +608,12 @@ public class PurviewAdminController {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("repositoryId", cursorState.getRepositoryId());
         response.put("streamKind", cursorState.getStreamKind());
-        response.put("cursor", cursorState.getCursor());
+        // The overview is what the admin UI renders in full, so it is the response that matters
+        // most — and the one this sanitisation was missing from while the single-cursor endpoint
+        // had it. Every path that emits a stored cursor goes through sanitizeCursorForResponse,
+        // or the cloud-metadata snapshot's raw drive URLs (sharing tokens included) ride along.
+        response.put("cursor", sanitizeCursorForResponse(
+                cursorState.getStreamKind(), cursorState.getCursor()));
         response.put("cursorKind", cursorState.getCursorKind());
         response.put("lastRunAt", cursorState.getLastRunAt());
         response.put("lastSuccessAt", cursorState.getLastSuccessAt());
@@ -535,7 +668,8 @@ public class PurviewAdminController {
         response.put("firstFailedAt", deadLetterState.getFirstFailedAt());
         response.put("lastFailedAt", deadLetterState.getLastFailedAt());
         response.put("failureCount", deadLetterState.getFailureCount());
-        response.put("checkpoint", deadLetterState.getCheckpoint());
+        response.put("checkpoint", sanitizeCursorForResponse(
+                deadLetterState.getStreamKind(), deadLetterState.getCheckpoint()));
         response.put("errorSummary", deadLetterState.getErrorSummary());
         return response;
     }

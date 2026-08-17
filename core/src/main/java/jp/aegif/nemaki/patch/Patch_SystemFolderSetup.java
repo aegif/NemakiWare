@@ -62,50 +62,86 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
     protected void applyPerRepositoryPatch(String repositoryId) {
         log.info("Starting System Folder Setup Patch for repository: " + repositoryId);
         
+        // NOT-READY MUST THROW, NEVER RETURN.
+        //
+        // AbstractNemakiPatch.apply() records this patch as applied the instant this method
+        // returns normally (AbstractNemakiPatch.java:57-59), and isApplied then skips it on every
+        // later startup. So returning early because the repository is not initialized yet does not
+        // mean "try again next time" — it means "never again", with a single warn line as the only
+        // trace. That is the shape PX1 came out of.
+        //
+        // Throwing is the safe direction and does NOT risk startup: apply() already catches
+        // (AbstractNemakiPatch.java:63-67), logs, marks the run unsuccessful and moves to the next
+        // repository — and crucially does not write the history, so this patch runs again next
+        // startup. The old comment below ("Don't throw - patch failures should not prevent
+        // application startup") was written against a premise that is not true of apply().
         try {
             ContentService contentService = patchUtil.getContentService();
             if (contentService == null) {
-                log.error("ContentService not available, cannot apply System Folder patch");
-                return;
+                throw new IllegalStateException("ContentService not available for repository "
+                        + repositoryId + " — the system folder was not set up. Retrying next startup.");
             }
-            
+
             if (patchUtil.getRepositoryInfoMap() == null) {
-                log.warn("RepositoryInfoMap not available yet. Skipping System Folder Setup for: " + repositoryId);
-                return;
+                throw new IllegalStateException("RepositoryInfoMap not available yet for repository "
+                        + repositoryId + " — the system folder was not set up. Retrying next startup.");
             }
-            
+
             if (patchUtil.getRepositoryInfoMap().get(repositoryId) == null) {
-                log.warn("Repository info not available for: " + repositoryId + ". Skipping System Folder Setup.");
-                return;
+                throw new IllegalStateException("Repository info not available for " + repositoryId
+                        + " — the system folder was not set up. Retrying next startup.");
             }
-            
+
             String rootFolderId = patchUtil.getRepositoryInfoMap().get(repositoryId).getRootFolderId();
             if (rootFolderId == null) {
-                log.warn("Root folder ID not available for repository: " + repositoryId + ". Skipping System Folder Setup.");
-                return;
+                throw new IllegalStateException("Root folder id not available for repository "
+                        + repositoryId + " — the system folder was not set up. Retrying next startup.");
             }
-            
+
             log.info("Using root folder ID: " + rootFolderId + " for repository: " + repositoryId);
-            
+
             // Verify root folder exists
             try {
                 Folder rootFolder = (Folder) contentService.getContent(repositoryId, rootFolderId);
                 if (rootFolder == null) {
-                    log.warn("Root folder not found for repository: " + repositoryId + ". Repository may not be fully initialized yet.");
-                    return;
+                    throw new IllegalStateException("Root folder " + rootFolderId + " not found for "
+                            + repositoryId + "; the repository is not fully initialized yet — the "
+                            + "system folder was not set up. Retrying next startup.");
                 }
-                
+
                 log.info("Root folder verified for repository: " + repositoryId + ", proceeding with System folder setup");
+            } catch (IllegalStateException e) {
+                throw e;
             } catch (Exception e) {
-                log.warn("Cannot access root folder for repository: " + repositoryId + ". Repository may not be fully initialized yet. Error: " + e.getMessage());
-                return;
+                throw new IllegalStateException("Cannot access root folder " + rootFolderId + " for "
+                        + repositoryId + "; the repository is not fully initialized yet — the system "
+                        + "folder was not set up. Retrying next startup: " + e.getMessage(), e);
             }
             
             // Create SystemCallContext for operations
             SystemCallContext callContext = new SystemCallContext(repositoryId);
             
-            // Check if System folder already exists
-            Folder existingSystemFolder = findExistingSystemFolder(contentService, repositoryId, rootFolderId);
+            // Check if System folder already exists.
+            //
+            // FIRST from the configuration, which records the id this patch assigned last time and
+            // is read by a direct document lookup. findExistingSystemFolder below asks the
+            // `children` view — and a view whose design document is being rebuilt answers with
+            // ZERO ROWS and HTTP 200, so "no system folder here" is exactly what a healthy-looking
+            // failure says. This patch then creates a second one. That happened: bedroom held two
+            // `.system` folders, the second created 2026-08-13, which breaks CMIS path resolution
+            // because two objects answer to /.system.
+            //
+            // The configuration cannot be silenced the same way: it is a document read by id, not
+            // a view query. If it names a folder that still exists, there is nothing to do.
+            Folder existingSystemFolder = findConfiguredSystemFolder(contentService, repositoryId);
+            if (existingSystemFolder != null) {
+                log.info("System folder already recorded in configuration with ID: "
+                        + existingSystemFolder.getId() + " — nothing to create");
+                setSystemFolderConfiguration(repositoryId, existingSystemFolder.getId());
+                log.info("System Folder Setup Patch completed successfully for repository: " + repositoryId);
+                return;
+            }
+            existingSystemFolder = findExistingSystemFolder(contentService, repositoryId, rootFolderId);
             
             if (existingSystemFolder == null) {
                 log.info("Creating System folder for repository: " + repositoryId);
@@ -118,7 +154,12 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                     setSystemFolderConfiguration(repositoryId, systemFolderId);
                     
                 } else {
-                    log.warn("Failed to create System folder for repository: " + repositoryId);
+                    // Creating it is this patch's entire job. Warning and returning would record
+                    // the patch as applied with no system folder created and no retry — the same
+                    // "never again" as the not-ready branches above.
+                    throw new IllegalStateException("Failed to create the system folder for "
+                            + repositoryId + " (createSystemFolder returned no id). Retrying next "
+                            + "startup.");
                 }
             } else {
                 log.info("System folder already exists with ID: " + existingSystemFolder.getId());
@@ -130,11 +171,76 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
             log.info("System Folder Setup Patch completed successfully for repository: " + repositoryId);
             
         } catch (Exception e) {
+            // Rethrow. Swallowing here is what turns "this failed" into "this is done": apply()
+            // writes the history as soon as this method returns normally, so a swallowed failure is
+            // permanent and invisible. apply() catches this, logs it, and leaves the patch
+            // un-recorded so it runs again next startup — startup is not affected.
             log.error("Error during System Folder Setup Patch for repository: " + repositoryId, e);
-            // Don't throw - patch failures should not prevent application startup
+            throw (e instanceof RuntimeException) ? (RuntimeException) e
+                    : new IllegalStateException("System Folder Setup failed for repository "
+                            + repositoryId + ": " + e.getMessage(), e);
         }
     }
     
+    /**
+     * The system folder id recorded in the configuration, or null if none is recorded.
+     *
+     * <p>Reads {@code nemaki_conf} through {@code _all_docs} — not a view, and not even the same
+     * database as the one whose design document gets rewritten during an upgrade. That is the
+     * whole point: this lookup cannot be turned into a silent empty answer by a rebuild.
+     */
+    private String readConfiguredSystemFolderId(String repositoryId) {
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper confClient =
+            patchUtil.getConnectorPool().getClient("nemaki_conf");
+        if (confClient == null) {
+            return null;
+        }
+        java.util.List<com.ibm.cloud.cloudant.v1.model.Document> holders =
+            findConfigurationDocumentsByKey(confClient, "system.folder", repositoryId);
+        for (com.ibm.cloud.cloudant.v1.model.Document doc : holders) {
+            java.util.Map<String, Object> props = doc.getProperties();
+            if (props == null) {
+                continue;
+            }
+            Object value = props.get("value");
+            if (value != null && !value.toString().trim().isEmpty()) {
+                return value.toString();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The system folder this patch recorded last time, if it is still there.
+     *
+     * <p>Deliberately does NOT go through a view. The configuration entry holds the id, and an id
+     * is read straight from the document store — which is the one lookup a design-document rebuild
+     * cannot turn into a silent empty answer. Returns null when nothing is recorded (a genuinely
+     * first run) or when the recorded folder has since been deleted, and in both cases the caller
+     * falls back to the view-based search.
+     */
+    private Folder findConfiguredSystemFolder(ContentService contentService, String repositoryId) {
+        try {
+            String recordedId = readConfiguredSystemFolderId(repositoryId);
+            if (recordedId == null || recordedId.trim().isEmpty()) {
+                return null;
+            }
+            Folder folder = contentService.getFolder(repositoryId, recordedId);
+            if (folder == null) {
+                log.warn("Configuration names system folder " + recordedId + " for repository "
+                        + repositoryId + " but it no longer exists — falling back to a search");
+                return null;
+            }
+            return folder;
+        } catch (Exception e) {
+            // Unknown, not absent. Fall back to the search rather than creating a duplicate on a
+            // guess; the search has its own (weaker) protection.
+            log.warn("Could not read the configured system folder id for repository "
+                    + repositoryId + ": " + e.getMessage());
+            return null;
+        }
+    }
+
     /**
      * Find existing System folder in the root directory
      * This prevents duplicate creation and handles the case where multiple System folders exist.
@@ -435,6 +541,35 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                 return;
             }
 
+            // Existence is a property of the logical key, not of this method's id convention.
+            // The initialization dump seeds some of these keys under fixed ids
+            // (system_config_001 carries system.version), while this method derives its id
+            // from the key — so an id-only check missed the seeded copy and created a second
+            // document for the same key. The strict configuration reader refuses to choose
+            // between duplicates, which turned the 4b cursor preflight red on every standard
+            // install: the gate could never be satisfied, only argued with.
+            java.util.List<com.ibm.cloud.cloudant.v1.model.Document> holders =
+                findConfigurationDocumentsByKey(confClient, key, repositoryId);
+            String duplicate = duplicateToDelete(documentId, holders);
+            if (duplicate != null) {
+                // Both this method's document and another holder exist — the state earlier
+                // runs of this very patch created. Heal by removing OUR copy, never the other
+                // one: the other id may be the dump's seed or an operator's own document, and
+                // this patch has no authority over either.
+                com.ibm.cloud.cloudant.v1.model.Document ours = holders.stream()
+                    .filter(d -> duplicate.equals(d.getId())).findFirst().orElse(null);
+                if (ours != null) {
+                    confClient.delete(ours.getId(), ours.getRev());
+                    log.info("Removed duplicate configuration document '" + duplicate
+                        + "' for key '" + key + "' — another document already carries it");
+                }
+                return;
+            }
+            if (!holders.isEmpty()) {
+                log.info("Configuration key already stored: " + key + " (document: "
+                    + holders.get(0).getId() + ")");
+                return;
+            }
             if (confClient.exists(documentId)) {
                 log.info("Configuration document already exists: " + documentId);
                 return;
@@ -463,5 +598,62 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
         } catch (Exception e) {
             log.error("Error creating configuration document: " + documentId, e);
         }
+    }
+
+    /**
+     * Every configuration document that carries this logical key in this scope, whatever its id.
+     *
+     * <p>Scope matters: a global entry (no {@code repositoryId}) and a repository entry with the
+     * same key name are different settings, and treating one as a duplicate of the other would
+     * delete a document that is not ours to judge.
+     */
+    private java.util.List<com.ibm.cloud.cloudant.v1.model.Document> findConfigurationDocumentsByKey(
+            jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper confClient,
+            String key, String repositoryId) {
+        java.util.List<com.ibm.cloud.cloudant.v1.model.Document> holders =
+            new java.util.ArrayList<>();
+        com.ibm.cloud.cloudant.v1.model.AllDocsResult result = confClient.getClient()
+            .postAllDocs(new com.ibm.cloud.cloudant.v1.model.PostAllDocsOptions.Builder()
+                .db(confClient.getDatabaseName())
+                .includeDocs(true)
+                .build())
+            .execute().getResult();
+        for (com.ibm.cloud.cloudant.v1.model.DocsResultRow row : result.getRows()) {
+            if (row.getValue() != null && Boolean.TRUE.equals(row.getValue().isDeleted())) {
+                continue;
+            }
+            com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+            if (doc == null || doc.getId() == null || doc.getId().startsWith("_design/")) {
+                continue;
+            }
+            java.util.Map<String, Object> props = doc.getProperties();
+            if (props == null || !key.equals(props.get("key"))) {
+                continue;
+            }
+            Object scope = props.get("repositoryId");
+            boolean sameScope = repositoryId == null ? scope == null
+                : repositoryId.equals(scope);
+            if (sameScope) {
+                holders.add(doc);
+            }
+        }
+        return holders;
+    }
+
+    /**
+     * Which document this patch may delete to end a duplication, or null.
+     *
+     * <p>Only its own — the one under the id this patch derives — and only while another
+     * document also carries the key. A single holder is healthy whatever its id, and a
+     * duplication among documents this patch never wrote is not its call to resolve: the
+     * strict reader will keep refusing, which is the honest outcome.
+     */
+    static String duplicateToDelete(String derivedId,
+            java.util.List<com.ibm.cloud.cloudant.v1.model.Document> holders) {
+        if (derivedId == null || holders == null || holders.size() < 2) {
+            return null;
+        }
+        return holders.stream().map(com.ibm.cloud.cloudant.v1.model.Document::getId)
+            .anyMatch(derivedId::equals) ? derivedId : null;
     }
 }

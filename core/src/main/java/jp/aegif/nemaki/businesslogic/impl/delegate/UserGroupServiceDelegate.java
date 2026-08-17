@@ -65,6 +65,23 @@ public class UserGroupServiceDelegate {
 		return contentDaoService.getGroupItems(repositoryId);
 	}
 
+	/**
+	 * The ids of the groups that DIRECTLY contain {@code groupId} (reverse-lookup view).
+	 *
+	 * <p>"Directly" is load-bearing and is why the name is not the shorter one: this class
+	 * already has {@code getGroupIdsContainingUser}, which answers a different question —
+	 * the TRANSITIVE set a user belongs to, including anonymous/anyone, used to build ACL
+	 * tokens. These two are for referential cleanup on delete, and must not be confused with it.
+	 */
+	public List<String> getGroupIdsDirectlyContainingGroup(String repositoryId, String groupId) {
+		return contentDaoService.getGroupIdsDirectlyContainingGroup(repositoryId, groupId);
+	}
+
+	/** The ids of the groups that DIRECTLY list {@code userId} as a member. See above. */
+	public List<String> getGroupIdsDirectlyContainingUser(String repositoryId, String userId) {
+		return contentDaoService.getGroupIdsDirectlyContainingUser(repositoryId, userId);
+	}
+
 	public List<GroupItem> getGroupItems(String repositoryId, int skip, int limit) {
 		return contentDaoService.getGroupItems(repositoryId, skip, limit);
 	}
@@ -92,6 +109,19 @@ public class UserGroupServiceDelegate {
 	}
 
 	public boolean containsUserInGroup(String repositoryId, String userId, GroupItem group) {
+		return containsUserInGroup(repositoryId, userId, group, new java.util.HashSet<String>());
+	}
+
+	/**
+	 * Transitive membership test with a per-walk visited set so an indirect
+	 * nested-group cycle (A -> B -> A) terminates instead of recursing until
+	 * StackOverflow. Mirrors the guard in {@code PrincipalServiceImpl}.
+	 */
+	private boolean containsUserInGroup(String repositoryId, String userId, GroupItem group,
+			java.util.Set<String> visited) {
+		if (group == null || group.getGroupId() == null || !visited.add(group.getGroupId())) {
+			return false;
+		}
 		log.debug("$$ group:" + group.getName());
 		if (group.getUsers().contains(userId))
 			return true;
@@ -100,10 +130,11 @@ public class UserGroupServiceDelegate {
 			GroupItem g = getGroupItemById(repositoryId, groupId);
 			if (g == null) {
 				log.debug("$$ group:" + groupId + "does not exist!");
-				return false;
+				// A dangling subgroup reference is not a match; keep checking the
+				// remaining siblings rather than aborting the whole walk.
+				continue;
 			}
-			boolean result = containsUserInGroup(repositoryId, userId, g);
-			if (result)
+			if (containsUserInGroup(repositoryId, userId, g, visited))
 				return true;
 		}
 		return false;

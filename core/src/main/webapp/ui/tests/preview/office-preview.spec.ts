@@ -26,7 +26,7 @@
  * Re-enable after ensuring LibreOffice is available in test environment.
  */
 import { test, expect } from '@playwright/test';
-import { waitForUiStable } from '../utils/wait-helpers';
+import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { setupPreviewTestData, cleanupPreviewTestData, type TestContext } from './preview-setup';
 
 let testContext: TestContext;
@@ -73,7 +73,7 @@ test.describe('Office Preview E2E Tests', () => {
     // Wait for document viewer to finish loading and stabilize
     // DocumentViewer loads object, then secondary data (versions, relationships, RAG) causing re-renders
     await page.waitForSelector('.ant-tabs-tab', { timeout: 30000 });
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
     await waitForUiStable(page);
 
     // Verify document viewer loaded (properties tab or any tab should be visible)
@@ -118,7 +118,7 @@ test.describe('Office Preview E2E Tests', () => {
 
     // Wait for document viewer to finish loading and stabilize
     await page.waitForSelector('.ant-tabs-tab', { timeout: 30000 });
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
     await waitForUiStable(page);
 
     // Verify document viewer loaded

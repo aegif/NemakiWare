@@ -20,7 +20,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 import {
@@ -45,7 +45,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     // Use TestHelper's mobile sidebar handling
     await testHelper.closeMobileSidebar(browserName);
@@ -66,7 +66,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     // Click folder creation button
     const folderButton = page.locator('button').filter({ hasText: /フォルダ作成|新規フォルダ|Create Folder/ }).first();
     if (await folderButton.count() === 0) {
-      test.skip('ENV: Folder creation button not found');
+      test.skip(true, 'ENV: Folder creation button not found');
       return;
     }
 
@@ -154,7 +154,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     // Find and select the test folder
     const folderRow = page.locator('.ant-table-tbody tr').filter({ hasText: testFolderName }).first();
     if (await folderRow.count() === 0) {
-      test.skip('ENV: Test folder not found');
+      test.skip(true, 'ENV: Test folder not found');
       return;
     }
 
@@ -235,7 +235,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     // Find and select the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 
@@ -286,7 +286,7 @@ test.describe('ACL Inheritance and Custom Type Interaction', () => {
     // Find and select the test document
     const documentRow = page.locator('.ant-table-tbody tr').filter({ hasText: testDocumentName }).first();
     if (await documentRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 

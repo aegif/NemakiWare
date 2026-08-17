@@ -242,7 +242,7 @@ test.describe('Keycloak OIDC - NemakiWare OIDC Auth Flow', () => {
 
     // Step 2: Call NemakiWare OIDC endpoint with access_token + userinfo_endpoint
     const response = await request.post(NEMAKI_OIDC_URL, {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
       data: {
         access_token: kcToken,
         userinfo_endpoint: USERINFO_ENDPOINT
@@ -262,7 +262,7 @@ test.describe('Keycloak OIDC - NemakiWare OIDC Auth Flow', () => {
     expect(kcToken).not.toBeNull();
 
     const response = await request.post(NEMAKI_OIDC_URL, {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
       data: {
         access_token: kcToken,
         userinfo_endpoint: USERINFO_ENDPOINT
@@ -280,7 +280,7 @@ test.describe('Keycloak OIDC - NemakiWare OIDC Auth Flow', () => {
     expect(kcToken).not.toBeNull();
 
     const authResponse = await request.post(NEMAKI_OIDC_URL, {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
       data: {
         access_token: kcToken,
         userinfo_endpoint: USERINFO_ENDPOINT
@@ -303,7 +303,7 @@ test.describe('Keycloak OIDC - NemakiWare OIDC Auth Flow', () => {
 
   test('OIDC endpoint rejects missing access_token', async ({ request }) => {
     const response = await request.post(NEMAKI_OIDC_URL, {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
       data: {}
     });
     expect(response.status()).toBe(400);
@@ -311,7 +311,7 @@ test.describe('Keycloak OIDC - NemakiWare OIDC Auth Flow', () => {
 
   test('OIDC endpoint rejects invalid access_token', async ({ request }) => {
     const response = await request.post(NEMAKI_OIDC_URL, {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
       data: {
         access_token: 'invalid-token-value',
         userinfo_endpoint: USERINFO_ENDPOINT
@@ -327,7 +327,7 @@ test.describe('Keycloak OIDC - NemakiWare OIDC Auth Flow', () => {
     expect(kcToken).not.toBeNull();
 
     const response = await request.post(NEMAKI_OIDC_URL, {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
       data: {
         access_token: kcToken,
         userinfo_endpoint: USERINFO_ENDPOINT

@@ -17,7 +17,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { gotoSearchPage, searchPageSubmitButton, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 
 const BASE_URL = 'http://localhost:8080';
@@ -160,14 +160,7 @@ test.describe('Concurrent Load Test - UI Heavy', () => {
         await waitForUiStable(page);
 
         // Navigate to search
-        const searchMenu = page.locator('.ant-menu-item').filter({ hasText: /検索|Search/i });
-        if (await searchMenu.count() > 0) {
-          await searchMenu.first().click();
-          await waitForUiStable(page);
-        } else {
-          await page.goto(`${BASE_URL}/core/ui/#/search`);
-          await waitForUiStable(page);
-        }
+        await gotoSearchPage(page);
 
         // Perform search
         const searchInput = page.locator('input[placeholder*="検索"]').first();
@@ -175,7 +168,7 @@ test.describe('Concurrent Load Test - UI Heavy', () => {
           await searchInput.fill(searchTerm);
         }
 
-        const searchButton = page.locator('button.search-button').first();
+        const searchButton = searchPageSubmitButton(page);
         if (await searchButton.count() > 0) {
           await searchButton.click();
           await waitForUiStable(page);
@@ -475,7 +468,7 @@ test.describe('Mixed Load Test - UI and API', () => {
           await searchInput.fill('test');
         }
 
-        const searchButton = page.locator('button.search-button').first();
+        const searchButton = searchPageSubmitButton(page);
         if (await searchButton.count() > 0) {
           await searchButton.click();
           await waitForUiStable(page);

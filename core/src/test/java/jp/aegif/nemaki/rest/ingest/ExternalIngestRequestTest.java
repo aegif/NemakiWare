@@ -1,18 +1,19 @@
 package jp.aegif.nemaki.rest.ingest;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
 import java.io.ByteArrayInputStream;
 import java.util.Map;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Unit tests for ExternalIngestRequest serialization behavior.
  */
 public class ExternalIngestRequestTest {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
 
     @Test
     public void testRequestIdGenerated() {

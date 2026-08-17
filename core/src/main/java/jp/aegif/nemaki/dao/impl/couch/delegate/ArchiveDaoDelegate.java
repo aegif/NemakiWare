@@ -9,7 +9,7 @@ import java.util.Map;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.model.ViewResult;
 import com.ibm.cloud.cloudant.v1.model.ViewResultRow;
 import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
@@ -414,16 +414,22 @@ public class ArchiveDaoDelegate {
 		boolean hasBinary = sourceAttachments != null && !sourceAttachments.isEmpty();
 		try {
 			Object binaryContent = sourceClient.getAttachment(archive.getOriginalId(), "content");
-			if (binaryContent instanceof java.io.InputStream && archiveDocId != null) {
-				com.ibm.cloud.cloudant.v1.model.Document archiveDoc = archiveClient.get(archiveDocId);
-				String archiveRev = archiveDoc != null ? archiveDoc.getRev() : null;
-				// Use the original mimeType from the raw document
-				Object mimeTypeObj = originalProps != null ? originalProps.get("mimeType") : null;
-				String mimeType = mimeTypeObj instanceof String ? (String) mimeTypeObj : "application/octet-stream";
-				if (mimeType.isEmpty()) mimeType = "application/octet-stream";
-				archiveClient.createAttachment(archiveDocId, archiveRev, "content",
-					(java.io.InputStream) binaryContent, mimeType);
-				log.info("createAttachmentArchive: binary content copied to archive for " + archive.getOriginalId());
+			if (binaryContent instanceof java.io.InputStream) {
+				// getAttachment hands the caller a live connection. Every path out of this block
+				// has to close it: an archiveDocId we never got, or a throw from the get/create
+				// below, otherwise strands the connection until GC notices.
+				try (java.io.InputStream body = (java.io.InputStream) binaryContent) {
+					if (archiveDocId != null) {
+						com.ibm.cloud.cloudant.v1.model.Document archiveDoc = archiveClient.get(archiveDocId);
+						String archiveRev = archiveDoc != null ? archiveDoc.getRev() : null;
+						// Use the original mimeType from the raw document
+						Object mimeTypeObj = originalProps != null ? originalProps.get("mimeType") : null;
+						String mimeType = mimeTypeObj instanceof String ? (String) mimeTypeObj : "application/octet-stream";
+						if (mimeType.isEmpty()) mimeType = "application/octet-stream";
+						archiveClient.createAttachment(archiveDocId, archiveRev, "content", body, mimeType);
+						log.info("createAttachmentArchive: binary content copied to archive for " + archive.getOriginalId());
+					}
+				}
 			}
 		} catch (Exception e) {
 			if (hasBinary) {
@@ -537,7 +543,14 @@ public class ArchiveDaoDelegate {
 							!"archivedBy".equals(key) && !"coldArchivedAt".equals(key) &&
 							!"coldMoveMode".equals(key) && !"contentRef".equals(key) &&
 							!"aclSnapshot".equals(key) && !"propsSnapshot".equals(key) &&
-							!"deletedWithParent".equals(key) && !"lastRevision".equals(key)) {
+							!"deletedWithParent".equals(key) && !"lastRevision".equals(key) &&
+							// content_incarnation belongs to the PRE-DELETE lifetime (design §8.1).
+							// Copying it would restore a Content whose _rev restarts at 1 while Solr
+							// still holds "same incarnation, generation 50" — the content fence would
+							// then read "generation 1 < 50" and refuse the restored write FOR EVER.
+							// A fresh one forces the §4.4 mismatch path, which correctly overwrites
+							// the pre-delete Solr document. Minted below, never copied.
+							!jp.aegif.nemaki.epoch.ContentIncarnation.FIELD.equals(key)) {
 							docMap.put(key, entry.getValue());
 						}
 					}
@@ -545,6 +558,13 @@ public class ArchiveDaoDelegate {
 			} catch (Exception e) {
 				log.warn("CLOUDANT FIX: Error accessing getProperties() during restore: " + e.getMessage());
 			}
+
+			// A RESTORE IS A NEW LIFETIME (design §8.1, wiring gate 3). Always mint — never carry the
+			// archived value over, and never leave the field absent either: an incarnation-less
+			// restored Content would be indistinguishable from pre-migration content, and the fence
+			// would compare its restarted generation against the pre-delete one.
+			docMap.put(jp.aegif.nemaki.epoch.ContentIncarnation.FIELD,
+					jp.aegif.nemaki.epoch.ContentIncarnation.mint());
 
 			// FIX (2026-02-11): CouchArchive does not store 'objectType' field.
 			// Normal documents have 'objectType' (e.g. "cmis:document") which is required
@@ -626,50 +646,53 @@ public class ArchiveDaoDelegate {
 			boolean archiveHasBinary = archiveAttachments != null && !archiveAttachments.isEmpty();
 			try {
 				Object attachmentData = archiveClient.getAttachment(archiveId, "content");
-				if (attachmentData instanceof java.io.InputStream) {
-					com.ibm.cloud.cloudant.v1.model.Document doc = client.get(originalId);
-					String revision = doc != null ? doc.getRev() : null;
+				// Closed on every path out, including the throws below (see createAttachmentArchive).
+				try (java.io.InputStream body = attachmentData instanceof java.io.InputStream
+						? (java.io.InputStream) attachmentData : null) {
+					if (attachmentData instanceof java.io.InputStream) {
+						com.ibm.cloud.cloudant.v1.model.Document doc = client.get(originalId);
+						String revision = doc != null ? doc.getRev() : null;
 
-					// Get mimeType from the restored document properties
-					String mimeType = docMap.get("mimeType") instanceof String
-						? (String) docMap.get("mimeType") : "application/octet-stream";
-					if (mimeType.isEmpty()) mimeType = "application/octet-stream";
+						// Get mimeType from the restored document properties
+						String mimeType = docMap.get("mimeType") instanceof String
+							? (String) docMap.get("mimeType") : "application/octet-stream";
+						if (mimeType.isEmpty()) mimeType = "application/octet-stream";
 
-					client.createAttachment(originalId, revision, "content",
-						(java.io.InputStream) attachmentData, mimeType);
+						client.createAttachment(originalId, revision, "content", body, mimeType);
 
-					// Update length metadata, preserving _attachments stubs
-					com.ibm.cloud.cloudant.v1.model.Document updatedDoc = client.get(originalId);
-					if (updatedDoc != null) {
-						Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> atts = updatedDoc.getAttachments();
-						if (atts != null && atts.get("content") != null) {
-							long actualLength = atts.get("content").length();
-							Map<String, Object> updateMap = new HashMap<>();
-							updateMap.put("_id", originalId);
-							updateMap.put("_rev", updatedDoc.getRev());
-							Map<String, Object> props = updatedDoc.getProperties();
-							if (props != null) {
-								updateMap.putAll(props);
+						// Update length metadata, preserving _attachments stubs
+						com.ibm.cloud.cloudant.v1.model.Document updatedDoc = client.get(originalId);
+						if (updatedDoc != null) {
+							Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> atts = updatedDoc.getAttachments();
+							if (atts != null && atts.get("content") != null) {
+								long actualLength = atts.get("content").length();
+								Map<String, Object> updateMap = new HashMap<>();
+								updateMap.put("_id", originalId);
+								updateMap.put("_rev", updatedDoc.getRev());
+								Map<String, Object> props = updatedDoc.getProperties();
+								if (props != null) {
+									updateMap.putAll(props);
+								}
+								updateMap.put("length", actualLength);
+								updateMap.put("actualLength", actualLength);
+								// Include _attachments stubs to preserve binary
+								Map<String, Object> attachmentsStubs = new HashMap<>();
+								for (Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Attachment> entry : atts.entrySet()) {
+									Map<String, Object> stub = new HashMap<>();
+									stub.put("stub", true);
+									stub.put("content_type", entry.getValue().contentType());
+									stub.put("length", entry.getValue().length());
+									attachmentsStubs.put(entry.getKey(), stub);
+								}
+								updateMap.put("_attachments", attachmentsStubs);
+								client.update(updateMap);
+								log.info("restoreAttachment: updated length to " + actualLength + " for " + originalId);
 							}
-							updateMap.put("length", actualLength);
-							updateMap.put("actualLength", actualLength);
-							// Include _attachments stubs to preserve binary
-							Map<String, Object> attachmentsStubs = new HashMap<>();
-							for (Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Attachment> entry : atts.entrySet()) {
-								Map<String, Object> stub = new HashMap<>();
-								stub.put("stub", true);
-								stub.put("content_type", entry.getValue().contentType());
-								stub.put("length", entry.getValue().length());
-								attachmentsStubs.put(entry.getKey(), stub);
-							}
-							updateMap.put("_attachments", attachmentsStubs);
-							client.update(updateMap);
-							log.info("restoreAttachment: updated length to " + actualLength + " for " + originalId);
 						}
-					}
 
-					log.info("Binary attachment restored for: " + originalId);
-				}
+						log.info("Binary attachment restored for: " + originalId);
+					}
+					}
 			} catch (Exception attachmentError) {
 				if (archiveHasBinary) {
 					throw new RuntimeException("Failed to restore binary attachment for: " + originalId

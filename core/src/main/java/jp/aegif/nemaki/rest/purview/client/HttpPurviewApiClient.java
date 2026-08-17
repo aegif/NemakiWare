@@ -12,8 +12,9 @@ import java.util.Base64;
 
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 @Component
 public class HttpPurviewApiClient implements PurviewApiClient {
@@ -26,7 +27,7 @@ public class HttpPurviewApiClient implements PurviewApiClient {
     private final HttpClient httpClient;
     private final PurviewTokenCache tokenCache;
     private final PurviewHttpRetryHandler retryHandler;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = ObjectMapperFactory.createDefaultObjectMapper();
 
     public HttpPurviewApiClient() {
         this(HttpClient.newBuilder().build(), new PurviewTokenCache(), new PurviewHttpRetryHandler());
@@ -117,7 +118,7 @@ public class HttpPurviewApiClient implements PurviewApiClient {
             String token = accessToken.asText();
             tokenCache.put(request.getTenantId(), request.getClientId(), token, expiresIn);
             return token;
-        } catch (IOException e) {
+        } catch (tools.jackson.core.JacksonException e) {
             throw new PurviewClientException("Failed to parse Purview token response", e);
         }
     }
@@ -133,14 +134,17 @@ public class HttpPurviewApiClient implements PurviewApiClient {
         return URI.create(String.format(TOKEN_URL_TEMPLATE, urlEncodePathSegment(request.getTenantId())));
     }
 
-    private URI buildProbeUri(PurviewConnectionRequest request) {
+    URI buildProbeUri(PurviewConnectionRequest request) {
         StringBuilder builder = new StringBuilder();
         builder.append(trimTrailingSlash(request.getEndpoint()));
         builder.append("/");
         builder.append(trimSlashes(request.getAtlasBasePath()));
         builder.append("/");
         builder.append(TYPEDEF_HEADERS_PATH);
-        return URI.create(builder.toString());
+        // Required on the Data Map surface. Without it the probe fails with a request-shape
+        // error while the entity client (which sends it) works — and a probe that fails for a
+        // reason the writes do not share reports a connection problem that is not there.
+        return URI.create(PurviewDataMapApi.withApiVersion(builder.toString(), request));
     }
 
     private String formatBodyExcerpt(String body) {

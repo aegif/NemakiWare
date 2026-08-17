@@ -1,0 +1,157 @@
+/**
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ */
+package jp.aegif.nemaki.rest.purview.journal;
+
+/**
+ * The typed <em>mutable envelope</em> of one stored v2 journal row — §8-a v2, frozen as
+ * v2.3.18 ②.
+ *
+ * <p>{@link LineageEventV2} is the immutable business event: its fields are covered by
+ * {@code creationPayloadDigest} and never change after {@code appendV2}. Everything the
+ * fenced sequencer (and later the projector and replay machinery) mutates lives here,
+ * <b>outside</b> the digest: the sequencing lifecycle state, the fencing coordinates
+ * ({@code sequencerGeneration}, {@code sequencerLeaseToken}), and the CouchDB {@code _rev}
+ * that makes every transition a CAS.
+ *
+ * <p>State-dependent requirements are enforced at construction, so a decoded row that claims
+ * {@code SEQUENCING} without fencing coordinates — or {@code UNSEQUENCED} with a sequence —
+ * cannot exist as a value:
+ *
+ * <ul>
+ *   <li>{@code UNSEQUENCED}: no generation, no token, {@code event.sequenceNumber() == 0};</li>
+ *   <li>{@code SEQUENCING}: generation and token present, sequence still 0;</li>
+ *   <li>{@code SEQUENCED}: generation and token present (audit), sequence &gt; 0.</li>
+ * </ul>
+ */
+public record LineageJournalRowV2(
+        LineageEventV2 event,
+        String rev,
+        SequencingState state,
+        Long sequencerGeneration,
+        String sequencerLeaseToken,
+        java.util.Map<String, LineageTargetLifecycle> targetLifecycles,
+        java.util.Map<String, LineageReplayRequest> replayRequests
+) {
+
+    /** §8-a's sequencing lifecycle. Terminal for this machine is {@code SEQUENCED}. */
+    public enum SequencingState { UNSEQUENCED, SEQUENCING, SEQUENCED }
+
+    /** D-rest-1-shaped constructor: sequencer coordinates only, no target lifecycles yet. */
+    public LineageJournalRowV2(LineageEventV2 event, String rev, SequencingState state,
+                               Long sequencerGeneration, String sequencerLeaseToken) {
+        this(event, rev, state, sequencerGeneration, sequencerLeaseToken, java.util.Map.of(),
+                java.util.Map.of());
+    }
+
+    /** D-rest-2-shaped constructor: lifecycles, no replay requests yet. */
+    public LineageJournalRowV2(LineageEventV2 event, String rev, SequencingState state,
+                               Long sequencerGeneration, String sequencerLeaseToken,
+                               java.util.Map<String, LineageTargetLifecycle> targetLifecycles) {
+        this(event, rev, state, sequencerGeneration, sequencerLeaseToken, targetLifecycles,
+                java.util.Map.of());
+    }
+
+    public LineageJournalRowV2 {
+        if (event == null) {
+            throw new IllegalArgumentException("event must not be null");
+        }
+        if (targetLifecycles == null) {
+            throw new IllegalArgumentException("targetLifecycles must not be null (empty means"
+                    + " no target has a lifecycle yet)");
+        }
+        targetLifecycles = java.util.Map.copyOf(targetLifecycles);
+        for (var e : targetLifecycles.entrySet()) {
+            if (e.getKey() == null || e.getKey().isBlank()) {
+                throw new IllegalArgumentException("lifecycle target name must not be blank");
+            }
+        }
+        if (replayRequests == null) {
+            throw new IllegalArgumentException("replayRequests must not be null (empty means"
+                    + " no target has a request)");
+        }
+        replayRequests = java.util.Map.copyOf(replayRequests);
+        // §8-d: replay requests are legal ONLY on SEQUENCED rows — nothing unsequenced was
+        // ever deliverable, so nothing about it can be replayed.
+        if (state != SequencingState.SEQUENCED && !replayRequests.isEmpty()) {
+            throw new IllegalArgumentException("replay requests on a " + state
+                    + " row cannot exist — replay presupposes a sequenced delivery");
+        }
+        // §8-b: a target lifecycle beyond PENDING can only exist on a SEQUENCED row — claims
+        // require SEQUENCED, and the creation-time classifications (REJECTED/UNRESOLVED) are
+        // exempt because they are appendV2-time verdicts, not projection progress.
+        if (state != SequencingState.SEQUENCED) {
+            for (var e : targetLifecycles.entrySet()) {
+                LineagePublishStatus s = e.getValue().status();
+                boolean creationTime = s == LineagePublishStatus.PENDING
+                        || s == LineagePublishStatus.REJECTED
+                        || s == LineagePublishStatus.UNRESOLVED
+                        || s == LineagePublishStatus.WAITING_FOR_CATALOG;
+                if (!creationTime) {
+                    throw new IllegalArgumentException("target '" + e.getKey() + "' is "
+                            + s + " but the row is " + state + " — projection progress on an"
+                            + " unsequenced row cannot exist");
+                }
+            }
+        }
+        if (rev == null || rev.isBlank()) {
+            throw new IllegalArgumentException("rev must not be blank — every transition on"
+                    + " this envelope is a CAS, and a row without its _rev cannot CAS");
+        }
+        if (state == null) {
+            throw new IllegalArgumentException("state must not be null");
+        }
+        boolean hasGeneration = sequencerGeneration != null;
+        boolean hasToken = sequencerLeaseToken != null && !sequencerLeaseToken.isBlank();
+        switch (state) {
+            case UNSEQUENCED -> {
+                if (hasGeneration || hasToken) {
+                    throw new IllegalArgumentException("an UNSEQUENCED row must carry no"
+                            + " fencing coordinates");
+                }
+                if (event.sequenceNumber() != 0) {
+                    throw new IllegalArgumentException("an UNSEQUENCED row must have"
+                            + " sequenceNumber 0, got " + event.sequenceNumber());
+                }
+            }
+            case SEQUENCING -> {
+                if (!hasGeneration || !hasToken) {
+                    throw new IllegalArgumentException("a SEQUENCING row must carry"
+                            + " sequencerGeneration and sequencerLeaseToken");
+                }
+                if (event.sequenceNumber() != 0) {
+                    throw new IllegalArgumentException("a SEQUENCING row must still have"
+                            + " sequenceNumber 0 — finalize sets it with SEQUENCED in one CAS");
+                }
+            }
+            case SEQUENCED -> {
+                if (!hasGeneration || !hasToken) {
+                    throw new IllegalArgumentException("a SEQUENCED row keeps its fencing"
+                            + " coordinates for audit");
+                }
+                if (event.sequenceNumber() <= 0) {
+                    throw new IllegalArgumentException("a SEQUENCED row must have a positive"
+                            + " sequence, got " + event.sequenceNumber());
+                }
+            }
+        }
+    }
+
+    /** The CouchDB document id this row lives under. */
+    public String documentId() {
+        return CouchLineageEventV2.documentId(event.deliveryId());
+    }
+}

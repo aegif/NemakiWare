@@ -1,4 +1,4 @@
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
@@ -69,7 +69,7 @@ import { TestHelper, generateTestId } from '../utils/test-helper';
  *
  * 5. Smart Conditional Skipping Pattern (Lines 169, 200, 225, 286, 314, 372, 416, 500, 506, 545):
  *    - Tests check for feature availability before execution: if (await element.count() > 0)
- *    - Graceful skip with informative messages: test.skip('ENV: Feature not found')
+ *    - Graceful skip with informative messages: test.skip(true, 'ENV: Feature not found')
  *    - Self-healing: Tests automatically pass when UI features become available
  *    - Better than test.describe() which requires manual re-enable
  *    - Rationale: UI features may not be implemented or temporarily unavailable
@@ -193,7 +193,7 @@ test.describe('Document Management', () => {
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+      await waitForAppReady(page, { timeout: 30000 });
     }
 
     await testHelper.closeMobileSidebar(browserName);
@@ -258,7 +258,7 @@ test.describe('Document Management', () => {
       await expect(table).toBeVisible({ timeout: 10000 });
 
       // Wait for table to finish loading (wait for spinner to disappear if present)
-      const spinner = page.locator('.ant-spin');
+      const spinner = page.locator('.ant-spin-spinning');
       if (await spinner.count() > 0) {
         await expect(spinner).not.toBeVisible({ timeout: 10000 });
       }
@@ -714,7 +714,7 @@ test.describe('Document Management', () => {
           await waitForUiStable(page); // Give React time to update state
 
           // Wait for any loading indicators to disappear
-          const spinner = page.locator('.ant-spin');
+          const spinner = page.locator('.ant-spin-spinning');
           if (await spinner.count() > 0) {
             await expect(spinner).not.toBeVisible({ timeout: 5000 });
           }
@@ -770,7 +770,7 @@ test.describe('Document Management', () => {
         console.log('Download popup test completed with expected behavior');
       }
     } else {
-      test.skip('ENV: No downloadable documents found in repository');
+      test.skip(true, 'ENV: No downloadable documents found in repository');
     }
   });
 

@@ -51,6 +51,9 @@ public class RAGIndexingServiceImplAclUpdateTest {
     private static final String REPO_ID = "test-repo";
     private static final String DOC_ID = "doc-123";
     private static final String RAG_ID = RAGIndexingServiceImpl.toRagId(DOC_ID);
+    /** MUST equal the version the searcher-read parent carries: a mismatch means the snapshot is
+     *  stale and the rebuild is abandoned rather than written under a borrowed token. */
+    private static final long REALTIME_VERSION = 1234567L;
 
     @Mock private RAGConfig ragConfig;
     @Mock private EmbeddingService embeddingService;
@@ -73,6 +76,15 @@ public class RAGIndexingServiceImplAclUpdateTest {
         when(embeddingService.isHealthy()).thenReturn(true);
         when(ragConfig.getAclChunkUpdateLimit()).thenReturn(2); // small page size to exercise paging
         when(solrClientProvider.getClient()).thenReturn(solrClient);
+
+        // The block rebuild fences its write on a REALTIME GET of the parent's _version_ (a
+        // searcher-read version lags the soft commit and would 409 spuriously). Absent means
+        // "deleted while we were rebuilding" and the write is abandoned, so these tests have to
+        // say the block is still there.
+        SolrDocument version = new SolrDocument();
+        version.setField("_version_", REALTIME_VERSION);
+        when(solrClient.getById(anyString(), anyString(), any(SolrParams.class)))
+                .thenReturn(version);
 
         // Capture all UpdateRequests flowing through SolrClient.request()
         // (UpdateRequest.process and SolrClient.commit both funnel through request())
@@ -179,7 +191,15 @@ public class RAGIndexingServiceImplAclUpdateTest {
         assertEquals(RAG_ID, parent.getFieldValue("id"));
         assertEquals("document", parent.getFieldValue("doc_type"));
         assertNotNull(parent.getFieldValue("document_vector"), "document vector must be preserved");
-        assertNull(parent.getFieldValue("_version_"), "_version_ must not be copied");
+        // The rebuild fences its write on the parent's version so a concurrent purge on another
+        // replica cannot be undone. The version has to come from the REALTIME GET: the parent
+        // above was read through a searcher, which lags the soft commit, and CASing on that stale
+        // value fails writes that should have succeeded (this was tried once and reverted).
+        assertEquals(REALTIME_VERSION, parent.getFieldValue("_version_"),
+                "the block add must carry the version as its compare-and-swap token — and the"
+                        + " code only gets here because the realtime version MATCHED the version"
+                        + " the snapshot was read at, so the token and the data are the same"
+                        + " revision");
         assertEquals(newReaders, new ArrayList<>(parent.getFieldValues("readers")),
                 "parent readers must be replaced");
 
@@ -200,11 +220,40 @@ public class RAGIndexingServiceImplAclUpdateTest {
     @Test
     public void aclUpdateDoesNothingWhenDocumentNotIndexed() throws Exception {
         stubQueries(null, new ArrayList<>());
+        // "Genuinely absent" means the realtime GET agrees: the searcher AND the update log both
+        // say no document. Only then is skipping correct.
+        when(solrClient.getById(anyString(), anyString(), any(SolrParams.class)))
+                .thenReturn(null);
 
         service.updateDocumentACL(REPO_ID, DOC_ID, Arrays.asList("user:test-repo:alice"));
 
         assertNull(findDeleteRequest(), "no delete when document is not in the RAG index");
         assertNull(findAddRequest(), "no add when document is not in the RAG index");
+    }
+
+    @Test
+    public void aclUpdateFailsWhenBlockExistsButIsNotYetSearchable() throws Exception {
+        // The searcher says absent, but the realtime GET finds the block in the update log: the
+        // block was written moments ago and the soft commit has not exposed it yet. Skipping here
+        // silently drops a GRANT — the newly permitted user stays filtered out of RAG search
+        // until the next content reindex, and no reconciliation task ever converges it. The only
+        // correct move is to fail so the caller records a per-node failure and the re-drive
+        // retries after the commit, exactly like the snapshot/realtime version mismatch.
+        stubQueries(null, new ArrayList<>());
+        // (the class-level stub already answers the realtime GET with a version)
+
+        try {
+            service.updateDocumentACL(REPO_ID, DOC_ID, Arrays.asList("user:test-repo:alice"));
+            org.junit.jupiter.api.Assertions.fail(
+                    "a block in the update log but not yet searchable must not be skipped as"
+                            + " 'not indexed' — that silently drops the readers update");
+        } catch (RAGIndexingException expected) {
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    String.valueOf(expected.getMessage()).contains("not yet searchable"),
+                    "the reason must say soft-commit lag so the retry is not a mystery: "
+                            + expected.getMessage());
+        }
+        assertNull(findAddRequest(), "nothing may be written from a snapshot that could not be read");
     }
 
     @Test

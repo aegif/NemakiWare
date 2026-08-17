@@ -25,12 +25,13 @@ import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import org.springframework.beans.factory.annotation.Autowired;
 
 import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Probes CouchDB connection state at startup and exposes setup-required flag.
@@ -55,10 +56,17 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
     private final AtomicBoolean setupRequired = new AtomicBoolean(true);
     private final AtomicBoolean probed = new AtomicBoolean(false);
 
+    /**
+     * Version string reported by the last re-probe, so Setup Mode can apply the same floor the
+     * startup path applies. Empty means "no re-probe has answered yet"; {@code AtomicReference}
+     * cannot hold null.
+     */
+    private final AtomicReference<String> lastProbedVersion = new AtomicReference<>("");
+
     /** Setup token for authenticating Setup API requests during Setup Mode. */
     private final String setupToken = UUID.randomUUID().toString();
 
-    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
 
     /**
      * Required view counts (shared with DatabasePreInitializer).
@@ -110,7 +118,7 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
                         if (id == null || !id.asText().startsWith("_design/")) continue;
                         JsonNode views = doc.get("views");
                         if (views == null || !views.isObject()) continue;
-                        java.util.Iterator<String> names = views.fieldNames();
+                        java.util.Iterator<String> names = views.propertyNames().iterator();
                         while (names.hasNext()) resolved.add(names.next());
                     }
                 }
@@ -158,6 +166,73 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
     // Lifecycle
     // ---------------------------------------------------------------
 
+    /**
+     * Stop the application if CouchDB is too old to run on.
+     *
+     * <p>Only reached when the server ANSWERED — an unreachable CouchDB keeps the existing
+     * behaviour (Setup Mode), because a database that is not up yet is a different situation from
+     * one that is up and unsupported.
+     *
+     * <p>Throwing from a {@code ContextRefreshedEvent} listener fails the context refresh, so the
+     * application does not come up. That is the intent: the alternative is what shipped before —
+     * the version was read, shown in {@code /health}, and otherwise ignored, so a 2.x server (the
+     * ordinary shape of a 2.4-era deployment) started fine and broke later as something else.
+     *
+     * <p>Package-private so the test can drive {@code onApplicationEvent} through a stubbed
+     * connection and pin the WIRING, not just the comparison.
+     */
+    void enforceCouchDbVersion(CouchDbConnectionResult conn) {
+        String message = couchDbVersionRefusal(conn);
+        if (message == null) {
+            return;
+        }
+        log.error(message);
+        throw new IllegalStateException(message);
+    }
+
+    /**
+     * The same decision as {@link #enforceCouchDbVersion}, without throwing.
+     *
+     * <p>Setup Mode needs the answer as a value rather than as a failed context refresh: by then
+     * the application is up and serving the wizard, so the honest outcome is a 400 telling the
+     * operator which CouchDB they pointed at, not a 500.
+     *
+     * @return the refusal message, or {@code null} when the server is supported
+     */
+    public String couchDbVersionRefusal(CouchDbConnectionResult conn) {
+        String reported = (conn == null) ? null : conn.getCouchDbVersion();
+        if (CouchDbVersionRequirement.isSatisfiedBy(reported)) {
+            return null;
+        }
+        return CouchDbVersionRequirement.refusalMessage(reported);
+    }
+
+    /**
+     * Refusal message for the server the last {@link #reprobeState()} / {@link #reprobe()} talked
+     * to, or {@code null} if that server is supported.
+     *
+     * <p>Exists because the startup gate only runs once, in {@code onApplicationEvent}, and only on
+     * the branch where CouchDB answered. An operator who starts with CouchDB down lands in Setup
+     * Mode, points the wizard at any reachable server, and would otherwise complete setup — writing
+     * databases — against a CouchDB the release refuses to run on.
+     */
+    public String couchDbVersionRefusalFromLastProbe() {
+        String reported = lastProbedVersion.get();
+        return couchDbVersionRefusal(reported.isEmpty() ? null : reachableWithVersion(reported));
+    }
+
+    private void rememberProbedVersion(CouchDbConnectionResult conn) {
+        String reported = (conn == null) ? null : conn.getCouchDbVersion();
+        lastProbedVersion.set(reported == null ? "" : reported);
+    }
+
+    private static CouchDbConnectionResult reachableWithVersion(String version) {
+        CouchDbConnectionResult r = new CouchDbConnectionResult();
+        r.setReachable(true);
+        r.setCouchDbVersion(version);
+        return r;
+    }
+
     @Override
     public void onApplicationEvent(ContextRefreshedEvent event) {
         if (!probed.compareAndSet(false, true)) {
@@ -175,6 +250,9 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
             setupRequired.set(true);
             log.warn("StartupProbeService: CouchDB unreachable (" + conn.getErrorMessage() + ") → setupRequired=true");
         } else {
+            // Before anything else touches it: refuse an unsupported CouchDB.
+            enforceCouchDbVersion(conn);
+
             // CouchDB reachable — check all main repository DBs
             List<RepositoryOverview> repos = probeRepositories(url, user, pass);
             evaluateRepositoryState(repos, "startup");
@@ -249,6 +327,7 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
 
         CouchDbConnectionResult conn = testConnection(url, user, pass);
         if (!conn.isReachable()) {
+            lastProbedVersion.set("");
             currentState.set(StartupState.DB_UNREACHABLE);
             setupRequired.set(true);
             logStateTransition(previous, StartupState.DB_UNREACHABLE, wasSetupRequired, true);
@@ -259,6 +338,7 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
             return;
         }
 
+        rememberProbedVersion(conn);
         List<RepositoryOverview> repos = probeRepositories(url, user, pass);
         evaluateRepositoryState(repos, "reprobe");
         logStateTransition(previous, currentState.get(), wasSetupRequired, setupRequired.get());
@@ -289,10 +369,12 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
 
         CouchDbConnectionResult conn = testConnection(url, user, pass);
         if (!conn.isReachable()) {
+            lastProbedVersion.set("");
             currentState.set(StartupState.DB_UNREACHABLE);
             log.info("reprobeState: " + previous + " → DB_UNREACHABLE (setupRequired unchanged)");
             return;
         }
+        rememberProbedVersion(conn);
 
         List<RepositoryOverview> repos = probeRepositories(url, user, pass);
 

@@ -23,7 +23,7 @@
 -->
 <config>
 
-  <luceneMatchVersion>9.11</luceneMatchVersion>
+  <luceneMatchVersion>10.0.0</luceneMatchVersion>
 
   <!-- Use classic schema.xml instead of managed schema -->
   <schemaFactory class="ClassicIndexSchemaFactory"/>

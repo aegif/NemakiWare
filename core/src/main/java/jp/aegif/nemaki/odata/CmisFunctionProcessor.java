@@ -196,12 +196,10 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
                     Locale.ENGLISH
             );
         } catch (Exception e) {
-            throw new ODataApplicationException(
-                    "Error executing function " + functionName + ": " + e.getMessage(),
-                    HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(),
-                    Locale.ENGLISH,
-                    e
-            );
+            // Route through ODataExceptions.map so CMIS faults get the right HTTP
+            // status (404/409/400/403/405) and a genuine 500 does NOT echo the
+            // internal exception message (it is logged with a correlation id).
+            throw ODataExceptions.map("Error executing function " + functionName, e);
         }
     }
     
@@ -285,12 +283,10 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
                     Locale.ENGLISH
             );
         } catch (Exception e) {
-            throw new ODataApplicationException(
-                    "Error executing function " + functionName + ": " + e.getMessage(),
-                    HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(),
-                    Locale.ENGLISH,
-                    e
-            );
+            // Route through ODataExceptions.map so CMIS faults get the right HTTP
+            // status (404/409/400/403/405) and a genuine 500 does NOT echo the
+            // internal exception message (it is logged with a correlation id).
+            throw ODataExceptions.map("Error executing function " + functionName, e);
         }
     }
     
@@ -635,10 +631,22 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
             entityCollection.setCount(changes.getNumItems().intValue());
         }
         
-        // Add next change log token as annotation (for pagination)
+        // Add next change log token as @odata.nextLink. GetContentChanges is an
+        // unbound function import; Olingo resolves the overload by the exact set
+        // of parameter names, so the nextLink MUST carry ALL declared parameters
+        // (not just changeLogToken) or following it fails with "has no function
+        // with parameters '[changeLogToken]'". Nullable params are emitted as the
+        // OData 'null' literal so the overload still resolves.
         if (changeLogTokenHolder.getValue() != null) {
-            entityCollection.setNext(URI.create(baseUri + "/GetContentChanges(changeLogToken='" + 
-                    encodeODataKeyValue(changeLogTokenHolder.getValue()) + "')"));
+            String next = baseUri + "/GetContentChanges("
+                    + "changeLogToken='" + encodeODataKeyValue(changeLogTokenHolder.getValue()) + "'"
+                    + ",includeProperties=" + (includeProperties != null ? includeProperties : Boolean.FALSE)
+                    + ",filter=" + (filter != null ? "'" + encodeODataKeyValue(filter) + "'" : "null")
+                    + ",includePolicyIds=" + (includePolicyIds != null ? includePolicyIds : Boolean.FALSE)
+                    + ",includeAcl=" + (includeAcl != null ? includeAcl : Boolean.FALSE)
+                    + ",maxItems=" + (maxItems != null ? maxItems : "null")
+                    + ")";
+            entityCollection.setNext(URI.create(next));
         }
         
         return entityCollection;

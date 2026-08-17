@@ -80,7 +80,10 @@ public class ContentServiceImplDeleteGroupTest {
         doReturn(target).when(service).getGroupItemById(REPO, "tgt");
         // nested cleanup re-fetches each referencing group by id for a revision-bearing doc
         doReturn(parent).when(service).getGroupItemById(REPO, "parent");
-        doReturn(List.of(target, parent, unrelated)).when(service).getGroupItems(REPO);
+        // The cleanup asks the reverse-lookup view who nests "tgt" rather than listing every
+        // group and scanning. "unrelated" is deliberately NOT in this answer — that is what the
+        // view returns — and the assertions below still require it to be left alone.
+        doReturn(List.of("parent")).when(service).getGroupIdsDirectlyContainingGroup(REPO, "tgt");
 
         assertTrue(service.deleteGroup(REPO, "tgt"));
 
@@ -99,7 +102,7 @@ public class ContentServiceImplDeleteGroupTest {
         GroupItem other = group("other", "other-doc", new ArrayList<>(List.of("keep")));
 
         doReturn(target).when(service).getGroupItemById(REPO, "tgt");
-        doReturn(List.of(target, other)).when(service).getGroupItems(REPO);
+        doReturn(List.of()).when(service).getGroupIdsDirectlyContainingGroup(REPO, "tgt");
 
         assertTrue(service.deleteGroup(REPO, "tgt"));
 

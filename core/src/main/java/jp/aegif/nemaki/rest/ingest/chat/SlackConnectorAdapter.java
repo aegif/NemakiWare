@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rest.ingest.chat;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import jp.aegif.nemaki.rest.ingest.AdapterHttpClient;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Slack Web API connector adapter — fetches conversation history and files.
@@ -28,7 +29,7 @@ public class SlackConnectorAdapter {
 
     private static final Logger logger = LoggerFactory.getLogger(SlackConnectorAdapter.class);
     private static final String DEFAULT_API = "https://slack.com/api";
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
     /** Hard cap on total messages per getHistory() call to prevent runaway pagination. */
     private static final int MAX_PAGES = 50;
 

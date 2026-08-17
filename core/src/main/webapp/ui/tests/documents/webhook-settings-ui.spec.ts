@@ -13,7 +13,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { waitForUiStable } from '../utils/wait-helpers';
+import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { ApiHelper, generateTestId } from '../utils/test-helper';
 import { AuthHelper } from '../utils/auth-helper';
 
@@ -57,7 +57,7 @@ test.describe('Webhook Settings UI Tests', () => {
     // Navigate to the folder detail view using the correct app route
     // App routes: /documents/:objectId (DocumentViewer)
     await page.goto(`${BASE_URL}/core/ui/#/documents/${testFolderId}`);
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
 
     // Wait for tabs to render
     const webhookTab = page.locator('.ant-tabs-tab').filter({ hasText: /Webhook|ウェブフック/ });
@@ -498,7 +498,7 @@ test.describe('Webhook Settings UI Tests', () => {
     // Login and navigate to folder detail view
     await authHelper.login();
     await page.goto(`${BASE_URL}/core/ui/#/documents/${testFolderId}`);
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
 
     // Click Webhook tab
     const webhookTab = page.locator('.ant-tabs-tab').filter({ hasText: /Webhook|ウェブフック/ });
@@ -512,7 +512,7 @@ test.describe('Webhook Settings UI Tests', () => {
     await addButton.click();
 
     // Modal should appear
-    const modal = page.locator('.ant-modal-content');
+    const modal = page.locator('.ant-modal-container');
     await modal.waitFor({ state: 'visible', timeout: 5000 });
 
     // Fill URL
@@ -529,7 +529,7 @@ test.describe('Webhook Settings UI Tests', () => {
     await waitForUiStable(page);
 
     // Verify row added in webhook table (scope to the active tab panel to exclude property tables)
-    const webhookPanel = page.locator('.ant-tabs-tabpane-active, .ant-tabs-tabpane:not([hidden])').last();
+    const webhookPanel = page.locator('.ant-tabs-content-active, .ant-tabs-tabpane:not([hidden])').last();
     const tableRows = webhookPanel.locator('.ant-table-tbody .ant-table-row');
     await expect(tableRows).toHaveCount(1, { timeout: 5000 });
     // Verify the URL is displayed
@@ -541,7 +541,7 @@ test.describe('Webhook Settings UI Tests', () => {
     await editButton.click();
 
     // Modal should reappear with existing data
-    const editModal = page.locator('.ant-modal-content');
+    const editModal = page.locator('.ant-modal-container');
     await editModal.waitFor({ state: 'visible', timeout: 5000 });
 
     // Change URL

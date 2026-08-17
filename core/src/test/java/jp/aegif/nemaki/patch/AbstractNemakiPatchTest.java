@@ -64,6 +64,17 @@ public class AbstractNemakiPatchTest {
             return appliedPatches.contains(repositoryId + ":" + name);
         }
 
+        /**
+         * These tests are about the history / skip logic, not about the view canary. The real
+         * gate asks CouchDB whether the repository's views are answering; this stub has no
+         * CouchDB, and leaving it unanswered would silently turn every case below into
+         * "skipped because the views look dead" — which is the opposite of what they assert.
+         */
+        @Override
+        public boolean cmisViewsAreAnswering(String repositoryId) {
+            return true;
+        }
+
         @Override
         protected void createPathHistory(String repositoryId, String name) {
             createPathHistoryCalls.add(repositoryId + ":" + name);

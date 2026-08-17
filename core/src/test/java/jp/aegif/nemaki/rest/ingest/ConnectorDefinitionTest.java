@@ -1,15 +1,16 @@
 package jp.aegif.nemaki.rest.ingest;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.Test;
 import static org.junit.Assert.*;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Unit tests for ConnectorDefinition serialization and field behavior.
  */
 public class ConnectorDefinitionTest {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
 
     @Test
     public void testJsonRoundTrip() throws Exception {

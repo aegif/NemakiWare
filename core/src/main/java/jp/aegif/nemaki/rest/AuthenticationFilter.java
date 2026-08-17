@@ -31,7 +31,7 @@ import jp.aegif.nemaki.util.constant.SystemConst;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.businesslogic.PrincipalService;
 import jp.aegif.nemaki.api.v1.exception.ProblemDetail;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.chemistry.opencmis.commons.enums.CmisVersion;
@@ -49,6 +49,7 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 public class AuthenticationFilter implements Filter {
 
@@ -60,7 +61,7 @@ public class AuthenticationFilter implements Filter {
 	private final String TOKEN_FALSE = "false";
 
 	// ObjectMapper for RFC 7807 ProblemDetail serialization (thread-safe, reusable)
-	private static final ObjectMapper objectMapper = new ObjectMapper();
+	private static final ObjectMapper objectMapper = ObjectMapperFactory.createDefaultObjectMapper();
 
 	private  Log log = LogFactory.getLog(AuthenticationFilter.class);
 
@@ -106,7 +107,20 @@ public class AuthenticationFilter implements Filter {
 			// Bypass authentication for public /rest/all/* endpoints
 			// - /rest/all/repositories: needed for login page
 			// - /rest/all/build-info: non-sensitive server metadata for version display
-			if (requestURI != null && (requestURI.contains("/rest/all/repositories") || requestURI.contains("/rest/all/build-info"))) {
+			//
+			// NOTE on /rest/all/readiness (the load-balancer probe): it is NOT listed here, and
+			// must not be. web.xml maps this filter to specific /rest/* patterns and readiness is
+			// not among them, so the filter never runs for it — adding a case here would be dead
+			// code that only widens the substring match below. Verified: an unauthenticated GET
+			// of /rest/all/readiness returns 200 with no entry in this list.
+			//
+			// These two use contains() rather than the pathInfo comparison used elsewhere in this
+			// filter (see the ingest-webhook case). That is tolerable only because the servlet
+			// container normalises the path before getRequestURI() and query strings are not part
+			// of it — probed with "?x=", ";", and "../" forms, all of which still returned 401 on
+			// protected paths. Do not add entries to this list without re-checking that.
+			if (requestURI != null && (requestURI.contains("/rest/all/repositories")
+					|| requestURI.contains("/rest/all/build-info"))) {
 				log.debug("Bypassing authentication for public /rest/all/* URI: " + requestURI);
 				chain.doFilter(req, res);
 				return;

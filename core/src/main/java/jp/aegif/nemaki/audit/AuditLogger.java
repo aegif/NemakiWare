@@ -21,9 +21,10 @@
  ******************************************************************************/
 package jp.aegif.nemaki.audit;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.SerializationFeature;
+import tools.jackson.databind.json.JsonMapper;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.TrustedProxyResolver;
 import jp.aegif.nemaki.util.constant.PropertyKey;
@@ -187,18 +188,19 @@ public class AuditLogger {
     }
 
     public AuditLogger() {
-        this.objectMapper = new ObjectMapper();
-        
-        // Performance optimization settings
-        this.objectMapper.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
-        this.objectMapper.configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
-        
-        // Disable sorting (already controlled by @JsonPropertyOrder)
-        this.objectMapper.configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, false);
-        this.objectMapper.configure(com.fasterxml.jackson.databind.MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, false);
-        
-        // Enable efficient serialization
-        this.objectMapper.configure(com.fasterxml.jackson.databind.MapperFeature.USE_STD_BEAN_NAMING, false);
+        this.objectMapper = JsonMapper.builderWithJackson2Defaults()
+                // Performance optimization settings
+                .configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false)
+                // Jackson 3 moved this toggle from SerializationFeature to DateTimeFeature
+                .configure(tools.jackson.databind.cfg.DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS, false)
+                // Disable sorting (already controlled by @JsonPropertyOrder).
+                // Jackson 3 flipped SORT_PROPERTIES_ALPHABETICALLY's default to on,
+                // so the explicit disable is now load-bearing, not documentation.
+                .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, false)
+                .configure(tools.jackson.databind.MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, false)
+                // Jackson 3 removed MapperFeature.USE_STD_BEAN_NAMING (std naming is now
+                // always on); audit accessors are conventional, where both namings agree.
+                .build();
     }
 
     /**
@@ -584,7 +586,7 @@ public class AuditLogger {
             
             // Successfully logged
             auditEventLogged.incrementAndGet();
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Failed to serialize audit event: " + e.getMessage(), e);
             // Fallback: output minimal structured JSON with essential fields only
             try {

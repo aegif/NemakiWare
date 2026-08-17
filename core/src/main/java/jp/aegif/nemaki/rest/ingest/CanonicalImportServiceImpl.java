@@ -43,7 +43,7 @@ import java.util.Map;
 public class CanonicalImportServiceImpl implements CanonicalImportService {
 
     private static final Logger logger = LoggerFactory.getLogger(CanonicalImportServiceImpl.class);
-    private static final com.fasterxml.jackson.databind.ObjectMapper JSON_MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
+    private static final tools.jackson.databind.ObjectMapper JSON_MAPPER = new tools.jackson.databind.ObjectMapper();
 
     /** Idempotency key TTL: 7 days.  After this period the key is considered
      *  expired and a new import with the same key will proceed normally. */
@@ -789,6 +789,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             try {
                 content.setAclInherited(false);
                 contentService.update(callContext, repositoryId, content);
+                // This path writes an ACL without going through AclService, so nothing else
+                // advances the cache generation — and other replicas would keep serving the
+                // pre-import permissions until their entries expired. Bumping here rather than
+                // in the DAO keeps ordinary content updates from clearing every replica.
+                jp.aegif.nemaki.util.cache.AclCacheGeneration.advance(repositoryId);
                 logger.info("ACL inheritance disabled for imported document {}", objectId);
             } catch (Exception e) {
                 logger.warn("Failed to break ACL inheritance for {}: {}", objectId, e.getMessage());
@@ -824,7 +829,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (contextJson == null) return;
 
             Map<String, Object> context = JSON_MAPPER.readValue(contextJson,
-                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                    new tools.jackson.core.type.TypeReference<Map<String, Object>>() {});
             Object sourceAclObj = context.get("sourceAcl");
             if (!(sourceAclObj instanceof List<?> sourceAclList) || sourceAclList.isEmpty()) return;
 
@@ -860,6 +865,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 acl.setLocalAces(localAces);
                 content.setAcl(acl);
                 contentService.update(callContext, repositoryId, content);
+                // This path writes an ACL without going through AclService, so nothing else
+                // advances the cache generation — and other replicas would keep serving the
+                // pre-import permissions until their entries expired. Bumping here rather than
+                // in the DAO keeps ordinary content updates from clearing every replica.
+                jp.aegif.nemaki.util.cache.AclCacheGeneration.advance(repositoryId);
                 logger.info("Applied {} source ACEs to imported document {}", localAces.size(), objectId);
             }
         } catch (Exception e) {
@@ -877,7 +887,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             String existingContextJson = getAspectProperty(existingDoc, "nemaki:externalIntegration", "nemaki:externalContext");
             if (existingContextJson == null) return false;
             Map<String, Object> existingContext = JSON_MAPPER.readValue(existingContextJson,
-                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                    new tools.jackson.core.type.TypeReference<Map<String, Object>>() {});
             // Compare parent-context fields: channelId, threadId, parentPageId, mailboxId
             for (String key : List.of("channelId", "threadId", "parentPageId", "workspaceId", "mailboxId")) {
                 Object existing = existingContext.get(key);
@@ -988,6 +998,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     @Override
     public ExternalIngestResult execute(CallContext callContext, ExternalIngestRequest request) {
         String requestId = request.getRequestId();
+        // §3: the lineage operation id is issued when the business operation starts, not when
+        // the lineage event is emitted afterwards — retries of the emission reuse this id.
+        String lineageOperationId = java.util.UUID.randomUUID().toString();
 
         // 0. Validate metadata size and depth to prevent DoS
         if (request.getMetadata() != null) {
@@ -1312,9 +1325,22 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 warnings.add(relError);
             }
 
-            // 7. Emit lineage event
+            // 7. Emit lineage event. The document that actually exists may not carry the
+            // requested fileName (the version-update branch keeps the existing document's
+            // name), so the name is read back from the final object — guarded, because a
+            // lineage-only read must never fail an import that succeeded.
+            String lineageDocumentName = fileName;
+            try {
+                Content lineageContent = contentService.getContent(repositoryId, objectId);
+                if (lineageContent != null && lineageContent.getName() != null
+                        && !lineageContent.getName().isBlank()) {
+                    lineageDocumentName = lineageContent.getName();
+                }
+            } catch (Exception e) {
+                logger.debug("Lineage name read failed; using requested fileName: {}", e.getMessage());
+            }
             String lineageEventId = ingestLineageEmitter != null
-                    ? ingestLineageEmitter.emitLineageEvent(repositoryId, objectId, targetFolderId, connector, request)
+                    ? ingestLineageEmitter.emitLineageEvent(repositoryId, objectId, targetFolderId, lineageDocumentName, lineageOperationId, connector, request)
                     : null;
 
             logger.info("Canonical import completed: requestId={}, objectId={}, profile={}, connector={}",

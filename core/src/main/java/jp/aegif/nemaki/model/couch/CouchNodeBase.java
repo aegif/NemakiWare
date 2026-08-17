@@ -40,6 +40,12 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 @JsonIgnoreProperties(ignoreUnknown=true)
+// Key order is DECLARED, not inherited from reflection. HotSpot keeps a class's method
+// array sorted by the ADDRESS of each method-name Symbol, and Symbols are interned
+// process-wide in load order — so which class happened to load first decided the order
+// Jackson wrote these documents in, and it could differ between two boots of the same
+// binary. Alphabetical is the one order that does not depend on that history.
+@com.fasterxml.jackson.annotation.JsonPropertyOrder(alphabetic = true)
 public class CouchNodeBase {
 	
 	private static final Log log = LogFactory.getLog(CouchNodeBase.class);
@@ -60,7 +66,10 @@ public class CouchNodeBase {
 	protected String modifier;
 	
 	// Cloudant SDK Documentオブジェクトの動的プロパティを処理
-	protected Map<String, Object> additionalProperties = new HashMap<>();
+	// Sorted, for the same reason as @JsonPropertyOrder above: HashMap iteration order is a
+	// function of capacity and insertion history, so two nodes could emit the same extra
+	// properties in different orders.
+	protected Map<String, Object> additionalProperties = new java.util.TreeMap<>();
 	
 	public CouchNodeBase(){
 	}
@@ -95,8 +104,22 @@ public class CouchNodeBase {
 				this.modifier = (String) properties.get("modifier");
 			}
 
-			// その他のプロパティを保存
-			this.additionalProperties.putAll(properties);
+			// EXTRA properties only. Putting the whole document here would echo every typed
+			// field back out through the @JsonAnyGetter below, so a stored document would
+			// serialize each of its properties twice — and because the map is written LAST,
+			// its (stale) copy is the one that survives a Map conversion or a JSON reader.
+			// A read-modify-write would then discard the modification silently.
+			retainExtraProperties(properties);
+		}
+	}
+
+	/** Keeps only the keys this class does not already serialize as a typed property. */
+	protected void retainExtraProperties(Map<String, Object> properties) {
+		java.util.Set<String> typed = serializedPropertyNames(getClass());
+		for (Map.Entry<String, Object> entry : properties.entrySet()) {
+			if (!typed.contains(entry.getKey())) {
+				this.additionalProperties.put(entry.getKey(), entry.getValue());
+			}
 		}
 	}
 	
@@ -114,23 +137,104 @@ public class CouchNodeBase {
 	}
 	
 	// 動的プロパティを処理するためのメソッド
-	// CouchTypeDefinitionの明示的なフィールドは除外する（Jackson王道パターン）
+	// このクラスが型付きプロパティとして書き出す名前は除外する（Jackson王道パターン）
 	@JsonAnySetter
 	public void setAdditionalProperty(String name, Object value) {
-		// CouchTypeDefinitionで明示的に定義されているフィールドは除外
 		if (!isExplicitField(name)) {
 			this.additionalProperties.put(name, value);
 		}
 	}
-	
-	// 明示的に定義されているフィールドかどうかを判定
+
+	/**
+	 * Whether this class already serializes {@code fieldName} as a typed property.
+	 *
+	 * <p>The any-setter receives every key Jackson could not bind, and that includes the
+	 * READ-ONLY derived properties — {@code isDocument()}, {@code isFolder()},
+	 * {@code isContent()} and friends have no field and no setter, so they are written on
+	 * serialization but cannot be read back. Echoing them into the any-getter map made a
+	 * stored document grow a duplicate of each on every round trip.
+	 */
 	protected boolean isExplicitField(String fieldName) {
-		// CouchTypeDefinitionで明示的に@JsonPropertyが定義されているフィールド
-		return "properties".equals(fieldName) || 
-		       "allowedSourceTypes".equals(fieldName) || 
-		       "allowedTargetTypes".equals(fieldName);
+		return serializedPropertyNames(getClass()).contains(fieldName);
 	}
-	
+
+	// ------------------------------------------------------------------ typed-property set
+
+	private static final java.util.Map<Class<?>, java.util.Set<String>> SERIALIZED_NAMES =
+			new java.util.concurrent.ConcurrentHashMap<>();
+
+	/**
+	 * The property names this class writes itself, so the any-getter map never repeats one.
+	 *
+	 * <p>Mirrors the visibility the persistence mappers configure (see
+	 * {@code ObjectMapperFactory}): fields at ANY visibility, getters and is-getters at
+	 * PUBLIC_ONLY. {@code CouchModelSerializationShapeTest} compares this set against the keys
+	 * Jackson actually emits for every model, so the two cannot drift apart.
+	 */
+	protected static java.util.Set<String> serializedPropertyNames(Class<?> type) {
+		return SERIALIZED_NAMES.computeIfAbsent(type, CouchNodeBase::computeSerializedPropertyNames);
+	}
+
+	private static java.util.Set<String> computeSerializedPropertyNames(Class<?> type) {
+		java.util.Set<String> names = new java.util.HashSet<>();
+		for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+			for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+				if (java.lang.reflect.Modifier.isStatic(f.getModifiers())
+						|| f.isAnnotationPresent(com.fasterxml.jackson.annotation.JsonIgnore.class)
+						|| isAnyGetterCarrier(f.getName())) {
+					continue;
+				}
+				names.add(explicitName(f.getAnnotation(JsonProperty.class), f.getName()));
+			}
+			for (java.lang.reflect.Method m : c.getDeclaredMethods()) {
+				String property = readPropertyName(m);
+				if (property != null && !isAnyGetterCarrier(property)) {
+					names.add(explicitName(m.getAnnotation(JsonProperty.class), property));
+				}
+			}
+		}
+		return java.util.Set.copyOf(names);
+	}
+
+	/** The bean-property name a public no-arg getter contributes, or null if it is not one. */
+	private static String readPropertyName(java.lang.reflect.Method m) {
+		if (!java.lang.reflect.Modifier.isPublic(m.getModifiers())
+				|| java.lang.reflect.Modifier.isStatic(m.getModifiers())
+				|| m.getParameterCount() != 0
+				|| m.getReturnType() == void.class
+				|| m.isAnnotationPresent(com.fasterxml.jackson.annotation.JsonIgnore.class)
+				|| m.isAnnotationPresent(JsonAnyGetter.class)
+				|| m.isSynthetic()) {
+			return null;
+		}
+		String name = m.getName();
+		if (name.startsWith("get") && name.length() > 3) {
+			return decapitalize(name.substring(3));
+		}
+		if (name.startsWith("is") && name.length() > 2
+				&& (m.getReturnType() == boolean.class || m.getReturnType() == Boolean.class)) {
+			return decapitalize(name.substring(2));
+		}
+		return null;
+	}
+
+	private static String explicitName(JsonProperty annotation, String fallback) {
+		return (annotation != null && !annotation.value().isEmpty()) ? annotation.value() : fallback;
+	}
+
+	/** The map itself is the any-getter channel, never one of the properties it may carry. */
+	private static boolean isAnyGetterCarrier(String name) {
+		return "additionalProperties".equals(name);
+	}
+
+	private static String decapitalize(String name) {
+		if (name.length() > 1 && Character.isUpperCase(name.charAt(1))) {
+			return name; // URL -> URL, matching the standard bean rule Jackson follows
+		}
+		return Character.toLowerCase(name.charAt(0)) + name.substring(1);
+	}
+
+
 	// Jackson王道パターン：@JsonAnyGetterでserialization制御
 	@JsonAnyGetter
 	public Map<String, Object> getAdditionalProperties() {

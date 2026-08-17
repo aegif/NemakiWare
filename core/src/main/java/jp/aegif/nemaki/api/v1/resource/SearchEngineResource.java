@@ -166,6 +166,17 @@ public class SearchEngineResource {
             response.setIndexedCount(status.getIndexedCount());
             response.setErrorCount(status.getErrorCount());
             response.setSilentDropCount(status.getSilentDropCount());
+            // Where the wall clock went. Reindex throughput falls from ~70 docs/s at 5,615
+            // objects to 2.6 at 97,693 and the cause is not yet known — the double-indexing that
+            // looked like the culprit was removed and measured to make no difference. These make
+            // the next large run answer the question instead of prompting another guess.
+            response.setEnumerationMs(status.getEnumerationMs());
+            response.setIndexingMs(status.getSolrWriteMs());
+            response.setVerificationMs(status.getVerificationMs());
+            response.setSolrRtgMs(status.getSolrRtgMs());
+            response.setIncarnationMs(status.getIncarnationMs());
+            response.setBuildDocMs(status.getBuildDocMs());
+            response.setSolrAddMs(status.getSolrAddMs());
             response.setReindexedCount(status.getReindexedCount());
             response.setStartTime(status.getStartTime());
             response.setEndTime(status.getEndTime());
@@ -490,6 +501,25 @@ public class SearchEngineResource {
             response.setRepositoryId(repositoryId);
             response.setFolderId(folderId);
             response.setRecursive(recursive);
+            // This USED to take the subtree out of the ACL-epoch fence: the batch write path
+            // built a full replacement document without effective_acl_epoch and without a
+            // _version_ CAS, so every document it touched lost its epoch and a concurrent
+            // applyAcl could be overwritten last-write-wins. `readers` was recomputed, so
+            // search authorization kept working — which is exactly why it was easy to miss.
+            //
+            // The batch path is fenced as of 2026-08-12 (same machinery as the single-document
+            // write: realtime GET, authoritative incarnation, ACL group preserved from what
+            // Solr holds, per-document _version_ CAS). Verified: the same folder that went
+            // 186 -> 0 fenced children before the fix stays 186/186, and a full recursive
+            // reindex of 5,611 documents leaves the migration verdict at COMPLETE 0 unfenced.
+            //
+            // The note stays, weaker: checking the verdict after a bulk operation is cheap and
+            // it is the only thing that distinguishes "fenced" from "looks fine". Documents
+            // whose _rev yields no generation still take the fail-open path.
+            response.setNote("The ACL-epoch fence is preserved by this operation. Confirm with"
+                    + " GET /api/v1/admin/acl-epoch/migration/" + repositoryId
+                    + " once it completes — the verdict is what distinguishes a fenced index"
+                    + " from one that merely looks correct.");
             
             Map<String, LinkInfo> links = new HashMap<>();
             links.put("self", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId + "/search-engine/reindex/folder/" + folderId));
@@ -728,6 +758,75 @@ public class SearchEngineResource {
     }
     
     @POST
+    @Path("/purge-orphans")
+    @Operation(
+            summary = "Purge orphaned index entries",
+            description = "Removes search-index entries whose object no longer exists in CouchDB. "
+                    + "Refuses when the discrepancy is large enough to suggest the repository "
+                    + "could not be read, rather than a handful of stragglers."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Purge attempted",
+                    content = @io.swagger.v3.oas.annotations.media.Content(
+                            mediaType = MediaType.APPLICATION_JSON,
+                            schema = @Schema(implementation = OperationResponse.class)
+                    )
+            )
+    })
+    public Response purgeOrphans(
+            @Parameter(description = "Repository ID", required = true, example = "bedroom")
+            @PathParam("repositoryId") String repositoryId) {
+
+        logger.info("API v1: Purging orphaned index entries for repository " + repositoryId);
+
+        checkAdminAuthorization();
+
+        try {
+            if (solrIndexMaintenanceService == null) {
+                throw ApiException.internalError("Solr index maintenance service is not available");
+            }
+
+            long removed = solrIndexMaintenanceService.purgeOrphanedIndexEntries(repositoryId);
+
+            OperationResponse response = new OperationResponse();
+            response.setSuccess(removed >= 0);
+            response.setMessage(removed < 0
+                    ? "Refused: the index and the repository disagree too much for this to be a"
+                            + " stragglers problem. Nothing was deleted; see the server log."
+                    : removed + " orphaned index entries removed");
+            response.setRepositoryId(repositoryId);
+            if (removed < 0) {
+                // A refusal is not a success. Returning 200 with success=false invites automation
+                // to treat "nothing was deleted because the repository looks unreadable" as a
+                // completed cleanup.
+                Map<String, LinkInfo> refusedLinks = new HashMap<>();
+                refusedLinks.put("health", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId
+                        + "/search-engine/health/details"));
+                response.setLinks(refusedLinks);
+                return Response.status(Response.Status.CONFLICT).entity(response).build();
+            }
+
+            Map<String, LinkInfo> links = new HashMap<>();
+            links.put("self", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId
+                    + "/search-engine/purge-orphans"));
+            links.put("health", new LinkInfo("/api/v1/cmis/repositories/" + repositoryId
+                    + "/search-engine/health/details"));
+            response.setLinks(links);
+
+            return Response.ok(response).build();
+
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.severe("Error purging orphaned index entries: " + e.getMessage());
+            throw ApiException.internalError("Failed to purge orphaned index entries: "
+                    + e.getMessage(), e);
+        }
+    }
+
+    @POST
     @Path("/optimize")
     @Operation(
             summary = "Optimize index",
@@ -875,7 +974,21 @@ public class SearchEngineResource {
         
         @Schema(description = "Number of documents silently dropped")
         private long silentDropCount;
-        
+        @Schema(description = "Milliseconds spent walking the folder tree")
+        private long enumerationMs;
+        @Schema(description = "Milliseconds spent building and submitting documents to Solr, including the CouchDB reads each one needs")
+        private long indexingMs;
+        @Schema(description = "Milliseconds spent verifying each batch after it was submitted")
+        private long verificationMs;
+        @Schema(description = "Of indexingMs: the content fence's realtime GET — one Solr round trip per document")
+        private long solrRtgMs;
+        @Schema(description = "Of indexingMs: resolving the authoritative content incarnation in CouchDB, per document")
+        private long incarnationMs;
+        @Schema(description = "Of indexingMs: building the Solr document — attachment reads and text extraction")
+        private long buildDocMs;
+        @Schema(description = "Of indexingMs: the single Solr round trip that submits each batch")
+        private long solrAddMs;
+
         @Schema(description = "Number of documents reindexed")
         private long reindexedCount;
         
@@ -909,6 +1022,20 @@ public class SearchEngineResource {
         public void setErrorCount(long errorCount) { this.errorCount = errorCount; }
         public long getSilentDropCount() { return silentDropCount; }
         public void setSilentDropCount(long silentDropCount) { this.silentDropCount = silentDropCount; }
+        public long getEnumerationMs() { return enumerationMs; }
+        public void setEnumerationMs(long enumerationMs) { this.enumerationMs = enumerationMs; }
+        public long getIndexingMs() { return indexingMs; }
+        public void setIndexingMs(long indexingMs) { this.indexingMs = indexingMs; }
+        public long getVerificationMs() { return verificationMs; }
+        public void setVerificationMs(long verificationMs) { this.verificationMs = verificationMs; }
+        public long getSolrRtgMs() { return solrRtgMs; }
+        public void setSolrRtgMs(long solrRtgMs) { this.solrRtgMs = solrRtgMs; }
+        public long getIncarnationMs() { return incarnationMs; }
+        public void setIncarnationMs(long incarnationMs) { this.incarnationMs = incarnationMs; }
+        public long getBuildDocMs() { return buildDocMs; }
+        public void setBuildDocMs(long buildDocMs) { this.buildDocMs = buildDocMs; }
+        public long getSolrAddMs() { return solrAddMs; }
+        public void setSolrAddMs(long solrAddMs) { this.solrAddMs = solrAddMs; }
         public long getReindexedCount() { return reindexedCount; }
         public void setReindexedCount(long reindexedCount) { this.reindexedCount = reindexedCount; }
         public long getStartTime() { return startTime; }
@@ -1034,7 +1161,10 @@ public class SearchEngineResource {
         
         @Schema(description = "HATEOAS links")
         private Map<String, LinkInfo> links;
-        
+
+        @Schema(description = "Operational warning, when the operation has a required follow-up")
+        private String note;
+
         public boolean isSuccess() { return success; }
         public void setSuccess(boolean success) { this.success = success; }
         public String getMessage() { return message; }
@@ -1047,6 +1177,8 @@ public class SearchEngineResource {
         public void setFolderId(String folderId) { this.folderId = folderId; }
         public Boolean getRecursive() { return recursive; }
         public void setRecursive(Boolean recursive) { this.recursive = recursive; }
+        public String getNote() { return note; }
+        public void setNote(String note) { this.note = note; }
         public Map<String, LinkInfo> getLinks() { return links; }
         public void setLinks(Map<String, LinkInfo> links) { this.links = links; }
     }

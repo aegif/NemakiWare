@@ -89,10 +89,14 @@ run_http_test() {
     echo -n "Testing: $test_name ... "
     total_tests=$((total_tests + 1))
     
+    # `|| true`: under `set -e` a failed curl (timeout, refused) in a bare assignment kills
+    # the whole script BEFORE the comparison below can count it as FAILED — the run then ends
+    # silently in the middle, with no summary and a green-looking exit code. A helper whose
+    # entire job is to record failures must not die on one.
     if [[ -n "$auth" ]]; then
-        status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -u "$auth" "$url" 2>/dev/null)
+        status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -u "$auth" "$url" 2>/dev/null || true)
     else
-        status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$url" 2>/dev/null)
+        status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$url" 2>/dev/null || true)
     fi
     
     if [[ "$status" == "$expected_status" ]]; then
@@ -136,6 +140,15 @@ run_http_test "Core Application Root" "http://localhost:8080/core" "302"
 run_http_test "CMIS AtomPub (Bedroom)" "http://localhost:8080/core/atom/bedroom" "200" "admin:admin"
 run_http_test "CMIS AtomPub (Canopy)" "http://localhost:8080/core/atom/canopy" "200" "admin:admin"
 run_http_test "CMIS Web Services" "http://localhost:8080/core/services" "200"  # Jakarta EE 11 compatible
+
+# The Jersey JSON provider must still be OUR mapper. Jersey resolves it as
+# ContextResolver<com.fasterxml...ObjectMapper> and matches on the generic type, so a
+# provider declared with the wrong ObjectMapper type is never found — it wires, logs
+# nothing, and Jersey quietly serves every /core/rest/* response with its own stock
+# mapper instead. WRITE_NUMBERS_AS_STRINGS is unique to our profile, so a quoted number
+# here is the one cheap end-to-end proof that the resolver is still plugged in.
+QA_OID=$(curl -s -u admin:admin "http://localhost:8080/core/browser/bedroom/root?cmisselector=children&maxItems=1" 2>/dev/null | jq -r '.objects[0].object.properties."cmis:objectId".value' 2>/dev/null)
+run_test "Jersey ContextResolver active (numbers as strings)" "curl -s -u admin:admin 'http://localhost:8080/core/rest/repo/bedroom/renditions/$QA_OID' | jq -r '.count | type'" "string"
 
 echo
 echo "=== 5. CMIS BROWSER BINDING TESTS ==="

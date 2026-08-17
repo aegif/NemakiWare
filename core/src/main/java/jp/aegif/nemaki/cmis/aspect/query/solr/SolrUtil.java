@@ -32,15 +32,14 @@ import jp.aegif.nemaki.util.constant.PropertyKey;
 
 import java.util.List;
 import java.util.ArrayList;
-import org.antlr.runtime.tree.Tree;
+import org.apache.chemistry.opencmis.server.support.query.CmisTree;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.solr.client.solrj.SolrClient;
-import org.apache.solr.client.solrj.impl.HttpSolrClient;
-import org.apache.solr.client.solrj.impl.Http2SolrClient;
+import org.apache.solr.client.solrj.impl.HttpJdkSolrClient;
 
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.request.UpdateRequest;
@@ -63,7 +62,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import org.apache.solr.client.solrj.SolrQuery;
+import org.apache.solr.client.solrj.request.SolrQuery;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
@@ -82,6 +81,7 @@ public class SolrUtil implements ApplicationContextAware {
 	private final HashMap<String, String> map;
 
 	private PropertyManager propertyManager;
+
 	private TypeService typeService;
 	private TextExtractionService textExtractionService;
 
@@ -92,8 +92,22 @@ public class SolrUtil implements ApplicationContextAware {
 	// Cached ContentService instance to avoid repeated applicationContext.getBean() calls
 	private volatile ContentService contentServiceCache;
 
+	// ACL-in-Solr: lazily-resolved ACLExpander (RAG @Component) used to stamp
+	// repository-scoped reader tokens onto the `readers` field of every content
+	// document, so the query path can filter by the caller's principals in Solr.
+	private volatile jp.aegif.nemaki.rag.acl.ACLExpander aclExpanderCache;
+
 	// BTL-004: Shared SolrClient instance — HttpSolrClient is thread-safe
 	private volatile SolrClient sharedSolrClient;
+
+	/**
+	 * The HTTP executor backing {@link #sharedSolrClient}. Ours to shut down, because supplying
+	 * one to the builder makes SolrJ stop shutting it down itself.
+	 */
+	private volatile java.util.concurrent.ExecutorService sharedSolrHttpExecutor;
+
+	/** Guarded by {@code solrClientLock}. Once set, no further client is created. */
+	private boolean solrClientDestroyed;
 	private final Object solrClientLock = new Object();
 
 	// BTL-009: Dedicated executor for async Solr operations.
@@ -168,23 +182,44 @@ public class SolrUtil implements ApplicationContextAware {
 			if (client != null) {
 				return client;
 			}
+			if (solrClientDestroyed) {
+				// Building one here would leave a client nothing closes, and destroy() may already
+				// have shut down the executor it would be handed. Null is this method's documented
+				// answer for "no client available".
+				log.warn("SolrUtil has been destroyed — not creating a new Solr client");
+				return null;
+			}
 			String url = getSolrUrl();
 			if (url == null) {
 				log.error("Solr URL is null — cannot create SolrClient");
 				return null;
 			}
 			log.info("Creating shared Solr client for URL: " + url);
+			java.util.concurrent.ExecutorService httpExecutor = null;
 			try {
-				@SuppressWarnings("deprecation")
-				HttpSolrClient newClient = new HttpSolrClient.Builder(url)
-					.withConnectionTimeout(30000)
-					.withSocketTimeout(30000)
+				// Force HTTP/1.1: the JDK client defaults to HTTP/2, which against
+				// Solr 10 / Jetty 12 throws intermittent "RST_STREAM: Protocol
+				// error" on update/block-join requests.
+				//
+				// withExecutor is not optional: SolrJ's default is a 4-thread pool shared by the
+				// thread writing a request body into a pipe and the thread draining it, which
+				// deadlocks permanently at four concurrent large updates. See SolrHttpExecutor.
+				httpExecutor = jp.aegif.nemaki.util.SolrHttpExecutor.create("solr-http-cmis");
+				HttpJdkSolrClient newClient = new HttpJdkSolrClient.Builder(url)
+					.useHttp1_1(true)
+					.withExecutor(httpExecutor)
+					.withConnectionTimeout(30000, java.util.concurrent.TimeUnit.MILLISECONDS)
+					.withRequestTimeout(30000, java.util.concurrent.TimeUnit.MILLISECONDS)
 					.build();
+				// Supplying an executor makes SolrJ leave its shutdown to us (destroy()).
+				sharedSolrHttpExecutor = httpExecutor;
 				sharedSolrClient = newClient;
-				log.info("Shared HttpSolrClient created successfully for URL: " + url);
+				log.info("Shared HttpJdkSolrClient created successfully for URL: " + url);
 				return newClient;
 			} catch (Exception e) {
-				log.error("HttpSolrClient creation failed: " + e.getMessage(), e);
+				// The executor exists whether or not build() succeeded; nothing else references it.
+				jp.aegif.nemaki.util.SolrHttpExecutor.shutdown(httpExecutor);
+				log.error("HttpJdkSolrClient creation failed: " + e.getMessage(), e);
 				return null;
 			}
 		}
@@ -223,7 +258,7 @@ public class SolrUtil implements ApplicationContextAware {
 		return "dynamic.property." + cmisColName.replace(":", "\\:").replace("\\\\:", "\\:");
 	}
 
-	public String convertToString(Tree propertyNode) {
+	public String convertToString(CmisTree propertyNode) {
 		List<String> _string = new ArrayList<String>();
 		for (int i = 0; i < propertyNode.getChildCount(); i++) {
 			_string.add(propertyNode.getChild(i).toString());
@@ -277,11 +312,36 @@ public class SolrUtil implements ApplicationContextAware {
 	 *                        Use this for metadata-only changes (e.g. ACL) where document content has not changed.
 	 */
 	public void indexDocument(String repositoryId, Content content, boolean forceSync, boolean skipRAGIndexing) {
+		indexDocument(repositoryId, content, forceSync, skipRAGIndexing, null);
+	}
+
+	/**
+	 * As {@link #indexDocument(String, Content, boolean, boolean)}, but with an
+	 * optional {@code onPermanentFailure} callback run when an ASYNC index write
+	 * ultimately fails after exhausting its bounded retries. Used by the
+	 * search-index ACL refresh path to record the object in the reconciliation
+	 * queue (so a permanently-failed readers write is not lost to a WARN). Null
+	 * (the default overload) preserves the existing behaviour exactly.
+	 */
+	public void indexDocument(String repositoryId, Content content, boolean forceSync, boolean skipRAGIndexing,
+			Runnable onPermanentFailure) {
+		indexDocument(repositoryId, content, forceSync, skipRAGIndexing, onPermanentFailure, false);
+	}
+
+	/**
+	 * As above, with {@code strict}: when true (the synchronous reconciliation
+	 * re-drive), a transient computation failure of a security/completeness field
+	 * ({@code readers} / body / path) THROWS instead of persisting a degraded
+	 * document — see {@link #createSolrDocument(String, Content, boolean)}. Only
+	 * meaningful with {@code forceSync=true} (the async path swallows + retries).
+	 */
+	public void indexDocument(String repositoryId, Content content, boolean forceSync, boolean skipRAGIndexing,
+			Runnable onPermanentFailure, boolean strict) {
 		if (log.isDebugEnabled()) {
 			log.debug("indexDocument called for " + content.getId());
 		}
 		log.info("SolrUtil.indexDocument called for document: " + content.getId() + " in repository: " + repositoryId);
-		
+
 		String _force = propertyManager
 				.readValue(PropertyKey.SOLR_INDEXING_FORCE);
 		boolean force = (Boolean.TRUE.toString().equals(_force)) ? true : false;
@@ -296,14 +356,15 @@ public class SolrUtil implements ApplicationContextAware {
 
 		// For maintenance operations, execute synchronously to track progress accurately
 		if (forceSync) {
-			indexDocumentInternal(repositoryId, content, skipRAGIndexing);
+			indexDocumentInternal(repositoryId, content, skipRAGIndexing, strict);
 		} else {
 			// Execute Solr indexing asynchronously to avoid blocking CMIS operations
 			CompletableFuture.runAsync(() -> {
-				indexDocumentInternal(repositoryId, content, skipRAGIndexing);
+				indexDocumentInternal(repositoryId, content, skipRAGIndexing, strict);
 			}, asyncSolrExecutor).exceptionally(ex -> {
 				log.warn("Solr async indexing failed for {}, scheduling retry: {}", content.getId(), ex.getMessage());
-				scheduleRetry(() -> indexDocumentInternal(repositoryId, content, skipRAGIndexing), content.getId(), 1);
+				scheduleRetry(() -> indexDocumentInternal(repositoryId, content, skipRAGIndexing, strict), content.getId(), 1,
+						onPermanentFailure);
 				return null;
 			});
 		}
@@ -316,8 +377,19 @@ public class SolrUtil implements ApplicationContextAware {
 	 * @param attempt current retry attempt (1-based)
 	 */
 	private void scheduleRetry(Runnable task, String docId, int attempt) {
+		scheduleRetry(task, docId, attempt, null);
+	}
+
+	private void scheduleRetry(Runnable task, String docId, int attempt, Runnable onPermanentFailure) {
 		if (attempt > SOLR_INDEX_MAX_RETRY) {
 			log.error("Solr indexing permanently failed for document {} after {} retries", docId, SOLR_INDEX_MAX_RETRY);
+			if (onPermanentFailure != null) {
+				try {
+					onPermanentFailure.run();
+				} catch (Exception e) {
+					log.warn("onPermanentFailure hook failed for {}: {}", docId, e.getMessage());
+				}
+			}
 			return;
 		}
 		long delay = SOLR_INDEX_RETRY_DELAYS_MS[Math.min(attempt - 1, SOLR_INDEX_RETRY_DELAYS_MS.length - 1)];
@@ -332,7 +404,7 @@ public class SolrUtil implements ApplicationContextAware {
 			task.run();
 		}, asyncSolrExecutor).exceptionally(ex -> {
 			log.warn("Solr indexing retry {} failed for {}: {}", attempt, docId, ex.getMessage());
-			scheduleRetry(task, docId, attempt + 1);
+			scheduleRetry(task, docId, attempt + 1, onPermanentFailure);
 			return null;
 		});
 	}
@@ -345,7 +417,60 @@ public class SolrUtil implements ApplicationContextAware {
 	 * @param commitWithinMs commit within milliseconds (default 5000 for batch operations)
 	 * @return number of successfully indexed documents
 	 */
-	public int indexDocumentsBatch(String repositoryId, List<Content> contents, int commitWithinMs) {
+	/**
+	 * What a batch actually did. An int return could not distinguish "correctly not written"
+	 * from "failed": the fence skips a document whose Solr copy is already newer, and counting
+	 * that as a failure put a clean no-op into the reindex error total.
+	 */
+	public static final class BatchOutcome {
+		/** Documents handed to Solr. */
+		public final int written;
+		/** Skipped because Solr already holds a strictly newer generation — a correct no-op. */
+		public final int skippedStale;
+		/**
+		 * Excluded because the content fence could not establish an authoritative incarnation.
+		 * These are NOT retried by the caller's verification pass (that only re-indexes documents
+		 * MISSING from Solr, and these usually exist), so each one is handed to reconciliation
+		 * here instead of being silently dropped.
+		 */
+		public final int fenceBlocked;
+
+		/**
+		 * Where the batch's time went, in nanoseconds. Reported so the reindex phase breakdown can
+		 * be split without guessing — the enclosing timer showed the indexing phase is ~90% of a
+		 * full reindex, and the next question ("which part of it") cannot be answered from outside
+		 * this method.
+		 *
+		 * <p>{@code solrRtgNs} is per DOCUMENT, not per batch: the content fence reads each
+		 * document's current {@code _version_} out of Solr before adding it. That is the ledger's
+		 * hypothesis ③ — a round trip this project added itself in C8 — so it is measured
+		 * separately rather than folded into the Solr total.
+		 */
+		public final long solrRtgNs;
+		/** Resolving the authoritative content incarnation (CouchDB), per document. */
+		public final long incarnationNs;
+		/** Building the Solr document: attachment metadata + body reads and text extraction. */
+		public final long buildDocNs;
+		/** The one Solr round trip that submits the whole batch. */
+		public final long solrAddNs;
+
+		BatchOutcome(int written, int skippedStale, int fenceBlocked) {
+			this(written, skippedStale, fenceBlocked, 0L, 0L, 0L, 0L);
+		}
+
+		BatchOutcome(int written, int skippedStale, int fenceBlocked,
+				long solrRtgNs, long incarnationNs, long buildDocNs, long solrAddNs) {
+			this.written = written;
+			this.skippedStale = skippedStale;
+			this.fenceBlocked = fenceBlocked;
+			this.solrRtgNs = solrRtgNs;
+			this.incarnationNs = incarnationNs;
+			this.buildDocNs = buildDocNs;
+			this.solrAddNs = solrAddNs;
+		}
+	}
+
+	public BatchOutcome indexDocumentsBatch(String repositoryId, List<Content> contents, int commitWithinMs) {
 		return indexDocumentsBatch(repositoryId, contents, commitWithinMs, false);
 	}
 
@@ -358,21 +483,28 @@ public class SolrUtil implements ApplicationContextAware {
 	 * @param skipRAGIndexing if true, skip RAG re-indexing after batch Solr update
 	 * @return number of successfully indexed documents
 	 */
-	public int indexDocumentsBatch(String repositoryId, List<Content> contents, int commitWithinMs, boolean skipRAGIndexing) {
+	public BatchOutcome indexDocumentsBatch(String repositoryId, List<Content> contents, int commitWithinMs, boolean skipRAGIndexing) {
 		if (contents == null || contents.isEmpty()) {
-			return 0;
+			return new BatchOutcome(0, 0, 0);
 		}
 		
 		log.info("Batch indexing " + contents.size() + " documents for repository: " + repositoryId);
 		
 		SolrClient solrClient = null;
 		int successCount = 0;
+		int skippedStale = 0;
+		int fenceBlocked = 0;
+		// Phase accumulators — see BatchOutcome. Timing only; no control flow depends on these.
+		long solrRtgNs = 0L;
+		long incarnationNs = 0L;
+		long buildDocNs = 0L;
+		long solrAddNs = 0L;
 		List<Content> indexedContents = new ArrayList<>();
 		try {
 			solrClient = getSolrClient();
 			if (solrClient == null) {
 				log.warn("Solr client is null, skipping batch indexing");
-				return 0;
+				return new BatchOutcome(0, 0, 0);
 			}
 			
 			UpdateRequest updateRequest = new UpdateRequest();
@@ -380,7 +512,80 @@ public class SolrUtil implements ApplicationContextAware {
 			
 			for (Content content : contents) {
 				try {
+					// FENCED, like the single-document path (C8). A batch add used to be a plain
+					// full-document replace: it recomputed `readers` (so search authorization kept
+					// working, which is why nobody noticed) while DROPPING effective_acl_epoch and
+					// the content-fence fields, and it carried no _version_ CAS. Two consequences,
+					// both silent — the subtree left the ACL-epoch fence, and a concurrent
+					// applyAcl's fenced write could be overwritten last-write-wins by a reindex
+					// that had no idea it was competing.
+					//
+					// Same machinery as indexDocumentInternal, not a second implementation: the
+					// generation comes from the content's own _rev, the incarnation is resolved
+					// authoritatively (a read, and a write only the first time), and the ACL group
+					// is preserved from what Solr already holds rather than re-asserted here — the
+					// ACL axis has its own writer and its own fence, and a reindex has no new ACL
+					// information to contribute.
+					long myGen = parseRevGeneration(content.getRevision());
+					SolrDocument cur = null;
+					String incarnation = null;
+					Long versionField = null; // null => plain add, fail-open (unknown generation)
+
+					if (myGen > 0) {
+						long t = System.nanoTime();
+						cur = readVersionAndGeneration(repositoryId, content.getId());
+						solrRtgNs += System.nanoTime() - t;
+						jp.aegif.nemaki.epoch.ContentIncarnation.ContentStore store = contentStore();
+						if (store != null) {
+							t = System.nanoTime();
+							incarnation = jp.aegif.nemaki.epoch.ContentIncarnation.resolve(
+									repositoryId, content.getId(), store);
+							incarnationNs += System.nanoTime() - t;
+						}
+						jp.aegif.nemaki.epoch.ContentWriterFence.Decision decision =
+								jp.aegif.nemaki.epoch.ContentWriterFence.decide(cur, incarnation, myGen);
+						if (decision == jp.aegif.nemaki.epoch.ContentWriterFence.Decision.SKIP_STALE) {
+							// A strictly-fresher content write already landed. Leaving it alone is
+							// the CORRECT outcome, not a failure and not an index — counted on its
+							// own so the caller does not have to infer it from a subtraction.
+							log.debug("Batch fence: skipping {} — Solr holds a newer generation",
+									content.getId());
+							skippedStale++;
+							continue;
+						}
+						if (decision == jp.aegif.nemaki.epoch.ContentWriterFence.Decision.FAIL_CLOSED) {
+							// No authoritative incarnation: stamping anyway is what the fence
+							// exists to prevent.
+							//
+							// This is NOT picked up by the caller's verification pass. That pass
+							// re-indexes documents MISSING from Solr, and a fence-blocked document
+							// usually exists there already — so excluding it and saying nothing
+							// would drop it silently. Hand it to reconciliation, the same way
+							// applyContentFence does for an indexed document with no ACL group.
+							log.warn("Batch fence: no authoritative content_incarnation for {} —"
+									+ " excluded from this batch and enqueued for reconciliation",
+									content.getId());
+							enqueueReconcile(repositoryId, content.getId(),
+									"CONTENT_INCARNATION_UNRESOLVED: batch reindex could not"
+											+ " establish an authoritative content_incarnation");
+							fenceBlocked++;
+							continue;
+						}
+						if (cur == null) {
+							versionField = -1L; // create-if-absent
+						} else {
+							long version = toLongOrDefault(cur.getFieldValue("_version_"), 0L);
+							versionField = (version != 0L) ? Long.valueOf(version) : null;
+						}
+					}
+
+					long buildStart = System.nanoTime();
 					SolrInputDocument doc = createSolrDocument(repositoryId, content);
+					buildDocNs += System.nanoTime() - buildStart;
+					applyContentFence(doc, cur, incarnation, myGen, repositoryId, content.getId());
+					if (versionField != null) {
+						doc.addField("_version_", versionField);
+					}
 					updateRequest.add(doc);
 					indexedContents.add(content);
 					successCount++;
@@ -390,7 +595,9 @@ public class SolrUtil implements ApplicationContextAware {
 			}
 			
 			if (successCount > 0) {
+				long addStart = System.nanoTime();
 				UpdateResponse response = updateRequest.process(solrClient);
+				solrAddNs += System.nanoTime() - addStart;
 				if (response.getStatus() == 0) {
 					log.info("Batch indexed " + successCount + " documents successfully");
 					// Trigger RAG indexing for each document if not skipped
@@ -400,7 +607,11 @@ public class SolrUtil implements ApplicationContextAware {
 						}
 					}
 				} else {
-					// Throw exception to trigger fallback to individual indexing in caller
+					// Throw exception to trigger fallback to individual indexing in caller.
+					// With per-document CAS this now also covers the case where a concurrent
+					// fenced ACL write moved a _version_ mid-batch: Solr fails the whole request,
+					// and the caller re-does these documents one at a time on the path that
+					// re-reads and retries. The concurrent writer winning is the intended outcome.
 					log.error("Batch indexing failed with status: " + response.getStatus());
 					throw new RuntimeException("Solr batch indexing failed with status: " + response.getStatus());
 				}
@@ -416,7 +627,8 @@ public class SolrUtil implements ApplicationContextAware {
 			throw new RuntimeException("Solr batch indexing failed: " + e.getMessage(), e);
 		}
 
-		return successCount;
+		return new BatchOutcome(successCount, skippedStale, fenceBlocked,
+				solrRtgNs, incarnationNs, buildDocNs, solrAddNs);
 	}
 
 	/**
@@ -424,32 +636,96 @@ public class SolrUtil implements ApplicationContextAware {
 	 * @param skipRAGIndexing if true, skip RAG re-indexing after Solr update
 	 */
 	private void indexDocumentInternal(String repositoryId, Content content, boolean skipRAGIndexing) {
+		indexDocumentInternal(repositoryId, content, skipRAGIndexing, false);
+	}
+
+	/** Bounded retry for the single-doc index {@code _version_} CAS loop. */
+	private static final int INDEX_CAS_MAX_ATTEMPTS = 6;
+
+	private void indexDocumentInternal(String repositoryId, Content content, boolean skipRAGIndexing, boolean strict) {
 		SolrClient solrClient = null;
+		// Generation-fenced write (single-doc). Every CONTENT write of an object carries
+		// content_generation = the CouchDB _rev leading integer (monotonic per object,
+		// scoped by content_incarnation). To make ALL content writers converge on the
+		// latest state, a single-doc index does an OPTIMISTIC-CONCURRENCY add:
+		//   1. realtime-GET the current _version_ + stored generation,
+		//   2. SKIP if a strictly-newer generation already landed (a late stale writer,
+		//      e.g. a delayed applyAcl-refresh or move add, must not overwrite it),
+		//   3. otherwise add with `_version_` CAS (create-if-absent when the doc is
+		//      absent), retrying on 409 by re-reading + re-evaluating the generation.
+		// This closes the "reconcile succeeds + task deleted, then an old normal writer
+		// lands stale readers with no further convergence event" hole. Batch indexing
+		// (indexDocumentsBatch) runs the SAME sequence as of 2026-08-12 — it used to be a
+		// plain add on the theory that a full reindex clears the index first, which was not
+		// true of the folder-scoped reindex and cost the subtree its ACL-epoch fence (C8).
+		// A 0/unknown generation is fail-open (plain add) to preserve behaviour for docs
+		// without a parsable _rev, on both paths.
+		long myGen = parseRevGeneration(content.getRevision());
+		int attempt = 0;
+		while (true) {
 		try {
 			log.info("Starting Solr indexing for document: " + content.getId());
 			solrClient = getSolrClient();
-			
+
 			if (solrClient == null) {
 				throw new RuntimeException("Solr client is not available, cannot index document: " + content.getId());
 			}
-			
-			SolrInputDocument doc = createSolrDocument(repositoryId, content);
-			
+
+			Long versionField = null; // null => plain add (no CAS), fail-open
+			SolrDocument cur = null;
+			String incarnation = null;
+			if (myGen > 0) {
+				cur = readVersionAndGeneration(repositoryId, content.getId());
+
+				// CONTENT FENCE (wiring gate 3, design §4.4/§8.1). The incarnation is resolved
+				// AUTHORITATIVELY first — ContentIncarnation.resolve persists it by _rev CAS and
+				// throws rather than handing back a value CouchDB does not hold, so this writer can
+				// never stamp an identity two concurrent writers would disagree about.
+				jp.aegif.nemaki.epoch.ContentIncarnation.ContentStore store = contentStore();
+				if (store != null) {
+					incarnation = jp.aegif.nemaki.epoch.ContentIncarnation.resolve(
+							repositoryId, content.getId(), store);
+				}
+				jp.aegif.nemaki.epoch.ContentWriterFence.Decision decision =
+						jp.aegif.nemaki.epoch.ContentWriterFence.decide(cur, incarnation, myGen);
+				if (decision == jp.aegif.nemaki.epoch.ContentWriterFence.Decision.FAIL_CLOSED) {
+					throw new RuntimeException("Content fence: no authoritative content_incarnation for "
+							+ content.getId() + " — refusing to stamp Solr (retry)");
+				}
+				if (decision == jp.aegif.nemaki.epoch.ContentWriterFence.Decision.SKIP_STALE) {
+					log.info("Content fence: skipping write for {} — Solr holds a newer generation in "
+							+ "the same incarnation", content.getId());
+					return; // clean: a strictly-fresher content write already landed
+				}
+				if (cur == null) {
+					versionField = -1L; // create-if-absent
+				} else {
+					long version = toLongOrDefault(cur.getFieldValue("_version_"), 0L);
+					versionField = (version != 0L) ? Long.valueOf(version) : null;
+				}
+			}
+
+			SolrInputDocument doc = createSolrDocument(repositoryId, content, strict);
+			applyContentFence(doc, cur, incarnation, myGen, repositoryId, content.getId());
+			if (versionField != null) {
+				doc.addField("_version_", versionField);
+			}
+
 			log.info("Created SolrInputDocument with " + doc.size() + " fields for document: " + content.getId());
-			log.debug("Document fields: repository_id={}, object_id={}, basetype={}, name={}", 
-				doc.getFieldValue("repository_id"), doc.getFieldValue("object_id"), 
+			log.debug("Document fields: repository_id={}, object_id={}, basetype={}, name={}",
+				doc.getFieldValue("repository_id"), doc.getFieldValue("object_id"),
 				doc.getFieldValue("basetype"), doc.getFieldValue("name"));
-			
+
 			UpdateRequest updateRequest = new UpdateRequest();
 			updateRequest.add(doc);
 			updateRequest.setCommitWithin(1000); // Commit within 1 second
-			
+
 			// DIRECT FIX: Don't pass core name to avoid URL duplication
 			// getSolrUrl() already returns full URL with core path
 			UpdateResponse response = updateRequest.process(solrClient);
-			
+
 			log.info("Solr response status: " + response.getStatus() + " for document: " + content.getId());
-			
+
 			if (response.getStatus() == 0) {
 				log.info("Document indexed successfully in Solr: " + content.getId() + " for repository: " + repositoryId);
 				// Trigger RAG indexing asynchronously if enabled (skip for metadata-only changes like ACL)
@@ -461,6 +737,17 @@ public class SolrUtil implements ApplicationContextAware {
 			} else {
 				throw new RuntimeException("Solr indexing failed with status: " + response.getStatus() + " for document: " + content.getId());
 			}
+			return;
+		} catch (org.apache.solr.client.solrj.RemoteSolrException e) {
+			if (e.code() == 409 && myGen > 0 && attempt < INDEX_CAS_MAX_ATTEMPTS) {
+				// Concurrent write changed the doc/version (or a create-if-absent lost the
+				// race) — re-read + re-evaluate the generation and retry.
+				attempt++;
+				log.debug("Index CAS conflict for {} (attempt {}), re-reading", content.getId(), attempt);
+				continue;
+			}
+			log.error("Solr error during indexing for document: " + content.getId() + " in repository: " + repositoryId + ", code=" + e.code() + ", details: " + e.getMessage(), e);
+			throw new RuntimeException("Solr indexing failed: " + e.getMessage(), e);
 		} catch (SolrServerException e) {
 			log.error("Solr server error during indexing for document: " + content.getId() + " in repository: " + repositoryId + ", details: " + e.getMessage(), e);
 			throw new RuntimeException("Solr indexing failed: " + e.getMessage(), e);
@@ -478,6 +765,7 @@ public class SolrUtil implements ApplicationContextAware {
 			log.error("Unexpected error during Solr indexing for document: " + content.getId() + " in repository: " + repositoryId + ", details: " + e.getMessage(), e);
 			throw new RuntimeException("Solr indexing failed: " + e.getMessage(), e);
 		}
+		} // end while(true) CAS retry loop (exited only via return on success/skip or throw)
 	}
 
 	/**
@@ -491,6 +779,24 @@ public class SolrUtil implements ApplicationContextAware {
 			return;
 		}
 		Document document = (Document) content;
+
+		// PWC exclusion (security): a Private Working Copy is a checkout-owner-only
+		// draft. PermissionServiceImpl authorizes a PWC by CHECKOUT OWNERSHIP and
+		// deliberately ignores the normal inherited ACL, but RAG authorizes by
+		// inherited-ACL token intersection (the Solr readers fq + the live
+		// isReadableByTokens gate), which does NOT know the PWC rule. An indexed PWC
+		// would therefore (a) let a same-group non-owner use the in-progress draft as
+		// a findSimilarDocuments seed — an existence + semantic-neighbourhood oracle
+		// (the result stage is still filtered by PermissionService, but the seed is
+		// only token-gated), and (b) hide the draft from its own owner when the owner
+		// is not in the inherited ACL. PWCs are transient drafts, not semantic-search
+		// targets, so exclude them from RAG entirely and remove any block a prior
+		// build indexed for this id (the CMIS content doc is unaffected — the CMIS
+		// query path still has PermissionService.getFiltered enforcing the PWC rule).
+		if (Boolean.TRUE.equals(document.isPrivateWorkingCopy())) {
+			triggerRAGDeletion(repositoryId, document.getId());
+			return;
+		}
 
 		CompletableFuture.runAsync(() -> {
 			try {
@@ -555,7 +861,418 @@ public class SolrUtil implements ApplicationContextAware {
 	/**
 	 * Create SolrInputDocument from NemakiWare Content
 	 */
+	/**
+	 * ACL-in-Solr readers for a relationship: the UNION of the source object's
+	 * and target object's readers, reproducing {@code read(source) OR read(target)}
+	 * (PermissionServiceImpl.checkRelationshipPermission). A relationship has no
+	 * ACL of its own, so this lets the query-side readers fq apply to
+	 * relationships like any other content instead of exempting them (which would
+	 * inflate numFound with unauthorized relationships). If both source and target
+	 * are missing (a dangling relationship) the set is empty — fail-closed, and
+	 * the in-memory check returns false for a dangling relationship anyway.
+	 *
+	 * <p>Staleness is bounded: an endpoint ACL change (applyAcl) and a move both
+	 * reverse-look-up the relationships referencing the changed object and
+	 * re-index them (AclServiceImpl.updateSearchIndexACLRecursively), so a GRANT
+	 * becomes searchable and a REVOKE stops inflating numFound once that async
+	 * refresh runs. The in-memory getFiltered re-evaluates
+	 * checkRelationshipPermission live, so the RESULT is always correct even
+	 * within that brief refresh window.
+	 */
+	private List<String> relationshipReaders(String repositoryId, Relationship relationship,
+			jp.aegif.nemaki.rag.acl.ACLExpander aclExpander, boolean strict) {
+		ContentService cs = getContentServiceSafely();
+		if (cs == null) {
+			if (strict) {
+				// Reconciliation re-drive: we cannot compute readers without the
+				// ContentService — do not persist an empty (invisible) relationship as
+				// success. Fail so the task retries.
+				throw new RuntimeException("Strict reindex: ContentService unavailable for relationship "
+						+ relationship.getId());
+			}
+			return unionReaders(null, null);
+		}
+		List<String> sourceReaders = resolveEndpointReaders(repositoryId, relationship.getSourceId(),
+				cs, aclExpander, strict, relationship.getId(), "source");
+		List<String> targetReaders = resolveEndpointReaders(repositoryId, relationship.getTargetId(),
+				cs, aclExpander, strict, relationship.getId(), "target");
+		return unionReaders(sourceReaders, targetReaders);
+	}
+
+	/**
+	 * Resolve one relationship endpoint's reader tokens.
+	 *
+	 * <p>A null endpoint id contributes nothing. Otherwise the endpoint is read via
+	 * {@code getContent} — but the DAO layers collapse BOTH a genuine 404 and a
+	 * transient read error to {@code null}, so on a null read the behaviour depends on
+	 * {@code strict}:
+	 * <ul>
+	 *   <li>{@code strict == false} (normal indexing): treat null as "no contribution"
+	 *       (the historical best-effort behaviour).</li>
+	 *   <li>{@code strict == true} (reconciliation re-drive): probe the store
+	 *       authoritatively (tri-state). NOT_FOUND ⇒ a genuinely dangling endpoint,
+	 *       contribute nothing; ERROR / still-present-but-unreadable ⇒ a TRANSIENT
+	 *       failure, THROW so the task retries rather than persisting a one-sided (or
+	 *       empty) readers set that under-exposes the relationship.</li>
+	 * </ul>
+	 * Per-endpoint (not per-relationship-whole) so one dangling far endpoint does not
+	 * block the reconciliation of the near object's other relationships.
+	 */
+	private List<String> resolveEndpointReaders(String repositoryId, String endpointId,
+			ContentService cs, jp.aegif.nemaki.rag.acl.ACLExpander aclExpander, boolean strict,
+			String relationshipId, String side) {
+		if (endpointId == null) {
+			return null;
+		}
+		Content endpoint = cs.getContent(repositoryId, endpointId);
+		if (endpoint != null) {
+			return aclExpander.expandToReaders(repositoryId, endpoint);
+		}
+		if (!strict) {
+			return null;
+		}
+		DocState state = probeEndpointExists(repositoryId, endpointId);
+		if (state == DocState.NOT_FOUND) {
+			return null; // genuinely dangling endpoint — the union with the other side stands
+		}
+		throw new RuntimeException("Strict reindex: relationship " + relationshipId + " " + side
+				+ " endpoint " + endpointId + " unreadable (" + state + ") — retrying");
+	}
+
+	/**
+	 * Pure union of a relationship's source and target reader tokens (dedup,
+	 * source order first). A null side contributes nothing; two null sides (a
+	 * dangling relationship, or ContentService unavailable) yield an EMPTY list,
+	 * which is fail-closed — the query-side readers fq then excludes the
+	 * relationship for every non-admin caller. Extracted + package-private so the
+	 * union / fail-closed contract is unit-testable without Spring.
+	 */
+	static List<String> unionReaders(List<String> sourceReaders, List<String> targetReaders) {
+		return jp.aegif.nemaki.acl.AclSemantics.relationshipReaders(sourceReaders, targetReaders);
+	}
+
+	/** Tri-state document existence used by strict relationship-endpoint reads. */
+	private enum DocState { FOUND, NOT_FOUND, ERROR }
+
+	/**
+	 * Authoritative tri-state existence probe against CouchDB (distinguishing a
+	 * genuine 404/tombstone from a transient read error, which the DAO layers both
+	 * collapse to {@code null}). Mirrors {@code AclServiceImpl.probeContentExists}.
+	 */
+	private DocState probeEndpointExists(String repositoryId, String objectId) {
+		jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool pool = getConnectorPoolSafely();
+		if (pool == null) {
+			return DocState.ERROR;
+		}
+		try {
+			jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper client = pool.getClient(repositoryId);
+			if (client == null) {
+				return DocState.ERROR;
+			}
+			com.ibm.cloud.cloudant.v1.model.Document doc = client.getClient().getDocument(
+					new com.ibm.cloud.cloudant.v1.model.GetDocumentOptions.Builder()
+							.db(client.getDatabaseName()).docId(objectId).build())
+					.execute().getResult();
+			if (doc == null) {
+				return DocState.NOT_FOUND;
+			}
+			if (doc.getProperties() != null && Boolean.TRUE.equals(doc.getProperties().get("_deleted"))) {
+				return DocState.NOT_FOUND;
+			}
+			return DocState.FOUND;
+		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
+			return DocState.NOT_FOUND;
+		} catch (Exception e) {
+			log.warn("Strict reindex: existence probe errored for {}: {}", objectId, e.getMessage());
+			return DocState.ERROR;
+		}
+	}
+
+	private volatile jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool connectorPoolCache;
+
+	/**
+	 * CouchDB access for {@link jp.aegif.nemaki.epoch.ContentIncarnation#resolve} (wiring gate 3).
+	 * Straight to CouchDB, never through the content cache: the incarnation is an IDENTITY that must
+	 * be established authoritatively, and a cached read could hand back a value a competing writer
+	 * has already superseded.
+	 */
+	private jp.aegif.nemaki.epoch.ContentIncarnation.ContentStore contentStore() {
+		jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool pool = getConnectorPoolSafely();
+		if (pool == null) {
+			return null;
+		}
+		return new jp.aegif.nemaki.epoch.ContentIncarnation.ContentStore() {
+			@Override public com.ibm.cloud.cloudant.v1.model.Document read(String repositoryId, String docId) {
+				var client = pool.getClient(repositoryId);
+				if (client == null) {
+					throw new jp.aegif.nemaki.epoch.ContentIncarnation.IncarnationUnavailableException(
+							"no content DB client for repository '" + repositoryId + "'");
+				}
+				try {
+					return client.getClient().getDocument(
+							new com.ibm.cloud.cloudant.v1.model.GetDocumentOptions.Builder()
+									.db(client.getDatabaseName()).docId(docId).build()).execute().getResult();
+				} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
+					return null; // genuinely deleted — the caller decides, never a guess
+				}
+			}
+			@Override public String write(String repositoryId, com.ibm.cloud.cloudant.v1.model.Document doc) {
+				var client = pool.getClient(repositoryId);
+				try {
+					var r = client.getClient().putDocument(
+							new com.ibm.cloud.cloudant.v1.model.PutDocumentOptions.Builder()
+									.db(client.getDatabaseName()).docId(doc.getId()).document(doc).build())
+							.execute().getResult();
+					return (r != null && r.isOk()) ? r.getRev() : null;
+				} catch (com.ibm.cloud.sdk.core.service.exception.ConflictException e) {
+					return null; // 409 — the caller re-reads and adopts the winner's value
+				}
+			}
+		};
+	}
+
+	/** Lazily resolve the CouchDB connector pool from Spring (mirrors {@link #getContentServiceSafely()}). */
+	private jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool getConnectorPoolSafely() {
+		jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool cached = connectorPoolCache;
+		if (cached != null) {
+			return cached;
+		}
+		if (applicationContext == null) {
+			return null;
+		}
+		try {
+			synchronized (this) {
+				cached = connectorPoolCache;
+				if (cached != null) {
+					return cached;
+				}
+				cached = applicationContext.getBean("connectorPool",
+						jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
+				connectorPoolCache = cached;
+				return cached;
+			}
+		} catch (Exception e) {
+			log.debug("connectorPool not yet available: {}", e.getMessage());
+			return null;
+		}
+	}
+
+	/**
+	 * Parse the monotonic generation from a CouchDB {@code _rev} ("N-hash"): the
+	 * leading integer N, which increments on every document write (including every
+	 * applyAcl / move / update). Returns 0 when the revision is null or unparseable,
+	 * which disables the generation fence for that write (never skips).
+	 */
+	public static long parseRevGeneration(String revision) {
+		if (revision == null) {
+			return 0L;
+		}
+		int dash = revision.indexOf('-');
+		String head = (dash > 0) ? revision.substring(0, dash) : revision;
+		try {
+			long gen = Long.parseLong(head.trim());
+			return gen > 0 ? gen : 0L;
+		} catch (NumberFormatException e) {
+			return 0L;
+		}
+	}
+
+
+	/** Bounded retry for the {@code _version_} optimistic-concurrency loop. */
+	private static final int READERS_CAS_MAX_ATTEMPTS = 6;
+
+	/**
+	 * Read the current {@code _version_} + {@code content_generation} for an object, or
+	 * {@code null} if it is not indexed. Uses Solr REALTIME GET ({@code /get}) — NOT a
+	 * searcher query — so it returns the latest (possibly uncommitted) {@code _version_}.
+	 * A searcher query would lag behind by the soft-commit window (commitWithin=1s), so a
+	 * {@code _version_} CAS would keep reading a stale version and loop to exhaustion whenever
+	 * the doc was written in the last second. The nemaki core has {@code <updateLog>} + a
+	 * {@code _version_} field, so realtime get and optimistic concurrency are both available.
+	 *
+	 * <p>The name is historical: since increment 14 it reads the {@code _version_} and the
+	 * CONTENT generation ({@code content_generation}); the ACL generation it was named for no
+	 * longer exists.
+	 */
+	/**
+	 * Apply the content fence to a rebuilt document (wiring gate 3).
+	 *
+	 * <p>Stamps this axis' own fields ({@code content_incarnation} + {@code content_generation}) and
+	 * then hands the ACL group back to whatever Solr already holds. The content writer's own
+	 * expansion is DISCARDED: the ACL axis has its own writer, fence and CAS, and a body
+	 * re-extraction finishing after a fresh applyAcl must not be a second opinion on it.
+	 *
+	 * <p>BOTH ACL-group fields move together ({@code readers} + {@code effective_acl_epoch}):
+	 * restoring the readers while leaving a mismatched epoch beside them would hand the ACL fence a
+	 * value that does not describe what it sits next to.
+	 */
+	private void applyContentFence(SolrInputDocument doc, SolrDocument stored, String incarnation,
+			long myGen, String repositoryId, String objectId) {
+		if (incarnation != null) {
+			doc.setField(jp.aegif.nemaki.epoch.ContentIncarnation.SOLR_FIELD, incarnation);
+			doc.setField(jp.aegif.nemaki.epoch.ContentIncarnation.SOLR_GENERATION_FIELD, myGen);
+		}
+		java.util.Map<String, Object> rebuilt = new java.util.LinkedHashMap<>();
+		jp.aegif.nemaki.epoch.ContentWriterFence.AclGroupOutcome outcome =
+				jp.aegif.nemaki.epoch.ContentWriterFence.preserveAclGroup(stored, rebuilt);
+		switch (outcome) {
+			case PRESERVED:
+				// Replace, never accumulate: createSolrDocument used addField for readers, so
+				// setField here is what actually drops its value.
+				doc.removeField("readers");
+				for (java.util.Map.Entry<String, Object> e : rebuilt.entrySet()) {
+					doc.setField(e.getKey(), e.getValue());
+				}
+				break;
+			case MISSING_ON_EXISTING:
+				// An existing document with no ACL group: this writer's expansion is not an
+				// authoritative answer for it, so it is dropped and the object is handed to
+				// reconciliation (design §4.4) rather than stamped as if settled.
+				doc.removeField("readers");
+				log.warn("Content fence: {} is indexed without an ACL group — enqueueing for "
+						+ "reconciliation rather than stamping this writer's expansion", objectId);
+				enqueueReadersReconcile(repositoryId, objectId, null);
+				break;
+			case BOOTSTRAP_NOT_INDEXED:
+			default:
+				break; // first index: this writer's own values stand
+		}
+	}
+
+	private SolrDocument readVersionAndGeneration(String repositoryId, String objectId) throws Exception {
+		SolrClient solrClient = getSolrClient();
+		if (solrClient == null) {
+			throw new RuntimeException("Solr client unavailable");
+		}
+		SolrDocument doc = solrClient.getById(objectId);
+		if (doc == null) {
+			return null;
+		}
+		// Ids are globally-unique CMIS ids, but the core is shared across repositories.
+		// A cross-repo id collision is a HARD FAILURE — returning null here would make the
+		// caller treat the id as absent and create-if-absent / overwrite ANOTHER repo's
+		// document under the same unique key. Fail closed so the write is aborted + retried.
+		Object repo = doc.getFieldValue("repository_id");
+		if (repo != null && !repositoryId.equals(repo.toString())) {
+			throw new RuntimeException("Solr id collision: object " + objectId + " belongs to repository '"
+					+ repo + "', not '" + repositoryId + "' — refusing to overwrite");
+		}
+		return doc;
+	}
+
+	private static long toLongOrDefault(Object v, long dflt) {
+		if (v instanceof Number) {
+			return ((Number) v).longValue();
+		}
+		if (v != null) {
+			try {
+				return Long.parseLong(v.toString());
+			} catch (NumberFormatException ignore) {
+				return dflt;
+			}
+		}
+		return dflt;
+	}
+
 	private SolrInputDocument createSolrDocument(String repositoryId, Content content) {
+		return createSolrDocument(repositoryId, content, false);
+	}
+
+	/**
+	 * Build the Solr document for a content node.
+	 *
+	 * <p>{@code strict} controls how a transient computation failure of a
+	 * SECURITY-relevant or completeness-relevant field (the {@code readers} tokens,
+	 * the extracted body text, the calculated path) is handled:
+	 * <ul>
+	 *   <li>{@code strict == false} (normal indexing): the failure is logged and the
+	 *       field is left empty — a best-effort content save must not fail wholesale
+	 *       on a transient Tika/ACL hiccup.</li>
+	 *   <li>{@code strict == true} (the reconciliation re-drive): the failure is
+	 *       RE-THROWN so the caller counts it and retries, instead of persisting a
+	 *       degraded document (empty readers → invisible; missing body/path →
+	 *       clobbers the good copy) and then deleting the reconciliation task as if it
+	 *       were clean. See SearchIndexReconciliationScheduler.</li>
+	 * </ul>
+	 */
+	/**
+	 * The ONE decision taken when readers cannot be computed. Extracted so it can be bound by a
+	 * test: it is the whole difference between the two paths.
+	 *
+	 * <ul>
+	 *   <li><b>strict</b> (reconciliation re-drive) — THROW. A swallowed failure would persist an
+	 *       EMPTY readers set (the doc becomes invisible to every non-admin) and then let the
+	 *       poller delete the task as if it had reconciled. Failing keeps the task counted and
+	 *       retried.</li>
+	 *   <li><b>ordinary</b> — return, so the caller leaves {@code readers} empty and the query-side
+	 *       fq excludes the doc for non-admin users (fail-closed, never a leak), AND enqueue it for
+	 *       reconciliation. Before increment 5T this was a bare {@code log.warn}: because this runs
+	 *       inside {@code createSolrDocument}, execution continued and the document was indexed
+	 *       with an empty readers set as a SUCCESS, on the most frequent path there is (every
+	 *       create and update), with no durable retry — so the stale-deny survived until the next
+	 *       ACL change or a full reindex.</li>
+	 * </ul>
+	 */
+	void onReadersComputationFailed(String repositoryId, String objectId, Exception cause, boolean strict) {
+		if (strict) {
+			throw new RuntimeException("Strict reindex: readers computation failed for "
+					+ objectId + ": " + (cause == null ? "unknown" : cause.getMessage()), cause);
+		}
+		log.warn("Failed to compute readers for content {}: {} — enqueueing for reconciliation",
+				objectId, cause == null ? "unknown" : cause.getMessage());
+		enqueueReadersReconcile(repositoryId, objectId, cause);
+	}
+
+	/**
+	 * Increment 5T. Records a readers-computation failure on the ORDINARY (non-strict) index path so
+	 * the fail-closed empty {@code readers} is retried durably instead of persisting silently.
+	 *
+	 * <p>Best-effort by construction: this runs inside the ordinary index write, which must not be
+	 * failed by a queue problem. {@code enqueue} never throws, and its own failures are already
+	 * surfaced through the reconciliation {@code enqueueFailureCount} metric. The strict path does
+	 * not come here at all — it rethrows so the task is counted and retried.
+	 */
+	private void enqueueReadersReconcile(String repositoryId, String objectId, Exception cause) {
+		enqueueReconcile(repositoryId, objectId,
+				"READERS_COMPUTATION_FAILURE: " + (cause == null ? "unknown" : cause.getMessage()));
+	}
+
+	/**
+	 * Enqueue with an explicit reason.
+	 *
+	 * <p>The readers-flavoured helper above stamps {@code READERS_COMPUTATION_FAILURE: unknown}
+	 * when handed a null cause, which mis-describes anything that is not a readers computation —
+	 * a content-incarnation failure enqueued through it would send an operator looking at the
+	 * wrong subsystem. Callers whose reason is known say so.
+	 */
+	private void enqueueReconcile(String repositoryId, String objectId, String reason) {
+		try {
+			jp.aegif.nemaki.reconcile.SearchIndexReconciliationService queue = reconciliationQueue();
+			if (queue == null) {
+				log.warn("{} for {} could NOT be enqueued: reconciliation queue is not wired; the "
+						+ "document will stay as it is until the next ACL change or a full reindex",
+						reason, objectId);
+				return;
+			}
+			queue.enqueue(repositoryId, objectId, reason);
+		} catch (Exception e) {
+			log.warn("Failed to enqueue reconciliation for {} ({}): {}", objectId, reason, e.getMessage());
+		}
+	}
+
+	/** Lazily resolved, like {@link #getACLExpander}, to avoid a startup dependency cycle. */
+	private jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconciliationQueue() {
+		if (applicationContext == null) {
+			return null;
+		}
+		try {
+			return applicationContext.getBean(jp.aegif.nemaki.reconcile.SearchIndexReconciliationService.class);
+		} catch (Exception e) {
+			return null;
+		}
+	}
+
+	private SolrInputDocument createSolrDocument(String repositoryId, Content content, boolean strict) {
 		if (log.isDebugEnabled()) {
 			log.debug("Creating Solr document for content: {} (type: {}) in repository: {}",
 				content.getId(), content.getType(), repositoryId);
@@ -612,6 +1329,13 @@ public class SolrUtil implements ApplicationContextAware {
 					log.debug("Added path field: {} for content: {}", path, content.getId());
 				}
 			} catch (Exception e) {
+				if (strict) {
+					// Reconciliation re-drive: a full-document write with a transiently
+					// unresolvable path would clobber the good indexed path. Fail so the
+					// task retries instead of persisting a path-less doc as "reconciled".
+					throw new RuntimeException("Strict reindex: path calculation failed for "
+							+ content.getId() + ": " + e.getMessage(), e);
+				}
 				log.warn("Failed to calculate path for content {}: {}", content.getId(), e.getMessage());
 			}
 		} else {
@@ -632,9 +1356,21 @@ public class SolrUtil implements ApplicationContextAware {
 			if (document.getAttachmentNodeId() != null) {
 				doc.addField("content_id", document.getAttachmentNodeId());
 
-				// Extract text content for full-text search
+				// ONE attachment fetch supplies both the indexed body and content_length.
+				//
+				// There used to be two: extractTextContent opened the attachment (and the node it
+				// gets already carries the length), and then getContentLength fetched the SAME
+				// attachment document a second time just to read that number. Ledger T3.
+				//
+				// Removing the second read is also the more consistent shape: it removes one of
+				// the windows in which a concurrent update can put the indexed body and the
+				// indexed length on different revisions. It does NOT reduce this to a single
+				// snapshot — AttachmentDaoDelegate.getAttachment still reads the metadata and
+				// then opens the body separately, so one window remains. One fewer, not none.
+				AttachmentContent attachmentContent =
+						readAttachment(repositoryId, document.getAttachmentNodeId());
 				try {
-					String textContent = extractTextContent(repositoryId, document.getAttachmentNodeId());
+					String textContent = attachmentContent.text;
 					if (textContent != null && !textContent.trim().isEmpty()) {
 						doc.addField("content", textContent);
 						doc.addField("text", textContent);  // Add text field for CONTAINS queries
@@ -643,12 +1379,21 @@ public class SolrUtil implements ApplicationContextAware {
 						}
 					}
 				} catch (Exception e) {
+					if (strict) {
+						// Reconciliation re-drive: a full-document write with a
+						// transiently-failed extraction would replace the good indexed
+						// body with an empty one. Fail so the task retries instead of
+						// clobbering + deleting the task as "reconciled".
+						throw new RuntimeException("Strict reindex: text extraction failed for "
+								+ content.getId() + ": " + e.getMessage(), e);
+					}
 					log.warn("Failed to extract text content for document {}: {}", content.getId(), e.getMessage());
 				}
-				
-				// Add content_length field for numeric range queries
-				long contentLength = getContentLength(repositoryId, document.getAttachmentNodeId());
-				doc.addField("content_length", contentLength);
+
+				// Length comes from the node that was just read, and survives an extraction that
+				// produced no text (unsupported MIME, empty document): losing the length there is
+				// what the removed second read used to paper over.
+				doc.addField("content_length", attachmentContent.length);
 			}
 			
 			// Versioning fields
@@ -815,6 +1560,43 @@ public class SolrUtil implements ApplicationContextAware {
 			}
 		}
 
+		// ACL-in-Solr: stamp repository-scoped reader tokens onto the content doc
+		// so the CMIS query path can filter by the caller's principals in Solr
+		// (returning only authorized documents; numFound becomes the authorized
+		// count). Applied to ALL queryable content: documents, folders, items,
+		// principal items (user/group items live under /.system with a normal
+		// inherited ACL — default GROUP_EVERYONE:read — and were readable through
+		// the in-memory filter, so they must carry readers too), AND relationships.
+		// A relationship stores no ACL of its own; its read permission is
+		// read(source) OR read(target) (PermissionServiceImpl.checkRelationshipPermission),
+		// so it is stamped with the UNION of its source's and target's readers —
+		// not exempted from the fq (which would let unauthorized relationships
+		// inflate numFound and trip the ACL scan cap). expandToReaders is itself
+		// fail-closed (admin-only when the ACL is null/empty), so a stamped doc
+		// always carries at least one token.
+		jp.aegif.nemaki.rag.acl.ACLExpander aclExpander = getAclExpanderSafely();
+		if (aclExpander != null) {
+			try {
+				List<String> readers = (content instanceof Relationship)
+						? relationshipReaders(repositoryId, (Relationship) content, aclExpander, strict)
+						: aclExpander.expandToReaders(repositoryId, content);
+				if (readers != null) {
+					for (String reader : readers) {
+						doc.addField("readers", reader);
+					}
+				}
+			} catch (Exception e) {
+				onReadersComputationFailed(repositoryId, content.getId(), e, strict);
+			}
+		}
+
+		// ACL-in-Solr generation fence (#1): stamp the object's CouchDB revision
+		// generation (the leading integer of `_rev`, which bumps on every applyAcl /
+		// move / update — unlike the CMIS change token, which an ACL change does NOT
+		// move). The reconciliation re-drive reads this back before writing and skips
+		// its write when Solr already holds a STRICTLY-NEWER generation, so a slow
+		// stale re-drive cannot overwrite a concurrent applyAcl's fresher readers.
+
 		if (log.isDebugEnabled()) {
 			log.debug("Created Solr document for content: {} with {} fields", content.getId(), doc.size());
 		}
@@ -930,7 +1712,13 @@ public class SolrUtil implements ApplicationContextAware {
 				} catch (Exception retryEx) {
 					throw new RuntimeException("Solr deletion retry failed: " + retryEx.getMessage(), retryEx);
 				}
-			}, documentId, 1);
+			}, documentId, 1, () -> log.error(
+					"Solr deletion PERMANENTLY failed for document {} in repository {}. The object"
+					+ " is gone from CouchDB but still in the search index, so queries will keep"
+					+ " returning it. It is listed by GET /api/v1/cmis/repositories/{}/search-engine"
+					+ "/health/details as orphanedInSolr and can be removed with POST .../search-"
+					+ "engine/purge-orphans — a full reindex is not required.",
+					documentId, repositoryId, repositoryId));
 			return null;
 		});
 	}
@@ -1289,9 +2077,22 @@ public class SolrUtil implements ApplicationContextAware {
 			Thread.currentThread().interrupt();
 		}
 
-		SolrClient client = sharedSolrClient;
-		if (client != null) {
+		// Detach the client and its executor together, under the lock creation uses, and refuse
+		// further creation inside it. Otherwise teardown can interleave with a concurrent
+		// getSolrClient(): destroy() clears the field, the getter builds a replacement, and
+		// destroy() then shuts down the REPLACEMENT's executor while leaking the original's —
+		// leaving a published client whose transport is dead.
+		SolrClient client;
+		java.util.concurrent.ExecutorService httpExecutor;
+		synchronized (solrClientLock) {
+			solrClientDestroyed = true;
+			client = sharedSolrClient;
+			httpExecutor = sharedSolrHttpExecutor;
 			sharedSolrClient = null;
+			sharedSolrHttpExecutor = null;
+		}
+
+		if (client != null) {
 			try {
 				client.close();
 				log.info("Shared SolrClient closed successfully");
@@ -1299,6 +2100,9 @@ public class SolrUtil implements ApplicationContextAware {
 				log.warn("Error closing shared SolrClient: " + e.getMessage());
 			}
 		}
+
+		// After the client, so in-flight requests can finish writing their bodies.
+		jp.aegif.nemaki.util.SolrHttpExecutor.shutdown(httpExecutor);
 	}
 
 	/**
@@ -1335,6 +2139,38 @@ public class SolrUtil implements ApplicationContextAware {
 	}
 
 	/**
+	 * Resolve the ACLExpander lazily from the Spring context (it is a RAG
+	 * {@code @Component}), mirroring {@link #getContentServiceSafely()} to avoid a
+	 * hard construction-time dependency. Returns null if unavailable, in which
+	 * case content is indexed without reader tokens — fail-closed at query time
+	 * (the query-side readers fq simply will not match, so the document is not
+	 * returned to non-admin users until re-indexed; it never leaks).
+	 */
+	private jp.aegif.nemaki.rag.acl.ACLExpander getAclExpanderSafely() {
+		jp.aegif.nemaki.rag.acl.ACLExpander cached = aclExpanderCache;
+		if (cached != null) {
+			return cached;
+		}
+		if (applicationContext == null) {
+			return null;
+		}
+		try {
+			synchronized (this) {
+				cached = aclExpanderCache;
+				if (cached != null) {
+					return cached;
+				}
+				cached = applicationContext.getBean(jp.aegif.nemaki.rag.acl.ACLExpander.class);
+				aclExpanderCache = cached;
+				return cached;
+			}
+		} catch (Exception e) {
+			log.debug("ACLExpander not yet available: {}", e.getMessage());
+			return null;
+		}
+	}
+
+	/**
 	 * Get RAGIndexingService lazily from ApplicationContext.
 	 * Returns null if RAG is not enabled or service is not available.
 	 */
@@ -1357,125 +2193,154 @@ public class SolrUtil implements ApplicationContextAware {
 	}
 
 	/**
-	 * Get content length from AttachmentNode.
-	 * Uses ContentService to retrieve the attachment and get its length.
+	 * One attachment read, supplying both the indexed body and {@code content_length}.
 	 *
-	 * @param repositoryId Repository ID
-	 * @param attachmentId Attachment node ID
-	 * @return Content length in bytes, or 0 if not available
-	 */
-	private long getContentLength(String repositoryId, String attachmentId) {
-		if (attachmentId == null || attachmentId.isEmpty()) {
-			return 0L;
-		}
-
-		try {
-			ContentService contentService = getContentServiceSafely();
-			if (contentService == null) {
-				log.debug("getContentLength: ContentService not available, returning 0");
-				return 0L;
-			}
-
-			AttachmentNode attachment = contentService.getAttachment(repositoryId, attachmentId);
-			if (attachment == null) {
-				log.debug("getContentLength: Attachment not found: {}", attachmentId);
-				return 0L;
-			}
-
-			return attachment.getLength();
-		} catch (Exception e) {
-			log.warn("getContentLength: Failed to get content length for attachment {}: {}", attachmentId, e.getMessage());
-			return 0L;
-		}
-	}
-
-	/**
-	 * Extract text content from attachment for full-text search.
-	 * Uses Apache Tika via TextExtractionService to extract text from various document formats
-	 * including PDF, Word, Excel, PowerPoint, and plain text files.
+	 * <h2>Why these were merged</h2>
 	 *
-	 * @param repositoryId Repository ID
-	 * @param attachmentId Attachment node ID
-	 * @return Extracted text content or null if extraction fails
+	 * <p>Indexing a document with an attachment used to fetch that attachment TWICE: once here to
+	 * extract text, and once more in a separate {@code getContentLength} whose only job was to read
+	 * a number the first fetch had already loaded. {@code AttachmentDaoDelegate.getAttachment}
+	 * calls {@code convertRef()} — which sets the length from the CouchDB {@code _attachments}
+	 * metadata — and only then opens the body, so the node returned here always carries the length.
+	 * Ledger T3.
+	 *
+	 * <p>The second read was also the less consistent option, not the safer one: two reads can
+	 * straddle a concurrent update, so the indexed body and the indexed length could come from
+	 * different revisions. This removes ONE of those windows, not all of them —
+	 * {@code AttachmentDaoDelegate.getAttachment} still reads the metadata and then opens the body
+	 * separately, so a concurrent update can still split them. One fewer, not none.
+	 *
+	 * <h2>What had to be preserved</h2>
+	 *
+	 * <p>Deleting the second read naively loses the length in two cases the old shape covered.
+	 * Both are handled here:
+	 *
+	 * <ul>
+	 *   <li><b>Extraction produced no text</b> (unsupported MIME, empty document, Tika failure).
+	 *       The node — and its length — is already in hand, so the length is still reported. Only
+	 *       the text is dropped.
+	 *   <li><b>No {@code TextExtractionService}</b>. Nothing can be extracted, so there is no
+	 *       reason to open a body; this takes the metadata-only path instead. That keeps the F3
+	 *       separation intact (metadata reads must not open attachments) and still yields a length.
+	 * </ul>
+	 *
+	 * <p>The metadata path also serves as the fallback when the body-opening read finds nothing:
+	 * {@code getAttachmentRef} retries briefly for attachments that are not visible yet, which
+	 * {@code getAttachment} does not. That retry only costs a second read when the first one
+	 * already failed, never on the normal path.
+	 *
+	 * <p><b>F3</b>: every stream this opens is closed on every path, including the ones that return
+	 * without extracting.
 	 */
-	private String extractTextContent(String repositoryId, String attachmentId) {
+	// Package-private, not private, so SolrUtilAttachmentSingleReadTest can pin the
+	// single-fetch property directly instead of reaching through createSolrDocument.
+	AttachmentContent readAttachment(String repositoryId, String attachmentId) {
 		if (attachmentId == null || attachmentId.isEmpty()) {
-			return null;
+			return AttachmentContent.NONE;
 		}
 
-		// Check if TextExtractionService is available
+		ContentService contentService = getContentServiceSafely();
+		if (contentService == null) {
+			log.debug("readAttachment: ContentService not available for {}", attachmentId);
+			return AttachmentContent.NONE;
+		}
+
+		// Nothing to extract — read metadata only rather than opening a body that cannot be used.
 		if (textExtractionService == null) {
 			log.warn("TextExtractionService not available - full-text search may not work properly");
-			return null;
+			return new AttachmentContent(null, lengthFromMetadata(contentService, repositoryId, attachmentId));
 		}
 
+		long length = 0L;
 		try {
-			// Get ContentService to retrieve the attachment
-			ContentService contentService = getContentServiceSafely();
-			if (contentService == null) {
-				return null;
-			}
-
-			// Retrieve the attachment node
 			AttachmentNode attachment = contentService.getAttachment(repositoryId, attachmentId);
 			if (attachment == null) {
 				if (log.isDebugEnabled()) {
 					log.debug("Attachment not found: {}", attachmentId);
 				}
-				return null;
+				// getAttachmentRef retries; getAttachment does not. Only reached on failure.
+				return new AttachmentContent(null, lengthFromMetadata(contentService, repositoryId, attachmentId));
 			}
+			length = attachment.getLength();
 
-			// Get the content stream from the AttachmentNode
 			java.io.InputStream contentStream = attachment.getInputStream();
 			if (contentStream == null) {
 				if (log.isDebugEnabled()) {
 					log.debug("No content stream available for attachment: {}", attachmentId);
 				}
-				return null;
+				return new AttachmentContent(null, length);
 			}
 
-			// Get MIME type and filename for better parsing
-			String mimeType = attachment.getMimeType();
-			String fileName = attachment.getName();
-
-			// Check if the MIME type is supported for text extraction
-			if (mimeType != null && !textExtractionService.isSupported(mimeType)) {
-				if (log.isDebugEnabled()) {
-					log.debug("MIME type {} not supported for text extraction", mimeType);
-				}
-				try {
-					contentStream.close();
-				} catch (Exception e) {
-					// Ignore close errors
-				}
-				return null;
-			}
-
+			// The stream is open from here, so the try/finally starts BEFORE anything else can
+			// throw. Reading the mime type and file name outside it left a window where a getter
+			// throwing would let the open stream escape — narrow, since these are plain model
+			// accessors, but F3 was a connection leak and "closed on every path" has to be true
+			// rather than nearly true.
 			try {
-				// Extract text using Tika via TextExtractionService
-				String extractedText = textExtractionService.extractText(contentStream, mimeType, fileName);
+				String mimeType = attachment.getMimeType();
+				String fileName = attachment.getName();
 
+				if (mimeType != null && !textExtractionService.isSupported(mimeType)) {
+					if (log.isDebugEnabled()) {
+						log.debug("MIME type {} not supported for text extraction", mimeType);
+					}
+					return new AttachmentContent(null, length);
+				}
+
+				String extractedText = textExtractionService.extractText(contentStream, mimeType, fileName);
 				if (extractedText != null && !extractedText.isEmpty()) {
 					if (log.isDebugEnabled()) {
 						log.debug("Successfully extracted {} characters from {} ({})",
 								extractedText.length(), fileName, mimeType);
 					}
-					return extractedText;
-				} else {
-					return null;
+					return new AttachmentContent(extractedText, length);
 				}
+				return new AttachmentContent(null, length);
 			} finally {
-				// Ensure the content stream is closed
 				try {
 					contentStream.close();
 				} catch (Exception e) {
 					// Ignore close errors
 				}
 			}
-
 		} catch (Exception e) {
+			// A failed extraction is logged and yields no text — unchanged from before this merge.
 			log.warn("Failed to extract text content for attachment {}: {}", attachmentId, e.getMessage());
-			return null;
+			if (length == 0L) {
+				// The failure happened before the node was read, so its length is still unknown.
+				// The separate getContentLength call this method replaced was independent and
+				// would have supplied it here; going to the metadata path keeps that parity
+				// instead of silently indexing content_length=0.
+				return new AttachmentContent(null,
+						lengthFromMetadata(contentService, repositoryId, attachmentId));
+			}
+			return new AttachmentContent(null, length);
+		}
+	}
+
+	/** The metadata-only read — never opens the attachment body (F3). */
+	private long lengthFromMetadata(ContentService contentService, String repositoryId, String attachmentId) {
+		try {
+			AttachmentNode ref = contentService.getAttachmentRef(repositoryId, attachmentId);
+			return (ref != null) ? ref.getLength() : 0L;
+		} catch (Exception e) {
+			log.warn("Could not read the length of attachment {}: {}", attachmentId, e.getMessage());
+			return 0L;
+		}
+	}
+
+	/** The text to index and the length to index, from a single attachment read. */
+	static final class AttachmentContent {
+		static final AttachmentContent NONE = new AttachmentContent(null, 0L);
+
+		/** Extracted text, or null when there is nothing to index. */
+		final String text;
+		/** The attachment's length, or 0 when no node could be read at all. */
+		final long length;
+
+		AttachmentContent(String text, long length) {
+			this.text = text;
+			this.length = length;
 		}
 	}
 	

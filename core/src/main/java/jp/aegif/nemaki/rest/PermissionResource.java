@@ -226,9 +226,12 @@ public class PermissionResource extends ResourceBase {
 				}
 			}
 			
-			if (breakInheritance) {
-				aclPropagation = AclPropagation.OBJECTONLY;
-			}
+			// NOTE: breaking inheritance deliberately does NOT force OBJECTONLY any more.
+			// The break is carried by the "inherited=false" extension attached in
+			// convertJsonToCmisAcl; the propagation value never controlled it. Forcing
+			// OBJECTONLY here made this repository's own UI the single biggest user of a
+			// propagation value the server does not implement separately, which in turn made
+			// "reject objectonly" impossible to consider without breaking the UI.
 			
 			// Convert JSON to CMIS ACL
 			org.apache.chemistry.opencmis.commons.data.Acl cmisAcl = convertJsonToCmisAcl(inputJson, breakInheritance);

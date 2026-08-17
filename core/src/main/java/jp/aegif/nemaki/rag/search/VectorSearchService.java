@@ -69,6 +69,26 @@ public interface VectorSearchService {
     List<VectorSearchResult> searchInFolder(String repositoryId, String userId, String query,
                                             String folderId, int topK) throws VectorSearchException;
 
+    /**
+     * Folder-scoped search with the caller's weighting and threshold.
+     *
+     * <p>The five-argument form uses the server's configured boosts and similarity threshold.
+     * That silently discarded whatever the caller asked for: {@code RAGSearchResource} routes
+     * every request carrying a {@code folderId} here, so {@code propertyBoost},
+     * {@code contentBoost} and {@code minScore} were accepted by the API and then dropped,
+     * with no error. A caller asking for content-only search inside a folder got the default
+     * mix instead — which also meant a folder filter that was broken for chunks could be
+     * masked entirely by the property half.
+     *
+     * @param minScore minimum combined similarity, or null for the configured threshold
+     * @param propertyBoost weight for metadata similarity, or null for the configured value
+     * @param contentBoost weight for body similarity, or null for the configured value
+     */
+    List<VectorSearchResult> searchInFolder(String repositoryId, String userId, String query,
+                                            String folderId, int topK, Float minScore,
+                                            Float propertyBoost, Float contentBoost)
+            throws VectorSearchException;
+
 
     /**
      * Find documents similar to a given document based on vector similarity.

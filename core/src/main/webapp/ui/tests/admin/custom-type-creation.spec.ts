@@ -41,10 +41,10 @@
  *    - Implementation: generateTestId() for concise uniqueness
  *
  * 4. Smart Conditional Skipping with Informative Messages (Lines 158-160, 185-187, 252-261, 353-361):
- *    - Skip if create button not found: test.skip('ENV: Create type button not found - UI may not be implemented')
- *    - Skip if edit button missing: test.skip('ENV: Edit button not found')
- *    - Skip if property tab unavailable: test.skip('ENV: Property tab not available')
- *    - Skip if type selector missing: test.skip('ENV: Type selector not visible - implemented in DocumentList.tsx lines 1236-1254')
+ *    - Skip if create button not found: test.skip(true, 'ENV: Create type button not found - UI may not be implemented')
+ *    - Skip if edit button missing: test.skip(true, 'ENV: Edit button not found')
+ *    - Skip if property tab unavailable: test.skip(true, 'ENV: Property tab not available')
+ *    - Skip if type selector missing: test.skip(true, 'ENV: Type selector not visible - implemented in DocumentList.tsx lines 1236-1254')
  *    - Rationale: Tests adapt to UI implementation state with clear diagnostic messages
  *    - Self-healing: Tests pass automatically when features become available
  *
@@ -127,7 +127,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 
@@ -172,7 +172,7 @@ test.describe('Custom Type Creation and Property Management', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     // MOBILE FIX: Close sidebar
     await testHelper.closeMobileSidebar(browserName);
@@ -189,7 +189,7 @@ test.describe('Custom Type Creation and Property Management', () => {
     const typeManagementItem = page.locator('.ant-menu-item').filter({ hasText: /タイプ管理|Type Management/i });
     if (await typeManagementItem.count() > 0) {
       await typeManagementItem.click();
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+      await waitForAppReady(page, { timeout: 30000 });
     }
   });
 
@@ -252,7 +252,7 @@ test.describe('Custom Type Creation and Property Management', () => {
 
       // Method 3: First input in basic info tab
       if (!typeIdFilled) {
-        const basicTabInputs = createModal.locator('.ant-tabs-tabpane-active input');
+        const basicTabInputs = createModal.locator('.ant-tabs-content-active input');
         console.log(`Type ID selector 3 count: ${await basicTabInputs.count()}`);
         if (await basicTabInputs.count() > 0) {
           await basicTabInputs.first().fill(customTypeId);
@@ -390,7 +390,10 @@ test.describe('Custom Type Creation and Property Management', () => {
 
       console.log('Test: Custom type creation verified successfully');
     } else {
-      await expect(page.getByRole('button', { name: /タイプ作成|Create Type/i }).first()).toBeVisible({ timeout: 10000 });
+      // Fallback when the create-type trigger button wasn't found: assert the
+      // page rendered the create button (its label is "新規タイプ" / "New Type"
+      // / "Create Type"), matching the same regex used to locate it above.
+      await expect(page.getByRole('button', { name: /新規タイプ|新規.*作成|Create.*Type/i }).first()).toBeVisible({ timeout: 10000 });
     }
   });
 
@@ -513,7 +516,7 @@ test.describe('Custom Type Creation and Property Management', () => {
           }
         } else {
           console.log('ℹ️ JSON TextArea not found');
-          test.skip('ENV: JSON editor TextArea not found in modal');
+          test.skip(true, 'ENV: JSON editor TextArea not found in modal');
         }
       } else {
         // Not JSON edit modal - might be form-based (unexpected)
@@ -522,11 +525,11 @@ test.describe('Custom Type Creation and Property Management', () => {
         if (await cancelButton.count() > 0) {
           await cancelButton.click();
         }
-        test.skip('ENV: JSON editor modal not found');
+        test.skip(true, 'ENV: JSON editor modal not found');
       }
     } else {
       console.log('ℹ️ No editable custom types found in table');
-      test.skip('ENV: No editable custom types available');
+      test.skip(true, 'ENV: No editable custom types available');
     }
   });
 

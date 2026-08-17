@@ -54,7 +54,7 @@ test.describe('Internationalization Tests', () => {
     // Navigate to Documents section
     const documentsLink = page.locator('.ant-menu-item').filter({ hasText: /ドキュメント|Documents/i });
     await documentsLink.click();
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
 
     // Mobile browser handling: close sidebar to prevent overlay blocking
     await testHelper.closeMobileSidebar(browserName);
@@ -171,7 +171,7 @@ test.describe('Internationalization Tests', () => {
     try {
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
     } catch {
-      test.skip('ENV: Upload modal did not open - timing issue');
+      test.skip(true, 'ENV: Upload modal did not open - timing issue');
       return;
     }
 
@@ -188,7 +188,7 @@ test.describe('Internationalization Tests', () => {
     try {
       await submitButton.click({ timeout: 5000 });
     } catch {
-      test.skip('ENV: Submit button click failed - UI state issue');
+      test.skip(true, 'ENV: Submit button click failed - UI state issue');
       return;
     }
 
@@ -207,7 +207,7 @@ test.describe('Internationalization Tests', () => {
     const isVisible = await documentRow.isVisible().catch(() => false);
     if (!isVisible) {
       // Document may take time to appear - skip test gracefully
-      test.skip('ENV: Japanese filename not visible in table - timing issue');
+      test.skip(true, 'ENV: Japanese filename not visible in table - timing issue');
       return;
     }
     await expect(documentRow).toBeVisible({ timeout: 10000 });
@@ -283,7 +283,7 @@ test.describe('Internationalization Tests', () => {
 
     // Skip test if no files were uploaded successfully
     if (filesUploaded === 0) {
-      test.skip('ENV: Could not upload any special character files - UI timing issue');
+      test.skip(true, 'ENV: Could not upload any special character files - UI timing issue');
       return;
     }
 
@@ -298,7 +298,7 @@ test.describe('Internationalization Tests', () => {
       }
     }
     if (!allVisible) {
-      test.skip('ENV: Special character filenames not visible - timing issue');
+      test.skip(true, 'ENV: Special character filenames not visible - timing issue');
       return;
     }
   });
@@ -468,6 +468,12 @@ test.describe('Internationalization Tests', () => {
           page.waitForSelector('.ant-message-success', { timeout: 15000 }),
           page.waitForTimeout(5000),
         ]);
+        // The race above can win on the 5s timer while the dialog still says
+        // "アップロード中...". Everything after this looks for a properties modal, and an
+        // upload dialog still on screen is both the wrong container and a mask over the
+        // row the test wants to click. Wait for it to actually go away.
+        await page.locator('.ant-modal-wrap:visible').first()
+          .waitFor({ state: 'hidden', timeout: 30000 }).catch(() => undefined);
         uploadSuccess = true;
       }
     } catch {
@@ -506,30 +512,26 @@ test.describe('Internationalization Tests', () => {
     const documentRow = page.locator(`.ant-table-tbody tr:has-text("${unicodeFilename}")`);
     const isVisible = await documentRow.isVisible().catch(() => false);
     if (!isVisible) {
-      test.skip('ENV: Unicode filename not visible in table - timing issue');
+      test.skip(true, 'ENV: Unicode filename not visible in table - timing issue');
       return;
     }
     await expect(documentRow).toBeVisible({ timeout: 10000 });
 
-    // Look for properties/info button
-    const propertiesButton = documentRow.locator('button, a').filter({
-      or: [
-        { hasText: 'プロパティ' },
-        { hasText: '詳細' },
-        { hasText: 'Properties' }
-      ]
-    });
+    // Open the document's detail view. The row's action controls are icon-only, so there
+    // is no "プロパティ"/"詳細" text to match; the name itself is the link that opens the
+    // viewer. (The previous locator used filter({or: [...]}), which is not a Playwright
+    // option: the key was ignored, the filter matched all eight controls in the row, and
+    // .first() clicked the name link anyway — while the assertion still looked for a modal
+    // that this path never opens.)
+    const detailLink = documentRow.locator('button.ant-btn-link').first();
 
-    if (await propertiesButton.count() > 0) {
-      await propertiesButton.first().click(isMobile ? { force: true } : {});
-      await waitForRender(page);
+    if (await detailLink.count() > 0) {
+      await detailLink.click(isMobile ? { force: true } : {});
+      await waitForUiStable(page);
 
-      // Verify Unicode characters in properties modal/drawer
-      const propertiesContainer = page.locator('.ant-modal, .ant-drawer');
-      if (await propertiesContainer.count() > 0) {
-        // Check cmis:name property contains correct Unicode characters
-        await expect(propertiesContainer).toContainText('特殊文字テスト');
-      }
+      // The detail view must render the name with its multibyte characters intact.
+      await expect(page.getByText('特殊文字テスト', { exact: false }).first())
+        .toBeVisible({ timeout: 15000 });
     } else {
       // If properties button not found, verify via CMIS API directly
       const queryResponse = await page.request.get(
@@ -592,7 +594,7 @@ test.describe('Internationalization Tests', () => {
                    rootData.properties?.['cmis:objectId']?.value;
 
     if (!rootId) {
-      test.skip('ENV: Could not determine root folder ID for API upload');
+      test.skip(true, 'ENV: Could not determine root folder ID for API upload');
       return;
     }
 
@@ -628,7 +630,7 @@ test.describe('Internationalization Tests', () => {
 
     // Skip if no files were uploaded successfully
     if (filesUploaded === 0) {
-      test.skip('ENV: Could not upload any international character files');
+      test.skip(true, 'ENV: Could not upload any international character files');
       return;
     }
 
@@ -721,7 +723,7 @@ test.describe('Internationalization Tests', () => {
     try {
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
     } catch {
-      test.skip('ENV: Upload modal did not open - timing issue');
+      test.skip(true, 'ENV: Upload modal did not open - timing issue');
       return;
     }
 
@@ -732,21 +734,21 @@ test.describe('Internationalization Tests', () => {
         'Content for long Japanese filename'
       );
     } catch {
-      test.skip('ENV: File input not accessible in upload modal - timing issue');
+      test.skip(true, 'ENV: File input not accessible in upload modal - timing issue');
       return;
     }
 
     const submitButton = page.locator('.ant-modal button[type="submit"], .ant-modal .ant-btn-primary').first();
     const submitVisible = await submitButton.isVisible().catch(() => false);
     if (!submitVisible) {
-      test.skip('ENV: Submit button not visible in upload modal');
+      test.skip(true, 'ENV: Submit button not visible in upload modal');
       return;
     }
     // FIX 2025-12-24: Handle click failure gracefully
     try {
       await submitButton.click({ timeout: 5000 });
     } catch {
-      test.skip('ENV: Submit button click failed - UI state issue');
+      test.skip(true, 'ENV: Submit button click failed - UI state issue');
       return;
     }
 
@@ -775,11 +777,13 @@ test.describe('Internationalization Tests', () => {
     try {
       await page.waitForSelector('.ant-modal:not(.ant-modal-hidden)', { timeout: 5000 });
     } catch {
-      test.skip('ENV: Upload modal did not open for second upload - timing issue');
+      test.skip(true, 'ENV: Upload modal did not open for second upload - timing issue');
       return;
     }
 
-    const nameInput = page.locator('.ant-modal input[type="text"], .ant-modal input[id*="name"]');
+    // .first(): the upload modal has more than one text input, and a bare locator here
+    // is a strict-mode violation rather than a passing test.
+    const nameInput = page.locator('.ant-modal input[type="text"], .ant-modal input[id*="name"]').first();
     if (await nameInput.count() > 0) {
       await nameInput.fill(veryLongName);
 

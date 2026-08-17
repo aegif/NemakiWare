@@ -95,6 +95,7 @@ public class FilesystemExporter {
             if (child instanceof Folder) {
                 Files.createDirectories(childPath);
                 result.foldersExported++;
+                result.recordExported(child.getId(), child.getName(), true);
 
                 exportFolderToFilesystem(repositoryId, (Folder) child, childPath, callContext, result, allowOverwrite);
 
@@ -143,6 +144,7 @@ public class FilesystemExporter {
                 }
 
                 result.documentsExported++;
+                result.recordExported(doc.getId(), doc.getName(), false);
 
                 exportVersionHistoryToFilesystem(repositoryId, doc, targetDir, callContext, result, allowOverwrite);
             }

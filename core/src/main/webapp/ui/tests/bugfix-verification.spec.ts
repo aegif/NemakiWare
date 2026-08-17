@@ -230,7 +230,7 @@ test.describe('Bug Fix Verification Tests', () => {
     const viewportSize = page.viewportSize();
     const isMobile = viewportSize && viewportSize.width <= 414;
     if (isMobile) {
-      test.skip('ENV: Folder navigation differs on mobile');
+      test.skip(true, 'ENV: Folder navigation differs on mobile');
       return;
     }
 
@@ -433,7 +433,7 @@ test.describe('Bug Fix Verification Tests', () => {
       console.log('Verifying relationship is visible on target document...');
 
       // Look for the source document name in the relationship tab content
-      const relationshipContent = page.locator('.ant-tabs-tabpane-active');
+      const relationshipContent = page.locator('.ant-tabs-content-active');
       const sourceDocVisible = relationshipContent.locator(`text=${sourceDocName}`);
 
       // Should find at least one reference to the source document
@@ -510,7 +510,7 @@ test.describe('Bug Fix Verification Tests', () => {
       // Skip test if secondary type not available in this repository
       if (errorText.includes('typeNotFound') || errorText.includes('commentable')) {
         // UPDATED (2025-12-26): Secondary types ARE implemented - nemaki:commentable may not be registered in test repository
-        test.skip('ENV: Secondary type nemaki:commentable not found in repository');
+        test.skip(true, 'ENV: Secondary type nemaki:commentable not found in repository');
         return;
       }
       throw new Error(`Failed to update properties: ${errorText}`);
@@ -609,7 +609,7 @@ test.describe('Bug Fix Verification Tests', () => {
       const errorText = await checkoutResponse.text();
       console.log('Checkout failed:', errorText);
       if (errorText.includes('not versionable')) {
-        test.skip('ENV: Document type not versionable');
+        test.skip(true, 'ENV: Document type not versionable');
         return;
       }
       throw new Error(`Failed to checkout: ${errorText}`);
@@ -716,7 +716,7 @@ test.describe('Bug Fix Verification Tests', () => {
     if (!checkoutResponse.ok()) {
       const errorText = await checkoutResponse.text();
       if (errorText.includes('not versionable')) {
-        test.skip('ENV: Document type not versionable');
+        test.skip(true, 'ENV: Document type not versionable');
         return;
       }
       throw new Error(`Failed to checkout: ${errorText}`);

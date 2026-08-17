@@ -3,7 +3,7 @@ package jp.aegif.nemaki.rag.config;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.apache.solr.client.solrj.SolrClient;
-import org.apache.solr.client.solrj.impl.HttpSolrClient;
+import org.apache.solr.client.solrj.impl.HttpJdkSolrClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,6 +48,15 @@ public class SolrClientProvider {
     private volatile SolrClient solrClient;
     private final Object lock = new Object();
 
+    /**
+     * The HTTP executor backing {@link #solrClient}. Ours to shut down, because supplying one to
+     * the builder makes SolrJ stop shutting it down itself.
+     */
+    private volatile java.util.concurrent.ExecutorService httpExecutor;
+
+    /** Guarded by {@link #lock}. Once set, no further client is created. */
+    private boolean destroyed;
+
     @PostConstruct
     public void init() {
         log.info("SolrClientProvider initialized - Solr URL: {}://{}:{}/solr",
@@ -63,6 +72,12 @@ public class SolrClientProvider {
     public SolrClient getClient() {
         if (solrClient == null) {
             synchronized (lock) {
+                if (destroyed) {
+                    // Creating one here would build a client nothing will ever close, and — worse
+                    // — cleanup() may already have shut down the executor it would be handed.
+                    throw new IllegalStateException(
+                            "SolrClientProvider has been destroyed; no new Solr client will be created");
+                }
                 if (solrClient == null) {
                     solrClient = createSolrClient();
                     log.info("Created shared HttpSolrClient for RAG operations");
@@ -73,17 +88,47 @@ public class SolrClientProvider {
     }
 
     /**
-     * Create a new HttpSolrClient (HTTP/1.1) for reliable Solr communication.
-     * Note: Http2SolrClient has known issues with UpdateRequest and Block Join documents,
-     * so we use the more stable HTTP/1.1 client.
+     * Create a new HttpJdkSolrClient (JDK-built-in HTTP client) for reliable Solr
+     * communication. Solr 10 removed HttpSolrClient (Apache HttpClient) and
+     * Http2SolrClient (Jetty); HttpJdkSolrClient is the dependency-free
+     * replacement.
+     *
+     * HTTP/1.1 is forced (useHttp1_1): the JDK client defaults to HTTP/2, which
+     * against Solr 10 / Jetty 12 throws intermittent "RST_STREAM: Protocol
+     * error" on UpdateRequest / block-join (RAG parent-child) documents — the
+     * same class of HTTP/2 defect the previous HttpSolrClient (HTTP/1.1) was
+     * chosen to avoid.
      */
     private SolrClient createSolrClient() {
         String url = String.format("%s://%s:%d/solr", solrProtocol, solrHost, solrPort);
 
-        return new HttpSolrClient.Builder(url)
-                .withConnectionTimeout((int) CONNECTION_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                .withSocketTimeout((int) SOCKET_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                .build();
+        // withExecutor is not optional. SolrJ's default is a 4-thread pool shared by the thread
+        // writing a request body into a pipe and the thread draining it, so four concurrent
+        // updates deadlock it permanently. RAG bodies always exceed the 1 KiB pipe buffer because
+        // they carry float embedding vectors, so this client reaches that state first — measured.
+        // See SolrHttpExecutor.
+        java.util.concurrent.ExecutorService executor =
+                jp.aegif.nemaki.util.SolrHttpExecutor.create("solr-http-rag");
+        try {
+            SolrClient client = new HttpJdkSolrClient.Builder(url)
+                    .useHttp1_1(true)
+                    .withExecutor(executor)
+                    .withConnectionTimeout(CONNECTION_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                    .withRequestTimeout(SOCKET_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                    .withIdleTimeout(IDLE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                    .build();
+            // Publish only once build() has succeeded. Assigning the field first would leave a
+            // failed attempt's executor in it with no client to close, and the next attempt would
+            // overwrite the field and leak it — an unbounded pool, so the leak is unbounded too.
+            httpExecutor = executor;
+            return client;
+        } catch (RuntimeException | Error e) {
+            // Defence, not a covered path: build() was measured to validate nothing (eight
+            // malformed base URLs, including null and "", all built successfully), so this cannot
+            // be provoked from outside and no test exercises it. Keep it anyway.
+            jp.aegif.nemaki.util.SolrHttpExecutor.shutdown(executor);
+            throw e;
+        }
     }
 
     /**
@@ -95,16 +140,38 @@ public class SolrClientProvider {
         return String.format("%s://%s:%d/solr", solrProtocol, solrHost, solrPort);
     }
 
+    /**
+     * Terminal teardown.
+     *
+     * <p>The client and its executor are detached together under the same lock creation uses, and
+     * {@code destroyed} is set inside it. Without that, teardown can interleave with a concurrent
+     * {@link #getClient()}: cleanup clears the field, the getter builds a replacement, and cleanup
+     * then shuts down the REPLACEMENT's executor while leaking the original's — leaving a
+     * published client whose transport is dead. Closing happens outside the lock so a slow close
+     * does not block getters that are about to be refused anyway.
+     */
     @PreDestroy
     public void cleanup() {
-        if (solrClient != null) {
+        SolrClient client;
+        java.util.concurrent.ExecutorService executor;
+        synchronized (lock) {
+            destroyed = true;
+            client = solrClient;
+            executor = httpExecutor;
+            solrClient = null;
+            httpExecutor = null;
+        }
+
+        if (client != null) {
             try {
                 log.info("Closing shared SolrClient...");
-                solrClient.close();
+                client.close();
                 log.info("SolrClient closed successfully");
             } catch (Exception e) {
                 log.error("Error closing SolrClient", e);
             }
         }
+        // After the client, so in-flight requests can finish writing their bodies.
+        jp.aegif.nemaki.util.SolrHttpExecutor.shutdown(executor);
     }
 }

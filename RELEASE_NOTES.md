@@ -1,10 +1,1279 @@
 # NemakiWare Release Notes
 
 User-facing changelog. For per-commit detail see
-[`CLAUDE.md`](CLAUDE.md); for design rationale see
-[`docs/design/`](docs/design/).
+[`docs/history/development-log.md`](docs/history/development-log.md); for design
+rationale see [`docs/design/`](docs/design/). [`CLAUDE.md`](CLAUDE.md) now holds
+only repository gotchas.
 
 ---
+
+# 3.3.0 (2026-08-17)
+
+## 3.3.0 破壊的変更 — 起動要件とクライアント要件
+
+### CouchDB 3.3 以上が必須になりました (**起動を止めます**)
+
+3.3.0 は起動時に CouchDB のバージョンを確認し、**3.3 未満なら起動しません**。バージョンが
+読み取れない場合も同様に拒否します (不明を「たぶん大丈夫」とは扱いません)。
+
+これまではバージョンを読んで health 画面に出すだけだったため、古い CouchDB でも起動でき、
+**後になって別の場所で別の症状として壊れて**いました。2.4 世代の環境は CouchDB 1.6 / 2.x の
+ことが多いので、**NemakiWare を上げる前に CouchDB を上げてください**。
+
+> 下限を 3.3 にしたのは「3.x と書いてあるから」ではありません。検索索引の整合を守る仕組み
+> (ACL-epoch scanner) が「絶対に全件走査しない」ことを保証する根拠が CouchDB 3.3.x の挙動に
+> 基づいており、3.0〜3.2 ではその検証をしていないためです。壊れると分かっているのではなく、
+> **確かめていないので通さない**、という判断です。
+
+### REST API に CSRF 対策ヘッダが必要になりました
+
+**CMIS クライアントは影響を受けません。** AtomPub (`/atom/*`) は対象外、Browser Binding
+(`/browser/*`) は非ブラウザクライアントを通す軽量ポリシーです。
+
+影響を受けるのは **NemakiWare 独自の REST API** を直接叩いているクライアントです。
+
+| 経路 | 変更 |
+|---|---|
+| `/core/rest/**` / `/core/api/v1/**` の POST / PUT / DELETE / **PATCH** | CSRF 検証。**Basic auth はバイパスしません** |
+| `/core/api/v1/ingest-webhook/{id}` | **対象外** (HMAC 署名で検証するため)。`/subscribe` 側の管理操作は対象 |
+| `/core/rest/repo/{repo}/archive/index` | `limit` 未指定時の応答が**全件から 100 件**になりました |
+
+`X-Requested-With: XMLHttpRequest` を付けるか、Bearer / `AUTH_TOKEN` / `X-API-Key` で認証して
+ください。Basic auth を除外しているのは、ブラウザが realm 単位で自動付与する ambient
+credential だからです (付いていることが利用者の意図を示しません)。
+
+アーカイブ一覧を全件前提で読んでいたクライアントは、`totalItems` を見て `skip` / `limit` で
+ページングしてください。`limit` に 0 や負値を渡した場合も「未指定」として 100 件になります
+(`ArchiveResource.effectiveLimit`)。
+
+### CORS の既定が「許可しない」になりました
+
+`api.cors.allowedOrigins` を**設定していない場合の意味が変わりました**。
+
+| | 3.2 まで | 3.3.0 |
+|---|---|---|
+| 未設定 | `*` (**すべてのオリジンを許可**) | **CORS ヘッダを返さない** (ブラウザの same-origin policy が効く) |
+| 明示設定 | そのオリジンのみ | 変更なし。`*` も明示すれば従来どおり |
+
+同梱の React UI は `/core/ui/` と**同一オリジン**なので影響しません。
+**影響するのは、別オリジンのブラウザアプリからこれらの API を叩いている場合だけ**です
+(`/rest/*` `/api/*` `/odata/*` `/saml/*` `/services/*` `/mcp/*` — web.xml の corsFilter
+マッピングが正)。その場合は自分のオリジンを設定してください。
+
+```
+api.cors.allowedOrigins=https://ecm.example.com,https://admin.example.com
+```
+
+**CMIS クライアント・スクリプト・MCP サーバなど非ブラウザのクライアントは影響を受けません** —
+CORS はブラウザ側の仕組みです。未設定のときは起動ログにその旨が出ます。
+
+---
+
+## 3.3.0 で解決した既知の問題
+
+### `npm audit` — **0 件になりました**
+
+3.2 系では UI の依存に high が残っていました。3.3.0 で全て上げています。
+
+| パッケージ | → |
+|---|---|
+| `js-yaml` | 4.3.0 → **4.3.1** (5.x は default export が無く `swagger-client` が壊れるため 4 系の修正版) |
+| `dompurify` | 3.4.12 固定 → **3.4.13** |
+| `react-router` / `react-router-dom` | 7.18.1 → **7.18.2** |
+| `swagger-ui-react` | 5.31.x → **5.32.13** |
+| `brace-expansion` | → **5.0.9** |
+
+`npm audit --omit=dev` は **0 vulnerabilities**、UI ビルドと UI 単体テスト 191 件も通っています。
+
+### `cxf-core` — **4.2.0 → 4.2.3**
+
+SOAP バインディングの CXF を advisory の修正版 (4.2.2) より新しい **4.2.3** に上げました。
+
+**併せて構造を直しています。** 4.2.0 はバージョン変数が無く **5 箇所にベタ書き**で、
+安全に上げられない状態でした。`org.apache.cxf.version` プロパティに集約し、
+**enforcer にファミリ規則を追加**しています (Spring / HttpComponents に次ぐ 3 本目)。
+この規則を入れた時点で、OpenCMIS が CXF 4.1.3 を宣言していることが**その場で発覚**したので、
+そちらも dependencyManagement で押さえました。WAR 内の CXF は 10 個すべて 4.2.3 です。
+
+SOAP は実際に往復させて確認しています (MTOM の `getRepositories`、WSDL 6 本)。
+
+---
+
+## 3.3.0 追補 — 出荷物から開発用の残留物を取り除きました (2026-08-16)
+
+### 無認証で応答していた診断エンドポイントを削除しました
+
+`/core/rest/test`、`/core/rest/test/json`、`/core/rest/test/types` の 3 つが
+**認証なしで 200 を返していました** (`/rest/test/*` が `web.xml` の security-constraint に
+無かったため)。返していたのは固定文字列だけでデータ漏洩はありませんが、開発用の足場が
+本番で公開されている状態でした。**クラスごと削除しました** — これらは 404 になります。
+
+同じく参照されていなかった `MockSolrUtil` / `MockQueryProcessor` も WAR から除きました。
+
+### `/rest/all/repositories` が CORS 設定を無視していた問題
+
+このエンドポイントだけ `Access-Control-Allow-Origin: *` を直書きしており、
+**`api.cors.allowedOrigins` を設定しても効きませんでした**。設定を反映する
+`SimpleCorsFilter` が立てたヘッダを、サーブレットが上書きしていたためです。
+直書きを削除し、CORS の決定箇所を 1 つに集約しました。
+
+> 併せて 3.3.0 では**既定値そのものも変わっています** — 未設定は「許可しない」です。
+> 詳細は冒頭の破壊的変更「CORS の既定が『許可しない』になりました」を見てください。
+> この修正の意味は「設定がこのエンドポイントにも効くようになった」ことです。
+
+### WAR の中身
+
+Playwright の出力 (346KB) を含むテスト成果物 4 件が `/core/ui/` 配下で公開されていたので
+除きました。併せて `ui/public/**` が Vite の出力と**二重に**入っていたのも除いています
+(218 エントリ)。WAR は 210.4MB → 205.7MB になりました (バイト実測 205,686,621)。UI の動作に変化はありません。
+
+### JAXB 実装が 2 セット同梱されていた問題
+
+`jaxws-rt` が引き込む古い `com.sun.xml.bind` 4.0.2 と、明示的に固定している
+`org.glassfish.jaxb` 4.0.9 が**同じクラスを両方持って**いました。どちらが読まれるかは
+Tomcat のディレクトリ走査順に依存するため**デプロイごとに変わり得え**、4.0.9 への更新が
+環境によっては効いていませんでした。古い方を除外し、**SOAP バインディングが実際に
+往復することを確認**しています (MTOM の `getRepositories`、WSDL 6 本)。
+
+---
+
+## 3.3.0 追補 — QA 用の `testuser` が本番にも作られていた問題を修正しました (2026-08-16)
+
+**症状**: 初期化パッチ `Patch_TestUserInitialization` に有効・無効の切り替えが無く、**すべての
+デプロイのすべてのリポジトリ**に QA 用のアカウント `testuser` と グループ `testgroup` が
+作られていました。
+
+**認証はできません。** 保存されるパスワード `test` は BCrypt ハッシュではないため、照合が
+`BCrypt.checkpw` の不明形式フォールバックに落ちて例外になり、必ず不一致になります
+(`AuthenticationUtil.passwordMatchesWithUpgrade`)。**したがって既知の資格情報で入られる
+問題ではありません。** 問題は「誰も頼んでいない QA アカウントが本番データに居ること」と、
+**後から管理者が実パスワードを設定すれば有効なアカウントになる**ことです。
+
+**修正**: `patch.testuser.enabled` (既定 **false**) を新設し、明示的に有効にしたときだけ
+作るようにしました。QA 環境では `PATCH_TESTUSER_ENABLED=true` を渡してください
+(`docker-compose-simple.yml` が読みます)。
+
+**既存環境**: パッチ適用済みの記録はリポジトリごとに残るため、**既にある `testuser` /
+`testgroup` は自動では消えません**。不要なら管理 UI か REST で削除してください。
+
+```bash
+curl -u admin:admin -X DELETE -H "X-Requested-With: XMLHttpRequest" \
+  "http://HOST:8080/core/rest/repo/REPO/user/delete/testuser"
+```
+
+```bash
+curl -u admin:admin -X DELETE -H "X-Requested-With: XMLHttpRequest" \
+  "http://HOST:8080/core/rest/repo/REPO/group/delete/testgroup"
+```
+
+---
+
+## 3.3.0 追補 — 公開イメージの既定でクラウドディレクトリ同期が有効だった問題を修正しました (2026-08-16)
+
+**症状**: 公開 Docker イメージ (および `docker/` の compose で自前ビルドしたイメージ) の
+既定設定でクラウドディレクトリ同期が有効になっており、**毎日 02:00 に同期ジョブが起動して
+いました**。同期先として NemakiWare 開発元の Google Workspace ドメインと管理者メールアドレスが
+既定値として埋め込まれていました。
+
+**影響**: 3.1.0 〜 3.2.8 の公開イメージが対象です。
+
+- 鍵ファイル (`/usr/local/tomcat/secrets/google-service-account.json`) を置いていない環境では
+  毎日 ERROR ログが 1 本出るだけで、それ以外の影響はありません。
+- **他用途で同じパスに Google のサービスアカウント鍵を置いていた環境**では、その鍵で
+  開発元ドメイン宛の domain-wide delegation を要求していました。当該サービスアカウントは
+  開発元ドメインで委任されていないため Google 側が `unauthorized_client` で拒否し、
+  **テナントをまたぐデータの読み書きは発生しません**が、意図しない外部 API 呼び出しでした。
+- 利用者の環境から開発元へデータが送られることはありません (同期は「読み取って
+  NemakiWare に取り込む」方向のみ)。
+
+**修正**: 出荷設定の既定を `cloud.directory.sync.enabled=false` / providers・domain・adminEmail
+すべて空にしました。同期を使う場合は `-D` か環境変数、または `docker/secrets/*.env` で
+自分の値を与えてください。
+
+**併せて**: WAR 同梱のテンプレート側でキー名が 2 つ実装と食い違っており、設定しても読まれない
+状態でした (`cloud.directory.sync.google.serviceAccountKeyPath` → 正しくは
+`...serviceAccountKey`、`cloud.directory.sync.windowSize` → 正しくは
+`cloud.directory.sync.window.size`)。テンプレートを実装に合わせました。
+
+**確認方法**: 起動ログの
+`Cloud directory sync scheduler initialized (activeCron=...)` を見てください。この行は
+有効・無効にかかわらず出ます (`CloudDirectorySyncScheduler.java:58`)。**`activeCron=null` なら
+起動していません。** cron 式が入っていれば有効です。
+
+---
+
+## 3.3.0 追補 — 同時書き込みでサーバが停止する不具合を修正しました (2026-08-14)
+
+### 複数ユーザが同時に文書を登録するとサーバが応答しなくなる問題
+
+**症状**: RAG (AI 検索) を有効にしたリポジトリに**複数のクライアントが同時に**文書を
+登録すると、その時点から **CMIS API 全体が応答を返さなくなります**。CPU 使用率は
+ほぼゼロのまま、読み取りも書き込みも返りません。**回復するにはサーバの再起動が必要**です。
+
+**原因**: 検索サーバ (Solr) との通信に使うクライアントライブラリが既定で用意する
+スレッドプールを、そのままの設定で使っていました。このプールは実質 4 スレッドしかなく、
+かつ 1 回の通信が**送信側と受信側で 2 スレッドを同時に**必要とします。同時 4 件で
+送信側が全スレッドを占めると受信側が永久に起動できず、そのまま解けません。
+
+RAG 文書はベクトルデータを含むため必ずこの条件に該当します。通常の CMIS 索引でも
+十分に大きなデータであれば同じ状態になります。
+
+**修正**: 専用のスレッドプールを用意し、送信側と受信側が奪い合わないようにしました。
+**設定変更は不要**で、アップグレードするだけで解消します。
+
+実測 (同時 12 件の文書登録):
+
+| | 修正前 | 修正後 |
+|---|---|---|
+| 完了した件数 | **0 件** (180 秒以上応答なし) | **12 件** |
+| 所要時間 | (完了せず) | 2.2 秒 |
+
+> **3.3.0 より前のバージョンをお使いの場合**: この不具合は RAG 機能と同時書き込みが
+> 揃ったときに出ます。同時実行数を絞る運用で回避していた環境では、3.3.0 で
+> その制限を外せます。
+
+---
+
+## 3.3.0 追補 — 書き込みが速くなりました (2026-08-12)
+
+### 文書作成のスループットが約 5 倍になりました
+
+内部の CouchDB view クエリが、**必要な 1 件を絞り込むために view 全体を取得して
+アプリ側で突き合わせて**いました。返る答えは正しかったため不具合として見えず、
+**コストだけ**が出ていました。しかもそのコストは答えの大きさではなく
+**リポジトリ全体の大きさに比例**するので、**リポジトリが育つほど書き込みが遅く**なります。
+
+とくに文書作成では、CMIS の名前重複チェックが親フォルダの子名一覧を引くたびに
+リポジトリ全体分を転送していました。開発環境 (2,722 行) の実測:
+
+| | 1 件あたり (16 並列) | スループット |
+|---|---|---|
+| 修正前 | 11.85 秒 | 約 1.2 件/秒 |
+| 修正後 | 0.44 秒 | 約 6.5 件/秒 |
+
+同じ経路を**ログイン**も通ります (`userItemsById`)。ただしログインには 1 時間有効の
+ユーザキャッシュがあるため、この転送が起きるのは**キャッシュミスのとき**です
+(当初「ログインのたび」と書いていましたが誤りでした)。ユーザ数の多い環境では、
+その 1 回の転送が全ユーザ文書分になります。**設定変更や再索引は不要**で、
+アップグレードするだけで解消します。
+
+### 移動時の権限反映が、混雑中でもリクエストを止めなくなりました
+
+フォルダを移動すると、その配下の検索インデックス上の権限を書き直します。この処理の
+待ち行列が埋まっているとき、**移動リクエスト自身がその書き直しを最後まで実行**して
+いました。大きなフォルダを移動すると、そのリクエストが長時間返らないことになります。
+
+同じ状況を権限変更 (`applyACL`) 側では既に回避しており (待ち行列が埋まっていたら
+再同期キューに預けて即座に返す)、移動側だけがその処理を通っていませんでした。移動側も
+同じ扱いに揃えました。**書き直しの仕事は失われません** — 再同期キューが引き受けます。
+
+混雑していない通常時の動作は変わりません。
+
+> **この変更が対象にしているのは、待ち行列に投入した後の索引書き換えだけです。**
+> その手前で走るキャッシュ退避 (継承サブツリー全体の走査) は、今もリクエストスレッドで
+> 同期実行されます。したがって**非常に大きなフォルダの移動は依然として時間がかかります**。
+
+### インスタンスが残っているタイプは削除できなくなりました (**挙動変更**)
+
+CMIS では、あるタイプのオブジェクトがまだ存在する間、そのタイプ定義の削除は拒否される
+べきです。**これまでは成功していました** — チェック自体が未実装だったためで、削除すると
+「型定義の無いオブジェクト」が残る状態になっていました。
+
+これからは **409 (constraint)** で拒否されます。メッセージにタイプ名と理由が入ります。
+
+- **影響**: これまで通っていた `deleteType` が失敗するようになります。タイプを削除する
+  前に、そのタイプのオブジェクトをすべて削除してください。
+- 子タイプを持つタイプの削除は従来どおり拒否されます (こちらは以前から動作していました)。
+- **この検査が入るのは CMIS バインディング (AtomPub / Browser / Web Services) の
+  `deleteType` です。** 管理画面が使う NemakiWare 独自の REST 削除
+  (`DELETE /core/rest/repo/{repo}/type/delete/{typeId}`) は従来どおり削除できます。
+  この API は元々「CMIS 非準拠。既存文書は基底型の挙動にフォールバックする」という警告を
+  応答に含んでおり、意図的な管理用の抜け道です。**管理画面から型を消す場合は、
+  インスタンスが残っていないかをご自身で確認してください。**
+- **secondary type も対象です** (2026-08-13 追加)。当初は主タイプ
+  (`cmis:objectTypeId`) しか見ておらず、文書に適用中の secondary type が削除できて
+  いましたが、`secondaryIds` も確認するようにしました。
+
+### 全再索引が、索引を消したまま「完了」と報告することがなくなりました (**重要**)
+
+全再索引は **索引を消してから** リポジトリを走査します。その走査が中身を見つけられない
+状態 (CouchDB の view が再構築中など) だと、**索引を空にしたうえで「完了・エラー 0 件」と
+報告**していました。データそのものは無事ですが、**検索だけが全滅し、その事実が
+どこにも出ない**状態です。
+
+再索引の前に「今の索引が持っている件数」と「走査で見つけた件数」を突き合わせ、
+**大きく食い違うときは索引を消さずに中止**するようにしました。中止すると状態は
+`error` になり、メッセージに両方の件数が入ります。
+
+> 本当にリポジトリを大幅に削除した後で再索引したい場合は、
+> `POST /api/v1/cmis/repositories/{repo}/search-engine/clear` で明示的に索引を消してから
+> 再索引してください。
+
+**v3.3.0 は全再索引が必須**なので、アップグレード時にこの保護が効きます。
+
+### 起動時パッチが、CouchDB の view が答えられない状態では適用されなくなりました (**重要**)
+
+パッチの多くは「これは既に在るか？」を CouchDB の view で確かめてから作ります。**view が
+再構築中だとエラーにならずに「0 件」と答える**ため、既に在るものを「無い」と判定して
+**二重に作って**しまいます。実際に `.system` フォルダが 2 つできる事象が起きました
+(CMIS のパス解決が壊れます)。
+
+v3.3.0 のアップグレードでは view の再構築が起きるため、この窓が現実に開きます。
+**データベースに文書があるのに中核 view が 1 件も返さない場合は、パッチを適用せず
+次回起動に回す**ようにしました。ログに理由が出ます。新規リポジトリは対象外です。
+
+### 削除済み文書が検索に残ったとき、再索引なしで消せるようになりました
+
+索引からの削除は非同期で、失敗するとその場で再試行しますが、**プロセスが落ちると
+その再試行ごと消えます**。結果として、削除済みの文書が検索に残ることがあります。
+
+- 恒久的に失敗した場合、**ログに対処方法まで出す**ようにしました
+- `POST /api/v1/cmis/repositories/{repo}/search-engine/purge-orphans` で
+  **CouchDB に存在しない索引エントリだけを削除**できます。従来は 10 時間級の全再索引しか
+  手がありませんでした
+- 一覧は `GET .../search-engine/health/details` の `orphanedInSolr` で確認できます
+
+> このコマンドは、索引とリポジトリの食い違いが大きすぎる場合 (= リポジトリが読めていない
+> 疑いがある場合) は**何も削除せずに拒否**します。
+
+### 型の削除・名前の一意性が、データベース障害中に素通りしなくなりました
+
+「そのタイプのインスタンスが在るか」「同じ名前の子が既に在るか」の確認は CouchDB の
+view を引きます。**引けなかったときに「無い」と答えていた**ため、障害中は
+インスタンスが残っている型が削除でき、名前の重複も作れました。
+
+いずれも、view が答えられないときは**確認できない旨のエラー**を返すようにしました。
+view が再構築中で「0 件」と答える場合も、別経路で裏を取ります。
+
+### 全再索引が、全文書を二度索引付けするのをやめました
+
+バッチ書き込みの直後に検索クエリで確認していたため、**まだコミットされていない文書が
+「消えた」と判定され、ほぼ全件が 1 件ずつ再索引**されていました。確認方法をリアルタイム
+取得に変えました。
+
+実測 (5,615 オブジェクト): `silentDropCount` と `reindexedCount` が **5,614 → 0**。
+つまり全文書が二度索引付けされていたのが一度になりました。**あわせて、進捗 API が
+「5,614 件が黙って落ちた」と報告していたのも解消します** — 実際には落ちておらず、
+この数字自体が誤りでした。
+
+> **所要時間は変わりません。** 同じ 5,615 オブジェクトで前後を測ったところ 77 秒 / 84 秒で、
+> 二重の索引付けを消しても速くはなりませんでした。大規模環境で再索引が遅くなる問題
+> (10 万文書で 10 時間級) は**別の原因**で、まだ特定できていません。
+
+### 権限伝播の内部キャッシュを監視できるようになりました
+
+`GET /core/api/v1/admin/search-index/metrics` に、権限伝播の走査が使う祖先キャッシュの
+カウンタを追加しました。**`traversalMemoEvictions` を見てください** — 0 のままなら
+上限は余裕です。増え続ける場合は、1 回の権限変更が触るフォルダ数が上限 (既定 2,048) を
+超えており、CouchDB への読み取りが増えています。
+
+開発環境の実測では、深さ 12・フォルダ 84 個の木で実際に要ったのは **86 エントリ**
+(上限の 4.2%)、eviction は 0 件でした。
+
+### CMIS の拒否が 500 ではなく正しい状態コードで返るようになりました
+
+`deleteType` は、拒否を含むあらゆる例外を「サーバ内部エラー」として包み直していたため、
+**意図した拒否がすべて 500** で返っていました。CMIS の例外はそのまま返すようにしたので、
+上記の制約違反は 409、引数不正は 400 と、本来の状態コードになります。
+
+> 1 段内側では、制約違反と引数不正**以外**の失敗が今も
+> `CmisObjectNotFoundException` (404) に包まれます。つまり「削除に失敗した」が
+> 「そもそも存在しない」として返る場合があります。これは今回の変更前からの挙動で、
+> 別途対応します。
+
+---
+
+## 3.3.0 追補 — 権限伝播とロック順の是正 (2026-08-11)
+
+### ロック競合が 500 ではなく 503 で返るようになりました (**クライアント影響あり**)
+
+オブジェクトロックの取得に**上限**が入りました。これまで、まれな条件下でロックの
+待ち合わせが循環すると**リポジトリ全体が再起動まで応答を止める**ことがありました
+(実際に発生。詳細は [`docs/design/v3.3-release-blockers.md`](docs/design/v3.3-release-blockers.md)
+の A6 節)。上限により、この故障は「リポジトリ停止」から「**そのリクエスト 1 本が
+失敗する**」に格下げされます。
+
+- 返るのは **HTTP 503** (`CmisServiceUnavailableException`)。**再試行して構いません**。
+  500 (恒久的な障害) と区別してください。
+- AtomPub / Browser binding / `/api/v1` のいずれでも 503 になります。ただし
+  `/api/v1` の一部 (原因例外を伝播しない 29 箇所) では 500 のままです。
+- 通常運用では発生しません。全テストスイート 1 周でも発火ゼロで、
+  発火するのは 300 秒待っても取れない極端な輻輳時のみです。
+- 移動やチェックイン等で**別リクエストと衝突した読み取り**は、409
+  (`CmisUpdateConflictException`) を返すことがあります。こちらも再試行対象です。
+
+### 管理エンドポイントを 3 本追加
+
+いずれも管理者のみ。読み取り専用です。
+
+| パス | 用途 |
+|---|---|
+| `GET /core/api/v1/admin/search-index/metrics` | 伝播の各種カウンタ (要求スレッドへの流出、耐久キューへの委譲、pending gate、グループ解決の打ち切り 等) |
+| `GET /core/api/v1/admin/search-index/propagation` | 実行中の伝播と、信頼できる場合のみの ETA |
+| `GET /core/api/v1/admin/search-index/lock-order` | 危険なロック順の検出結果 (upgrade / inversion) |
+
+「上位フォルダの権限変更にどれくらいかかるか」「今それで詰まっているのか」を
+管理者が判断するための情報です。
+
+### 権限剥奪の索引削除に専用レーン
+
+RAG ブロックの削除 (剥奪に伴うもの) が、大規模な権限変更の再索引バックログの後ろで
+待たされないよう、専用のポーリングレーンに分離しました。利用者から見た挙動の変化は
+ありません (剥奪後に検索から消えるまでの時間が短くなります)。
+
+### 既知の制限: ACL の `objectonly` 伝播は未対応です
+
+`applyACL` の `aclPropagation` に **`objectonly` を指定しても、`propagate` として扱われます**
+(エラーにはなりません)。この制限は Alfresco と同じ位置づけです。
+
+理由は実効 ACL の計算方法です。NemakiWare は子孫に実効 ACL を保存せず、**読み取りのたびに
+祖先をたどって計算**します。したがって上位フォルダの ACL を変更すると、`objectonly` を
+指定したかどうかに関わらず子孫の実効 ACL は変わります。「このオブジェクトだけ」を実現するには
+継承を切って (`breakInheritance`) ください。
+
+capability の宣言は `propagate` のままです (CMIS 1.1 §2.1.12.3 は propagate が objectonly の
+サポートを含むと読めるため、値の受理自体は非適合ではありません)。
+
+### 継承ブレーク時に、送った ACL が実際に適用されるようになりました (**挙動変更**)
+
+これまで `breakInheritance=true` を伴う `setACL` は、**送られた ACE リストを読まずに**
+現在の実効 ACL をそのままローカル化していました。「継承を切り、同時にこの人を外す」
+という 1 回の呼び出しが、**成功を返したうえで剥奪だけ行われない**状態でした。
+
+- 継承ブレーク時は、要求された ACE を `direct` フラグに関係なく**すべて**保存します。
+  継承を切った後は継承元が無いため、フラグは*出自*を表すもので*行き先*ではありません。
+- 画面の「継承を解除」ボタンの動作は変わりません (読み込んだ実効 ACL をそのまま
+  送り返す作りなので、継承分もローカル ACE として引き継がれます)。
+- **空の ACE リスト + ブレークは「空の ACL」として扱います** (従来は「現状維持」)。
+  CMIS の add/remove 版は結果リストを計算して渡すため、最後の ACE の削除がこの形で
+  届きえます。**「継承を切りつつ現状を維持する」という指定はありません** — 継承ブレークは
+  ACL の extension で伝えるので、ACL を省略すると継承ブレーク自体が起きません。
+
+### RAG 検索の `folderId` がフォルダを絞るようになりました (**不具合修正**)
+
+`GET /api/v1/cmis/repositories/{repo}/rag/search` の `folderId` は、**指定しても
+絞り込まれていません**でした。指定したフォルダの外の文書が返り、中の文書が落ちる
+ことがあります。**権限の問題ではなく** (返るのは元から読める文書だけです)、
+スコープ指定が効いていなかったという不具合です。`folderId` を信頼して結果を
+絞っていた連携がある場合は、返る集合が変わります。
+
+`folderId` と `propertyBoost` / `contentBoost` / `minScore` を**併用できるように**
+なりました。これまで `folderId` を指定すると残り 3 つは無視され、サーバ設定値で
+検索されていました (エラーにはならず、要求と違う検索結果が 200 で返っていました)。
+
+### 複数レプリカ構成での権限剥奪の反映時間 (**運用情報**)
+
+レプリカを複数台で運用する場合、**権限を変更したレプリカ以外**に反映されるまでの時間は
+経路によって桁が違います。開発スタックで 2 レプリカ (同一 CouchDB / Solr) を立てて実測しました。
+
+| 操作 | 変更したレプリカ | **別のレプリカ** |
+|---|---|---|
+| ACE の削除 (フォルダの権限を外す) | 0.1〜0.3 秒 | **0.3〜1.5 秒** |
+| グループからユーザを外す | 0.1 秒 | **5〜10 秒** |
+
+グループ経由だけ遅いのは、principal 世代のキャッシュが**ポーリング (既定 5 秒)** でしか
+他レプリカに伝わらないためです。書き込み側の publish と読み取り側の検知でポーリングを
+2 回跨ぐので、**正常時の目安は 5〜10 秒**です。単一レプリカ構成では該当しません。
+
+> **これは上限 (SLA) ではありません。** ポーリングは `scheduleWithFixedDelay` なので
+> 各回の実行時間が間隔に上乗せされます。さらに、世代の publish が失敗しても警告ログを
+> 残して次の周回に回されるだけで、CouchDB が落ちている・ポーラが停止している・
+> publish が競合し続ける、といった状況では **反映は無期限に遅れえます**。
+> 剥奪の反映を時間で保証したい要件がある場合、この仕組みだけに依存しないでください。
+
+短縮したい場合はポーリング間隔を縮められますが、CouchDB への読み出しが増えます。
+
+### アップグレード時に CouchDB の view が再構築されます (**メンテナンス窓を推奨**)
+
+入れ子グループの逆引き view (`joinedDirectGroupsByGroupId`) が、辺 1 本につき**同じ行を
+20 回**書いていました。1 回に修正しています (開発環境の実測: view の行数 960 → 48、
+design document の index ファイル 227.8 MB → 183.1 MB)。
+
+**この修正の適用時、CouchDB は `_design/_repo` の全 view を再構築します。** 大規模な
+リポジトリでは時間がかかり、その間 view を使う操作 (一覧・検索・パッチ履歴の照会など) が
+待たされます。**メンテナンス窓での適用を推奨**し、適用後に view を 1 本叩いて再構築を
+完了させてから通常運用に戻してください。
+
+> 起動時のログに `Error getting patch history ... _repo/patch - timeout` が出ることが
+> あります。パッチ機構の履歴 view が同じ design document に同居しているため、自分が
+> 起こした再構築に当たったものです。パッチは冪等なので再起動での再適用は安全です。
+
+### 添付の読み出しで CouchDB 接続が漏れなくなりました
+
+存在確認・長さ・MIME type だけが必要な箇所が添付本体を丸ごとダウンロードし、
+その接続を閉じずに捨てていました。**全再索引で特に顕著**で、開発スタックの実測では
+2,510 文書の再索引中に ESTABLISHED 接続が 3 → 1,289 まで増え、完了後も約 90 秒
+張り付いていました。メタデータ専用の経路に切り替え、本体を開くのは実際に読む
+ときだけにしています。
+
+> **追記 (2026-08-13): 97,693 オブジェクトまで実測しました。** 再索引中のピークは 5 で、
+> アイドル時 (3) とほとんど変わりません。文書数を最初の実測点の 17 倍にしても
+> ピークは 3 → 5 で、接続漏れの警告は 0 件でした。
+> **20 万以上はまだ未実測**なので、その規模で運用される場合は再索引時の接続数監視を
+> お願いします。
+>
+> **別件の注意: 10 万規模では全再索引そのものに 10 時間級かかります。** 処理レートが
+> 規模とともに低下します (2.6 万件で 10.3 件/秒 → 9.8 万件で 2.6 件/秒)。接続漏れとは
+> 別の課題ですが、アップグレード時の再索引を計画される際は所要時間にご注意ください。
+
+---
+
+## 3.3.0 追補 — OpenCMIS 2.0.0-RC2 採用 (2026-08-07)
+
+OpenCMIS を自己ビルドの `2.0.0-RC2-nemakiware` に更新しました。Java 21 baseline、
+クエリスタックの ANTLR4 化、HTTP クライアントの Apache HttpClient 5 化を含みます。
+CMIS の外部仕様に変更はなく、AtomPub / Browser / Web Services の各バインディングは
+従来どおりです (CMIS TCK 38 テスト green)。
+
+### ユーザ / グループが `/.system/users` に出ないことがあった
+
+一部の生成経路 (MCP サービスアカウントと初期化時のテストユーザ) が、ユーザ項目を
+親フォルダに紐付けずに作成していました。アカウントは存在して認証もできる一方、
+`/.system/users` の一覧には現れず、管理 UI からも見えません。修正済みです。
+
+**既存環境で見えないユーザ / グループがある場合**、その項目は親フォルダを持たない
+状態で保存されています。新規作成分は自動的に正しく紐付きますが、既存分は
+CouchDB 上で `parentId` を `/.system/users` (グループは `/.system/groups`) の
+オブジェクト ID に設定してください。
+
+アップグレード時のその他の注意はありません。運用者の操作も不要です。
+
+---
+
+## 3.3.0 追補 — Jackson 3 移行と Spring 7 閉鎖 (2026-08-06)
+
+### Jackson 2 → 3 (`tools.jackson`)
+
+自コードのシリアライズは Jackson 3.2.1 になりました。Jackson 2 は Cloudant SDK・SolrJ・
+CXF・Jersey の JSON provider が必要とするため WAR 内に残りますが、**推移依存としてのみ**です
+(名前空間が異なるため共存できます。annotation は 2 系のものが両者で共有されます)。
+
+**CouchDB に永続される文書の内容と符号化は変わりません。** 移行前に採取した golden で、
+プロパティ集合・値・符号化 (数値の文字列化、日付表現、null の扱い)・読み書き往復の形状が
+同一であることを確認しています。
+
+**REST API の応答で 1 点だけ変わります。** Spring MVC が扱う `/core/api/...` のうち
+POJO を返すエンドポイントは、プロパティの並びが**アルファベット順**になります
+(値・型・日付形式は不変)。JSON オブジェクトのキー順に意味はなく、従来の並びは
+JVM のクラスロード順に依存していて起動ごとに変わりうるものでした (実測で確認)。
+今回の変更で並びは決定的になります。キー順に依存するクライアントがある場合のみ注意してください。
+Jersey が扱う `/core/rest/...` と `/core/api/v1/cmis/...` は Jackson 2 のままで、影響ありません。
+
+### Spring 7 閉鎖
+
+- 全 `org.springframework` モジュールが単一版であることをビルドで強制するようになりました
+  (以前 spring-tx だけが古い版で混入した事故があり、目視でしか気づけませんでした)。
+- 実体のない log4j 1.x 用フラグ (`-Dlog4j.configuration`) を Dockerfile と compose から削除しました。
+  ログは従来どおり Logback です。動作に変化はありません。
+
+---
+
+## 3.3.0 追補 — 起動ごとの型定義リーク修正とアーカイブ一覧の有界化 (2026-08-06)
+
+### 起動ごとに propertyDefinitionDetail が漏れていた
+
+システム CMIS プロパティの初期化が存在確認なしに毎起動 detail 文書を作成しており、
+起動を重ねた環境では リポジトリあたり数千件の孤児文書が蓄積、型一覧 API
+(`/rest/repo/{repo}/type/list`) が数秒単位まで劣化していました。初期化は冪等になり、
+不足分だけを一度作成します (リポジトリごとに view 読取 2 回)。蓄積済みの環境は
+アップグレード後もそのまま動きますが、孤児の掃除は型一覧の応答時間を回復させます。
+
+注意: これらの standalone detail は稼働中の型キャッシュ再構築が参照します。
+手動で削除した場合は core の再起動 (初期化が不足分を再作成) まで型プロパティ検査が
+不完全になることがあります。
+
+### `/rest/repo/{repo}/archive/index` の既定応答が有界に
+
+limit 未指定の呼び出しは従来**全件**を返していました (蓄積環境で数十 MB・数十秒に達し、
+実際に QA を停止させた実測あり)。既定は新しい順 100 件になり、`totalItems` で総数を
+判定できます。明示的な limit はこれまでどおり尊重されます。全件が必要なクライアントは
+skip/limit でページングしてください。管理 UI は元からページングしており影響ありません。
+
+---
+
+## 3.3.0 — Breaking-major dependency uplift + native ARM64 stack + OData repair (2026-07-22)
+
+### Persistent-format addition (content documents + Solr schema)
+
+Content documents gain a `content_incarnation` field, and the Solr schema gains
+`content_incarnation` (string) and `content_generation` (long). Together they fence the CONTENT axis:
+`content_generation` is the Content's own `_rev` generation, and because a restore reuses the id but
+restarts `_rev` at 1, generations are only compared WITHIN one incarnation — a different one means
+"new lifetime, write authoritatively" instead of "skip as older", which is what stops a restored
+document being refused for ever.
+
+New content is stamped in the same CouchDB commit that creates it; existing content is backfilled by
+`Patch_ContentIncarnationBackfill` at startup, or lazily by the first authoritative write, whichever
+wins the `_rev` CAS. No manual step is required. An archive restore always mints a FRESH incarnation
+and never reuses the archived one.
+
+The content fence reads `content_generation` only. (The ACL axis is fenced by
+`effective_acl_epoch` — see the ACL-epoch section below.)
+
+**Reusing an existing SOLR_HOME? Add the three fields by hand.** The schema shipped in the Solr image
+seeds a FRESH `SOLR_HOME` only; an existing one keeps its own `schema.xml` on the data volume, and
+the core uses `ClassicIndexSchemaFactory`, so the Schema API refuses to add them
+(`schema is not editable`). Without them EVERY document write fails with
+`400 unknown field 'content_incarnation'` — the CMIS operation still succeeds, but the index silently
+stops being updated, so queries return stale or missing results while `ERROR Solr indexing
+permanently failed for document …` accumulates in the log. Edit
+`{SOLR_HOME}/nemaki/conf/schema.xml` to add
+
+```xml
+<field name="effective_acl_epoch" type="long" indexed="true" stored="true" required="false" multiValued="false" />
+<field name="content_incarnation" type="string" indexed="true" stored="true" required="false" multiValued="false" />
+<field name="content_generation" type="long" indexed="true" stored="true" required="false" multiValued="false" />
+```
+
+then `curl "http://{solr}/solr/admin/cores?action=RELOAD&core=nemaki"`, and confirm all three with
+`curl "http://{solr}/solr/nemaki/schema/fields"` **before** starting the mandatory full reindex.
+
+**Do this on any stack whose Solr data volume survives the upgrade — which is the default.**
+`docker-compose-prod.yml` and `docker-compose-simple.yml` both mount the named volume `solr_data` at
+`SOLR_HOME=/var/solr/data`, and `--build --force-recreate` keeps named volumes. So upgrading an
+existing deployment gives you the **Solr 10 image with your Solr 9-era `schema.xml`**, not a fresh
+core. Only a genuinely new stack (or one where the volume was deliberately removed) seeds the schema
+from the image.
+
+`effective_acl_epoch` is the one that bites hardest: `AclEpochIndexWriter` sends it in the same
+atomic update as the reader tokens, so if it is missing the **mandatory initial ACL-epoch stamp fails
+for every document**, and the migration verdict comes back `UNKNOWN` rather than `INCOMPLETE`.
+
+**This fixes a real clobber**: a slow full-document rebuild (body re-extraction, rename, move) that
+finished after a fresh `applyAcl` used to overwrite the new reader tokens with the ones it had
+computed minutes earlier. The content writer now preserves whatever ACL group Solr already holds
+rather than re-emitting its own.
+
+### Persistent-format addition (reconciliation queue)
+
+Reconciliation task documents (`type: searchIndexAclReindexTask` in `nemaki_conf`) gain a
+`minRequiredEpoch` field. It records the highest ACL epoch a task is obliged to reconcile, and is
+merged monotonically so a later best-effort refresh cannot lower an obligation a finalized epoch
+raised. Existing tasks have no such field and read as `0` — no migration is required, and the next
+enqueue fills it in. A field that is PRESENT but not a non-negative integer is treated as corruption
+and surfaces rather than being read as `0`.
+
+Such an entry is **contained, not propagated**: it is skipped for execution (never claimed — its
+obligation is unknown), while staying visible in `GET /api/v1/admin/search-index/reconcile`
+(`corruptCount`), in `GET /metrics` (`corrupt`), and in a new
+`GET /api/v1/admin/search-index/reconcile/corrupt` listing that reports each entry's `objectId` and
+the reason. It is removed with `DELETE /api/v1/admin/search-index/reconcile/corrupt/{docId}`,
+addressed by CouchDB `_id` because resolving a `taskId` would mean deserializing the document that
+will not deserialize; that route REFUSES a healthy document. After deleting one, re-index its
+`objectId` — deleting a task drops only the automatic retry. Earlier 3.3.0 pre-releases let a single
+corrupt entry stall the whole queue with no way to remove it through the API.
+
+### ACL-epoch fencing is now the ACL write path (no switch)
+
+ACL mutations (applyAcl, move) run a two-phase outbox: the pending marker rides the SAME CouchDB
+write as the ACL change, an epoch is finalized post-commit, the Solr ACL group is written under the
+epoch fence (`readers` + `effective_acl_epoch`, `_version_` CAS), and a durable reconciliation
+obligation guarantees convergence across crashes. A leader-gated recovery sweep runs every 5
+minutes. This replaces the previous `acl_index_generation` fence, which could not order a change
+made on an ANCESTOR — the reason inherited-ACL and move revocations could go stale in the index.
+
+There is no enable/disable setting: the pre-epoch path has been removed. A pre-release
+`acl.epoch.wiring.enabled` briefly existed; a leftover `false` is ignored and warned about at
+startup.
+
+**Per deployment, in this order:** full reindex → initial-epoch migration
+
+> **接続リークは解消済みです (2026-08-13 更新)。** 修正前は 2,510 文書の再索引で
+> ESTABLISHED が 3 → 1,289 まで増え、完了後も約 90 秒張り付き、テスト 1 周で約 5,000 件の
+> leak 警告が出ていました。**97,693 オブジェクトまで実測**して、再索引中のピーク 5
+> (アイドル時 3)・leak 警告 0 件を確認しています (この観測は**再索引を完走させておらず**、
+> 約 1.4 時間・370 サンプルの部分観測です)。**20 万以上は未実測**なので、その規模では
+> 引き続き接続数を監視し、必要なら分割してください。詳細は F3 in
+> [`docs/design/v3.3-release-blockers.md`](docs/design/v3.3-release-blockers.md)。
+>
+> **所要時間にご注意ください。** 10 万文書規模の全再索引は **10 時間級**かかります
+> (処理レートが規模とともに 10.3 → 2.6 件/秒に低下。台帳 RX1)。
+(`verdict` COMPLETE / COMPLETE_EXCEPT_ORPHANS). Skipping the migration is not fatal — each
+document's first ACL write fences it — but it produces a reconciliation burst instead of a quiet
+upgrade.
+
+The Solr field `acl_index_generation` is gone from the shipped schema. Existing `SOLR_HOME`s keep
+an unused definition (inert); a fresh one simply never has it.
+
+Also fixed while plumbing this: an ordinary update (rename, property edit) used to RE-MINT
+`content_incarnation` on every write because the model never carried it — each update silently
+started a new content "lifetime" for the content fence. Updates now round-trip it verbatim.
+
+### New admin API: orphaned index entries (dry-run + confirmed delete)
+
+`GET /api/v1/admin/acl-epoch/migration/{repo}/orphans` lists index entries whose CouchDB content is
+definitively gone (the residual behind `COMPLETE_EXCEPT_ORPHANS`); `DELETE` on the same path with
+the **mandatory `?confirm=true`** removes the verified ones. Verification is fail-closed — only a
+definitive 404 qualifies, a read error never does — and every delete is a Solr `_version_` CAS, so
+a concurrently restored object is never deleted over. Admin-gated and CSRF-protected.
+
+### New admin API: initial ACL-epoch stamp (run it AFTER the full reindex)
+
+`POST /api/v1/admin/acl-epoch/migration/{repositoryId}` stamps the initial `effective_acl_epoch` on
+every CMIS object in a repository's Solr index; `GET` on the same path reports progress and a
+`verdict`. Both are admin-gated and CSRF-protected.
+
+**Order matters, and getting it wrong silently discards the work.** Run this AFTER the mandatory
+full reindex, never before: the reindex rebuilds every document through the content writer, whose
+fence preserves whatever ACL group Solr already holds — and on a freshly-rebuilt index there is
+nothing to preserve.
+
+The run is restartable by simply running it again: an already-stamped document is recognised from
+the query and skipped without recomputing anything.
+
+Read the `verdict`, not the raw count:
+
+| verdict | meaning |
+|---|---|
+| `COMPLETE` | every CMIS object in the index carries an epoch. Reported from the live index, so it is still `COMPLETE` after a restart even though the in-memory run record is gone |
+| `COMPLETE_EXCEPT_ORPHANS` | done; the residual is index entries whose CouchDB content was deleted and which can never be stamped |
+| `EMPTY_INDEX` | the repository has NO CMIS objects indexed — almost always "the full reindex has not been run yet". **Not** done |
+| `INCOMPLETE` | documents remain that could have been fenced — repair any reported quarantine blockers, then re-run |
+| `PARTIALLY_FENCED_NO_RUN_RECORD` | part of the index carries epochs and part does not, with no run record in this JVM. Ordinary ACL writes bootstrap epochs one document at a time, so this does **not** prove a migration ran — run the stamp (reindex first if one is pending) |
+| `NOT_RUN` / `RUNNING` / `FAILED` / `UNKNOWN` | no conclusion available. `NOT_RUN` now means "no run record AND nothing in the index is fenced"; a finished migration no longer degrades to `NOT_RUN` on restart |
+
+An unknown repository id is a 404 listing the configured ids — never a completed migration.
+
+Running it does not switch anything ON — the epoch writer is already the ACL write path in 3.3.0.
+What the stamp buys is a QUIET upgrade: without it, every document's first ACL mutation has to
+bootstrap its own fence and the reconciliation queue absorbs the burst.
+
+### New admin API: ACL-epoch outbox scanner
+
+`POST /api/v1/admin/acl-epoch/scan/{repositoryId}` runs one bounded crash-recovery sweep of the
+ACL-epoch outbox and returns a summary; `GET` on the same path returns the last one. `POST
+/api/v1/admin/acl-epoch/finalize/{repositoryId}/{docId}` finalizes a single document. Admin-gated
+and CSRF-protected. `more: true` in the summary means the pass hit its budget — run it again;
+progress is durable.
+
+The same sweep also runs automatically every 5 minutes on the leader (see the ACL-epoch section
+above); this endpoint is the on-demand version, for when you do not want to wait for the next tick.
+A healthy deployment reports zeros: the sweep exists for state left behind by a crash between an
+ACL mutation's commit and its finalize, which is rare by construction.
+
+Reconciliation tasks created by the outbox ACK are now recorded with reason `OUTBOX_ACK` instead of
+`INDEX_WRITE_FAILURE`. The ACK runs for a mutation that succeeded, so the old label sent anyone
+triaging the queue looking for a Solr failure that never happened. The field is free-form; existing
+tasks are unaffected.
+
+### New admin API: ACL-epoch quarantine
+
+`GET /api/v1/admin/acl-epoch/quarantine` lists the quarantined documents that have blocked an
+ACL-index refresh (a quarantined ANCESTOR blocks its whole subtree), and
+`POST /api/v1/admin/acl-epoch/quarantine/{repositoryId}/{docId}/repair` repairs one — normalizing
+its epoch fields and clearing the marker in a single CAS. Blocked reconciliation tasks are retained
+under a capped backoff and resume on their own after the repair; no manual re-enqueue. Both are
+admin-gated and CSRF-protected.
+
+A quarantine is how the fence refuses to guess: a document whose epoch fields are corrupt cannot be
+used as a source for anyone's effective epoch, so it is isolated rather than read optimistically.
+A healthy deployment reports zeros; a non-zero list is an operator action, not a self-healing wait.
+_On `deps/v3.3-breaking-majors` (off `master`). First minor with breaking-major
+dependency bumps. No CouchDB view / patch / schema / Mango changes — the 2.4
+data carry-over path is untouched; all changes are dependency, container, and
+OData/runtime code._
+
+### Breaking-major dependency uplift
+- **Apache Olingo (OData) 4.10 → 5.0** (all six modules; Java 17+, jakarta.servlet).
+- **Apache Solr / Lucene 9 → 10** (solr-solrj 10.0.0, lucene 10.3.2). The removed
+  `HttpSolrClient`/`Http2SolrClient` are replaced by `HttpJdkSolrClient` with
+  `useHttp1_1(true)` (avoids HTTP/2 RST_STREAM against Jetty 12); Solr 10 defaults
+  to SolrCloud so the container runs `solr-foreground --user-managed`; the legacy
+  fat-jar Solr module was dropped from the reactor.
+- **Netty 4.1 → 4.2** (netty-bom 4.2.16.Final), **react-router-dom 6 → 7**
+  (HashRouter), **Ant Design 5 → 6** (@ant-design/icons 6), plus the Tier-1/2
+  bumps (jakarta.annotation 3, i18next 26, jsdom 29).
+
+### OData binding repaired + hardened
+Entity-set reads (`/Documents`, `/Folders`, `/Objects`, …) had always returned
+`400 "Function not found in URI"`. Root cause: `CmisFunctionProcessor` implements
+the same Olingo interfaces as the entity-set processors and, since Olingo keeps
+one processor per interface, clobbered them — every read was misrouted to the
+function processor. (Pre-existing; reproduced on Olingo 4.10 and 5.0.) Fixes:
+delegate function URIs from the entity-set processors so one processor serves
+each interface; replace the hand-rolled `ODataHandlerImpl` shim with Olingo 5.0's
+jakarta-native `ODataHttpHandler` + `setSplit(1)`; expose the unbound functions
+(`Query`/`GetObjectByPath`/`GetContentChanges`) as function imports; map CMIS
+exceptions to correct HTTP status (409/400/404/403/405) instead of a blanket 500;
+always emit `@odata.count`; fix a null-`Holder` NPE in `$expand=children`.
+Validated: full OData IT suite 65/65, Apache Olingo *client* consumes the service
+4/4, `$metadata` validates against the OASIS OData 4.0 CSDL XSD, and a
+conformance checklist (Minimal + Intermediate) passes 21/21. See
+`tools/odata-conformance/`.
+
+### Native ARM64 (Apple Silicon) container images
+- **TEI** (`docker/tei/Dockerfile.arm64`): native arm64 build of Hugging Face
+  Text Embeddings Inference (MKL dropped, `ort,candle` backends) exposing the same
+  `/embed` API; non-root UID; opt-in via `NEMAKI_TEI_IMAGE`/`NEMAKI_TEI_PLATFORM`.
+- **Apache Atlas** (`docker/atlas/Dockerfile.arm64`): native arm64 Atlas 2.3.0
+  built from source; the dead expired-cert Hortonworks repo is mirrored to clojars
+  so **full Maven TLS validation stays on**; the container **exits when the Atlas
+  server process dies** (supervised CMD + `restart: unless-stopped`) instead of
+  lingering; non-root UID; build context pinned to a commit SHA; opt-in via
+  `NEMAKI_ATLAS_IMAGE`/`NEMAKI_ATLAS_PLATFORM`.
+- Both dev/eval overlays bind their ports to `127.0.0.1`.
+
+### Security / hygiene
+- npm audit HIGH cleared at the time (brace-expansion 5.0.7, js-yaml 4.3.0); Solr runtime
+  index/tlog data that had been committed by accident was removed from history and
+  is now gitignored.
+  **This no longer holds** — see "3.3.0 で解決した既知の問題" near the top of this file. js-yaml 4.3.0
+  is itself in the vulnerable range of a later advisory.
+
+### Review remediation — ORDER BY + paging correctness
+- **[P1] ORDER BY / the repository default order was applied only within a page,
+  not before paging.** The query path sliced the ACL-filtered page first
+  (`permitted.subList(skip, …)`) and then sorted only that page inside
+  `compileObjectDataListForSearchResult`, so a page size of 1 made the sort a
+  no-op and pages came back in Solr's native `modified desc` order — page N
+  disagreed with the unpaged ORDER BY (and with the configured
+  `capability.extended.orderBy.default=cmis:creationDate DESC`). Fix: a new
+  `CompileService.sortContentsForSearchResult` orders the whole ACL-authorized
+  set (by the ORDER BY, or the repository default when none is given) **before**
+  it is sliced; the page compile is then called with `orderBy="NONE"` so it is
+  not re-sorted. The ordering compile is properties-only and cached
+  (`objectDataCache`), so the page compile only recomputes allowable actions /
+  ACL. Both the CMIS Browser query and the OData entity-set path are fixed.
+- **[P1] OData `$orderby` was silently dropped (pre-existing).**
+  `convertOrderByToClause` read the property name from
+  `item.getExpression().toString()`, which for a `$orderby=name` Member
+  expression is the Olingo AST rendering, not the property name — so it mapped to
+  nothing and no ORDER BY was emitted (falling back to the default order). It now
+  extracts the name from the resource path exactly as `$filter` does.
+- **Verification**: live pre/post (the bug reproduced on the old build, every
+  case matched after the fix); Olingo *client* IT 6/6 (new
+  `olingoClientOrderByIsAppliedAndOrderedPagingMatches`: desc == reverse(asc) and
+  ordered `$top=1` page concatenation == the unpaged order); OData functional IT
+  65/65; the conformance checklist's `$orderby` check was tightened from
+  HTTP-200-only to asserting real ordering (25/25); CMIS Browser paging
+  unregressed.
+
+### P2 remediation — OData IT CI gate + arm64 supply-chain verification
+- **OData ITs are now a real CI gate.** A new `odata-tests` job in
+  `integration-tests.yml` starts the live stack, runs `ci-complete-setup.sh`,
+  seeds documents via the new `scripts/ci-seed-odata-docs.sh` (so the paging /
+  `$orderby` regression tests, which `assumeTrue(total >= 2)` and
+  `assumeTrue(distinct names)`, actually execute instead of skipping on a fresh
+  DB), then runs `ODataDocumentsIT`/`ODataFoldersIT`/`ODataOlingoClientValidationIT`
+  (71 tests) with the JUnit `@Disabled` condition deactivated. Previously these
+  ITs only ran by hand. The seed step is **fail-closed**: it idempotently creates
+  fixed distinct-named documents (409 = already exists is fine) and polls the
+  query path until count ≥ 3, every seed name is queryable, and all names are
+  distinct — exiting non-zero otherwise, so the gate cannot pass by silently
+  skipping its regressions.
+- **arm64 build inputs are pinned and verified (fail-closed).**
+  - Atlas: `docker/atlas/Dockerfile.arm64` adds `ARG ATLAS_SRC_SHA512` and runs
+    `sha512sum -c` on the downloaded `apache-atlas-2.3.0-sources.tar.gz` (the
+    pinned value matches Apache's official `downloads` and `archive` checksums),
+    so a tampered mirror / MITM aborts the build.
+  - TEI: `docker/tei/build-arm64.sh` adds `TEI_EXPECTED_COMMIT` and, after
+    `git clone --branch v1.7.4` (a mutable tag), verifies `HEAD` equals the
+    pinned commit `6e900af…` (resolved identically by `git ls-remote` and the
+    GitHub API) and aborts on mismatch.
+
+### Integration-review remediation — ACL-scan reachability (P1)
+- **The ACL-scan cap now rejects over-large result sets instead of faking
+  `hasMoreItems`.** The query path fetches at most
+  `-Dnemakiware.cmis.query.aclScanMaxRows` (default 10000) Solr rows, then
+  authorizes / sorts / pages them in memory. Previously, when the pre-ACL match
+  count exceeded the cap it reported `numItems` as a lower bound with
+  `hasMoreItems=true` — but rows past the cap are unreachable, so a paging client
+  looped forever, `$orderby` sorted only the first cap rows (wrong global order),
+  and even `$top=1` paid the full cap-sized fetch/authorize cost (a
+  low-privilege DoS). Now, when Solr's `numFound` exceeds the cap the query is
+  rejected with **HTTP 400** *before* the getContent/ACL/ObjectData/lock work,
+  with a message telling the caller to narrow the query or raise the cap. Within
+  the cap the whole authorized set is materialized, so `numItems` is the **exact**
+  authorized total and `hasMoreItems` (`skip+max < total`) is honest — *except* while
+  a permission change is still propagating, when the query may deliberately return a
+  confirmed prefix rather than a 400 (see the `truncatedByAclScanLimit` extension in
+  3.3.0). In that degraded window `numItems` is a lower bound; the extension flag is
+  how a client tells the two apart. Pinned by
+  `SolrQueryProcessorScanCapTest` (cap allowed, cap+1 rejected) and verified live
+  (cap=2: broad query → 400, narrow → 200; default cap: honest `hasMoreItems`,
+  exact `numItems`).
+
+### Integration-review remediation (second pass)
+- **The cap rejection no longer leaks the pre-ACL count, and rejects before
+  transferring bodies.** The query now runs a `rows=0` count probe first: an
+  over-cap match set is rejected from that cheap probe, before any document
+  bodies are transferred (so even `$top=1` no longer pays a cap-sized fetch), and
+  the 400 message is generic — it no longer echoes the pre-ACL `numFound` (which
+  counts objects the caller cannot read). A race-window re-check on the real
+  fetch keeps the same generic message.
+- **Browser Binding CSRF — a compatibility-preserving check is now applied**
+  (reversing the earlier "out of scope" stance). `/browser/*` POSTs are rejected
+  with 403 when `Sec-Fetch-Site: cross-site` is present or an `Origin` header is
+  cross-origin; a request with neither header — a non-browser CMIS client
+  (cmislib, the TCK, scripts) — is still allowed. This blocks a browser-forged
+  cross-site POST without requiring the full token/`X-Requested-With` validation
+  that would break CMIS clients. `CsrfValidator.validateBrowserBindingCsrf` +
+  `CsrfValidatorBrowserBindingTest` (8 cases); verified live (header-less → 201,
+  cross-site → 403, cross-origin Origin → 403, same-origin → 201).
+- **The OData seed no longer rejects legally same-named documents.**
+  `ci-seed-odata-docs.sh` dropped the repo-wide name-uniqueness requirement (CMIS
+  allows same-named documents in different folders); it now only verifies its own
+  distinct-by-construction seed names are present and count ≥ 3. It stays
+  fail-closed on a Solr-indexing timeout.
+- **The new regression tests are now CI-gated.**
+  `SolrQueryProcessorScanCapTest` and `CsrfValidatorBrowserBindingTest` were added
+  to the unit-tests job's explicit `-Dtest` list. (The Node 20→22 bump and the
+  OData 500 redaction were already completed in the prior commit, including the
+  Maven `frontend-maven-plugin` nodeVersion.)
+### Integration-review remediation (third pass)
+- **The OData gate can no longer go green by skipping.** The seed relaxation
+  above meant the `$orderby` test would `assumeTrue`-skip whenever *any* two
+  documents in the repository shared a name (which CMIS allows across folders),
+  passing Surefire without running the regression. The Olingo IT now **self-seeds**
+  a distinct set (`@BeforeAll`, idempotent, co-operating with the CI seed script)
+  and both paging/`$orderby` regressions read **only** that set via
+  `$filter=startswith(name,'odata-ci-seed-')` with **hard assertions** (no
+  `assumeTrue`). Verified live: 6/6, 0 skipped.
+- **The two-phase cap logic is now regression-pinned.** `queryWithinScanCap` was
+  extracted and `SolrQueryProcessorScanCapTest` (9 tests) now drives it with a
+  mock `SolrClient` to assert: phase 1 queries with `rows=0`, an over-cap match is
+  rejected **without a second query**, the rejection message carries **no pre-ACL
+  count**, growth between the probe and the fetch is caught by the re-check, and a
+  within-cap query fetches with `rows=cap`.
+- **Security docs reconciled** with the new Browser Binding CSRF policy
+  (`CLAUDE.md`, `docs/MANUAL-VERIFICATION-SECURITY-AUDIT.md`,
+  `docs/MANUAL-VERIFICATION-CONNECTORS.md`, `docs/design/connector-delegation.md`
+  no longer say `/browser` is CSRF-exempt).
+### ACL-in-Solr — the cap now bounds the caller's authorized count, not the repo total
+The pre-ACL cap rejection (a low-privilege user could not search a large
+repository even when their authorized subset was tiny, and the "is the overall
+match over the cap" bit was observable pre-ACL) is **resolved** by pushing
+authorization into Solr, mirroring the pattern RAG already uses.
+- **Index side** (`SolrUtil.createSolrDocument`): every queryable content object —
+  documents, folders, items **including principal items** (user/group items sit
+  under `/.system` with a normal inherited ACL, default `GROUP_EVERYONE:read`, and
+  were visible to non-admins through the in-memory filter) — is stamped with
+  repository-scoped reader tokens from `ACLExpander.expandToReaders`
+  (`user:{repo}:{id}` / `group:{repo}:{id}` / `anyone:{repo}`, admin-only
+  fail-closed) in the `readers` field. A **relationship** stores no ACL of its
+  own — its read permission is `read(source) OR read(target)`
+  (`checkRelationshipPermission`) — so it is stamped with the **union of its
+  source's and target's readers** (`relationshipReaders`). The field already
+  exists in the nemaki core schema (used by RAG) — **no schema change**.
+- **Query side** (`SolrQueryProcessor.aclFilterQueries`): a non-admin query adds a
+  plain `readers:(...)` fq plus a `-doc_type:[* TO *]` exclusion of RAG docs, so
+  **Solr returns only authorized documents and `numFound` is the authorized
+  count** — relationships carry their source/target readers so they are filtered
+  like any other content (no carve-out). Admins bypass the readers restriction
+  (they see everything, as before); the in-memory `permissionService.getFiltered`
+  stays as defense-in-depth. Fail-safe: an admin-check failure is treated as
+  non-admin, and if the expander is unwired (or the caller anonymous) the fq is
+  skipped and `getFiltered` still enforces ACL. Pinned by
+  `SolrQueryProcessorAclFilterTest`, added to the CI unit-tests gate.
+- **ACL changes propagate** (`AclServiceImpl`): the changed object is re-indexed
+  by `updateInternal`; inheriting descendants have their content `readers`
+  re-indexed by the (now content-aware) recursion, regardless of whether RAG is
+  enabled. A **stale-cache fix** evicts the object's cached ACL *before*
+  `updateInternal` re-indexes, so `createSolrDocument → expandToReaders →
+  calculateAcl` recomputes readers from the just-applied ACL (calculateAcl
+  otherwise returns the cached Acl).
+- **⚠️⚠️ Upgrade — a full CMIS + RAG reindex is SECURITY-MANDATORY, not
+  optional.** An index built by a pre-fix build carries the old
+  **member-expanded `user:` tokens** on documents (group members and admins
+  expanded at index time), and existing content has no `readers` field at all.
+  Until the rebuild, the round-2 revocation fixes (group departure / admin
+  demotion) **do not take effect for old data**, with three concrete consequences:
+  (1) content with no `readers` is invisible to non-admin search (fail-closed —
+  not a leak); (2) stale member-expanded tokens keep matching after a departure,
+  so CMIS `numFound` stays inflated and can trip the ACL scan-cap 400, and the RAG
+  seed / findSimilar paths (token-gated, no PermissionService on the seed) stay
+  matchable for a departed member; (3) the over-broad token sets bloat the RAG
+  candidate pool. (The RAG *result* stage is still filtered by PermissionService,
+  so this is not a plain body leak — but the seed oracle and numFound/cap
+  correctness are real.) v3.3 already requires a Solr-10 reindex, so this is the
+  same step, but it MUST run before exposing the upgraded system:
+  `POST /api/v1/cmis/repositories/{repo}/search-engine/reindex` and (if RAG is
+  enabled) `POST /api/v1/cmis/repositories/{repo}/search-engine/rag/reindex`.
+  Until the rebuild completes, treat the deployment as pre-fix for revocation.
+- **Verified live**: readers populated on content; a non-admin sees the
+  `GROUP_EVERYONE` documents but not a restricted one (admin sees it);
+  grant/revoke reflects immediately (tokens add/remove); and with `cap=2` over a
+  14-document repository a low-privilege user authorized to 2 documents gets
+  **HTTP 200** with their two docs while an admin authorized to all 14 gets 400.
+  Admin bypass keeps TCK QueryTestGroup 6/6, OData IT 71/71, conformance 25/25 and
+  the focused unit tests unregressed.
+
+### ACL-in-Solr — revocation soundness (review: P0 + two P1)
+- **[P0] Group departure left stale search access (an actual RAG leak).**
+  `ACLExpander.expandToReaders` expanded a group's *current members* into
+  `user:{repo}:{id}` tokens at index time, so a removed member (or nested-subgroup
+  member, or demoted admin) kept a stale user token on every document until it was
+  re-indexed — and the query always includes the caller's own user token, so it
+  kept matching. CMIS was corrected by `getFiltered` (but numFound inflated and
+  could trip the scan cap); **RAG has no final ACL check, so it returned document
+  names / paths / chunk text**. Fix: the index now stores **only the
+  ACL-directly-named principal tokens** (member expansion removed); membership is
+  resolved at query time (`getGroupIdsContainingUser` is transitive over nested
+  groups on both the CMIS and RAG paths — verified), which is **revocation-safe
+  with no re-index**. Verified live: a user loses search access to a
+  group-granted document the instant they leave the group, without re-indexing the
+  document. This also closes the pre-existing RAG leak. `ACLExpanderTest` updated
+  to the no-expansion contract.
+- **[P1] Move left the old parent's inherited ACL.** A folder move did not evict
+  the moved object's ACL cache before re-indexing, and never re-indexed
+  descendants, so a public→private move left stale, over-permissive readers.
+  Fix: `ContentServiceImpl.move` evicts the moved object's ACL cache before its
+  re-index, and `ObjectServiceImpl.moveObject` calls the new
+  `AclService.refreshMovedSubtreeSearchIndexAcl` (same evict + recursive re-index
+  as the applyAcl path) for inheriting descendants. Verified live: after moving a
+  public folder into a private one, a descendant document's readers refresh within
+  ~5 s and a non-admin loses search access — no manual re-index.
+- **[P1] Relationships reintroduced the pre-ACL cap.** (Superseded the earlier
+  full fq exemption.) Relationships now carry `readers(source) ∪ readers(target)`
+  and are filtered by the normal fq, so numFound is authorized.
+
+### ACL-in-Solr — revocation soundness, round 2 (review: three P1 + one P2 + P3)
+The round-1 fixes were correct for group departure but a second review found the
+grant direction, admin demotion, the async window, and a cyclic-group DoS still
+open. All fixed; each has an automated pin and (where observable) a live check.
+- **[P1] A grant on a relationship endpoint was never reflected in search
+  (permanent unsearchability), and a revoke re-tripped the cap.** For a
+  relationship, `getFiltered` can only REMOVE a hit Solr returned — it cannot ADD
+  one Solr excluded. So a user newly granted read on the source/target could never
+  find the relationship, and a revoke left a stale over-permissive token inflating
+  numFound (false 400). Fix: an ACL change (`applyAcl`) and a move now
+  **reverse-look-up the relationships referencing the changed object**
+  (`getRelationsipsOfObject(..., EITHER)`) and re-index them
+  (`AclServiceImpl.updateSearchIndexACLRecursively`, for the root as well as
+  inheriting descendants). Verified live: granting read on a source document
+  propagates the new principal onto the relationship's `readers` within the async
+  refresh.
+- **[P1] Admin demotion still left RAG access.** The null/empty-ACL fallback
+  expanded the *current* admins into individual `user:` tokens — the same
+  revocation hole as group members. Fix: stamp the single **`admin:{repo}` ROLE
+  token**; only a current admin is granted it at query time
+  (`ACLExpander.buildReaderTokenSet` / `buildReaderFilterQuery`), so demotion takes
+  effect immediately without re-indexing. Pinned by `ACLExpanderTest`.
+- **[P1] The move / applyAcl descendant re-index is async, so RAG had a stale
+  window** (CMIS is corrected by `getFiltered`, but RAG had no final ACL check).
+  Fix (the reviewer's recommended permanent closure): a **final live-ACL gate on
+  every RAG hit** (`VectorSearchServiceImpl.filterByLiveAcl` →
+  `ACLExpander.isReadableByTokens`) — the RAG analog of CMIS `getFiltered`. The
+  Solr `readers` fq is now only an optimization; each hit is re-verified against
+  live ACL (calculateAcl, whose cache is evicted on any ACL change / move), so a
+  stale, over-permissive index entry can never leak a name/path/chunk — closing
+  the move, applyAcl, relationship, admin-demotion and group-departure windows for
+  RAG in one place. Pinned by `ACLExpanderTest` (intersect / disjoint / missing).
+- **[P2] A cyclic nested group (A→B→A) StackOverflowed every non-admin search.**
+  The query-time group resolution recursed with no visited set, and group editing
+  only rejected direct self-add. Fix: `PrincipalServiceImpl.containsUserInGroup`
+  now carries a per-walk visited set (read side, the DoS fix), and
+  `ContentServiceImpl.update()` — the single choke point all group edits route
+  through — rejects an edit that would introduce an indirect cycle (write side).
+  Verified live: A→B→A add is rejected with a clear error, a legitimate C→B add
+  still succeeds; pinned by `PrincipalServiceImplCycleTest`.
+- **[P3]** Stale comments corrected (`SolrQueryProcessor` relationship "carve-out"
+  and `queryWithinScanCap` "pre-ACL numFound"; `ACLExpander` class Javadoc step 3;
+  `SolrUtil.relationshipReaders` residual note).
+
+### ACL-in-Solr — revocation soundness, round 3 (multi-agent self-review: P1 + two P2 + P3 batch)
+A 5-lens × 3-refuter adversarial self-review of the round-2 commit surfaced four
+residual defects; all fixed and live-verified.
+- **[P1] Moving a LEAF document never refreshed its relationships.**
+  `refreshMovedSubtreeSearchIndexAcl` early-returned for any non-folder, so round
+  2's relationship reverse-reindex ran for folder moves and applyAcl but not for a
+  moved leaf document (the common case — ingest links documents via
+  hasAttachment / attachedToRecord / derivedFromContext). A grant via the new
+  parent stayed permanently unsearchable on those relationships; a restrictive
+  move kept inflating numFound. Fix: the early return is now `content == null`
+  only; a leaf still runs the relationship refresh
+  (`updateSearchIndexACLRecursively(isRoot=true)` skips the root's own content
+  readers but refreshes its relationships, and recurses only for a folder).
+  Verified live: moving a leaf from a restricted folder into a public one now adds
+  `GROUP_EVERYONE` to the relationship's readers (previously stuck at admin/system).
+- **[P2] findSimilarDocuments authorized the similarity SEED only via the
+  stale-able Solr fq.** The results get the live-ACL gate, but the seed vector
+  (`getDocumentVector`) was authorized purely by the indexed readers fq, so during
+  a stale-permissive window (async re-index, a failed refresh, or a not-yet-rebuilt
+  pre-fix index) a revoked caller could use a revoked document as a seed — an
+  existence + semantic-neighbourhood oracle. Fix: re-verify the seed with
+  `isReadableByTokens` and treat an unreadable seed identically to "not found"
+  (same exception, preserving indistinguishability).
+- **[P2] The cyclic-group rejection returned HTTP 500 on the Spring/api-v1 group
+  endpoints.** `assertNoNestedGroupCycle` threw `IllegalStateException`, which the
+  per-method generic `catch (Exception)` mapped to 500 (invalid client input → 500,
+  a class this project treats as a defect). Fix: throw `IllegalArgumentException`
+  (both layers already map it to 400) and add a specific catch ahead of the generic
+  one in `GroupController` and `GroupResource`. Verified live: api/v1 cycle add →
+  400 ProblemDetail; a non-cyclic edit → 200.
+- **[P3 batch]** (a) `searchWithBoost`/`searchInFolder` now apply the live gate
+  BEFORE the topK trim (inside `executeWeightedKnnSearch`, matching
+  findSimilarDocuments) so a dropped stale hit no longer shrinks the page below
+  topK; (b) `updateSearchIndexACLRecursively`'s descendant walk is now guarded per
+  node so a transient `getChildren`/single-child failure is bounded to that subtree
+  instead of abandoning the whole traversal (docs softened to best-effort);
+  (c) move-coverage Javadoc (`AclService`, `AclServiceImpl`, `ObjectServiceImpl`)
+  corrected to include leaves; (d) `UserGroupServiceDelegate.containsUserInGroup`
+  gained a visited set (no live caller today, but a latent StackOverflow hazard;
+  a dangling-subgroup abort-the-whole-walk side bug was also fixed).
+- **Reviewed and cleared:** the CMIS getFiltered path's cyclic-group DoS is a
+  non-issue — `UserGroupDaoDelegate.getJoinedGroupByUserId` already carries a
+  visited set + maxIterations=50.
+
+### ACL-in-Solr — durable reconciliation queue for failed async ACL refreshes
+Closes the round-3/4 known limitation ("the relationship reverse-reindex is async
+best-effort; a permanently-failed refresh stays stale until the next ACL touch or a
+full reindex"). Failed asynchronous search-index ACL refreshes are recorded in a
+CouchDB queue, **re-driven with confirmed (synchronous) writes**, and are
+operator-observable. A first implementation was reworked after review to make the
+concurrency/durability semantics actually hold:
+- **Atomic dedupe + CAS** (`SearchIndexReconciliationService`): each entry lives
+  under a DETERMINISTIC `_id` (`search-index-acl-reconcile::{repo}::{object}`), so
+  concurrent enqueues for the same object collapse to one document (a create
+  conflict resolves to an in-place update), and **every state transition is a
+  `_rev` compare-and-swap** — a stale rev → 409 → the operation is abandoned. Two
+  replicas therefore cannot both process an entry, and a poller cannot clobber a
+  newer failure event that arrived mid-flight (a new enqueue bumps `generation`,
+  which changes the rev and makes the in-flight CAS delete fail, so the fresh
+  failure survives). Lifecycle `PENDING → LEASED → (deleted | PENDING | FAILED)`;
+  a crashed poller's lease expires and is reclaimable.
+- **Confirmed re-drive** (fixes the core review defect): the poller re-drives via
+  `AclService.reindexSearchIndexAclForObject` with `forceSync=true`, so the Solr
+  writes complete SYNCHRONOUSLY and a failure throws and is counted — the entry is
+  only completed (CAS-deleted) when the re-drive is genuinely clean (previously a
+  fire-and-forget async submit reported clean and the entry was deleted before the
+  write was known to have landed, re-opening the very `INDEX_WRITE_FAILURE` it was
+  meant to fix). A cache-eviction failure (a precondition for a correct re-index)
+  is also counted / enqueued rather than treated as success.
+- **DB-side due selection**: the poller claims via a Mango `$lte` range + ascending
+  sort on `nextAttemptAt` (epoch millis), served by `(type,status,nextAttemptAt)` —
+  so the oldest-due entries come first and a backlog beyond one batch is not
+  starved. Expired leases are reclaimed via `(type,status,leaseExpiresAt)`.
+- **Enqueue points** (`AclServiceImpl`): every caught failure — per-node
+  content/RAG/relationship refresh, a `getChildren` traversal failure, a cache
+  eviction failure, and (via a `SolrUtil.indexDocument` `onPermanentFailure`
+  callback) an async Solr write that exhausts its bounded retries — records the
+  object; the outer async task enqueues the root on a whole-traversal throw.
+- **Admin API + metrics** (`/api/v1/admin/search-index/reconcile`, admin-gated,
+  CSRF-protected): list (by status), `GET /metrics` (pending/leased/failed counts,
+  oldest-pending age, enqueue-failure count — for alerting), force-retry, delete.
+- **Config** (optional; defaults): `nemakiware.searchindex.reconcile
+  .pollIntervalSeconds=120 / .maxAttempts=10 / .batchSize=50 / .baseBackoffSeconds=60
+  / .leaseSeconds=300`.
+- **Honest scope**: this is a durable retry queue for the common case — a **Solr
+  failure while CouchDB is healthy** (the ACL change that triggered it was already
+  persisted to CouchDB). If CouchDB itself is unavailable, the queue write also
+  fails; that is surfaced via the `enqueueFailureCount` metric (alert on it) rather
+  than silently lost, and the true belt-and-suspenders for that case is a periodic
+  authoritative ACL-to-index audit (a separate, larger effort). After `maxAttempts`
+  an entry is kept as `FAILED` for inspection — operators should alert on the
+  `failed` count, `oldestPendingCreatedAgeMs` (backlog age) and `mostOverduePendingMs`
+  (how far past its next-attempt time the most-overdue entry is).
+- **Verified**: `SearchIndexReconciliationSchedulerTest` (5 — clean→complete,
+  under-cap→retryLater, at-cap→markFailed, non-leader→no-claim, deterministic-id
+  encoding); live against real CouchDB — deterministic-id dedupe (duplicate `_id` →
+  409), a synchronous retry re-drove a real object and CAS-deleted the entry, the
+  Mango due query returned entries sorted by `nextAttemptAt`, and the metrics
+  endpoint reported the correct oldest-pending age. **Persistent-format note**:
+  unlike the rest of v3.3 this ADDS a `nemaki_conf` record type
+  (`searchIndexAclReindexTask`) + Mango indexes (existing views / 2.4 carry-over
+  untouched) — call it out in upgrade notes.
+
+### ACL-in-Solr — reconciliation queue hardening (review: four P1 + three P2 + P3)
+A further review found the v2 queue-layer CAS was sound but the RE-DRIVE layer and
+admin surface still had holes. All fixed.
+- **[P1] Stale content re-indexed as clean.** `reindexSearchIndexAclForObject` read
+  the object BEFORE clearing the cache, then re-indexed the already-fetched (stale)
+  Java object — so a stale JVM cache (e.g. an ACL change made on another replica)
+  was written as if fresh and the task CAS-deleted. Fix: **evict the root cache
+  first, then read authoritatively** (a cache miss re-loads from the store).
+- **[P1] A read error was mistaken for "object deleted."** Both DAO layers collapse
+  every exception to `null`, so a transient DB timeout made `content == null` →
+  treated as deleted → CAS delete → task lost. Fix: on `null`, an **authoritative
+  tri-state existence probe** against the content DB (`NotFoundException` /
+  `_deleted` tombstone → complete; any other error → retry — never delete on a read
+  blip). `connectorPool` injected into `AclServiceImpl`.
+- **[P1] Admin retry/delete raced a running poller.** Fix: retry now CAS-**claims**
+  the task (an actively-`LEASED` task → **409**) before re-driving; `DELETE` of an
+  actively-leased task → 409 unless `?force=true`.
+- **[P1/P2] Lease starvation + stale writer.** Fix: `claimDue` reclaims **expired
+  leases first** (no starvation under a sustained PENDING backlog). A long re-drive
+  that outlives its lease self-heals to eventual consistency (fresh-read per worker
+  + generation bump on new events + CAS-ACK failure + re-poll); strict index-side
+  fencing tokens are noted as a separate residual.
+- **[P2] Eviction failure proceeded with a stale re-index.** Fix: an eviction
+  failure now ABORTS that re-drive (retry later) instead of overwriting correct
+  readers with stale-cache values; the async move path defers to reconciliation too.
+- **[P2] No migration from the first queue format.** Fix:
+  `Patch_SearchIndexReconcileV1Cleanup` deletes the first-generation docs
+  (auto-id / ISO timestamps) that the deterministic-id format supersedes.
+- **[P2] Admin `?status=` filtered after the limit.** Fix: status is applied in the
+  Mango selector (accurate regardless of page), and the limit is capped.
+- **[P2] Metrics insufficient for alerting.** Fix: split `oldestPendingCreatedAgeMs`
+  from `mostOverduePendingMs`; the response is fail-soft — the in-process
+  `enqueueFailureCount` is always returned and `queueMetricsAvailable=false` on a
+  CouchDB outage (noted per-JVM, aggregate across replicas).
+- **[P3] Off-by-one + boundaries.** `maxAttempts` now means exactly N re-drives; a
+  fresh enqueue resets the attempt count (a new event gets a full retry budget); and
+  non-positive / invalid config values are clamped to defaults with a WARN.
+- **[fencing residual] Cooperative lease fencing.** The long-subtree × lease-expiry
+  stale-writer window (previously self-healing but transient) is now closed: the
+  scheduler passes a lease guard the re-drive polls before each node's writes — it
+  heartbeats/renews the lease (CAS) so a legitimately long re-drive keeps it, and
+  returns `false` once the lease has been reclaimed (rev changed), at which point the
+  re-drive ABORTS (the reclaiming worker owns it). No index-side generation token is
+  needed. Verified in the IT (`renewDetectsLeaseLoss`).
+- **[test residual] Real-CouchDB integration tests.** `SearchIndexReconciliationServiceIT`
+  (gated on a reachable `nemaki_conf`, skipped offline; each test isolated under a
+  unique repo prefix) — 8 cases against a live CouchDB: deterministic-id dedupe, an
+  8-thread concurrent enqueue collapsing to one document, CAS claim exclusivity, a
+  6-thread concurrent claim with exactly one winner, lease-loss detection, the
+  complete-CAS-fails-after-a-concurrent-enqueue case, the Mango-selector status
+  filter, and metrics. Not in the default surefire run (opt-in via `-Dtest`, like the
+  OData ITs).
+- **Verified**: `SearchIndexReconciliationSchedulerTest` 7 (two off-by-one boundary
+  cases) + `SearchIndexReconciliationServiceIT` 8 (live CouchDB); the focused suite
+  and TCK QueryTestGroup 6/6 unregressed; live — the tri-state probe, admin
+  claim-conflict (active lease → 409), Mango-selector status filter, fail-soft
+  metrics, and the v1-cleanup patch.
+
+### ACL-in-Solr — revocation soundness, round 4 (review: P0 + P2 + P3 batch)
+- **[P0/design] Private Working Copies are now excluded from RAG indexing.**
+  A PWC is a checkout-owner-only draft — `PermissionServiceImpl` authorizes it by
+  ownership and ignores the normal inherited ACL — but RAG authorizes by
+  inherited-ACL token intersection (Solr readers fq + the live
+  `isReadableByTokens` gate), which does not know the PWC rule. The RAG *result*
+  stage is still filtered by `PermissionService` (so a same-group non-owner could
+  not read draft chunk text in results), but the round-3 `findSimilarDocuments`
+  seed gate is token-based, so a same-group non-owner could use a PWC as a
+  similarity seed (existence + semantic-neighbourhood oracle), and an owner not in
+  the inherited ACL would be denied their own draft. Fix: `SolrUtil.triggerRAGIndexing`
+  skips a PWC and deletes any RAG block a prior build indexed for it; the CMIS
+  content doc is unaffected (the CMIS query path still enforces the PWC rule via
+  `getFiltered`). Verified live: after checkout, the PWC has no RAG document block.
+- **[P2] The nested-group cycle guard now covers the CREATE path.** round 2's
+  guard lived in `update()` (edits) and `buildAndCreateGroup`, but LDAP directory
+  sync (`DirectorySyncServiceImpl.createGroup` with `syncNestedGroups=true`)
+  persists real nested-group lists through `createGroupItem(cc,repo,groupItem)`,
+  which was unguarded — so a create could persist an A→B→A cycle. Fix: the guard
+  is now enforced in `createGroupItem` (the GroupItem create choke point), so REST,
+  LDAP and cloud sync all pass through it. (Correction to round 3's note: cloud
+  sync writes empty nested lists, but LDAP sync does not — hence this fix.)
+  Verified live: creating a group whose nested list closes a cycle is rejected.
+- **[P3 batch]** (a) corrected the stale `ACLExpander` comments that claimed the
+  RAG path has "no final in-memory ACL check" (the live gate + the REST/MCP
+  `PermissionService` re-check exist); (b) reframed the reindex-mandatory rationale
+  above to the accurate reasons (fail-closed invisibility, numFound/cap inflation +
+  seed oracle, candidate-pool bloat) rather than a plain "RAG leak"; (c) documented
+  the relationship reverse-reindex as **async best-effort** — a grant is briefly
+  unsearchable on its relationships until the async refresh lands, `indexDocument`
+  itself retries on Solr write failure, but a reverse-lookup that permanently fails
+  leaves the relationship stale until the next ACL touch or a full reindex (a
+  durable reconciliation queue is a separate, cross-cutting effort tracked for a
+  future release, as it applies to all async ACL propagation, not just this path).
+
+**Verification**: Java unit + full CMIS TCK green on the v3.3 tree
+(Connection/Basics/Control/Versioning/CRUD1/CRUD2/Query/Types all pass;
+Types requires sweeping E2E residual custom types — a known data-pollution, not a
+regression); UI `tsc` clean + vite build; vitest 191/191; OData 65/65 + Olingo
+client 4/4 + CSDL XSD valid + conformance 21/21; five-service arm64 stack
+(core + CouchDB + Solr 10 + native TEI + native Atlas) healthy with CMIS/RAG/OData
+all serving.
 
 ## 3.2.8 — Malformed multipart filename returns 400, not 500 (2026-07-08)
 _On `release/3.2.8` (off `master`). Closes the last known low-severity residual
@@ -4400,5 +5669,7 @@ is retained for traceability.
 
 ## Prior releases
 
-See the per-RC history block in [`CLAUDE.md`](CLAUDE.md#現在のバージョン)
-for RC1 through RC14 (and RC15/RC3 detail).
+See the per-RC history block in
+[`docs/history/development-log.md`](docs/history/development-log.md)
+for RC1 through RC14 (and RC15/RC3 detail). It was moved there verbatim from
+`CLAUDE.md` on 2026-07-26.

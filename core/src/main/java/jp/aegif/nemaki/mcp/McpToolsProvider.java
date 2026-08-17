@@ -19,8 +19,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.TextExtractionService;
@@ -151,7 +151,7 @@ public class McpToolsProvider {
                 "NemakiWareにログインしてセッショントークンを取得します",
                 schema
             );
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Failed to generate login tool schema", e);
             // Fallback: use defaultRepository if it's safe (no quotes)
             String safeDefaultRepo = defaultRepository != null && !defaultRepository.contains("\"")
@@ -194,7 +194,7 @@ public class McpToolsProvider {
                 "APIキーを使用してNemakiWareにログインします。クラウド認証ユーザーやプログラムからのアクセスに便利です。",
                 schema
             );
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Failed to generate API key login tool schema", e);
             return new McpToolDefinition(
                 "nemakiware_apikey_login",
@@ -229,7 +229,7 @@ public class McpToolsProvider {
                 "クラウド認証（Google/Microsoft/SAML等）を使用してNemakiWareにログインを開始します。ブラウザで認証後、ログインコードを入力して完了します。",
                 schema
             );
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Failed to generate cloud login tool schema", e);
             return new McpToolDefinition(
                 "nemakiware_cloud_login",
@@ -259,7 +259,7 @@ public class McpToolsProvider {
                 "クラウド認証の完了状態を確認します。認証が完了するまで数秒おきにこのツールを呼び出してください。",
                 schema
             );
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Failed to generate cloud login status tool schema", e);
             return new McpToolDefinition(
                 "nemakiware_cloud_login_status",
@@ -447,7 +447,7 @@ public class McpToolsProvider {
                 String response = objectMapper.writeValueAsString(responseObj);
                 // Note: Login success is already logged by McpAuthenticationHandler
                 return resultFactory.success(response);
-            } catch (JsonProcessingException e) {
+            } catch (JacksonException e) {
                 log.error("Failed to serialize login response", e);
                 return resultFactory.error("Internal error");
             }
@@ -481,7 +481,7 @@ public class McpToolsProvider {
                 log.info("MCP API key login successful for user '{}' in repository '{}'",
                     loginResult.getUserId(), loginResult.getRepositoryId());
                 return resultFactory.success(response);
-            } catch (JsonProcessingException e) {
+            } catch (JacksonException e) {
                 log.error("Failed to serialize login response", e);
                 return resultFactory.error("Internal error");
             }
@@ -519,7 +519,7 @@ public class McpToolsProvider {
             // SECURITY: Don't log the login_code - it's a shared secret
             log.info("MCP cloud login initiated, request_id={}", initResult.getRequestId());
             return resultFactory.success(response);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Failed to serialize cloud login response", e);
             return resultFactory.error("Internal error");
         }
@@ -562,7 +562,7 @@ public class McpToolsProvider {
 
             String response = objectMapper.writeValueAsString(responseObj);
             return resultFactory.success(response);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Failed to serialize cloud login status response", e);
             return resultFactory.error("Internal error");
         }
@@ -774,8 +774,12 @@ public class McpToolsProvider {
                 return resultFactory.error("Document has no content");
             }
 
-            AttachmentNode attachment = contentService.getAttachment(repositoryId, attachmentNodeId);
-            if (attachment == null) {
+            // Metadata first: the MIME check below rejects most documents, and fetching the body
+            // before deciding meant every rejected document downloaded its attachment and leaked
+            // the connection — the early return happens before the try-with-resources that would
+            // have closed it.
+            AttachmentNode attachmentRef = contentService.getAttachmentRef(repositoryId, attachmentNodeId);
+            if (attachmentRef == null) {
                 // Log details for debugging, but return generic message
                 log.warn("Document content not found: {} (id: {}, user: {})",
                         document.getName(), document.getId(), userId);
@@ -783,8 +787,8 @@ public class McpToolsProvider {
             }
 
             // 4. Extract text from the document
-            String mimeType = attachment.getMimeType();
-            String fileName = attachment.getName();
+            String mimeType = attachmentRef.getMimeType();
+            String fileName = attachmentRef.getName();
 
             // Check if the MIME type is supported for text extraction
             if (!textExtractionService.isSupported(mimeType)) {
@@ -792,6 +796,13 @@ public class McpToolsProvider {
                 log.warn("Unsupported document type for text extraction: {} (id: {}, mimeType: {})",
                         document.getName(), document.getId(), mimeType);
                 return resultFactory.error("Document type is not supported for text extraction");
+            }
+
+            AttachmentNode attachment = contentService.getAttachment(repositoryId, attachmentNodeId);
+            if (attachment == null) {
+                log.warn("Document content disappeared before extraction: {} (id: {})",
+                        document.getName(), document.getId());
+                return resultFactory.error("Document content not found");
             }
 
             String extractedText;

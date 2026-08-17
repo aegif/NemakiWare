@@ -1,4 +1,4 @@
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
@@ -73,7 +73,7 @@ test.describe('Solr Index Maintenance', () => {
 
     // Login as admin
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     await testHelper.closeMobileSidebar(browserName);
 
@@ -108,10 +108,10 @@ test.describe('Solr Index Maintenance', () => {
         hasText: /Solrインデックスメンテナンス|Solr Index Maintenance/i
       });
 
-      const hasTitle = await pageTitle.count() > 0;
-      const hasTabs = await page.locator('.ant-tabs').count() > 0;
-
-      expect(hasTitle || hasTabs).toBe(true);
+      // count() is a snapshot: it does not retry, so this used to assert on whatever had
+      // rendered at that instant. Use a retrying assertion on the page's own content.
+      await expect(pageTitle.or(page.locator('.ant-tabs')).first())
+        .toBeVisible({ timeout: 15000 });
       console.log('Solr maintenance page loaded successfully');
     } else {
       console.log('Solr maintenance menu item not found - trying direct navigation');
@@ -121,7 +121,7 @@ test.describe('Solr Index Maintenance', () => {
 
       const hasContent = await page.locator('.ant-tabs, .ant-card').count() > 0;
       if (!hasContent) {
-        test.skip('ENV: Solr maintenance page not accessible');
+        test.skip(true, 'ENV: Solr maintenance page not accessible');
       }
     }
   });
@@ -131,7 +131,7 @@ test.describe('Solr Index Maintenance', () => {
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
 
     // Wait for health check card to appear (API loads healthStatus asynchronously)
     const healthCard = page.locator('.ant-card').filter({
@@ -148,7 +148,7 @@ test.describe('Solr Index Maintenance', () => {
     }
 
     if (await healthCard.count() === 0) {
-      test.skip('ENV: Solr health API may be unavailable');
+      test.skip(true, 'ENV: Solr health API may be unavailable');
       return;
     }
 
@@ -268,7 +268,7 @@ test.describe('Solr Index Maintenance', () => {
     });
 
     if (await queryTab.count() === 0) {
-      test.skip('ENV: Solr query tab not found - Solr may not be enabled');
+      test.skip(true, 'ENV: Solr query tab not found - Solr may not be enabled');
       return;
     }
 
@@ -312,7 +312,7 @@ test.describe('Solr Index Maintenance', () => {
     }).first();
 
     if (await reindexTab.count() === 0) {
-      test.skip('ENV: Reindexing tab not found - Solr may not be enabled');
+      test.skip(true, 'ENV: Reindexing tab not found - Solr may not be enabled');
       return;
     }
 
@@ -363,7 +363,7 @@ test.describe('Solr Index Maintenance', () => {
     }).first();
 
     if (await reindexTab.count() === 0) {
-      test.skip('ENV: Reindexing tab not found - Solr may not be enabled');
+      test.skip(true, 'ENV: Reindexing tab not found - Solr may not be enabled');
       return;
     }
 
@@ -406,7 +406,7 @@ test.describe('Solr Index Maintenance', () => {
 
     // Navigate to Solr maintenance page
     await page.goto('/core/ui/#/solr');
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
 
     // Wait for health check card to load (API is async)
     const healthCardLocator = page.locator('.ant-card').filter({
@@ -431,7 +431,7 @@ test.describe('Solr Index Maintenance', () => {
         await iconButton.click(isMobile ? { force: true } : {});
         console.log('Clicked refresh button (icon)');
       } else {
-        test.skip('ENV: Refresh button not found - Solr maintenance UI may differ');
+        test.skip(true, 'ENV: Refresh button not found - Solr maintenance UI may differ');
         return;
       }
     } else {
@@ -483,7 +483,7 @@ test.describe('Solr Index Maintenance', () => {
     }).first();
 
     if (await reindexTab.count() === 0) {
-      test.skip('ENV: Reindexing tab not found - Solr may not be enabled');
+      test.skip(true, 'ENV: Reindexing tab not found - Solr may not be enabled');
       return;
     }
 

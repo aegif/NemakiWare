@@ -9,9 +9,10 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Thin HTTP helper for direct Atlas REST API calls using Basic Auth.
@@ -19,7 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public class AtlasDirectClient {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private final HttpClient httpClient;
@@ -60,6 +61,25 @@ public class AtlasDirectClient {
      */
     public AtlasResponse bulkCreateEntities(Map<String, Object> payload) throws IOException, InterruptedException {
         return post("/api/atlas/v2/entity/bulk", payload);
+    }
+
+    /**
+     * Reads one type definition by name (増分 B).
+     *
+     * <p>Used to establish that a type the schema payload declares actually exists in the
+     * catalog afterwards. A schema apply that reports success can still have skipped a type,
+     * and everything downstream would then fail as "entity not found" rather than as
+     * "the type was never created".
+     */
+    public AtlasResponse getTypeDef(String typeName) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(endpoint + "/api/atlas/v2/types/typedef/name/" + typeName))
+                .header("Authorization", authHeader)
+                .GET()
+                .build();
+        HttpResponse<String> response =
+                httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        return new AtlasResponse(response.statusCode(), parseBody(response.body()));
     }
 
     /**
@@ -137,7 +157,7 @@ public class AtlasDirectClient {
         }
         try {
             return MAPPER.readValue(body, MAP_TYPE);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             return Map.of("_rawBody", body);
         }
     }

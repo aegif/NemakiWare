@@ -9,7 +9,7 @@ Keycloakをローカル認証プロバイダ (IdP) として使用し、OIDC (Op
 > **Keycloak ポート**: このガイドは `docker-compose-auth-test.yml` を使い Keycloak を **8180** で公開する前提です。
 > 単体起動 `docker-compose.keycloak.yml` (8088) や LDAP 統合 `docker-compose-ldap-keycloak-test.yml` (8088) とは別ポートなので注意してください。
 
-> **CSRF 注意**: `/core/rest/repo/.../authtoken/*/convert` 等の REST mutation は CSRF 保護対象です。CLI/curl からは `X-Requested-With: XMLHttpRequest` ヘッダーを必ず付与してください。詳細は [CLAUDE.md の CSRF保護セクション](../CLAUDE.md#csrf保護-rest-api) を参照。
+> **CSRF 注意**: `/core/rest/repo/.../authtoken/*/convert` 等の REST mutation は CSRF 保護対象です。CLI/curl からは `X-Requested-With: XMLHttpRequest` ヘッダーを必ず付与してください。詳細は [CLAUDE.md の CSRF セクション](../CLAUDE.md#csrf-rest-api-を叩くとき) を参照。
 
 ## クイックスタート
 

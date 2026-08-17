@@ -34,7 +34,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
 import * as path from 'path';
@@ -55,7 +55,7 @@ test.describe('Office Document Preview', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
     await testHelper.waitForAntdLoad();
 
     // Close sidebar on mobile
@@ -209,7 +209,7 @@ test.describe('Office Document Preview', () => {
       console.log('✅ Preview tab opened');
 
       // Check for loading state
-      const loadingSpinner = page.locator('.ant-spin');
+      const loadingSpinner = page.locator('.ant-spin-spinning');
       if (await loadingSpinner.count() > 0 && await loadingSpinner.isVisible()) {
         console.log('Waiting for preview to load...');
         await waitForUiStable(page, { timeout: 15000 });
@@ -428,7 +428,7 @@ test.describe('Office Document Preview', () => {
     }).first();
 
     if (await excelRow.count() === 0) {
-      test.skip('ENV: No existing Excel file found');
+      test.skip(true, 'ENV: No existing Excel file found');
       return;
     }
 
@@ -462,7 +462,7 @@ test.describe('Office Document Preview', () => {
           // Check for PDF document or retry button
           const pdfDocument = page.locator('.react-pdf__Document, canvas');
           const retryButton = page.locator('button').filter({ hasText: /プレビュー生成を試行|再試行/ });
-          const loadingSpinner = page.locator('.ant-spin');
+          const loadingSpinner = page.locator('.ant-spin-spinning');
 
           // Wait for loading to complete
           if (await loadingSpinner.count() > 0 && await loadingSpinner.isVisible()) {

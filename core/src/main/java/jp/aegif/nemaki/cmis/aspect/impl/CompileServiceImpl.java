@@ -26,10 +26,12 @@ import java.math.BigInteger;
 import java.text.MessageFormat;
 import java.text.ParseException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -645,10 +647,12 @@ public class CompileServiceImpl implements CompileService {
 			IncludeRelationships includeRelationships, String renditionFilter, Boolean includeAcl, BigInteger maxItems,
 			BigInteger skipCount, boolean folderOnly, String orderBy, long numFound) {
 		if (CollectionUtils.isEmpty(contents)) {
-			// Empty list
+			// Empty page (out-of-range skip / no rows). numItems still reports the
+			// authorized total (numFound) so @odata.count / CMIS numItems is correct
+			// even for an empty page; numFound is 0 for a genuinely empty result.
 			ObjectListImpl list = new ObjectListImpl();
 			list.setObjects(new ArrayList<ObjectData>());
-			list.setNumItems(BigInteger.ZERO);
+			list.setNumItems(BigInteger.valueOf(numFound));
 			list.setHasMoreItems(false);
 			return list;
 		} else {
@@ -688,14 +692,64 @@ public class CompileServiceImpl implements CompileService {
 				// paged list
 				list.setObjects(new ArrayList<>(objectDataList));
 			}
-			// totalNumItem - set to the actual filtered count for consistency
+			// numItems is the authorized total (numFound), NOT the current page
+			// size. Callers pass the ACL-filtered total here and pre-slice the page,
+			// so @odata.count / CMIS numItems reflects the whole authorized result.
 			if (log.isDebugEnabled()) {
-				log.debug("Setting numItems to filtered count: " + objectDataList.size() + " (was " + numFound + ")");
+				log.debug("Setting numItems to authorized total: " + numFound + " (page size " + objectDataList.size() + ")");
 			}
-			list.setNumItems(BigInteger.valueOf(objectDataList.size()));
+			list.setNumItems(BigInteger.valueOf(numFound));
 
 			return list;
 		}
+	}
+
+	@Override
+	public <T extends Content> List<T> sortContentsForSearchResult(CallContext callContext, String repositoryId,
+			List<T> contents, String orderBy) {
+		if (CollectionUtils.isEmpty(contents) || "NONE".equals(orderBy)) {
+			return contents;
+		}
+
+		// Order the whole authorized set BEFORE paging. Compile a lightweight
+		// ObjectData (properties only — no allowable actions / relationships / ACL)
+		// for every content so it can be ordered by an arbitrary CMIS property, then
+		// map the sorted ObjectData back to its Content by identity. sortUtil.sort
+		// resolves the repository default order (capability.extended.orderBy.default)
+		// when orderBy is blank, so default-ordered paging is fixed too. The property
+		// compile is cached (objectDataCache), so the caller's subsequent page compile
+		// only recomputes allowable actions / ACL for the page, not the whole set.
+		List<ObjectData> sortable = new ArrayList<ObjectData>(contents.size());
+		IdentityHashMap<ObjectData, T> back = new IdentityHashMap<ObjectData, T>();
+		for (T content : contents) {
+			ObjectDataImpl od = getRawObjectData(callContext, repositoryId, content, null,
+					false, IncludeRelationships.NONE, null, false);
+			if (od != null) {
+				sortable.add(od);
+				back.put(od, content);
+			}
+		}
+
+		sortUtil.sort(repositoryId, sortable, orderBy);
+
+		List<T> ordered = new ArrayList<T>(contents.size());
+		Set<T> seen = Collections.newSetFromMap(new IdentityHashMap<T, Boolean>());
+		for (ObjectData od : sortable) {
+			T c = back.get(od);
+			if (c != null && seen.add(c)) {
+				ordered.add(c);
+			}
+		}
+		// Safety net: keep any content whose lightweight compile was dropped so the
+		// authorized total (numItems) and the paged set stay complete.
+		if (ordered.size() != contents.size()) {
+			for (T c : contents) {
+				if (seen.add(c)) {
+					ordered.add(c);
+				}
+			}
+		}
+		return ordered;
 	}
 
 	@Override

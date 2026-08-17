@@ -8,7 +8,7 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.solr.client.solrj.SolrClient;
-import org.apache.solr.client.solrj.SolrQuery;
+import org.apache.solr.client.solrj.request.SolrQuery;
 import org.apache.solr.client.solrj.request.UpdateRequest;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
@@ -81,6 +81,20 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
     private final ACLExpander aclExpander;
     private final SolrClientProvider solrClientProvider;
 
+    /**
+     * Durable reconciliation queue (XML-wired bean; optional so RAG-only test
+     * contexts without it still start). When present, a FAILED best-effort PWC
+     * block delete becomes a durable {@code RAG_PURGE} task instead of a swallowed
+     * WARN — a stale pre-existing PWC block must not silently survive.
+     */
+    @Autowired(required = false)
+    private jp.aegif.nemaki.reconcile.SearchIndexReconciliationService reconciliationService;
+
+    /** Test/DI hook. */
+    void setReconciliationService(jp.aegif.nemaki.reconcile.SearchIndexReconciliationService s) {
+        this.reconciliationService = s;
+    }
+
     @Autowired
     public RAGIndexingServiceImpl(
             RAGConfig ragConfig,
@@ -103,6 +117,29 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
     public void indexDocument(String repositoryId, Document document) throws RAGIndexingException {
         if (log.isDebugEnabled()) {
             log.debug("RAG indexDocument called for: " + document.getId() + " (" + document.getName() + ")");
+        }
+
+        // SECURITY (single choke point): NEVER RAG-index a Private Working Copy. A PWC is
+        // a checkout-owner-only draft that PermissionServiceImpl authorizes by OWNERSHIP,
+        // ignoring the normal inherited ACL — but RAG authorizes by inherited-ACL token
+        // intersection, which does not know the PWC rule. An indexed PWC would let a
+        // same-group non-owner use the in-progress draft as a findSimilarDocuments seed
+        // (an existence + semantic-neighbourhood oracle, since the seed is only token-
+        // gated). Excluding here (not only in SolrUtil.triggerRAGIndexing) closes the
+        // bypass where the RAG full/single reindex (RAGIndexMaintenanceServiceImpl) calls
+        // this method DIRECTLY. Remove any block a prior build indexed for this id.
+        //
+        // This runs BEFORE the isEnabled() gate ON PURPOSE (review round-7 [P1]): a PWC
+        // whose stale block was indexed by an EARLIER build must be purged even while RAG
+        // is CURRENTLY disabled — otherwise the seed-oracle block silently reappears in
+        // search the moment RAG is re-enabled. handlePwcPurge → purgeDocumentBlocks is
+        // deliberately isEnabled()-independent for exactly this reason. (Moving this after
+        // the gate would let `isEnabled()==false` skip the choke point entirely.)
+        if (Boolean.TRUE.equals(document.isPrivateWorkingCopy())) {
+            log.debug("RAG indexDocument: skipping Private Working Copy {} (owner-only draft, excluded from RAG)",
+                    document.getId());
+            handlePwcPurge(repositoryId, document.getId());
+            return;
         }
 
         if (!isEnabled()) {
@@ -196,8 +233,123 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         }
     }
 
+    /**
+     * Immediate PWC block purge with VERIFICATION (review round-6): the immediate
+     * path (not just the queue handler) deletes AND verifies absence, and on a
+     * still-present OR unverifiable outcome enqueues a DURABLE {@code RAG_PURGE}
+     * task via {@link SearchIndexReconciliationService#enqueueOrThrow} so the caller
+     * fails if the obligation could not be durably recorded. It never throws for a
+     * transient Solr/RAG problem alone (a single PWC must not abort a full reindex):
+     * it converts that into a durable task; it throws ONLY if the durable task
+     * itself cannot be persisted (or no queue is wired), because then the block
+     * would silently survive with no record.
+     */
+    private void handlePwcPurge(String repositoryId, String documentId) throws RAGIndexingException {
+        boolean confirmedAbsent = false;
+        String problem = null;
+        try {
+            purgeDocumentBlocks(repositoryId, documentId); // rag.enabled-independent, repo-scoped
+            confirmedAbsent = !isDocumentInRagIndex(repositoryId, documentId);
+            if (!confirmedAbsent) {
+                problem = "block still present after delete";
+            }
+        } catch (Exception e) {
+            problem = e.getMessage();
+        }
+        if (confirmedAbsent) {
+            return;
+        }
+        // Not confirmed gone → the obligation MUST become durable.
+        if (reconciliationService == null) {
+            throw new RAGIndexingException("PWC block for " + documentId + " could not be purged ("
+                    + problem + ") and no reconciliation queue is wired to make the purge durable");
+        }
+        // enqueueOrThrow: fail if we cannot even record the obligation (otherwise
+        // "Solr delete failed AND queue write failed AND caller reports success").
+        //
+        // Convert the queue's UNCHECKED IllegalStateException into a CHECKED
+        // RAGIndexingException (review round-7 [P2]): indexDocumentsBatch catches
+        // RAGIndexingException and continues to the next document, so a queue outage
+        // fails THIS PWC only. An uncaught IllegalStateException would escape the batch
+        // loop's catch and abort the ENTIRE reindex.
+        try {
+            reconciliationService.enqueueOrThrow(repositoryId, documentId,
+                    jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.PWC_PURGE_FAILURE,
+                    jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Operation.RAG_PURGE);
+        } catch (RuntimeException e) {
+            throw new RAGIndexingException("PWC block for " + documentId + " could not be purged ("
+                    + problem + ") and the durable RAG_PURGE task could not be recorded", e);
+        }
+        log.warn("RAG indexDocument: PWC block purge for {} not confirmed ({}); durable RAG_PURGE task enqueued",
+                documentId, problem);
+    }
+
+    @Override
+    public boolean isDocumentInRagIndex(String repositoryId, String documentId) throws RAGIndexingException {
+        try {
+            SolrClient solrClient = solrClientProvider.getClient();
+            SolrQuery q = new SolrQuery();
+            // _root_ matches the block parent AND every chunk (the purge deletes by
+            // the same key), so a non-zero count means SOMETHING survived. Scoped to
+            // the repository — the RAG id is the raw CMIS id, and a same-id doc in
+            // another repository must not be reported (or purged) here.
+            q.setQuery(purgeScopeQuery(repositoryId, documentId));
+            q.setRows(0);
+            SolrDocumentList results = solrClient.query("nemaki", q).getResults();
+            return results != null && results.getNumFound() > 0;
+        } catch (Exception e) {
+            // Unknown ≠ absent: the caller must retry, not complete.
+            throw new RAGIndexingException("Failed to verify RAG block absence for: " + documentId, e);
+        }
+    }
+
+    @Override
+    public void purgeDocumentBlocks(String repositoryId, String documentId) throws RAGIndexingException {
+        // NOTE: deliberately NO isEnabled() gate — see the interface contract. A
+        // disabled RAG must not silently keep a PWC block alive until re-enablement.
+        //
+        // The per-ragId stripe is taken here for the same reason indexToSolr and
+        // updateDocumentACL take it, and the consequence of omitting it is worse than
+        // over-serializing. updateDocumentACL is a READ-REBUILD-WRITE: it snapshots the parent
+        // and every chunk, then re-adds the whole block with new readers. A delete landing
+        // between that read and that write is undone by the write — the block is REBUILT from
+        // the in-memory snapshot, and a purge that already verified "absent" has been silently
+        // reversed. That block is precisely the existence-and-similarity oracle the purge
+        // exists to remove, so the failure is a security one and it is invisible: the purge
+        // reports success.
+        //
+        // Under the lock the interleaving cannot occur: the rebuild either reads nothing (and
+        // returns early as "not indexed") or completes before the delete.
+        String ragId = toRagId(documentId);
+        java.util.concurrent.locks.Lock lock = ragBlockLocks.get(ragId);
+        lock.lock();
+        try {
+            SolrClient solrClient = solrClientProvider.getClient();
+            solrClient.deleteByQuery("nemaki", purgeScopeQuery(repositoryId, documentId));
+            solrClient.commit("nemaki");
+            log.info("RAG purged blocks for document {} (repository {})", documentId, repositoryId);
+        } catch (Exception e) {
+            throw new RAGIndexingException("Failed to purge RAG blocks for: " + documentId, e);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Repository-scoped block selector shared by the purge delete and its verifier. */
+    private static String purgeScopeQuery(String repositoryId, String documentId) {
+        String sanitizedRagId = SolrQuerySanitizer.escape(toRagId(documentId));
+        String sanitizedRepo = SolrQuerySanitizer.escape(repositoryId);
+        return "_root_:" + sanitizedRagId + " AND repository_id:" + sanitizedRepo;
+    }
+
     @Override
     public void updateDocumentACL(String repositoryId, String documentId, List<String> readers) throws RAGIndexingException {
+        updateDocumentACL(repositoryId, documentId, readers, null);
+    }
+
+    @Override
+    public void updateDocumentACL(String repositoryId, String documentId, List<String> readers,
+            java.util.function.BooleanSupplier leaseStillHeld) throws RAGIndexingException {
         if (!isEnabled()) {
             return;
         }
@@ -228,11 +380,35 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
                 parentQuery.setRows(1);
                 SolrDocumentList parentDocs = solrClient.query("nemaki", parentQuery).getResults();
                 if (parentDocs == null || parentDocs.isEmpty()) {
-                    // Not indexed (yet) — nothing to update; the next indexing run embeds fresh ACL
+                    // The SEARCHER says the block is absent — but the searcher lags the soft
+                    // commit (commitWithin, default 10s), so "absent" has two very different
+                    // causes and only the realtime GET can tell them apart. Genuinely absent:
+                    // nothing to update, the next indexing run embeds fresh readers — skip. In
+                    // the update log but not yet searchable: the block EXISTS and its readers are
+                    // about to be wrong, and skipping here silently drops a GRANT — the newly
+                    // permitted user stays filtered out of RAG search until the next content
+                    // reindex, with no reconciliation task to ever converge it. Same lag, same
+                    // remedy as the snapshot/realtime version mismatch below: fail so the caller
+                    // records a per-node failure and the re-drive retries after the commit.
+                    Long inUpdateLog = realtimeVersion(solrClient, ragId);
+                    if (inUpdateLog != null) {
+                        throw new RAGIndexingException("RAG block for " + documentId
+                                + " exists in the update log but is not yet searchable"
+                                + " (soft-commit lag) — its readers cannot be rebuilt from the"
+                                + " searcher; failing so reconciliation re-drives after the"
+                                + " commit");
+                    }
                     log.debug("RAG ACL update skipped, document not in RAG index: {} (ragId={})",
                             documentId, ragId);
                     return;
                 }
+
+                // The version the SNAPSHOT below is built from. Compared against the realtime
+                // version just before the write: a CAS token proves nothing about the data it is
+                // attached to unless the two came from the same revision.
+                Object snapshotVersionRaw = parentDocs.get(0).getFieldValue("_version_");
+                Long snapshotVersion = snapshotVersionRaw instanceof Number
+                        ? ((Number) snapshotVersionRaw).longValue() : null;
 
                 // 2. Fetch ALL chunk documents (paged) and convert page-by-page. A partial
                 //    fetch would silently drop the tail chunks on rebuild, so unlike the
@@ -243,6 +419,14 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
                 long totalChunks;
                 int start = 0;
                 do {
+                    // Cooperative fencing: before fetching each page, confirm we still hold
+                    // the reconciliation lease. Aborting HERE (before the block-replacing
+                    // add below) means a worker that lost its lease mid-rebuild lands NO
+                    // stale block — the reclaimer owns the write.
+                    if (leaseStillHeld != null && !leaseStillHeld.getAsBoolean()) {
+                        throw new RAGIndexingException("Reconciliation lease lost during RAG block "
+                                + "rebuild for " + documentId + " — aborting before block add");
+                    }
                     SolrQuery chunkQuery = new SolrQuery();
                     chunkQuery.setQuery("_root_:" + sanitizedRagId);
                     chunkQuery.addFilterQuery("doc_type:" + DOC_TYPE_CHUNK);
@@ -264,6 +448,59 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
                 SolrInputDocument parentDoc = copyForReindex(parentDocs.get(0), ragId, readers);
                 parentDoc.addChildDocuments(children);
 
+                // Final fence check (review round 3, #5): re-confirm the lease AFTER the
+                // last page fetch and RIGHT BEFORE the block-replacing add, so a worker
+                // whose lease was reclaimed during the (possibly long) rebuild does not
+                // land a stale block.
+                // CROSS-REPLICA FENCE. The per-ragId lock above is JVM-local, so on more than
+                // one replica it orders nothing: another node can delete this block (a RAG_PURGE
+                // for a revoked reader) between the read above and the add below, and the add —
+                // which re-creates the whole block from the pre-delete snapshot — would silently
+                // put back exactly what the purge removed.
+                //
+                // A `_version_` CAS was attempted here before and reverted, for a good reason:
+                // the parent above comes from a SEARCHER query, which lags the soft commit, so
+                // its `_version_` is often stale and CASing on it produced spurious conflicts.
+                // The fix is not to abandon the CAS but to get an authoritative version — a
+                // REALTIME GET reads the update log and is not subject to that lag.
+                //
+                // Semantics relied on: a positive `_version_` means "the document must exist with
+                // exactly this version". A concurrent block write bumps it; a purge removes the
+                // document entirely. Either way the add is rejected instead of resurrecting.
+                Long fenceVersion = realtimeVersion(solrClient, ragId);
+                if (fenceVersion == null) {
+                    // The block is gone as of the realtime read — a purge won the race while we
+                    // were rebuilding. Re-adding here IS the resurrection, so stop. No exception:
+                    // there is nothing left to update, and a retry would only find it gone again.
+                    log.info("RAG ACL update abandoned for {} (ragId={}): the block no longer"
+                            + " exists — it was deleted while the rebuild was in flight", documentId, ragId);
+                    return;
+                }
+                if (snapshotVersion == null || !snapshotVersion.equals(fenceVersion)) {
+                    // THE SNAPSHOT IS NOT THE THING BEING FENCED.
+                    //
+                    // Attaching the current version to a snapshot read earlier would launder a
+                    // stale rebuild through a CAS that only proves "nothing changed in the last
+                    // few microseconds". Another replica could have written a newer block between
+                    // the read and the GET; Solr would accept our write, because the version we
+                    // present really is current, and the newer readers and chunks would be
+                    // replaced by older ones. That restores access somebody just lost.
+                    //
+                    // Throw rather than return: the caller records a per-node failure and the
+                    // reconciliation queue re-drives this object once the write we lost to has
+                    // settled. Returning quietly would report an ACL update that never happened.
+                    throw new RAGIndexingException("RAG block for " + documentId + " changed while"
+                            + " its ACL rebuild was in flight (snapshot version " + snapshotVersion
+                            + ", current " + fenceVersion + ") — abandoning the stale rebuild;"
+                            + " reconciliation will re-drive it");
+                }
+                parentDoc.setField("_version_", fenceVersion);
+
+                if (leaseStillHeld != null && !leaseStillHeld.getAsBoolean()) {
+                    throw new RAGIndexingException("Reconciliation lease lost before RAG block add for "
+                            + documentId + " — aborting (reclaimer owns the write)");
+                }
+
                 // 4. Replace the block with a SINGLE add request. Re-adding a root document
                 //    cascades deletion of the previous block (delete-by-_root_ on update —
                 //    the very behavior that caused the original chunk-loss bug), so no
@@ -276,9 +513,39 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             } finally {
                 lock.unlock();
             }
+        } catch (RAGIndexingException e) {
+            // Already specific — the fence and the lease guard both throw this with the reason in
+            // the message. Re-wrapping would bury it: several callers log only getMessage(), and
+            // "Failed to update ACL for document: X" tells an operator nothing about whether to
+            // wait for a retry or go looking for a problem.
+            throw e;
         } catch (Exception e) {
             throw new RAGIndexingException("Failed to update ACL for document: " + documentId, e);
         }
+    }
+
+    /**
+     * The parent block's current {@code _version_} from Solr's REALTIME GET, or {@code null} if it
+     * does not exist right now.
+     *
+     * <p>Realtime GET reads the update log rather than the searcher, so it sees writes that have
+     * not been soft-committed yet. That distinction is the whole point: a searcher-read version is
+     * routinely stale, and CASing on a stale version fails requests that should have succeeded.
+     *
+     * <p>A failure to read is reported as an exception rather than as "absent": treating "we could
+     * not tell" as "it is gone" would abandon a legitimate ACL update, and treating it as "it is
+     * there" would need a version we do not have.
+     */
+    private Long realtimeVersion(SolrClient solrClient, String ragId) throws Exception {
+        org.apache.solr.common.params.ModifiableSolrParams params =
+                new org.apache.solr.common.params.ModifiableSolrParams();
+        params.set("fl", "_version_");
+        SolrDocument doc = solrClient.getById("nemaki", ragId, params);
+        if (doc == null) {
+            return null;
+        }
+        Object v = doc.getFieldValue("_version_");
+        return v instanceof Number ? ((Number) v).longValue() : null;
     }
 
     /**
@@ -507,7 +774,9 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         }
 
         try {
-            AttachmentNode attachment = contentService.getAttachment(repositoryId, attachmentId);
+            // Ref, not the node: this runs once per indexed document, and getAttachment opens
+            // the body to answer a question about its mime type.
+            AttachmentNode attachment = contentService.getAttachmentRef(repositoryId, attachmentId);
             return attachment != null ? attachment.getMimeType() : null;
         } catch (Exception e) {
             return null;

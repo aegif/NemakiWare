@@ -431,9 +431,9 @@ class CouchLineageJournalStoreTest {
         when(viewResult.getRows()).thenReturn(List.of(row));
         doReturn(viewResult).when(mockClient).queryView(eq("lineage"), eq("by_target_status"), any(Map.class));
 
-        List<LineageEvent> results = store.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50);
+        List<LineageJournalRow> results = store.findByTargetAndStatus("purview", LineagePublishStatus.PENDING, 50);
         assertEquals(1, results.size());
-        assertEquals("evt-1", results.get(0).eventId());
+        assertEquals("evt-1", ((LineageJournalRow.Decoded) results.get(0)).entry().record().recordId());
     }
 
     @Test
@@ -442,7 +442,7 @@ class CouchLineageJournalStoreTest {
         when(viewResult.getRows()).thenReturn(List.of());
         doReturn(viewResult).when(mockClient).queryView(eq("lineage"), eq("by_target_status"), any(Map.class));
 
-        List<LineageEvent> results = store.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50);
+        List<LineageJournalRow> results = store.findByTargetAndStatus("purview", LineagePublishStatus.FAILED, 50);
         assertTrue(results.isEmpty());
     }
 
@@ -466,10 +466,11 @@ class CouchLineageJournalStoreTest {
         when(viewResult.getRows()).thenReturn(List.of(row));
         doReturn(viewResult).when(mockClient).queryView(eq("lineage"), eq("by_repo_process_type_time"), any(Map.class));
 
-        List<LineageEvent> results = store.findByProcessType("bedroom", LineageProcessType.IMPORT_FILESYSTEM, 10, 0);
+        List<LineageJournalRow> results = store.findByProcessType("bedroom", LineageProcessType.IMPORT_FILESYSTEM, 10, 0);
         assertEquals(1, results.size());
-        assertEquals("evt-1", results.get(0).eventId());
-        assertEquals(LineageProcessType.IMPORT_FILESYSTEM, results.get(0).processType());
+        assertEquals("evt-1", ((LineageJournalRow.Decoded) results.get(0)).entry().record().recordId());
+        assertEquals(LineageProcessType.IMPORT_FILESYSTEM,
+                ((LineageJournalRow.Decoded) results.get(0)).entry().record().processType());
     }
 
     // ---------------------------------------------------------------
@@ -654,9 +655,9 @@ class CouchLineageJournalStoreTest {
         when(viewResult.getRows()).thenReturn(List.of(row));
         doReturn(viewResult).when(mockClient).queryView(eq("lineage"), eq("by_target_status_time"), any(Map.class));
 
-        List<LineageEvent> results = store.findByTargetAndStatusOldestFirst("purview", LineagePublishStatus.PENDING, 10);
+        List<LineageJournalRow> results = store.findByTargetAndStatusOldestFirst("purview", LineagePublishStatus.PENDING, 10);
         assertEquals(1, results.size());
-        assertEquals("evt-old", results.get(0).eventId());
+        assertEquals("evt-old", ((LineageJournalRow.Decoded) results.get(0)).entry().record().recordId());
     }
 
     @Test

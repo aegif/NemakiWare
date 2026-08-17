@@ -1,9 +1,9 @@
 package jp.aegif.nemaki.cmis.tck.tests;
 
 import org.apache.chemistry.opencmis.tck.tests.query.ContentChangesSmokeTest;
-import org.apache.chemistry.opencmis.tck.tests.query.QueryForObject;
-import org.apache.chemistry.opencmis.tck.tests.query.QueryInFolderTest;
-import org.apache.chemistry.opencmis.tck.tests.query.QueryLikeTest;
+import jp.aegif.nemaki.cmis.tck.tests.settling.SettlingQueryForObject;
+import jp.aegif.nemaki.cmis.tck.tests.settling.SettlingQueryInFolder;
+import jp.aegif.nemaki.cmis.tck.tests.settling.SettlingQueryLike;
 import org.apache.chemistry.opencmis.tck.tests.query.QueryRootFolderTest;
 import org.apache.chemistry.opencmis.tck.tests.query.QuerySmokeTest;
 import org.junit.jupiter.api.Test;
@@ -44,19 +44,22 @@ public class QueryTestGroup extends TckSuite{
 	
 	@Test
 	public void queryForObject() throws Exception{
-		QueryForObject test = new QueryForObject();
+		// Waits for the index; see SearchIndexSettle.
+		SettlingQueryForObject test = new SettlingQueryForObject();
 		run(test);
 	}
 	
 	@Test
 	public void queryLikeTest() throws Exception{
-		QueryLikeTest test = new QueryLikeTest();
+		// Waits for the index; see SearchIndexSettle.
+		SettlingQueryLike test = new SettlingQueryLike();
 		run(test);
 	}
 	
 	@Test
 	public void queryInFolderTest() throws Exception{
-		QueryInFolderTest test = new QueryInFolderTest();
+		// Waits for the index; see SearchIndexSettle.
+		SettlingQueryInFolder test = new SettlingQueryInFolder();
 		run(test);
 	}
 	

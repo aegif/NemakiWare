@@ -224,83 +224,41 @@ public class CouchAttachmentNode extends CouchNodeBase{
 		return mimeType;
 	}
 	
-	public AttachmentNode convert(){
+	/**
+	 * Metadata only — no attachment body is fetched.
+	 *
+	 * <p>Name, length and MIME type all come from the document that was already read, so this
+	 * costs nothing beyond the conversion. {@link #convert()} additionally opens the binary
+	 * stream and hands ownership of it to the caller; anything that only inspects metadata must
+	 * use THIS method, or it leaks one CouchDB connection per call and downloads the whole
+	 * attachment to learn what it already had.
+	 */
+	public AttachmentNode convertRef(){
 		AttachmentNode a = new AttachmentNode(super.convert());
-		
+
 		a.setName(getName());
-		// CRITICAL FIX: Use actual length from CouchDB _attachments instead of stored field
+		// Use actual length from CouchDB _attachments instead of the stored field
 		a.setLength(getActualLength());
-		// CRITICAL FIX: Use actual MIME type from CouchDB _attachments instead of stored field
+		// Use actual MIME type from CouchDB _attachments instead of the stored field
 		a.setMimeType(getActualMimeType());
-		
-		// CRITICAL FIX FOR JAVA 17 MIGRATION: Set InputStream from CouchDB attachment
-		// This was broken during Java 17/Jakarta EE migration - InputStream was never retrieved
-		try {
-			// CRITICAL FIX: Use proper DI instead of manual Spring context lookup
-			jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool connectorPool = 
-				jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
-					.getBean("connectorPool", jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
-			
-			if (connectorPool != null && getId() != null) {
-				// Try all main repository IDs + nemaki_conf to find the attachment
-				java.util.List<String> repositoryIds = new java.util.ArrayList<>();
-				try {
-					jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repoInfoMap =
-						jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext()
-							.getBean("repositoryInfoMap", jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap.class);
-					if (repoInfoMap != null) {
-						repositoryIds.addAll(repoInfoMap.getMainRepositoryKeys());
-					}
-				} catch (Exception e) {
-					// RepositoryInfoMap not available yet — use known defaults
-					repositoryIds.add("bedroom");
-					repositoryIds.add("canopy");
-				}
-				if (!repositoryIds.contains("nemaki_conf")) {
-					repositoryIds.add("nemaki_conf");
-				}
-				boolean streamSet = false;
-				
-				for (String repositoryId : repositoryIds) {
-					try {
-						jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-						if (client != null) {
-							// Get the actual binary attachment from CouchDB
-							Object attachmentData = client.getAttachment(getId(), "content");
-							
-							if (attachmentData instanceof java.io.InputStream) {
-								a.setInputStream((java.io.InputStream) attachmentData);
-								streamSet = true;
-								break;
-							}
-						}
-					} catch (Exception repoEx) {
-						// Try next repository
-						continue;
-					}
-				}
-				
-				if (!streamSet) {
-					// Log warning but don't fail - allows system to continue working
-					if (log.isDebugEnabled()) {
-						log.debug("Could not retrieve InputStream for attachment " + getId() + " from any repository");
-					}
-				}
-			} else {
-				if (log.isDebugEnabled()) {
-					log.debug("connectorPool is null or getId() is null");
-				}
-			}
-		} catch (Exception e) {
-			// Log error but don't fail the conversion - allows system to continue working
-			if (log.isDebugEnabled()) {
-				log.debug("Failed to retrieve InputStream for attachment " + getId() + ": " + e.getMessage());
-			}
-		}
 
 		return a;
 	}
-	
+
+	// convert() — "metadata AND an open binary stream" — used to live here and is deliberately
+	// gone. It opened the attachment body itself by looking the connector pool up from
+	// SpringContext and trying EVERY repository in turn until one answered. The DAO then opened
+	// the body a SECOND time and assigned over the first reference without closing it, so every
+	// attachment read leaked exactly one CouchDB connection and downloaded the attachment twice.
+	// Measured before the fix: a 2,510-document reindex took ESTABLISHED connections from 3 to
+	// 1,289, and they stayed for about ninety seconds after it finished.
+	//
+	// Opening the body belongs where the repository is already known — AttachmentDaoDelegate
+	// .getAttachment does it once, there. This class returns metadata only (convertRef), which
+	// is what every caller that is not about to READ the bytes actually wants. It had no callers
+	// left when it was removed; it is recorded here because re-adding a convenience method that
+	// opens a stream is how this comes back.
+
 	/**
 	 * Inner class to represent CouchDB attachment info
 	 */

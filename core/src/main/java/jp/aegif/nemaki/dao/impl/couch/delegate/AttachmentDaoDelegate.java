@@ -8,7 +8,7 @@ import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.ibm.cloud.cloudant.v1.model.Document;
 
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
@@ -34,6 +34,29 @@ public class AttachmentDaoDelegate {
 		this.daoHelper = daoHelper;
 	}
 
+	/**
+	 * The attachment's metadata WITHOUT opening its binary stream.
+	 *
+	 * <p>{@link #getAttachment} eagerly opens the CouchDB attachment body and hands the caller an
+	 * {@code InputStream} it then owns. Callers that only want existence or length were using it
+	 * anyway, never closing what they never read — one leaked HTTP connection per call, and a
+	 * full attachment download to answer a question the document already answers. During a full
+	 * reindex, which touches every document, this was measured at 3 → 1,289 established
+	 * connections for 2,510 documents, and the sockets stayed for about ninety seconds after it
+	 * finished. Length lives in the document, so this needs no body at all.
+	 */
+	public AttachmentNode getAttachmentRef(String repositoryId, String attachmentId) {
+		try {
+			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			CouchAttachmentNode can = client.get(CouchAttachmentNode.class, attachmentId);
+			return can == null ? null : can.convertRef();
+		} catch (Exception e) {
+			log.error("Error getting attachment metadata: " + attachmentId + " in repository: "
+					+ repositoryId, e);
+			return null;
+		}
+	}
+
 	public AttachmentNode getAttachment(String repositoryId, String attachmentId) {
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
@@ -41,7 +64,12 @@ public class AttachmentDaoDelegate {
 			CouchAttachmentNode can = client.get(CouchAttachmentNode.class, attachmentId);
 
 			if (can != null) {
-				AttachmentNode result = can.convert();
+				// convertRef, NOT convert: convert() opens the body itself (searching every
+				// repository for it), and this method then opened it a SECOND time and replaced
+				// the first stream without closing it. Every attachment read leaked exactly one
+				// connection, and downloaded the attachment twice to do it. The open happens once,
+				// here, where the repository is already known.
+				AttachmentNode result = can.convertRef();
 
 				try {
 					Object attachmentObj = client.getAttachment(attachmentId, "content");
@@ -87,7 +115,13 @@ public class AttachmentDaoDelegate {
 						if (latestDoc != null && latestDoc.getRev() != null) {
 							can.setRevision(latestDoc.getRev());
 						}
-						client.update(can);
+						// Preserve any existing binary across the metadata write. Stage 2 below
+						// re-uploads it only when this node actually carries a stream; when it does
+						// not, a plain update here would delete the stored binary outright.
+						client.updatePreservingAttachments(can, latestDoc);
+						// Re-read rather than trusting `can`: update(Map) swallows failures and
+						// returns null, so the object cannot tell a successful write from a lost
+						// response. This GET was removed once (ledger V3) and put back.
 						Document updatedDoc = client.get(attachmentNode.getId());
 						stage1RevisionAfterUpdate = updatedDoc != null ? updatedDoc.getRev() : null;
 						log.debug("STAGE 1: Updated attachment metadata for: " + attachmentNode.getId() + " (new revision: " + stage1RevisionAfterUpdate + ")");
@@ -569,20 +603,37 @@ public class AttachmentDaoDelegate {
 				long oldLength = can.getLength();
 				String oldName = can.getName();
 
-				// STAGE 1: Update metadata first
-				// CouchDB preserves existing _attachments stubs when not mentioned in the update body.
+				// STAGE 1: Update metadata first.
+				//
+				// The comment that used to sit here claimed CouchDB preserves existing
+				// _attachments stubs when they are not mentioned in the update body. It does not:
+				// this update serialises the POJO and POSTs it, and a body without _attachments
+				// REPLACES the document, dropping the binary. That is why stage 2 has to re-upload
+				// it, and why a read landing between the two stages finds a document with no
+				// attachment at all and fails with "Content stream InputStream is null!" — an
+				// intermittent HTTP 500 on an ordinary read, reproduced against a live server
+				// during back-to-back appends.
+				//
+				// Carrying the stub forward closes that window: CouchDB keeps the existing binary
+				// when the body declares it as a stub, so the document is never attachment-less.
+				// Stage 2 then replaces the binary as before.
 				boolean metadataUpdated = false;
 				if (contentStream.getMimeType() != null || contentStream.getLength() >= 0 || contentStream.getFileName() != null) {
 					can.setMimeType(contentStream.getMimeType());
 					can.setLength(contentStream.getLength());
 					can.setName(contentStream.getFileName());
-					client.update(can);
+					client.updatePreservingAttachments(can, currentDoc);
 					metadataUpdated = true;
 					log.debug("STAGE1: Updated attachment metadata for: " + attachment.getId());
 				}
 
 				// STAGE 2: Upload binary
 				try {
+					// A SECOND read, on purpose. It is not the same as the unconditional GET at the
+					// top of this method: it happens later, so it can recover from a transient
+					// failure of that one (get() returns null for any error, not just 404) and it
+					// sees a revision advanced in between. Removing it (ledger V3) let a null or
+					// stale _rev reach the binary upload; it was put back.
 					Document updatedDoc = client.get(attachment.getId());
 					String revisionToUse = updatedDoc != null ? updatedDoc.getRev() : can.getRevision();
 
@@ -610,7 +661,11 @@ public class AttachmentDaoDelegate {
 								can.setMimeType(oldMimeType);
 								can.setLength(oldLength);
 								can.setName(oldName);
-								client.update(can);
+								// Attachment-preserving, like stage 1. A plain update here would post a
+								// body without _attachments and delete the binary — so the compensation
+								// for "the new binary failed to upload" would be "the OLD binary is gone
+								// too", which is worse than the failure it is compensating for.
+								client.updatePreservingAttachments(can, latestDoc);
 								log.info("Rollback successful: metadata restored for " + attachment.getId());
 							} else {
 								// Cannot get latest rev — rollback impossible
@@ -630,13 +685,17 @@ public class AttachmentDaoDelegate {
 					throw new RuntimeException("Failed to upload binary content for attachment " + attachment.getId(), binaryEx);
 				}
 			} else {
-				// Metadata-only update (no binary content change)
+				// Metadata-only update (no binary content change).
+				//
+				// "No binary change" is exactly why this must preserve the stub: a plain update
+				// posts a body without _attachments, so a path whose whole point is to leave the
+				// binary alone would silently delete it.
 				if (contentStream != null) {
 					can.setMimeType(contentStream.getMimeType());
 					can.setLength(contentStream.getLength());
 					can.setName(contentStream.getFileName());
 				}
-				client.update(can);
+				client.updatePreservingAttachments(can, currentDoc);
 				log.debug("Updated attachment metadata (no binary) for: " + attachment.getId());
 			}
 

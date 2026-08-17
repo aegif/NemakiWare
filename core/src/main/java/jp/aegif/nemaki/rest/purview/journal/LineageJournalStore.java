@@ -222,9 +222,29 @@ public interface LineageJournalStore {
 
     void appendAll(List<LineageEvent> events);
 
-    List<LineageEvent> findByRepositoryId(String repositoryId, int limit, int offset);
+    /**
+     * Stores a v2 event by create-if-absent under its {@code deliveryId}-derived key.
+     *
+     * <p>This is §8-a's step 1 and only step 1: the row is written unsequenced
+     * ({@code state=UNSEQUENCED}), and the fenced sequencer that assigns {@code sequence} is
+     * D-rest's — deliberately not the v1 {@code append}'s assign-then-create pattern, whose
+     * crash window (a burned sequence number with no event) is the defect 8-a exists to remove.
+     *
+     * <p>Idempotency is exact-match: a conflict whose stored document carries the same
+     * {@code creationPayloadDigest} is this event's own earlier attempt and returns quietly;
+     * anything else under the key — different digest, a v1 row, no digest — throws
+     * {@link LineageIntegrityException}, routed per §3's table (normal emit: spool + metric,
+     * never a 500 to the business caller; admin replay/repair: 500).
+     *
+     * <p>Nothing in production calls this until A-2 Slice 4 flips the writer.
+     *
+     * @throws LineageIntegrityException on an id collision with different content
+     */
+    void appendV2(LineageEventV2 event);
 
-    List<LineageEvent> findByProcessType(String repositoryId, LineageProcessType processType, int limit, int offset);
+    List<LineageJournalRow> findByRepositoryId(String repositoryId, int limit, int offset);
+
+    List<LineageJournalRow> findByProcessType(String repositoryId, LineageProcessType processType, int limit, int offset);
 
     /**
      * Returns events for the given process type across all repositories.
@@ -234,7 +254,7 @@ public interface LineageJournalStore {
      * @param offset      number of events to skip
      * @return list of events (empty if store is inactive)
      */
-    List<LineageEvent> findByProcessType(LineageProcessType processType, int limit, int offset);
+    List<LineageJournalRow> findByProcessType(LineageProcessType processType, int limit, int offset);
 
     /**
      * Updates the publish status for a specific target on an event.
@@ -259,7 +279,7 @@ public interface LineageJournalStore {
      * @param status  the new status
      * @return 1 if updated, 0 if event not found or conflict
      */
-    int updatePublishStatus(String eventId, String target, LineagePublishStatus status);
+    int updatePublishStatus(String recordId, String target, LineagePublishStatus status);
 
     /**
      * Purges events older than the cutoff timestamp.
@@ -296,7 +316,7 @@ public interface LineageJournalStore {
      * @param target  the target sink name (e.g. "purview")
      * @return 1 if discarded, 0 if event not found, conflict, or invalid state
      */
-    int discardEvent(String eventId, String target);
+    int discardEvent(String recordId, String target);
 
     /**
      * Counts events with at least one non-terminal target status for
@@ -318,15 +338,20 @@ public interface LineageJournalStore {
      * @param offset number of events to skip
      * @return list of events (empty if store is inactive)
      */
-    List<LineageEvent> findAll(int limit, int offset);
+    List<LineageJournalRow> findAll(int limit, int offset);
 
     /**
-     * Returns a single event by its eventId.
+     * Returns a single row by its record id — the delivery-addressed lookup.
      *
-     * @param eventId the event identifier (not the CouchDB document ID)
-     * @return the event, or null if not found
+     * <p>The record id is what the journal document key is derived from: v1's {@code eventId},
+     * v2's {@code deliveryId}. It is what every mutation on this interface takes, what the
+     * projector claims, and what the admin API's detail route addresses. An <em>audit</em> lookup
+     * by v2's {@code eventId} would be a different method with different semantics (several
+     * deliveries can share one audit event) and deliberately does not exist yet.
+     *
+     * @return the row — possibly {@link LineageJournalRow.Undecodable} — or null if absent
      */
-    LineageEvent findByEventId(String eventId);
+    LineageJournalRow findByRecordId(String recordId);
 
     /**
      * Returns event counts grouped by {@link LineageProcessType}.
@@ -346,7 +371,7 @@ public interface LineageJournalStore {
      * @param limit  maximum number of events to return
      * @return list of events (empty if store is inactive)
      */
-    List<LineageEvent> findByTargetAndStatus(String target, LineagePublishStatus status, int limit);
+    List<LineageJournalRow> findByTargetAndStatus(String target, LineagePublishStatus status, int limit);
 
 
     /**
@@ -370,7 +395,7 @@ public interface LineageJournalStore {
      * @param target  the target sink name
      * @return the retry count, or 0 if not found or not tracked
      */
-    int getRetryCount(String eventId, String target);
+    int getRetryCount(String recordId, String target);
 
 
 
@@ -383,7 +408,7 @@ public interface LineageJournalStore {
      * @param offset number of events to skip
      * @return list of events within the date range
      */
-    List<LineageEvent> findByDateRange(String start, String end, int limit, int offset);
+    List<LineageJournalRow> findByDateRange(String start, String end, int limit, int offset);
 
     /**
      * Estimates the total size in bytes of non-terminal events for the given target.
@@ -408,7 +433,7 @@ public interface LineageJournalStore {
      * @param limit  maximum number of events to return
      * @return list of events ordered oldest-first (empty if store is inactive)
      */
-    List<LineageEvent> findByTargetAndStatusOldestFirst(String target, LineagePublishStatus status, int limit);
+    List<LineageJournalRow> findByTargetAndStatusOldestFirst(String target, LineagePublishStatus status, int limit);
 
     /**
      * Finds events by repository ID and sequence range, ordered by sequence number.
@@ -421,7 +446,7 @@ public interface LineageJournalStore {
      * @param limit maximum number of events to return
      * @return list of events in sequence order
      */
-    List<LineageEvent> findByRepositoryAndSequenceRange(String repositoryId, long fromSequence, int limit);
+    List<LineageJournalRow> findByRepositoryAndSequenceRange(String repositoryId, long fromSequence, int limit);
 
     /**
      * Returns distinct repository IDs that have at least one non-terminal event

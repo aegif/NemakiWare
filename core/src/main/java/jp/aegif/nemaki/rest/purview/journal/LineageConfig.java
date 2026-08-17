@@ -99,6 +99,18 @@ public class LineageConfig {
     @Autowired(required = false)
     private PropertyManager propertyManager;
 
+    // §6-a's write seam (4a). All three are optional so that a context without the barrier
+    // machinery still builds an emitter — that construction is the pre-4a behaviour, and the
+    // emitter treats an absent reader as "no fence exists" rather than guessing.
+    @Autowired(required = false)
+    private LineageBarrierReader barrierReader;
+
+    @Autowired(required = false)
+    private LineageSpoolMachinery spoolMachinery;
+
+    @Autowired(required = false)
+    private LineageMetrics lineageMetrics;
+
     @Value("${lineage.mode:disabled}")
     private String mode;
 
@@ -150,6 +162,89 @@ public class LineageConfig {
 
     @Value("${lineage.projection.stale-threshold-minutes:5}")
     private int projectionStaleThresholdMinutes;
+
+    // --- D-rest activation boundary (v2.3.18 (5)) + §8-b v2 claim/verify knobs ---
+
+    @Value("${lineage.drest.enabled:false}")
+    private boolean drestEnabled;
+
+    @Value("${lineage.projection.claim-lease-seconds:120}")
+    private int projectionClaimLeaseSeconds;
+
+    @Value("${lineage.verify.timeout-seconds:30}")
+    private int verifyTimeoutSeconds;
+
+    @Value("${lineage.verify.interval-seconds:2}")
+    private int verifyIntervalSeconds;
+
+    @Value("${lineage.verify.max-age-minutes:10}")
+    private int verifyMaxAgeMinutes;
+
+    /**
+     * How long one event may wait for a catalog obligation before giving up on itself.
+     *
+     * <p>Hours, not minutes: the obligation is waiting for a catalog entity that another
+     * system has to publish, and a wait measured against a verify poll would expire almost
+     * every real case. Zero disables expiry entirely, which is a legitimate choice for a
+     * deployment that would rather stall than record an UNRESOLVED it did not mean.
+     *
+     * <p>Expiry ends the EVENT's wait only. The obligation is shared with every other event
+     * waiting on the same catalog entity and is never touched by it.
+     */
+    /**
+     * Endpoint kinds this deployment must not emit lineage for.
+     *
+     * <p>An escape hatch for a kind whose catalog type cannot record a purge: declaring it here
+     * stops the producer creating events for it, which is honest. The alternative — emitting
+     * them and letting every one terminalise as SNAPSHOT_INCOMPLETE — is refused by readiness.
+     */
+    @Value("${lineage.emit.disabled-kinds:}")
+    private String disabledKinds;
+
+    @Value("${lineage.catalog-wait.max-age-hours:24}")
+    private int catalogWaitMaxAgeHours;
+
+    @Value("${lineage.sequencer.lease-seconds:60}")
+    private int sequencerLeaseSeconds;
+
+    @Value("${lineage.sequencer.batch-size:100}")
+    private int sequencerBatchSize;
+
+    @Value("${lineage.sequencer.backlog-cap:1000}")
+    private int sequencerBacklogCap;
+
+    @Value("${lineage.spool.dir:}")
+    private String spoolDir;
+
+    @Value("${lineage.spool.scan.max-files:2000}")
+    private int spoolScanMaxFiles;
+
+    @Value("${lineage.spool.scan.max-materializations:100}")
+    private int spoolScanMaxMaterializations;
+
+    @Value("${lineage.spool.scan.max-millis:5000}")
+    private long spoolScanMaxMillis;
+
+    @Value("${lineage.endpoint.max-per-event:1000}")
+    private int endpointMaxPerEvent;
+
+    @Value("${lineage.event.max-payload-bytes:1048576}")
+    private long eventMaxPayloadBytes;
+
+    @Value("${lineage.read.schema.versions:1,2}")
+    private String readSchemaVersions;
+
+    @Value("${lineage.barrier.view.ttl-ms:1000}")
+    private long barrierViewTtlMs;
+
+    @Value("${lineage.node.id:}")
+    private String nodeId;
+
+    @Value("${lineage.barrier.distribution.dir:}")
+    private String barrierDistributionDir;
+
+    @Value("${lineage.event.max-document-bytes:4194304}")
+    private long eventMaxDocumentBytes;
 
     // --- Leader election (multi-node deployments) ---
 
@@ -207,6 +302,167 @@ public class LineageConfig {
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .toList();
+    }
+
+    /**
+     * The single aggregate D-rest readiness switch (v2.3.18 (5)), default false. Gates the v2
+     * projection branch, the v2 reaper, the v2 half of purge, and the admin sequencer POST.
+     * Config validity and view-signature checks are layered on top by LineageDrestReadiness —
+     * this is only the operator's intent bit.
+     */
+    public boolean isDrestEnabled() {
+        return readDynamicBoolean("lineage.drest.enabled", drestEnabled);
+    }
+
+    /** §8-b projection claim lease TTL. Bounds are enforced by LineageDrestReadiness. */
+    public int getProjectionClaimLeaseSeconds() {
+        return readDynamicInt("lineage.projection.claim-lease-seconds", projectionClaimLeaseSeconds);
+    }
+
+    /** §8-b verify: per-encounter poll budget. */
+    public int getVerifyTimeoutSeconds() {
+        return readDynamicInt("lineage.verify.timeout-seconds", verifyTimeoutSeconds);
+    }
+
+    /** §8-b verify: poll interval inside the encounter budget. */
+    public int getVerifyIntervalSeconds() {
+        return readDynamicInt("lineage.verify.interval-seconds", verifyIntervalSeconds);
+    }
+
+    /** §8-b verify: absolute cap from verifyingSince; exceeded → FAILED (no retry consumed). */
+    /**
+     * The kinds this node will not emit. Unknown names are ignored rather than fatal: a typo
+     * must not stop the node starting, and readiness still refuses any kind left emittable
+     * that cannot be tombstoned.
+     */
+    public java.util.Set<EndpointKind> getNonEmittableKinds() {
+        if (disabledKinds == null || disabledKinds.isBlank()) {
+            return java.util.Set.of();
+        }
+        java.util.Set<EndpointKind> kinds = new java.util.LinkedHashSet<>();
+        for (String name : disabledKinds.split(",")) {
+            try {
+                kinds.add(EndpointKind.valueOf(name.trim().toUpperCase(java.util.Locale.ROOT)));
+            } catch (IllegalArgumentException unknown) {
+                // Ignored on purpose — see the javadoc.
+            }
+        }
+        return kinds;
+    }
+
+    public int getCatalogWaitMaxAgeHours() {
+        return catalogWaitMaxAgeHours;
+    }
+
+    public int getVerifyMaxAgeMinutes() {
+        return readDynamicInt("lineage.verify.max-age-minutes", verifyMaxAgeMinutes);
+    }
+
+    /** §8-a admin sequencer run parameters (F7 — policy is config, not code constants). */
+    public int getSequencerLeaseSeconds() {
+        return readDynamicInt("lineage.sequencer.lease-seconds", sequencerLeaseSeconds);
+    }
+
+    public int getSequencerBatchSize() {
+        return readDynamicInt("lineage.sequencer.batch-size", sequencerBatchSize);
+    }
+
+    public int getSequencerBacklogCap() {
+        return readDynamicInt("lineage.sequencer.backlog-cap", sequencerBacklogCap);
+    }
+
+    /** The node-local fact spool base directory; blank = no spool on this node. */
+    public String getSpoolDir() {
+        return trimToEmpty(readDynamic("lineage.spool.dir", spoolDir));
+    }
+
+    public int getSpoolScanMaxFiles() {
+        return readDynamicInt("lineage.spool.scan.max-files", spoolScanMaxFiles);
+    }
+
+    public int getSpoolScanMaxMaterializations() {
+        return readDynamicInt("lineage.spool.scan.max-materializations",
+                spoolScanMaxMaterializations);
+    }
+
+    public long getSpoolScanMaxMillis() {
+        return readDynamicLong("lineage.spool.scan.max-millis", spoolScanMaxMillis);
+    }
+
+    /** §2's chunking limits (v2.3.22). Frozen into each decision that partitions under them. */
+    public int getEndpointMaxPerEvent() {
+        return readDynamicInt("lineage.endpoint.max-per-event", endpointMaxPerEvent);
+    }
+
+    public long getEventMaxPayloadBytes() {
+        return readDynamicLong("lineage.event.max-payload-bytes", eventMaxPayloadBytes);
+    }
+
+    /**
+     * A guard rail, NOT a guarantee: CouchDB measures {@code max_document_size} on its own
+     * internal representation, so its rejection is the final word (v2.3.22 D1).
+     */
+    public long getEventMaxDocumentBytes() {
+        return readDynamicLong("lineage.event.max-document-bytes", eventMaxDocumentBytes);
+    }
+
+    /**
+     * Which event schema versions this node is willing to READ (4a).
+     *
+     * <p>Configurable so that a deployment can be pinned to v1 during a rollout — and so that
+     * §6-a's startup fence has something to fence: a node declaring {@code [1]} must not join
+     * a deployment whose {@code minReaderSchemaVersion} is already 2, because the v2 rows it
+     * cannot read would sit unprojected while its cursor moved past them.
+     */
+    public java.util.Set<Integer> getReadSchemaVersions() {
+        String raw = trimToEmpty(readDynamic("lineage.read.schema.versions",
+                readSchemaVersions));
+        if (raw.isEmpty()) {
+            return java.util.Set.of(1, 2);
+        }
+        java.util.Set<Integer> versions = new java.util.LinkedHashSet<>();
+        for (String token : raw.split(",")) {
+            String trimmed = token.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            try {
+                versions.add(Integer.parseInt(trimmed));
+            } catch (NumberFormatException notANumber) {
+                logger.warn("Ignoring unparseable lineage.read.schema.versions entry '{}'",
+                        trimmed);
+            }
+        }
+        if (versions.isEmpty()) {
+            // Configured, and configured to nothing usable. {1,2} is the answer for an ABSENT
+            // setting; handing it back here would let a node ACK as a v2 reader on the
+            // strength of a value nobody could parse.
+            logger.error("lineage.read.schema.versions is set to '{}' but yields no usable"
+                    + " version — this node declares that it reads NOTHING", raw);
+            return java.util.Set.of();
+        }
+        return java.util.Set.copyOf(versions);
+    }
+
+    /**
+     * How long a read of the §6-a barrier may be reused (4a). The emit path consults the
+     * barrier per fact, so without this every journaled emit would add an HTTP round trip.
+     * The lag is bounded and one-directional in the tolerable sense — a rollback governs which
+     * version NEW facts materialize at, so being a second late is not a correctness question.
+     */
+    public long getBarrierViewTtlMs() {
+        return readDynamicLong("lineage.barrier.view.ttl-ms", barrierViewTtlMs);
+    }
+
+    /** The operator-pinned node id, or empty to allocate one on the first prepare/ack. */
+    public String getNodeId() {
+        return trimToEmpty(readDynamic("lineage.node.id", nodeId));
+    }
+
+    /** Overrides the deployment root the binary digest walks (tests and odd containers). */
+    public String getBarrierDistributionDir() {
+        return trimToEmpty(readDynamic("lineage.barrier.distribution.dir",
+                barrierDistributionDir));
     }
 
     public int getRetentionDays() {
@@ -378,7 +634,8 @@ public class LineageConfig {
         return switch (getMode()) {
             case DISABLED  -> new NoopLineageEmitter();
             case DIRECT    -> new DirectLineageEmitter(this, sinks);
-            case JOURNALED -> new JournaledLineageEmitter(store, this);
+            case JOURNALED -> new JournaledLineageEmitter(store, this, barrierReader,
+                    spoolMachinery, lineageMetrics);
         };
     }
 
@@ -410,7 +667,8 @@ public class LineageConfig {
         return switch (mode) {
             case DISABLED  -> new NoopLineageEmitter();
             case DIRECT    -> new DirectLineageEmitter(this, sinks);
-            case JOURNALED -> new JournaledLineageEmitter(store, this);
+            case JOURNALED -> new JournaledLineageEmitter(store, this, barrierReader,
+                    spoolMachinery, lineageMetrics);
         };
     }
 
@@ -462,6 +720,20 @@ public class LineageConfig {
             return startupDefault;
         }
         return Boolean.parseBoolean(value.trim());
+    }
+
+    private long readDynamicLong(String key, long startupDefault) {
+        String value = readDynamic(key, null);
+        if (value == null || value.trim().isEmpty()) {
+            return startupDefault;
+        }
+        try {
+            return Long.parseLong(value.trim());
+        } catch (NumberFormatException e) {
+            logger.warn("Invalid long for key '{}': '{}', using default {}", key, value,
+                    startupDefault);
+            return startupDefault;
+        }
     }
 
     private int readDynamicInt(String key, int startupDefault) {

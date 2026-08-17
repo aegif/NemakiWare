@@ -23,7 +23,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 
@@ -118,7 +118,7 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
     const documentsMenuItem = page.locator('.ant-menu-item').filter({ hasText: 'ドキュメント' });
     if (await documentsMenuItem.count() > 0) {
       await documentsMenuItem.click();
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+      await waitForAppReady(page, { timeout: 30000 });
     }
 
     await testHelper.closeMobileSidebar(browserName);
@@ -173,7 +173,7 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
     // Find the test document row
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 
@@ -237,7 +237,7 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
     // Find and click on the test document
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 
@@ -305,7 +305,7 @@ test.describe('Bug Fix: Description Disappearing with Secondary Types (WebUI)', 
     // Find and open the test document
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('ENV: Test document not found after navigation');
+      test.skip(true, 'ENV: Test document not found after navigation');
       return;
     }
 

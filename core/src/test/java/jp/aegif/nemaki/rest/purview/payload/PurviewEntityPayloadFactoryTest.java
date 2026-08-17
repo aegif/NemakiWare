@@ -160,10 +160,120 @@ public class PurviewEntityPayloadFactoryTest {
         assertEquals("ACTIVE", attributes.get("lifecycleState"));
         assertEquals("google", attributes.get("cloudProvider"));
         assertEquals("cloud-001", attributes.get("externalFileId"));
-        assertEquals("https://drive.example/doc-001", attributes.get("cloudFileUrl"));
+        // no stored URL reaches the catalog: SharePoint-style sharing tokens live in the path,
+        // so no transformation of a stored URL is secret-free (A-1g). Whether this null also
+        // removes a URL published before that rule is backend-dependent and unverified — see
+        // E-20 in the design's release gate.
+        assertNull(attributes.get("cloudFileUrl"));
         assertEquals("2026-03-20T03:00:00.000+0000", attributes.get("cloudLastSyncedAt"));
         assertTrue(((Number) attributes.get("createTime")).longValue() > 0);
         assertTrue(((Number) attributes.get("modifiedTime")).longValue() > 0);
+    }
+
+    /**
+     * A custom property mapping cannot overwrite a core attribute at the payload boundary.
+     *
+     * <p>The resolver rejects reserved names on load, so reaching this guard means the resolver
+     * was bypassed — which is exactly the case worth testing, since a stubbed resolver is how a
+     * future core attribute would arrive without being listed as reserved. The guard is
+     * {@code containsKey}, not {@code putIfAbsent}: the value being protected is often null
+     * ({@code cloudFileUrl} is deliberately null so no stored cloud URL reaches the catalog), and
+     * {@code putIfAbsent} treats a null mapping as absent and overwrites it.
+     */
+    @Test
+    public void testCustomPropertyCannotOverwriteACoreAttributeEvenIfTheResolverAllowsIt() {
+        for (String reserved : List.of("cloudFileUrl", "qualifiedName", "externalFileId")) {
+            Map<String, Object> attributes = new java.util.LinkedHashMap<>();
+            attributes.put("qualifiedName", "nemaki://bedroom/objects/doc-001");
+            attributes.put("externalFileId", "cloud-001");
+            attributes.put("cloudFileUrl", null);   // null, and must stay null
+
+            PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+            factory.setPropertyMappingResolver(
+                    resolverForcing("nemaki:leak", reserved, PropertyType.STRING));
+
+            Document document = new Document();
+            document.setId("doc-001");
+            document.setObjectType("nemaki:document");
+            document.setSubTypeProperties(List.of(
+                    new Property("nemaki:leak", "SECRET-VALUE")));
+
+            factory.appendCustomPropertyValues(attributes, "bedroom", document);
+
+            assertFalse(String.valueOf(attributes).contains("SECRET-VALUE"),
+                    reserved + " was overwritten: " + attributes);
+            assertTrue(attributes.containsKey("cloudFileUrl"), "the null key must remain present");
+            assertNull(attributes.get("cloudFileUrl"));
+        }
+    }
+
+    /**
+     * A forbidden source property does not project under a name nobody reserved.
+     *
+     * <p>The output-name guard cannot see this: {@code legacyCloudUrl} is not reserved and is not
+     * already on the entity. The property is on the document because older documents really do
+     * carry cloud metadata in {@code subTypeProperties}, and its value is the URL A-1g removed
+     * from the catalog. The resolver is stubbed so that the load-time rule is out of the way —
+     * this is the boundary's own responsibility.
+     */
+    @Test
+    public void aForbiddenSourcePropertyDoesNotProjectUnderAnInnocuousName() {
+        for (String outputName : List.of("legacyCloudUrl", "myUrl")) {
+            Map<String, Object> attributes = new java.util.LinkedHashMap<>();
+            attributes.put("qualifiedName", "nemaki://bedroom/objects/doc-001");
+            attributes.put("cloudFileUrl", null);
+
+            PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+            factory.setPropertyMappingResolver(
+                    resolverForcing("nemaki:cloudFileUrl", outputName, PropertyType.STRING));
+
+            Document document = new Document();
+            document.setId("doc-001");
+            document.setObjectType("nemaki:document");
+            document.setSubTypeProperties(List.of(new Property("nemaki:cloudFileUrl",
+                    "https://tenant.sharepoint.com/:x:/g/team/SECRET-PATH-TOKEN")));
+
+            factory.appendCustomPropertyValues(attributes, "bedroom", document);
+
+            assertFalse(String.valueOf(attributes).contains("SECRET-PATH-TOKEN"),
+                    "projected as " + outputName + ": " + attributes);
+            assertFalse(attributes.containsKey(outputName), attributes.toString());
+        }
+    }
+
+    /** The guard must not stop ordinary custom attributes from projecting. */
+    @Test
+    public void testANonReservedCustomPropertyStillProjects() {
+        Map<String, Object> attributes = new java.util.LinkedHashMap<>();
+        attributes.put("qualifiedName", "nemaki://bedroom/objects/doc-001");
+
+        PurviewEntityPayloadFactory factory = new PurviewEntityPayloadFactory();
+        factory.setPropertyMappingResolver(
+                resolverForcing("nemaki:dept", "department", PropertyType.STRING));
+
+        Document document = new Document();
+        document.setId("doc-001");
+        document.setObjectType("nemaki:document");
+        document.setSubTypeProperties(List.of(new Property("nemaki:dept", "Legal")));
+
+        factory.appendCustomPropertyValues(attributes, "bedroom", document);
+
+        assertEquals("Legal", attributes.get("department"));
+    }
+
+    /** A resolver that hands back a mapping the real one would have rejected on load. */
+    private static CatalogPropertyMappingResolver resolverForcing(String cmisPropertyId,
+                                                                  String catalogName,
+                                                                  PropertyType type) {
+        CatalogPropertyMappingResolver resolver = mock(CatalogPropertyMappingResolver.class);
+        CatalogPropertyMappingResolver.ResolvedMapping resolved =
+                new CatalogPropertyMappingResolver.ResolvedMapping(cmisPropertyId, catalogName,
+                        type, Cardinality.SINGLE);
+        when(resolver.getEnabledMappings("bedroom", "nemaki:document"))
+                .thenReturn(Map.of(cmisPropertyId, catalogName));
+        when(resolver.getResolvedMappingsAllRepositories()).thenReturn(Map.of(catalogName, resolved));
+        when(resolver.getResolvedMappings("bedroom")).thenReturn(Map.of(catalogName, resolved));
+        return resolver;
     }
 
     @Test
@@ -408,7 +518,9 @@ public class PurviewEntityPayloadFactoryTest {
         assertEquals("nemaki_external_asset", externalAsset.get("typeName"));
         assertEquals("google:cloud-001", externalAttributes.get("externalStableKey"));
         assertEquals("google", externalAttributes.get("sourceSystem"));
-        assertEquals("https://drive.example/doc-001", externalAttributes.get("externalPath"));
+        // the file id, not the stored URL: a drive URL's query string can carry a sharing
+        // token, and externalPath is persisted in the catalog (A-1f)
+        assertEquals("cloud-001", externalAttributes.get("externalPath"));
 
         Map<String, Object> processAttributes = (Map<String, Object>) syncProcess.get("attributes");
         Map<String, Object> relationshipAttributes = (Map<String, Object>) syncProcess.get("relationshipAttributes");
@@ -416,6 +528,8 @@ public class PurviewEntityPayloadFactoryTest {
         assertEquals("doc-001", processAttributes.get("objectId"));
         assertEquals("google", processAttributes.get("cloudProvider"));
         assertEquals("google:cloud-001", processAttributes.get("externalStableKey"));
+        // positive value, not merely "no secret": the file id is what replaced the stored URL
+        assertEquals("cloud-001", processAttributes.get("targetDescription"));
         assertEquals(1, ((List<?>) relationshipAttributes.get("inputs")).size());
         assertEquals(1, ((List<?>) relationshipAttributes.get("outputs")).size());
     }

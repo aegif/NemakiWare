@@ -96,7 +96,77 @@ class IngestLineageEmitterTest {
                 IngestLineageEmitter.resolveProcessType(null, "attachment"));
     }
 
+    // ── resolveFactProcessType (the v2 classification; v1 labels stay frozen) ──
+
+    /**
+     * The CHAT_CONTEXT inversion (v2.3.13 confirmed bug 1): v1 classifies an attachment as the
+     * generic type and a message as the attachment type. The fact classification corrects it;
+     * the v1 side keeps the historical labels because they are hashed into every eventKey.
+     */
+    @Test
+    void factType_chatContext_correctsTheInversion() {
+        assertEquals(LineageProcessType.CHAT_ATTACHMENT_IMPORT,
+                IngestLineageEmitter.resolveFactProcessType(SourceArchetype.CHAT_CONTEXT, "attachment"));
+        assertEquals(LineageProcessType.CHAT_MESSAGE_IMPORT,
+                IngestLineageEmitter.resolveFactProcessType(SourceArchetype.CHAT_CONTEXT, "message"));
+        // and the frozen v1 labels remain inverted:
+        assertEquals(LineageProcessType.EXTERNAL_ATTACHMENT_IMPORT,
+                IngestLineageEmitter.resolveProcessType(SourceArchetype.CHAT_CONTEXT, "attachment"));
+        assertEquals(LineageProcessType.CHAT_ATTACHMENT_IMPORT,
+                IngestLineageEmitter.resolveProcessType(SourceArchetype.CHAT_CONTEXT, "message"));
+    }
+
+    @Test
+    void factType_nullArchetype_isGenericIngestNotUpload() {
+        assertEquals(LineageProcessType.GENERIC_EXTERNAL_INGEST,
+                IngestLineageEmitter.resolveFactProcessType(null, "message"));
+        assertEquals(LineageProcessType.EXTERNAL_ATTACHMENT_IMPORT,
+                IngestLineageEmitter.resolveFactProcessType(null, "attachment"));
+    }
+
+    @Test
+    void factType_agreesWithV1EverywhereElse() {
+        assertEquals(LineageProcessType.FILE_SHARE_SYNC_DOWNLOAD,
+                IngestLineageEmitter.resolveFactProcessType(SourceArchetype.FILE_SHARE, "file"));
+        assertEquals(LineageProcessType.MAIL_MESSAGE_IMPORT,
+                IngestLineageEmitter.resolveFactProcessType(SourceArchetype.MESSAGE_CONTEXT, "message"));
+        assertEquals(LineageProcessType.MAIL_ATTACHMENT_IMPORT,
+                IngestLineageEmitter.resolveFactProcessType(SourceArchetype.MESSAGE_CONTEXT, "attachment"));
+        assertEquals(LineageProcessType.BUSINESS_RECORD_IMPORT,
+                IngestLineageEmitter.resolveFactProcessType(SourceArchetype.BUSINESS_RECORD, "record"));
+        assertEquals(LineageProcessType.EXTERNAL_NOTE_IMPORT,
+                IngestLineageEmitter.resolveFactProcessType(SourceArchetype.COMPOUND_NOTE, "page"));
+        assertEquals(LineageProcessType.EXTERNAL_ATTACHMENT_IMPORT,
+                IngestLineageEmitter.resolveFactProcessType(SourceArchetype.COMPOUND_NOTE, "attachment"));
+    }
+
     // ── buildCanonicalSourceUri ──
+
+    /**
+     * The production transformation itself must reject a URL-shaped sourceObjectId — the review
+     * finding was that percent-encoding ran before validation, so {@code ?} became {@code %3F}
+     * and the literal-character checks downstream never saw it. The throw is absorbed by the
+     * producer's fail-open boundary; the import is unaffected.
+     */
+    @Test
+    void sourceUri_urlShapedSourceObjectIdIsRejectedBeforeEncoding() {
+        ConnectorDefinition c = new ConnectorDefinition();
+        c.setSourceSystem("google_drive");
+        c.setSourceArchetype(null);
+        c.setTenantId("t1");
+        ExternalIngestRequest r = new ExternalIngestRequest();
+        r.setSourceObjectId("https://drive.example/file?sig=SECRET");
+        r.setSourceObjectType("document");
+
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> IngestLineageEmitter.buildCanonicalSourceUri(c, r));
+        assertTrue(thrown.getMessage().contains("query"), thrown.getMessage());
+
+        r.setSourceObjectId("file%3Fsig%3DSECRET");
+        assertThrows(IllegalArgumentException.class,
+                () -> IngestLineageEmitter.buildCanonicalSourceUri(c, r),
+                "a pre-encoded delimiter is an encoded URL, not an id");
+    }
 
     @Test
     void sourceUri_fileShare() {

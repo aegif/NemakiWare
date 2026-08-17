@@ -49,8 +49,8 @@ import jp.aegif.nemaki.cmis.service.VersioningService;
 
 import org.apache.chemistry.opencmis.commons.data.ObjectParentData;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
@@ -61,6 +61,7 @@ import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * OData Action Processor for CMIS operations.
@@ -299,12 +300,7 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
                     Locale.ENGLISH
             );
         } catch (Exception e) {
-            throw new ODataApplicationException(
-                    "Error executing action " + actionName + ": " + e.getMessage(),
-                    HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(),
-                    Locale.ENGLISH,
-                    e
-            );
+            throw ODataExceptions.map("Error executing action " + actionName, e);
         }
     }
     
@@ -655,7 +651,7 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
         }
         
         try {
-            ObjectMapper objectMapper = new ObjectMapper();
+            ObjectMapper objectMapper = ObjectMapperFactory.createDefaultObjectMapper();
             List<Map<String, Object>> aceList = objectMapper.readValue(
                     json, 
                     new TypeReference<List<Map<String, Object>>>() {}

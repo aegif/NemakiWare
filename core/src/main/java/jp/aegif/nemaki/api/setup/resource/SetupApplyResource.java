@@ -12,8 +12,8 @@ import java.util.logging.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
@@ -33,6 +33,7 @@ import jp.aegif.nemaki.init.DatabasePreInitializer;
 import jp.aegif.nemaki.init.StartupProbeService;
 import jp.aegif.nemaki.patch.PatchService;
 import jp.aegif.nemaki.util.PasswordPolicyService;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * POST /apply -- one-shot setup: validate settings, run DB init, persist config, clear setupRequired.
@@ -44,7 +45,7 @@ import jp.aegif.nemaki.util.PasswordPolicyService;
 public class SetupApplyResource {
 
     private static final Logger logger = Logger.getLogger(SetupApplyResource.class.getName());
-    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
 
     @Autowired(required = false)
     private StartupProbeService startupProbeService;
@@ -84,6 +85,14 @@ public class SetupApplyResource {
             logger.warning("mark-complete: reprobe returned " + state + " — refusing to mark complete");
             return error(400, "Cannot complete setup: database state is " + state
                     + ". Ensure CouchDB is running and databases are properly initialized.");
+        }
+
+        // The wizard can be pointed at a different server than the one probed at startup, and
+        // /apply may never have run on this instance (this endpoint is the retry path).
+        String versionRefusal = startupProbeService.couchDbVersionRefusalFromLastProbe();
+        if (versionRefusal != null) {
+            logger.warning("mark-complete refused: " + versionRefusal);
+            return error(400, versionRefusal);
         }
 
         // Trigger deferred Phase 2/3 initialization BEFORE marking complete.
@@ -137,6 +146,14 @@ public class SetupApplyResource {
         CouchDbConnectionResult connResult = startupProbeService.testConnection(couchUrl, couchUser, couchPass);
         if (!connResult.isReachable()) {
             return error(400, "CouchDB is not reachable: " + connResult.getErrorMessage());
+        }
+        // Same floor the startup path enforces. Startup only gets to apply it when CouchDB
+        // answered THEN; an operator who started with the database down arrives here instead, and
+        // step 4 below CREATES DATABASES. Refusing after that would leave a half-built 2.x server.
+        String versionRefusal = startupProbeService.couchDbVersionRefusal(connResult);
+        if (versionRefusal != null) {
+            logger.warning("Setup apply refused: " + versionRefusal);
+            return error(400, versionRefusal);
         }
         logger.info("CouchDB connection verified: " + connResult.getCouchDbVersion());
 
@@ -505,7 +522,7 @@ public class SetupApplyResource {
         }
 
         JsonNode adminDoc = mapper.readTree(adminDocBody);
-        com.fasterxml.jackson.databind.node.ObjectNode mutable = adminDoc.deepCopy();
+        tools.jackson.databind.node.ObjectNode mutable = (tools.jackson.databind.node.ObjectNode) adminDoc.deepCopy();
         mutable.put("passwordHash", bcryptHash);
 
         URL url = new URL(dbUrl + "/" + adminDocId);

@@ -898,6 +898,7 @@ public class UserGroupSearchServiceImplTest {
 		@Override public boolean cancelReindex(String repositoryId) { return false; }
 		@Override public IndexHealthStatus checkIndexHealth(String repositoryId) { return null; }
 		@Override public IndexDiscrepancyResult getIndexDiscrepancies(String repositoryId) { return null; }
+		@Override public long purgeOrphanedIndexEntries(String repositoryId) { return 0; }
 		@Override public boolean reindexDocument(String repositoryId, String objectId) { return false; }
 		@Override public boolean deleteFromIndex(String repositoryId, String objectId) { return false; }
 		@Override public boolean clearIndex(String repositoryId) { return false; }

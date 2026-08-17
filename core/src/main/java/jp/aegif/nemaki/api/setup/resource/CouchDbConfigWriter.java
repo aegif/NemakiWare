@@ -8,8 +8,9 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Shared utility for direct CouchDB HTTP operations during Setup.
@@ -20,7 +21,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 final class CouchDbConfigWriter {
 
-    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
 
     private CouchDbConfigWriter() {}
 

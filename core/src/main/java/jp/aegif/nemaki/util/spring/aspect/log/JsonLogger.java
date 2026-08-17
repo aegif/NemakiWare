@@ -44,13 +44,13 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
-import com.fasterxml.jackson.core.JsonParseException;
-import com.fasterxml.jackson.databind.JsonMappingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.databind.node.TextNode;
+import tools.jackson.core.exc.StreamReadException;
+import tools.jackson.databind.DatabindException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.StringNode;
 
 import jp.aegif.nemaki.util.spring.aspect.log.JsonLogger.JsonLogConfig.GlobalConfig;
 import jp.aegif.nemaki.util.spring.aspect.log.JsonLogger.JsonLogConfig.MethodConfig;
@@ -72,12 +72,12 @@ public class JsonLogger {
 	private final ReadWriteLock lock = new ReentrantReadWriteLock(true);
 	
 	@PostConstruct
-	public void init() throws JsonParseException, JsonMappingException, IOException {
+	public void init() throws StreamReadException, DatabindException, IOException {
 		load(jsonConfigurationFile);
 		defaultMethodConfig.merge(config.getGlobal());
 	}
 
-	private void load(String fileName) throws JsonParseException, JsonMappingException, IOException {
+	private void load(String fileName) throws StreamReadException, DatabindException, IOException {
 		InputStream is = this.getClass().getClassLoader().getResourceAsStream(fileName);
 		config = mapper.readValue(is, JsonLogConfig.class);
 		
@@ -711,7 +711,7 @@ public class JsonLogger {
 	private JsonNode simple(Holder holder,  ValueConfig valueConfig){
 		Object value = holder.getValue();
 		if(value != null){
-			return new TextNode(value.toString());
+			return new StringNode(value.toString());
 		}
 		return null;
 	}
@@ -739,7 +739,7 @@ public class JsonLogger {
 		return mapper.valueToTree(config);
 	}
 	
-	public void updateJsonConfiguration(String json) throws JsonParseException, JsonMappingException, IOException{
+	public void updateJsonConfiguration(String json) throws StreamReadException, DatabindException, IOException{
 		lock.writeLock().lock();
 		try{
 			config = mapper.readValue(json, JsonLogConfig.class);
@@ -748,7 +748,7 @@ public class JsonLogger {
 		}
 	}
 
-	public void reloadJsonConfiguration() throws JsonParseException, JsonMappingException, IOException {
+	public void reloadJsonConfiguration() throws StreamReadException, DatabindException, IOException {
 		lock.writeLock().lock();
 		try{
 			load(jsonConfigurationFile);

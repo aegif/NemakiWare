@@ -52,29 +52,49 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	@Override
 	public User createUser(String repositoryId, User user) {
 		User created = nonCachedPrincipalDaoService.createUser(repositoryId, user);
+		// A principal write on the legacy path counts too: the readers projection memoises
+		// principal KIND keyed on this generation, so a create/update/delete that does not
+		// advance it leaves that memo valid until its TTL. Cheap, and it closes the window.
+		jp.aegif.nemaki.util.cache.PrincipalGeneration.advance(repositoryId);
 		return created;
 	}
 
 	@Override
 	public Group createGroup(String repositoryId, Group group) {
 		Group created = nonCachedPrincipalDaoService.createGroup(repositoryId, group);
+		// A principal write on the legacy path counts too: the readers projection memoises
+		// principal KIND keyed on this generation, so a create/update/delete that does not
+		// advance it leaves that memo valid until its TTL. Cheap, and it closes the window.
+		jp.aegif.nemaki.util.cache.PrincipalGeneration.advance(repositoryId);
 		return created;
 	}
 
 	@Override
 	public User updateUser(String repositoryId, User user) {
 		User u = nonCachedPrincipalDaoService.updateUser(repositoryId, user);
+		// A principal write on the legacy path counts too: the readers projection memoises
+		// principal KIND keyed on this generation, so a create/update/delete that does not
+		// advance it leaves that memo valid until its TTL. Cheap, and it closes the window.
+		jp.aegif.nemaki.util.cache.PrincipalGeneration.advance(repositoryId);
 		return u;
 	}
 
 	@Override
 	public Group updateGroup(String repositoryId, Group group) {
 		Group g = nonCachedPrincipalDaoService.updateGroup(repositoryId, group);
+		// A principal write on the legacy path counts too: the readers projection memoises
+		// principal KIND keyed on this generation, so a create/update/delete that does not
+		// advance it leaves that memo valid until its TTL. Cheap, and it closes the window.
+		jp.aegif.nemaki.util.cache.PrincipalGeneration.advance(repositoryId);
 		return g;
 	}
 
 	@Override
 	public void delete(String repositoryId, Class<?> clazz, String nodeId) {
+		// A principal write on the legacy path counts too: the readers projection memoises
+		// principal KIND keyed on this generation, so a create/update/delete that does not
+		// advance it leaves that memo valid until its TTL. Cheap, and it closes the window.
+		jp.aegif.nemaki.util.cache.PrincipalGeneration.advance(repositoryId);
 		if (clazz.equals(User.class)) {
 			getUser(repositoryId, nodeId);
 			nonCachedPrincipalDaoService.delete(repositoryId, null, nodeId);
@@ -102,6 +122,20 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 		return user;
 	}
 
+	/**
+	 * Increment 5T, now memoised for a few seconds — see {@link jp.aegif.nemaki.acl.PrincipalLookupCache}
+	 * for why that does not reintroduce the staleness these by-id reads were kept out of the caches
+	 * to avoid (UNAVAILABLE is never stored, and every principal write invalidates the memo).
+	 *
+	 * <p>This is the hot path of the readers projection: one lookup per ACE, per node, on a
+	 * traversal that visits every inheriting descendant.
+	 */
+	@Override
+	public jp.aegif.nemaki.acl.PrincipalLookup lookupUserById(String repositoryId, String userId) {
+		return jp.aegif.nemaki.acl.PrincipalLookupCache.get(repositoryId, "user", userId,
+				() -> nonCachedPrincipalDaoService.lookupUserById(repositoryId, userId));
+	}
+
 	@Override
 	public List<User> getUsers(String repositoryId) {
 		List<User> users = nonCachedPrincipalDaoService.getUsers(repositoryId);
@@ -119,6 +153,13 @@ public class PrincipalDaoServiceImpl implements PrincipalDaoService {
 	public Group getGroupById(String repositoryId, String groupId) {
 		Group group = nonCachedPrincipalDaoService.getGroupById(repositoryId, groupId);
 		return group;
+	}
+
+	/** Increment 5T. See {@link #lookupUserById}. */
+	@Override
+	public jp.aegif.nemaki.acl.PrincipalLookup lookupGroupById(String repositoryId, String groupId) {
+		return jp.aegif.nemaki.acl.PrincipalLookupCache.get(repositoryId, "group", groupId,
+				() -> nonCachedPrincipalDaoService.lookupGroupById(repositoryId, groupId));
 	}
 
 	@Override

@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.solr.client.solrj.SolrClient;
-import org.apache.solr.client.solrj.SolrQuery;
+import org.apache.solr.client.solrj.request.SolrQuery;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
@@ -109,9 +109,10 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             // Build ACL filter
             String aclFilter = aclExpander.buildReaderFilterQuery(repositoryId, userId);
 
-            // Execute weighted KNN search
-            return executeWeightedKnnSearch(repositoryId, queryVector, aclFilter, null, topK, minScore,
-                    propertyBoost, contentBoost);
+            // Execute weighted KNN search (the live-ACL gate is applied inside,
+            // BEFORE the topK trim, so a dropped stale hit does not shrink the page).
+            return executeWeightedKnnSearch(repositoryId, userId, queryVector, aclFilter,
+                    null, null, topK, minScore, propertyBoost, contentBoost);
 
         } catch (EmbeddingException e) {
             log.error("Failed to generate query embedding", e);
@@ -122,8 +123,29 @@ public class VectorSearchServiceImpl implements VectorSearchService {
     @Override
     public List<VectorSearchResult> searchInFolder(String repositoryId, String userId, String query,
                                                    String folderId, int topK) throws VectorSearchException {
+        return searchInFolder(repositoryId, userId, query, folderId, topK, null, null, null);
+    }
+
+    @Override
+    public List<VectorSearchResult> searchInFolder(String repositoryId, String userId, String query,
+                                                   String folderId, int topK, Float minScore,
+                                                   Float propertyBoost, Float contentBoost)
+            throws VectorSearchException {
         if (!isEnabled()) {
             throw new VectorSearchException("Vector search is not enabled");
+        }
+
+        // Rejected BEFORE embedding the query: with both weights at zero neither half runs, so
+        // the embedding is work done for a search that cannot return anything. Same guard as
+        // searchWithBoost, applied to the effective values so a configuration of 0/0 fails the
+        // same way an explicit request does.
+        float effectivePropertyBoost =
+                propertyBoost != null ? propertyBoost : ragConfig.getPropertyBoost();
+        float effectiveContentBoost =
+                contentBoost != null ? contentBoost : ragConfig.getContentBoost();
+        if (effectivePropertyBoost == 0.0f && effectiveContentBoost == 0.0f) {
+            throw new VectorSearchException(
+                    "At least one of propertyBoost or contentBoost must be greater than 0");
         }
 
         try {
@@ -133,14 +155,55 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             // Build ACL filter
             String aclFilter = aclExpander.buildReaderFilterQuery(repositoryId, userId);
 
-            // Build folder filter (using Block Join to parent)
-            String sanitizedFolderId = SolrQuerySanitizer.escape(folderId);
-            String folderFilter = "{!parent which='doc_type:document'}parent_id:" + sanitizedFolderId;
+            // Folder scoping needs TWO different filters, because the two halves of a
+            // weighted search run over documents with different shapes.
+            //
+            // Only the parent document carries parent_id (the folder). A chunk carries
+            // parent_document_id — the document it belongs to — and nothing about the folder.
+            // Field values verified against the live index: a parent is
+            // {id: "rag:<objectId>", object_id: "<objectId>", parent_id: "<folderId>"} and a
+            // chunk is {id: "<objectId>_chunk_N", parent_document_id: "<objectId>"}. So the
+            // chunk filter joins through object_id, NOT through id — the "rag:" prefix on the
+            // parent's id would match nothing.
+            //
+            // Two wrong versions preceded this, both of which Solr answered rather than
+            // rejected, which is why each needed measuring rather than reasoning about:
+            //
+            //   1. {!parent which='doc_type:document'}parent_id:X — a to-parent Block Join
+            //      whose inner query runs against CHILDREN. It searched the chunks for a field
+            //      only the parent has. Measured: 1 document returned for a folder holding 2,
+            //      and through the API, documents from OTHER folders entirely.
+            //   2. A plain parent_id:X on both halves. Correct for the property half, and it
+            //      matches ZERO chunks, so folder-scoped search lost every content-based hit —
+            //      the same silent wrongness pointing the other way. Measured on this index:
+            //      the folder held 2 documents / 1,144 chunks; the plain filter matched 0 of
+            //      the chunks, the join below matched all 1,144.
+            // Quoted, not merely escaped. escape() covers Solr punctuation but not whitespace or
+            // boolean keywords, so a folder id of `foo OR bar` parsed as several clauses instead
+            // of one term value — broadening the filter or failing to parse, depending on the
+            // default field. Ids are normally uuids, but they can be imported, and a folder
+            // filter is exactly the wrong place to rely on "the input is well-formed".
+            String sanitizedFolderId = SolrQuerySanitizer.escapeAndQuote(folderId);
+            String documentFolderFilter = "parent_id:" + sanitizedFolderId;
+            // The inner query of the join needs its OWN repository restriction. The outer
+            // filters (doc_type:chunk, repository_id:..., the ACL filter) constrain the CHUNKS
+            // the join returns; they say nothing about which parent documents the join reads
+            // object_id values FROM. Without this, a folder id matching a parent in another
+            // repository would contribute that parent's object_id to the join set. Object ids
+            // are CouchDB uuids so a natural collision is implausible, but import/export can
+            // carry ids between repositories, which is exactly the case where "implausible"
+            // stops being an argument.
+            String chunkFolderFilter = "{!join from=object_id to=parent_document_id}"
+                    + "(doc_type:document AND repository_id:"
+                    + SolrQuerySanitizer.escapeAndQuote(repositoryId)
+                    + " AND parent_id:" + sanitizedFolderId + ")";
 
-            // Execute weighted KNN search
-            return executeWeightedKnnSearch(repositoryId, queryVector, aclFilter, folderFilter, topK,
-                    ragConfig.getSearchSimilarityThreshold(),
-                    ragConfig.getPropertyBoost(), ragConfig.getContentBoost());
+            // Execute weighted KNN search (live-ACL gate applied inside, before trim).
+            // null means "use the server's value"; anything the caller supplied is honoured.
+            return executeWeightedKnnSearch(repositoryId, userId, queryVector, aclFilter,
+                    chunkFolderFilter, documentFolderFilter, topK,
+                    minScore != null ? minScore : ragConfig.getSearchSimilarityThreshold(),
+                    effectivePropertyBoost, effectiveContentBoost);
 
         } catch (EmbeddingException e) {
             throw new VectorSearchException("Failed to generate query embedding", e);
@@ -187,6 +250,22 @@ public class VectorSearchServiceImpl implements VectorSearchService {
                 throw new VectorSearchException("Document not found in RAG index: " + documentId);
             }
 
+            // Live-ACL gate on the SEED, not just the results. getDocumentVector
+            // authorizes the seed only via the indexed readers fq, which is merely
+            // an optimization and can be stale-permissive (the async re-index window
+            // after applyAcl/move, a failed/WARN-swallowed refresh, or a not-yet-
+            // rebuilt pre-fix index whose docs still carry member-expanded tokens).
+            // Without re-checking live ACL here, a caller whose read was revoked
+            // could still use the revoked document as a similarity seed — an
+            // existence + semantic-neighbourhood oracle over its content. Re-verify
+            // against live ACL and treat an unreadable seed identically to "not
+            // found" (same exception, preserving the indistinguishability contract
+            // in getDocumentVector's comment).
+            java.util.Set<String> seedTokens = aclExpander.buildReaderTokenSet(repositoryId, userId);
+            if (!aclExpander.isReadableByTokens(repositoryId, documentId, seedTokens)) {
+                throw new VectorSearchException("Document not found in RAG index: " + documentId);
+            }
+
             // 3. Execute KNN search using the document vector
             // Request topK + 1 to account for the source document
             List<VectorSearchResult> results = executeDocumentVectorSearch(
@@ -194,6 +273,10 @@ public class VectorSearchServiceImpl implements VectorSearchService {
 
             // 4. Filter out the source document from results
             results.removeIf(r -> documentId.equals(r.getDocumentId()));
+
+            // Final live-ACL gate (see filterByLiveAcl) before the topK trim, so a
+            // stale over-permissive index entry cannot leak a similar document.
+            results = filterByLiveAcl(repositoryId, userId, results);
 
             // 5. Limit to topK after filtering
             if (results.size() > topK) {
@@ -376,8 +459,15 @@ public class VectorSearchServiceImpl implements VectorSearchService {
      *
      * KNN queries are executed in parallel for better performance.
      */
-    private List<VectorSearchResult> executeWeightedKnnSearch(String repositoryId, float[] queryVector,
-                                                               String aclFilter, String additionalFilter,
+    /**
+     * @param chunkFilter extra filter for the chunk (content) half, or null
+     * @param documentFilter extra filter for the property half, or null. Separate from
+     *     chunkFilter because chunks and parent documents carry different fields: one filter
+     *     applied to both is necessarily wrong for one of them, silently and without an error.
+     */
+    private List<VectorSearchResult> executeWeightedKnnSearch(String repositoryId, String userId, float[] queryVector,
+                                                               String aclFilter, String chunkFilter,
+                                                               String documentFilter,
                                                                int topK, float minScore,
                                                                float propertyBoost, float contentBoost)
             throws VectorSearchException {
@@ -403,7 +493,7 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             if (chunkSearchEnabled) {
                 chunkSearchFuture = CompletableFuture.runAsync(() -> {
                     try {
-                        searchChunkVectors(solrClient, repositoryId, vectorStr, aclFilter, additionalFilter,
+                        searchChunkVectors(solrClient, repositoryId, vectorStr, aclFilter, chunkFilter,
                                 topK * ragConfig.getChunkSearchTopKMultiplier(), documentScores, contentBoost);
                     } catch (Exception e) {
                         log.error("Chunk vector search failed", e);
@@ -416,7 +506,7 @@ public class VectorSearchServiceImpl implements VectorSearchService {
             if (propertySearchEnabled) {
                 propertySearchFuture = CompletableFuture.runAsync(() -> {
                     try {
-                        searchPropertyVectors(solrClient, repositoryId, vectorStr, aclFilter, additionalFilter,
+                        searchPropertyVectors(solrClient, repositoryId, vectorStr, aclFilter, documentFilter,
                                 topK * ragConfig.getPropertySearchTopKMultiplier(), documentScores, propertyBoost);
                     } catch (Exception e) {
                         log.error("Property vector search failed", e);
@@ -469,6 +559,12 @@ public class VectorSearchServiceImpl implements VectorSearchService {
 
             // Sort by combined score descending
             results.sort((a, b) -> Float.compare(b.getScore(), a.getScore()));
+
+            // Final live-ACL gate BEFORE the topK trim, so a hit dropped for stale
+            // over-permissive index readers does not leave the page short of topK
+            // (the candidate pool here is topK * multiplier). Consistent with
+            // findSimilarDocuments, which also gates before its trim.
+            results = filterByLiveAcl(repositoryId, userId, results);
 
             // Limit to topK
             if (results.size() > topK) {
@@ -704,6 +800,38 @@ public class VectorSearchServiceImpl implements VectorSearchService {
         } catch (Exception e) {
             log.warn("Failed to batch enrich parent info for " + results.size() + " results", e);
         }
+    }
+
+    /**
+     * Final live-ACL gate over RAG hits — the RAG analog of the CMIS in-memory
+     * {@code getFiltered} check. The Solr {@code readers} fq is only an
+     * optimization; here every surviving hit is re-verified against LIVE ACL
+     * (loaded through calculateAcl, whose cache is evicted on any ACL change /
+     * move), so a stale, over-permissive {@code readers} value in the index —
+     * during the async re-index window after a move / applyAcl, on a relationship
+     * whose endpoint ACL changed, or after an admin demotion / group departure —
+     * can never leak a document name, path, or chunk text. Fail-closed: a hit
+     * whose content is missing or unreadable is dropped.
+     *
+     * <p>topK is small, and both the content load and calculateAcl are cached, so
+     * this per-hit re-check is cheap relative to the KNN search itself.
+     */
+    private List<VectorSearchResult> filterByLiveAcl(String repositoryId, String userId,
+            List<VectorSearchResult> results) {
+        if (results == null || results.isEmpty()) {
+            return results;
+        }
+        java.util.Set<String> callerTokens = aclExpander.buildReaderTokenSet(repositoryId, userId);
+        List<VectorSearchResult> authorized = new ArrayList<>(results.size());
+        for (VectorSearchResult r : results) {
+            if (r != null && aclExpander.isReadableByTokens(repositoryId, r.getDocumentId(), callerTokens)) {
+                authorized.add(r);
+            } else if (log.isDebugEnabled()) {
+                log.debug("RAG hit dropped by live-ACL gate: "
+                        + (r != null ? r.getDocumentId() : "null"));
+            }
+        }
+        return authorized;
     }
 
     private String getStringField(SolrDocument doc, String field) {

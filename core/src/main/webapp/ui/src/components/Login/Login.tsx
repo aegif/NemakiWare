@@ -740,6 +740,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             rules={[{ required: true, message: t('login.validation.usernameRequired') }]}
           >
             <Input
+              type="text"
               prefix={<UserOutlined />}
               placeholder={t('login.username')}
               autoComplete="username"

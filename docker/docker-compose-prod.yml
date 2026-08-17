@@ -68,19 +68,33 @@ services:
       - JAVA_OPTS=-Dorg.ektorp.support.AutoUpdateViewOnChange=false -Dorg.ektorp.http.IdleConnectionMonitor.enabled=false -Dorg.ektorp.support.DesignDocument.UPDATE_ON_DIFF=false -Dorg.ektorp.support.DesignDocument.ALLOW_AUTO_UPDATE=true -Dorg.apache.catalina.loader.WebappClassLoader.ENABLE_CLEAR_REFERENCES=true -Dorg.apache.tomcat.util.scan.StandardJarScanFilter.jarsToSkip=*.jar
       # CouchDB credentials are mandatory (:? fails-fast if unset). Other ${VAR:-}
       # fallbacks remain only for optional features where empty/disabled is safe.
-      - CATALINA_OPTS=-Xms${NEMAKI_HEAP_MIN:-1g} -Xmx${NEMAKI_HEAP_MAX:-3g} -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Ddb.couchdb.url=http://couchdb:5984 -Ddb.couchdb.auth.enabled=true -Ddb.couchdb.auth.username=${COUCHDB_USER:?COUCHDB_USER must be set} -Ddb.couchdb.auth.password=${COUCHDB_PASSWORD:?COUCHDB_PASSWORD must be set} -Dsolr.host=solr -Dsolr.port=8983 -Dsolr.protocol=http -Dnemakiware.public.scheme=${NEMAKI_PUBLIC_SCHEME:-auto} -Dcloud.auth.google.enabled=${CLOUD_AUTH_GOOGLE_ENABLED:-false} -Dcloud.auth.google.clientId=${CLOUD_AUTH_GOOGLE_CLIENT_ID:-} -Dcloud.auth.microsoft.enabled=${CLOUD_AUTH_MICROSOFT_ENABLED:-false} -Dcloud.auth.microsoft.clientId=${CLOUD_AUTH_MICROSOFT_CLIENT_ID:-} -Dcloud.auth.microsoft.tenantId=${CLOUD_AUTH_MICROSOFT_TENANT_ID:-} -Dcloud.drive.google.enabled=${CLOUD_DRIVE_GOOGLE_ENABLED:-false} -Dcloud.drive.microsoft.enabled=${CLOUD_DRIVE_MICROSOFT_ENABLED:-false} -Dsso.oidc.enabled=${SSO_OIDC_ENABLED:-false} -Dsso.saml.enabled=${SSO_SAML_ENABLED:-false} -Doidc.enabled=${OIDC_ENABLED:-false} -Doidc.issuer=${OIDC_ISSUER:-} -Doidc.clientId=${OIDC_CLIENT_ID:-} -Ddirectory.sync.enabled=${DIRECTORY_SYNC_ENABLED:-false} -Ddirectory.sync.ldap.url=${LDAP_URL:-} -Ddirectory.sync.ldap.base.dn=${LDAP_BASE_DN:-} -Ddirectory.sync.ldap.bind.dn=${LDAP_BIND_DN:-} -Ddirectory.sync.ldap.bind.password=${LDAP_BIND_PASSWORD:-} -Dnemakiware.security.requireAdminPasswordChange=${NEMAKI_REQUIRE_ADMIN_PW_CHANGE:-true} -Djdk.httpclient.allowRestrictedHeaders=host
+      - CATALINA_OPTS=-Xms${NEMAKI_HEAP_MIN:-1g} -Xmx${NEMAKI_HEAP_MAX:-3g} -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Ddb.couchdb.url=http://couchdb:5984 -Ddb.couchdb.auth.enabled=true -Ddb.couchdb.auth.username=${COUCHDB_USER:?COUCHDB_USER must be set} -Ddb.couchdb.auth.password=${COUCHDB_PASSWORD:?COUCHDB_PASSWORD must be set} -Dsolr.host=solr -Dsolr.port=8983 -Dsolr.protocol=http -Dnemakiware.public.scheme=${NEMAKI_PUBLIC_SCHEME:-auto} -Dcloud.auth.google.enabled=${CLOUD_AUTH_GOOGLE_ENABLED:-false} -Dcloud.auth.google.clientId=${CLOUD_AUTH_GOOGLE_CLIENT_ID:-} -Dcloud.auth.microsoft.enabled=${CLOUD_AUTH_MICROSOFT_ENABLED:-false} -Dcloud.auth.microsoft.clientId=${CLOUD_AUTH_MICROSOFT_CLIENT_ID:-} -Dcloud.auth.microsoft.tenantId=${CLOUD_AUTH_MICROSOFT_TENANT_ID:-} -Dcloud.drive.google.enabled=${CLOUD_DRIVE_GOOGLE_ENABLED:-false} -Dcloud.drive.microsoft.enabled=${CLOUD_DRIVE_MICROSOFT_ENABLED:-false} -Dsso.oidc.enabled=${SSO_OIDC_ENABLED:-false} -Dsso.saml.enabled=${SSO_SAML_ENABLED:-false} -Doidc.enabled=${OIDC_ENABLED:-false} -Doidc.issuer=${OIDC_ISSUER:-} -Doidc.clientId=${OIDC_CLIENT_ID:-} -Ddirectory.sync.enabled=${DIRECTORY_SYNC_ENABLED:-false} -Ddirectory.sync.ldap.url=${LDAP_URL:-} -Ddirectory.sync.ldap.base.dn=${LDAP_BASE_DN:-} -Ddirectory.sync.ldap.bind.dn=${LDAP_BIND_DN:-} -Ddirectory.sync.ldap.bind.password=${LDAP_BIND_PASSWORD:-} -Dnemakiware.security.requireAdminPasswordChange=${NEMAKI_REQUIRE_ADMIN_PW_CHANGE:-true} -Djdk.httpclient.allowRestrictedHeaders=host
     env_file:
       - path: ./secrets/microsoft-entra.env
         required: false
       - path: ./secrets/ingest-connectors.env
         required: false
+      # Cloud integration settings (copy docker/.env.cloud.example to .env.cloud).
+      # Interpolated ${CLOUD_*} vars in CATALINA_OPTS above still need --env-file .env.cloud
+      # (or host env) — this entry covers the keys the app reads directly from container env
+      # (cloud.directory.sync.*, cloud.drive.encryption.key), which CATALINA_OPTS does not pass.
+      - path: ./.env.cloud
+        required: false
     volumes:
       - ${NEMAKI_SECRETS_DIR:-./secrets}:/usr/local/tomcat/secrets:ro
-      # To fully override the baked-in properties file without rebuilding the
-      # image, uncomment and provide your own file:
+      # NOTE: mounting over /usr/local/tomcat/conf/nemakiware.properties does NOT override the
+      # settings. Spring reads `classpath:nemakiware.properties` (propertyContext.xml), which
+      # resolves to WEB-INF/classes/nemakiware.properties inside the WAR; conf/ is not on the
+      # webapp classpath, and -Dnemakiware.properties=<path> is not read by anything.
+      # Override with -D system properties or environment variables instead — CATALINA_OPTS above
+      # already does exactly that for the settings this compose file cares about.
       # - ./config/nemakiware.properties:/usr/local/tomcat/conf/nemakiware.properties:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/core"]
+      # Readiness, not liveness: /core answers as soon as the webapp is deployed, but the first
+      # CMIS call still waits ~10s for the type cache, and concurrent requests arriving in that
+      # window were measured queueing 8.3s behind it. /rest/all/readiness builds the cache and
+      # returns 503 until it has, so an orchestrator does not route to a cold instance.
+      test: ["CMD", "curl", "-f", "http://localhost:8080/core/rest/all/readiness"]
       interval: 30s
       timeout: 10s
       retries: 5

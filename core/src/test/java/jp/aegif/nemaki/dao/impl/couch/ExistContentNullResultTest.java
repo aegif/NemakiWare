@@ -1,0 +1,231 @@
+/**
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ */
+package jp.aegif.nemaki.dao.impl.couch;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import java.util.List;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
+
+import com.ibm.cloud.cloudant.v1.model.ViewResult;
+import com.ibm.cloud.cloudant.v1.model.ViewResultRow;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
+import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
+
+/**
+ * "This type has no instances" is an ordinary answer, not an error.
+ *
+ * <h2>Why the assertion is on the log</h2>
+ *
+ * <p>{@code existContent} answers false either way, so asserting the return value cannot fail.
+ * The keyed {@code queryView} overload returns {@code null} when the key matches nothing — its
+ * documented contract, which callers branch on — and {@code existContent} used to dereference
+ * that straight away. The resulting NullPointerException was caught by its own catch block, which
+ * logs at ERROR and returns false. So the answer was right, arrived at by throwing and logging an
+ * error on the most ordinary input there is: a type with nothing in it.
+ *
+ * <p>That matters beyond noise. Ledger item V2 proposes wiring
+ * {@code TypeManagerImpl.checkTypeHasInstances} to this method; wiring a method whose
+ * no-instances path runs through an exception handler is how a genuine failure later becomes
+ * indistinguishable from an empty result.
+ *
+ * <p>Restoring the dereference makes {@link #anAbsentTypeIsNotAnError()} fail.
+ */
+public class ExistContentNullResultTest {
+
+    private static final String REPO = "bedroom";
+
+    private ListAppender<ILoggingEvent> appender;
+    private Logger daoLogger;
+
+    @BeforeEach
+    public void attachAppender() {
+        daoLogger = (Logger) LoggerFactory.getLogger(ContentDaoServiceImpl.class);
+        appender = new ListAppender<>();
+        appender.start();
+        daoLogger.addAppender(appender);
+        daoLogger.setLevel(Level.DEBUG);
+    }
+
+    @AfterEach
+    public void detachAppender() {
+        daoLogger.detachAppender(appender);
+    }
+
+    private ContentDaoServiceImpl daoAnswering(ViewResult result) {
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(anyString(), anyString(), anyString())).thenReturn(result);
+        CloudantClientPool pool = mock(CloudantClientPool.class);
+        when(pool.getClient(anyString())).thenReturn(client);
+
+        ContentDaoServiceImpl dao = new ContentDaoServiceImpl();
+        dao.setConnectorPool(pool);
+        return dao;
+    }
+
+    private long errorsLogged() {
+        return appender.list.stream().filter(e -> e.getLevel() == Level.ERROR).count();
+    }
+
+    /** The case the fix is about: no instances, so null, so false — quietly. */
+    @Test
+    public void anAbsentTypeIsNotAnError() {
+        ContentDaoServiceImpl dao = daoAnswering(null);
+
+        assertFalse(dao.existContent(REPO, "nemaki:typeWithNoInstances"));
+        assertEquals(0, errorsLogged(),
+                "a type with no instances is the ordinary case; reaching the answer by "
+                        + "dereferencing null and catching the NPE logs an error every time");
+    }
+
+    /** A type that does have instances still answers true. */
+    @Test
+    public void aPopulatedTypeIsStillReported() {
+        ViewResult result = mock(ViewResult.class);
+        when(result.getRows()).thenReturn(List.of(mock(ViewResultRow.class)));
+
+        assertTrue(daoAnswering(result).existContent(REPO, "cmis:document"));
+        assertEquals(0, errorsLogged());
+    }
+
+    /**
+     * A non-null result whose row list is null is also "no instances" — the reduce view can only
+     * produce rows or nothing, but the guard has to cover both shapes or it just moves the NPE.
+     */
+    @Test
+    public void aResultWithNoRowListIsAlsoNotAnError() {
+        ViewResult result = mock(ViewResult.class);
+        when(result.getRows()).thenReturn(null);
+
+        assertFalse(daoAnswering(result).existContent(REPO, "nemaki:whatever"));
+        assertEquals(0, errorsLogged());
+    }
+
+    /**
+     * A failure must NOT be reported as "no instances".
+     *
+     * <p>This is the same reasoning that makes an unwired DAO refuse the deletion rather than
+     * assume the type is empty: a CouchDB or view outage is the same class of ignorance. Answering
+     * false during an outage would let a populated type be deleted because the database happened
+     * to be unreachable — the exact hole the constraint exists to close, reopened for the duration.
+     *
+     * <p>{@code checkTypeDependencies} turns the throw into a dependency issue, so the operator
+     * gets a refusal naming the cause instead of a success on a false premise.
+     */
+    @Test
+    public void aFailureIsReportedRatherThanAnsweredAsNoInstances() {
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(anyString(), anyString(), anyString()))
+                .thenThrow(new IllegalStateException("CouchDB is unreachable"));
+        CloudantClientPool pool = mock(CloudantClientPool.class);
+        when(pool.getClient(anyString())).thenReturn(client);
+        ContentDaoServiceImpl dao = new ContentDaoServiceImpl();
+        dao.setConnectorPool(pool);
+
+        assertThrows(org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException.class,
+                () -> dao.existContent(REPO, "nemaki:whatever"),
+                "swallowing the failure and returning false lets a populated type be deleted "
+                        + "while the database is down");
+        assertEquals(1, errorsLogged(), "the operator still needs the cause in the log");
+    }
+
+    /**
+     * A silently empty view must not be read as "this type has no instances".
+     *
+     * <p>`queryView` answers null both when the key matched nothing AND when the design document
+     * or view is absent, and a view being rebuilt replies HTTP 200 with zero rows and no error.
+     * Reading any of those as "no instances" lets a populated type be deleted for as long as the
+     * rebuild lasts — which is exactly the window a v3.3.0 upgrade opens, because
+     * {@code Patch_JoinedGroupsSingleEmit} rewrites that design document.
+     */
+    @Test
+    public void aSilentlyEmptyViewDoesNotMeanTheTypeIsUnused() {
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(anyString(), anyString(), anyString())).thenReturn(null);
+        java.util.Map<String, Object> instance = new java.util.HashMap<>();
+        instance.put("_id", "an-object-of-this-type");
+        when(client.findRawBySelector(any(java.util.Map.class), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of(instance));
+        CloudantClientPool pool = mock(CloudantClientPool.class);
+        when(pool.getClient(anyString())).thenReturn(client);
+        ContentDaoServiceImpl dao = new ContentDaoServiceImpl();
+        dao.setConnectorPool(pool);
+
+        assertTrue(dao.existContent(REPO, "nemaki:typeInUse"),
+                "the view could not see the instances but they exist — answering false here "
+                        + "makes a populated type deletable while the view is rebuilding");
+    }
+
+    /**
+     * A type still applied as a SECONDARY type is in use, even though no object names it as its
+     * primary type.
+     *
+     * <p>{@code countByObjectType} keys on {@code doc.objectType} — the primary type — while a
+     * secondary type lives in the separate {@code secondaryIds} array. So every view-based check
+     * answers "no instances" for a secondary type that documents are actively using, and deleting
+     * it strips a type definition out from under live objects. RELEASE_NOTES carried this as a
+     * known limitation until it was closed.
+     */
+    @Test
+    public void aTypeStillAppliedAsASecondaryTypeCountsAsInUse() {
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(anyString(), anyString(), anyString())).thenReturn(null);
+        java.util.Map<String, Object> user = new java.util.HashMap<>();
+        user.put("_id", "a-document-tagged-with-it");
+        // No object has it as a PRIMARY type; one has it as a secondary type.
+        when(client.findRawBySelector(any(java.util.Map.class), org.mockito.ArgumentMatchers.anyInt()))
+                .thenAnswer(inv -> {
+                    java.util.Map<String, Object> selector =
+                            (java.util.Map<String, Object>) inv.getArgument(0);
+                    return selector.containsKey("secondaryIds") ? List.of(user) : List.of();
+                });
+        CloudantClientPool pool = mock(CloudantClientPool.class);
+        when(pool.getClient(anyString())).thenReturn(client);
+        ContentDaoServiceImpl dao = new ContentDaoServiceImpl();
+        dao.setConnectorPool(pool);
+
+        assertTrue(dao.existContent(REPO, "nemaki:taggable"),
+                "nothing has it as a primary type, but documents carry it as a secondary type — "
+                        + "reporting it unused lets the definition be deleted out from under them");
+    }
+
+    /** An empty row list means the key matched nothing. Still false, still not an error. */
+    @Test
+    public void anEmptyRowListIsNotAnError() {
+        ViewResult result = mock(ViewResult.class);
+        when(result.getRows()).thenReturn(List.of());
+
+        assertFalse(daoAnswering(result).existContent(REPO, "nemaki:whatever"));
+        assertEquals(0, errorsLogged());
+    }
+}

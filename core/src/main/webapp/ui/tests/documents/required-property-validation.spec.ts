@@ -16,7 +16,7 @@
  */
 
 import { test, expect, request } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 
@@ -281,7 +281,7 @@ test.describe('Required Property Validation Tests', () => {
     await waitForUiStable(page);
 
     // Wait for page content to be ready
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     await testHelper.closeMobileSidebar(browserName);
   });
@@ -302,22 +302,22 @@ test.describe('Required Property Validation Tests', () => {
 
       const dropdown = page.locator('.ant-select-dropdown');
       let dropdownOpened = false;
-      let modal = page.locator('.ant-modal-content').last();
+      let modal = page.locator('.ant-modal-container').last();
 
       for (let attempt = 1; attempt <= 5; attempt++) {
         try {
           // If modal is not visible, click the upload button
-          if (!(await page.locator('.ant-modal-content').isVisible().catch(() => false))) {
+          if (!(await page.locator('.ant-modal-container').isVisible().catch(() => false))) {
             console.log(`  Opening upload modal (attempt ${attempt})`);
             await uploadButton.click(isMobile ? { force: true } : {});
           }
 
           // Wait for modal with type selector to appear and stabilize
-          await page.waitForSelector('.ant-modal-content .ant-select', { state: 'visible', timeout: 10000 });
+          await page.waitForSelector('.ant-modal-container .ant-select', { state: 'visible', timeout: 10000 });
           console.log(`  Upload modal with type selector visible (attempt ${attempt})`);
 
           // Re-locate modal (use last() to get the most recently opened one)
-          modal = page.locator('.ant-modal-content').last();
+          modal = page.locator('.ant-modal-container').last();
 
           // Click type selector to open dropdown
           const typeSelector = modal.locator('.ant-select').first();
@@ -336,8 +336,8 @@ test.describe('Required Property Validation Tests', () => {
       if (!dropdownOpened) {
         console.log('WARNING: Could not open type dropdown after 5 attempts');
         // Debug info
-        const modalCount = await page.locator('.ant-modal-content').count();
-        const selectCount = await page.locator('.ant-modal-content .ant-select').count();
+        const modalCount = await page.locator('.ant-modal-container').count();
+        const selectCount = await page.locator('.ant-modal-container .ant-select').count();
         console.log(`  DEBUG: ${modalCount} modals, ${selectCount} selects on page`);
       }
 
@@ -381,13 +381,17 @@ test.describe('Required Property Validation Tests', () => {
         await expect(modal).toBeVisible({ timeout: 3000 });
         console.log('Modal still visible after type selection');
 
-        // Verify selection was applied (re-locate after retry loop)
-        const selectedValue = await modal.locator('.ant-select').first().locator('.ant-select-selection-item').textContent();
+        // Verify selection was applied. This is a log line, and it used to be a 30-second
+        // blocking read: the modal holds more than one .ant-select and .first() is not
+        // necessarily the type picker, so textContent() waited out its whole timeout on an
+        // element that never gets a selection item. Report what is there; do not block.
+        const selectedValue = await modal.locator('.ant-select-selection-item').first()
+          .textContent({ timeout: 5000 }).catch(() => '(not reported)');
         console.log(`Selected type display: ${selectedValue}`);
       } else {
         await page.keyboard.press('Escape');
         console.log('Test document type not found even after search. Skipping test.');
-        test.skip('ENV: Test document type not found in selector');
+        test.skip(true, 'ENV: Test document type not found in selector');
         return;
       }
 
@@ -414,7 +418,7 @@ test.describe('Required Property Validation Tests', () => {
         const formItems = modal.locator('.ant-form-item');
         console.log(`  Total form items in modal: ${await formItems.count()}`);
 
-        test.skip('ENV: Custom properties section not appearing - type definition incomplete');
+        test.skip(true, 'ENV: Custom properties section not appearing - type definition incomplete');
         return;
       }
 
@@ -494,7 +498,7 @@ test.describe('Required Property Validation Tests', () => {
             await deleteButton.click(isMobile ? { force: true } : {});
             await waitForRender(page);
 
-            const deleteModal = page.locator('.ant-modal-content').filter({ hasText: /削除|Delete/ });
+            const deleteModal = page.locator('.ant-modal-container').filter({ hasText: /削除|Delete/ });
             if (await deleteModal.count() > 0) {
               const confirmBtn = deleteModal.locator('button.ant-btn-dangerous, button').filter({ hasText: /削除|Delete/ });
               if (await confirmBtn.count() > 0) {
@@ -532,9 +536,9 @@ test.describe('Required Property Validation Tests', () => {
       await createFolderButton.click(isMobile ? { force: true } : {});
       await waitForRender(page);
 
-      await expect(page.locator('.ant-modal-content')).toBeVisible({ timeout: 5000 });
+      await expect(page.locator('.ant-modal-container')).toBeVisible({ timeout: 5000 });
       // Target the folder creation modal specifically (last opened modal without upload area)
-      const modal = page.locator('.ant-modal-content').last();
+      const modal = page.locator('.ant-modal-container').last();
 
       // Wait for modal to stabilize
       await waitForUiStable(page);
@@ -566,7 +570,7 @@ test.describe('Required Property Validation Tests', () => {
 
       if (await testTypeOption.count() === 0) {
         await page.keyboard.press('Escape');
-        test.skip('ENV: Test folder type not found in selector - type may not have been created');
+        test.skip(true, 'ENV: Test folder type not found in selector - type may not have been created');
         return;
       }
 
@@ -641,7 +645,7 @@ test.describe('Required Property Validation Tests', () => {
             await deleteButton.click(isMobile ? { force: true } : {});
             await waitForRender(page);
 
-            const deleteModal = page.locator('.ant-modal-content').filter({ hasText: /削除|Delete/ });
+            const deleteModal = page.locator('.ant-modal-container').filter({ hasText: /削除|Delete/ });
             if (await deleteModal.count() > 0) {
               const confirmBtn = deleteModal.locator('button.ant-btn-dangerous, button').filter({ hasText: /削除|Delete/ });
               if (await confirmBtn.count() > 0) {
@@ -667,17 +671,17 @@ test.describe('Required Property Validation Tests', () => {
 
       // Open upload modal and select type (combined retry — modal may close due to React re-render)
       const uploadButton = page.locator('button').filter({ hasText: /ファイルアップロード|Upload/ });
-      let modal3 = page.locator('.ant-modal-content').last();
+      let modal3 = page.locator('.ant-modal-container').last();
       const dropdown3 = page.locator('.ant-select-dropdown');
       let dropdown3Opened = false;
 
       for (let attempt = 1; attempt <= 5; attempt++) {
         try {
-          if (!(await page.locator('.ant-modal-content').isVisible().catch(() => false))) {
+          if (!(await page.locator('.ant-modal-container').isVisible().catch(() => false))) {
             await uploadButton.click(isMobile ? { force: true } : {});
           }
-          await page.waitForSelector('.ant-modal-content .ant-select', { state: 'visible', timeout: 10000 });
-          modal3 = page.locator('.ant-modal-content').last();
+          await page.waitForSelector('.ant-modal-container .ant-select', { state: 'visible', timeout: 10000 });
+          modal3 = page.locator('.ant-modal-container').last();
           const typeSelector3 = modal3.locator('.ant-select').first();
           await typeSelector3.click({ timeout: 5000 });
           await expect(dropdown3).toBeVisible({ timeout: 3000 });
@@ -700,7 +704,7 @@ test.describe('Required Property Validation Tests', () => {
 
       if (await testTypeOption.count() === 0) {
         await page.keyboard.press('Escape');
-        test.skip('ENV: Test document type not found even after search');
+        test.skip(true, 'ENV: Test document type not found even after search');
         return;
       }
 

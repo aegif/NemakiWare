@@ -61,6 +61,11 @@ public class PurviewDocumentPublishServiceImplTest {
                         "datamap/api/atlas/v2", "tenant-123", "client-123", "secret-123", 5000, 30000));
         when(entityRegistryClient.bulkCreateOrUpdateEntities(any(), any()))
                 .thenAnswer(this::successWithEntityCount);
+        // The folder companion's tie (増分 B): stubbed so these tests exercise the real
+        // publish path rather than a client that answers nothing.
+        when(entityRegistryClient.createRelationship(any(), any())).thenReturn(
+                jp.aegif.nemaki.rest.purview.client.PurviewEntityPublishResult.success(
+                        1, "relationship created"));
         when(containmentRelationshipService.upsertContainmentRelationships(any(), any(), anyMap())).thenReturn(0);
         when(documentTypeRelationshipService.upsertDocumentTypeRelationships(any(), any(), anyMap())).thenReturn(0);
 
@@ -72,7 +77,13 @@ public class PurviewDocumentPublishServiceImplTest {
                 entityRegistryClient,
                 containmentRelationshipService,
                 documentTypeRelationshipService,
-                deadLetterStateService);
+                deadLetterStateService,
+                // The real lifecycle over the same payload factory and client, so these tests
+                // see the folder companions that production publishes rather than a stub's idea
+                // of them (増分 B, §3).
+                new jp.aegif.nemaki.rest.purview.lineage.LineageFolderCompanionLifecycleImpl(
+                        connectionResolver, new PurviewEntityPayloadFactory(),
+                        entityRegistryClient));
     }
 
     @Test
@@ -93,13 +104,19 @@ public class PurviewDocumentPublishServiceImplTest {
 
         int processedCount = service.publishRepositoryHierarchy("bedroom");
 
-        assertEquals(5, processedCount);
+        // 5 → 7 (増分 B): each of the two folders now publishes its DataSet companion in the
+        // same bulk, per §3. Repository + 2 folders + 2 documents + 2 companions.
+        assertEquals(7, processedCount);
         ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
         verify(entityRegistryClient).bulkCreateOrUpdateEntities(any(), payloadCaptor.capture());
         List<Map<String, Object>> entities = (List<Map<String, Object>>) payloadCaptor.getValue().get("entities");
-        assertEquals(5, entities.size());
+        assertEquals(7, entities.size());
+        // 増分 B: each folder's DataSet companion travels in the same bulk (§3), named from
+        // LineageEndpoint.folderProxyQualifiedName so lineage resolves to the same entity.
         assertEquals(List.of(
                 "nemaki://bedroom",
+                "nemaki://bedroom/folders/folder-001/dataset",
+                "nemaki://bedroom/folders/root-001/dataset",
                 "nemaki://bedroom/objects/doc-001",
                 "nemaki://bedroom/objects/doc-002",
                 "nemaki://bedroom/objects/folder-001",
@@ -113,6 +130,8 @@ public class PurviewDocumentPublishServiceImplTest {
                 "nemaki_document",
                 "nemaki_folder",
                 "nemaki_folder",
+                "nemaki_folder_dataset",
+                "nemaki_folder_dataset",
                 "nemaki_repository"),
                 entities.stream()
                         .map(entity -> entity.get("typeName").toString())
@@ -171,11 +190,12 @@ public class PurviewDocumentPublishServiceImplTest {
     public void testUpsertContentsPublishesFoldersAndDocumentsTogether() throws Exception {
         int processedCount = service.upsertContents("bedroom", List.of(folder("folder-001"), document("doc-001", "folder-001")));
 
-        assertEquals(2, processedCount);
+        // 2 → 3 (増分 B): the folder brings its companion, in the same bulk as itself.
+        assertEquals(3, processedCount);
         ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
         verify(entityRegistryClient).bulkCreateOrUpdateEntities(any(), payloadCaptor.capture());
         List<Map<String, Object>> entities = (List<Map<String, Object>>) payloadCaptor.getValue().get("entities");
-        assertEquals(List.of("nemaki_document", "nemaki_folder"),
+        assertEquals(List.of("nemaki_document", "nemaki_folder", "nemaki_folder_dataset"),
                 entities.stream().map(entity -> entity.get("typeName").toString()).sorted().toList());
     }
 
@@ -208,7 +228,8 @@ public class PurviewDocumentPublishServiceImplTest {
 
         int processedCount = service.upsertContents("bedroom", List.of(folder, document));
 
-        assertEquals(4, processedCount);
+        // 4 → 5 (増分 B): 2 entities + 1 companion + 2 containment relationships.
+        assertEquals(5, processedCount);
         verify(containmentRelationshipService).upsertContainmentRelationships(
                 eq("bedroom"),
                 eq(List.of(folder, document)),

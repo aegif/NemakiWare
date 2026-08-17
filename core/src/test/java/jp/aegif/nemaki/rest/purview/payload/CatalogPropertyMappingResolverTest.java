@@ -27,6 +27,263 @@ class CatalogPropertyMappingResolverTest {
         return new CatalogPropertyMappingResolver(service, typeService, null);
     }
 
+    /**
+     * Configuration that never went through {@code saveMappings}.
+     *
+     * <p>{@code validateMappings} only ever ran on save, so the reserved-name rule protected
+     * exactly one of the ways a mapping arrives. A configuration written before the rule existed,
+     * a restore, a hand-edited CouchDB document and a corrupted value all reach the payload
+     * through {@code loadMappings}, and each could name a core attribute — including
+     * {@code cloudFileUrl}, which is deliberately null so that no stored cloud URL reaches the
+     * catalog. These tests therefore feed the persisted JSON directly.
+     */
+    @Nested
+    class PersistedConfigurationBypassingSave {
+
+        private CatalogPropertyMappingResolver withStoredJson(String json) {
+            IntegrationSettingsService service = mock(IntegrationSettingsService.class);
+            when(service.readSetting("catalog.sync.propertyMappings.bedroom")).thenReturn(json);
+            return resolver(service);
+        }
+
+        @Test
+        void testReservedCatalogNameInStoredJsonIsDropped() {
+            CatalogPropertyMappingResolver r = withStoredJson("""
+                    { "nemaki:document": {
+                        "nemaki:cloudFileUrl": { "enabled": true, "catalogName": "cloudFileUrl" } } }
+                    """);
+
+            assertTrue(r.loadMappings("bedroom").getOrDefault("nemaki:document", Map.of()).isEmpty(),
+                    "a mapping onto a core attribute must not survive the load");
+            assertTrue(r.getEnabledMappings("bedroom", "nemaki:document").isEmpty());
+            assertEquals(1, r.getRejectedMappingCount());
+        }
+
+        @Test
+        void testEveryReservedNameIsRejectedFromStoredJson() {
+            for (String reserved : CatalogPropertyMappingResolver.RESERVED_ATTRIBUTE_NAMES) {
+                CatalogPropertyMappingResolver r = withStoredJson("""
+                        { "nemaki:document": {
+                            "nemaki:x": { "enabled": true, "catalogName": "%s" } } }
+                        """.formatted(reserved));
+                assertTrue(r.getEnabledMappings("bedroom", "nemaki:document").isEmpty(),
+                        reserved + " survived the load");
+            }
+        }
+
+        @Test
+        void testBlankAndWhitespaceCatalogNamesAreDropped() {
+            for (String blank : List.of("", " ", "   ")) {
+                CatalogPropertyMappingResolver r = withStoredJson("""
+                        { "nemaki:document": {
+                            "nemaki:x": { "enabled": true, "catalogName": "%s" } } }
+                        """.formatted(blank));
+                assertTrue(r.getEnabledMappings("bedroom", "nemaki:document").isEmpty(),
+                        "blank name '" + blank + "' survived the load");
+            }
+            // a padded reserved name is a mistake either way
+            CatalogPropertyMappingResolver padded = withStoredJson("""
+                    { "nemaki:document": {
+                        "nemaki:x": { "enabled": true, "catalogName": " cloudFileUrl " } } }
+                    """);
+            assertTrue(padded.getEnabledMappings("bedroom", "nemaki:document").isEmpty());
+        }
+
+        /** One bad mapping must not stop the rest of the projection. */
+        @Test
+        void testOnlyTheOffendingMappingIsDropped() {
+            CatalogPropertyMappingResolver r = withStoredJson("""
+                    { "nemaki:document": {
+                        "nemaki:cloudFileUrl": { "enabled": true, "catalogName": "cloudFileUrl" },
+                        "nemaki:dept":         { "enabled": true, "catalogName": "department" } } }
+                    """);
+
+            Map<String, String> enabled = r.getEnabledMappings("bedroom", "nemaki:document");
+            assertEquals(Map.of("nemaki:dept", "department"), enabled);
+            assertEquals(1, r.getRejectedMappingCount());
+        }
+
+        /** A disabled mapping is inert, so it is kept as configuration rather than dropped. */
+        @Test
+        void testADisabledReservedMappingIsNotCounted() {
+            CatalogPropertyMappingResolver r = withStoredJson("""
+                    { "nemaki:document": {
+                        "nemaki:x": { "enabled": false, "catalogName": "cloudFileUrl" } } }
+                    """);
+            assertTrue(r.getEnabledMappings("bedroom", "nemaki:document").isEmpty());
+            assertEquals(0, r.getRejectedMappingCount());
+        }
+
+        /**
+         * The output name is innocuous; the input property is the secret carrier.
+         *
+         * <p>{@code nemaki:cloudFileUrl -> legacyCloudUrl} passes the reserved-name rule (nothing
+         * is called legacyCloudUrl) and the payload boundary (no such attribute exists yet), and
+         * would put in Atlas exactly the URL increment A-1g removed. The property is real on older
+         * documents — {@code CloudDriveResource} still reads cloud metadata from
+         * {@code subTypeProperties} as a legacy fallback.
+         */
+        @Test
+        void testAForbiddenSourcePropertyIsDroppedWhateverTheOutputNameIs() {
+            for (String outputName : List.of("legacyCloudUrl", "myUrl", "department")) {
+                CatalogPropertyMappingResolver r = withStoredJson("""
+                        { "nemaki:document": {
+                            "nemaki:cloudFileUrl": { "enabled": true, "catalogName": "%s" } } }
+                        """.formatted(outputName));
+                assertTrue(r.getEnabledMappings("bedroom", "nemaki:document").isEmpty(),
+                        "nemaki:cloudFileUrl projected as '" + outputName + "'");
+                assertEquals(1, r.getRejectedMappingCount());
+            }
+        }
+
+        /** And it must not take the rest of the configuration down with it. */
+        @Test
+        void testOtherMappingsSurviveAForbiddenSourceProperty() {
+            CatalogPropertyMappingResolver r = withStoredJson("""
+                    { "nemaki:document": {
+                        "nemaki:cloudFileUrl": { "enabled": true, "catalogName": "legacyCloudUrl" },
+                        "nemaki:dept":         { "enabled": true, "catalogName": "department" } } }
+                    """);
+            assertEquals(Map.of("nemaki:dept", "department"),
+                    r.getEnabledMappings("bedroom", "nemaki:document"));
+        }
+
+        /**
+         * Every shape a hand-edited or corrupted {@code catalogName} can take.
+         *
+         * <p>These used to fall back to the CMIS property id, so a mapping nobody configured
+         * projected under a name nobody chose. There is no compatibility contract for that, so
+         * each is now a configuration error: the one mapping is dropped, counted and warned about.
+         */
+        @Test
+        void testAMalformedCatalogNameDropsOnlyThatMapping() {
+            String[] malformed = {
+                    "\"catalogName\": null",
+                    "\"catalogName\": 1",
+                    "\"catalogName\": {}",
+                    "\"catalogName\": []",
+                    "\"catalogName\": true",
+                    "\"unrelated\": \"x\"" };   // the field missing entirely
+            for (String field : malformed) {
+                CatalogPropertyMappingResolver r = withStoredJson("""
+                        { "nemaki:document": {
+                            "nemaki:dept": { "enabled": true, %s },
+                            "nemaki:team": { "enabled": true, "catalogName": "team" } } }
+                        """.formatted(field));
+
+                assertEquals(Map.of("nemaki:team", "team"),
+                        r.getEnabledMappings("bedroom", "nemaki:document"),
+                        "with " + field);
+                assertEquals(1, r.getRejectedMappingCount(), "with " + field);
+            }
+        }
+
+        /** And the reason names the shape, so an operator knows what to edit. */
+        @Test
+        void testAMalformedCatalogNameIsDistinguishedFromAnAbsentOne() {
+            CatalogPropertyMappingResolver missing = withStoredJson("""
+                    { "nemaki:document": { "nemaki:dept": { "enabled": true } } }
+                    """);
+            assertTrue(missing.getEnabledMappings("bedroom", "nemaki:document").isEmpty());
+
+            CatalogPropertyMappingResolver malformed = withStoredJson("""
+                    { "nemaki:document": {
+                        "nemaki:dept": { "enabled": true, "catalogName": 1 } } }
+                    """);
+            assertTrue(malformed.getEnabledMappings("bedroom", "nemaki:document").isEmpty());
+
+            assertEquals("the stored configuration has no catalog attribute name",
+                    CatalogPropertyMappingResolver.Rejection.MISSING_CATALOG_NAME.reason());
+            assertEquals("the stored catalog attribute name is not a string",
+                    CatalogPropertyMappingResolver.Rejection.MALFORMED_CATALOG_NAME.reason());
+        }
+
+        /**
+         * A disabled mapping projects nothing, so it is kept as configuration whatever shape it
+         * is in — the admin UI still has to show it — and never counted as rejected.
+         */
+        @Test
+        void testADisabledMappingIsKeptVerbatimWhateverItsShape() {
+            CatalogPropertyMappingResolver r = withStoredJson("""
+                    { "nemaki:document": {
+                        "nemaki:a": { "enabled": false, "catalogName": "cloudFileUrl" },
+                        "nemaki:b": { "enabled": false, "catalogName": 1 },
+                        "nemaki:c": { "enabled": false },
+                        "nemaki:cloudFileUrl": { "enabled": false, "catalogName": "legacyUrl" } } }
+                    """);
+
+            Map<String, CatalogPropertyMappingResolver.PropertyMapping> loaded =
+                    r.loadMappings("bedroom").get("nemaki:document");
+            assertEquals(4, loaded.size(), "a disabled mapping is configuration, not a rejection");
+            assertEquals("cloudFileUrl", loaded.get("nemaki:a").catalogName());
+            assertNull(loaded.get("nemaki:b").catalogName(), "not a string, so not invented");
+            assertNull(loaded.get("nemaki:c").catalogName());
+
+            assertTrue(r.getEnabledMappings("bedroom", "nemaki:document").isEmpty());
+            assertEquals(0, r.getRejectedMappingCount());
+        }
+
+        /** Save and load must agree, or one of them is the hole. */
+        @Test
+        void testSaveRejectsWhatLoadRejects() {
+            for (String name : List.of("cloudFileUrl", "qualifiedName", "externalFileId", " ")) {
+                assertNotNull(CatalogPropertyMappingResolver.rejectionFor("nemaki:x", name), name);
+                assertFalse(CatalogPropertyMappingResolver.validateMappings(Map.of(
+                                "nemaki:document", Map.of("nemaki:x",
+                                        new CatalogPropertyMappingResolver.PropertyMapping(true, name))))
+                        .isEmpty(), name + " passed validateMappings");
+            }
+            // the input side, through the same entry point and the same validator
+            assertEquals(CatalogPropertyMappingResolver.Rejection.FORBIDDEN_SOURCE_PROPERTY,
+                    CatalogPropertyMappingResolver.rejectionFor(
+                            "nemaki:cloudFileUrl", "legacyCloudUrl"));
+            assertFalse(CatalogPropertyMappingResolver.validateMappings(Map.of(
+                            "nemaki:document", Map.of("nemaki:cloudFileUrl",
+                                    new CatalogPropertyMappingResolver.PropertyMapping(
+                                            true, "legacyCloudUrl"))))
+                    .isEmpty(), "a forbidden source property passed validateMappings");
+
+            assertNull(CatalogPropertyMappingResolver.rejectionFor("nemaki:dept", "department"));
+        }
+
+        /**
+         * The rejection names the rule that fired, so an operator is not told a forbidden source
+         * property has a blank or reserved name.
+         */
+        @Test
+        void testTheRejectionSaysWhichRuleFired() {
+            assertEquals(CatalogPropertyMappingResolver.Rejection.FORBIDDEN_SOURCE_PROPERTY,
+                    CatalogPropertyMappingResolver.rejectionFor("nemaki:cloudFileUrl", "anything"));
+            assertEquals(CatalogPropertyMappingResolver.Rejection.BLANK_CATALOG_NAME,
+                    CatalogPropertyMappingResolver.rejectionFor("nemaki:dept", "  "));
+            assertEquals(CatalogPropertyMappingResolver.Rejection.RESERVED_CATALOG_NAME,
+                    CatalogPropertyMappingResolver.rejectionFor("nemaki:dept", "cloudFileUrl"));
+
+            for (CatalogPropertyMappingResolver.Rejection r
+                    : CatalogPropertyMappingResolver.Rejection.values()) {
+                assertFalse(r.reason().isBlank(), r + " has no operator message");
+            }
+        }
+
+        /** validateMappings reports the specific reason, not one message for every case. */
+        @Test
+        void testSaveErrorsNameTheRuleThatFired() {
+            List<String> forbidden = CatalogPropertyMappingResolver.validateMappings(Map.of(
+                    "nemaki:document", Map.of("nemaki:cloudFileUrl",
+                            new CatalogPropertyMappingResolver.PropertyMapping(
+                                    true, "legacyCloudUrl"))));
+            assertEquals(1, forbidden.size());
+            assertTrue(forbidden.get(0).contains("under any name"), forbidden.get(0));
+
+            List<String> reserved = CatalogPropertyMappingResolver.validateMappings(Map.of(
+                    "nemaki:document", Map.of("nemaki:dept",
+                            new CatalogPropertyMappingResolver.PropertyMapping(
+                                    true, "cloudFileUrl"))));
+            assertEquals(1, reserved.size());
+            assertTrue(reserved.get(0).contains("reserved"), reserved.get(0));
+        }
+    }
+
     @Nested
     class RepositoryScopedLoadSave {
 

@@ -58,6 +58,33 @@ public interface RAGIndexingService {
     void deleteDocument(String repositoryId, String documentId) throws RAGIndexingException;
 
     /**
+     * Whether ANY RAG doc (block parent or chunk) still exists for this document
+     * IN THIS REPOSITORY. Used by the durable {@code RAG_PURGE} re-drive to VERIFY
+     * a delete actually removed the block — {@link #deleteDocument} silently no-ops
+     * when RAG is disabled, and a verify-less purge would complete its task with
+     * the block still present. Deliberately does NOT check {@code isEnabled()}: a
+     * leftover block must be detectable (and the purge retried/kept visible) even
+     * if RAG was disabled after the block was written. Repository-scoped (the RAG
+     * id is the raw CMIS object id, not repo-scoped).
+     *
+     * @throws RAGIndexingException if Solr cannot be queried (caller must treat as
+     *         "unknown" and retry, never as absent)
+     */
+    boolean isDocumentInRagIndex(String repositoryId, String documentId) throws RAGIndexingException;
+
+    /**
+     * PURGE-dedicated block delete: removes the document's RAG block (parent +
+     * chunks) REGARDLESS of {@code isEnabled()} — a security purge (a Private
+     * Working Copy block that must not exist) cannot be turned into a silent no-op
+     * by RAG being disabled, or the block would silently return on re-enablement.
+     * Repository-scoped: a same-id document in another repository is untouched.
+     *
+     * @throws RAGIndexingException if the delete could not be executed (caller
+     *         retries; never treat as purged)
+     */
+    void purgeDocumentBlocks(String repositoryId, String documentId) throws RAGIndexingException;
+
+    /**
      * Update RAG index when document ACL changes.
      * Re-indexes the readers field without re-embedding.
      *
@@ -67,6 +94,19 @@ public interface RAGIndexingService {
      * @throws RAGIndexingException if update fails
      */
     void updateDocumentACL(String repositoryId, String documentId, List<String> readers) throws RAGIndexingException;
+
+    /**
+     * As {@link #updateDocumentACL(String, String, List)}, but with a cooperative-fencing
+     * lease guard checked before EACH chunk page is fetched. Rebuilding a large block
+     * (thousands of chunks) can outlive the reconciliation lease; if {@code leaseStillHeld}
+     * reports the lease lost mid-rebuild the method ABORTS with a {@link RAGIndexingException}
+     * BEFORE the single block-replacing add, so a worker that lost its lease to a reclaimer
+     * never lands a stale block. A {@code null} guard disables fencing (normal ACL refresh).
+     *
+     * @param leaseStillHeld returns {@code false} once the reconciliation lease is lost
+     */
+    void updateDocumentACL(String repositoryId, String documentId, List<String> readers,
+            java.util.function.BooleanSupplier leaseStillHeld) throws RAGIndexingException;
 
     /**
      * Check if RAG indexing is enabled and available.

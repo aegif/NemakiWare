@@ -99,7 +99,7 @@ test.describe('Excel Preview Tests', () => {
     console.log('Toolbar visible:', hasToolbar);
 
     // Check for loading or error states
-    const loadingSpinner = page.locator('.ant-spin');
+    const loadingSpinner = page.locator('.ant-spin-spinning');
     const errorAlert = page.locator('.ant-alert-error');
     const loadingVisible = await loadingSpinner.isVisible().catch(() => false);
     const errorVisible = await errorAlert.isVisible().catch(() => false);

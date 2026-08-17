@@ -532,7 +532,28 @@ public class IntegrationSettingsController {
 					if (!(propEntry.getValue() instanceof Map<?, ?>)) continue;
 					Map<String, Object> fields = (Map<String, Object>) propEntry.getValue();
 					boolean enabled = Boolean.TRUE.equals(fields.get("enabled"));
-					String catalogName = fields.get("catalogName") instanceof String s ? s : propEntry.getKey();
+					// No fallback to the property id. Inventing a catalogName here is exactly the
+					// property-id reuse the resolver's load path stopped accepting (A-1k): the
+					// invented value gets persisted, and from then on it is indistinguishable from
+					// one an admin chose. A disabled mapping may omit the name (stored as absent).
+					String catalogName = fields.get("catalogName") instanceof String s
+							&& !s.isBlank() ? s : null;
+					if (enabled) {
+						// The resolver's single entry point, not a re-derivation: this also
+						// rejects forbidden source properties and reserved catalog names at save
+						// time, instead of silently dropping them at load with only a WARN.
+						CatalogPropertyMappingResolver.Rejection rejection =
+								CatalogPropertyMappingResolver.rejectionFor(
+										propEntry.getKey(), catalogName);
+						if (rejection != null) {
+							response.put("status", "error");
+							response.put("message", "Mapping for '" + propEntry.getKey()
+									+ "' (type '" + typeEntry.getKey() + "') is rejected: "
+									+ rejection.reason()
+									+ " (the property id is never used as a fallback name)");
+							return ResponseEntity.badRequest().body(response);
+						}
+					}
 					typeMappings.put(propEntry.getKey(), new PropertyMapping(enabled, catalogName));
 				}
 				parsed.put(typeEntry.getKey(), typeMappings);

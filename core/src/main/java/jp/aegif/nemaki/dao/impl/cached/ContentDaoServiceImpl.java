@@ -851,6 +851,19 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public List<String> getGroupIdsDirectlyContainingGroup(String repositoryId, String groupId) {
+		// Not cached: this is read once per group deletion, and a stale answer would leave a
+		// dangling nested-group reference behind — the exact thing the caller exists to prevent.
+		return nonCachedContentDaoService.getGroupIdsDirectlyContainingGroup(repositoryId, groupId);
+	}
+
+	@Override
+	public List<String> getGroupIdsDirectlyContainingUser(String repositoryId, String userId) {
+		// Not cached, for the same reason as the group twin.
+		return nonCachedContentDaoService.getGroupIdsDirectlyContainingUser(repositoryId, userId);
+	}
+
+	@Override
 	public List<GroupItem> getGroupItems(String repositoryId) {
 		return nonCachedContentDaoService.getGroupItems(repositoryId);
 	}
@@ -878,7 +891,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 		if (joinedGroup == null){
 			return null;
-		}else{
+		} else if (jp.aegif.nemaki.dao.TruncatedGroupResolution.isTruncated(joinedGroup)) {
+			// Do not memoise an incomplete membership — it would make a temporary
+			// misconfiguration into a durable authorization error. See TruncatedGroupResolution.
+			return joinedGroup;
+		} else {
 			joinedGroupCache.put(userId,joinedGroup);
 		}
 
@@ -1116,6 +1133,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public UserItem create(String repositoryId, UserItem userItem) {
 		UserItem created = nonCachedContentDaoService.create(repositoryId, userItem);
+		jp.aegif.nemaki.util.cache.PrincipalGeneration.advance(repositoryId);
 		nemakiCachePool.get(repositoryId).getContentCache().put(created.getId(), created);
 		nemakiCachePool.get(repositoryId).getUserItemCache().put(created.getUserId(), created);
 		addToTreeCache(repositoryId, created);
@@ -1125,6 +1143,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public GroupItem create(String repositoryId, GroupItem groupItem) {
 		GroupItem created = nonCachedContentDaoService.create(repositoryId, groupItem);
+		jp.aegif.nemaki.util.cache.PrincipalGeneration.advance(repositoryId);
 		nemakiCachePool.get(repositoryId).getContentCache().put(created.getId(), created);
 		nemakiCachePool.get(repositoryId).getGroupItemCache().put(created.getGroupId(), created);
 		// A new group with members (users or nested groups) changes those members'
@@ -1168,6 +1187,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		Document updated = nonCachedContentDaoService.update(repositoryId, document);
 		nemakiCachePool.get(repositoryId).getContentCache().put(updated.getId(), updated);
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
+		// The stored ACL may have changed. AclService.applyAcl evicts aclCache itself (and walks
+		// descendants), but it is not the only writer: the importers and the canonical ingest
+		// pipeline set ACEs and call contentService.update directly, deliberately bypassing
+		// applyAcl's permission check and epoch bookkeeping. Without this eviction their ACL
+		// writes leave a stale effective ACL memoised here, in the SAME JVM, and that memo is
+		// what the authorization gate reads. It bites new objects too: indexing an object on
+		// create populates aclCache via calculateAcl before the importer applies its ACL.
+		// Cost is one warm recomputation (~1.7ms) on the next authorization of this object.
+		// Descendants are intentionally NOT walked — every bypassing path writes ACLs onto
+		// documents and relationships only, never folders, so nothing inherits from here.
+		nemakiCachePool.get(repositoryId).getAclCache().remove(updated.getId());
 
 		return updated;
 	}
@@ -1196,6 +1226,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		Folder updated = nonCachedContentDaoService.update(repositoryId, folder);
 		nemakiCachePool.get(repositoryId).getContentCache().put(updated.getId(), updated);
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
+		// The stored ACL may have changed. AclService.applyAcl evicts aclCache itself (and walks
+		// descendants), but it is not the only writer: the importers and the canonical ingest
+		// pipeline set ACEs and call contentService.update directly, deliberately bypassing
+		// applyAcl's permission check and epoch bookkeeping. Without this eviction their ACL
+		// writes leave a stale effective ACL memoised here, in the SAME JVM, and that memo is
+		// what the authorization gate reads. It bites new objects too: indexing an object on
+		// create populates aclCache via calculateAcl before the importer applies its ACL.
+		// Cost is one warm recomputation (~1.7ms) on the next authorization of this object.
+		// Descendants are intentionally NOT walked — every bypassing path writes ACLs onto
+		// documents and relationships only, never folders, so nothing inherits from here.
+		nemakiCachePool.get(repositoryId).getAclCache().remove(updated.getId());
 
 		return updated;
 	}
@@ -1232,6 +1273,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		Relationship updated = nonCachedContentDaoService.update(repositoryId, relationship);
 		nemakiCachePool.get(repositoryId).getContentCache().put(updated.getId(), updated);
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
+		// The stored ACL may have changed. AclService.applyAcl evicts aclCache itself (and walks
+		// descendants), but it is not the only writer: the importers and the canonical ingest
+		// pipeline set ACEs and call contentService.update directly, deliberately bypassing
+		// applyAcl's permission check and epoch bookkeeping. Without this eviction their ACL
+		// writes leave a stale effective ACL memoised here, in the SAME JVM, and that memo is
+		// what the authorization gate reads. It bites new objects too: indexing an object on
+		// create populates aclCache via calculateAcl before the importer applies its ACL.
+		// Cost is one warm recomputation (~1.7ms) on the next authorization of this object.
+		// Descendants are intentionally NOT walked — every bypassing path writes ACLs onto
+		// documents and relationships only, never folders, so nothing inherits from here.
+		nemakiCachePool.get(repositoryId).getAclCache().remove(updated.getId());
 		return updated;
 	}
 
@@ -1240,6 +1292,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		Policy updated = nonCachedContentDaoService.update(repositoryId, policy);
 		nemakiCachePool.get(repositoryId).getContentCache().put(updated.getId(), updated);
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
+		// The stored ACL may have changed. AclService.applyAcl evicts aclCache itself (and walks
+		// descendants), but it is not the only writer: the importers and the canonical ingest
+		// pipeline set ACEs and call contentService.update directly, deliberately bypassing
+		// applyAcl's permission check and epoch bookkeeping. Without this eviction their ACL
+		// writes leave a stale effective ACL memoised here, in the SAME JVM, and that memo is
+		// what the authorization gate reads. It bites new objects too: indexing an object on
+		// create populates aclCache via calculateAcl before the importer applies its ACL.
+		// Cost is one warm recomputation (~1.7ms) on the next authorization of this object.
+		// Descendants are intentionally NOT walked — every bypassing path writes ACLs onto
+		// documents and relationships only, never folders, so nothing inherits from here.
+		nemakiCachePool.get(repositoryId).getAclCache().remove(updated.getId());
 		return updated;
 	}
 
@@ -1248,12 +1311,24 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		Item updated = nonCachedContentDaoService.update(repositoryId, item);
 		nemakiCachePool.get(repositoryId).getContentCache().put(updated.getId(), updated);
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
+		// The stored ACL may have changed. AclService.applyAcl evicts aclCache itself (and walks
+		// descendants), but it is not the only writer: the importers and the canonical ingest
+		// pipeline set ACEs and call contentService.update directly, deliberately bypassing
+		// applyAcl's permission check and epoch bookkeeping. Without this eviction their ACL
+		// writes leave a stale effective ACL memoised here, in the SAME JVM, and that memo is
+		// what the authorization gate reads. It bites new objects too: indexing an object on
+		// create populates aclCache via calculateAcl before the importer applies its ACL.
+		// Cost is one warm recomputation (~1.7ms) on the next authorization of this object.
+		// Descendants are intentionally NOT walked — every bypassing path writes ACLs onto
+		// documents and relationships only, never folders, so nothing inherits from here.
+		nemakiCachePool.get(repositoryId).getAclCache().remove(updated.getId());
 		return updated;
 	}
 
 	@Override
 	public UserItem update(String repositoryId, UserItem userItem) {
 		UserItem updated = nonCachedContentDaoService.update(repositoryId, userItem);
+		jp.aegif.nemaki.util.cache.PrincipalGeneration.advance(repositoryId);
 		nemakiCachePool.get(repositoryId).getContentCache().put(updated.getId(), updated);
 		nemakiCachePool.get(repositoryId).getUserItemCache().put(updated.getUserId(), updated);
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
@@ -1263,6 +1338,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public GroupItem update(String repositoryId, GroupItem groupItem) {
 		GroupItem updated = nonCachedContentDaoService.update(repositoryId, groupItem);
+		jp.aegif.nemaki.util.cache.PrincipalGeneration.advance(repositoryId);
 		nemakiCachePool.get(repositoryId).getContentCache().put(updated.getId(), updated);
 		nemakiCachePool.get(repositoryId).getGroupItemCache().put(updated.getGroupId(), updated);
 		nemakiCachePool.get(repositoryId).getObjectDataCache().remove(updated.getId());
@@ -1439,6 +1515,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 			
 			String objectType = content.getObjectType();
+			if ("nemaki:user".equals(objectType) || "nemaki:group".equals(objectType)) {
+				// Deleting a principal is a revocation. Replicas that did not perform it keep
+				// serving the old membership (and, for a user, the old password hash and admin
+				// flag) until their entries expire, so the generation has to move here too — the
+				// create/update paths alone would miss the one change that removes access.
+				jp.aegif.nemaki.util.cache.PrincipalGeneration.advance(repositoryId);
+			}
 			if ("nemaki:user".equals(objectType)) {
 				UserItem item = getUserItem(repositoryId, objectId);
 				if (item != null) {
@@ -1629,28 +1712,39 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	// ///////////////////////////////////////
 	// Attachment
 	// ///////////////////////////////////////
+	/**
+	 * NOT cached, deliberately.
+	 *
+	 * <p>An {@link AttachmentNode} carries a live {@link java.io.InputStream} over the binary,
+	 * and a stream can be read once. Memoising the node therefore hands the SECOND caller an
+	 * already-consumed stream, which reads as empty rather than failing. Two consequences, both
+	 * observed:
+	 *
+	 * <ul>
+	 * <li><b>Appending destroyed content.</b> {@code appendAttachment} builds the new binary as
+	 *     {@code SequenceInputStream(existing, newChunk)}. With an exhausted "existing" the
+	 *     concatenation is just the new chunk, so appending {@code "line 2"} to {@code "line 1"}
+	 *     left {@code "line 2"} alone — verified in CouchDB itself, not merely in the response.
+	 *     This is what the TCK's small-buffer append test has been failing on.</li>
+	 * <li><b>Connections were pinned.</b> A cached node whose stream is never read holds its
+	 *     CouchDB connection for the lifetime of the cache entry, which is the shape of the
+	 *     connection growth measured under concurrent attachment reads.</li>
+	 * </ul>
+	 *
+	 * <p>The cache was never buying much: it saved one metadata GET while the binary transfer —
+	 * the actual cost — happened anyway. Caching metadata separately from the stream would be a
+	 * larger change to the {@code AttachmentNode} contract and is not needed to make this correct.
+	 */
 	@Override
 	public AttachmentNode getAttachment(String repositoryId, String attachmentId) {
-		NemakiCache<AttachmentNode> attachmentCache = nemakiCachePool.get(repositoryId).getAttachmentCache();
-		AttachmentNode v = attachmentCache.get(attachmentId);
+		return nonCachedContentDaoService.getAttachment(repositoryId, attachmentId);
+	}
 
-		AttachmentNode an = null;
-		if (v != null) {
-			an = v;
-
-		} else {
-			an = nonCachedContentDaoService.getAttachment(repositoryId, attachmentId);
-			if (an == null) {
-				return null;
-			} else {
-				attachmentCache.put(attachmentId, an);
-			}
-		}
-
-		return an;
-		// throw new
-		// UnsupportedOperationException(Thread.currentThread().getStackTrace()[0].getMethodName()
-		// + ":this method is only for non-cahced service.");
+	@Override
+	public AttachmentNode getAttachmentRef(String repositoryId, String attachmentId) {
+		// Deliberately not cached, for the same reason getAttachment is not: an AttachmentNode is
+		// a mutable holder whose stream is single-use. The metadata read is a single document GET.
+		return nonCachedContentDaoService.getAttachmentRef(repositoryId, attachmentId);
 	}
 
 	@Override
@@ -1680,11 +1774,27 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public void updateAttachment(String repositoryId, AttachmentNode attachment, ContentStream contentStream) {
 		NemakiCache<AttachmentNode> attachmentCache = nemakiCachePool.get(repositoryId).getAttachmentCache();
-		AttachmentNode v = attachmentCache.get(attachment.getId());
-		if (v != null) {
+		// Evict BEFORE and AFTER, and the "after" in a finally.
+		//
+		// Evicting only before the write was a read-through race. The underlying write is a
+		// multi-step CouchDB operation (metadata document, then the binary as an attachment), and
+		// any read landing inside it — including the re-index this very call triggers downstream —
+		// misses the cache, loads the PRE-write node, and puts it back. From then on the cache
+		// serves the previous content length, and since the CMIS content response is bounded by
+		// that length the body is silently truncated to the previous chunk boundary. Reproduced
+		// against a live server: appending to a checked-out document and reading it back within
+		// ~50ms returned the previous chunk while CouchDB already held the appended bytes; with a
+		// 50ms pause it never reproduced. It is what the TCK's small-buffer append test
+		// (bufferSize 8 and 0, i.e. many back-to-back appends) has been failing on.
+		//
+		// The eviction after the write is the one that matters, and it must happen even when the
+		// write throws — a failed write can still have advanced the stored state.
+		attachmentCache.remove(attachment.getId());
+		try {
+			nonCachedContentDaoService.updateAttachment(repositoryId, attachment, contentStream);
+		} finally {
 			attachmentCache.remove(attachment.getId());
 		}
-		nonCachedContentDaoService.updateAttachment(repositoryId, attachment, contentStream);
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////

@@ -1,7 +1,7 @@
 package jp.aegif.nemaki.rest.ingest.mail;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -13,6 +13,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Microsoft 365 Graph Mail connector adapter — fetches messages via Microsoft Graph API.
@@ -24,7 +25,7 @@ public class M365MailConnectorAdapter {
 
     private static final Logger logger = LoggerFactory.getLogger(M365MailConnectorAdapter.class);
     private static final String DEFAULT_GRAPH_BASE = "https://graph.microsoft.com/v1.0";
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
 
     private final String accessToken;
     private final HttpClient httpClient;

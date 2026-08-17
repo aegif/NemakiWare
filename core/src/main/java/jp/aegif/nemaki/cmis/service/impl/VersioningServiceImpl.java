@@ -153,17 +153,11 @@ public class VersioningServiceImpl implements VersioningService {
 		contentService.cancelCheckOut(callContext, repositoryId, pwcId, extension);
 
 			//remove cache
-			
+
 			Document latest = contentService.getDocumentOfLatestVersion(repositoryId, document.getVersionSeriesId());
 			//Latest document does not exit when pwc is created as the first version
 			if(latest != null){
-				Lock latestLock = threadLockService.getWriteLock(repositoryId, latest.getId());
-				try{
-					latestLock.lock();
-					nemakiCachePool.get(repositoryId).removeCmisCache(latest.getId());
-				}finally{
-					latestLock.unlock();
-				}
+				evictLatestVersionCache(repositoryId, latest.getId());
 			}
 		}finally{
 			lock.unlock();
@@ -235,16 +229,101 @@ public class VersioningServiceImpl implements VersioningService {
 			Document latest = contentService
 					.getDocumentOfLatestVersion(repositoryId, pwc.getVersionSeriesId());
 			if(latest != null){
-				Lock latestLock = threadLockService.getWriteLock(repositoryId, latest.getId());
-				try{
-					latestLock.lock();
-					nemakiCachePool.get(repositoryId).removeCmisCache(latest.getId());
-				}finally{
-					latestLock.unlock();
-				}
+				evictLatestVersionCache(repositoryId, latest.getId());
 			}
 		}finally{
 			lock.unlock();
+		}
+	}
+
+	/**
+	 * Evict the latest version's CMIS cache after a checkIn / cancelCheckOut has COMMITTED.
+	 *
+	 * <p>This runs on the wrong side of the point of no return for an acquisition failure to
+	 * propagate: the version series has already durably changed, so throwing here would send the
+	 * client a retryable failure ("safe to retry") for an operation that in fact succeeded — the
+	 * retry then finds the PWC gone and fails confusingly, and the client never learns the first
+	 * attempt worked. Eviction is an idempotent cache remove; doing it without the lock risks at
+	 * worst a racing reader repopulating the entry, which the eviction-under-lock never prevented
+	 * either (repopulation happens after any eviction). So on a lock timeout: evict anyway, warn,
+	 * and report the mutation's success.
+	 */
+	private void evictLatestVersionCache(String repositoryId, String latestId) {
+		Lock latestLock = threadLockService.getWriteLock(repositoryId, latestId);
+		try {
+			latestLock.lock();
+			try {
+				nemakiCachePool.get(repositoryId).removeCmisCache(latestId);
+			} finally {
+				latestLock.unlock();
+			}
+		} catch (jp.aegif.nemaki.util.lock.LockAcquisitionTimeoutException e) {
+			log.warn("Could not take the lock to refresh the latest-version cache for " + latestId
+					+ " after a committed versioning operation — evicting without the lock"
+					+ " instead of failing a request whose mutation already succeeded. ("
+					+ e.getMessage() + ")");
+			nemakiCachePool.get(repositoryId).removeCmisCache(latestId);
+			// The unlocked eviction can lose a race the locked one could not: a reader that read
+			// the OLD version before the mutation committed may put it into the cache AFTER the
+			// line above, and the stale entry then survives. (The locked eviction ordered itself
+			// after all in-flight readers of this stripe.) A second eviction after those readers'
+			// requests have long finished narrows that window from "until the cache TTL" to a few
+			// seconds; the TTL remains the backstop, not the plan.
+			scheduleReEviction(repositoryId, latestId);
+		}
+	}
+
+	/**
+	 * Seconds to wait before the second, best-effort eviction.
+	 *
+	 * <p>Heuristic, not a correctness bound: it needs to outlast the in-flight reads that could
+	 * still repopulate the stale entry, and those are single requests. A reader slower than this
+	 * still wins, and the cache TTL is what covers that.
+	 */
+	private static final long RE_EVICTION_DELAY_SECONDS = 5;
+
+	/**
+	 * Lazily created scheduler for the re-eviction above.
+	 *
+	 * <p>Its own daemon thread rather than {@code CompletableFuture.delayedExecutor}, which runs
+	 * on the JVM-wide delayed scheduler and the common ForkJoinPool: work queued there outlives
+	 * this application's control, can execute after Spring has closed the caches during a
+	 * redeploy, and briefly pins the web application's classloader. Created on first use, so an
+	 * installation that never hits a lock timeout never starts the thread. Matches the daemon
+	 * single-thread pattern the other schedulers in this codebase use.
+	 */
+	private static volatile java.util.concurrent.ScheduledExecutorService reEvictionScheduler;
+
+	private static java.util.concurrent.ScheduledExecutorService reEvictionScheduler() {
+		java.util.concurrent.ScheduledExecutorService local = reEvictionScheduler;
+		if (local == null) {
+			synchronized (VersioningServiceImpl.class) {
+				local = reEvictionScheduler;
+				if (local == null) {
+					local = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+						Thread t = new Thread(r, "cmis-latest-cache-reevict");
+						t.setDaemon(true);
+						return t;
+					});
+					reEvictionScheduler = local;
+				}
+			}
+		}
+		return local;
+	}
+
+	private void scheduleReEviction(String repositoryId, String latestId) {
+		try {
+			reEvictionScheduler().schedule(() -> {
+				try {
+					nemakiCachePool.get(repositoryId).removeCmisCache(latestId);
+				} catch (RuntimeException ignore) {
+					// Best-effort; the TTL backstop covers a failed re-eviction, and a shutdown
+					// racing this task must not produce noise.
+				}
+			}, RE_EVICTION_DELAY_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
+		} catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
+			log.debug("Re-eviction not scheduled (shutting down): " + latestId);
 		}
 	}
 

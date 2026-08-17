@@ -675,6 +675,8 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public jp.aegif.nemaki.model.GroupItem buildAndCreateGroup(String repositoryId, String groupId,
 			String name, java.util.List<String> users, java.util.List<String> groups, String actorUsername) {
+		// Cycle guard is enforced centrally in createGroupItem (the create choke
+		// point) — the build path below persists through it.
 		jp.aegif.nemaki.model.GroupItem group = new jp.aegif.nemaki.model.GroupItem(
 				null, jp.aegif.nemaki.common.NemakiObjectType.nemakiGroup, groupId, name,
 				users == null ? new ArrayList<String>() : users,
@@ -692,9 +694,63 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public void applyGroupUpdate(String repositoryId, jp.aegif.nemaki.model.GroupItem group, String actorUsername) {
+		// Cycle guard is enforced centrally in update() (the shared choke point);
+		// no separate call needed here.
 		group.setModifier(actorUsername);
 		group.setModified(new java.util.GregorianCalendar());
 		update(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, group);
+	}
+
+	/**
+	 * Reject a nested-group edit that would create a membership cycle. Adding
+	 * subgroup {@code S} to group {@code G} is a cycle if {@code S == G} or if
+	 * {@code G} is already reachable from {@code S} (S transitively contains G).
+	 * The existing self-add check ({@code GroupMembershipEditor}) only caught the
+	 * direct {@code S == G} case; an indirect A->B->A cycle slipped through and,
+	 * before the read-side visited-set guard, StackOverflowed every non-admin
+	 * query. This is the write-side half of that fix (defense in depth: the
+	 * read side is now cycle-safe regardless).
+	 */
+	private void assertNoNestedGroupCycle(String repositoryId, String groupId,
+			java.util.List<String> nestedGroupIds) {
+		if (groupId == null || nestedGroupIds == null) {
+			return;
+		}
+		for (String sub : nestedGroupIds) {
+			if (sub == null) {
+				continue;
+			}
+			if (groupId.equals(sub)
+					|| groupReaches(repositoryId, sub, groupId, new java.util.HashSet<String>())) {
+				// IllegalArgumentException (not IllegalState): this is invalid CLIENT
+				// input, so the REST layers map it to HTTP 400 (Spring
+				// GlobalExceptionHandler / api-v1 ApiExceptionMapper both map
+				// IllegalArgumentException -> 400), not a 500 server error.
+				throw new IllegalArgumentException("Nested-group cycle: adding group '" + sub
+						+ "' to group '" + groupId + "' would create a membership cycle");
+			}
+		}
+	}
+
+	/** True if {@code targetGroupId} is reachable from {@code fromGroupId} by walking nested groups (cycle-safe). */
+	private boolean groupReaches(String repositoryId, String fromGroupId, String targetGroupId,
+			java.util.Set<String> visited) {
+		if (fromGroupId == null || !visited.add(fromGroupId)) {
+			return false;
+		}
+		if (fromGroupId.equals(targetGroupId)) {
+			return true;
+		}
+		jp.aegif.nemaki.model.GroupItem g = getGroupItemById(repositoryId, fromGroupId);
+		if (g == null || g.getGroups() == null) {
+			return false;
+		}
+		for (String sub : g.getGroups()) {
+			if (groupReaches(repositoryId, sub, targetGroupId, visited)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	@Override
@@ -713,28 +769,35 @@ public class ContentServiceImpl implements ContentService {
 	 * references it, so deleting a group never leaves dangling references behind.
 	 */
 	private void removeGroupFromAllNestedGroups(String repositoryId, String groupId) {
-		List<jp.aegif.nemaki.model.GroupItem> allGroups = getGroupItems(repositoryId);
-		if (allGroups == null) {
+		// Ask the reverse-lookup view who nests this group, instead of listing every group in
+		// the repository (with include_docs) and scanning each one's nested list. The view
+		// already existed and the read path already used it; only this writer did not.
+		// Measured on the dev stack with 2,978 groups: 6.2 s per deletion before, and the cost
+		// was in the enumeration, not in the updates — a repository with one group that nests
+		// the target paid the same as one with a hundred.
+		//
+		// A view failure throws rather than returning an empty list: "nobody references it" and
+		// "we could not find out" must not be the same answer here, because the difference is a
+		// dangling nested-group reference left behind by a delete that reported success.
+		List<String> parents = getGroupIdsDirectlyContainingGroup(repositoryId, groupId);
+		if (parents == null || parents.isEmpty()) {
 			return;
 		}
-		for (jp.aegif.nemaki.model.GroupItem listed : allGroups) {
-			List<String> nested = listed.getGroups();
-			if (nested != null && nested.contains(groupId)) {
-				// the list-view instance carries no revision; re-fetch a full,
-				// revision-bearing document before persisting the update
-				jp.aegif.nemaki.model.GroupItem g = getGroupItemById(repositoryId, listed.getGroupId());
-				if (g == null) {
-					continue;
-				}
-				List<String> current = g.getGroups();
-				if (current == null || !current.contains(groupId)) {
-					continue;
-				}
-				List<String> updated = new ArrayList<>(current);
-				updated.remove(groupId);
-				g.setGroups(updated);
-				update(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, g);
+		for (String parentId : parents) {
+			// Re-fetch a full, revision-bearing document before persisting the update; the view
+			// value carries no revision.
+			jp.aegif.nemaki.model.GroupItem g = getGroupItemById(repositoryId, parentId);
+			if (g == null) {
+				continue;
 			}
+			List<String> current = g.getGroups();
+			if (current == null || !current.contains(groupId)) {
+				continue;
+			}
+			List<String> updated = new ArrayList<>(current);
+			updated.remove(groupId);
+			g.setGroups(updated);
+			update(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, g);
 		}
 	}
 
@@ -791,28 +854,26 @@ public class ContentServiceImpl implements ContentService {
 	 * so deleting a user never leaves dangling references behind.
 	 */
 	private void removeUserFromAllGroups(String repositoryId, String userId) {
-		List<jp.aegif.nemaki.model.GroupItem> allGroups = getGroupItems(repositoryId);
-		if (allGroups == null) {
+		// Reverse-lookup view, not an enumeration of every group — same change and same reason
+		// as removeGroupFromAllNestedGroups below. Deleting a user had the identical cost.
+		List<String> parents = getGroupIdsDirectlyContainingUser(repositoryId, userId);
+		if (parents == null || parents.isEmpty()) {
 			return;
 		}
-		for (jp.aegif.nemaki.model.GroupItem listed : allGroups) {
-			List<String> members = listed.getUsers();
-			if (members != null && members.contains(userId)) {
-				// the list-view instance carries no revision; re-fetch a full,
-				// revision-bearing document before persisting the update
-				jp.aegif.nemaki.model.GroupItem g = getGroupItemById(repositoryId, listed.getGroupId());
-				if (g == null) {
-					continue;
-				}
-				List<String> current = g.getUsers();
-				if (current == null || !current.contains(userId)) {
-					continue;
-				}
-				List<String> updated = new ArrayList<>(current);
-				updated.remove(userId);
-				g.setUsers(updated);
-				update(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, g);
+		for (String parentId : parents) {
+			// the view value carries no revision; re-fetch a full, revision-bearing document
+			jp.aegif.nemaki.model.GroupItem g = getGroupItemById(repositoryId, parentId);
+			if (g == null) {
+				continue;
 			}
+			List<String> current = g.getUsers();
+			if (current == null || !current.contains(userId)) {
+				continue;
+			}
+			List<String> updated = new ArrayList<>(current);
+			updated.remove(userId);
+			g.setUsers(updated);
+			update(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, g);
 		}
 	}
 
@@ -965,6 +1026,16 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public List<GroupItem> getGroupItems(String repositoryId) {
 		return userGroupDelegate.getGroupItems(repositoryId);
+	}
+
+	@Override
+	public List<String> getGroupIdsDirectlyContainingGroup(String repositoryId, String groupId) {
+		return userGroupDelegate.getGroupIdsDirectlyContainingGroup(repositoryId, groupId);
+	}
+
+	@Override
+	public List<String> getGroupIdsDirectlyContainingUser(String repositoryId, String userId) {
+		return userGroupDelegate.getGroupIdsDirectlyContainingUser(repositoryId, userId);
 	}
 
 	@Override
@@ -1366,8 +1437,13 @@ public class ContentServiceImpl implements ContentService {
 
 	public Document replacePwc(CallContext callContext, String repositoryId, Document originalPwc,
 			ContentStream contentStream) {
-		// Update attachment contentStream
-		AttachmentNode an = contentDaoService.getAttachment(repositoryId, originalPwc.getAttachmentNodeId());
+		// Metadata only (ledger B1). updateAttachment builds its CouchAttachmentNode from this
+		// node's FIELDS and re-reads the document for the current _rev
+		// (AttachmentDaoDelegate.updateAttachment:587-595); it never touches getInputStream(). The
+		// previous getAttachment therefore downloaded the entire OLD binary, discarded it, and
+		// then overwrote it on the next line. F3 separated these two calls for exactly this: the
+		// body-opening one is for callers that read the body.
+		AttachmentNode an = contentDaoService.getAttachmentRef(repositoryId, originalPwc.getAttachmentNodeId());
 		contentDaoService.updateAttachment(repositoryId, an, contentStream);
 
 		// Update rendition contentStream
@@ -1454,21 +1530,35 @@ public class ContentServiceImpl implements ContentService {
 		log.debug("Repository: {}, Document: {}", repositoryId, original.getId());
 
 		// CRITICAL TCK FIX: Handle both cases - document with/without existing attachment
-		AttachmentNode an = null;
+		//
+		// THE ATTACHMENT IS READ AFTER THE WRITE, NOT BEFORE (ledger B1-b).
+		//
+		// This used to fetch the node with getAttachment (which OPENS the body), hand it to
+		// updateAttachment, and then build the preview from that same node's stream — a stream
+		// opened BEFORE the new bytes were written. The preview was therefore generated from the
+		// PREVIOUS content, and the document was left showing a thumbnail of what it used to be.
+		// replacePwc re-reads a fresh node for exactly this reason; this path did not.
+		//
+		// The write itself needs metadata only (updateAttachment builds its CouchAttachmentNode
+		// from the node's fields and re-reads the document for the current _rev,
+		// AttachmentDaoDelegate:587-595), so it takes getAttachmentRef. The body is opened once,
+		// afterwards, and only if a preview is actually going to be made — with previews off,
+		// nothing downloads the binary at all.
 		if (original.getAttachmentNodeId() != null) {
 			// Case 1: Document already has attachment - update it
-			an = contentDaoService.getAttachment(repositoryId, original.getAttachmentNodeId());
-			contentDaoService.updateAttachment(repositoryId, an, contentStream);
+			AttachmentNode ref = contentDaoService.getAttachmentRef(repositoryId, original.getAttachmentNodeId());
+			contentDaoService.updateAttachment(repositoryId, ref, contentStream);
 		} else {
 			// Case 2: Document created without content - create new attachment
 			String attachmentId = createAttachmentAtomic(callContext, repositoryId, contentStream);
 			original.setAttachmentNodeId(attachmentId);
-			an = contentDaoService.getAttachment(repositoryId, attachmentId);
 			log.debug("Created new attachment for document without content: {}", attachmentId);
 		}
 
 		// Update rendition contentStream if preview is enabled
 		if (isPreviewEnabled()) {
+			// Fetched HERE — after the write — so the stream carries the new content.
+			AttachmentNode an = contentDaoService.getAttachment(repositoryId, original.getAttachmentNodeId());
 			ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(), contentStream.getBigLength(),
 					contentStream.getMimeType(), an.getInputStream());
 
@@ -2251,6 +2341,15 @@ public class ContentServiceImpl implements ContentService {
 	public GroupItem createGroupItem(CallContext callContext, String repositoryId, GroupItem groupItem) {
 		validateGroupItem(repositoryId, groupItem);
 
+		// Reject a create that would persist a nested-group cycle. This is the
+		// GroupItem CREATE choke point (REST buildAndCreateGroup, LDAP directory
+		// sync createGroup with syncNestedGroups=true, cloud sync) — the sibling
+		// guard in update() only covers edits, so without this a create could
+		// persist an A->B->A cycle that the read side then has to defend against.
+		if (groupItem != null) {
+			assertNoNestedGroupCycle(repositoryId, groupItem.getGroupId(), groupItem.getGroups());
+		}
+
 		GroupItem created = contentDaoService.create(repositoryId, groupItem);
 
 		// Solr indexing (failure won't affect main operation)
@@ -2718,6 +2817,16 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public Content update(CallContext callContext, String repositoryId, Content content) {
+		// Reject a nested-group edit that would introduce a membership cycle. This
+		// is the single choke point every group persistence path routes through
+		// (legacy add/update members, Spring MVC, api/v1, applyGroupUpdate), so
+		// the guard here covers them all — see assertNoNestedGroupCycle. The
+		// read-side resolution is cycle-safe regardless (visited set); this is the
+		// write-side half that keeps such data from being created in the first place.
+		if (content instanceof jp.aegif.nemaki.model.GroupItem) {
+			jp.aegif.nemaki.model.GroupItem gi = (jp.aegif.nemaki.model.GroupItem) content;
+			assertNoNestedGroupCycle(repositoryId, gi.getGroupId(), gi.getGroups());
+		}
 		Content result = updateInternal(repositoryId, content);
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.UPDATED);
 		return result;
@@ -2808,6 +2917,12 @@ public class ContentServiceImpl implements ContentService {
 
 		content.setParentId(target.getId());
 
+		// ── ACL-epoch Phase 1 for MOVE (design §11.2): the parent change IS an ACL mutation (the
+		// inherited chain changes), so the marker must ride the SAME PUT as the parentId change —
+		// one _rev, atomic by construction. Phase 2 (finalize + ACK) runs in
+		// AclServiceImpl.refreshMovedSubtreeSearchIndexAcl, which the move caller invokes next.
+		jp.aegif.nemaki.epoch.AclEpochPhase1.markPending(content);
+
 		Content result = move(repositoryId, content, sourceId);
 
 		Folder source = getFolder(repositoryId, sourceId);
@@ -2816,6 +2931,22 @@ public class ContentServiceImpl implements ContentService {
 		}
 		if (target != null) {
 			writeChangeEvent(callContext, repositoryId, target, ChangeType.UPDATED);
+		}
+
+		// ACL-in-Solr: the moved object's effective (inherited) ACL changed because
+		// its parent changed, so its `readers` field must be recomputed from the
+		// NEW ancestor chain. calculateAcl caches by object id, so evict the moved
+		// object's cached ACL BEFORE the re-index below, else it would recompute
+		// readers from the stale (old-parent) inherited ACL — a public->private
+		// move would otherwise leave the old, more-permissive readers in Solr.
+		// (Inheriting descendants are refreshed by the caller — see
+		// ObjectServiceImpl.moveObject -> AclService.refreshMovedSubtreeSearchIndexAcl.)
+		if (result != null && nemakiCachePool != null) {
+			try {
+				nemakiCachePool.get(repositoryId).removeCmisAndContentCache(result.getId());
+			} catch (Exception e) {
+				log.warn("moveObject: ACL cache eviction failed for " + result.getId() + ": " + e.getMessage());
+			}
 		}
 
 		// Solr indexing for moved content (failure won't affect main operation)
@@ -2930,16 +3061,23 @@ public class ContentServiceImpl implements ContentService {
 		deleteInternal(callContext, repositoryId, objectId, deletedWithParent, mimeType, contentStreamLength, new HashSet<>());
 	}
 
-	private void deleteWithVisited(CallContext callContext, String repositoryId, String objectId, Boolean deletedWithParent,
-			String mimeType, Long contentStreamLength, Set<String> visited) {
-		deleteInternal(callContext, repositoryId, objectId, deletedWithParent, mimeType, contentStreamLength, visited);
-	}
-
 	/**
-	 * Internal delete with cascade support for parentChildRelationship.
-	 * When deleting Document/Folder/Item (NOT Relationship), recursively deletes child objects
-	 * linked via nemaki:parentChildRelationship before deleting relationships and the object.
-	 * Uses visited set to prevent infinite loops on circular references.
+	 * Archive the object, delete its relationships, and delete it.
+	 *
+	 * <p>It does NOT cascade. The parentChild cascade was moved to
+	 * {@code ObjectServiceInternalImpl.deleteObjectInternal} so each child goes through the
+	 * permission check, the ThreadLockService and cache invalidation — see the comment at the
+	 * point it used to happen, below.
+	 *
+	 * <p><b>The {@code visited} set no longer detects anything here either.</b> Both remaining callers
+	 * pass a fresh empty set and this method does not call itself, so
+	 * {@code visited.contains(objectId)} cannot be true on entry. Loop detection for the real
+	 * cascade lives in {@code ObjectServiceInternalImpl}, which keeps a thread-local set across
+	 * the whole cascade — the cascade was moved there so each step goes through the permission,
+	 * lock and cache handling that this method does not do. The three private
+	 * {@code *WithVisited} methods that used to recurse through here were removed on 2026-08-14:
+	 * nothing outside their own cycle called them, and the divergent copy of the archive-length
+	 * logic they carried is exactly what made the C4 correction miss a call site.
 	 */
 	private void deleteInternal(CallContext callContext, String repositoryId, String objectId, Boolean deletedWithParent,
 			String mimeType, Long contentStreamLength, Set<String> visited) {
@@ -3240,17 +3378,14 @@ public class ContentServiceImpl implements ContentService {
 				String attachmentId = version.getAttachmentNodeId();
 				// Get attachment info before deletion
 				try {
-					AttachmentNode attachment = contentDaoService.getAttachment(repositoryId, attachmentId);
+					// getAttachmentRef, because "we only need metadata here" is exactly what it is
+					// for. The previous form downloaded the whole attachment and closed it
+					// immediately — no leak, but a full binary transfer per version, moments
+					// before deleting that binary.
+					AttachmentNode attachment = contentDaoService.getAttachmentRef(repositoryId, attachmentId);
 					if (attachment != null) {
-						// Close the InputStream immediately — we only need metadata here
-						InputStream is = attachment.getInputStream();
-						if (is != null) {
-							try { is.close(); } catch (Exception ignore) {}
-						}
 						mimeType = attachment.getMimeType();
-						// Use actual binary size from CouchDB, falling back to metadata length
-						Long actualSize = getAttachmentActualSize(repositoryId, attachmentId);
-						contentStreamLength = (actualSize != null) ? actualSize : attachment.getLength();
+						contentStreamLength = lengthForArchive(repositoryId, attachment, attachmentId);
 					}
 				} catch (Exception e) {
 					log.warn("Failed to get attachment info before deletion: {}", e.getMessage());
@@ -3286,106 +3421,6 @@ public class ContentServiceImpl implements ContentService {
 		}
 		// Note: Solr index deletion is handled in the delete() method for each document
 		// and Solr index update for promoted versions is handled above
-	}
-
-	/**
-	 * Same as deleteDocument but passes visited set for cascade loop detection.
-	 */
-	private void deleteDocumentWithVisited(CallContext callContext, String repositoryId, String objectId, Boolean allVersions,
-			Boolean deleteWithParent, Set<String> visited) {
-		Document document = (Document) getContent(repositoryId, objectId);
-		if (document == null) {
-			return;
-		}
-		List<Document> versionList = new ArrayList<>();
-		String versionSeriesId = document.getVersionSeriesId();
-
-		if (allVersions) {
-			try {
-				versionList = getAllVersions(callContext, repositoryId, versionSeriesId);
-				if (versionList.isEmpty()) {
-					versionList.add(document);
-				}
-			} catch (Exception e) {
-				versionList.add(document);
-			}
-		} else {
-			versionList.add(document);
-			List<Document> allVersionsInSeries = new ArrayList<>();
-			try {
-				allVersionsInSeries = contentDaoService.getAllVersions(repositoryId, versionSeriesId);
-			} catch (Exception e) {
-				// ignore
-			}
-			List<Document> remainingVersions = new ArrayList<>();
-			for (Document v : allVersionsInSeries) {
-				if (!v.isPrivateWorkingCopy() && !java.util.Objects.equals(v.getId(), objectId)) {
-					remainingVersions.add(v);
-				}
-			}
-			if (remainingVersions.isEmpty()) {
-				allVersions = true;
-			} else {
-				Document nextLatest = null;
-				double highestVersionNumber = -1;
-				for (Document v : remainingVersions) {
-					try {
-						double versionNumber = Double.parseDouble(v.getVersionLabel());
-						if (versionNumber > highestVersionNumber) {
-							highestVersionNumber = versionNumber;
-							nextLatest = v;
-						}
-					} catch (NumberFormatException e) {
-						// ignore
-					}
-				}
-				if (nextLatest != null) {
-					nextLatest.setLatestVersion(true);
-					nextLatest.setLatestMajorVersion(nextLatest.isMajorVersion());
-					contentDaoService.update(repositoryId, nextLatest);
-					nemakiCachePool.get(repositoryId).getObjectDataCache().remove(nextLatest.getId());
-					solrUtil.indexDocument(repositoryId, nextLatest);
-				}
-			}
-		}
-
-		for (Document version : versionList) {
-			String mimeType = null;
-			Long contentStreamLength = null;
-			if (version.getAttachmentNodeId() != null) {
-				try {
-					AttachmentNode attachment = contentDaoService.getAttachment(repositoryId, version.getAttachmentNodeId());
-					if (attachment != null) {
-						// Close the InputStream immediately — we only need metadata here
-						InputStream is = attachment.getInputStream();
-						if (is != null) {
-							try { is.close(); } catch (Exception ignore) {}
-						}
-						mimeType = attachment.getMimeType();
-						Long actualSize = getAttachmentActualSize(repositoryId, version.getAttachmentNodeId());
-						contentStreamLength = (actualSize != null) ? actualSize : attachment.getLength();
-					}
-				} catch (Exception e) {
-					// ignore
-				}
-				deleteAttachment(callContext, repositoryId, version.getAttachmentNodeId());
-			}
-			if (CollectionUtils.isNotEmpty(version.getRenditionIds())) {
-				for (String renditionId : version.getRenditionIds()) {
-					contentDaoService.delete(repositoryId, renditionId);
-				}
-			}
-			deleteWithVisited(callContext, repositoryId, version.getId(), deleteWithParent, mimeType, contentStreamLength, visited);
-		}
-
-		if (allVersions) {
-			try {
-				contentDaoService.delete(repositoryId, versionSeriesId);
-				nemakiCachePool.get(repositoryId).getObjectDataCache().remove(versionSeriesId);
-			} catch (Exception e) {
-				// ignore
-			}
-		}
 	}
 
 	// deletedWithParent flag controls whether it's deleted with the parent all
@@ -3432,39 +3467,16 @@ public class ContentServiceImpl implements ContentService {
 		return failureIds;
 	}
 
-	private List<String> deleteTreeWithVisited(CallContext callContext, String repositoryId, String folderId, Boolean allVersions,
-			Boolean continueOnFailure, Boolean deletedWithParent, Set<String> visited) {
-		List<String> failureIds = new ArrayList<>();
-		List<Content> children = getChildren(repositoryId, folderId);
-		if (!CollectionUtils.isEmpty(children)) {
-			for (Content child : children) {
-				try {
-					if (child.isFolder()) {
-						deleteTreeWithVisited(callContext, repositoryId, child.getId(), allVersions, continueOnFailure, true, visited);
-					} else if (child.isDocument()) {
-						deleteDocumentWithVisited(callContext, repositoryId, child.getId(), allVersions, true, visited);
-					} else {
-						deleteWithVisited(callContext, repositoryId, child.getId(), true, null, null, visited);
-					}
-				} catch (Exception e) {
-					if (continueOnFailure) {
-						failureIds.add(child.getId());
-					} else {
-						throw e;
-					}
-				}
-			}
-		}
-		try {
-			deleteWithVisited(callContext, repositoryId, folderId, deletedWithParent, null, null, visited);
-		} catch (Exception e) {
-			if (continueOnFailure) {
-				failureIds.add(folderId);
-			} else {
-				throw e;
-			}
-		}
-		return failureIds;
+	/**
+	 * The content length to record for an attachment that is about to be deleted.
+	 *
+	 * <p>One implementation, in {@link ArchiveServiceDelegate#lengthForArchive} — the archive
+	 * writer had the same code with the preference the wrong way round, and keeping two copies is
+	 * how that happened. The reasoning and the measurement live there.
+	 */
+	Long lengthForArchive(String repositoryId, AttachmentNode attachment, String attachmentId) {
+		return ArchiveServiceDelegate.lengthForArchive(contentDaoService, repositoryId, attachment,
+				attachmentId);
 	}
 
 	@Override
@@ -3474,16 +3486,25 @@ public class ContentServiceImpl implements ContentService {
 		}
 		
 		AttachmentNode an = contentDaoService.getAttachment(repositoryId, attachmentId);
-		
-		// CRITICAL FIX: Only call setStream if no InputStream exists
-		// setStream() consumes the InputStream, so we need to avoid calling it when retrieving for getContentStream
-		if (an != null && an.getInputStream() == null) {
-			if (log.isDebugEnabled()) {
-				log.debug("AttachmentNode has no InputStream, calling setStream to populate it");
-			}
-			contentDaoService.setStream(repositoryId, an);
-		}
-		
+
+		// A READ DOES NOT WRITE.
+		//
+		// This used to call setStream() whenever the DAO came back without a body, described as
+		// "calling setStream to populate it". setStream cannot do that: it never calls
+		// setInputStream (AttachmentDaoDelegate.setStream, STAGE 2 only UPLOADS a stream the node
+		// already carries, and there is none here). What it actually does is exists() + get() +
+		// updatePreservingAttachments() + get() — three requests and a metadata WRITE, on the read
+		// path, for every attachment whose body could not be opened.
+		//
+		// So the call could not achieve its stated purpose and cost a revision bump per failure.
+		// The DAO opens the body once, where the repository is known (F3), and if that fails the
+		// honest answer is a node without a stream.
+		//
+		// Not every caller null-checks that stream — appendAttachment hands it straight to a
+		// SequenceInputStream, for one. That is UNCHANGED by this removal (the deleted call could
+		// not have supplied a stream either) and it is a robustness gap of a different kind from
+		// the redundant round trips, so it is recorded here rather than filed under them.
+
 		if (log.isDebugEnabled()) {
 			log.debug("getAttachment completed - InputStream: " + (an != null && an.getInputStream() != null ? "SUCCESS" : "NULL"));
 		}
@@ -3502,7 +3523,10 @@ public class ContentServiceImpl implements ContentService {
 		final long retryDelayMs = 25;
 		
 		for (int attempt = 1; attempt <= maxRetries; attempt++) {
-			AttachmentNode an = contentDaoService.getAttachment(repositoryId, attachmentId);
+			// The metadata-only path. This method has always been documented as "without stream",
+			// but it called the stream-opening one — so every caller that trusted the contract
+			// leaked a connection and pulled the whole attachment down.
+			AttachmentNode an = contentDaoService.getAttachmentRef(repositoryId, attachmentId);
 			if (an != null) {
 				return an;
 			}
@@ -3600,12 +3624,25 @@ public class ContentServiceImpl implements ContentService {
 		// CouchDB _attachments metadata automatically tracks the correct size after binary upload.
 		// The next getAttachment() call will read the correct length from _attachments metadata.
 
-		// Update Document with new change token
+		// Update Document with new change token.
+		//
+		// THIS RE-READ IS NOT REDUNDANT — do not remove it (ledger V4). appendContentStream holds
+		// a write lock for the duration (ObjectServiceImpl:906-908), but that lock is JVM-local:
+		// another replica can update this content document while the attachment binary — which can
+		// be large — is being written. Without this read the update below would go out with the
+		// revision from the top of the method, CouchDB would answer 409, and a client retrying
+		// appendContentStream would append the same chunk twice. Reading the current document and
+		// adding only the token also preserves whatever property change landed concurrently.
 		Document freshDocument = contentDaoService.getDocument(repositoryId, objectId.getValue());
 		String newChangeToken = String.valueOf(System.currentTimeMillis());
 		freshDocument.setChangeToken(newChangeToken);
-		contentDaoService.update(repositoryId, freshDocument);
-		Document updatedDocument = contentDaoService.getDocument(repositoryId, objectId.getValue());
+
+		// The DAO's update returns the written object with its new revision — it converts the
+		// model it just wrote (ContentDaoServiceImpl:2161-2166), the same return
+		// deleteContentStream already uses for its holder, its Solr index and its change event.
+		// Reading the document back afterwards was a third GET of a document this method had
+		// itself just written. Ledger V4.
+		Document updatedDocument = contentDaoService.update(repositoryId, freshDocument);
 
 		// Update holders with new change token and object ID
 		if (changeToken != null) {
@@ -3704,6 +3741,11 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public Acl calculateAcl(String repositoryId, Content content, boolean strict) {
+		return aclDelegate.calculateAcl(repositoryId, content, strict);
+	}
+
+	@Override
 	public Map<String, Content> getContentsByIds(String repositoryId, List<String> objectIds) {
 		return aclDelegate.getContentsByIds(repositoryId, objectIds);
 	}
@@ -3790,7 +3832,56 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public void restoreArchive(String repositoryId, String archiveId) throws ParentNoLongerExistException {
+		// Read before restoring, for the same reason the destroy path reads before destroying:
+		// afterwards the archive row is gone and nothing says which subjects came back.
+		Archive archive = null;
+		try {
+			archive = getArchive(repositoryId, archiveId);
+		} catch (RuntimeException e) {
+			log.warn("Could not read archive " + archiveId + " before restoring it; a stale"
+					+ " lineage purge mark could survive the restore", e);
+		}
 		archiveDelegate.restoreArchive(repositoryId, archiveId);
+		invalidateLineagePurge(repositoryId, archiveId, archive);
+	}
+
+	/**
+	 * Stop any purge mark authorising a tombstone, because the object is back.
+	 *
+	 * <p>After the restore succeeded — invalidating first would let a restore that then failed
+	 * leave the ledger claiming an object exists when it does not. Never throws, for the same
+	 * reason as the destroy path. A mark that survives a restore is the dangerous direction, so
+	 * a failure here is logged loudly.
+	 */
+	private void invalidateLineagePurge(String repositoryId, String archiveId, Archive archive) {
+		if (lineagePurgeLedger == null || archive == null) {
+			return;
+		}
+		try {
+			long now = System.currentTimeMillis();
+			invalidateLineagePurgeFor(repositoryId,
+					jp.aegif.nemaki.rest.purview.journal.EndpointKind.ARCHIVE, archiveId, now);
+			String originalId = archive.getOriginalId();
+			if (originalId != null && !originalId.isBlank()) {
+				boolean folder = Boolean.TRUE.equals(archive.isFolder());
+				invalidateLineagePurgeFor(repositoryId,
+						folder ? jp.aegif.nemaki.rest.purview.journal.EndpointKind.CMIS_FOLDER
+								: jp.aegif.nemaki.rest.purview.journal.EndpointKind.CMIS_DOCUMENT,
+						originalId, now);
+			}
+		} catch (RuntimeException e) {
+			log.warn("Could not invalidate the lineage purge mark for archive " + archiveId
+					+ "; a restored object could still read as PURGED", e);
+		}
+	}
+
+	private void invalidateLineagePurgeFor(String repositoryId,
+			jp.aegif.nemaki.rest.purview.journal.EndpointKind kind, String objectId, long atMs) {
+		String qualifiedName = lineageQualifiedName(repositoryId, kind, objectId);
+		String subjectDigest = jp.aegif.nemaki.rest.purview.journal
+				.LineageSourceDispositionResolver.SourceEvidence.subjectDigest(repositoryId, kind,
+						qualifiedName);
+		lineagePurgeLedger.invalidateOnRestore(repositoryId, kind, subjectDigest, atMs);
 	}
 
 	@Override
@@ -3823,7 +3914,82 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	public void destroyArchive(String repositoryId, String archiveId) {
+		// Read before destroying: afterwards there is nothing left to say what was destroyed,
+		// and the lineage purge ledger's whole value is that it names the incarnation and
+		// revision that went away. Without it a later "not found" is indistinguishable from a
+		// stale replica, and a catalog tombstone would rest on an absence.
+		Archive archive = null;
+		try {
+			archive = getArchive(repositoryId, archiveId);
+		} catch (RuntimeException e) {
+			log.warn("Could not read archive " + archiveId + " before destroying it; the"
+					+ " lineage purge ledger will have no mark for it", e);
+		}
 		archiveDelegate.destroyArchive(repositoryId, archiveId);
+		recordLineagePurge(repositoryId, archiveId, archive);
+	}
+
+	/**
+	 * Record the destruction in the lineage purge ledger.
+	 *
+	 * <p>After the destroy, never before: a mark written first would authorise a tombstone for
+	 * an object whose deletion then failed. Never throws — a lineage concern must not be able
+	 * to fail a repository operation, and a missing mark degrades to UNKNOWN, which refuses to
+	 * publish a tombstone rather than publishing a wrong one.
+	 *
+	 * <p>Three subjects go away at once: the archive itself, and the original object under both
+	 * the document and the folder qualified names. Only the one matching the archive's type is
+	 * recorded, because a mark for a subject that never existed would be a claim about an
+	 * object this code never saw.
+	 */
+	private void recordLineagePurge(String repositoryId, String archiveId, Archive archive) {
+		if (lineagePurgeLedger == null || archive == null) {
+			return;
+		}
+		try {
+			long now = System.currentTimeMillis();
+			String originalId = archive.getOriginalId();
+			String revision = archive.getLastRevision() == null ? "0" : archive.getLastRevision();
+			recordLineagePurgeFor(repositoryId,
+					jp.aegif.nemaki.rest.purview.journal.EndpointKind.ARCHIVE, archiveId,
+					archiveId, revision, now);
+			if (originalId != null && !originalId.isBlank()) {
+				boolean folder = Boolean.TRUE.equals(archive.isFolder());
+				recordLineagePurgeFor(repositoryId,
+						folder ? jp.aegif.nemaki.rest.purview.journal.EndpointKind.CMIS_FOLDER
+								: jp.aegif.nemaki.rest.purview.journal.EndpointKind.CMIS_DOCUMENT,
+						originalId, originalId, revision, now);
+			}
+		} catch (RuntimeException e) {
+			log.warn("Could not record a lineage purge mark for archive " + archiveId
+					+ "; the subject will read as UNKNOWN rather than PURGED", e);
+		}
+	}
+
+	private void recordLineagePurgeFor(String repositoryId,
+			jp.aegif.nemaki.rest.purview.journal.EndpointKind kind, String objectId,
+			String incarnation, String revision, long atMs) {
+		String qualifiedName = lineageQualifiedName(repositoryId, kind, objectId);
+		String subjectDigest = jp.aegif.nemaki.rest.purview.journal
+				.LineageSourceDispositionResolver.SourceEvidence.subjectDigest(repositoryId, kind,
+						qualifiedName);
+		lineagePurgeLedger.recordPurge(repositoryId, kind, subjectDigest, incarnation, revision,
+				atMs);
+	}
+
+	/**
+	 * The qualified name a lineage subject has.
+	 *
+	 * <p>Built from the same three forms {@code LineageEndpoint} produces. A folder is
+	 * referenced through its DataSet proxy, which is a different name from the folder's own.
+	 */
+	private static String lineageQualifiedName(String repositoryId,
+			jp.aegif.nemaki.rest.purview.journal.EndpointKind kind, String objectId) {
+		return switch (kind) {
+			case CMIS_FOLDER -> "nemaki://" + repositoryId + "/folders/" + objectId + "/dataset";
+			case ARCHIVE -> "nemaki://" + repositoryId + "/archives/" + objectId;
+			default -> "nemaki://" + repositoryId + "/objects/" + objectId;
+		};
 	}
 
 	// ///////////////////////////////////////
@@ -3847,6 +4013,21 @@ public class ContentServiceImpl implements ContentService {
 	private GregorianCalendar getTimeStamp() {
 		initDelegates();
 		return helper.getTimeStamp();
+	}
+
+	/**
+	 * The lineage purge ledger, when the lineage machinery is present.
+	 *
+	 * <p>Optional: a deployment without it still destroys and restores archives exactly as
+	 * before. What it loses is the ability to say PURGED later — which reads as UNKNOWN, and
+	 * UNKNOWN never publishes a tombstone.
+	 */
+	@org.springframework.beans.factory.annotation.Autowired(required = false)
+	private jp.aegif.nemaki.rest.purview.journal.LineagePurgeLedger lineagePurgeLedger;
+
+	public void setLineagePurgeLedger(
+			jp.aegif.nemaki.rest.purview.journal.LineagePurgeLedger lineagePurgeLedger) {
+		this.lineagePurgeLedger = lineagePurgeLedger;
 	}
 
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
@@ -4028,8 +4209,10 @@ public class ContentServiceImpl implements ContentService {
 		// Create attachment using existing method (already handles _rev properly)
 		String attachmentId = createAttachment(callContext, repositoryId, contentStream);
 		
-		// ATOMIC VERIFICATION: Ensure attachment exists and is accessible
-		AttachmentNode verification = getAttachment(repositoryId, attachmentId);
+		// ATOMIC VERIFICATION: Ensure attachment exists and is accessible.
+		// Ref, not the full node: this asks whether the document is there, and getAttachment
+		// would answer that by opening the body — a connection nobody in this method reads.
+		AttachmentNode verification = getAttachmentRef(repositoryId, attachmentId);
 		if (verification == null) {
 			throw new CmisRuntimeException("Atomic attachment creation failed - attachment not accessible: " + attachmentId);
 		}
@@ -4046,18 +4229,25 @@ public class ContentServiceImpl implements ContentService {
 			Document document, String attachmentId) {
 		log.debug("Creating preview atomically for attachment: {}", attachmentId);
 		
-		// Use the already-created and verified attachment
+		// Existence first, without a body.
+		if (getAttachmentRef(repositoryId, attachmentId) == null) {
+			throw new CmisRuntimeException("Atomic preview creation failed - attachment not found: " + attachmentId);
+		}
+
+		// Convertibility is decided by the REQUEST's mime type, so it can be decided before
+		// anything is opened. The original order opened the body first and then dropped it
+		// unread whenever the type had no rendition — which is most uploads.
+		if (!renditionManager.checkConvertible(contentStream.getMimeType())) {
+			return;
+		}
+
 		AttachmentNode an = getAttachment(repositoryId, attachmentId);
 		if (an == null) {
 			throw new CmisRuntimeException("Atomic preview creation failed - attachment not found: " + attachmentId);
 		}
-		
 		ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(),
 				contentStream.getBigLength(), contentStream.getMimeType(), an.getInputStream());
-
-		if (renditionManager.checkConvertible(previewCS.getMimeType())) {
-			createPreview(callContext, repositoryId, previewCS, document);
-		}
+		createPreview(callContext, repositoryId, previewCS, document);
 	}
 	
 	/**
@@ -4082,8 +4272,8 @@ public class ContentServiceImpl implements ContentService {
 		// Copy attachment using existing method
 		String attachmentId = copyAttachment(callContext, repositoryId, originalAttachmentId);
 		
-		// ATOMIC VERIFICATION: Ensure copied attachment exists and is accessible
-		AttachmentNode verification = getAttachment(repositoryId, attachmentId);
+		// ATOMIC VERIFICATION: Ensure copied attachment exists and is accessible (metadata only)
+		AttachmentNode verification = getAttachmentRef(repositoryId, attachmentId);
 		if (verification == null) {
 			throw new CmisRuntimeException("Atomic attachment copy failed - attachment not accessible: " + attachmentId);
 		}

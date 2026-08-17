@@ -1,6 +1,6 @@
 package jp.aegif.nemaki.rest.purview.journal;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Lightweight HTTP client wrapper using java.net.http.HttpClient.
@@ -36,7 +37,7 @@ public class SimpleHttpClient implements AutoCloseable {
         this.client = HttpClient.newBuilder()
                 .connectTimeout(timeout)
                 .build();
-        this.objectMapper = new ObjectMapper();
+        this.objectMapper = ObjectMapperFactory.createDefaultObjectMapper();
         this.timeout = timeout;
         this.basicAuthHeader = null;
         this.bearerToken = null;

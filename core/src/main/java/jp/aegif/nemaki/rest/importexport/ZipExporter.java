@@ -154,15 +154,32 @@ public class ZipExporter {
 
     // ========== Folder Recursive Export ==========
 
-    @SuppressWarnings("unchecked")
     public void exportFolderRecursive(String repositoryId, Folder folder, String basePath,
             ZipOutputStream zos, CallContext callContext, Set<String> exportedObjectIds) throws Exception {
+        exportFolderRecursive(repositoryId, folder, basePath, zos, callContext,
+                exportedObjectIds, null);
+    }
+
+    /**
+     * @param exportedObjects typed moved-content collector for lineage, or null. The requested
+     *                        root (the {@code basePath.isEmpty()} call) is recorded in the
+     *                        legacy id set but NOT here — it is the container, not moved
+     *                        content; nested folders arrive with a non-empty basePath and are.
+     */
+    @SuppressWarnings("unchecked")
+    public void exportFolderRecursive(String repositoryId, Folder folder, String basePath,
+            ZipOutputStream zos, CallContext callContext, Set<String> exportedObjectIds,
+            jp.aegif.nemaki.rest.importexport.ImportExportUtils.ExportedObjectCollector exportedObjects)
+            throws Exception {
 
         ContentService cs = getContentService();
         List<Content> children = cs.getChildren(repositoryId, folder.getId());
 
         if (exportedObjectIds != null) {
             exportedObjectIds.add(folder.getId());
+        }
+        if (exportedObjects != null && !basePath.isEmpty()) {
+            exportedObjects.record(folder.getId(), folder.getName(), true);
         }
 
         // Export folder metadata
@@ -191,13 +208,17 @@ public class ZipExporter {
                 zos.putNextEntry(new ZipEntry(childPath + "/"));
                 zos.closeEntry();
 
-                exportFolderRecursive(repositoryId, (Folder) child, childPath, zos, callContext, exportedObjectIds);
+                exportFolderRecursive(repositoryId, (Folder) child, childPath, zos, callContext,
+                        exportedObjectIds, exportedObjects);
 
             } else if (child instanceof Document) {
                 Document doc = (Document) child;
 
                 if (exportedObjectIds != null) {
                     exportedObjectIds.add(doc.getId());
+                }
+                if (exportedObjects != null) {
+                    exportedObjects.record(doc.getId(), doc.getName(), false);
                 }
 
                 if (doc.getAttachmentNodeId() != null) {

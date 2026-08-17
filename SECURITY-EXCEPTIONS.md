@@ -15,8 +15,14 @@ apply or cannot be fixed*, not just that it is ignored.
 
 | ID | Component | Applicability / rationale | Mitigation in place | Owner | Expiry |
 |----|-----------|---------------------------|---------------------|-------|--------|
-| GHSA-qhr7-h655-pw6r | `org.apache.solr:solr-core` (9.10.1) | **Not applicable.** Advisory concerns hardcoded credentials created by Solr's `bin/solr auth enable` Basic-Auth *setup tool*. NemakiWare ships no `security.json`, does not enable `BasicAuthPlugin`, and never runs `bin/solr auth enable` (verified). **No patched version exists** (vulnerable range `>= 9.4.0, <= 9.10.1`). | Solr is bound to `127.0.0.1` in dev (`docker-compose-simple.yml`) and kept off the host network in prod (`docker-compose-prod.yml`); no Basic-Auth surface is configured. | @Ishii-Akinori | 2027-01-31 |
-| CVE-2025-66516 | Apache Solr / PDFBox (SolrCell `/update/extract`) | **Mitigated at the source (record kept for traceability).** The live indexing path extracts text application-side with Tika **3.2.3** (which fixes this CVE) and posts plain text to the normal `/update` handler; the Solr runtime image is **9.10.1** (Solr-side fix); the leftover `/update/extract` handler is being removed from `token/solrconfig.xml`. | Triple-covered: patched Tika app-side + patched Solr + handler removal + `127.0.0.1` binding. | @Ishii-Akinori | 2027-01-31 |
+| CVE-2025-66516 | Apache Solr / PDFBox (SolrCell `/update/extract`) | **Resolved (record kept for traceability).** The live indexing path extracts text application-side with Tika **3.2.3** (which fixes this CVE) and posts plain text to the normal `/update` handler; the Solr runtime image is now **10.0.0-slim** (carries the Solr-side fix forward); the leftover `/update/extract` handler was dropped when the `token` core's stock-example solrconfig was replaced with a minimal Solr-10 config. | Quadruple-covered: patched Tika app-side + Solr 10 image + handler removed + `127.0.0.1` binding. | @Ishii-Akinori | 2027-01-31 |
+
+> **GHSA-qhr7-h655-pw6r** (solr-core Basic-Auth setup tool) was **retired** on
+> the Solr 10 upgrade: the WAR no longer depends on `solr-core` at all (the
+> custom `jp.aegif.nemaki.solr` module that pulled it in transitively was
+> decommissioned — it targeted Solr server-internal APIs and was undeployed
+> since RC13), and the runtime image is `solr:10.0.0-slim`. The advisory no
+> longer applies to any artifact we ship.
 
 ## Container-image findings (Trivy) — informational by design
 
@@ -24,9 +30,10 @@ The Solr and core images are third-party distributions (`solr:*-slim`,
 `tomcat:*`) plus our config/WAR. Their HIGH/CRITICAL findings are overwhelmingly
 in **bundled libraries** (Jetty, ZooKeeper, Netty, Jackson, LibreOffice, the
 JDK, …) that we **cannot patch independently of a new upstream image** — e.g.
-`solr:9.10.1-slim` currently bundles Jetty 10.0.26 / ZooKeeper 3.9.4 / Netty
-4.2.6 / Jackson 2.18.0 with fixes only in versions that ship with a *later Solr
-image*. Gating a build/release on these would be non-actionable churn.
+`solr:10.0.0-slim` bundles Jetty 12 / a refreshed ZooKeeper / Netty / Jackson;
+any residual HIGH/CRITICALs are in those bundled libraries with fixes only in a
+*later Solr image*. Gating a build/release on these would be non-actionable
+churn.
 
 Therefore the image Trivy scans (security-scan.yml `trivy-image`,
 release-images.yml) are **informational** (report + SARIF artifact, no hard

@@ -91,8 +91,9 @@ public class ApiV1Application extends ResourceConfig {
         // Register authentication filter
         register(jp.aegif.nemaki.api.v1.filter.ApiAuthenticationFilter.class);
         
-        // Note: CORS is handled by SimpleCorsFilter in web.xml to avoid duplicate headers
-        // Do NOT register ApiCorsFilter here as it would cause double CORS header application
+        // CORS is handled by SimpleCorsFilter (web.xml) exclusively. A second JAX-RS CORS
+        // filter used to sit unregistered next to this class with a hardcoded "*"; it was
+        // deleted in 3.3.0 rather than left as a loaded gun.
         
         // Enable Jersey-Spring bridge for automatic DI
         property("jersey.config.server.provider.classnames", 

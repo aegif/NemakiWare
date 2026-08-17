@@ -1,0 +1,838 @@
+/**
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ */
+package jp.aegif.nemaki.rest.purview.journal;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import java.lang.reflect.Field;
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+import com.ibm.cloud.cloudant.v1.Cloudant;
+
+import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
+import jp.aegif.nemaki.rest.purview.journal.LineageTargetLifecycle.TerminalReason;
+
+/**
+ * §8-b v2 (D-rest-2): the per-target lifecycle shapes, the strict decode, the
+ * field-preserving mutations, and the store's fenced transition table.
+ */
+public class LineageV2TransitionMachineTest {
+
+    private static final String TARGET = "atlas";
+
+    private static LineageEventV2 v2Event() {
+        return new LineageEventV2Builder()
+                .eventId("11111111-2222-3333-4444-555555555555")
+                .occurredAt("2026-08-01T00:00:00Z")
+                .repositoryId("bedroom")
+                .processType(LineageProcessType.ARCHIVE_LOCAL)
+                .operationId("op-1")
+                .delivery(new LineageDelivery.Original(List.of(TARGET)))
+                .addInput(LineageEndpoint.document("bedroom", "doc-1", "a.txt"))
+                .addOutput(LineageEndpoint.archive("bedroom", "arc-1", "doc-1", 1L))
+                .sequenceNumber(7L)
+                .build();
+    }
+
+    /** A stored SEQUENCED v2 doc with the given lifecycle fields for {@link #TARGET}. */
+    private static Map<String, Object> sequencedDoc(String status, Map<String, Object> claim,
+                                                    Map<String, Object> reason) {
+        Map<String, Object> doc = new LinkedHashMap<>(CouchLineageEventV2.toMap(v2Event()));
+        doc.put("_rev", "3-abc");
+        doc.put("state", "SEQUENCED");
+        doc.put("sequencerGeneration", 1L);
+        doc.put("sequencerLeaseToken", "seq-tok");
+        if (status != null) {
+            doc.put("publishStatusByTarget", new LinkedHashMap<>(Map.of(TARGET, status)));
+        }
+        if (claim != null) {
+            doc.put("v2ClaimByTarget", new LinkedHashMap<>(Map.of(TARGET, claim)));
+        }
+        if (reason != null) {
+            doc.put("v2TerminalReasonByTarget", new LinkedHashMap<>(Map.of(TARGET, reason)));
+        }
+        return doc;
+    }
+
+    private static Map<String, Object> liveClaim(Long verifyingSince) {
+        Map<String, Object> claim = new LinkedHashMap<>();
+        claim.put("token", "tok-1");
+        claim.put("claimedAtMs", 1000L);
+        claim.put("leaseExpiresAtMs", System.currentTimeMillis() + 60_000L);
+        if (verifyingSince != null) {
+            claim.put("verifyingSinceMs", verifyingSince);
+        }
+        claim.put("retryCount", 0L);
+        return claim;
+    }
+
+    // ================================================================ lifecycle shapes
+
+    @Nested
+    class LifecycleShapes {
+
+        private LineageTargetLifecycle lc(LineagePublishStatus s, String token, Long claimedAt,
+                                          Long lease, Long since, Long retry,
+                                          TerminalReason reason) {
+            return new LineageTargetLifecycle(s, token, claimedAt, lease, since, retry, reason);
+        }
+
+        @Test
+        public void theClaimBundleIsAllOrNothing() {
+            assertThrows(IllegalArgumentException.class, () ->
+                    lc(LineagePublishStatus.FAILED, "tok", 1L, null, null, null, null),
+                    "token without retryCount is a partial bundle");
+            assertThrows(IllegalArgumentException.class, () ->
+                    lc(LineagePublishStatus.FAILED, null, null, null, null, 0L, null),
+                    "retryCount without token is a partial bundle");
+        }
+
+        @Test
+        public void liveStatesRequireTokenAndLease() {
+            assertNotNull(lc(LineagePublishStatus.PROJECTING, "tok", 1L, 2L, null, 0L, null));
+            assertThrows(IllegalArgumentException.class, () ->
+                    lc(LineagePublishStatus.PROJECTING, "tok", 1L, null, null, 0L, null));
+            assertNotNull(lc(LineagePublishStatus.VERIFYING, "tok", 1L, 2L, 3L, 0L, null));
+            assertThrows(IllegalArgumentException.class, () ->
+                    lc(LineagePublishStatus.VERIFYING, "tok", 1L, 2L, null, 0L, null),
+                    "VERIFYING without verifyingSince");
+        }
+
+        @Test
+        public void failedDistinguishesStageByTheVerifyMarker() {
+            assertNotNull(lc(LineagePublishStatus.FAILED, "tok", 1L, null, null, 0L, null),
+                    "failed in PROJECTING: no marker");
+            assertNotNull(lc(LineagePublishStatus.FAILED, "tok", 1L, null, 3L, 0L, null),
+                    "failed after entering VERIFYING: marker retained");
+            assertThrows(IllegalArgumentException.class, () ->
+                    lc(LineagePublishStatus.FAILED, "tok", 1L, 5L, null, 0L, null),
+                    "FAILED must not hold a live lease");
+        }
+
+        @Test
+        public void publishedCameThroughVerifying() {
+            assertNotNull(lc(LineagePublishStatus.PUBLISHED, "tok", 1L, null, 3L, 0L, null));
+            assertThrows(IllegalArgumentException.class, () ->
+                    lc(LineagePublishStatus.PUBLISHED, "tok", 1L, null, null, 0L, null),
+                    "PUBLISHED without the verify marker did not verify");
+        }
+
+        @Test
+        public void rejectedHasExactlyTwoProvenances() {
+            TerminalReason reason = new TerminalReason("PRE_SINK_GATE", "detail", 9L);
+            assertNotNull(lc(LineagePublishStatus.REJECTED, "tok", 1L, null, null, 0L, reason),
+                    "gate-rejected: bundle present");
+            assertNotNull(lc(LineagePublishStatus.REJECTED, null, null, null, null, null, reason),
+                    "creation-time rejected: no bundle");
+            assertThrows(IllegalArgumentException.class, () ->
+                    lc(LineagePublishStatus.REJECTED, "tok", 1L, null, 3L, 0L, reason),
+                    "REJECTED never carries the verify marker (gate fires in PROJECTING)");
+            assertThrows(IllegalArgumentException.class, () ->
+                    lc(LineagePublishStatus.REJECTED, "tok", 1L, null, null, 0L, null),
+                    "REJECTED requires the reason");
+        }
+
+        @Test
+        public void reasonIsRequiredInExactlyTheThreeReasonStatesAndForbiddenElsewhere() {
+            TerminalReason reason = new TerminalReason("R", "", 9L);
+            assertThrows(IllegalArgumentException.class, () ->
+                    lc(LineagePublishStatus.UNPROJECTABLE, "tok", 1L, null, 3L, 0L, null));
+            assertThrows(IllegalArgumentException.class, () ->
+                    lc(LineagePublishStatus.UNRESOLVED, null, null, null, null, null, null));
+            assertThrows(IllegalArgumentException.class, () ->
+                    lc(LineagePublishStatus.PENDING, null, null, null, null, null, reason));
+            assertThrows(IllegalArgumentException.class, () ->
+                    lc(LineagePublishStatus.PUBLISHED, "tok", 1L, null, 3L, 0L, reason));
+            assertThrows(IllegalArgumentException.class, () ->
+                    lc(LineagePublishStatus.DISCARDED, "tok", 1L, null, null, 0L, reason));
+        }
+
+        /** Round-2 fix 3: the stored detail never exceeds MAX_DETAIL_LENGTH, marker included. */
+        @Test
+        public void terminalReasonDetailIsBoundedWithAVisibleMarker() {
+            String longDetail = "x".repeat(2000);
+            TerminalReason r = new TerminalReason("R", longDetail, 1L);
+            assertTrue(r.detail().length() <= TerminalReason.MAX_DETAIL_LENGTH,
+                    "stored length is the contract, marker included");
+            assertTrue(r.detail().endsWith("…[truncated]"), "truncation is visible");
+            TerminalReason exact = new TerminalReason("R",
+                    "y".repeat(TerminalReason.MAX_DETAIL_LENGTH), 1L);
+            assertEquals(TerminalReason.MAX_DETAIL_LENGTH, exact.detail().length(),
+                    "exactly-at-bound is stored untouched");
+            assertThrows(IllegalArgumentException.class, () ->
+                    new TerminalReason("r".repeat(TerminalReason.MAX_REASON_LENGTH + 1),
+                            "", 1L));
+        }
+
+        @Test
+        public void hasLiveClaimIsExactlyTheTwoLiveStates() {
+            assertTrue(lc(LineagePublishStatus.PROJECTING, "tok", 1L, 2L, null, 0L, null)
+                    .hasLiveClaim());
+            assertTrue(lc(LineagePublishStatus.VERIFYING, "tok", 1L, 2L, 3L, 0L, null)
+                    .hasLiveClaim());
+            assertFalse(lc(LineagePublishStatus.FAILED, "tok", 1L, null, null, 0L, null)
+                    .hasLiveClaim());
+            assertFalse(lc(LineagePublishStatus.PENDING, null, null, null, null, null, null)
+                    .hasLiveClaim());
+        }
+
+        @Test
+        public void skippedIsNeverLegalOnAV2Row() {
+            assertThrows(IllegalArgumentException.class, () ->
+                    lc(LineagePublishStatus.SKIPPED, null, null, null, null, null, null));
+        }
+    }
+
+    // ================================================================ strict decode
+
+    @Nested
+    class StrictDecode {
+
+        @Test
+        public void aFullLifecycleDecodesTyped() {
+            LineageJournalRowV2 row = CouchLineageJournalRowV2.fromRaw(
+                    sequencedDoc("VERIFYING", liveClaim(1500L), null));
+            LineageTargetLifecycle lc = row.targetLifecycles().get(TARGET);
+            assertEquals(LineagePublishStatus.VERIFYING, lc.status());
+            assertEquals("tok-1", lc.claimToken());
+            assertEquals(1500L, lc.verifyingSinceMs());
+            assertEquals(0L, lc.retryCount());
+        }
+
+        @Test
+        public void aClaimWithoutAStatusIsMalformed() {
+            Map<String, Object> doc = sequencedDoc(null, liveClaim(null), null);
+            assertThrows(IllegalArgumentException.class,
+                    () -> CouchLineageJournalRowV2.fromRaw(doc));
+        }
+
+        @Test
+        public void aContradictoryShapeNeverBecomesAValue() {
+            // VERIFYING without verifyingSince
+            Map<String, Object> claim = liveClaim(null);
+            Map<String, Object> doc = sequencedDoc("VERIFYING", claim, null);
+            assertThrows(IllegalArgumentException.class,
+                    () -> CouchLineageJournalRowV2.fromRaw(doc));
+        }
+
+        @Test
+        public void anUnknownStatusIsRefusedLoudly() {
+            Map<String, Object> doc = sequencedDoc("HALF_DONE", null, null);
+            assertThrows(IllegalArgumentException.class,
+                    () -> CouchLineageJournalRowV2.fromRaw(doc));
+        }
+
+        @Test
+        public void projectionProgressOnAnUnsequencedRowIsMalformed() {
+            Map<String, Object> doc = sequencedDoc("PROJECTING", liveClaim(null), null);
+            doc.put("state", "UNSEQUENCED");
+            assertThrows(IllegalArgumentException.class,
+                    () -> CouchLineageJournalRowV2.fromRaw(doc),
+                    "claims exist only past the sequencer's finalize");
+        }
+
+        @Test
+        public void fractionalNumbersAreRefusedEverywhere() {
+            Map<String, Object> claim = liveClaim(null);
+            claim.put("claimedAtMs", 10.5d);
+            Map<String, Object> doc = sequencedDoc("PROJECTING", claim, null);
+            assertThrows(IllegalArgumentException.class,
+                    () -> CouchLineageJournalRowV2.fromRaw(doc));
+        }
+    }
+
+    // ================================================================ mutation round-trips
+
+    @Nested
+    class MutationRoundTrips {
+
+        @Test
+        public void aClaimMintsTheBundleAndClearsThePerAttemptMarker() {
+            // A FAILED row whose failed attempt had reached VERIFYING (marker present).
+            Map<String, Object> claim = new LinkedHashMap<>(liveClaim(1500L));
+            claim.remove("leaseExpiresAtMs");
+            claim.put("retryCount", 2L);
+            Map<String, Object> doc = sequencedDoc("FAILED", claim, null);
+
+            CouchLineageJournalRowV2.applyProjectionClaim(doc, TARGET, "tok-2", 5000L, 9000L);
+            LineageTargetLifecycle lc = CouchLineageJournalRowV2.fromRaw(doc)
+                    .targetLifecycles().get(TARGET);
+            assertEquals(LineagePublishStatus.PROJECTING, lc.status());
+            assertEquals("tok-2", lc.claimToken());
+            assertEquals(5000L, lc.claimedAtMs());
+            assertEquals(9000L, lc.leaseExpiresAtMs());
+            assertNull(lc.verifyingSinceMs(), "the one deliberate audit-reset point (D1)");
+            assertEquals(2L, lc.retryCount(), "retryCount retained across attempts");
+        }
+
+        @Test
+        public void settleToFailedIncrementsOnlyWhenAsked() {
+            Map<String, Object> doc = sequencedDoc("PROJECTING", liveClaim(null), null);
+            CouchLineageJournalRowV2.applySettle(doc, TARGET, LineagePublishStatus.FAILED,
+                    true, null);
+            LineageTargetLifecycle lc = CouchLineageJournalRowV2.fromRaw(doc)
+                    .targetLifecycles().get(TARGET);
+            assertEquals(1L, lc.retryCount(), "observed publish failure increments");
+            assertNull(lc.leaseExpiresAtMs(), "no live lease after settle");
+
+            Map<String, Object> doc2 = sequencedDoc("VERIFYING", liveClaim(1500L), null);
+            CouchLineageJournalRowV2.applySettle(doc2, TARGET, LineagePublishStatus.FAILED,
+                    false, null);
+            LineageTargetLifecycle lc2 = CouchLineageJournalRowV2.fromRaw(doc2)
+                    .targetLifecycles().get(TARGET);
+            assertEquals(0L, lc2.retryCount(), "verify max-age / reap consumes no retry");
+            assertEquals(1500L, lc2.verifyingSinceMs(), "the stage marker survives");
+        }
+
+        @Test
+        public void publishedKeepsTheAuditFields() {
+            Map<String, Object> doc = sequencedDoc("VERIFYING", liveClaim(1500L), null);
+            CouchLineageJournalRowV2.applySettle(doc, TARGET, LineagePublishStatus.PUBLISHED,
+                    false, null);
+            LineageTargetLifecycle lc = CouchLineageJournalRowV2.fromRaw(doc)
+                    .targetLifecycles().get(TARGET);
+            assertEquals(LineagePublishStatus.PUBLISHED, lc.status());
+            assertEquals("tok-1", lc.claimToken(), "token kept for audit");
+            assertEquals(1500L, lc.verifyingSinceMs());
+            assertNull(lc.leaseExpiresAtMs());
+        }
+
+        @Test
+        public void discardedFromFailedPreservesTheBundleByteForByte() {
+            Map<String, Object> claim = new LinkedHashMap<>(liveClaim(1500L));
+            claim.remove("leaseExpiresAtMs");
+            claim.put("retryCount", 3L);
+            Map<String, Object> doc = sequencedDoc("FAILED", claim, null);
+            CouchLineageJournalRowV2.applySettle(doc, TARGET, LineagePublishStatus.DISCARDED,
+                    false, null);
+            LineageTargetLifecycle lc = CouchLineageJournalRowV2.fromRaw(doc)
+                    .targetLifecycles().get(TARGET);
+            assertEquals(LineagePublishStatus.DISCARDED, lc.status());
+            assertEquals("tok-1", lc.claimToken());
+            assertEquals(3L, lc.retryCount());
+            assertEquals(1500L, lc.verifyingSinceMs(), "C3: no transition into a terminal"
+                    + " state removes audit fields");
+        }
+
+        @Test
+        public void terminalReasonsAreWrittenDurably() {
+            Map<String, Object> doc = sequencedDoc("VERIFYING", liveClaim(1500L), null);
+            CouchLineageJournalRowV2.applySettle(doc, TARGET,
+                    LineagePublishStatus.UNPROJECTABLE, false,
+                    new TerminalReason("VERIFY_MISMATCH", "wrong type", 2000L));
+            LineageTargetLifecycle lc = CouchLineageJournalRowV2.fromRaw(doc)
+                    .targetLifecycles().get(TARGET);
+            assertEquals("VERIFY_MISMATCH", lc.terminalReason().reason());
+            assertEquals("wrong type", lc.terminalReason().detail());
+        }
+    }
+
+    // ================================================================ §8-d replay decode
+
+    @Nested
+    class ReplayRequestShapes {
+
+        @Test
+        public void failedRequiresItsReasonAndOthersForbidIt() {
+            assertThrows(IllegalArgumentException.class, () -> new LineageReplayRequest(
+                    LineageReplayRequest.State.FAILED, 1L, "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d", 1L, 1L, null));
+            assertThrows(IllegalArgumentException.class, () -> new LineageReplayRequest(
+                    LineageReplayRequest.State.ACKED, 1L, "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d", 1L, 1L,
+                    new TerminalReason("R", "", 1L)));
+            assertNotNull(new LineageReplayRequest(LineageReplayRequest.State.FAILED, 1L,
+                    "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d", 1L, 1L, new TerminalReason("R", "d", 1L)));
+        }
+
+        @Test
+        public void generationStartsAtOneAndRequestIdIsRequired() {
+            assertThrows(IllegalArgumentException.class, () -> new LineageReplayRequest(
+                    LineageReplayRequest.State.REQUESTED, 0L, "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d", 1L, 1L, null));
+            assertThrows(IllegalArgumentException.class, () -> new LineageReplayRequest(
+                    LineageReplayRequest.State.REQUESTED, 1L, " ", 1L, 1L, null));
+            assertThrows(IllegalArgumentException.class, () -> new LineageReplayRequest(
+                    LineageReplayRequest.State.REQUESTED, 1L, "not-a-uuid", 1L, 1L, null),
+                    "the requestId is an ownership fence — arbitrary strings are refused");
+        }
+
+        @Test
+        public void aRequestOnAnUnsequencedRowIsMalformed() {
+            Map<String, Object> doc = sequencedDoc("PENDING", null, null);
+            doc.put("state", "UNSEQUENCED");
+            doc.remove("sequencerGeneration");
+            doc.remove("sequencerLeaseToken");
+            doc.put("sequenceNumber", 0L);
+            doc.put("v2ReplayRequestsByTarget", Map.of(TARGET, Map.of(
+                    "state", "REQUESTED", "generation", 1L, "requestId", "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+                    "requestedAtMs", 1L, "updatedAtMs", 1L)));
+            assertThrows(IllegalArgumentException.class,
+                    () -> CouchLineageJournalRowV2.fromRaw(doc),
+                    "replay presupposes a sequenced delivery");
+        }
+
+        @Test
+        public void isUnackedIsExactlyTheTwoWorkOwingStates() {
+            assertTrue(new LineageReplayRequest(LineageReplayRequest.State.REQUESTED, 1L,
+                    "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d", 1L, 1L, null).isUnacked());
+            assertTrue(new LineageReplayRequest(LineageReplayRequest.State.CREATED, 1L,
+                    "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d", 1L, 1L, null).isUnacked());
+            assertFalse(new LineageReplayRequest(LineageReplayRequest.State.ACKED, 1L,
+                    "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d", 1L, 1L, null).isUnacked());
+            assertFalse(new LineageReplayRequest(LineageReplayRequest.State.FAILED, 1L,
+                    "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d", 1L, 1L, new TerminalReason("R", "d", 1L)).isUnacked());
+        }
+
+        @Test
+        public void aStoredRequestDecodesTyped() {
+            Map<String, Object> doc = sequencedDoc("PUBLISHED", publishedClaim(), null);
+            doc.put("v2ReplayRequestsByTarget", Map.of(TARGET, Map.of(
+                    "state", "CREATED", "generation", 3L, "requestId", "8f14e45f-ceea-467f-a34e-d7e6c1b5c5d1",
+                    "requestedAtMs", 1000L, "updatedAtMs", 2000L)));
+            LineageReplayRequest r = CouchLineageJournalRowV2.fromRaw(doc)
+                    .replayRequests().get(TARGET);
+            assertEquals(LineageReplayRequest.State.CREATED, r.state());
+            assertEquals(3L, r.generation());
+            assertTrue(r.isUnacked());
+        }
+    }
+
+    private static Map<String, Object> publishedClaim() {
+        Map<String, Object> claim = new LinkedHashMap<>();
+        claim.put("token", "tok-1");
+        claim.put("claimedAtMs", 1000L);
+        claim.put("verifyingSinceMs", 1500L);
+        claim.put("retryCount", 0L);
+        return claim;
+    }
+
+    // ================================================================ the fenced store
+
+    @Nested
+    class FencedStore {
+
+        private CouchLineageJournalStore store;
+        private Cloudant rawClient;
+
+        @BeforeEach
+        void setUp() throws Exception {
+            store = new CouchLineageJournalStore();
+            CloudantClientWrapper wrapper = mock(CloudantClientWrapper.class);
+            when(wrapper.getDatabaseName()).thenReturn("nemaki_lineage");
+            rawClient = mock(Cloudant.class, RETURNS_DEEP_STUBS);
+            when(wrapper.getClient()).thenReturn(rawClient);
+            set(store, "lineageClient", wrapper);
+            set(store, "dbProvisioned", new AtomicBoolean(true));
+        }
+
+        private void set(Object target, String field, Object value) throws Exception {
+            Field f = target.getClass().getDeclaredField(field);
+            f.setAccessible(true);
+            f.set(target, value);
+        }
+
+        private void storedDocIs(Map<String, Object> doc) {
+            String documentId = CouchLineageEventV2.documentId(v2Event().deliveryId());
+            com.ibm.cloud.cloudant.v1.model.Document sdkDoc =
+                    new com.ibm.cloud.cloudant.v1.model.Document();
+            Map<String, Object> withoutMeta = new HashMap<>(doc);
+            Object id = withoutMeta.remove("_id");
+            Object rev = withoutMeta.remove("_rev");
+            sdkDoc.setProperties(withoutMeta);
+            sdkDoc.setId(id instanceof String i ? i : documentId);
+            sdkDoc.setRev(rev instanceof String r ? r : "3-abc");
+            when(rawClient.getDocument(org.mockito.ArgumentMatchers.argThat(
+                    (com.ibm.cloud.cloudant.v1.model.GetDocumentOptions o) ->
+                            o != null && documentId.equals(o.docId())))
+                    .execute().getResult())
+                    .thenReturn(sdkDoc);
+        }
+
+        /**
+         * The refusal matrix: every (expected → next) pair outside the frozen fenced table is
+         * a caller bug, thrown before any IO.
+         */
+        @Test
+        public void everyPairOutsideTheFencedTableIsRefusedBeforeIO() {
+            Set<List<LineagePublishStatus>> allowed = Set.of(
+                    List.of(LineagePublishStatus.PROJECTING, LineagePublishStatus.VERIFYING),
+                    List.of(LineagePublishStatus.VERIFYING, LineagePublishStatus.PUBLISHED),
+                    List.of(LineagePublishStatus.VERIFYING, LineagePublishStatus.FAILED),
+                    List.of(LineagePublishStatus.PROJECTING, LineagePublishStatus.FAILED),
+                    List.of(LineagePublishStatus.VERIFYING,
+                            LineagePublishStatus.UNPROJECTABLE),
+                    List.of(LineagePublishStatus.PROJECTING, LineagePublishStatus.REJECTED));
+            for (LineagePublishStatus expected : LineagePublishStatus.values()) {
+                for (LineagePublishStatus next : LineagePublishStatus.values()) {
+                    if (allowed.contains(List.of(expected, next))) {
+                        continue;
+                    }
+                    assertThrows(IllegalArgumentException.class, () ->
+                            store.transitionV2("rec", TARGET, expected, next, "tok", null),
+                            expected + "->" + next);
+                }
+            }
+        }
+
+        @Test
+        public void everyPairOutsideTheUnclaimedTableIsRefusedBeforeIO() {
+            Set<List<LineagePublishStatus>> allowed = Set.of(
+                    List.of(LineagePublishStatus.PENDING,
+                            LineagePublishStatus.WAITING_FOR_CATALOG),
+                    List.of(LineagePublishStatus.WAITING_FOR_CATALOG,
+                            LineagePublishStatus.PENDING),
+                    List.of(LineagePublishStatus.WAITING_FOR_CATALOG,
+                            LineagePublishStatus.UNRESOLVED),
+                    List.of(LineagePublishStatus.PENDING, LineagePublishStatus.DISCARDED),
+                    List.of(LineagePublishStatus.PENDING, LineagePublishStatus.UNRESOLVED),
+                    List.of(LineagePublishStatus.FAILED, LineagePublishStatus.DISCARDED));
+            for (LineagePublishStatus expected : LineagePublishStatus.values()) {
+                for (LineagePublishStatus next : LineagePublishStatus.values()) {
+                    if (allowed.contains(List.of(expected, next))) {
+                        continue;
+                    }
+                    assertThrows(IllegalArgumentException.class, () ->
+                            store.transitionV2Unclaimed("rec", TARGET, expected, next, null),
+                            expected + "->" + next);
+                }
+            }
+        }
+
+        @Test
+        public void reasonsAreRequiredExactlyWhereTheTableSaysSo() {
+            assertThrows(IllegalArgumentException.class, () -> store.transitionV2("rec",
+                    TARGET, LineagePublishStatus.VERIFYING,
+                    LineagePublishStatus.UNPROJECTABLE, "tok", null));
+            assertThrows(IllegalArgumentException.class, () -> store.transitionV2("rec",
+                    TARGET, LineagePublishStatus.VERIFYING, LineagePublishStatus.PUBLISHED,
+                    "tok", new TerminalReason("R", "", 1L)));
+            assertThrows(IllegalArgumentException.class, () -> store.transitionV2Unclaimed(
+                    "rec", TARGET, LineagePublishStatus.WAITING_FOR_CATALOG,
+                    LineagePublishStatus.UNRESOLVED, null));
+            // v2.3.24 F1: the late creation-time verdict carries its reason too — without
+            // this the exhaustive table test above would pass for the wrong reason (a null
+            // reason throws whether or not the pair itself is legal).
+            assertThrows(IllegalArgumentException.class, () -> store.transitionV2Unclaimed(
+                    "rec", TARGET, LineagePublishStatus.PENDING,
+                    LineagePublishStatus.UNRESOLVED, null));
+        }
+
+        /**
+         * v2.3.24 F1: a created row whose plan proved unstorable goes terminal WITHOUT a
+         * claim, on the UNSEQUENCED row it always is — the only terminalization that row's
+         * invariants admit.
+         */
+        @Test
+        public void aPendingRowGoesUnresolvedWithItsReasonAndNoClaim() {
+            Map<String, Object> doc = sequencedDoc("PENDING", null, null);
+            doc.put("state", "UNSEQUENCED");
+            doc.put("sequenceNumber", 0L); // an unsequenced row has no sequence yet
+            doc.remove("sequencerGeneration");
+            doc.remove("sequencerLeaseToken");
+            storedDocIs(doc);
+            assertTrue(store.transitionV2Unclaimed(v2Event().deliveryId(), TARGET,
+                    LineagePublishStatus.PENDING, LineagePublishStatus.UNRESOLVED,
+                    new TerminalReason("unstorable_plan", "a later chunk was refused", 5L)));
+            org.mockito.ArgumentCaptor<com.ibm.cloud.cloudant.v1.model.PutDocumentOptions> put =
+                    org.mockito.ArgumentCaptor.forClass(
+                            com.ibm.cloud.cloudant.v1.model.PutDocumentOptions.class);
+            org.mockito.Mockito.verify(rawClient, org.mockito.Mockito.atLeastOnce())
+                    .putDocument(put.capture());
+            Map<String, Object> written = put.getValue().document().getProperties();
+            assertEquals("UNRESOLVED", ((Map<?, ?>) written.get("publishStatusByTarget"))
+                    .get(TARGET));
+            Map<?, ?> reason = (Map<?, ?>) ((Map<?, ?>) written.get("v2TerminalReasonByTarget"))
+                    .get(TARGET);
+            assertEquals("unstorable_plan", reason.get("reason"));
+            assertNull(written.get("v2ClaimByTarget"),
+                    "a pre-claim terminalization never invents a claim bundle");
+        }
+
+        @Test
+        public void aClaimOnASequencedPendingRowMintsTokenAndLease() {
+            storedDocIs(sequencedDoc("PENDING", null, null));
+            LineageV2TransitionStore.V2ClaimGrant grant =
+                    store.claimForProjection(v2Event().deliveryId(), TARGET,
+                            Duration.ofSeconds(120));
+            assertNotNull(grant);
+            assertNotNull(grant.claimToken());
+        }
+
+        @Test
+        public void anUnsequencedRowIsNeverClaimable() {
+            Map<String, Object> doc = sequencedDoc("PENDING", null, null);
+            doc.put("state", "UNSEQUENCED");
+            doc.remove("sequencerGeneration");
+            doc.remove("sequencerLeaseToken");
+            doc.put("sequenceNumber", 0L);
+            storedDocIs(doc);
+            assertNull(store.claimForProjection(v2Event().deliveryId(), TARGET,
+                    Duration.ofSeconds(120)));
+        }
+
+        @Test
+        public void aLiveClaimIsNotReclaimable() {
+            storedDocIs(sequencedDoc("PROJECTING", liveClaim(null), null));
+            assertNull(store.claimForProjection(v2Event().deliveryId(), TARGET,
+                    Duration.ofSeconds(120)));
+        }
+
+        @Test
+        public void aTokenMismatchLosesTheFence() {
+            storedDocIs(sequencedDoc("PROJECTING", liveClaim(null), null));
+            assertFalse(store.transitionV2(v2Event().deliveryId(), TARGET,
+                    LineagePublishStatus.PROJECTING, LineagePublishStatus.VERIFYING,
+                    "rotated-token", null));
+        }
+
+        @Test
+        public void anExpiredClaimNeverRenewsItself() {
+            Map<String, Object> claim = liveClaim(null);
+            claim.put("leaseExpiresAtMs", 1L);
+            storedDocIs(sequencedDoc("PROJECTING", claim, null));
+            assertFalse(store.renewClaim(v2Event().deliveryId(), TARGET, "tok-1",
+                    Duration.ofSeconds(120)),
+                    "an expired claim goes through the reaper, never resurrects");
+        }
+
+        /** F4: every claimant write fails after expiry — the reaper owns expired claims. */
+        @Test
+        public void anExpiredClaimantCannotSettleEvenWithTheRightToken() {
+            Map<String, Object> claim = liveClaim(null);
+            claim.put("leaseExpiresAtMs", 1L);
+            storedDocIs(sequencedDoc("PROJECTING", claim, null));
+            assertFalse(store.transitionV2(v2Event().deliveryId(), TARGET,
+                    LineagePublishStatus.PROJECTING, LineagePublishStatus.FAILED,
+                    "tok-1", null),
+                    "an expired claimant racing the reaper must lose, not settle");
+        }
+
+        /** F5: appendV2 refuses initial statuses this slice cannot write consistently. */
+        @Test
+        public void appendV2RefusesNonPendingInitialStatuses() {
+            LineageEventV2 pending = v2Event();
+            LineageEventV2 published = new LineageEventV2(pending.schemaVersion(),
+                    pending.idempotencyKeyVersion(), pending.eventId(), pending.processKey(),
+                    pending.delivery(), pending.deliveryId(), pending.repositoryId(),
+                    pending.processType(), pending.operationId(), pending.occurredAt(),
+                    pending.inputs(), pending.outputs(), pending.chunkIndex(),
+                    pending.chunkCount(), pending.sequenceNumber(), pending.correlationId(),
+                    pending.spoolRecordId(), pending.legacyEventKey(),
+                    Map.of(TARGET, LineagePublishStatus.PUBLISHED),
+                    pending.creationPayloadDigest());
+            assertThrows(IllegalArgumentException.class, () -> store.appendV2(published),
+                    "creation-time classifications land with their producers and reason"
+                            + " shapes — a bare non-PENDING status would be a row every read"
+                            + " refuses");
+        }
+
+        /** §8-d preconditions: terminal-only source, no live claim, frozen expected set. */
+        @Test
+        public void replayPreconditionsAreEnforcedOnTheStore() throws Exception {
+            var config = mock(LineageConfig.class);
+            when(config.getTargets()).thenReturn(java.util.List.of(TARGET));
+            set(store, "lineageConfig", config);
+
+            // Live claim → refused
+            storedDocIs(sequencedDoc("PROJECTING", liveClaim(null), null));
+            assertThrows(LineageV2ReplayStore.ReplayRefusedException.class,
+                    () -> store.requestReplay(v2Event().deliveryId(), TARGET));
+
+            // Non-terminal (PENDING) → refused
+            storedDocIs(sequencedDoc("PENDING", null, null));
+            assertThrows(LineageV2ReplayStore.ReplayRefusedException.class,
+                    () -> store.requestReplay(v2Event().deliveryId(), TARGET));
+
+            // Terminal PUBLISHED → granted, generation 1
+            storedDocIs(sequencedDoc("PUBLISHED", publishedClaim(), null));
+            LineageV2ReplayStore.ReplayGrant grant =
+                    store.requestReplay(v2Event().deliveryId(), TARGET);
+            assertNotNull(grant);
+            assertEquals(1L, grant.generation());
+
+            // Unconfigured target → refused before any read
+            assertThrows(LineageV2ReplayStore.ReplayRefusedException.class,
+                    () -> store.requestReplay(v2Event().deliveryId(), "not-configured"));
+
+            // A durable FAILED request permanently blocks (frozen {absent, ACKED})
+            Map<String, Object> doc = sequencedDoc("PUBLISHED", publishedClaim(), null);
+            doc.put("v2ReplayRequestsByTarget", Map.of(TARGET, Map.of(
+                    "state", "FAILED", "generation", 2L, "requestId", "6c84fb90-12c4-11e1-840d-7b25c5ee775a",
+                    "requestedAtMs", 1L, "updatedAtMs", 2L,
+                    "reason", Map.of("reason", "COMPENSATION_ID_COLLISION", "detail", "d",
+                            "atMs", 3L))));
+            storedDocIs(doc);
+            assertThrows(LineageV2ReplayStore.ReplayRefusedException.class,
+                    () -> store.requestReplay(v2Event().deliveryId(), TARGET));
+
+            // ACKED admits the next generation
+            Map<String, Object> acked = sequencedDoc("PUBLISHED", publishedClaim(), null);
+            acked.put("v2ReplayRequestsByTarget", Map.of(TARGET, Map.of(
+                    "state", "ACKED", "generation", 2L, "requestId", "6c84fb90-12c4-11e1-840d-7b25c5ee775a",
+                    "requestedAtMs", 1L, "updatedAtMs", 2L)));
+            storedDocIs(acked);
+            assertEquals(3L, store.requestReplay(v2Event().deliveryId(), TARGET).generation());
+        }
+
+        @Test
+        public void replayAdvanceIsRequestIdFencedAndTableBound() {
+            assertThrows(IllegalArgumentException.class, () -> store.advanceReplay("r",
+                    TARGET, "req", LineageReplayRequest.State.REQUESTED,
+                    LineageReplayRequest.State.ACKED), "skipping CREATED is a caller bug");
+            Map<String, Object> doc = sequencedDoc("PUBLISHED", publishedClaim(), null);
+            doc.put("v2ReplayRequestsByTarget", Map.of(TARGET, Map.of(
+                    "state", "REQUESTED", "generation", 1L, "requestId", "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+                    "requestedAtMs", 1L, "updatedAtMs", 1L)));
+            storedDocIs(doc);
+            assertFalse(store.advanceReplay(v2Event().deliveryId(), TARGET, "8f14e45f-ceea-467f-a34e-d7e6c1b5c5d1",
+                    LineageReplayRequest.State.REQUESTED,
+                    LineageReplayRequest.State.CREATED), "a rotated requestId loses the fence");
+            assertTrue(store.advanceReplay(v2Event().deliveryId(), TARGET, "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+                    LineageReplayRequest.State.REQUESTED,
+                    LineageReplayRequest.State.CREATED));
+        }
+
+        /**
+         * 後追いレビュー: the strict v1 merge fetch's two load-bearing properties, pinned
+         * directly (the routing test proves the WIRING; these prove the CONTRACT).
+         */
+        @Test
+        public void theStrictV1FetchThrowsOnANullResultAndDoesNotClampItsLimit() {
+            // (1) A null view result is abnormal — never an empty page, which the merge
+            // window would read as coverage-to-infinity.
+            when(rawClient.postView(org.mockito.ArgumentMatchers.any(
+                    com.ibm.cloud.cloudant.v1.model.PostViewOptions.class))
+                    .execute().getResult()).thenReturn(null);
+            assertThrows(LineageSequencingStore.SequencingStorageException.class,
+                    () -> store.findV1ByRepositoryAndSequenceRangeStrict("bedroom", 0, 50));
+
+            // (2) The caller's limit reaches the query VERBATIM — the legacy method clamps
+            // at 200, which would silently shrink a page the coverage arithmetic sized.
+            var result = mock(com.ibm.cloud.cloudant.v1.model.ViewResult.class);
+            when(result.getRows()).thenReturn(java.util.List.of());
+            when(rawClient.postView(org.mockito.ArgumentMatchers.any(
+                    com.ibm.cloud.cloudant.v1.model.PostViewOptions.class))
+                    .execute().getResult()).thenReturn(result);
+            store.findV1ByRepositoryAndSequenceRangeStrict("bedroom", 0, 500);
+            org.mockito.ArgumentCaptor<com.ibm.cloud.cloudant.v1.model.PostViewOptions> options =
+                    org.mockito.ArgumentCaptor.forClass(
+                            com.ibm.cloud.cloudant.v1.model.PostViewOptions.class);
+            org.mockito.Mockito.verify(rawClient, org.mockito.Mockito.atLeastOnce())
+                    .postView(options.capture());
+            assertEquals(500L, options.getAllValues().stream()
+                    .filter(o -> o != null && "by_repository_and_sequence".equals(o.view()))
+                    .reduce((a, b) -> b).orElseThrow().limit(),
+                    "500 must reach the query unclamped");
+        }
+
+        /** F4: V3-only fields under a V2 decision are malformed, not fields to ignore. */
+        @Test
+        public void aV2DecisionCarryingV3FieldsIsRefused() {
+            String spoolId = "a".repeat(64);
+            String documentId = "lineage_materialization:" + spoolId;
+            Map<String, Object> doc = new LinkedHashMap<>();
+            doc.put("type", "lineage_materialization");
+            doc.put("spoolRecordId", spoolId);
+            doc.put("factPayloadDigest", "b".repeat(64));
+            doc.put("materializeSchemaVersion", 2L);
+            doc.put("barrierGeneration", 0L);
+            doc.put("allocatedEventId", "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d");
+            doc.put("planEntries", java.util.List.of(Map.of("chunkIndex", 0L,
+                    "deliveryId", "d".repeat(64), "eventDigest", "e".repeat(64))));
+            doc.put("materializationPlanDigest", "f".repeat(64));
+            doc.put("createdAtMs", 1000L);
+            doc.put("chunkLimits", Map.of("maxEndpointsPerEvent", 1000L,
+                    "maxPayloadBytes", 1048576L));
+
+            com.ibm.cloud.cloudant.v1.model.Document sdkDoc =
+                    new com.ibm.cloud.cloudant.v1.model.Document();
+            sdkDoc.setProperties(new HashMap<>(doc));
+            sdkDoc.setId(documentId);
+            sdkDoc.setRev("1-x");
+            when(rawClient.getDocument(org.mockito.ArgumentMatchers.argThat(
+                    (com.ibm.cloud.cloudant.v1.model.GetDocumentOptions o) ->
+                            o != null && documentId.equals(o.docId())))
+                    .execute().getResult())
+                    .thenReturn(sdkDoc);
+            assertThrows(LineageSequencingStore.SequencingStorageException.class,
+                    () -> store.readDecision(spoolId),
+                    "chunk fields under V2 are a malformed document");
+        }
+
+        /** D-rest-4 round-1 fix 1: schema values are validated BEFORE int narrowing. */
+        @Test
+        public void aDecisionSchemaOutsideOneOrTwoIsRefusedBeforeNarrowing() {
+            Map<String, Object> doc = new LinkedHashMap<>();
+            String spoolId = "a".repeat(64);
+            doc.put("_id", "lineage_materialization:" + spoolId);
+            doc.put("_rev", "1-x");
+            doc.put("type", "lineage_materialization");
+            doc.put("spoolRecordId", spoolId);
+            doc.put("factPayloadDigest", "b".repeat(64));
+            doc.put("materializeSchemaVersion", 4294967297L); // (int) would see 1
+            doc.put("barrierGeneration", 0L);
+            doc.put("allocatedEventId", "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d");
+            doc.put("planEntries", java.util.List.of(Map.of("schemaVersion", 1L,
+                    "eventId", "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+                    "v1EventDigest", "c".repeat(64))));
+            doc.put("materializationPlanDigest", "d".repeat(64));
+            doc.put("createdAtMs", 1000L);
+            String documentId = "lineage_materialization:" + spoolId;
+            com.ibm.cloud.cloudant.v1.model.Document sdkDoc =
+                    new com.ibm.cloud.cloudant.v1.model.Document();
+            Map<String, Object> withoutMeta = new HashMap<>(doc);
+            withoutMeta.remove("_id");
+            withoutMeta.remove("_rev");
+            sdkDoc.setProperties(withoutMeta);
+            sdkDoc.setId(documentId);
+            sdkDoc.setRev("1-x");
+            when(rawClient.getDocument(org.mockito.ArgumentMatchers.argThat(
+                    (com.ibm.cloud.cloudant.v1.model.GetDocumentOptions o) ->
+                            o != null && documentId.equals(o.docId())))
+                    .execute().getResult())
+                    .thenReturn(sdkDoc);
+            assertThrows(LineageSequencingStore.SequencingStorageException.class,
+                    () -> store.readDecision(spoolId),
+                    "4294967297 must never masquerade as schema 1");
+        }
+
+        @Test
+        public void aMalformedRowThrowsRatherThanBecomingAValue() {
+            Map<String, Object> doc = sequencedDoc("VERIFYING", liveClaim(null), null);
+            storedDocIs(doc);
+            assertThrows(LineageSequencingStore.SequencingStorageException.class, () ->
+                    store.claimForProjection(v2Event().deliveryId(), TARGET,
+                            Duration.ofSeconds(120)));
+        }
+    }
+}

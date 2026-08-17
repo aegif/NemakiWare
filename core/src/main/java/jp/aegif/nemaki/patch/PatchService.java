@@ -207,10 +207,37 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 			// Iterate through all repositories
 			for (String repositoryId : repositoryInfoMap.keys()) {
 				log.info("Initializing system properties for repository: " + repositoryId);
-				
-				// Create PropertyDefinitionDetail for each system property
+
+				// One view read each for cores and details, up front. The per-property lookup
+				// (getPropertyDefinitionDetailByCoreNodeId) scans the WHOLE details view with
+				// documents included and filters client-side, so checking ~50 properties one
+				// by one re-reads the entire collection ~50 times — on the very installations
+				// where accumulated details made that collection huge in the first place.
+				java.util.Map<String, String> coreIdByPropertyId = new java.util.HashMap<>();
+				List<jp.aegif.nemaki.model.NemakiPropertyDefinitionCore> cores =
+						typeService.getPropertyDefinitionCores(repositoryId);
+				if (cores != null) {
+					for (jp.aegif.nemaki.model.NemakiPropertyDefinitionCore core : cores) {
+						if (core != null && core.getPropertyId() != null && core.getId() != null) {
+							coreIdByPropertyId.put(core.getPropertyId(), core.getId());
+						}
+					}
+				}
+				java.util.Set<String> coreIdsWithDetail = new java.util.HashSet<>();
+				List<NemakiPropertyDefinitionDetail> details =
+						typeService.getPropertyDefinitionDetails(repositoryId);
+				if (details != null) {
+					for (NemakiPropertyDefinitionDetail detail : details) {
+						if (detail != null && detail.getCoreNodeId() != null) {
+							coreIdsWithDetail.add(detail.getCoreNodeId());
+						}
+					}
+				}
+
+				// Create PropertyDefinitionDetail for each system property still missing one
 				for (String propertyId : systemPropertyIds) {
-					createSystemPropertyDefinitionDetail(repositoryId, propertyId);
+					createSystemPropertyDefinitionDetail(repositoryId, propertyId,
+							coreIdByPropertyId, coreIdsWithDetail);
 				}
 			}
 			
@@ -265,17 +292,47 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 	/**
 	 * Create PropertyDefinitionDetail record for a single system CMIS property
 	 */
-	private void createSystemPropertyDefinitionDetail(String repositoryId, String propertyId) {
+	private void createSystemPropertyDefinitionDetail(String repositoryId, String propertyId,
+			java.util.Map<String, String> coreIdByPropertyId,
+			java.util.Set<String> coreIdsWithDetail) {
 		try {
+			// Idempotency guard. This runs for every system property, in every repository, on
+			// EVERY boot — and createPropertyDefinition reuses the core but always creates a
+			// new detail document. Without the guard each boot therefore leaked one detail per
+			// system property per repository: ~50 ids x 2 repositories x ~100 boots put
+			// ~10,000 orphaned propertyDefinitionDetail documents into CouchDB, and the type
+			// list endpoint — which loads every detail — degraded to multi-second responses
+			// that intermittently broke the UI's networkidle waits.
+			//
+			// Residual, accepted: the check and the create are separate operations and the
+			// one-shot flag is JVM-local, so replicas booting simultaneously against the same
+			// empty state can each create one detail. That is bounded by the replica count —
+			// once — where the defect this fixes was bounded by nothing.
+			//
+			// These standalone details ARE consumed, but only through a path static reading
+			// misses: a type-cache rebuild on the RUNNING server (refreshTypes during type
+			// churn) reassembles definitions from the database, and with these rows absent
+			// the system property definitions came up thin — the first TCK run after they
+			// were bulk-deleted failed 14 property/version-history checks, and the next boot
+			// (this method recreating them) turned all of them green again. Static review had
+			// concluded "no reader"; the runtime said otherwise. They stay, and this guard is
+			// what keeps "they stay" from meaning "they multiply".
+			if (!needsSystemPropertyDetail(coreIdByPropertyId, coreIdsWithDetail, propertyId)) {
+				log.debug("System property detail already present, skipping: " + propertyId);
+				return;
+			}
 			log.debug("Creating PropertyDefinitionDetail for system property: " + propertyId);
-			
+
 			// Create minimal NemakiPropertyDefinition with required fields
 			NemakiPropertyDefinition propDef = createSystemPropertyDefinition(propertyId);
-			
+
 			// Use TypeService.createPropertyDefinition to create both Core and Detail records
 			NemakiPropertyDefinitionDetail detail = typeService.createPropertyDefinition(repositoryId, propDef);
 			
 			if (detail != null) {
+				if (detail.getCoreNodeId() != null) {
+					coreIdsWithDetail.add(detail.getCoreNodeId());
+				}
 				log.debug("✅ Created PropertyDefinitionDetail for " + propertyId + " with ID: " + detail.getId());
 			} else {
 				log.warn("⚠️  PropertyDefinitionDetail creation returned null for " + propertyId);
@@ -287,6 +344,27 @@ public class PatchService implements ApplicationListener<ContextRefreshedEvent> 
 		}
 	}
 	
+	/**
+	 * Whether this system property still needs its detail document.
+	 *
+	 * <p>Pure and static — the decision reads the structures its caller prefetched with one
+	 * view read each, so it is testable without the Spring context and costs nothing per
+	 * property. "Needs" means: no core exists for the property id yet, or its core has no
+	 * detail referencing it. A core with at least one detail is the initialized state, and
+	 * creating another detail for it is exactly the per-boot leak this guards against.
+	 */
+	static boolean needsSystemPropertyDetail(java.util.Map<String, String> coreIdByPropertyId,
+			java.util.Set<String> coreIdsWithDetail, String propertyId) {
+		if (coreIdByPropertyId == null || coreIdsWithDetail == null) {
+			return false;
+		}
+		String coreId = coreIdByPropertyId.get(propertyId);
+		if (coreId == null) {
+			return true;
+		}
+		return !coreIdsWithDetail.contains(coreId);
+	}
+
 	/**
 	 * Create NemakiPropertyDefinition with minimal required fields for system properties
 	 */

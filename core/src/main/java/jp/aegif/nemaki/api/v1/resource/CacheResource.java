@@ -75,6 +75,49 @@ public class CacheResource {
         }
     }
     
+    /**
+     * Drop every cache for this repository on THIS replica.
+     *
+     * <p>The pool has been able to do this since it was written, but nothing ever called it, so
+     * the only way to clear a replica's caches was to restart the process — which is what
+     * docs/MULTI-REPLICA-DEPLOYMENT.md had to recommend. Generation-based invalidation now handles
+     * the ordinary case automatically; this is the manual escape hatch for when it cannot, and for
+     * support work.
+     *
+     * <p>It is per replica by construction: caches are JVM-local, so in a multi-replica deployment
+     * this must be sent to each replica in turn. Saying so in the response is deliberate — a
+     * cleared-looking repository that is only cleared on one node is a worse state than an
+     * obviously uncleared one.
+     */
+    @DELETE
+    @Path("/all")
+    @Operation(
+            summary = "Invalidate every cache for this repository (this replica only)",
+            description = "Drops the content, ACL, object-data, principal and type caches for the "
+                    + "repository on the replica that serves the request. Caches are JVM-local, so "
+                    + "in a multi-replica deployment this must be issued against every replica."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Caches cleared on this replica")
+    })
+    public Response invalidateAllCaches(
+            @Parameter(description = "Repository ID", required = true, example = "bedroom")
+            @PathParam("repositoryId") String repositoryId) {
+
+        logger.info("API v1: Clearing ALL caches for repository " + repositoryId + " on this replica");
+        checkAdminAuthorization();
+
+        nemakiCachePool.clear(repositoryId);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("repositoryId", repositoryId);
+        body.put("cleared", true);
+        body.put("scope", "this replica only");
+        body.put("note", "Caches are JVM-local. In a multi-replica deployment, issue this against "
+                + "every replica — clearing one node does not clear the others.");
+        return Response.ok(body).build();
+    }
+
     @DELETE
     @Path("/objects/{objectId}")
     @Operation(

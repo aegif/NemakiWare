@@ -36,6 +36,7 @@ import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
 
 import jp.aegif.nemaki.businesslogic.TypeService;
+import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
@@ -111,6 +112,12 @@ public class TypeManagerImpl implements TypeManager {
 	private RepositoryInfoMap repositoryInfoMap;
 	private TypeService typeService;
 	private PropertyManager propertyManager;
+	/**
+	 * The DAO, not {@code ContentService}: {@code contentService} already depends on this bean, so
+	 * injecting it here would close a Spring cycle around a non-lazy bean with an init-method.
+	 * {@code existContent} lives on the DAO interface anyway.
+	 */
+	private ContentDaoService contentDaoService;
 
 	/**
 	 * Constant
@@ -147,10 +154,19 @@ public class TypeManagerImpl implements TypeManager {
 	
 	// CRITICAL FIX: Track types being deleted to prevent infinite recursion during cache refresh
 	private final Set<String> typesBeingDeleted = new HashSet<>();
-	
+
 	// ENHANCEMENT: Track deletion timestamps for timeout-based cleanup
 	private final Map<String, Long> typesDeletionTimestamps = new HashMap<>();
-	
+
+	// Both maps above are guarded by initLock. This counter is not — it exists so that
+	// cleanupTimedOutTypes(), which every getTypeDefinition() call runs, can decide there is
+	// nothing to clean WITHOUT taking the process-wide monitor. Deleting a type is rare and
+	// getTypeDefinition is on every response, so the common case must not serialise: on virtual
+	// threads a `synchronized` block that blocks pins its carrier, and the profile showed the
+	// ForkJoinPool compensating for exactly that. Mutated only under initLock; read unguarded,
+	// where a stale zero merely defers a cleanup whose deadline is five minutes away.
+	private volatile int pendingDeletions = 0;
+
 	// TIMEOUT: Maximum time a type can remain in "being deleted" state (5 minutes)
 	private static final long DELETION_TIMEOUT_MS = 5 * 60 * 1000L;
 
@@ -518,7 +534,8 @@ public class TypeManagerImpl implements TypeManager {
 			long currentTime = System.currentTimeMillis();
 			typesBeingDeleted.add(typeId);
 			typesDeletionTimestamps.put(typeId, currentTime);
-			
+			pendingDeletions = typesDeletionTimestamps.size();
+
 			log.debug("NEMAKI TYPE DELETION: Marked type as being deleted: " + typeId + " at timestamp: " + currentTime);
 			log.debug("NEMAKI TYPE DELETION: Total types currently being deleted: " + typesBeingDeleted.size());
 			log.debug("NEMAKI TYPE DELETION: Types being deleted: " + typesBeingDeleted);
@@ -538,7 +555,8 @@ public class TypeManagerImpl implements TypeManager {
 		synchronized (initLock) {
 			boolean wasRemoved = typesBeingDeleted.remove(typeId);
 			Long timestamp = typesDeletionTimestamps.remove(typeId);
-			
+			pendingDeletions = typesDeletionTimestamps.size();
+
 			if (wasRemoved) {
 				long duration = timestamp != null ? System.currentTimeMillis() - timestamp : 0;
 				log.debug("NEMAKI TYPE DELETION: Successfully unmarked type being deleted: " + typeId + " (duration: " + duration + "ms)");
@@ -555,10 +573,18 @@ public class TypeManagerImpl implements TypeManager {
 	 * This prevents memory leaks and race condition deadlocks
 	 */
 	public void cleanupTimedOutTypes() {
+		// Nothing is being deleted, which is the state this server is in essentially always.
+		// Taking initLock to discover that would serialise every getTypeDefinition() call — and
+		// getTypeDefinition() runs once per object in every response. The read is unguarded on
+		// purpose: pendingDeletions is volatile, and the worst a stale zero can do is postpone a
+		// cleanup whose deadline is DELETION_TIMEOUT_MS (five minutes) away.
+		if (pendingDeletions == 0) {
+			return;
+		}
 		synchronized (initLock) {
 			long currentTime = System.currentTimeMillis();
 			List<String> timedOutTypes = new ArrayList<>();
-			
+
 			// Find types that have exceeded timeout duration
 			for (Map.Entry<String, Long> entry : typesDeletionTimestamps.entrySet()) {
 				String typeId = entry.getKey();
@@ -582,7 +608,8 @@ public class TypeManagerImpl implements TypeManager {
 					typesBeingDeleted.remove(typeId);
 					typesDeletionTimestamps.remove(typeId);
 				}
-				
+				pendingDeletions = typesDeletionTimestamps.size();
+
 				log.debug("NEMAKI TYPE DELETION: Cleanup complete - remaining types being deleted: " + typesBeingDeleted.size());
 			}
 		}
@@ -2886,8 +2913,16 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		if (log.isDebugEnabled()) {
 				log.debug("*** THIS INSTANCE: " + this.hashCode() + " ***");
 			}
-		log.debug("OBJECT_IDENTITY: getTypeDefinition called for " + typeId); // (important-comment)
-		log.warn("INHERITANCE DEBUG: getTypeDefinition method called for repositoryId=" + repositoryId + ", typeId=" + typeId);
+		// Both of the lines that used to sit here ran on every call — an unguarded debug that
+		// still concatenates, and a WARN that a production configuration actually emits. This
+		// method is called once per object in every compiled response (241 times for a single
+		// 25-row query once ACL-in-Solr started counting the full result set), and the console
+		// appender is a process-wide serialisation point: a thread dump under load found 11 of
+		// 16 request threads queued inside that one write. Diagnostics belong behind isDebug.
+		if (log.isDebugEnabled()) {
+			log.debug("OBJECT_IDENTITY: getTypeDefinition called for repositoryId=" + repositoryId
+					+ ", typeId=" + typeId); // (important-comment)
+		}
 		if (log.isDebugEnabled()) {
 				log.debug("*** ClassLoader: " + this.getClass().getClassLoader() + " ***");
 			}
@@ -2951,10 +2986,14 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			return null;
 		}
 		
-		log.debug("NEMAKI TYPE DEBUG: Total types in cache for repository " + repositoryId + ": " + types.size());
+		if (log.isDebugEnabled()) {
+			log.debug("NEMAKI TYPE DEBUG: Total types in cache for repository " + repositoryId + ": " + types.size());
+		}
 		
 		// List all type IDs in cache for debugging
-		log.debug("NEMAKI TYPE DEBUG: Available type IDs in cache: " + types.keySet());
+		if (log.isDebugEnabled()) {
+			log.debug("NEMAKI TYPE DEBUG: Available type IDs in cache: " + types.keySet());
+		}
 		
 		TypeDefinitionContainer tc = types.get(typeId);
 		if (tc == null) {
@@ -3003,7 +3042,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			return null;
 		}
 		
-		log.debug("NEMAKI TYPE DEBUG: Found type '" + typeId + "' in cache successfully");
+		if (log.isDebugEnabled()) {
+			log.debug("NEMAKI TYPE DEBUG: Found type '" + typeId + "' in cache successfully");
+		}
 
 		TypeDefinition typeDefinition = tc.getTypeDefinition();
 		
@@ -4040,12 +4081,19 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			invalidateTypeDefinitionCache(repositoryId);
 			
 			log.info("deleteTypeDefinition: Successfully deleted and invalidated cache for typeId=" + typeId);
-		} catch (CmisConstraintException | CmisInvalidArgumentException e) {
-			// Re-throw constraint and validation exceptions without wrapping
+		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisBaseException e) {
+			// Every CMIS exception already carries the status the client must see. This used to
+			// list only constraint and invalidArgument, so the rest — including a genuine
+			// CmisObjectNotFoundException from further down — fell into the catch below.
 			throw e;
 		} catch (Exception e) {
+			// NOT "not found". Wrapping an arbitrary failure (CouchDB unreachable, a view
+			// timing out) in CmisObjectNotFoundException tells the client HTTP 404, which reads
+			// as "the type is already gone" — so a caller that treats 404 as success moves on
+			// believing a deletion happened that did not. A failure to delete is a server error.
 			log.error("deleteTypeDefinition: Failed to delete typeId=" + typeId + " in repository=" + repositoryId, e);
-			throw new CmisObjectNotFoundException("Failed to delete type definition: " + typeId, e);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"Failed to delete type definition: " + typeId, e);
 		}
 	}
 
@@ -4113,18 +4161,45 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 
 	/**
-	 * Check if the type has existing instances in the repository.
+	 * Does any object of this type still exist?
 	 *
-	 * Current limitation: Returns false (no instances) without actual checking.
-	 * For production use, this should query ContentDaoService to find documents/folders
-	 * using this type (e.g., contentDaoService.getContentByType(repositoryId, typeId)).
+	 * <p>CMIS requires {@code deleteType} to be refused while instances remain. This used to be a
+	 * stub returning false — "not yet implemented" — so a populated type could always be deleted,
+	 * leaving objects whose type definition was gone. It is now answered from the
+	 * {@code countByObjectType} view.
 	 *
-	 * Implementation note: Requires ContentDaoService injection and a new query method.
+	 * <p>That view could not be queried at all until 2026-08-12: it has a reduce function, and the
+	 * DAO's keyed view helper unconditionally asked for {@code include_docs}, which CouchDB rejects
+	 * on a reduce view. {@code existContent} therefore threw on every call and answered false from
+	 * its catch block. Wiring this method up before that was fixed would have looked like it
+	 * worked and changed nothing.
+	 *
+	 * <p><b>Unwired means refuse, not allow.</b> If the DAO is missing, the honest answer is "this
+	 * cannot be determined", and answering false would silently restore the very hole this closes.
+	 * Type deletion is a rare administrative operation, so failing it loudly on a misconfigured
+	 * deployment is the cheaper mistake — {@code checkTypeDependencies} turns the throw into a
+	 * dependency issue, which becomes a constraint error naming the cause.
+	 *
+	 * <p><b>Primary and secondary.</b> The {@code countByObjectType} view keys on
+	 * {@code doc.objectType}, so it sees primary types only; a secondary type is applied through
+	 * the separate {@code secondaryIds} field and used to answer false here, which let a type in
+	 * active use be deleted. {@code existContent} now checks {@code secondaryIds} as well.
+	 *
+	 * <p>There is deliberately no {@code tck:}-prefix exemption. One exists in
+	 * {@code ExceptionServiceImpl.constraintObjectsStillExist} (which has no callers), and copying
+	 * it here would mean any real repository that happened to name a type {@code tck:something}
+	 * silently lost the protection. A rule that a client can opt out of by choosing a type name is
+	 * not a constraint.
 	 */
 	private boolean checkTypeHasInstances(String repositoryId, String typeId) {
-		// Instance checking not yet implemented - requires ContentDaoService dependency
-		log.debug("checkTypeHasInstances: Instance checking not implemented, returning false for typeId=" + typeId);
-		return false;
+		if (contentDaoService == null) {
+			throw new IllegalStateException("Cannot determine whether type '" + typeId
+					+ "' still has instances: the content DAO is not wired. Refusing the deletion"
+					+ " rather than assuming the type is empty.");
+		}
+		boolean exists = contentDaoService.existContent(repositoryId, typeId);
+		log.debug("checkTypeHasInstances: typeId=" + typeId + " hasInstances=" + exists);
+		return exists;
 	}
 
 	/**
@@ -4273,6 +4348,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		PropertyDefinition<?> pdf = tdf.getPropertyDefinitions()
 				.get(propertyId);
 		return pdf.getDefaultValue().get(0);
+	}
+
+	public void setContentDaoService(ContentDaoService contentDaoService) {
+		this.contentDaoService = contentDaoService;
 	}
 
 	public void setTypeService(TypeService typeService) {

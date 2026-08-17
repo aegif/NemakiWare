@@ -8,7 +8,7 @@
  */
 
 import { test, expect, Page, APIRequestContext } from '@playwright/test';
-import { waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 
@@ -117,7 +117,7 @@ test.describe('Property Display Tests', () => {
 
   test.beforeEach(async ({ page }) => {
     if (setupFailed || !testDocumentId || !testDocumentName) {
-      test.skip('ENV: Test document setup failed');
+      test.skip(true, 'ENV: Test document setup failed');
     }
 
     authHelper = new AuthHelper(page);
@@ -125,7 +125,7 @@ test.describe('Property Display Tests', () => {
 
     // Login as admin
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     // Wait for Ant Design components to load
     await testHelper.waitForAntdLoad();

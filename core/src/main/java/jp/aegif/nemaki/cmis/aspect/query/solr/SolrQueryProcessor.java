@@ -43,7 +43,7 @@ import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
 
-import org.antlr.runtime.tree.Tree;
+import org.apache.chemistry.opencmis.server.support.query.CmisTree;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.ObjectList;
@@ -51,6 +51,7 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectListImpl;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject.SortSpec;
@@ -61,7 +62,7 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TermQuery;
-import org.apache.solr.client.solrj.SolrQuery;
+import org.apache.solr.client.solrj.request.SolrQuery;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.response.QueryResponse;
@@ -75,7 +76,15 @@ public class SolrQueryProcessor implements QueryProcessor {
 	private ContentService contentService;
 	private PermissionService permissionService;
 	private CompileService compileService;
+	// ACL-in-Solr: builds the query-time readers fq from the caller's principals.
+	private jp.aegif.nemaki.rag.acl.ACLExpander aclExpander;
 	private ExceptionService exceptionService;
+
+	/**
+	 * Answers "is a permission change still landing in this repository?". Optional: when it is not
+	 * wired the over-cap behaviour is exactly what it always was (reject with 400).
+	 */
+	private AclPropagationStaleness propagationStaleness;
 	private ThreadLockService threadLockService;
 	private SolrUtil solrUtil;
 	private static final Log logger = LogFactory
@@ -242,8 +251,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 			}
 		}
 		
-		// Get where caluse as Tree
-		Tree whereTree = null;
+		// Get where caluse as CmisTree
+		CmisTree whereTree = null;
 		try {
 			if (logger.isDebugEnabled()) {
 				logger.debug("About to call util.processStatement()");
@@ -252,7 +261,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 			if (logger.isDebugEnabled()) {
 				logger.debug("processStatement() completed");
 			}
-			Tree tree = util.parseStatement();
+			CmisTree tree = util.parseStatement();
 			if (logger.isDebugEnabled()) {
 				logger.debug("parseStatement() completed");
 			}
@@ -297,7 +306,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 		// Build solr statement of WHERE
 		String whereQueryString = "";
-		if (whereTree == null || whereTree.isNil()) {
+		// ANTLR3's Tree.isNil() was `token == null || token.getType() == INVALID_TOKEN_TYPE`,
+		// and INVALID_TOKEN_TYPE is 0. CmisTree (the ANTLR4 stack) exposes no isNil, so the
+		// same condition is spelled out: a node with no token type is the nil root.
+		if (whereTree == null || whereTree.getType() == 0) {
 			// CRITICAL FIX (2025-12-18): Try to parse secondary type properties manually
 			// when OpenCMIS parsing fails (e.g., due to FailedPredicateException)
 			String manualWhereQuery = parseSecondaryTypeWhereClause(repositoryId, statement);
@@ -443,7 +455,32 @@ public class SolrQueryProcessor implements QueryProcessor {
 		SolrQuery solrQuery = new SolrQuery();
 		solrQuery.setQuery(whereQueryString);
 		solrQuery.setFilterQueries(fromQueryString);
-		
+
+		// ACL-in-Solr: filter to documents the caller may read, IN SOLR, so
+		// numFound is the authorized count (not the pre-ACL total). This lets a
+		// low-privilege user search a large repository — their authorized subset
+		// is small even if the overall match exceeds the scan cap — and removes
+		// the pre-ACL cap rejection for such users. Admins bypass the fq (they see
+		// everything, matching the in-memory admin bypass). The in-memory
+		// permissionService.getFiltered below is kept as defense-in-depth.
+		boolean callerIsAdmin = false;
+		String callerUsername = (callContext != null) ? callContext.getUsername() : null;
+		try {
+			jp.aegif.nemaki.model.UserItem callerItem =
+					(callerUsername != null) ? contentService.getUserItemById(repositoryId, callerUsername) : null;
+			callerIsAdmin = (callerItem != null && Boolean.TRUE.equals(callerItem.isAdmin()));
+		} catch (Exception e) {
+			// Fail-closed: an admin-check failure is treated as non-admin, so the
+			// readers fq is applied rather than skipped.
+			callerIsAdmin = false;
+		}
+		String readersFilterQuery = (!callerIsAdmin && aclExpander != null && callerUsername != null)
+				? aclExpander.buildReaderFilterQuery(repositoryId, callerUsername)
+				: null;
+		for (String aclFq : aclFilterQueries(callerIsAdmin, readersFilterQuery)) {
+			solrQuery.addFilterQuery(aclFq);
+		}
+
 		// RANKING FIX: Add sort by modification date descending to prioritize recent documents
 		// This ensures that newly created documents appear at the top of search results
 		solrQuery.setSort("modified", SolrQuery.ORDER.desc);
@@ -458,27 +495,49 @@ public class SolrQueryProcessor implements QueryProcessor {
 			logger.debug("whereQueryString: " + whereQueryString);
 			logger.debug("fromQueryString: " + fromQueryString);
 		}
-		if(skipCount == null){
-			solrQuery.set(CommonParams.START, 0);
-		}else{
-			solrQuery.set(CommonParams.START, skipCount.intValue());
-		}
-		if(maxItems == null){
-			solrQuery.set(CommonParams.ROWS, 50);
-		}else{
-			solrQuery.set(CommonParams.ROWS, maxItems.intValue());
-		}
-		
+		// Authorization is applied primarily IN SOLR via the readers fq added
+		// above (ACL-in-Solr), so for a non-admin caller Solr's numFound is already
+		// the authorized count and the pre-ACL total is never materialized
+		// (relationships are NOT exempt — they carry their source/target readers).
+		// The in-memory permissionService.getFiltered below remains as
+		// defense-in-depth (and is the sole ACL gate for admins, who bypass the
+		// fq). The matching set is
+		// fetched up to a bounded cap and sorted + paged in memory so ORDER BY is
+		// correct across pages; a set LARGER than the cap cannot be ordered/paged
+		// in memory and is REJECTED (see the count probe below) rather than
+		// returned as a truncated page with a misleading hasMoreItems. Within the
+		// cap the whole set is materialized, so numItems is exact and hasMoreItems
+		// is honest. Raise the cap with -Dnemakiware.cmis.query.aclScanMaxRows.
+		int aclScanCap = Integer.getInteger("nemakiware.cmis.query.aclScanMaxRows", 10000);
 
+		if (solrClient == null) {
+			logger.error("SolrClient is null - cannot execute query");
+			exceptionService.invalidArgument("Solr client initialization failed");
+			return null;
+		}
+
+		// Two-phase, scan-cap-bounded fetch (rows=0 count probe → reject over-cap
+		// before any body transfer → rows=cap fetch → race re-check). Extracted so
+		// the guard behaviour is unit-testable (see SolrQueryProcessorScanCapTest).
+		// A CmisInvalidArgumentException from the guard is a 400 that propagates
+		// out; its message never echoes the pre-ACL count.
 		QueryResponse resp = null;
+		boolean truncatedByScanCap = false;
 		try {
-			if (solrClient == null) {
-				logger.error("SolrClient is null - cannot execute query");
-				exceptionService.invalidArgument("Solr client initialization failed");
-				return null;
+			final String repoForStaleness = repositoryId;
+			CappedResult capped = queryWithinScanCap(solrClient, solrQuery, aclScanCap,
+					() -> propagationStaleness != null
+							&& propagationStaleness.isPropagationUnconverged(repoForStaleness));
+			resp = capped.response;
+			truncatedByScanCap = capped.truncated;
+			if (truncatedByScanCap) {
+				AclPropagationStaleness.recordDegradedQuery();
+				logger.warn("Query in " + repositoryId + " matched more than the " + aclScanCap
+						+ "-row ACL scan limit while a permission change is still propagating;"
+						+ " answering with the rows that could be confirmed instead of rejecting."
+						+ " numItems is a lower bound and hasMoreItems reflects only what is"
+						+ " reachable.");
 			}
-			// Core name is already included in the URL from SolrUtil.getSolrUrl()
-			resp = solrClient.query(solrQuery);
 		} catch (SolrServerException | IOException e) {
 			logger.error("Solr query failed: " + e.getMessage(), e);
 			exceptionService.invalidArgument("Solr query execution failed: " + e.getMessage());
@@ -556,15 +615,51 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 				// Build ObjectList
 				String orderBy = orderBy(queryObject);
+
+				// ORDER BY / repository-default ordering must be applied to the FULL
+				// authorized set BEFORE paging. ACL filtering happens after Solr
+				// returns, so the page has to be sliced from the ordered authorized
+				// set — not the Solr-native (modified desc) order. If the page were
+				// sliced first and sorted only within itself, a page size of 1 would
+				// make the sort a no-op and page N would disagree with the unpaged
+				// order. Sort here, then slice.
+				List<Content> ordered = compileService.sortContentsForSearchResult(
+						callContext, repositoryId, permitted, orderBy);
+
+				// ACL-aware paging in memory. `ordered` is the authorized full set
+				// (bounded by aclScanCap); numItems is the authorized total and the
+				// page is sliced here so a full authorized page is returned even when
+				// the Solr window contained non-authorized documents.
+				int totalAuthorized = ordered.size();
+				int skip = (skipCount == null) ? 0 : Math.max(0, skipCount.intValue());
+				int max = (maxItems == null) ? totalAuthorized : Math.max(0, maxItems.intValue());
+				List<Content> pageContents;
+				if (skip >= totalAuthorized) {
+					pageContents = new ArrayList<Content>();
+				} else {
+					pageContents = new ArrayList<Content>(
+							ordered.subList(skip, Math.min(skip + max, totalAuthorized)));
+				}
+				// numFound <= aclScanCap here (the reachability guard above rejects
+				// anything larger), so `ordered` is the COMPLETE authorized set:
+				// numItems is the exact authorized total and hasMoreItems (computed
+				// in compileObjectDataListForSearchResult from skip+max vs the total)
+				// is honest — there is no unreachable remainder to mis-signal.
+
 				// TCK CRITICAL FIX: Pass propertyAliases map to enable query alias support
-				// Build ObjectList with original includeAllowableActions parameter for final response
 				if (logger.isDebugEnabled()) {
 					logger.debug("TCK Alias: Calling compileObjectDataListForSearchResult with propertyAliases");
 				}
+				// The page is already globally ordered; pass "NONE" so the page compile
+				// does not re-sort it (a SELECT-limited property set could otherwise
+				// reorder the page by a property it no longer carries).
 				ObjectList result = compileService.compileObjectDataListForSearchResult(
-						callContext, repositoryId, permitted, filter, requestedWithAliasKey,
+						callContext, repositoryId, pageContents, filter, requestedWithAliasKey,
 						includeAllowableActions, includeRelationships, renditionFilter, false,
-						maxItems, skipCount, false, orderBy,numFound);
+						maxItems, skipCount, false, "NONE", totalAuthorized);
+				if (truncatedByScanCap) {
+					markTruncated(result);
+				}
 
 				return result;
 				
@@ -603,6 +698,154 @@ public class SolrQueryProcessor implements QueryProcessor {
 		return value.toString();
 	}
 	
+	/**
+	 * Reachability guard for ACL-aware in-memory paging: the pre-ACL Solr match
+	 * count {@code numFound} exceeds the scan cap. When true the query cannot be
+	 * correctly authorized/ordered/paged in memory (only the first {@code cap}
+	 * rows are fetched) and must be rejected rather than returned as a
+	 * wrong-ordered / truncated page with a misleading {@code hasMoreItems=true}.
+	 * Boundary: {@code numFound == cap} is allowed; {@code cap + 1} is rejected.
+	 */
+	static boolean exceedsScanCap(long numFound, int aclScanCap) {
+		return numFound > aclScanCap;
+	}
+
+	/**
+	 * ACL-in-Solr: build the ACL-related filter queries for a CMIS query.
+	 * <ul>
+	 *   <li><b>Admin</b> (or no readers fq available — expander unwired /
+	 *       anonymous): NO readers filtering in Solr; the in-memory
+	 *       {@code permissionService.getFiltered} still enforces ACL.</li>
+	 *   <li><b>Non-admin</b>: restrict to content carrying one of the caller's
+	 *       reader tokens. Relationships carry the union of their source/target
+	 *       readers (stamped at index time), so they are filtered like any other
+	 *       content — no carve-out.</li>
+	 *   <li>Always: exclude RAG parent/chunk docs, which share this Solr core and
+	 *       also carry a {@code readers} field (CMIS content has no
+	 *       {@code doc_type}).</li>
+	 * </ul>
+	 * Package-private + static for the unit test.
+	 */
+	static List<String> aclFilterQueries(boolean callerIsAdmin, String readersFilterQuery) {
+		List<String> fqs = new ArrayList<String>();
+		if (!callerIsAdmin && readersFilterQuery != null) {
+			fqs.add(readersFilterQuery);
+		}
+		fqs.add("-doc_type:[* TO *]");
+		return fqs;
+	}
+
+	/**
+	 * Execute the Solr query in two phases so the ACL-scan cap is enforced without
+	 * transferring document bodies for an over-cap match set:
+	 * <ol>
+	 *   <li><b>Phase 1</b> issues the query with {@code rows=0} — this returns
+	 *       {@code numFound} with NO body transfer. Because the ACL-in-Solr readers
+	 *       fq is already applied to {@code solrQuery}, for a non-admin caller this
+	 *       count is the AUTHORIZED match count (an admin, who bypasses the fq,
+	 *       sees the full count — which is fine, they may read everything). If it
+	 *       exceeds the cap the query is rejected here (no second query, no
+	 *       cap-sized fetch), so even {@code $top=1} is cheap to reject.</li>
+	 *   <li><b>Phase 2</b> (only when within the cap) re-issues the query with
+	 *       {@code rows=cap} to fetch the set for in-memory ACL + sort + paging,
+	 *       then re-checks the count to close the race window where documents were
+	 *       added between the probe and the fetch.</li>
+	 * </ol>
+	 * The rejection {@link CmisInvalidArgumentException} (HTTP 400) never echoes
+	 * the count — that would leak the number of matching objects. Package-private
+	 * so {@code SolrQueryProcessorScanCapTest} can drive it with a mock
+	 * {@link SolrClient}.
+	 */
+	static CappedResult queryWithinScanCap(SolrClient solrClient, SolrQuery solrQuery,
+			int aclScanCap, java.util.function.BooleanSupplier mayDegrade)
+			throws SolrServerException, IOException {
+		// Phase 1: rows=0 count probe.
+		solrQuery.set(CommonParams.START, 0);
+		solrQuery.set(CommonParams.ROWS, 0);
+		boolean degraded = false;
+		if (exceedsScanCap(numFoundOf(solrClient.query(solrQuery)), aclScanCap)) {
+			// Over the cap. Ordinarily that is a query too broad to authorize in memory and it is
+			// refused here, before any body transfer. There is one case where the count is not
+			// evidence of breadth: while a permission change is still propagating, the index still
+			// carries the revoked principal's tokens, so the pre-gate count is inflated by rows the
+			// in-memory gate is about to remove. Rejecting then makes a revocation look like a
+			// broken search.
+			//
+			// The question is asked ONLY here — on a request that was going to fail — so the
+			// cheap-reject path is untouched for every query that is genuinely too broad.
+			if (!mayDegrade.getAsBoolean()) {
+				throw scanCapExceeded(aclScanCap);
+			}
+			degraded = true;
+		}
+		// Phase 2: fetch up to the cap. Bounded either way, so the degraded path costs no more
+		// than a query that was within the cap.
+		solrQuery.set(CommonParams.ROWS, aclScanCap);
+		QueryResponse resp = solrClient.query(solrQuery);
+		// Race-window re-check (documents added between the probe and the fetch).
+		if (!degraded && exceedsScanCap(numFoundOf(resp), aclScanCap)) {
+			if (!mayDegrade.getAsBoolean()) {
+				throw scanCapExceeded(aclScanCap);
+			}
+			degraded = true;
+		}
+		return new CappedResult(resp, degraded);
+	}
+
+	/**
+	 * A cap-bounded fetch, and whether it is all there is.
+	 *
+	 * <p>{@code truncated} means the match set was larger than the ACL scan cap and the server
+	 * chose to answer with what it could confirm rather than refuse. The rows are correct — the
+	 * in-memory gate still runs — but they are a prefix, so the caller must not present the count
+	 * as a total or claim more pages than it can actually serve.
+	 */
+	static final class CappedResult {
+		final QueryResponse response;
+		final boolean truncated;
+
+		CappedResult(QueryResponse response, boolean truncated) {
+			this.response = response;
+			this.truncated = truncated;
+		}
+	}
+
+	/**
+	 * Tell the caller the page is a prefix, not the whole answer.
+	 *
+	 * <p>{@code hasMoreItems} already says only what this server can actually serve: it is
+	 * computed from the slice against the confirmed set, so once the caller reaches the end of the
+	 * cap-bounded window it goes false rather than promising pages that cannot be fetched. What
+	 * that alone cannot say is WHY the answer stops there, which is the difference between "you
+	 * have seen everything" and "narrow your query". The extension carries that, and the count
+	 * stays a lower bound rather than a fabricated total.
+	 */
+	private static void markTruncated(ObjectList result) {
+		if (result == null) {
+			return;
+		}
+		List<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement> exts =
+				new ArrayList<org.apache.chemistry.opencmis.commons.data.CmisExtensionElement>();
+		if (result.getExtensions() != null) {
+			exts.addAll(result.getExtensions());
+		}
+		exts.add(new org.apache.chemistry.opencmis.commons.impl.dataobjects.CmisExtensionElementImpl(
+				null, "truncatedByAclScanLimit", null, "true"));
+		result.setExtensions(exts);
+	}
+
+	private static long numFoundOf(QueryResponse resp) {
+		return (resp != null && resp.getResults() != null) ? resp.getResults().getNumFound() : 0;
+	}
+
+	/** Build the 400 for an over-cap result set — note: NO pre-ACL count in the message. */
+	static CmisInvalidArgumentException scanCapExceeded(int aclScanCap) {
+		return new CmisInvalidArgumentException(
+				"The query is too broad to authorize in memory: it matches more than the "
+				+ aclScanCap + "-row ACL scan limit. Narrow the query (add a WHERE clause) "
+				+ "or raise -Dnemakiware.cmis.query.aclScanMaxRows.");
+	}
+
 	private String orderBy(QueryObject queryObject){
 		List<SortSpec> sortSpecs = queryObject.getOrderBys();
 		List<String> _orderBy = new ArrayList<String>();
@@ -619,20 +862,38 @@ public class SolrQueryProcessor implements QueryProcessor {
 		return orderBy;
 	}
 
-	private Tree extractWhereTree(Tree tree){
-		for (int i = 0; i < tree.getChildCount(); i++) {
-			Tree selectTree = tree.getChild(i);
-			if ("SELECT".equals(selectTree.getText())) {
-				for(int j=0; j < selectTree.getChildCount(); j++){
-					Tree whereTree = selectTree.getChild(j);
-					if("WHERE".equals(whereTree.getText())){
-						return whereTree.getChild(0);
-					}
+	/**
+	 * The predicate under WHERE, or null when the statement has none.
+	 *
+	 * <p>The ROOT is the SELECT node itself under OpenCMIS 2.x; under the ANTLR3 grammar it
+	 * was a nil node WRAPPING the SELECT. Only looking one level down — as this did — silently
+	 * returned null on the 2.x shape, and a null predicate means the Solr query falls back to
+	 * {@code *:*}: every LIKE, IN_FOLDER and equality filter was dropped and the query returned
+	 * the whole repository. It failed no parse and logged nothing; the TCK caught it as
+	 * "name should start with 'a' but is 'bDocument'". Both shapes are accepted here.
+	 */
+	private CmisTree extractWhereTree(CmisTree tree){
+		if (tree == null) {
+			return null;
+		}
+		CmisTree selectTree = "SELECT".equals(tree.getText()) ? tree : null;
+		if (selectTree == null) {
+			for (int i = 0; i < tree.getChildCount(); i++) {
+				if ("SELECT".equals(tree.getChild(i).getText())) {
+					selectTree = tree.getChild(i);
+					break;
 				}
-
 			}
 		}
-
+		if (selectTree == null) {
+			return null;
+		}
+		for (int j = 0; j < selectTree.getChildCount(); j++) {
+			CmisTree whereTree = selectTree.getChild(j);
+			if ("WHERE".equals(whereTree.getText())) {
+				return whereTree.getChild(0);
+			}
+		}
 		return null;
 	}
 
@@ -985,8 +1246,16 @@ public class SolrQueryProcessor implements QueryProcessor {
 		this.compileService = compileService;
 	}
 
+	public void setAclExpander(jp.aegif.nemaki.rag.acl.ACLExpander aclExpander) {
+		this.aclExpander = aclExpander;
+	}
+
 	public void setExceptionService(ExceptionService exceptionService) {
 		this.exceptionService = exceptionService;
+	}
+
+	public void setPropagationStaleness(AclPropagationStaleness propagationStaleness) {
+		this.propagationStaleness = propagationStaleness;
 	}
 
 	public void setSolrUtil(SolrUtil solrUtil) {

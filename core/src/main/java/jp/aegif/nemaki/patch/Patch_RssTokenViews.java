@@ -3,9 +3,10 @@ package jp.aegif.nemaki.patch;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Patch to add CouchDB views required for RSS token persistence.
@@ -43,7 +44,7 @@ public class Patch_RssTokenViews extends AbstractNemakiPatch {
 
             // Get current design document
             String designDocId = "_design/_repo";
-            ObjectMapper mapper = new ObjectMapper();
+            ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
 
             // Read current design document
             JsonNode currentDoc = client.get(JsonNode.class, designDocId);
@@ -53,7 +54,7 @@ public class Patch_RssTokenViews extends AbstractNemakiPatch {
             }
 
             // Clone the document as ObjectNode for modification
-            ObjectNode updatedDoc = currentDoc.deepCopy();
+            ObjectNode updatedDoc = (ObjectNode) currentDoc.deepCopy();
             ObjectNode views = (ObjectNode) updatedDoc.get("views");
             if (views == null) {
                 views = mapper.createObjectNode();
@@ -88,7 +89,7 @@ public class Patch_RssTokenViews extends AbstractNemakiPatch {
 
     private void addViewIfMissing(ObjectNode views, String viewName, String mapFunction, String reduceFunction, String repositoryId) {
         if (!views.has(viewName)) {
-            ObjectMapper mapper = new ObjectMapper();
+            ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
             ObjectNode viewDef = mapper.createObjectNode();
             viewDef.put("map", mapFunction);
             if (reduceFunction != null && !reduceFunction.isEmpty()) {

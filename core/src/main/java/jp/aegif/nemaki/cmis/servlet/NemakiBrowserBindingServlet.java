@@ -108,13 +108,39 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         // existing behavior is preserved. Tomcat caches the parsed parts, so this
         // does not double-parse the (single-use) request body.
         if ("POST".equalsIgnoreCase(request.getMethod())) {
-            String contentType = request.getContentType();
-            if (contentType != null && contentType.regionMatches(true, 0, "multipart/", 0, 10)) {
+            // CSRF: the Browser Binding intentionally does not require the full
+            // token / X-Requested-With validation (that would break non-browser
+            // CMIS clients), but a forged cross-site POST from a browser IS
+            // rejected — reject Sec-Fetch-Site: cross-site and a cross-origin
+            // Origin. Header-less non-browser clients (cmislib / TCK / scripts)
+            // send neither and are allowed. All Browser Binding mutations are
+            // POST; GET reads are not state-changing.
+            String csrfReason = jp.aegif.nemaki.rest.CsrfValidator.validateBrowserBindingCsrf(request);
+            if (csrfReason != null) {
+                log.warn("Rejected cross-site Browser Binding POST: " + csrfReason
+                        + " (Origin=" + request.getHeader("Origin")
+                        + ", Sec-Fetch-Site=" + request.getHeader("Sec-Fetch-Site") + ")");
+                response.setContentType("application/json");
+                response.setCharacterEncoding("UTF-8");
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                try (java.io.PrintWriter w = response.getWriter()) {
+                    w.write("{\"exception\":\"permissionDenied\",\"message\":\"CSRF check failed: "
+                            + csrfReason + "\"}");
+                }
+                return;
+            }
+
+            if (MultipartReplayRequestWrapper.isMultipart(request)) {
                 try {
-                    // Force multipart parsing here (same trigger as the code below):
-                    // getParameter parses the body, and a malformed part filename
-                    // (NUL/control char) throws InvalidFileNameException during it.
-                    request.getParameter("cmisaction");
+                    // The container parses the body ONCE, here, and everything downstream —
+                    // this servlet's own routing lookups AND OpenCMIS's MultipartParser —
+                    // reads the replay instead. Without it the two compete for a single-use
+                    // stream: whoever asks second gets an empty body, and OpenCMIS answers
+                    // "Invalid multipart request!" for every upload.
+                    //
+                    // A malformed part filename (NUL / control char) still surfaces on this
+                    // first parse, which is what the catch below translates to a 400.
+                    request = new MultipartReplayRequestWrapper(request);
                 } catch (Throwable t) {
                     if (isInvalidMultipartFilename(t)) {
                         log.warn("Rejected multipart upload with an invalid part filename: " + t.getMessage());
@@ -355,6 +381,14 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 // TCK tests use "folderId" parameter for document creation, but NemakiWare expects "objectId"
                 String folderId = org.apache.chemistry.opencmis.server.shared.HttpUtils.getStringParameter(request, "folderId");
                 if (folderId != null && !folderId.isEmpty()) {
+                    // Put the mapping in the BODY, not just in a getParameter override.
+                    // OpenCMIS answers parameters for a multipart request from the fields IT
+                    // parsed, so a wrapper that only overrides getParameter is invisible to it
+                    // and the create fails with "folderId must be set". The override below
+                    // still serves this servlet's own lookups.
+                    if (request instanceof MultipartReplayRequestWrapper replay) {
+                        replay.addSyntheticField("objectId", folderId);
+                    }
                     // Create a request wrapper to inject objectId parameter
                     final String folderIdValue = folderId;
                     finalRequest = new HttpServletRequestWrapper(request) {
@@ -1300,6 +1334,18 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     response.sendError(HttpServletResponse.SC_CONFLICT, "CMIS constraint: " + e.getMessage());
                 }
                 return null;
+            } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisServiceUnavailableException e) {
+                // A bounded lock acquisition gave up. 503, NOT 500: OpenCMIS clients map 500 to
+                // CmisRuntimeException (a fault, do not retry) and 503 to "temporarily
+                // unavailable, retry" — and retrying is exactly right here. Every other route in
+                // this servlet already preserves that distinction; content download must not be
+                // the one path that loses it.
+                log.warn("Content stream for " + objectId + " temporarily unavailable: " + e.getMessage());
+                if (!response.isCommitted()) {
+                    response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE,
+                        "Temporarily unavailable, retry: " + e.getMessage());
+                }
+                return null;
             } catch (Exception e) {
                 log.debug("Service exception getting content stream for " + objectId + ": " + e.getMessage());
                 if (!response.isCommitted()) {
@@ -1506,7 +1552,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     // Fallback to Jackson if OpenCMIS conversion fails
                     log.warn("TypeDefinition OpenCMIS conversion failed, using Jackson fallback: " + 
                         typeDefException.getMessage());
-                    com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    tools.jackson.databind.ObjectMapper objectMapper = new tools.jackson.databind.ObjectMapper();
                     String json = objectMapper.writeValueAsString(result);
                     writer.write(json);
                 }
@@ -1556,7 +1602,7 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 writer.write(jsonArray.toJSONString());
             } else {
                 // For other types, use Jackson as fallback but this should be rare
-                com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                tools.jackson.databind.ObjectMapper objectMapper = new tools.jackson.databind.ObjectMapper();
                 String json = objectMapper.writeValueAsString(result);
                 writer.write(json);
             }

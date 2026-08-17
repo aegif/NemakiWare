@@ -78,7 +78,61 @@ public class PurviewCloudMetadataPublishServiceImplTest {
 
         String snapshot = service.buildRepositoryCloudMetadataSnapshot("bedroom");
 
-        assertEquals("doc-001|google|cloud-001|https://drive.example/doc-001|2026-03-20T03:00:00.000+0000", snapshot);
+        // The URL slot is empty by contract: the snapshot is persisted as the cursor and served
+        // by the admin API, and a drive URL's query string is where sharing tokens live. The slot
+        // itself stays so stored old-format cursors keep their field positions.
+        assertEquals("doc-001|google|cloud-001||2026-03-20T03:00:00.000+0000", snapshot);
+        assertFalse(snapshot.contains("https://"), "no URL may enter the cursor");
+    }
+
+    /**
+     * A cursor stored before the URL left the format must compare as unchanged against a fresh
+     * snapshot of the same documents — otherwise the first sync after upgrade republishes every
+     * cloud-linked document for no observable catalog difference.
+     */
+    @Test
+    public void testAnOldFormatCursorWithUrlsComparesAsUnchanged() {
+        RepositoryInfo repositoryInfo = new RepositoryInfo();
+        repositoryInfo.setId("bedroom");
+        repositoryInfo.setRootFolder("root-001");
+        when(repositoryInfoMap.get("bedroom")).thenReturn(repositoryInfo);
+        when(contentDaoService.getContent("bedroom", "root-001")).thenReturn(folder("root-001"));
+        when(contentDaoService.getChildrenCount("bedroom", "root-001")).thenReturn(1L);
+        when(contentDaoService.getChildrenPaged("bedroom", "root-001", 0, 100))
+                .thenReturn(List.of(documentWithCloud("doc-001", "root-001", "google", "cloud-001",
+                        "https://drive.example/doc-001", "2026-03-20T03:00:00.000+0000")));
+
+        String oldFormatCursor =
+                "doc-001|google|cloud-001|https://drive.example/doc-001?authkey=SECRET|2026-03-20T03:00:00.000+0000";
+        PurviewCloudMetadataSyncResult result =
+                service.syncRepositoryCloudMetadataIfChanged("bedroom", oldFormatCursor);
+
+        assertFalse(result.isChanged());
+        assertFalse(result.getSnapshot().contains("SECRET"),
+                "the returned snapshot replaces the stored cursor and must be clean");
+        verify(documentPublishService, never()).upsertContents(any(), any());
+    }
+
+    /** A URL-only change is no longer a change: the catalog cannot see it (A-1g). */
+    @Test
+    public void testAUrlOnlyChangeDoesNotTriggerRepublish() {
+        RepositoryInfo repositoryInfo = new RepositoryInfo();
+        repositoryInfo.setId("bedroom");
+        repositoryInfo.setRootFolder("root-001");
+        when(repositoryInfoMap.get("bedroom")).thenReturn(repositoryInfo);
+        when(contentDaoService.getContent("bedroom", "root-001")).thenReturn(folder("root-001"));
+        when(contentDaoService.getChildrenCount("bedroom", "root-001")).thenReturn(1L);
+        when(contentDaoService.getChildrenPaged("bedroom", "root-001", 0, 100))
+                .thenReturn(List.of(documentWithCloud("doc-001", "root-001", "google", "cloud-001",
+                        "https://drive.example/doc-001?rotated=NEW", "2026-03-20T03:00:00.000+0000")));
+
+        String oldCursorWithDifferentUrl =
+                "doc-001|google|cloud-001|https://drive.example/doc-001?authkey=OLD|2026-03-20T03:00:00.000+0000";
+        PurviewCloudMetadataSyncResult result =
+                service.syncRepositoryCloudMetadataIfChanged("bedroom", oldCursorWithDifferentUrl);
+
+        assertFalse(result.isChanged());
+        verify(documentPublishService, never()).upsertContents(any(), any());
     }
 
     @Test
@@ -154,7 +208,9 @@ public class PurviewCloudMetadataPublishServiceImplTest {
         verify(cloudSyncLineageService).upsertCloudSyncLineage("bedroom", List.of(currentDocument));
         verify(cloudSyncLineageService).reconcileRemovedCloudSyncLineage(eq("bedroom"), argThat(entries ->
                 entries.size() == 1
-                        && "doc-legacy|microsoft|cloud-legacy|https://onedrive.example/doc-legacy|2026-03-19T01:00:00.000+0000"
+                        // Normalised on parse: the URL slot from an old-format cursor is emptied
+                        // before the entry travels anywhere further.
+                        && "doc-legacy|microsoft|cloud-legacy||2026-03-19T01:00:00.000+0000"
                                 .equals(entries.get("doc-legacy"))),
                 argThat(keys -> keys.size() == 1 && keys.contains("google:cloud-001")));
     }

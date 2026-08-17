@@ -290,6 +290,7 @@ public class ZipImporter {
                         uuidToObjectId.put(uuid, newFolder.getId());
                     }
                     result.foldersCreated++;
+                    result.recordCreated(newFolder.getId(), name, true, parentFolderId);
 
                     processAcpAcl(repositoryId, child, newFolder.getId(), callContext, result);
 
@@ -340,6 +341,7 @@ public class ZipImporter {
                         uuidToObjectId.put(uuid, newDoc.getId());
                     }
                     result.documentsCreated++;
+                    result.recordCreated(newDoc.getId(), name, false, parentFolderId);
 
                     processAcpAcl(repositoryId, child, newDoc.getId(), callContext, result);
 
@@ -495,6 +497,9 @@ public class ZipImporter {
                     String createName = isOverwrite
                             ? ".importing-" + System.currentTimeMillis() + "-" + fileName
                             : fileName;
+                    // The name the document ends up with: fileName normally, createName only
+                    // when an overwrite's rename fails (that branch flips it below).
+                    String importedName = fileName;
 
                     PropertiesImpl props = new PropertiesImpl();
                     props.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, objectTypeId));
@@ -532,10 +537,12 @@ public class ZipImporter {
                         } catch (Exception e) {
                             log.warn("Failed to rename imported document from temp name: " + createName + " - " + e.getMessage());
                             result.warnings.add("Document imported with temp name (rename failed): " + createName);
+                            importedName = createName;
                         }
                     }
 
                     result.documentsCreated++;
+                    result.recordCreated(newDoc.getId(), importedName, false, parentFolderId);
 
                     if (oldObjectId != null) {
                         oldIdToNewId.put(oldObjectId, newDoc.getId());
@@ -780,6 +787,11 @@ public class ZipImporter {
                 acl.setLocalAces(aces);
                 content.setAcl(acl);
                 cs.updateInternal(repositoryId, content);
+                // This path writes an ACL without going through AclService, so nothing else
+                // advances the cache generation — and other replicas would keep serving the
+                // pre-import permissions until their entries expired. Bumping here rather than
+                // in the DAO keeps ordinary content updates from clearing every replica.
+                jp.aegif.nemaki.util.cache.AclCacheGeneration.advance(repositoryId);
             }
 
         } catch (Exception e) {
@@ -844,6 +856,7 @@ public class ZipImporter {
 
         pathToFolderId.put(path, newFolder.getId());
         result.foldersCreated++;
+        result.recordCreated(newFolder.getId(), folderName, true, parentFolderId);
 
         if (metadataMap != null && oldIdToNewId != null) {
             JSONObject folderMeta = metadataMap.get(path + "/");
@@ -941,6 +954,11 @@ public class ZipImporter {
                 acl.setLocalAces(aces);
                 content.setAcl(acl);
                 cs.updateInternal(repositoryId, content);
+                // This path writes an ACL without going through AclService, so nothing else
+                // advances the cache generation — and other replicas would keep serving the
+                // pre-import permissions until their entries expired. Bumping here rather than
+                // in the DAO keeps ordinary content updates from clearing every replica.
+                jp.aegif.nemaki.util.cache.AclCacheGeneration.advance(repositoryId);
             }
 
         } catch (Exception e) {

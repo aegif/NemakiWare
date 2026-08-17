@@ -17,61 +17,103 @@ public class IngestLineageEmitter {
     private static final Logger logger = LoggerFactory.getLogger(IngestLineageEmitter.class);
 
     /**
-     * Emit a lineage event for an imported document.
+     * Emit the lineage fact for an imported document.
      *
-     * @return eventId string, or null on failure
+     * <p>The return value keeps the old contract exactly: the v1 eventId of the stored journal
+     * row, or null when nothing was emitted. The id is preset on the {@link
+     * LineageFact.LegacyV1Projection} so the projected event carries the same id we return —
+     * returning the operation id instead was rejected in review as a compat break (the ingest
+     * response's {@code lineageEventId} must resolve against the journal). At the v2 flip the
+     * projection dies and this becomes the operation id, which v2 events carry verbatim.
+     *
+     * @param documentName the created document's cmis:name — the typed CMIS_DOCUMENT endpoint
+     *                     requires it, and only the caller that created the document knows it
+     * @param operationId  issued by the caller at the start of the import operation (§3) —
+     *                     not here, which would stamp it after the mutation already happened
+     * @return the v1 eventId of the emitted event, or null when nothing was emitted
      */
     public String emitLineageEvent(String repositoryId, String objectId, String targetFolderId,
+                                   String documentName, String operationId,
                                    ConnectorDefinition connector, ExternalIngestRequest request) {
         try {
-            LineageProcessType processType = resolveProcessType(connector.getSourceArchetype(), request.getSourceObjectType());
+            // Two classifications on purpose. The v1 type participates in eventKey and keeps
+            // its historical labels — including the CHAT_CONTEXT inversion — while the fact's
+            // own type is what v2 calls the operation. See resolveFactProcessType.
+            LineageProcessType legacyProcessType = resolveProcessType(connector.getSourceArchetype(), request.getSourceObjectType());
+            LineageProcessType factProcessType =
+                    resolveFactProcessType(connector.getSourceArchetype(), request.getSourceObjectType());
             String sourceUri = buildCanonicalSourceUri(connector, request);
+            String v1EventId = java.util.UUID.randomUUID().toString();
 
-            LineageEventBuilder builder = new LineageEventBuilder()
-                    .repositoryId(repositoryId)
-                    .processType(processType)
-                    .addInput(sourceUri)
-                    .addOutputObject(repositoryId, objectId)
-                    .correlationId(request.getCorrelationId())
-                    .snapshotAttribute("sourceSystem", connector.getSourceSystem())
-                    .snapshotAttribute("sourceArchetype",
-                            connector.getSourceArchetype() != null ? connector.getSourceArchetype().name() : "")
-                    .snapshotAttribute("sourceObjectId", request.getSourceObjectId());
-
+            // The v1 event-level snapshot, conditionals preserved exactly (it rides the legacy
+            // projection verbatim; most keys have no v2 home — the endpoint attributes carry
+            // sourceSystem and the stable key, and targetFolderId is a §3 Process attribute).
+            java.util.Map<String, String> v1Snapshot = new java.util.LinkedHashMap<>();
+            v1Snapshot.put("sourceSystem", connector.getSourceSystem());
+            v1Snapshot.put("sourceArchetype",
+                    connector.getSourceArchetype() != null ? connector.getSourceArchetype().name() : "");
+            v1Snapshot.put("sourceObjectId", request.getSourceObjectId());
             if (request.getSourceObjectType() != null) {
-                builder.snapshotAttribute("sourceObjectType", request.getSourceObjectType());
+                v1Snapshot.put("sourceObjectType", request.getSourceObjectType());
             }
             if (targetFolderId != null) {
-                builder.snapshotAttribute("targetFolderId", targetFolderId);
+                v1Snapshot.put("targetFolderId", targetFolderId);
             }
 
-            LineageEvent event = builder.build();
-            emitViaJournal(event);
-            return event.eventId();
+            boolean emitted = LineageFactEmission.emitSafely(resolveEmitter(repositoryId), () -> {
+                String occurredAt = java.time.Instant.now().toString();
+                return new LineageFact(
+                        repositoryId,
+                        factProcessType,
+                        operationId,
+                        occurredAt,
+                        java.util.List.of(LineageEndpoint.externalAsset(
+                                repositoryId, sourceUri, connector.getSourceSystem())),
+                        java.util.List.of(LineageEndpoint.document(
+                                repositoryId, objectId, documentName)),
+                        lineageTargets(),
+                        request.getCorrelationId(),
+                        new LineageFact.LegacyV1Projection(
+                                legacyProcessType,
+                                java.util.List.of(sourceUri),
+                                java.util.List.of(LineageEvent.qualifiedName(repositoryId, objectId)),
+                                v1Snapshot,
+                                v1EventId));
+            }, "repo=" + repositoryId + " op=" + operationId + " type=" + factProcessType);
+            return emitted ? v1EventId : null;
         } catch (Exception e) {
             logger.warn("Failed to emit lineage event for {}: {}", objectId, e.getMessage());
             return null;
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private void emitViaJournal(LineageEvent event) {
+    private java.util.List<String> lineageTargets() {
         try {
             var ctx = SpringContext.getApplicationContext();
-            if (ctx == null) return;
+            if (ctx == null) return java.util.List.of();
             LineageConfig config = ctx.getBean(LineageConfig.class);
-            if (config == null) return;
-            LineageMode mode = config.getModeForRepository(event.repositoryId());
-            if (mode == LineageMode.DISABLED) return;
+            return config != null ? config.getTargets() : java.util.List.of();
+        } catch (Exception e) {
+            return java.util.List.of();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private LineageEmitter resolveEmitter(String repositoryId) {
+        try {
+            var ctx = SpringContext.getApplicationContext();
+            if (ctx == null) return null;
+            LineageConfig config = ctx.getBean(LineageConfig.class);
+            if (config == null) return null;
+            LineageMode mode = config.getModeForRepository(repositoryId);
+            if (mode == LineageMode.DISABLED) return null;
             LineageJournalStore store = ctx.getBean(LineageJournalStore.class);
             java.util.List<LineageTargetSink> sinks = (java.util.List<LineageTargetSink>)
                     (java.util.List<?>) ctx.getBeansOfType(LineageTargetSink.class).values().stream().toList();
-            LineageEmitter emitter = config.createEmitterForMode(mode, store, sinks);
-            if (emitter.isActive()) {
-                emitter.emit(event);
-            }
+            return config.createEmitterForMode(mode, store, sinks);
         } catch (Exception e) {
-            logger.warn("Lineage event emission failed (non-fatal): {}", e.getMessage());
+            logger.warn("Lineage emitter resolution failed (non-fatal): {}", e.getMessage());
+            return null;
         }
     }
 
@@ -121,6 +163,33 @@ public class IngestLineageEmitter {
         if (sourceObjectType == null) return false;
         String lower = sourceObjectType.toLowerCase();
         return "attachment".equals(lower) || "file".equals(lower);
+    }
+
+    /**
+     * The v2 classification of this ingest — what the operation actually is.
+     *
+     * <p>It differs from {@link #resolveProcessType} (whose labels are frozen into every v1
+     * eventKey) in exactly two places, both v2.3.13 confirmed corrections:
+     * <ul>
+     *   <li>null archetype, non-attachment: {@code GENERIC_EXTERNAL_INGEST}, not
+     *       {@code IMPORT_UPLOADED} — unclassified connector ingest is not a user upload;</li>
+     *   <li>{@code CHAT_CONTEXT}: the v1 branch is inverted (a real attachment became the
+     *       generic type, a message became the attachment type). v2 classifies an attachment
+     *       as {@code CHAT_ATTACHMENT_IMPORT} and a message as {@code CHAT_MESSAGE_IMPORT},
+     *       matching the {@code MESSAGE_CONTEXT} pattern.</li>
+     * </ul>
+     */
+    static LineageProcessType resolveFactProcessType(SourceArchetype archetype, String sourceObjectType) {
+        boolean isAttachment = isAttachmentObjectType(sourceObjectType);
+        if (archetype == null) {
+            return isAttachment ? LineageProcessType.EXTERNAL_ATTACHMENT_IMPORT
+                    : LineageProcessType.GENERIC_EXTERNAL_INGEST;
+        }
+        if (archetype == SourceArchetype.CHAT_CONTEXT) {
+            return isAttachment ? LineageProcessType.CHAT_ATTACHMENT_IMPORT
+                    : LineageProcessType.CHAT_MESSAGE_IMPORT;
+        }
+        return resolveProcessType(archetype, sourceObjectType);
     }
 
     static LineageProcessType resolveProcessType(SourceArchetype archetype, String sourceObjectType) {

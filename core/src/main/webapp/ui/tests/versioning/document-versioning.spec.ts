@@ -1,4 +1,4 @@
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, ApiHelper, generateTestId } from '../utils/test-helper';
@@ -166,7 +166,7 @@ test.describe('Document Versioning', () => {
     await authHelper.login();
 
     // Wait for UI to fully load
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     await testHelper.closeMobileSidebar(browserName);
 
@@ -186,7 +186,7 @@ test.describe('Document Versioning', () => {
     const filename = `versioning-test-${timestamp}.txt`;
     const uploadSuccess = await testHelper.uploadDocument(filename, 'Version 1.0 content', isMobile);
     if (!uploadSuccess) {
-      test.skip('ENV: Upload failed');
+      test.skip(true, 'ENV: Upload failed');
       return;
     }
 
@@ -254,13 +254,13 @@ test.describe('Document Versioning', () => {
         if (checkinButtonVisible) {
           console.log('Test: Document successfully checked out - checkin button is now visible');
         } else {
-          test.skip('ENV: Checkout failed - neither PWC tag nor checkin button found');
+          test.skip(true, 'ENV: Checkout failed - neither PWC tag nor checkin button found');
         }
       }
     } else {
       // UPDATED (2025-12-26): Versioning IS implemented in DocumentList.tsx lines 955-962
       // Button uses EditOutlined icon, only visible for versionable documents that aren't PWC
-      test.skip('ENV: Check-out button not visible - document may not be versionable or is already checked out');
+      test.skip(true, 'ENV: Check-out button not visible - document may not be versionable or is already checked out');
       return;
     }
 
@@ -295,7 +295,7 @@ test.describe('Document Versioning', () => {
     const filename = `checkin-test-${timestamp}.txt`;
     const uploadSuccess = await testHelper.uploadDocument(filename, 'Version 1.0 content', isMobile);
     if (!uploadSuccess) {
-      test.skip('ENV: Upload failed');
+      test.skip(true, 'ENV: Upload failed');
       return;
     }
 
@@ -308,7 +308,7 @@ test.describe('Document Versioning', () => {
     // Step 1: Check-out using icon button in the row (EditOutlined = aria-label="edit")
     const checkoutButton = documentRow.locator('button').filter({ has: page.locator('span[role="img"][aria-label="edit"]') }).first();
     if (await checkoutButton.count() === 0) {
-      test.skip('ENV: Check-out button not visible in document row');
+      test.skip(true, 'ENV: Check-out button not visible in document row');
       return;
     }
 
@@ -330,7 +330,7 @@ test.describe('Document Versioning', () => {
       await checkinButton.click(isMobile ? { force: true } : {});
 
       // Wait for check-in modal to appear (filter by check-in title to avoid matching upload modal)
-      const modal = page.locator('.ant-modal').filter({ hasText: 'チェックイン' }).last().locator('.ant-modal-content');
+      const modal = page.locator('.ant-modal').filter({ hasText: 'チェックイン' }).last().locator('.ant-modal-container');
       await expect(modal).toBeVisible({ timeout: 10000 });
       console.log('Test: Check-in modal opened');
 
@@ -418,7 +418,7 @@ test.describe('Document Versioning', () => {
     const filename = `cancel-checkout-${timestamp}.txt`;
     const uploadSuccess = await testHelper.uploadDocument(filename, 'Original content', isMobile);
     if (!uploadSuccess) {
-      test.skip('ENV: Upload failed');
+      test.skip(true, 'ENV: Upload failed');
       return;
     }
 
@@ -429,14 +429,20 @@ test.describe('Document Versioning', () => {
     await documentRow.click(isMobile ? { force: true } : {});
     await waitForRender(page);
 
-    const checkoutButton = page.locator('button, .ant-btn').filter({ hasText: /チェックアウト|Check.*Out/i }).first();
+    // /チェックアウト/ also matches the CANCEL controls ("チェックアウトキャンセル" and
+    // "チェックアウト取消"), so .first() could click cancel before anything was checked out
+    // — after which the cancel button this test then looks for is gone. Anchor the name.
+    const checkoutButton = page.getByRole('button', { name: /^(チェックアウト|Check ?Out)$/i }).first();
     if (await checkoutButton.count() > 0) {
       await checkoutButton.click(isMobile ? { force: true } : {});
       await waitForUiStable(page);
 
-      // Cancel check-out
-      const cancelCheckoutButton = page.locator('button, .ant-btn').filter({ hasText: /チェックアウト.*キャンセル|Cancel.*Check.*Out/i }).first();
+      // Cancel check-out. Both label variants ship: the toolbar says 取消, the row action
+      // menu says キャンセル; the old regex only matched the second.
+      const cancelCheckoutButton = page.locator('button, .ant-btn')
+        .filter({ hasText: /チェックアウト(キャンセル|取消)|Cancel.*Check.*Out/i }).first();
       if (await cancelCheckoutButton.count() > 0) {
+        await expect(cancelCheckoutButton).toBeEnabled({ timeout: 10000 });
         await cancelCheckoutButton.click(isMobile ? { force: true } : {});
         await waitForRender(page);
 
@@ -453,7 +459,7 @@ test.describe('Document Versioning', () => {
       }
     } else {
       // UPDATED (2025-12-26): Cancel button IS implemented in DocumentList.tsx lines 974-980
-      test.skip('ENV: Cancel button not visible - document may not be a PWC (cancel only shown for checked-out documents)');
+      test.skip(true, 'ENV: Cancel button not visible - document may not be a PWC (cancel only shown for checked-out documents)');
       return;
     }
 
@@ -494,7 +500,7 @@ test.describe('Document Versioning', () => {
     const filename = `version-history-${timestamp}.txt`;
     const uploadSuccess = await testHelper.uploadDocument(filename, 'Version 1.0', isMobile);
     if (!uploadSuccess) {
-      test.skip('ENV: Upload failed');
+      test.skip(true, 'ENV: Upload failed');
       return;
     }
 
@@ -525,7 +531,7 @@ test.describe('Document Versioning', () => {
     await waitForUiStable(page);
 
     // A freshly uploaded document lists at least its initial version.
-    const versionRows = page.locator('.ant-tabs-tabpane-active .ant-table-tbody tr.ant-table-row');
+    const versionRows = page.locator('.ant-tabs-content-active .ant-table-tbody tr.ant-table-row');
     await expect(versionRows.first()).toBeVisible({ timeout: 10000 });
 
     // Return to the document list for cleanup (i18n back button: 戻る / Back).
@@ -570,7 +576,7 @@ test.describe('Document Versioning', () => {
     const filename = `version-download-${timestamp}.txt`;
     const uploadSuccess = await testHelper.uploadDocument(filename, 'Version 1.0 for download', isMobile);
     if (!uploadSuccess) {
-      test.skip('ENV: Upload failed');
+      test.skip(true, 'ENV: Upload failed');
       return;
     }
 
@@ -624,11 +630,11 @@ test.describe('Document Versioning', () => {
         }
       } else {
         // Version download functionality is part of version history modal/drawer
-        test.skip('ENV: Version download button not visible - version history UI may need different selector');
+        test.skip(true, 'ENV: Version download button not visible - version history UI may need different selector');
         return;
       }
     } else {
-      test.skip('ENV: Version history not accessible');
+      test.skip(true, 'ENV: Version history not accessible');
       return;
     }
 
@@ -738,7 +744,11 @@ test.describe('Document Versioning', () => {
 
     // Cleanup: Delete the test document via API
     try {
-      await apiHelper.deleteDocument(docId);
+      // deleteObject, not deleteDocument: ApiHelper has no deleteDocument, so this call
+      // threw TypeError every time and the catch below reported it as a non-critical
+      // cleanup failure. The document was never deleted — one of the leaks feeding the
+      // repository growth that has been slowing this suite down.
+      await apiHelper.deleteObject(docId);
       console.log('Test: Cleanup - document deleted via API');
     } catch (e) {
       console.log('Test: Cleanup failed (non-critical)');

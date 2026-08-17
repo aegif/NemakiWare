@@ -323,15 +323,21 @@ public class RenditionResource extends ResourceBase {
                 return Response.status(Response.Status.BAD_REQUEST).entity(response).build();
             }
 
-            AttachmentNode attachment = getContentService().getAttachment(repositoryId, attachmentId);
-            if (attachment == null) {
+            // Ref first, body later. Every one of these endpoints used to open the
+            // attachment body BEFORE testing convertibility, then return early for an
+            // unsupported MIME type without closing it — one leaked CouchDB connection per
+            // rejected request, and the MIME type it was testing came from the document,
+            // not from the body. Same defect as createPreviewAtomic; fixing that one alone
+            // left these three.
+            AttachmentNode attachmentRef = getContentService().getAttachmentRef(repositoryId, attachmentId);
+            if (attachmentRef == null) {
                 response.put("status", "error");
                 response.put("message", "Document attachment not found");
                 return Response.status(Response.Status.NOT_FOUND).entity(response).build();
             }
 
             // Check if MIME type is convertible
-            String mimeType = attachment.getMimeType();
+            String mimeType = attachmentRef.getMimeType();
             RenditionManager renditionManager = getRenditionManager();
 
             // Check SVG convertibility first (CAD/diagram formats), then PDF
@@ -346,6 +352,14 @@ public class RenditionResource extends ResourceBase {
                 response.put("message", "MIME type not supported for conversion: " + mimeType);
                 response.put("supportedTypes", SUPPORTED_MIME_TYPES);
                 return Response.status(Response.Status.BAD_REQUEST).entity(response).build();
+            }
+
+            // Convertible, so the body is actually going to be read: open it now.
+            AttachmentNode attachment = getContentService().getAttachment(repositoryId, attachmentId);
+            if (attachment == null) {
+                response.put("status", "error");
+                response.put("message", "Document attachment not found");
+                return Response.status(Response.Status.NOT_FOUND).entity(response).build();
             }
 
             // Read attachment content into byte array to avoid consuming cached InputStream

@@ -125,7 +125,7 @@ test.describe('Help Page Content Accuracy', () => {
     await page.waitForTimeout(2000);
     await page.locator('.ant-tabs-tab').filter({ hasText: /管理者ガイド|Admin Guide/i }).click();
     await page.waitForTimeout(1000);
-    const content = await page.locator('.ant-tabs-tabpane-active').textContent() || '';
+    const content = await page.locator('.ant-tabs-content-active').textContent() || '';
     expect(content).toMatch(/無効化|disabled|feature toggle/i);
   });
 

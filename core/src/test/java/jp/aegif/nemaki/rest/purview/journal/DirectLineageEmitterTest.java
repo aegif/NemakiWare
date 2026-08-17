@@ -42,7 +42,7 @@ class DirectLineageEmitterTest {
 
         // Allow async dispatch time
         Thread.sleep(200);
-        verify(mockSink).publish(event);
+        verify(mockSink).publish(LineageRecord.fromV1(event));
     }
 
     @Test
@@ -65,7 +65,7 @@ class DirectLineageEmitterTest {
     @Test
     void emit_nullEventIsIgnored() throws Exception {
         DirectLineageEmitter emitter = new DirectLineageEmitter(mockConfig, List.of(mockSink));
-        emitter.emit(null);
+        emitter.emit((LineageEvent) null);
         verify(mockSink, never()).publish(any());
     }
 
@@ -141,7 +141,7 @@ class DirectLineageEmitterTest {
         emitter.emit(event);
 
         Thread.sleep(300);
-        verify(mockSink).publish(event);
-        verify(mockSink2).publish(event);
+        verify(mockSink).publish(LineageRecord.fromV1(event));
+        verify(mockSink2).publish(LineageRecord.fromV1(event));
     }
 }

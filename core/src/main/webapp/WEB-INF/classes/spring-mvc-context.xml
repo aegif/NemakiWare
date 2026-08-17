@@ -19,7 +19,8 @@
 	-->
 
 	<!-- CORS is handled by SimpleCorsFilter (web.xml), not Spring MVC.
-	     Configure via system property: api.cors.allowedOrigins (default: *) -->
+	     Configure via api.cors.allowedOrigins. Since 3.3.0 the default is NO
+	     cross-origin access; unset means no CORS headers are emitted. -->
 
 	<!-- CSRF protection for state-changing Spring MVC endpoints -->
 	<!-- Mirrors ResourceBase.validateCsrfProtection() used by Jersey resources -->

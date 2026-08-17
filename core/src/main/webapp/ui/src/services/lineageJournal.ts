@@ -22,15 +22,50 @@ function ensureOk(res: Response, context: string): void {
   }
 }
 
+/** How much the server could establish about one end of a lineage relation. */
+export type LineageAssetResolution = 'TYPED' | 'LEGACY_NAME' | 'UNRESOLVED';
+
+export interface LineageAsset {
+  qualifiedName: string;
+  resolution: LineageAssetResolution;
+  /** Present only when resolution is TYPED. */
+  kind: string | null;
+  atlasTypeName: string | null;
+  attributes: Record<string, unknown>;
+  /** Present only when resolution is UNRESOLVED. */
+  unresolvedReason?: string;
+}
+
 export interface LineageEventSummary {
   eventId: string;
+  /**
+   * The v1 name for processIdentity. On a v2 record this holds the processKey, so prefer
+   * processIdentity where it is present.
+   */
   eventKey: string;
+  /** Added in A-2 Slice 2b; absent on responses from an older server. */
+  processIdentity?: string;
+  /** The journal document identity: eventId on v1, deliveryId on v2. */
+  recordId?: string | null;
+  schemaVersion?: number;
+  idempotencyKeyVersion?: number;
   repositoryId: string;
   processType: string | null;
   occurredAt: string;
   inputs: string[];
   outputs: string[];
+  /** Structured form of inputs/outputs; carries the kind and any unresolved reason. */
+  inputAssets?: LineageAsset[];
+  outputAssets?: LineageAsset[];
   publishStatusByTarget: Record<string, string>;
+  /** Set when the server could not project the stored row; the other fields are then partial. */
+  unprojectable?: boolean;
+  unprojectableReason?: string;
+}
+
+/** The identity to display: the version-neutral one where the server supplies it. */
+export function displayProcessIdentity(event: LineageEventSummary): string {
+  return event.processIdentity ?? event.eventKey;
 }
 
 export interface DeadLetterRecord {
@@ -85,8 +120,12 @@ export async function getEvents(params: {
   return (await parseJsonResponseBody(res, 'getEvents')) as unknown as { events: LineageEventSummary[]; total: number };
 }
 
-export async function getEvent(eventId: string): Promise<LineageEventSummary> {
-  const res = await fetchWithAuth(`${BASE_URL}/events/${encodeURIComponent(eventId)}`);
+/**
+ * Fetches one journal row. The parameter is a RECORD id — v1's eventId, v2's deliveryId; use
+ * recordId from a list row where present (they are the same value for every v1 row).
+ */
+export async function getEvent(recordId: string): Promise<LineageEventSummary> {
+  const res = await fetchWithAuth(`${BASE_URL}/events/${encodeURIComponent(recordId)}`);
   ensureOk(res, 'getEvent');
   return (await parseJsonResponseBody(res, 'getEvent')) as unknown as LineageEventSummary;
 }

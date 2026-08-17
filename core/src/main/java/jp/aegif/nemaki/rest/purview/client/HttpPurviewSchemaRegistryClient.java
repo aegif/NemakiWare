@@ -13,8 +13,9 @@ import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 @Component
 public class HttpPurviewSchemaRegistryClient implements PurviewSchemaRegistryClient {
@@ -27,7 +28,7 @@ public class HttpPurviewSchemaRegistryClient implements PurviewSchemaRegistryCli
     private final HttpClient httpClient;
     private final PurviewTokenCache tokenCache;
     private final PurviewHttpRetryHandler retryHandler;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = ObjectMapperFactory.createDefaultObjectMapper();
 
     public HttpPurviewSchemaRegistryClient() {
         this(HttpClient.newBuilder().build(), new PurviewTokenCache(), new PurviewHttpRetryHandler());
@@ -61,7 +62,7 @@ public class HttpPurviewSchemaRegistryClient implements PurviewSchemaRegistryCli
         String requestBody;
         try {
             requestBody = objectMapper.writeValueAsString(payload);
-        } catch (IOException e) {
+        } catch (tools.jackson.core.JacksonException e) {
             throw new PurviewClientException("Failed to serialize Purview schema payload", e);
         }
 
@@ -144,7 +145,7 @@ public class HttpPurviewSchemaRegistryClient implements PurviewSchemaRegistryCli
             String token = accessToken.asText();
             tokenCache.put(request.getTenantId(), request.getClientId(), token, expiresIn);
             return token;
-        } catch (IOException e) {
+        } catch (tools.jackson.core.JacksonException e) {
             throw new PurviewClientException("Failed to parse Purview token response", e);
         }
     }
@@ -160,9 +161,15 @@ public class HttpPurviewSchemaRegistryClient implements PurviewSchemaRegistryCli
         return URI.create(String.format(TOKEN_URL_TEMPLATE, urlEncodePathSegment(request.getTenantId())));
     }
 
-    private URI buildSchemaUri(PurviewConnectionRequest request) {
-        return URI.create(trimTrailingSlash(request.getEndpoint()) + "/"
-                + trimSlashes(request.getAtlasBasePath()) + "/" + TYPE_DEFS_PATH);
+    URI buildSchemaUri(PurviewConnectionRequest request) {
+        // Required on the Data Map surface — without it the typedef apply fails with a
+        // request-shape error, which is the first step of the runbook and would read as a
+        // credentials problem. Same constant as the entity client, so the three clients that
+        // speak this surface cannot drift apart again.
+        return URI.create(PurviewDataMapApi.withApiVersion(
+                trimTrailingSlash(request.getEndpoint()) + "/"
+                        + trimSlashes(request.getAtlasBasePath()) + "/" + TYPE_DEFS_PATH,
+                request));
     }
 
     private String formatBodyExcerpt(String body) {

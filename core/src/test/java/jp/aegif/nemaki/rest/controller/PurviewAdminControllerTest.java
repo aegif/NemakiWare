@@ -98,7 +98,12 @@ public class PurviewAdminControllerTest {
                 incrementalSyncService, archiveReconciliationService, cloudMetadataReconciliationService, containmentReconciliationService, typeReconciliationService,
                 deleteResolutionService, jobStateService,
                 cursorStateService, stateOverviewService, deadLetterStateService, deadLetterRetryService,
-                cloudSyncLineageService);
+                cloudSyncLineageService,
+                // 増分 B's backfill and reconciliation: mocked, because these tests are about
+                // the controller's authorisation and response shape, not the services'.
+                mock(jp.aegif.nemaki.rest.purview.lineage.LineageFolderCompanionBackfill.class),
+                mock(jp.aegif.nemaki.rest.purview.lineage
+                        .LineageCatalogReconciliationService.class));
     }
 
     @Test
@@ -492,6 +497,99 @@ public class PurviewAdminControllerTest {
         assertEquals("token-100", response.getBody().get("cursor"));
         assertEquals("changeToken", response.getBody().get("cursorKind"));
         assertEquals("2026-03-20T04:00:00Z", response.getBody().get("lastRunAt"));
+    }
+
+    /**
+     * The cloud-metadata cursor is the snapshot blob, and its old shape carried raw drive URLs —
+     * query string, sharing tokens and all. Stored cursors scrub themselves on the next
+     * successful sync; this pins that the admin API never serves the stored residue meanwhile.
+     */
+    @Test
+    void getCursorState_sanitizesCloudMetadataSnapshotCursor() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        CallContext callContext = mock(CallContext.class);
+        when(callContext.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(request.getAttribute("CallContext")).thenReturn(callContext);
+        controller.setHttpRequest(request);
+
+        PurviewCursorState cursorState = new PurviewCursorState(
+                "bedroom",
+                "cloud-metadata-snapshot",
+                "doc-1|google|file-1|https://drive.example/d?authkey=SECRET|2026-03-20",
+                "snapshot",
+                "2026-03-20T04:00:00Z",
+                "2026-03-20T04:00:00Z",
+                "",
+                "",
+                0,
+                0);
+        when(cursorStateService.getCursorState("bedroom", "cloud-metadata-snapshot"))
+                .thenReturn(cursorState);
+
+        ResponseEntity<Map<String, Object>> response =
+                controller.getCursorState("bedroom", "cloud-metadata-snapshot");
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("doc-1|google|file-1||2026-03-20", response.getBody().get("cursor"));
+        assertFalse(String.valueOf(response.getBody().get("cursor")).contains("SECRET"));
+    }
+
+    /**
+     * GET /state is the response the admin UI renders in full — the single-cursor endpoint was
+     * sanitized while this one leaked, twice. Every SECRET below must be gone from the overview.
+     */
+    @Test
+    void getState_sanitizesCloudMetadataCursorsInTheOverview() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        CallContext callContext = mock(CallContext.class);
+        when(callContext.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(request.getAttribute("CallContext")).thenReturn(callContext);
+        controller.setHttpRequest(request);
+
+        PurviewStateOverview overview = new PurviewStateOverview(
+                "NemakiWare",
+                new PurviewSchemaState("NemakiWare", "", "", "", "", ""),
+                java.util.List.of(),
+                java.util.List.of(new PurviewCursorState(
+                        "bedroom", "cloud-metadata-snapshot",
+                        "doc-1|google|file-1|https://drive.example/d?authkey=SECRET|2026-03-20",
+                        "snapshot", "2026-03-20T04:00:00Z", "2026-03-20T04:00:00Z", "", "", 0, 0)),
+                java.util.List.of(),
+                java.util.List.of(),
+                java.util.List.of());
+        when(schemaPlannerService.getCurrentSchemaState())
+                .thenReturn(new PurviewSchemaState("NemakiWare", "", "", "", "", ""));
+        when(stateOverviewService.getStateOverview("NemakiWare")).thenReturn(overview);
+
+        ResponseEntity<Map<String, Object>> response = controller.getState();
+
+        String body = String.valueOf(response.getBody());
+        assertFalse(body.contains("SECRET"), body);
+        assertFalse(body.contains("authkey"), body);
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> cursors =
+                (java.util.List<Map<String, Object>>) response.getBody().get("cursors");
+        assertEquals("doc-1|google|file-1||2026-03-20", cursors.get(0).get("cursor"));
+    }
+
+    /** Other streams' cursors (change tokens, timestamps) pass through untouched. */
+    @Test
+    void getCursorState_leavesOtherStreamCursorsAlone() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        CallContext callContext = mock(CallContext.class);
+        when(callContext.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(request.getAttribute("CallContext")).thenReturn(callContext);
+        controller.setHttpRequest(request);
+
+        PurviewCursorState cursorState = new PurviewCursorState(
+                "bedroom", "archive-snapshot", "arch-1|a|b|c|d", "snapshot",
+                "2026-03-20T04:00:00Z", "2026-03-20T04:00:00Z", "", "", 0, 0);
+        when(cursorStateService.getCursorState("bedroom", "archive-snapshot"))
+                .thenReturn(cursorState);
+
+        ResponseEntity<Map<String, Object>> response =
+                controller.getCursorState("bedroom", "archive-snapshot");
+        assertEquals("arch-1|a|b|c|d", response.getBody().get("cursor"));
     }
 
     @Test

@@ -127,7 +127,7 @@ services:
       # Other ${VAR:-} fallbacks remain only for optional features (cloud auth,
       # OIDC, SAML, LDAP) where empty / disabled is the safe default.
       # When DIRECTORY_SYNC_ENABLED=true, LDAP_BIND_PASSWORD must be supplied.
-      - CATALINA_OPTS=-Xms1g -Xmx3g -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Dlog4j.configuration=file:/usr/local/tomcat/conf/log4j.properties -Ddb.couchdb.auth.enabled=true -Ddb.couchdb.auth.username=${COUCHDB_USER:?COUCHDB_USER must be set} -Ddb.couchdb.auth.password=${COUCHDB_PASSWORD:?COUCHDB_PASSWORD must be set} -Dsolr.host=solr -Dsolr.port=8983 -Dsolr.protocol=http -Dcloud.auth.google.enabled=${CLOUD_AUTH_GOOGLE_ENABLED:-false} -Dcloud.auth.google.clientId=${CLOUD_AUTH_GOOGLE_CLIENT_ID:-} -Dcloud.auth.microsoft.enabled=${CLOUD_AUTH_MICROSOFT_ENABLED:-false} -Dcloud.auth.microsoft.clientId=${CLOUD_AUTH_MICROSOFT_CLIENT_ID:-} -Dcloud.auth.microsoft.tenantId=${CLOUD_AUTH_MICROSOFT_TENANT_ID:-} -Dcloud.drive.google.enabled=${CLOUD_DRIVE_GOOGLE_ENABLED:-false} -Dcloud.drive.microsoft.enabled=${CLOUD_DRIVE_MICROSOFT_ENABLED:-false} -Dsso.oidc.enabled=${SSO_OIDC_ENABLED:-false} -Dsso.saml.enabled=${SSO_SAML_ENABLED:-false} -Doidc.enabled=${OIDC_ENABLED:-false} -Doidc.issuer=${OIDC_ISSUER:-http://keycloak:8080/realms/nemakiware} -Doidc.clientId=${OIDC_CLIENT_ID:-nemakiware-ui} -Ddirectory.sync.enabled=${DIRECTORY_SYNC_ENABLED:-false} -Ddirectory.sync.ldap.url=${LDAP_URL:-ldap://openldap:389} -Ddirectory.sync.ldap.base.dn=${LDAP_BASE_DN:-dc=nemakiware,dc=example,dc=com} -Ddirectory.sync.ldap.bind.dn=${LDAP_BIND_DN:-cn=admin,dc=nemakiware,dc=example,dc=com} -Ddirectory.sync.ldap.bind.password=${LDAP_BIND_PASSWORD:-} -Djdk.httpclient.allowRestrictedHeaders=host
+      - CATALINA_OPTS=-Xms1g -Xmx3g -XX:+DisableExplicitGC -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Ddb.couchdb.auth.enabled=true -Ddb.couchdb.auth.username=${COUCHDB_USER:?COUCHDB_USER must be set} -Ddb.couchdb.auth.password=${COUCHDB_PASSWORD:?COUCHDB_PASSWORD must be set} -Dsolr.host=solr -Dsolr.port=8983 -Dsolr.protocol=http -Dcloud.auth.google.enabled=${CLOUD_AUTH_GOOGLE_ENABLED:-false} -Dcloud.auth.google.clientId=${CLOUD_AUTH_GOOGLE_CLIENT_ID:-} -Dcloud.auth.microsoft.enabled=${CLOUD_AUTH_MICROSOFT_ENABLED:-false} -Dcloud.auth.microsoft.clientId=${CLOUD_AUTH_MICROSOFT_CLIENT_ID:-} -Dcloud.auth.microsoft.tenantId=${CLOUD_AUTH_MICROSOFT_TENANT_ID:-} -Dcloud.drive.google.enabled=${CLOUD_DRIVE_GOOGLE_ENABLED:-false} -Dcloud.drive.microsoft.enabled=${CLOUD_DRIVE_MICROSOFT_ENABLED:-false} -Dsso.oidc.enabled=${SSO_OIDC_ENABLED:-false} -Dsso.saml.enabled=${SSO_SAML_ENABLED:-false} -Doidc.enabled=${OIDC_ENABLED:-false} -Doidc.issuer=${OIDC_ISSUER:-http://keycloak:8080/realms/nemakiware} -Doidc.clientId=${OIDC_CLIENT_ID:-nemakiware-ui} -Ddirectory.sync.enabled=${DIRECTORY_SYNC_ENABLED:-false} -Ddirectory.sync.ldap.url=${LDAP_URL:-ldap://openldap:389} -Ddirectory.sync.ldap.base.dn=${LDAP_BASE_DN:-dc=nemakiware,dc=example,dc=com} -Ddirectory.sync.ldap.bind.dn=${LDAP_BIND_DN:-cn=admin,dc=nemakiware,dc=example,dc=com} -Ddirectory.sync.ldap.bind.password=${LDAP_BIND_PASSWORD:-} -Dpatch.testuser.enabled=${PATCH_TESTUSER_ENABLED:-false} -Djdk.httpclient.allowRestrictedHeaders=host
     env_file:
       - path: ./secrets/microsoft-entra.env
         required: false
@@ -139,7 +139,11 @@ services:
       - ./secrets:/usr/local/tomcat/secrets:ro
     restart: on-failure
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/core"]
+      # Readiness, not liveness: /core answers as soon as the webapp is deployed, but the first
+      # CMIS call still waits ~10s for the type cache, and concurrent requests arriving in that
+      # window were measured queueing 8.3s behind it. /rest/all/readiness builds the cache and
+      # returns 503 until it has, so an orchestrator does not route to a cold instance.
+      test: ["CMD", "curl", "-f", "http://localhost:8080/core/rest/all/readiness"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -159,18 +163,25 @@ services:
   # — but note that Solr schema uses knn_vector_1024 so dimension
   # change requires schema migration + full RAG reindex.
   tei:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
-    platform: linux/amd64  # Required for Apple Silicon (Rosetta emulation)
+    # Default: the official linux/amd64 CPU image (runs under emulation on Apple
+    # Silicon). On ARM64 hosts, build a native image once with
+    # docker/tei/build-arm64.sh and run with:
+    #   NEMAKI_TEI_IMAGE=nemakiware-tei:1.7.4-arm64-ort NEMAKI_TEI_PLATFORM=linux/arm64
+    # to drop the qemu emulation. Both expose the same native TEI /embed API.
+    image: ${NEMAKI_TEI_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:cpu-1.6}
+    platform: ${NEMAKI_TEI_PLATFORM:-linux/amd64}
     profiles:
       - rag
     ports:
-      - "8081:80"
+      # Dev/eval: bind to loopback only (embedding service, no auth).
+      - "127.0.0.1:8081:80"
     volumes:
       - tei_cache:/data
     deploy:
       resources:
         limits:
-          memory: 4g
+          # e5-large ONNX warmup peaks ~7 GiB; 8g avoids OOM (exit 137).
+          memory: 8g
         reservations:
           memory: 2g
     environment:

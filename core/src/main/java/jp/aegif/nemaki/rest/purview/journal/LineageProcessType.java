@@ -78,5 +78,28 @@ public enum LineageProcessType {
     MAIL_MESSAGE_IMPORT,
 
     /** Mail attachment import (message_context archetype). Journal-owned. */
-    MAIL_ATTACHMENT_IMPORT;
+    MAIL_ATTACHMENT_IMPORT,
+
+    /**
+     * Connector ingest whose source archetype is unknown.
+     *
+     * <p>v1 classified this as {@code IMPORT_UPLOADED}, which mislabels it: an unclassified
+     * connector ingest is not a user upload, and the two have different shapes (an external
+     * asset becoming a document, versus an upload artifact becoming created content). v2 names
+     * it what it is; the v1 eventKey keeps the old label through
+     * {@code LineageFact.LegacyV1Projection} until the write flip.
+     */
+    GENERIC_EXTERNAL_INGEST,
+
+    /**
+     * Chat message import (chat_context archetype, non-attachment).
+     *
+     * <p>v1 never had this constant, and its {@code CHAT_CONTEXT} classification is inverted —
+     * a real attachment became the generic {@code EXTERNAL_ATTACHMENT_IMPORT} and a
+     * non-attachment message became {@code CHAT_ATTACHMENT_IMPORT}, the opposite of the
+     * {@code MESSAGE_CONTEXT} pattern (v2.3.13 confirmed bug 1). v2 classifies correctly;
+     * the v1 eventKey keeps the historical inverted labels through
+     * {@code LineageFact.LegacyV1Projection} until the write flip.
+     */
+    CHAT_MESSAGE_IMPORT;
 }

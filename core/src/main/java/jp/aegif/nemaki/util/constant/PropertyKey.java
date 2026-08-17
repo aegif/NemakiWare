@@ -448,4 +448,21 @@ public interface PropertyKey {
 	final String CLOUD_DIRECTORY_SYNC_WINDOW_SIZE = "cloud.directory.sync.window.size";
 	final String CLOUD_DIRECTORY_SYNC_GOOGLE_ADMIN_EMAIL = "cloud.directory.sync.google.adminEmail";
 	final String CLOUD_DIRECTORY_SYNC_THREAD_POOL_SIZE = "cloud.directory.sync.threadPoolSize";
+
+	/**
+	 * Seed the QA fixture account ({@code testuser} / {@code testgroup}) into every repository.
+	 *
+	 * <p><b>Default false.</b> Absent means false: {@code PropertyManager.readBoolean} maps a
+	 * missing key to {@code Boolean.valueOf(null)}, so an operator who never heard of this key
+	 * does not get the fixture.
+	 */
+	final String PATCH_TESTUSER_ENABLED = "patch.testuser.enabled";
+
+	// ACL-epoch fencing production wiring (design §11, increment 12).
+	// DEFAULT FALSE: off means bit-identical pre-epoch behavior. The flip is a per-deployment
+	// operational step taken AFTER the full reindex + initial-epoch migration (verdict COMPLETE
+	// or COMPLETE_EXCEPT_ORPHANS).
+	final String ACL_EPOCH_WIRING_ENABLED = "acl.epoch.wiring.enabled";
+	final String ACL_EPOCH_SCAN_INTERVAL_SECONDS = "acl.epoch.scan.intervalSeconds";
+	final String ACL_EPOCH_SCAN_MAX_DOCS_PER_PASS = "acl.epoch.scan.maxDocsPerPass";
 }

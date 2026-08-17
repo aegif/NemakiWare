@@ -66,14 +66,6 @@ public class CouchVersionSeries extends CouchNodeBase{
 		this.versionSeriesCheckedOutId = versionSeriesCheckedOutId;
 	}
 
-	@Override
-	protected boolean isExplicitField(String fieldName) {
-		return super.isExplicitField(fieldName) ||
-		       "versionSeriesCheckedOut".equals(fieldName) ||
-		       "versionSeriesCheckedOutBy".equals(fieldName) ||
-		       "versionSeriesCheckedOutId".equals(fieldName);
-	}
-
 	public VersionSeries convert(){
 		VersionSeries vs = new VersionSeries(super.convert());
 		vs.setVersionSeriesCheckedOut(isVersionSeriesCheckedOut());

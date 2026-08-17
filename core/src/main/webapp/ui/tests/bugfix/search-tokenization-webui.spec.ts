@@ -22,7 +22,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { searchPageSubmitButton, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 
@@ -287,7 +287,7 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
 
     // Navigate directly to search page via URL
     await page.goto('http://localhost:8080/core/ui/index.html#/search');
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
     await waitForUiStable(page);
 
     // Find search input
@@ -303,7 +303,9 @@ test.describe('Bug Fix: Search Tokenization Issue (WebUI)', () => {
     console.log(`[TEST] Search term entered: ${UNIQUE_SEARCH_TERM}`);
 
     // Execute search
-    const searchButton = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")');
+    // The page-specific hook: `button:has-text("検索")` also matches link-styled buttons in
+    // the result rows, which React replaces as rows re-render.
+    const searchButton = searchPageSubmitButton(page);
     if (await searchButton.count() > 0) {
       await searchButton.first().click(isMobile ? { force: true } : {});
     } else {

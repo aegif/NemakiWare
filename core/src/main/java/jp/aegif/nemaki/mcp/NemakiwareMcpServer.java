@@ -10,8 +10,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * NemakiWare MCP Server implementation.
@@ -105,7 +105,7 @@ public class NemakiwareMcpServer {
             tool.put("description", def.getDescription());
             try {
                 tool.put("inputSchema", objectMapper.readValue(def.getInputSchema(), Map.class));
-            } catch (JsonProcessingException e) {
+            } catch (JacksonException e) {
                 log.error("Failed to parse input schema for tool {}: {}", def.getName(), e.getMessage());
                 tool.put("inputSchema", Map.of("type", "object"));
             }

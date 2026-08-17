@@ -1,9 +1,17 @@
+# NOTE on expiry: specify timeToLiveSeconds ONLY.
+#
+# CacheService.buildExpiry prefers timeToIdleSeconds when both are present, and ehcache's
+# TimeToIdleExpiryPolicy resets the deadline on every read. An entry that keeps being read
+# therefore NEVER expires. That matters because cache eviction is JVM-local with no
+# cross-replica invalidation: on a replica that did not perform an ACL or password change,
+# a hot entry would hold the stale authorization decision forever, not for an hour.
+# With TTL only, the stale window on such a replica is bounded by this value.
+# See docs/design/v3.3-release-blockers.md D2 and docs/MULTI-REPLICA-DEPLOYMENT.md.
 default:
   cacheEnabled: true
   maxElementsInMemory: 10000
   eternal: false
   timeToLiveSeconds: 3600
-  timeToIdleSeconds: 3600
 
 configCache:
   eternal: true

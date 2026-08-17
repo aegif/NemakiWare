@@ -25,13 +25,15 @@ import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.SolrIndexMaintenanceService;
 import jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
+import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
+import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Folder;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.solr.client.solrj.SolrClient;
-import org.apache.solr.client.solrj.SolrQuery;
+import org.apache.solr.client.solrj.request.SolrQuery;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.client.solrj.response.UpdateResponse;
 import org.apache.solr.client.solrj.util.ClientUtils;
@@ -67,9 +69,34 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
     /** Commit within milliseconds for batch operations */
     private static final int BATCH_COMMIT_WITHIN_MS = 5000;
 
+    /**
+     * Below this many already-indexed objects the wipe guard does not apply.
+     *
+     * <p>A repository that holds almost nothing has almost nothing to lose, and a first-ever
+     * reindex of a fresh repository legitimately starts from an empty index. The guard exists to
+     * stop a catastrophic wipe, not to police small numbers.
+     */
+    private static final int ENUMERATION_GUARD_FLOOR = 20;
+
+    /**
+     * How much smaller than the live index the enumeration may be before it is treated as broken.
+     *
+     * <p>Deliberately generous: the guard must fire on "found 1 of 164" (the reproduced failure)
+     * without firing on an operator who genuinely deleted most of a repository and is rebuilding.
+     * A tenth is far outside what ordinary deletion produces, because deletions already remove
+     * their own index entries as they happen.
+     */
+    private static final int ENUMERATION_GUARD_FACTOR = 10;
+
     private ContentService contentService;
     private SolrUtil solrUtil;
     private RepositoryInfoMap repositoryInfoMap;
+    /** Needed for existsStrict: the confirmation must be able to fail rather than guess. */
+    private CloudantClientPool connectorPool;
+
+    public void setConnectorPool(CloudantClientPool connectorPool) {
+        this.connectorPool = connectorPool;
+    }
 
     private final Map<String, ReindexStatus> reindexStatuses = new ConcurrentHashMap<>();
     private final Map<String, AtomicBoolean> cancelFlags = new ConcurrentHashMap<>();
@@ -138,6 +165,65 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 countDocumentsRecursive(repositoryId, rootFolder.getId(), totalCount);
                 status.setTotalDocuments(totalCount.get());
 
+                // ── Refuse to destroy an index we cannot rebuild ────────────────────────────
+                // The enumeration below CANNOT tell "this folder has no children" from "the
+                // children could not be read": ContentDaoServiceImpl.getChildren catches and
+                // returns an empty list, and countDocumentsRecursive swallows too. Propagating
+                // the exception would not help either — a CouchDB view whose map function fails
+                // answers HTTP 200 with zero rows, so there is no exception to propagate. That
+                // was reproduced: with the `children` view returning empty, a full reindex of a
+                // 164-object repository reported totalDocuments=1, indexedCount=1, errorCount=0,
+                // status=completed, and left one document in Solr. The data was intact in
+                // CouchDB; only the search index was destroyed, and nothing said so.
+                //
+                // The only thing that catches it is a yardstick the same failure cannot silence:
+                // what the index ALREADY holds. Finding almost nothing to re-index, while about
+                // to delete a great deal, is not a reindex — it is a wipe.
+                long alreadyIndexed = countIndexedCmisObjects(repositoryId);
+                if (alreadyIndexed < 0) {
+                    status.setStatus("error");
+                    status.setErrorMessage("Refusing to reindex: Solr could not be queried for the"
+                            + " current object count, so there is no way to tell a working"
+                            + " enumeration from a silently empty one. Nothing was cleared.");
+                    status.setEndTime(System.currentTimeMillis());
+                    return;
+                }
+                if (alreadyIndexed >= ENUMERATION_GUARD_FLOOR
+                        && totalCount.get() * ENUMERATION_GUARD_FACTOR < alreadyIndexed) {
+                    String msg = "Refusing to reindex: the folder walk found only "
+                            + totalCount.get() + " object(s) while the index currently holds "
+                            + alreadyIndexed + ". That gap means the enumeration is not seeing the"
+                            + " repository (a CouchDB view that is rebuilding answers with zero"
+                            + " rows and no error), and clearing the index now would destroy it"
+                            + " with nothing to put back. Nothing was cleared. If the repository"
+                            + " really did shrink this much, clear the index explicitly with"
+                            + " POST /api/v1/cmis/repositories/" + repositoryId
+                            + "/search-engine/clear and then reindex.";
+                    log.error(msg);
+                    status.setStatus("error");
+                    status.setErrorMessage(msg);
+                    status.setEndTime(System.currentTimeMillis());
+                    return;
+                }
+
+                // Say what is about to be destroyed and what is expected to replace it, on the
+                // way THROUGH the guard as well as on refusal.
+                //
+                // The guard only refuses at a 10x gap and only above 20 indexed objects, so it
+                // passes cases that are still worth seeing: a 90% loss clears it (an enumeration
+                // that sees 11 of 100 satisfies 11*10 > 100), and below 20 objects nothing is
+                // checked at all. Tightening the thresholds was considered and declined — it would
+                // block legitimate bulk deletions and push operators toward the explicit
+                // /search-engine/clear, which has no guard whatsoever. Logging both numbers costs
+                // nothing and makes an unexpected shrink visible after the fact, which is what the
+                // silent case lacked.
+                log.info("Reindex of " + repositoryId + " is about to clear the index: it currently"
+                        + " holds " + alreadyIndexed + " CMIS object(s) and the folder walk found "
+                        + totalCount.get() + " to re-index. A large drop here is worth"
+                        + " investigating even though the guard allowed it (guard refuses only"
+                        + " below a " + ENUMERATION_GUARD_FACTOR + "x gap above "
+                        + ENUMERATION_GUARD_FLOOR + " indexed objects).");
+
                 // Clear existing index
                 clearIndex(repositoryId);
 
@@ -170,7 +256,15 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 status.setEndTime(System.currentTimeMillis());
 
                 log.info("Full reindex completed for repository: " + repositoryId + 
-                    ", indexed: " + indexedCount.get() + ", errors: " + errorCount.get());
+                    ", indexed: " + indexedCount.get() + ", errors: " + errorCount.get()
+                    + " | where the time went: enumeration=" + status.getEnumerationMs() + "ms"
+                    + " indexing=" + status.getSolrWriteMs() + "ms"
+                    + " [solrRtg=" + status.getSolrRtgMs() + "ms"
+                    + " incarnation=" + status.getIncarnationMs() + "ms"
+                    + " buildDoc=" + status.getBuildDocMs() + "ms"
+                    + " solrAdd=" + status.getSolrAddMs() + "ms]"
+                    + " verification=" + status.getVerificationMs() + "ms"
+                    + " (wall=" + (System.currentTimeMillis() - status.getStartTime()) + "ms)");
                 
                 // Run health check after completion to verify index integrity
                 if (!cancelFlags.get(repositoryId).get()) {
@@ -355,7 +449,9 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 status.setCurrentFolder(folder.getName());
             }
 
+            long enumStart = System.nanoTime();
             List<Content> children = contentService.getChildren(repositoryId, folderId);
+            status.addEnumerationMs((System.nanoTime() - enumStart) / 1_000_000L);
             
             // Collect documents for batch indexing
             List<Content> batchBuffer = new ArrayList<>();
@@ -420,23 +516,47 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         }
         
         try {
-            int successCount = solrUtil.indexDocumentsBatch(repositoryId, batch, BATCH_COMMIT_WITHIN_MS, skipRAGIndexing);
+            long writeStart = System.nanoTime();
+            jp.aegif.nemaki.cmis.aspect.query.solr.SolrUtil.BatchOutcome outcome =
+                    solrUtil.indexDocumentsBatch(repositoryId, batch, BATCH_COMMIT_WITHIN_MS, skipRAGIndexing);
+            // The whole indexing phase. It DID turn out to be the hot one (~90% of a full
+            // reindex), so indexDocumentsBatch now reports its own split and the four parts are
+            // folded in below. They sum to just under this total; the remainder is loop overhead.
+            status.addSolrWriteMs((System.nanoTime() - writeStart) / 1_000_000L);
+            status.addSolrRtgMs(outcome.solrRtgNs / 1_000_000L);
+            status.addIncarnationMs(outcome.incarnationNs / 1_000_000L);
+            status.addBuildDocMs(outcome.buildDocNs / 1_000_000L);
+            status.addSolrAddMs(outcome.solrAddNs / 1_000_000L);
+            int successCount = outcome.written;
             indexedCount.addAndGet(successCount);
             status.setIndexedCount(indexedCount.get());
-            
-            // Track errors for documents that failed during document creation
-            int failedCount = batch.size() - successCount;
+
+            // Documents the content fence skipped because Solr already holds a strictly newer
+            // generation are NOT failures — leaving them alone is the correct outcome. They used
+            // to land in the error total purely because it was computed by subtraction, which put
+            // clean no-ops into the reindex error count.
+            int failedCount = batch.size() - successCount - outcome.skippedStale;
             if (failedCount > 0) {
                 errorCount.addAndGet(failedCount);
                 if (errors.size() < 100) {
-                    errors.add("Batch indexing: " + failedCount + " documents failed in batch of " + batch.size());
+                    errors.add("Batch indexing: " + failedCount + " documents failed in batch of "
+                            + batch.size()
+                            + (outcome.fenceBlocked > 0
+                                    ? " (" + outcome.fenceBlocked + " blocked by the content fence"
+                                            + " and enqueued for reconciliation)"
+                                    : ""));
                 }
             }
-            
-            log.info("Batch indexed " + successCount + "/" + batch.size() + " documents, total: " + indexedCount.get());
+
+            log.info("Batch indexed " + successCount + "/" + batch.size() + " documents"
+                    + (outcome.skippedStale > 0 ? ", " + outcome.skippedStale + " already newer" : "")
+                    + (outcome.fenceBlocked > 0 ? ", " + outcome.fenceBlocked + " fence-blocked" : "")
+                    + ", total: " + indexedCount.get());
             
             // Verify batch indexing and re-index any silently dropped documents
+            long verifyStart = System.nanoTime();
             verifyAndReindexMissing(repositoryId, batch, indexedCount, errorCount, errors, status, silentDropCount, reindexedSuccessCount, skipRAGIndexing);
+            status.addVerificationMs((System.nanoTime() - verifyStart) / 1_000_000L);
             
         } catch (Exception e) {
             // Fall back to individual indexing on batch failure
@@ -530,11 +650,33 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 return;
             }
             
-            SolrQuery query = new SolrQuery(queryString);
-            query.setRows(0); // We only need the count
-            QueryResponse response = solrClient.query(query);
-            long foundCount = response.getResults().getNumFound();
-            
+            // A REALTIME GET, not a search. The batch was submitted with commitWithin, so a
+            // searcher cannot see it yet — and during a full reindex the index was just cleared,
+            // so there is no older visible copy to find either. A search here therefore reported
+            // essentially the WHOLE batch as "silently dropped" and re-indexed every document
+            // individually, one commitWithin=1000 write at a time. Every document was built twice
+            // (including its CouchDB attachment reads) and the constant soft commits made it worse
+            // as the index grew: reindex throughput decayed from 10.3 to 2.6 documents/second
+            // between 26k and 98k objects.
+            //
+            // /get reads the transaction log, so it sees uncommitted documents and answers the
+            // question that was actually being asked: did Solr accept this document?
+            List<String> batchIds = new ArrayList<>(batch.size());
+            for (Content content : batch) {
+                batchIds.add(content.getId());
+            }
+            java.util.Set<String> existingIds = new java.util.HashSet<>();
+            for (org.apache.solr.common.SolrDocument doc : solrClient.getById(batchIds)) {
+                Object id = doc.getFieldValue("object_id");
+                if (id == null) {
+                    id = doc.getFieldValue("id");
+                }
+                if (id != null) {
+                    existingIds.add(id.toString());
+                }
+            }
+            long foundCount = existingIds.size();
+
             if (foundCount < batch.size()) {
                 // Some documents were silently dropped - identify and re-index them
                 int missingCount = batch.size() - (int) foundCount;
@@ -543,19 +685,6 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 // Track silent drop count
                 silentDropCount.addAndGet(missingCount);
                 status.setSilentDropCount(silentDropCount.get());
-                
-                // Get the IDs that exist in Solr
-                query.setRows(batch.size());
-                query.setFields("object_id");
-                response = solrClient.query(query);
-                
-                java.util.Set<String> existingIds = new java.util.HashSet<>();
-                for (org.apache.solr.common.SolrDocument doc : response.getResults()) {
-                    Object objectId = doc.getFieldValue("object_id");
-                    if (objectId != null) {
-                        existingIds.add(objectId.toString());
-                    }
-                }
                 
                 // Re-index missing documents individually
                 int batchReindexedCount = 0;
@@ -960,6 +1089,147 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         } catch (Exception e) {
             log.error("Error deleting document from index: " + objectId, e);
             return false;
+        }
+    }
+
+    /**
+     * Delete index entries whose object no longer exists in CouchDB.
+     *
+     * <p>These accumulate because removing a document from the index is asynchronous with an
+     * IN-MEMORY retry: {@code SolrUtil.deleteDocument} hands the delete to an executor and, on
+     * failure, schedules a bounded retry that lives only in this JVM. The CouchDB delete has
+     * already committed by then, so if the process dies inside that window — or the retries run
+     * out — the document is gone from the repository and still answering queries. Three such
+     * entries were found in {@code bedroom}: deleted private working copies that a CMIS query
+     * still returned, which is how the TCK's Query Smoke Test started failing.
+     *
+     * <p>{@code checkIndexHealth} could already SEE them ({@code orphanedInSolr}); there was no
+     * way to remove them short of a full reindex, which at 100k documents is a ten-hour operation.
+     *
+     * <p><b>Guarded exactly like a full reindex.</b> "In Solr but not in CouchDB" is computed from
+     * a folder-tree walk, and that walk cannot tell an empty repository from an unreadable one —
+     * a CouchDB view being rebuilt answers HTTP 200 with zero rows. Without the guard, running
+     * this against a rebuilding view would classify EVERY document as orphaned and delete the
+     * whole index. That is the same failure the reindex guard exists to stop, wearing a different
+     * hat.
+     *
+     * @return the number of entries removed, or -1 if the operation was refused
+     */
+    @Override
+    public long purgeOrphanedIndexEntries(String repositoryId) {
+        long alreadyIndexed = countIndexedCmisObjects(repositoryId);
+        if (alreadyIndexed < 0) {
+            log.error("Refusing to purge orphans in " + repositoryId
+                    + ": Solr could not be queried for the current object count");
+            return -1;
+        }
+        IndexDiscrepancyResult discrepancies = getIndexDiscrepancies(repositoryId);
+        if (discrepancies == null || discrepancies.getOrphanedInSolr() == null) {
+            log.error("Refusing to purge orphans in " + repositoryId
+                    + ": the discrepancy check did not produce a result");
+            return -1;
+        }
+        List<DiscrepancyDocumentInfo> orphans = discrepancies.getOrphanedInSolr();
+        long survivors = alreadyIndexed - orphans.size();
+        if (alreadyIndexed >= ENUMERATION_GUARD_FLOOR
+                && survivors * ENUMERATION_GUARD_FACTOR < alreadyIndexed) {
+            log.error("Refusing to purge orphans in " + repositoryId + ": " + orphans.size()
+                    + " of " + alreadyIndexed + " indexed objects look orphaned, which is not a"
+                    + " handful of stragglers — it is what an unreadable repository looks like."
+                    + " Nothing was deleted.");
+            return -1;
+        }
+        if (orphans.isEmpty()) {
+            return 0;
+        }
+        try {
+            SolrClient solrClient = solrUtil.getSolrClient();
+            if (solrClient == null) {
+                return -1;
+            }
+            // CONFIRM EACH ONE DIRECTLY, AND ONLY ON A 404. getIndexDiscrepancies builds its
+            // "exists in CouchDB" set by walking the folder tree, and the `children` view only
+            // emits documents whose latestVersion is true — so historical versions and live
+            // private working copies are indexed but absent from that walk. "Orphaned" from that
+            // routine means "not in the tree", which is a weaker statement than "not in the
+            // database".
+            //
+            // The confirmation must distinguish absent from unreadable. contentService.getContent
+            // and CloudantClientWrapper.get both answer null for a document that could not be
+            // read (they catch everything), so confirming with either would make every version
+            // and working copy look absent during a CouchDB outage — the same "failure means no"
+            // that this whole series of fixes exists to remove, reintroduced in the guard against
+            // it. existsStrict throws instead, and a throw aborts the entire purge.
+            List<String> ids = new ArrayList<>();
+            int stillAlive = 0;
+            CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+            if (client == null) {
+                log.error("Refusing to purge orphans in " + repositoryId
+                        + ": no CouchDB client, so no candidate can be confirmed");
+                return -1;
+            }
+            for (DiscrepancyDocumentInfo info : orphans) {
+                String id = info.getObjectId();
+                if (id == null) {
+                    continue;
+                }
+                if (client.existsStrict(id)) {
+                    stillAlive++;
+                    continue;
+                }
+                ids.add(id);
+            }
+            if (stillAlive > 0) {
+                log.info("purge-orphans in " + repositoryId + ": " + stillAlive + " of "
+                        + orphans.size() + " candidates are still present in CouchDB (versions or"
+                        + " working copies that the folder walk does not reach) and were kept.");
+            }
+            if (ids.isEmpty()) {
+                return 0;
+            }
+            solrClient.deleteById(ids);
+            solrClient.commit();
+            log.info("Purged " + ids.size() + " orphaned index entries from " + repositoryId);
+            return ids.size();
+        } catch (Exception e) {
+            log.error("Failed to purge orphaned index entries for " + repositoryId, e);
+            return -1;
+        }
+    }
+
+    /**
+     * How many CMIS objects the index currently holds for this repository, or {@code -1} if Solr
+     * could not answer.
+     *
+     * <p>{@code -doc_type:[* TO *]} is the canonical way this codebase separates CMIS objects from
+     * RAG documents and chunks (the RAG side is the only writer of {@code doc_type}); the same
+     * negative test is used by {@code AclEpochMigrationService}. Counting the whole repository
+     * instead would make the number swing with RAG chunk counts and turn the guard into noise.
+     *
+     * <p>Returns -1 rather than 0 when the query FAILS, so the caller can tell "the index is
+     * empty" from "I do not know" — a guard that reads a failure as an empty index would wave
+     * through exactly the case it exists to stop. An absent client is different and answers 0:
+     * {@code clearIndex} needs that same client and deletes nothing without it, so there is no
+     * index to protect and refusing would only block deployments where Solr is not wired.
+     */
+    private long countIndexedCmisObjects(String repositoryId) {
+        try {
+            SolrClient solrClient = solrUtil.getSolrClient();
+            if (solrClient == null) {
+                // Not "unknown" — nothing to protect. clearIndex needs the same client and
+                // returns false without deleting anything when it is absent, so there is no
+                // index for this guard to save. Refusing here would only block reindexes in
+                // configurations where Solr is not wired at all.
+                return 0;
+            }
+            SolrQuery query = new SolrQuery("repository_id:"
+                    + ClientUtils.escapeQueryChars(repositoryId) + " AND -doc_type:[* TO *]");
+            query.setRows(0);
+            return solrClient.query(query).getResults().getNumFound();
+        } catch (Exception e) {
+            log.error("Could not count indexed objects for repository " + repositoryId
+                    + " — treating it as unknown rather than as an empty index", e);
+            return -1;
         }
     }
 

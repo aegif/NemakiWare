@@ -2,8 +2,9 @@ package jp.aegif.nemaki.dao.impl.couch.delegate;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Shared helper for DAO delegate classes.
@@ -16,16 +17,15 @@ public class DaoHelper {
 	 * This ensures all fields from the object hierarchy are properly serialized.
 	 */
 	public ObjectMapper createConfiguredObjectMapper() {
-		ObjectMapper mapper = new ObjectMapper();
-		mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-
-		mapper.setVisibility(PropertyAccessor.ALL, Visibility.NONE);
-		mapper.setVisibility(PropertyAccessor.SETTER, Visibility.ANY);
-		mapper.setVisibility(PropertyAccessor.CREATOR, Visibility.ANY);
-		mapper.setVisibility(PropertyAccessor.GETTER, Visibility.ANY);
-		mapper.setVisibility(PropertyAccessor.IS_GETTER, Visibility.ANY);
-
-		return mapper;
+		return JsonMapper.builderWithJackson2Defaults()
+				.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+				.changeDefaultVisibility(vc -> vc
+						.withVisibility(PropertyAccessor.ALL, Visibility.NONE)
+						.withVisibility(PropertyAccessor.SETTER, Visibility.ANY)
+						.withVisibility(PropertyAccessor.CREATOR, Visibility.ANY)
+						.withVisibility(PropertyAccessor.GETTER, Visibility.ANY)
+						.withVisibility(PropertyAccessor.IS_GETTER, Visibility.ANY))
+				.build();
 	}
 
 	/**

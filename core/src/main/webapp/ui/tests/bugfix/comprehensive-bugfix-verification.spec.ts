@@ -21,7 +21,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
+import { gotoSearchPage, searchPageSubmitButton, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
 
@@ -188,7 +188,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     // Find and click on the test document
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 
@@ -314,7 +314,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     // Find and open the test document
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('ENV: Test document not found after navigation');
+      test.skip(true, 'ENV: Test document not found after navigation');
       return;
     }
 
@@ -390,7 +390,7 @@ test.describe('Comprehensive Bug Fix Verification (WebUI)', () => {
     // Click on the test document
     const docRow = page.locator('tr').filter({ hasText: testDocName });
     if (await docRow.count() === 0) {
-      test.skip('ENV: Test document not found');
+      test.skip(true, 'ENV: Test document not found');
       return;
     }
 
@@ -604,17 +604,18 @@ test.describe('Search Tokenization Bug Fix Verification', () => {
     const isMobile = testHelper.isMobile(browserName);
 
     // Go to search page
-    await page.locator('.ant-menu-item').filter({ hasText: '検索' }).click();
-    await waitForUiStable(page);
+    await gotoSearchPage(page);
 
     // Enter search term
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"]').first();
-    if (await searchInput.count() === 0) { test.skip('ENV: Search input not found'); return; }
+    if (await searchInput.count() === 0) { test.skip(true, 'ENV: Search input not found'); return; }
 
     await searchInput.fill(EXACT_PHRASE);
 
-    // Execute search
-    const searchBtn = page.locator('button:has-text("検索"), .ant-btn:has-text("Search")').first();
+    // Execute search. The page-specific hook matters: `button:has-text("検索")` also
+    // matches link-styled buttons inside the results table, which React replaces as
+    // rows re-render — clicking one fails with "element was detached from the DOM".
+    const searchBtn = searchPageSubmitButton(page);
     if (await searchBtn.count() > 0) {
       await searchBtn.click(isMobile ? { force: true } : {});
     } else {

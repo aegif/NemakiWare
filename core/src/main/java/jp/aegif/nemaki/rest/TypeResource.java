@@ -1230,6 +1230,10 @@ public class TypeResource extends ResourceBase {
 		existingType.setLocalNameSpace(newTypeDef.getLocalNameSpace());
 		existingType.setDisplayName(newTypeDef.getDisplayName());
 		existingType.setDescription(newTypeDef.getDescription());
+		// The type's own query name was never updated here either, so a type stored with a
+		// null one before this fix stayed unusable in a FROM clause no matter how often it
+		// was edited. parseJson now always produces one, so an update repairs it.
+		existingType.setQueryName(newTypeDef.getQueryName());
 		existingType.setCreatable(newTypeDef.isCreatable());
 		existingType.setQueryable(newTypeDef.isQueryable());
 		existingType.setFulltextIndexed(newTypeDef.isFulltextIndexed());
@@ -1390,10 +1394,19 @@ public class TypeResource extends ResourceBase {
 		
 		// Basic properties
 		tdf.setTypeId(typeId);
-		tdf.setLocalName((String) typeJson.get("localName"));
+		// localName and queryName are both REQUIRED by CMIS, and a caller that omits them
+		// from the JSON used to get a type stored with nulls. The TCK says so in as many
+		// words — "Local name is not set!" and "Type Query Name: null" — for every type the
+		// E2E suite creates through this endpoint, and a null query name also makes the type
+		// unusable in a FROM clause. Default both to the typeId, which is what every built-in
+		// type in this repository does; the XML import path already did.
+		String localName = (String) typeJson.get("localName");
+		tdf.setLocalName(StringUtils.isBlank(localName) ? typeId : localName);
 		tdf.setLocalNameSpace((String) typeJson.get("localNamespace"));
 		tdf.setDisplayName((String) typeJson.get("displayName"));
 		tdf.setDescription((String) typeJson.get("description"));
+		String queryName = (String) typeJson.get("queryName");
+		tdf.setQueryName(StringUtils.isBlank(queryName) ? typeId : queryName);
 		
 		// Parent and base type
 		String baseId = (String) typeJson.get("baseId");
@@ -1788,6 +1801,9 @@ public class TypeResource extends ResourceBase {
 			}
 			tdf.setTypeId(typeId);
 			tdf.setLocalName(typeId);
+			// Same omission as the JSON path: without this the type cannot be named in a
+			// CMIS query at all.
+			tdf.setQueryName(typeId);
 
 			// title
 			String title = getElementValue(type, "title");

@@ -80,7 +80,9 @@ async function uploadFile(folderId: string, fileName: string, content: Buffer | 
   formData.append('propertyValue[1]', fileName);
   formData.append('succinct', 'true');
 
-  const blob = new Blob([content], { type: mimeType });
+  // Buffer is not a BlobPart; hand Blob the bytes it accepts.
+  const blob = new Blob([typeof content === 'string' ? content : new Uint8Array(content)],
+    { type: mimeType });
   formData.append('content', blob, fileName);
 
   const response = await cmisRequest(`${BASE_URL}?objectId=${folderId}`, {
@@ -299,7 +301,7 @@ test.describe('Comprehensive Preview Tests', () => {
     await waitForUiStable(page);
 
     // Check for image preview (img element inside the active tab panel)
-    const imageElement = page.locator('.ant-tabs-tabpane-active img').first();
+    const imageElement = page.locator('.ant-tabs-content-active img').first();
     await expect(imageElement).toBeVisible({ timeout: 30000 });
   });
 
@@ -327,9 +329,9 @@ test.describe('Comprehensive Preview Tests', () => {
 
     // Check for text preview — multiple possible selectors
     // Monaco Editor renders h4 with filename, or pre/code block, or textarea
-    const textHeader = page.locator('.ant-tabs-tabpane-active h4:has-text("テキストサンプル.txt")');
-    const monacoEditor = page.locator('.ant-tabs-tabpane-active .monaco-editor, .ant-tabs-tabpane-active pre, .ant-tabs-tabpane-active code, .ant-tabs-tabpane-active textarea');
-    const textContent = page.locator('.ant-tabs-tabpane-active').filter({ hasText: 'サンプルテキスト' });
+    const textHeader = page.locator('.ant-tabs-content-active h4:has-text("テキストサンプル.txt")');
+    const monacoEditor = page.locator('.ant-tabs-content-active .monaco-editor, .ant-tabs-content-active pre, .ant-tabs-content-active code, .ant-tabs-content-active textarea');
+    const textContent = page.locator('.ant-tabs-content-active').filter({ hasText: 'サンプルテキスト' });
 
     const headerVisible = await textHeader.isVisible({ timeout: 15000 }).catch(() => false);
     const editorVisible = await monacoEditor.first().isVisible().catch(() => false);

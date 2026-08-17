@@ -33,13 +33,17 @@ public class PurviewSchemaPayloadFactory {
                 buildArchiveProcessEntityDef(),
                 buildCloudSyncProcessEntityDef(),
                 buildImportProcessEntityDef(),
-                buildExportProcessEntityDef()));
+                buildExportProcessEntityDef(),
+                buildImportArtifactEntityDef(),
+                buildExportArtifactEntityDef(),
+                buildFolderDatasetEntityDef()));
         payload.put("relationshipDefs", List.of(
                 buildRepositoryContainsFolderRelationshipDef(),
                 buildFolderContainsFolderRelationshipDef(),
                 buildFolderContainsDocumentRelationshipDef(),
                 buildDocumentHasTypeDefinitionRelationshipDef(),
-                buildDocumentHasArchiveRelationshipDef()));
+                buildDocumentHasArchiveRelationshipDef(),
+                buildFolderHasDatasetRelationshipDef()));
         payload.put("businessMetadataDefs", List.of());
         payload.put("classificationDefs", List.of());
         payload.put("enumDefs", List.of());
@@ -86,6 +90,11 @@ public class PurviewSchemaPayloadFactory {
                 attribute("folderPath", "string", true),
                 attribute("versionSeriesId", "string", true),
                 attribute("versionLabel", "string", true),
+                // §2's truncation evidence (v2.3.26). Additive: an attribute the type does
+                // not declare is dropped on arrival, so the companion has to exist here or
+                // the evidence for a shortened value would be the thing that goes missing.
+                attribute("folderPathOriginalSha256", "string", true),
+                attribute("versionLabelOriginalSha256", "string", true),
                 attribute("isLatestVersion", "boolean", true),
                 attribute("lifecycleState", "string", true),
                 attribute("archiveState", "string", true),
@@ -94,7 +103,16 @@ public class PurviewSchemaPayloadFactory {
                 attribute("cloudProvider", "string", true),
                 attribute("externalFileId", "string", true),
                 attribute("cloudFileUrl", "string", true),
-                attribute("cloudLastSyncedAt", "string", true)));
+                attribute("cloudLastSyncedAt", "string", true),
+                // 増分 B (v2.3.31). Content facts and version identity: without the latter,
+                // importing the same external file three times reads as "the same asset became
+                // the same document" three times, and which version moved is unanswerable.
+                // All identifiers, digests and counts — no display value, so no §2 companion.
+                attribute("mimeType", "string", true),
+                attribute("contentLength", "long", true),
+                attribute("versionObjectId", "string", true),
+                attribute("changeToken", "string", true),
+                attribute("contentHash", "string", true)));
         attrs.addAll(customAttrDefs);
         entityDef.put("attributeDefs", attrs);
         return entityDef;
@@ -152,7 +170,23 @@ public class PurviewSchemaPayloadFactory {
         entityDef.put("attributeDefs", List.of(
                 attribute("externalStableKey", "string", false),
                 attribute("sourceSystem", "string", false),
-                attribute("externalPath", "string", true)));
+                attribute("externalPath", "string", true),
+                // 増分 B (v2.3.31). One Atlas type, three kinds, and the kinds diverge:
+                // tenantId on the generic external asset, provider on cloud, storageClass on
+                // cold. Sharing a type constrains what may be declared, not what must be.
+                //
+                // storageClass is NOT sourceSystem: sourceSystem carries the storage adapter
+                // type (what the catalog sync reads from contentRef.type), and GLACIER is a
+                // property of the object within that adapter.
+                attribute("tenantId", "string", true),
+                attribute("provider", "string", true),
+                attribute("storageClass", "string", true),
+                // What the source said about the bytes, so a re-sync can tell "unchanged" from
+                // "changed back". Identifiers and counts; no URL, no path, no credential.
+                attribute("sourceRevision", "string", true),
+                attribute("sourceModifiedAt", "long", true),
+                attribute("sourceContentHash", "string", true),
+                attribute("sourceContentLength", "long", true)));
         return entityDef;
     }
 
@@ -167,7 +201,10 @@ public class PurviewSchemaPayloadFactory {
                 attribute("archiveState", "string", true),
                 attribute("archivedAt", "long", true),
                 attribute("versionSeriesId", "string", true),
-                attribute("versionLabel", "string", true)));
+                attribute("versionLabel", "string", true),
+                // §2's truncation evidence (v2.3.26) — see nemaki_document.
+                attribute("nameOriginalSha256", "string", true),
+                attribute("versionLabelOriginalSha256", "string", true)));
         return entityDef;
     }
 
@@ -223,6 +260,120 @@ public class PurviewSchemaPayloadFactory {
                 attribute("targetDescription", "string", true),
                 attribute("objectCount", "long", true)));
         return entityDef;
+    }
+
+    /**
+     * What was fed into an import — the upload or the source directory (increment B).
+     *
+     * <p>Identity is {@code nemaki://{repo}/imports/{operationId}}: an artifact belongs to one
+     * operation, so the same folder imported twice produces two artifacts and two Processes.
+     * Naming it after the folder instead would make the second import collapse into the first.
+     *
+     * <p><b>No source path or URL attribute, deliberately.</b> Where the bytes came from is a
+     * property of the operation, and {@code nemaki_import_process.sourceDescription} carries it.
+     * Putting it here as well would put an operator-supplied path — the one place §4's sharing
+     * links keep their tokens — behind a second, longer-lived retention rule.
+     * {@code originalFileName} is a leaf name, not a path.
+     *
+     * <p>{@code originalFileName} is the only display value here, so it is the only one carrying
+     * a §2 truncation companion. {@code importMode} and {@code contentHash} are machine values
+     * and a digest; shortening either would name something that does not exist.
+     */
+    private Map<String, Object> buildImportArtifactEntityDef() {
+        Map<String, Object> entityDef = baseTypeDef("nemaki_import_artifact",
+                "Artifact consumed by a NemakiWare import operation");
+        entityDef.put("superTypes", List.of("DataSet"));
+        entityDef.put("attributeDefs", List.of(
+                attribute("importMode", "string", false),
+                attribute("byteLength", "long", true),
+                attribute("contentHash", "string", true),
+                attribute("originalFileName", "string", true),
+                // §2's truncation evidence (v2.3.26) — see nemaki_document.
+                attribute("originalFileNameOriginalSha256", "string", true),
+                // v2.3.58 (additive, optional): where a historical entity records that its
+                // source was destroyed. Without it these types had nowhere to say so, and Atlas
+                // silently drops an undeclared attribute — a tombstone written anyway would be
+                // indistinguishable from a live object, which is worse than no entity at all.
+                // Optional, so every entity already published stays valid.
+                attribute("lifecycleState", "string", true)));
+        return entityDef;
+    }
+
+    /**
+     * What an export produced — the zip or the target directory (increment B).
+     *
+     * <p>Identity is {@code nemaki://{repo}/exports/{operationId}}, for the same reason as the
+     * import artifact: two exports of the same folder are two facts.
+     *
+     * <p><b>No target path or URL attribute</b>, mirroring the import side; the destination is
+     * {@code nemaki_export_process.targetDescription}. {@code name} is the export's display name
+     * and is the only value here under §2's limit.
+     */
+    private Map<String, Object> buildExportArtifactEntityDef() {
+        Map<String, Object> entityDef = baseTypeDef("nemaki_export_artifact",
+                "Artifact produced by a NemakiWare export operation");
+        entityDef.put("superTypes", List.of("DataSet"));
+        entityDef.put("attributeDefs", List.of(
+                attribute("artifactKind", "string", false),
+                attribute("objectCount", "long", true),
+                // name itself is inherited from Asset; only its evidence companion is declared.
+                attribute("nameOriginalSha256", "string", true),
+                // v2.3.58 (additive, optional): where a historical entity records that its
+                // source was destroyed. Without it these types had nowhere to say so, and Atlas
+                // silently drops an undeclared attribute — a tombstone written anyway would be
+                // indistinguishable from a live object, which is worse than no entity at all.
+                // Optional, so every entity already published stays valid.
+                attribute("lifecycleState", "string", true)));
+        return entityDef;
+    }
+
+    /**
+     * The DataSet companion of a folder (増分 B, §3).
+     *
+     * <p>Atlas types {@code Process.inputs} and {@code Process.outputs} as {@code DataSet}, and
+     * {@code nemaki_folder} is not one. Changing its supertype would rewrite every folder entity
+     * already in the catalog, so a folder gets a 1:1 companion instead: the same object, named
+     * for lineage's benefit, created and retired alongside it. It is not a placeholder for a
+     * folder that does not exist — {@code sourceState} says which of those it is.
+     *
+     * <p><b>Never deleted on source deletion.</b> Past lineage points at it, and a Process whose
+     * input has vanished is worse than one whose input is marked {@code PURGED}. Only the
+     * retention path may remove it, and only with no referencing Process left.
+     *
+     * <p>{@code name} is inherited from {@code Asset}; the identity is the qualified name, which
+     * is derived from {@code objectId} and therefore survives a rename and a move.
+     */
+    private Map<String, Object> buildFolderDatasetEntityDef() {
+        Map<String, Object> entityDef = baseTypeDef("nemaki_folder_dataset",
+                "DataSet companion of a NemakiWare folder, for lineage endpoints");
+        entityDef.put("superTypes", List.of("DataSet"));
+        entityDef.put("attributeDefs", List.of(
+                attribute("repositoryId", "string", false),
+                attribute("objectId", "string", false),
+                // Two fields, not one: `active` is what a query filters on, `sourceState` is why.
+                // Collapsing them would make "archived" and "purged" indistinguishable to the
+                // retention rule, which may only remove the second.
+                attribute("active", "boolean", true),
+                attribute("sourceState", "string", true)));
+        return entityDef;
+    }
+
+    /**
+     * The 1:1 tie between a folder and its DataSet companion.
+     *
+     * <p>{@code endDef1} is the folder rather than {@code DataSet}: the companion belongs to
+     * exactly one folder, and naming the concrete type is what stops a second companion from
+     * being attached to the same folder by a retry.
+     */
+    private Map<String, Object> buildFolderHasDatasetRelationshipDef() {
+        Map<String, Object> relationshipDef = baseTypeDef("nemaki_folder_has_dataset",
+                "Links a NemakiWare folder to its DataSet companion");
+        relationshipDef.put("category", "RELATIONSHIP");
+        relationshipDef.put("relationshipCategory", "ASSOCIATION");
+        relationshipDef.put("endDef1", relationshipEnd("nemaki_folder", "folder"));
+        relationshipDef.put("endDef2", relationshipEnd("nemaki_folder_dataset", "folderDataset"));
+        relationshipDef.put("propagateTags", "NONE");
+        return relationshipDef;
     }
 
     private Map<String, Object> buildRepositoryContainsFolderRelationshipDef() {

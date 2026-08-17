@@ -50,7 +50,6 @@ on:
       # code-only PRs (previously they were skipped when no manifest changed).
       - 'core/src/main/java/**'
       - 'common/src/main/java/**'
-      - 'solr/src/main/java/**'
   pull_request:
     # No paths filter on PRs: the gating jobs (credential drift, XML-hardening,
     # exception-expiry, dependency drift, npm audit, bundled-jar) run on EVERY
@@ -74,7 +73,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: core/src/main/webapp/ui/package-lock.json
       - name: Install dependencies (no audit on install)
@@ -119,7 +118,6 @@ jobs:
           mvn clean install -N -DskipTests -q
           mvn clean install -f common/pom.xml -DskipTests -q
           mvn clean install -f cloudant-init/pom.xml -DskipTests -q
-          mvn clean install -f solr/pom.xml -DskipTests -q
       - name: Resolve dependency tree
         run: |
           mvn -f core/pom.xml -Pdevelopment,opencmis-github-packages dependency:tree \
@@ -215,6 +213,18 @@ jobs:
             fail=1
           fi
 
+          # Shipped defaults must not carry a tenant identity or arm a scheduled job.
+          # This shipped in 3.1.0-3.2.8 with the maintainer's own Workspace domain and
+          # admin email baked into the published image, and a cron armed for 02:00 daily.
+          if grep -nE '^cloud\.directory\.sync\.enabled=true' docker/core/nemakiware.properties; then
+            echo "::error title=Shipped default::cloud directory sync is ENABLED in the shipped image defaults — it must be opt-in"
+            fail=1
+          fi
+          if grep -nE '^cloud\.directory\.sync\.(providers|google\.(domain|adminEmail|serviceAccountKey)|microsoft\.(tenantId|clientId|clientSecret))=[^[:space:]]+' docker/core/nemakiware.properties; then
+            echo "::error title=Identity leak::docker/core/nemakiware.properties carries a non-empty cloud directory sync identity — these must ship blank"
+            fail=1
+          fi
+
           # No legacy properties files should be re-introduced
           for legacy in docker/nemakiware.properties docker/log4j.properties \
                        docker/ui-war/nemakiware_ui.properties \
@@ -269,8 +279,8 @@ jobs:
           echo "OK: no active SolrCell handler / extraction lib under docker/solr."
       - name: Forbid any jar under docker/solr (tracked or untracked)
         # Strict policy: docker/solr/ must contain only Dockerfile, pom.xml,
-        # assembly descriptors, and Solr core configs. The Solr 9 image is
-        # built from solr:9.10.1-slim plus our config tree — never from
+        # assembly descriptors, and Solr core configs. The Solr image is
+        # built from solr:10.0.0-slim plus our config tree — never from
         # bundled jars. Any jar here either:
         #   (a) shaded fat jar carrying stale dependency classes
         #       (e.g., the deleted solr-with-dependencies.jar, which embedded

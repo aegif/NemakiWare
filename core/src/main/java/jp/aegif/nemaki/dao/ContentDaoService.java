@@ -476,6 +476,16 @@ public interface ContentDaoService {
 	GroupItem getGroupItemByIdFresh(String repositoryId, String groupId);
 
 	List<GroupItem> getGroupItems(String repositoryId);
+
+	/**
+	 * The ids of the groups that directly contain {@code groupId}, from the reverse-lookup
+	 * view. Deleting a group must strip it from its parents; finding them by listing every
+	 * group in the repository is what made that O(all groups).
+	 */
+	List<String> getGroupIdsDirectlyContainingGroup(String repositoryId, String groupId);
+
+	/** The ids of the groups that directly list {@code userId} as a member. */
+	List<String> getGroupIdsDirectlyContainingUser(String repositoryId, String userId);
 	List<GroupItem> getGroupItems(String repositoryId, int skip, int limit);
 	int getGroupItemCount(String repositoryId);
 	List<String> getJoinedGroupByUserId(String repositoryId, String userId);
@@ -656,6 +666,16 @@ public interface ContentDaoService {
 	 * @return if nothing found, return null
 	 */
 	AttachmentNode getAttachment(String repositoryId, String attachmentId);
+
+	/**
+	 * The attachment's metadata only — no binary stream is opened.
+	 *
+	 * <p>Use this for existence checks and length. {@link #getAttachment} opens the body and
+	 * transfers ownership of the stream to the caller; a caller that only inspects metadata leaks
+	 * a connection per call and downloads the whole attachment to learn nothing it did not
+	 * already have.
+	 */
+	AttachmentNode getAttachmentRef(String repositoryId, String attachmentId);
 
 	/**
 	 * Set InputStream

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Table, Tag, Button, Space, Select, message, Drawer } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import { getEvents, type LineageEventSummary } from '../../services/lineageJournal';
+import { displayProcessIdentity, getEvents, type LineageEventSummary } from '../../services/lineageJournal';
 import LineageEventDetail from './LineageEventDetail';
 
 export default function LineageJournalBrowser() {
@@ -51,8 +51,8 @@ export default function LineageJournalBrowser() {
   const columns = [
     {
       title: t('integrationSettings.lineage.eventKey'),
-      dataIndex: 'eventKey',
-      key: 'eventKey',
+      key: 'processIdentity',
+      render: (_: unknown, record: LineageEventSummary) => displayProcessIdentity(record),
       ellipsis: true,
       width: 200,
     },

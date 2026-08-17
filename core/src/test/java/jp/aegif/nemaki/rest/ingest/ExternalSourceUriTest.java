@@ -67,6 +67,82 @@ class ExternalSourceUriTest {
         assertFalse(uri.contains("workspace/id"), "tenantId should be URL-encoded: " + uri);
     }
 
+    /**
+     * A {@code ?} or {@code #} in an encoded segment must be rejected BEFORE encoding — encoding
+     * first would turn it into {@code %3F}/{@code %23} and slip a URL-shaped value past
+     * ExternalAssetIdentity.parse's literal-character checks, embedding a signed URL reversibly
+     * in a qualified name. Pre-encoded forms are the same smell one level down.
+     */
+    @Test
+    void testRejectsQueryAndFragmentDelimitersInRawIds() {
+        IllegalArgumentException q = assertThrows(IllegalArgumentException.class,
+                () -> ExternalSourceUri.forFileShare("google_drive", "t1",
+                        "https://drive.example/file?sig=SECRET"));
+        assertTrue(q.getMessage().contains("query"), q.getMessage());
+
+        assertThrows(IllegalArgumentException.class,
+                () -> ExternalSourceUri.build("custom", "t1", "objs", "id#fragment"));
+        assertThrows(IllegalArgumentException.class,
+                () -> ExternalSourceUri.build("custom", "t1", "objs", "?leading"),
+                "a delimiter at position 0 is still a delimiter (indexOf >= 0, not > 0)");
+        assertThrows(IllegalArgumentException.class,
+                () -> ExternalSourceUri.build("custom", "t1", "objs", "#leading"));
+        assertThrows(IllegalArgumentException.class,
+                () -> ExternalSourceUri.build("custom", "t1?x=1", "objs", "id-1"),
+                "tenantId is encoded too, so it gets the same pre-encoding check");
+    }
+
+    @Test
+    void testRejectsPreEncodedDelimitersInRawIds() {
+        assertThrows(IllegalArgumentException.class,
+                () -> ExternalSourceUri.build("custom", "t1", "objs", "file%3Fsig%3DSECRET"));
+        assertThrows(IllegalArgumentException.class,
+                () -> ExternalSourceUri.build("custom", "t1", "objs", "file%3fsig"),
+                "case-insensitive");
+        assertThrows(IllegalArgumentException.class,
+                () -> ExternalSourceUri.build("custom", "t1", "objs", "file%23frag"));
+    }
+
+    /**
+     * Mailbox names are arbitrary IMAP {@code astring}s (RFC 9051 §9): {@code #news.…} (the
+     * §5.1.2.1 namespace convention) and even {@code Questions?} are legal names that must
+     * encode, not reject — a rejection here silently loses every lineage fact of that mailbox
+     * while imports keep succeeding. Only a URI scheme marks a value as a URL; message ids
+     * keep the strict object-id policy.
+     */
+    @Test
+    void testMailboxNamesPermitTheImapAlphabet() {
+        String uri = ExternalSourceUri.forMailMessage("imap", "acct1",
+                "#news.comp.mail.misc", "msg-1");
+        assertTrue(uri.contains("mailboxes/%23news.comp.mail.misc/messages/"), uri);
+
+        String att = ExternalSourceUri.forMailAttachment("imap", "acct1",
+                "#shared/team", "msg-1", "att-1");
+        assertTrue(att.contains("%23shared"), att);
+
+        String question = ExternalSourceUri.forMailMessage("imap", "acct1",
+                "Questions?", "msg-1");
+        assertTrue(question.contains("mailboxes/Questions%3F/messages/"), question);
+    }
+
+    @Test
+    void testMailboxNamesStillRejectUrlShapedValues() {
+        assertThrows(IllegalArgumentException.class,
+                () -> ExternalSourceUri.forMailMessage("imap", "acct1",
+                        "https://mail.example/?sig=SECRET", "msg-1"));
+        assertThrows(IllegalArgumentException.class,
+                () -> ExternalSourceUri.forMailMessage("imap", "acct1",
+                        "https://mail.example/#access_token=SECRET", "msg-1"),
+                "a scheme is the URL mark that survives even without a query string");
+    }
+
+    @Test
+    void testMessageIdsKeepTheStrictObjectIdPolicy() {
+        assertThrows(IllegalArgumentException.class,
+                () -> ExternalSourceUri.forMailAttachment("imap", "acct1", "INBOX",
+                        "msg#1", "att-1"));
+    }
+
     @Test
     void testForBusinessRecord() {
         assertEquals("salesforce://tenant/org1/records/Account/r1",

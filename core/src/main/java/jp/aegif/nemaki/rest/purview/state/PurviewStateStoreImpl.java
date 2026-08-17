@@ -61,6 +61,286 @@ public class PurviewStateStoreImpl implements PurviewStateStore {
         return value == null ? "" : value.toString();
     }
 
+    /**
+     * The four-state read (4b preflight): absence, an empty value, a value, or a failure —
+     * never one impersonating another. {@link #getString} deliberately collapses the first
+     * three, which is fine for its callers and not fine for an acceptance check.
+     */
+    @Override
+    public RawEntry getRaw(String key) {
+        try {
+            if (connectorPool != null) {
+                Object raw = readRawValueFromConfigDocumentStrict(key);
+                if (raw != NOT_FOUND) {
+                    // A present-but-null value is NOT empty: the key holds something this
+                    // code cannot interpret, which is unknown, not clean.
+                    return raw == null ? RawEntry.error("NullValue")
+                        : RawEntry.of(raw.toString());
+                }
+                return RawEntry.absent();
+            }
+            Map<String, Object> configuration = getConfigurationMap();
+            if (!configuration.containsKey(key)) {
+                return RawEntry.absent();
+            }
+            Object value = configuration.get(key);
+            return value == null ? RawEntry.error("NullValue")
+                    : RawEntry.of(value.toString());
+        } catch (RuntimeException e) {
+            // Not "absent": a key we could not read has not been checked. The exception's
+            // message is NOT logged — it is uncontrolled text that may carry response
+            // fragments, and this read exists to look for residual tokens.
+            log.warn("Raw state read failed for key " + key + " ("
+                    + e.getClass().getSimpleName() + ") — reporting ERROR, not absence");
+            return RawEntry.error(e.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * Both stores, independently (4b preflight). The migration leaves the legacy
+     * {@code nemaki_conf} document in place when the dedicated one already exists, so a clean
+     * dedicated cursor can sit on top of a legacy one that still carries a raw URL.
+     */
+    @Override
+    public java.util.List<RawEntry> getRawEverywhere(String key) {
+        java.util.List<RawEntry> entries = new java.util.ArrayList<>();
+        if (connectorPool != null) {
+            try {
+                Object raw = readRawValueFromConfigDocumentStrict(key);
+                entries.add(raw == NOT_FOUND ? RawEntry.absent()
+                        : raw == null ? RawEntry.error("NullValue")
+                                : RawEntry.of(raw.toString()));
+            } catch (RuntimeException e) {
+                log.warn("Dedicated-store read failed for key " + key + " ("
+                        + e.getClass().getSimpleName() + ") — reporting ERROR");
+                entries.add(RawEntry.error("dedicated:" + e.getClass().getSimpleName()));
+            }
+        }
+        try {
+            Map<String, Object> configuration = connectorPool == null
+                    ? getConfigurationMap() : readLegacyConfigurationStrict();
+            if (!configuration.containsKey(key)) {
+                entries.add(RawEntry.absent());
+            } else {
+                Object value = configuration.get(key);
+                entries.add(value == null ? RawEntry.error("NullValue")
+                        : RawEntry.of(value.toString()));
+            }
+        } catch (RuntimeException e) {
+            log.warn("Legacy-store read failed for key " + key + " ("
+                    + e.getClass().getSimpleName() + ") — reporting ERROR");
+            entries.add(RawEntry.error("legacy:" + e.getClass().getSimpleName()));
+        }
+        return entries;
+    }
+
+    /**
+     * The dedicated Purview state database, and ONLY it (4b preflight).
+     *
+     * <p>{@link #getConfigClient} falls back to {@code nemaki_conf} when the dedicated client
+     * is unavailable, which is right for ordinary reads and wrong here: the whole point of
+     * inspecting both stores is that they are two stores, and a fallback would silently make
+     * them one.
+     */
+    private CloudantClientWrapper strictDedicatedClient() {
+        CloudantClientWrapper client =
+                connectorPool.getClient(SystemConst.NEMAKI_PURVIEW_STATE_DB);
+        if (client == null) {
+            throw new IllegalStateException("the dedicated Purview state database is not"
+                    + " available");
+        }
+        return client;
+    }
+
+    /** The legacy {@code nemaki_conf} database, read directly rather than through the DAO. */
+    private CloudantClientWrapper strictLegacyClient() {
+        CloudantClientWrapper client = connectorPool.getClient(SystemConst.NEMAKI_CONF_DB);
+        if (client == null) {
+            throw new IllegalStateException("the legacy configuration database is not"
+                    + " available");
+        }
+        return client;
+    }
+
+    /**
+     * The legacy configuration map, read so that a failure THROWS.
+     *
+     * <p>{@link #getConfigurationMap} goes through {@code ContentDaoService}, which catches
+     * database failures and answers with an empty configuration — and the cache may then keep
+     * that empty answer. For an ordinary read that is a graceful degradation; for a residue
+     * check it is a clean verdict for a store nobody could read.
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> readLegacyConfigurationStrict() {
+        CloudantClientWrapper client = strictLegacyClient();
+        com.ibm.cloud.cloudant.v1.model.AllDocsResult result = client.getClient()
+                .postAllDocs(new com.ibm.cloud.cloudant.v1.model.PostAllDocsOptions.Builder()
+                        .db(client.getDatabaseName())
+                        .includeDocs(true)
+                        .build())
+                .execute().getResult();
+        Map<String, Object> values = new java.util.LinkedHashMap<>();
+        for (com.ibm.cloud.cloudant.v1.model.DocsResultRow row : result.getRows()) {
+            if (row.getValue() != null && Boolean.TRUE.equals(row.getValue().isDeleted())) {
+                continue;
+            }
+            if (row.getId() != null && row.getId().startsWith("_design/")) {
+                continue;
+            }
+            if (row.getDoc() == null || row.getDoc().getProperties() == null) {
+                throw new IllegalStateException("legacy configuration row '" + row.getId()
+                        + "' returned no document — the inventory would be incomplete");
+            }
+            Map<String, Object> props = row.getDoc().getProperties();
+            // The real legacy schema: one document per key, global entries carrying no
+            // repositoryId. Reading only an aggregate "configuration" map — which is what an
+            // earlier version of this method did — misses every one of them, which would
+            // report a dirty legacy cursor as absent.
+            Object key = props.get("key");
+            if (key instanceof String name && !name.isBlank()) {
+                if (props.get("repositoryId") == null) {
+                    putOnce(values, name, props.get("value"));
+                }
+                continue;
+            }
+            // Aggregate shape, kept for compatibility with any deployment that still has one.
+            Object configuration = props.get("configuration");
+            if (configuration instanceof Map) {
+                ((Map<String, Object>) configuration)
+                        .forEach((k, v) -> putOnce(values, k, v));
+            }
+            // Anything else in this database is not configuration and is not our business.
+        }
+        return values;
+    }
+
+    /**
+     * Both legacy shapes can coexist, so the same logical key can appear twice. Last-write-wins
+     * would let a clean per-key document overwrite a dirty aggregate value and report green;
+     * there is no basis for choosing between them, so neither is chosen.
+     */
+    private static void putOnce(Map<String, Object> values, String key, Object value) {
+        if (values.containsKey(key)) {
+            throw new IllegalStateException("legacy key '" + key + "' is stored in more than"
+                    + " one place — refusing to pick one");
+        }
+        values.put(key, value);
+    }
+
+    /** Distinguishes "the document has no such value" from "the value is there and empty". */
+    private static final Object NOT_FOUND = new Object();
+
+    /**
+     * A read that preserves not-found versus failure.
+     *
+     * <p>{@code CloudantClientWrapper.get} catches every read exception and answers
+     * {@code null}, which would turn an outage into "absent" — the one answer this whole check
+     * must never invent. So the SDK is called directly here: a 404 is absence, anything else
+     * propagates and becomes {@code ERROR}.
+     */
+    @SuppressWarnings("unchecked")
+    private Object readRawValueFromConfigDocumentStrict(String key) {
+        CloudantClientWrapper configClient = strictDedicatedClient();
+        Map<String, Object> existing;
+        try {
+            com.ibm.cloud.cloudant.v1.model.Document doc = configClient.getClient()
+                    .getDocument(new com.ibm.cloud.cloudant.v1.model.GetDocumentOptions.Builder()
+                            .db(configClient.getDatabaseName())
+                            .docId(buildDocumentId(key))
+                            .build())
+                    .execute().getResult();
+            existing = new java.util.HashMap<>();
+            if (doc.getProperties() != null) {
+                existing.putAll(doc.getProperties());
+            }
+        } catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException absent) {
+            return NOT_FOUND;
+        }
+        // buildDocumentId maps '.' to '_', so it is NOT injective: a document whose key is
+        // "purview_cursor_state_..." lands on the same id as "purview.cursor.state...". The
+        // fetched document must therefore say it is the key we asked for.
+        Object storedKey = existing.get("key");
+        if (!(storedKey instanceof String name) || !name.equals(key)) {
+            throw new IllegalStateException("the state document at the derived id holds key '"
+                    + storedKey + "', not the requested one — refusing to read a collision");
+        }
+        if (existing.containsKey("value")) {
+            return existing.get("value");
+        }
+        Object props = existing.get("properties");
+        if (props instanceof Map && ((Map<String, Object>) props).containsKey("value")) {
+            return ((Map<String, Object>) props).get("value");
+        }
+        // The document EXISTS but holds no value. That is not absence — it is a shape this
+        // code does not understand, and calling it absent would report clean for a key nobody
+        // could read.
+        throw new IllegalStateException("state document for the key exists but carries no"
+                + " 'value' field");
+    }
+
+    /**
+     * Enumeration that cannot swallow a failure (4b preflight).
+     *
+     * <p>{@link #getAll} suppresses Cloudant errors and returns whatever it has, which would
+     * let a cursor inventory look complete while missing every persisted key. This throws
+     * instead, so the caller reports an unreadable inventory rather than a short one.
+     */
+    @Override
+    public Map<String, Object> getAllStrict() {
+        if (connectorPool == null) {
+            return new java.util.LinkedHashMap<>(getConfigurationMap());
+        }
+        // Both stores, both strictly: a legacy enumeration that silently returned nothing
+        // would hide every repository whose cursor lives only there.
+        Map<String, Object> merged = new java.util.LinkedHashMap<>(
+                readLegacyConfigurationStrict());
+        merged.putAll(readAllFromConfigDocumentsStrict());
+        return merged;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> readAllFromConfigDocumentsStrict() {
+        CloudantClientWrapper configClient = strictDedicatedClient();
+        Map<String, Object> values = new java.util.LinkedHashMap<>();
+        com.ibm.cloud.cloudant.v1.model.AllDocsResult result = configClient.getClient()
+                .postAllDocs(new com.ibm.cloud.cloudant.v1.model.PostAllDocsOptions.Builder()
+                        .db(configClient.getDatabaseName())
+                        .includeDocs(true)
+                        .startKey(DOCUMENT_ID_PREFIX)
+                        .endKey(DOCUMENT_ID_PREFIX + "\ufff0")
+                        .build())
+                .execute().getResult();
+        for (com.ibm.cloud.cloudant.v1.model.DocsResultRow row : result.getRows()) {
+            if (row.getValue() != null && Boolean.TRUE.equals(row.getValue().isDeleted())) {
+                continue; // a tombstone is genuinely gone
+            }
+            if (row.getDoc() == null || row.getDoc().getProperties() == null) {
+                // A live row whose document did not come back is a row we did not read.
+                // Skipping it would make a short inventory look complete.
+                throw new IllegalStateException("state row '" + row.getId() + "' returned no"
+                        + " document — the inventory would be incomplete");
+            }
+            Map<String, Object> props = row.getDoc().getProperties();
+            Object key = props.get("key");
+            if (!(key instanceof String name) || name.isBlank()) {
+                throw new IllegalStateException("state row '" + row.getId() + "' has no usable"
+                        + " key — refusing to enumerate around it");
+            }
+            // The point read derives the document id from the key. A row whose id does not
+            // match would be enumerated here and then 404 there, reporting ABSENT for a key
+            // that is demonstrably present.
+            if (!buildDocumentId(name).equals(row.getId())) {
+                throw new IllegalStateException("state row '" + row.getId() + "' holds a key"
+                        + " whose derived id does not match it — a later point read would"
+                        + " report it absent");
+            }
+            // containsKey, not "put returned non-null": a first row holding a null value
+            // returns null from put both times, and the second, clean row would win.
+            putOnce(values, name, props.get("value"));
+        }
+        return values;
+    }
+
     @Override
     public int getInt(String key) {
         if (connectorPool != null) {

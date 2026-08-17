@@ -1,4 +1,4 @@
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper, generateTestId } from '../utils/test-helper';
@@ -286,18 +286,18 @@ test.describe('Type Definition Upload and JSON Editing', () => {
 
     // Login first
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     // Navigate directly to Type Management page via URL (more reliable than menu clicks)
     await page.goto('/core/ui/#/types');
     // Retry navigation if auth state race redirects away
     for (let retry = 0; retry < 3; retry++) {
-      await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+      await waitForAppReady(page, { timeout: 30000 });
       if (page.url().includes('/types')) break;
       console.log(`type-upload: Retrying navigation to /types (attempt ${retry + 2})`);
       await page.goto('/core/ui/#/types');
     }
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
 
     await page.waitForSelector('.ant-table', { timeout: 30000 });
   });
@@ -351,7 +351,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
       if (typeInTable > 0) {
         console.log('✅ Type found in table (message may have been missed)');
       } else {
-        test.skip('ENV: Type upload failed - neither message nor table entry found');
+        test.skip(true, 'ENV: Type upload failed - neither message nor table entry found');
         return;
       }
     }
@@ -379,14 +379,14 @@ test.describe('Type Definition Upload and JSON Editing', () => {
         console.log(`✅ Type ${testTypeId} found via API after upload`);
       } else {
         console.log(`⚠️ Type ${testTypeId} not found via API - upload may have failed`);
-        test.skip('ENV: Type not found via API after upload');
+        test.skip(true, 'ENV: Type not found via API after upload');
         return;
       }
     } else {
       // Fallback to table check (may fail due to pagination)
       const typeRow = page.locator(`tr:has-text("${testTypeId}")`);
       if (await typeRow.count() === 0) {
-        test.skip('ENV: Cannot verify type creation - API check failed');
+        test.skip(true, 'ENV: Cannot verify type creation - API check failed');
         return;
       }
       console.log(`✅ Type ${testTypeId} found in table after upload`);
@@ -430,7 +430,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
     if (!conflictModalVisible) {
       // Conflict detection IS implemented - if modal not visible, type may not exist in system yet
       console.log('⚠️ Conflict modal not displayed - type may not exist in system for conflict to occur');
-      test.skip('ENV: Conflict modal not visible - type may not exist in system');
+      test.skip(true, 'ENV: Conflict modal not visible - type may not exist in system');
       return;
     }
 
@@ -481,7 +481,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
         t.id === testTypeId || t.typeId === testTypeId
       );
       if (!typeExists) {
-        test.skip(`ENV: Type ${testTypeId} not found via API - depends on Test 1 success`);
+        test.skip(true, `ENV: Type ${testTypeId} not found via API - depends on Test 1 success`);
         return;
       }
     }
@@ -516,7 +516,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
 
     if (await typeRow.count() === 0) {
       console.log(`Type ${testTypeId} not found in any page`);
-      test.skip(`ENV: Type ${testTypeId} not visible in table (pagination issue)`);
+      test.skip(true, `ENV: Type ${testTypeId} not visible in table (pagination issue)`);
       return;
     }
 
@@ -652,7 +652,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
       console.log(`⚠️ Type ${newTypeId} not found in any page - upload may not have worked`);
       // Cleanup temp file
       try { fs.unlinkSync(newTypePath); } catch (e) { /* ignore */ }
-      test.skip('ENV: Type not created - upload feature may not be fully implemented');
+      test.skip(true, 'ENV: Type not created - upload feature may not be fully implemented');
       return;
     }
 
@@ -694,7 +694,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
       console.log('⚠️ Edit conflict modal not displayed - target type may not exist for conflict');
       // Cleanup temp file
       try { fs.unlinkSync(newTypePath); } catch (e) { /* ignore */ }
-      test.skip('ENV: Edit conflict modal not visible - target type may not exist');
+      test.skip(true, 'ENV: Edit conflict modal not visible - target type may not exist');
       return;
     }
 
@@ -737,7 +737,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
         t.id === testTypeId || t.typeId === testTypeId
       );
       if (!typeExists) {
-        test.skip(`ENV: Type ${testTypeId} not found via API - depends on earlier tests`);
+        test.skip(true, `ENV: Type ${testTypeId} not found via API - depends on earlier tests`);
         return;
       }
     }
@@ -768,7 +768,7 @@ test.describe('Type Definition Upload and JSON Editing', () => {
 
     if (await typeRow.count() === 0) {
       console.log(`Type ${testTypeId} not found in any page`);
-      test.skip(`ENV: Type ${testTypeId} not visible in table (pagination issue)`);
+      test.skip(true, `ENV: Type ${testTypeId} not visible in table (pagination issue)`);
       return;
     }
 

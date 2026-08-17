@@ -1,4 +1,4 @@
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
@@ -78,7 +78,7 @@ test.describe('Archive Management', () => {
 
     // Login as admin
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
 
     await testHelper.closeMobileSidebar(browserName);
 
@@ -229,7 +229,7 @@ test.describe('Archive Management', () => {
     const uploadSuccess = await testHelper.uploadDocument(filename, 'Content for archive test', isMobile);
 
     if (!uploadSuccess) {
-      test.skip('ENV: Failed to upload test document');
+      test.skip(true, 'ENV: Failed to upload test document');
       return;
     }
 
@@ -303,7 +303,7 @@ test.describe('Archive Management', () => {
     // CRITICAL FIX (2025-12-14): Check for empty table placeholder first
     const emptyPlaceholder = page.locator('.ant-table-placeholder, .ant-empty');
     if (await emptyPlaceholder.count() > 0) {
-      test.skip('ENV: Archive table is empty - no entries to restore');
+      test.skip(true, 'ENV: Archive table is empty - no entries to restore');
       return;
     }
 
@@ -315,7 +315,7 @@ test.describe('Archive Management', () => {
     console.log(`Found ${rowCount} data rows in archive table`);
 
     if (rowCount === 0) {
-      test.skip('ENV: No archive entries to restore');
+      test.skip(true, 'ENV: No archive entries to restore');
       return;
     }
 
@@ -406,7 +406,7 @@ test.describe('Archive Management', () => {
     const rowCount = await archiveRows.count();
 
     if (rowCount === 0) {
-      test.skip('ENV: No archive entries for download button test');
+      test.skip(true, 'ENV: No archive entries for download button test');
       return;
     }
 
@@ -451,7 +451,7 @@ test.describe('Archive Management', () => {
     const rowCount = await archiveRows.count();
 
     if (rowCount === 0) {
-      test.skip('ENV: No archive entries for detail view test');
+      test.skip(true, 'ENV: No archive entries for detail view test');
       return;
     }
 

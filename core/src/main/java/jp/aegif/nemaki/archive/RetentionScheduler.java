@@ -30,7 +30,10 @@ import jp.aegif.nemaki.rest.purview.journal.LineageConfig;
 import jp.aegif.nemaki.rest.purview.journal.LineageMode;
 import jp.aegif.nemaki.rest.purview.journal.LineageEmitter;
 import jp.aegif.nemaki.rest.purview.journal.LineageEvent;
-import jp.aegif.nemaki.rest.purview.journal.LineageEventBuilder;
+import jp.aegif.nemaki.rest.purview.journal.EndpointKind;
+import jp.aegif.nemaki.rest.purview.journal.LineageEndpoint;
+import jp.aegif.nemaki.rest.purview.journal.LineageFact;
+import jp.aegif.nemaki.rest.purview.journal.LineageFactEmission;
 import jp.aegif.nemaki.rest.purview.journal.LineageJournalStore;
 import jp.aegif.nemaki.rest.purview.journal.LineageProcessType;
 import jp.aegif.nemaki.rest.purview.journal.LineageTargetSink;
@@ -481,23 +484,52 @@ public class RetentionScheduler {
         }
         try {
             CallContext systemContext = new SystemCallContext(repositoryId);
+            // §3: the operation id is issued when the business operation starts, and the typed
+            // ARCHIVE endpoint needs the document's name — readable only before the deletion
+            // that archives it. The read is lineage-only and guarded: a null name loses this
+            // one fact inside the facade (loudly), never the archival.
+            String operationId = java.util.UUID.randomUUID().toString();
+            String documentName = null;
+            try {
+                jp.aegif.nemaki.model.Document documentBeforeArchive =
+                        contentService.getDocument(repositoryId, documentId);
+                documentName = documentBeforeArchive != null
+                        ? documentBeforeArchive.getName() : null;
+            } catch (Exception e) {
+                log.warn("Could not read document name for lineage (archival continues): "
+                        + e.getMessage());
+            }
+
             contentService.deleteDocument(systemContext, repositoryId, documentId, true, false);
             nemakiCachePool.get(repositoryId).removeCmisCache(documentId);
             result.incrementSucceeded();
 
-            // Lineage Journal: ARCHIVE_LOCAL
+            // Lineage: one version-free fact; the emitter projects it (v1 today, v2 after the
+            // §6-a flip). The v1 strings ride along verbatim — they are the eventKey.
             {
-                LineageConfig lc = getLineageConfig();
-                LineageEventBuilder b = new LineageEventBuilder()
-                        .repositoryId(repositoryId)
-                        .processType(LineageProcessType.ARCHIVE_LOCAL)
-                        .addInputObject(repositoryId, documentId)
-                        .addOutput("nemaki://" + repositoryId + "/archives/" + documentId)
-                        .snapshotAttribute("reason", reason);
-                if (lc != null) {
-                    b.targets(lc.getTargets());
-                }
-                emitLineageEvent(b.build());
+                final String lineageDocumentName = documentName;
+                LineageFactEmission.emitSafely(resolveLineageEmitter(repositoryId), () -> {
+                    String occurredAt = java.time.Instant.now().toString();
+                    return new LineageFact(
+                            repositoryId,
+                            LineageProcessType.ARCHIVE_LOCAL,
+                            operationId,
+                            occurredAt,
+                            java.util.List.of(LineageEndpoint.document(
+                                    repositoryId, documentId, lineageDocumentName)),
+                            java.util.List.of(LineageEndpoint.archive(
+                                    repositoryId, documentId, documentId,
+                                    java.time.Instant.parse(occurredAt).toEpochMilli())),
+                            lineageTargets(),
+                            null,
+                            new LineageFact.LegacyV1Projection(
+                                    LineageProcessType.ARCHIVE_LOCAL,
+                                    java.util.List.of(LineageEvent.qualifiedName(
+                                            repositoryId, documentId)),
+                                    java.util.List.of("nemaki://" + repositoryId
+                                            + "/archives/" + documentId),
+                                    java.util.Map.of("reason", reason)));
+                }, "repo=" + repositoryId + " op=" + operationId + " type=ARCHIVE_LOCAL");
             }
 
             log.info("Archived " + reason + " document: " + documentId);
@@ -512,6 +544,9 @@ public class RetentionScheduler {
     private boolean moveToCold(String repositoryId, Archive archive, LongTermStorageAdapter adapter) {
         String archiveId = archive.getId();
         String originalId = archive.getOriginalId();
+        // §3: the lineage operation id is issued when the business operation starts (the state
+        // transition below is already part of it), not when the emission happens afterwards.
+        final String lineageOperationId = java.util.UUID.randomUUID().toString();
         boolean coldPutSucceeded = false;
         String storageRef = null;
 
@@ -583,20 +618,51 @@ public class RetentionScheduler {
                     log.info("Move mode: deleted local archive content after cold storage write: " + archiveId);
                 }
 
-                // Lineage Journal: ARCHIVE_COLD
+                // Lineage: one version-free fact. The typed ARCHIVE endpoint requires the
+                // original object id — an archive without one cannot make a valid catalog
+                // entity (the Atlas type marks it mandatory), so such a row loses this one
+                // fact inside the facade, with a WARN naming it, rather than publishing a
+                // blank. archivedAt comes from the archive record itself.
                 {
-                    LineageConfig lc = getLineageConfig();
-                    LineageEventBuilder b = new LineageEventBuilder()
-                            .repositoryId(repositoryId)
-                            .processType(LineageProcessType.ARCHIVE_COLD)
-                            .addInput("nemaki://" + repositoryId + "/archives/" + archiveId)
-                            .addOutput("cold://" + (storageRef != null ? storageRef : archiveId))
-                            .snapshotAttribute("originalId", originalId != null ? originalId : "")
-                            .snapshotAttribute("coldMoveMode", coldMoveMode);
-                    if (lc != null) {
-                        b.targets(lc.getTargets());
-                    }
-                    emitLineageEvent(b.build());
+                    // storageRef is reassigned earlier in this method; the lambda needs an
+                    // effectively-final copy of the value as it stands now. Everything else
+                    // lineage-only (config, archive getters) runs inside the boundary.
+                    final String finalStorageRef = storageRef;
+                    final String finalOriginalId = originalId;
+                    LineageFactEmission.emitSafely(resolveLineageEmitter(repositoryId), () -> {
+                        String archiveName = archive.getName();
+                        java.util.GregorianCalendar archivedAtCal = archive.getArchivedAt();
+                        String occurredAt = java.time.Instant.now().toString();
+                        long archivedAtMillis = archivedAtCal != null
+                                ? archivedAtCal.getTimeInMillis()
+                                : java.time.Instant.parse(occurredAt).toEpochMilli();
+                        return new LineageFact(
+                                repositoryId,
+                                LineageProcessType.ARCHIVE_COLD,
+                                lineageOperationId,
+                                occurredAt,
+                                // Through the producer factory, not the canonical constructor:
+                                // §2's attribute limits are applied at that boundary, and a
+                                // hand-built endpoint would skip them (v2.3.26).
+                                java.util.List.of(LineageEndpoint.archive(
+                                        repositoryId, archiveId, finalOriginalId,
+                                        archivedAtMillis, archiveName)),
+                                java.util.List.of(LineageEndpoint.coldStorage(
+                                        repositoryId,
+                                        finalStorageRef != null ? finalStorageRef : archiveId,
+                                        adapter.getClass().getSimpleName())),
+                                lineageTargets(),
+                                null,
+                                new LineageFact.LegacyV1Projection(
+                                        LineageProcessType.ARCHIVE_COLD,
+                                        java.util.List.of("nemaki://" + repositoryId
+                                                + "/archives/" + archiveId),
+                                        java.util.List.of("cold://" + (finalStorageRef != null
+                                                ? finalStorageRef : archiveId)),
+                                        java.util.Map.of(
+                                                "originalId", finalOriginalId != null ? finalOriginalId : "",
+                                                "coldMoveMode", coldMoveMode)));
+                    }, "repo=" + repositoryId + " op=" + lineageOperationId + " type=ARCHIVE_COLD");
                 }
 
                 log.info("Successfully moved archive to cold storage: " + archiveId
@@ -651,6 +717,16 @@ public class RetentionScheduler {
         log.info("Retention scheduler stopped");
     }
 
+    /** Lineage-only config read; never throws (fail-open — a producer must not fail the op). */
+    private java.util.List<String> lineageTargets() {
+        try {
+            LineageConfig lc = getLineageConfig();
+            return lc != null ? lc.getTargets() : java.util.List.of();
+        } catch (Exception e) {
+            return java.util.List.of();
+        }
+    }
+
     private LineageConfig getLineageConfig() {
         try {
             return SpringContext.getApplicationContext()
@@ -660,12 +736,13 @@ public class RetentionScheduler {
         }
     }
 
-    private void emitLineageEvent(LineageEvent event) {
+    /** The active emitter for this repository, or {@code null} when lineage is off. */
+    private LineageEmitter resolveLineageEmitter(String repositoryId) {
         try {
             LineageConfig config = getLineageConfig();
-            if (config == null) return;
-            LineageMode mode = config.getModeForRepository(event.repositoryId());
-            if (mode == LineageMode.DISABLED) return;
+            if (config == null) return null;
+            LineageMode mode = config.getModeForRepository(repositoryId);
+            if (mode == LineageMode.DISABLED) return null;
 
             LineageJournalStore store = SpringContext.getApplicationContext()
                     .getBean(LineageJournalStore.class);
@@ -673,12 +750,10 @@ public class RetentionScheduler {
             java.util.List<LineageTargetSink> sinks = (java.util.List<LineageTargetSink>)
                     (java.util.List<?>) SpringContext.getApplicationContext()
                     .getBeansOfType(LineageTargetSink.class).values().stream().toList();
-            LineageEmitter emitter = config.createEmitterForMode(mode, store, sinks);
-            if (emitter.isActive()) {
-                emitter.emit(event);
-            }
+            return config.createEmitterForMode(mode, store, sinks);
         } catch (Exception e) {
-            log.warn("Lineage event emission failed (non-fatal): " + e.getMessage());
+            log.warn("Lineage emitter resolution failed (non-fatal): " + e.getMessage());
+            return null;
         }
     }
 

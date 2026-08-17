@@ -26,6 +26,23 @@ public class CouchLineageEvent {
     private static final String TYPE = "lineage_event";
     static final String ID_PREFIX = "lineage:";
 
+    /**
+     * The journal document {@code _id} for a record id — v1's {@code eventId} or v2's
+     * {@code deliveryId}, which share one keyspace under one prefix.
+     *
+     * <p>This is the single place the conversion lives (the design's §"Slice 2 の内訳"): the
+     * store's mutations take a record id and address the document with it, and for v2 that is the
+     * deliveryId-derived key that create-if-absent idempotency depends on. Inline
+     * {@code ID_PREFIX + eventId} concatenations are what let an audit id quietly stand in for a
+     * document key.
+     */
+    static String journalDocumentId(String recordId) {
+        if (recordId == null || recordId.isBlank()) {
+            throw new IllegalArgumentException("recordId must not be null or blank");
+        }
+        return ID_PREFIX + recordId;
+    }
+
     @JsonProperty("_id")
     private String id;
 

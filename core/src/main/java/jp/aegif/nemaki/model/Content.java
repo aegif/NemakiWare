@@ -62,6 +62,19 @@ public class Content extends NodeBase {
 	private String changeToken;
 	private List<String> renditionIds;
 
+	// ===== ACL-epoch outbox carrier (design §11.1, increment 12 step 0) =====
+	// The DAO update path builds a FRESH CouchDocument from this model object, so any stored
+	// field the model does not carry is ERASED by an ordinary rename/property update. These
+	// carriers exist ONLY so that unrelated updates stop being destructive: values are read
+	// back VERBATIM and written back UNTOUCHED. Nothing here is ever minted, defaulted or
+	// interpreted — a document that has no epoch fields keeps having none (the four keys are
+	// aclEpochState / aclEpochMutationId / aclSourceEpoch / aclEpochQuarantined, presence-
+	// faithful including an explicit null value). contentIncarnation is the ONE exception
+	// with assign-once semantics: CouchContent mints it when ABSENT (create / legacy lazy
+	// fill, design §8.1) and preserves it verbatim when present.
+	private java.util.Map<String, Object> aclEpochFields;
+	private String contentIncarnation;
+
 	public Content() {
 		super();
 	}
@@ -73,6 +86,15 @@ public class Content extends NodeBase {
 		setCreator(n.getCreator());
 		setModified(n.getModified());
 		setModifier(n.getModifier());
+		// Copy-constructor chains (Document(Content) etc. call super(c)) must not drop the
+		// verbatim carriers — dropping them here is exactly the erasure §11.1 closes.
+		if (n instanceof Content) {
+			Content c = (Content) n;
+			if (c.getAclEpochFields() != null) {
+				this.aclEpochFields = new java.util.LinkedHashMap<>(c.getAclEpochFields());
+			}
+			this.contentIncarnation = c.getContentIncarnation();
+		}
 		
 		// COMPREHENSIVE REVISION MANAGEMENT: Preserve revision from NodeBase
 		setRevision(n.getRevision());
@@ -204,5 +226,51 @@ public class Content extends NodeBase {
 	public int hashCode() {
 		String id = this.getId();
 		return id != null ? id.hashCode() : System.identityHashCode(this);
+	}
+
+	// ===== ACL-epoch outbox carrier accessors (§11.1) =====
+
+	/** The verbatim epoch-field carrier; {@code null} when the stored document has none. */
+	public java.util.Map<String, Object> getAclEpochFields() {
+		return aclEpochFields;
+	}
+
+	public void setAclEpochFields(java.util.Map<String, Object> aclEpochFields) {
+		this.aclEpochFields = aclEpochFields;
+	}
+
+	/** Phase-1 write helper: record one epoch field for the NEXT persist of this object. */
+	public void putAclEpochField(String key, Object value) {
+		if (this.aclEpochFields == null) {
+			this.aclEpochFields = new java.util.LinkedHashMap<>();
+		}
+		this.aclEpochFields.put(key, value);
+	}
+
+	/** Lenient typed reader: the value when it is a String, else {@code null} (corruption is the scanner's job). */
+	public String aclEpochFieldAsString(String key) {
+		Object v = aclEpochFields == null ? null : aclEpochFields.get(key);
+		return (v instanceof String) ? (String) v : null;
+	}
+
+	/** Lenient typed reader: the value when it is an integral Number, else {@code null}. */
+	public Long aclEpochFieldAsLong(String key) {
+		Object v = aclEpochFields == null ? null : aclEpochFields.get(key);
+		if (!(v instanceof Number)) {
+			return null;
+		}
+		try {
+			return new java.math.BigDecimal(v.toString()).longValueExact();
+		} catch (ArithmeticException | NumberFormatException e) {
+			return null;
+		}
+	}
+
+	public String getContentIncarnation() {
+		return contentIncarnation;
+	}
+
+	public void setContentIncarnation(String contentIncarnation) {
+		this.contentIncarnation = contentIncarnation;
 	}
 }

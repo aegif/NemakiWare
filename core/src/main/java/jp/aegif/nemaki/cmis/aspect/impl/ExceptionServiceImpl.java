@@ -891,7 +891,21 @@ public class ExceptionServiceImpl implements ExceptionService,
 	@Override
 	public void constraintAclPropagationDoesNotMatch(
 			AclPropagation aclPropagation) {
-		// Do nothing
+		// Deliberately accepts every value, including OBJECTONLY, and the repository behaves as
+		// PROPAGATE regardless. Owner decision (2026-08-12): keep declaring PROPAGATE in
+		// AclCapabilities and document that setting an ACL with OBJECTONLY is not supported yet,
+		// which is the same position Alfresco takes.
+		//
+		// Why accepting is not a conformance break: CMIS 1.1 §2.1.12.3 describes PROPAGATE as
+		// including support for OBJECTONLY, so a PROPAGATE repository may accept the value. What
+		// this repository does NOT do is honour the distinction — effective ACLs are computed by
+		// walking ancestors at read time, so a descendant's effective ACL changes whether the
+		// caller asked for OBJECTONLY or not.
+		//
+		// Rejecting OBJECTONLY here would be the other defensible choice and is deliberately NOT
+		// taken: this repository's own UI used to send it (that was removed — see
+		// AclDirectFlagAndPropagationTest), and existing clients that pass it today would start
+		// failing on an operation that has always appeared to work.
 	}
 
 	@Override
@@ -906,8 +920,11 @@ public class ExceptionServiceImpl implements ExceptionService,
 			return; // Cannot validate content stream requirement without type definition
 		}
 		if (td.getContentStreamAllowed() == ContentStreamAllowed.REQUIRED) {
+			// Existence check only — the metadata path. The stream-opening variant handed this
+			// check an InputStream it discarded without closing, so every create or update of a
+			// content-required type leaked a CouchDB connection and pulled down the attachment.
 			if (document.getAttachmentNodeId() == null
-					|| contentService.getAttachment(repositoryId, document
+					|| contentService.getAttachmentRef(repositoryId, document
 							.getAttachmentNodeId()) == null) {
 				constraint(document.getId(),
 						"This document type does not allow no content stream");

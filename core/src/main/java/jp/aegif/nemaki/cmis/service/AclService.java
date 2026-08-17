@@ -67,4 +67,49 @@ public interface AclService {
 			@LogParam("objectId") String objectId, @LogParam("aces") Acl aces,
 			@LogParam("aclPropagation") AclPropagation aclPropagation);
 
+	/**
+	 * ACL-in-Solr: after a move, refresh the search-index {@code readers} of the
+	 * moved object's inheriting descendants (their effective inherited ACL changed
+	 * with the new ancestor chain) AND of the relationships referencing the moved
+	 * object (their readers derive from source/target readers). The moved object's
+	 * own content/RAG readers are handled by {@code ContentServiceImpl.move}. A
+	 * moved leaf still needs the relationship refresh; only a null content is a
+	 * no-op. See {@code AclServiceImpl.refreshMovedSubtreeSearchIndexAcl}.
+	 */
+	void refreshMovedSubtreeSearchIndexAcl(String repositoryId, jp.aegif.nemaki.model.Content content);
+
+	/**
+	 * Reconciliation entry point: re-drive the search-index ACL refresh
+	 * (content {@code readers} + RAG block + relationships + inheriting
+	 * descendants) for a SINGLE object that a prior async refresh failed to
+	 * complete. Called by the reconciliation scheduler out of the durable queue.
+	 *
+	 * @return {@code true} if the object no longer needs reconciliation (clean
+	 *         re-drive, or the object was deleted / no search index is wired);
+	 *         {@code false} if a failure was hit and the task should be retried.
+	 */
+	boolean reindexSearchIndexAclForObject(String repositoryId, String objectId);
+
+	/**
+	 * As {@link #reindexSearchIndexAclForObject(String, String)} but with a
+	 * cooperative-fencing lease guard: {@code leaseStillHeld} is polled before each
+	 * node's writes (it heartbeats/renews the reconciliation lease and returns
+	 * {@code false} once the lease has been lost to a reclaiming worker). When it
+	 * returns {@code false} the re-drive ABORTS (returns {@code false}, not clean) so
+	 * a worker that outlived its lease stops overwriting the reclaimer's fresher
+	 * readers. A {@code null} guard disables fencing (e.g. a short manual retry).
+	 */
+	boolean reindexSearchIndexAclForObject(String repositoryId, String objectId,
+			java.util.function.BooleanSupplier leaseStillHeld);
+
+	/**
+	 * Re-drive handler for a {@code RAG_PURGE} reconciliation task: remove the
+	 * object's RAG block (a Private Working Copy must never be RAG-indexed) and
+	 * VERIFY it is gone. Returns {@code true} only when the block is confirmed
+	 * absent; any delete failure, verification failure, or inability to verify
+	 * returns {@code false} so the task is retried (never completed on an
+	 * unverified delete).
+	 */
+	boolean purgeRagBlockForObject(String repositoryId, String objectId);
+
 }

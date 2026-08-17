@@ -1,6 +1,6 @@
-# Multi-replica deployment requirements (NemakiWare 3.1.1)
+# Multi-replica deployment requirements (NemakiWare 3.3.0)
 
-> **Default posture**: NemakiWare 3.1.1 is shipped as **single-replica** by
+> **Default posture**: NemakiWare 3.3.0 is shipped as **single-replica** by
 > default. The startup log emits an INFO line confirming that posture so
 > a silently-scaled deployment is at least visible in operator logs.
 > Multi-replica deployments work, but only if the conditions below are
@@ -32,7 +32,44 @@ the one that created the entry will not see it.
 | **Ingest scheduler circuit breaker** | `consecutiveFailures` map keyed by connectorId | `rest/ingest/IngestSchedulerService.java` |
 | **Scheduled delegated profile state** (RC5+) | `inactiveCreatorStreak` (per-profile auto-disable streak counter) + `warnedDelegatedSchedulerProfiles` (WARN-once memo) | `rest/ingest/IngestSchedulerService.java` |
 | **EhCache** (ACL / content / type definition cache) | Local in-memory cache; `cache.clustering.enabled=false` ships disabled | `core/src/main/webapp/WEB-INF/classes/ehcache.yml` + `nemakiware.properties:80` |
+| **Full reindex progress** | `reindexStatuses` — status, counts and phase timings of a running/finished reindex | `businesslogic/impl/SolrIndexMaintenanceServiceImpl.java:101` |
+| **ACL-epoch migration progress** | `runs` — per-repository run record for the stamp pass | `epoch/AclEpochMigrationService.java:92` |
+| **Verified-password cache** | `verified` (key → expiry). The TTL *is* the revocation window, so with N replicas the window is per-replica | `security/VerifiedPasswordCache.java:83` |
+| **Login throttle** | `attempts` keyed per principal — the lockout counter is per-replica, so the effective allowance is N × the configured one | `security/LoginThrottle.java:36` |
+| **RAG block write locks** | `ragBlockLocks` — `Striped.lock(64)`, per JVM. See §1.1 | `rag/indexing/RAGIndexingServiceImpl.java:73` |
 | **Cron schedulers** (Cloud Directory Sync / Ingest / Retention / Lineage) | Each replica has its own scheduler — `LeaderElection` gates execution | `rest/purview/journal/LeaderElection.java`, the three scheduler classes |
+
+### 1.1 RAG block writes are serialised WITHIN a JVM only
+
+`RAGIndexingServiceImpl` writes a RAG document as a Solr **block join** — a parent plus one child
+per chunk. Two operations rebuild that whole block: `indexToSolr` (re-index) and
+`updateDocumentACL` (a read-rebuild-write that re-adds the block with new `readers`). They are
+serialised against each other by `ragBlockLocks`, a Guava `Striped.lock(64)` — **an in-process
+lock**.
+
+**Across replicas there is no such serialisation.** Two replicas can interleave that
+read-rebuild-write for the same document, and because a block-join add REPLACES the whole block,
+the loser's snapshot can overwrite the winner's. The failure that matters is the ACL one: a
+rebuild that read the block before a revocation landed can re-add the pre-revocation `readers`.
+
+The code states this posture at `rag/indexing/RAGIndexingServiceImpl.java:371` ("single-replica
+posture") and points here for the limits — this section is that reference.
+
+**What to do about it in 3.3.0:**
+
+- Treat RAG **re-index and RAG ACL propagation as single-replica operations**. Pin them to one
+  replica, the same way the CMIS reindex and the initial epoch stamp are pinned — the procedure
+  is [`docs/operations/v3.3.0-upgrade-runbook.md`](operations/v3.3.0-upgrade-runbook.md) §O2
+  ("再索引・初期 stamp は 1 台に固定し、ロードバランサを経由せずそのレプリカを直接叩く").
+  §5 below is a symptom table for missing sticky sessions / leader election and does not cover
+  this.
+- After a bulk ACL change with RAG enabled, verify rather than assume — the RAG revocation probes
+  under `tools/acl-probe/` (`rag_revocation_paths.py` and friends) exist for exactly this.
+- Ordinary single-document writes arriving on different replicas are not the concern: they carry
+  different `ragId`s and do not contend.
+
+**Not** fixed by the generation-based cache invalidation in L2 below: that clears stale reads, and
+this is a lost write.
 
 State that is NOT JVM-local (safe across replicas without coordination):
 
@@ -56,7 +93,7 @@ To run N≥2 core replicas safely, **all** of the following must hold:
 | **R1** | **Cookie-based sticky sessions** are enabled at the load balancer for the entire `/core/*` path tree | LB config inspection. The browser must keep talking to the same replica for the lifetime of an authenticated session. Required by every row in §1 except cron schedulers and EhCache |
 | **R2** | `lineage.leader-election.enabled=true` is set in `nemakiware.properties` | Each cron scheduler logs `leaderElection=enabled` at startup |
 | **R3** | `nemakiware.deployment.singleReplica=false` AND `nemakiware.deployment.stickySession=true` are set **as JVM system properties (`-D...`) or environment variables only** | Suppresses the loud startup WARN from `SamlAuthnRequestRegistry`; absence reverts to the default-single-replica WARN/INFO behaviour. **These two keys are NOT read from `nemakiware.properties`** — `SamlAuthnRequestRegistry` is constructed during static class initialisation, before Spring DI has wired the `PropertyManager` that reads the properties file, so the registry consults `System.getProperty()` and `System.getenv()` directly. Putting them in the properties file is silently ignored |
-| **R4** | All replicas read **the same** `nemakiware.properties` (file mount or shared S3/SSM-managed config). Drift between replicas causes intermittent behaviour | Compare the file at `/usr/local/tomcat/conf/nemakiware.properties` on every replica |
+| **R4** | All replicas resolve the same configuration. Note that the properties file is **baked into the WAR** — Spring reads `classpath:nemakiware.properties`, so mounting over `/usr/local/tomcat/conf/nemakiware.properties` changes nothing. Differences between replicas therefore come from `-D` flags and environment variables | Compare `CATALINA_OPTS` and the environment on every replica, and confirm they run the same image tag |
 | **R5** | All replicas point at **the same CouchDB cluster** (single source of truth). CouchDB itself can be clustered/replicated, but every NemakiWare replica must have one logical view | `db.couchdb.url` is identical |
 | **R6** | All replicas point at **the same Solr cluster** for both the `nemaki` and `token` cores | `solr.host` / `solr.port` identical, or all replicas use the same external Solr URL |
 
@@ -69,12 +106,12 @@ To run N≥2 core replicas safely, **all** of the following must hold:
 | **S3** | All non-browser clients of `/api/*` and `/rest/*` send `X-Requested-With: XMLHttpRequest` or a non-Basic `Authorization` header (Bearer / `AUTH_TOKEN` / `X-API-Key`) | This satisfies the CSRF policy enforced by `CsrfValidator` for state-changing methods. **It does NOT survive sticky-cookie eviction** — if the LB drops a target, switches stickiness, or the browser clears the sticky cookie, the JVM-local auth token / passkey challenge / MCP session held on the previous replica is gone, and the user must re-authenticate (or the in-flight SAML / passkey flow fails). React UI complies; review any custom REST client to add the header |
 | **S4** | `auth.token.expiration` (default 24h) and the LB sticky cookie TTL are aligned (LB ≥ NemakiWare token TTL) | Otherwise sticky drops mid-session and the user is silently re-authenticated as a different identity |
 
-### What multi-replica is NOT supported for in 3.1.1
+### What multi-replica is NOT supported for in 3.3.0
 
 | # | Limitation | Workaround |
 |---|------------|------------|
 | **L1** | Setup wizard | The `X-Setup-Token` is generated per-replica at startup and only the issuing replica honours it. Run the initial setup against a **single** replica (scale down to 1, complete setup, then scale up) |
-| **L2** | EhCache invalidation across replicas | Cache-clustering knobs (`cache.clustering.terracotta.url`, `cache.clustering.offheap.mb`) exist in properties as commented-out placeholders but Terracotta is not actively wired. Stale ACL / content cache between replicas is possible until per-replica TTL expires. Mitigation: keep `core/src/main/webapp/WEB-INF/classes/ehcache.yml` TTLs short (defaults are conservative) |
+| **L2** | EhCache invalidation across replicas | Cache-clustering knobs (`cache.clustering.terracotta.url`, `cache.clustering.offheap.mb`) exist as placeholders, but even with clustering enabled each cache is built with heap + local offheap tiers only (`CacheService` never adds a clustered resource pool), so nothing is shared or invalidated between replicas. A replica that did not perform a permission change keeps its own answer until the entry expires. **Correction (2026-08-09):** an earlier version of this row said "until per-replica TTL expires" — that was wrong while `ehcache.yml` specified `timeToIdleSeconds`, because `buildExpiry` prefers TTI and ehcache resets an idle deadline on every read, so a frequently-read entry never expired at all. `timeToIdleSeconds` has since been removed from the default block, which makes the bound real: at most `timeToLiveSeconds` (3600). **Update (2026-08-11): generation-based cross-replica invalidation is now IMPLEMENTED** (P3-1-2 / D4). Each replica publishes per-repository ACL and principal generation counters to a shared CouchDB document and clears its own caches when another node's counter CHANGES, so the bound is now the poll interval (5s) plus publish arrival rather than the TTL. The TTL remains the backstop for a replica whose poller has died — watch for that in the logs. |
 | **L3** | Per-IP rate limits | `/rest/all/saml/initiate` rate limit is per-replica. With N replicas the effective rate is `N × 30/min`. Acceptable for typical workloads; place a coarser global rate limit at the LB if abuse is a concern |
 | **L4** | IMAP IDLE | `ImapIdleMonitor` opens an IMAP connection per profile and sits in IDLE. Multiple replicas would each open one connection per profile, duplicating fetches. Gated by `LeaderElection` (R2 above) — only the leader runs IDLE monitors |
 
@@ -219,7 +256,7 @@ confirm the LB sticky cookie keeps the session on a single replica.
 
 ---
 
-## 4. What 3.1.1 does NOT promise for multi-replica
+## 4. What 3.3.0 does NOT promise for multi-replica
 
 This release does NOT ship:
 
@@ -252,7 +289,7 @@ then, follow the recipe above.
 | Cloud Directory Sync runs N×expected times | `lineage.leader-election.enabled` not set |
 | External Ingest fetches duplicated across replicas | Same — leader election off |
 | Setup Wizard returns 401 or "invalid token" | You're hitting a replica other than the one that issued the setup token (L1) |
-| Stale ACL behaviour between replicas after permission change | EhCache local invalidation (L2). Wait out TTL or roll the replicas |
+| Stale ACL behaviour between replicas after permission change | EhCache local invalidation (L2), now driven by cross-replica generation counters: normally bounded by the poll interval (5s) + publish arrival. `timeToLiveSeconds` (3600s) is the backstop if a replica's poller has stopped. To clear immediately without a restart: `DELETE /api/v1/cmis/repositories/{repositoryId}/cache/all` **on each replica** (the call is local to the replica that serves it) |
 | Loud startup WARN about "multi-replica WITHOUT sticky session" | R3 not configured. Set both as env vars or `-D` system properties after enabling LB sticky — these two keys are NOT honoured from `nemakiware.properties` |
 | Startup INFO line still says `single-replica (default)` even though you set `nemakiware.deployment.singleReplica=false` in `nemakiware.properties` | R3 mis-applied. The two `nemakiware.deployment.*` keys are env / system-property only (see §3.2 b); rewrite as `-D` flags or env vars |
 | Sticky session is enabled at the LB but users still occasionally have to re-login mid-session | Either S4 (sticky cookie TTL < `auth.token.expiration`) or LB target removed. Note that S3 (`X-Requested-With`) does NOT prevent this — it only satisfies the CSRF policy |

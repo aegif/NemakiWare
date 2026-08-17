@@ -146,6 +146,20 @@ public class ArchiveResource extends ResourceBase {
 		return null;
 	}
 
+	/** The archive page size when the caller names none. */
+	static final int DEFAULT_INDEX_LIMIT = 100;
+
+	/**
+	 * The limit actually applied: the caller's positive choice, or the bounded default.
+	 *
+	 * <p>Zero and negative values count as "none named" rather than "everything" — the
+	 * unbounded read stops being an accident a client can back into and becomes something
+	 * spelled out with skip/limit paging against {@code totalItems}.
+	 */
+	static int effectiveLimit(Integer requested) {
+		return (requested != null && requested > 0) ? requested : DEFAULT_INDEX_LIMIT;
+	}
+
 	@SuppressWarnings("unchecked")
 	@GET
 	@Path("/index")
@@ -175,10 +189,15 @@ public class ArchiveResource extends ResourceBase {
 			if (adminUser) {
 				// DB-level pagination via archivesByArchivedAt view:
 				// CouchDB handles skip/limit/descending natively.
-				// When limit is not provided (0), CouchDB returns all rows — this
-				// preserves backward compatibility for clients that don't paginate.
+				//
+				// The default is BOUNDED. "No limit means all rows" looked like harmless
+				// backward compatibility until an environment with 68,606 accumulated
+				// archives turned the bare call into a 29.5MB / 19-second response — an
+				// unbounded default is a landmine armed by data growth. Explicit limits are
+				// honoured as given; a caller that truly wants everything pages with
+				// skip/limit and totalItems (already in the response) says when to stop.
 				int s = (skip != null && skip > 0) ? skip : 0;
-				int l = (limit != null && limit > 0) ? limit : 0;
+				int l = effectiveLimit(limit);
 				long totalItems = getContentService().getSearchableArchivesCount(repositoryId);
 				List<Archive> archives = getContentService().getSearchableArchivesPaged(
 						repositoryId, s, l, descending);
@@ -248,10 +267,15 @@ public class ArchiveResource extends ResourceBase {
 					return descending ? -cmp : cmp;
 				});
 
-				// Apply pagination after filter + sort
+				// Apply pagination after filter + sort. The RESPONSE is bounded by the same
+				// default as the admin branch — an unbounded default is the same landmine one
+				// privilege level down. What stays unbounded here is the in-memory LOAD of the
+				// user's own archives (the two views are merged and deduped before paging);
+				// bounding that needs the combined (user, archivedAt) view the comment above
+				// describes, which is a follow-up, not this fix.
 				int totalFiltered = filtered.size();
 				int s = (skip != null && skip > 0) ? skip : 0;
-				int l = (limit != null && limit > 0) ? limit : totalFiltered;
+				int l = effectiveLimit(limit);
 				int end = Math.min(s + l, totalFiltered);
 				if (s < totalFiltered) {
 					filtered = filtered.subList(s, end);
@@ -656,7 +680,8 @@ public class ArchiveResource extends ResourceBase {
 		}
 	}
 
-	private void emitLineageEvent(String repositoryId, String objectId, HttpServletRequest httpRequest) {
+	private void emitLineageEvent(String repositoryId, String objectId, String documentName,
+			String operationId, HttpServletRequest httpRequest) {
 		try {
 			LineageConfig lc = getLineageConfig();
 			if (lc == null) return;
@@ -670,19 +695,30 @@ public class ArchiveResource extends ResourceBase {
 					(java.util.List<?>) SpringContext.getApplicationContext()
 					.getBeansOfType(LineageTargetSink.class).values().stream().toList();
 			LineageEmitter emitter = lc.createEmitterForMode(mode, store, sinks);
-			if (emitter.isActive()) {
-				LineageEventBuilder b = new LineageEventBuilder()
-						.repositoryId(repositoryId)
-						.processType(LineageProcessType.ARCHIVE_LOCAL)
-						.addInputObject(repositoryId, objectId)
-						.addOutput("nemaki://" + repositoryId + "/archives/" + objectId)
-						.snapshotAttribute("reason", "force-archive")
-						.snapshotAttribute("requestedBy", getCallContextUsername(httpRequest));
-				if (lc != null) {
-					b.targets(lc.getTargets());
-				}
-				emitter.emit(b.build());
-			}
+			java.util.List<String> targets = lc.getTargets();
+			String requestedBy = getCallContextUsername(httpRequest);
+			jp.aegif.nemaki.rest.purview.journal.LineageFactEmission.emitSafely(emitter, () -> {
+				String occurredAt = java.time.Instant.now().toString();
+				return new jp.aegif.nemaki.rest.purview.journal.LineageFact(
+						repositoryId,
+						LineageProcessType.ARCHIVE_LOCAL,
+						operationId,
+						occurredAt,
+						java.util.List.of(jp.aegif.nemaki.rest.purview.journal.LineageEndpoint
+								.document(repositoryId, objectId, documentName)),
+						java.util.List.of(jp.aegif.nemaki.rest.purview.journal.LineageEndpoint
+								.archive(repositoryId, objectId, objectId,
+										java.time.Instant.parse(occurredAt).toEpochMilli())),
+						targets,
+						null,
+						new jp.aegif.nemaki.rest.purview.journal.LineageFact.LegacyV1Projection(
+								LineageProcessType.ARCHIVE_LOCAL,
+								java.util.List.of(LineageEvent.qualifiedName(repositoryId, objectId)),
+								java.util.List.of("nemaki://" + repositoryId + "/archives/" + objectId),
+								java.util.Map.of(
+										"reason", "force-archive",
+										"requestedBy", requestedBy)));
+			}, "repo=" + repositoryId + " op=" + operationId + " type=ARCHIVE_LOCAL(force)");
 		} catch (Exception e) {
 			log.warn("Lineage event emission failed (non-fatal): " + e.getMessage());
 		}
@@ -738,14 +774,29 @@ public class ArchiveResource extends ResourceBase {
 		}
 		try {
 			CallContext systemContext = new SystemCallContext(repositoryId);
+			// The typed ARCHIVE endpoint needs the document's name, readable only before the
+			// deletion that archives it; the operation id is issued at operation start (§3).
+			// The read is lineage-only, so it must not be able to fail the archive: a lost name
+			// loses one fact inside the facade (loudly), never the deletion.
+			String lineageOperationId = java.util.UUID.randomUUID().toString();
+			String documentName = null;
+			try {
+				jp.aegif.nemaki.model.Document documentBeforeArchive =
+						getContentService().getDocument(repositoryId, objectId);
+				documentName = documentBeforeArchive != null
+						? documentBeforeArchive.getName() : null;
+			} catch (Exception e) {
+				log.warn("Could not read document name for lineage (archive continues): "
+						+ e.getMessage());
+			}
 			// Use deleteDocument to properly handle attachments, renditions, and version series
 			getContentService().deleteDocument(systemContext, repositoryId, objectId, true, false);
 			if (cachePool != null) {
 				cachePool.get(repositoryId).removeCmisCache(objectId);
 			}
 
-			// Lineage Journal: ARCHIVE_LOCAL (force-archive)
-			emitLineageEvent(repositoryId, objectId, httpRequest);
+			// Lineage: one version-free fact; the emitter projects it (v1 today, v2 after §6-a).
+			emitLineageEvent(repositoryId, objectId, documentName, lineageOperationId, httpRequest);
 		} catch (Exception e) {
 			log.error("Failed to force-archive document " + objectId, e);
 			status = false;

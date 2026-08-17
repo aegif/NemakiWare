@@ -3,9 +3,10 @@ package jp.aegif.nemaki.patch;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Patch to add all 38 standard CMIS views required by CMIS 1.1 specification.
@@ -39,7 +40,7 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
 
             // Get current design document
             String designDocId = "_design/_repo";
-            ObjectMapper mapper = new ObjectMapper();
+            ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
 
             // Read current design document
             JsonNode currentDoc = client.get(JsonNode.class, designDocId);
@@ -48,7 +49,7 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
             }
 
             // Clone the document as ObjectNode for modification
-            ObjectNode updatedDoc = currentDoc.deepCopy();
+            ObjectNode updatedDoc = (ObjectNode) currentDoc.deepCopy();
             ObjectNode views = (ObjectNode) updatedDoc.get("views");
             if (views == null) {
                 views = mapper.createObjectNode();
@@ -132,7 +133,12 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
 
             addViewIfMissing(views, "joinedDirectGroupsByUserId", "function(doc) {if (doc.type == 'cmis:item' && doc.groupId) {if ( doc.subTypeProperties ) {for(var i in doc.subTypeProperties ) {if ( doc.subTypeProperties[i].key == 'nemaki:users' ) {for(var user in doc.subTypeProperties[i].value) {emit(doc.subTypeProperties[i].value[user], doc)}}}}}}", null, repositoryId);
 
-            addViewIfMissing(views, "joinedDirectGroupsByGroupId", "function(doc) {\n    if (doc.type == 'cmis:item' && doc.groupId) {\n        if (doc.subTypeProperties) {\n            for (var i in doc.subTypeProperties) {\n                if (doc.subTypeProperties[i].key == 'nemaki:groups') {\n                    for (var group in doc.subTypeProperties[i].value) {\n                        emit([doc.subTypeProperties[i].value[group],0], doc);\n                        emit([doc.subTypeProperties[i].value[group],1], doc);\n                        emit([doc.subTypeProperties[i].value[group],2], doc);\n                        emit([doc.subTypeProperties[i].value[group],3], doc);\n                        emit([doc.subTypeProperties[i].value[group],4], doc);\n                        emit([doc.subTypeProperties[i].value[group],5], doc);\n                        emit([doc.subTypeProperties[i].value[group],6], doc);\n                        emit([doc.subTypeProperties[i].value[group],7], doc);\n                        emit([doc.subTypeProperties[i].value[group],8], doc);\n                        emit([doc.subTypeProperties[i].value[group],9], doc);\n                        emit([doc.subTypeProperties[i].value[group],10], doc);\n                        emit([doc.subTypeProperties[i].value[group],11], doc);\n                        emit([doc.subTypeProperties[i].value[group],12], doc);\n                        emit([doc.subTypeProperties[i].value[group],13], doc);\n                        emit([doc.subTypeProperties[i].value[group],14], doc);\n                        emit([doc.subTypeProperties[i].value[group],15], doc);\n                        emit([doc.subTypeProperties[i].value[group],16], doc);\n                        emit([doc.subTypeProperties[i].value[group],17], doc);\n                        emit([doc.subTypeProperties[i].value[group],18], doc);\n                        emit([doc.subTypeProperties[i].value[group],19], doc);\n                    }\n                }\n            }\n        }\n    }\n}", null, repositoryId);
+            // F4: ONE emit per edge. This used to emit the same row at [id,0]..[id,19] — twenty
+            // byte-identical copies, since the second key element carries no information. The
+            // key SHAPE is kept because both consumers query startkey/endkey = [id, 0]; a
+            // scalar key would match neither and return nothing rather than fail.
+            // Existing repositories are migrated by Patch_JoinedGroupsSingleEmit.
+            addViewIfMissing(views, "joinedDirectGroupsByGroupId", "function(doc) {\n    if (doc.type == 'cmis:item' && doc.groupId) {\n        if (doc.subTypeProperties) {\n            for (var i in doc.subTypeProperties) {\n                if (doc.subTypeProperties[i].key == 'nemaki:groups') {\n                    for (var group in doc.subTypeProperties[i].value) {\n                        emit([doc.subTypeProperties[i].value[group],0], doc);\n                    }\n                }\n            }\n        }\n    }\n}", null, repositoryId);
 
             addViewIfMissing(views, "changesByObjectId", "function(doc) { if (doc.type == 'change')  emit(doc.objectId, doc) }", null, repositoryId);
 
@@ -159,7 +165,7 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
 
     private void addViewIfMissing(ObjectNode views, String viewName, String mapFunction, String reduceFunction, String repositoryId) {
         if (!views.has(viewName)) {
-            ObjectMapper mapper = new ObjectMapper();
+            ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
             ObjectNode viewDef = mapper.createObjectNode();
             viewDef.put("map", mapFunction);
             if (reduceFunction != null && !reduceFunction.isEmpty()) {
@@ -178,7 +184,7 @@ public class Patch_StandardCmisViews extends AbstractNemakiPatch {
      * Add or update a view. If the view exists but has a different map or reduce function, update it.
      */
     private void addOrUpdateView(ObjectNode views, String viewName, String mapFunction, String reduceFunction, String repositoryId) {
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = ObjectMapperFactory.createDefaultObjectMapper();
         if (views.has(viewName)) {
             JsonNode existing = views.get(viewName);
             String existingMap = existing.has("map") ? existing.get("map").asText() : "";

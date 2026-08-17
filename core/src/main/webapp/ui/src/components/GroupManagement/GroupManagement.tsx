@@ -509,7 +509,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
             />
           </Form.Item>
 
-          <Divider orientation="left">{t('groupManagement.memberSettings')}</Divider>
+          <Divider titlePlacement="left">{t('groupManagement.memberSettings')}</Divider>
 
           <Form.Item
             name="userMembers"

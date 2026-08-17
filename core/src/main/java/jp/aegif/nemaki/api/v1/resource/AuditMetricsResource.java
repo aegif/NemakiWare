@@ -377,7 +377,7 @@ public class AuditMetricsResource {
             if (auditFile.exists() && auditFile.length() > 0) {
                 // Read last N lines using RandomAccessFile (reverse read)
                 java.util.List<String> lines = readTailLines(auditFile, limit);
-                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                tools.jackson.databind.ObjectMapper mapper = new tools.jackson.databind.ObjectMapper();
 
                 for (String line : lines) {
                     if (line.trim().isEmpty()) continue;

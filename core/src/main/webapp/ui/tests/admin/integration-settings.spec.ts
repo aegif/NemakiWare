@@ -1,4 +1,4 @@
-import { waitForUiStable, waitForRender } from '../utils/wait-helpers';
+import { waitForAppReady, waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { test, expect } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
 import { TestHelper } from '../utils/test-helper';
@@ -34,7 +34,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
     await testHelper.closeMobileSidebar(browserName);
     await testHelper.waitForAntdLoad();
   });
@@ -130,7 +130,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     await waitForUiStable(page);
 
     // Should have Google tab panel visible with a form item
-    const googlePanel = page.locator('.ant-tabs-tabpane-active');
+    const googlePanel = page.locator('.ant-tabs-content-active');
     await expect(googlePanel).toBeVisible({ timeout: 10000 });
     const googleFormItem = googlePanel.locator('.ant-form-item').first();
     await expect(googleFormItem).toBeVisible({ timeout: 5000 });
@@ -142,7 +142,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     await waitForUiStable(page);
 
     // Should have Microsoft tab with Tenant ID field
-    const msPanel = page.locator('.ant-tabs-tabpane-active');
+    const msPanel = page.locator('.ant-tabs-content-active');
     const msFormItems = msPanel.locator('.ant-form-item');
     const msItemCount = await msFormItems.count();
     console.log(`Microsoft tab has ${msItemCount} form items`);
@@ -155,7 +155,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     await waitForUiStable(page);
 
     // Should have SAML tab with form items
-    const samlPanel = page.locator('.ant-tabs-tabpane-active');
+    const samlPanel = page.locator('.ant-tabs-content-active');
     const samlFormItems = samlPanel.locator('.ant-form-item');
     const samlItemCount = await samlFormItems.count();
     console.log(`SAML tab has ${samlItemCount} form items`);
@@ -168,7 +168,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     await waitForUiStable(page);
 
     // Should have Purview tab with form items
-    const purviewPanel = page.locator('.ant-tabs-tabpane-active');
+    const purviewPanel = page.locator('.ant-tabs-content-active');
     const purviewFormItems = purviewPanel.locator('.ant-form-item');
     const purviewItemCount = await purviewFormItems.count();
     console.log(`Purview tab has ${purviewItemCount} form items`);
@@ -186,7 +186,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     await atlasTab.click();
     await waitForUiStable(page);
 
-    const atlasPanel = page.locator('.ant-tabs-tabpane-active');
+    const atlasPanel = page.locator('.ant-tabs-content-active');
     const atlasFormItems = atlasPanel.locator('.ant-form-item');
     const atlasItemCount = await atlasFormItems.count();
     console.log(`Atlas tab has ${atlasItemCount} form items`);
@@ -198,7 +198,7 @@ test.describe('Integration Settings - Page Rendering', () => {
     await dataplexTab.click();
     await waitForUiStable(page);
 
-    const dataplexPanel = page.locator('.ant-tabs-tabpane-active');
+    const dataplexPanel = page.locator('.ant-tabs-content-active');
     const dataplexFormItems = dataplexPanel.locator('.ant-form-item');
     const dataplexItemCount = await dataplexFormItems.count();
     console.log(`Dataplex tab has ${dataplexItemCount} form items`);
@@ -243,7 +243,7 @@ test.describe('Integration Settings - Navigation', () => {
     const testHelper = new TestHelper(page);
 
     await authHelper.login();
-    await page.waitForSelector('.ant-menu-item, .ant-table-tbody', { timeout: 30000 });
+    await waitForAppReady(page, { timeout: 30000 });
     await testHelper.closeMobileSidebar(browserName);
     await testHelper.waitForAntdLoad();
 
@@ -404,13 +404,30 @@ test.describe('Integration Settings - API', () => {
     expect(getResponse.ok()).toBe(true);
     const getData = await getResponse.json();
 
-    expect(getData.settings['atlas.enabled']).toBe('true');
-    expect(getData.settings['atlas.endpoint']).toBe('https://e2e-atlas.example.com:21443');
-    expect(getData.settings['atlas.username']).toBe('e2e-atlas-user');
-    expect(getData.settings['atlas.password']).toBe('[configured]');
-    expect(getData.sources['atlas.endpoint']).toBe('couchdb');
+    // What is under test is the PRECEDENCE contract, not one branch of it. `atlas.*` is an
+    // ordinary key, so a system property set at deploy time outranks the stored value — the
+    // atlas/4b-dryrun overlays pin exactly these four with -D, and on such a deployment the
+    // stored value is written and correctly does NOT take effect. Asserting `couchdb`
+    // unconditionally made this test fail on every environment that runs Atlas for real,
+    // which is the only kind of environment where the rest of the Atlas suite is exercised.
+    const endpointSource = getData.sources['atlas.endpoint'];
+    expect(['couchdb', 'system_property']).toContain(endpointSource);
 
-    console.log('Atlas settings round-trip verified');
+    if (endpointSource === 'couchdb') {
+      expect(getData.settings['atlas.enabled']).toBe('true');
+      expect(getData.settings['atlas.endpoint']).toBe('https://e2e-atlas.example.com:21443');
+      expect(getData.settings['atlas.username']).toBe('e2e-atlas-user');
+      expect(getData.settings['atlas.password']).toBe('[configured]');
+      console.log('Atlas settings round-trip verified (stored value is effective)');
+    } else {
+      // The deploy-time value must still be the effective one, and the write must not have
+      // half-applied: every key the overlay pins reports the same source.
+      expect(getData.settings['atlas.endpoint']).not.toBe('https://e2e-atlas.example.com:21443');
+      for (const key of ['atlas.enabled', 'atlas.username']) {
+        expect(getData.sources[key]).toBe('system_property');
+      }
+      console.log('Atlas settings precedence verified (system property outranks the store)');
+    }
 
     // Cleanup
     await page.request.put(

@@ -177,6 +177,7 @@ public class FilesystemImporter {
                             contentStream, VersioningState.MAJOR, null, null, null);
 
                     result.documentsCreated++;
+                    result.recordCreated(newDoc.getId(), fileName, false, parentFolderId);
 
                     if (metadata != null) {
                         applyCustomAcl(repositoryId, newDoc.getId(), metadata, callContext, result);
@@ -224,6 +225,7 @@ public class FilesystemImporter {
 
         pathToFolderId.put(path, newFolder.getId());
         result.foldersCreated++;
+        result.recordCreated(newFolder.getId(), folderName, true, parentFolderId);
 
         return newFolder.getId();
     }
@@ -314,6 +316,11 @@ public class FilesystemImporter {
                 acl.setLocalAces(aces);
                 content.setAcl(acl);
                 cs.updateInternal(repositoryId, content);
+                // This path writes an ACL without going through AclService, so nothing else
+                // advances the cache generation — and other replicas would keep serving the
+                // pre-import permissions until their entries expired. Bumping here rather than
+                // in the DAO keeps ordinary content updates from clearing every replica.
+                jp.aegif.nemaki.util.cache.AclCacheGeneration.advance(repositoryId);
             }
 
         } catch (Exception e) {

@@ -106,25 +106,22 @@ find core/src/main/webapp/ui/tests -name "*.ts" -exec sed -i '' 's|/ui/dist/|/ui
 
 ## 🧪 テスト委譲のプロセス
 
-### 🚀 推奨デプロイ方法（Keycloak自動起動）
+### 🚀 デプロイ方法
 
-**重要**: コード変更後のデプロイには `deploy-with-verification.sh` を使用してください。
-このスクリプトは Keycloak の起動確認・自動起動も行います。
+> **2026-08-16 訂正**: ここにあった `deploy-with-verification.sh` は**リポジトリに存在しません**
+> (4 箇所で参照されていました)。以下が実際に動く手順です。正典は
+> `.claude/skills/build-deploy/`。
 
 ```bash
-# プロジェクトルートから実行
-./deploy-with-verification.sh
-
-# スクリプトが実行すること:
-# - Step 1: UIビルド
-# - Step 2: WARビルド
-# - Step 3a: Keycloak起動確認・自動起動 ← 自動的にKeycloakを起動
-# - Step 3b: NemakiWareビルド
-# - Step 4: サーバー起動待機
-# - Step 5: デプロイ検証（アセットハッシュ確認）
-# - Step 6: 基本APIテスト
-# - Step 7: 外部認証確認
+./tools/verify/build-outside-ide.sh war
 ```
+
+```bash
+docker compose -p nb33 -f docker/docker-compose-simple.yml up -d --build --force-recreate core
+```
+
+`docker compose restart` は使わないこと — WAR はイメージビルド時にコピーされるので、
+`restart` では古い WAR のまま動きます。
 
 **手動でKeycloakを起動する必要がある場合**:
 ```bash
@@ -136,7 +133,7 @@ sleep 60  # Keycloak起動待機
 ### ステップ1: 委譲前の準備（委譲元エージェント）
 
 ```bash
-# 1. 環境の健全性確認（推奨: deploy-with-verification.sh を先に実行）
+# 1. 環境の健全性確認
 docker ps                       # 全コンテナ起動確認（keycloakを含む4コンテナ）
 ./qa-test.sh                    # QAテスト全通過確認（56/56）
 git status                      # クリーンな状態確認
@@ -205,7 +202,7 @@ git push origin <branch-name>
 ### 委譲元エージェント（Claude Code等）
 
 **環境準備**:
-- [ ] **デプロイスクリプト実行推奨**（`./deploy-with-verification.sh` → Keycloak自動起動）⚠️ **推奨**
+- [ ] **WAR ビルド → `--build --force-recreate` で再デプロイ**（上記「デプロイ方法」）⚠️ **必須**
 - [ ] Dockerコンテナ全て起動済み（`docker ps` → keycloakを含む4コンテナ）
 - [ ] QAテスト全通過（`./qa-test.sh` → 56/56）
 - [ ] **外部認証テスト通過**（`npx playwright test tests/auth/` → 19/19）⚠️ **必須**
@@ -483,7 +480,25 @@ const adminMenu = page.locator('.ant-menu-submenu:has-text("管理")');  // Not 
 - For Java 21, ensure `MAVEN_OPTS` includes required `--add-opens` (see `core/start-jetty-dev.sh`).
 - **External Ingest delegation (3.1.1-RC3+)**: connectors are admin-only by default. To let a folder owner use a connector, set `delegated=true` AND either `allowedFolderIds=[...]` or `delegateAllFolders=true` (the latter only when truly needed — credential reach is repo-wide). Empty `allowedFolderIds` while `delegated=true` is treated as no delegation. See `docs/design/connector-delegation.md`.
 
-## Current Work Status (2026-05-31)
+## Current Work Status — 履歴として残す (2026-05-31 時点)
+
+> **2026-08-16 訂正**: 以下は **2026-05-31 の状態**で、そこから 700 コミット以上進んでいます。
+> 「現在地」として読まないでください。
+>
+> - 当時のブランチ `release/3.1.1-RC6` / タグ `v3.1.1-RC6.9` は**現在地ではありません**。
+> - 「`CLAUDE.md` の canonical version log (RC1〜RC33)」を指していますが、
+>   **その節は CLAUDE.md にありません**。
+> - 記載の合格数 (QA 56/56、TCK 39/39) は当時の数字です。
+>
+> 現在地は次で確認してください。
+>
+> - 利用者向けの変更履歴 → [`RELEASE_NOTES.md`](RELEASE_NOTES.md)
+> - リリース前の未決事項 → [`docs/design/v3.3-release-blockers.md`](docs/design/v3.3-release-blockers.md)
+> - ブランチとタグ → `git log --oneline -1` / `git tag --sort=-v:refname | head -1`
+>
+> 以下の詳細 (TCK の内訳、当時の課題整理) は**当時の記録として**残してあります。
+
+
 
 ### Active Branch
 - **Branch**: `release/3.1.1-RC6` (latest tag: `v3.1.1-RC6.9`)

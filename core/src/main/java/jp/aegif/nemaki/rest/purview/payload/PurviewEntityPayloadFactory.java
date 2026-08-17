@@ -14,11 +14,15 @@ import org.springframework.stereotype.Component;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.model.Archive;
 import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.rest.purview.journal.LineageEndpoint;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.NemakiTypeDefinition;
 
 @Component
 public class PurviewEntityPayloadFactory {
+
+    private static final org.slf4j.Logger logger =
+            org.slf4j.LoggerFactory.getLogger(PurviewEntityPayloadFactory.class);
 
     private static final String REPOSITORY_TYPE_NAME = "nemaki_repository";
     private static final String FOLDER_TYPE_NAME = "nemaki_folder";
@@ -33,7 +37,8 @@ public class PurviewEntityPayloadFactory {
     private static final String DOCUMENT_HAS_TYPE_DEFINITION_RELATIONSHIP = "nemaki_document_has_type_definition";
     private static final String LIFECYCLE_ACTIVE = "ACTIVE";
     private static final String LIFECYCLE_ARCHIVED = "ARCHIVED";
-    private static final String FILESYSTEM_SOURCE_SYSTEM = "filesystem";
+    private static final String FILESYSTEM_SOURCE_SYSTEM =
+            jp.aegif.nemaki.rest.purview.ExternalAssetIdentity.FILESYSTEM_SOURCE_SYSTEM;
     private static final String ZIP_FOLDER_EXPORT_MODE = "zip-folder";
     private static final String ZIP_SELECTION_EXPORT_MODE = "zip-selection";
 
@@ -76,7 +81,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", REPOSITORY_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("status", "ACTIVE");
         entity.put("createdBy", "system");
         entity.put("updatedBy", "system");
@@ -110,7 +115,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", FOLDER_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(content.getCreator(), "system"));
         entity.put("updatedBy", firstNonBlank(content.getModifier(), content.getCreator(), "system"));
@@ -153,7 +158,18 @@ public class PurviewEntityPayloadFactory {
         attributes.put("archivedAt", null);
         attributes.put("cloudProvider", PurviewCloudMetadataSupport.getCloudProvider(content));
         attributes.put("externalFileId", PurviewCloudMetadataSupport.getExternalFileId(content));
-        attributes.put("cloudFileUrl", PurviewCloudMetadataSupport.getCloudFileUrl(content));
+        // Null, not the stored URL and not a stripped version of it. Stripping the query is not
+        // enough: SharePoint's modern sharing links put the token in the PATH (/:x:/g/...TOKEN),
+        // a shape CloudDriveResource itself accepts as valid, so no transformation of a stored
+        // URL can promise it is secret-free. Until increment B rebuilds a provider-canonical URL
+        // from {provider, fileId}, the catalog carries no URL.
+        //
+        // What this does NOT claim: that a null clears a URL published before this rule existed.
+        // The null is serialized (the client's ObjectMapper uses Jackson's default inclusion), but
+        // whether the backend deletes the property or ignores the null differs between Atlas OSS
+        // and Purview, and neither has been verified here. Removing already-published values is a
+        // separate remediation — see the design's §4 and the live-Atlas release gate.
+        attributes.put("cloudFileUrl", null);
         attributes.put("cloudLastSyncedAt", PurviewCloudMetadataSupport.getCloudLastSyncedAt(content));
 
         // Inject custom property values based on mapping configuration
@@ -161,7 +177,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", DOCUMENT_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(content.getCreator(), "system"));
         entity.put("updatedBy", firstNonBlank(content.getModifier(), content.getCreator(), "system"));
@@ -226,10 +242,33 @@ public class PurviewEntityPayloadFactory {
                     || localEntry.cardinality() != schemaEntry.cardinality()) {
                 continue;
             }
-            Object value = propertyValues.get(cmisPropertyId);
-            if (value != null) {
-                attributes.put(catalogName, convertPropertyValue(value));
+            // The same entry point save and load use — both ends of the mapping, one rule. A
+            // resolver that hands back a mapping this rejects has been bypassed, which is the
+            // case this layer exists for.
+            CatalogPropertyMappingResolver.Rejection rejection =
+                    CatalogPropertyMappingResolver.rejectionFor(cmisPropertyId, catalogName);
+            if (rejection != null) {
+                logger.warn("Ignoring custom property mapping '{}' -> '{}': {}.",
+                        cmisPropertyId, catalogName, rejection.reason());
+                continue;
             }
+            Object value = propertyValues.get(cmisPropertyId);
+            if (value == null) {
+                continue;
+            }
+            // A separate rule, deliberately: rejectionFor judges the mapping, this judges the
+            // entity being built. A custom property may add an attribute, never replace one this
+            // factory already decided — which holds even for a core attribute nobody remembered
+            // to add to RESERVED_ATTRIBUTE_NAMES. containsKey, not putIfAbsent: the value being
+            // protected is often null (cloudFileUrl is deliberately null so that no stored URL
+            // reaches the catalog), and putIfAbsent treats a null mapping as absent.
+            if (attributes.containsKey(catalogName)) {
+                logger.warn("Ignoring custom property '{}' -> catalog attribute '{}': the name is"
+                        + " already set by a core attribute of this entity. A custom mapping may"
+                        + " add attributes, not replace them.", cmisPropertyId, catalogName);
+                continue;
+            }
+            attributes.put(catalogName, convertPropertyValue(value));
         }
     }
 
@@ -270,7 +309,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", TYPE_DEFINITION_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(typeDefinition.getCreator(), "system"));
         entity.put("updatedBy", firstNonBlank(typeDefinition.getModifier(), typeDefinition.getCreator(), "system"));
@@ -306,6 +345,78 @@ public class PurviewEntityPayloadFactory {
         relationship.put("typeName", "nemaki_document_has_archive");
         relationship.put("end1", relationshipEnd("DataSet", end1Qn, guidByQualifiedName.get(end1Qn)));
         relationship.put("end2", relationshipEnd(ARCHIVE_TYPE_NAME, end2Qn, guidByQualifiedName.get(end2Qn)));
+        relationship.put("attributes", Map.of());
+        return relationship;
+    }
+
+    /** The lifecycle states a folder companion can be in (§3). */
+    public static final String SOURCE_STATE_ACTIVE = "ACTIVE";
+    /** The folder went to the archive; past lineage still points here. */
+    public static final String SOURCE_STATE_ARCHIVED = "ARCHIVED";
+    /** The archive was purged. Still not a deletion — history retention, not an orphan. */
+    public static final String SOURCE_STATE_PURGED = "PURGED";
+    /** A companion whose folder has no record of ever existing (injection or a fault). */
+    public static final String SOURCE_STATE_ORPHAN = "ORPHAN";
+
+    /**
+     * The DataSet companion of a folder (増分 B, §3).
+     *
+     * <p>The qualified name comes from {@link LineageEndpoint#folderProxyQualifiedName} rather
+     * than being spelled here: lineage endpoints resolve through that method, and a second
+     * spelling of the same name is how the two sides drift into pointing at different entities.
+     *
+     * <p>{@code active} and {@code sourceState} say the same thing at two resolutions — the
+     * first is what a query filters on, the second is why. Only {@code PURGED} may ever be
+     * collected, so they cannot be collapsed.
+     */
+    public Map<String, Object> buildFolderDatasetEntity(String repositoryId, Content folder,
+            String sourceState) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("qualifiedName",
+                LineageEndpoint.folderProxyQualifiedName(repositoryId, folder.getId()));
+        attributes.put("name", firstNonBlank(folder.getName(), folder.getId()));
+        attributes.put("repositoryId", repositoryId);
+        attributes.put("objectId", folder.getId());
+        attributes.put("active", SOURCE_STATE_ACTIVE.equals(sourceState));
+        attributes.put("sourceState", sourceState);
+
+        // No custom property values: the companion exists for lineage to point at, and a
+        // mapped property could carry anything an operator configured. The folder entity is
+        // where those belong, and it already has them.
+
+        Map<String, Object> entity = new LinkedHashMap<>();
+        entity.put("typeName", "nemaki_folder_dataset");
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
+        entity.put("status", "ACTIVE");
+        entity.put("createdBy", firstNonBlank(folder.getCreator(), "system"));
+        entity.put("updatedBy",
+                firstNonBlank(folder.getModifier(), folder.getCreator(), "system"));
+        entity.put("version", 0);
+        return entity;
+    }
+
+    /**
+     * The 1:1 tie between a folder and its companion.
+     *
+     * <p>Created with the same payload every time, so a retry is a no-op: the client turns
+     * Atlas's 409 into "relationship already exists" rather than a failure, which is what makes
+     * the backfill safe to re-run after a crash mid-batch.
+     */
+    public Map<String, Object> buildFolderDatasetRelationship(String repositoryId,
+            Content folder) {
+        return buildFolderDatasetRelationship(repositoryId, folder, Map.of());
+    }
+
+    public Map<String, Object> buildFolderDatasetRelationship(String repositoryId, Content folder,
+            Map<String, String> guidByQualifiedName) {
+        String end1Qn = buildObjectQualifiedName(repositoryId, folder.getId());
+        String end2Qn = LineageEndpoint.folderProxyQualifiedName(repositoryId, folder.getId());
+        Map<String, Object> relationship = new LinkedHashMap<>();
+        relationship.put("typeName", "nemaki_folder_has_dataset");
+        relationship.put("end1",
+                relationshipEnd(FOLDER_TYPE_NAME, end1Qn, guidByQualifiedName.get(end1Qn)));
+        relationship.put("end2", relationshipEnd("nemaki_folder_dataset", end2Qn,
+                guidByQualifiedName.get(end2Qn)));
         relationship.put("attributes", Map.of());
         return relationship;
     }
@@ -383,7 +494,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", DOCUMENT_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(archive.getCreator(), "system"));
         entity.put("updatedBy", firstNonBlank(archive.getArchivedBy(), archive.getModifier(), archive.getCreator(), "system"));
@@ -415,7 +526,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", ARCHIVE_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(archive.getCreator(), "system"));
         entity.put("updatedBy", firstNonBlank(archive.getArchivedBy(), archive.getModifier(), archive.getCreator(), "system"));
@@ -462,12 +573,13 @@ public class PurviewEntityPayloadFactory {
                 toEpochMillis(archive.getModified()),
                 toEpochMillis(archive.getCreated())));
         attributes.put("externalStableKey", stableKey);
-        attributes.put("sourceSystem", firstNonBlank(resolveArchiveSourceSystem(archive), "cold-storage"));
+        attributes.put("sourceSystem", firstNonBlank(resolveArchiveSourceSystem(archive),
+                jp.aegif.nemaki.rest.purview.ExternalAssetIdentity.COLD_STORAGE_SOURCE_SYSTEM));
         attributes.put("externalPath", firstNonBlank(stableKey, archive.getPath()));
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", EXTERNAL_ASSET_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(archive.getCreator(), "system"));
         entity.put("updatedBy", firstNonBlank(archive.getArchivedBy(), archive.getModifier(), archive.getCreator(), "system"));
@@ -485,7 +597,8 @@ public class PurviewEntityPayloadFactory {
         if (provider == null || provider.isBlank() || externalFileId == null || externalFileId.isBlank()) {
             return null;
         }
-        return provider + ":" + externalFileId;
+        return jp.aegif.nemaki.rest.purview.ExternalAssetIdentity
+                .cloud(provider, externalFileId).value();
     }
 
     public Map<String, Object> buildExternalAssetEntity(String repositoryId, Content content) {
@@ -499,13 +612,14 @@ public class PurviewEntityPayloadFactory {
         attributes.put("modifiedTime", toEpochMillis(content.getModified()));
         attributes.put("externalStableKey", stableKey);
         attributes.put("sourceSystem", PurviewCloudMetadataSupport.getCloudProvider(content));
-        attributes.put("externalPath", firstNonBlank(
-                PurviewCloudMetadataSupport.getCloudFileUrl(content),
-                PurviewCloudMetadataSupport.getExternalFileId(content)));
+        // The file id, not the stored URL: a URL the drive API accepts can carry a sharing
+        // token in its query string, and externalPath is persisted in the catalog. The id is the
+        // same fact with nothing secret in it — it is already half of the stable key.
+        attributes.put("externalPath", PurviewCloudMetadataSupport.getExternalFileId(content));
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", EXTERNAL_ASSET_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(content.getCreator(), "system"));
         entity.put("updatedBy", firstNonBlank(content.getModifier(), content.getCreator(), "system"));
@@ -526,9 +640,10 @@ public class PurviewEntityPayloadFactory {
         attributes.put("objectId", content.getId());
         attributes.put("cloudProvider", PurviewCloudMetadataSupport.getCloudProvider(content));
         attributes.put("externalStableKey", stableKey);
-        attributes.put("targetDescription", firstNonBlank(
-                PurviewCloudMetadataSupport.getCloudFileUrl(content),
-                PurviewCloudMetadataSupport.getExternalFileId(content)));
+        // The file id, never a stored URL — same reason as cloudFileUrl above: SharePoint-style
+        // sharing tokens live in the path, so a "sanitized" URL is not a secret-free one.
+        attributes.put("targetDescription",
+                PurviewCloudMetadataSupport.getExternalFileId(content));
 
         Map<String, Object> relationshipAttributes = new LinkedHashMap<>();
         relationshipAttributes.put("inputs", List.of(
@@ -538,7 +653,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", CLOUD_SYNC_PROCESS_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("relationshipAttributes", relationshipAttributes);
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(content.getCreator(), "system"));
@@ -548,7 +663,7 @@ public class PurviewEntityPayloadFactory {
     }
 
     public String buildFilesystemExternalStableKey(String path) {
-        return "filesystem:" + path;
+        return jp.aegif.nemaki.rest.purview.ExternalAssetIdentity.filesystem(path).value();
     }
 
     public Map<String, Object> buildFilesystemExternalAssetEntity(
@@ -557,20 +672,26 @@ public class PurviewEntityPayloadFactory {
             String username,
             long occurredAtMillis) {
         String stableKey = buildFilesystemExternalStableKey(path);
+        // From the key, not from the argument: the key is normalised and the argument may not be,
+        // and an externalPath that disagrees with its own key describes a second file. It also
+        // makes the entity impossible to reconstruct as a LineageEndpoint, whose kind-consistency
+        // check requires the two to agree.
+        String normalisedPath = jp.aegif.nemaki.rest.purview.ExternalAssetIdentity
+                .filesystemPathOf(stableKey);
         Map<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("qualifiedName", buildExternalAssetQualifiedName(repositoryId, stableKey));
-        attributes.put("name", firstNonBlank(path, stableKey));
+        attributes.put("name", firstNonBlank(normalisedPath, stableKey));
         attributes.put("description", null);
         attributes.put("owner", firstNonBlank(username, "system"));
         attributes.put("createTime", occurredAtMillis);
         attributes.put("modifiedTime", occurredAtMillis);
         attributes.put("externalStableKey", stableKey);
         attributes.put("sourceSystem", FILESYSTEM_SOURCE_SYSTEM);
-        attributes.put("externalPath", path);
+        attributes.put("externalPath", normalisedPath);
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", EXTERNAL_ASSET_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(username, "system"));
         entity.put("updatedBy", firstNonBlank(username, "system"));
@@ -608,7 +729,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", IMPORT_PROCESS_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("relationshipAttributes", relationshipAttributes);
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(username, "system"));
@@ -644,7 +765,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", IMPORT_PROCESS_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("relationshipAttributes", relationshipAttributes);
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(username, "system"));
@@ -683,7 +804,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", EXPORT_PROCESS_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("relationshipAttributes", relationshipAttributes);
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(username, "system"));
@@ -719,7 +840,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", EXPORT_PROCESS_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("relationshipAttributes", relationshipAttributes);
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(username, "system"));
@@ -756,7 +877,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", EXPORT_PROCESS_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("relationshipAttributes", relationshipAttributes);
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(username, "system"));
@@ -795,7 +916,7 @@ public class PurviewEntityPayloadFactory {
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("typeName", ARCHIVE_PROCESS_TYPE_NAME);
-        entity.put("attributes", attributes);
+        entity.put("attributes", CatalogSecretBoundary.sealed(attributes));
         entity.put("relationshipAttributes", relationshipAttributes);
         entity.put("status", "ACTIVE");
         entity.put("createdBy", firstNonBlank(archive.getCreator(), "system"));
@@ -821,8 +942,8 @@ public class PurviewEntityPayloadFactory {
     }
 
     public String buildExternalAssetQualifiedName(String repositoryId, String stableKey) {
-        return "nemaki://" + repositoryId + "/external-assets/"
-                + Base64.getUrlEncoder().withoutPadding().encodeToString(stableKey.getBytes(StandardCharsets.UTF_8));
+        return jp.aegif.nemaki.rest.purview.ExternalAssetIdentity.qualifiedName(repositoryId,
+                jp.aegif.nemaki.rest.purview.ExternalAssetIdentity.parse(stableKey));
     }
 
     private String buildArchiveProcessQualifiedName(String repositoryId, String archiveId) {

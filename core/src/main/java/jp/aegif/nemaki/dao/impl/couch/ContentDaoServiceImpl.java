@@ -43,9 +43,10 @@ import com.ibm.cloud.cloudant.v1.model.ViewResult;
 import com.ibm.cloud.cloudant.v1.model.ViewResultRow;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
 
@@ -176,21 +177,20 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 * This ensures all fields from the object hierarchy are properly serialized
 	 */
 	private ObjectMapper createConfiguredObjectMapper() {
-		ObjectMapper mapper = new ObjectMapper();
 		// Configure Jackson to ignore unknown properties during Cloudant migration
-		mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-		
 		// CRITICAL FIX: PropertyDefinitionCore contamination prevention
 		// CHANGED: Use SETTER access instead of FIELD access to enforce validation
 		// This ensures @JsonCreator constructors and setter methods are called
 		// preventing contamination during deserialization
-		mapper.setVisibility(PropertyAccessor.ALL, Visibility.NONE);
-		mapper.setVisibility(PropertyAccessor.SETTER, Visibility.ANY);     // FIXED: Use SETTER instead of FIELD
-		mapper.setVisibility(PropertyAccessor.CREATOR, Visibility.ANY);    // FIXED: Enable @JsonCreator constructors
-		mapper.setVisibility(PropertyAccessor.GETTER, Visibility.ANY);
-		mapper.setVisibility(PropertyAccessor.IS_GETTER, Visibility.ANY);
-		
-		return mapper;
+		return JsonMapper.builderWithJackson2Defaults()
+				.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+				.changeDefaultVisibility(vc -> vc
+						.withVisibility(PropertyAccessor.ALL, Visibility.NONE)
+						.withVisibility(PropertyAccessor.SETTER, Visibility.ANY)
+						.withVisibility(PropertyAccessor.CREATOR, Visibility.ANY)
+						.withVisibility(PropertyAccessor.GETTER, Visibility.ANY)
+						.withVisibility(PropertyAccessor.IS_GETTER, Visibility.ANY))
+				.build();
 	}
 
 	// ///////////////////////////////////////
@@ -590,6 +590,63 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			actualDocMap.put("description", descriptionObj);
 		}
 
+		return convertDocumentMapToContent(actualDocMap);
+	}
+
+	/**
+	 * Builds a {@link Content} from the raw value a view emitted.
+	 *
+	 * <p>The {@code children} view is declared as {@code emit(doc.parentId, doc)}, so its value
+	 * <em>is</em> the document — every field, {@code _rev} included. Asking CouchDB for
+	 * {@code include_docs=true} on top of that makes it look each document up again by id and
+	 * send a second copy: measured on a 50-child folder, 40 ms and 93 KB versus 5 ms and 49 KB
+	 * for the same information. Reading the value instead is the whole saving.
+	 *
+	 * <p>This is only sound because the queries here use CouchDB's default freshness
+	 * ({@code update=true}), where the index is brought current before the response is built and
+	 * the emitted value therefore matches the document it was emitted from. A caller that adds
+	 * {@code stale=ok} / {@code update=false} would be reading a snapshot instead, and must go
+	 * back to {@code include_docs}.
+	 */
+	@SuppressWarnings("unchecked")
+	private Content convertViewValueToContent(Object value) {
+		if (!(value instanceof Map)) {
+			return null;
+		}
+		Map<String, Object> raw = (Map<String, Object>) value;
+		Map<String, Object> docMap = new HashMap<>(raw.size() * 2);
+		for (Map.Entry<String, Object> entry : raw.entrySet()) {
+			docMap.put(entry.getKey(), normalizeJsonNumber(entry.getValue()));
+		}
+		return convertDocumentMapToContent(docMap);
+	}
+
+	/**
+	 * Gson hands back {@code LazilyParsedNumber} for JSON numbers, which Jackson would treat as
+	 * an unknown bean rather than a number. The document path already did this for created and
+	 * modified; the view-value path sees every top-level field, so it does it for all of those.
+	 *
+	 * <p>TOP LEVEL ONLY — this does not recurse. Numbers nested inside {@code acl},
+	 * {@code aspects} or {@code subTypeProperties} keep Gson's type. That is deliberate rather
+	 * than an oversight: the nested structures are deserialised by the Couch model classes' own
+	 * setters, which take the value as {@code Object} and do their own conversion, so a
+	 * {@code LazilyParsedNumber} there is handled where it lands. If a future field needs a
+	 * numeric primitive at depth, this has to grow a recursive pass.
+	 */
+	private static Object normalizeJsonNumber(Object value) {
+		if (value instanceof Number && value.getClass().getName().contains("LazilyParsedNumber")) {
+			Number n = (Number) value;
+			double d = n.doubleValue();
+			return (d == Math.floor(d) && !Double.isInfinite(d)) ? (Object) n.longValue() : (Object) d;
+		}
+		return value;
+	}
+
+	/** The shared tail: decide the concrete Couch model class and convert. */
+	private Content convertDocumentMapToContent(Map<String, Object> actualDocMap) {
+		String type = (String) actualDocMap.get("type");
+		String objectType = (String) actualDocMap.get("objectType");
+
 		// Determine actual type
 		String actualType = (type != null) ? type : objectType;
 
@@ -749,18 +806,120 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		return result;
 	}
 
+	/**
+	 * Are there objects of this type?
+	 *
+	 * <p>Answering false when the question could not be answered is not available here. The
+	 * consumer is the CMIS guard that refuses to delete a type while instances remain
+	 * ({@code TypeManagerImpl.checkTypeHasInstances}), and that guard is fail-closed: an
+	 * unwired DAO refuses the deletion rather than assuming the type is empty. A CouchDB or view
+	 * failure is the same class of ignorance, so swallowing it and returning false would restore
+	 * exactly that hole for as long as the outage lasts — a type could be deleted with its objects
+	 * still in the repository because the database was briefly unreachable.
+	 *
+	 * <p>So a failure propagates. {@code checkTypeDependencies} catches it and reports it as a
+	 * dependency issue, which becomes a constraint error naming the cause: the deletion is refused
+	 * and the operator is told why, instead of succeeding on a false premise.
+	 *
+	 * <p>"No instances" is NOT a failure and must not travel this path: the keyed view overload
+	 * answers an unmatched key with {@code null}, which is the ordinary case here and is handled
+	 * before it can become an exception.
+	 */
 	@Override
 	public boolean existContent(String repositoryId, String objectTypeId) {
 		try {
 			// Query countByObjectType view to check if content exists
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			ViewResult result = client.queryView("_repo", "countByObjectType", objectTypeId);
-			
-			return result.getRows() != null && !result.getRows().isEmpty();
+
+			// A key that matches nothing comes back as null, not as an empty result — that is the
+			// documented contract of the keyed overload, and "no instances of this type" is the
+			// common case here rather than an exceptional one. Dereferencing it threw an NPE that
+			// the catch below turned into false: the right answer, reached by throwing and logging
+			// an error every time. getChildrenNames already guards the same way.
+			if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
+				return true;
+			}
+			// "No rows" is the answer ONLY if the view could answer. queryView returns null both
+			// when the key matched nothing AND when the design document or view is absent, and a
+			// view whose design document is being rebuilt replies HTTP 200 with zero rows and no
+			// error at all. Reading either as "this type has no instances" reopens the very hole
+			// this method exists to close — a populated type would become deletable for as long as
+			// the rebuild lasts, which is precisely the window a v3.3.0 upgrade creates.
+			return confirmNoInstances(repositoryId, objectTypeId)
+					|| isUsedAsSecondaryType(repositoryId, objectTypeId);
 		} catch (Exception e) {
-			log.error("Error checking content existence for objectTypeId: " + objectTypeId + " in repository: " + repositoryId, e);
+			log.error("Could not determine whether objects of type " + objectTypeId
+					+ " still exist in repository " + repositoryId
+					+ " — reporting the failure rather than answering 'no'", e);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"Could not determine whether objects of type '" + objectTypeId
+							+ "' still exist: " + e.getMessage(), e);
+		}
+	}
+
+	/**
+	 * Is this type applied to anything as a SECONDARY type?
+	 *
+	 * <p>{@code countByObjectType} keys on {@code doc.objectType}, which is the PRIMARY type only.
+	 * A secondary type is recorded in the separate {@code secondaryIds} array, so a secondary type
+	 * that documents are actively using answers "no instances" through every view-based check —
+	 * and deleting it strips a type definition out from under live objects.
+	 *
+	 * <p>Asked through Mango because there is no view keyed on {@code secondaryIds}. That is
+	 * acceptable here and nowhere else in this class: type deletion is a rare administrative
+	 * operation, not a per-request path. (An earlier attempt put a Mango fallback on
+	 * {@code getChildrenNames}, which runs on every create, and it hung the CMIS TCK.)
+	 */
+	private boolean isUsedAsSecondaryType(String repositoryId, String typeId) {
+		try {
+			Map<String, Object> elemMatch = new HashMap<String, Object>();
+			elemMatch.put("$eq", typeId);
+			Map<String, Object> secondaryIds = new HashMap<String, Object>();
+			secondaryIds.put("$elemMatch", elemMatch);
+			Map<String, Object> selector = new HashMap<String, Object>();
+			selector.put("secondaryIds", secondaryIds);
+			List<Map<String, Object>> found =
+					connectorPool.getClient(repositoryId).findRawBySelector(selector, 1);
+			if (found == null || found.isEmpty()) {
+				return false;
+			}
+			log.info("Type '" + typeId + "' is still applied as a secondary type in repository '"
+					+ repositoryId + "' (for example " + found.get(0).get("_id") + ")");
+			return true;
+		} catch (Exception e) {
+			// Unknown, not unused. The caller is deciding whether a deletion may proceed.
+			log.error("Could not determine whether '" + typeId + "' is in use as a secondary type"
+					+ " in repository '" + repositoryId + "'", e);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"Could not determine whether type '" + typeId
+							+ "' is still applied as a secondary type: " + e.getMessage(), e);
+		}
+	}
+
+	/**
+	 * Second opinion on "this type has no instances", from outside the map/reduce views.
+	 *
+	 * <p>Mango ({@code _find}) does not read {@code _design/_repo}, so it cannot be emptied by the
+	 * same rebuild that empties {@code countByObjectType}. Only reached when the view already said
+	 * nothing, so the common case still costs one view query.
+	 *
+	 * @return false if nothing of this type exists, true if something does
+	 */
+	private boolean confirmNoInstances(String repositoryId, String objectTypeId) {
+		Map<String, Object> selector = new HashMap<String, Object>();
+		selector.put("objectType", objectTypeId);
+		List<Map<String, Object>> found =
+				connectorPool.getClient(repositoryId).findRawBySelector(selector, 1);
+		if (found == null || found.isEmpty()) {
 			return false;
 		}
+		log.warn("The countByObjectType view reported no instances of '" + objectTypeId
+				+ "' in repository '" + repositoryId + "', but a direct query found one ("
+				+ found.get(0).get("_id") + "). Reporting that the type IS in use — the view is"
+				+ " probably being rebuilt, and trusting it would have allowed the type to be"
+				+ " deleted with its objects still in place.");
+		return true;
 	}
 
 	@Override
@@ -1014,39 +1173,42 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Content> getChildren(String repositoryId, String parentId) {
 		try {
-			// Use ViewQuery to get children by parent ID
+			// include_docs=false EXPLICITLY. The children view emits the whole document as its
+			// value, so asking for the documents as well makes CouchDB look each one up by id and
+			// send a second copy of it (see convertViewValueToContent). Omitting the key is NOT
+			// enough: CloudantClientWrapper.queryView defaults it back to true when the caller
+			// does not say otherwise, so leaving it out is a no-op on the wire.
 			Map<String, Object> queryParams = new HashMap<String, Object>();
 			queryParams.put("key", parentId);
-			queryParams.put("include_docs", true);
+			queryParams.put("include_docs", false);
 			queryParams.put("reduce", false);
-			
-			log.debug("DEBUG getChildren: repositoryId=" + repositoryId + ", parentId=" + parentId);
-			
+
+			if (log.isDebugEnabled()) {
+				log.debug("DEBUG getChildren: repositoryId=" + repositoryId + ", parentId=" + parentId);
+			}
+
 			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "children", queryParams);
 
 			List<Content> children = new ArrayList<Content>();
 
 			if (result != null && result.getRows() != null) {
-				log.debug("DEBUG getChildren: found " + result.getRows().size() + " raw rows");
+				if (log.isDebugEnabled()) {
+					log.debug("DEBUG getChildren: found " + result.getRows().size() + " raw rows");
+				}
 				for (ViewResultRow row : result.getRows()) {
-					if (row.getDoc() != null) {
-						try {
-							// Convert document inline using convertCloudantDocumentToContent
-							// instead of N+1 getContent() calls
-							Content content = convertCloudantDocumentToContent(row.getDoc());
-							if (content != null) {
-								log.debug("DEBUG getChildren: successfully converted content for id=" + row.getDoc().getId());
-								children.add(content);
-							} else {
-								log.debug("DEBUG getChildren: convertCloudantDocumentToContent returned NULL for id=" + row.getDoc().getId());
-							}
-						} catch (Exception e) {
-							log.warn("Failed to convert child document: " + e.getMessage());
+					try {
+						Content content = convertViewValueToContent(row.getValue());
+						if (content != null) {
+							children.add(content);
+						} else if (log.isDebugEnabled()) {
+							log.debug("DEBUG getChildren: could not convert view value for id=" + row.getId());
 						}
+					} catch (Exception e) {
+						log.warn("Failed to convert child document: " + e.getMessage());
 					}
 				}
 			}
-			
+
 			log.debug("Retrieved " + children.size() + " children for parent '" + parentId + "' from repository: " + repositoryId);
 			return children;
 			
@@ -1059,9 +1221,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Content> getChildrenPaged(String repositoryId, String parentId, int skip, int limit) {
 		try {
+			// Same as getChildren: the view value already is the document, and include_docs must
+			// be set to false EXPLICITLY (the wrapper defaults it to true when omitted).
 			Map<String, Object> queryParams = new HashMap<String, Object>();
 			queryParams.put("key", parentId);
-			queryParams.put("include_docs", true);
+			queryParams.put("include_docs", false);
 			queryParams.put("reduce", false);
 			queryParams.put("skip", skip);
 			queryParams.put("limit", limit);
@@ -1071,15 +1235,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			List<Content> children = new ArrayList<Content>();
 			if (result != null && result.getRows() != null) {
 				for (ViewResultRow row : result.getRows()) {
-					if (row.getDoc() != null) {
-						try {
-							Content content = convertCloudantDocumentToContent(row.getDoc());
-							if (content != null) {
-								children.add(content);
-							}
-						} catch (Exception e) {
-							log.warn("Failed to convert child document in paged query: " + e.getMessage());
+					try {
+						Content content = convertViewValueToContent(row.getValue());
+						if (content != null) {
+							children.add(content);
 						}
+					} catch (Exception e) {
+						log.warn("Failed to convert child document in paged query: " + e.getMessage());
 					}
 				}
 			}
@@ -1213,9 +1375,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		compositeKey.put("parentId", parentId);
 		compositeKey.put("name", name);
 
+		// include_docs=false EXPLICITLY, for the reason getChildren documents: childByName is
+		// declared as emit({parentId, name}, doc), so the value IS the document. Asking for the
+		// documents as well makes CouchDB look each one up by id and send a second copy — and
+		// this code then threw BOTH away and issued getContent() for a third. Path resolution
+		// walks one segment at a time, so /a/b/c/d paid that three times per segment.
+		//
+		// Omitting the key is not enough: CloudantClientWrapper.queryView defaults it back to
+		// true when the caller does not say otherwise.
 		Map<String, Object> queryParams = new HashMap<String, Object>();
 		queryParams.put("key", compositeKey);
-		queryParams.put("include_docs", true);
+		queryParams.put("include_docs", false);
 		queryParams.put("reduce", false);
 
 		ViewResult result = client.queryView("_repo", "childByName", queryParams);
@@ -1233,9 +1403,24 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 		if (result.getRows() != null && !result.getRows().isEmpty()) {
 			ViewResultRow row = result.getRows().get(0);
-			String objectId = extractObjectId(row);
+			Content content = convertViewValueToContent(row.getValue());
+			if (content != null) {
+				if (log.isTraceEnabled()) log.trace("getChildByName: found via childByName view: '" + name + "' id=" + content.getId());
+				return content;
+			}
+			// The value was not a Map at all, so convertViewValueToContent could make nothing of
+			// it. The row still carries the id whether or not documents were requested, so fall
+			// back to a read rather than reporting the child as absent (that would surface as
+			// "path not found" for an object that exists).
+			//
+			// NOTE the narrowness: convertViewValueToContent accepts ANY Map, so a view rewritten
+			// to emit a PROJECTION (say {name: doc.name}) would convert into a partial Content and
+			// never reach here. The wrapper's typed path guards that with a _rev check; this path
+			// shares its converter with getChildren and is left alone rather than diverging.
+			String objectId = row.getId();
 			if (objectId != null) {
-				if (log.isTraceEnabled()) log.trace("getChildByName: found via childByName view: '" + name + "' id=" + objectId);
+				log.warn("childByName returned a value that is not a document for '" + name
+						+ "' in repository " + repositoryId + " — falling back to a read by id");
 				return getContent(repositoryId, objectId);
 			}
 		}
@@ -1247,19 +1432,38 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	 * Used when childByName view is not available.
 	 */
 	private Content getChildByNameFallback(CloudantClientWrapper client, String repositoryId, String parentId, String name) {
+		// Same correction as getChildren and getChildByNameView: children emits the document as
+		// its value, so include_docs sends a second copy that this method then discarded in
+		// favour of a third read. The name filter therefore has to read the VALUE — reading
+		// row.getDoc() would now see null and match nothing.
 		Map<String, Object> queryParams = new HashMap<String, Object>();
 		queryParams.put("key", parentId);
-		queryParams.put("include_docs", true);
+		queryParams.put("include_docs", false);
 		queryParams.put("reduce", false);
 		ViewResult result = client.queryView("_repo", "children", queryParams);
 
 		if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
 			for (ViewResultRow row : result.getRows()) {
-				String childName = extractName(row);
-				String objectId = extractObjectId(row);
-				if (name.equals(childName) && objectId != null) {
-					if (log.isTraceEnabled()) log.trace("getChildByName fallback: found '" + name + "' id=" + objectId);
-					return getContent(repositoryId, objectId);
+				Content content = convertViewValueToContent(row.getValue());
+				if (content != null) {
+					if (name.equals(content.getName())) {
+						if (log.isTraceEnabled()) log.trace("getChildByName fallback: found '" + name + "' id=" + content.getId());
+						return content;
+					}
+					continue;
+				}
+				// Not a Map at all (see the note above for what this does and does not cover).
+				// Reading it by id is the only way left to compare the name, and reporting
+				// "no such child" on an unconvertible row would be a false absence.
+				String objectId = row.getId();
+				if (objectId != null) {
+					Content byId = getContent(repositoryId, objectId);
+					if (byId != null && name.equals(byId.getName())) {
+						log.warn("children returned a value that is not a document while resolving '"
+								+ name + "' in repository " + repositoryId
+								+ " — fell back to a read by id");
+						return byId;
+					}
 				}
 			}
 		}
@@ -1267,41 +1471,33 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	/**
-	 * Extract the document name from a ViewResultRow, handling both Map and Document types.
+	 * Does the {@code childrenNames} view have any rows at all in this repository?
+	 *
+	 * <p>Reads the view's own row total (limit 0), not documents — so this is a header read, not a
+	 * scan. Used only to tell "this folder is empty" from "the view is empty", which is the
+	 * difference between a normal create and a uniqueness check running blind.
+	 *
+	 * <p>A repository with nothing in it legitimately has zero rows; it also has no names to
+	 * collide with, so treating it as alive is harmless.
 	 */
-	private String extractName(ViewResultRow row) {
-		if (row.getDoc() == null) return null;
-		Object docObj = row.getDoc();
-		if (docObj instanceof Map) {
-			return (String) ((Map<String, Object>) docObj).get("name");
-		} else if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
-			com.ibm.cloud.cloudant.v1.model.Document doc = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
-			Map<String, Object> props = doc.getProperties();
-			return props != null ? (String) props.get("name") : null;
-		}
-		return null;
-	}
-
-	/**
-	 * Extract the object ID from a ViewResultRow, handling both Map and Document types.
-	 */
-	private String extractObjectId(ViewResultRow row) {
-		if (row.getDoc() == null) return null;
-		Object docObj = row.getDoc();
-		if (docObj instanceof Map) {
-			return (String) ((Map<String, Object>) docObj).get("_id");
-		} else if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
-			com.ibm.cloud.cloudant.v1.model.Document doc = (com.ibm.cloud.cloudant.v1.model.Document) docObj;
-			String id = doc.getId();
-			if (id != null) return id;
-			Map<String, Object> props = doc.getProperties();
-			if (props != null) {
-				id = (String) props.get("_id");
-				if (id == null) id = (String) props.get("id");
+	private boolean childrenNamesViewIsAlive(String repositoryId) {
+		try {
+			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			if (client == null) {
+				return true;
 			}
-			return id;
+			if (client.queryViewCount("_repo", "childrenNames") > 0) {
+				return true;
+			}
+			// Zero rows for the whole view: either a genuinely empty repository (fine) or a view
+			// that is not answering (not fine). The database's own document count separates them.
+			com.ibm.cloud.cloudant.v1.model.DatabaseInformation info = client.getDatabaseInfo();
+			return info == null || info.getDocCount() == null || info.getDocCount() <= 10L;
+		} catch (Exception e) {
+			// Cannot tell — say alive. The catch below already fails closed on a thrown query,
+			// and blocking every create because this probe failed would be worse than the hole.
+			return true;
 		}
-		return null;
 	}
 
 	public List<String> getChildrenNames(String repositoryId, String parentId){
@@ -1321,10 +1517,37 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				}
 			}
 
+			// An empty list is "this folder has no children" ONLY if the view is working. A view
+			// being rebuilt answers 200 with zero rows, and the consumer here is the CMIS
+			// name-uniqueness check, which reads "no names" as "no conflict".
+			//
+			// But the test cannot be "this parent returned nothing" — a folder with no children
+			// is the most ordinary state there is, and this runs on every create and rename. A
+			// previous pass cross-checked THAT condition with Mango; with no index on parentId it
+			// is a full collection scan per empty folder, and it hung the CMIS TCK outright.
+			//
+			// The distinguishing question is repository-wide: if childrenNames returns even one
+			// row for the whole view, the view is alive and this parent's emptiness is real. Only
+			// when the ENTIRE view is empty is there reason to doubt it — and that check reads
+			// the view's own row total, not the documents.
+			if (names.isEmpty() && !childrenNamesViewIsAlive(repositoryId)) {
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+						"The childrenNames view returned nothing for the entire repository "
+								+ repositoryId + ", so the existing names under " + parentId
+								+ " cannot be established and name uniqueness cannot be checked.");
+			}
 			return names;
 		} catch (Exception e) {
+			// NOT an empty list. The only consumer is the CMIS name-uniqueness check
+			// (ExceptionServiceImpl.nameConstraintViolation on create, ContentServiceImpl on
+			// rename), and an empty list there means "no name conflicts" — so a CouchDB blip
+			// would silently let a duplicate name through. The same fail-open shape that let
+			// existContent report a populated type as empty.
 			log.error("Error getting children names for parent: " + parentId + " in repository: " + repositoryId, e);
-			return new ArrayList<String>();
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"Could not read the existing names under " + parentId + " in repository "
+							+ repositoryId + ", so name uniqueness cannot be checked: "
+							+ e.getMessage(), e);
 		}
 	}
 
@@ -1489,6 +1712,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public List<String> getGroupIdsDirectlyContainingGroup(String repositoryId, String groupId) {
+		return userGroupDao.getGroupIdsDirectlyContainingGroup(repositoryId, groupId);
+	}
+
+	@Override
+	public List<String> getGroupIdsDirectlyContainingUser(String repositoryId, String userId) {
+		return userGroupDao.getGroupIdsDirectlyContainingUser(repositoryId, userId);
+	}
+
+	@Override
 	public List<GroupItem> getGroupItems(String repositoryId) {
 		return userGroupDao.getGroupItems(repositoryId);
 	}
@@ -1508,6 +1741,22 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	/**
+	 * The recorded history for this patch, or {@code null} if there is none.
+	 *
+	 * <p><b>A failure is not "none".</b> This used to answer {@code null} for both "no such
+	 * record" and "the query did not work", and {@code PatchUtil.isApplied} reads {@code null} as
+	 * "not applied yet" — so an unreadable history made every patch look unapplied and run again.
+	 * That is not hypothetical: bedroom ended up with TWO history records for
+	 * {@code system-folder-setup-20250805} and TWO {@code .system} folders, the second created
+	 * 2026-08-13. Duplicate system folders break CMIS path resolution (the TCK's rootFolderTest
+	 * fails on exactly that), and a non-idempotent patch running twice can do worse.
+	 *
+	 * <p>The failure is easy to walk into: the {@code patch} view lives in {@code _design/_repo},
+	 * the same design document that {@code Patch_JoinedGroupsSingleEmit} rewrites — and while
+	 * CouchDB rebuilds a design document its views answer with zero rows and HTTP 200, so there is
+	 * not even an exception unless the query itself fails.
+	 */
 	public PatchHistory getPatchHistoryByName(String repositoryId, String name) {
 		try {
 			// Use existing 'patch' view to get patch history by name
@@ -1544,11 +1793,56 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				}
 			}
 			
-			return null;
+			// The view found nothing. That is the answer ONLY if the view was able to answer.
+			// A design document being rebuilt replies HTTP 200 with zero rows and no exception
+			// (measured), which is indistinguishable here from "this patch has never run" — and
+			// the caller turns that into "apply it again". So confirm with a lookup that does
+			// not go through _design/_repo at all before reporting absence.
+			return confirmPatchHistoryAbsent(repositoryId, name);
+		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException e) {
+			throw e;
 		} catch (Exception e) {
-			log.error("Error getting patch history by name: " + name + ", error: " + e.getMessage());
+			// Deliberately NOT null: null means "no such record", which the caller turns into
+			// "apply this patch". Answering that when the truth is "I could not look" is how a
+			// patch runs a second time.
+			log.error("Error getting patch history by name: " + name + ", error: " + e.getMessage(), e);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"Could not read patch history for '" + name + "' in repository '"
+							+ repositoryId + "': " + e.getMessage(), e);
+		}
+	}
+
+	/**
+	 * Second opinion on "this patch has no history", from outside the map/reduce views.
+	 *
+	 * <p>Mango ({@code _find}) does not read {@code _design/_repo}, so a rebuild of that document
+	 * cannot make this answer empty the way it makes the {@code patch} view answer empty. Only
+	 * reached when the view already said nothing, so the normal startup path still costs one view
+	 * query — and on a genuinely fresh repository, where this DOES run for every patch, the
+	 * database is small.
+	 *
+	 * @return the history the view missed, or {@code null} if it really is absent
+	 */
+	private PatchHistory confirmPatchHistoryAbsent(String repositoryId, String name) {
+		Map<String, Object> selector = new HashMap<String, Object>();
+		selector.put("type", "patch");
+		selector.put("name", name);
+		List<Map<String, Object>> found =
+				connectorPool.getClient(repositoryId).findRawBySelector(selector, 2);
+		if (found == null || found.isEmpty()) {
 			return null;
 		}
+		Map<String, Object> doc = found.get(0);
+		log.warn("The 'patch' view reported no history for '" + name + "' in repository '"
+				+ repositoryId + "', but a direct query found one (" + doc.get("_id")
+				+ "). Treating the patch as applied. The view is probably being rebuilt — had this"
+				+ " gone unnoticed, the patch would have been applied a second time.");
+		PatchHistory history = new PatchHistory(name, Boolean.TRUE.equals(doc.get("applied")));
+		Object id = doc.get("_id");
+		if (id != null) {
+			history.setId(id.toString());
+		}
+		return history;
 	}
 
 	@Override
@@ -2252,6 +2546,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public AttachmentNode getAttachment(String repositoryId, String attachmentId) {
 		return attachmentDao.getAttachment(repositoryId, attachmentId);
+	}
+
+	@Override
+	public AttachmentNode getAttachmentRef(String repositoryId, String attachmentId) {
+		return attachmentDao.getAttachmentRef(repositoryId, attachmentId);
 	}
 
 	@Override

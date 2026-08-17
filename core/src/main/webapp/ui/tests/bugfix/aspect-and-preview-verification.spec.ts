@@ -33,7 +33,7 @@
  */
 
 import { test, expect, Page } from '@playwright/test';
-import { waitForUiStable } from '../utils/wait-helpers';
+import { waitForRender, waitForUiStable } from '../utils/wait-helpers';
 import { AuthHelper } from '../utils/auth-helper';
 import { cleanupTestData } from '../utils/cleanup-helper';
 
@@ -513,7 +513,7 @@ test.describe('Office Document Preview', () => {
     const result = await executeCmisQuery(request, query);
 
     if (result.numItems === 0) {
-      test.skip('ENV: No Office/PDF documents found for rendition test');
+      test.skip(true, 'ENV: No Office/PDF documents found for rendition test');
       return;
     }
 
@@ -588,7 +588,7 @@ test.describe('Office Document Preview', () => {
 
     // Navigate to document viewer
     await page.goto(`http://localhost:8080/core/ui/index.html#/documents/${docId}`);
-    await page.waitForLoadState('networkidle');
+    await waitForRender(page);
     await waitForUiStable(page);
 
     // Check for tabs (document viewer should show tabs)

@@ -1,18 +1,19 @@
 package jp.aegif.nemaki.rest.ingest;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
 import java.util.Map;
+import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
  * Unit tests for ImportProfileDefinition serialization and validation logic.
  */
 class ImportProfileDefinitionTest {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
 
     @Test
     void testJsonRoundTrip() throws Exception {

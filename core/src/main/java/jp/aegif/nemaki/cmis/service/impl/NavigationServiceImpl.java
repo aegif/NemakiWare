@@ -86,8 +86,15 @@ public class NavigationServiceImpl implements NavigationService {
 
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
 		
+		// The folder's lock is held for the folder's OWN compile and released before the children
+		// are listed. It used to stay held across the whole listing, which put it outside the
+		// ordered set the children are taken as — and a lock held outside a set cannot be ordered
+		// against it. The live detector caught precisely that: two listings of different folders,
+		// each holding its own folder and reaching for a child of the other, in opposite orders.
+		// getChildrenInternal now takes the folder together with its children as one ordered set,
+		// so the folder is still locked while the listing is built.
 		Lock parentLock = threadLockService.getReadLock(repositoryId, folderId);
-		
+
 		try{
 			parentLock.lock();
 			
@@ -113,12 +120,111 @@ public class NavigationServiceImpl implements NavigationService {
 					includeAllowableActions, includeRelationships, renditionFilter, false);
 			parentObjectData.setValue(_parent);
 
-			return getChildrenInternal(callContext, repositoryId, folderId, filter,
-					orderBy, includeAllowableActions, includeRelationships,
-					renditionFilter, includePathSegments, maxItems, skipCount, false);
 		}finally{
 			parentLock.unlock();
 		}
+
+		return getChildrenInternal(callContext, repositoryId, folderId, filter,
+				orderBy, includeAllowableActions, includeRelationships,
+				renditionFilter, includePathSegments, maxItems, skipCount, false);
+	}
+
+	/** The verified lock set for an object and its CURRENT parent, plus that parent (may be null). */
+	record ParentLockHold(List<Lock> locks, Folder parent) {
+	}
+
+	/** Re-previews after a mismatch this many times before giving up with a conflict. */
+	private static final int PARENT_LOCK_RETRIES = 2;
+
+	/**
+	 * Lock an object together with its current parent as one ordered set, retrying while a
+	 * concurrent move keeps changing which parent that is.
+	 *
+	 * <p>The parent is resolved once unlocked (to decide what to lock) and once locked (to decide
+	 * what to answer). Those normally agree, but a request that arrives while a move holds the
+	 * child's lock previews the OLD parent and only gets its locks after the move commits — at
+	 * which point the re-read shows the new one. Failing that with a conflict outright, as the
+	 * first version of this method did, turned "a read that waited politely for a move" into a
+	 * deterministic 409, when the correct answer was one re-preview away; the pre-restructure
+	 * nested-lock code answered it, at the price of the lock-order inversion that code was
+	 * removed for. So: drop the set, preview again, relock. Answering WITHOUT the retry is not an
+	 * option either way — the changed parent's lock was never taken, and compiling an object
+	 * nothing holds still is the defect the ordered set exists to remove.
+	 *
+	 * <p>The retry is bounded; an object being moved in a sustained loop eventually gets the
+	 * conflict, which by then is describing reality.
+	 */
+	ParentLockHold lockObjectAndCurrentParent(String repositoryId, String objectId) {
+		for (int attempt = 0;; attempt++) {
+			Folder preview = contentService.getParent(repositoryId, objectId);
+			List<Lock> locks = threadLockService.orderedLocks(repositoryId,
+					preview == null ? java.util.List.of(objectId)
+							: java.util.List.of(objectId, preview.getId()),
+					false);
+			threadLockService.bulkLock(locks);
+			boolean sameParent;
+			Folder actual;
+			try {
+				// The guard spans everything between acquiring and the decision — the re-read
+				// hits CouchDB and can fail like any read, and even the comparison can throw on
+				// malformed data (a folder with a null id). Without the release, one transient
+				// error here would leave the child's and parent's READ holds attached to a thread
+				// that has already unwound — permanently, which is indefinite write failure on
+				// those stripes. Exactly the unbounded outcome this whole area exists to remove,
+				// arriving through its own helper.
+				actual = contentService.getParent(repositoryId, objectId);
+				sameParent = (preview == null && actual == null)
+						|| (preview != null && actual != null && preview.getId() != null
+								&& preview.getId().equals(actual.getId()));
+			} catch (RuntimeException | Error e) {
+				threadLockService.bulkUnlock(locks);
+				throw e;
+			}
+			if (sameParent) {
+				return new ParentLockHold(locks, actual);
+			}
+			threadLockService.bulkUnlock(locks);
+			if (attempt >= PARENT_LOCK_RETRIES) {
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisUpdateConflictException(
+						"Object " + objectId + " kept being moved while its parent was being"
+								+ " read; the answer would not match any locked state. Retry.");
+			}
+		}
+	}
+
+	/**
+	 * Fail if the folder disappeared while its lock was not held.
+	 *
+	 * <p>{@code getChildren} verifies and compiles the folder under its own lock, releases it, and
+	 * only then takes the folder together with its children as one ordered set. That release is
+	 * what makes the ordering possible — a lock held outside a set is not ordered against it — but
+	 * it opens a window, and a listing built after the folder was deleted in that window would be
+	 * an answer about something that no longer exists.
+	 */
+	private void requireFolderStillPresent(String repositoryId, String folderId) {
+		Content folder = contentService.getContent(repositoryId, folderId);
+		if (folder == null) {
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException(
+					"Folder " + folderId + " was deleted while its children were being listed");
+		}
+	}
+
+	/**
+	 * The folder's id followed by its children's, as one list to be ordered together.
+	 *
+	 * <p>The folder is included deliberately. Locking it separately, before or around the set,
+	 * leaves its position in the global acquisition order undefined — which is exactly how two
+	 * listings of different folders ended up waiting on each other.
+	 */
+	private static List<String> withFolder(String folderId, List<Content> contents) {
+		List<String> ids = new ArrayList<>((contents == null ? 0 : contents.size()) + 1);
+		ids.add(folderId);
+		if (contents != null) {
+			for (Content content : contents) {
+				ids.add(content.getId());
+			}
+		}
+		return ids;
 	}
 
 	private ObjectInFolderList getChildrenInternal(CallContext callContext,
@@ -150,7 +256,12 @@ public class NavigationServiceImpl implements NavigationService {
 		if (totalCount == 0) {
 			List<Content> probe = contentService.getChildrenPaged(repositoryId, folderId, 0, FULL_FETCH_THRESHOLD + 1);
 			if (probe.isEmpty()) {
-				// Folder is genuinely empty
+				// "No children" and "no folder" look identical from here, and this is the branch a
+				// deleted folder actually takes: deleteTree removes the children before the folder,
+				// so by the time the folder is gone its child count is zero. Without this check a
+				// folder deleted in getChildren's unlocked window would be answered with an empty
+				// 200 listing instead of the 404 the pre-restructure code gave.
+				requireFolderStillPresent(repositoryId, folderId);
 				ObjectInFolderListImpl emptyResult = new ObjectInFolderListImpl();
 				emptyResult.setObjects(new ArrayList<ObjectInFolderData>());
 				emptyResult.setNumItems(BigInteger.ZERO);
@@ -172,10 +283,18 @@ public class NavigationServiceImpl implements NavigationService {
 			// Used for small folders (accurate global sort) or when client specifies explicit orderBy
 			List<Content> contents = contentService.getChildren(repositoryId, folderId);
 
-			List<Lock> locks = threadLockService.readLocks(repositoryId, contents);
+			// The folder itself belongs in this set, not outside it: an ordering is a property of
+			// a set, and a lock taken before it is not ordered against anything in it.
+			List<Lock> locks = threadLockService.orderedLocks(repositoryId,
+					withFolder(folderId, contents), false);
 
 			try {
 				threadLockService.bulkLock(locks);
+
+				// The folder's lock was released between its own compile and here, so confirm it
+				// still exists before listing what is supposedly inside it. Without this, a folder
+				// deleted in that window is listed as though it were still there.
+				requireFolderStillPresent(repositoryId, folderId);
 
 				contents = permissionService.getFiltered(callContext, repositoryId, contents);
 
@@ -277,10 +396,14 @@ public class NavigationServiceImpl implements NavigationService {
 				hasMore = false;
 			}
 
-			List<Lock> locks = threadLockService.readLocks(repositoryId, pageContents);
+			// Same as the legacy branch: the folder is part of the set, not held around it.
+			List<Lock> locks = threadLockService.orderedLocks(repositoryId,
+					withFolder(folderId, pageContents), false);
 
 			try {
 				threadLockService.bulkLock(locks);
+
+				requireFolderStillPresent(repositoryId, folderId);
 
 				// Compile with skipCount=0 (already handled), maxItems=size, orderBy=null
 				// Passing null lets SortUtil apply the configured default orderBy within the page.
@@ -328,8 +451,18 @@ public class NavigationServiceImpl implements NavigationService {
 
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
 		
+		// The folder's lock covers the folder's OWN validation and compile, and is released before
+		// the tree walk — the same narrowing getChildren needed, and for the same reason: held
+		// across the walk it sits OUTSIDE every ordered set the walk takes, and a lock outside a
+		// set is not ordered against it. The live detector attributed 161 of 162 remaining
+		// inversions to this method for exactly that reason. Each level of the walk still locks
+		// its folder together with its children (getChildrenInternal takes {folder} ∪ {children}).
 		Lock parentLock = threadLockService.getReadLock(repositoryId, folderId);
-		
+		ObjectData _folder;
+		int d;
+		boolean iaa;
+		boolean ips;
+
 		try{
 			parentLock.lock();
 			
@@ -350,27 +483,27 @@ public class NavigationServiceImpl implements NavigationService {
 			// Body of the method
 			// //////////////////
 			// check depth
-			int d = (depth == null ? 2 : depth.intValue());
+			d = (depth == null ? 2 : depth.intValue());
 
 			// set defaults if values not set
-			boolean iaa = (includeAllowableActions == null ? false
+			iaa = (includeAllowableActions == null ? false
 					: includeAllowableActions.booleanValue());
-			boolean ips = (includePathSegment == null ? false : includePathSegment
+			ips = (includePathSegment == null ? false : includePathSegment
 					.booleanValue());
 
 			// Set ObjectData of the starting folder for ObjectInfo
-			ObjectData _folder = compileService.compileObjectData(
+			_folder = compileService.compileObjectData(
 					callContext, repositoryId, folder, filter,
 					includeAllowableActions, includeRelationships, renditionFilter, false);
 			anscestorObjectData.setValue(_folder);
 
-			// get the tree.
-			return getDescendantsInternal(callContext, repositoryId, _folder, filter, iaa,
-					false, includeRelationships, null, ips, 0, d, foldersOnly);
-			
 		}finally{
 			parentLock.unlock();
 		}
+
+		// get the tree.
+		return getDescendantsInternal(callContext, repositoryId, _folder, filter, iaa,
+				false, includeRelationships, null, ips, 0, d, foldersOnly);
 	}
 
 	private List<ObjectInFolderContainer> getDescendantsInternal(
@@ -422,11 +555,14 @@ public class NavigationServiceImpl implements NavigationService {
 		
 		exceptionService.invalidArgumentRequiredString("folderId", folderId);
 		
-		Lock childLock = threadLockService.getReadLock(repositoryId, folderId);
-		
+		// The child and its CURRENT parent are locked as one ordered set. Nesting them — child
+		// first, then parent — is what the live detector caught here: another request holding
+		// those two stripes the other way round waits on this one and neither ever finishes.
+		// Ordering is only a property of a whole set; a lock taken outside the set cannot be
+		// ordered against it. The helper retries while a concurrent move changes the parent, so
+		// the answer always describes a placement whose locks are actually held.
+		ParentLockHold hold = lockObjectAndCurrentParent(repositoryId, folderId);
 		try{
-			childLock.lock();
-
 			// //////////////////
 			// General Exception
 			// //////////////////
@@ -441,24 +577,16 @@ public class NavigationServiceImpl implements NavigationService {
 			// CMIS 1.1 §2.2.3.3: Root folder has no parent — must reject before lock
 			exceptionService.invalidArgumentRootFolder(repositoryId, folder);
 
-			Folder parent = contentService.getParent(repositoryId, folderId);
+			Folder parent = hold.parent();
 			exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parent);
-			
-			Lock parentLock = threadLockService.getReadLock(repositoryId, parent.getId());
-			try{
-				parentLock.lock();
 
-				// //////////////////
-				// Body of the method
-				// //////////////////
-				return compileService.compileObjectData(callContext, repositoryId,
-						parent, filter, true, IncludeRelationships.NONE, null, true);
-				
-			}finally{
-				parentLock.unlock();
-			}
+			// //////////////////
+			// Body of the method
+			// //////////////////
+			return compileService.compileObjectData(callContext, repositoryId,
+					parent, filter, true, IncludeRelationships.NONE, null, true);
 		}finally{
-			childLock.unlock();
+			threadLockService.bulkUnlock(hold.locks());
 		}
 	}
 
@@ -470,11 +598,13 @@ public class NavigationServiceImpl implements NavigationService {
 
 		exceptionService.invalidArgumentRequired("objectId", objectId);
 		
-		Lock childLock = threadLockService.getReadLock(repositoryId, objectId);
-		
+		// Same shape as getFolderParent: the object and its CURRENT parent as one ordered set,
+		// re-previewed while a concurrent move keeps changing which parent that is. Taking the
+		// child's lock and then the parent's leaves the order to whichever object each request
+		// happens to start from, and the detector caught exactly that pair inverted here.
+		ParentLockHold hold = lockObjectAndCurrentParent(repositoryId, objectId);
+		List<Lock> locks = hold.locks();
 		try{
-			childLock.lock();
-			
 			// //////////////////
 			// General Exception
 			// //////////////////
@@ -484,17 +614,15 @@ public class NavigationServiceImpl implements NavigationService {
 					repositoryId, PermissionMapping.CAN_GET_PARENTS_FOLDER, content);
 
 
-			//Get parent
-			Folder parent = contentService.getParent(repositoryId, objectId);
+			Folder parent = hold.parent();
 			if (parent == null) {
-				// Root folder or orphaned object - no parent exists
+				// Root folder or orphaned object - no parent exists. The helper verified this
+				// under the object's lock, so it is the locked truth, not a stale preview.
 				return new ArrayList<ObjectParentData>();
 			}
-			Lock parentLock = threadLockService.getReadLock(repositoryId, parent.getId());
 
-			try{
-				parentLock.lock();
-				
+			{
+
 				// //////////////////
 				// Specific Exception
 				// //////////////////
@@ -516,13 +644,9 @@ public class NavigationServiceImpl implements NavigationService {
 				}
 
 				return Collections.singletonList((ObjectParentData) result);
-				
-			}finally{
-				parentLock.unlock();
 			}
-			
 		}finally{
-			childLock.unlock();
+			threadLockService.bulkUnlock(locks);
 		}
 	}
 
