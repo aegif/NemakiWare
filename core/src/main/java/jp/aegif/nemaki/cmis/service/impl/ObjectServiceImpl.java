@@ -1322,10 +1322,15 @@ public class ObjectServiceImpl implements ObjectService {
 		List<Lock> objectLocks = threadLockService.orderedLocks(repositoryId,
 				java.util.List.of(movingId, targetFolderId), true);
 		Content moved = null;
+		// Acquire OUTSIDE the try (CodeQL java/unreleased-lock, 3.3.1 #5): with lock() inside,
+		// a lock() that fails would still reach the finally's unlock() — an unlock without a hold,
+		// throwing IllegalMonitorStateException over the original failure. bulkLock stays inside
+		// because its contract is the opposite: bulkUnlock is documented safe after a FAILED
+		// bulkLock and cleans up exactly the wrappers that were taken.
+		if (hierarchyLock != null) {
+			hierarchyLock.lock();
+		}
 		try {
-			if (hierarchyLock != null) {
-				hierarchyLock.lock();
-			}
 			threadLockService.bulkLock(objectLocks);
 			// //////////////////
 			// General Exception
