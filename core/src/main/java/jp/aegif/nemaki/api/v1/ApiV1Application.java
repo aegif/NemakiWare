@@ -90,9 +90,14 @@ public class ApiV1Application extends ResourceConfig {
                             .title("NemakiWare CMIS REST API")
                             .version("1.0.0")
                             .description("OpenAPI 3.0 compliant REST API for NemakiWare CMIS Repository."))
+                    // "/core" ONLY — the servlet context. swagger-jaxrs2 already prepends the
+                    // @ApplicationPath (/api/v1/cmis) to every path in the spec, so a server URL
+                    // carrying it too doubles the segment (…/core/api/v1/cmis/api/v1/cmis/…),
+                    // which the auth filter then misparses (repositoryId="api") into a 401.
+                    // Found by the Playwright execute test reading the actual request URL.
                     .addServersItem(new io.swagger.v3.oas.models.servers.Server()
-                            .url("/core/api/v1/cmis")
-                            .description("NemakiWare CMIS REST API v1"));
+                            .url("/core")
+                            .description("NemakiWare servlet context"));
             new io.swagger.v3.jaxrs2.integration.JaxrsOpenApiContextBuilder<>()
                     .application(this)
                     .openApiConfiguration(new io.swagger.v3.oas.integration.SwaggerConfiguration()
