@@ -650,7 +650,7 @@
 		<dependency>
 			<groupId>com.sun.xml.ws</groupId>
 			<artifactId>jaxws-rt</artifactId>
-			<version>4.0.1</version>
+			<version>4.0.5</version>
 			<exclusions>
 				<!-- 3.3.0: this dragged in com.sun.xml.bind:jaxb-impl 4.0.2 (and jaxb-core 4.0.2),
 				     which ship the SAME classes as the org.glassfish.jaxb 4.0.9 artifacts pinned
