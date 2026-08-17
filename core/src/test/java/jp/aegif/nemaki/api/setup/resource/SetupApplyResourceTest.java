@@ -208,14 +208,16 @@ public class SetupApplyResourceTest {
      */
     @Test
     public void testMarkCompleteCallsReprobeStateAndMarkSetupComplete() {
-        when(probeService.getCurrentState()).thenReturn(StartupProbeService.StartupState.DB_CONNECTED_CURRENT);
+        // markComplete reads ONE snapshot for state+version (external review, 3.3.1);
+        // couchDbVersionRefusal(snapshot) is left unstubbed = null = no refusal.
+        when(probeService.currentSnapshot()).thenReturn(new StartupProbeService.ProbeSnapshot(StartupProbeService.StartupState.DB_CONNECTED_CURRENT, ""));
 
         Response resp = resource.markComplete();
         assertEquals(200, resp.getStatus());
 
         InOrder inOrder = inOrder(probeService, cmisPostInitializer, patchService);
         inOrder.verify(probeService).reprobeState();
-        inOrder.verify(probeService).getCurrentState();
+        inOrder.verify(probeService).currentSnapshot();
         inOrder.verify(cmisPostInitializer).executePatches();
         inOrder.verify(patchService).executePatchService();
         inOrder.verify(probeService).markSetupComplete();
@@ -229,7 +231,7 @@ public class SetupApplyResourceTest {
      */
     @Test
     public void testMarkCompleteDeferredFailureReturns500AndKeepsSetupMode() {
-        when(probeService.getCurrentState()).thenReturn(StartupProbeService.StartupState.DB_CONNECTED_CURRENT);
+        when(probeService.currentSnapshot()).thenReturn(new StartupProbeService.ProbeSnapshot(StartupProbeService.StartupState.DB_CONNECTED_CURRENT, ""));
         when(patchService.executePatchService()).thenReturn(false);
 
         Response resp = resource.markComplete();
@@ -281,7 +283,7 @@ public class SetupApplyResourceTest {
      */
     @Test
     public void testMarkCompleteRetryAfterPhase3Failure() {
-        when(probeService.getCurrentState()).thenReturn(StartupProbeService.StartupState.DB_CONNECTED_CURRENT);
+        when(probeService.currentSnapshot()).thenReturn(new StartupProbeService.ProbeSnapshot(StartupProbeService.StartupState.DB_CONNECTED_CURRENT, ""));
 
         // First call: Phase 3 fails
         when(patchService.executePatchService()).thenReturn(false);
@@ -292,7 +294,7 @@ public class SetupApplyResourceTest {
 
         // Second call: Phase 3 succeeds (user fixed the issue)
         reset(probeService, cmisPostInitializer, patchService);
-        when(probeService.getCurrentState()).thenReturn(StartupProbeService.StartupState.DB_CONNECTED_CURRENT);
+        when(probeService.currentSnapshot()).thenReturn(new StartupProbeService.ProbeSnapshot(StartupProbeService.StartupState.DB_CONNECTED_CURRENT, ""));
         when(cmisPostInitializer.executePatches()).thenReturn(true);
         when(patchService.executePatchService()).thenReturn(true);
 
@@ -306,7 +308,7 @@ public class SetupApplyResourceTest {
      */
     @Test
     public void testMarkCompleteRetryAfterPhase2Failure() {
-        when(probeService.getCurrentState()).thenReturn(StartupProbeService.StartupState.DB_CONNECTED_CURRENT);
+        when(probeService.currentSnapshot()).thenReturn(new StartupProbeService.ProbeSnapshot(StartupProbeService.StartupState.DB_CONNECTED_CURRENT, ""));
 
         // First call: Phase 2 fails
         when(cmisPostInitializer.executePatches()).thenReturn(false);
@@ -317,7 +319,7 @@ public class SetupApplyResourceTest {
 
         // Second call: Phase 2 succeeds
         reset(probeService, cmisPostInitializer, patchService);
-        when(probeService.getCurrentState()).thenReturn(StartupProbeService.StartupState.DB_CONNECTED_CURRENT);
+        when(probeService.currentSnapshot()).thenReturn(new StartupProbeService.ProbeSnapshot(StartupProbeService.StartupState.DB_CONNECTED_CURRENT, ""));
         when(cmisPostInitializer.executePatches()).thenReturn(true);
         when(patchService.executePatchService()).thenReturn(true);
 

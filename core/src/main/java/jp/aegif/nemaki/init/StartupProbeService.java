@@ -61,8 +61,8 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
      * one half is to carry the other half over explicitly ({@link #setStateKeepingVersion}).
      * {@code version} is never null; empty means "this snapshot's probe did not report one".
      */
-    record ProbeSnapshot(StartupState state, String version) {
-        ProbeSnapshot {
+    public record ProbeSnapshot(StartupState state, String version) {
+        public ProbeSnapshot {
             if (version == null) version = "";
         }
     }
@@ -226,8 +226,23 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
      * databases — against a CouchDB the release refuses to run on.
      */
     public String couchDbVersionRefusalFromLastProbe() {
-        String reported = snapshot.get().version();
+        return couchDbVersionRefusal(snapshot.get());
+    }
+
+    /**
+     * Refusal for the version carried by ONE snapshot. Gate consumers should read
+     * {@link #currentSnapshot()} once and pass it here alongside their state check - reading
+     * state and version through separate getters can straddle a concurrent re-probe and pair
+     * probe A's state with probe B's version (external review, 3.3.1).
+     */
+    public String couchDbVersionRefusal(ProbeSnapshot snap) {
+        String reported = (snap == null) ? "" : snap.version();
         return couchDbVersionRefusal(reported.isEmpty() ? null : reachableWithVersion(reported));
+    }
+
+    /** The state and version of the last probe, as one consistent pair. */
+    public ProbeSnapshot currentSnapshot() {
+        return snapshot.get();
     }
 
     private void publishSnapshot(StartupState state, CouchDbConnectionResult conn) {

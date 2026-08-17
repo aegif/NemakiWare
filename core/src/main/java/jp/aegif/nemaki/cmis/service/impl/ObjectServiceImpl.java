@@ -1322,11 +1322,12 @@ public class ObjectServiceImpl implements ObjectService {
 		List<Lock> objectLocks = threadLockService.orderedLocks(repositoryId,
 				java.util.List.of(movingId, targetFolderId), true);
 		Content moved = null;
-		// Acquire OUTSIDE the try (CodeQL java/unreleased-lock, 3.3.1 #5): with lock() inside,
-		// a lock() that fails would still reach the finally's unlock() — an unlock without a hold,
-		// throwing IllegalMonitorStateException over the original failure. bulkLock stays inside
-		// because its contract is the opposite: bulkUnlock is documented safe after a FAILED
-		// bulkLock and cleans up exactly the wrappers that were taken.
+		// Acquire OUTSIDE the try (CodeQL java/unreleased-lock, 3.3.1 #5). MonitoredLock.unlock()
+		// on a never-taken wrapper records and returns rather than throwing, so the old shape was
+		// not a masking bug — this is the structural lock-before-try idiom the analyzer checks,
+		// and it removes the no-op unlock a failed lock() used to reach in the finally. bulkLock
+		// stays inside because its contract is the opposite: bulkUnlock is documented safe after
+		// a FAILED bulkLock and cleans up exactly the wrappers that were taken.
 		if (hierarchyLock != null) {
 			hierarchyLock.lock();
 		}
