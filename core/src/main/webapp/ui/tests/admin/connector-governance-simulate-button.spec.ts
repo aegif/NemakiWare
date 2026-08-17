@@ -365,7 +365,13 @@ test.describe('H2: Simulate (audit) button UI flow', () => {
     // button appears; which principal doesn't matter.
     const firstOption = page.locator('.ant-select-item-option').first();
     await expect(firstOption).toBeVisible({ timeout: 10000 });
-    await firstOption.click();
+    // Keyboard selection, not a mouse click: on slow CI runners the async principal
+    // load re-renders the option list mid-click and Playwright retries "element is
+    // not stable" until the dropdown collapses (shard run 2026-08-17, 57 retries).
+    // ArrowDown+Enter drives AntD's own active-item path and needs no positional
+    // stability; the tag-count assertion below still discriminates the selection.
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
     // Confirm the selection registered as a tag BEFORE closing the overlay.
     // Clicking the select container a second time can toggle-deselect in
     // AntD's multi-select, so we assert the tag, then close the dropdown

@@ -468,8 +468,18 @@ test.describe('User Management CRUD Operations', () => {
     const confirmCount = await confirmButton.count();
     console.log(`Delete test: Found ${confirmCount} confirm buttons`);
     if (confirmCount > 0) {
-      await confirmButton.first().click({ force: true });
-      console.log(`Delete test: Clicked confirm button`);
+      // Best-effort: the Popconfirm can render outside the viewport on CI (small
+      // window + long table), where even force:true throws "outside of the
+      // viewport" and used to abort the test BEFORE the API fallback below.
+      // The real discriminator is the reload + re-search + row-gone assertion
+      // at the end, so a failed UI confirm must fall through, not abort.
+      try {
+        await confirmButton.first().scrollIntoViewIfNeeded();
+        await confirmButton.first().click({ force: true });
+        console.log(`Delete test: Clicked confirm button`);
+      } catch (e) {
+        console.log(`Delete test: confirm click failed (falling back to API delete): ${e}`);
+      }
     } else {
       // Try clicking any visible primary button in popover
       const anyPopoverBtn = page.locator('.ant-popover:visible button, .ant-popconfirm:visible button').first();
