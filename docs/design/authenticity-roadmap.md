@@ -20,10 +20,10 @@
 | 層 | 採用する標準 | 準拠を名乗れるか |
 |---|---|---|
 | 要求事項 | InterPARES benchmark/baseline (A.1〜A.8 / B.1〜B.3) | ✗ 認証制度なし → 対応表 + 根拠の公開まで (§5 禁じ手) |
-| 機能モデル・語彙 | OAIS (ISO 14721)、現用層は ISO 15489 | ✗ 参照モデル → 語彙として採用 (§3.1) |
+| 機能モデル・語彙 | OAIS (ISO 14721 — **現行は 2025 年版**。参照時は版を固定)、現用層は ISO 15489 | ✗ 参照モデル → 語彙として採用 (§3.1) |
 | メタデータ | **METS** (構造) / **PREMIS** (保存イベント) / Dublin Core (記述) | △ スキーマ妥当性は機械検証可 |
-| パッケージング | **E-ARK CSIP / SIP / AIP / DIP** (DILCIS Board 維持)。搬送シリアライズに BagIt (RFC 8493) | **◯ 唯一「準拠」を機械検証つきで名乗れる層** — バリデータによるパッケージ単位の適合性検証がある |
-| 完全性・時刻 | SHA-256 / RFC 3161 / ERS (RFC 4998・6283) / OpenTimestamps (**デファクトであり正式規格ではない**と常に付記) | ◯ 暗号学的に検証可 |
+| パッケージング | **E-ARK CSIP / SIP** (DILCIS Board 維持。**版を固定する: CSIP 2.2.0 / PREMIS 3.0 / バリデータとルールセットの版込み** — 版なしの「validator pass」は再現不能)。BagIt (RFC 8493) は Archivematica 接続層の transfer 形式としてのみ使用 — **現行 RFC 8493 は serialization を規定しない**ので「bag の中に IP を封入して搬送」という語り方はしない (外部レビュー指摘) | **◯ 「準拠」を機械検証つきで名乗れる層** — バリデータによるパッケージ単位の適合性検証がある |
+| 完全性・時刻 | SHA-256 / RFC 3161 (**TSA プロトコルであって「認定タイムスタンプ」を自動的には意味しない**) / ERS (RFC 4998 = ASN.1/CMS、RFC 6283 = XMLERS — **積層ではなく表現形式の選択肢**) / OpenTimestamps (**デファクトであり正式規格ではない**と常に付記) | ◯ 暗号学的に検証可 |
 | 組織認証 | CoreTrustSeal / ISO 16363 | ✗ 対象は運用組織 → 顧客の取得支援 (§3.1) |
 
 この表の含意: **マーケティングで「準拠」と言い切れるのはパッケージング層 (E-ARK) と
@@ -40,11 +40,11 @@
 | 資産 | 実装 | 真正性文脈での意味 |
 |---|---|---|
 | **チャット・クラウド取込コネクタ** | `rest/ingest/` — `chat/SlackConnectorAdapter` / `TeamsConnectorAdapter` / `MattermostConnectorAdapter`、`note/NotionConnectorAdapter`、`record/SalesforceConnectorAdapter`、IMAP、クラウドドライブ、webhook (HMAC) | 対象文書の入口。ユーザーの構想 (Slack 等からの共有文書) は既に入口がある |
-| **取込時コンテンツハッシュ** | `CanonicalImportServiceImpl` が SHA-256 を計算し `nemaki:externalIntegration` aspect の **`nemaki:contentHash`** に保存 (:745,:1505)。再取込時に既存ハッシュと比較 (:1273) | integrity の起点。**取り込んだ瞬間の指紋が既に残っている** |
+| **取込時コンテンツハッシュ** | `CanonicalImportServiceImpl` が SHA-256 を計算し `nemaki:externalIntegration` aspect の **`nemaki:contentHash`** に保存 (:745,:1505)。再取込時に既存ハッシュと比較 (:1273)。**ただし証拠としては未完**: aspect 付与はコンテンツ作成後の別更新で失敗は warning 止まり (:1315)、型レベルの property definition が無い生プロパティ、空コンテンツは hash なし、対象は content bytes のみ (メタデータ・添付・会話範囲を含まない) | integrity の起点は在る。**「原子的な証拠取得」にするのが P1-1** |
 | **来歴属性** | 同 aspect の `nemaki:sourceArchetype` / `sourceSystem` / `sourceObjectType` / `sourceObjectId` / `sourceUrl` (:1478-1486) | identity の一部 (出所・恒久リンク) |
-| **チャット文脈メタデータ** | `Patch_ChatContextMetadataSecondaryType` — `nemaki:chatWorkspaceId` / `chatChannelId(Name)` / `chatThreadId` / `chatMessageId` / **`chatParticipants`** / `chatSelectionReason` / `chatEvidenceScope` / `chatCapturedAt` / `chatCaptureWindowStart/End` | チャット由来記録の identity 属性として出色。**「誰が・どの文脈で・なぜこの範囲を」まで既に型がある** |
+| **チャット文脈メタデータ** | `Patch_ChatContextMetadataSecondaryType` — `nemaki:chatWorkspaceId` / `chatChannelId(Name)` / `chatThreadId` / `chatMessageId` / **`chatParticipants`** / `chatSelectionReason` / `chatEvidenceScope` / `chatCapturedAt` / `chatCaptureWindowStart/End` | identity 属性として出色の**型**。ただし `chatCapturedAt` を設定する取込コードは無く、全プロパティ optional・READWRITE (:82) — A.1 の「分かち難く結合した保護属性」にするには P1-1 での設定 + 更新制約が要る |
 | **Lineage journal + 外部カタログ** | `rest/purview/journal/` 一式 — CouchDB 永続イベント (V2)、Atlas sink、カタログ publish/republish/reconciliation、dead letter、historical compensation | chain of custody の記録装置と、**NemakiWare の外にある独立検証点** (Atlas/Purview) |
-| **環境同一性の証明** | `LineageBarrier` — 配布物 (WAR) のバイナリダイジェスト + ノード membership ダイジェスト、golden vector で式を凍結 | 「どのソフトウェアがその記録を処理したか」の証拠。InterPARES が求める手続き・システムの文書化に直結 |
+| **環境同一性の証明** | `LineageWriteVersionBarrier` / `LineageBarrierService` / `LineageBinaryDigest` — 配布物 (WAR) のバイナリダイジェスト + ノード membership ダイジェスト、golden vector で式を凍結 | 「どのソフトウェアがその記録を処理したか」の証拠。InterPARES が求める手続き・システムの文書化に直結 |
 | **保持・処分・長期保管** | retention (ACTIVE → ARCHIVED_LOCAL → ARCHIVED_COLD)、S3 Legal Hold、cold storage、削除アーカイブ | ライフサイクル管理と法的保全 |
 | **アクセス制御と監査** | CMIS ACL + ACL-epoch fencing (収束保証つき)、audit (READ レベル選択式、WRITE/DELETE/ACL は常時) | 保護手続きとアクセス記録 |
 | **バージョニング** | CMIS versioning (checkin/checkout、TCK 準拠) | 改変履歴 |
@@ -54,8 +54,15 @@
 BagIt / OAIS 型パッケージ (`bagit|oais` で 0 件)、定期 fixity 再検証ジョブ、journal の
 改竄検知 (エントリ連鎖)、真正性レポート、InterPARES へのマッピング (`interpares` で 0 件)。
 
-**重要な現状**: `lineage.mode` の既定は **`disabled`** (`IntegrationSettingsController:129`)。
-真正性基盤としては「来歴を記録しない既定」は成立しないが、既定変更は破壊的なので §2 へ。
+**重要な現状 3 点**:
+1. `lineage.mode` の既定は **`disabled`** (`IntegrationSettingsController:129`)。既定変更は破壊的なので §2 へ。
+2. **journal は既定 90 日で purge される** (`LineageConfig:120` の `lineage.retention.days:90`、
+   `LineagePurgeScheduler` / `LineageJournalStore.purgeOlderThan`)。「journal は追記専用で残る」
+   という素朴な前提は現行実装と**正面衝突**する — P1-3 の分離設計 (配送 journal / evidence
+   ledger) で解く。
+3. 現行の取込 lineage snapshot は `sourceSystem/Archetype/ObjectId` 等のみで
+   **contentHash・chat*・取込主体を含まず** (`IngestLineageEmitter:51`)、emit の失敗は
+   warn して null を返す非致命経路 (:84)。P1-1 の「journal 化の徹底」の実体はここ。
 
 ---
 
@@ -82,7 +89,7 @@ BagIt / OAIS 型パッケージ (`bagit|oais` で 0 件)、定期 fixity 再検�
 - **これが済むと解ける据え置き**: V2 (作成直後の検証読み削減)・V5 (リトライ一本化) は
   「create/update の失敗が失敗として現れる」ことが前提だった。
 
-### 2-2. 残り 17 パッチの unprepared-return → throw 化
+### 2-2. 残り 16 パッチの unprepared-return → throw 化 (件数は台帳 `v3.3-release-plan.md` の「残る 16 本」に一致させた)
 
 `Patch_SystemFolderSetup` だけ 3.3 で実施済み (オーナー決定)。残りのパッチも
 「準備できていないのに正常終了して履歴を焼く」形を持つ。2-1 と同じ思想。
@@ -127,10 +134,10 @@ Systems) の Authenticity Task Force が定義した **benchmark requirements (�
 真正性推定の根拠 A.1〜A.8)** と **baseline requirements (保存者側の真正な複製の根拠
 B.1〜B.3)** を、機能→根拠→検証手順の管理表として採用する。
 
-> **P0 タスク**: 下表の要求事項名は概要の言い換えであり、**原典 (InterPARES 1
-> Authenticity Task Force 最終報告、および InterPARES Trust の後続成果) の条文確認が
-> 最初の作業**。マッピング表 v1 はこの確認をもって確定する。「準拠」を名乗る認証制度は
-> 無いので、成果物は**公開マッピング表 + 各行の検証手順**という形を取る (§5)。
+> **P0 タスク**: 下表の要求事項名は概要の言い換え。**2026-08-17 の外部レビュー (原典
+> ip1_authenticity_requirements.pdf と照合) の訂正を反映済み**だが、確定は P0-1 の原典確認
+> をもって行う。成果物は**サブ要求 (A.1.a 等) まで展開し、Creator / NemakiWare / Preserver
+> の責務を分離した公開マッピング表 + 各行の検証手順** (§5)。「準拠」を名乗る認証制度は無い。
 
 | 要求 (概要の言い換え) | 現状 (v3.3.0) | ギャップ → 計画 (§4) |
 |---|---|---|
@@ -139,19 +146,18 @@ B.1〜B.3)** を、機能→根拠→検証手順の管理表として採用す�
 | A.3 喪失・破損からの保護手続き | CouchDB 永続化、削除アーカイブ、バックアップ手順 (runbook) | **fixity 再検証が無い** (P1-2) |
 | A.4 媒体・技術の陳腐化への保護手続き | 変換基盤 (LibreOffice/Tika)、cold storage | 保存フォーマット方針と**移行の証跡** (P3-2) |
 | A.5 文書形式 (documentary forms) の確立 | タイプシステム + secondary types | チャット/クラウド由来記録の「記録形式」定義 (P1-1) |
-| A.6 認証 (authentication) の手段 | 認証基盤 (BCrypt/OIDC/SAML)、HMAC webhook | 記録**そのもの**への時刻証明・署名 (P2-1, P2-2) |
-| A.7 権威ある記録の特定 | バージョニング + latest 概念 | 「authoritative copy」の明示 (P1-4 レポートで表現) |
-| A.8 除去・移転の文書化 | retention/処分、lineage | **処分証跡** (P3-3) |
-| B.1 移転・維持・複製の管理 | lineage journal + Atlas 照合 | journal の改竄検知 (P1-3)、AIP/DIP (P3-1) |
-| B.2 複製過程とその影響の文書化 | rendition はあるが証跡なし | 変換 = 複製イベントの記録 (P3-2) |
-| B.3 アーカイブ記述 | CMIS メタデータ + Atlas カタログ | エクスポート時の記述パッケージ (P3-1) |
+| A.6 記録の authentication — **どの記録を・誰が・どの手段で真正と宣言する権限を持つかの規則** | 利用者認証 (BCrypt/OIDC/SAML) は**これではない** (外部レビュー訂正)。該当する仕組みは現状なし | 宣言主体と手段の規則化 + evidence への宣言者記録 (P1-4) + 運用規程テンプレート。時刻証明 (P2 系) は**補助証拠**。電子署名は現時点で計画外と明記 |
+| A.7 authoritative record の特定 — 複数コピーがあるとき**どれが権威かを決める手続・責任部署・記録クラスとの結合** (目的別に複数あり得る) | バージョニング + latest 概念 (**それだけでは不足** — 外部レビュー訂正) | 識別手続の規則化 + P1-4 での表現 + 非権威スタブの明示マーク (§4 Phase 3) |
+| A.8 除去・移転 — **真正性判断に必要な関連文書を記録と一緒に移す手続** | retention/処分、lineage | **主対応は P3-1/P3-4** (evidence を SIP に同梱して移す)。P3-3 (処分証跡) はその一部 (外部レビュー訂正) |
+| B.1 移転・維持・複製の管理 | lineage journal + Atlas 照合 | journal の改竄検知 (P1-3)、SIP (P3-1)。**B 系は保存者側の最低条件で全項目が必要** — 移管後は移管先の責務。NemakiWare が軽量 Archive を務める範囲でのみ自ら負う (責務境界表を P0-1 で確定) |
+| B.2 複製過程とその影響の文書化 | rendition はあるが証跡なし | 変換イベントの記録 (P3-2)。**hash だけでは不足** — 日時・責任者・取得記録との関係・形式/内容/アクセス性/利用への影響・不完全な複製の開示まで (外部レビュー訂正) |
+| B.3 アーカイブ記述 | CMIS メタデータ + Atlas カタログ (**単票中心で、fonds の階層的 archival description は無い**) | エクスポート時の記述 (P3-1)。階層記述は移管先の記述体系に委ねるか自前で持つかを P0-1 で整理 |
 
 ### §3.1 OAIS (ISO 14721) — 語彙として採用する (2026-08-17 オーナー議論)
 
 OAIS も参照モデルであって製品認証ではないが、この領域の**共通語彙**であり、
 調達・監査は SIP/AIP/DIP・Producer/Archive の語彙で会話する。採用理由はもう 1 つあり、
-**Phase 1 の機能群は OAIS の PDI (Preservation Description Information) をほぼ再構成している**
-— 対応に増築は要らず、既に作るものに正しい名前が付くだけ:
+**Phase 1 の機能群は OAIS の PDI (Preservation Description Information) の主要素に対する技術的対応物を持つ** (完全な再構成ではない — 外部レビュー指摘):
 
 | PDI 分類 | NemakiWare 側 |
 |---|---|
@@ -159,10 +165,11 @@ OAIS も参照モデルであって製品認証ではないが、この領域の
 | Context | `nemaki:chatContextMetadata` |
 | Reference | `nemaki:sourceObjectId` / `sourceUrl` |
 | Fixity | `nemaki:contentHash` + fixity service (P1-2) |
-| Access Rights | CMIS ACL + ACL-epoch |
+| Access Rights | CMIS ACL + ACL-epoch (**技術的アクセス制御のみ — PDI の Access Rights Information は法的・契約上の条件も含む**。そちらはメタデータで持つ設計が P3-1 に要る) |
 
 **位置づけ**: NemakiWare は OAIS でいう **Producer〜軽量 Archive** (現用記録システム。
-ISO 15489 の層)。本格的な保存処理は §4.3 の移管先に委ねる。
+ISO 15489 の層)。本格的な保存処理は §4 Phase 3 (P3-4) の移管先に委ねる。**Producer である
+以上、一次成果物は SIP** — AIP/DIP を名乗るのは「軽量 Archive」の責務範囲を定義してから。
 
 **認証の但し書き**: 認証制度は InterPARES には無いが OAIS 系には在る —
 ISO 16363 (重量級・正式認証は世界的にも稀) と **CoreTrustSeal** (軽量・現実的)。
@@ -170,9 +177,10 @@ ISO 16363 (重量級・正式認証は世界的にも稀) と **CoreTrustSeal** 
 言えるのは「顧客が CoreTrustSeal 等を目指す際に要求される技術的能力の提供と
 要件対応表の公開」まで (§5 の禁じ手と同じ構図)。
 
-実装語彙としては **PREMIS** (保存メタデータの事実上の標準) を採る。journal のイベント
-(capture / fixity check / migration / disposition) は PREMIS イベント型とほぼ 1:1 で、
-P3-1 のクロスウォークの土台になる。
+実装語彙としては **PREMIS 3.0** を採る。journal のイベントは PREMIS の controlled
+vocabulary に**クロスウォークで固定**する — `capture` / `fixity check` / `migration` は語彙に
+在るが、処分・移管系は `deaccession` / `deletion` / `transfer` 等との**使い分けを表で確定**
+してから使う (「ほぼ 1:1」という当て込みはしない — 外部レビュー指摘)。
 
 ---
 
@@ -182,9 +190,9 @@ P3-1 のクロスウォークの土台になる。
 
 | ID | 何を | 具体 |
 |---|---|---|
-| **P1-1** | **Capture Provenance の完成** | 取込イベントを lineage journal に必ず刻む (contentHash・source*・chat* を含む capture イベント)。取込主体 (`ingestedBy`) と取込時刻を全コネクタで統一。既存: hash と属性は在る — **欠けているのは「取込」という出来事の journal 化の徹底** |
+| **P1-1** | **Capture Provenance の原子化** | 「必ず刻む」を設計として実装する: (a) content commit と evidence commit の**トランザクション境界** (outbox パターン — 現状は aspect 付与が後追い更新で失敗 warning、emit は握り潰し `IngestLineageEmitter:84`。2-1 の fail-fast と同族)。(b) snapshot に contentHash・chat*・取込主体 (`ingestedBy` — **新規項目**) を追加 (`:51` に現状無し)。(c) `chatCapturedAt` 等を取込コードが実際に設定し、**更新制約** (READWRITE をやめる) を掛けて A.1 の保護属性にする。(d) 空コンテンツ・version ごとの hash・メタデータ hash の扱いを evidence data model として定義。(e) 失敗時は隔離 + 再構築可能性 |
 | **P1-2** | **Fixity service** | leader-gated の定期ジョブ (既存スケジューラパターン) が保存コンテンツの SHA-256 を再計算し `nemaki:contentHash` と照合。結果を journal に記録、乖離は隔離 + アラート。運用 API は再索引の verdict 型を踏襲 (`COMPLETE` の意味論の教訓をそのまま適用: 「検証した範囲」を常に言う)。**対象は cold 層 (S3) を含む** — 詳細は Phase 3 前提モデルの原則 3 |
-| **P1-3** | **Tamper-evident journal** | journal エントリをハッシュ連鎖化 (prev-hash)。日次アンカーダイジェストを **Atlas/Purview に publish** — 外部カタログが独立アンカーになり、「NemakiWare 単独では改竄を隠せない」構造を作る。`LineageBarrier` のダイジェスト機構と golden vector 文化を流用。**設計上の但し書き 3 点**: (1) 連鎖が固定するのは「記録された順序」— だから P1-1 (書き込み経路で必ず刻む) が先。(2) アンカー以前しか凍結されない — アンカー頻度 = 書き直され得る窓の長さ。(3) multi-replica では連鎖の構築を leader 固定の単一書き手にする (LeaderElection の既存パターン) |
+| **P1-3** | **Tamper-evident evidence ledger** | **journal と evidence を分離する** (外部レビュー + purge 衝突の帰結): 配送用 journal は現行どおり purge 可 (`lineage.retention.days`)、**evidence ledger は immutable** で期間・法的根拠別に保持し、purge 境界ごとに checkpoint + 外部アンカー + inclusion proof を残す。連鎖の構築は素朴な LeaderElection 流用ではなく、**既存の fenced sequencer (`CouchLineageSequencingStore` — lease generation CAS 持ち) を土台**に: chain domain (repo 単位か全体か) / sequence と連鎖の同一 CAS 確定 / failover 時の fork 検出 / **unsequenced backlog がある間の anchor 禁止** / purge 後 genesis / 「順序 = 確定 sequence 順であって時計順ではない」の明記。但し書き: 連鎖が固定するのは記録された順序 (P1-1 が先)、アンカー以前しか凍結されない (頻度 = 書き直され得る窓) |
 | **P1-4** | **真正性レポート (evidence package)** | 文書 1 件について identity 属性・contentHash と fixity 履歴・custody チェーン (journal 抜粋)・アクセス監査・バージョン系譜・処理環境 (Barrier ダイジェスト) を 1 つの JSON + 人が読む PDF に集約する API/UI。**マーケの主砲** (§5) |
 
 ### Phase 2 — 信頼できる時刻 (3.5 候補)
@@ -198,7 +206,7 @@ P3-1 のクロスウォークの土台になる。
 | 0 | ハッシュ連鎖のみ | なし | 0 | 内部の一貫性・記録順序 |
 | 1 | + Atlas/Purview (P1-3) | なし (顧客自身の別システム) | 0 | 単一システム管理者の事後改竄の検知 |
 | 2 | + **OpenTimestamps** (Bitcoin へのコミットメント集約) | あり・契約不要 | 0 | 組織外に対する「遅くとも時刻 T に存在」の第三者検証可能な証明 |
-| 3 | + 認定タイムスタンプ (RFC 3161) | あり・有償 | 僅少 (下記) | 日本の制度上の裏付け |
+| 3 | + RFC 3161 TSA (**認定 TSA を選んだ場合に**日本の制度上の裏付け — プロトコル自体は認定を意味しない) | あり・有償 | 僅少 (下記) | 制度上の裏付け + 細かい時刻粒度 |
 
 **コスト設計の要**: ハッシュ連鎖があるため、タイムスタンプは文書ごとではなく
 **連鎖のアンカーに 1 日 1 回**で全文書に継承される (時刻粒度は「その日中」。細かくする
@@ -207,9 +215,9 @@ P3-1 のクロスウォークの土台になる。
 | ID | 何を | 具体 |
 |---|---|---|
 | **P2-0** | **アンカー先のプラガブル化** | P1-3 の日次アンカー D の送出先を多重化: Atlas (段 1、既存 sink) / OpenTimestamps (段 2) / RFC 3161 TSA (段 3)。段ごとに独立に有効化 |
-| **P2-1** | **OpenTimestamps アンカー** | D をカレンダーサーバへ送信 (HTTP POST のみ、鍵・ウォレット・暗号資産保有なし。外に出るのは 32 バイトのハッシュだけ)。**証明は二段階** — 送信直後は pending、Bitcoin ブロック確定後にジョブが `.ots` を upgrade (dead-letter/リトライの既存パターン)。複数カレンダー併用。検証は `.ots` + ブロックヘッダ列だけで**当社にもカレンダーにも依存せず**可能 → P4-1 と直結。時刻粒度は ±1〜2 時間 |
-| **P2-2** | RFC 3161 タイムスタンプ (段 3) | 日次アンカー + 必要ならアーカイブ遷移時に TSA トークンを取得し保存。認定 TSA / フリー TSA をプラガブルに。細かい時刻粒度が要る要件はこちら |
-| **P2-3** | 長期有効性 (再タイムスタンプ) | アルゴリズム失効前の積層再スタンプ運用。ERS (RFC 4998/6283) 採用可否を設計判断として比較。`.ots` は AIP (P3-1) に同梱して保全 |
+| **P2-1** | **OpenTimestamps アンカー** | D をカレンダーサーバへ送信 (HTTP POST のみ、鍵・ウォレット・暗号資産保有なし)。**公式クライアントは nonce 付き commitment を送る** — 生の D すら外に出ない (privacy 特性として明記・踏襲する)。**証明は二段階** — 送信直後は pending、Bitcoin ブロック確定後 (**数時間かかり得る**) にジョブが `.ots` を upgrade (dead-letter/リトライの既存パターン)。複数カレンダー併用。検証は `.ots` + 信頼できる Bitcoin ブロックヘッダ列で**当社にもカレンダーにも依存せず**可能 → P4-1 と直結。証明の意味は「**そのブロック時刻までに存在した**」という上限側の存在証明であり、対称な誤差幅の時刻証明ではない |
+| **P2-2** | RFC 3161 タイムスタンプ (段 3) | 日次アンカー + 必要ならアーカイブ遷移時に TSA トークンを取得し保存。認定 TSA / フリー TSA をプラガブルに。**TSA policy OID・証明書/失効情報 (CRL/OCSP)・nonce・accuracy の保存**まで含めて「検証可能なトークン」とする (長期検証情報は P2-3) |
+| **P2-3** | 長期有効性 | **timestamp renewal と hash-tree renewal は発火条件が異なる別操作** — 「再タイムスタンプ」の一語で潰さない。ERS は RFC 4998 (ASN.1/CMS) と RFC 6283 (XMLERS) が**表現形式の選択肢**で、採用可否と形式を設計判断として比較。`.ots`・TSA トークンは SIP (P3-1) に同梱して保全 |
 
 **採らないもの**: Ethereum 系 (ガス代が発生)・プライベート/コンソーシアムチェーン
 (信頼の依存先がコンソーシアムに戻り、アンカーの目的を壊す)。
@@ -218,10 +226,10 @@ P3-1 のクロスウォークの土台になる。
 
 | ID | 何を | 具体 |
 |---|---|---|
-| **P3-1** | SIP/AIP/DIP エクスポート (**E-ARK 一次**) | 一次形式は **E-ARK SIP (CSIP 準拠: METS 構造記述 + PREMIS 保存メタデータ)**。journal イベント → PREMIS イベント、チャット文脈 → 記述メタデータのクロスウォーク。evidence package (`.ots` 含む) は CSIP の規約に従う置き場所に同梱 (規約上の正位置は着手時に要確認)。搬送には BagIt (RFC 8493) シリアライズを併用 (bag の中に IP)。既存 `ImportExportResource` を土台に。**出力は E-ARK バリデータの通過を CI テストとして固定** (§6)。実装候補は下記「実装ノート」 |
-| **P3-2** | 保存フォーマット複製の証跡化 | PDF/A 変換 (jodconverter) を「複製イベント」として journal に記録 (元 hash → 複製 hash、変換環境 = Barrier ダイジェスト)。B.2 対応。**これは利便コピーであって保存計画の代替ではない** (下記の非目標) |
+| **P3-1** | **E-ARK SIP エクスポート** (Producer の一次成果物) | **E-ARK SIP (CSIP 2.2.0 準拠: METS 構造記述 + PREMIS 3.0)** — 使用する仕様版・profile・バリデータとルールセットの**版を固定して宣言**する。journal イベント → PREMIS イベント (クロスウォーク表で語彙を確定)、チャット文脈 → 記述メタデータ。evidence package (`.ots`・TSA トークン含む) は CSIP 規約に従う置き場所に同梱 (正位置は着手時に要確認)。既存 `ImportExportResource` を土台に。**出力はバリデータ通過を CI テストとして固定** (§6)。AIP/DIP の生成は「軽量 Archive」責務を定義してから別途判断 (§3.1)。BagIt は **Archivematica 接続層の transfer 形式としてのみ** (P3-4) |
+| **P3-2** | 保存フォーマット複製の証跡化 | PDF/A 変換を「複製イベント」として journal に記録 — B.2 の要求どおり **hash だけでなく日時・責任者・取得記録との関係・影響・不完全性の開示**まで。**現行 jodconverter は PDF/A profile の指定・検証を持たない** (rendition 基盤のみ) — PDF/A 出力と検証 (veraPDF 等) は新規要素。**これは利便コピーであって保存計画の代替ではない** (下記の非目標) |
 | **P3-3** | 処分証跡 | retention による削除を disposition イベントとして journal + Atlas に残す (何を・いつ・どの規則で) |
-| **P3-4** | **保存システムへの移管** | P3-1 の E-ARK SIP を移管先へ引き渡し、REST API で取込を起動。**移管自体を transfer イベントとして journal に記録し、先方の AIP 識別子と相互参照** — InterPARES A.8 / B.1 の充足。**RODA は E-ARK ネイティブ**なので一次形式がそのまま通る。**Archivematica の E-ARK 取込対応度は着手時に要確認** — 不足なら BagIt transfer へ変換する接続層で吸収 (一次形式は変えない)。Preservica も同様に接続層で |
+| **P3-4** | **保存システムへの移管 (custody transfer プロトコル)** | 「双方向参照」は時系列で成立させる — **SIP 作成時点で先方 AIP ID は存在しない**ので、SIP には連鎖抜粋を入れ、先方の受領・AIP 生成**後**に受領証を journal へ追記して次アンカーで凍結する。状態機械で管理: `PACKAGE_CREATED → SENT → RECEIVED → VALIDATED → INGEST_ACCEPTED → AIP_CREATED → RECEIPT_VERIFIED → CUSTODY_TRANSFERRED → LOCAL_DISPOSITION`。受領証の中身は AIP checksum だけでなく **署名付き受領・submission ID・AIP ID・対象 SIP digest・検証結果・先方 agent** まで。失敗・再送・重複取込・部分受入・先方 AIP 再生成の扱いを submission agreement として明文化。**RODA は E-ARK 対応** (受入 profile/版の互換は要確認)、**Archivematica は BagIt transfer 対応が確認済み** — E-ARK 直接取込の対応度は着手時に要確認、不足なら接続層で変換 (一次形式は変えない) |
 
 #### Phase 3 の前提モデル: リテンション終端の 3 つの出口 (2026-08-17 オーナー議論)
 
@@ -254,13 +262,32 @@ P3-1 のクロスウォークの土台になる。
    次のアンカーで凍結されると、向こうのパッケージにこちらの連鎖が入り、こちらの
    連鎖に向こうの指紋が入る — 検証者は custody 境界をまたいで歩ける
 3. **cold 層は custody 不変の内部イベント** — 移動先・移動前後の hash 照合・legal hold
-   適用を同じ journal に刻む。**fixity service (P1-2) は cold 層も対象** (S3 の multipart
-   ETag は MD5 ではないため自前 SHA-256 照合。S3 の checksum-sha256 メタデータ活用が
-   設計点)。「遮断した層こそ誰も見ていないのだから fixity が要る」
+   適用を同じ journal に刻む。**現行の cold move は移動前後の hash 照合を実装していない**
+   (`RetentionScheduler:567` / `S3StorageAdapter:74` — S3 put + Legal Hold + 状態遷移のみ)。
+   **fixity service (P1-2) は cold 層も対象** (S3 の multipart ETag は MD5 ではないため自前
+   SHA-256 照合。S3 の checksum-sha256 メタデータ活用が設計点)。「遮断した層こそ誰も
+   見ていないのだから fixity が要る」
 
 **Atlas 側**: 移管した記録のエンティティは削除せず「移管済み (AIP=X)」状態へ遷移。
-カタログは custody 境界をまたぐ横断地図として残る — Purview/Atlas 前提の構想が
-いちばん効く場面。
+カタログは custody 境界をまたぐ横断地図として残る。**ただし独立性の限界を明記する**:
+Atlas/Purview が同一組織・同一 tenant の管理下なら「管理者でも書き換えられない」は
+成立しない — その主張が立つのは段 2 (組織外アンカー) 以上 (外部レビュー指摘。§5 の
+文言もこの条件付けに従う)。外部アンカーの threat model (変更権限・anchor gap・fork) は
+実装前に設計課題として起こす (§8)。
+
+#### 消去要求との調停 (設計課題 — 実装前に確定させる)
+
+journal・audit・Solr/RAG・Atlas/Purview・バックアップ・cold S3・移管先 AIP・evidence
+package には**個人識別子 (参加者名等) が複製され得る**。「内容は消したが氏名や参照を
+スタブに残す」は消去要求への回答にならない場合がある。少なくとも:
+
+- 優先順位の規則: 法定保存義務・legal hold・公共アーカイブ例外 vs 本人の消去請求
+- disposition イベントに残してよい**最小情報**の定義 (仮名化 tombstone と復元可能な
+  個人情報の区別)
+- Atlas・移管先への deletion/rectification の伝播
+- WORM/バックアップ証拠の満了設計
+- OTS へは nonce 付き commitment のみ (P2-1 — 生ハッシュも出さない)
+- 「消去済みだが証跡あり」と「保存義務により消去拒否」を**別状態**として持つ
 
 **非目標 (明記)**: フォーマット同定 (PRONOM)・保存用正規化・保存計画 (preservation
 planning) は**作らない**。Archivematica カテゴリの本領であり、再実装は何年分もの
@@ -295,18 +322,21 @@ planning) は**作らない**。Archivematica カテゴリの本領であり、�
 - **Phase 1**: 「Slack・Teams・クラウドストレージから取り込んだ瞬間に、SHA-256 指紋・
   取込文脈 (誰が・どのチャンネルで・どの範囲を)・処理環境まで記録。**ワンクリックで
   真正性レポート**」
-- **P1-3**: 「来歴ジャーナルはハッシュ連鎖 + **外部カタログ (Microsoft Purview / Apache
-  Atlas) への日次アンカー**。管理者でも過去を静かに書き換えられない構造」
-- **Phase 2**: 「RFC 3161 タイムスタンプで時刻を第三者証明」
-- **Phase 4**: 「**NemakiWare を信用しなくても検証できる** — 公開 CLI と外部カタログの
-  二系統照合」
+- **P1-3**: 「来歴はハッシュ連鎖の evidence ledger + 外部カタログ (Microsoft Purview /
+  Apache Atlas) への日次アンカー」— **「管理者でも書き換えられない」と言うのは段 2
+  (組織外アンカー) を有効にした構成についてのみ** (同一 tenant の Atlas だけでは
+  成立しない — この条件ごと公開する)
+- **Phase 2**: 「組織外への存在証明は**無償構成 (OpenTimestamps) から**。認定 TSA を
+  足せば制度上の裏付けと細かい時刻粒度まで」
 - **Phase 3**: 「**Slack での共有からアーカイブ移管まで、証拠の連鎖が一度も切れない**。
   RODA / Archivematica 等の保存システムへ、捕獲文脈・fixity 履歴・アンカー証明を携えた
-  SIP を渡す」「パッケージは **E-ARK (CSIP) 準拠 — バリデータの機械検証つき**。
-  この層だけは『準拠』を根拠付きで言い切れる (§0 の非対称)」
+  SIP を渡す」「パッケージは **E-ARK (CSIP 2.2.0) 準拠 — 版を固定したバリデータの機械
+  検証つき**。この層だけは『準拠』を根拠付きで言い切れる (§0 の非対称)」
+- **Phase 4**: 「**NemakiWare を信用しなくても検証できる** — 公開 CLI と外部カタログの
+  二系統照合」
 - 通奏低音: 「InterPARES の真正性要求事項への**対応マッピングと検証手順を公開**」
-  「OAIS の語彙 (SIP/AIP/DIP・PDI) で説明可能。CoreTrustSeal 等を目指す組織の
-  技術要件に対応表で応える」
+  「OAIS の語彙 (SIP・PDI) で説明可能。CoreTrustSeal 等を目指す組織の技術要件に
+  対応表で応える」
 
 ### 禁じ手
 
@@ -315,6 +345,10 @@ planning) は**作らない**。Archivematica カテゴリの本領であり、�
 - 「OAIS **認証**」「ISO 16363 **認証済み製品**」— 認証対象は運用組織であって
   ソフトウェアではない (§3.1)。
 - 「電帳法**対応**」— JIIMA 認証を取るまでは「電帳法の保存要件を意識した設計」まで。
+  **これは自主規制であって、JIIMA 認証が法的必須という意味ではない** (外部レビュー指摘)。
+  電子取引データの真実性確保にはタイムスタンプ以外の経路 (訂正削除不能/履歴保全システム、
+  事務処理規程) があり、**電子取引とスキャナ保存の要件を混同しない** — 文言確定前に
+  国税庁の現行一問一答で経路ごとに確認する (P0)。
 - 検証手順を添えられない主張は出さない。
 
 ### 想定市場 (優先度はオーナー判断)
@@ -341,20 +375,45 @@ planning) は**作らない**。Archivematica カテゴリの本領であり、�
 | バージョン | 中身 |
 |---|---|
 | **3.3.1** | 非破壊パッチ ([`v3.3.1-plan.md`](v3.3.1-plan.md)) |
-| **3.4** | §2 前提工事 (DAO fail-fast、17 パッチ、lineage 既定) + **Phase 1** |
-| **3.5** | Phase 2〜3 (時刻証明・パッケージ) |
+| **3.4** | §2 前提工事 (2-1〜2-3 は必須、2-5 の予告類。2-4 は設計判断が付いたものだけ) + **Phase 1** |
+| **3.5** | Phase 2 (時刻証明 — アンカー多重化・OTS・TSA) |
+| **3.6** | Phase 3 (E-ARK SIP・移管プロトコル・処分) — **時刻証明とパッケージングは独立したリリース境界を持つ** (外部レビュー指摘を採用) |
 | 継続 | Phase 4 (検証 CLI・制度) |
 
 ## §8 直近アクション (P0)
 
-1. **InterPARES 原典の条文確認** — §3 の表を原典の文言で確定 (最初の 1 週間の仕事)
+1. **InterPARES 原典の条文確認** — §3 の表を**サブ要求 (A.1.a 等) まで展開し、
+   Creator / NemakiWare / Preserver の責務境界列を付けて**確定 (最初の 1 週間の仕事)
 2. **`lineage.mode=journaled` の実測** — 書き込みオーバーヘッドと journal 成長率
    (bedroom 規模 + 10 万規模)。2-3 と P1-1 のコスト根拠
-3. **アンカー実装調査** — OpenTimestamps の Java クライアント (Eternity Wall 系) の
-   成熟度確認 (送信側は HTTP POST のみなので自前実装も選択肢、検証側は参照実装に
-   寄せる案を含む)。認定 TSA / フリー TSA の候補・コスト・可用性
+3. **アンカー実装調査** — OpenTimestamps の Java クライアント
+   (`com.eternitywall:java-opentimestamps` — **Central に 1.20 まで存在することは確認済み**、
+   残るは保守状況)。nonce 付き commitment の踏襲。認定 TSA / フリー TSA の候補・コスト・
+   可用性、TSA policy OID / 失効情報の保存設計
 4. **P1-4 のモック** — 真正性レポートの見た目 (JSON スキーマ + PDF 1 枚) を先に作り、
    オーナーとマーケ観点でレビューしてから実装に入る
 5. **E-ARK 実装調査** — keeps/commons-ip の入手経路・ライセンス・成熟度
-   (Central に無いことは確認済み)。CSIP の現行版と、evidence package の置き場所規約の
-   確認。参照バリデータの特定と CI への組み込み方
+   (Central に無いことは確認済み)。**CSIP 2.2.0 / E-ARK SIP profile / PREMIS 3.0 /
+   バリデータとルールセットの版を固定**して宣言する形を決める
+6. **消去要求との調停の法務確認** — 個人情報保護と保存義務の優先順位、電帳法の
+   経路別要件 (電子取引 / スキャナ保存) を国税庁一問一答で確定
+
+### 実装前に §に起こす設計課題 (外部レビュー 2026-08-17 より)
+
+- **Slack 等の source-side 捕獲完全性**: API scope・編集/削除履歴・thread/添付・cursor gap・
+  取得 request ID。**webhook HMAC は通信相手の検証であって Slack 内の記録内容の真正性
+  証明ではない** — 「NemakiWare が証明するのは取込時点以降」という境界を evidence に明記
+- **Evidence data model**: hash アルゴリズム ID・バイト長・version/object ID・メタデータ
+  hash・添付/表現グラフ・正規化・agent・event outcome・失敗証拠
+- **Fixity policy**: 全件/標本・周期・初回 baseline・「読めない」と「不一致」の区別・
+  修復ソース・隔離・S3 version ID・リストア後の全検証
+- **外部アンカーの threat model**: Atlas の変更権限・別 tenant 構成・複数 anchor・
+  anchor gap・fork・時計故障
+- **Submission agreement** (P3-4): profile/版・許容 CITS・上限サイズ・暗号化・malware・
+  PII・拒否条件・再送・受領証・custody acceptance
+- **長期暗号運用**: algorithm deprecation registry、timestamp renewal / hash-tree renewal の
+  発火条件
+- **非権威スタブの詳細**: 最小メタデータ・アクセス制御・権威コピーへの解決・リンク切れ・
+  消去時の破棄
+- **CoreTrustSeal 支援の範囲**: 機能チェックリスト外 (組織統治・財務・designated
+  community・承継計画・DR) は**顧客組織側の課題**と明示する
