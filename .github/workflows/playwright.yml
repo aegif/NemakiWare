@@ -26,7 +26,11 @@ permissions:
 
 jobs:
   test:
-    timeout-minutes: 180
+    # Green runs take 87-103 minutes of job time (measured over the last successful
+    # runs, 2026-08). The known hang mode (client-side metadata-XHR stall cascading
+    # into cleanup goto timeouts) previously burned the whole limit; 130 keeps ~30%
+    # headroom over the slowest green while failing hangs 50 minutes sooner.
+    timeout-minutes: 130
     runs-on: ubuntu-latest
     env:
       MAVEN_USERNAME: ${{ github.actor }}
