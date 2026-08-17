@@ -130,6 +130,34 @@ B.1〜B.3)** を、機能→根拠→検証手順の管理表として採用す�
 | B.2 複製過程とその影響の文書化 | rendition はあるが証跡なし | 変換 = 複製イベントの記録 (P3-2) |
 | B.3 アーカイブ記述 | CMIS メタデータ + Atlas カタログ | エクスポート時の記述パッケージ (P3-1) |
 
+### §3.1 OAIS (ISO 14721) — 語彙として採用する (2026-08-17 オーナー議論)
+
+OAIS も参照モデルであって製品認証ではないが、この領域の**共通語彙**であり、
+調達・監査は SIP/AIP/DIP・Producer/Archive の語彙で会話する。採用理由はもう 1 つあり、
+**Phase 1 の機能群は OAIS の PDI (Preservation Description Information) をほぼ再構成している**
+— 対応に増築は要らず、既に作るものに正しい名前が付くだけ:
+
+| PDI 分類 | NemakiWare 側 |
+|---|---|
+| Provenance | lineage journal + capture イベント (P1-1) |
+| Context | `nemaki:chatContextMetadata` |
+| Reference | `nemaki:sourceObjectId` / `sourceUrl` |
+| Fixity | `nemaki:contentHash` + fixity service (P1-2) |
+| Access Rights | CMIS ACL + ACL-epoch |
+
+**位置づけ**: NemakiWare は OAIS でいう **Producer〜軽量 Archive** (現用記録システム。
+ISO 15489 の層)。本格的な保存処理は §4.3 の移管先に委ねる。
+
+**認証の但し書き**: 認証制度は InterPARES には無いが OAIS 系には在る —
+ISO 16363 (重量級・正式認証は世界的にも稀) と **CoreTrustSeal** (軽量・現実的)。
+ただし**認証対象は運用されるリポジトリ (組織) であってソフトウェアではない**。
+言えるのは「顧客が CoreTrustSeal 等を目指す際に要求される技術的能力の提供と
+要件対応表の公開」まで (§5 の禁じ手と同じ構図)。
+
+実装語彙としては **PREMIS** (保存メタデータの事実上の標準) を採る。journal のイベント
+(capture / fixity check / migration / disposition) は PREMIS イベント型とほぼ 1:1 で、
+P3-1 のクロスウォークの土台になる。
+
 ---
 
 ## §4 ケイパビリティ・ロードマップ
@@ -174,9 +202,15 @@ B.1〜B.3)** を、機能→根拠→検証手順の管理表として採用す�
 
 | ID | 何を | 具体 |
 |---|---|---|
-| **P3-1** | AIP/DIP エクスポート | BagIt (RFC 8493) パッケージ: manifest-sha256 + 来歴・記述メタデータ + evidence package 同梱。監査人・アーカイブ機関・後継システムへの引き渡し形式。既存 `ImportExportResource` を土台に |
-| **P3-2** | 保存フォーマット複製の証跡化 | PDF/A 変換 (jodconverter) を「複製イベント」として journal に記録 (元 hash → 複製 hash、変換環境 = Barrier ダイジェスト)。B.2 対応 |
+| **P3-1** | AIP/SIP/DIP エクスポート | BagIt (RFC 8493) パッケージ: manifest-sha256 + **PREMIS へのクロスウォーク** (journal イベント → PREMIS イベント、チャット文脈 → 記述メタデータ) + evidence package (`.ots` 含む) 同梱。既存 `ImportExportResource` を土台に。**Archivematica にハードコードしない** — 標準準拠パッケージとして作り、E-ARK プロファイルは市場要求を見て判断 |
+| **P3-2** | 保存フォーマット複製の証跡化 | PDF/A 変換 (jodconverter) を「複製イベント」として journal に記録 (元 hash → 複製 hash、変換環境 = Barrier ダイジェスト)。B.2 対応。**これは利便コピーであって保存計画の代替ではない** (下記の非目標) |
 | **P3-3** | 処分証跡 | retention による削除を disposition イベントとして journal + Atlas に残す (何を・いつ・どの規則で) |
+| **P3-4** | **保存システムへの移管 (Archivematica 連動)** | P3-1 のパッケージを Archivematica の transfer 形で生成し、REST API で取込を起動 (API 仕様は着手時に要確認)。**移管自体を transfer イベントとして journal に記録し、先方の AIP 識別子と相互参照** — InterPARES A.8 / B.1 の充足。第一連携先 Archivematica、同型 (Preservica / RODA) にも同じ出口が効く形に |
+
+**非目標 (明記)**: フォーマット同定 (PRONOM)・保存用正規化・保存計画 (preservation
+planning) は**作らない**。Archivematica カテゴリの本領であり、再実装は何年分もの
+ニッチな蓄積の劣化コピーになる。NemakiWare の価値は「移管の瞬間まで証拠の連鎖を
+切らさない Producer」であること。
 
 ### Phase 4 — 第三者検証 (継続)
 
@@ -203,12 +237,18 @@ B.1〜B.3)** を、機能→根拠→検証手順の管理表として採用す�
 - **Phase 2**: 「RFC 3161 タイムスタンプで時刻を第三者証明」
 - **Phase 4**: 「**NemakiWare を信用しなくても検証できる** — 公開 CLI と外部カタログの
   二系統照合」
+- **Phase 3**: 「**Slack での共有からアーカイブ移管まで、証拠の連鎖が一度も切れない**。
+  Archivematica 等の保存システムへ、捕獲文脈・fixity 履歴・アンカー証明を携えた SIP を渡す」
 - 通奏低音: 「InterPARES の真正性要求事項への**対応マッピングと検証手順を公開**」
+  「OAIS の語彙 (SIP/AIP/DIP・PDI) で説明可能。CoreTrustSeal 等を目指す組織の
+  技術要件に対応表で応える」
 
 ### 禁じ手
 
 - 「InterPARES **準拠**」— 準拠を認定する制度は無い。言えるのは「要求事項に対する
   対応表と根拠の公開」まで。
+- 「OAIS **認証**」「ISO 16363 **認証済み製品**」— 認証対象は運用組織であって
+  ソフトウェアではない (§3.1)。
 - 「電帳法**対応**」— JIIMA 認証を取るまでは「電帳法の保存要件を意識した設計」まで。
 - 検証手順を添えられない主張は出さない。
 
