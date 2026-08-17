@@ -167,7 +167,7 @@ P3-1 のクロスウォークの土台になる。
 | ID | 何を | 具体 |
 |---|---|---|
 | **P1-1** | **Capture Provenance の完成** | 取込イベントを lineage journal に必ず刻む (contentHash・source*・chat* を含む capture イベント)。取込主体 (`ingestedBy`) と取込時刻を全コネクタで統一。既存: hash と属性は在る — **欠けているのは「取込」という出来事の journal 化の徹底** |
-| **P1-2** | **Fixity service** | leader-gated の定期ジョブ (既存スケジューラパターン) が保存コンテンツの SHA-256 を再計算し `nemaki:contentHash` と照合。結果を journal に記録、乖離は隔離 + アラート。運用 API は再索引の verdict 型を踏襲 (`COMPLETE` の意味論の教訓をそのまま適用: 「検証した範囲」を常に言う) |
+| **P1-2** | **Fixity service** | leader-gated の定期ジョブ (既存スケジューラパターン) が保存コンテンツの SHA-256 を再計算し `nemaki:contentHash` と照合。結果を journal に記録、乖離は隔離 + アラート。運用 API は再索引の verdict 型を踏襲 (`COMPLETE` の意味論の教訓をそのまま適用: 「検証した範囲」を常に言う)。**対象は cold 層 (S3) を含む** — 詳細は Phase 3 前提モデルの原則 3 |
 | **P1-3** | **Tamper-evident journal** | journal エントリをハッシュ連鎖化 (prev-hash)。日次アンカーダイジェストを **Atlas/Purview に publish** — 外部カタログが独立アンカーになり、「NemakiWare 単独では改竄を隠せない」構造を作る。`LineageBarrier` のダイジェスト機構と golden vector 文化を流用。**設計上の但し書き 3 点**: (1) 連鎖が固定するのは「記録された順序」— だから P1-1 (書き込み経路で必ず刻む) が先。(2) アンカー以前しか凍結されない — アンカー頻度 = 書き直され得る窓の長さ。(3) multi-replica では連鎖の構築を leader 固定の単一書き手にする (LeaderElection の既存パターン) |
 | **P1-4** | **真正性レポート (evidence package)** | 文書 1 件について identity 属性・contentHash と fixity 履歴・custody チェーン (journal 抜粋)・アクセス監査・バージョン系譜・処理環境 (Barrier ダイジェスト) を 1 つの JSON + 人が読む PDF に集約する API/UI。**マーケの主砲** (§5) |
 
@@ -206,6 +206,45 @@ P3-1 のクロスウォークの土台になる。
 | **P3-2** | 保存フォーマット複製の証跡化 | PDF/A 変換 (jodconverter) を「複製イベント」として journal に記録 (元 hash → 複製 hash、変換環境 = Barrier ダイジェスト)。B.2 対応。**これは利便コピーであって保存計画の代替ではない** (下記の非目標) |
 | **P3-3** | 処分証跡 | retention による削除を disposition イベントとして journal + Atlas に残す (何を・いつ・どの規則で) |
 | **P3-4** | **保存システムへの移管 (Archivematica 連動)** | P3-1 のパッケージを Archivematica の transfer 形で生成し、REST API で取込を起動 (API 仕様は着手時に要確認)。**移管自体を transfer イベントとして journal に記録し、先方の AIP 識別子と相互参照** — InterPARES A.8 / B.1 の充足。第一連携先 Archivematica、同型 (Preservica / RODA) にも同じ出口が効く形に |
+
+#### Phase 3 の前提モデル: リテンション終端の 3 つの出口 (2026-08-17 オーナー議論)
+
+現行の retention (ACTIVE → ARCHIVED_LOCAL → ARCHIVED_COLD、S3 + Legal Hold) は
+**保管層の移動**であり、custody (管理責任) は NemakiWare に残る。Archivematica 移管は
+**custody の移転**であり、両者は同じ「アーカイブ」という語でも別物。モデルは
+「cold の先に移管」ではなく、**スケジュール終端の 3 択**:
+
+| 出口 | いつ | custody |
+|---|---|---|
+| 継続保管 (cold 層、実装済み) | 法定保存期間中・低頻度アクセス・legal hold | NemakiWare のまま |
+| アーカイブ移管 (P3-4) | 永年/歴史的価値、**保存期間がシステム寿命を超えるもの**、組織的分離 | 移転 |
+| 廃棄 (P3-3) | 期間満了・保存価値なし | 消滅 (証跡は残る) |
+
+- **選別 (appraisal)**: どの記録を移管するかをリテンション規則の属性として持つ (P3-4 の設計要素)
+- **移管後の NemakiWare 側**: 削除 + 処分証跡、または**非権威スタブ** (メタデータ +
+  AIP 参照 + evidence package を残し検索可能性を保つ。A.7 のため「非権威」を明示マーク)。
+  推奨はスタブ
+- **用語の言い分け (実害あり)**: 現機能名 ARCHIVED_* と OAIS の Archive が衝突する。
+  文書と UI では「保管層 (storage tier、custody 不変)」と「アーカイブ移管 (custody
+  transfer)」を言い分けること
+
+#### 移管時のリネージ 3 原則
+
+1. **journal は移管で出ていかない** — 追記専用でローカルに残る。SIP に入るのは
+   **抜粋の複製** (当該文書の capture〜移管直前のイベント列を PREMIS に変換 +
+   連鎖の該当区間 + アンカー証明)
+2. **移管イベントが双方向の継ぎ目** — journal に「対象 + contentHash + 根拠規程 +
+   承認者 + 宛先」を刻み、取込完了後に**先方 AIP 識別子と AIP チェックサムを追記**。
+   次のアンカーで凍結されると、向こうのパッケージにこちらの連鎖が入り、こちらの
+   連鎖に向こうの指紋が入る — 検証者は custody 境界をまたいで歩ける
+3. **cold 層は custody 不変の内部イベント** — 移動先・移動前後の hash 照合・legal hold
+   適用を同じ journal に刻む。**fixity service (P1-2) は cold 層も対象** (S3 の multipart
+   ETag は MD5 ではないため自前 SHA-256 照合。S3 の checksum-sha256 メタデータ活用が
+   設計点)。「遮断した層こそ誰も見ていないのだから fixity が要る」
+
+**Atlas 側**: 移管した記録のエンティティは削除せず「移管済み (AIP=X)」状態へ遷移。
+カタログは custody 境界をまたぐ横断地図として残る — Purview/Atlas 前提の構想が
+いちばん効く場面。
 
 **非目標 (明記)**: フォーマット同定 (PRONOM)・保存用正規化・保存計画 (preservation
 planning) は**作らない**。Archivematica カテゴリの本領であり、再実装は何年分もの
