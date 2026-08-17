@@ -7,6 +7,8 @@ only repository gotchas.
 
 ---
 
+# 3.3.0 (2026-08-17)
+
 ## 3.3.0 破壊的変更 — 起動要件とクライアント要件
 
 ### CouchDB 3.3 以上が必須になりました (**起動を止めます**)
@@ -32,11 +34,171 @@ only repository gotchas.
 
 | 経路 | 変更 |
 |---|---|
-| `/core/rest/**` / `/core/api/v1/**` の POST / PUT / DELETE | CSRF 検証。**Basic auth はバイパスしません** |
+| `/core/rest/**` / `/core/api/v1/**` の POST / PUT / DELETE / **PATCH** | CSRF 検証。**Basic auth はバイパスしません** |
+| `/core/api/v1/ingest-webhook/{id}` | **対象外** (HMAC 署名で検証するため)。`/subscribe` 側の管理操作は対象 |
+| `/core/rest/repo/{repo}/archive/index` | `limit` 未指定時の応答が**全件から 100 件**になりました |
 
 `X-Requested-With: XMLHttpRequest` を付けるか、Bearer / `AUTH_TOKEN` / `X-API-Key` で認証して
 ください。Basic auth を除外しているのは、ブラウザが realm 単位で自動付与する ambient
 credential だからです (付いていることが利用者の意図を示しません)。
+
+アーカイブ一覧を全件前提で読んでいたクライアントは、`totalItems` を見て `skip` / `limit` で
+ページングしてください。`limit` に 0 や負値を渡した場合も「未指定」として 100 件になります
+(`ArchiveResource.effectiveLimit`)。
+
+### CORS の既定が「許可しない」になりました
+
+`api.cors.allowedOrigins` を**設定していない場合の意味が変わりました**。
+
+| | 3.2 まで | 3.3.0 |
+|---|---|---|
+| 未設定 | `*` (**すべてのオリジンを許可**) | **CORS ヘッダを返さない** (ブラウザの same-origin policy が効く) |
+| 明示設定 | そのオリジンのみ | 変更なし。`*` も明示すれば従来どおり |
+
+同梱の React UI は `/core/ui/` と**同一オリジン**なので影響しません。
+**影響するのは、別オリジンのブラウザアプリからこれらの API を叩いている場合だけ**です
+(`/rest/*` `/api/*` `/odata/*` `/saml/*` `/services/*` `/mcp/*` — web.xml の corsFilter
+マッピングが正)。その場合は自分のオリジンを設定してください。
+
+```
+api.cors.allowedOrigins=https://ecm.example.com,https://admin.example.com
+```
+
+**CMIS クライアント・スクリプト・MCP サーバなど非ブラウザのクライアントは影響を受けません** —
+CORS はブラウザ側の仕組みです。未設定のときは起動ログにその旨が出ます。
+
+---
+
+## 3.3.0 で解決した既知の問題
+
+### `npm audit` — **0 件になりました**
+
+3.2 系では UI の依存に high が残っていました。3.3.0 で全て上げています。
+
+| パッケージ | → |
+|---|---|
+| `js-yaml` | 4.3.0 → **4.3.1** (5.x は default export が無く `swagger-client` が壊れるため 4 系の修正版) |
+| `dompurify` | 3.4.12 固定 → **3.4.13** |
+| `react-router` / `react-router-dom` | 7.18.1 → **7.18.2** |
+| `swagger-ui-react` | 5.31.x → **5.32.13** |
+| `brace-expansion` | → **5.0.9** |
+
+`npm audit --omit=dev` は **0 vulnerabilities**、UI ビルドと UI 単体テスト 191 件も通っています。
+
+### `cxf-core` — **4.2.0 → 4.2.3**
+
+SOAP バインディングの CXF を advisory の修正版 (4.2.2) より新しい **4.2.3** に上げました。
+
+**併せて構造を直しています。** 4.2.0 はバージョン変数が無く **5 箇所にベタ書き**で、
+安全に上げられない状態でした。`org.apache.cxf.version` プロパティに集約し、
+**enforcer にファミリ規則を追加**しています (Spring / HttpComponents に次ぐ 3 本目)。
+この規則を入れた時点で、OpenCMIS が CXF 4.1.3 を宣言していることが**その場で発覚**したので、
+そちらも dependencyManagement で押さえました。WAR 内の CXF は 10 個すべて 4.2.3 です。
+
+SOAP は実際に往復させて確認しています (MTOM の `getRepositories`、WSDL 6 本)。
+
+---
+
+## 3.3.0 追補 — 出荷物から開発用の残留物を取り除きました (2026-08-16)
+
+### 無認証で応答していた診断エンドポイントを削除しました
+
+`/core/rest/test`、`/core/rest/test/json`、`/core/rest/test/types` の 3 つが
+**認証なしで 200 を返していました** (`/rest/test/*` が `web.xml` の security-constraint に
+無かったため)。返していたのは固定文字列だけでデータ漏洩はありませんが、開発用の足場が
+本番で公開されている状態でした。**クラスごと削除しました** — これらは 404 になります。
+
+同じく参照されていなかった `MockSolrUtil` / `MockQueryProcessor` も WAR から除きました。
+
+### `/rest/all/repositories` が CORS 設定を無視していた問題
+
+このエンドポイントだけ `Access-Control-Allow-Origin: *` を直書きしており、
+**`api.cors.allowedOrigins` を設定しても効きませんでした**。設定を反映する
+`SimpleCorsFilter` が立てたヘッダを、サーブレットが上書きしていたためです。
+直書きを削除し、CORS の決定箇所を 1 つに集約しました。
+
+> 併せて 3.3.0 では**既定値そのものも変わっています** — 未設定は「許可しない」です。
+> 詳細は冒頭の破壊的変更「CORS の既定が『許可しない』になりました」を見てください。
+> この修正の意味は「設定がこのエンドポイントにも効くようになった」ことです。
+
+### WAR の中身
+
+Playwright の出力 (346KB) を含むテスト成果物 4 件が `/core/ui/` 配下で公開されていたので
+除きました。併せて `ui/public/**` が Vite の出力と**二重に**入っていたのも除いています
+(218 エントリ)。WAR は 210.4MB → 205.7MB になりました (バイト実測 205,686,621)。UI の動作に変化はありません。
+
+### JAXB 実装が 2 セット同梱されていた問題
+
+`jaxws-rt` が引き込む古い `com.sun.xml.bind` 4.0.2 と、明示的に固定している
+`org.glassfish.jaxb` 4.0.9 が**同じクラスを両方持って**いました。どちらが読まれるかは
+Tomcat のディレクトリ走査順に依存するため**デプロイごとに変わり得え**、4.0.9 への更新が
+環境によっては効いていませんでした。古い方を除外し、**SOAP バインディングが実際に
+往復することを確認**しています (MTOM の `getRepositories`、WSDL 6 本)。
+
+---
+
+## 3.3.0 追補 — QA 用の `testuser` が本番にも作られていた問題を修正しました (2026-08-16)
+
+**症状**: 初期化パッチ `Patch_TestUserInitialization` に有効・無効の切り替えが無く、**すべての
+デプロイのすべてのリポジトリ**に QA 用のアカウント `testuser` と グループ `testgroup` が
+作られていました。
+
+**認証はできません。** 保存されるパスワード `test` は BCrypt ハッシュではないため、照合が
+`BCrypt.checkpw` の不明形式フォールバックに落ちて例外になり、必ず不一致になります
+(`AuthenticationUtil.passwordMatchesWithUpgrade`)。**したがって既知の資格情報で入られる
+問題ではありません。** 問題は「誰も頼んでいない QA アカウントが本番データに居ること」と、
+**後から管理者が実パスワードを設定すれば有効なアカウントになる**ことです。
+
+**修正**: `patch.testuser.enabled` (既定 **false**) を新設し、明示的に有効にしたときだけ
+作るようにしました。QA 環境では `PATCH_TESTUSER_ENABLED=true` を渡してください
+(`docker-compose-simple.yml` が読みます)。
+
+**既存環境**: パッチ適用済みの記録はリポジトリごとに残るため、**既にある `testuser` /
+`testgroup` は自動では消えません**。不要なら管理 UI か REST で削除してください。
+
+```bash
+curl -u admin:admin -X DELETE -H "X-Requested-With: XMLHttpRequest" \
+  "http://HOST:8080/core/rest/repo/REPO/user/delete/testuser"
+```
+
+```bash
+curl -u admin:admin -X DELETE -H "X-Requested-With: XMLHttpRequest" \
+  "http://HOST:8080/core/rest/repo/REPO/group/delete/testgroup"
+```
+
+---
+
+## 3.3.0 追補 — 公開イメージの既定でクラウドディレクトリ同期が有効だった問題を修正しました (2026-08-16)
+
+**症状**: 公開 Docker イメージ (および `docker/` の compose で自前ビルドしたイメージ) の
+既定設定でクラウドディレクトリ同期が有効になっており、**毎日 02:00 に同期ジョブが起動して
+いました**。同期先として NemakiWare 開発元の Google Workspace ドメインと管理者メールアドレスが
+既定値として埋め込まれていました。
+
+**影響**: 3.1.0 〜 3.2.8 の公開イメージが対象です。
+
+- 鍵ファイル (`/usr/local/tomcat/secrets/google-service-account.json`) を置いていない環境では
+  毎日 ERROR ログが 1 本出るだけで、それ以外の影響はありません。
+- **他用途で同じパスに Google のサービスアカウント鍵を置いていた環境**では、その鍵で
+  開発元ドメイン宛の domain-wide delegation を要求していました。当該サービスアカウントは
+  開発元ドメインで委任されていないため Google 側が `unauthorized_client` で拒否し、
+  **テナントをまたぐデータの読み書きは発生しません**が、意図しない外部 API 呼び出しでした。
+- 利用者の環境から開発元へデータが送られることはありません (同期は「読み取って
+  NemakiWare に取り込む」方向のみ)。
+
+**修正**: 出荷設定の既定を `cloud.directory.sync.enabled=false` / providers・domain・adminEmail
+すべて空にしました。同期を使う場合は `-D` か環境変数、または `docker/secrets/*.env` で
+自分の値を与えてください。
+
+**併せて**: WAR 同梱のテンプレート側でキー名が 2 つ実装と食い違っており、設定しても読まれない
+状態でした (`cloud.directory.sync.google.serviceAccountKeyPath` → 正しくは
+`...serviceAccountKey`、`cloud.directory.sync.windowSize` → 正しくは
+`cloud.directory.sync.window.size`)。テンプレートを実装に合わせました。
+
+**確認方法**: 起動ログの
+`Cloud directory sync scheduler initialized (activeCron=...)` を見てください。この行は
+有効・無効にかかわらず出ます (`CloudDirectorySyncScheduler.java:58`)。**`activeCron=null` なら
+起動していません。** cron 式が入っていれば有効です。
 
 ---
 
@@ -448,7 +610,7 @@ and never reuses the archived one.
 The content fence reads `content_generation` only. (The ACL axis is fenced by
 `effective_acl_epoch` — see the ACL-epoch section below.)
 
-**Reusing an existing SOLR_HOME? Add the two fields by hand.** The schema shipped in the Solr image
+**Reusing an existing SOLR_HOME? Add the three fields by hand.** The schema shipped in the Solr image
 seeds a FRESH `SOLR_HOME` only; an existing one keeps its own `schema.xml` on the data volume, and
 the core uses `ClassicIndexSchemaFactory`, so the Schema API refuses to add them
 (`schema is not editable`). Without them EVERY document write fails with
@@ -458,13 +620,24 @@ permanently failed for document …` accumulates in the log. Edit
 `{SOLR_HOME}/nemaki/conf/schema.xml` to add
 
 ```xml
+<field name="effective_acl_epoch" type="long" indexed="true" stored="true" required="false" multiValued="false" />
 <field name="content_incarnation" type="string" indexed="true" stored="true" required="false" multiValued="false" />
 <field name="content_generation" type="long" indexed="true" stored="true" required="false" multiValued="false" />
 ```
 
-then `curl "http://{solr}/solr/admin/cores?action=RELOAD&core=nemaki"`. The normal 3.3.0 upgrade path
-(a Solr 10 migration onto a fresh core, which is why the full reindex is mandatory anyway) gets them
-from the image and needs no action; this applies to dev/staging stacks that kept their volume.
+then `curl "http://{solr}/solr/admin/cores?action=RELOAD&core=nemaki"`, and confirm all three with
+`curl "http://{solr}/solr/nemaki/schema/fields"` **before** starting the mandatory full reindex.
+
+**Do this on any stack whose Solr data volume survives the upgrade — which is the default.**
+`docker-compose-prod.yml` and `docker-compose-simple.yml` both mount the named volume `solr_data` at
+`SOLR_HOME=/var/solr/data`, and `--build --force-recreate` keeps named volumes. So upgrading an
+existing deployment gives you the **Solr 10 image with your Solr 9-era `schema.xml`**, not a fresh
+core. Only a genuinely new stack (or one where the volume was deliberately removed) seeds the schema
+from the image.
+
+`effective_acl_epoch` is the one that bites hardest: `AclEpochIndexWriter` sends it in the same
+atomic update as the reader tokens, so if it is missing the **mandatory initial ACL-epoch stamp fails
+for every document**, and the migration verdict comes back `UNKNOWN` rather than `INCOMPLETE`.
 
 **This fixes a real clobber**: a slow full-document rebuild (body re-extraction, rename, move) that
 finished after a fresh `applyAcl` used to overwrite the new reader tokens with the ones it had
@@ -641,9 +814,11 @@ conformance checklist (Minimal + Intermediate) passes 21/21. See
 - Both dev/eval overlays bind their ports to `127.0.0.1`.
 
 ### Security / hygiene
-- npm audit HIGH cleared (brace-expansion 5.0.7, js-yaml 4.3.0); Solr runtime
+- npm audit HIGH cleared at the time (brace-expansion 5.0.7, js-yaml 4.3.0); Solr runtime
   index/tlog data that had been committed by accident was removed from history and
   is now gitignored.
+  **This no longer holds** — see "3.3.0 で解決した既知の問題" near the top of this file. js-yaml 4.3.0
+  is itself in the vulnerable range of a later advisory.
 
 ### Review remediation — ORDER BY + paging correctness
 - **[P1] ORDER BY / the repository default order was applied only within a page,

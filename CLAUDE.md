@@ -70,7 +70,10 @@ CMIS 1.1 準拠のオープンソース ECM。技術スタックは `pom.xml` / 
   バックプレッシャー維持のため**変更不可**。ThreadFactory のみ
   `Thread.ofVirtual().name(...).factory()` に統一。`ScheduledExecutorService`
   (McpAuthenticationHandler) は VT 非対応のためプラットフォームスレッドのまま。
-- `/lib/jakarta-converted/` 内カスタム JAR による Maven systemPath 警告は**想定内**。
+- 旧 Jakarta 変換の遺物 (`docker/README-JAKARTA.md` / `docker/use-jakarta-jars.sh` /
+  `docker/core/Dockerfile.jakarta` / `docker/lib/jakarta-converted/`) は **3.3.0 で削除済み**。
+  古いブランチ・チェックアウトで見かけても手順として読まないこと (禁止されている
+  `1.2.0-SNAPSHOT` を勧め、実在しないスクリプトを指している)。`systemPath` 依存は全 pom で 0 件。
 
 ### データ・認証
 
@@ -132,7 +135,8 @@ CMIS 1.1 準拠のオープンソース ECM。技術スタックは `pom.xml` / 
 ## CSRF (REST API を叩くとき)
 
 `/core/rest/repo/...` (Jersey) と `/core/api/v1/...` (Spring MVC) の
-state-changing request (POST/PUT/DELETE) は CSRF 検証されます。
+state-changing request (POST/PUT/DELETE/**PATCH**) は CSRF 検証されます
+(`/core/api/v1/ingest-webhook/{id}` だけは HMAC 検証のため対象外)。
 **Basic auth はバイパスしません** (ブラウザが realm 単位で自動付与する
 ambient credential のため)。
 

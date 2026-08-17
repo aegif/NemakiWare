@@ -50,7 +50,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * Keycloak for authentication.
  * </p>
  *
- * @see <a href="docs/ldap-sync-keycloak-authentication.md">LDAP Sync + Keycloak Authentication Guide</a>
+ * @see <a href="../../../../../../../../docker/README-LDAP-KEYCLOAK-TEST.md">LDAP Sync + Keycloak
+ *      test environment</a> — the previous link here named a file that has never existed in this
+ *      repository.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class DirectorySyncConfig {

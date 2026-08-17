@@ -310,7 +310,11 @@ cloud.drive.google.enabled=true
 # 注: OIDC認証と同じクライアントIDを使用
 
 # === ディレクトリ同期 (Google Workspace) ===
-cloud.directory.sync.google.enabled=true
+# 有効化はマスタースイッチ + providers リスト。per-provider の enabled キーは存在しない
+# (3.3.0 でこの文書が案内していた cloud.directory.sync.google.enabled は読まれない誤記だった)。
+cloud.directory.sync.enabled=true
+cloud.directory.sync.providers=google
+cloud.directory.sync.cron=0 0 2 * * ?
 cloud.directory.sync.google.serviceAccountKey=/path/to/google-service-account.json
 cloud.directory.sync.google.domain=your-domain.com
 cloud.directory.sync.google.adminEmail=admin@your-domain.com
@@ -330,7 +334,10 @@ cloud.drive.microsoft.enabled=true
 # 注: OIDC認証と同じクライアントID/シークレットを使用
 
 # === ディレクトリ同期 (Microsoft Entra ID) ===
-cloud.directory.sync.microsoft.enabled=true
+# こちらもマスタースイッチ + providers。both なら providers=google,microsoft
+cloud.directory.sync.enabled=true
+cloud.directory.sync.providers=microsoft
+cloud.directory.sync.cron=0 0 2 * * ?
 cloud.directory.sync.microsoft.tenantId=YOUR_AZURE_TENANT_ID
 cloud.directory.sync.microsoft.clientId=YOUR_AZURE_APP_CLIENT_ID
 cloud.directory.sync.microsoft.clientSecret=YOUR_AZURE_CLIENT_SECRET
@@ -338,34 +345,29 @@ cloud.directory.sync.microsoft.clientSecret=YOUR_AZURE_CLIENT_SECRET
 
 ### Docker 環境変数
 
-`docker/.env` ファイルで設定する場合:
+**正典は [`docker/.env.cloud.example`](../docker/.env.cloud.example)** です。
+`docker/.env.cloud` にコピーして値を入れ、次で起動します:
 
 ```bash
-# Google
-NEMAKI_CLOUD_AUTH_GOOGLE_ENABLED=true
-NEMAKI_CLOUD_AUTH_GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
-NEMAKI_CLOUD_AUTH_GOOGLE_CLIENT_SECRET=xxx
-
-NEMAKI_CLOUD_DRIVE_GOOGLE_ENABLED=true
-
-NEMAKI_CLOUD_DIRECTORY_SYNC_GOOGLE_ENABLED=true
-NEMAKI_CLOUD_DIRECTORY_SYNC_GOOGLE_SERVICE_ACCOUNT_KEY=/config/google-service-account.json
-NEMAKI_CLOUD_DIRECTORY_SYNC_GOOGLE_DOMAIN=your-domain.com
-NEMAKI_CLOUD_DIRECTORY_SYNC_GOOGLE_ADMIN_EMAIL=admin@your-domain.com
-
-# Microsoft
-NEMAKI_CLOUD_AUTH_MICROSOFT_ENABLED=true
-NEMAKI_CLOUD_AUTH_MICROSOFT_CLIENT_ID=xxx
-NEMAKI_CLOUD_AUTH_MICROSOFT_TENANT_ID=xxx
-NEMAKI_CLOUD_AUTH_MICROSOFT_CLIENT_SECRET=xxx
-
-NEMAKI_CLOUD_DRIVE_MICROSOFT_ENABLED=true
-
-NEMAKI_CLOUD_DIRECTORY_SYNC_MICROSOFT_ENABLED=true
-NEMAKI_CLOUD_DIRECTORY_SYNC_MICROSOFT_TENANT_ID=xxx
-NEMAKI_CLOUD_DIRECTORY_SYNC_MICROSOFT_CLIENT_ID=xxx
-NEMAKI_CLOUD_DIRECTORY_SYNC_MICROSOFT_CLIENT_SECRET=xxx
+docker compose -f docker-compose-prod.yml --env-file .env.cloud up -d
 ```
+
+1 つのファイルで **2 つの届き方**があり、変数名が違います (example 内に区分あり):
+
+| 区分 | 例 | 届き方 |
+|---|---|---|
+| **[A] compose 補間** | `CLOUD_AUTH_GOOGLE_CLIENT_ID` | `docker-compose-prod.yml` の CATALINA_OPTS が `${...}` で参照し `-D` として JVM へ。**`--env-file` (かホスト環境変数) が必要** |
+| **[B] コンテナ環境変数直読み** | `CLOUD_DIRECTORY_SYNC_GOOGLE_SERVICEACCOUNTKEY` | アプリが直接読む (プロパティキーを大文字化し `.`→`_`、**prefix 無し**)。prod compose の `env_file:` が同じファイルを読み込むことで届く |
+
+> **3.3.0 の訂正**: この文書と example が載せていた `NEMAKI_CLOUD_*` という変数名は
+> **どこからも読まれない誤記**でした。また [B] の名前をそのまま `--env-file` に頼って
+> 渡しても **compose はサービス環境に注入しません** (`--env-file` は補間用)。現在は
+> prod compose 側に `env_file: .env.cloud` を追加してあり、コピーするだけで両方が届きます
+> (`docker compose config` で検証済み)。
+
+> **注**: `cloud.auth.` / `cloud.drive.` は admin-managed dynamic key です。管理 UI
+> (`nemaki_conf`) に保存された値がどちらの機構よりも**先に**読まれます
+> (`PropertyManager.isAdminManagedDynamicKey`)。`cloud.directory.sync.` は対象外です。
 
 ---
 

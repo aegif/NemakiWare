@@ -23,8 +23,9 @@ Building RAG on top of file storage or generic databases means bolting on permis
 ### 1. Build
 
 ```bash
-# Install OpenCMIS JARs to local Maven repository (first build only)
-./scripts/install-opencmis-local.sh
+# Install OpenCMIS JARs to local Maven repository (first build only).
+# Requires a GitHub token with packages:read — see "OpenCMIS JAR Resolution" below.
+./scripts/fetch-opencmis-from-github-packages.sh
 
 # Build UI
 cd core/src/main/webapp/ui && npm install && npm run build && cd ../../../..
@@ -67,12 +68,12 @@ docker compose -f docker-compose-simple.yml --profile rag up -d --build
 
 A Setup Wizard runs on first launch to configure database, authentication, and embedding provider.
 
-> **Deployment posture (3.1.1)**: this release is **single-replica** by
+> **Deployment posture (3.3.0)**: this release is **single-replica** by
 > design. Multi-replica deployments are supported but require explicit
 > setup — sticky sessions at the LB, leader election for cron schedulers,
 > bootstrap order with the Setup Wizard at N=1, and a few other
 > conditions. See **[`docs/MULTI-REPLICA-DEPLOYMENT.md`](docs/MULTI-REPLICA-DEPLOYMENT.md)** for
-> the authoritative checklist (10 JVM-local subsystems inventoried,
+> the authoritative checklist (17 JVM-local subsystems inventoried,
 > 6 required conditions, 4 known limitations, bootstrap recipe,
 > failure-mode lookup).
 
@@ -185,8 +186,8 @@ See [Cloud Integration Guide](docs/CLOUD_INTEGRATION.md).
 |-----------|------------|
 | Server | Tomcat 11 (Jakarta EE 11, Virtual Threads) |
 | Framework | Spring 7, Apache Chemistry OpenCMIS |
-| Database | CouchDB 3.x |
-| Search | Apache Solr 9.x (full-text + DenseVector) |
+| Database | CouchDB 3.3+ (checked at startup — 3.3.0 refuses to start below 3.3) |
+| Search | Apache Solr 10.x (full-text + DenseVector) |
 | UI | React 19, TypeScript, Vite 7, Ant Design 5 |
 | Java | 21 (required) |
 
@@ -290,11 +291,21 @@ cd core/src/main/webapp/ui && npx playwright test --project=chromium
 
 ### OpenCMIS JAR Resolution
 
-NemakiWare uses custom OpenCMIS 1.1.0-nemakiware JARs (Jakarta EE compatible). Pre-built JARs are in `lib/built-jars/` and must be installed before the first build:
+NemakiWare uses custom OpenCMIS **2.0.0-RC2-nemakiware** JARs (Jakarta EE compatible), pinned at
+`core/pom.xml` (`org.apache.chemistry.opencmis.version`). They are published to GitHub Packages, not
+to Maven Central, so the first build has to fetch them:
 
 ```bash
-./scripts/install-opencmis-local.sh
+./scripts/fetch-opencmis-from-github-packages.sh
 ```
+
+This needs a GitHub token with `packages:read` in `~/.m2/settings.xml` under server id
+`github-opencmis`; the script's header shows the exact block. The fetched JARs land in
+`lib/built-jars/`.
+
+`scripts/install-opencmis-local.sh` installs the **older 1.1.0-nemakiware** JARs that are checked
+into `lib/built-jars/`. Those are no longer what `core/pom.xml` resolves against — running it alone
+does not make the build succeed.
 
 ---
 
@@ -302,7 +313,8 @@ NemakiWare uses custom OpenCMIS 1.1.0-nemakiware JARs (Jakarta EE compatible). P
 
 | Document | Description |
 |----------|-------------|
-| [Release Notes](RELEASE_NOTES.md) | User-facing changelog (latest: 3.1.1-RC6.9) |
+| [Release Notes](RELEASE_NOTES.md) | User-facing changelog (latest: 3.3.0) |
+| [3.3.0 Upgrade Runbook](docs/operations/v3.3.0-upgrade-runbook.md) | Mandatory full reindex, CouchDB 3.3 gate, rollback |
 | [Architecture](docs/ARCHITECTURE.md) | System architecture overview |
 | [AWS Deployment](docs/AWS-DEPLOYMENT-GUIDE.md) | Production deployment on AWS |
 | [Bedrock Embedding](docs/BEDROCK_EMBEDDING.md) | Amazon Bedrock setup |
