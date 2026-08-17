@@ -77,6 +77,32 @@ public class ApiV1Application extends ResourceConfig {
         
         // Register OpenAPI/Swagger resource for /openapi.json endpoint
         register(OpenApiResource.class);
+
+        // The @OpenAPIDefinition on this class is NOT scanned by OpenApiResource (its scanner
+        // covers the resource packages, not the Application class), so the served openapi.json
+        // carried no `servers` — and Swagger UI's "Try it out" resolved every request against
+        // the page origin, hitting /api/v1/... WITHOUT the /core context and getting a 404.
+        // Found by actually executing from the UI (3.3.1 #8): none of the 129 operations had
+        // ever been executable. Configure the context programmatically instead.
+        try {
+            io.swagger.v3.oas.models.OpenAPI oas = new io.swagger.v3.oas.models.OpenAPI()
+                    .info(new io.swagger.v3.oas.models.info.Info()
+                            .title("NemakiWare CMIS REST API")
+                            .version("1.0.0")
+                            .description("OpenAPI 3.0 compliant REST API for NemakiWare CMIS Repository."))
+                    .addServersItem(new io.swagger.v3.oas.models.servers.Server()
+                            .url("/core/api/v1/cmis")
+                            .description("NemakiWare CMIS REST API v1"));
+            new io.swagger.v3.jaxrs2.integration.JaxrsOpenApiContextBuilder<>()
+                    .application(this)
+                    .openApiConfiguration(new io.swagger.v3.oas.integration.SwaggerConfiguration()
+                            .openAPI(oas)
+                            .prettyPrint(true)
+                            .resourcePackages(java.util.Set.of("jp.aegif.nemaki.api.v1.resource")))
+                    .buildContext(true);
+        } catch (io.swagger.v3.oas.integration.OpenApiConfigurationException e) {
+            logger.warning("OpenAPI context configuration failed — /openapi.json will lack servers: " + e.getMessage());
+        }
         
         // Register exception mappers for RFC 7807 compliant error responses
         register(jp.aegif.nemaki.api.v1.exception.ApiExceptionMapper.class);
