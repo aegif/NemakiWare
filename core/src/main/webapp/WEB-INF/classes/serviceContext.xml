@@ -392,9 +392,11 @@
     </bean>
 
     <bean id="aclService" class="jp.aegif.nemaki.cmis.service.impl.AclServiceImpl" destroy-method="destroy">
-        <!-- ACL-epoch production wiring (design §11, increment 12). The FLAG
-             (acl.epoch.wiring.enabled, default false) decides whether any of it runs; with the
-             flag off these collaborators sit idle and behavior is bit-identical pre-epoch. -->
+        <!-- ACL-epoch production wiring (design §11). ALWAYS ON since 3.3.0: the pre-epoch ACL
+             write path was removed, so there is no off state and no acl.epoch.wiring.enabled to
+             decide anything. A leftover false is ignored and warned about at startup
+             (AclEpochScanScheduler.warnIfObsoleteFlagIsSet). These collaborators are not optional.
+             This comment used to claim the opposite — see RELEASE_NOTES, 3.3.0 breaking changes. -->
         <property name="propertyManager"><ref bean="propertyManager" /></property>
         <property name="aclEpochFinalizationService"><ref bean="aclEpochFinalizationService" /></property>
         <property name="aclEpochIndexWriter"><ref bean="aclEpochIndexWriter" /></property>
@@ -513,9 +515,9 @@
         <property name="connectorPool" ref="connectorPool" />
     </bean>
 
-    <!-- ACL-epoch crash-recovery sweep (design §11.7, increment 12). Leader-gated like the
-         reconciliation poller; starts ONLY when acl.epoch.wiring.enabled=true — with the flag
-         off, start() logs and returns without scheduling anything. -->
+    <!-- ACL-epoch crash-recovery sweep (design §11.7). Leader-gated like the reconciliation
+         poller. It starts UNCONDITIONALLY: acl.epoch.wiring.enabled no longer gates it (3.3.0),
+         and start() only declines when its collaborators are unwired. -->
     <bean id="aclEpochScanScheduler" class="jp.aegif.nemaki.epoch.AclEpochScanScheduler"
           init-method="start" destroy-method="stop">
         <property name="finalizationService" ref="aclEpochFinalizationService" />

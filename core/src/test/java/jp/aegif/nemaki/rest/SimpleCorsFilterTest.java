@@ -12,15 +12,36 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class SimpleCorsFilterTest {
 
-    // ── Default (wildcard) ──
+    // ── Default (3.3.0: deny) ──
 
+    /**
+     * The default was {@code *} until 3.3.0, which handed every origin on the internet a readable
+     * response from every path this filter covers, on any deployment that never set the key. The
+     * shipped UI is same-origin and never used it.
+     */
     @Test
-    void defaultOrigins_returnsWildcard() throws Exception {
+    void defaultOrigins_deniesCrossOrigin() throws Exception {
         var filter = new SimpleCorsFilter();
-        filter.resolveOrigins(); // no PropertyManager → stays *
+        filter.resolveOrigins(); // no PropertyManager, no system property → no origins
 
         var req = new MockHttpServletRequest("GET", "/api/v1/admin/connectors");
         req.addHeader("Origin", "http://evil.com");
+        var res = new MockHttpServletResponse();
+        filter.doFilter(req, res, new MockFilterChain());
+
+        assertNull(res.getHeader("Access-Control-Allow-Origin"),
+                "an unconfigured deployment must not answer cross-origin requests");
+        assertNull(res.getHeader("Access-Control-Allow-Headers"));
+        assertNull(res.getHeader("Access-Control-Allow-Methods"));
+    }
+
+    /** {@code *} is still available — as something the operator chose. */
+    @Test
+    void wildcardIsStillHonouredWhenAskedFor() throws Exception {
+        var filter = createFilterWithOrigins("*");
+
+        var req = new MockHttpServletRequest("GET", "/api/v1/admin/connectors");
+        req.addHeader("Origin", "http://anything.example");
         var res = new MockHttpServletResponse();
         filter.doFilter(req, res, new MockFilterChain());
 
@@ -98,8 +119,7 @@ class SimpleCorsFilterTest {
 
     @Test
     void optionsPreflight_returns200() throws Exception {
-        var filter = new SimpleCorsFilter();
-        filter.resolveOrigins();
+        var filter = createFilterWithOrigins("*");
 
         var req = new MockHttpServletRequest("OPTIONS", "/api/v1/admin/connectors");
         req.addHeader("Origin", "http://localhost:5173");
@@ -133,8 +153,7 @@ class SimpleCorsFilterTest {
 
     @Test
     void allowedHeaders_includesCsrfBypassHeaders() throws Exception {
-        var filter = new SimpleCorsFilter();
-        filter.resolveOrigins();
+        var filter = createFilterWithOrigins("*");
 
         var req = new MockHttpServletRequest("OPTIONS", "/api/v1/admin/connectors");
         req.addHeader("Origin", "http://localhost:5173");

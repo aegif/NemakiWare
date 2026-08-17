@@ -213,6 +213,18 @@ jobs:
             fail=1
           fi
 
+          # Shipped defaults must not carry a tenant identity or arm a scheduled job.
+          # This shipped in 3.1.0-3.2.8 with the maintainer's own Workspace domain and
+          # admin email baked into the published image, and a cron armed for 02:00 daily.
+          if grep -nE '^cloud\.directory\.sync\.enabled=true' docker/core/nemakiware.properties; then
+            echo "::error title=Shipped default::cloud directory sync is ENABLED in the shipped image defaults — it must be opt-in"
+            fail=1
+          fi
+          if grep -nE '^cloud\.directory\.sync\.(providers|google\.(domain|adminEmail|serviceAccountKey)|microsoft\.(tenantId|clientId|clientSecret))=[^[:space:]]+' docker/core/nemakiware.properties; then
+            echo "::error title=Identity leak::docker/core/nemakiware.properties carries a non-empty cloud directory sync identity — these must ship blank"
+            fail=1
+          fi
+
           # No legacy properties files should be re-introduced
           for legacy in docker/nemakiware.properties docker/log4j.properties \
                        docker/ui-war/nemakiware_ui.properties \

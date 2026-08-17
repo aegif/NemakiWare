@@ -36,6 +36,7 @@ import jp.aegif.nemaki.common.NemakiObjectType;
 import jp.aegif.nemaki.model.GroupItem;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.UserItem;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 import jp.aegif.nemaki.util.spring.SpringContext;
 
 /**
@@ -43,6 +44,22 @@ import jp.aegif.nemaki.util.spring.SpringContext;
  * Creates:
  * - TestUser group
  * - test user (password: test) and adds to TestUser group
+ *
+ * <p><b>Off unless {@code patch.testuser.enabled=true} (3.3.0).</b> This is wired into the
+ * production {@code patchContext.xml} and listed among the ordered seed patches, so until 3.3.0 it
+ * seeded {@code testuser} and {@code testgroup} into EVERY repository of EVERY deployment — a QA
+ * fixture in production data.
+ *
+ * <p>The stored password was never usable: {@code "test"} is not a BCrypt hash, so
+ * {@code AuthenticationUtil.passwordMatchesWithUpgrade} falls through to its unknown-format branch,
+ * {@code BCrypt.checkpw} throws {@code Invalid salt version}, and the match returns false. The
+ * account could not authenticate. What it was is an account nobody asked for, sitting in
+ * {@code /.system/users} and in {@code testgroup}, that an administrator could later give a real
+ * password to.
+ *
+ * <p>Turning this off does NOT remove accounts already seeded — {@code PatchHistory} records the
+ * patch as applied per repository, so it simply never runs again. Removing them is a manual step;
+ * the release notes carry it.
  */
 public class Patch_TestUserInitialization extends AbstractNemakiPatch {
 
@@ -59,10 +76,51 @@ public class Patch_TestUserInitialization extends AbstractNemakiPatch {
         log.info("=== PATCH: TestUserInitialization - No system patches required ===");
     }
 
+    /**
+     * Skip BEFORE any patch history is recorded.
+     *
+     * <p>The base {@code apply()} records {@code PatchHistory} after each successful
+     * {@code applyPerRepositoryPatch}. If this patch only declined inside that method, a boot with
+     * the flag off would still be recorded as "applied" — and turning the flag on later would do
+     * nothing, forever, because {@code isApplied} short-circuits first. Found in review as the
+     * "opt-in bakes in on first boot" defect; skipping here, before the loop, leaves no history
+     * behind, so an operator can enable the fixture on a later boot and still get it.
+     */
+    @Override
+    public boolean apply() {
+        if (!isEnabled()) {
+            log.info("=== PATCH: Test User Initialization SKIPPED entirely (set "
+                    + PropertyKey.PATCH_TESTUSER_ENABLED
+                    + "=true to seed the QA fixture; no patch history is recorded, so enabling it"
+                    + " later still works) ===");
+            return true;
+        }
+        return super.apply();
+    }
+
+    /**
+     * Whether the operator asked for the QA fixture.
+     *
+     * <p>Package-private so the test can drive the real {@code applyPerRepositoryPatch} decision
+     * rather than re-implementing it.
+     */
+    boolean isEnabled() {
+        if (patchUtil == null || patchUtil.getPropertyManager() == null) {
+            // No configuration reachable is not consent.
+            return false;
+        }
+        return patchUtil.getPropertyManager().readBoolean(PropertyKey.PATCH_TESTUSER_ENABLED);
+    }
+
     @Override
     protected void applyPerRepositoryPatch(String repositoryId) {
+        if (!isEnabled()) {
+            log.info("=== PATCH: Test User Initialization SKIPPED for repository " + repositoryId
+                    + " (set " + PropertyKey.PATCH_TESTUSER_ENABLED + "=true to seed the QA fixture) ===");
+            return;
+        }
         log.info("=== PATCH: Applying Test User Initialization for repository: " + repositoryId + " ===");
-        
+
         try {
             // Get services via proper DI - these should be injected as fields
             PrincipalService principalService = SpringContext.getApplicationContext()

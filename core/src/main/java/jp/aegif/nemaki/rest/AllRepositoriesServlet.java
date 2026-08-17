@@ -30,10 +30,10 @@ public class AllRepositoriesServlet extends HttpServlet {
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
-        // Set CORS headers to allow React UI access
-        response.setHeader("Access-Control-Allow-Origin", "*");
-        response.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-        response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+        // CORS is SimpleCorsFilter's job (mapped to /rest/*, so it has already run and set the
+        // headers according to api.cors.allowedOrigins). Setting them here overwrote that with a
+        // literal "*", which made this one endpoint ignore the configuration entirely — an
+        // operator who restricted origins still got Access-Control-Allow-Origin: * from it.
         response.setContentType("application/json");
         response.setCharacterEncoding("UTF-8");
 
@@ -77,11 +77,9 @@ public class AllRepositoriesServlet extends HttpServlet {
     protected void doOptions(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
-        // Set CORS headers for preflight requests
-        response.setHeader("Access-Control-Allow-Origin", "*");
-        response.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-        response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-        response.setHeader("Access-Control-Max-Age", "3600");
+        // Kept for direct-dispatch safety only: SimpleCorsFilter answers OPTIONS itself and
+        // returns without calling the chain, so in the deployed mapping this never runs. The CORS
+        // headers that used to be here are deliberately gone — see doGet.
         response.setStatus(HttpServletResponse.SC_OK);
     }
 

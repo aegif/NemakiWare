@@ -115,8 +115,16 @@ services:
       DIRECTORY_SYNC_CREATE_MISSING_USERS: "true"
       DIRECTORY_SYNC_UPDATE_EXISTING_USERS: "true"
       # OIDC/SAML Configuration
+      # 3.3.0: the baked-in file defaults flipped to disabled, so the login-page
+      # buttons (sso.*) must be enabled here explicitly like everything else.
+      SSO_OIDC_ENABLED: "true"
+      SSO_SAML_ENABLED: "true"
       OIDC_ENABLED: "true"
-      OIDC_ISSUER_URL: "http://keycloak:8080/realms/nemakiware"
+      # PropertyManager maps oidc.issuer -> env OIDC_ISSUER (key uppercased, dots to
+      # underscores). This used to say OIDC_ISSUER_URL, which maps to nothing — the stack
+      # only worked when the wizard had already written the issuer into nemaki_conf.
+      OIDC_ISSUER: "http://keycloak:8080/realms/nemakiware"
+      OIDC_CLIENTID: "nemakiware-ui"
       SAML_ENABLED: "true"
       # Password encryption key (for LDAP bind password encryption)
       # WARNING: Change this in production!

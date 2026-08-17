@@ -87,6 +87,14 @@ public class SetupApplyResource {
                     + ". Ensure CouchDB is running and databases are properly initialized.");
         }
 
+        // The wizard can be pointed at a different server than the one probed at startup, and
+        // /apply may never have run on this instance (this endpoint is the retry path).
+        String versionRefusal = startupProbeService.couchDbVersionRefusalFromLastProbe();
+        if (versionRefusal != null) {
+            logger.warning("mark-complete refused: " + versionRefusal);
+            return error(400, versionRefusal);
+        }
+
         // Trigger deferred Phase 2/3 initialization BEFORE marking complete.
         // If patches fail, do not mark setup complete — user can retry.
         List<String> initFailures = triggerDeferredInitialization();
@@ -138,6 +146,14 @@ public class SetupApplyResource {
         CouchDbConnectionResult connResult = startupProbeService.testConnection(couchUrl, couchUser, couchPass);
         if (!connResult.isReachable()) {
             return error(400, "CouchDB is not reachable: " + connResult.getErrorMessage());
+        }
+        // Same floor the startup path enforces. Startup only gets to apply it when CouchDB
+        // answered THEN; an operator who started with the database down arrives here instead, and
+        // step 4 below CREATES DATABASES. Refusing after that would leave a half-built 2.x server.
+        String versionRefusal = startupProbeService.couchDbVersionRefusal(connResult);
+        if (versionRefusal != null) {
+            logger.warning("Setup apply refused: " + versionRefusal);
+            return error(400, versionRefusal);
         }
         logger.info("CouchDB connection verified: " + connResult.getCouchDbVersion());
 

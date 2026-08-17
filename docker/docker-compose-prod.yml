@@ -74,10 +74,20 @@ services:
         required: false
       - path: ./secrets/ingest-connectors.env
         required: false
+      # Cloud integration settings (copy docker/.env.cloud.example to .env.cloud).
+      # Interpolated ${CLOUD_*} vars in CATALINA_OPTS above still need --env-file .env.cloud
+      # (or host env) — this entry covers the keys the app reads directly from container env
+      # (cloud.directory.sync.*, cloud.drive.encryption.key), which CATALINA_OPTS does not pass.
+      - path: ./.env.cloud
+        required: false
     volumes:
       - ${NEMAKI_SECRETS_DIR:-./secrets}:/usr/local/tomcat/secrets:ro
-      # To fully override the baked-in properties file without rebuilding the
-      # image, uncomment and provide your own file:
+      # NOTE: mounting over /usr/local/tomcat/conf/nemakiware.properties does NOT override the
+      # settings. Spring reads `classpath:nemakiware.properties` (propertyContext.xml), which
+      # resolves to WEB-INF/classes/nemakiware.properties inside the WAR; conf/ is not on the
+      # webapp classpath, and -Dnemakiware.properties=<path> is not read by anything.
+      # Override with -D system properties or environment variables instead — CATALINA_OPTS above
+      # already does exactly that for the settings this compose file cares about.
       # - ./config/nemakiware.properties:/usr/local/tomcat/conf/nemakiware.properties:ro
     healthcheck:
       # Readiness, not liveness: /core answers as soon as the webapp is deployed, but the first
