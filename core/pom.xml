@@ -24,7 +24,8 @@
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<org.springframework.version>7.0.8</org.springframework.version>
 		<org.apache.chemistry.opencmis.version>2.0.0-RC2-nemakiware</org.apache.chemistry.opencmis.version>
-		<!-- One version per HttpComponents 5 family; the enforcer refuses any other. -->
+		<!-- One version per CXF / HttpComponents 5 family; the enforcer refuses any other. -->
+		<org.apache.cxf.version>4.2.3</org.apache.cxf.version>
 		<httpcomponents.client5.version>5.5.1</httpcomponents.client5.version>
 		<httpcomponents.core5.version>5.3.6</httpcomponents.core5.version>
 		<opencmis.github.packages.url>https://maven.pkg.github.com/aegif/chemistry-opencmis-nemakiware</opencmis.github.packages.url>
@@ -155,7 +156,7 @@
 			     already uses. spring-tx leaks in at 7.0.4 while every other
 			     Spring module is ${org.springframework.version} (7.0.8); Spring
 			     modules must share a version. cxf-rt-ws-policy leaks in at 4.1.3
-			     while the rest of CXF is 4.2.0. -->
+			     while the rest of CXF is ${org.apache.cxf.version}. -->
 			<dependency>
 				<groupId>org.springframework</groupId>
 				<artifactId>spring-tx</artifactId>
@@ -164,7 +165,22 @@
 			<dependency>
 				<groupId>org.apache.cxf</groupId>
 				<artifactId>cxf-rt-ws-policy</artifactId>
-				<version>4.2.0</version>
+				<version>${org.apache.cxf.version}</version>
+			</dependency>
+			<!-- OpenCMIS 2.0.0-RC2 declares CXF 4.1.3 for these two. Nearest-wins already
+			     resolved them to our version, but the declared nodes stay in the tree, and the
+			     family enforcer reads the tree — which is the point: an OpenCMIS bump that moved
+			     CXF underneath us would otherwise be invisible. Pin them so the version is stated
+			     once, in the property. -->
+			<dependency>
+				<groupId>org.apache.cxf</groupId>
+				<artifactId>cxf-rt-frontend-jaxws</artifactId>
+				<version>${org.apache.cxf.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.cxf</groupId>
+				<artifactId>cxf-rt-transports-http</artifactId>
+				<version>${org.apache.cxf.version}</version>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>
@@ -635,6 +651,24 @@
 			<groupId>com.sun.xml.ws</groupId>
 			<artifactId>jaxws-rt</artifactId>
 			<version>4.0.1</version>
+			<exclusions>
+				<!-- 3.3.0: this dragged in com.sun.xml.bind:jaxb-impl 4.0.2 (and jaxb-core 4.0.2),
+				     which ship the SAME classes as the org.glassfish.jaxb 4.0.9 artifacts pinned
+				     below — 538 duplicated classes, 123 of them with different bytecode
+				     (ContextFactory and DatatypeConverterImpl among them). Which copy wins is
+				     Tomcat's readdir order, i.e. per-deployment: observed 4.0.2 winning on one
+				     stack and the newer one on another, silently undoing the 4.0.4 -> 4.0.9 bump.
+				     The exclusions here are on the LEGACY com.sun.xml.bind coordinates; the
+				     org.glassfish.jaxb pin keeps providing the implementation. -->
+				<exclusion>
+					<groupId>com.sun.xml.bind</groupId>
+					<artifactId>jaxb-impl</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>com.sun.xml.bind</groupId>
+					<artifactId>jaxb-core</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		
 		<!-- Jakarta SOAP API implementation -->
@@ -740,7 +774,6 @@
 		</dependency>
 		
 		<!-- Jakarta Web Services implementation for 1.2.0-nemakiware OpenCMIS compatibility -->
-		<!-- jaxws-rt dependency excluded - using Jakarta version from lib/jakarta-converted/ -->
 		<!-- javax.xml.ws dependencies removed - using Jakarta versions only -->
 		
 		<!-- Solr strategy: Use HttpJdkSolrClient (Java 11+ built-in) to avoid HTTP Client conflicts -->
@@ -957,22 +990,22 @@
 		<dependency>
 			<groupId>org.apache.cxf</groupId>
 			<artifactId>cxf-rt-frontend-jaxws</artifactId>
-			<version>4.2.0</version>
+			<version>${org.apache.cxf.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.cxf</groupId>
 			<artifactId>cxf-rt-transports-http</artifactId>
-			<version>4.2.0</version>
+			<version>${org.apache.cxf.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.cxf</groupId>
 			<artifactId>cxf-rt-frontend-simple</artifactId>
-			<version>4.2.0</version>
+			<version>${org.apache.cxf.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.cxf</groupId>
 			<artifactId>cxf-core</artifactId>
-			<version>4.2.0</version>
+			<version>${org.apache.cxf.version}</version>
 		</dependency>
 		
 		<!-- Jakarta EE Web Services Runtime Implementation - version 4.0.1 used above -->
@@ -1223,6 +1256,19 @@
 								     did not fail to resolve, did not fail to compile, and did not fail
 								     any unit test — it failed at Tomcat startup with NoSuchMethodError,
 								     which is the most expensive place to find a version skew. -->
+								<!-- Third family. CXF has already leaked once (cxf-rt-ws-policy at
+								     4.1.3 beside 4.2.x siblings, pinned in dependencyManagement above)
+								     and the versions were hardcoded in five places with no property, so
+								     a security bump could silently move four of five. -->
+								<bannedDependencies>
+									<excludes>
+										<exclude>org.apache.cxf:*</exclude>
+									</excludes>
+									<includes>
+										<include>org.apache.cxf:*:${org.apache.cxf.version}</include>
+									</includes>
+									<message>All org.apache.cxf modules must be exactly ${org.apache.cxf.version} — bump the property, not individual dependencies.</message>
+								</bannedDependencies>
 								<bannedDependencies>
 									<excludes>
 										<exclude>org.apache.httpcomponents.client5:*</exclude>
@@ -1325,7 +1371,18 @@
 						ui/run-e2e-tests.sh,
 						ui/scripts/**,
 						ui/cleanup-test-types.sh,
-						ui/eslint.config.js
+						ui/eslint.config.js,
+						<!-- 3.3.0: these were being served unauthenticated under /core/ui/.
+						     failing-tests.txt alone is 346 KB of Playwright output. -->
+						ui/failing-tests.txt,
+						ui/TEST_COVERAGE.md,
+						ui/README-TESTING.md,
+						ui/tsconfig.tests.json,
+						<!-- Vite copies public/ INTO dist, and webResources copies dist to ui/.
+						     Shipping public/ as well duplicated 218 entries (the whole pdf-worker
+						     tree twice). Nothing references /ui/public/ — the built app points at
+						     /ui/pdf-worker/ etc. -->
+						ui/public/**
 					</warSourceExcludes>
 					<!-- Copy production build files to ui/ directory -->
 					<!-- webResources runs AFTER warSourceExcludes, so production index.html will be included -->
