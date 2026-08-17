@@ -158,14 +158,29 @@ test.describe('MCP Settings', () => {
     // Save button should now be enabled
     const saveButton = page.getByRole('button', { name: /保.*存|Save/i });
     await expect(saveButton).toBeEnabled({ timeout: 10000 });
-    await saveButton.click();
+    // Wait for the SAVE's actual PUT to finish before verifying: on slow CI runners the
+    // immediate GET raced the in-flight PUT and consistently read the old value back
+    // (surfaced by the 3.3.1 4-shard run; locally the PUT wins the race). The PUT must
+    // also succeed — a silently failing save used to look identical to this race.
+    const [saveResp] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('/integration-settings/mcp') && r.request().method() === 'PUT',
+        { timeout: 15000 },
+      ),
+      saveButton.click(),
+    ]);
+    expect(saveResp.ok(), `save PUT answered ${saveResp.status()}`).toBeTruthy();
     await waitForUiStable(page);
 
-    // Verify via API
-    const res = await request.get(MCP_SETTINGS_URL, {
-      headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' },
-    });
-    const body = await res.json();
-    expect(body.settings['mcp.tools.list.public']).toBe('false');
+    // Verify via API. Poll briefly: the PUT has returned but CouchDB's write may still be
+    // propagating to the read path.
+    await expect
+      .poll(async () => {
+        const res = await request.get(MCP_SETTINGS_URL, {
+          headers: { 'Authorization': AUTH_HEADER, 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        return (await res.json()).settings['mcp.tools.list.public'];
+      }, { timeout: 10000 })
+      .toBe('false');
   });
 });
