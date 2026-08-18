@@ -1,0 +1,336 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/aegif/NemakiWare/docs/design/authenticity-report/schema.json",
+  "title": "NemakiWare Authenticity Evidence Report",
+  "description": "One document's authenticity evidence, for an auditor. MOCK (v0, 2026-08-18) — not implemented yet; this file exists to be reviewed before P1-4 is built. Two design rules govern every field: (1) every assertion carries the procedure by which a third party can re-check it, and (2) the report is required to state what it does NOT prove. `notProven` and `verification` are therefore required, not optional.",
+  "type": "object",
+  "required": ["reportVersion", "generatedAt", "generator", "subject", "assertionScope", "evidence", "notProven", "verification"],
+  "additionalProperties": false,
+
+  "properties": {
+    "reportVersion": {
+      "const": "0-mock",
+      "description": "Schema version. A verifier MUST refuse a version it does not know rather than ignore unknown fields."
+    },
+    "generatedAt": { "type": "string", "format": "date-time" },
+
+    "generator": {
+      "type": "object",
+      "required": ["product", "productVersion", "repositoryId", "instanceId"],
+      "additionalProperties": false,
+      "properties": {
+        "product": { "const": "NemakiWare" },
+        "productVersion": { "type": "string" },
+        "repositoryId": { "type": "string" },
+        "instanceId": {
+          "type": "string",
+          "description": "Which instance produced this. Matters for multi-replica: progress state is JVM-local (see docs/operations runbook O2)."
+        }
+      }
+    },
+
+    "subject": {
+      "type": "object",
+      "description": "What this report is about. A report is always about ONE version of ONE object — 'the document' is ambiguous once versioning exists.",
+      "required": ["objectId", "versionSeriesId", "versionLabel", "name", "objectTypeId"],
+      "properties": {
+        "objectId": { "type": "string" },
+        "versionSeriesId": { "type": "string" },
+        "versionLabel": { "type": "string" },
+        "name": { "type": "string" },
+        "objectTypeId": { "type": "string" },
+        "isAuthoritativeCopy": {
+          "type": ["boolean", "null"],
+          "description": "InterPARES A.7. null = the deployment has not defined an authoritative-record rule, which is itself reportable (do not silently claim true)."
+        },
+        "authoritativeCopyRule": {
+          "type": ["string", "null"],
+          "description": "The rule by which the above was decided, or null if none is defined."
+        }
+      }
+    },
+
+    "assertionScope": {
+      "type": "object",
+      "description": "The boundary of the claim. This is the first thing an auditor should read.",
+      "required": ["custodyBeginsAt", "custodyBeginsBecause", "coversPeriod"],
+      "properties": {
+        "custodyBeginsAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The moment NemakiWare's evidence starts. NOT the moment the record was created."
+        },
+        "custodyBeginsBecause": {
+          "type": "string",
+          "enum": ["INGESTED_FROM_EXTERNAL_SOURCE", "CREATED_IN_REPOSITORY", "IMPORTED_FROM_PACKAGE", "RESTORED_FROM_ARCHIVE"]
+        },
+        "coversPeriod": {
+          "type": "object",
+          "required": ["from", "to"],
+          "properties": {
+            "from": { "type": "string", "format": "date-time" },
+            "to": { "type": "string", "format": "date-time" }
+          }
+        },
+        "sourceSystem": {
+          "type": ["object", "null"],
+          "description": "Present when custody began by ingest. The source's own record-keeping is OUTSIDE this report — see notProven.",
+          "properties": {
+            "system": { "type": "string" },
+            "sourceObjectId": { "type": "string" },
+            "capturedAt": { "type": "string", "format": "date-time" },
+            "capturedBy": { "type": "string" },
+            "captureWindow": { "type": ["string", "null"] },
+            "transportAuthentication": {
+              "type": ["string", "null"],
+              "enum": ["HMAC_WEBHOOK", "OAUTH2_POLL", "API_TOKEN_POLL", null],
+              "description": "How the TRANSPORT was authenticated. This is not evidence about the content's authenticity inside the source system."
+            }
+          }
+        }
+      }
+    },
+
+    "evidence": {
+      "type": "object",
+      "required": ["contentIntegrity", "chainOfCustody", "externalAnchors", "trustLevel"],
+      "properties": {
+
+        "trustLevel": {
+          "type": "object",
+          "description": "Which rung of the trust ladder this report actually rests on. Computed from externalAnchors, never asserted by hand.",
+          "required": ["level", "label", "independentOfOperator"],
+          "properties": {
+            "level": { "type": "integer", "minimum": 0, "maximum": 3 },
+            "label": {
+              "type": "string",
+              "enum": [
+                "0: internal hash chain only",
+                "1: + catalog anchor inside the same organization",
+                "2: + public blockchain anchor (OpenTimestamps)",
+                "3: + accredited RFC 3161 time-stamp authority"
+              ]
+            },
+            "independentOfOperator": {
+              "type": "boolean",
+              "description": "TRUE only at level >= 2. At levels 0-1 an administrator of this deployment could in principle rewrite the evidence, so the claim 'not even an administrator can alter this' MUST NOT be made."
+            }
+          }
+        },
+
+        "contentIntegrity": {
+          "type": "object",
+          "required": ["algorithm", "digest", "sizeBytes", "recordedAt", "fixityHistory"],
+          "properties": {
+            "algorithm": { "type": "string", "enum": ["SHA-256", "SHA-512"] },
+            "digest": { "type": "string", "pattern": "^[0-9a-f]{64,128}$" },
+            "sizeBytes": { "type": "integer", "minimum": 0 },
+            "recordedAt": { "type": "string", "format": "date-time" },
+            "metadataDigest": {
+              "type": ["object", "null"],
+              "description": "Digest over the canonicalized property set. Content alone is not the record — InterPARES A.1 attributes must be covered too.",
+              "properties": {
+                "algorithm": { "type": "string" },
+                "digest": { "type": "string" },
+                "canonicalization": { "type": "string" }
+              }
+            },
+            "fixityHistory": {
+              "type": "array",
+              "description": "Every check, not just the last one. An empty array means never checked since ingest — which the renderer must show as a warning, not as 'ok'.",
+              "items": {
+                "type": "object",
+                "required": ["checkedAt", "outcome"],
+                "properties": {
+                  "checkedAt": { "type": "string", "format": "date-time" },
+                  "outcome": {
+                    "type": "string",
+                    "enum": ["MATCH", "MISMATCH", "UNREADABLE"],
+                    "description": "UNREADABLE is deliberately distinct from MISMATCH: 'we could not read it' and 'it changed' are different findings for an auditor."
+                  },
+                  "storageTier": { "type": "string", "enum": ["LIVE", "ARCHIVED_LOCAL", "ARCHIVED_COLD"] },
+                  "detail": { "type": ["string", "null"] }
+                }
+              }
+            }
+          }
+        },
+
+        "chainOfCustody": {
+          "type": "object",
+          "description": "The lineage journal excerpt for this object, plus the hash-chain position that makes the excerpt tamper-evident.",
+          "required": ["chainVerified", "events"],
+          "properties": {
+            "chainVerified": { "type": "boolean" },
+            "chainVerificationDetail": { "type": ["string", "null"] },
+            "barrierDigest": {
+              "type": ["string", "null"],
+              "description": "Digest of the processing barrier this object's events sit under."
+            },
+            "sequencePosition": { "type": ["integer", "null"] },
+            "events": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["eventId", "occurredAt", "type", "agent", "outcome"],
+                "properties": {
+                  "eventId": { "type": "string" },
+                  "occurredAt": { "type": "string", "format": "date-time" },
+                  "type": {
+                    "type": "string",
+                    "description": "PREMIS-crosswalked event type (vocabulary fixed at implementation time)."
+                  },
+                  "agent": {
+                    "type": "object",
+                    "required": ["id", "kind"],
+                    "properties": {
+                      "id": { "type": "string" },
+                      "kind": { "type": "string", "enum": ["USER", "SERVICE", "SCHEDULER", "EXTERNAL_CONNECTOR"] }
+                    }
+                  },
+                  "outcome": { "type": "string", "enum": ["SUCCESS", "FAILURE", "PARTIAL"] },
+                  "outcomeDetail": { "type": ["string", "null"] },
+                  "effectOnRecord": {
+                    "type": ["string", "null"],
+                    "description": "InterPARES B.2.c: what the operation did to form/content/accessibility. Required for reproduction events."
+                  }
+                }
+              }
+            },
+            "journalRetention": {
+              "type": "object",
+              "description": "Journal entries can be purged by policy. If the covered period starts later than custody did, say so — an auditor must not read a short chain as a complete one.",
+              "required": ["retentionDays", "oldestRetainedEvent", "purgedEventsExist"],
+              "properties": {
+                "retentionDays": { "type": ["integer", "null"] },
+                "oldestRetainedEvent": { "type": ["string", "null"], "format": "date-time" },
+                "purgedEventsExist": { "type": "boolean" }
+              }
+            }
+          }
+        },
+
+        "externalAnchors": {
+          "type": "array",
+          "description": "Zero or more. An empty array is legitimate and means trustLevel 0.",
+          "items": {
+            "type": "object",
+            "required": ["kind", "status", "anchoredDigest"],
+            "properties": {
+              "kind": { "type": "string", "enum": ["ATLAS_CATALOG", "OPENTIMESTAMPS", "RFC3161_TSA"] },
+              "status": { "type": "string", "enum": ["CONFIRMED", "PENDING", "FAILED", "NOT_CONFIGURED"] },
+              "anchoredDigest": { "type": "string" },
+              "anchoredAt": { "type": ["string", "null"], "format": "date-time" },
+
+              "timeSemantics": {
+                "type": "string",
+                "enum": ["UPPER_BOUND_ONLY", "BIDIRECTIONAL_WITHIN_ACCURACY", "NOT_A_TIME_PROOF"],
+                "description": "OpenTimestamps proves only 'existed no later than' (UPPER_BOUND_ONLY). An RFC 3161 token proves a point in time within its stated accuracy. A catalog anchor inside the same organization is NOT_A_TIME_PROOF. Rendering these with the same wording breaks the claim."
+              },
+              "independenceCaveat": {
+                "type": ["string", "null"],
+                "description": "Required non-null for ATLAS_CATALOG: the catalog is administered by the same organization, so it does not establish independence."
+              },
+
+              "opentimestamps": {
+                "type": ["object", "null"],
+                "properties": {
+                  "calendars": { "type": "array", "items": { "type": "string" } },
+                  "upgraded": { "type": "boolean", "description": "false = still PendingAttestation; the proof is not yet independently verifiable." },
+                  "bitcoinBlockHeight": { "type": ["integer", "null"] },
+                  "otsFileDigest": { "type": ["string", "null"] },
+                  "noncePolicy": { "const": "SHA256(digest || 16 random bytes)" }
+                }
+              },
+
+              "rfc3161": {
+                "type": ["object", "null"],
+                "description": "Everything needed to verify the token years later. Collect at issuance — revocation data cannot be reconstructed afterwards.",
+                "properties": {
+                  "tsaName": { "type": "string" },
+                  "accreditation": {
+                    "type": ["string", "null"],
+                    "enum": ["JP_MIC_ACCREDITED", "EU_QUALIFIED", "NONE", null]
+                  },
+                  "policyOid": { "type": "string" },
+                  "serialNumber": { "type": "string" },
+                  "genTime": { "type": "string", "format": "date-time" },
+                  "accuracySeconds": { "type": ["number", "null"] },
+                  "tokenDigest": { "type": "string" },
+                  "certificateChainIncluded": { "type": "boolean" },
+                  "revocationDataCapturedAt": {
+                    "type": ["string", "null"],
+                    "format": "date-time",
+                    "description": "null means CRL/OCSP was never captured — long-term verification may be impossible. Report it, do not hide it."
+                  }
+                }
+              }
+            }
+          }
+        },
+
+        "accessAudit": {
+          "type": ["object", "null"],
+          "description": "InterPARES A.2 requires that access controls be not merely defined but monitored.",
+          "properties": {
+            "aclSnapshotDigest": { "type": "string" },
+            "aclEpoch": { "type": ["integer", "null"] },
+            "modifyingInteractions": { "type": "integer" },
+            "auditCoverage": {
+              "type": "string",
+              "enum": ["ALL_MODIFYING_INTERACTIONS", "PARTIAL", "NOT_ENABLED"]
+            }
+          }
+        },
+
+        "versionLineage": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "required": ["versionLabel", "objectId", "createdAt"],
+            "properties": {
+              "versionLabel": { "type": "string" },
+              "objectId": { "type": "string" },
+              "createdAt": { "type": "string", "format": "date-time" },
+              "contentDigest": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    },
+
+    "notProven": {
+      "type": "array",
+      "minItems": 1,
+      "description": "REQUIRED and never empty. A report that claims everything proves nothing to an auditor. Entries are generated from the actual configuration, not boilerplate.",
+      "items": {
+        "type": "object",
+        "required": ["claim", "why"],
+        "properties": {
+          "claim": { "type": "string", "description": "The thing a reader might wrongly assume is proven." },
+          "why": { "type": "string", "description": "Why this report cannot establish it." },
+          "whatWouldEstablishIt": { "type": ["string", "null"] }
+        }
+      }
+    },
+
+    "verification": {
+      "type": "array",
+      "minItems": 1,
+      "description": "REQUIRED. One entry per assertion in `evidence`, giving a procedure a third party can run WITHOUT trusting this deployment where that is possible.",
+      "items": {
+        "type": "object",
+        "required": ["assertion", "procedure", "requiresTrustInDeployment"],
+        "properties": {
+          "assertion": { "type": "string" },
+          "procedure": { "type": "string" },
+          "requiresTrustInDeployment": {
+            "type": "boolean",
+            "description": "true = the check can only be run against this system, so it does not defend against an operator who controls it. Auditors need to see which checks are self-attested."
+          },
+          "tool": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

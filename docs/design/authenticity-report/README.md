@@ -1,0 +1,62 @@
+# 真正性レポート (監査人向け) — 実装前モック
+
+P0-4 の成果物。**まだ実装は存在しない。** 実装 (P1-4) に入る前に、
+「何を・誰に・どう見せるか」をオーナーとマーケ観点でレビューするための材料である。
+
+| ファイル | 中身 |
+|---|---|
+| [`schema.json`](schema.json) | レポートの JSON Schema (draft 2020-12)。`reportVersion: "0-mock"` |
+| [`example.json`](example.json) | Slack 取込文書 1 件の記入例。段 2 (OpenTimestamps) まで有効な構成 |
+| [`report-mock.html`](report-mock.html) | 人が読む 1 枚。A4 印刷前提 (ブラウザで開いて PDF 出力できる) |
+
+**宛先は「監査人」に確定** (オーナー決定 2026-08-18)。監査人向けが最も要求が厳しく、
+これが作れれば情シス向け・営業向けは縮約で作れるが、逆はできないため。
+
+---
+
+## 設計の核: 「証明していないこと」を証拠と同じ重みで置く
+
+監査人にとっては、**何が証明されていないか**の方が判断材料になる。したがって:
+
+- `notProven` は **required かつ `minItems: 1`**。空にできない。
+- `verification` も **required**。各主張に対し、第三者が再実行できる手順を書く。
+- `verification[].requiresTrustInDeployment` で **「自己申告」と「独立検証可」を明示的に区別**する。
+  本システムを信頼せずに実行できる検査は、現状 **OpenTimestamps の `ots verify` ただ 1 つ**である。
+  これを曖昧にすると、レポート全体が「自社システムが自社システムは正しいと言っている」に落ちる。
+
+## 主張が壊れないための型 (schema に埋め込んだ制約)
+
+| 仕組み | 何を防ぐか |
+|---|---|
+| `evidence.trustLevel.independentOfOperator` は段 2 以上でのみ true | 段 1 (組織内 Atlas) だけの構成で「管理者でも書き換えられない」と書いてしまうこと |
+| `externalAnchors[].timeSemantics` が 3 値 | OpenTimestamps の**上限のみ**の証明を、TSA の双方向証明と同じ言葉で書いてしまうこと |
+| `ATLAS_CATALOG` は `independenceCaveat` が **非 null 必須** | 同一 tenant のカタログを独立した証拠のように見せること |
+| `fixityHistory[].outcome` が `MATCH` / `MISMATCH` / **`UNREADABLE`** の 3 値 | 「読めなかった」を「変わっていない」に丸めること |
+| `journalRetention.purgedEventsExist` | 保持期間で消えた区間があるのに、短い連鎖を完全な連鎖として読ませること |
+| `rfc3161.revocationDataCapturedAt` が null 可 | 失効情報を取り損ねた事実を隠すこと (発行後に遡って取得できない) |
+| `subject.isAuthoritativeCopy` が **null 可** | 正本識別の規則が無いのに正本だと書いてしまうこと |
+
+## レビューで決めてほしいこと
+
+1. **1 枚に収まっているが、密度は妥当か。** 監査人が実際に読む前提で、削るべき節・増やすべき節はあるか。
+2. **「証明していないこと」5 項目の粒度。** 現在は (a) 取込前の来歴、(b) HMAC の意味、(c) 変更権限、
+   (d) 正本、(e) 時刻の下限。デプロイの構成から自動生成する設計なので、**項目を足すほど誠実だが読み手は重く感じる**。
+3. **段 3 (認定 TSA) を構成した場合の見せ方。** 現在は「未構成」と正直に書いているが、
+   電帳法の文脈では「認定タイムスタンプ取得済み」を前面に出したい可能性がある。その場合の
+   レイアウト上の扱い (バッジにするか、節を独立させるか)。
+4. **文書名・利用者名の扱い。** 例では実名相当 (`user:otsuka`) を出している。監査目的では必要だが、
+   レポートを外部に出す場合のマスキング方針が要る。
+
+## 実装時に確定させる項目 (モックでは仮置き)
+
+- PREMIS イベント語彙のクロスウォーク表 (`chainOfCustody.events[].type`)
+- 属性ダイジェストの正規化仕様 (例では JCS / RFC 8785 を仮置き)
+- 連鎖検証ツールの提供形態 (`nemaki-verify` は計画中の名前)
+- 段 3 を構成した場合の TSA 情報の保存範囲 (証明書チェーン・policy OID・CRL/OCSP)
+  — 根拠は [`../authenticity-roadmap.md`](../authenticity-roadmap.md) §9-5
+
+## 禁じ手の遵守
+
+[`../authenticity-roadmap.md`](../authenticity-roadmap.md) §5 に従い、本モックは
+**「InterPARES 準拠」「OAIS 認証」「ISO 16363 認証済み」「電帳法対応」を一切主張しない**。
+フッタで「対応付けて設計したが、適合性を認証する制度は存在しない」と明記している。

@@ -1,0 +1,254 @@
+{
+  "reportVersion": "0-mock",
+  "generatedAt": "2026-08-18T14:32:07Z",
+
+  "generator": {
+    "product": "NemakiWare",
+    "productVersion": "3.4.0",
+    "repositoryId": "bedroom",
+    "instanceId": "nemaki-core-1"
+  },
+
+  "subject": {
+    "objectId": "3b3658e95431a6190de5b0e58c955125",
+    "versionSeriesId": "vs-8f21c0a4",
+    "versionLabel": "2.0",
+    "name": "2026年度_第2四半期_取締役会議事録.pdf",
+    "objectTypeId": "cmis:document",
+    "isAuthoritativeCopy": null,
+    "authoritativeCopyRule": null
+  },
+
+  "assertionScope": {
+    "custodyBeginsAt": "2026-07-14T02:11:53Z",
+    "custodyBeginsBecause": "INGESTED_FROM_EXTERNAL_SOURCE",
+    "coversPeriod": { "from": "2026-07-14T02:11:53Z", "to": "2026-08-18T14:32:07Z" },
+    "sourceSystem": {
+      "system": "slack",
+      "sourceObjectId": "F07J2K9QX1M",
+      "capturedAt": "2026-07-14T02:11:53Z",
+      "capturedBy": "connector:slack-sites-profile",
+      "captureWindow": "2026-07-14T02:00:00Z/2026-07-14T03:00:00Z",
+      "transportAuthentication": "HMAC_WEBHOOK"
+    }
+  },
+
+  "evidence": {
+    "trustLevel": {
+      "level": 2,
+      "label": "2: + public blockchain anchor (OpenTimestamps)",
+      "independentOfOperator": true
+    },
+
+    "contentIntegrity": {
+      "algorithm": "SHA-256",
+      "digest": "9f2c4e1a7b8d3056c9e4f1a2b7d8e3f0c5a6b9d2e7f4a1c8b3d6e9f2a5c8b1d4",
+      "sizeBytes": 284713,
+      "recordedAt": "2026-07-14T02:11:54Z",
+      "metadataDigest": {
+        "algorithm": "SHA-256",
+        "digest": "4a7d2f9c1e6b8035a2d7f4c1e8b5a2d9f6c3e0b7a4d1f8c5e2b9d6a3f0c7e4b1",
+        "canonicalization": "JCS (RFC 8785) over the CMIS property set, excluding cmis:lastModificationDate"
+      },
+      "fixityHistory": [
+        { "checkedAt": "2026-07-14T02:11:54Z", "outcome": "MATCH", "storageTier": "LIVE", "detail": "baseline at ingest" },
+        { "checkedAt": "2026-07-21T03:00:12Z", "outcome": "MATCH", "storageTier": "LIVE", "detail": null },
+        { "checkedAt": "2026-08-04T03:00:09Z", "outcome": "MATCH", "storageTier": "LIVE", "detail": null },
+        { "checkedAt": "2026-08-18T03:00:15Z", "outcome": "MATCH", "storageTier": "LIVE", "detail": null }
+      ]
+    },
+
+    "chainOfCustody": {
+      "chainVerified": true,
+      "chainVerificationDetail": "Recomputed 6 event digests and the barrier digest; all matched the stored chain.",
+      "barrierDigest": "b7e3a1c9f4d80652e1a7c4f9b2d5e8a3c6f1b4d7e0a3c6f9b2e5d8a1c4f7b0e3",
+      "sequencePosition": 148213,
+      "events": [
+        {
+          "eventId": "7b685fe1-020c-4c58-8e5d-d75df64bfab8",
+          "occurredAt": "2026-07-14T02:11:53Z",
+          "type": "ingestion",
+          "agent": { "id": "connector:slack-sites-profile", "kind": "EXTERNAL_CONNECTOR" },
+          "outcome": "SUCCESS",
+          "outcomeDetail": null,
+          "effectOnRecord": "Stored as received. No transformation applied."
+        },
+        {
+          "eventId": "c41a9d02-5e7b-4318-a6f2-0b9e4c7d1a83",
+          "occurredAt": "2026-07-14T02:11:56Z",
+          "type": "message digest calculation",
+          "agent": { "id": "service:canonical-import", "kind": "SERVICE" },
+          "outcome": "SUCCESS",
+          "outcomeDetail": "SHA-256 over the received byte stream",
+          "effectOnRecord": null
+        },
+        {
+          "eventId": "2f8c1b45-9a03-4d7e-b158-6c2a9f0e3d47",
+          "occurredAt": "2026-07-28T09:42:11Z",
+          "type": "modification",
+          "agent": { "id": "user:otsuka", "kind": "USER" },
+          "outcome": "SUCCESS",
+          "outcomeDetail": "New version 2.0 created; 1.0 retained.",
+          "effectOnRecord": "Content replaced by the uploader. The prior version and its digest remain in the version lineage below."
+        },
+        {
+          "eventId": "e93d5a17-4c86-40b2-9f31-8d0b7e2c5a69",
+          "occurredAt": "2026-07-28T09:42:12Z",
+          "type": "message digest calculation",
+          "agent": { "id": "service:content-service", "kind": "SERVICE" },
+          "outcome": "SUCCESS",
+          "outcomeDetail": null,
+          "effectOnRecord": null
+        },
+        {
+          "eventId": "a05f7c92-1b34-4e8d-97a6-3f5c8b1d0e42",
+          "occurredAt": "2026-07-29T00:05:00Z",
+          "type": "validation",
+          "agent": { "id": "scheduler:anchor-daily", "kind": "SCHEDULER" },
+          "outcome": "SUCCESS",
+          "outcomeDetail": "Included in daily anchor D-2026-07-29.",
+          "effectOnRecord": null
+        },
+        {
+          "eventId": "d17b6e30-8f52-4a19-b0c7-2e9d4a6f1b85",
+          "occurredAt": "2026-08-18T03:00:15Z",
+          "type": "fixity check",
+          "agent": { "id": "scheduler:fixity", "kind": "SCHEDULER" },
+          "outcome": "SUCCESS",
+          "outcomeDetail": "MATCH",
+          "effectOnRecord": null
+        }
+      ],
+      "journalRetention": {
+        "retentionDays": 90,
+        "oldestRetainedEvent": "2026-05-20T00:00:00Z",
+        "purgedEventsExist": false
+      }
+    },
+
+    "externalAnchors": [
+      {
+        "kind": "ATLAS_CATALOG",
+        "status": "CONFIRMED",
+        "anchoredDigest": "b7e3a1c9f4d80652e1a7c4f9b2d5e8a3c6f1b4d7e0a3c6f9b2e5d8a1c4f7b0e3",
+        "anchoredAt": "2026-07-29T00:05:02Z",
+        "timeSemantics": "NOT_A_TIME_PROOF",
+        "independenceCaveat": "この Atlas は本デプロイと同一組織・同一 tenant の管理下にあります。したがってカタログへの記録は、組織の管理者による改変に対する独立した証拠にはなりません。独立性は下の OpenTimestamps 記録によって与えられます。",
+        "opentimestamps": null,
+        "rfc3161": null
+      },
+      {
+        "kind": "OPENTIMESTAMPS",
+        "status": "CONFIRMED",
+        "anchoredDigest": "b7e3a1c9f4d80652e1a7c4f9b2d5e8a3c6f1b4d7e0a3c6f9b2e5d8a1c4f7b0e3",
+        "anchoredAt": "2026-07-29T04:37:41Z",
+        "timeSemantics": "UPPER_BOUND_ONLY",
+        "independenceCaveat": null,
+        "opentimestamps": {
+          "calendars": [
+            "https://alice.btc.calendar.opentimestamps.org",
+            "https://bob.btc.calendar.opentimestamps.org"
+          ],
+          "upgraded": true,
+          "bitcoinBlockHeight": 921447,
+          "otsFileDigest": "5c8e2a9f1d4b70362e8a5c1f9d4b7e0a3c6f2b8d5e1a4c7f0b3e6d9a2c5f8b1e",
+          "noncePolicy": "SHA256(digest || 16 random bytes)"
+        },
+        "rfc3161": null
+      },
+      {
+        "kind": "RFC3161_TSA",
+        "status": "NOT_CONFIGURED",
+        "anchoredDigest": "b7e3a1c9f4d80652e1a7c4f9b2d5e8a3c6f1b4d7e0a3c6f9b2e5d8a1c4f7b0e3",
+        "anchoredAt": null,
+        "timeSemantics": "BIDIRECTIONAL_WITHIN_ACCURACY",
+        "independenceCaveat": null,
+        "opentimestamps": null,
+        "rfc3161": null
+      }
+    ],
+
+    "accessAudit": {
+      "aclSnapshotDigest": "3e7a1f5c9b2d64801a7e3c5f9b1d4a7c0e6b2f8d5a1c4e7b0d3f6a9c2e5b8d1f",
+      "aclEpoch": 42,
+      "modifyingInteractions": 3,
+      "auditCoverage": "ALL_MODIFYING_INTERACTIONS"
+    },
+
+    "versionLineage": [
+      {
+        "versionLabel": "1.0",
+        "objectId": "3b3658e95431a6190de5b0e58c9550a1",
+        "createdAt": "2026-07-14T02:11:53Z",
+        "contentDigest": "1d4f7a0c3e6b9825d1a4f7c0e3b6a9d2f5c8e1b4a7d0f3c6e9b2a5d8f1c4e7b0"
+      },
+      {
+        "versionLabel": "2.0",
+        "objectId": "3b3658e95431a6190de5b0e58c955125",
+        "createdAt": "2026-07-28T09:42:11Z",
+        "contentDigest": "9f2c4e1a7b8d3056c9e4f1a2b7d8e3f0c5a6b9d2e7f4a1c8b3d6e9f2a5c8b1d4"
+      }
+    ]
+  },
+
+  "notProven": [
+    {
+      "claim": "この文書が Slack 上で作成された時点から改変されていないこと",
+      "why": "本レポートの証拠は 2026-07-14T02:11:53Z の取込時点から始まります。それ以前に Slack 内で行われた編集・削除・再投稿については、NemakiWare は観測していません。",
+      "whatWouldEstablishIt": "Slack 側の監査ログ (Enterprise Grid の audit logs API) との突合。ただしそれも Slack という別組織のシステムへの信頼を前提とします。"
+    },
+    {
+      "claim": "HMAC 署名付き webhook で受信したので、内容が真正であること",
+      "why": "HMAC が証明するのは「送信者が共有鍵を持っていた」ことだけで、送られてきた内容が Slack 内の記録と一致することや、改変されていないことは証明しません。通信相手の検証と内容の真正性は別の主張です。",
+      "whatWouldEstablishIt": "source 側での署名付き記録。Slack はこれを提供していません。"
+    },
+    {
+      "claim": "バージョン 1.0 の内容が 2.0 に置き換わった際、その変更が正当な権限に基づくこと",
+      "why": "本レポートは「誰が・いつ変更したか」を記録していますが、その人物がその変更を行う権限を持つべきだったかは、組織の職務権限規程に照らして人が判断する事項です。",
+      "whatWouldEstablishIt": "InterPARES A.6 に相当する「誰が真正と宣言する権限を持つか」の規則の整備 (本製品では未実装 — ロードマップ P1-4 系)。"
+    },
+    {
+      "claim": "この文書が「正本」であること",
+      "why": "本デプロイでは authoritative record を識別する規則が定義されていません (subject.isAuthoritativeCopy = null)。同一内容の複製が他所に存在する場合、どれが正本かを本レポートは決定しません。",
+      "whatWouldEstablishIt": "InterPARES A.7 に相当する識別手続の規則化と、その規則の本レポートへの反映。"
+    },
+    {
+      "claim": "RFC 3161 タイムスタンプによる時刻の証明",
+      "why": "本デプロイでは TSA が構成されていません (externalAnchors の RFC3161_TSA が NOT_CONFIGURED)。OpenTimestamps による証明は「この時刻より前に存在した」という上限側のみで、下限は与えません。",
+      "whatWouldEstablishIt": "認定タイムスタンプ事業者の RFC 3161 TSA を構成すること。"
+    }
+  ],
+
+  "verification": [
+    {
+      "assertion": "内容が記録された digest と一致する",
+      "procedure": "対象バイト列を取得し `sha256sum` を実行して evidence.contentIntegrity.digest と比較する。バイト列の取得自体は本システム経由になるため、本システムが改竄されていないことは別途担保が要る。",
+      "requiresTrustInDeployment": true,
+      "tool": "sha256sum"
+    },
+    {
+      "assertion": "来歴イベントの連鎖が改竄されていない",
+      "procedure": "evidence.chainOfCustody.events の各 eventId とペイロードから digest を再計算し、barrierDigest まで畳み込んで一致を確認する。手順は docs/design/acl-epoch-fencing.md と同じ連鎖検証を用いる。",
+      "requiresTrustInDeployment": true,
+      "tool": "nemaki-verify (計画中)"
+    },
+    {
+      "assertion": "barrierDigest が 2026-07-29 の時点で既に存在していた",
+      "procedure": "添付の .ots ファイルを取得し、公式クライアントで `ots verify` を実行する。検証には Bitcoin のブロックヘッダのみを用い、NemakiWare にも OpenTimestamps カレンダーにも接続しない。これは本システムを信頼せずに実行できる唯一の検査である。",
+      "requiresTrustInDeployment": false,
+      "tool": "ots (OpenTimestamps 公式クライアント) + Bitcoin フルノードまたは信頼できるブロックヘッダ列"
+    },
+    {
+      "assertion": "アクセス権限の状態が記録のとおりである",
+      "procedure": "GET /core/api/v1/cmis/repositories/bedroom/objects/{objectId}/acl の応答を正規化して aclSnapshotDigest と比較する。",
+      "requiresTrustInDeployment": true,
+      "tool": "curl + jq"
+    },
+    {
+      "assertion": "バージョン系譜が記録のとおりである",
+      "procedure": "CMIS の getAllVersions を実行し、versionLineage の objectId と createdAt の並びが一致することを確認する。各版の内容 digest も同様に再計算して比較する。",
+      "requiresTrustInDeployment": true,
+      "tool": "CMIS クライアント (cmislib 等)"
+    }
+  ]
+}
