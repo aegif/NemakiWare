@@ -88,6 +88,15 @@ import org.slf4j.LoggerFactory;
  * assume more. {@code revocationDataCapturedAt=never} is recorded because revocation data cannot
  * be reconstructed after the fact and its absence has to be visible rather than assumed.
  *
+ * <h3>What CONFIRMED means here</h3>
+ *
+ * <p>Narrower than the word suggests, so it is spelled out: the response answered our nonce and
+ * imprint, and its CMS signature verifies against the certificate the token itself carried. If
+ * a trust anchor is configured, the signer also chains to it — and if it does not, the result is
+ * FAILED rather than a CONFIRMED receipt with a quiet attribute saying otherwise. What CONFIRMED
+ * does NOT mean: that the signer was authenticated against any external directory, that its
+ * certificate path was validated per PKIX, or that revocation was checked.
+ *
  * <p><b>Not derivable at all:</b> whether the TSA is organizationally independent of this
  * deployment. An operator can run their own TSA and configure its certificate as the anchor;
  * every cryptographic check then passes. Independence is therefore taken from an explicit
@@ -206,6 +215,13 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
                 return AnchorReceipt.failed(kind(), hexDigest, attemptedAt,
                         "TSA token signature did not verify: " + check.detail);
             }
+            if (trustAnchor != null && !check.chainsToAnchor) {
+                // An operator who configured an anchor asked for exactly this check. Recording
+                // the failure in an attribute and returning CONFIRMED anyway would answer a
+                // different question than the one they configured (external review, 3.4).
+                return AnchorReceipt.failed(kind(), hexDigest, attemptedAt,
+                        "TSA signer does not chain to the configured trust anchor");
+            }
 
             // Independence is a fact about the WORLD, not about cryptography: an operator can
             // configure their own self-signed TSA as its own trust anchor and every
@@ -244,11 +260,6 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             // (accreditation != NONE), AND the signature must verify, AND the signer must chain
             // to a separately configured anchor. Even then the evidence report presents this as
             // DECLARED rather than proven (external review, 3.4).
-            // Not "is this independent" — that is not ours to decide (see
-            // AnchorReceipt.preservesIndependentlyCheckableArtifact). What we record is whether
-            // the token carries what a reader needs to check it for themselves.
-            boolean checkableByAThirdParty = check.certificateCount > 0;
-
             // An absent accuracy means the token states no precision, so it cannot carry the
             // bidirectional claim its kind normally does — it degrades to an upper bound.
             AnchorKind.TimeSemantics semantics = info.getGenTimeAccuracy() == null
@@ -257,7 +268,7 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
 
             return AnchorReceipt.confirmed(kind(), hexDigest, attemptedAt,
                     info.getGenTime().toInstant(), encodedToken, sha256Hex(encodedToken), attrs,
-                    checkableByAThirdParty, semantics);
+                    semantics);
 
         } catch (Exception e) {
             // Anchoring must never fail the operation that triggered it.

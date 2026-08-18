@@ -150,7 +150,6 @@ class Rfc3161AnchorTargetTest {
             assertEquals(AnchorStatus.FAILED, receipt.status(),
                     "a refusal reported as CONFIRMED would store an empty response as evidence");
             assertNull(receipt.proof(), "there is no token to keep");
-            assertFalse(receipt.preservesIndependentlyCheckableArtifact());
 
             // Asserting FAILED alone does NOT discriminate the fix: drop the status check and the
             // code walks into token.getTimeStampInfo() on a null token, the catch-all turns the
@@ -397,8 +396,6 @@ class Rfc3161AnchorTargetTest {
             AnchorReceipt receipt = new Rfc3161AnchorTarget(url, null, "NONE").anchor(DIGEST);
 
             assertEquals(AnchorStatus.CONFIRMED, receipt.status());
-            assertTrue(receipt.preservesIndependentlyCheckableArtifact(),
-                    "the token ships its signer certificate, so a reader can check the signature");
             assertEquals("false", receipt.attributes().get("signerTrustAnchorConfigured"),
                     "but nothing here says whose certificate that is — the record must not imply "
                             + "it does");
@@ -419,13 +416,30 @@ class Rfc3161AnchorTargetTest {
                     new Rfc3161AnchorTarget(url, null, "JP_MIC_ACCREDITED", certificate).anchor(DIGEST);
 
             assertEquals(AnchorStatus.CONFIRMED, selfOperated.status());
-            assertTrue(selfOperated.preservesIndependentlyCheckableArtifact(),
-                    "the token and its certificate are preserved — that much is true regardless "
-                            + "of who runs the TSA");
             assertEquals("true", selfOperated.attributes().get("thirdPartyStatusIsOperatorDeclared"),
                     "and the record marks the third-party status as the operator's word, not ours");
             assertTrue(selfOperated.attributes().get("trustAnchorCheck").contains("NOT PKIX"),
                     "no reader may mistake the issuer check for path validation");
+        }
+
+        @Test
+        @DisplayName("a configured anchor the signer does not chain to makes it FAILED")
+        void anchorMismatchFailsClosed() throws Exception {
+            // The operator configured an anchor precisely to have this checked. Recording
+            // signerChainsToTrustAnchor=false in an attribute and returning CONFIRMED anyway
+            // answers a different question than the one they asked.
+            String url = startTsa(true);
+            java.security.KeyPair unrelated =
+                    java.security.KeyPairGenerator.getInstance("RSA").generateKeyPair();
+            java.security.cert.X509Certificate foreignAnchor =
+                    selfSignedTsaCert(unrelated, "CN=Some Other CA");
+
+            AnchorReceipt receipt =
+                    new Rfc3161AnchorTarget(url, null, "JP_MIC_ACCREDITED", foreignAnchor).anchor(DIGEST);
+
+            assertEquals(AnchorStatus.FAILED, receipt.status(),
+                    "the signature verifies, so only the anchor check can reject this");
+            assertTrue(receipt.failureReason().contains("trust anchor"), receipt.failureReason());
         }
 
         @Test
@@ -496,7 +510,6 @@ class Rfc3161AnchorTargetTest {
                     "the response is well-formed and passes validate(); only signature "
                             + "verification distinguishes it from an honest token");
             assertTrue(receipt.failureReason().contains("signature"), receipt.failureReason());
-            assertFalse(receipt.preservesIndependentlyCheckableArtifact());
         }
 
         /** A self-signed certificate with the critical timeStamping EKU RFC 3161 §2.3 demands. */
@@ -525,13 +538,10 @@ class Rfc3161AnchorTargetTest {
     class ReceiptSemantics {
 
         @Test
-        @DisplayName("a failed anchor never supports an independence claim")
+        @DisplayName("a failed anchor never supports an claim")
         void failedAnchorClaimsNothing() {
             AnchorReceipt receipt = AnchorReceipt.failed(
                     AnchorKind.RFC3161_TSA, DIGEST, java.time.Instant.now(), "unreachable");
-
-            assertFalse(receipt.preservesIndependentlyCheckableArtifact(),
-                    "the target is independent, but a failed attempt is not evidence");
             assertNull(receipt.anchoredAt(), "no anchor time may be asserted for a failure");
         }
 
@@ -545,17 +555,13 @@ class Rfc3161AnchorTargetTest {
             assertEquals(AnchorStatus.PENDING, receipt.status());
             assertNull(receipt.anchoredAt(),
                     "filling in 'now' would state a time the proof does not support");
-            assertFalse(receipt.preservesIndependentlyCheckableArtifact(),
-                    "a commitment nobody can verify yet is not yet evidence");
         }
 
         @Test
-        @DisplayName("the ladder's independence and time semantics are carried on the kind")
+        @DisplayName("the kind carries time semantics — and deliberately not independence")
         void ladderSemantics() {
-            assertFalse(AnchorKind.ATLAS_CATALOG.independentOfOperator());
-            assertTrue(AnchorKind.OPENTIMESTAMPS.independentOfOperator());
-            assertTrue(AnchorKind.RFC3161_TSA.independentOfOperator());
-
+            // There is no independentOfOperator() to assert. Four review rounds established that
+            // this code cannot determine organizational independence, so no flag claims to.
             assertEquals(AnchorKind.TimeSemantics.NOT_A_TIME_PROOF,
                     AnchorKind.ATLAS_CATALOG.timeSemantics());
             assertEquals(AnchorKind.TimeSemantics.UPPER_BOUND_ONLY,
@@ -571,8 +577,7 @@ class Rfc3161AnchorTargetTest {
             byte[] original = {1, 2, 3};
             AnchorReceipt receipt = AnchorReceipt.confirmed(
                     AnchorKind.RFC3161_TSA, DIGEST, java.time.Instant.now(),
-                    java.time.Instant.now(), original, "d", java.util.Map.of("k", "v"),
-                    true, AnchorKind.TimeSemantics.BIDIRECTIONAL_WITHIN_ACCURACY);
+                    java.time.Instant.now(), original, "d", java.util.Map.of("k", "v"), AnchorKind.TimeSemantics.BIDIRECTIONAL_WITHIN_ACCURACY);
 
             original[0] = 9;
             assertEquals(1, receipt.proof()[0], "mutating the source must not alter the receipt");

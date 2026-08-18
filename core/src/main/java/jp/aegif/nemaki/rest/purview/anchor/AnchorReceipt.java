@@ -45,14 +45,12 @@ public final class AnchorReceipt {
     private final String proofDigest;
     private final Map<String, String> attributes;
     private final String failureReason;
-    private final boolean independentlyVerifiable;
     private final AnchorKind.TimeSemantics timeSemantics;
 
     private AnchorReceipt(AnchorKind kind, AnchorStatus status, String anchoredDigest,
                           Instant attemptedAt, Instant anchoredAt, byte[] proof, String proofDigest,
                           Map<String, String> attributes, String failureReason,
-                          boolean independentlyVerifiable, AnchorKind.TimeSemantics timeSemantics) {
-        this.independentlyVerifiable = independentlyVerifiable;
+                          AnchorKind.TimeSemantics timeSemantics) {
         this.timeSemantics = timeSemantics;
         this.kind = kind;
         this.status = status;
@@ -69,10 +67,6 @@ public final class AnchorReceipt {
     /**
      * A proof that is complete and checkable.
      *
-     * @param independentlyVerifiable whether a third party can check this proof WITHOUT trusting
-     *        this deployment. Not implied by the destination: a self-hosted or untrusted RFC 3161
-     *        service is as operator-controlled as the catalog is, so the target establishes this
-     *        and says so here rather than the enum deciding for it (external review, 3.4).
      * @param timeSemantics what the anchor's time may be read as. Per receipt because an RFC 3161
      *        token that omits {@code accuracy} does not support the bidirectional claim its kind
      *        normally would.
@@ -80,7 +74,6 @@ public final class AnchorReceipt {
     public static AnchorReceipt confirmed(AnchorKind kind, String anchoredDigest, Instant attemptedAt,
                                           Instant anchoredAt, byte[] proof, String proofDigest,
                                           Map<String, String> attributes,
-                                          boolean independentlyVerifiable,
                                           AnchorKind.TimeSemantics timeSemantics) {
         if (proof == null || proof.length == 0) {
             // A confirmed receipt with nothing to check is a contradiction — and exactly the
@@ -88,8 +81,7 @@ public final class AnchorReceipt {
             throw new IllegalArgumentException("a CONFIRMED receipt requires a non-empty proof");
         }
         return new AnchorReceipt(kind, AnchorStatus.CONFIRMED, anchoredDigest, attemptedAt,
-                anchoredAt, proof, proofDigest, attributes, null,
-                independentlyVerifiable, timeSemantics);
+                anchoredAt, proof, proofDigest, attributes, null, timeSemantics);
     }
 
     /**
@@ -100,18 +92,18 @@ public final class AnchorReceipt {
     public static AnchorReceipt pending(AnchorKind kind, String anchoredDigest, Instant attemptedAt,
                                         byte[] proof, String proofDigest, Map<String, String> attributes) {
         return new AnchorReceipt(kind, AnchorStatus.PENDING, anchoredDigest, attemptedAt,
-                null, proof, proofDigest, attributes, null, false, AnchorKind.TimeSemantics.NOT_A_TIME_PROOF);
+                null, proof, proofDigest, attributes, null, AnchorKind.TimeSemantics.NOT_A_TIME_PROOF);
     }
 
     public static AnchorReceipt failed(AnchorKind kind, String anchoredDigest, Instant attemptedAt,
                                        String failureReason) {
         return new AnchorReceipt(kind, AnchorStatus.FAILED, anchoredDigest, attemptedAt,
-                null, null, null, Map.of(), failureReason, false, AnchorKind.TimeSemantics.NOT_A_TIME_PROOF);
+                null, null, null, Map.of(), failureReason, AnchorKind.TimeSemantics.NOT_A_TIME_PROOF);
     }
 
     public static AnchorReceipt notConfigured(AnchorKind kind, String anchoredDigest) {
         return new AnchorReceipt(kind, AnchorStatus.NOT_CONFIGURED, anchoredDigest, null,
-                null, null, null, Map.of(), null, false, AnchorKind.TimeSemantics.NOT_A_TIME_PROOF);
+                null, null, null, Map.of(), null, AnchorKind.TimeSemantics.NOT_A_TIME_PROOF);
     }
 
     public AnchorKind kind() {
@@ -134,8 +126,8 @@ public final class AnchorReceipt {
 
     /**
      * The time the ANCHOR attests, present only once {@link AnchorStatus#CONFIRMED}. Read it
-     * together with {@link AnchorKind#timeSemantics()}: for OpenTimestamps this is an upper
-     * bound, not the moment of anchoring.
+     * together with {@link #timeSemantics()} — the RECEIPT's, not the kind's, because a token
+     * that states no accuracy carries less than its kind normally would.
      */
     public Instant anchoredAt() {
         return anchoredAt;
@@ -177,35 +169,6 @@ public final class AnchorReceipt {
         // BIDIRECTIONAL_WITHIN_ACCURACY would describe a proof that does not exist
         // (external review, 3.4).
         return timeSemantics;
-    }
-
-    /**
-     * Whether we hold something a third party could check <em>without our cooperation</em>.
-     *
-     * <h3>Why this is not called "independent"</h3>
-     *
-     * <p>Three review rounds all landed on the same wall: this system cannot establish that an
-     * anchor is organizationally independent of the operator, and every attempt to compute it
-     * was derivable by the operator. Verify a certificate chain and an operator can run their
-     * own TSA and configure its certificate as the anchor. Require a declared accreditation and
-     * the operator writes the declaration. Trust the sidecar's verification and the operator
-     * runs the sidecar. Each fix moved the assumption without removing it.
-     *
-     * <p>So the claim is abandoned rather than relabelled. What this deployment can honestly
-     * assert is not "this is independent" but "we kept the artifact by which YOU can decide":
-     * a complete OpenTimestamps proof that verifies against Bitcoin block headers, or a
-     * time-stamp token carrying the certificate needed to check its signature. Whether the
-     * issuer is a genuine third party is then the reader's judgement about the world, made with
-     * evidence in hand — which is exactly what an auditor is for, and is the one thing no
-     * amount of code here can do on their behalf.
-     *
-     * <p>The evidence report renders this as a preserved artifact plus the verification
-     * procedure, never as a boolean called "independent".
-     */
-    public boolean preservesIndependentlyCheckableArtifact() {
-        return kind.independentOfOperator()
-                && proof != null && proof.length > 0
-                && (status == AnchorStatus.CONFIRMED || "true".equals(attributes.get("proofComplete")));
     }
 
     @Override

@@ -130,8 +130,6 @@ class OpenTimestampsAnchorTargetTest {
             assertEquals(AnchorStatus.PENDING, receipt.status());
             assertNull(receipt.anchoredAt(),
                     "Bitcoin has not confirmed it, so no time may be asserted");
-            assertFalse(receipt.preservesIndependentlyCheckableArtifact(),
-                    "the destination is independent, but an unconfirmed commitment is not yet evidence");
             assertNotNull(receipt.proof());
             assertEquals("false", receipt.attributes().get("upgraded"));
             assertEquals("SHA256(digest || 16 random bytes)", receipt.attributes().get("noncePolicy"),
@@ -201,10 +199,6 @@ class OpenTimestampsAnchorTargetTest {
             assertEquals("true", result.attributes().get("proofComplete"));
             assertEquals("921447", result.attributes().get("bitcoinBlockHeight"));
             assertEquals("false", result.attributes().get("chainVerifiedLocally"));
-            assertTrue(result.preservesIndependentlyCheckableArtifact(),
-                    "we did not check it — but we kept the complete proof, and keeping the thing "
-                            + "an auditor can check is precisely what this deployment can honestly "
-                            + "claim to have done");
         }
 
         @Test
@@ -226,7 +220,7 @@ class OpenTimestampsAnchorTargetTest {
         }
 
         @Test
-        @DisplayName("verified against Bitcoin: CONFIRMED and independently checkable")
+        @DisplayName("verified against Bitcoin: CONFIRMED and checkable")
         void verifiedProofIsConfirmed() throws Exception {
             String url = start(java.util.Map.of(
                     "/upgrade", "{\"status\":\"CONFIRMED\",\"changed\":false,\"proofBase64\":\""
@@ -239,7 +233,6 @@ class OpenTimestampsAnchorTargetTest {
 
             assertEquals(AnchorStatus.CONFIRMED, result.status());
             assertEquals("true", result.attributes().get("chainVerifiedLocally"));
-            assertTrue(result.preservesIndependentlyCheckableArtifact());
             assertEquals(AnchorKind.TimeSemantics.UPPER_BOUND_ONLY, result.timeSemantics());
             assertNull(result.anchoredAt());
         }
@@ -267,8 +260,7 @@ class OpenTimestampsAnchorTargetTest {
         void confirmedIsNotUpgradedAgain() throws Exception {
             String url = start(java.util.Map.of());
             AnchorReceipt confirmed = AnchorReceipt.confirmed(AnchorKind.OPENTIMESTAMPS, DIGEST,
-                    java.time.Instant.now(), null, PROOF, "d", java.util.Map.of(),
-                    true, AnchorKind.TimeSemantics.UPPER_BOUND_ONLY);
+                    java.time.Instant.now(), null, PROOF, "d", java.util.Map.of(), AnchorKind.TimeSemantics.UPPER_BOUND_ONLY);
 
             assertSame(confirmed, new OpenTimestampsAnchorTarget(url).upgrade(confirmed));
             assertTrue(paths.isEmpty(), "no request should be made for an already-confirmed proof");
