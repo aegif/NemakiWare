@@ -81,11 +81,11 @@ import org.slf4j.LoggerFactory;
  * with the right nonce and imprint and have it recorded as confirmed evidence — {@code
  * validate()} would accept it.
  *
- * <p><b>Not done:</b> PKIX path validation and revocation checking. When a trust anchor is
- * configured we check that the signer's certificate is signed by it and currently valid, which
- * is an issuer check, NOT path validation — no intermediates, no basicConstraints, no policy,
- * no CRL/OCSP. The receipt says so in {@code trustAnchorCheck} rather than letting a reader
- * assume more. {@code revocationDataCapturedAt=never} is recorded because revocation data cannot
+ * <p><b>Not done:</b> revocation checking. When a trust anchor is configured, the signer is
+ * validated to it by PKIX path validation over the certificates the token carries — which is
+ * what a real accredited TSA needs, since those issue from an intermediate rather than their
+ * root — but with revocation disabled. The receipt says so in {@code trustAnchorCheck} rather
+ * than letting a reader assume freshness we never established. {@code revocationDataCapturedAt=never} is recorded because revocation data cannot
  * be reconstructed after the fact and its absence has to be visible rather than assumed.
  *
  * <h3>What CONFIRMED means here</h3>
@@ -214,12 +214,12 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
                 return AnchorReceipt.failed(kind(), hexDigest, attemptedAt,
                         "TSA token signature did not verify: " + check.detail);
             }
-            if (trustAnchor != null && !check.issuedByConfiguredCertificate) {
+            if (trustAnchor != null && !check.validatesToTrustAnchor) {
                 // An operator who configured an anchor asked for exactly this check. Recording
                 // the failure in an attribute and returning CONFIRMED anyway would answer a
                 // different question than the one they configured (external review, 3.4).
                 return AnchorReceipt.failed(kind(), hexDigest, attemptedAt,
-                        "TSA signer was not issued by the configured trust-anchor certificate (this is a direct-issuer check; a signer behind an intermediate CA will not pass)");
+                        "TSA signer does not validate to the configured trust anchor (PKIX path validation over the certificates the token carries; revocation not checked)");
             }
 
             Map<String, String> attrs = new LinkedHashMap<>();
@@ -236,7 +236,7 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             attrs.put("embeddedCertificateCount", String.valueOf(check.certificateCount));
             attrs.put("signatureVerified", "true");
             attrs.put("signerTrustAnchorConfigured", String.valueOf(trustAnchor != null));
-            attrs.put("signerIssuedByConfiguredCertificate", String.valueOf(check.issuedByConfiguredCertificate));
+            attrs.put("signerValidatesToTrustAnchor", String.valueOf(check.validatesToTrustAnchor));
             // The operator's own words, recorded verbatim and never interpreted. Deriving a
             // boolean from this string put independence back in through the attribute map:
             // any value other than "NONE" — including "none" or "SELF_OPERATED" — read as
@@ -244,7 +244,7 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             attrs.put("accreditationDeclaredByOperator", accreditation);
             attrs.put("trustAnchorCheck", trustAnchor == null
                     ? "not configured; no issuer check was performed"
-                    : "direct issuer signature + signer validity only; NOT PKIX path validation");
+                    : "PKIX path validation to the configured anchor; revocation NOT checked");
             // Not a TODO: revocation data genuinely cannot be captured retroactively, so its
             // absence is part of the evidence rather than a gap to paper over.
             attrs.put("revocationDataCapturedAt", "never");
@@ -333,7 +333,7 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
     }
 
     /** What could be established about the token's signature, as separate facts. */
-    private record SignatureCheck(boolean signatureValid, boolean issuedByConfiguredCertificate,
+    private record SignatureCheck(boolean signatureValid, boolean validatesToTrustAnchor,
                                   int certificateCount, String detail) {
     }
 
@@ -359,24 +359,63 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
 
             boolean chains = false;
             if (trustAnchor != null) {
-                try {
-                    java.security.cert.X509Certificate signerCert =
-                            new org.bouncycastle.cert.jcajce.JcaX509CertificateConverter()
-                                    .setProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider())
-                                    .getCertificate(signer);
-                    signerCert.verify(trustAnchor.getPublicKey());
-                    signerCert.checkValidity(java.util.Date.from(Instant.now()));
-                    chains = true;
-                } catch (Exception e) {
-                    logger.warn("TSA signer does not chain to the configured trust anchor: {}",
-                            e.toString());
-                }
+                chains = validatePath(signer, certs);
             }
             return new SignatureCheck(true, chains, certs.size(), "ok");
 
         } catch (Exception e) {
             return new SignatureCheck(false, false, 0,
                     e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * PKIX path validation from the token's signer up to the configured trust anchor, using the
+     * certificates the token itself carries as candidate intermediates.
+     *
+     * <p>A direct issuer check (does the anchor's key verify the signer's signature?) was the
+     * first implementation and it is a trap: <b>commercial accredited TSAs issue from an
+     * intermediate CA, not from their root</b>. Configuring such a TSA's root would have made
+     * every single anchoring attempt fail — and because the anchor check fails closed, fail
+     * loudly and totally. The direct check only ever worked for a self-signed TSA acting as its
+     * own anchor, which is precisely the configuration that proves nothing.
+     *
+     * <p>Revocation checking is disabled deliberately and consistently with the rest of this
+     * class: we do not fetch CRL/OCSP at issue time, and the receipt says so rather than
+     * implying a freshness we never established.
+     */
+    private boolean validatePath(org.bouncycastle.cert.X509CertificateHolder signer,
+                                 java.util.Collection<org.bouncycastle.cert.X509CertificateHolder> embedded) {
+        try {
+            org.bouncycastle.cert.jcajce.JcaX509CertificateConverter converter =
+                    new org.bouncycastle.cert.jcajce.JcaX509CertificateConverter();
+            java.security.cert.X509Certificate signerCert = converter.getCertificate(signer);
+
+            java.util.List<java.security.cert.X509Certificate> chain = new java.util.ArrayList<>();
+            chain.add(signerCert);
+            for (org.bouncycastle.cert.X509CertificateHolder holder : embedded) {
+                java.security.cert.X509Certificate c = converter.getCertificate(holder);
+                // The anchor is supplied separately; including it in the path would make
+                // CertPathValidator reject the path as containing its own trust anchor.
+                if (!c.equals(signerCert) && !c.equals(trustAnchor)) {
+                    chain.add(c);
+                }
+            }
+
+            java.security.cert.CertPath path = java.security.cert.CertificateFactory
+                    .getInstance("X.509").generateCertPath(chain);
+            java.security.cert.PKIXParameters params = new java.security.cert.PKIXParameters(
+                    java.util.Set.of(new java.security.cert.TrustAnchor(trustAnchor, null)));
+            params.setRevocationEnabled(false);
+            params.setDate(java.util.Date.from(Instant.now()));
+
+            java.security.cert.CertPathValidator.getInstance("PKIX").validate(path, params);
+            return true;
+
+        } catch (Exception e) {
+            logger.warn("TSA signer does not validate to the configured trust anchor: {}",
+                    e.toString());
+            return false;
         }
     }
 
