@@ -1,14 +1,14 @@
 {
   "reportVersion": "0-mock",
   "generatedAt": "2026-08-18T14:32:07Z",
-
+  "locale": "ja",
+  "messageCatalogVersion": "2026.08-0",
   "generator": {
     "product": "NemakiWare",
     "productVersion": "3.4.0",
     "repositoryId": "bedroom",
     "instanceId": "nemaki-core-1"
   },
-
   "subject": {
     "objectId": "3b3658e95431a6190de5b0e58c955125",
     "versionSeriesId": "vs-8f21c0a4",
@@ -18,11 +18,13 @@
     "isAuthoritativeCopy": null,
     "authoritativeCopyRule": null
   },
-
   "assertionScope": {
     "custodyBeginsAt": "2026-07-14T02:11:53Z",
     "custodyBeginsBecause": "INGESTED_FROM_EXTERNAL_SOURCE",
-    "coversPeriod": { "from": "2026-07-14T02:11:53Z", "to": "2026-08-18T14:32:07Z" },
+    "coversPeriod": {
+      "from": "2026-07-14T02:11:53Z",
+      "to": "2026-08-18T14:32:07Z"
+    },
     "sourceSystem": {
       "system": "slack",
       "sourceObjectId": "F07J2K9QX1M",
@@ -32,14 +34,16 @@
       "transportAuthentication": "HMAC_WEBHOOK"
     }
   },
-
   "evidence": {
     "trustLevel": {
       "level": 2,
-      "label": "2: + public blockchain anchor (OpenTimestamps)",
+      "label": {
+        "key": "trustLevel.2",
+        "ja": "段 2: 公開ブロックチェーンへのアンカーまで",
+        "en": "Level 2: anchored to a public blockchain"
+      },
       "independentOfOperator": true
     },
-
     "contentIntegrity": {
       "algorithm": "SHA-256",
       "digest": "9f2c4e1a7b8d3056c9e4f1a2b7d8e3f0c5a6b9d2e7f4a1c8b3d6e9f2a5c8b1d4",
@@ -51,16 +55,46 @@
         "canonicalization": "JCS (RFC 8785) over the CMIS property set, excluding cmis:lastModificationDate"
       },
       "fixityHistory": [
-        { "checkedAt": "2026-07-14T02:11:54Z", "outcome": "MATCH", "storageTier": "LIVE", "detail": "baseline at ingest" },
-        { "checkedAt": "2026-07-21T03:00:12Z", "outcome": "MATCH", "storageTier": "LIVE", "detail": null },
-        { "checkedAt": "2026-08-04T03:00:09Z", "outcome": "MATCH", "storageTier": "LIVE", "detail": null },
-        { "checkedAt": "2026-08-18T03:00:15Z", "outcome": "MATCH", "storageTier": "LIVE", "detail": null }
+        {
+          "checkedAt": "2026-07-14T02:11:54Z",
+          "outcome": "MATCH",
+          "storageTier": "LIVE",
+          "detail": {
+            "key": "fixity.baselineAtIngest",
+            "ja": "取込時の基準値",
+            "en": "baseline recorded at ingest"
+          }
+        },
+        {
+          "checkedAt": "2026-07-21T03:00:12Z",
+          "outcome": "MATCH",
+          "storageTier": "LIVE",
+          "detail": null
+        },
+        {
+          "checkedAt": "2026-08-04T03:00:09Z",
+          "outcome": "MATCH",
+          "storageTier": "LIVE",
+          "detail": null
+        },
+        {
+          "checkedAt": "2026-08-18T03:00:15Z",
+          "outcome": "MATCH",
+          "storageTier": "LIVE",
+          "detail": null
+        }
       ]
     },
-
     "chainOfCustody": {
       "chainVerified": true,
-      "chainVerificationDetail": "Recomputed 6 event digests and the barrier digest; all matched the stored chain.",
+      "chainVerificationDetail": {
+        "key": "chain.verifiedOk",
+        "ja": "6 件のイベントダイジェストと barrier ダイジェストを再計算し、保存されている連鎖と一致しました。",
+        "en": "Recomputed 6 event digests and the barrier digest; all matched the stored chain.",
+        "params": {
+          "eventCount": 6
+        }
+      },
       "barrierDigest": "b7e3a1c9f4d80652e1a7c4f9b2d5e8a3c6f1b4d7e0a3c6f9b2e5d8a1c4f7b0e3",
       "sequencePosition": 148213,
       "events": [
@@ -68,34 +102,66 @@
           "eventId": "7b685fe1-020c-4c58-8e5d-d75df64bfab8",
           "occurredAt": "2026-07-14T02:11:53Z",
           "type": "ingestion",
-          "agent": { "id": "connector:slack-sites-profile", "kind": "EXTERNAL_CONNECTOR" },
+          "agent": {
+            "id": "connector:slack-sites-profile",
+            "kind": "EXTERNAL_CONNECTOR"
+          },
           "outcome": "SUCCESS",
           "outcomeDetail": null,
-          "effectOnRecord": "Stored as received. No transformation applied."
+          "effectOnRecord": {
+            "key": "effect.storedAsReceived",
+            "ja": "受領したまま格納。変換は行っていません。",
+            "en": "Stored as received. No transformation applied."
+          }
         },
         {
           "eventId": "c41a9d02-5e7b-4318-a6f2-0b9e4c7d1a83",
           "occurredAt": "2026-07-14T02:11:56Z",
           "type": "message digest calculation",
-          "agent": { "id": "service:canonical-import", "kind": "SERVICE" },
+          "agent": {
+            "id": "service:canonical-import",
+            "kind": "SERVICE"
+          },
           "outcome": "SUCCESS",
-          "outcomeDetail": "SHA-256 over the received byte stream",
+          "outcomeDetail": {
+            "key": "outcome.sha256OverReceivedBytes",
+            "ja": "受領したバイト列に対する SHA-256",
+            "en": "SHA-256 over the received byte stream"
+          },
           "effectOnRecord": null
         },
         {
           "eventId": "2f8c1b45-9a03-4d7e-b158-6c2a9f0e3d47",
           "occurredAt": "2026-07-28T09:42:11Z",
           "type": "modification",
-          "agent": { "id": "user:otsuka", "kind": "USER" },
+          "agent": {
+            "id": "user:otsuka",
+            "kind": "USER"
+          },
           "outcome": "SUCCESS",
-          "outcomeDetail": "New version 2.0 created; 1.0 retained.",
-          "effectOnRecord": "Content replaced by the uploader. The prior version and its digest remain in the version lineage below."
+          "outcomeDetail": {
+            "key": "outcome.newVersionCreated",
+            "ja": "新しい版 2.0 を作成。版 1.0 は保持。",
+            "en": "New version 2.0 created; version 1.0 retained.",
+            "params": {
+              "newVersion": "2.0",
+              "retainedVersion": "1.0"
+            }
+          },
+          "effectOnRecord": {
+            "key": "effect.contentReplacedByUploader",
+            "ja": "アップロード者により内容が置換されました。直前の版とそのダイジェストは下のバージョン系譜に残っています。",
+            "en": "Content was replaced by the uploader. The prior version and its digest remain in the version lineage below."
+          }
         },
         {
           "eventId": "e93d5a17-4c86-40b2-9f31-8d0b7e2c5a69",
           "occurredAt": "2026-07-28T09:42:12Z",
           "type": "message digest calculation",
-          "agent": { "id": "service:content-service", "kind": "SERVICE" },
+          "agent": {
+            "id": "service:content-service",
+            "kind": "SERVICE"
+          },
           "outcome": "SUCCESS",
           "outcomeDetail": null,
           "effectOnRecord": null
@@ -104,18 +170,35 @@
           "eventId": "a05f7c92-1b34-4e8d-97a6-3f5c8b1d0e42",
           "occurredAt": "2026-07-29T00:05:00Z",
           "type": "validation",
-          "agent": { "id": "scheduler:anchor-daily", "kind": "SCHEDULER" },
+          "agent": {
+            "id": "scheduler:anchor-daily",
+            "kind": "SCHEDULER"
+          },
           "outcome": "SUCCESS",
-          "outcomeDetail": "Included in daily anchor D-2026-07-29.",
+          "outcomeDetail": {
+            "key": "outcome.includedInDailyAnchor",
+            "ja": "日次アンカー D-2026-07-29 に包含",
+            "en": "Included in daily anchor D-2026-07-29",
+            "params": {
+              "anchorId": "D-2026-07-29"
+            }
+          },
           "effectOnRecord": null
         },
         {
           "eventId": "d17b6e30-8f52-4a19-b0c7-2e9d4a6f1b85",
           "occurredAt": "2026-08-18T03:00:15Z",
           "type": "fixity check",
-          "agent": { "id": "scheduler:fixity", "kind": "SCHEDULER" },
+          "agent": {
+            "id": "scheduler:fixity",
+            "kind": "SCHEDULER"
+          },
           "outcome": "SUCCESS",
-          "outcomeDetail": "MATCH",
+          "outcomeDetail": {
+            "key": "outcome.fixityMatch",
+            "ja": "一致",
+            "en": "MATCH"
+          },
           "effectOnRecord": null
         }
       ],
@@ -125,7 +208,6 @@
         "purgedEventsExist": false
       }
     },
-
     "externalAnchors": [
       {
         "kind": "ATLAS_CATALOG",
@@ -133,7 +215,11 @@
         "anchoredDigest": "b7e3a1c9f4d80652e1a7c4f9b2d5e8a3c6f1b4d7e0a3c6f9b2e5d8a1c4f7b0e3",
         "anchoredAt": "2026-07-29T00:05:02Z",
         "timeSemantics": "NOT_A_TIME_PROOF",
-        "independenceCaveat": "この Atlas は本デプロイと同一組織・同一 tenant の管理下にあります。したがってカタログへの記録は、組織の管理者による改変に対する独立した証拠にはなりません。独立性は下の OpenTimestamps 記録によって与えられます。",
+        "independenceCaveat": {
+          "key": "anchor.sameTenantCatalog",
+          "ja": "この Atlas は本デプロイと同一組織・同一 tenant の管理下にあります。したがってカタログへの記録は、組織の管理者による改変に対する独立した証拠にはなりません。独立性は OpenTimestamps の記録によって与えられます。",
+          "en": "This Atlas instance is administered by the same organization and tenant as this deployment. Its record therefore does not constitute independent evidence against alteration by an administrator of that organization. Independence is supplied by the OpenTimestamps record below."
+        },
         "opentimestamps": null,
         "rfc3161": null
       },
@@ -167,14 +253,12 @@
         "rfc3161": null
       }
     ],
-
     "accessAudit": {
       "aclSnapshotDigest": "3e7a1f5c9b2d64801a7e3c5f9b1d4a7c0e6b2f8d5a1c4e7b0d3f6a9c2e5b8d1f",
       "aclEpoch": 42,
       "modifyingInteractions": 3,
       "auditCoverage": "ALL_MODIFYING_INTERACTIONS"
     },
-
     "versionLineage": [
       {
         "versionLabel": "1.0",
@@ -190,65 +274,163 @@
       }
     ]
   },
-
   "notProven": [
     {
-      "claim": "この文書が Slack 上で作成された時点から改変されていないこと",
-      "why": "本レポートの証拠は 2026-07-14T02:11:53Z の取込時点から始まります。それ以前に Slack 内で行われた編集・削除・再投稿については、NemakiWare は観測していません。",
-      "whatWouldEstablishIt": "Slack 側の監査ログ (Enterprise Grid の audit logs API) との突合。ただしそれも Slack という別組織のシステムへの信頼を前提とします。"
+      "claim": {
+        "key": "notProven.preIngestHistory.claim",
+        "ja": "この文書が Slack 上で作成された時点から改変されていないこと",
+        "en": "That this document has been unaltered since it was created in Slack"
+      },
+      "why": {
+        "key": "notProven.preIngestHistory.why",
+        "ja": "本レポートの証拠は 2026-07-14T02:11:53Z の取込時点から始まります。それ以前に Slack 内で行われた編集・削除・再投稿を NemakiWare は観測していません。",
+        "en": "This report's evidence begins at ingest (2026-07-14T02:11:53Z). NemakiWare did not observe any editing, deletion or re-posting that took place inside Slack before that moment."
+      },
+      "whatWouldEstablishIt": {
+        "key": "notProven.preIngestHistory.fix",
+        "ja": "Slack 側の監査ログ (Enterprise Grid の audit logs API) との突合。ただしそれも Slack という別組織のシステムへの信頼を前提とします。",
+        "en": "Reconciliation against Slack's own audit logs (Enterprise Grid audit logs API) — which would in turn rest on trusting a system operated by another organization."
+      }
     },
     {
-      "claim": "HMAC 署名付き webhook で受信したので、内容が真正であること",
-      "why": "HMAC が証明するのは「送信者が共有鍵を持っていた」ことだけで、送られてきた内容が Slack 内の記録と一致することや、改変されていないことは証明しません。通信相手の検証と内容の真正性は別の主張です。",
-      "whatWouldEstablishIt": "source 側での署名付き記録。Slack はこれを提供していません。"
+      "claim": {
+        "key": "notProven.hmacIsNotContentAuthenticity.claim",
+        "ja": "HMAC 署名付き webhook で受信したので、内容が真正であること",
+        "en": "That the content is authentic because it arrived over an HMAC-signed webhook"
+      },
+      "why": {
+        "key": "notProven.hmacIsNotContentAuthenticity.why",
+        "ja": "HMAC が証明するのは「送信者が共有鍵を持っていた」ことだけで、送られてきた内容が Slack 内の記録と一致することや、改変されていないことは証明しません。通信相手の検証と内容の真正性は別の主張です。",
+        "en": "An HMAC proves only that the sender held the shared secret. It does not establish that the delivered content matches the record held in Slack, nor that it was unaltered. Authenticating the counterparty and authenticating the content are different claims."
+      },
+      "whatWouldEstablishIt": {
+        "key": "notProven.hmacIsNotContentAuthenticity.fix",
+        "ja": "source 側での署名付き記録。Slack はこれを提供していません。",
+        "en": "Signed records produced by the source system itself. Slack does not offer this."
+      }
     },
     {
-      "claim": "バージョン 1.0 の内容が 2.0 に置き換わった際、その変更が正当な権限に基づくこと",
-      "why": "本レポートは「誰が・いつ変更したか」を記録していますが、その人物がその変更を行う権限を持つべきだったかは、組織の職務権限規程に照らして人が判断する事項です。",
-      "whatWouldEstablishIt": "InterPARES A.6 に相当する「誰が真正と宣言する権限を持つか」の規則の整備 (本製品では未実装 — ロードマップ P1-4 系)。"
+      "claim": {
+        "key": "notProven.authorityForChange.claim",
+        "ja": "バージョン 1.0 の内容が 2.0 に置き換わった際、その変更が正当な権限に基づくこと",
+        "en": "That the replacement of version 1.0 by version 2.0 was made under proper authority"
+      },
+      "why": {
+        "key": "notProven.authorityForChange.why",
+        "ja": "本レポートは「誰が・いつ変更したか」を記録していますが、その人物がその変更を行う権限を持つべきだったかは、組織の職務権限規程に照らして人が判断する事項です。",
+        "en": "This report records who made the change and when, but whether that person should have held the authority to make it is a judgement for a human to make against the organization's delegation-of-authority rules."
+      },
+      "whatWouldEstablishIt": {
+        "key": "notProven.authorityForChange.fix",
+        "ja": "InterPARES A.6 に相当する「誰が真正と宣言する権限を持つか」の規則の整備 (本製品では未実装)。",
+        "en": "Establishing the rule for who may declare a record authentic (the InterPARES A.6 requirement). Not implemented in this product."
+      }
     },
     {
-      "claim": "この文書が「正本」であること",
-      "why": "本デプロイでは authoritative record を識別する規則が定義されていません (subject.isAuthoritativeCopy = null)。同一内容の複製が他所に存在する場合、どれが正本かを本レポートは決定しません。",
-      "whatWouldEstablishIt": "InterPARES A.7 に相当する識別手続の規則化と、その規則の本レポートへの反映。"
+      "claim": {
+        "key": "notProven.authoritativeCopy.claim",
+        "ja": "この文書が「正本」であること",
+        "en": "That this document is the authoritative copy"
+      },
+      "why": {
+        "key": "notProven.authoritativeCopy.why",
+        "ja": "本デプロイでは authoritative record を識別する規則が定義されていません。同一内容の複製が他所に存在する場合、どれが正本かを本レポートは決定しません。",
+        "en": "No rule for identifying the authoritative record is defined in this deployment. Where copies of the same content exist elsewhere, this report does not determine which of them is authoritative."
+      },
+      "whatWouldEstablishIt": {
+        "key": "notProven.authoritativeCopy.fix",
+        "ja": "InterPARES A.7 に相当する識別手続の規則化と、その規則の本レポートへの反映。",
+        "en": "Defining the identification procedure required by InterPARES A.7 and reflecting that rule in this report."
+      }
     },
     {
-      "claim": "RFC 3161 タイムスタンプによる時刻の証明",
-      "why": "本デプロイでは TSA が構成されていません (externalAnchors の RFC3161_TSA が NOT_CONFIGURED)。OpenTimestamps による証明は「この時刻より前に存在した」という上限側のみで、下限は与えません。",
-      "whatWouldEstablishIt": "認定タイムスタンプ事業者の RFC 3161 TSA を構成すること。"
+      "claim": {
+        "key": "notProven.lowerTimeBound.claim",
+        "ja": "特定の時刻に存在したこと (時刻の下限)",
+        "en": "That the document existed at a specific time (a lower time bound)"
+      },
+      "why": {
+        "key": "notProven.lowerTimeBound.why",
+        "ja": "本デプロイでは TSA が構成されていません。OpenTimestamps による証明は「この時刻より前に存在した」という上限側のみで、下限は与えません。",
+        "en": "No time-stamp authority is configured in this deployment. The OpenTimestamps proof establishes only an upper bound — that the data existed no later than a given time — and gives no lower bound."
+      },
+      "whatWouldEstablishIt": {
+        "key": "notProven.lowerTimeBound.fix",
+        "ja": "認定タイムスタンプ事業者の RFC 3161 TSA を構成すること。",
+        "en": "Configuring an RFC 3161 time-stamp authority from an accredited provider."
+      }
     }
   ],
-
   "verification": [
     {
-      "assertion": "内容が記録された digest と一致する",
-      "procedure": "対象バイト列を取得し `sha256sum` を実行して evidence.contentIntegrity.digest と比較する。バイト列の取得自体は本システム経由になるため、本システムが改竄されていないことは別途担保が要る。",
+      "assertion": {
+        "key": "verify.contentDigest.assertion",
+        "ja": "内容が記録された digest と一致する",
+        "en": "The content matches the recorded digest"
+      },
+      "procedure": {
+        "key": "verify.contentDigest.procedure",
+        "ja": "対象バイト列を取得し sha256sum を実行して evidence.contentIntegrity.digest と比較する。バイト列の取得自体が本システム経由になるため、本システムが改竄されていないことは別途担保が要る。",
+        "en": "Retrieve the byte stream, run sha256sum and compare with evidence.contentIntegrity.digest. The byte stream is obtained through this system, so the integrity of this system itself must be assured separately."
+      },
       "requiresTrustInDeployment": true,
       "tool": "sha256sum"
     },
     {
-      "assertion": "来歴イベントの連鎖が改竄されていない",
-      "procedure": "evidence.chainOfCustody.events の各 eventId とペイロードから digest を再計算し、barrierDigest まで畳み込んで一致を確認する。手順は docs/design/acl-epoch-fencing.md と同じ連鎖検証を用いる。",
+      "assertion": {
+        "key": "verify.chain.assertion",
+        "ja": "来歴イベントの連鎖が改竄されていない",
+        "en": "The chain of custody events has not been tampered with"
+      },
+      "procedure": {
+        "key": "verify.chain.procedure",
+        "ja": "evidence.chainOfCustody.events の各 eventId とペイロードから digest を再計算し、barrierDigest まで畳み込んで一致を確認する。",
+        "en": "Recompute a digest from each eventId and payload in evidence.chainOfCustody.events, fold them up to barrierDigest and confirm the match."
+      },
       "requiresTrustInDeployment": true,
-      "tool": "nemaki-verify (計画中)"
+      "tool": "nemaki-verify (計画中 / planned)"
     },
     {
-      "assertion": "barrierDigest が 2026-07-29 の時点で既に存在していた",
-      "procedure": "添付の .ots ファイルを取得し、公式クライアントで `ots verify` を実行する。検証には Bitcoin のブロックヘッダのみを用い、NemakiWare にも OpenTimestamps カレンダーにも接続しない。これは本システムを信頼せずに実行できる唯一の検査である。",
+      "assertion": {
+        "key": "verify.ots.assertion",
+        "ja": "barrierDigest が 2026-07-29 の時点で既に存在していた",
+        "en": "The barrierDigest already existed on 2026-07-29"
+      },
+      "procedure": {
+        "key": "verify.ots.procedure",
+        "ja": "添付の .ots ファイルを取得し、公式クライアントで ots verify を実行する。検証には Bitcoin のブロックヘッダのみを用い、NemakiWare にも OpenTimestamps カレンダーにも接続しない。これは本システムを信頼せずに実行できる唯一の検査である。",
+        "en": "Take the attached .ots file and run ots verify with the official client. Verification uses only Bitcoin block headers and contacts neither NemakiWare nor the OpenTimestamps calendars. This is the only check in this report that can be performed without trusting this system."
+      },
       "requiresTrustInDeployment": false,
-      "tool": "ots (OpenTimestamps 公式クライアント) + Bitcoin フルノードまたは信頼できるブロックヘッダ列"
+      "tool": "ots (OpenTimestamps official client) + Bitcoin full node or trusted block headers"
     },
     {
-      "assertion": "アクセス権限の状態が記録のとおりである",
-      "procedure": "GET /core/api/v1/cmis/repositories/bedroom/objects/{objectId}/acl の応答を正規化して aclSnapshotDigest と比較する。",
+      "assertion": {
+        "key": "verify.acl.assertion",
+        "ja": "アクセス権限の状態が記録のとおりである",
+        "en": "Access control state is as recorded"
+      },
+      "procedure": {
+        "key": "verify.acl.procedure",
+        "ja": "GET /core/api/v1/cmis/repositories/bedroom/objects/{objectId}/acl の応答を正規化して aclSnapshotDigest と比較する。",
+        "en": "Normalize the response of GET /core/api/v1/cmis/repositories/bedroom/objects/{objectId}/acl and compare with aclSnapshotDigest."
+      },
       "requiresTrustInDeployment": true,
       "tool": "curl + jq"
     },
     {
-      "assertion": "バージョン系譜が記録のとおりである",
-      "procedure": "CMIS の getAllVersions を実行し、versionLineage の objectId と createdAt の並びが一致することを確認する。各版の内容 digest も同様に再計算して比較する。",
+      "assertion": {
+        "key": "verify.versions.assertion",
+        "ja": "バージョン系譜が記録のとおりである",
+        "en": "The version lineage is as recorded"
+      },
+      "procedure": {
+        "key": "verify.versions.procedure",
+        "ja": "CMIS の getAllVersions を実行し、versionLineage の objectId と createdAt の並びが一致することを確認する。各版の内容 digest も同様に再計算して比較する。",
+        "en": "Call the CMIS getAllVersions operation and confirm that the objectId and createdAt sequence matches versionLineage. Recompute and compare each version's content digest in the same way."
+      },
       "requiresTrustInDeployment": true,
-      "tool": "CMIS クライアント (cmislib 等)"
+      "tool": "CMIS client (cmislib etc.)"
     }
   ]
 }
