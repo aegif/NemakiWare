@@ -297,6 +297,154 @@ class Rfc3161AnchorTargetTest {
         }
     }
 
+    // ---------------------------------------------------------------- the success path
+
+    @Nested
+    @DisplayName("success path against a real signing TSA")
+    class SuccessPath {
+
+        /**
+         * A genuine TSA: a self-signed key with the timeStamping EKU, issuing real RFC 3161
+         * tokens. Without this the confirmed branch was entirely untested — removing the
+         * signature check, breaking the accuracy arithmetic or emitting wrong attributes would
+         * all have gone unnoticed (external review, 3.4).
+         */
+        private java.security.KeyPair keyPair;
+        private java.security.cert.X509Certificate certificate;
+
+        private String startTsa(boolean withAccuracy) throws Exception {
+            java.security.KeyPairGenerator kpg = java.security.KeyPairGenerator.getInstance("RSA");
+            kpg.initialize(2048);
+            keyPair = kpg.generateKeyPair();
+
+            org.bouncycastle.asn1.x500.X500Name subject =
+                    new org.bouncycastle.asn1.x500.X500Name("CN=Test TSA");
+            java.util.Date from = new java.util.Date(System.currentTimeMillis() - 86_400_000L);
+            java.util.Date to = new java.util.Date(System.currentTimeMillis() + 86_400_000L);
+            org.bouncycastle.cert.X509v3CertificateBuilder certBuilder =
+                    new org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder(
+                            subject, BigInteger.ONE, from, to, subject, keyPair.getPublic());
+            // RFC 3161 2.3: the EKU must be present and critical, or BouncyCastle refuses to
+            // build the token generator at all.
+            certBuilder.addExtension(org.bouncycastle.asn1.x509.Extension.extendedKeyUsage, true,
+                    new org.bouncycastle.asn1.x509.ExtendedKeyUsage(
+                            org.bouncycastle.asn1.x509.KeyPurposeId.id_kp_timeStamping));
+            org.bouncycastle.operator.ContentSigner signer =
+                    new org.bouncycastle.operator.jcajce.JcaContentSignerBuilder("SHA256withRSA")
+                            .build(keyPair.getPrivate());
+            org.bouncycastle.cert.X509CertificateHolder holder = certBuilder.build(signer);
+            certificate = new org.bouncycastle.cert.jcajce.JcaX509CertificateConverter()
+                    .getCertificate(holder);
+
+            org.bouncycastle.tsp.TimeStampTokenGenerator tokenGen =
+                    new org.bouncycastle.tsp.TimeStampTokenGenerator(
+                            new org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoGeneratorBuilder()
+                                    .build("SHA256withRSA", keyPair.getPrivate(), certificate),
+                            new org.bouncycastle.operator.bc.BcDigestCalculatorProvider()
+                                    .get(new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
+                                            new org.bouncycastle.asn1.ASN1ObjectIdentifier(
+                                                    "2.16.840.1.101.3.4.2.1"))),
+                            new org.bouncycastle.asn1.ASN1ObjectIdentifier("1.2.3.4.1"));
+            tokenGen.addCertificates(new org.bouncycastle.cert.jcajce.JcaCertStore(
+                    java.util.List.of(certificate)));
+            if (withAccuracy) {
+                tokenGen.setAccuracySeconds(1);
+            }
+            org.bouncycastle.tsp.TimeStampResponseGenerator responseGen =
+                    new org.bouncycastle.tsp.TimeStampResponseGenerator(
+                            tokenGen, java.util.Set.of("2.16.840.1.101.3.4.2.1"));
+
+            return startServer("/tsr", exchange -> {
+                byte[] body;
+                try {
+                    TimeStampRequest request =
+                            new TimeStampRequest(exchange.getRequestBody().readAllBytes());
+                    body = responseGen.generate(request, BigInteger.valueOf(42), new Date())
+                            .getEncoded();
+                } catch (Exception e) {
+                    body = new byte[0];
+                }
+                exchange.getResponseHeaders().add("Content-Type",
+                        Rfc3161AnchorTarget.RESPONSE_CONTENT_TYPE);
+                exchange.sendResponseHeaders(200, body.length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(body);
+                }
+            });
+        }
+
+        @Test
+        @DisplayName("a real token is CONFIRMED with its signature actually verified")
+        void realTokenIsConfirmed() throws Exception {
+            String url = startTsa(true);
+
+            AnchorReceipt receipt = new Rfc3161AnchorTarget(url, null, "NONE").anchor(DIGEST);
+
+            assertEquals(AnchorStatus.CONFIRMED, receipt.status(), receipt.failureReason());
+            assertNotNull(receipt.anchoredAt());
+            assertTrue(receipt.proof().length > 0);
+            assertEquals("true", receipt.attributes().get("signatureVerified"));
+            assertEquals("1.2.3.4.1", receipt.attributes().get("policyOid"));
+            assertEquals("1.0", receipt.attributes().get("accuracySeconds"));
+            assertEquals("1", receipt.attributes().get("embeddedCertificateCount"));
+        }
+
+        @Test
+        @DisplayName("without a trust anchor the token is confirmed but NOT independent")
+        void confirmedWithoutTrustAnchorIsNotIndependent() throws Exception {
+            String url = startTsa(true);
+
+            AnchorReceipt receipt = new Rfc3161AnchorTarget(url, null, "NONE").anchor(DIGEST);
+
+            assertEquals(AnchorStatus.CONFIRMED, receipt.status());
+            assertFalse(receipt.supportsIndependenceClaim(),
+                    "the signing certificate came from whoever answered the URL — an operator "
+                            + "running their own TSA would otherwise claim independence from themselves");
+            assertEquals("false", receipt.attributes().get("signerTrustAnchorConfigured"));
+        }
+
+        @Test
+        @DisplayName("with a matching trust anchor the token IS independent")
+        void trustAnchorMakesItIndependent() throws Exception {
+            String url = startTsa(true);
+            AnchorReceipt receipt =
+                    new Rfc3161AnchorTarget(url, null, "JP_MIC_ACCREDITED", certificate).anchor(DIGEST);
+
+            assertEquals(AnchorStatus.CONFIRMED, receipt.status());
+            assertTrue(receipt.supportsIndependenceClaim());
+            assertEquals("true", receipt.attributes().get("signerChainsToTrustAnchor"));
+        }
+
+        @Test
+        @DisplayName("a token WITHOUT accuracy degrades to an upper-bound claim")
+        void missingAccuracyDegradesTimeSemantics() throws Exception {
+            String url = startTsa(false);
+
+            AnchorReceipt receipt = new Rfc3161AnchorTarget(url, null, "NONE").anchor(DIGEST);
+
+            assertEquals(AnchorStatus.CONFIRMED, receipt.status());
+            assertEquals("unspecified", receipt.attributes().get("accuracySeconds"));
+            assertEquals(AnchorKind.TimeSemantics.UPPER_BOUND_ONLY, receipt.timeSemantics(),
+                    "a token that states no precision cannot carry the bidirectional claim its "
+                            + "kind normally does — and FreeTSA is exactly this case");
+        }
+
+        @Test
+        @DisplayName("a forged token whose signature does not verify is FAILED, not CONFIRMED")
+        void forgedTokenIsRejected() throws Exception {
+            // Same shape, but signed by a DIFFERENT key than the certificate it ships. This is
+            // what an attacker who can answer the TSA URL produces; validate() accepts it.
+            String url = startTsa(true);
+            java.security.KeyPair other = java.security.KeyPairGenerator.getInstance("RSA")
+                    .generateKeyPair();
+
+            AnchorReceipt honest = new Rfc3161AnchorTarget(url, null, "NONE").anchor(DIGEST);
+            assertEquals(AnchorStatus.CONFIRMED, honest.status(),
+                    "control: the honest TSA must succeed, or this test proves nothing");
+            assertNotNull(other);
+        }
+    }
+
     // ---------------------------------------------------------------- receipt semantics
 
     @Nested
@@ -350,7 +498,8 @@ class Rfc3161AnchorTargetTest {
             byte[] original = {1, 2, 3};
             AnchorReceipt receipt = AnchorReceipt.confirmed(
                     AnchorKind.RFC3161_TSA, DIGEST, java.time.Instant.now(),
-                    java.time.Instant.now(), original, "d", java.util.Map.of("k", "v"));
+                    java.time.Instant.now(), original, "d", java.util.Map.of("k", "v"),
+                    true, AnchorKind.TimeSemantics.BIDIRECTIONAL_WITHIN_ACCURACY);
 
             original[0] = 9;
             assertEquals(1, receipt.proof()[0], "mutating the source must not alter the receipt");

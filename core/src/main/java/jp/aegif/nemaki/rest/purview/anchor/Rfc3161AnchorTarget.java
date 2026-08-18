@@ -101,6 +101,7 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
     private final String tsaUrl;
     private final String reqPolicyOid;
     private final String accreditation;
+    private final java.security.cert.X509Certificate trustAnchor;
     private final SecureRandom random = new SecureRandom();
 
     /**
@@ -113,6 +114,19 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
      *                      accredited is a fact about a contract, not something to detect.
      */
     public Rfc3161AnchorTarget(String tsaUrl, String reqPolicyOid, String accreditation) {
+        this(tsaUrl, reqPolicyOid, accreditation, null);
+    }
+
+    /**
+     * @param trustAnchor the certificate the TSA's signer must chain to, or null when the
+     *        operator has configured none. Without an anchor the signature can still be checked
+     *        against the certificate the token carries — but that certificate is supplied by
+     *        whoever answered, so it establishes internal consistency, NOT that an independent
+     *        party issued the token. Receipts say so instead of assuming.
+     */
+    public Rfc3161AnchorTarget(String tsaUrl, String reqPolicyOid, String accreditation,
+                               java.security.cert.X509Certificate trustAnchor) {
+        this.trustAnchor = trustAnchor;
         this.tsaUrl = tsaUrl == null || tsaUrl.isBlank() ? null : tsaUrl.trim();
         this.reqPolicyOid = reqPolicyOid == null || reqPolicyOid.isBlank() ? null : reqPolicyOid.trim();
         this.accreditation = accreditation == null || accreditation.isBlank() ? "NONE" : accreditation.trim();
@@ -167,6 +181,18 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             TimeStampTokenInfo info = token.getTimeStampInfo();
             byte[] encodedToken = token.getEncoded();
 
+            // THE check validate() does not do. Without it a CMS-shaped blob carrying the right
+            // nonce and imprint — which anyone who can answer this URL can produce — becomes
+            // "confirmed independent evidence". Verifying against the certificate the token
+            // carries proves the token is internally consistent; chaining that certificate to a
+            // configured anchor is what proves somebody else issued it. They are separate facts
+            // and the receipt reports them separately (external review, 3.4).
+            SignatureCheck check = verifySignature(token);
+            if (!check.signatureValid) {
+                return AnchorReceipt.failed(kind(), hexDigest, attemptedAt,
+                        "TSA token signature did not verify: " + check.detail);
+            }
+
             Map<String, String> attrs = new LinkedHashMap<>();
             attrs.put("tsaUrl", tsaUrl);
             attrs.put("accreditation", accreditation);
@@ -175,21 +201,34 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             attrs.put("genTime", info.getGenTime().toInstant().toString());
             attrs.put("accuracySeconds", accuracySecondsOf(info));
             attrs.put("digestAlgorithm", DIGEST_ALGORITHM);
-            // Pitfall 2's observable half: say whether the certificate actually arrived, so a
-            // deployment that will not be verifiable later is visible now rather than in court.
-            attrs.put("certificateChainIncluded",
-                    String.valueOf(!token.getCertificates().getMatches(null).isEmpty()));
+            // Pitfall 2's observable half. Named for what it measures: a count. A non-empty
+            // certificate set usually means the signer certificate alone, which is NOT a chain,
+            // and calling it one would overstate what a later verifier has to work with.
+            attrs.put("embeddedCertificateCount", String.valueOf(check.certificateCount));
+            attrs.put("signatureVerified", "true");
+            attrs.put("signerTrustAnchorConfigured", String.valueOf(trustAnchor != null));
+            attrs.put("signerChainsToTrustAnchor", String.valueOf(check.chainsToAnchor));
             // Not a TODO: revocation data genuinely cannot be captured retroactively, so its
             // absence is part of the evidence rather than a gap to paper over.
             attrs.put("revocationDataCapturedAt", "never");
-            attrs.put("signatureVerified", "false");
-            attrs.put("certificatePathVerified", "false");
 
             logger.info("RFC 3161 token obtained from {} (serial {}, genTime {})",
                     tsaUrl, info.getSerialNumber(), info.getGenTime().toInstant());
 
+            // Independence requires somebody ELSE to have issued the token. A verified signature
+            // by a certificate the responder itself supplied does not establish that, so without
+            // a configured trust anchor this is confirmed evidence that is NOT independent.
+            boolean independentlyVerifiable = check.chainsToAnchor;
+
+            // An absent accuracy means the token states no precision, so it cannot carry the
+            // bidirectional claim its kind normally does — it degrades to an upper bound.
+            AnchorKind.TimeSemantics semantics = info.getGenTimeAccuracy() == null
+                    ? AnchorKind.TimeSemantics.UPPER_BOUND_ONLY
+                    : AnchorKind.TimeSemantics.BIDIRECTIONAL_WITHIN_ACCURACY;
+
             return AnchorReceipt.confirmed(kind(), hexDigest, attemptedAt,
-                    info.getGenTime().toInstant(), encodedToken, sha256Hex(encodedToken), attrs);
+                    info.getGenTime().toInstant(), encodedToken, sha256Hex(encodedToken), attrs,
+                    independentlyVerifiable, semantics);
 
         } catch (Exception e) {
             // Anchoring must never fail the operation that triggered it.
@@ -254,6 +293,54 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
         }
     }
 
+    /** What could be established about the token's signature, as separate facts. */
+    private record SignatureCheck(boolean signatureValid, boolean chainsToAnchor,
+                                  int certificateCount, String detail) {
+    }
+
+    /**
+     * Verify the CMS signature against the certificate carried in the token, and — only when an
+     * anchor is configured — whether that certificate chains to it.
+     */
+    private SignatureCheck verifySignature(TimeStampToken token) {
+        try {
+            java.util.Collection<org.bouncycastle.cert.X509CertificateHolder> certs =
+                    token.getCertificates().getMatches(null);
+            java.util.Collection<org.bouncycastle.cert.X509CertificateHolder> signers =
+                    token.getCertificates().getMatches(token.getSID());
+            if (signers.isEmpty()) {
+                return new SignatureCheck(false, false, certs.size(),
+                        "the token carries no certificate matching its signer id"
+                                + " (certReq was probably not honoured)");
+            }
+            org.bouncycastle.cert.X509CertificateHolder signer = signers.iterator().next();
+            token.validate(new org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoVerifierBuilder()
+                    .setProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider())
+                    .build(signer));
+
+            boolean chains = false;
+            if (trustAnchor != null) {
+                try {
+                    java.security.cert.X509Certificate signerCert =
+                            new org.bouncycastle.cert.jcajce.JcaX509CertificateConverter()
+                                    .setProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider())
+                                    .getCertificate(signer);
+                    signerCert.verify(trustAnchor.getPublicKey());
+                    signerCert.checkValidity(java.util.Date.from(Instant.now()));
+                    chains = true;
+                } catch (Exception e) {
+                    logger.warn("TSA signer does not chain to the configured trust anchor: {}",
+                            e.toString());
+                }
+            }
+            return new SignatureCheck(true, chains, certs.size(), "ok");
+
+        } catch (Exception e) {
+            return new SignatureCheck(false, false, 0,
+                    e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+    }
+
     /** Lowercase 64-char hex to bytes. A caller that gets this wrong has a bug, so this throws. */
     static byte[] decodeSha256Hex(String hexDigest) {
         if (hexDigest == null || hexDigest.length() != 64) {
@@ -262,14 +349,24 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
         }
         byte[] out = new byte[32];
         for (int i = 0; i < 32; i++) {
-            int hi = Character.digit(hexDigest.charAt(i * 2), 16);
-            int lo = Character.digit(hexDigest.charAt(i * 2 + 1), 16);
+            // Character.digit would accept uppercase and even full-width Unicode digits, which
+            // the sidecar's binascii.unhexlify rejects — the two rungs would then disagree about
+            // what a valid digest is. Accept exactly lowercase ASCII hex.
+            int hi = lowerHexValue(hexDigest.charAt(i * 2));
+            int lo = lowerHexValue(hexDigest.charAt(i * 2 + 1));
             if (hi < 0 || lo < 0) {
-                throw new IllegalArgumentException("digest is not hexadecimal at position " + (i * 2));
+                throw new IllegalArgumentException(
+                        "digest is not lowercase ASCII hexadecimal at position " + (i * 2));
             }
             out[i] = (byte) ((hi << 4) | lo);
         }
         return out;
+    }
+
+    private static int lowerHexValue(char c) {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        return -1;
     }
 
     static String sha256Hex(byte[] data) {

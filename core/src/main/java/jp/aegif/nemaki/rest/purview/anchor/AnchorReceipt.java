@@ -45,10 +45,15 @@ public final class AnchorReceipt {
     private final String proofDigest;
     private final Map<String, String> attributes;
     private final String failureReason;
+    private final boolean independentlyVerifiable;
+    private final AnchorKind.TimeSemantics timeSemantics;
 
     private AnchorReceipt(AnchorKind kind, AnchorStatus status, String anchoredDigest,
                           Instant attemptedAt, Instant anchoredAt, byte[] proof, String proofDigest,
-                          Map<String, String> attributes, String failureReason) {
+                          Map<String, String> attributes, String failureReason,
+                          boolean independentlyVerifiable, AnchorKind.TimeSemantics timeSemantics) {
+        this.independentlyVerifiable = independentlyVerifiable;
+        this.timeSemantics = timeSemantics;
         this.kind = kind;
         this.status = status;
         this.anchoredDigest = anchoredDigest;
@@ -61,11 +66,30 @@ public final class AnchorReceipt {
         this.failureReason = failureReason;
     }
 
+    /**
+     * A proof that is complete and checkable.
+     *
+     * @param independentlyVerifiable whether a third party can check this proof WITHOUT trusting
+     *        this deployment. Not implied by the destination: a self-hosted or untrusted RFC 3161
+     *        service is as operator-controlled as the catalog is, so the target establishes this
+     *        and says so here rather than the enum deciding for it (external review, 3.4).
+     * @param timeSemantics what the anchor's time may be read as. Per receipt because an RFC 3161
+     *        token that omits {@code accuracy} does not support the bidirectional claim its kind
+     *        normally would.
+     */
     public static AnchorReceipt confirmed(AnchorKind kind, String anchoredDigest, Instant attemptedAt,
                                           Instant anchoredAt, byte[] proof, String proofDigest,
-                                          Map<String, String> attributes) {
+                                          Map<String, String> attributes,
+                                          boolean independentlyVerifiable,
+                                          AnchorKind.TimeSemantics timeSemantics) {
+        if (proof == null || proof.length == 0) {
+            // A confirmed receipt with nothing to check is a contradiction — and exactly the
+            // shape an evidence report would happily render as "confirmed".
+            throw new IllegalArgumentException("a CONFIRMED receipt requires a non-empty proof");
+        }
         return new AnchorReceipt(kind, AnchorStatus.CONFIRMED, anchoredDigest, attemptedAt,
-                anchoredAt, proof, proofDigest, attributes, null);
+                anchoredAt, proof, proofDigest, attributes, null,
+                independentlyVerifiable, timeSemantics);
     }
 
     /**
@@ -76,18 +100,18 @@ public final class AnchorReceipt {
     public static AnchorReceipt pending(AnchorKind kind, String anchoredDigest, Instant attemptedAt,
                                         byte[] proof, String proofDigest, Map<String, String> attributes) {
         return new AnchorReceipt(kind, AnchorStatus.PENDING, anchoredDigest, attemptedAt,
-                null, proof, proofDigest, attributes, null);
+                null, proof, proofDigest, attributes, null, false, kind.timeSemantics());
     }
 
     public static AnchorReceipt failed(AnchorKind kind, String anchoredDigest, Instant attemptedAt,
                                        String failureReason) {
         return new AnchorReceipt(kind, AnchorStatus.FAILED, anchoredDigest, attemptedAt,
-                null, null, null, Map.of(), failureReason);
+                null, null, null, Map.of(), failureReason, false, kind.timeSemantics());
     }
 
     public static AnchorReceipt notConfigured(AnchorKind kind, String anchoredDigest) {
         return new AnchorReceipt(kind, AnchorStatus.NOT_CONFIGURED, anchoredDigest, null,
-                null, null, null, Map.of(), null);
+                null, null, null, Map.of(), null, false, kind.timeSemantics());
     }
 
     public AnchorKind kind() {
@@ -143,12 +167,28 @@ public final class AnchorReceipt {
     }
 
     /**
-     * Whether this receipt supports a claim of independence from the operator. Requires BOTH an
-     * independent target and a confirmed proof: a pending OpenTimestamps commitment is not yet
-     * evidence of anything, however independent its destination.
+     * What this anchor's time may be read as. Usually the kind's default, but an RFC 3161 token
+     * without {@code accuracy} is downgraded to {@link AnchorKind.TimeSemantics#UPPER_BOUND_ONLY}
+     * rather than claiming a precision the token never stated.
+     */
+    public AnchorKind.TimeSemantics timeSemantics() {
+        return timeSemantics;
+    }
+
+    /**
+     * Whether this receipt supports a claim of independence from the operator.
+     *
+     * <p>Three conditions, and the third is the one that was missing: the destination must be
+     * outside the organization, the proof must be confirmed, AND the target must have
+     * established that a third party can actually check it. An operator who points this at a
+     * time-stamp service they run themselves gets a CONFIRMED receipt from an "independent"
+     * KIND — so the kind alone can never be the test (external review, 3.4).
      */
     public boolean supportsIndependenceClaim() {
-        return kind.independentOfOperator() && status == AnchorStatus.CONFIRMED;
+        return kind.independentOfOperator()
+                && status == AnchorStatus.CONFIRMED
+                && independentlyVerifiable
+                && proof != null && proof.length > 0;
     }
 
     @Override

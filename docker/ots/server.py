@@ -107,8 +107,47 @@ def upgrade(proof_b64):
     }
 
 
+def info(proof_b64):
+    """Report what the proof itself says, WITHOUT a Bitcoin node.
+
+    `ots verify` needs a Bitcoin RPC endpoint (it calls getblockcount/getblockhash), which this
+    container deliberately does not ship: running a full node beside an ECM server is not a
+    reasonable deployment requirement, and checking Bitcoin is precisely the step a third-party
+    auditor performs for themselves — that is what makes rung 2 independent of us.
+
+    So completeness is determined offline from the proof's own structure: a complete proof
+    carries a BitcoinBlockHeaderAttestation naming a block height, an incomplete one still
+    carries PendingAttestation. Reporting the block height is a statement about the proof, not
+    about the blockchain, and the caller records it as exactly that.
+    """
+    proof = base64.b64decode(proof_b64, validate=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        ots_path = os.path.join(tmp, "digest.bin.ots")
+        with open(ots_path, "wb") as fh:
+            fh.write(proof)
+        code, out, err = _run(["ots", "info", ots_path], VERIFY_TIMEOUT_S)
+    text = (out.decode("utf-8", "replace") + "\n" + err).strip()
+    height = None
+    for line in text.splitlines():
+        if "BitcoinBlockHeaderAttestation" in line:
+            digits = "".join(ch for ch in line.split("BitcoinBlockHeaderAttestation")[1] if ch.isdigit())
+            if digits:
+                height = int(digits)
+    return {
+        "complete": height is not None,
+        "bitcoinBlockHeight": height,
+        "pending": "PendingAttestation" in text,
+        "exitCode": code,
+        "info": text[:4000],
+    }
+
+
 def verify(hex_digest, proof_b64):
-    """Verify a proof against a digest. This is what a third party runs, so we run it too."""
+    """Full verification against the Bitcoin chain.
+
+    REQUIRES a Bitcoin node: the client resolves the attested block through RPC. Without one it
+    reports failure, which is why completeness is decided by `info` above and this endpoint is
+    kept only for deployments that do run a node (and for the auditor's own procedure)."""
     raw = _digest_bytes(hex_digest)
     proof = base64.b64decode(proof_b64, validate=True)
     with tempfile.TemporaryDirectory() as tmp:
@@ -163,7 +202,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if length > MAX_BODY:
+            # A negative length would make rfile.read(-1) read to EOF, sailing past MAX_BODY and
+            # letting one slow client hold a thread while it feeds unbounded input.
+            if length < 0 or length > MAX_BODY:
                 self._send(413, {"error": "body too large"})
                 return
             request = json.loads(self.rfile.read(length) or b"{}")
@@ -172,6 +213,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, stamp(request.get("digest")))
             elif self.path == "/upgrade":
                 self._send(200, upgrade(request["proofBase64"]))
+            elif self.path == "/info":
+                self._send(200, info(request["proofBase64"]))
             elif self.path == "/verify":
                 self._send(200, verify(request.get("digest"), request["proofBase64"]))
             else:
