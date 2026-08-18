@@ -14,6 +14,9 @@ import org.slf4j.LoggerFactory;
  */
 public class IngestLineageEmitter {
 
+    /** See {@link #lastEmissionFailure()}. Thread-scoped: ingest is request-scoped. */
+    private static final ThreadLocal<String> lastFailure = new ThreadLocal<>();
+
     private static final Logger logger = LoggerFactory.getLogger(IngestLineageEmitter.class);
 
     /**
@@ -35,6 +38,7 @@ public class IngestLineageEmitter {
     public String emitLineageEvent(String repositoryId, String objectId, String targetFolderId,
                                    String documentName, String operationId,
                                    ConnectorDefinition connector, ExternalIngestRequest request) {
+        lastFailure.remove();
         try {
             // Two classifications on purpose. The v1 type participates in eventKey and keeps
             // its historical labels — including the CHAT_CONTEXT inversion — while the fact's
@@ -82,9 +86,30 @@ public class IngestLineageEmitter {
             }, "repo=" + repositoryId + " op=" + operationId + " type=" + factProcessType);
             return emitted ? v1EventId : null;
         } catch (Exception e) {
+            // Recorded, not swallowed. The document is already committed at this point, so a
+            // lost event means content exists with no provenance — the exact split P1-1 exists
+            // to close. Until the outbox lands, the least we owe the caller is the ability to
+            // tell "nothing to emit" from "we failed to emit", because a null cannot.
             logger.warn("Failed to emit lineage event for {}: {}", objectId, e.getMessage());
+            lastFailure.set(e.getClass().getSimpleName() + ": " + e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Why the most recent {@link #emitLineageEvent} on THIS thread produced no event id, or null
+     * when the last call succeeded or simply had nothing to emit.
+     *
+     * <p>Thread-scoped because ingest is request-scoped: a caller asks about the emission it just
+     * performed, and must not see another request's failure. Cleared on every call so a stale
+     * failure cannot be reported against a later, successful import.
+     *
+     * <p>This is a stop-gap with a deliberate boundary: it makes evidence loss VISIBLE, it does
+     * not make capture atomic. Atomicity is the outbox in P1-1(a) — content and evidence
+     * committed together or not at all — and this method disappears when that lands.
+     */
+    public String lastEmissionFailure() {
+        return lastFailure.get();
     }
 
     private java.util.List<String> lineageTargets() {

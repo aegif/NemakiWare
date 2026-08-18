@@ -1342,6 +1342,19 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             String lineageEventId = ingestLineageEmitter != null
                     ? ingestLineageEmitter.emitLineageEvent(repositoryId, objectId, targetFolderId, lineageDocumentName, lineageOperationId, connector, request)
                     : null;
+            // The document is committed by now. If provenance could not be recorded, the import
+            // is NOT wholly successful: content exists with no evidence of where it came from,
+            // and a caller that sees only success will never come back for it. Say so in the
+            // result rather than leaving it in a log line nobody reads (P1-1).
+            if (lineageEventId == null && ingestLineageEmitter != null) {
+                String emissionFailure = ingestLineageEmitter.lastEmissionFailure();
+                if (emissionFailure != null) {
+                    warnings.add("Provenance was NOT recorded for this document ("
+                            + emissionFailure + "). The content is stored, but no lineage event "
+                            + "exists for it — re-import or record it manually before relying on "
+                            + "this object's evidence.");
+                }
+            }
 
             logger.info("Canonical import completed: requestId={}, objectId={}, profile={}, connector={}",
                     requestId, objectId, profile.getProfileId(), connector.getConnectorId());
