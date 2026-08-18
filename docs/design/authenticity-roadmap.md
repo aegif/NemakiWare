@@ -7,7 +7,9 @@
 > **中長期的に真正性を判断できる状態**をつくるための基礎として NemakiWare を位置づける。
 
 本書は 2 部構成。**§2 = 破壊的なので 3.3 から外したが、やった方がよいこと** (この基盤の
-前提工事)、**§3 以降 = InterPARES 準拠ケイパビリティの作り込みとマーケティング**。
+前提工事)、**§3 以降 = InterPARES の要求に対応付けた (mapped to) ケイパビリティの作り込みと
+マーケティング**。**「InterPARES 準拠」とは書かない** — 認証制度が存在せず、原文の枠組み上も
+製品単体で満たすとは言えないため (§5 の禁じ手 / §9-1)。
 3.3.1 (非破壊パッチ) は別文書 [`v3.3.1-plan.md`](v3.3.1-plan.md)。
 
 **本書の現状記述は 2026-08-17 に v3.3.0 のコードで確認したもの** (file を併記)。
@@ -22,7 +24,7 @@
 | 要求事項 | InterPARES benchmark/baseline (A.1〜A.8 / B.1〜B.3) | ✗ 認証制度なし → 対応表 + 根拠の公開まで (§5 禁じ手) |
 | 機能モデル・語彙 | OAIS (ISO 14721 — **現行は 2025 年版**。参照時は版を固定)、現用層は ISO 15489 | ✗ 参照モデル → 語彙として採用 (§3.1) |
 | メタデータ | **METS** (構造) / **PREMIS** (保存イベント) / Dublin Core (記述) | △ スキーマ妥当性は機械検証可 |
-| パッケージング | **E-ARK CSIP / SIP** (DILCIS Board 維持。**版を固定する: CSIP 2.2.0 / PREMIS 3.0 / バリデータとルールセットの版込み** — 版なしの「validator pass」は再現不能)。BagIt (RFC 8493) は Archivematica 接続層の transfer 形式としてのみ使用 — **現行 RFC 8493 は serialization を規定しない**ので「bag の中に IP を封入して搬送」という語り方はしない (外部レビュー指摘) | **◯ 「準拠」を機械検証つきで名乗れる層** — バリデータによるパッケージ単位の適合性検証がある |
+| パッケージング | **E-ARK CSIP / SIP** (DILCIS Board 維持。**版を固定する: CSIP 2.2.0 / METS 1.12 / バリデータとルールセットの版込み** (CSIP が規定するのは「PREMIS in METS Guidelines 2017 年版」であって PREMIS の版番号ではない — §9-3) — 版なしの「validator pass」は再現不能)。BagIt (RFC 8493) は Archivematica 接続層の transfer 形式としてのみ使用 — **現行 RFC 8493 は serialization を規定しない**ので「bag の中に IP を封入して搬送」という語り方はしない (外部レビュー指摘) | **◯ 「準拠」を機械検証つきで名乗れる層** — バリデータによるパッケージ単位の適合性検証がある |
 | 完全性・時刻 | SHA-256 / RFC 3161 (**TSA プロトコルであって「認定タイムスタンプ」を自動的には意味しない**) / ERS (RFC 4998 = ASN.1/CMS、RFC 6283 = XMLERS — **積層ではなく表現形式の選択肢**) / OpenTimestamps (**デファクトであり正式規格ではない**と常に付記) | ◯ 暗号学的に検証可 |
 | 組織認証 | CoreTrustSeal / ISO 16363 | ✗ 対象は運用組織 → 顧客の取得支援 (§3.1) |
 
@@ -130,14 +132,28 @@ BagIt / OAIS 型パッケージ (`bagit|oais` で 0 件)、定期 fixity 再検�
 ## §3 InterPARES 要求事項マッピング (作り込みの背骨)
 
 InterPARES (International Research on Permanent Authentic Records in Electronic
-Systems) の Authenticity Task Force が定義した **benchmark requirements (作成者側の
-真正性推定の根拠 A.1〜A.8)** と **baseline requirements (保存者側の真正な複製の根拠
-B.1〜B.3)** を、機能→根拠→検証手順の管理表として採用する。
+Systems) の Authenticity Task Force が定義した **benchmark requirements (A.1〜A.8)** と
+**baseline requirements (B.1〜B.3)** を、機能→根拠→検証手順の管理表として採用する。
 
-> **P0 タスク**: 下表の要求事項名は概要の言い換え。**2026-08-17 の外部レビュー (原典
-> ip1_authenticity_requirements.pdf と照合) の訂正を反映済み**だが、確定は P0-1 の原典確認
-> をもって行う。成果物は**サブ要求 (A.1.a 等) まで展開し、Creator / NemakiWare / Preserver
-> の責務を分離した公開マッピング表 + 各行の検証手順** (§5)。「準拠」を名乗る認証制度は無い。
+**両者の違いは主体ではなく充足様式である** (§9-1 で原典を確認。以前ここに書いていた
+「作成者側 / 保存者側」という説明は不正確だった):
+
+- **Benchmark (A) は累積的** — 満たした数と充足度が高いほど真正性の**推定が強まる**。
+  部分適合に意味がある。ただし**評価者は常に preserver** で、実施主体 (creator) と
+  評価主体は分離している。
+- **Baseline (B) は全件必須** — 全部満たさなければ preserver はコピーの真正性を attest
+  **できない**。**「B を 80% 満たす」は原文の枠組み上そもそも成立しない主張**なので、
+  適合度の書き方を A 系と B 系で分ける。
+- 責務は固定ではない: **A.5 だけが Creator 専属**で、**A.2/A.3/A.4/A.6 は Preserver にも
+  掛かる**。**A.6/A.7/A.8 は条件付き要求**である。
+
+> **P0 タスク**: 下表の要求事項名は概要の言い換え。**P0-1 の原典確認は完了した (§9-1)**。
+> **その結果、下表はまだ原典に追随できていない**: (a) **サブ要求が存在するのは A.1 と
+> B.1・B.2 だけ**で A.2〜A.8・B.3 は各 1 文 (「A.1.a 等まで一律展開」という当初計画は
+> そもそも成立しない)、(b) A.6/A.7/A.8 が条件付き要求であることが表に出ていない、
+> (c) 責務境界列が未追加。**表の書き直しは 3.4 の実装着手前に行う** (材料は §9-1)。
+> 成果物は Creator / NemakiWare / Preserver の責務を分離した公開マッピング表 +
+> 各行の検証手順 (§5)。「準拠」を名乗る認証制度は無い。
 
 | 要求 (概要の言い換え) | 現状 (v3.3.0) | ギャップ → 計画 (§4) |
 |---|---|---|
@@ -226,10 +242,10 @@ vocabulary に**クロスウォークで固定**する — `capture` / `fixity c
 
 | ID | 何を | 具体 |
 |---|---|---|
-| **P3-1** | **E-ARK SIP エクスポート** (Producer の一次成果物) | **E-ARK SIP (CSIP 2.2.0 準拠: METS 構造記述 + PREMIS 3.0)** — 使用する仕様版・profile・バリデータとルールセットの**版を固定して宣言**する。journal イベント → PREMIS イベント (クロスウォーク表で語彙を確定)、チャット文脈 → 記述メタデータ。evidence package (`.ots`・TSA トークン含む) は CSIP 規約に従う置き場所に同梱 (正位置は着手時に要確認)。既存 `ImportExportResource` を土台に。**出力はバリデータ通過を CI テストとして固定** (§6)。AIP/DIP の生成は「軽量 Archive」責務を定義してから別途判断 (§3.1)。BagIt は **Archivematica 接続層の transfer 形式としてのみ** (P3-4) |
+| **P3-1** | **E-ARK SIP エクスポート** (Producer の一次成果物) | **E-ARK SIP (CSIP 2.2.0 準拠: METS 1.12 構造記述 + PREMIS in METS Guidelines 2017)** — 使用する仕様版・profile・バリデータとルールセットの**版を固定して宣言**する。journal イベント → PREMIS イベント (クロスウォーク表で語彙を確定)、チャット文脈 → 記述メタデータ。evidence package (`.ots`・TSA トークン含む) は CSIP 規約に従う置き場所に同梱 (正位置は着手時に要確認)。既存 `ImportExportResource` を土台に。**出力はバリデータ通過を CI テストとして固定** (§6)。AIP/DIP の生成は「軽量 Archive」責務を定義してから別途判断 (§3.1)。BagIt は **Archivematica 接続層の transfer 形式としてのみ** (P3-4) |
 | **P3-2** | 保存フォーマット複製の証跡化 | PDF/A 変換を「複製イベント」として journal に記録 — B.2 の要求どおり **hash だけでなく日時・責任者・取得記録との関係・影響・不完全性の開示**まで。**現行 jodconverter は PDF/A profile の指定・検証を持たない** (rendition 基盤のみ) — PDF/A 出力と検証 (veraPDF 等) は新規要素。**これは利便コピーであって保存計画の代替ではない** (下記の非目標) |
 | **P3-3** | 処分証跡 | retention による削除を disposition イベントとして journal + Atlas に残す (何を・いつ・どの規則で) |
-| **P3-4** | **保存システムへの移管 (custody transfer プロトコル)** | 「双方向参照」は時系列で成立させる — **SIP 作成時点で先方 AIP ID は存在しない**ので、SIP には連鎖抜粋を入れ、先方の受領・AIP 生成**後**に受領証を journal へ追記して次アンカーで凍結する。状態機械で管理: `PACKAGE_CREATED → SENT → RECEIVED → VALIDATED → INGEST_ACCEPTED → AIP_CREATED → RECEIPT_VERIFIED → CUSTODY_TRANSFERRED → LOCAL_DISPOSITION`。受領証の中身は AIP checksum だけでなく **署名付き受領・submission ID・AIP ID・対象 SIP digest・検証結果・先方 agent** まで。失敗・再送・重複取込・部分受入・先方 AIP 再生成の扱いを submission agreement として明文化。**RODA は E-ARK 対応** (受入 profile/版の互換は要確認)、**Archivematica は BagIt transfer 対応が確認済み** — E-ARK 直接取込の対応度は着手時に要確認、不足なら接続層で変換 (一次形式は変えない) |
+| **P3-4** | **保存システムへの移管 (custody transfer プロトコル)** | 「双方向参照」は時系列で成立させる — **SIP 作成時点で先方 AIP ID は存在しない**ので、SIP には連鎖抜粋を入れ、先方の受領・AIP 生成**後**に受領証を journal へ追記して次アンカーで凍結する。状態機械で管理: `PACKAGE_CREATED → SENT → RECEIVED → VALIDATED → INGEST_ACCEPTED → AIP_CREATED → RECEIPT_VERIFIED → CUSTODY_TRANSFERRED → LOCAL_DISPOSITION`。受領証の中身は AIP checksum だけでなく **署名付き受領・submission ID・AIP ID・対象 SIP digest・検証結果・先方 agent** まで。失敗・再送・重複取込・部分受入・先方 AIP 再生成の扱いを submission agreement として明文化。**RODA は E-ARK 対応** (公式に「E-ARK SIP/AIP/DIP と 100% compatible」。ただし**受入 profile/版の対応表は未確認**で相互運用の保証には実機受入試験が要る — §9-3)。**Archivematica は E-ARK SIP を直接取り込めないことが確定** (transfer type は 8 種のみで E-ARK 相当が無い — §9-4) → **BagIt (`zipped bag`) に包む接続層が必須**。API 仕様と落とし穴は §9-4 |
 
 #### Phase 3 の前提モデル: リテンション終端の 3 つの出口 (2026-08-17 オーナー議論)
 
@@ -295,10 +311,14 @@ planning) は**作らない**。Archivematica カテゴリの本領であり、�
 切らさない Producer」であること。
 
 **実装ノート (E-ARK パッケージ生成)**: RODA エコシステムの Java ライブラリ
-**keeps/commons-ip** (CSIP の生成 + 検証) が第一候補。ただし **Maven Central には無い**
-(2026-08-17 に検索して確認 — 出てくるのは無関係の同名ライブラリのみ)。GitHub 配布のため
-入手経路 (GitHub Packages / self-build — OpenCMIS で確立済みのパターン) とライセンス・
-成熟度の確認が P0。不採用の場合の代替は METS/PREMIS の直接生成 (JAXB — SOAP 経路で
+**keeps/commons-ip** (CSIP の生成 + 検証) が第一候補。**P0-5 で調査完了 (§9-3)**:
+LGPL-3.0 / 最新 2.12.0 (2026-08-14) / 保守は活発 / Java 17+ / CSIP 2.0.4・2.1.0・**2.2.0** 対応。
+**入手経路が最大の制約** — Maven Central には無く、`distributionManagement` は GitHub
+Packages 単独で**公開パッケージでも匿名 GET は 401**。`<dependency>` で引くと
+**fork PR の CI がシークレット不在で必ず落ちる**。→ **CI 検証は GitHub Release の
+CLI fat-jar (匿名取得可) を CLI として叩く**。ライブラリとして生成に使う側だけ
+GitHub Packages 認証を使うか社内ミラーに置く。**Python 版 eark-validator は
+CSIP 2.2.0 ルールセット未同梱 + 偽陽性 issue 多数でゲートに使えない**。不採用の場合の代替は METS/PREMIS の直接生成 (JAXB — SOAP 経路で
 保守している JAXB 資産がそのまま効く)。いずれでも**公式/参照バリデータでの検証を CI に
 固定する**方針は変わらない。
 
@@ -391,18 +411,23 @@ planning) は**作らない**。Archivematica カテゴリの本領であり、�
 受入 API も先行調査済み (§9-4)。残るは 4 (P1-4 モック)・6 (法務確認)。
 
 
-1. ✅ **InterPARES 原典の条文確認** (完了 — §9-1) — §3 の表を**サブ要求 (A.1.a 等) まで展開し、
-   Creator / NemakiWare / Preserver の責務境界列を付けて**確定 (最初の 1 週間の仕事)
-2. ✅ **`lineage.mode=journaled` の実測** (bedroom 規模のみ完了 — §9-2。10 万規模は未実測) — 書き込みオーバーヘッドと journal 成長率
-   (bedroom 規模 + 10 万規模)。2-3 と P1-1 のコスト根拠
-3. ✅ **アンカー実装調査** (完了 — §9-5) — OpenTimestamps の Java クライアント
-   (`com.eternitywall:java-opentimestamps` — **Central に 1.20 まで存在することは確認済み**、
-   残るは保守状況)。nonce 付き commitment の踏襲。認定 TSA / フリー TSA の候補・コスト・
-   可用性、TSA policy OID / 失効情報の保存設計
+1. ✅ **InterPARES 原典の条文確認** (完了 — §9-1)。**ただし §3 の表への反映は未了** —
+   原典に細目が無い箇所まで一律展開する当初計画は成立しないと判明したため、
+   表の書き直し (条件付き要求の明示 + 責務境界列) を実装着手前の残作業として残す
+2. ✅ **`lineage.mode=journaled` の実測** (bedroom 規模のみ完了 — §9-2)。
+   **+12.3% (ingest 経路・targets 空・bedroom 規模)** / journal 1 event = 生 JSON 約 755B。
+   **10 万規模は未実測**。なお **通常の CMIS 作成経路は lineage を出さない**ことも判明
+3. ✅ **アンカー実装調査** (完了 — §9-5)。結論: **java-opentimestamps は事実上停止**
+   (master 2021-05-05 / Central 1.20 が最後) で、**本当の障害は bitcoinj 0.14.7 経由の
+   依存の毒性** (H2 1.3.167 の RCE 等) かつ **bitcoinj は本体が import するため単純
+   exclude 不可**。段 3 (TSA) は **BouncyCastle が既に WAR にある**ので追加依存ゼロで
+   始められる (ただし bcprov/bcpkix の版ずれと `validate()` が拒否応答を素通しする件に
+   注意)。nonce = `SHA256(D‖random16)` は本書の記述どおりで正しかった。認定 TSA 6 業務と
+   コスト試算の裏付けも §9-5
 4. **P1-4 のモック** — 真正性レポートの見た目 (JSON スキーマ + PDF 1 枚) を先に作り、
    オーナーとマーケ観点でレビューしてから実装に入る
 5. ✅ **E-ARK 実装調査** (完了 — §9-3) — keeps/commons-ip の入手経路・ライセンス・成熟度
-   (Central に無いことは確認済み)。**CSIP 2.2.0 / E-ARK SIP profile / PREMIS 3.0 /
+   (Central に無いことは確認済み)。**CSIP 2.2.0 / E-ARK SIP profile / METS 1.12 /
    バリデータとルールセットの版を固定**して宣言する形を決める
 6. **消去要求との調停の法務確認** — 個人情報保護と保存義務の優先順位、電帳法の
    経路別要件 (電子取引 / スキャナ保存) を国税庁一問一答で確定
