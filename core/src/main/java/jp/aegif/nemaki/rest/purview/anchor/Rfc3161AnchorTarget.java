@@ -74,11 +74,25 @@ import org.slf4j.LoggerFactory;
  *       captured and what we did not, rather than implying a verification we did not perform.</li>
  * </ol>
  *
- * <p><b>What we deliberately do not do here:</b> verify the signature, build a certificate path,
- * or fetch CRL/OCSP. Those belong to verification, not to anchoring, and pretending to have done
- * them at issue time would be the exact overclaim the evidence report is built to avoid. What we
- * DO record is {@code revocationDataCapturedAt=never}, because revocation data cannot be
- * reconstructed after the fact and its absence has to be visible rather than assumed.
+ * <h3>What is and is not established here</h3>
+ *
+ * <p><b>Done:</b> the CMS signature over the TSTInfo is verified against the certificate the
+ * token carries. Without this, anyone able to answer the configured URL could return a token
+ * with the right nonce and imprint and have it recorded as confirmed evidence — {@code
+ * validate()} would accept it.
+ *
+ * <p><b>Not done:</b> PKIX path validation and revocation checking. When a trust anchor is
+ * configured we check that the signer's certificate is signed by it and currently valid, which
+ * is an issuer check, NOT path validation — no intermediates, no basicConstraints, no policy,
+ * no CRL/OCSP. The receipt says so in {@code trustAnchorCheck} rather than letting a reader
+ * assume more. {@code revocationDataCapturedAt=never} is recorded because revocation data cannot
+ * be reconstructed after the fact and its absence has to be visible rather than assumed.
+ *
+ * <p><b>Not derivable at all:</b> whether the TSA is organizationally independent of this
+ * deployment. An operator can run their own TSA and configure its certificate as the anchor;
+ * every cryptographic check then passes. Independence is therefore taken from an explicit
+ * operator declaration ({@code accreditation}) combined with the chain check, and the receipt
+ * marks it as declared.
  */
 public class Rfc3161AnchorTarget implements AnchorTarget {
 
@@ -193,6 +207,11 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
                         "TSA token signature did not verify: " + check.detail);
             }
 
+            // Independence is a fact about the WORLD, not about cryptography: an operator can
+            // configure their own self-signed TSA as its own trust anchor and every
+            // cryptographic test passes. It is therefore declared, never inferred.
+            boolean operatorDeclaredThirdParty = !"NONE".equals(accreditation);
+
             Map<String, String> attrs = new LinkedHashMap<>();
             attrs.put("tsaUrl", tsaUrl);
             attrs.put("accreditation", accreditation);
@@ -208,6 +227,9 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             attrs.put("signatureVerified", "true");
             attrs.put("signerTrustAnchorConfigured", String.valueOf(trustAnchor != null));
             attrs.put("signerChainsToTrustAnchor", String.valueOf(check.chainsToAnchor));
+            // Named to stop a reader mistaking a configuration value for a verified property.
+            attrs.put("thirdPartyStatusIsOperatorDeclared", String.valueOf(operatorDeclaredThirdParty));
+            attrs.put("trustAnchorCheck", "issuer signature + validity only; NOT PKIX path validation");
             // Not a TODO: revocation data genuinely cannot be captured retroactively, so its
             // absence is part of the evidence rather than a gap to paper over.
             attrs.put("revocationDataCapturedAt", "never");
@@ -215,10 +237,15 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             logger.info("RFC 3161 token obtained from {} (serial {}, genTime {})",
                     tsaUrl, info.getSerialNumber(), info.getGenTime().toInstant());
 
-            // Independence requires somebody ELSE to have issued the token. A verified signature
-            // by a certificate the responder itself supplied does not establish that, so without
-            // a configured trust anchor this is confirmed evidence that is NOT independent.
-            boolean independentlyVerifiable = check.chainsToAnchor;
+            // Independence is a fact about the WORLD, not about cryptography, and no amount of
+            // certificate checking can establish it: an operator can configure their own
+            // self-signed TSA as its own trust anchor and every cryptographic test passes. So it
+            // is never inferred. The operator must declare the TSA an accredited third party
+            // (accreditation != NONE), AND the signature must verify, AND the signer must chain
+            // to a separately configured anchor. Even then the evidence report presents this as
+            // DECLARED rather than proven (external review, 3.4).
+            boolean independentlyVerifiable =
+                    check.chainsToAnchor && operatorDeclaredThirdParty;
 
             // An absent accuracy means the token states no precision, so it cannot carry the
             // bidirectional claim its kind normally does — it degrades to an upper bound.

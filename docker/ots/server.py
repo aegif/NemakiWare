@@ -107,38 +107,61 @@ def upgrade(proof_b64):
     }
 
 
-def info(proof_b64):
-    """Report what the proof itself says, WITHOUT a Bitcoin node.
+def info(hex_digest, proof_b64):
+    """Report what the proof says about a SPECIFIC digest, using the library's object model.
 
-    `ots verify` needs a Bitcoin RPC endpoint (it calls getblockcount/getblockhash), which this
-    container deliberately does not ship: running a full node beside an ECM server is not a
-    reasonable deployment requirement, and checking Bitcoin is precisely the step a third-party
-    auditor performs for themselves — that is what makes rung 2 independent of us.
+    Two things this must not do, both learned the hard way (external review, 3.4):
 
-    So completeness is determined offline from the proof's own structure: a complete proof
-    carries a BitcoinBlockHeaderAttestation naming a block height, an incomplete one still
-    carries PendingAttestation. Reporting the block height is a statement about the proof, not
-    about the blockchain, and the caller records it as exactly that.
+    1. **Parse `ots info` text.** The rendering includes calendar URIs verbatim, so a crafted
+       PendingAttestation URI containing the substring "BitcoinBlockHeaderAttestation(921447)"
+       would make a text scan report a complete proof. Attestations are read from the parsed
+       timestamp instead.
+    2. **Ignore which digest the proof is for.** A perfectly valid, complete proof for some
+       OTHER document says nothing about ours. The proof's own file digest is compared with the
+       digest we are asking about, and a mismatch is reported as such.
+
+    Note what "complete" does and does not mean: the proof CONTAINS a Bitcoin attestation naming
+    a block. It has NOT been checked against the blockchain — that needs a node, and it is the
+    caller's job to keep those two facts apart.
     """
+    # `ots stamp` hashes the FILE we hand it, and that file contains the raw digest bytes, so
+    # the proof commits to SHA256(D) rather than to D. That is still a commitment to D — one
+    # extra layer — but the binding check has to be made at the layer the proof actually uses.
+    import hashlib
+    expected = hashlib.sha256(_digest_bytes(hex_digest)).digest()
     proof = base64.b64decode(proof_b64, validate=True)
-    with tempfile.TemporaryDirectory() as tmp:
-        ots_path = os.path.join(tmp, "digest.bin.ots")
-        with open(ots_path, "wb") as fh:
-            fh.write(proof)
-        code, out, err = _run(["ots", "info", ots_path], VERIFY_TIMEOUT_S)
-    text = (out.decode("utf-8", "replace") + "\n" + err).strip()
-    height = None
-    for line in text.splitlines():
-        if "BitcoinBlockHeaderAttestation" in line:
-            digits = "".join(ch for ch in line.split("BitcoinBlockHeaderAttestation")[1] if ch.isdigit())
-            if digits:
-                height = int(digits)
+
+    from opentimestamps.core.serialize import BytesDeserializationContext
+    from opentimestamps.core.timestamp import DetachedTimestampFile
+    from opentimestamps.core.notary import BitcoinBlockHeaderAttestation, PendingAttestation
+
+    try:
+        detached = DetachedTimestampFile.deserialize(BytesDeserializationContext(proof))
+    except Exception as exc:  # noqa: BLE001 - a malformed proof is an answer, not a crash
+        return {"complete": False, "error": f"unreadable proof: {type(exc).__name__}: {exc}"}
+
+    if detached.file_digest != expected:
+        return {
+            "complete": False,
+            "digestMatches": False,
+            "error": "this proof is for a different digest",
+        }
+
+    heights, pending = [], False
+    for _msg, attestation in detached.timestamp.all_attestations():
+        if isinstance(attestation, BitcoinBlockHeaderAttestation):
+            heights.append(int(attestation.height))
+        elif isinstance(attestation, PendingAttestation):
+            pending = True
+
     return {
-        "complete": height is not None,
-        "bitcoinBlockHeight": height,
-        "pending": "PendingAttestation" in text,
-        "exitCode": code,
-        "info": text[:4000],
+        "complete": bool(heights),
+        "digestMatches": True,
+        "bitcoinBlockHeight": min(heights) if heights else None,
+        "bitcoinAttestationCount": len(heights),
+        "pending": pending,
+        # Said explicitly so no caller can mistake structure for verification.
+        "chainVerified": False,
     }
 
 
@@ -214,7 +237,7 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/upgrade":
                 self._send(200, upgrade(request["proofBase64"]))
             elif self.path == "/info":
-                self._send(200, info(request["proofBase64"]))
+                self._send(200, info(request.get("digest"), request["proofBase64"]))
             elif self.path == "/verify":
                 self._send(200, verify(request.get("digest"), request["proofBase64"]))
             else:

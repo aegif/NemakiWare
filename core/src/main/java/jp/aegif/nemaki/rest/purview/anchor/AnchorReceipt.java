@@ -100,18 +100,18 @@ public final class AnchorReceipt {
     public static AnchorReceipt pending(AnchorKind kind, String anchoredDigest, Instant attemptedAt,
                                         byte[] proof, String proofDigest, Map<String, String> attributes) {
         return new AnchorReceipt(kind, AnchorStatus.PENDING, anchoredDigest, attemptedAt,
-                null, proof, proofDigest, attributes, null, false, kind.timeSemantics());
+                null, proof, proofDigest, attributes, null, false, AnchorKind.TimeSemantics.NOT_A_TIME_PROOF);
     }
 
     public static AnchorReceipt failed(AnchorKind kind, String anchoredDigest, Instant attemptedAt,
                                        String failureReason) {
         return new AnchorReceipt(kind, AnchorStatus.FAILED, anchoredDigest, attemptedAt,
-                null, null, null, Map.of(), failureReason, false, kind.timeSemantics());
+                null, null, null, Map.of(), failureReason, false, AnchorKind.TimeSemantics.NOT_A_TIME_PROOF);
     }
 
     public static AnchorReceipt notConfigured(AnchorKind kind, String anchoredDigest) {
         return new AnchorReceipt(kind, AnchorStatus.NOT_CONFIGURED, anchoredDigest, null,
-                null, null, null, Map.of(), null, false, kind.timeSemantics());
+                null, null, null, Map.of(), null, false, AnchorKind.TimeSemantics.NOT_A_TIME_PROOF);
     }
 
     public AnchorKind kind() {
@@ -172,6 +172,10 @@ public final class AnchorReceipt {
      * rather than claiming a precision the token never stated.
      */
     public AnchorKind.TimeSemantics timeSemantics() {
+        // Non-confirmed receipts carry NOT_A_TIME_PROOF regardless of kind: a failed or pending
+        // RFC 3161 receipt has no token, no time and no accuracy, so reporting its kind's usual
+        // BIDIRECTIONAL_WITHIN_ACCURACY would describe a proof that does not exist
+        // (external review, 3.4).
         return timeSemantics;
     }
 
