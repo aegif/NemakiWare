@@ -387,17 +387,21 @@ planning) は**作らない**。Archivematica カテゴリの本領であり、�
 
 ## §8 直近アクション (P0)
 
-1. **InterPARES 原典の条文確認** — §3 の表を**サブ要求 (A.1.a 等) まで展開し、
+**進捗 (2026-08-18)**: 1・2・3・5 は完了 (結果は §9)。P3-4 の前提だった Archivematica の
+受入 API も先行調査済み (§9-4)。残るは 4 (P1-4 モック)・6 (法務確認)。
+
+
+1. ✅ **InterPARES 原典の条文確認** (完了 — §9-1) — §3 の表を**サブ要求 (A.1.a 等) まで展開し、
    Creator / NemakiWare / Preserver の責務境界列を付けて**確定 (最初の 1 週間の仕事)
-2. **`lineage.mode=journaled` の実測** — 書き込みオーバーヘッドと journal 成長率
+2. ✅ **`lineage.mode=journaled` の実測** (bedroom 規模のみ完了 — §9-2。10 万規模は未実測) — 書き込みオーバーヘッドと journal 成長率
    (bedroom 規模 + 10 万規模)。2-3 と P1-1 のコスト根拠
-3. **アンカー実装調査** — OpenTimestamps の Java クライアント
+3. ✅ **アンカー実装調査** (完了 — §9-5) — OpenTimestamps の Java クライアント
    (`com.eternitywall:java-opentimestamps` — **Central に 1.20 まで存在することは確認済み**、
    残るは保守状況)。nonce 付き commitment の踏襲。認定 TSA / フリー TSA の候補・コスト・
    可用性、TSA policy OID / 失効情報の保存設計
 4. **P1-4 のモック** — 真正性レポートの見た目 (JSON スキーマ + PDF 1 枚) を先に作り、
    オーナーとマーケ観点でレビューしてから実装に入る
-5. **E-ARK 実装調査** — keeps/commons-ip の入手経路・ライセンス・成熟度
+5. ✅ **E-ARK 実装調査** (完了 — §9-3) — keeps/commons-ip の入手経路・ライセンス・成熟度
    (Central に無いことは確認済み)。**CSIP 2.2.0 / E-ARK SIP profile / PREMIS 3.0 /
    バリデータとルールセットの版を固定**して宣言する形を決める
 6. **消去要求との調停の法務確認** — 個人情報保護と保存義務の優先順位、電帳法の
@@ -422,3 +426,356 @@ planning) は**作らない**。Archivematica カテゴリの本領であり、�
   消去時の破棄
 - **CoreTrustSeal 支援の範囲**: 機能チェックリスト外 (組織統治・財務・designated
   community・承継計画・DR) は**顧客組織側の課題**と明示する
+
+---
+
+## §9 P0 調査結果 (2026-08-18)
+
+一次資料に当たって確定した事実を記録する。**未確認は未確認と書く。**
+
+### §9-1. InterPARES 原典 (P0-1)
+
+**正典**: Authenticity Task Force, "Appendix 2: Requirements for Assessing and Maintaining
+the Authenticity of Electronic Records", in *The Long-term Preservation of Authentic
+Electronic Records: Findings of the InterPARES Project* (Duranti ed., Archilab, 2005),
+pp.204-219。文書本体の日付は **2002 年 3 月**。
+<https://www.interpares.org/display_file/interpares_book_k_app02.pdf>
+
+**前提の訂正 2 件** (これまでの本書の書き方が誤っていた):
+
+1. **これは InterPARES 1 の book の Appendix 2** であって IP2 のものではない。IP2 側の
+   再録は Preserver Guidelines 冊子で、そちらは自ら "abridged version" と称する**要約版**
+   なので正典に使わない。
+2. **サブ要求が存在するのは A.1 と B.1・B.2 だけ。** A.2〜A.8 と B.3 に細目は無く、
+   各 1 文の要求である。「A.1.a 等が全体にある」という想定で表を作ると破綻する。
+   全数は A.1 + 配下 11 項目 + A.2〜A.8 の 7 項目 / B.1 (+3) + B.2 (+4) + B.3。
+
+**Benchmark と Baseline の違いは主体ではなく充足様式** (原典 p.3 に明記):
+
+| | 充足様式 | 意味 |
+|---|---|---|
+| Benchmark (A) | **累積的 (cumulative)** | 満たした数と充足度が高いほど真正性の**推定が強まる**。部分適合に意味がある |
+| Baseline (B) | **全件必須 (all-or-nothing)** | 全部満たさなければ preserver はコピーの真正性を attest **できない**。部分適合は無意味 |
+
+→ **マッピング表の適合度表記を A 系と B 系で分けること。** 「B を 80% 満たす」は原文の
+枠組み上、成立しない主張。
+
+**責務境界** (原典 B.1 Commentary p.10 / IP2 Preserver Guidelines §1.5):
+
+- **A.5 (documentary form の確立) だけが Creator 専属。**
+- **A.2 (アクセス権限)・A.3 (喪失/破損対策)・A.4 (媒体・技術対策)・A.6 (authentication) は
+  Creator と Preserver の双方に掛かる。** preserver は移管時に A.1 属性と A.8 文書の
+  引継ぎを**検証**し、自らの保管下で A.2/A.3/A.4 を確立・実装・**定期監視**する。
+- **A.6 / A.7 / A.8 は条件付き要求** (法制度が authentication を要求する場合 / 複数コピーが
+  存在する場合 / active→semi-active 移行がある場合)。無条件の A.2〜A.5 と同列に置かない。
+- Benchmark の**評価者は常に preserver**。実施主体 (creator) と評価主体が分離している。
+
+**実装上の含意**:
+
+- A.1 の「属性と記録の link」は**概念的でよい** (原典 Commentary p.8: record profile でも
+  topic map でも可)。CMIS プロパティ + 二次索引で満たす余地がある。ただし
+  「**エクスポート・migrate・移管のときも属性が記録に結び付いたまま利用可能**」を要求して
+  いるので、**エクスポート経路まで設計しないと落ちる**。
+- A.2 の「実効的な実装」は**監査証跡による監視**を含む (閲覧を除く全相互作用の記録)。
+- ATF Report p.27-28: InterPARES 要求は**自動化手段と手作業の組合せ**を前提にしている。
+  → **製品単体で Benchmark を「満たす」とは原文の枠組み上そもそも言えない。**
+  表では「製品が寄与しうる部分」と「導入組織の手続に残る部分」を必ず分ける。
+
+**認証制度**: 組織・製品が準拠を名乗る公式な認証/適合性評価の仕組みは**存在しない**。
+原典で certify が使われるのは「preserver が記録のコピーを certify する」意味のみ。
+ATF Report は他標準 (ISO 15489 / DoD 5015.2 / MoReq) との対応付けでも「条項 X を満たせば
+要求 Y をあらゆる点で満たす」という言い方を**意図的に回避**したと明記し、対応は
+「一般的な類似」に留まるとしている。IP2 は監査枠組みとして外部の NARA/RLG チェックリスト
+(後の TRAC → ISO 16363) を参照させており、自ら認証者として振る舞っていない。
+→ **正しい言い方は「Benchmark/Baseline Requirements に対応付けた (mapped to)」
+「に依拠して設計した (informed by)」。**「InterPARES 準拠」「InterPARES 認証」は不可
+(§5 の禁じ手と一致)。
+
+**未確認**: 「認証を行わない」と明示否認した公式文言は見つかっていない (上記は用法と
+外部委譲からの推論)。書籍実物との頁対照も未検証。
+
+### §9-2. `lineage.mode=journaled` の実測 (P0-2)
+
+**環境**: ローカル nb33 (v3.3.1 WAR、CouchDB 3.3.3 / Solr 10 / TEI)、bedroom。
+
+**まず捕獲経路の事実 — これを知らないと計測を誤る**:
+
+- **通常の CMIS 作成経路 (`createDocument` 等) は lineage を一切出さない。** emitter を
+  呼ぶのは **ingest 経路** (`CanonicalImportServiceImpl` → `IngestLineageEmitter`) と
+  retention / import-export / cloud-drive / archive の各経路だけ。
+  `ObjectServiceImpl` / `ContentServiceImpl` に emit は無い (`invalidateLineagePurge` は
+  purge 台帳の話で別物)。
+- 最初 CMIS 作成で計測して「journaled にしても journal が 1 件も増えない」ことに気づき、
+  経路を `POST /api/v1/repo/{repo}/ingest` に変更して初めて実測になった。
+  **「モードを有効にした」だけでは何も journal されない。**
+
+**交絡の発覚 (A-B-A)**: disabled → journaled の単純前後比較では **+38%** に見えたが、
+同一条件で disabled をもう一度走らせると journaled とほぼ同じ値になった。
+
+| 順序 | モード | mean |
+|---|---|---|
+| 1 | disabled | 165.7ms |
+| 2 | journaled | 228.5ms |
+| 3 | **disabled (再)** | **225.0ms** |
+
+→ 差の大半は**リポジトリ肥大による単調ドリフト**。前後比較は使えない。
+
+**交互計測 (8 ラウンド × 25 件 ×2 モード、各 n=200)** — ドリフトを両条件に等しく載せる:
+
+| モード | mean | p50 | p95 |
+|---|---|---|---|
+| disabled | 268.5ms | 263.6ms | 294.9ms |
+| journaled | 301.5ms | 298.7ms | 339.4ms |
+| **差** | **+33.0ms (+12.3%)** | +35.1ms | +44.5ms |
+
+**journal 成長率** (ingest 1 件 = journal 1 文書):
+
+| 指標 | 値 | 備考 |
+|---|---|---|
+| 生 JSON | **約 755 B/event** | 実イベント文書を直接測定 |
+| CouchDB `active` | 約 1.0 KB/doc | 圧縮後の実効サイズ |
+| CouchDB `file` | **約 15 KB/doc** | 未圧縮の占有。**定期 compaction が要る** |
+
+**未実測**: 10 万規模 / 長期運用時の journal 成長と purge の効き / direct モードとの比較 /
+`lineage.targets` を設定した場合 (今回は targets 空 = 投影先なしでの journal 書き込みのみ)。
+**この +12.3% は「ingest 経路・targets 空・bedroom 規模」という条件付きの数字**である。
+
+### §9-3. E-ARK 実装調査 (P0-5)
+
+**仕様の現行版** (確認済み): **CSIP 2.2.0 / E-ARK SIP 2.2.0 (ともに 2024-05-17)**。
+METS は **1.12** 準拠を要求。2.2.0 以降のリリースは無く約 2 年安定。
+
+**本書の記述の訂正**: これまで「PREMIS 3.0」と書いてきたが、**CSIP 本文が規定しているのは
+「PREMIS in METS Guidelines の 2017 年版」に従うこと**であり、「PREMIS 3.0」という版番号での
+直接規定は見当たらない (2017 年版ガイドラインが PREMIS 3.0 を前提とする、という関係)。
+RODA 側は「PREMIS 3」と明記している。**一次文書で要裏取り。**
+
+**keeps/commons-ip**: LGPL-3.0 / 最新 **2.12.0 (2026-08-14)** / **保守は活発** (直近 1 年で
+5 リリース、open issues 6) / Java **17+** (21 で可) / Maven 座標
+`org.roda-community:commons-ip2` / CSIP は **2.0.4・2.1.0・2.2.0** に対応。
+
+**配布経路がここの最大の落とし穴**:
+
+- **Maven Central に存在しない** (`a:commons-ip2` → 0 件)。`distributionManagement` は
+  **GitHub Packages 単独**で、**公開パッケージでも匿名 GET は 401** (PAT が要る)。
+  → `<dependency>` で引くと **fork PR の CI がシークレット不在で必ず落ちる**。
+- **回避策**: CLI fat-jar が **GitHub Release アセットとして匿名取得できる**
+  (`commons-ip2-cli-2.12.0.jar` / 10,895,225 B、HTTP 200 実測)。
+  → **CI 検証は fat-jar を CLI として叩く。** ライブラリとして SIP を「作る」側だけ
+  GitHub Packages 認証を使うか、社内リポジトリにミラーする。
+
+**Python 版 eark-validator は CI ゲートに使えない** (重要):
+
+- 最新 1.1.3 (2024-09-11)、Python 3.10+、Apache-2.0。
+- **同梱ルールセットは V2.0.4 と V2.1.0 のみで、2.2.0 が無い。**
+- CSIP 要件の**偽陽性 issue が 15 件以上** open (CSIP17/63/76/114 等)。
+- → 2.2.0 をゲートにするなら **commons-ip 一択**。
+
+**ルールセットの版固定**: 両ツールともルールセットは**ツール本体に同梱**され、独立した
+成果物は存在しない → **ツール版を固定すればルールセット版も固定される**。ただし
+「どの CSIP 版で検証するか」は実行時引数なので **`--specification-version 2.2.0` を必ず明示**
+(既定は 2.1.0 とされ、黙って滑る)。退行検知には `DILCISBoard/eark-ip-test-corpus` を
+**コミット SHA 固定**で使う。
+
+**RODA**: 公式ドキュメントが「E-ARK SIP/AIP/DIP と 100% compatible」「保存メタデータは
+PREMIS 3」と明記。取込時に SIP 形式 (素のファイル / E-ARK / BagIt) を選ぶ設計。
+IP 操作には commons-ip を使用。**未確認**: RODA の特定リリースがどの CSIP 版を受け入れるかの
+対応表は取得できていない (同梱 commons-ip 版に依存するはず) — **相互運用の保証には実機受入試験が必要**。
+
+### §9-4. Archivematica 受入 API (P3-4 の前提確認)
+
+**版**: Archivematica **1.18.0** (2025-09-26) / Storage Service **0.24.0** (2025-10-07)。
+docs に 1.19 ブランチはあるが tag 未リリース。
+
+**E-ARK SIP の直接取込は不可 — 前提は正しかった**。転送 type は
+`standard / zipfile / unzipped bag / zipped bag / dspace / maildir / TRIM / dataverse` の
+**8 種のみ** (ソース `PACKAGE_TYPE_STARTING_POINTS` と公式 API リファレンスが一致)。
+E-ARK/CSIP に相当するものは無く、未知の type は `ValueError` で拒否される。
+→ **BagIt (`zipped bag`) に包む接続層が要る**という §4 の設計判断は裏付けられた。
+なお「E-ARK 非対応」と明言した公式ステートメントは無く、上記は**型リストの網羅による消去法**。
+
+**採用すべき API** (旧 `/api/transfer/start_transfer/` は transfer UUID を返さず追加往復が
+要るので使わない):
+
+```
+POST /api/v2beta/package
+  {name, path: base64("<location_uuid>:<絶対パス>"), type:"zipped bag",
+   processing_config:"automated", auto_approve:true}
+  → 202 {"id": "<transfer UUID>"}
+```
+
+認証は `Authorization: ApiKey <user>:<key>`。**Dashboard と Storage Service は別ユーザ空間
+= 別 API キー**。Dashboard API は **CSRF 免除**。
+
+**実装で必ず踏む落とし穴** (公式ドキュメント/ソースで確認済み):
+
+1. **202 の `id` は「転送が開始した」ことを保証しない** — status で確認が要る。
+2. **`status: COMPLETE` でも `sip_uuid` が無いことがある。** 「COMPLETE **かつ** `sip_uuid` が
+   存在 **かつ** `"BACKLOG"` でない」の 3 条件を満たすまで再ポーリングする。
+3. **`sip_uuid` がそのまま AIP UUID になる** (`store_aip.py`)。transfer UUID で Storage
+   Service を引いてはならない (1 transfer から複数 SIP が生まれ得る)。
+4. **AIP チェックサムは `/api/v2/file/{uuid}/` では返らない** — モデルには存在するが
+   tastypie の `fields` に含まれていない。**pointer file (METS) の PREMIS
+   `messageDigest`** から取る。**ただし pointer file は単一ファイル化された AIP にしか
+   存在しない** (非圧縮ディレクトリ AIP では 404) → **受領証に checksum を載せるなら
+   processing config で AIP 圧縮を有効にしておく必要がある**。
+5. `check_fixity` の `success` は `true/false/null` の 3 値で、**`null` は「開始できなかった」**。
+   `false` と混同しない。
+6. **API allowlist** が非空だと未登録 IP は 403。接続層のホスト IP 登録が要る。
+7. `zipped bag` は **bag 名が転送名になる** (API の `name` は実質無視)。受入形式は
+   `.zip / .tgz / .tar.gz` のみ。
+
+**受領証に載せられるもの**: transfer UUID / AIP UUID (= sip_uuid) / `status=="UPLOADED"` /
+`stored_date` / size / 保存先パス / fixity 結果と実施時刻 / マイクロサービス粒度のジョブ記録。
+**送った SIP 自体の checksum は API から返らない**ので接続層で保持する — ただし bag 検証に
+失敗すると転送が FAILED になるため「COMPLETE したこと」自体がマニフェスト一致の証拠になり、
+送った bag の `manifest-*.txt` は AIP 内 `metadata/` に保存されるので `extract_file` で回収できる。
+
+**ポーリング回避**: Storage Service の **Service callbacks** (post-store AIP 等) で任意の
+REST エンドポイントを叩ける (`<package_uuid>` / `<package_name>` がプレースホルダ置換)。
+→ NemakiWare 側に受領 webhook を立てる設計が可能。
+
+**未確認**: `/contents/` が AIP に対して per-file checksum を常に返すか / Enduro と
+E-ARK ツールキットの 2026 年時点の状況 (参照資料が 2023 年) / AM 1.19 の API 変更 /
+大規模 AIP での `check_fixity` の所要時間。
+
+### §9-5. アンカー / OTS / TSA 実装調査 (P0-3)
+
+#### 段 2 (OpenTimestamps): **Java 実装は事実上メンテ停止。依存の毒性が本当の問題**
+
+| 項目 | 事実 (2026-08-18 実測) |
+|---|---|
+| リポジトリ | `eternitywall/java-opentimestamps` → `opentimestamps/java-opentimestamps` に移管済 (groupId は歴史的経緯で `com.eternitywall` のまま) |
+| master HEAD | **2021-05-05** (5 年 3 ヶ月 停止)。GitHub Releases **0 件** |
+| Maven Central | **1.20 / 2021-01-18 が最後**。**Central 上の Java 実装はこの 1 件のみ** (`q=opentimestamps` → 1 件) = 代替ライブラリは存在しない |
+| ライセンス | **LGPL-3.0** |
+| 傍証 | dependabot PR (json 20190722→20230227) が **2023-04-14 から未マージ** |
+
+**採用の本当の障害は保守状況ではなく推移依存**。`java-opentimestamps:1.20` は
+**`org.bitcoinj:bitcoinj-core:0.14.7` (2017 年)** を引き込み、そこから:
+
+| 推移依存 | 既知 CVE | 主なもの |
+|---|---|---|
+| `com.h2database:h2:1.3.167` | 2 | **CVE-2021-42392 (RCE)** |
+| `mysql:mysql-connector-java:5.1.33` | 8 | CVE-2019-2692 ほか |
+| `guava:18.0` | 3 | CVE-2018-10237 ほか |
+| `protobuf-java:2.6.1` | 3 | CVE-2024-7254 ほか |
+| `spongycastle:core:1.51.0.0` | — | 古い BC フォーク。**WAR 内の BC 1.81 と二重化** |
+| `slf4j-simple` (直接依存) | — | **ライブラリが binding を持ち込む** |
+
+**bitcoinj は単純に exclude できない**: `OpenTimestamps.java` (メインエントリ) が
+`org.bitcoinj.core.{DumpedPrivateKey, ECKey, NetworkParameters}` を直接 import している
+(private calendar の ECDSA 署名用)。ブランケット exclusion は `NoClassDefFoundError` を招く。
+
+→ **選択肢は 3 つ**: (a) 採用 + 徹底 exclusion + 自前検証、(b) **stamp/upgrade だけ自前実装**
+(`POST /digest` と `GET /timestamp/{commitment}` の 2 本だけ。nonce は `SHA256(D‖random16)`)、
+(c) Python `ots` を sidecar 化。**(b)(c) は `.ots` の形式仕様書が存在しない**ことを織り込む
+必要がある — org 内に spec は無く、**Python 参照実装が事実上の正典** (Java 版は逐語移植で
+Python のコメントがソースに残っている)。
+
+**カレンダーサーバ** (全て HTTP 200 で生存確認):
+
+- `alice/bob.btc.calendar.opentimestamps.org` (Peter Todd) / `a.pool.eternitywall.com`
+  (Riccardo Casatta) / `btc.calendar.catallaxy.com` (Bull Bitcoin)
+- **無料・アカウント不要・API キー不要**。ただし**利用規約も SLA も無い**。
+- サーバ実装に**アプリ層のレート制限は無い** (`MAX_DIGEST_LENGTH = 64` のみ)。
+- **Java クライアントは古い URL をハードコード** (`finney.calendar.eternitywall.com` を含む)
+  → 使うなら URL は明示指定する。
+
+**nonce の作法 (ロードマップの記述は正しかった)**: Python/Java とも
+**ファイルごとに 16 バイトの乱数を append してから SHA-256**。カレンダーに渡るのは
+`SHA256(D ‖ nonce16)` で、**元ダイジェスト D は外に出ない**。ただし README が明示する残余
+リークは踏襲が要る: 作成時刻は記録される / **トランスポート層のプライバシーは無い**
+(IP・タイミングは見える)。
+
+**確定までの時間**: サーバ既定は `--btc-min-confirmations 6` / `--btc-min-tx-interval 6時間`。
+カレンダーの実測 tx 平均間隔は **alice 1.13 時間 / catallaxy 8.84 時間**。
+→ **アンカー送出から upgrade 可能まで数時間〜半日を上限として設計する**。
+upgrade 後は**カレンダーにも当社にも依存せず、信頼できるブロックヘッダ列だけで検証可能**
+(P4-1 の前提は成立)。
+**未確認**: カレンダーが pending commitment を保持する期間は実装にもドキュメントにも記載が
+無い。**upgrade を無期限に先送りできる保証は無い**と見なすこと。
+
+#### 段 3 (RFC 3161 TSA): **追加依存ゼロで始められる。ただし版ずれが 1 件ある**
+
+**BouncyCastle は既に WAR に入っている** (実測):
+
+```
+WEB-INF/lib/bcprov-jdk18on-1.81.jar
+WEB-INF/lib/bcpkix-jdk18on-1.81.1.jar   ← org.bouncycastle.tsp はここ
+WEB-INF/lib/bcutil-jdk18on-1.81.1.jar
+```
+
+経路は `tika-parsers-standard-package → tika-parser-crypto-module → bcjmail → bcpkix`。
+**どの pom にも bouncycastle の宣言は 0 件 = 完全に Tika 経由の推移依存**。
+→ **直接使うなら明示宣言しないと Tika の版変更で静かに消える。** さらに
+**bcprov 1.81 と bcpkix 1.81.1 で版がずれている** — CLAUDE.md の HttpComponents 5 の教訓
+(「ファミリで動く」) と同型のリスクで、prov/pkix/util は揃えるべき。
+
+**BouncyCastle TSP の落とし穴** (bc-java の `main` を直読して確認):
+
+1. **`TimeStampResponse.validate(request)` は拒否応答を素通しする。** status が rejection
+   (トークン null) の場合、**例外を投げずに正常復帰**する。`getStatus()` / `getFailInfo()` /
+   `getTimeStampToken() == null` を呼び出し側で必ず明示チェックしないと
+   **「失敗したのに成功扱い」**になる。
+2. **`validate()` は署名検証ではない。** 見るのは nonce 一致 / status / messageImprint /
+   SigningCertificate 属性の存在 / reqPolicy 一致まで。CMS 署名検証は
+   `TimeStampToken.validate(SignerInformationVerifier)` が別途必要で、**証明書パス構築と
+   失効確認はどちらにも含まれない**。3 段階を全部やる。
+3. **`certReq` の既定は false** (RFC 3161 §2.4.1)。`setCertReq(true)` を忘れると TSA は
+   証明書を入れてこず、**後日の検証で鎖が張れない**。「TSA A では動いて B で壊れる」形で出る。
+4. **nonce に `System.currentTimeMillis()` を使う流布したイディオムは誤り** — RFC 3161 は
+   64bit 以上の乱数を求める。`SecureRandom` を使う。
+5. TSA が DER でなく HTTP エラーページを返すと `TSPException` でなく `IOException` になる
+   → `Content-Type: application/timestamp-reply` を確認する。
+6. `reqPolicy` を設定すると `validate()` が**ポリシー OID の完全一致を要求**する。事業者の
+   OID を正確に知らずに設定すると全件失敗する。
+
+**日本の認定タイムスタンプ** (総務省「時刻認証業務の認定に関する規程」= 令和3年総務省告示
+第146号。指定調査機関は日本データ通信協会のみ)。**令和8年3月現在の認定 6 業務**:
+
+| 業務名 | 事業者 |
+|---|---|
+| セイコータイムスタンプサービス | セイコーソリューションズ |
+| **タイムスタンプサービス DiaStamp** (2026-01-14 まで「MIND タイムスタンプサービス」) | 三菱電機デジタルイノベーション |
+| アマノタイムスタンプサービス3161 | アマノ |
+| 認定タイムスタンプ byGMO | GMO グローバルサイン |
+| タイムスタンプサービス iScign | サイエンスパーク |
+| ウイングアークタイムスタンプサービス | ウイングアーク1st |
+
+**注意**: MIND → DiaStamp の改称で**検証用電子証明書ファイルも差し替わっている**。
+総務省ページが業務ごとに配布する検証用証明書 zip が**唯一の公式な信頼アンカー配布経路**
+なので、入手先を固定でハードコードすると壊れる。
+
+**コスト前提は裏付けられた**: 日次アンカー = **月 30 スタンプ**は、アマノの一次見積
+(2014 年・月額 ¥8,000 で 1,000 スタンプ/月) にも GMO の月額 1 万円プランにも**余裕で収まる**。
+毎時アンカー (月 720) でも同様。ただし **GMO は API 帯域が既定「15 秒/1 スタンプ」**、
+セイコー SSL は「最大 1 スタンプ/秒」なので、**バースト設計ではなく定常レート設計**が要る。
+
+**長期検証のために保存すべきもの** (根拠つき):
+
+| 保存物 | 根拠 |
+|---|---|
+| TSA トークン (DER) | RFC 3161 §2.4.2。ファイル名 **`.tst`** / Content-Type **`application/vnd.etsi.timestamp-token`** (EN 319 422 Annex C) |
+| **完全な証明書チェーン** | `certReq=true` で TSU 証明書は同梱されるが、**中間・ルートは同梱される保証が無い** |
+| policy OID | EN 319 422 §5.2.2 (policy field shall be present)。**どのポリシーを期待していたかは別途記録が要る** (認定業務であることの主張に直結) |
+| **CRL / OCSP 応答 (取得時刻付き)** | **発行直後に取得しないと後追い不能**。FreeTSA が 2026-02 に証明書をローテートした実例あり (旧証明書は `tsa.crt_expired` に退避) |
+| accuracy / genTime / nonce / serialNumber | EN 319 422 §5.2.2 は accuracy 必須・最低 1 秒精度 |
+| TSA の CP/CPS の版と取得時のコピー | 同じ事業者でもポリシーが複数併存する (アマノは Type-T2 用 Ver2.00 と旧デ協認定 Ver1.16 を併掲) |
+| 総務省配布の検証用証明書 zip (取得日付き) | 認定業務の唯一の公式信頼アンカー |
+
+**RFC 4998 ERS の renewal 2 種** — ロードマップ P2-3 の認識は原文と一致していた:
+
+- **Timestamp Renewal**: TSU 秘密鍵の危殆化、または**タイムスタンプ生成に使った**アルゴリズムが
+  安全でなくなったとき。**アーカイブ対象データにアクセスせず**既存トークンに被せる。
+- **Hash-Tree Renewal**: **ハッシュツリー構築に使った**ハッシュが安全性を失ったとき。
+  **元データが要る**。
+- RFC 4998 は「アルゴリズムの安全性は out-of-band で監視せよ、本文書の範囲外」と明記
+  → **algorithm deprecation registry は仕様が肩代わりしてくれない**。
+
+**版固定の注意**: **ETSI EN 319 422 は 2016 年版が現行だが改訂が必要と評価されており、
+後継 TS の目標が 2027-05-31**。P3-1 と同じく版を固定して宣言する方針をここにも適用する。
+
+**未確認 (決定前に潰す 3 点)**: (a) 認定 TSA の**接続認証方式** (クライアント証明書 / IP 制限)
+はどの事業者も公開仕様書に無く契約後の接続仕様書でしか分からない、(b) OTS カレンダーの
+pending 保持期限、(c) EN 319 422 の後継版の内容。
