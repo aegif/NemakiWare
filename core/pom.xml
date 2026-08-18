@@ -26,6 +26,14 @@
 		<org.apache.chemistry.opencmis.version>2.0.0-RC2-nemakiware</org.apache.chemistry.opencmis.version>
 		<!-- One version per CXF / HttpComponents 5 family; the enforcer refuses any other. -->
 		<org.apache.cxf.version>4.2.3</org.apache.cxf.version>
+		<!-- BouncyCastle arrives transitively through Tika (bcjmail -> bcpkix), but 3.4 uses
+		     org.bouncycastle.tsp directly for RFC 3161 anchoring, so it must be declared: a Tika
+		     bump could otherwise remove it silently. Tika brought prov at 1.81 while pkix/util
+		     came at 1.81.1 — the same family skew that cost a Tomcat startup with HttpComponents.
+		     BC publishes patch releases PER ARTIFACT, so 1.81.1 exists for prov/pkix/util but
+		     NOT for bcjmail; bcjmail is therefore excluded from the pin and from the enforcer
+		     rule below rather than forced to a version that was never released. -->
+		<org.bouncycastle.version>1.81.1</org.bouncycastle.version>
 		<httpcomponents.client5.version>5.5.1</httpcomponents.client5.version>
 		<httpcomponents.core5.version>5.3.6</httpcomponents.core5.version>
 		<opencmis.github.packages.url>https://maven.pkg.github.com/aegif/chemistry-opencmis-nemakiware</opencmis.github.packages.url>
@@ -62,6 +70,23 @@
 				<artifactId>joda-time</artifactId>
 				<version>2.14.0</version>
 			</dependency>
+			<!-- Align the whole BouncyCastle family (see the property comment). -->
+			<dependency>
+				<groupId>org.bouncycastle</groupId>
+				<artifactId>bcprov-jdk18on</artifactId>
+				<version>${org.bouncycastle.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.bouncycastle</groupId>
+				<artifactId>bcutil-jdk18on</artifactId>
+				<version>${org.bouncycastle.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.bouncycastle</groupId>
+				<artifactId>bcpkix-jdk18on</artifactId>
+				<version>${org.bouncycastle.version}</version>
+			</dependency>
+
 			<!-- Override transitive netty from odata-server-core (4.1.97).
 			     4.1.124.Final fixes CVE-2025-55163 (HTTP/2 MadeYouReset DoS)
 			     in addition to CVE-2025-24970 / CVE-2025-58056. -->
@@ -186,6 +211,15 @@
 	</dependencyManagement>
 
 	<dependencies>
+		<!-- RFC 3161 time-stamping (3.4 trust ladder, rung 3). org.bouncycastle.tsp lives in
+		     bcpkix. It already reaches the WAR through Tika, but an undeclared transitive is
+		     not a contract: declare what the code imports. Version comes from
+		     dependencyManagement so the family cannot skew. -->
+		<dependency>
+			<groupId>org.bouncycastle</groupId>
+			<artifactId>bcpkix-jdk18on</artifactId>
+		</dependency>
+
 		<!-- nemakiware-action dependency commented out - module is suspended and not needed -->
 		<!--
 		<dependency>
@@ -1268,6 +1302,21 @@
 										<include>org.apache.cxf:*:${org.apache.cxf.version}</include>
 									</includes>
 									<message>All org.apache.cxf modules must be exactly ${org.apache.cxf.version} — bump the property, not individual dependencies.</message>
+								</bannedDependencies>
+								<!-- Fourth family. Tika delivered prov/jmail 1.81 and pkix/util 1.81.1
+								     to the same WAR; 3.4 calls org.bouncycastle.tsp directly, so a
+								     cross-version tsp/prov pair is exactly the shape that compiles,
+								     resolves, passes unit tests and then fails at runtime. -->
+								<bannedDependencies>
+									<excludes>
+										<exclude>org.bouncycastle:*</exclude>
+									</excludes>
+									<includes>
+										<include>org.bouncycastle:*:${org.bouncycastle.version}</include>
+										<!-- bcjmail has no 1.81.1 release (BC patches per artifact). -->
+										<include>org.bouncycastle:bcjmail-jdk18on</include>
+									</includes>
+									<message>All org.bouncycastle modules must be exactly ${org.bouncycastle.version} — bump the property, not individual dependencies.</message>
 								</bannedDependencies>
 								<bannedDependencies>
 									<excludes>

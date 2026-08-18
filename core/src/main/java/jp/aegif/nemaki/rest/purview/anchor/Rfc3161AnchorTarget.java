@@ -1,0 +1,287 @@
+/**
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ */
+package jp.aegif.nemaki.rest.purview.anchor;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.math.BigInteger;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URL;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+import org.bouncycastle.asn1.cmp.PKIStatus;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.operator.DigestCalculator;
+import org.bouncycastle.tsp.TimeStampRequest;
+import org.bouncycastle.tsp.TimeStampRequestGenerator;
+import org.bouncycastle.tsp.TimeStampResponse;
+import org.bouncycastle.tsp.TimeStampToken;
+import org.bouncycastle.tsp.TimeStampTokenInfo;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * RFC 3161 time stamping — rung 3 of the trust ladder.
+ *
+ * <h3>Why this class is longer than "post the digest, keep the token"</h3>
+ *
+ * <p>BouncyCastle's TSP API has a handful of behaviours that produce code which compiles, runs,
+ * and quietly fails to prove anything. Each is handled here explicitly, with the reason, because
+ * every one of them was found by reading the library rather than by a test failing:
+ *
+ * <ol>
+ *   <li><b>{@code TimeStampResponse.validate(request)} lets rejections through.</b> When the TSA
+ *       refuses, the response carries no token, and validate() returns normally instead of
+ *       throwing. Code that trusts validate() alone treats a refusal as a success. We check the
+ *       status and the presence of a token ourselves, first.</li>
+ *   <li><b>{@code certReq} defaults to false.</b> RFC 3161 §2.4.1 says that when it is absent or
+ *       false the TSA MUST NOT include its certificate. Forget {@code setCertReq(true)} and the
+ *       token arrives with nothing to build a chain from — which nobody notices until the day
+ *       someone tries to verify it, possibly years later, and it only shows up against some
+ *       TSAs. We require it and record whether the certificate actually came.</li>
+ *   <li><b>A nonce must be unpredictable.</b> The widespread idiom of using
+ *       {@code System.currentTimeMillis()} makes it guessable; RFC 3161 asks for a large random
+ *       number. We use {@link SecureRandom} over 64 bits and let BouncyCastle enforce that the
+ *       same value comes back.</li>
+ *   <li><b>A non-DER response is an {@code IOException}, not a {@code TSPException}.</b> A proxy
+ *       error page parses as garbage rather than as a refusal, so we check the content type and
+ *       say what actually happened.</li>
+ *   <li><b>{@code reqPolicy} demands an exact match.</b> Asking for a policy OID we guessed
+ *       wrong fails every request, so the policy is only sent when an operator configured one.</li>
+ *   <li><b>validate() is not signature verification.</b> It checks the nonce, the status, the
+ *       message imprint and the presence of a SigningCertificate attribute — not the CMS
+ *       signature, and certainly not certificate path building or revocation. We record what we
+ *       captured and what we did not, rather than implying a verification we did not perform.</li>
+ * </ol>
+ *
+ * <p><b>What we deliberately do not do here:</b> verify the signature, build a certificate path,
+ * or fetch CRL/OCSP. Those belong to verification, not to anchoring, and pretending to have done
+ * them at issue time would be the exact overclaim the evidence report is built to avoid. What we
+ * DO record is {@code revocationDataCapturedAt=never}, because revocation data cannot be
+ * reconstructed after the fact and its absence has to be visible rather than assumed.
+ */
+public class Rfc3161AnchorTarget implements AnchorTarget {
+
+    private static final Logger logger = LoggerFactory.getLogger(Rfc3161AnchorTarget.class);
+
+    /** RFC 3161 §3.4: the media type a TSA must answer with over HTTP. */
+    static final String RESPONSE_CONTENT_TYPE = "application/timestamp-reply";
+    private static final String REQUEST_CONTENT_TYPE = "application/timestamp-query";
+
+    /** SHA-256, matching the digests the rest of the evidence chain uses. */
+    private static final String DIGEST_ALGORITHM = "SHA-256";
+    private static final org.bouncycastle.asn1.ASN1ObjectIdentifier SHA256_OID =
+            new org.bouncycastle.asn1.ASN1ObjectIdentifier("2.16.840.1.101.3.4.2.1");
+
+    private static final int CONNECT_TIMEOUT_MS = 10_000;
+    private static final int READ_TIMEOUT_MS = 30_000;
+    /** A TSA reply is a few KB. Anything far larger is a proxy page, not a token. */
+    private static final int MAX_RESPONSE_BYTES = 256 * 1024;
+
+    private final String tsaUrl;
+    private final String reqPolicyOid;
+    private final String accreditation;
+    private final SecureRandom random = new SecureRandom();
+
+    /**
+     * @param tsaUrl        endpoint, or null/blank to leave rung 3 unconfigured
+     * @param reqPolicyOid  policy OID to demand, or null to accept the TSA's default. Only set
+     *                      this when the operator knows their provider's OID: a wrong value
+     *                      fails every request (pitfall 5).
+     * @param accreditation free-form marker for the evidence report ("JP_MIC_ACCREDITED",
+     *                      "EU_QUALIFIED", "NONE"). Recorded, never inferred — whether a TSA is
+     *                      accredited is a fact about a contract, not something to detect.
+     */
+    public Rfc3161AnchorTarget(String tsaUrl, String reqPolicyOid, String accreditation) {
+        this.tsaUrl = tsaUrl == null || tsaUrl.isBlank() ? null : tsaUrl.trim();
+        this.reqPolicyOid = reqPolicyOid == null || reqPolicyOid.isBlank() ? null : reqPolicyOid.trim();
+        this.accreditation = accreditation == null || accreditation.isBlank() ? "NONE" : accreditation.trim();
+    }
+
+    @Override
+    public AnchorKind kind() {
+        return AnchorKind.RFC3161_TSA;
+    }
+
+    @Override
+    public boolean isConfigured() {
+        return tsaUrl != null;
+    }
+
+    @Override
+    public AnchorReceipt anchor(String hexDigest) {
+        byte[] imprint = decodeSha256Hex(hexDigest);
+        if (!isConfigured()) {
+            return AnchorReceipt.notConfigured(kind(), hexDigest);
+        }
+        Instant attemptedAt = Instant.now();
+        try {
+            TimeStampRequestGenerator gen = new TimeStampRequestGenerator();
+            // Pitfall 2: without this the TSA is REQUIRED to omit its certificate.
+            gen.setCertReq(true);
+            if (reqPolicyOid != null) {
+                gen.setReqPolicy(new org.bouncycastle.asn1.ASN1ObjectIdentifier(reqPolicyOid));
+            }
+            // Pitfall 3: unpredictable, 64 bits, and echoed back by the TSA.
+            BigInteger nonce = new BigInteger(64, random);
+            TimeStampRequest request = gen.generate(SHA256_OID, imprint, nonce);
+
+            byte[] responseBytes = post(request.getEncoded());
+            TimeStampResponse response = new TimeStampResponse(responseBytes);
+
+            // Pitfall 1: check the refusal BEFORE trusting validate(), which passes it through.
+            int status = response.getStatus();
+            TimeStampToken token = response.getTimeStampToken();
+            if (token == null || (status != PKIStatus.GRANTED && status != PKIStatus.GRANTED_WITH_MODS)) {
+                String failInfo = response.getFailInfo() == null ? "none"
+                        : response.getFailInfo().toString();
+                return AnchorReceipt.failed(kind(), hexDigest, attemptedAt,
+                        "TSA refused: status=" + status
+                                + " failInfo=" + failInfo
+                                + " message=" + String.valueOf(response.getStatusString()));
+            }
+
+            // Now validate() is meaningful: nonce echo, imprint match, policy match if requested.
+            response.validate(request);
+
+            TimeStampTokenInfo info = token.getTimeStampInfo();
+            byte[] encodedToken = token.getEncoded();
+
+            Map<String, String> attrs = new LinkedHashMap<>();
+            attrs.put("tsaUrl", tsaUrl);
+            attrs.put("accreditation", accreditation);
+            attrs.put("policyOid", String.valueOf(info.getPolicy()));
+            attrs.put("serialNumber", String.valueOf(info.getSerialNumber()));
+            attrs.put("genTime", info.getGenTime().toInstant().toString());
+            attrs.put("accuracySeconds", accuracySecondsOf(info));
+            attrs.put("digestAlgorithm", DIGEST_ALGORITHM);
+            // Pitfall 2's observable half: say whether the certificate actually arrived, so a
+            // deployment that will not be verifiable later is visible now rather than in court.
+            attrs.put("certificateChainIncluded",
+                    String.valueOf(!token.getCertificates().getMatches(null).isEmpty()));
+            // Not a TODO: revocation data genuinely cannot be captured retroactively, so its
+            // absence is part of the evidence rather than a gap to paper over.
+            attrs.put("revocationDataCapturedAt", "never");
+            attrs.put("signatureVerified", "false");
+            attrs.put("certificatePathVerified", "false");
+
+            logger.info("RFC 3161 token obtained from {} (serial {}, genTime {})",
+                    tsaUrl, info.getSerialNumber(), info.getGenTime().toInstant());
+
+            return AnchorReceipt.confirmed(kind(), hexDigest, attemptedAt,
+                    info.getGenTime().toInstant(), encodedToken, sha256Hex(encodedToken), attrs);
+
+        } catch (Exception e) {
+            // Anchoring must never fail the operation that triggered it.
+            logger.warn("RFC 3161 anchoring failed against {}: {}", tsaUrl, e.toString());
+            return AnchorReceipt.failed(kind(), hexDigest, attemptedAt,
+                    e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+    }
+
+    /** Accuracy in seconds as RFC 3161 states it, or "unspecified" when the token omits it. */
+    private static String accuracySecondsOf(TimeStampTokenInfo info) {
+        if (info.getGenTimeAccuracy() == null) {
+            return "unspecified";
+        }
+        double seconds = info.getGenTimeAccuracy().getSeconds()
+                + info.getGenTimeAccuracy().getMillis() / 1_000d
+                + info.getGenTimeAccuracy().getMicros() / 1_000_000d;
+        return String.valueOf(seconds);
+    }
+
+    /**
+     * POST the DER request and return the DER reply.
+     *
+     * <p>Pitfall 4: an HTML error page from a proxy would otherwise surface as an opaque parse
+     * failure, so the content type is checked and the mismatch reported as itself.
+     */
+    private byte[] post(byte[] derRequest) throws IOException {
+        URL url = URI.create(tsaUrl).toURL();
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        try {
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setRequestProperty("Content-Type", REQUEST_CONTENT_TYPE);
+            conn.setRequestProperty("Accept", RESPONSE_CONTENT_TYPE);
+            conn.setFixedLengthStreamingMode(derRequest.length);
+            try (OutputStream out = conn.getOutputStream()) {
+                out.write(derRequest);
+            }
+
+            int code = conn.getResponseCode();
+            if (code != HttpURLConnection.HTTP_OK) {
+                throw new IOException("TSA answered HTTP " + code + " " + conn.getResponseMessage());
+            }
+            String contentType = conn.getContentType();
+            if (contentType == null || !contentType.toLowerCase().startsWith(RESPONSE_CONTENT_TYPE)) {
+                throw new IOException("TSA answered Content-Type '" + contentType
+                        + "', expected " + RESPONSE_CONTENT_TYPE
+                        + " (an intermediary is probably answering instead of the TSA)");
+            }
+            try (InputStream in = conn.getInputStream()) {
+                byte[] body = in.readNBytes(MAX_RESPONSE_BYTES + 1);
+                if (body.length > MAX_RESPONSE_BYTES) {
+                    throw new IOException("TSA reply exceeds " + MAX_RESPONSE_BYTES
+                            + " bytes; refusing to parse it as a token");
+                }
+                return body;
+            }
+        } finally {
+            conn.disconnect();
+        }
+    }
+
+    /** Lowercase 64-char hex to bytes. A caller that gets this wrong has a bug, so this throws. */
+    static byte[] decodeSha256Hex(String hexDigest) {
+        if (hexDigest == null || hexDigest.length() != 64) {
+            throw new IllegalArgumentException("expected a 64-character SHA-256 hex digest, got "
+                    + (hexDigest == null ? "null" : hexDigest.length() + " chars"));
+        }
+        byte[] out = new byte[32];
+        for (int i = 0; i < 32; i++) {
+            int hi = Character.digit(hexDigest.charAt(i * 2), 16);
+            int lo = Character.digit(hexDigest.charAt(i * 2 + 1), 16);
+            if (hi < 0 || lo < 0) {
+                throw new IllegalArgumentException("digest is not hexadecimal at position " + (i * 2));
+            }
+            out[i] = (byte) ((hi << 4) | lo);
+        }
+        return out;
+    }
+
+    static String sha256Hex(byte[] data) {
+        try {
+            byte[] d = MessageDigest.getInstance(DIGEST_ALGORITHM).digest(data);
+            StringBuilder sb = new StringBuilder(64);
+            for (byte b : d) {
+                sb.append(Character.forDigit((b >> 4) & 0xf, 16)).append(Character.forDigit(b & 0xf, 16));
+            }
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is required by the platform", e);
+        }
+    }
+}
