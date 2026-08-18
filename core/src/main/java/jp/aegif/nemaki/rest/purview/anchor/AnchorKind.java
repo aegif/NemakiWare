@@ -43,26 +43,26 @@ public enum AnchorKind {
      * <p>Not a time proof: the catalog records when IT was told, not when the data existed, and
      * a same-tenant catalog is administered by the very party whose behaviour is in question.
      */
-    ATLAS_CATALOG(1, TimeSemantics.NOT_A_TIME_PROOF),
+    ATLAS_CATALOG(TimeSemantics.NOT_A_TIME_PROOF),
 
     /**
      * OpenTimestamps, committed into the Bitcoin blockchain. Rung 2.
      *
-     * <p>Independent of the operator and free, but <b>upper bound only</b> and not immediate:
+     * <p>Free, but <b>upper bound only</b> and not immediate:
      * confirmation waits on calendar aggregation and block confirmations (measured at hours to
      * roughly half a day, calendar-dependent). A receipt is therefore legitimately
      * {@link AnchorStatus#PENDING} for a while, and pending is not failure.
      */
-    OPENTIMESTAMPS(2, TimeSemantics.UPPER_BOUND_ONLY),
+    OPENTIMESTAMPS(TimeSemantics.UPPER_BOUND_ONLY),
 
     /**
      * An RFC 3161 time-stamp authority. Rung 3.
      *
-     * <p>Independent of the operator and immediate, with an accuracy the token itself states.
-     * Whether the authority is accredited is a property of the configured TSA, not of this
-     * enum — see {@code rfc3161.accreditation} in the evidence report.
+     * <p>Immediate, with an accuracy the token itself states when it states one. Who operates
+     * the authority — and therefore what its token is worth — is a property of the deployment's
+     * configuration and contracts, not something this enum can express.
      */
-    RFC3161_TSA(3, TimeSemantics.BIDIRECTIONAL_WITHIN_ACCURACY);
+    RFC3161_TSA(TimeSemantics.BIDIRECTIONAL_WITHIN_ACCURACY);
 
     /** What a time claim derived from this anchor may say. */
     public enum TimeSemantics {
@@ -74,17 +74,10 @@ public enum AnchorKind {
         NOT_A_TIME_PROOF
     }
 
-    private final int rung;
     private final TimeSemantics timeSemantics;
 
-    AnchorKind(int rung, TimeSemantics timeSemantics) {
-        this.rung = rung;
+    AnchorKind(TimeSemantics timeSemantics) {
         this.timeSemantics = timeSemantics;
-    }
-
-    /** Trust-ladder rung, 1-3. Rung 0 (the internal hash chain) has no anchor target. */
-    public int rung() {
-        return rung;
     }
 
     public TimeSemantics timeSemantics() {

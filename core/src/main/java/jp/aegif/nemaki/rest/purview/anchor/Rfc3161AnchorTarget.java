@@ -99,9 +99,8 @@ import org.slf4j.LoggerFactory;
  *
  * <p><b>Not derivable at all:</b> whether the TSA is organizationally independent of this
  * deployment. An operator can run their own TSA and configure its certificate as the anchor;
- * every cryptographic check then passes. Independence is therefore taken from an explicit
- * operator declaration ({@code accreditation}) combined with the chain check, and the receipt
- * marks it as declared.
+ * every check here then passes. The receipt records the operator's accreditation string
+ * verbatim and interprets nothing.
  */
 public class Rfc3161AnchorTarget implements AnchorTarget {
 
@@ -215,18 +214,13 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
                 return AnchorReceipt.failed(kind(), hexDigest, attemptedAt,
                         "TSA token signature did not verify: " + check.detail);
             }
-            if (trustAnchor != null && !check.chainsToAnchor) {
+            if (trustAnchor != null && !check.issuedByConfiguredCertificate) {
                 // An operator who configured an anchor asked for exactly this check. Recording
                 // the failure in an attribute and returning CONFIRMED anyway would answer a
                 // different question than the one they configured (external review, 3.4).
                 return AnchorReceipt.failed(kind(), hexDigest, attemptedAt,
-                        "TSA signer does not chain to the configured trust anchor");
+                        "TSA signer was not issued by the configured trust-anchor certificate (this is a direct-issuer check; a signer behind an intermediate CA will not pass)");
             }
-
-            // Independence is a fact about the WORLD, not about cryptography: an operator can
-            // configure their own self-signed TSA as its own trust anchor and every
-            // cryptographic test passes. It is therefore declared, never inferred.
-            boolean operatorDeclaredThirdParty = !"NONE".equals(accreditation);
 
             Map<String, String> attrs = new LinkedHashMap<>();
             attrs.put("tsaUrl", tsaUrl);
@@ -242,10 +236,15 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             attrs.put("embeddedCertificateCount", String.valueOf(check.certificateCount));
             attrs.put("signatureVerified", "true");
             attrs.put("signerTrustAnchorConfigured", String.valueOf(trustAnchor != null));
-            attrs.put("signerChainsToTrustAnchor", String.valueOf(check.chainsToAnchor));
-            // Named to stop a reader mistaking a configuration value for a verified property.
-            attrs.put("thirdPartyStatusIsOperatorDeclared", String.valueOf(operatorDeclaredThirdParty));
-            attrs.put("trustAnchorCheck", "issuer signature + validity only; NOT PKIX path validation");
+            attrs.put("signerIssuedByConfiguredCertificate", String.valueOf(check.issuedByConfiguredCertificate));
+            // The operator's own words, recorded verbatim and never interpreted. Deriving a
+            // boolean from this string put independence back in through the attribute map:
+            // any value other than "NONE" — including "none" or "SELF_OPERATED" — read as
+            // third-party status (external review, 3.4).
+            attrs.put("accreditationDeclaredByOperator", accreditation);
+            attrs.put("trustAnchorCheck", trustAnchor == null
+                    ? "not configured; no issuer check was performed"
+                    : "direct issuer signature + signer validity only; NOT PKIX path validation");
             // Not a TODO: revocation data genuinely cannot be captured retroactively, so its
             // absence is part of the evidence rather than a gap to paper over.
             attrs.put("revocationDataCapturedAt", "never");
@@ -334,7 +333,7 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
     }
 
     /** What could be established about the token's signature, as separate facts. */
-    private record SignatureCheck(boolean signatureValid, boolean chainsToAnchor,
+    private record SignatureCheck(boolean signatureValid, boolean issuedByConfiguredCertificate,
                                   int certificateCount, String detail) {
     }
 

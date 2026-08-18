@@ -71,7 +71,7 @@ public final class AnchorReceipt {
      *        token that omits {@code accuracy} does not support the bidirectional claim its kind
      *        normally would.
      */
-    public static AnchorReceipt confirmed(AnchorKind kind, String anchoredDigest, Instant attemptedAt,
+    static AnchorReceipt confirmed(AnchorKind kind, String anchoredDigest, Instant attemptedAt,
                                           Instant anchoredAt, byte[] proof, String proofDigest,
                                           Map<String, String> attributes,
                                           AnchorKind.TimeSemantics timeSemantics) {

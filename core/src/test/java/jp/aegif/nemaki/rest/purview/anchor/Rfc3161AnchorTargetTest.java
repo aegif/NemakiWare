@@ -399,7 +399,10 @@ class Rfc3161AnchorTargetTest {
             assertEquals("false", receipt.attributes().get("signerTrustAnchorConfigured"),
                     "but nothing here says whose certificate that is — the record must not imply "
                             + "it does");
-            assertEquals("false", receipt.attributes().get("thirdPartyStatusIsOperatorDeclared"));
+            assertEquals("NONE", receipt.attributes().get("accreditationDeclaredByOperator"));
+            assertTrue(receipt.attributes().get("trustAnchorCheck").contains("not configured"),
+                    "no anchor was configured, so the record must not describe a check that "
+                            + "never ran");
         }
 
         @Test
@@ -416,9 +419,11 @@ class Rfc3161AnchorTargetTest {
                     new Rfc3161AnchorTarget(url, null, "JP_MIC_ACCREDITED", certificate).anchor(DIGEST);
 
             assertEquals(AnchorStatus.CONFIRMED, selfOperated.status());
-            assertEquals("true", selfOperated.attributes().get("thirdPartyStatusIsOperatorDeclared"),
-                    "and the record marks the third-party status as the operator's word, not ours");
-            assertTrue(selfOperated.attributes().get("trustAnchorCheck").contains("NOT PKIX"),
+            assertEquals("JP_MIC_ACCREDITED",
+                    selfOperated.attributes().get("accreditationDeclaredByOperator"),
+                    "the operator's word is recorded verbatim and interpreted by nobody here — "
+                            + "deriving a boolean from it put independence back in by the side door");
+            assertTrue(selfOperated.attributes().get("trustAnchorCheck").contains("direct issuer"),
                     "no reader may mistake the issuer check for path validation");
         }
 
@@ -439,7 +444,7 @@ class Rfc3161AnchorTargetTest {
 
             assertEquals(AnchorStatus.FAILED, receipt.status(),
                     "the signature verifies, so only the anchor check can reject this");
-            assertTrue(receipt.failureReason().contains("trust anchor"), receipt.failureReason());
+            assertTrue(receipt.failureReason().contains("trust-anchor"), receipt.failureReason());
         }
 
         @Test
