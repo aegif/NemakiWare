@@ -45,10 +45,13 @@ public final class AnchorReceipt {
     private final String proofDigest;
     private final Map<String, String> attributes;
     private final String failureReason;
+    private final AnchorKind.TimeSemantics timeSemantics;
 
     private AnchorReceipt(AnchorKind kind, AnchorStatus status, String anchoredDigest,
                           Instant attemptedAt, Instant anchoredAt, byte[] proof, String proofDigest,
-                          Map<String, String> attributes, String failureReason) {
+                          Map<String, String> attributes, String failureReason,
+                          AnchorKind.TimeSemantics timeSemantics) {
+        this.timeSemantics = timeSemantics;
         this.kind = kind;
         this.status = status;
         this.anchoredDigest = anchoredDigest;
@@ -61,11 +64,24 @@ public final class AnchorReceipt {
         this.failureReason = failureReason;
     }
 
-    public static AnchorReceipt confirmed(AnchorKind kind, String anchoredDigest, Instant attemptedAt,
+    /**
+     * A proof that is complete and checkable.
+     *
+     * @param timeSemantics what the anchor's time may be read as. Per receipt because an RFC 3161
+     *        token that omits {@code accuracy} does not support the bidirectional claim its kind
+     *        normally would.
+     */
+    static AnchorReceipt confirmed(AnchorKind kind, String anchoredDigest, Instant attemptedAt,
                                           Instant anchoredAt, byte[] proof, String proofDigest,
-                                          Map<String, String> attributes) {
+                                          Map<String, String> attributes,
+                                          AnchorKind.TimeSemantics timeSemantics) {
+        if (proof == null || proof.length == 0) {
+            // A confirmed receipt with nothing to check is a contradiction — and exactly the
+            // shape an evidence report would happily render as "confirmed".
+            throw new IllegalArgumentException("a CONFIRMED receipt requires a non-empty proof");
+        }
         return new AnchorReceipt(kind, AnchorStatus.CONFIRMED, anchoredDigest, attemptedAt,
-                anchoredAt, proof, proofDigest, attributes, null);
+                anchoredAt, proof, proofDigest, attributes, null, timeSemantics);
     }
 
     /**
@@ -76,18 +92,18 @@ public final class AnchorReceipt {
     public static AnchorReceipt pending(AnchorKind kind, String anchoredDigest, Instant attemptedAt,
                                         byte[] proof, String proofDigest, Map<String, String> attributes) {
         return new AnchorReceipt(kind, AnchorStatus.PENDING, anchoredDigest, attemptedAt,
-                null, proof, proofDigest, attributes, null);
+                null, proof, proofDigest, attributes, null, AnchorKind.TimeSemantics.NOT_A_TIME_PROOF);
     }
 
     public static AnchorReceipt failed(AnchorKind kind, String anchoredDigest, Instant attemptedAt,
                                        String failureReason) {
         return new AnchorReceipt(kind, AnchorStatus.FAILED, anchoredDigest, attemptedAt,
-                null, null, null, Map.of(), failureReason);
+                null, null, null, Map.of(), failureReason, AnchorKind.TimeSemantics.NOT_A_TIME_PROOF);
     }
 
     public static AnchorReceipt notConfigured(AnchorKind kind, String anchoredDigest) {
         return new AnchorReceipt(kind, AnchorStatus.NOT_CONFIGURED, anchoredDigest, null,
-                null, null, null, Map.of(), null);
+                null, null, null, Map.of(), null, AnchorKind.TimeSemantics.NOT_A_TIME_PROOF);
     }
 
     public AnchorKind kind() {
@@ -110,8 +126,8 @@ public final class AnchorReceipt {
 
     /**
      * The time the ANCHOR attests, present only once {@link AnchorStatus#CONFIRMED}. Read it
-     * together with {@link AnchorKind#timeSemantics()}: for OpenTimestamps this is an upper
-     * bound, not the moment of anchoring.
+     * together with {@link #timeSemantics()} — the RECEIPT's, not the kind's, because a token
+     * that states no accuracy carries less than its kind normally would.
      */
     public Instant anchoredAt() {
         return anchoredAt;
@@ -143,12 +159,16 @@ public final class AnchorReceipt {
     }
 
     /**
-     * Whether this receipt supports a claim of independence from the operator. Requires BOTH an
-     * independent target and a confirmed proof: a pending OpenTimestamps commitment is not yet
-     * evidence of anything, however independent its destination.
+     * What this anchor's time may be read as. Usually the kind's default, but an RFC 3161 token
+     * without {@code accuracy} is downgraded to {@link AnchorKind.TimeSemantics#UPPER_BOUND_ONLY}
+     * rather than claiming a precision the token never stated.
      */
-    public boolean supportsIndependenceClaim() {
-        return kind.independentOfOperator() && status == AnchorStatus.CONFIRMED;
+    public AnchorKind.TimeSemantics timeSemantics() {
+        // Non-confirmed receipts carry NOT_A_TIME_PROOF regardless of kind: a failed or pending
+        // RFC 3161 receipt has no token, no time and no accuracy, so reporting its kind's usual
+        // BIDIRECTIONAL_WITHIN_ACCURACY would describe a proof that does not exist
+        // (external review, 3.4).
+        return timeSemantics;
     }
 
     @Override

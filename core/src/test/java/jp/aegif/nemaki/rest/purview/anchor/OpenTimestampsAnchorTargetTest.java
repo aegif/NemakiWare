@@ -130,8 +130,6 @@ class OpenTimestampsAnchorTargetTest {
             assertEquals(AnchorStatus.PENDING, receipt.status());
             assertNull(receipt.anchoredAt(),
                     "Bitcoin has not confirmed it, so no time may be asserted");
-            assertFalse(receipt.supportsIndependenceClaim(),
-                    "the destination is independent, but an unconfirmed commitment is not yet evidence");
             assertNotNull(receipt.proof());
             assertEquals("false", receipt.attributes().get("upgraded"));
             assertEquals("SHA256(digest || 16 random bytes)", receipt.attributes().get("noncePolicy"),
@@ -169,61 +167,92 @@ class OpenTimestampsAnchorTargetTest {
         }
 
         @Test
-        @DisplayName("still pending: the receipt is returned untouched and nothing is re-verified")
+        @DisplayName("still pending: the receipt is returned untouched")
         void stillPendingIsNotAFailure() throws Exception {
-            String url = start(java.util.Map.of("/upgrade",
-                    "{\"status\":\"PENDING\",\"changed\":false,\"proofBase64\":\"" + PROOF_B64
-                            + "\",\"exitCode\":1}"));
+            String url = start(java.util.Map.of(
+                    "/upgrade", "{\"status\":\"PENDING\",\"changed\":false,\"proofBase64\":\""
+                            + PROOF_B64 + "\",\"exitCode\":1}",
+                    "/info", "{\"complete\":false,\"digestMatches\":true,\"pending\":true}"));
             AnchorReceipt pending = pendingReceipt(url);
 
             AnchorReceipt result = new OpenTimestampsAnchorTarget(url).upgrade(pending);
 
-            assertSame(pending, result, "nothing changed, so nothing should be rebuilt");
-            assertFalse(paths.contains("/verify"),
-                    "verifying an unchanged proof would be a pointless round trip to the calendars");
+            assertSame(pending, result);
+            assertEquals(AnchorStatus.PENDING, result.status());
         }
 
         @Test
-        @DisplayName("upgraded AND verified: promoted to CONFIRMED with the attestation recorded")
-        void upgradedAndVerified() throws Exception {
-            byte[] upgraded = "upgraded-ots-proof".getBytes(StandardCharsets.UTF_8);
-            String upgradedB64 = Base64.getEncoder().encodeToString(upgraded);
+        @DisplayName("complete but unverified stays PENDING and says why")
+        void completeButUnverifiedIsNotConfirmed() throws Exception {
+            // The shipped configuration has no Bitcoin node, so a complete proof cannot be
+            // checked here. CONFIRMED is reserved for evidence somebody verified; printing
+            // "confirmed" for a proof nobody checked is the overclaim this design exists to stop.
+            String url = start(java.util.Map.of(
+                    "/upgrade", "{\"status\":\"PENDING\",\"changed\":false,\"proofBase64\":\""
+                            + PROOF_B64 + "\"}",
+                    "/info", "{\"complete\":true,\"digestMatches\":true,\"bitcoinBlockHeight\":921447}",
+                    "/verify", "{\"verified\":false,\"stderr\":\"Could not connect to local Bitcoin node\"}"));
+
+            AnchorReceipt result = new OpenTimestampsAnchorTarget(url).upgrade(pendingReceipt(url));
+
+            assertEquals(AnchorStatus.PENDING, result.status());
+            assertEquals("true", result.attributes().get("proofComplete"));
+            assertEquals("921447", result.attributes().get("bitcoinBlockHeight"));
+            assertEquals("false", result.attributes().get("chainVerifiedLocally"));
+        }
+
+        @Test
+        @DisplayName("a proof for a DIFFERENT digest is refused, however complete it is")
+        void proofForAnotherDigestIsRefused() throws Exception {
+            // A perfectly valid, fully confirmed proof for someone else's document says nothing
+            // about ours. Without this binding it would be promoted on our receipt.
             String url = start(java.util.Map.of(
                     "/upgrade", "{\"status\":\"CONFIRMED\",\"changed\":true,\"proofBase64\":\""
-                            + upgradedB64 + "\"}",
-                    "/verify", "{\"verified\":true,\"pending\":false,\"attestation\":"
-                            + "\"Bitcoin block 921447 attests existence as of 2026-07-29\"}"));
+                            + PROOF_B64 + "\"}",
+                    "/info", "{\"complete\":true,\"digestMatches\":false,"
+                            + "\"error\":\"this proof is for a different digest\"}"));
+            AnchorReceipt pending = pendingReceipt(url);
+
+            AnchorReceipt result = new OpenTimestampsAnchorTarget(url).upgrade(pending);
+
+            assertSame(pending, result);
+            assertEquals(AnchorStatus.PENDING, result.status());
+        }
+
+        @Test
+        @DisplayName("verified against Bitcoin: CONFIRMED and checkable")
+        void verifiedProofIsConfirmed() throws Exception {
+            String url = start(java.util.Map.of(
+                    "/upgrade", "{\"status\":\"CONFIRMED\",\"changed\":false,\"proofBase64\":\""
+                            + PROOF_B64 + "\"}",
+                    "/info", "{\"complete\":true,\"digestMatches\":true,\"bitcoinBlockHeight\":921447}",
+                    "/verify", "{\"verified\":true,\"attestation\":\"Bitcoin block 921447 attests "
+                            + "existence as of 2026-07-29\"}"));
 
             AnchorReceipt result = new OpenTimestampsAnchorTarget(url).upgrade(pendingReceipt(url));
 
             assertEquals(AnchorStatus.CONFIRMED, result.status());
-            assertTrue(result.supportsIndependenceClaim(),
-                    "a confirmed, independently verifiable proof is exactly what rung 2 is for");
-            assertEquals("true", result.attributes().get("upgraded"));
-            assertTrue(result.attributes().get("attestation").contains("921447"));
-            assertArrayEqualsHelper(upgraded, result.proof());
-            assertNull(result.anchoredAt(),
-                    "the proof names a Bitcoin block; turning that into an instant is the "
-                            + "verifier's job, and inventing one here would assert more than the proof does");
+            assertEquals("true", result.attributes().get("chainVerifiedLocally"));
+            assertEquals(AnchorKind.TimeSemantics.UPPER_BOUND_ONLY, result.timeSemantics());
+            assertNull(result.anchoredAt());
         }
 
         @Test
-        @DisplayName("upgraded but NOT verified: stays pending rather than becoming false evidence")
-        void upgradedButUnverifiedIsNotPromoted() throws Exception {
+        @DisplayName("partial progress is kept, not thrown away")
+        void partialUpgradeIsPreserved() throws Exception {
+            byte[] partial = "partly-upgraded".getBytes(StandardCharsets.UTF_8);
             String url = start(java.util.Map.of(
-                    "/upgrade", "{\"status\":\"CONFIRMED\",\"changed\":true,\"proofBase64\":\""
-                            + Base64.getEncoder().encodeToString("garbage".getBytes(StandardCharsets.UTF_8))
-                            + "\"}",
-                    "/verify", "{\"verified\":false,\"pending\":false,"
-                            + "\"stderr\":\"Bad timestamp: mismatch\"}"));
-            AnchorReceipt pending = pendingReceipt(url);
+                    "/upgrade", "{\"status\":\"PENDING\",\"changed\":true,\"proofBase64\":\""
+                            + Base64.getEncoder().encodeToString(partial) + "\"}",
+                    "/info", "{\"complete\":false,\"digestMatches\":true,\"pending\":true}"));
 
-            AnchorReceipt result = new OpenTimestampsAnchorTarget(url).upgrade(pending);
+            AnchorReceipt result = new OpenTimestampsAnchorTarget(url).upgrade(pendingReceipt(url));
 
-            assertSame(pending, result,
-                    "bytes that changed but do not verify are not evidence; promoting them would "
-                            + "put an uncheckable proof behind the word CONFIRMED");
             assertEquals(AnchorStatus.PENDING, result.status());
+            org.junit.jupiter.api.Assertions.assertArrayEquals(partial, result.proof(),
+                    "discarding the newer bytes would rely on calendars still holding the same "
+                            + "intermediate data on the next attempt");
+            assertEquals("partial", result.attributes().get("upgraded"));
         }
 
         @Test
@@ -231,7 +260,7 @@ class OpenTimestampsAnchorTargetTest {
         void confirmedIsNotUpgradedAgain() throws Exception {
             String url = start(java.util.Map.of());
             AnchorReceipt confirmed = AnchorReceipt.confirmed(AnchorKind.OPENTIMESTAMPS, DIGEST,
-                    java.time.Instant.now(), null, PROOF, "d", java.util.Map.of());
+                    java.time.Instant.now(), null, PROOF, "d", java.util.Map.of(), AnchorKind.TimeSemantics.UPPER_BOUND_ONLY);
 
             assertSame(confirmed, new OpenTimestampsAnchorTarget(url).upgrade(confirmed));
             assertTrue(paths.isEmpty(), "no request should be made for an already-confirmed proof");

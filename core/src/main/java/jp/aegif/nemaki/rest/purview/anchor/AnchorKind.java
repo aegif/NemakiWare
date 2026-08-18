@@ -24,9 +24,11 @@ package jp.aegif.nemaki.rest.purview.anchor;
  * design and are carried on this enum so that no caller has to remember them:
  *
  * <ul>
- *   <li><b>Independence.</b> An anchor inside the operating organization proves nothing against
- *       that organization's own administrator. Only {@link #independentOfOperator()} targets
- *       support the claim "not even an administrator of this deployment could alter this".</li>
+ *   <li><b>Independence is NOT modelled here.</b> Four review rounds established that this code
+ *       cannot determine whether an anchor is organizationally independent of the operator:
+ *       every computable test was satisfiable by an operator running their own infrastructure.
+ *       A destination is not a guarantee, so no flag pretends otherwise. What the receipt
+ *       records instead is what it actually holds and what was actually checked.</li>
  *   <li><b>Time semantics.</b> A blockchain anchor proves an <i>upper</i> bound — the data
  *       existed no later than some block. A time-stamp token asserts a point in time within a
  *       stated accuracy. Rendering the two with the same words is how an honest report turns
@@ -41,26 +43,26 @@ public enum AnchorKind {
      * <p>Not a time proof: the catalog records when IT was told, not when the data existed, and
      * a same-tenant catalog is administered by the very party whose behaviour is in question.
      */
-    ATLAS_CATALOG(1, false, TimeSemantics.NOT_A_TIME_PROOF),
+    ATLAS_CATALOG(TimeSemantics.NOT_A_TIME_PROOF),
 
     /**
      * OpenTimestamps, committed into the Bitcoin blockchain. Rung 2.
      *
-     * <p>Independent of the operator and free, but <b>upper bound only</b> and not immediate:
+     * <p>Free, but <b>upper bound only</b> and not immediate:
      * confirmation waits on calendar aggregation and block confirmations (measured at hours to
      * roughly half a day, calendar-dependent). A receipt is therefore legitimately
      * {@link AnchorStatus#PENDING} for a while, and pending is not failure.
      */
-    OPENTIMESTAMPS(2, true, TimeSemantics.UPPER_BOUND_ONLY),
+    OPENTIMESTAMPS(TimeSemantics.UPPER_BOUND_ONLY),
 
     /**
      * An RFC 3161 time-stamp authority. Rung 3.
      *
-     * <p>Independent of the operator and immediate, with an accuracy the token itself states.
-     * Whether the authority is accredited is a property of the configured TSA, not of this
-     * enum — see {@code rfc3161.accreditation} in the evidence report.
+     * <p>Immediate, with an accuracy the token itself states when it states one. Who operates
+     * the authority — and therefore what its token is worth — is a property of the deployment's
+     * configuration and contracts, not something this enum can express.
      */
-    RFC3161_TSA(3, true, TimeSemantics.BIDIRECTIONAL_WITHIN_ACCURACY);
+    RFC3161_TSA(TimeSemantics.BIDIRECTIONAL_WITHIN_ACCURACY);
 
     /** What a time claim derived from this anchor may say. */
     public enum TimeSemantics {
@@ -72,27 +74,10 @@ public enum AnchorKind {
         NOT_A_TIME_PROOF
     }
 
-    private final int rung;
-    private final boolean independentOfOperator;
     private final TimeSemantics timeSemantics;
 
-    AnchorKind(int rung, boolean independentOfOperator, TimeSemantics timeSemantics) {
-        this.rung = rung;
-        this.independentOfOperator = independentOfOperator;
+    AnchorKind(TimeSemantics timeSemantics) {
         this.timeSemantics = timeSemantics;
-    }
-
-    /** Trust-ladder rung, 1-3. Rung 0 (the internal hash chain) has no anchor target. */
-    public int rung() {
-        return rung;
-    }
-
-    /**
-     * Whether evidence resting on this anchor survives an administrator of this deployment.
-     * False for anchors that live inside the operating organization.
-     */
-    public boolean independentOfOperator() {
-        return independentOfOperator;
     }
 
     public TimeSemantics timeSemantics() {

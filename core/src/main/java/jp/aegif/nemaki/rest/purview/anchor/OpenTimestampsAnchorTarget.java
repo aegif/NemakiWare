@@ -143,39 +143,74 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
             return pending;
         }
         try {
-            String body = "{\"proofBase64\":\""
-                    + Base64.getEncoder().encodeToString(pending.proof()) + "\"}";
-            JsonNode response = post("/upgrade", body);
-            if (!response.path("changed").asBoolean(false)) {
-                return pending;
-            }
-            byte[] upgraded = Base64.getDecoder().decode(response.path("proofBase64").asString(""));
+            byte[] current = pending.proof();
+            JsonNode upgradeResponse = post("/upgrade", "{\"proofBase64\":\""
+                    + Base64.getEncoder().encodeToString(current) + "\"}");
+            byte[] latest = Base64.getDecoder().decode(
+                    upgradeResponse.path("proofBase64").asString(""));
+            boolean changed = upgradeResponse.path("changed").asBoolean(false);
 
-            // The upgrade tells us the commitment is complete, but the block time it attests
-            // has to come from verification rather than from our own clock — so ask.
-            JsonNode verified = post("/verify",
-                    "{\"digest\":\"" + pending.anchoredDigest() + "\",\"proofBase64\":\""
-                            + Base64.getEncoder().encodeToString(upgraded) + "\"}");
-            if (!verified.path("verified").asBoolean(false)) {
-                // Upgraded bytes that do not verify are not evidence; keep the pending receipt
-                // rather than promote something we could not check.
-                logger.warn("OpenTimestamps proof for {} upgraded but did not verify: {}",
-                        pending.anchoredDigest(), verified.path("stderr").asString(""));
+            // Ask the proof what it says ABOUT THIS DIGEST. "Unchanged" also describes an
+            // already-complete proof, so completeness is a property of the proof rather than of
+            // whether upgrade altered bytes. The sidecar binds the proof to the digest: a valid
+            // complete proof for some other document says nothing about ours.
+            byte[] candidate = changed && latest.length > 0 ? latest : current;
+            JsonNode info = post("/info", "{\"digest\":\"" + pending.anchoredDigest()
+                    + "\",\"proofBase64\":\"" + Base64.getEncoder().encodeToString(candidate) + "\"}");
+
+            if (!info.path("digestMatches").asBoolean(false)) {
+                logger.warn("OpenTimestamps proof does not belong to digest {}: {}",
+                        pending.anchoredDigest(), info.path("error").asString(""));
                 return pending;
             }
 
             Map<String, String> attrs = new LinkedHashMap<>(pending.attributes());
-            attrs.put("upgraded", "true");
-            attrs.put("attestation", verified.path("attestation").asString(""));
+            if (changed && latest.length > 0) {
+                // Progress that may not be completion: keep the newer bytes rather than relying
+                // on calendars still holding the same intermediate data next time.
+                attrs.put("upgraded", info.path("complete").asBoolean(false) ? "true" : "partial");
+            }
 
-            logger.info("OpenTimestamps commitment for {} confirmed: {}",
+            if (!info.path("complete").asBoolean(false)) {
+                // Nothing new to record: hand back the same receipt rather than an equal-looking
+                // copy, so a caller can tell "no progress" from "progress" by identity.
+                if (!changed || latest.length == 0) {
+                    return pending;
+                }
+                return AnchorReceipt.pending(kind(), pending.anchoredDigest(), pending.attemptedAt(),
+                        candidate, Rfc3161AnchorTarget.sha256Hex(candidate), attrs);
+            }
+
+            // The proof now CONTAINS a Bitcoin attestation. That is not the same as having
+            // checked it: confirming it means resolving the named block, which needs a Bitcoin
+            // node this container deliberately does not ship. So a complete-but-unchecked proof
+            // stays PENDING and says why. CONFIRMED is reserved for evidence somebody verified
+            // (external review, 3.4) — a report that prints "confirmed" for an unverified proof
+            // is the overclaim this whole design exists to prevent.
+            attrs.put("proofComplete", "true");
+            attrs.put("bitcoinBlockHeight", info.path("bitcoinBlockHeight").asString(""));
+            attrs.put("chainVerifiedLocally", "false");
+            attrs.put("chainVerificationProcedure",
+                    "ots verify (requires a Bitcoin node; this deployment runs none)");
+
+            JsonNode verified = post("/verify", "{\"digest\":\"" + pending.anchoredDigest()
+                    + "\",\"proofBase64\":\"" + Base64.getEncoder().encodeToString(candidate) + "\"}");
+            if (!verified.path("verified").asBoolean(false)) {
+                logger.info("OpenTimestamps proof for {} is complete (Bitcoin block {}) but "
+                                + "unverified here; a verifier with a Bitcoin node can check it",
+                        pending.anchoredDigest(), info.path("bitcoinBlockHeight").asString(""));
+                return AnchorReceipt.pending(kind(), pending.anchoredDigest(), pending.attemptedAt(),
+                        candidate, Rfc3161AnchorTarget.sha256Hex(candidate), attrs);
+            }
+
+            attrs.put("chainVerifiedLocally", "true");
+            attrs.put("attestation", verified.path("attestation").asString(""));
+            logger.info("OpenTimestamps proof for {} verified against Bitcoin: {}",
                     pending.anchoredDigest(), verified.path("attestation").asString(""));
 
-            // anchoredAt stays null: the attestation names a Bitcoin block, and turning that
-            // into an instant is the verifier's job, not ours. The attestation string carries
-            // what the proof actually says.
             return AnchorReceipt.confirmed(kind(), pending.anchoredDigest(), pending.attemptedAt(),
-                    null, upgraded, Rfc3161AnchorTarget.sha256Hex(upgraded), attrs);
+                    null, candidate, Rfc3161AnchorTarget.sha256Hex(candidate), attrs,
+                    AnchorKind.TimeSemantics.UPPER_BOUND_ONLY);
 
         } catch (Exception e) {
             logger.warn("OpenTimestamps upgrade failed for {}: {}",

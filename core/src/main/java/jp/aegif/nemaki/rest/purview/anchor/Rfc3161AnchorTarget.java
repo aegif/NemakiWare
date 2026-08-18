@@ -74,11 +74,33 @@ import org.slf4j.LoggerFactory;
  *       captured and what we did not, rather than implying a verification we did not perform.</li>
  * </ol>
  *
- * <p><b>What we deliberately do not do here:</b> verify the signature, build a certificate path,
- * or fetch CRL/OCSP. Those belong to verification, not to anchoring, and pretending to have done
- * them at issue time would be the exact overclaim the evidence report is built to avoid. What we
- * DO record is {@code revocationDataCapturedAt=never}, because revocation data cannot be
- * reconstructed after the fact and its absence has to be visible rather than assumed.
+ * <h3>What is and is not established here</h3>
+ *
+ * <p><b>Done:</b> the CMS signature over the TSTInfo is verified against the certificate the
+ * token carries. Without this, anyone able to answer the configured URL could return a token
+ * with the right nonce and imprint and have it recorded as confirmed evidence — {@code
+ * validate()} would accept it.
+ *
+ * <p><b>Not done:</b> revocation checking. When a trust anchor is configured, the signer is
+ * validated to it by PKIX path validation over the certificates the token carries — which is
+ * what a real accredited TSA needs, since those issue from an intermediate rather than their
+ * root — but with revocation disabled. The receipt says so in {@code trustAnchorCheck} rather
+ * than letting a reader assume freshness we never established. {@code revocationDataCapturedAt=never} is recorded because revocation data cannot
+ * be reconstructed after the fact and its absence has to be visible rather than assumed.
+ *
+ * <h3>What CONFIRMED means here</h3>
+ *
+ * <p>Narrower than the word suggests, so it is spelled out: the response answered our nonce and
+ * imprint, and its CMS signature verifies against the certificate the token itself carried. If
+ * a trust anchor is configured, the signer also chains to it — and if it does not, the result is
+ * FAILED rather than a CONFIRMED receipt with a quiet attribute saying otherwise. What CONFIRMED
+ * does NOT mean: that the signer was authenticated against any external directory, that its
+ * certificate path was validated per PKIX, or that revocation was checked.
+ *
+ * <p><b>Not derivable at all:</b> whether the TSA is organizationally independent of this
+ * deployment. An operator can run their own TSA and configure its certificate as the anchor;
+ * every check here then passes. The receipt records the operator's accreditation string
+ * verbatim and interprets nothing.
  */
 public class Rfc3161AnchorTarget implements AnchorTarget {
 
@@ -101,6 +123,7 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
     private final String tsaUrl;
     private final String reqPolicyOid;
     private final String accreditation;
+    private final java.security.cert.X509Certificate trustAnchor;
     private final SecureRandom random = new SecureRandom();
 
     /**
@@ -113,6 +136,19 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
      *                      accredited is a fact about a contract, not something to detect.
      */
     public Rfc3161AnchorTarget(String tsaUrl, String reqPolicyOid, String accreditation) {
+        this(tsaUrl, reqPolicyOid, accreditation, null);
+    }
+
+    /**
+     * @param trustAnchor the certificate the TSA's signer must chain to, or null when the
+     *        operator has configured none. Without an anchor the signature can still be checked
+     *        against the certificate the token carries — but that certificate is supplied by
+     *        whoever answered, so it establishes internal consistency, NOT that an independent
+     *        party issued the token. Receipts say so instead of assuming.
+     */
+    public Rfc3161AnchorTarget(String tsaUrl, String reqPolicyOid, String accreditation,
+                               java.security.cert.X509Certificate trustAnchor) {
+        this.trustAnchor = trustAnchor;
         this.tsaUrl = tsaUrl == null || tsaUrl.isBlank() ? null : tsaUrl.trim();
         this.reqPolicyOid = reqPolicyOid == null || reqPolicyOid.isBlank() ? null : reqPolicyOid.trim();
         this.accreditation = accreditation == null || accreditation.isBlank() ? "NONE" : accreditation.trim();
@@ -167,6 +203,25 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             TimeStampTokenInfo info = token.getTimeStampInfo();
             byte[] encodedToken = token.getEncoded();
 
+            // THE check validate() does not do. Without it a CMS-shaped blob carrying the right
+            // nonce and imprint — which anyone who can answer this URL can produce — becomes
+            // "confirmed independent evidence". Verifying against the certificate the token
+            // carries proves the token is internally consistent; chaining that certificate to a
+            // configured anchor is what proves somebody else issued it. They are separate facts
+            // and the receipt reports them separately (external review, 3.4).
+            SignatureCheck check = verifySignature(token);
+            if (!check.signatureValid) {
+                return AnchorReceipt.failed(kind(), hexDigest, attemptedAt,
+                        "TSA token signature did not verify: " + check.detail);
+            }
+            if (trustAnchor != null && !check.validatesToTrustAnchor) {
+                // An operator who configured an anchor asked for exactly this check. Recording
+                // the failure in an attribute and returning CONFIRMED anyway would answer a
+                // different question than the one they configured (external review, 3.4).
+                return AnchorReceipt.failed(kind(), hexDigest, attemptedAt,
+                        "TSA signer does not validate to the configured trust anchor (PKIX path validation over the certificates the token carries; revocation not checked)");
+            }
+
             Map<String, String> attrs = new LinkedHashMap<>();
             attrs.put("tsaUrl", tsaUrl);
             attrs.put("accreditation", accreditation);
@@ -175,21 +230,44 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             attrs.put("genTime", info.getGenTime().toInstant().toString());
             attrs.put("accuracySeconds", accuracySecondsOf(info));
             attrs.put("digestAlgorithm", DIGEST_ALGORITHM);
-            // Pitfall 2's observable half: say whether the certificate actually arrived, so a
-            // deployment that will not be verifiable later is visible now rather than in court.
-            attrs.put("certificateChainIncluded",
-                    String.valueOf(!token.getCertificates().getMatches(null).isEmpty()));
+            // Pitfall 2's observable half. Named for what it measures: a count. A non-empty
+            // certificate set usually means the signer certificate alone, which is NOT a chain,
+            // and calling it one would overstate what a later verifier has to work with.
+            attrs.put("embeddedCertificateCount", String.valueOf(check.certificateCount));
+            attrs.put("signatureVerified", "true");
+            attrs.put("signerTrustAnchorConfigured", String.valueOf(trustAnchor != null));
+            attrs.put("signerValidatesToTrustAnchor", String.valueOf(check.validatesToTrustAnchor));
+            // The operator's own words, recorded verbatim and never interpreted. Deriving a
+            // boolean from this string put independence back in through the attribute map:
+            // any value other than "NONE" — including "none" or "SELF_OPERATED" — read as
+            // third-party status (external review, 3.4).
+            attrs.put("accreditationDeclaredByOperator", accreditation);
+            attrs.put("trustAnchorCheck", trustAnchor == null
+                    ? "not configured; no issuer check was performed"
+                    : "PKIX path validation to the configured anchor; revocation NOT checked");
             // Not a TODO: revocation data genuinely cannot be captured retroactively, so its
             // absence is part of the evidence rather than a gap to paper over.
             attrs.put("revocationDataCapturedAt", "never");
-            attrs.put("signatureVerified", "false");
-            attrs.put("certificatePathVerified", "false");
 
             logger.info("RFC 3161 token obtained from {} (serial {}, genTime {})",
                     tsaUrl, info.getSerialNumber(), info.getGenTime().toInstant());
 
+            // Independence is a fact about the WORLD, not about cryptography, and no amount of
+            // certificate checking can establish it: an operator can configure their own
+            // self-signed TSA as its own trust anchor and every cryptographic test passes. So it
+            // is never inferred. The operator must declare the TSA an accredited third party
+            // (accreditation != NONE), AND the signature must verify, AND the signer must chain
+            // to a separately configured anchor. Even then the evidence report presents this as
+            // DECLARED rather than proven (external review, 3.4).
+            // An absent accuracy means the token states no precision, so it cannot carry the
+            // bidirectional claim its kind normally does — it degrades to an upper bound.
+            AnchorKind.TimeSemantics semantics = info.getGenTimeAccuracy() == null
+                    ? AnchorKind.TimeSemantics.UPPER_BOUND_ONLY
+                    : AnchorKind.TimeSemantics.BIDIRECTIONAL_WITHIN_ACCURACY;
+
             return AnchorReceipt.confirmed(kind(), hexDigest, attemptedAt,
-                    info.getGenTime().toInstant(), encodedToken, sha256Hex(encodedToken), attrs);
+                    info.getGenTime().toInstant(), encodedToken, sha256Hex(encodedToken), attrs,
+                    semantics);
 
         } catch (Exception e) {
             // Anchoring must never fail the operation that triggered it.
@@ -254,6 +332,93 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
         }
     }
 
+    /** What could be established about the token's signature, as separate facts. */
+    private record SignatureCheck(boolean signatureValid, boolean validatesToTrustAnchor,
+                                  int certificateCount, String detail) {
+    }
+
+    /**
+     * Verify the CMS signature against the certificate carried in the token, and — only when an
+     * anchor is configured — whether that certificate chains to it.
+     */
+    private SignatureCheck verifySignature(TimeStampToken token) {
+        try {
+            java.util.Collection<org.bouncycastle.cert.X509CertificateHolder> certs =
+                    token.getCertificates().getMatches(null);
+            java.util.Collection<org.bouncycastle.cert.X509CertificateHolder> signers =
+                    token.getCertificates().getMatches(token.getSID());
+            if (signers.isEmpty()) {
+                return new SignatureCheck(false, false, certs.size(),
+                        "the token carries no certificate matching its signer id"
+                                + " (certReq was probably not honoured)");
+            }
+            org.bouncycastle.cert.X509CertificateHolder signer = signers.iterator().next();
+            token.validate(new org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoVerifierBuilder()
+                    .setProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider())
+                    .build(signer));
+
+            boolean chains = false;
+            if (trustAnchor != null) {
+                chains = validatePath(signer, certs);
+            }
+            return new SignatureCheck(true, chains, certs.size(), "ok");
+
+        } catch (Exception e) {
+            return new SignatureCheck(false, false, 0,
+                    e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * PKIX path validation from the token's signer up to the configured trust anchor, using the
+     * certificates the token itself carries as candidate intermediates.
+     *
+     * <p>A direct issuer check (does the anchor's key verify the signer's signature?) was the
+     * first implementation and it is a trap: <b>commercial accredited TSAs issue from an
+     * intermediate CA, not from their root</b>. Configuring such a TSA's root would have made
+     * every single anchoring attempt fail — and because the anchor check fails closed, fail
+     * loudly and totally. The direct check only ever worked for a self-signed TSA acting as its
+     * own anchor, which is precisely the configuration that proves nothing.
+     *
+     * <p>Revocation checking is disabled deliberately and consistently with the rest of this
+     * class: we do not fetch CRL/OCSP at issue time, and the receipt says so rather than
+     * implying a freshness we never established.
+     */
+    private boolean validatePath(org.bouncycastle.cert.X509CertificateHolder signer,
+                                 java.util.Collection<org.bouncycastle.cert.X509CertificateHolder> embedded) {
+        try {
+            org.bouncycastle.cert.jcajce.JcaX509CertificateConverter converter =
+                    new org.bouncycastle.cert.jcajce.JcaX509CertificateConverter();
+            java.security.cert.X509Certificate signerCert = converter.getCertificate(signer);
+
+            java.util.List<java.security.cert.X509Certificate> chain = new java.util.ArrayList<>();
+            chain.add(signerCert);
+            for (org.bouncycastle.cert.X509CertificateHolder holder : embedded) {
+                java.security.cert.X509Certificate c = converter.getCertificate(holder);
+                // The anchor is supplied separately; including it in the path would make
+                // CertPathValidator reject the path as containing its own trust anchor.
+                if (!c.equals(signerCert) && !c.equals(trustAnchor)) {
+                    chain.add(c);
+                }
+            }
+
+            java.security.cert.CertPath path = java.security.cert.CertificateFactory
+                    .getInstance("X.509").generateCertPath(chain);
+            java.security.cert.PKIXParameters params = new java.security.cert.PKIXParameters(
+                    java.util.Set.of(new java.security.cert.TrustAnchor(trustAnchor, null)));
+            params.setRevocationEnabled(false);
+            params.setDate(java.util.Date.from(Instant.now()));
+
+            java.security.cert.CertPathValidator.getInstance("PKIX").validate(path, params);
+            return true;
+
+        } catch (Exception e) {
+            logger.warn("TSA signer does not validate to the configured trust anchor: {}",
+                    e.toString());
+            return false;
+        }
+    }
+
     /** Lowercase 64-char hex to bytes. A caller that gets this wrong has a bug, so this throws. */
     static byte[] decodeSha256Hex(String hexDigest) {
         if (hexDigest == null || hexDigest.length() != 64) {
@@ -262,14 +427,24 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
         }
         byte[] out = new byte[32];
         for (int i = 0; i < 32; i++) {
-            int hi = Character.digit(hexDigest.charAt(i * 2), 16);
-            int lo = Character.digit(hexDigest.charAt(i * 2 + 1), 16);
+            // Character.digit would accept uppercase and even full-width Unicode digits, which
+            // the sidecar's binascii.unhexlify rejects — the two rungs would then disagree about
+            // what a valid digest is. Accept exactly lowercase ASCII hex.
+            int hi = lowerHexValue(hexDigest.charAt(i * 2));
+            int lo = lowerHexValue(hexDigest.charAt(i * 2 + 1));
             if (hi < 0 || lo < 0) {
-                throw new IllegalArgumentException("digest is not hexadecimal at position " + (i * 2));
+                throw new IllegalArgumentException(
+                        "digest is not lowercase ASCII hexadecimal at position " + (i * 2));
             }
             out[i] = (byte) ((hi << 4) | lo);
         }
         return out;
+    }
+
+    private static int lowerHexValue(char c) {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        return -1;
     }
 
     static String sha256Hex(byte[] data) {

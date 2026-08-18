@@ -107,8 +107,70 @@ def upgrade(proof_b64):
     }
 
 
+def info(hex_digest, proof_b64):
+    """Report what the proof says about a SPECIFIC digest, using the library's object model.
+
+    Two things this must not do, both learned the hard way (external review, 3.4):
+
+    1. **Parse `ots info` text.** The rendering includes calendar URIs verbatim, so a crafted
+       PendingAttestation URI containing the substring "BitcoinBlockHeaderAttestation(921447)"
+       would make a text scan report a complete proof. Attestations are read from the parsed
+       timestamp instead.
+    2. **Ignore which digest the proof is for.** A perfectly valid, complete proof for some
+       OTHER document says nothing about ours. The proof's own file digest is compared with the
+       digest we are asking about, and a mismatch is reported as such.
+
+    Note what "complete" does and does not mean: the proof CONTAINS a Bitcoin attestation naming
+    a block. It has NOT been checked against the blockchain — that needs a node, and it is the
+    caller's job to keep those two facts apart.
+    """
+    # `ots stamp` hashes the FILE we hand it, and that file contains the raw digest bytes, so
+    # the proof commits to SHA256(D) rather than to D. That is still a commitment to D — one
+    # extra layer — but the binding check has to be made at the layer the proof actually uses.
+    import hashlib
+    expected = hashlib.sha256(_digest_bytes(hex_digest)).digest()
+    proof = base64.b64decode(proof_b64, validate=True)
+
+    from opentimestamps.core.serialize import BytesDeserializationContext
+    from opentimestamps.core.timestamp import DetachedTimestampFile
+    from opentimestamps.core.notary import BitcoinBlockHeaderAttestation, PendingAttestation
+
+    try:
+        detached = DetachedTimestampFile.deserialize(BytesDeserializationContext(proof))
+    except Exception as exc:  # noqa: BLE001 - a malformed proof is an answer, not a crash
+        return {"complete": False, "error": f"unreadable proof: {type(exc).__name__}: {exc}"}
+
+    if detached.file_digest != expected:
+        return {
+            "complete": False,
+            "digestMatches": False,
+            "error": "this proof is for a different digest",
+        }
+
+    heights, pending = [], False
+    for _msg, attestation in detached.timestamp.all_attestations():
+        if isinstance(attestation, BitcoinBlockHeaderAttestation):
+            heights.append(int(attestation.height))
+        elif isinstance(attestation, PendingAttestation):
+            pending = True
+
+    return {
+        "complete": bool(heights),
+        "digestMatches": True,
+        "bitcoinBlockHeight": min(heights) if heights else None,
+        "bitcoinAttestationCount": len(heights),
+        "pending": pending,
+        # Said explicitly so no caller can mistake structure for verification.
+        "chainVerified": False,
+    }
+
+
 def verify(hex_digest, proof_b64):
-    """Verify a proof against a digest. This is what a third party runs, so we run it too."""
+    """Full verification against the Bitcoin chain.
+
+    REQUIRES a Bitcoin node: the client resolves the attested block through RPC. Without one it
+    reports failure, which is why completeness is decided by `info` above and this endpoint is
+    kept only for deployments that do run a node (and for the auditor's own procedure)."""
     raw = _digest_bytes(hex_digest)
     proof = base64.b64decode(proof_b64, validate=True)
     with tempfile.TemporaryDirectory() as tmp:
@@ -163,7 +225,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if length > MAX_BODY:
+            # A negative length would make rfile.read(-1) read to EOF, sailing past MAX_BODY and
+            # letting one slow client hold a thread while it feeds unbounded input.
+            if length < 0 or length > MAX_BODY:
                 self._send(413, {"error": "body too large"})
                 return
             request = json.loads(self.rfile.read(length) or b"{}")
@@ -172,6 +236,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, stamp(request.get("digest")))
             elif self.path == "/upgrade":
                 self._send(200, upgrade(request["proofBase64"]))
+            elif self.path == "/info":
+                self._send(200, info(request.get("digest"), request["proofBase64"]))
             elif self.path == "/verify":
                 self._send(200, verify(request.get("digest"), request["proofBase64"]))
             else:
