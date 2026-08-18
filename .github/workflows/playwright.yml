@@ -26,8 +26,18 @@ permissions:
 
 jobs:
   test:
-    timeout-minutes: 180
+    # 3.3.1 #9b: sharded 4 ways. Each shard boots its OWN full stack (CouchDB/Solr/core),
+    # so cross-shard interference through server state is impossible and workers:1 inside a
+    # shard keeps the suite's ordering assumptions. Unsharded green runs took 87-103 minutes;
+    # a shard carries the full build+boot (~25 min) plus about a quarter of the tests, so 75
+    # keeps headroom while a hung shard dies far sooner than the old 130/180. fail-fast is
+    # off so one flaky shard does not cancel the other three-quarters of the signal.
+    timeout-minutes: 75
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     env:
       MAVEN_USERNAME: ${{ github.actor }}
       MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
@@ -111,13 +121,15 @@ jobs:
       env:
         PLAYWRIGHT_BASE_URL: http://localhost:8080
         SKIP_KEYCLOAK: 'true'
-      run: npx playwright test --project=chromium --reporter=github
+      # github + html: --reporter on the CLI REPLACES the config's reporter list, so github
+      # alone left the playwright-report/ artifact empty (pre-existing, surfaced in review).
+      run: npx playwright test --project=chromium --reporter=github,html --shard=${{ matrix.shard }}/4
 
     - name: Upload Playwright Report
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
       if: always()
       with:
-        name: playwright-report
+        name: playwright-report-shard-${{ matrix.shard }}
         path: core/src/main/webapp/ui/playwright-report/
         retention-days: 30
 
@@ -125,7 +137,7 @@ jobs:
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
       if: always()
       with:
-        name: test-results
+        name: test-results-shard-${{ matrix.shard }}
         path: core/src/main/webapp/ui/test-results/
         retention-days: 30
 

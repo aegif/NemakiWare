@@ -264,9 +264,11 @@ public class DatabasePreInitializerReprobeTest {
 
         @SuppressWarnings("unchecked")
         private void forceState(StartupProbeService svc, StartupProbeService.StartupState state) throws Exception {
-            Field stateField = StartupProbeService.class.getDeclaredField("currentState");
+            // 3.3.1 #2: see StartupProbeServiceTest.forceState — snapshot record replaces the field.
+            Field stateField = StartupProbeService.class.getDeclaredField("snapshot");
             stateField.setAccessible(true);
-            ((AtomicReference<StartupProbeService.StartupState>) stateField.get(svc)).set(state);
+            ((AtomicReference<StartupProbeService.ProbeSnapshot>) stateField.get(svc))
+                    .set(new StartupProbeService.ProbeSnapshot(state, ""));
         }
     }
 

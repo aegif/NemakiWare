@@ -129,8 +129,9 @@ public class Patch_TestUserInitialization extends AbstractNemakiPatch {
                     .getBean("ContentService", ContentService.class);
             
             if (principalService == null || contentService == null) {
-                log.error("Required services not available - skipping test user initialization");
-                return;
+                // An unprepared return here would be recorded as "applied" by the base class.
+                throw new IllegalStateException(
+                        "Required services not available for test user initialization");
             }
             
             // Create TestUser group if it doesn't exist
@@ -141,12 +142,18 @@ public class Patch_TestUserInitialization extends AbstractNemakiPatch {
             
             log.info("=== PATCH: Test User Initialization completed successfully ===");
             
+        } catch (RuntimeException e) {
+            // The base class records PatchHistory only when this method RETURNS. Swallowing here
+            // used to bake a failed seed in as "applied" — enabled deployments whose first seed
+            // hit a transient CouchDB error never got the fixture, forever (3.3.1 #1). Throwing
+            // lets the base per-repository catch log it, mark the run unsuccessful, and leave no
+            // history — so the next boot retries.
+            throw e;
         } catch (Exception e) {
-            log.warn("Error during test user initialization: " + e.getMessage());
-            // Don't fail the entire patch process due to test user initialization issues
+            throw new RuntimeException("Test user initialization failed for " + repositoryId, e);
         }
     }
-    
+
     private void createTestUserGroup(String repositoryId, PrincipalService principalService, ContentService contentService) {
         try {
             // Check if TestUser group already exists
@@ -198,8 +205,10 @@ public class Patch_TestUserInitialization extends AbstractNemakiPatch {
                 }
             }
             
+        } catch (RuntimeException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("Failed to create QA group: " + e.getMessage(), e);
+            throw new RuntimeException("Failed to create QA group in " + repositoryId, e);
         }
     }
     
@@ -252,17 +261,20 @@ public class Patch_TestUserInitialization extends AbstractNemakiPatch {
                     String userId = createdUser.getId();
                     log.info("Created QA user with ID: " + userId + " with firstName: Test, lastName: User");
 
+                } catch (RuntimeException userCreationException) {
+                    throw userCreationException;
                 } catch (Exception userCreationException) {
-                    log.warn("Failed to create QA user (may already exist): " + userCreationException.getMessage());
-                    // Continue with patch execution even if user creation fails
+                    throw new RuntimeException(
+                            "Failed to create QA user in " + repositoryId, userCreationException);
                 }
             } else {
                 log.info("Test user already exists - skipping creation but continuing with group membership verification");
             }
             
+        } catch (RuntimeException e) {
+            throw e;
         } catch (Exception e) {
-            log.warn("Error during test user initialization: " + e.getMessage());
-            // Continue with patch execution - don't let user creation errors block group updates
+            throw new RuntimeException("Test user creation failed for " + repositoryId, e);
         }
     }
 }

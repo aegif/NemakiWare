@@ -134,7 +134,8 @@ public class JodRenditionManagerImpl implements RenditionManager {
 			inputFile.deleteOnExit();
 			log.info("[JodRendition] Input file created: " + inputFile.getAbsolutePath() + ", size=" + inputFile.length());
 
-			outputFile = File.createTempFile("output", ".pdf");
+			// Same 600-permission reasoning as convertInputStreamToFile below.
+			outputFile = java.nio.file.Files.createTempFile("output", ".pdf").toFile();
 			outputFile.deleteOnExit();
 			log.info("[JodRendition] Output file created: " + outputFile.getAbsolutePath());
 
@@ -201,7 +202,10 @@ public class JodRenditionManagerImpl implements RenditionManager {
 	private File convertInputStreamToFile(String prefix, String suffix,
 			InputStream inputStream) throws IOException {
 
-		File file = File.createTempFile(prefix, suffix);
+		// NIO variant, not File.createTempFile: on POSIX the legacy call inherits the umask
+		// (typically 644), so on a shared temp dir another local user could read the attachment
+		// body being converted. Files.createTempFile creates with 600 (CodeQL, 3.3.1 #5).
+		File file = java.nio.file.Files.createTempFile(prefix, suffix).toFile();
 		// try-with-resources, because the previous form closed both streams only on the way
 		// out of the happy path: a read failure mid-copy left the caller's InputStream open,
 		// and that stream is an attachment body — a live CouchDB connection held until GC.

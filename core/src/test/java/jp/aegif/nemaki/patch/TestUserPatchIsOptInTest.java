@@ -72,6 +72,21 @@ public class TestUserPatchIsOptInTest {
 		when(contentService.getGroupItems(anyString())).thenReturn(List.<GroupItem>of());
 		when(contentService.getUserItems(anyString())).thenReturn(List.<UserItem>of());
 
+		// The patch now THROWS on any failure instead of logging past it (3.3.1 #1), so the
+		// happy path needs real-looking returns — a null from these mocks is a failure now.
+		GroupItem createdGroup = mock(GroupItem.class);
+		when(createdGroup.getId()).thenReturn("group-1");
+		when(contentService.createGroupItem(any(), anyString(), any(GroupItem.class)))
+				.thenReturn(createdGroup);
+		jp.aegif.nemaki.model.Folder usersFolder = mock(jp.aegif.nemaki.model.Folder.class);
+		when(usersFolder.getId()).thenReturn("users-folder");
+		when(contentService.getOrCreateSystemSubFolder(anyString(), anyString()))
+				.thenReturn(usersFolder);
+		UserItem createdUser = mock(UserItem.class);
+		when(createdUser.getId()).thenReturn("user-1");
+		when(contentService.createUserItem(any(), anyString(), any(UserItem.class)))
+				.thenReturn(createdUser);
+
 		ApplicationContext ctx = mock(ApplicationContext.class);
 		when(ctx.getBean("PrincipalService", PrincipalService.class))
 				.thenReturn(mock(PrincipalService.class));
@@ -127,6 +142,40 @@ public class TestUserPatchIsOptInTest {
 	public void noPropertyManagerMeansNo() {
 		Patch_TestUserInitialization patch = new Patch_TestUserInitialization();
 		assertFalse(patch.isEnabled(), "a patch with nothing wired must not seed anything");
+	}
+
+	/**
+	 * 3.3.1 #1: an ENABLED seed that fails must not bake in either.
+	 *
+	 * <p>The four catches used to swallow and return normally, so the base class recorded
+	 * {@code PatchHistory} over a failed seed — an enabled deployment whose first boot hit a
+	 * transient error never got the fixture, forever. Now the failure propagates: the base
+	 * per-repository catch logs it, {@code apply()} reports {@code false}, and no history is
+	 * written, so the next boot retries. Restoring any swallowing catch fails this test.
+	 */
+	@Test
+	public void aFailedSeedRecordsNoHistoryAndRetriesNextBoot() {
+		ContentService contentService = wireContext();
+		when(contentService.getGroupItems(anyString()))
+				.thenThrow(new RuntimeException("transient CouchDB failure"));
+
+		PropertyManager propertyManager = mock(PropertyManager.class);
+		when(propertyManager.readBoolean(PropertyKey.PATCH_TESTUSER_ENABLED)).thenReturn(true);
+		PatchUtil patchUtil = mock(PatchUtil.class);
+		when(patchUtil.getPropertyManager()).thenReturn(propertyManager);
+		jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap repos =
+				mock(jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap.class);
+		when(repos.keys()).thenReturn(java.util.Set.of(REPO));
+		when(repos.isArchiveRepository(anyString())).thenReturn(false);
+		when(patchUtil.getRepositoryInfoMap()).thenReturn(repos);
+		when(patchUtil.cmisViewsAreAnswering(anyString())).thenReturn(true);
+		when(patchUtil.isApplied(anyString(), anyString())).thenReturn(false);
+
+		Patch_TestUserInitialization patch = new Patch_TestUserInitialization();
+		patch.setPatchUtil(patchUtil);
+
+		assertFalse(patch.apply(), "a failed seed must be reported as an unsuccessful run");
+		verify(patchUtil, never()).createPathHistory(anyString(), anyString());
 	}
 
 	/**

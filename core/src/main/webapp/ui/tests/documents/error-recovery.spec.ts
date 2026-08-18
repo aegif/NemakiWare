@@ -379,19 +379,40 @@ test.describe('Error Recovery Tests', () => {
     // Look for retry button or option
     // Playwright's filter() has no `or` option — an unknown key is silently ignored, so
     // the old form matched EVERY button on the page and `count() > 0` was always true.
+    // Gate on a short VISIBILITY wait, not an instant count(): count() also counts
+    // buttons inside dismissed notifications, and the instant check races the
+    // button's own render. On CI the invisible-node click failed ("Element is not
+    // visible", shard run 2026-08-17); locally the node exists a beat before it
+    // becomes visible. waitFor(visible) handles both.
     const retryButton = page.getByRole('button', { name: /再試行|Retry|もう一度/ });
+    let retryVisible = false;
+    try {
+      await retryButton.first().waitFor({ state: 'visible', timeout: 5000 });
+      retryVisible = true;
+    } catch {
+      // No visible retry affordance — fall back to the manual path below.
+    }
 
-    if (await retryButton.count() > 0) {
-      // If retry button exists, click it
+    if (retryVisible) {
       await retryButton.first().click(isMobile ? { force: true } : {});
       await page.waitForSelector('.ant-message-success', { timeout: 10000 });
     } else {
-      // If no retry button, close modal and try again manually
-      const closeButton = page.locator('.ant-modal button').filter({ hasText: /キャンセル|Cancel/i });
-      if (await closeButton.count() > 0) {
-        await closeButton.click({ force: true });
-        await waitForRender(page);
+      // If no retry button, close modal and try again manually. The Cancel button
+      // can be DISABLED while the failed upload settles (force-clicking it threw
+      // "Element is not visible"), so prefer an enabled Cancel, then the modal's
+      // X, then Escape.
+      const cancelButton = page.locator('.ant-modal button').filter({ hasText: /キャンセル|Cancel/i }).first();
+      if (await cancelButton.isEnabled().catch(() => false)) {
+        await cancelButton.click();
+      } else {
+        const closeX = page.locator('.ant-modal .ant-modal-close').first();
+        if (await closeX.isVisible().catch(() => false)) {
+          await closeX.click();
+        } else {
+          await page.keyboard.press('Escape');
+        }
       }
+      await waitForRender(page);
 
       // Retry manually
       await uploadButton.click(isMobile ? { force: true } : {});

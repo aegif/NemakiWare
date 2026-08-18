@@ -9,7 +9,7 @@ description: NemakiWare のテスト実行。QA 統合テスト、CMIS TCK 全 3
 
 ```bash
 ./qa-test.sh qa
-# 期待: 94/94 PASS
+# 期待: 95/95 PASS
 ```
 
 ## CMIS TCK (全 38 テスト)

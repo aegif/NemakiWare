@@ -189,5 +189,7 @@ reconcile re-drive は必ず epoch fence を通ります**。切替スイッチ�
 | クラウド統合 | [`docs/CLOUD_INTEGRATION.md`](docs/CLOUD_INTEGRATION.md) |
 | MCP サーバ | [`docs/MCP-SERVER.md`](docs/MCP-SERVER.md) |
 | Webhook 機能設計 | [`docs/design/webhook-feature-proposal.md`](docs/design/webhook-feature-proposal.md) |
+| 3.3.1 パッチ計画 | [`docs/design/v3.3.1-plan.md`](docs/design/v3.3.1-plan.md) |
+| 長期真正性ロードマップ (InterPARES / 3.4 以降) | [`docs/design/authenticity-roadmap.md`](docs/design/authenticity-roadmap.md) |
 | v3.3.0 アップグレード運用 | [`docs/operations/v3.3.0-upgrade-runbook.md`](docs/operations/v3.3.0-upgrade-runbook.md) |
 | 「同じものを二度取る往復」の棚卸し | [`docs/design/redundant-round-trips.md`](docs/design/redundant-round-trips.md) |

@@ -464,9 +464,12 @@ public class StartupProbeServiceTest {
 
     @SuppressWarnings("unchecked")
     private void forceState(StartupProbeService.StartupState state) throws Exception {
-        Field stateField = StartupProbeService.class.getDeclaredField("currentState");
+        // 3.3.1 #2: state+version live in ONE ProbeSnapshot record now (torn pairs are the
+        // defect the change removed), so forcing a state means publishing a whole snapshot.
+        Field stateField = StartupProbeService.class.getDeclaredField("snapshot");
         stateField.setAccessible(true);
-        ((AtomicReference<StartupProbeService.StartupState>) stateField.get(service)).set(state);
+        ((AtomicReference<StartupProbeService.ProbeSnapshot>) stateField.get(service))
+                .set(new StartupProbeService.ProbeSnapshot(state, ""));
     }
 
     private void forceSetupRequired(boolean value) throws Exception {

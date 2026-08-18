@@ -240,8 +240,22 @@ export class AuthHelper {
     for (let attempt = 1; attempt <= maxLoginAttempts; attempt++) {
       console.log(`AuthHelper: Login attempt ${attempt}/${maxLoginAttempts} for user: ${credentials.username}`);
 
-      // Navigate to login page
-      await this.page.goto('/core/ui/', { timeout: 30000 });
+      // Navigate to login page.
+      // 3.3.1 #9b: the goto used to be UNCAUGHT, so a navigation timeout threw straight out
+      // of this retry loop — in CI the known client-side hang then cascaded through every
+      // later spec's afterAll cleanup as "[Cleanup] Fatal error: page.goto: Timeout 30000ms".
+      // A failed goto now consumes one attempt and retries, which is the reload-retry shape
+      // that converged the same hang locally.
+      try {
+        // 15s per attempt, not 30s: three 30s attempts plus the post-login waits would
+        // exceed most specs' test timeout before the retry loop could ever help.
+        await this.page.goto('/core/ui/', { timeout: 15000 });
+      } catch (gotoError) {
+        console.warn(`AuthHelper: goto failed on attempt ${attempt}: ${gotoError}`);
+        if (attempt === maxLoginAttempts) throw gotoError;
+        await this.page.waitForTimeout(2000);
+        continue;
+      }
 
       // Check if already authenticated
       try {

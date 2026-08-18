@@ -52,16 +52,25 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
         DB_CONNECTED_LEGACY
     }
 
-    private final AtomicReference<StartupState> currentState = new AtomicReference<>(StartupState.DB_UNREACHABLE);
+    /**
+     * State and CouchDB version of ONE probe, published together.
+     *
+     * <p>These used to be two independent {@code AtomicReference}s, which meant a reader could
+     * pair the state of probe A with the version of probe B. Nothing downstream is allowed to
+     * make that mistake now: every probe publishes a whole snapshot, and the only way to change
+     * one half is to carry the other half over explicitly ({@link #setStateKeepingVersion}).
+     * {@code version} is never null; empty means "this snapshot's probe did not report one".
+     */
+    public record ProbeSnapshot(StartupState state, String version) {
+        public ProbeSnapshot {
+            if (version == null) version = "";
+        }
+    }
+
+    private final AtomicReference<ProbeSnapshot> snapshot =
+            new AtomicReference<>(new ProbeSnapshot(StartupState.DB_UNREACHABLE, ""));
     private final AtomicBoolean setupRequired = new AtomicBoolean(true);
     private final AtomicBoolean probed = new AtomicBoolean(false);
-
-    /**
-     * Version string reported by the last re-probe, so Setup Mode can apply the same floor the
-     * startup path applies. Empty means "no re-probe has answered yet"; {@code AtomicReference}
-     * cannot hold null.
-     */
-    private final AtomicReference<String> lastProbedVersion = new AtomicReference<>("");
 
     /** Setup token for authenticating Setup API requests during Setup Mode. */
     private final String setupToken = UUID.randomUUID().toString();
@@ -217,13 +226,31 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
      * databases — against a CouchDB the release refuses to run on.
      */
     public String couchDbVersionRefusalFromLastProbe() {
-        String reported = lastProbedVersion.get();
+        return couchDbVersionRefusal(snapshot.get());
+    }
+
+    /**
+     * Refusal for the version carried by ONE snapshot. Gate consumers should read
+     * {@link #currentSnapshot()} once and pass it here alongside their state check - reading
+     * state and version through separate getters can straddle a concurrent re-probe and pair
+     * probe A's state with probe B's version (external review, 3.3.1).
+     */
+    public String couchDbVersionRefusal(ProbeSnapshot snap) {
+        String reported = (snap == null) ? "" : snap.version();
         return couchDbVersionRefusal(reported.isEmpty() ? null : reachableWithVersion(reported));
     }
 
-    private void rememberProbedVersion(CouchDbConnectionResult conn) {
-        String reported = (conn == null) ? null : conn.getCouchDbVersion();
-        lastProbedVersion.set(reported == null ? "" : reported);
+    /** The state and version of the last probe, as one consistent pair. */
+    public ProbeSnapshot currentSnapshot() {
+        return snapshot.get();
+    }
+
+    private void publishSnapshot(StartupState state, CouchDbConnectionResult conn) {
+        snapshot.set(new ProbeSnapshot(state, conn == null ? "" : conn.getCouchDbVersion()));
+    }
+
+    private void setStateKeepingVersion(StartupState state) {
+        snapshot.getAndUpdate(s -> new ProbeSnapshot(state, s.version()));
     }
 
     private static CouchDbConnectionResult reachableWithVersion(String version) {
@@ -246,7 +273,7 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
 
         CouchDbConnectionResult conn = testConnection(url, user, pass);
         if (!conn.isReachable()) {
-            currentState.set(StartupState.DB_UNREACHABLE);
+            publishSnapshot(StartupState.DB_UNREACHABLE, null);
             setupRequired.set(true);
             log.warn("StartupProbeService: CouchDB unreachable (" + conn.getErrorMessage() + ") → setupRequired=true");
         } else {
@@ -255,7 +282,7 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
 
             // CouchDB reachable — check all main repository DBs
             List<RepositoryOverview> repos = probeRepositories(url, user, pass);
-            evaluateRepositoryState(repos, "startup");
+            publishSnapshot(evaluateRepositoryState(repos, "startup"), conn);
 
             // Admin-password policy (opt-in, for non-dev deployments): refuse to
             // leave Setup Mode while the built-in 'admin' account still has the
@@ -285,7 +312,7 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
     }
 
     public StartupState getCurrentState() {
-        return currentState.get();
+        return snapshot.get().state();
     }
 
     /**
@@ -299,9 +326,9 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
      * Mark setup as complete (called by SetupApplyResource after successful apply).
      */
     public void markSetupComplete() {
-        StartupState previous = currentState.get();
+        StartupState previous = snapshot.get().state();
         setupRequired.set(false);
-        currentState.set(StartupState.DB_CONNECTED_CURRENT);
+        setStateKeepingVersion(StartupState.DB_CONNECTED_CURRENT);
         log.info("StartupProbeService: setup marked complete → setupRequired=false (was " + previous + ")");
     }
 
@@ -314,7 +341,7 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
      * stay in that state even after the initializer successfully creates and
      * populates databases.
      *
-     * Updates both currentState AND setupRequired flag.
+     * Publishes a new probe snapshot AND updates the setupRequired flag.
      * For Setup Mode flows that must not flip setupRequired, use {@link #reprobeState()} instead.
      */
     public void reprobe() {
@@ -322,13 +349,12 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
         String user = resolveCouchDbUser();
         String pass = resolveCouchDbPassword();
 
-        StartupState previous = currentState.get();
+        StartupState previous = snapshot.get().state();
         boolean wasSetupRequired = setupRequired.get();
 
         CouchDbConnectionResult conn = testConnection(url, user, pass);
         if (!conn.isReachable()) {
-            lastProbedVersion.set("");
-            currentState.set(StartupState.DB_UNREACHABLE);
+            publishSnapshot(StartupState.DB_UNREACHABLE, null);
             setupRequired.set(true);
             logStateTransition(previous, StartupState.DB_UNREACHABLE, wasSetupRequired, true);
             // Re-announce token if entering Setup Mode from Normal Mode
@@ -338,10 +364,9 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
             return;
         }
 
-        rememberProbedVersion(conn);
         List<RepositoryOverview> repos = probeRepositories(url, user, pass);
-        evaluateRepositoryState(repos, "reprobe");
-        logStateTransition(previous, currentState.get(), wasSetupRequired, setupRequired.get());
+        publishSnapshot(evaluateRepositoryState(repos, "reprobe"), conn);
+        logStateTransition(previous, snapshot.get().state(), wasSetupRequired, setupRequired.get());
 
         // Re-announce token if entering Setup Mode from Normal Mode
         if (!wasSetupRequired && setupRequired.get()) {
@@ -354,7 +379,7 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
      *
      * Used by SetupApplyResource to verify DB readiness before deferred
      * initialization. Unlike {@link #reprobe()}, this method only updates
-     * currentState so that Setup Mode remains open if deferred init fails,
+     * the snapshot's state so that Setup Mode remains open if deferred init fails,
      * allowing the user to retry via /apply/mark-complete.
      *
      * The setupRequired flag is only cleared by {@link #markSetupComplete()}
@@ -365,16 +390,14 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
         String user = resolveCouchDbUser();
         String pass = resolveCouchDbPassword();
 
-        StartupState previous = currentState.get();
+        StartupState previous = snapshot.get().state();
 
         CouchDbConnectionResult conn = testConnection(url, user, pass);
         if (!conn.isReachable()) {
-            lastProbedVersion.set("");
-            currentState.set(StartupState.DB_UNREACHABLE);
+            publishSnapshot(StartupState.DB_UNREACHABLE, null);
             log.info("reprobeState: " + previous + " → DB_UNREACHABLE (setupRequired unchanged)");
             return;
         }
-        rememberProbedVersion(conn);
 
         List<RepositoryOverview> repos = probeRepositories(url, user, pass);
 
@@ -387,14 +410,16 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
         boolean allMainEmpty = mainRepos.isEmpty() || mainRepos.stream().allMatch(r -> "empty".equals(r.getJudgment()));
         boolean anyMainLegacy = mainRepos.stream().anyMatch(r -> "legacy".equals(r.getJudgment()));
 
+        StartupState next;
         if (allMainEmpty) {
-            currentState.set(StartupState.DB_CONNECTED_EMPTY);
+            next = StartupState.DB_CONNECTED_EMPTY;
         } else if (anyMainCurrent && !anyMainLegacy) {
-            currentState.set(StartupState.DB_CONNECTED_CURRENT);
+            next = StartupState.DB_CONNECTED_CURRENT;
         } else {
-            currentState.set(StartupState.DB_CONNECTED_LEGACY);
+            next = StartupState.DB_CONNECTED_LEGACY;
         }
-        log.info("reprobeState: " + previous + " → " + currentState.get() + " (setupRequired unchanged)");
+        publishSnapshot(next, conn);
+        log.info("reprobeState: " + previous + " → " + next + " (setupRequired unchanged)");
     }
 
     /**
@@ -412,10 +437,15 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
     }
 
     /**
-     * Evaluate repository state from probed overviews and set currentState + setupRequired.
+     * Evaluate repository state from probed overviews; sets setupRequired and RETURNS the state.
      * Used by onApplicationEvent() and reprobe().
      */
-    private void evaluateRepositoryState(List<RepositoryOverview> repos, String context) {
+    /**
+     * Decides the state and sets {@code setupRequired}; the CALLER publishes the returned state
+     * together with the probe's version as one snapshot. This method deliberately cannot publish
+     * — that is how state and version stay from the same probe.
+     */
+    private StartupState evaluateRepositoryState(List<RepositoryOverview> repos, String context) {
         List<RepositoryOverview> mainRepos = repos.stream()
                 .filter(r -> isMainRepository(r.getRepositoryId()))
                 .toList();
@@ -425,17 +455,17 @@ public class StartupProbeService implements ApplicationListener<ContextRefreshed
         boolean anyMainLegacy = mainRepos.stream().anyMatch(r -> "legacy".equals(r.getJudgment()));
 
         if (allMainEmpty) {
-            currentState.set(StartupState.DB_CONNECTED_EMPTY);
             setupRequired.set(true);
             log.info("StartupProbeService (" + context + "): all main repos empty or absent → setupRequired=true");
+            return StartupState.DB_CONNECTED_EMPTY;
         } else if (anyMainCurrent && !anyMainLegacy) {
-            currentState.set(StartupState.DB_CONNECTED_CURRENT);
             setupRequired.set(false);
             log.info("StartupProbeService (" + context + "): main repos current → setupRequired=false (Normal Mode)");
+            return StartupState.DB_CONNECTED_CURRENT;
         } else {
-            currentState.set(StartupState.DB_CONNECTED_LEGACY);
             setupRequired.set(true);
             log.info("StartupProbeService (" + context + "): main repos legacy → setupRequired=true");
+            return StartupState.DB_CONNECTED_LEGACY;
         }
     }
 

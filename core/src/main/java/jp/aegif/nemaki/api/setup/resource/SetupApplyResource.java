@@ -79,8 +79,10 @@ public class SetupApplyResource {
         }
         startupProbeService.reprobeState();
 
-        // Verify reprobe result: only complete setup if DB is actually ready
-        StartupProbeService.StartupState state = startupProbeService.getCurrentState();
+        // ONE snapshot for both checks. Reading state and version through separate getters can
+        // straddle a concurrent re-probe and mix two probes' answers (external review, 3.3.1).
+        StartupProbeService.ProbeSnapshot probe = startupProbeService.currentSnapshot();
+        StartupProbeService.StartupState state = probe.state();
         if (state != StartupProbeService.StartupState.DB_CONNECTED_CURRENT) {
             logger.warning("mark-complete: reprobe returned " + state + " — refusing to mark complete");
             return error(400, "Cannot complete setup: database state is " + state
@@ -89,7 +91,7 @@ public class SetupApplyResource {
 
         // The wizard can be pointed at a different server than the one probed at startup, and
         // /apply may never have run on this instance (this endpoint is the retry path).
-        String versionRefusal = startupProbeService.couchDbVersionRefusalFromLastProbe();
+        String versionRefusal = startupProbeService.couchDbVersionRefusal(probe);
         if (versionRefusal != null) {
             logger.warning("mark-complete refused: " + versionRefusal);
             return error(400, versionRefusal);
