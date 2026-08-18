@@ -244,8 +244,10 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             // (accreditation != NONE), AND the signature must verify, AND the signer must chain
             // to a separately configured anchor. Even then the evidence report presents this as
             // DECLARED rather than proven (external review, 3.4).
-            boolean independentlyVerifiable =
-                    check.chainsToAnchor && operatorDeclaredThirdParty;
+            // Not "is this independent" — that is not ours to decide (see
+            // AnchorReceipt.preservesIndependentlyCheckableArtifact). What we record is whether
+            // the token carries what a reader needs to check it for themselves.
+            boolean checkableByAThirdParty = check.certificateCount > 0;
 
             // An absent accuracy means the token states no precision, so it cannot carry the
             // bidirectional claim its kind normally does — it degrades to an upper bound.
@@ -255,7 +257,7 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
 
             return AnchorReceipt.confirmed(kind(), hexDigest, attemptedAt,
                     info.getGenTime().toInstant(), encodedToken, sha256Hex(encodedToken), attrs,
-                    independentlyVerifiable, semantics);
+                    checkableByAThirdParty, semantics);
 
         } catch (Exception e) {
             // Anchoring must never fail the operation that triggered it.

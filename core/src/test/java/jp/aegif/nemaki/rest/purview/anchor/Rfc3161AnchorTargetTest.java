@@ -150,7 +150,7 @@ class Rfc3161AnchorTargetTest {
             assertEquals(AnchorStatus.FAILED, receipt.status(),
                     "a refusal reported as CONFIRMED would store an empty response as evidence");
             assertNull(receipt.proof(), "there is no token to keep");
-            assertFalse(receipt.supportsIndependenceClaim());
+            assertFalse(receipt.preservesIndependentlyCheckableArtifact());
 
             // Asserting FAILED alone does NOT discriminate the fix: drop the status check and the
             // code walks into token.getTimeStampInfo() on a null token, the catch-all turns the
@@ -390,53 +390,42 @@ class Rfc3161AnchorTargetTest {
         }
 
         @Test
-        @DisplayName("without a trust anchor the token is confirmed but NOT independent")
-        void confirmedWithoutTrustAnchorIsNotIndependent() throws Exception {
+        @DisplayName("a token without a configured anchor still preserves a checkable artifact")
+        void tokenWithoutAnchorStillPreservesTheArtifact() throws Exception {
             String url = startTsa(true);
 
             AnchorReceipt receipt = new Rfc3161AnchorTarget(url, null, "NONE").anchor(DIGEST);
 
             assertEquals(AnchorStatus.CONFIRMED, receipt.status());
-            assertFalse(receipt.supportsIndependenceClaim(),
-                    "the signing certificate came from whoever answered the URL — an operator "
-                            + "running their own TSA would otherwise claim independence from themselves");
-            assertEquals("false", receipt.attributes().get("signerTrustAnchorConfigured"));
+            assertTrue(receipt.preservesIndependentlyCheckableArtifact(),
+                    "the token ships its signer certificate, so a reader can check the signature");
+            assertEquals("false", receipt.attributes().get("signerTrustAnchorConfigured"),
+                    "but nothing here says whose certificate that is — the record must not imply "
+                            + "it does");
+            assertEquals("false", receipt.attributes().get("thirdPartyStatusIsOperatorDeclared"));
         }
 
         @Test
-        @DisplayName("a self-signed TSA used as its own anchor is NOT independent without a declaration")
-        void selfAnchoredTsaIsNotIndependentByItself() throws Exception {
-            // The hole this field exists to close: an operator runs their own TSA and configures
-            // its certificate as the trust anchor. Every cryptographic check passes. Independence
-            // is a fact about the world and cannot be derived from that.
+        @DisplayName("the receipt asserts a preserved artifact, never that the TSA is independent")
+        void independenceIsNotSomethingThisCodeDecides() throws Exception {
+            // An operator can run their own TSA, configure its certificate as the anchor and
+            // write any accreditation string they like. Every local check then passes. Three
+            // review rounds showed each attempt to COMPUTE independence was derivable this way,
+            // so the claim is gone: what is asserted is that the token carries what a reader
+            // needs to check it, and who the issuer really is stays the reader's judgement.
             String url = startTsa(true);
 
-            AnchorReceipt receipt =
-                    new Rfc3161AnchorTarget(url, null, "NONE", certificate).anchor(DIGEST);
+            AnchorReceipt selfOperated =
+                    new Rfc3161AnchorTarget(url, null, "JP_MIC_ACCREDITED", certificate).anchor(DIGEST);
 
-            assertEquals(AnchorStatus.CONFIRMED, receipt.status());
-            assertEquals("true", receipt.attributes().get("signerChainsToTrustAnchor"),
-                    "the crypto does check out — that is exactly why crypto cannot be the test");
-            assertFalse(receipt.supportsIndependenceClaim(),
-                    "no third-party declaration, so no independence claim");
-        }
-
-        @Test
-        @DisplayName("independence requires BOTH a chain and an explicit third-party declaration")
-        void independenceRequiresDeclarationAndChain() throws Exception {
-            String url = startTsa(true);
-
-            AnchorReceipt declaredOnly =
-                    new Rfc3161AnchorTarget(url, null, "JP_MIC_ACCREDITED", null).anchor(DIGEST);
-            assertFalse(declaredOnly.supportsIndependenceClaim(),
-                    "a declaration alone proves nothing: the signer chains to nothing configured");
-
-            AnchorReceipt both = new Rfc3161AnchorTarget(url, null, "JP_MIC_ACCREDITED", certificate)
-                    .anchor(DIGEST);
-            assertTrue(both.supportsIndependenceClaim());
-            assertEquals("true", both.attributes().get("thirdPartyStatusIsOperatorDeclared"));
-            assertTrue(both.attributes().get("trustAnchorCheck").contains("NOT PKIX"),
-                    "the record must not let a reader mistake this for path validation");
+            assertEquals(AnchorStatus.CONFIRMED, selfOperated.status());
+            assertTrue(selfOperated.preservesIndependentlyCheckableArtifact(),
+                    "the token and its certificate are preserved — that much is true regardless "
+                            + "of who runs the TSA");
+            assertEquals("true", selfOperated.attributes().get("thirdPartyStatusIsOperatorDeclared"),
+                    "and the record marks the third-party status as the operator's word, not ours");
+            assertTrue(selfOperated.attributes().get("trustAnchorCheck").contains("NOT PKIX"),
+                    "no reader may mistake the issuer check for path validation");
         }
 
         @Test
@@ -507,7 +496,7 @@ class Rfc3161AnchorTargetTest {
                     "the response is well-formed and passes validate(); only signature "
                             + "verification distinguishes it from an honest token");
             assertTrue(receipt.failureReason().contains("signature"), receipt.failureReason());
-            assertFalse(receipt.supportsIndependenceClaim());
+            assertFalse(receipt.preservesIndependentlyCheckableArtifact());
         }
 
         /** A self-signed certificate with the critical timeStamping EKU RFC 3161 §2.3 demands. */
@@ -541,7 +530,7 @@ class Rfc3161AnchorTargetTest {
             AnchorReceipt receipt = AnchorReceipt.failed(
                     AnchorKind.RFC3161_TSA, DIGEST, java.time.Instant.now(), "unreachable");
 
-            assertFalse(receipt.supportsIndependenceClaim(),
+            assertFalse(receipt.preservesIndependentlyCheckableArtifact(),
                     "the target is independent, but a failed attempt is not evidence");
             assertNull(receipt.anchoredAt(), "no anchor time may be asserted for a failure");
         }
@@ -556,7 +545,7 @@ class Rfc3161AnchorTargetTest {
             assertEquals(AnchorStatus.PENDING, receipt.status());
             assertNull(receipt.anchoredAt(),
                     "filling in 'now' would state a time the proof does not support");
-            assertFalse(receipt.supportsIndependenceClaim(),
+            assertFalse(receipt.preservesIndependentlyCheckableArtifact(),
                     "a commitment nobody can verify yet is not yet evidence");
         }
 

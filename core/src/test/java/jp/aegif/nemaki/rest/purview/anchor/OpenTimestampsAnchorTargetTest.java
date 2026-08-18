@@ -130,7 +130,7 @@ class OpenTimestampsAnchorTargetTest {
             assertEquals(AnchorStatus.PENDING, receipt.status());
             assertNull(receipt.anchoredAt(),
                     "Bitcoin has not confirmed it, so no time may be asserted");
-            assertFalse(receipt.supportsIndependenceClaim(),
+            assertFalse(receipt.preservesIndependentlyCheckableArtifact(),
                     "the destination is independent, but an unconfirmed commitment is not yet evidence");
             assertNotNull(receipt.proof());
             assertEquals("false", receipt.attributes().get("upgraded"));
@@ -201,8 +201,10 @@ class OpenTimestampsAnchorTargetTest {
             assertEquals("true", result.attributes().get("proofComplete"));
             assertEquals("921447", result.attributes().get("bitcoinBlockHeight"));
             assertEquals("false", result.attributes().get("chainVerifiedLocally"));
-            assertFalse(result.supportsIndependenceClaim(),
-                    "nobody has checked it yet, here or anywhere");
+            assertTrue(result.preservesIndependentlyCheckableArtifact(),
+                    "we did not check it — but we kept the complete proof, and keeping the thing "
+                            + "an auditor can check is precisely what this deployment can honestly "
+                            + "claim to have done");
         }
 
         @Test
@@ -237,7 +239,7 @@ class OpenTimestampsAnchorTargetTest {
 
             assertEquals(AnchorStatus.CONFIRMED, result.status());
             assertEquals("true", result.attributes().get("chainVerifiedLocally"));
-            assertTrue(result.supportsIndependenceClaim());
+            assertTrue(result.preservesIndependentlyCheckableArtifact());
             assertEquals(AnchorKind.TimeSemantics.UPPER_BOUND_ONLY, result.timeSemantics());
             assertNull(result.anchoredAt());
         }

@@ -210,7 +210,9 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
 
             return AnchorReceipt.confirmed(kind(), pending.anchoredDigest(), pending.attemptedAt(),
                     null, candidate, Rfc3161AnchorTarget.sha256Hex(candidate), attrs,
-                    // Verified here, and re-verifiable by anyone with block headers without us.
+                    // A complete proof is checkable by anyone holding Bitcoin block headers,
+                    // with no cooperation from this deployment — including no trust in our
+                    // sidecar, whose verification result we do not ask anyone to take on faith.
                     true, AnchorKind.TimeSemantics.UPPER_BOUND_ONLY);
 
         } catch (Exception e) {

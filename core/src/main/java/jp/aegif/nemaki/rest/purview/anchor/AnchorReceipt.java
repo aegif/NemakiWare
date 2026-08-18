@@ -180,19 +180,32 @@ public final class AnchorReceipt {
     }
 
     /**
-     * Whether this receipt supports a claim of independence from the operator.
+     * Whether we hold something a third party could check <em>without our cooperation</em>.
      *
-     * <p>Three conditions, and the third is the one that was missing: the destination must be
-     * outside the organization, the proof must be confirmed, AND the target must have
-     * established that a third party can actually check it. An operator who points this at a
-     * time-stamp service they run themselves gets a CONFIRMED receipt from an "independent"
-     * KIND — so the kind alone can never be the test (external review, 3.4).
+     * <h3>Why this is not called "independent"</h3>
+     *
+     * <p>Three review rounds all landed on the same wall: this system cannot establish that an
+     * anchor is organizationally independent of the operator, and every attempt to compute it
+     * was derivable by the operator. Verify a certificate chain and an operator can run their
+     * own TSA and configure its certificate as the anchor. Require a declared accreditation and
+     * the operator writes the declaration. Trust the sidecar's verification and the operator
+     * runs the sidecar. Each fix moved the assumption without removing it.
+     *
+     * <p>So the claim is abandoned rather than relabelled. What this deployment can honestly
+     * assert is not "this is independent" but "we kept the artifact by which YOU can decide":
+     * a complete OpenTimestamps proof that verifies against Bitcoin block headers, or a
+     * time-stamp token carrying the certificate needed to check its signature. Whether the
+     * issuer is a genuine third party is then the reader's judgement about the world, made with
+     * evidence in hand — which is exactly what an auditor is for, and is the one thing no
+     * amount of code here can do on their behalf.
+     *
+     * <p>The evidence report renders this as a preserved artifact plus the verification
+     * procedure, never as a boolean called "independent".
      */
-    public boolean supportsIndependenceClaim() {
+    public boolean preservesIndependentlyCheckableArtifact() {
         return kind.independentOfOperator()
-                && status == AnchorStatus.CONFIRMED
-                && independentlyVerifiable
-                && proof != null && proof.length > 0;
+                && proof != null && proof.length > 0
+                && (status == AnchorStatus.CONFIRMED || "true".equals(attributes.get("proofComplete")));
     }
 
     @Override
