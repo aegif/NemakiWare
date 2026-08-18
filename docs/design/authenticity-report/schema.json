@@ -131,13 +131,14 @@
         "trustLevel": {
           "type": "object",
           "description": "Which rung of the trust ladder this report actually rests on. Computed from externalAnchors, never asserted by hand.",
-          "required": ["level", "label", "independentOfOperator"],
+          "required": ["level", "label", "verificationPerformed"],
           "properties": {
             "level": { "type": "integer", "minimum": 0, "maximum": 3 },
             "label": { "$ref": "#/$defs/localizedText" },
-            "independentOfOperator": {
-              "type": "boolean",
-              "description": "TRUE only at level >= 2. At levels 0-1 an administrator of this deployment could in principle rewrite the evidence, so the claim 'not even an administrator can alter this' MUST NOT be made."
+            "verificationPerformed": {
+              "type": "string",
+              "enum": ["NONE", "STRUCTURAL_ONLY", "CRYPTOGRAPHIC_LOCAL", "CHAIN_VERIFIED"],
+              "description": "What was actually checked, never what it implies. The product deliberately does NOT compute whether an anchor is independent of the operator: five review rounds established that every computable test was satisfiable by an operator running their own infrastructure (see authenticity-roadmap.md 9-5). A reader decides independence from the recorded facts and the verification procedures below; this report never asserts it."
             }
           }
         },

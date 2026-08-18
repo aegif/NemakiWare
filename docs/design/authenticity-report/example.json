@@ -42,7 +42,7 @@
         "ja": "段 2: 公開ブロックチェーンへのアンカーまで",
         "en": "Level 2: anchored to a public blockchain"
       },
-      "independentOfOperator": true
+      "verificationPerformed": "STRUCTURAL_ONLY"
     },
     "contentIntegrity": {
       "algorithm": "SHA-256",

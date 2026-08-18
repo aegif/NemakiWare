@@ -113,14 +113,29 @@ def main() -> int:
     # 5. the honesty invariants the schema cannot express
     ev = example["evidence"]
     level = ev["trustLevel"]["level"]
-    independent = ev["trustLevel"]["independentOfOperator"]
-    if independent != (level >= 2):
-        note(
-            f"trustLevel.independentOfOperator={independent} at level {level}: "
-            "independence may be claimed only at level 2 or above"
-        )
+
+    # The report must not assert independence at all. Five review rounds established that no
+    # computable test distinguishes a third-party anchor from one the operator runs, so the
+    # honest artifact records what was CHECKED and leaves the judgement to the reader.
+    if "independentOfOperator" in ev["trustLevel"]:
+        note("trustLevel.independentOfOperator is back: this report must not assert independence, "
+             "only record what was verified")
+    performed = ev["trustLevel"].get("verificationPerformed")
+    if performed not in {"NONE", "STRUCTURAL_ONLY", "CRYPTOGRAPHIC_LOCAL", "CHAIN_VERIFIED"}:
+        note(f"trustLevel.verificationPerformed={performed!r} is not one of the defined values")
     else:
-        print(f"ok  independentOfOperator={independent} is consistent with level {level}")
+        print(f"ok  level {level} records verificationPerformed={performed} and claims no more")
+
+    # A claim of chain verification has to be backed by an anchor that says the same.
+    if performed == "CHAIN_VERIFIED" and not any(
+            a.get("opentimestamps", {}).get("upgraded") for a in ev["externalAnchors"]
+            if a.get("opentimestamps")):
+        note("verificationPerformed=CHAIN_VERIFIED but no anchor records a verified chain")
+
+    for page_text in pages.values():
+        for banned in ("独立している", "independent of the operator"):
+            if banned in page_text:
+                note(f"a rendered page asserts independence: {banned!r}")
 
     for i, a in enumerate(ev["externalAnchors"]):
         if a["kind"] == "ATLAS_CATALOG" and not a.get("independenceCaveat"):

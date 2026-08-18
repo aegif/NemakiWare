@@ -73,7 +73,7 @@
   </div>
 </section>
 
-<section><h2><span class="n">2</span>証拠の独立性 (信頼の段)</h2>
+<section><h2><span class="n">2</span>アンカーと検証の実態 (信頼の段)</h2>
   <div class="ladder"><div class="rung on"><span class="lv">段 0</span>内部ハッシュ連鎖</div><div class="rung on"><span class="lv">段 1</span>組織内カタログ</div><div class="rung on"><span class="lv">段 2</span>公開ブロックチェーン</div><div class="rung"><span class="lv">段 3</span>認定 TSA (未構成)</div></div>
   <div class="muted" style="margin:-3px 0 6px">段 2: 公開ブロックチェーンへのアンカーまで</div>
   <table class="ev">
@@ -108,12 +108,12 @@
 
 <section><h2><span class="n">6</span>第三者による検証手順</h2>
   <table class="ev">
-    <tr><th style="width:158px">主張</th><th style="width:88px">独立性</th><th>手順</th></tr>
-    <tr><td>barrierDigest が 2026-07-29 の時点で既に存在していた</td><td><span class="tag indep">独立検証可</span></td><td>添付の .ots ファイルを取得し、公式クライアントで ots verify を実行する。検証には Bitcoin のブロックヘッダのみを用い、NemakiWare にも OpenTimestamps カレンダーにも接続しない。これは本システムを信頼せずに実行できる唯一の検査である。</td></tr><tr><td>内容が記録された digest と一致する</td><td><span class="tag self">自己申告</span></td><td>対象バイト列を取得し sha256sum を実行して evidence.contentIntegrity.digest と比較する。バイト列の取得自体が本システム経由になるため、本システムが改竄されていないことは別途担保が要る。</td></tr><tr><td>来歴イベントの連鎖が改竄されていない</td><td><span class="tag self">自己申告</span></td><td>evidence.chainOfCustody.events の各 eventId とペイロードから digest を再計算し、barrierDigest まで畳み込んで一致を確認する。</td></tr><tr><td>アクセス権限の状態が記録のとおりである</td><td><span class="tag self">自己申告</span></td><td>GET /core/api/v1/cmis/repositories/bedroom/objects/{objectId}/acl の応答を正規化して aclSnapshotDigest と比較する。</td></tr><tr><td>バージョン系譜が記録のとおりである</td><td><span class="tag self">自己申告</span></td><td>CMIS の getAllVersions を実行し、versionLineage の objectId と createdAt の並びが一致することを確認する。各版の内容 digest も同様に再計算して比較する。</td></tr>
+    <tr><th style="width:158px">主張</th><th style="width:88px">検証</th><th>手順</th></tr>
+    <tr><td>barrierDigest が 2026-07-29 の時点で既に存在していた</td><td><span class="tag indep">第三者が検証可</span></td><td>添付の .ots ファイルを取得し、公式クライアントで ots verify を実行する。検証には Bitcoin のブロックヘッダのみを用い、NemakiWare にも OpenTimestamps カレンダーにも接続しない。これは本システムを信頼せずに実行できる唯一の検査である。</td></tr><tr><td>内容が記録された digest と一致する</td><td><span class="tag self">本システム依存</span></td><td>対象バイト列を取得し sha256sum を実行して evidence.contentIntegrity.digest と比較する。バイト列の取得自体が本システム経由になるため、本システムが改竄されていないことは別途担保が要る。</td></tr><tr><td>来歴イベントの連鎖が改竄されていない</td><td><span class="tag self">本システム依存</span></td><td>evidence.chainOfCustody.events の各 eventId とペイロードから digest を再計算し、barrierDigest まで畳み込んで一致を確認する。</td></tr><tr><td>アクセス権限の状態が記録のとおりである</td><td><span class="tag self">本システム依存</span></td><td>GET /core/api/v1/cmis/repositories/bedroom/objects/{objectId}/acl の応答を正規化して aclSnapshotDigest と比較する。</td></tr><tr><td>バージョン系譜が記録のとおりである</td><td><span class="tag self">本システム依存</span></td><td>CMIS の getAllVersions を実行し、versionLineage の objectId と createdAt の並びが一致することを確認する。各版の内容 digest も同様に再計算して比較する。</td></tr>
   </table>
 </section>
 
-<footer>本レポートは NemakiWare が自動生成したものです。<b>「自己申告」と記した検査は本システムを信頼することを前提とします</b> — 本システムの管理者による改変を排除する検査は「独立検証可」と記したもののみです。本レポートは InterPARES の Benchmark / Baseline Requirements に<b>対応付けて</b>設計されていますが、InterPARES に適合性を認証する制度は存在せず、「InterPARES 準拠」を主張するものではありません。<br><span class="mono">schema: authenticity-report/schema.json (reportVersion 0-mock) — このページは example.json から render-mock.py が生成したものです。手で編集しないでください。</span></footer>
+<footer>本レポートは NemakiWare が自動生成したものです。<b>「本システム依存」と記した検査は本システムを信頼することを前提とします</b> — 本システムの管理者による改変を排除する検査は「独立検証可」と記したもののみです。本レポートは InterPARES の Benchmark / Baseline Requirements に<b>対応付けて</b>設計されていますが、InterPARES に適合性を認証する制度は存在せず、「InterPARES 準拠」を主張するものではありません。<br><span class="mono">schema: authenticity-report/schema.json (reportVersion 0-mock) — このページは example.json から render-mock.py が生成したものです。手で編集しないでください。</span></footer>
 
 </body>
 </html>

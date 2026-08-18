@@ -30,7 +30,7 @@ CHROME = {
         "scopeLead": "本レポートの証拠は <b>{ts}</b> — 外部システム ({src}) から取り込まれた時点 — <b>以降</b>についてのものです。",
         "scopeLeadPlain": "本レポートの証拠は <b>{ts}</b> — このリポジトリで作成された時点 — <b>以降</b>についてのものです。",
         "scopeTail": "取込前の来歴については「本レポートが証明していないこと」を参照してください。",
-        "s1": "対象", "s2": "証拠の独立性 (信頼の段)", "s3": "内容の同一性",
+        "s1": "対象", "s2": "アンカーと検証の実態 (信頼の段)", "s3": "内容の同一性",
         "s4": "保管の連鎖", "s5": "本レポートが証明していないこと", "s6": "第三者による検証手順",
         "docName": "文書名", "version": "バージョン", "series": "系列", "objectId": "オブジェクト ID",
         "source": "取得元", "captured": "取得日時", "authoritative": "正本の指定",
@@ -43,10 +43,10 @@ CHROME = {
         "retentionVal": "{d} 日 (最古の保持イベント {oldest})。本レポートの対象期間内に消去されたイベントは{purged}。",
         "purgedNo": "ありません", "purgedYes": "あります",
         "accessVal": "変更を伴う操作 {n} 件をすべて記録 / ACL epoch {e}",
-        "claim": "主張", "independence": "独立性", "procedure": "手順",
-        "indep": "独立検証可", "self": "自己申告",
+        "claim": "主張", "independence": "検証", "procedure": "手順",
+        "indep": "第三者が検証可", "self": "本システム依存",
         "notConfigured": "未構成", "match": "一致",
-        "footer": ('本レポートは NemakiWare が自動生成したものです。<b>「自己申告」と記した検査は本システムを信頼することを前提とします</b>'
+        "footer": ('本レポートは NemakiWare が自動生成したものです。<b>「本システム依存」と記した検査は本システムを信頼することを前提とします</b>'
                    ' — 本システムの管理者による改変を排除する検査は「独立検証可」と記したもののみです。'
                    '本レポートは InterPARES の Benchmark / Baseline Requirements に<b>対応付けて</b>設計されていますが、'
                    'InterPARES に適合性を認証する制度は存在せず、「InterPARES 準拠」を主張するものではありません。'),
@@ -60,7 +60,7 @@ CHROME = {
         "scopeLead": "The evidence in this report begins at <b>{ts}</b> — the moment the document was ingested from an external system ({src}) — <b>and runs forward from there</b>.",
         "scopeLeadPlain": "The evidence in this report begins at <b>{ts}</b> — the moment the document was created in this repository — <b>and runs forward from there</b>.",
         "scopeTail": 'For the history prior to ingest, see "What this report does not prove".',
-        "s1": "Subject", "s2": "Independence of the evidence (trust level)", "s3": "Content integrity",
+        "s1": "Subject", "s2": "Anchors and what was actually checked (trust level)", "s3": "Content integrity",
         "s4": "Chain of custody", "s5": "What this report does <u>not</u> prove", "s6": "How a third party can verify this",
         "docName": "Document", "version": "Version", "series": "series", "objectId": "Object ID",
         "source": "Source", "captured": "Captured", "authoritative": "Authoritative copy",
@@ -73,11 +73,11 @@ CHROME = {
         "retentionVal": "{d} days (oldest retained event {oldest}). Events within the covered period have {purged} been purged.",
         "purgedNo": "not", "purgedYes": "",
         "accessVal": "All {n} modifying interactions recorded / ACL epoch {e}",
-        "claim": "Assertion", "independence": "Independence", "procedure": "Procedure",
-        "indep": "INDEPENDENT", "self": "SELF-ATTESTED",
+        "claim": "Assertion", "independence": "Checked by", "procedure": "Procedure",
+        "indep": "THIRD PARTY CAN CHECK", "self": "RELIES ON THIS SYSTEM",
         "notConfigured": "Not configured", "match": "Match",
-        "footer": ('This report was generated automatically by NemakiWare. <b>Checks marked SELF-ATTESTED presuppose trust in this system</b>'
-                   ' — the only checks that exclude alteration by an administrator of this deployment are those marked INDEPENDENT.'
+        "footer": ('This report was generated automatically by NemakiWare. <b>Checks marked RELIES ON THIS SYSTEM presuppose trust in this system</b>'
+                   ' — only the checks marked THIRD PARTY CAN CHECK exclude alteration by an administrator of this deployment. This report never asserts that an anchor is independent: it records what was checked and by whom, and leaves that judgement to the reader.'
                    ' This report is designed <b>with reference to</b> the InterPARES Benchmark and Baseline Requirements.'
                    ' No scheme exists that certifies conformance to InterPARES, and no claim of "InterPARES compliance" is made here.'),
         "generated": "This page was generated from example.json by render-mock.py. Do not edit it by hand.",
