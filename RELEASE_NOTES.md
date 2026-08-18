@@ -7,7 +7,7 @@ only repository gotchas.
 
 ---
 
-# 3.3.1 (準備中 — タグ時に日付確定)
+# 3.3.1 (2026-08-18)
 
 3.3.0 の残件パッチ。**破壊的変更はありません**。計画と実装の記録は
 [`docs/design/v3.3.1-plan.md`](docs/design/v3.3.1-plan.md)。
