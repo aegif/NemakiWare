@@ -162,6 +162,30 @@ services:
   # Increase Docker memory to >=12GB, or switch to e5-small (384 dim)
   # — but note that Solr schema uses knn_vector_1024 so dimension
   # change requires schema migration + full RAG reindex.
+  # OpenTimestamps sidecar — trust ladder rung 2 (3.4).
+  #
+  # Runs the official Python client because the .ots format has no specification document (the
+  # Python implementation is the specification) and rung 2's whole value is that a third party
+  # can verify WITHOUT trusting this deployment. The Java library on Maven Central is
+  # unmaintained since 2021 and drags H2 1.3.167 (RCE) into the WAR through bitcoinj, which
+  # cannot be excluded because the library's entry class imports it.
+  #
+  # Only a digest ever reaches this service, and the client blinds it further before contacting
+  # a calendar, so calendar operators learn neither documents nor their digests.
+  ots:
+    build:
+      context: ./ots
+      dockerfile: Dockerfile
+    profiles:
+      - anchor
+    ports:
+      # Dev/eval: loopback only. No auth, and it reaches the public internet on its own.
+      - "127.0.0.1:8082:8082"
+    environment:
+      # Blank = the client's own default calendars. Set to a comma-separated list to pin them.
+      - OTS_CALENDARS=${OTS_CALENDARS:-}
+    restart: unless-stopped
+
   tei:
     # Default: the official linux/amd64 CPU image (runs under emulation on Apple
     # Silicon). On ARM64 hosts, build a native image once with
