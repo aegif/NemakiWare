@@ -46,6 +46,11 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
 
     @Override
     public ConnectorDefinition get(String connectorId) {
+        // Null means "no such connector", not a crash: Map.of rejects null values with an NPE,
+        // so an ingest request that simply omits connectorId used to answer 500 with a stack
+        // trace, while a WRONG id answered a clean 404. Callers already treat null as
+        // not-found. findBySystemAndArchetype below has guarded this way all along.
+        if (connectorId == null) return null;
         List<ConnectorDefinition> results = findBySelector(Map.of(
                 "type", ConnectorDefinition.DOC_TYPE,
                 "connectorId", connectorId));

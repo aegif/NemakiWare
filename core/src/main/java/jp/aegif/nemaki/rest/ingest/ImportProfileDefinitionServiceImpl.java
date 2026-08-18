@@ -51,6 +51,8 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
 
     @Override
     public ImportProfileDefinition get(String profileId) {
+        // Null means "no such profile", not a crash — see ConnectorDefinitionServiceImpl.get.
+        if (profileId == null) return null;
         List<ImportProfileDefinition> results = findBySelector(Map.of(
                 "type", ImportProfileDefinition.DOC_TYPE,
                 "profileId", profileId));
