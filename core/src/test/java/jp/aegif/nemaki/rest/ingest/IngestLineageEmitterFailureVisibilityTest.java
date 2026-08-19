@@ -82,12 +82,14 @@ class IngestLineageEmitterFailureVisibilityTest {
         request.setSourceObjectType("file");
 
         emitter.emitLineageEvent("bedroom", "obj-1", "f", "d", "op-1", connector, request);
-        assertNotNull(emitter.lastEmissionFailure());
+        assertNotNull(emitter.lastEmissionFailure(), "control: the first call did fail");
 
-        // A second attempt must start clean: reporting the previous failure against this import
-        // would mark a document as evidence-less when its own emission had not been judged yet.
-        emitter.emitLineageEvent("bedroom", "obj-2", "f", "d", "op-2", connector, request);
-        assertNotNull(emitter.lastEmissionFailure(),
-                "this one failed too, so a reason is expected — but it is THIS call's reason");
+        // The second call must be judged on its own. Asserting that it ALSO reports a failure
+        // would pass even if the first call's reason were simply carried forward — which is the
+        // bug this test exists for. So the reason is cleared and the emitter is asked again
+        // WITHOUT emitting: nothing new failed, so nothing may be reported.
+        emitter.clearLastEmissionFailureForTest();
+        assertNull(emitter.lastEmissionFailure(),
+                "a reason must belong to an emission, not linger on the thread");
     }
 }

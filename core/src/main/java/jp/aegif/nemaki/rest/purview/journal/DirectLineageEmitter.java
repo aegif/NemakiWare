@@ -18,7 +18,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p>{@link #emit(LineageEvent)} performs <b>no external network I/O</b>.
  * It enqueues the event for asynchronous fire-and-forget publish and
- * returns immediately. The caller's thread is never blocked by
+ * returns immediately. The caller's thread is not blocked while the queue has room (CallerRunsPolicy publishes on the caller thread once it is full) by
  * Purview/Atlas/Dataplex latency or outages.
  *
  * <h3>Delivery Guarantee: at-most-once, best-effort</h3>
@@ -35,7 +35,7 @@ import org.slf4j.LoggerFactory;
  * <h3>Failure Policy (fail-open)</h3>
  * <p>This emitter catches all exceptions, logs an error, records to
  * dead-letter, and returns normally. The parent business operation is
- * never blocked.
+ * not blocked while the queue has room (CallerRunsPolicy publishes on the caller thread once it is full).
  */
 public class DirectLineageEmitter implements LineageEmitter {
 
@@ -46,7 +46,7 @@ public class DirectLineageEmitter implements LineageEmitter {
     private final ThreadPoolExecutor asyncWorker;
     private final AtomicLong failureCount = new AtomicLong(0);
 
-    /** Backward-compatible constructor (no sinks — log-only mode). */
+    /** Backward-compatible constructor (no sinks — sinkless (backward compatibility) — retains no provenance). */
     public DirectLineageEmitter(LineageConfig config) {
         this(config, List.of());
     }

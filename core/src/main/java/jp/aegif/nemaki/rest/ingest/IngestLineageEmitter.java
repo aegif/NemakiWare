@@ -120,6 +120,11 @@ public class IngestLineageEmitter {
      * not make capture atomic. Atomicity is the outbox in P1-1(a) — content and evidence
      * committed together or not at all — and this method disappears when that lands.
      */
+    /** Test hook: the retained state is otherwise unobservable, so it cannot be asserted on. */
+    void clearLastEmissionFailureForTest() {
+        lastFailure.remove();
+    }
+
     public String lastEmissionFailure() {
         return lastFailure.get();
     }
