@@ -168,6 +168,9 @@ class IngestEvidenceSnapshotTest {
         withContent.setAttachmentNodeId("att-1");
         org.mockito.Mockito.when(contentService.getContent("bedroom", "obj-1"))
                 .thenReturn(withContent);
+        // The reference must resolve; an unresolvable one is UNKNOWN, tested separately.
+        org.mockito.Mockito.when(contentService.getAttachment("bedroom", "att-1"))
+                .thenReturn(new jp.aegif.nemaki.model.AttachmentNode());
         assertEquals(IngestLineageEmitter.CapturedContent.ContentState.STORED,
                 service.describeCapturedContent("bedroom", "obj-1", null).state(),
                 "the object holds bytes from an earlier import; 'none' would misdescribe it");
@@ -195,6 +198,66 @@ class IngestEvidenceSnapshotTest {
         assertEquals(IngestLineageEmitter.CapturedContent.ContentState.STORED,
                 service.describeCapturedContent("bedroom", "obj-3", "abc").state(),
                 "a hash this import computed needs no read-back at all");
+    }
+
+    @Test
+    @DisplayName("the call site picks the actor: delegated is admitted-unknown, direct is the caller")
+    void productionDecisionPicksTheActor() {
+        // The builder test below only proves the snapshot renders what it is handed. This drives
+        // the DECISION, which is what a revert would break while leaving every other test green
+        // (external review).
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p-1");
+        delegated.setDelegated(true);
+        delegated.setCreatedByUserId("otsuka");
+
+        org.apache.chemistry.opencmis.commons.server.CallContext ctx =
+                org.mockito.Mockito.mock(
+                        org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        org.mockito.Mockito.when(ctx.getUsername()).thenReturn("svc-caller");
+
+        String executed = CanonicalImportServiceImpl.resolveExecutedBy(delegated, ctx);
+        assertTrue(executed.startsWith("unknown:"),
+                "the synthesized context names the authority, not the actor — a service label "
+                        + "here would assert an actor nobody observed; got: " + executed);
+        assertEquals("otsuka", CanonicalImportServiceImpl.resolveOnBehalfOf(delegated));
+
+        ImportProfileDefinition direct = new ImportProfileDefinition();
+        direct.setProfileId("p-2");
+        direct.setDelegated(false);
+        assertEquals("svc-caller", CanonicalImportServiceImpl.resolveExecutedBy(direct, ctx),
+                "a direct import HAS an observed actor and must not discard it");
+        assertNull(CanonicalImportServiceImpl.resolveOnBehalfOf(direct),
+                "a direct import has no separate authority to name");
+    }
+
+    @Test
+    @DisplayName("a blank or unresolvable attachment reference is not 'stored'")
+    void attachmentReferenceIsResolved() throws Exception {
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        jp.aegif.nemaki.businesslogic.ContentService contentService =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.businesslogic.ContentService.class);
+        java.lang.reflect.Field f = CanonicalImportServiceImpl.class
+                .getDeclaredField("contentService");
+        f.setAccessible(true);
+        f.set(service, contentService);
+
+        jp.aegif.nemaki.model.Document blank = new jp.aegif.nemaki.model.Document();
+        blank.setAttachmentNodeId("   ");
+        org.mockito.Mockito.when(contentService.getContent("bedroom", "blank")).thenReturn(blank);
+        assertEquals(IngestLineageEmitter.CapturedContent.ContentState.NONE,
+                service.describeCapturedContent("bedroom", "blank", null).state(),
+                "the repository treats a blank id as no attachment, and so must the evidence");
+
+        jp.aegif.nemaki.model.Document dangling = new jp.aegif.nemaki.model.Document();
+        dangling.setAttachmentNodeId("att-missing");
+        org.mockito.Mockito.when(contentService.getContent("bedroom", "dangling"))
+                .thenReturn(dangling);
+        org.mockito.Mockito.when(contentService.getAttachment("bedroom", "att-missing"))
+                .thenReturn(null);
+        assertEquals(IngestLineageEmitter.CapturedContent.ContentState.UNKNOWN,
+                service.describeCapturedContent("bedroom", "dangling", null).state(),
+                "a reference that resolves to nothing is not proof that bytes are held");
     }
 
     @Test

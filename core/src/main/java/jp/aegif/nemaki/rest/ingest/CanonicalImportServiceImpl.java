@@ -680,6 +680,28 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     }
 
     /**
+     * Who ran this import, as far as this code can honestly tell.
+     *
+     * <p>A delegated profile can be driven manually by an authenticated caller OR autonomously
+     * by the scheduler, and the context for the latter is synthesized from the profile creator
+     * — so it names the authority, not the actor. Rather than print a service name nobody
+     * observed, the gap is admitted with its reason (external review). Threading execution
+     * origin through is P1-1(e).
+     */
+    static String resolveExecutedBy(ImportProfileDefinition profile, CallContext callContext) {
+        if (profile != null && profile.isDelegated()) {
+            return "unknown: delegated profile " + profile.getProfileId()
+                    + " — execution origin is not recorded yet";
+        }
+        return callContext != null ? callContext.getUsername() : null;
+    }
+
+    /** The authority a delegated import ran under: the profile's creator, or none if direct. */
+    static String resolveOnBehalfOf(ImportProfileDefinition profile) {
+        return profile != null && profile.isDelegated() ? profile.getCreatedByUserId() : null;
+    }
+
+    /**
      * What the repository actually holds for this object, decided by looking rather than by
      * inferring from which update branch ran.
      *
@@ -703,15 +725,22 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         try {
             Content stored = contentService.getContent(repositoryId, objectId);
             if (stored instanceof Document doc) {
-                // A non-null attachment id proves a REFERENCE exists. Resolving the bytes is
-                // stronger evidence and belongs with the fixity work (P1-2); the wording below
-                // therefore says what was checked rather than asserting the bytes are readable.
-                return doc.getAttachmentNodeId() != null
-                        ? IngestLineageEmitter.CapturedContent.storedWithoutDigest(
-                                "the object references content from an earlier import; this "
-                                        + "import supplied no bytes and did not read the stored "
-                                        + "ones back")
-                        : IngestLineageEmitter.CapturedContent.none();
+                String attachmentId = doc.getAttachmentNodeId();
+                if (attachmentId == null || attachmentId.isBlank()) {
+                    // The repository itself treats a blank id as no attachment.
+                    return IngestLineageEmitter.CapturedContent.none();
+                }
+                // A reference is not bytes. Softening the prose while leaving contentStored=true
+                // left the machine-readable claim wrong, and a dangling reference would have
+                // asserted stored content that does not exist (external review). Resolve it.
+                if (contentService.getAttachment(repositoryId, attachmentId) == null) {
+                    return IngestLineageEmitter.CapturedContent.unknown(
+                            "the object references content (" + attachmentId + ") that could not "
+                                    + "be resolved, so whether bytes are held is undetermined");
+                }
+                return IngestLineageEmitter.CapturedContent.storedWithoutDigest(
+                        "content is held from an earlier import; this import supplied no bytes "
+                                + "and did not read the stored ones back");
             }
             // The DAO layer catches its own failures and returns null, so a null read is NOT
             // evidence of emptiness — and this object was just written successfully, so a null
@@ -1510,11 +1539,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                             // actor we did not observe, so the executor is recorded as unknown
                             // WITH the reason — an honest gap beats a plausible label
                             // (external review). Threading execution origin through is P1-1(e).
-                            profile.isDelegated()
-                                    ? "unknown: delegated profile " + profile.getProfileId()
-                                            + " — execution origin is not recorded yet"
-                                    : (callContext != null ? callContext.getUsername() : null),
-                            profile.isDelegated() ? profile.getCreatedByUserId() : null)
+                            resolveExecutedBy(profile, callContext),
+                            resolveOnBehalfOf(profile))
                     : null;
             // The document is committed by now. If provenance could not be recorded, the import
             // is NOT wholly successful: content exists with no evidence of where it came from,
