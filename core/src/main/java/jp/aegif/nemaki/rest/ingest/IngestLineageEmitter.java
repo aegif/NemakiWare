@@ -146,10 +146,13 @@ public class IngestLineageEmitter {
             return new CapturedContent(ContentState.NONE, null, null);
         }
 
-        /** Bytes are present but this import did not produce them and did not read them back. */
-        public static CapturedContent storedWithoutDigest(String reason) {
-            return new CapturedContent(ContentState.STORED, null, reason);
-        }
+        // storedWithoutDigest(reason) was here: "bytes ARE held, we just did not hash them".
+        // It is gone because nothing could establish it. The only caller was the carried-forward
+        // case, and every cheap way to confirm those bytes turned out not to confirm anything
+        // (see CanonicalImportServiceImpl.describeCapturedContent). Leaving the factory in place
+        // would invite the claim back without the evidence — that case is unknown(), and proving
+        // it is fixity work (P1-2).
+
 
         /**
          * We could not find out. Kept distinct from {@link #none()} because "nothing is stored"

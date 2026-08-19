@@ -621,11 +621,15 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // so every chat import carried a capture-time property it left empty. It is stamped here
         // from the server clock rather than read from the request.
         //
-        // NOT yet a protected attribute. The property is still READWRITE, so a client with
-        // update permission can change it afterwards, or plant it before a re-import and have
-        // the no-overwrite rule below preserve their value. Making it evidence needs the
-        // updatability migration described in authenticity-roadmap.md P1-1(c) — until then the
-        // event snapshot, which a client cannot edit, is the trustworthy copy (external review).
+        // NOT yet a protected attribute, and NOT yet corroborated anywhere. The property is
+        // still READWRITE, so a client with update permission can change it afterwards, or plant
+        // it before a re-import and have the no-overwrite rule below preserve their value.
+        //
+        // An earlier version of this comment pointed at the event snapshot as the copy a client
+        // cannot edit — but the stamp happens HERE, after the import that emitted the event, so
+        // the snapshot does not carry it at all (external review). There is currently no second
+        // copy. Making this evidence needs both the updatability migration and moving the stamp
+        // ahead of emission: authenticity-roadmap.md P1-1(b)(c).
         applyChatCapturedAt(callContext, request, result.objectId(), warnings);
 
         // Apply capture window datetime properties if provided in metadata
@@ -798,9 +802,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * this", and a source that could choose the answer would make it evidence of nothing. It is
      * also written after the aspect exists, because writing before would have nowhere to go.
      */
-    // Package-private, not private: the call had no test at all, so removing it left every
-    // case green while custody time silently stopped being recorded (external review).
-    void applyChatCapturedAt(CallContext callContext, ExternalIngestRequest request,
+    private void applyChatCapturedAt(CallContext callContext, ExternalIngestRequest request,
                                      String objectId, List<String> warnings) {
         if (objectId == null) {
             return;
@@ -838,8 +840,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 // A re-import must not restamp custody: the first observation is the one that
                 // means anything, and moving it forward would quietly erase how long we have
                 // actually held the record. Note the limitation above — while the property is
-                // READWRITE this also preserves a value a client planted, which is why the
-                // event snapshot rather than this property is the copy to rely on.
+                // READWRITE this also preserves a value a client planted, and there is no second
+                // copy to check it against yet (P1-1(b)(c)).
                 return;
             }
             GregorianCalendar now = new GregorianCalendar();
