@@ -182,6 +182,59 @@ class LineageFactEmissionOutcomeTest {
     }
 
     @Test
+    @DisplayName("a REAL JournaledLineageEmitter whose store throws reports the loss")
+    void realJournaledEmitterReportsStoreFailure() {
+        // The fake above proves only that LineageFactEmission consumes a loss string — delete
+        // JournaledLineageEmitter's override and it still passes. This drives the real emitter
+        // with a store that fails the way CouchDB does, which is the seam that matters
+        // (external review, P1-1).
+        LineageJournalStore failingStore = org.mockito.Mockito.mock(LineageJournalStore.class);
+        org.mockito.Mockito.doThrow(new IllegalStateException("couchdb unreachable"))
+                .when(failingStore).append(org.mockito.ArgumentMatchers.any(LineageEvent.class));
+        LineageConfig config = org.mockito.Mockito.mock(LineageConfig.class);
+
+        JournaledLineageEmitter emitter = new JournaledLineageEmitter(failingStore, config);
+
+        String loss = emitter.emitReportingLoss(realFact());
+
+        assertNotNull(loss, "the journal has no row for this fact, so the caller must be told");
+        assertTrue(loss.contains("dead-lettered") || loss.contains("dropped"), loss);
+        assertTrue(loss.contains("couchdb unreachable"), loss);
+    }
+
+    @Test
+    @DisplayName("plain emit() leaves no retained state for the next caller")
+    void plainEmitRetainsNothing() {
+        LineageJournalStore failingStore = org.mockito.Mockito.mock(LineageJournalStore.class);
+        org.mockito.Mockito.doThrow(new IllegalStateException("couchdb unreachable"))
+                .when(failingStore).append(org.mockito.ArgumentMatchers.any(LineageEvent.class));
+        JournaledLineageEmitter emitter = new JournaledLineageEmitter(
+                failingStore, org.mockito.Mockito.mock(LineageConfig.class));
+
+        // A caller that never asked for a loss report must not leave one parked on the thread.
+        emitter.emit(realFact());
+
+        LineageJournalStore okStore = org.mockito.Mockito.mock(LineageJournalStore.class);
+        JournaledLineageEmitter healthy = new JournaledLineageEmitter(
+                okStore, org.mockito.Mockito.mock(LineageConfig.class));
+        assertNull(healthy.emitReportingLoss(realFact()),
+                "a previous failure on this thread must not be reported against a later success");
+    }
+
+    /** A fact the real emitter can actually convert to a v1 event. */
+    private static LineageFact realFact() {
+        return new LineageFact("bedroom", LineageProcessType.FILE_SHARE_SYNC_DOWNLOAD, "op-1",
+                java.time.Instant.now().toString(),
+                java.util.List.of(LineageEndpoint.externalAsset("bedroom", "src://x", "slack")),
+                java.util.List.of(LineageEndpoint.document("bedroom", "obj-1", "doc.txt")),
+                java.util.List.of(), null,
+                new LineageFact.LegacyV1Projection(
+                        LineageProcessType.FILE_SHARE_SYNC_DOWNLOAD,
+                        java.util.List.of("src://x"), java.util.List.of("bedroom/obj-1"),
+                        new java.util.LinkedHashMap<>(), java.util.UUID.randomUUID().toString()));
+    }
+
+    @Test
     @DisplayName("an emitter that reports no loss is still a success")
     void defaultLossReportingKeepsSuccess() {
         // The interface default delegates to emit() and reports nothing, so emitters with

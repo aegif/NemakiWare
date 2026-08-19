@@ -155,9 +155,12 @@ public class IngestLineageEmitter {
         try {
             var ctx = SpringContext.getApplicationContext();
             if (ctx == null) {
-                // Outside a running application (tests, tooling) there is nothing to record to,
-                // and nothing was expected of us.
-                return new EmitterResolution(null, null);
+                // NOT benign here. In the ingest path an absent application context means the
+                // emitter configuration could not be resolved — it does not establish that
+                // lineage was deliberately switched off, and the contract above says only
+                // explicit disablement is benign (external review, P1-1).
+                return new EmitterResolution(null,
+                        "no application context: lineage configuration could not be resolved");
             }
             LineageConfig config = ctx.getBean(LineageConfig.class);
             if (config == null) {

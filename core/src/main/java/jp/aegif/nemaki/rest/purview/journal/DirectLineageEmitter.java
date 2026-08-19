@@ -62,6 +62,27 @@ public class DirectLineageEmitter implements LineageEmitter {
                 new ThreadPoolExecutor.CallerRunsPolicy());
     }
 
+    /**
+     * Report a SYNCHRONOUS enqueue failure. Direct mode publishes to sinks asynchronously, so a
+     * sink that fails later cannot reach this caller without changing the mode's semantics —
+     * and the receipt says as much rather than implying otherwise. But an enqueue that fails
+     * here fails before the caller returns, and that one is reportable (external review, P1-1).
+     */
+    @Override
+    public String emitReportingLoss(LineageFact fact) {
+        List<String> losses = new java.util.ArrayList<>(1);
+        try {
+            enqueueLoss.set(losses);
+            emit(fact);
+        } finally {
+            enqueueLoss.remove();
+        }
+        return losses.isEmpty() ? null : losses.get(0);
+    }
+
+    /** Present only while {@link #emitReportingLoss} is on the stack. */
+    private static final ThreadLocal<List<String>> enqueueLoss = new ThreadLocal<>();
+
     @Override
     public void emit(LineageEvent event) {
         if (event == null) {
@@ -86,6 +107,11 @@ public class DirectLineageEmitter implements LineageEmitter {
             failureCount.incrementAndGet();
             logger.error("Failed to enqueue lineage event (fail-open): eventKey={}, repo={}, error={}",
                     event.eventKey(), event.repositoryId(), e.getMessage(), e);
+            List<String> sink = enqueueLoss.get();
+            if (sink != null && sink.isEmpty()) {
+                sink.add("enqueue failed, dead-lettered: "
+                        + e.getClass().getSimpleName() + ": " + e.getMessage());
+            }
 
             // Persist to file-based dead-letter log so the event is not silently lost.
             LineageDeadLetterSink.record(event, e.getMessage());

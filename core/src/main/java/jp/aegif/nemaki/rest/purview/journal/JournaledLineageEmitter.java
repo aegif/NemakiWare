@@ -1,5 +1,6 @@
 package jp.aegif.nemaki.rest.purview.journal;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.slf4j.Logger;
@@ -141,18 +142,34 @@ public class JournaledLineageEmitter implements LineageEmitter {
      */
     @Override
     public String emitReportingLoss(LineageFact fact) {
-        lastLoss.remove();
-        emit(fact);
-        String loss = lastLoss.get();
-        lastLoss.remove();
-        return loss;
+        // Scoped to THIS emission. An earlier version parked the reason in a static
+        // ThreadLocal that plain emit() callers never cleared, leaving stale state on pooled
+        // threads and making the "read once" comment untrue (external review, P1-1).
+        List<String> losses = new java.util.ArrayList<>(1);
+        try {
+            lossSink.set(losses);
+            emit(fact);
+        } finally {
+            lossSink.remove();
+        }
+        return losses.isEmpty() ? null : losses.get(0);
     }
 
-    /** Set by drop()/dead-letter on the emitting thread; read once by emitReportingLoss. */
-    private static final ThreadLocal<String> lastLoss = new ThreadLocal<>();
+    /**
+     * Present only while {@link #emitReportingLoss} is on the stack. A plain {@code emit()} call
+     * leaves it absent, so nothing is retained for callers that never asked.
+     */
+    private static final ThreadLocal<List<String>> lossSink = new ThreadLocal<>();
+
+    private static void noteLoss(String reason) {
+        List<String> sink = lossSink.get();
+        if (sink != null && sink.isEmpty()) {
+            sink.add(reason);
+        }
+    }
 
     private void drop(LineageFact fact, String reason, String detail) {
-        lastLoss.set("dropped (" + reason + "): " + detail);
+        noteLoss("dropped (" + reason + "): " + detail);
         failureCount.incrementAndGet();
         if (metrics != null) {
             metrics.recordEmitDropped(reason);
@@ -192,7 +209,7 @@ public class JournaledLineageEmitter implements LineageEmitter {
             LineageDeadLetterSink.record(event, e.getMessage());
             // Dead-lettered is not stored: the journal has no row for this event, so a caller
             // that reported an event id would be pointing at nothing.
-            lastLoss.set("dead-lettered: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            noteLoss("dead-lettered: " + e.getClass().getSimpleName() + ": " + e.getMessage());
         }
     }
 
