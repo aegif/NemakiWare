@@ -856,11 +856,15 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     .filter(a -> "nemaki:chatContextMetadata".equals(a.getName()))
                     .findFirst().orElse(null);
             if (chatAspect == null || chatAspect.getProperties() == null) {
-                // Absent aspect on a CHAT_CONTEXT import means the metadata step did not take
-                // effect, so the capture time has nowhere to live. Say so rather than returning
-                // silently — the caller is otherwise told the import succeeded (external review).
-                warnings.add("Capture time (nemaki:chatCapturedAt) was not recorded: the chat "
-                        + "context aspect is not present on the stored object");
+                // Either shape means the metadata step did not take effect, so the capture time
+                // has nowhere to live. Say so rather than returning silently — the caller is
+                // otherwise told the import succeeded (external review). The two are reported
+                // separately because "the aspect is missing" and "the aspect is there but empty"
+                // send an operator to different places.
+                warnings.add("Capture time (nemaki:chatCapturedAt) was not recorded: "
+                        + (chatAspect == null
+                                ? "the chat context aspect is not present on the stored object"
+                                : "the chat context aspect carries no properties"));
                 return;
             }
             Map<String, Property> props = new java.util.LinkedHashMap<>();

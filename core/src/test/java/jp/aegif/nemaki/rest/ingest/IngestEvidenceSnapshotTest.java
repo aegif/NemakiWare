@@ -534,7 +534,8 @@ class IngestEvidenceSnapshotTest {
     @org.junit.jupiter.params.provider.MethodSource("custodyFailureShapes")
     @DisplayName("when custody time cannot be recorded, the caller is told")
     void chatImportReportsWhyCustodyTimeIsMissing(
-            String shapeName, java.util.function.Supplier<jp.aegif.nemaki.model.Content> shape) {
+            String shapeName, java.util.function.Supplier<jp.aegif.nemaki.model.Content> shape,
+            String expectedDiagnostic) {
         // Each of these returns early. Returning SILENTLY would leave the caller with a success
         // result and an object whose custody time nobody recorded — and nothing to act on. The
         // import genuinely succeeded, so this cannot be an error; it has to be a warning, and a
@@ -547,6 +548,11 @@ class IngestEvidenceSnapshotTest {
                         .anyMatch(w -> w.contains("nemaki:chatCapturedAt")),
                 "the import reports success, so silence here means the gap is never noticed. "
                         + "Shape: " + shapeName + ", warnings: " + result.warnings());
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains(expectedDiagnostic)),
+                "a warning that does not say WHICH shape occurred sends an operator to the "
+                        + "wrong place — an aspect that is missing and one that is empty are "
+                        + "different problems. Expected \"" + expectedDiagnostic + "\" in: "
+                        + result.warnings());
     }
 
     static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments>
@@ -574,15 +580,27 @@ class IngestEvidenceSnapshotTest {
         java.util.function.Supplier<jp.aegif.nemaki.model.Content> throwing = () -> {
             throw new IllegalStateException("couchdb unreachable");
         };
+        java.util.function.Supplier<jp.aegif.nemaki.model.Content> emptyAspect = () -> {
+            Aspect chat = new Aspect();
+            chat.setName("nemaki:chatContextMetadata");
+            chat.setProperties(null);
+            jp.aegif.nemaki.model.Document doc = new jp.aegif.nemaki.model.Document();
+            doc.setId("chat-1");
+            doc.setType("cmis:document");
+            doc.setAspects(new ArrayList<>(List.of(chat)));
+            return doc;
+        };
         return java.util.stream.Stream.of(
                 org.junit.jupiter.params.provider.Arguments.of(
-                        "object could not be read back", unreadable),
+                        "object could not be read back", unreadable, "could not be read back"),
                 org.junit.jupiter.params.provider.Arguments.of(
-                        "object carries no aspects at all", noAspects),
+                        "object carries no aspects at all", noAspects, "carries no aspects"),
                 org.junit.jupiter.params.provider.Arguments.of(
-                        "chat aspect never took effect", wrongAspect),
+                        "chat aspect never took effect", wrongAspect, "is not present on the stored object"),
                 org.junit.jupiter.params.provider.Arguments.of(
-                        "read threw", throwing));
+                        "chat aspect is there but empty", emptyAspect, "carries no properties"),
+                org.junit.jupiter.params.provider.Arguments.of(
+                        "read threw", throwing, "couchdb unreachable"));
     }
 
     @Test

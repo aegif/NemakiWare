@@ -47,10 +47,12 @@ public class IngestLineageEmitter {
      *        {@link CapturedContent}. Recording a digest is what lets a later reader tie the
      *        provenance to a specific set of bytes rather than to an object id, which can be
      *        updated afterwards (P1-1(b)).
-     * @param executedBy the authenticated principal that ran this import, or null for scheduled
-     *        and webhook ingest which carry no authenticated context. Recorded either way: an
-     *        absent agent is itself a fact, and leaving the key out made it look like a delegated
-     *        import with a missing name.
+     * @param executedBy the authenticated principal that ran this import; null for webhook and
+     *        other unauthenticated ingest. A DELEGATED scheduled profile is not null — its context
+     *        is synthesized from the creator, so the caller passes an explicit "unknown:" string
+     *        rather than that person's name. Recorded either way: an absent agent is itself a
+     *        fact, and leaving the key out made it look like a delegated import with a missing
+     *        name.
      * @param onBehalfOf the authority the import ran under when it differs from the actor — for
      *        a delegated scheduled profile this is the profile creator. The InterPARES A.1
      *        identity attributes ask for a responsible agent, and one field cannot answer both
@@ -221,8 +223,9 @@ public class IngestLineageEmitter {
         }
         // Two different questions, so two fields. getUsername() on a delegated context returns
         // the profile creator — the authority the import ran UNDER — not the actor that ran it,
-        // and scheduled profiles pass no context at all. Collapsing those into one "ingestedBy"
-        // made an absent agent and a delegated one look alike (external review, P1-1(b)).
+        // and unauthenticated ingest has no actor to name at all. Collapsing those into one
+        // "ingestedBy" made an absent agent and a delegated one look alike (external review,
+        // P1-1(b)).
         v1Snapshot.put("executedBy", executedBy == null || executedBy.isBlank()
                 ? "service: no authenticated context (scheduled or webhook ingest)" : executedBy);
         if (onBehalfOf != null && !onBehalfOf.isBlank()) {
