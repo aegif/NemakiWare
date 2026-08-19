@@ -30,8 +30,13 @@ public record ExternalIngestResult(
     /**
      * Legacy arity, defaulting {@code createdObject} to false.
      *
-     * <p>False is the conservative answer: it means "do not claim custody began now". Paths that
-     * genuinely create an object say so explicitly.
+     * <p>False is the conservative answer: it means "do not claim custody began now" — a wrong
+     * false loses a fact, a wrong true asserts one. It exists so that error and skip results,
+     * which never create anything, stay readable.
+     *
+     * <p>It is NOT a safe default for a wrapper that rebuilds a result: dropping the flag there
+     * reported freshly created mail, note, record and chat objects as pre-existing (external
+     * review). Every rebuild must carry the inner result's value forward explicitly.
      */
     public ExternalIngestResult(String requestId, String objectId, String versionLabel,
                                 boolean isNewVersion, boolean dryRun, boolean skipped,

@@ -366,9 +366,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
             // Preserve the skipped flag/reason: a dedupe-skipped message body that
             // fell through above must still be reported as skipped, not imported.
+            // createdObject rides along: rebuilding through the legacy arity silently reported
+            // a freshly created object as pre-existing, which is what decides whether custody
+            // time may be recorded at all (external review).
             return new ExternalIngestResult(requestId, messageObjectId, messageResult.versionLabel(),
                     messageResult.isNewVersion(), false, messageResult.skipped(), messageResult.skipReason(),
-                    messageResult.lineageEventId(), List.of(), warnings);
+                    messageResult.lineageEventId(), List.of(), warnings,
+                    messageResult.createdObject());
 
         } catch (Exception e) {
             logger.error("Mail import failed: {}", e.getMessage(), e);
@@ -396,6 +400,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         List<String> warnings = new ArrayList<>();
         String pageVersionLabel = null;
         boolean pageNewVersion = false;
+        boolean pageCreated = false;
         String pageLineageEventId = null;
         boolean pageSkipped = false;     // files_and_body: page body was dedupe-skipped
         String pageSkipReason = null;
@@ -408,6 +413,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             pageObjectId = pageResult.objectId();
             pageVersionLabel = pageResult.versionLabel();
             pageNewVersion = pageResult.isNewVersion();
+            pageCreated = pageResult.createdObject();
             pageLineageEventId = pageResult.lineageEventId();
             pageSkipped = pageResult.skipped();
             pageSkipReason = pageResult.skipReason();
@@ -422,6 +428,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         int importedAttachmentCount = 0;   // genuinely new/updated attachments
         int skippedAttachmentCount = 0;    // dedupe-skipped attachments
         String firstAttachmentObjectId = null;
+        boolean firstAttachmentCreated = false;
         if (request.getMetadata() != null && request.getMetadata().get("attachments") instanceof List<?> attList) {
             for (Object attObj : attList) {
                 if (!(attObj instanceof Map<?, ?> attMap)) continue;
@@ -476,7 +483,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         else importedAttachmentCount++;
                         String attObjectId = attResult.objectId();
                         if (attObjectId != null) {
-                            if (firstAttachmentObjectId == null) firstAttachmentObjectId = attObjectId;
+                            if (firstAttachmentObjectId == null) {
+                                firstAttachmentObjectId = attObjectId;
+                                firstAttachmentCreated = attResult.createdObject();
+                            }
                             if (importBody && pageObjectId != null) {
                                 String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
                                         pageObjectId, attObjectId, "nemaki:hasAttachment");
@@ -517,9 +527,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         boolean overallSkipped = importBody && pageSkipped && importedAttachmentCount == 0;
         String overallSkipReason = overallSkipped ? pageSkipReason : null;
 
+        // createdObject must describe the object primaryObjectId NAMES, which is the page only
+        // when the body was imported — otherwise it is the first attachment (external review).
         return new ExternalIngestResult(requestId, primaryObjectId, pageVersionLabel,
                 pageNewVersion, false, overallSkipped, overallSkipReason, pageLineageEventId,
-                List.of(), warnings);
+                List.of(), warnings, importBody ? pageCreated : firstAttachmentCreated);
     }
 
     /**
@@ -540,7 +552,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 w.add(metaError);
                 return new ExternalIngestResult(attResult.requestId(), attResult.objectId(),
                         attResult.versionLabel(), attResult.isNewVersion(), false, false, null,
-                        attResult.lineageEventId(), List.of(), w);
+                        attResult.lineageEventId(), List.of(), w, attResult.createdObject());
             }
         }
         return attResult;
@@ -582,10 +594,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
 
         // Preserve the skipped flag/reason: a dedupe-skipped record that fell
-        // through above must still be reported as skipped, not imported.
+        // through above must still be reported as skipped, not imported. Same for createdObject.
         return new ExternalIngestResult(request.getRequestId(), result.objectId(), result.versionLabel(),
                 result.isNewVersion(), false, result.skipped(), result.skipReason(),
-                result.lineageEventId(), List.of(), warnings);
+                result.lineageEventId(), List.of(), warnings, result.createdObject());
     }
 
     @Override
@@ -679,10 +691,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
 
         // Preserve the skipped flag/reason: a dedupe-skipped chat object that fell
-        // through above must still be reported as skipped, not imported.
+        // through above must still be reported as skipped, not imported. Same for createdObject.
         return new ExternalIngestResult(request.getRequestId(), result.objectId(), result.versionLabel(),
                 result.isNewVersion(), false, result.skipped(), result.skipReason(),
-                result.lineageEventId(), List.of(), warnings);
+                result.lineageEventId(), List.of(), warnings, result.createdObject());
     }
 
     /**

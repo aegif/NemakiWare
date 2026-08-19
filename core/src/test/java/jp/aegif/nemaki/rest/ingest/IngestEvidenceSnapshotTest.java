@@ -499,8 +499,13 @@ class IngestEvidenceSnapshotTest {
         // Asserting on the in-memory aspect proved the property was set but not that it was ever
         // stored (external review), so ChatStore hands back only what an update() persisted.
         ChatStore store = new ChatStore(null);
-        runChatImport(store, true);
+        ExternalIngestResult result = runChatImport(store, true);
 
+        // The wrapper rebuilds the result, and rebuilding through the legacy arity dropped this
+        // flag — so a freshly created object was reported to its caller as pre-existing, which is
+        // what decides whether custody may be recorded at all (external review).
+        assertTrue(result.createdObject(),
+                "the public entry point must tell its caller that it created the object");
         assertNotNull(store.persisted,
                 "this operation created the object, so the moment it ran IS the moment custody "
                         + "began — and a property set in memory that never reaches update() is "
@@ -516,8 +521,10 @@ class IngestEvidenceSnapshotTest {
         // archive restore and names a later version's own creation. Both were shipped and both
         // were wrong (external review). An unknown fact gets recorded as nothing.
         ChatStore store = new ChatStore(null);
-        runChatImport(store, false);
+        ExternalIngestResult result = runChatImport(store, false);
 
+        assertFalse(result.createdObject(),
+                "nothing was created here, and saying otherwise would license the stamp");
         assertNull(store.persisted,
                 "stamping here would date a years-old holding from today — the exact opposite "
                         + "of what custody time means");
@@ -578,7 +585,7 @@ class IngestEvidenceSnapshotTest {
         }
     }
 
-    private static void runChatImport(ChatStore store, boolean objectIsNew) {
+    private static ExternalIngestResult runChatImport(ChatStore store, boolean objectIsNew) {
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService connectorService =
                 org.mockito.Mockito.mock(
@@ -653,6 +660,7 @@ class IngestEvidenceSnapshotTest {
                         org.apache.chemistry.opencmis.commons.server.CallContext.class),
                 chatRequest());
         assertTrue(result.isSuccess(), "control: the chat import must succeed");
+        return result;
     }
 
     private static ExternalIngestRequest chatRequest() {
