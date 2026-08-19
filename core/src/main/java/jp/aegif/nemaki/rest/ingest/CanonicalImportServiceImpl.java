@@ -692,7 +692,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
         try {
             Content content = contentService.getContent(request.getRepositoryId(), objectId);
-            if (content == null || content.getAspects() == null) {
+            if (content == null) {
+                warnings.add("Capture time (nemaki:chatCapturedAt) was not recorded: the stored "
+                        + "object could not be read back");
+                return;
+            }
+            if (content.getAspects() == null) {
+                // A null aspect list means the chat aspect is absent just as surely as a list
+                // without it does; returning silently here left half the case unreported.
+                warnings.add("Capture time (nemaki:chatCapturedAt) was not recorded: the stored "
+                        + "object carries no aspects");
                 return;
             }
             Aspect chatAspect = content.getAspects().stream()
@@ -1185,6 +1194,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
             ContentStream contentStream = null;
             String computedHash = null;
+            // Set when a check-in with no stream carries the previous version's bytes forward:
+            // content then exists that this import never read and cannot hash (external review).
+            String contentCarriedOverReason = null;
             if (request.getContentStream() != null) {
                 String mimeType = request.getMimeType() != null ? request.getMimeType() : "application/octet-stream";
                 // Buffer content to compute hash for dedupe and persistence
@@ -1348,6 +1360,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     String pwcId = objectIdHolder.getValue();
                     boolean isMajor = !"minor".equalsIgnoreCase(profile.getVersioningPolicy());
                     Holder<String> checkinHolder = new Holder<>(pwcId);
+                    if (contentStream == null) {
+                        contentCarriedOverReason = "the new version carried the previous "
+                                + "version's content forward; this import supplied no bytes "
+                                + "and did not read the stored ones back";
+                    }
                     versioningService.checkIn(callContext, repositoryId, checkinHolder, isMajor,
                             null, contentStream, "Imported from " + connector.getSourceSystem(),
                             null, null, null, null);
@@ -1434,13 +1451,23 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             String lineageEventId = ingestLineageEmitter != null
                     ? ingestLineageEmitter.emitLineageEvent(repositoryId, objectId, targetFolderId,
                             lineageDocumentName, lineageOperationId, connector, request,
-                            computedHash,
-                            callContext != null ? callContext.getUsername() : null,
-                            // Delegated scheduling synthesizes a context for the profile
-                            // creator, so the same value is also the authority; a future
-                            // scheduler-actor identity belongs in executedBy, not here.
-                            profile.isDelegated() && callContext != null
-                                    ? callContext.getUsername() : null)
+                            computedHash != null
+                                    ? IngestLineageEmitter.CapturedContent.hashed(computedHash)
+                                    : contentCarriedOverReason != null
+                                            ? IngestLineageEmitter.CapturedContent
+                                                    .storedWithoutDigest(contentCarriedOverReason)
+                                            : IngestLineageEmitter.CapturedContent.none(),
+                            // A delegated run's context is SYNTHESIZED from the profile creator,
+                            // so getUsername() names the authority, not the actor. Putting it in
+                            // both fields said "the creator ran it", which is what the split
+                            // exists to stop. Until an execution-origin identity is threaded
+                            // through, a delegated run records the service as the executor and
+                            // the profile's creator as the authority (external review).
+                            profile.isDelegated()
+                                    ? "service: ingest (delegated profile "
+                                            + profile.getProfileId() + ")"
+                                    : (callContext != null ? callContext.getUsername() : null),
+                            profile.isDelegated() ? profile.getCreatedByUserId() : null)
                     : null;
             // The document is committed by now. If provenance could not be recorded, the import
             // is NOT wholly successful: content exists with no evidence of where it came from,

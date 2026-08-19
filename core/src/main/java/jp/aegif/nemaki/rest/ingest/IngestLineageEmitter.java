@@ -43,10 +43,10 @@ public class IngestLineageEmitter {
     }
 
     /**
-     * @param contentHash the SHA-256 this import computed over the bytes it stored, or null when
-     *        there was no content (metadata-only imports, and empty streams). Recording it in the
-     *        event is what lets a later reader tie the provenance to a specific set of bytes
-     *        rather than merely to an object id, which can be updated afterwards (P1-1(b)).
+     * @param content what this import can say about the bytes now held — see
+     *        {@link CapturedContent}. Recording a digest is what lets a later reader tie the
+     *        provenance to a specific set of bytes rather than to an object id, which can be
+     *        updated afterwards (P1-1(b)).
      * @param executedBy the authenticated principal that ran this import, or null for scheduled
      *        and webhook ingest which carry no authenticated context. Recorded either way: an
      *        absent agent is itself a fact, and leaving the key out made it look like a delegated
@@ -59,7 +59,7 @@ public class IngestLineageEmitter {
     public String emitLineageEvent(String repositoryId, String objectId, String targetFolderId,
                                    String documentName, String operationId,
                                    ConnectorDefinition connector, ExternalIngestRequest request,
-                                   String contentHash, String executedBy, String onBehalfOf) {
+                                   CapturedContent content, String executedBy, String onBehalfOf) {
         lastFailure.remove();
         try {
             // Two classifications on purpose. The v1 type participates in eventKey and keeps
@@ -75,7 +75,7 @@ public class IngestLineageEmitter {
             // projection verbatim; most keys have no v2 home — the endpoint attributes carry
             // sourceSystem and the stable key, and targetFolderId is a §3 Process attribute).
             java.util.Map<String, String> v1Snapshot =
-                    buildV1Snapshot(connector, request, targetFolderId, contentHash,
+                    buildV1Snapshot(connector, request, targetFolderId, content,
                             executedBy, onBehalfOf);
 
             // emitReporting, not emitSafely: the plain form collapses "lineage is off" and
@@ -143,7 +143,7 @@ public class IngestLineageEmitter {
      */
     java.util.Map<String, String> buildV1Snapshot(ConnectorDefinition connector,
                                                   ExternalIngestRequest request,
-                                                  String targetFolderId, String contentHash,
+                                                  String targetFolderId, CapturedContent content,
                                                   String executedBy, String onBehalfOf) {
         java.util.Map<String, String> v1Snapshot = new java.util.LinkedHashMap<>();
         v1Snapshot.put("sourceSystem", connector.getSourceSystem());
@@ -162,11 +162,15 @@ public class IngestLineageEmitter {
         // Putting prose in the digest field would make a future consumer either fail validation
         // or invent undocumented prefix parsing, and the evidence report's schema requires hex
         // (external review, P1-1(b)).
-        boolean contentStored = contentHash != null && !contentHash.isBlank();
-        v1Snapshot.put("contentStored", String.valueOf(contentStored));
-        if (contentStored) {
-            v1Snapshot.put("contentHash", contentHash);
+        CapturedContent captured = content == null ? CapturedContent.none() : content;
+        v1Snapshot.put("contentStored", String.valueOf(captured.stored()));
+        if (captured.digest() != null && !captured.digest().isBlank()) {
+            v1Snapshot.put("contentHash", captured.digest());
             v1Snapshot.put("contentHashAlgorithm", "SHA-256");
+        } else if (captured.stored()) {
+            v1Snapshot.put("contentHashUnavailable", captured.digestUnavailableReason() == null
+                    ? "this import did not read the stored bytes"
+                    : captured.digestUnavailableReason());
         }
         // Two different questions, so two fields. getUsername() on a delegated context returns
         // the profile creator — the authority the import ran UNDER — not the actor that ran it,
@@ -187,6 +191,32 @@ public class IngestLineageEmitter {
         }
 
         return v1Snapshot;
+    }
+
+    /**
+     * What this import can say about the bytes the repository now holds.
+     *
+     * <p>Three states, not two. "Stored with a digest" and "nothing stored" are the easy ones;
+     * the third exists because a check-in with no stream carries the previous version's content
+     * forward, so bytes are present that this import never read and therefore cannot hash.
+     * Reporting that as "no content" would describe the repository wrongly, and reporting it as
+     * hashed would be a lie — so it is its own state, with the reason attached
+     * (external review, P1-1(b)).
+     */
+    public record CapturedContent(boolean stored, String digest, String digestUnavailableReason) {
+
+        public static CapturedContent hashed(String digest) {
+            return new CapturedContent(true, digest, null);
+        }
+
+        public static CapturedContent none() {
+            return new CapturedContent(false, null, null);
+        }
+
+        /** Bytes are present but this import did not produce them and did not read them back. */
+        public static CapturedContent storedWithoutDigest(String reason) {
+            return new CapturedContent(true, null, reason);
+        }
     }
 
     /** Test hook: the retained state is otherwise unobservable, so it cannot be asserted on. */

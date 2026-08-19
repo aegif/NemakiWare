@@ -63,7 +63,9 @@ class IngestEvidenceSnapshotTest {
     void contentHashIsRecorded() {
         Map<String, String> snapshot = new IngestLineageEmitter().buildV1Snapshot(
                 connector(), request(null), "folder-1",
-                "9f2c4e1a7b8d3056c9e4f1a2b7d8e3f0c5a6b9d2e7f4a1c8b3d6e9f2a5c8b1d4", "otsuka", null);
+                IngestLineageEmitter.CapturedContent.hashed(
+                        "9f2c4e1a7b8d3056c9e4f1a2b7d8e3f0c5a6b9d2e7f4a1c8b3d6e9f2a5c8b1d4"),
+                "otsuka", null);
 
         assertEquals("9f2c4e1a7b8d3056c9e4f1a2b7d8e3f0c5a6b9d2e7f4a1c8b3d6e9f2a5c8b1d4",
                 snapshot.get("contentHash"),
@@ -76,7 +78,7 @@ class IngestEvidenceSnapshotTest {
     @DisplayName("absence of content is a separate field, never prose in the digest field")
     void absentContentIsItsOwnField() {
         Map<String, String> snapshot = new IngestLineageEmitter().buildV1Snapshot(
-                connector(), request(null), "folder-1", null, "otsuka", null);
+                connector(), request(null), "folder-1", IngestLineageEmitter.CapturedContent.none(), "otsuka", null);
 
         assertEquals("false", snapshot.get("contentStored"),
                 "a reader must be able to tell 'nothing was stored' from 'something was stored "
@@ -92,7 +94,7 @@ class IngestEvidenceSnapshotTest {
     @DisplayName("stored content marks contentStored true alongside the digest")
     void storedContentIsMarked() {
         Map<String, String> snapshot = new IngestLineageEmitter().buildV1Snapshot(
-                connector(), request(null), "folder-1", "abc", "otsuka", null);
+                connector(), request(null), "folder-1", IngestLineageEmitter.CapturedContent.hashed("abc"), "otsuka", null);
 
         assertEquals("true", snapshot.get("contentStored"));
         assertEquals("abc", snapshot.get("contentHash"));
@@ -102,14 +104,14 @@ class IngestEvidenceSnapshotTest {
     @DisplayName("who ran it and on whose authority are separate facts")
     void agentIsRecordedAsTwoFields() {
         Map<String, String> authenticated = new IngestLineageEmitter().buildV1Snapshot(
-                connector(), request(null), "folder-1", "abc", "otsuka", null);
+                connector(), request(null), "folder-1", IngestLineageEmitter.CapturedContent.hashed("abc"), "otsuka", null);
         assertEquals("otsuka", authenticated.get("executedBy"),
                 "A.1 asks for a responsible agent; 'the connector' is not one");
         assertFalse(authenticated.containsKey("onBehalfOf"),
                 "a direct import has no separate authority to name");
 
         Map<String, String> delegated = new IngestLineageEmitter().buildV1Snapshot(
-                connector(), request(null), "folder-1", "abc", "svc-scheduler", "otsuka");
+                connector(), request(null), "folder-1", IngestLineageEmitter.CapturedContent.hashed("abc"), "svc-scheduler", "otsuka");
         assertEquals("svc-scheduler", delegated.get("executedBy"));
         assertEquals("otsuka", delegated.get("onBehalfOf"),
                 "one field cannot answer both 'who ran it' and 'on whose authority'");
@@ -119,13 +121,33 @@ class IngestEvidenceSnapshotTest {
     @DisplayName("an unauthenticated (scheduled/webhook) import says so rather than omitting it")
     void absentAgentIsStated() {
         Map<String, String> snapshot = new IngestLineageEmitter().buildV1Snapshot(
-                connector(), request(null), "folder-1", "abc", null, null);
+                connector(), request(null), "folder-1", IngestLineageEmitter.CapturedContent.hashed("abc"), null, null);
 
         String executedBy = snapshot.get("executedBy");
         assertNotNull(executedBy,
                 "leaving the key out made an absent agent look like a delegated import whose "
                         + "name simply was not filled in");
         assertTrue(executedBy.startsWith("service:"), executedBy);
+    }
+
+    @Test
+    @DisplayName("content carried forward is stored but unhashed — a third state, not 'no content'")
+    void carriedOverContentIsItsOwnState() {
+        // A check-in with no stream keeps the previous version's bytes. Reporting that as
+        // contentStored=false would describe the repository wrongly; reporting a digest would
+        // be a lie, since this import never read those bytes.
+        Map<String, String> snapshot = new IngestLineageEmitter().buildV1Snapshot(
+                connector(), request(null), "folder-1",
+                IngestLineageEmitter.CapturedContent.storedWithoutDigest(
+                        "the new version carried the previous version's content forward"),
+                "otsuka", null);
+
+        assertEquals("true", snapshot.get("contentStored"),
+                "bytes are present, so saying otherwise misdescribes what is held");
+        assertFalse(snapshot.containsKey("contentHash"),
+                "this import never read those bytes; any digest here would be invented");
+        assertTrue(snapshot.get("contentHashUnavailable").contains("carried the previous"),
+                snapshot.get("contentHashUnavailable"));
     }
 
     @Test
@@ -159,7 +181,7 @@ class IngestEvidenceSnapshotTest {
         metadata.put("captureWindowEnd", "2026-07-14T03:00:00Z");
 
         Map<String, String> snapshot = new IngestLineageEmitter().buildV1Snapshot(
-                connector(), request(metadata), "folder-1", "abc", "otsuka", null);
+                connector(), request(metadata), "folder-1", IngestLineageEmitter.CapturedContent.hashed("abc"), "otsuka", null);
 
         // The object's properties can be edited; the event is the record of what was observed
         // at capture time, so the context has to be in the event as well.
@@ -181,7 +203,7 @@ class IngestEvidenceSnapshotTest {
         metadata.put("channelId", "   ");          // blank must not become a recorded fact
 
         Map<String, String> snapshot = new IngestLineageEmitter().buildV1Snapshot(
-                connector(), request(metadata), "folder-1", "abc", "otsuka", null);
+                connector(), request(metadata), "folder-1", IngestLineageEmitter.CapturedContent.hashed("abc"), "otsuka", null);
 
         assertEquals("T01ABCD", snapshot.get("chat.workspaceId"));
         assertFalse(snapshot.containsKey("chat.channelId"),
@@ -193,7 +215,7 @@ class IngestEvidenceSnapshotTest {
     @DisplayName("the fields that were already there are still there")
     void existingFieldsAreUnchanged() {
         Map<String, String> snapshot = new IngestLineageEmitter().buildV1Snapshot(
-                connector(), request(null), "folder-1", "abc", "otsuka", null);
+                connector(), request(null), "folder-1", IngestLineageEmitter.CapturedContent.hashed("abc"), "otsuka", null);
 
         assertEquals("slack", snapshot.get("sourceSystem"));
         assertEquals("CHAT_CONTEXT", snapshot.get("sourceArchetype"));
