@@ -71,7 +71,10 @@ BagIt / OAIS 型パッケージ (`bagit|oais` で 0 件)、定期 fixity 再検�
    `captureWindowEnd`) / `executedBy`+`onBehalfOf` を運ぶ (PR #507)。**残る制約**は 2 つ:
    snapshot は **v1 projection 限定**で `LineageFact` の設計上 v2 に home が無いこと、および
    `nemaki:chatCapturedAt` は**オブジェクトに刻まれるが snapshot には入らない** — 刻印が emit の
-   **後**に走るため、載せるには順序を変える必要がある (どちらも下表 P1-1(b))。
+   **後**に走るため、載せるには順序を変える必要がある (どちらも下表 P1-1(b))。値は
+   **サーバ時計ではなくオブジェクトの作成時刻**: 刻印は dedupe skip を含む毎回の chat 取込で
+   走るので、本プロパティ以前に取り込まれた古い記録に「今」を刻むと、何年も前から保管して
+   いるものが今日から保管開始に見えてしまう。既に値がある場合は上書きしない。
 
 ---
 

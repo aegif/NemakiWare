@@ -801,6 +801,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * <p>Deliberately not taken from the request: the property answers "when did WE observe
      * this", and a source that could choose the answer would make it evidence of nothing. It is
      * also written after the aspect exists, because writing before would have nowhere to go.
+     *
+     * <p>The value is the OBJECT'S creation time, not the current clock. This runs on every chat
+     * import including dedupe-skipped ones, so an object first imported before this property
+     * existed would otherwise be stamped with today's date and appear to have entered custody
+     * now (external review). Known limitation: for a versioned document the id may name a later
+     * version, whose creation time postdates the series — closing that needs the version series'
+     * origin, which is P1-1(d) work.
      */
     private void applyChatCapturedAt(CallContext callContext, ExternalIngestRequest request,
                                      String objectId, List<String> warnings) {
@@ -844,9 +851,19 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 // copy to check it against yet (P1-1(b)(c)).
                 return;
             }
-            GregorianCalendar now = new GregorianCalendar();
-            now.setTimeInMillis(java.time.Instant.now().toEpochMilli());
-            props.put("nemaki:chatCapturedAt", new Property("nemaki:chatCapturedAt", now));
+            // NOT the current clock. A dedupe-skipped re-import re-decorates an object that may
+            // have been imported years ago, and stamping "now" would date this deployment's
+            // custody from today — the exact opposite of what the property is for (external
+            // review). The moment this repository took the record is when it created the object.
+            GregorianCalendar custodyBegan = content.getCreated();
+            if (custodyBegan == null) {
+                warnings.add("Capture time (nemaki:chatCapturedAt) was not recorded: the stored "
+                        + "object carries no creation time, and the current clock cannot stand in "
+                        + "for it — this object may have been held long before now");
+                return;
+            }
+            props.put("nemaki:chatCapturedAt",
+                    new Property("nemaki:chatCapturedAt", custodyBegan));
             chatAspect.setProperties(new ArrayList<>(props.values()));
             contentService.update(callContext, request.getRepositoryId(), content);
         } catch (Exception e) {

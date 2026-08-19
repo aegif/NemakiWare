@@ -494,11 +494,88 @@ class IngestEvidenceSnapshotTest {
     }
 
     @Test
-    @DisplayName("a chat import stamps custody time once, through the real entry point")
-    void chatImportStampsCustodyTimeOnce() {
+    @DisplayName("custody time is persisted as the object's own age, not today's date")
+    void chatImportPersistsCustodyTimeAsObjectAge() {
         // Calling applyChatCapturedAt directly proved the helper worked but not that anything
-        // called it: deleting the production call left the suite green (external review). So
-        // this goes through executeChatContextImport, which is what the connectors use.
+        // called it, and asserting on the in-memory aspect proved the property was set but not
+        // that it was ever stored (external review). So this goes through
+        // executeChatContextImport and reads back only what an update() actually persisted.
+        java.util.GregorianCalendar createdLongAgo = new java.util.GregorianCalendar();
+        createdLongAgo.setTimeInMillis(
+                java.time.Instant.parse("2024-03-01T09:00:00Z").toEpochMilli());
+
+        ChatStore store = new ChatStore(createdLongAgo, null);
+        runChatImport(store);
+
+        assertEquals(createdLongAgo, store.persisted,
+                "an object first imported before this property existed is re-decorated on every "
+                        + "poll; stamping the current clock would date years-old holdings from "
+                        + "today, which is the opposite of what custody time means. And an "
+                        + "in-memory mutation that never reaches update() is not a record.");
+    }
+
+    @Test
+    @DisplayName("a custody time already on the object is never overwritten")
+    void chatImportDoesNotOverwriteExistingCustodyTime() {
+        // Now that the value is the object's creation time, a restamp would write the SAME
+        // answer — so the rule only bites where the stored value DIFFERS: a legacy stamp, or one
+        // a client planted while the property is still READWRITE (P1-1(c)).
+        java.util.GregorianCalendar created = new java.util.GregorianCalendar();
+        created.setTimeInMillis(java.time.Instant.parse("2024-03-01T09:00:00Z").toEpochMilli());
+        java.util.GregorianCalendar alreadyRecorded = new java.util.GregorianCalendar();
+        alreadyRecorded.setTimeInMillis(
+                java.time.Instant.parse("2023-01-15T00:00:00Z").toEpochMilli());
+
+        ChatStore store = new ChatStore(created, alreadyRecorded);
+        runChatImport(store);
+
+        assertEquals(alreadyRecorded, store.persisted,
+                "the first observation is the one that means anything; moving it would quietly "
+                        + "erase how long the record has actually been held");
+    }
+
+    /**
+     * A stand-in for storage: {@code getContent} hands back only what an {@code update} persisted,
+     * so a property set in memory but never written is invisible — which is the point.
+     */
+    private static final class ChatStore {
+        private final java.util.GregorianCalendar created;
+        private Object persisted;
+
+        ChatStore(java.util.GregorianCalendar created, Object initialStamp) {
+            this.created = created;
+            this.persisted = initialStamp;
+        }
+
+        jp.aegif.nemaki.model.Document read() {
+            Aspect chatAspect = new Aspect();
+            chatAspect.setName("nemaki:chatContextMetadata");
+            List<Property> props = new ArrayList<>(List.of(
+                    new Property("nemaki:chatChannelId", "C1")));
+            if (persisted != null) {
+                props.add(new Property("nemaki:chatCapturedAt", persisted));
+            }
+            chatAspect.setProperties(props);
+            jp.aegif.nemaki.model.Document doc = new jp.aegif.nemaki.model.Document();
+            doc.setId("chat-1");
+            doc.setType("cmis:document");
+            doc.setAspects(new ArrayList<>(List.of(chatAspect)));
+            doc.setCreated(created);
+            return doc;
+        }
+
+        void write(jp.aegif.nemaki.model.Content content) {
+            if (content == null || content.getAspects() == null) return;
+            content.getAspects().stream()
+                    .filter(a -> "nemaki:chatContextMetadata".equals(a.getName()))
+                    .filter(a -> a.getProperties() != null)
+                    .flatMap(a -> a.getProperties().stream())
+                    .filter(p -> "nemaki:chatCapturedAt".equals(p.getKey()))
+                    .findFirst().ifPresent(p -> persisted = p.getValue());
+        }
+    }
+
+    private static void runChatImport(ChatStore store) {
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService connectorService =
                 org.mockito.Mockito.mock(
@@ -510,13 +587,11 @@ class IngestEvidenceSnapshotTest {
                 org.mockito.Mockito.mock(jp.aegif.nemaki.businesslogic.ContentService.class);
         jp.aegif.nemaki.cmis.service.ObjectService objectService =
                 org.mockito.Mockito.mock(jp.aegif.nemaki.cmis.service.ObjectService.class);
-        IngestMetadataService metadataService =
-                org.mockito.Mockito.mock(IngestMetadataService.class);
         service.setConnectorDefinitionService(connectorService);
         service.setImportProfileDefinitionService(profileService);
         service.setContentService(contentService);
         service.setObjectService(objectService);
-        service.setIngestMetadataService(metadataService);
+        service.setIngestMetadataService(org.mockito.Mockito.mock(IngestMetadataService.class));
         service.setIngestLineageEmitter(new RecordingEmitter());
 
         ImportProfileDefinition profile = new ImportProfileDefinition();
@@ -545,39 +620,19 @@ class IngestEvidenceSnapshotTest {
                         org.mockito.ArgumentMatchers.isNull()))
                 .thenReturn("chat-1");
 
-        // The aspect the metadata step would have created, so the stamp has somewhere to live.
-        Aspect chatAspect = new Aspect();
-        chatAspect.setName("nemaki:chatContextMetadata");
-        chatAspect.setProperties(new ArrayList<>(List.of(
-                new Property("nemaki:chatChannelId", "C1"))));
-        jp.aegif.nemaki.model.Document chatDoc = new jp.aegif.nemaki.model.Document();
-        chatDoc.setId("chat-1");
-        chatDoc.setType("cmis:document");
-        chatDoc.setAspects(new ArrayList<>(List.of(chatAspect)));
         org.mockito.Mockito.when(contentService.getContent("bedroom", "chat-1"))
-                .thenReturn(chatDoc);
+                .thenAnswer(inv -> store.read());
+        org.mockito.Mockito.doAnswer(inv -> {
+            store.write(inv.getArgument(2));
+            return null;
+        }).when(contentService).update(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq("bedroom"), org.mockito.ArgumentMatchers.any());
 
-        ExternalIngestResult first = service.executeChatContextImport(
+        ExternalIngestResult result = service.executeChatContextImport(
                 org.mockito.Mockito.mock(
                         org.apache.chemistry.opencmis.commons.server.CallContext.class),
                 chatRequest());
-        assertTrue(first.isSuccess(), "control: the chat import must succeed");
-
-        Property stamped = chatAspect.getProperties().stream()
-                .filter(p -> "nemaki:chatCapturedAt".equals(p.getKey())).findFirst().orElse(null);
-        assertNotNull(stamped,
-                "the import must record when this deployment took custody: " + first.warnings());
-        Object firstStamp = stamped.getValue();
-
-        service.executeChatContextImport(
-                org.mockito.Mockito.mock(
-                        org.apache.chemistry.opencmis.commons.server.CallContext.class),
-                chatRequest());
-        assertEquals(firstStamp, chatAspect.getProperties().stream()
-                        .filter(p -> "nemaki:chatCapturedAt".equals(p.getKey())).findFirst()
-                        .orElseThrow().getValue(),
-                "a re-import must not move custody forward: doing so quietly erases how long "
-                        + "the record has actually been held");
+        assertTrue(result.isSuccess(), "control: the chat import must succeed");
     }
 
     private static ExternalIngestRequest chatRequest() {

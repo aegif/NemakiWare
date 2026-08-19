@@ -127,10 +127,12 @@ public class IngestLineageEmitter {
      *
      * <p>Three states, not two. "Stored with a digest" and "nothing stored" are the easy ones;
      * the third exists because a check-in with no stream carries the previous version's content
-     * forward, so bytes are present that this import never read and therefore cannot hash.
+     * forward, so the object goes on REFERENCING content this import neither supplied nor read.
      * Reporting that as "no content" would describe the repository wrongly, and reporting it as
-     * hashed would be a lie — so it is its own state, with the reason attached
-     * (external review, P1-1(b)).
+     * hashed would be a lie — but "stored" is not available either: the reference is logical,
+     * and nothing cheap here establishes that the bytes are physically present and readable
+     * (external review). So it is its own state, "undetermined", with the reason attached.
+     * Establishing it is fixity work, P1-2.
      */
     public record CapturedContent(ContentState state, String digest, String reason) {
 
