@@ -59,6 +59,7 @@ class IngestCreatedObjectPropagationTest {
     private jp.aegif.nemaki.cmis.service.ObjectService objectService;
     private jp.aegif.nemaki.businesslogic.ContentService contentService;
     private jp.aegif.nemaki.dao.ContentDaoService contentDaoService;
+    private IngestMetadataService metadataService;
     private final List<jp.aegif.nemaki.model.Content> existingChildren = new ArrayList<>();
 
     private void wire(SourceArchetype archetype) {
@@ -73,7 +74,8 @@ class IngestCreatedObjectPropagationTest {
         service.setObjectService(objectService);
         service.setContentService(contentService);
         service.setContentDaoService(contentDaoService);
-        service.setIngestMetadataService(mock(IngestMetadataService.class));
+        metadataService = mock(IngestMetadataService.class);
+        service.setIngestMetadataService(metadataService);
 
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");
@@ -257,6 +259,37 @@ class IngestCreatedObjectPropagationTest {
                 "the flag must describe the object primaryObjectId NAMES. The second attachment "
                         + "was created, but stamping custody on the first would date a holding "
                         + "that predates this import from today");
+    }
+
+    @Test
+    @DisplayName("a metadata error on the attachment does not turn a creation into a non-creation")
+    void noteAttachmentMetadataErrorKeepsTheCreationFlag() {
+        // executeNoteAttachment rebuilds its result on this branch ONLY, to append the warning.
+        // Every other note test mocks applyNoteMetadata to succeed, so the rebuild was never
+        // entered and its propagation could be reverted while the whole suite stayed green
+        // (external review). A partial failure must not erase what the import did establish.
+        wire(SourceArchetype.COMPOUND_NOTE);
+        when(metadataService.applyNoteMetadata(any(), any(), any(), any()))
+                .thenReturn("note metadata could not be applied");
+
+        ExternalIngestRequest req = baseRequest("page-4", "page.html");
+        req.setImportPolicy("files_only");
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("attachments", List.of(new LinkedHashMap<>(Map.of(
+                "attachmentId", "a", "filename", "only.txt", "contentBase64",
+                java.util.Base64.getEncoder().encodeToString(
+                        "bytes".getBytes(java.nio.charset.StandardCharsets.UTF_8))))));
+        req.setMetadata(metadata);
+
+        ExternalIngestResult result = service.executeNoteImport(ctx(), req);
+
+        assertTrue(result.isSuccess(), "control: a metadata warning is not an error");
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains("note metadata")),
+                "control: the branch under test must actually have been entered: "
+                        + result.warnings());
+        assertTrue(result.createdObject(),
+                "the object WAS created; losing that because a metadata step failed would "
+                        + "discard the one moment of custody this deployment can establish");
     }
 
     @Test
