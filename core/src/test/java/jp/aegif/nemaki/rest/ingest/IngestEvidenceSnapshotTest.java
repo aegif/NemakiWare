@@ -494,44 +494,50 @@ class IngestEvidenceSnapshotTest {
     }
 
     @Test
-    @DisplayName("custody time is persisted as the object's own age, not today's date")
-    void chatImportPersistsCustodyTimeAsObjectAge() {
-        // Calling applyChatCapturedAt directly proved the helper worked but not that anything
-        // called it, and asserting on the in-memory aspect proved the property was set but not
-        // that it was ever stored (external review). So this goes through
-        // executeChatContextImport and reads back only what an update() actually persisted.
-        java.util.GregorianCalendar createdLongAgo = new java.util.GregorianCalendar();
-        createdLongAgo.setTimeInMillis(
-                java.time.Instant.parse("2024-03-01T09:00:00Z").toEpochMilli());
+    @DisplayName("a newly created chat object records custody time, and it reaches storage")
+    void newChatImportPersistsCustodyTime() {
+        // Asserting on the in-memory aspect proved the property was set but not that it was ever
+        // stored (external review), so ChatStore hands back only what an update() persisted.
+        ChatStore store = new ChatStore(null);
+        runChatImport(store, true);
 
-        ChatStore store = new ChatStore(createdLongAgo, null);
-        runChatImport(store);
+        assertNotNull(store.persisted,
+                "this operation created the object, so the moment it ran IS the moment custody "
+                        + "began — and a property set in memory that never reaches update() is "
+                        + "not a record of anything");
+    }
 
-        assertEquals(createdLongAgo, store.persisted,
-                "an object first imported before this property existed is re-decorated on every "
-                        + "poll; stamping the current clock would date years-old holdings from "
-                        + "today, which is the opposite of what custody time means. And an "
-                        + "in-memory mutation that never reaches update() is not a record.");
+    @Test
+    @DisplayName("an object that was already here is left unstamped, not dated from today")
+    void preExistingChatObjectIsNotStamped() {
+        // The stamp runs on every chat import including dedupe-skipped ones. An object first
+        // imported before this property existed has no stamp, and nothing available says when we
+        // first held it: the clock says today, and cmis:creationDate survives migration and
+        // archive restore and names a later version's own creation. Both were shipped and both
+        // were wrong (external review). An unknown fact gets recorded as nothing.
+        ChatStore store = new ChatStore(null);
+        runChatImport(store, false);
+
+        assertNull(store.persisted,
+                "stamping here would date a years-old holding from today — the exact opposite "
+                        + "of what custody time means");
     }
 
     @Test
     @DisplayName("a custody time already on the object is never overwritten")
     void chatImportDoesNotOverwriteExistingCustodyTime() {
-        // Now that the value is the object's creation time, a restamp would write the SAME
-        // answer — so the rule only bites where the stored value DIFFERS: a legacy stamp, or one
-        // a client planted while the property is still READWRITE (P1-1(c)).
-        java.util.GregorianCalendar created = new java.util.GregorianCalendar();
-        created.setTimeInMillis(java.time.Instant.parse("2024-03-01T09:00:00Z").toEpochMilli());
         java.util.GregorianCalendar alreadyRecorded = new java.util.GregorianCalendar();
         alreadyRecorded.setTimeInMillis(
                 java.time.Instant.parse("2023-01-15T00:00:00Z").toEpochMilli());
 
-        ChatStore store = new ChatStore(created, alreadyRecorded);
-        runChatImport(store);
+        ChatStore store = new ChatStore(alreadyRecorded);
+        runChatImport(store, true);
 
         assertEquals(alreadyRecorded, store.persisted,
                 "the first observation is the one that means anything; moving it would quietly "
-                        + "erase how long the record has actually been held");
+                        + "erase how long the record has actually been held. This also preserves "
+                        + "a value a client planted while the property is still READWRITE, which "
+                        + "is why it is not evidence on its own (P1-1(c)).");
     }
 
     /**
@@ -539,11 +545,9 @@ class IngestEvidenceSnapshotTest {
      * so a property set in memory but never written is invisible — which is the point.
      */
     private static final class ChatStore {
-        private final java.util.GregorianCalendar created;
         private Object persisted;
 
-        ChatStore(java.util.GregorianCalendar created, Object initialStamp) {
-            this.created = created;
+        ChatStore(Object initialStamp) {
             this.persisted = initialStamp;
         }
 
@@ -560,7 +564,6 @@ class IngestEvidenceSnapshotTest {
             doc.setId("chat-1");
             doc.setType("cmis:document");
             doc.setAspects(new ArrayList<>(List.of(chatAspect)));
-            doc.setCreated(created);
             return doc;
         }
 
@@ -575,7 +578,7 @@ class IngestEvidenceSnapshotTest {
         }
     }
 
-    private static void runChatImport(ChatStore store) {
+    private static void runChatImport(ChatStore store, boolean objectIsNew) {
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService connectorService =
                 org.mockito.Mockito.mock(
@@ -620,6 +623,23 @@ class IngestEvidenceSnapshotTest {
                         org.mockito.ArgumentMatchers.isNull()))
                 .thenReturn("chat-1");
 
+        if (!objectIsNew) {
+            // Dedupe finds it, so execute() returns a skip carrying the existing id — the real
+            // shape of a re-import of something imported before this property existed.
+            jp.aegif.nemaki.dao.ContentDaoService contentDaoService =
+                    org.mockito.Mockito.mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+            service.setContentDaoService(contentDaoService);
+            Aspect integration = new Aspect();
+            integration.setName("nemaki:externalIntegration");
+            integration.setProperties(new ArrayList<>(List.of(
+                    new Property("nemaki:sourceObjectId", "1720000000.000200"),
+                    new Property("nemaki:sourceSystem", "slack"),
+                    new Property("nemaki:sourceObjectType", "message"))));
+            jp.aegif.nemaki.model.Document existing = store.read();
+            existing.getAspects().add(integration);
+            org.mockito.Mockito.when(contentDaoService.getChildren("bedroom", "folder-1"))
+                    .thenReturn(new ArrayList<>(List.of(existing)));
+        }
         org.mockito.Mockito.when(contentService.getContent("bedroom", "chat-1"))
                 .thenAnswer(inv -> store.read());
         org.mockito.Mockito.doAnswer(inv -> {

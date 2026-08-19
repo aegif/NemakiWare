@@ -618,8 +618,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (metaError != null) warnings.add(metaError);
 
         // chatCapturedAt has been on the type since it was introduced but nothing ever set it,
-        // so every chat import carried a capture-time property it left empty. It is stamped here
-        // from the server clock rather than read from the request.
+        // so every chat import carried a capture-time property it left empty. It is stamped from
+        // the server clock rather than read from the request — but ONLY when this operation
+        // created the object, because for anything already here the clock is not the answer.
         //
         // NOT yet a protected attribute, and NOT yet corroborated anywhere. The property is
         // still READWRITE, so a client with update permission can change it afterwards, or plant
@@ -630,7 +631,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // the snapshot does not carry it at all (external review). There is currently no second
         // copy. Making this evidence needs both the updatability migration and moving the stamp
         // ahead of emission: authenticity-roadmap.md P1-1(b)(c).
-        applyChatCapturedAt(callContext, request, result.objectId(), warnings);
+        applyChatCapturedAt(callContext, request, result.objectId(), result.createdObject(),
+                warnings);
 
         // Apply capture window datetime properties if provided in metadata
         if (request.getMetadata() != null) {
@@ -802,16 +804,26 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * this", and a source that could choose the answer would make it evidence of nothing. It is
      * also written after the aspect exists, because writing before would have nowhere to go.
      *
-     * <p>The value is the OBJECT'S creation time, not the current clock. This runs on every chat
-     * import including dedupe-skipped ones, so an object first imported before this property
-     * existed would otherwise be stamped with today's date and appear to have entered custody
-     * now (external review). Known limitation: for a versioned document the id may name a later
-     * version, whose creation time postdates the series — closing that needs the version series'
-     * origin, which is P1-1(d) work.
+     * <p>Only for objects THIS operation created. The method runs on every chat import including
+     * dedupe-skipped ones, and for an object that was already here nothing available says when we
+     * first held it: the clock says today, and {@code cmis:creationDate} survives migration and
+     * archive restore and names a later version's own creation. Both were tried and both were
+     * wrong (external review), so a pre-existing object is left unstamped. Recovering the answer
+     * for legacy objects means reading their provenance events — P1-1(d).
      */
     private void applyChatCapturedAt(CallContext callContext, ExternalIngestRequest request,
-                                     String objectId, List<String> warnings) {
+                                     String objectId, boolean createdObject,
+                                     List<String> warnings) {
         if (objectId == null) {
+            return;
+        }
+        if (!createdObject) {
+            // This object was already here. When we first held it is not knowable from anything
+            // available: the clock says today, and cmis:creationDate survives migration and
+            // archive restore and names a later version's own creation (external review). Two
+            // wrong answers were shipped in review before this one; the third option is to
+            // record nothing, which is what an unknown fact deserves. Recovering it for legacy
+            // objects means reading their provenance events — P1-1(d).
             return;
         }
         try {
@@ -851,19 +863,12 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 // copy to check it against yet (P1-1(b)(c)).
                 return;
             }
-            // NOT the current clock. A dedupe-skipped re-import re-decorates an object that may
-            // have been imported years ago, and stamping "now" would date this deployment's
-            // custody from today — the exact opposite of what the property is for (external
-            // review). The moment this repository took the record is when it created the object.
-            GregorianCalendar custodyBegan = content.getCreated();
-            if (custodyBegan == null) {
-                warnings.add("Capture time (nemaki:chatCapturedAt) was not recorded: the stored "
-                        + "object carries no creation time, and the current clock cannot stand in "
-                        + "for it — this object may have been held long before now");
-                return;
-            }
-            props.put("nemaki:chatCapturedAt",
-                    new Property("nemaki:chatCapturedAt", custodyBegan));
+            // The clock is correct HERE and only here: this operation just created the object,
+            // so the moment it ran is the moment this deployment took custody. Applying it to an
+            // object that was already present is the bug the guard above exists for.
+            GregorianCalendar now = new GregorianCalendar();
+            now.setTimeInMillis(java.time.Instant.now().toEpochMilli());
+            props.put("nemaki:chatCapturedAt", new Property("nemaki:chatCapturedAt", now));
             chatAspect.setProperties(new ArrayList<>(props.values()));
             contentService.update(callContext, request.getRepositoryId(), content);
         } catch (Exception e) {
@@ -1435,6 +1440,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
             String objectId;
             boolean isNewVersion = false;
+            boolean createdObject = false;
             String versionLabel = "1.0";
 
             if (existingDoc != null && existingDoc.isDocument()) {
@@ -1537,6 +1543,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                                 : VersioningState.MAJOR;
                 objectId = objectService.createDocument(callContext, repositoryId, properties,
                         targetFolderId, contentStream, vs, null, null, null, null);
+                createdObject = true;
             }
 
             // 6. Apply secondary types
@@ -1621,7 +1628,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             emitAuditEvent(request.getRepositoryId(), objectId, callContext, true, null);
 
             return new ExternalIngestResult(requestId, objectId, versionLabel, isNewVersion,
-                    false, false, null, lineageEventId, List.of(), warnings);
+                    false, false, null, lineageEventId, List.of(), warnings, createdObject);
 
         } catch (Exception e) {
             logger.error("Canonical import failed: requestId={}, error={}", requestId, e.getMessage(), e);
