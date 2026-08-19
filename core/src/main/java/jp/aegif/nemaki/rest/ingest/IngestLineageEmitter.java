@@ -38,6 +38,23 @@ public class IngestLineageEmitter {
     public String emitLineageEvent(String repositoryId, String objectId, String targetFolderId,
                                    String documentName, String operationId,
                                    ConnectorDefinition connector, ExternalIngestRequest request) {
+        return emitLineageEvent(repositoryId, objectId, targetFolderId, documentName, operationId,
+                connector, request, null, null);
+    }
+
+    /**
+     * @param contentHash the SHA-256 this import computed over the bytes it stored, or null when
+     *        there was no content (metadata-only imports, and empty streams). Recording it in the
+     *        event is what lets a later reader tie the provenance to a specific set of bytes
+     *        rather than merely to an object id, which can be updated afterwards (P1-1(b)).
+     * @param ingestedBy the principal on whose authority the import ran. Absent until now, so an
+     *        event said what came in and from where but not who caused it — the InterPARES A.1
+     *        identity attributes name a responsible agent, and "the connector" is not one.
+     */
+    public String emitLineageEvent(String repositoryId, String objectId, String targetFolderId,
+                                   String documentName, String operationId,
+                                   ConnectorDefinition connector, ExternalIngestRequest request,
+                                   String contentHash, String ingestedBy) {
         lastFailure.remove();
         try {
             // Two classifications on purpose. The v1 type participates in eventKey and keeps
@@ -52,17 +69,8 @@ public class IngestLineageEmitter {
             // The v1 event-level snapshot, conditionals preserved exactly (it rides the legacy
             // projection verbatim; most keys have no v2 home — the endpoint attributes carry
             // sourceSystem and the stable key, and targetFolderId is a §3 Process attribute).
-            java.util.Map<String, String> v1Snapshot = new java.util.LinkedHashMap<>();
-            v1Snapshot.put("sourceSystem", connector.getSourceSystem());
-            v1Snapshot.put("sourceArchetype",
-                    connector.getSourceArchetype() != null ? connector.getSourceArchetype().name() : "");
-            v1Snapshot.put("sourceObjectId", request.getSourceObjectId());
-            if (request.getSourceObjectType() != null) {
-                v1Snapshot.put("sourceObjectType", request.getSourceObjectType());
-            }
-            if (targetFolderId != null) {
-                v1Snapshot.put("targetFolderId", targetFolderId);
-            }
+            java.util.Map<String, String> v1Snapshot =
+                    buildV1Snapshot(connector, request, targetFolderId, contentHash, ingestedBy);
 
             // emitReporting, not emitSafely: the plain form collapses "lineage is off" and
             // "we lost the evidence" into the same false, and the document is already committed
@@ -120,6 +128,53 @@ public class IngestLineageEmitter {
      * not make capture atomic. Atomicity is the outbox in P1-1(a) — content and evidence
      * committed together or not at all — and this method disappears when that lands.
      */
+    /**
+     * The event-level snapshot, extracted so it can be asserted on directly.
+     *
+     * <p>Testing this through {@code emitLineageEvent} needs a resolved emitter, and an unwired
+     * one fails long before the snapshot is built — which is exactly how an earlier test in this
+     * area passed while proving nothing. This is the production builder, called by production.
+     */
+    java.util.Map<String, String> buildV1Snapshot(ConnectorDefinition connector,
+                                                  ExternalIngestRequest request,
+                                                  String targetFolderId, String contentHash,
+                                                  String ingestedBy) {
+        java.util.Map<String, String> v1Snapshot = new java.util.LinkedHashMap<>();
+        v1Snapshot.put("sourceSystem", connector.getSourceSystem());
+        v1Snapshot.put("sourceArchetype",
+                connector.getSourceArchetype() != null ? connector.getSourceArchetype().name() : "");
+        v1Snapshot.put("sourceObjectId", request.getSourceObjectId());
+        if (request.getSourceObjectType() != null) {
+            v1Snapshot.put("sourceObjectType", request.getSourceObjectType());
+        }
+        if (targetFolderId != null) {
+            v1Snapshot.put("targetFolderId", targetFolderId);
+        }
+        // What was actually captured, so the event stands on its own. An object id alone can
+        // be updated later; a digest cannot be, and an agent is required by A.1 (P1-1(b)).
+        if (contentHash != null && !contentHash.isBlank()) {
+            v1Snapshot.put("contentHash", contentHash);
+            v1Snapshot.put("contentHashAlgorithm", "SHA-256");
+        } else {
+            // Said explicitly: a reader must be able to tell "no content was stored" from
+            // "content was stored but we did not record its digest".
+            v1Snapshot.put("contentHash", "none: no content was stored by this import");
+        }
+        if (ingestedBy != null && !ingestedBy.isBlank()) {
+            v1Snapshot.put("ingestedBy", ingestedBy);
+        }
+        for (String key : new String[]{"workspaceId", "channelId", "channelName", "threadId",
+                "messageId", "selectionReason", "evidenceScope",
+                "captureWindowStart", "captureWindowEnd"}) {
+            String value = resolveMetadataString(request, key);
+            if (value != null && !value.isBlank()) {
+                v1Snapshot.put("chat." + key, value);
+            }
+        }
+
+        return v1Snapshot;
+    }
+
     /** Test hook: the retained state is otherwise unobservable, so it cannot be asserted on. */
     void clearLastEmissionFailureForTest() {
         lastFailure.remove();

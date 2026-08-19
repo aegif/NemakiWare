@@ -611,9 +611,17 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 {"nemaki:chatSelectionReason", "selectionReason"},
                 {"nemaki:chatEvidenceScope", "evidenceScope"},
         };
+
         String metaError = ingestMetadataService.applyArchetypeMetadata(request.getRepositoryId(), result.objectId(), callContext,
                 "nemaki:chatContextMetadata", request, chatFields);
         if (metaError != null) warnings.add(metaError);
+
+        // chatCapturedAt has been on the type since it was introduced but nothing ever set it,
+        // so every chat import carried a capture-time property it left empty. It is OUR
+        // observation — the moment this deployment took custody — not a timestamp from the
+        // source, and it is stamped here rather than read from the request so a caller cannot
+        // choose when we say we captured it (P1-1(c)).
+        applyChatCapturedAt(callContext, request, result.objectId(), warnings);
 
         // Apply capture window datetime properties if provided in metadata
         if (request.getMetadata() != null) {
@@ -664,6 +672,49 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         return new ExternalIngestResult(request.getRequestId(), result.objectId(), result.versionLabel(),
                 result.isNewVersion(), false, result.skipped(), result.skipReason(),
                 result.lineageEventId(), List.of(), warnings);
+    }
+
+    /**
+     * Stamp {@code nemaki:chatCapturedAt} with the moment this deployment took custody.
+     *
+     * <p>Deliberately not taken from the request: the property answers "when did WE observe
+     * this", and a source that could choose the answer would make it evidence of nothing. It is
+     * also written after the aspect exists, because writing before would have nowhere to go.
+     */
+    private void applyChatCapturedAt(CallContext callContext, ExternalIngestRequest request,
+                                     String objectId, List<String> warnings) {
+        if (objectId == null) {
+            return;
+        }
+        try {
+            Content content = contentService.getContent(request.getRepositoryId(), objectId);
+            if (content == null || content.getAspects() == null) {
+                return;
+            }
+            Aspect chatAspect = content.getAspects().stream()
+                    .filter(a -> "nemaki:chatContextMetadata".equals(a.getName()))
+                    .findFirst().orElse(null);
+            if (chatAspect == null || chatAspect.getProperties() == null) {
+                return;   // not a chat import, or the aspect could not be attached
+            }
+            Map<String, Property> props = new java.util.LinkedHashMap<>();
+            for (Property p : chatAspect.getProperties()) {
+                props.put(p.getKey(), p);
+            }
+            if (props.containsKey("nemaki:chatCapturedAt")) {
+                // A re-import must not restamp custody: the first observation is the one that
+                // means anything, and moving it forward would quietly erase how long we have
+                // actually held the record.
+                return;
+            }
+            GregorianCalendar now = new GregorianCalendar();
+            now.setTimeInMillis(java.time.Instant.now().toEpochMilli());
+            props.put("nemaki:chatCapturedAt", new Property("nemaki:chatCapturedAt", now));
+            chatAspect.setProperties(new ArrayList<>(props.values()));
+            contentService.update(callContext, request.getRepositoryId(), content);
+        } catch (Exception e) {
+            warnings.add("Capture time (nemaki:chatCapturedAt) was not recorded: " + e.getMessage());
+        }
     }
 
     /**
@@ -1363,7 +1414,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 logger.debug("Lineage name read failed; using requested fileName: {}", e.getMessage());
             }
             String lineageEventId = ingestLineageEmitter != null
-                    ? ingestLineageEmitter.emitLineageEvent(repositoryId, objectId, targetFolderId, lineageDocumentName, lineageOperationId, connector, request)
+                    ? ingestLineageEmitter.emitLineageEvent(repositoryId, objectId, targetFolderId,
+                            lineageDocumentName, lineageOperationId, connector, request,
+                            computedHash, callContext != null ? callContext.getUsername() : null)
                     : null;
             // The document is committed by now. If provenance could not be recorded, the import
             // is NOT wholly successful: content exists with no evidence of where it came from,
