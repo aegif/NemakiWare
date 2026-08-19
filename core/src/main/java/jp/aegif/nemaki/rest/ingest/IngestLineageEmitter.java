@@ -123,6 +123,37 @@ public class IngestLineageEmitter {
     }
 
     /**
+     * What this import can say about the bytes the repository now holds.
+     *
+     * <p>Three states, not two. "Stored with a digest" and "nothing stored" are the easy ones;
+     * the third exists because a check-in with no stream carries the previous version's content
+     * forward, so bytes are present that this import never read and therefore cannot hash.
+     * Reporting that as "no content" would describe the repository wrongly, and reporting it as
+     * hashed would be a lie — so it is its own state, with the reason attached
+     * (external review, P1-1(b)).
+     */
+    public record CapturedContent(boolean stored, String digest, String digestUnavailableReason) {
+
+        public static CapturedContent hashed(String digest) {
+            return new CapturedContent(true, digest, null);
+        }
+
+        public static CapturedContent none() {
+            return new CapturedContent(false, null, null);
+        }
+
+        /** Bytes are present but this import did not produce them and did not read them back. */
+        public static CapturedContent storedWithoutDigest(String reason) {
+            return new CapturedContent(true, null, reason);
+        }
+    }
+
+    /** Test hook: the retained state is otherwise unobservable, so it cannot be asserted on. */
+    void clearLastEmissionFailureForTest() {
+        lastFailure.remove();
+    }
+
+    /**
      * Why the most recent {@link #emitLineageEvent} on THIS thread produced no event id, or null
      * when the last call succeeded or simply had nothing to emit.
      *
@@ -192,38 +223,6 @@ public class IngestLineageEmitter {
 
         return v1Snapshot;
     }
-
-    /**
-     * What this import can say about the bytes the repository now holds.
-     *
-     * <p>Three states, not two. "Stored with a digest" and "nothing stored" are the easy ones;
-     * the third exists because a check-in with no stream carries the previous version's content
-     * forward, so bytes are present that this import never read and therefore cannot hash.
-     * Reporting that as "no content" would describe the repository wrongly, and reporting it as
-     * hashed would be a lie — so it is its own state, with the reason attached
-     * (external review, P1-1(b)).
-     */
-    public record CapturedContent(boolean stored, String digest, String digestUnavailableReason) {
-
-        public static CapturedContent hashed(String digest) {
-            return new CapturedContent(true, digest, null);
-        }
-
-        public static CapturedContent none() {
-            return new CapturedContent(false, null, null);
-        }
-
-        /** Bytes are present but this import did not produce them and did not read them back. */
-        public static CapturedContent storedWithoutDigest(String reason) {
-            return new CapturedContent(true, null, reason);
-        }
-    }
-
-    /** Test hook: the retained state is otherwise unobservable, so it cannot be asserted on. */
-    void clearLastEmissionFailureForTest() {
-        lastFailure.remove();
-    }
-
     public String lastEmissionFailure() {
         return lastFailure.get();
     }

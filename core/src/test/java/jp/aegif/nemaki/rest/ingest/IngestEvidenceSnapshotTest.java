@@ -151,6 +151,22 @@ class IngestEvidenceSnapshotTest {
     }
 
     @Test
+    @DisplayName("the delegated-profile actor is recorded as unknown, not as a plausible service")
+    void delegatedActorIsHonestlyUnknown() {
+        // The call site cannot tell a manually-driven delegated import from a scheduled one, so
+        // naming a service would assert an actor nobody observed. The gap is stated instead.
+        Map<String, String> snapshot = new IngestLineageEmitter().buildV1Snapshot(
+                connector(), request(null), "folder-1",
+                IngestLineageEmitter.CapturedContent.hashed("abc"),
+                "unknown: delegated profile p-1 — execution origin is not recorded yet", "otsuka");
+
+        assertTrue(snapshot.get("executedBy").startsWith("unknown:"),
+                "a label that looks like an identity is worse than an admitted gap");
+        assertEquals("otsuka", snapshot.get("onBehalfOf"),
+                "the authority IS known for a delegated profile: its creator");
+    }
+
+    @Test
     @DisplayName("SHA-256 of empty content is a digest, and empty content that was stored has one")
     void emptyStoredContentStillHasADigest() throws Exception {
         // computeContentHash used to return null for zero bytes, so a legitimately empty file
@@ -189,6 +205,8 @@ class IngestEvidenceSnapshotTest {
         assertEquals("C02AMPJAY", snapshot.get("chat.channelId"));
         assertEquals("board-minutes", snapshot.get("chat.channelName"));
         assertEquals("1720000000.000100", snapshot.get("chat.threadId"));
+        assertEquals("1720000000.000200", snapshot.get("chat.messageId"),
+                "supplied but never asserted, so a dropped mapping would have gone unnoticed");
         assertEquals("retention policy R-7", snapshot.get("chat.selectionReason"));
         assertEquals("thread", snapshot.get("chat.evidenceScope"));
         assertEquals("2026-07-14T02:00:00Z", snapshot.get("chat.captureWindowStart"));

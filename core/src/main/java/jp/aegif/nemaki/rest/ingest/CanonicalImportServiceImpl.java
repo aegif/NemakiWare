@@ -5,6 +5,7 @@ import jp.aegif.nemaki.cmis.service.ObjectService;
 import jp.aegif.nemaki.cmis.service.VersioningService;
 import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Aspect;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
@@ -1361,9 +1362,27 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     boolean isMajor = !"minor".equalsIgnoreCase(profile.getVersioningPolicy());
                     Holder<String> checkinHolder = new Holder<>(pwcId);
                     if (contentStream == null) {
-                        contentCarriedOverReason = "the new version carried the previous "
-                                + "version's content forward; this import supplied no bytes "
-                                + "and did not read the stored ones back";
+                        // "No stream" does not by itself mean bytes were carried: a prior
+                        // version with no attachment copies nothing, and claiming
+                        // contentStored=true for it would misdescribe an empty version just as
+                        // badly as the bug this replaced (external review). Ask the PWC, which
+                        // is what check-in will actually copy from.
+                        try {
+                            Content pwc = contentService.getContent(repositoryId, pwcId);
+                            boolean priorHasContent = pwc instanceof Document doc
+                                    && doc.getAttachmentNodeId() != null;
+                            contentCarriedOverReason = priorHasContent
+                                    ? "the new version carried the previous version's content "
+                                            + "forward; this import supplied no bytes and did "
+                                            + "not read the stored ones back"
+                                    : null;
+                        } catch (Exception e) {
+                            // Unknown is not "stored": say we could not tell, rather than
+                            // asserting either state.
+                            contentCarriedOverReason = null;
+                            logger.debug("Could not determine carried-over content for {}: {}",
+                                    pwcId, e.getMessage());
+                        }
                     }
                     versioningService.checkIn(callContext, repositoryId, checkinHolder, isMajor,
                             null, contentStream, "Imported from " + connector.getSourceSystem(),
@@ -1463,9 +1482,15 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                             // exists to stop. Until an execution-origin identity is threaded
                             // through, a delegated run records the service as the executor and
                             // the profile's creator as the authority (external review).
+                            // A delegated profile can be driven manually by an authenticated
+                            // caller OR autonomously by the scheduler, and this code cannot
+                            // currently tell which. Naming a service outright would assert an
+                            // actor we did not observe, so the executor is recorded as unknown
+                            // WITH the reason — an honest gap beats a plausible label
+                            // (external review). Threading execution origin through is P1-1(e).
                             profile.isDelegated()
-                                    ? "service: ingest (delegated profile "
-                                            + profile.getProfileId() + ")"
+                                    ? "unknown: delegated profile " + profile.getProfileId()
+                                            + " — execution origin is not recorded yet"
                                     : (callContext != null ? callContext.getUsername() : null),
                             profile.isDelegated() ? profile.getCreatedByUserId() : null)
                     : null;
