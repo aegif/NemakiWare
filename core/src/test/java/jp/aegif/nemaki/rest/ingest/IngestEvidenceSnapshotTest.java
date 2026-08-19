@@ -169,7 +169,9 @@ class IngestEvidenceSnapshotTest {
         org.mockito.Mockito.when(contentService.getContent("bedroom", "obj-1"))
                 .thenReturn(withContent);
         // The reference must resolve; an unresolvable one is UNKNOWN, tested separately.
-        org.mockito.Mockito.when(contentService.getAttachment("bedroom", "att-1"))
+        // getAttachmentRef, not getAttachment: the latter fetches the binary and hands back a
+        // stream this path would leak, and its result is not evidence anyway (external review).
+        org.mockito.Mockito.when(contentService.getAttachmentRef("bedroom", "att-1"))
                 .thenReturn(new jp.aegif.nemaki.model.AttachmentNode());
         assertEquals(IngestLineageEmitter.CapturedContent.ContentState.STORED,
                 service.describeCapturedContent("bedroom", "obj-1", null).state(),
@@ -253,11 +255,156 @@ class IngestEvidenceSnapshotTest {
         dangling.setAttachmentNodeId("att-missing");
         org.mockito.Mockito.when(contentService.getContent("bedroom", "dangling"))
                 .thenReturn(dangling);
-        org.mockito.Mockito.when(contentService.getAttachment("bedroom", "att-missing"))
+        org.mockito.Mockito.when(contentService.getAttachmentRef("bedroom", "att-missing"))
                 .thenReturn(null);
         assertEquals(IngestLineageEmitter.CapturedContent.ContentState.UNKNOWN,
                 service.describeCapturedContent("bedroom", "dangling", null).state(),
                 "a reference that resolves to nothing is not proof that bytes are held");
+
+        // The check must not be the binary fetch: it returns a live stream that this path would
+        // discard unclosed, and the DAO swallows a failed fetch and returns the node regardless,
+        // so its answer carries no information (external review).
+        org.mockito.Mockito.verify(contentService, org.mockito.Mockito.never())
+                .getAttachment(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    @DisplayName("the import actually calls the decisions: neither is bypassed at the call site")
+    void theCallSiteUsesBothDecisions() {
+        // Every test above pins a decision in isolation. None of them notices if the call site
+        // stops asking — hardcoding CapturedContent.none() or reverting the actor to
+        // getUsername() would leave them all green (external review). So this drives the real
+        // import and reads what the emitter was actually handed.
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService connectorService =
+                org.mockito.Mockito.mock(
+                        jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService.class);
+        jp.aegif.nemaki.rest.ingest.ImportProfileDefinitionService profileService =
+                org.mockito.Mockito.mock(
+                        jp.aegif.nemaki.rest.ingest.ImportProfileDefinitionService.class);
+        jp.aegif.nemaki.cmis.service.ObjectService objectService =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.cmis.service.ObjectService.class);
+        jp.aegif.nemaki.businesslogic.ContentService contentService =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.businesslogic.ContentService.class);
+        service.setConnectorDefinitionService(connectorService);
+        service.setImportProfileDefinitionService(profileService);
+        service.setObjectService(objectService);
+        service.setContentService(contentService);
+
+        // Delegated, so the two candidate actors DIFFER: resolveExecutedBy admits it does not
+        // know, while the synthesized context names the profile's creator.
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        profile.setDelegated(true);
+        profile.setCreatedByUserId("otsuka");
+        org.mockito.Mockito.when(profileService.get("p1")).thenReturn(profile);
+
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(jp.aegif.nemaki.rest.ingest.SourceArchetype.FILE_SHARE);
+        connector.setSourceSystem("google_drive");
+        org.mockito.Mockito.when(connectorService.get("c1")).thenReturn(connector);
+        org.mockito.Mockito.when(objectService.createDocument(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.eq("bedroom"),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.eq("folder-1"),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        org.mockito.ArgumentMatchers.isNull()))
+                .thenReturn("new-obj-id");
+
+        // No content stream is supplied, so the content state can only come from reading the
+        // object — which is exactly the decision the call site must delegate.
+        jp.aegif.nemaki.model.Document stored = new jp.aegif.nemaki.model.Document();
+        stored.setAttachmentNodeId("att-1");
+        org.mockito.Mockito.when(contentService.getContent("bedroom", "new-obj-id"))
+                .thenReturn(stored);
+        org.mockito.Mockito.when(contentService.getAttachmentRef("bedroom", "att-1"))
+                .thenReturn(new jp.aegif.nemaki.model.AttachmentNode());
+
+        RecordingEmitter emitter = new RecordingEmitter();
+        service.setIngestLineageEmitter(emitter);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("file-123");
+        req.setSourceObjectType("files");
+        req.setFileName("test.txt");
+        org.apache.chemistry.opencmis.commons.server.CallContext ctx =
+                org.mockito.Mockito.mock(
+                        org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        org.mockito.Mockito.when(ctx.getUsername()).thenReturn("otsuka");
+
+        assertTrue(service.execute(ctx, req).isSuccess(), "control: the import must succeed");
+
+        assertNotNull(emitter.captured, "the import must record provenance at all");
+        assertEquals(IngestLineageEmitter.CapturedContent.ContentState.STORED,
+                emitter.captured.state(),
+                "the call site must ask what the repository holds, not assert a constant — "
+                        + "a hardcoded none() here is exactly the bug this guards");
+        assertTrue(emitter.executedBy != null && emitter.executedBy.startsWith("unknown:"),
+                "a delegated run has no observed actor; passing the context's username would "
+                        + "name the authority as the executor. Got: " + emitter.executedBy);
+        assertEquals("otsuka", emitter.onBehalfOf,
+                "the authority IS known and must reach the emitter");
+    }
+
+    /** Captures what the production call site actually hands the emitter. */
+    private static final class RecordingEmitter extends IngestLineageEmitter {
+        private IngestLineageEmitter.CapturedContent captured;
+        private String executedBy;
+        private String onBehalfOf;
+
+        @Override
+        public String emitLineageEvent(String repositoryId, String objectId, String targetFolderId,
+                String documentName, String operationId, ConnectorDefinition connector,
+                ExternalIngestRequest request, IngestLineageEmitter.CapturedContent content,
+                String executedBy, String onBehalfOf) {
+            this.captured = content;
+            this.executedBy = executedBy;
+            this.onBehalfOf = onBehalfOf;
+            return "evt-1";
+        }
+    }
+
+    @Test
+    @DisplayName("an unchanged-content import records no digest it did not establish")
+    void unchangedContentRecordsNoDigest() {
+        // Reverting the clear left all fourteen other tests green while restoring the claim
+        // (external review), so the decision is pinned directly.
+        CanonicalImportServiceImpl.ContentComparison same =
+                CanonicalImportServiceImpl.compareContent("abc", "abc");
+        assertFalse(same.contentChanged());
+        assertNull(same.hashToRecord(),
+                "the match is against a MUTABLE aspect property, not the bytes — a stale or "
+                        + "edited nemaki:contentHash would otherwise certify content this import "
+                        + "never stored, and the incoming bytes are discarded either way");
+
+        CanonicalImportServiceImpl.ContentComparison changed =
+                CanonicalImportServiceImpl.compareContent("abc", "def");
+        assertTrue(changed.contentChanged());
+        assertEquals("abc", changed.hashToRecord(),
+                "this import DID store and hash these bytes, so discarding the digest would "
+                        + "throw away the one thing it can honestly attest");
+
+        CanonicalImportServiceImpl.ContentComparison firstTime =
+                CanonicalImportServiceImpl.compareContent("abc", null);
+        assertTrue(firstTime.contentChanged());
+        assertEquals("abc", firstTime.hashToRecord());
+
+        assertNull(CanonicalImportServiceImpl.compareContent(null, "abc").hashToRecord(),
+                "no bytes were supplied, so no digest was established");
     }
 
     @Test

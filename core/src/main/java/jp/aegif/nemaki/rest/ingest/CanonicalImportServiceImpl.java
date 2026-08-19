@@ -702,6 +702,31 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     }
 
     /**
+     * Whether this import changed the content, and what digest it is entitled to record.
+     *
+     * <p>Extracted because the digest half was invisible to the tests: reverting it left every
+     * case green while restoring an unsupported claim (external review). The two answers belong
+     * together — the same comparison decides both.
+     */
+    record ContentComparison(boolean contentChanged, String hashToRecord, String versionLabel) {
+    }
+
+    static ContentComparison compareContent(String computedHash, String existingHash) {
+        if (computedHash == null) {
+            // No content stream provided — a metadata-only update, not a version-up.
+            return new ContentComparison(false, null, "metadata-only (no content provided)");
+        }
+        if (computedHash.equals(existingHash)) {
+            // The equality is with a MUTABLE aspect property, not with the stored bytes. Carrying
+            // computedHash forward would let a stale or edited nemaki:contentHash certify content
+            // this import never stored — and the incoming bytes are discarded either way, so no
+            // digest is owed here (external review).
+            return new ContentComparison(false, null, "metadata-only (content unchanged)");
+        }
+        return new ContentComparison(true, computedHash, null);
+    }
+
+    /**
      * What the repository actually holds for this object, decided by looking rather than by
      * inferring from which update branch ran.
      *
@@ -730,17 +755,25 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     // The repository itself treats a blank id as no attachment.
                     return IngestLineageEmitter.CapturedContent.none();
                 }
-                // A reference is not bytes. Softening the prose while leaving contentStored=true
-                // left the machine-readable claim wrong, and a dangling reference would have
-                // asserted stored content that does not exist (external review). Resolve it.
-                if (contentService.getAttachment(repositoryId, attachmentId) == null) {
+                // A reference is not bytes, so it is checked — but with getAttachmentRef, NOT
+                // getAttachment. getAttachment does a binary GET and returns a live stream that
+                // this path discarded unclosed, so every no-hash import leaked a connection and
+                // paid a round trip; worse, the DAO catches a failed binary fetch and still
+                // returns the node, so a non-null result there was not evidence of anything
+                // (external review). getAttachmentRef is a metadata-only get: no stream, no leak,
+                // and its null is unambiguous.
+                if (contentService.getAttachmentRef(repositoryId, attachmentId) == null) {
+                    // Absent record or failed read — the DAO returns null for both, and neither
+                    // supports the claim that bytes are held.
                     return IngestLineageEmitter.CapturedContent.unknown(
-                            "the object references content (" + attachmentId + ") that could not "
-                                    + "be resolved, so whether bytes are held is undetermined");
+                            "the object references content (" + attachmentId + ") whose record "
+                                    + "could not be found or read, so whether bytes are held is "
+                                    + "undetermined");
                 }
                 return IngestLineageEmitter.CapturedContent.storedWithoutDigest(
                         "content is held from an earlier import; this import supplied no bytes "
-                                + "and did not read the stored ones back");
+                                + "and did not read the stored ones back, so their integrity is "
+                                + "not attested here");
             }
             // The DAO layer catches its own failures and returns null, so a null read is NOT
             // evidence of emptiness — and this object was just written successfully, so a null
@@ -1441,27 +1474,15 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     versionLabel = "new version (always)";
                 } else {
                     // version_up_on_content_change (default): compare content hash before versioning
-                    boolean contentChanged;
-                    if (computedHash == null) {
-                        // No content stream provided — treat as metadata-only update, not version-up
-                        contentChanged = false;
-                        versionLabel = "metadata-only (no content provided)";
-                        logger.info("Dedupe: no content stream for {}, metadata-only update", objectId);
-                    } else {
-                        String existingHash = getAspectProperty(existingDoc, "nemaki:externalIntegration", "nemaki:contentHash");
-                        if (computedHash.equals(existingHash)) {
-                            contentChanged = false;
-                            // Equality here is with a MUTABLE aspect property, not with the
-                            // bytes. Keeping computedHash would let a stale or edited
-                            // nemaki:contentHash certify content this import never stored —
-                            // and the incoming bytes are discarded either way. Drop it and let
-                            // describeCapturedContent read the object (external review).
-                            computedHash = null;
-                            versionLabel = "metadata-only (content unchanged)";
-                            logger.info("Dedupe: content unchanged for {} (hash={}), metadata-only", objectId, computedHash);
-                        } else {
-                            contentChanged = true;
-                        }
+                    String existingHash = computedHash == null ? null : getAspectProperty(
+                            existingDoc, "nemaki:externalIntegration", "nemaki:contentHash");
+                    ContentComparison comparison = compareContent(computedHash, existingHash);
+                    boolean contentChanged = comparison.contentChanged();
+                    computedHash = comparison.hashToRecord();
+                    if (comparison.versionLabel() != null) {
+                        versionLabel = comparison.versionLabel();
+                        logger.info("Dedupe: {} for {} (existing hash={})", versionLabel, objectId,
+                                existingHash);
                     }
                     if (contentChanged) {
                         isNewVersion = true;
