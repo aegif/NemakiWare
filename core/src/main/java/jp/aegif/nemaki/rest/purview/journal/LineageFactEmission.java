@@ -132,8 +132,13 @@ public final class LineageFactEmission {
             return EmissionOutcome.nothingToEmit();
         }
         try {
-            emitter.emit(fact);
-            return EmissionOutcome.ok();
+            // emitReportingLoss, not emit: production emitters are fail-open and swallow their
+            // own failures, so a normal return says nothing about whether the fact was recorded
+            // (external review, P1-1). The default implementation delegates to emit() and
+            // reports no loss, so emitters that have nothing to add are unaffected.
+            String loss = emitter.emitReportingLoss(fact);
+            return loss == null ? EmissionOutcome.ok()
+                    : new EmissionOutcome(false, "not recorded: " + loss);
         } catch (RuntimeException e) {
             // emit() contracts to never throw; this catch is the boundary keeping that contract
             // even against an implementation that breaks it.

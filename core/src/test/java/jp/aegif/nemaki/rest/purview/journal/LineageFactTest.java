@@ -534,6 +534,9 @@ public class LineageFactTest {
     public void anEmitterThatBreaksItsNeverThrowContractIsStillContained() {
         LineageEmitter emitter = mock(LineageEmitter.class);
         when(emitter.isActive()).thenReturn(true);
+        // The throw has to sit on the path emission actually takes; the default
+        // emitReportingLoss() delegates to emit(), so a real emitter behaves identically.
+        when(emitter.emitReportingLoss(any(LineageFact.class))).thenCallRealMethod();
         org.mockito.Mockito.doThrow(new IllegalStateException("boom"))
                 .when(emitter).emit(any(LineageFact.class));
 
@@ -608,8 +611,13 @@ public class LineageFactTest {
 
     @Test
     public void aHealthyFactGoesThrough() {
+        // Emission now goes through emitReportingLoss(), whose interface default delegates to
+        // emit() — that is how a production emitter still receives the fact. A Mockito mock does
+        // NOT run default methods, so the delegation has to be asked for explicitly here; the
+        // behaviour under test is unchanged (P1-1: the emitter must be able to report a loss).
         LineageEmitter emitter = mock(LineageEmitter.class);
         when(emitter.isActive()).thenReturn(true);
+        when(emitter.emitReportingLoss(any(LineageFact.class))).thenCallRealMethod();
         LineageFactEmission.emitSafely(emitter, LineageFactTest::archiveFact, "repo=bedroom");
         verify(emitter).emit(any(LineageFact.class));
     }

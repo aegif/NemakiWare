@@ -67,8 +67,13 @@ public class IngestLineageEmitter {
             // emitReporting, not emitSafely: the plain form collapses "lineage is off" and
             // "we lost the evidence" into the same false, and the document is already committed
             // by the time we get here (external review, P1-1).
+            EmitterResolution resolution = resolveEmitterReporting(repositoryId);
+            if (resolution.failureReason() != null) {
+                lastFailure.set(resolution.failureReason());
+                return null;
+            }
             LineageFactEmission.EmissionOutcome outcome = LineageFactEmission.emitReporting(
-                    resolveEmitter(repositoryId), () -> {
+                    resolution.emitter(), () -> {
                 String occurredAt = java.time.Instant.now().toString();
                 return new LineageFact(
                         repositoryId,
@@ -131,21 +136,51 @@ public class IngestLineageEmitter {
     }
 
     @SuppressWarnings("unchecked")
-    private LineageEmitter resolveEmitter(String repositoryId) {
+    /**
+     * The emitter, or why there isn't one.
+     *
+     * <p>Returning a bare null conflated five different situations — lineage explicitly
+     * disabled, no Spring context, bean lookup failure, mode resolution failure, emitter
+     * construction failure — of which **only the first is benign**. A caller told "no emitter"
+     * cannot tell a deliberate configuration from a broken one, and the document is already
+     * committed by then (external review, P1-1).
+     */
+    record EmitterResolution(LineageEmitter emitter, String failureReason) {
+        boolean disabled() {
+            return emitter == null && failureReason == null;
+        }
+    }
+
+    private EmitterResolution resolveEmitterReporting(String repositoryId) {
         try {
             var ctx = SpringContext.getApplicationContext();
-            if (ctx == null) return null;
+            if (ctx == null) {
+                // Outside a running application (tests, tooling) there is nothing to record to,
+                // and nothing was expected of us.
+                return new EmitterResolution(null, null);
+            }
             LineageConfig config = ctx.getBean(LineageConfig.class);
-            if (config == null) return null;
+            if (config == null) {
+                return new EmitterResolution(null, "lineage configuration bean is absent");
+            }
             LineageMode mode = config.getModeForRepository(repositoryId);
-            if (mode == LineageMode.DISABLED) return null;
+            if (mode == LineageMode.DISABLED) {
+                return new EmitterResolution(null, null);   // the one benign case
+            }
             LineageJournalStore store = ctx.getBean(LineageJournalStore.class);
             java.util.List<LineageTargetSink> sinks = (java.util.List<LineageTargetSink>)
                     (java.util.List<?>) ctx.getBeansOfType(LineageTargetSink.class).values().stream().toList();
-            return config.createEmitterForMode(mode, store, sinks);
+            LineageEmitter emitter = config.createEmitterForMode(mode, store, sinks);
+            if (emitter == null) {
+                return new EmitterResolution(null,
+                        "no emitter could be created for lineage mode " + mode);
+            }
+            return new EmitterResolution(emitter, null);
         } catch (Exception e) {
             logger.warn("Lineage emitter resolution failed (non-fatal): {}", e.getMessage());
-            return null;
+            return new EmitterResolution(null,
+                    "emitter resolution failed: " + e.getClass().getSimpleName()
+                            + ": " + e.getMessage());
         }
     }
 

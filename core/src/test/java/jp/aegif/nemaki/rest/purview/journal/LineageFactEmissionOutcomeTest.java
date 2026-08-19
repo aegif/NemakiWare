@@ -157,6 +157,42 @@ class LineageFactEmissionOutcomeTest {
     }
 
     @Test
+    @DisplayName("an emitter that SWALLOWS its own failure is still reported as a loss")
+    void swallowedLossIsReported() {
+        // The failure mode that actually happens in production: JournaledLineageEmitter catches
+        // a journal write failure, dead-letters, and returns normally. Nothing throws, so an
+        // implementation that only watches for exceptions reports success and hands back an
+        // event id pointing at a journal row that does not exist (external review, P1-1).
+        LineageEmitter swallowing = new LineageEmitter() {
+            @Override public void emit(LineageEvent event) { }
+            @Override public void emit(LineageFact fact) { }
+            @Override public boolean isActive() { return true; }
+            @Override public String emitReportingLoss(LineageFact fact) {
+                return "dead-lettered: journal unreachable";
+            }
+        };
+
+        LineageFactEmission.EmissionOutcome outcome = LineageFactEmission.emitReporting(
+                swallowing, LineageFactEmissionOutcomeTest::anyFact, "test");
+
+        assertFalse(outcome.handedOff(),
+                "the fact was not recorded, so no event id may be reported for it");
+        assertTrue(outcome.failed());
+        assertTrue(outcome.failureReason().contains("dead-lettered"), outcome.failureReason());
+    }
+
+    @Test
+    @DisplayName("an emitter that reports no loss is still a success")
+    void defaultLossReportingKeepsSuccess() {
+        // The interface default delegates to emit() and reports nothing, so emitters with
+        // nothing to add must not suddenly be treated as failing.
+        LineageFactEmission.EmissionOutcome outcome = LineageFactEmission.emitReporting(
+                new FakeEmitter(true, null, null), LineageFactEmissionOutcomeTest::anyFact, "test");
+        assertTrue(outcome.handedOff());
+        assertFalse(outcome.failed());
+    }
+
+    @Test
     @DisplayName("emitSafely keeps its old contract for the callers that still use it")
     void emitSafelyStillReturnsBoolean() {
         assertTrue(LineageFactEmission.emitSafely(

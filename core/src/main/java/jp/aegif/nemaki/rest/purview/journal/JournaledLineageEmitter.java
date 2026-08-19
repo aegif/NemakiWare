@@ -134,7 +134,25 @@ public class JournaledLineageEmitter implements LineageEmitter {
         }
     }
 
+    /**
+     * The loss-reporting entry point. Same fail-open behaviour as {@link #emit(LineageFact)} —
+     * nothing new can throw — but a drop or dead-letter is now returned instead of only logged,
+     * so an ingest caller can warn its own caller that provenance was not recorded.
+     */
+    @Override
+    public String emitReportingLoss(LineageFact fact) {
+        lastLoss.remove();
+        emit(fact);
+        String loss = lastLoss.get();
+        lastLoss.remove();
+        return loss;
+    }
+
+    /** Set by drop()/dead-letter on the emitting thread; read once by emitReportingLoss. */
+    private static final ThreadLocal<String> lastLoss = new ThreadLocal<>();
+
     private void drop(LineageFact fact, String reason, String detail) {
+        lastLoss.set("dropped (" + reason + "): " + detail);
         failureCount.incrementAndGet();
         if (metrics != null) {
             metrics.recordEmitDropped(reason);
@@ -172,6 +190,9 @@ public class JournaledLineageEmitter implements LineageEmitter {
             // Persist to file-based dead-letter log so the event is not silently lost.
             // The dead-letter sink does not depend on CouchDB and never throws.
             LineageDeadLetterSink.record(event, e.getMessage());
+            // Dead-lettered is not stored: the journal has no row for this event, so a caller
+            // that reported an event id would be pointing at nothing.
+            lastLoss.set("dead-lettered: " + e.getClass().getSimpleName() + ": " + e.getMessage());
         }
     }
 
