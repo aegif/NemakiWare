@@ -755,25 +755,28 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     // The repository itself treats a blank id as no attachment.
                     return IngestLineageEmitter.CapturedContent.none();
                 }
-                // A reference is not bytes, so it is checked — but with getAttachmentRef, NOT
-                // getAttachment. getAttachment does a binary GET and returns a live stream that
-                // this path discarded unclosed, so every no-hash import leaked a connection and
-                // paid a round trip; worse, the DAO catches a failed binary fetch and still
-                // returns the node, so a non-null result there was not evidence of anything
-                // (external review). getAttachmentRef is a metadata-only get: no stream, no leak,
-                // and its null is unambiguous.
-                if (contentService.getAttachmentRef(repositoryId, attachmentId) == null) {
-                    // Absent record or failed read — the DAO returns null for both, and neither
-                    // supports the claim that bytes are held.
-                    return IngestLineageEmitter.CapturedContent.unknown(
-                            "the object references content (" + attachmentId + ") whose record "
-                                    + "could not be found or read, so whether bytes are held is "
-                                    + "undetermined");
-                }
-                return IngestLineageEmitter.CapturedContent.storedWithoutDigest(
-                        "content is held from an earlier import; this import supplied no bytes "
-                                + "and did not read the stored ones back, so their integrity is "
-                                + "not attested here");
+                // A reference is not bytes, and NOTHING cheap here can close that gap. Three
+                // attempts were made and all three were wrong (external review):
+                //
+                //   getAttachment          — does a binary GET and returns a live stream this
+                //                            path discarded unclosed (one leaked connection and
+                //                            one round trip per no-hash import), and the DAO
+                //                            swallows a failed fetch and returns the node anyway,
+                //                            so its non-null carries no information.
+                //   getAttachmentRef       — metadata-only and leak-free, but convertRef falls
+                //                            back to the STORED length field when _attachments
+                //                            is absent, so it cannot see the binary either.
+                //   getAttachmentActualSize— names the "content" attachment, but falls through to
+                //                            stream measurement for compressed ones, which is the
+                //                            download this path must not do.
+                //
+                // So the reference is REPORTED, not converted into a claim. Whether the bytes are
+                // held and readable is a fixity question (P1-2) with its own cost budget; deciding
+                // it as a side effect of ingest is what produced each of the three wrong answers.
+                return IngestLineageEmitter.CapturedContent.unknown(
+                        "the object references content (" + attachmentId + ") from an earlier "
+                                + "import; this import neither supplied those bytes nor verified "
+                                + "them, so whether they are held is undetermined here");
             }
             // The DAO layer catches its own failures and returns null, so a null read is NOT
             // evidence of emptiness — and this object was just written successfully, so a null
@@ -795,7 +798,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * this", and a source that could choose the answer would make it evidence of nothing. It is
      * also written after the aspect exists, because writing before would have nowhere to go.
      */
-    private void applyChatCapturedAt(CallContext callContext, ExternalIngestRequest request,
+    // Package-private, not private: the call had no test at all, so removing it left every
+    // case green while custody time silently stopped being recorded (external review).
+    void applyChatCapturedAt(CallContext callContext, ExternalIngestRequest request,
                                      String objectId, List<String> warnings) {
         if (objectId == null) {
             return;

@@ -19,6 +19,12 @@ package jp.aegif.nemaki.rest.ingest;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import jp.aegif.nemaki.model.Aspect;
+import jp.aegif.nemaki.model.Property;
+
+import java.util.ArrayList;
+import java.util.List;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -49,6 +55,10 @@ class IngestEvidenceSnapshotTest {
         c.setSourceArchetype(SourceArchetype.CHAT_CONTEXT);
         return c;
     }
+
+    private static final String UNCHANGED_BYTES = "unchanged bytes";
+    private static final String UNCHANGED_SHA256 =
+            "e35b2252583cefc6c764da00830c86b8d929c925703a88ebcb622c8f0caf24f9";
 
     private static ExternalIngestRequest request(Map<String, Object> metadata) {
         ExternalIngestRequest r = new ExternalIngestRequest();
@@ -168,14 +178,13 @@ class IngestEvidenceSnapshotTest {
         withContent.setAttachmentNodeId("att-1");
         org.mockito.Mockito.when(contentService.getContent("bedroom", "obj-1"))
                 .thenReturn(withContent);
-        // The reference must resolve; an unresolvable one is UNKNOWN, tested separately.
-        // getAttachmentRef, not getAttachment: the latter fetches the binary and hands back a
-        // stream this path would leak, and its result is not evidence anyway (external review).
-        org.mockito.Mockito.when(contentService.getAttachmentRef("bedroom", "att-1"))
-                .thenReturn(new jp.aegif.nemaki.model.AttachmentNode());
-        assertEquals(IngestLineageEmitter.CapturedContent.ContentState.STORED,
+        assertEquals(IngestLineageEmitter.CapturedContent.ContentState.UNKNOWN,
                 service.describeCapturedContent("bedroom", "obj-1", null).state(),
-                "the object holds bytes from an earlier import; 'none' would misdescribe it");
+                "the object REFERENCES content, which is neither 'none' nor proof that bytes "
+                        + "are held — no cheap check can tell, so the gap is stated");
+        assertTrue(service.describeCapturedContent("bedroom", "obj-1", null).reason()
+                        .contains("att-1"),
+                "the reference itself is an observation and belongs in the record");
 
         jp.aegif.nemaki.model.Document withoutContent = new jp.aegif.nemaki.model.Document();
         org.mockito.Mockito.when(contentService.getContent("bedroom", "obj-2"))
@@ -251,21 +260,26 @@ class IngestEvidenceSnapshotTest {
                 service.describeCapturedContent("bedroom", "blank", null).state(),
                 "the repository treats a blank id as no attachment, and so must the evidence");
 
-        jp.aegif.nemaki.model.Document dangling = new jp.aegif.nemaki.model.Document();
-        dangling.setAttachmentNodeId("att-missing");
-        org.mockito.Mockito.when(contentService.getContent("bedroom", "dangling"))
-                .thenReturn(dangling);
-        org.mockito.Mockito.when(contentService.getAttachmentRef("bedroom", "att-missing"))
-                .thenReturn(null);
+        jp.aegif.nemaki.model.Document referencing = new jp.aegif.nemaki.model.Document();
+        referencing.setAttachmentNodeId("att-1");
+        org.mockito.Mockito.when(contentService.getContent("bedroom", "ref"))
+                .thenReturn(referencing);
         assertEquals(IngestLineageEmitter.CapturedContent.ContentState.UNKNOWN,
-                service.describeCapturedContent("bedroom", "dangling", null).state(),
-                "a reference that resolves to nothing is not proof that bytes are held");
+                service.describeCapturedContent("bedroom", "ref", null).state(),
+                "a reference is not proof that bytes are held");
 
-        // The check must not be the binary fetch: it returns a live stream that this path would
-        // discard unclosed, and the DAO swallows a failed fetch and returns the node regardless,
-        // so its answer carries no information (external review).
+        // No attachment lookup may happen here at all. getAttachment leaks a stream and swallows
+        // its own failure; getAttachmentRef falls back to the stored length field so it cannot
+        // see the binary; getAttachmentActualSize downloads compressed ones. All three were
+        // tried and all three were wrong (external review) — the answer is fixity, P1-2.
         org.mockito.Mockito.verify(contentService, org.mockito.Mockito.never())
                 .getAttachment(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString());
+        org.mockito.Mockito.verify(contentService, org.mockito.Mockito.never())
+                .getAttachmentRef(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString());
+        org.mockito.Mockito.verify(contentService, org.mockito.Mockito.never())
+                .getAttachmentActualSize(org.mockito.ArgumentMatchers.anyString(),
                         org.mockito.ArgumentMatchers.anyString());
     }
 
@@ -324,12 +338,13 @@ class IngestEvidenceSnapshotTest {
 
         // No content stream is supplied, so the content state can only come from reading the
         // object — which is exactly the decision the call site must delegate.
+        // The object REFERENCES content, so the honest state is UNKNOWN and the reason names
+        // the attachment. That pair is reachable only by actually asking — a hardcoded none(),
+        // a hardcoded storedWithoutDigest(), or a state guessed from which branch ran all fail.
         jp.aegif.nemaki.model.Document stored = new jp.aegif.nemaki.model.Document();
         stored.setAttachmentNodeId("att-1");
         org.mockito.Mockito.when(contentService.getContent("bedroom", "new-obj-id"))
                 .thenReturn(stored);
-        org.mockito.Mockito.when(contentService.getAttachmentRef("bedroom", "att-1"))
-                .thenReturn(new jp.aegif.nemaki.model.AttachmentNode());
 
         RecordingEmitter emitter = new RecordingEmitter();
         service.setIngestLineageEmitter(emitter);
@@ -349,15 +364,113 @@ class IngestEvidenceSnapshotTest {
         assertTrue(service.execute(ctx, req).isSuccess(), "control: the import must succeed");
 
         assertNotNull(emitter.captured, "the import must record provenance at all");
-        assertEquals(IngestLineageEmitter.CapturedContent.ContentState.STORED,
+        assertEquals(IngestLineageEmitter.CapturedContent.ContentState.UNKNOWN,
                 emitter.captured.state(),
-                "the call site must ask what the repository holds, not assert a constant — "
-                        + "a hardcoded none() here is exactly the bug this guards");
+                "the call site must ask what the repository holds, not assert a constant");
+        assertTrue(emitter.captured.reason() != null
+                        && emitter.captured.reason().contains("att-1"),
+                "only the real decision can name the attachment it saw; a constant cannot. "
+                        + "Got: " + emitter.captured.reason());
         assertTrue(emitter.executedBy != null && emitter.executedBy.startsWith("unknown:"),
                 "a delegated run has no observed actor; passing the context's username would "
                         + "name the authority as the executor. Got: " + emitter.executedBy);
         assertEquals("otsuka", emitter.onBehalfOf,
                 "the authority IS known and must reach the emitter");
+    }
+
+    @Test
+    @DisplayName("a re-import that stores no bytes emits no digest, on either update policy")
+    void reimportWithoutStoringBytesEmitsNoDigest() {
+        // compareContent is pinned in isolation elsewhere, but that proved nothing about the
+        // import: dropping the assignment that feeds its answer back into computedHash — or the
+        // matching clear on the metadata-only policy — left every test green while the record
+        // went back to certifying a digest for bytes this import threw away (external review).
+        // So this drives the two real branches.
+        for (String updatePolicy : new String[]{"version_up_on_content_change",
+                "update_metadata_only"}) {
+            RecordingEmitter emitter = runReimport(updatePolicy);
+            assertNotNull(emitter.captured,
+                    "control: the re-import must reach the emitter (" + updatePolicy + ")");
+            assertNull(emitter.captured.digest(),
+                    "no bytes were stored under " + updatePolicy + ": the incoming ones were "
+                            + "discarded, and the hash they matched sits in a MUTABLE aspect "
+                            + "property. Recording the digest would certify content this import "
+                            + "never stored. Got: " + emitter.captured.digest());
+        }
+    }
+
+    /** Drives a real re-import of an already-imported document whose recorded hash matches. */
+    private static RecordingEmitter runReimport(String updatePolicy) {
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService connectorService =
+                org.mockito.Mockito.mock(
+                        jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService.class);
+        jp.aegif.nemaki.rest.ingest.ImportProfileDefinitionService profileService =
+                org.mockito.Mockito.mock(
+                        jp.aegif.nemaki.rest.ingest.ImportProfileDefinitionService.class);
+        jp.aegif.nemaki.businesslogic.ContentService contentService =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.businesslogic.ContentService.class);
+        jp.aegif.nemaki.dao.ContentDaoService contentDaoService =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        service.setConnectorDefinitionService(connectorService);
+        service.setImportProfileDefinitionService(profileService);
+        service.setContentService(contentService);
+        service.setContentDaoService(contentDaoService);
+        service.setObjectService(
+                org.mockito.Mockito.mock(jp.aegif.nemaki.cmis.service.ObjectService.class));
+
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        // The default policy returns a skip before any of this is reached.
+        profile.setDedupePolicy("create_new_version");
+        profile.setUpdatePolicy(updatePolicy);
+        org.mockito.Mockito.when(profileService.get("p1")).thenReturn(profile);
+
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(jp.aegif.nemaki.rest.ingest.SourceArchetype.FILE_SHARE);
+        connector.setSourceSystem("google_drive");
+        org.mockito.Mockito.when(connectorService.get("c1")).thenReturn(connector);
+
+        // An already-imported document whose recorded hash MATCHES the incoming bytes.
+        Aspect integration = new Aspect();
+        integration.setName("nemaki:externalIntegration");
+        integration.setProperties(new ArrayList<>(List.of(
+                new Property("nemaki:sourceObjectId", "file-123"),
+                new Property("nemaki:sourceSystem", "google_drive"),
+                new Property("nemaki:sourceObjectType", "files"),
+                new Property("nemaki:contentHash", UNCHANGED_SHA256))));
+        jp.aegif.nemaki.model.Document existing = new jp.aegif.nemaki.model.Document();
+        existing.setId("existing-1");
+        existing.setType("cmis:document");
+        existing.setName("test.txt");
+        existing.setAttachmentNodeId("att-1");
+        existing.setAspects(new ArrayList<>(List.of(integration)));
+        org.mockito.Mockito.when(contentDaoService.getChildren("bedroom", "folder-1"))
+                .thenReturn(new ArrayList<>(List.of(existing)));
+        org.mockito.Mockito.when(contentService.getContent("bedroom", "existing-1"))
+                .thenReturn(existing);
+
+        RecordingEmitter emitter = new RecordingEmitter();
+        service.setIngestLineageEmitter(emitter);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("file-123");
+        req.setSourceObjectType("files");
+        req.setFileName("test.txt");
+        req.setContentStream(new java.io.ByteArrayInputStream(
+                UNCHANGED_BYTES.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+        service.execute(org.mockito.Mockito.mock(
+                org.apache.chemistry.opencmis.commons.server.CallContext.class), req);
+        return emitter;
     }
 
     /** Captures what the production call site actually hands the emitter. */
@@ -376,6 +489,74 @@ class IngestEvidenceSnapshotTest {
             this.onBehalfOf = onBehalfOf;
             return "evt-1";
         }
+    }
+
+    @Test
+    @DisplayName("a re-import of unchanged content emits no digest, and custody time is stamped once")
+    void unchangedReimportEmitsNoDigestAndStampsCustodyOnce() throws Exception {
+        // compareContent is pinned in isolation above, but the assignment that FEEDS its answer
+        // back into computedHash was not: dropping it left every test green while the snapshot
+        // went back to certifying a digest this import never established (external review).
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        jp.aegif.nemaki.businesslogic.ContentService contentService =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.businesslogic.ContentService.class);
+        java.lang.reflect.Field f = CanonicalImportServiceImpl.class
+                .getDeclaredField("contentService");
+        f.setAccessible(true);
+        f.set(service, contentService);
+
+        // Content is UNCHANGED, so the digest computed from the incoming bytes matches a
+        // MUTABLE aspect property — never the stored bytes — and the bytes are discarded.
+        String sha = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        CanonicalImportServiceImpl.ContentComparison unchanged =
+                CanonicalImportServiceImpl.compareContent(sha, sha);
+        jp.aegif.nemaki.model.Document existing = new jp.aegif.nemaki.model.Document();
+        existing.setAttachmentNodeId("att-1");
+        org.mockito.Mockito.when(contentService.getContent("bedroom", "obj-9"))
+                .thenReturn(existing);
+
+        IngestLineageEmitter.CapturedContent captured = service.describeCapturedContent(
+                "bedroom", "obj-9", unchanged.hashToRecord());
+        assertNull(captured.digest(),
+                "feeding the comparison's answer back is what stops the discarded bytes' digest "
+                        + "from reaching the record; without it this asserts a hash for content "
+                        + "this import never stored");
+        assertEquals(IngestLineageEmitter.CapturedContent.ContentState.UNKNOWN, captured.state());
+
+        // Custody time: stamped from the server clock, and NOT restamped on re-import.
+        Aspect chatAspect = new Aspect();
+        chatAspect.setName("nemaki:chatContextMetadata");
+        chatAspect.setProperties(new ArrayList<>(List.of(
+                new Property("nemaki:chatChannelId", "C1"))));
+        jp.aegif.nemaki.model.Document chatDoc = new jp.aegif.nemaki.model.Document();
+        chatDoc.setAspects(new ArrayList<>(List.of(chatAspect)));
+        org.mockito.Mockito.when(contentService.getContent("bedroom", "chat-1"))
+                .thenReturn(chatDoc);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setRepositoryId("bedroom");
+        List<String> warnings = new ArrayList<>();
+        service.applyChatCapturedAt(null, req, "chat-1", warnings);
+
+        Property stamped = chatAspect.getProperties().stream()
+                .filter(p -> "nemaki:chatCapturedAt".equals(p.getKey())).findFirst().orElse(null);
+        assertNotNull(stamped, "custody time must be recorded: " + warnings);
+        Object first = stamped.getValue();
+        org.mockito.Mockito.verify(contentService).update(
+                org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.eq("bedroom"),
+                org.mockito.ArgumentMatchers.any());
+
+        service.applyChatCapturedAt(null, req, "chat-1", new ArrayList<>());
+        assertEquals(first, chatAspect.getProperties().stream()
+                        .filter(p -> "nemaki:chatCapturedAt".equals(p.getKey())).findFirst()
+                        .orElseThrow().getValue(),
+                "a re-import must not move custody forward: doing so quietly erases how long "
+                        + "the record has actually been held");
+        org.mockito.Mockito.verify(contentService, org.mockito.Mockito.times(1)).update(
+                org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.eq("bedroom"),
+                org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -448,6 +629,7 @@ class IngestEvidenceSnapshotTest {
         metadata.put("channelName", "board-minutes");
         metadata.put("threadId", "1720000000.000100");
         metadata.put("messageId", "1720000000.000200");
+        metadata.put("participants", "otsuka, ishii, sasaki");
         metadata.put("selectionReason", "retention policy R-7");
         metadata.put("evidenceScope", "thread");
         metadata.put("captureWindowStart", "2026-07-14T02:00:00Z");
@@ -464,6 +646,9 @@ class IngestEvidenceSnapshotTest {
         assertEquals("1720000000.000100", snapshot.get("chat.threadId"));
         assertEquals("1720000000.000200", snapshot.get("chat.messageId"),
                 "supplied but never asserted, so a dropped mapping would have gone unnoticed");
+        assertEquals("otsuka, ishii, sasaki", snapshot.get("chat.participants"),
+                "the record said which channel a message came from but not who was in it — "
+                        + "participants was stored on the object and dropped from the evidence");
         assertEquals("retention policy R-7", snapshot.get("chat.selectionReason"));
         assertEquals("thread", snapshot.get("chat.evidenceScope"));
         assertEquals("2026-07-14T02:00:00Z", snapshot.get("chat.captureWindowStart"));

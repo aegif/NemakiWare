@@ -223,8 +223,13 @@ public class IngestLineageEmitter {
         if (onBehalfOf != null && !onBehalfOf.isBlank()) {
             v1Snapshot.put("onBehalfOf", onBehalfOf);
         }
+        // participants was stored on the object but left out of the evidence, so the record
+        // said which channel a message came from without saying who was in it (external review).
+        // NOT here: nemaki:chatCapturedAt. It is stamped from the server clock AFTER the import
+        // returns, so at this point it does not exist yet — carrying it needs the stamp to move
+        // ahead of emission, which is P1-1(b) work, not a field to add to this loop.
         for (String key : new String[]{"workspaceId", "channelId", "channelName", "threadId",
-                "messageId", "selectionReason", "evidenceScope",
+                "messageId", "participants", "selectionReason", "evidenceScope",
                 "captureWindowStart", "captureWindowEnd"}) {
             String value = resolveMetadataString(request, key);
             if (value != null && !value.isBlank()) {
