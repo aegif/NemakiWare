@@ -42,9 +42,9 @@
 | 資産 | 実装 | 真正性文脈での意味 |
 |---|---|---|
 | **チャット・クラウド取込コネクタ** | `rest/ingest/` — `chat/SlackConnectorAdapter` / `TeamsConnectorAdapter` / `MattermostConnectorAdapter`、`note/NotionConnectorAdapter`、`record/SalesforceConnectorAdapter`、IMAP、クラウドドライブ、webhook (HMAC) | 対象文書の入口。ユーザーの構想 (Slack 等からの共有文書) は既に入口がある |
-| **取込時コンテンツハッシュ** | `CanonicalImportServiceImpl` が SHA-256 を計算し `nemaki:externalIntegration` aspect の **`nemaki:contentHash`** に保存 (:745,:1505)。再取込時に既存ハッシュと比較 (:1273)。**ただし証拠としては未完**: aspect 付与はコンテンツ作成後の別更新で失敗は warning 止まり (:1315)、型レベルの property definition が無い生プロパティ、空コンテンツは hash なし、対象は content bytes のみ (メタデータ・添付・会話範囲を含まない) | integrity の起点は在る。**「原子的な証拠取得」にするのが P1-1** |
+| **取込時コンテンツハッシュ** | `CanonicalImportServiceImpl` が SHA-256 を計算し `nemaki:externalIntegration` aspect の **`nemaki:contentHash`** に保存 (:745,:1505)。再取込時に既存ハッシュと比較 (:1273)。**ただし証拠としては未完**: aspect 付与はコンテンツ作成後の別更新で失敗は warning 止まり (:1315)、型レベルの property definition が無い生プロパティ、空コンテンツも hash あり (**2026-08-20 に修正**: 空入力の SHA-256 は有効な digest)、対象は content bytes のみ (メタデータ・添付・会話範囲を含まない) | integrity の起点は在る。**「原子的な証拠取得」にするのが P1-1** |
 | **来歴属性** | 同 aspect の `nemaki:sourceArchetype` / `sourceSystem` / `sourceObjectType` / `sourceObjectId` / `sourceUrl` (:1478-1486) | identity の一部 (出所・恒久リンク) |
-| **チャット文脈メタデータ** | `Patch_ChatContextMetadataSecondaryType` — `nemaki:chatWorkspaceId` / `chatChannelId(Name)` / `chatThreadId` / `chatMessageId` / **`chatParticipants`** / `chatSelectionReason` / `chatEvidenceScope` / `chatCapturedAt` / `chatCaptureWindowStart/End` | identity 属性として出色の**型**。ただし `chatCapturedAt` を設定する取込コードは無く、全プロパティ optional・READWRITE (:82) — A.1 の「分かち難く結合した保護属性」にするには P1-1 での設定 + 更新制約が要る |
+| **チャット文脈メタデータ** | `Patch_ChatContextMetadataSecondaryType` — `nemaki:chatWorkspaceId` / `chatChannelId(Name)` / `chatThreadId` / `chatMessageId` / **`chatParticipants`** / `chatSelectionReason` / `chatEvidenceScope` / `chatCapturedAt` / `chatCaptureWindowStart/End` | identity 属性として出色の**型**。ただし `chatCapturedAt` は **2026-08-19 に取込時スタンプを実装済み** (P1-1(c) の設定部)。残るは更新制約で、全プロパティ optional・READWRITE (:82) — A.1 の「分かち難く結合した保護属性」にするには P1-1 での設定 + 更新制約が要る |
 | **Lineage journal + 外部カタログ** | `rest/purview/journal/` 一式 — CouchDB 永続イベント (V2)、Atlas sink、カタログ publish/republish/reconciliation、dead letter、historical compensation | chain of custody の記録装置と、**NemakiWare の外にある独立検証点** (Atlas/Purview) |
 | **環境同一性の証明** | `LineageWriteVersionBarrier` / `LineageBarrierService` / `LineageBinaryDigest` — 配布物 (WAR) のバイナリダイジェスト + ノード membership ダイジェスト、golden vector で式を凍結 | 「どのソフトウェアがその記録を処理したか」の証拠。InterPARES が求める手続き・システムの文書化に直結 |
 | **保持・処分・長期保管** | retention (ACTIVE → ARCHIVED_LOCAL → ARCHIVED_COLD)、S3 Legal Hold、cold storage、削除アーカイブ | ライフサイクル管理と法的保全 |
@@ -62,9 +62,22 @@ BagIt / OAIS 型パッケージ (`bagit|oais` で 0 件)、定期 fixity 再検�
    `LineagePurgeScheduler` / `LineageJournalStore.purgeOlderThan`)。「journal は追記専用で残る」
    という素朴な前提は現行実装と**正面衝突**する — P1-3 の分離設計 (配送 journal / evidence
    ledger) で解く。
-3. 現行の取込 lineage snapshot は `sourceSystem/Archetype/ObjectId` 等のみで
-   **contentHash・chat*・取込主体を含まず** (`IngestLineageEmitter:51`)、emit の失敗は
-   warn して null を返す非致命経路 (:84)。P1-1 の「journal 化の徹底」の実体はここ。
+3. 取込 lineage snapshot は **PR #507 以前**、`sourceSystem/Archetype/ObjectId` 等のみで
+   contentHash・chat*・取込主体を含まず、emit の失敗も warn して null を返す非致命経路だった。
+   P1-1 の「journal 化の徹底」の実体はここ。**2026-08-19〜20 に解消**: 取り逃しは呼び出し元に
+   届くようになり (PR #506)、snapshot は `contentStored` (`"true"` / `"false"` / `"unknown"`) /
+   `contentHash` / 会話文脈 (`chat.workspaceId` / `channelId` / `channelName` / `threadId` /
+   `messageId` / `participants` / `selectionReason` / `evidenceScope` / `captureWindowStart` /
+   `captureWindowEnd`) / `executedBy`+`onBehalfOf` を運ぶ (PR #507)。**残る制約**は 2 つ:
+   snapshot は **v1 projection 限定**で `LineageFact` の設計上 v2 に home が無いこと、および
+   `nemaki:chatCapturedAt` は**オブジェクトに刻まれるが snapshot には入らない** — 刻印が emit の
+   **後**に走るため、載せるには順序を変える必要がある (どちらも下表 P1-1(b))。刻印は
+   **この取込が作ったオブジェクトに限る**: dedupe skip を含む毎回の chat 取込で走るため、
+   既に在るオブジェクトに「今」を刻むと、何年も前から保管しているものが今日から保管開始に
+   見えてしまう。かといって `cmis:creationDate` も答えではない (移行・アーカイブ復元で
+   保存され、後の版は自分の作成時刻を持つ)。**分からないものは記録しない**。既存オブジェクト
+   の保管開始を復元するには来歴イベントを読む必要がある (P1-1(d))。既に値がある場合も
+   上書きしない。
 
 ---
 
@@ -206,7 +219,7 @@ vocabulary に**クロスウォークで固定**する — `capture` / `fixity c
 
 | ID | 何を | 具体 |
 |---|---|---|
-| **P1-1** | **Capture Provenance の原子化** — **着手時の注意 (2026-08-19、PR #506 のレビューで判明)**: (a) に入る前に、**emit 経路が失敗を報告できる状態にすること**。現状 `LineageFactEmission.emitSafely` が RuntimeException を握って false を返し、`resolveEmitter` は解決失敗を null で返して「lineage 無効」と区別できず、`JournaledLineageEmitter.emit` は journal 書き込み失敗を握って正常復帰する (= journal に 1 行も無いのに event ID が返る)。**この 3 つの fail-open 境界より外側に何を足しても可視化にはならない** — #506 は 2 度それをやって 2 度とも成立しなかった (1 度目は emitSafely の外、2 度目は emitReporting を入れたが本番の emitter が例外を投げないので届かず)。**4 つを 1 つの PR に入れて初めて「取り逃しが見える」と言える**: (1) Journaled/Direct emitter が失敗を握らず報告する (spool の明示的 drop も含む)、(2) `resolveEmitter` を typed outcome にして「明示的な無効化」と「解決失敗」を分ける (現状 5 つの事象が null に潰れ、良性なのは 1 つだけ)、(3) 複合取込 (.eml・添付) が子の warnings を親に統合する、(4) そのうえで emitReporting の主張を再検証。**先行作業は `feat/v34-p1-1-capture-atomicity` (PR #506, draft) に残してある** | 「必ず刻む」を設計として実装する: (a) content commit と evidence commit の**トランザクション境界** (outbox パターン — 現状は aspect 付与が後追い更新で失敗 warning、emit は握り潰し `IngestLineageEmitter:84`。2-1 の fail-fast と同族)。(b) snapshot に contentHash・chat*・取込主体 (`ingestedBy` — **新規項目**) を追加 (`:51` に現状無し)。(c) `chatCapturedAt` 等を取込コードが実際に設定し、**更新制約** (READWRITE をやめる) を掛けて A.1 の保護属性にする。(d) 空コンテンツ・version ごとの hash・メタデータ hash の扱いを evidence data model として定義。(e) 失敗時は隔離 + 再構築可能性 |
+| **P1-1** | **Capture Provenance の原子化** — 「必ず刻む」を設計として実装する。**現在地 (2026-08-20)**: (a) の**可視化**は PR #506 で完了 (5 巡のレビューで NO BLOCKERS)。(b) snapshot は content 状態 (機械可読キーは `contentStored` = `"true"` / `"false"` / `"unknown"` — 「判定できない」を「保存していない」に潰さない) / contentHash / chat* / `executedBy`+`onBehalfOf` を運ぶ (PR #507)。(c) `chatCapturedAt` の取込時スタンプは実装済み。**未了**: (a) の本体である **outbox** (content commit と evidence commit のトランザクション境界)、(b) の **v2 表現**と `chatCapturedAt` の emit 前倒し — 現状は v1 projection 限定で `LineageFact` の設計上 v2 に home が無く、**v2 write flip で失われる**ため、真正性レポートをこのスキーマの上に建てる前に型付き表現が要る、(c) の **更新制約** — `Patch_ChatContextMetadataSecondaryType` は既存型にプロパティ id を足すだけで updatability を書き換えない (`:50`) ので、コードを変えても新規デプロイにしか効かず構成が割れる。既存プロパティ定義を書き換える移行パッチと、我々自身の aspect 直接更新が阻まれないかの確認が要る、(d) 空コンテンツ・version ごとの hash・メタデータ hash の evidence data model、(e) 失敗時の隔離 + 再構築可能性 (実行起源の記録もここ — 委譲実行の executedBy は現在 admitted-unknown) |
 | **P1-2** | **Fixity service** | leader-gated の定期ジョブ (既存スケジューラパターン) が保存コンテンツの SHA-256 を再計算し `nemaki:contentHash` と照合。結果を journal に記録、乖離は隔離 + アラート。運用 API は再索引の verdict 型を踏襲 (`COMPLETE` の意味論の教訓をそのまま適用: 「検証した範囲」を常に言う)。**対象は cold 層 (S3) を含む** — 詳細は Phase 3 前提モデルの原則 3 |
 | **P1-3** | **Tamper-evident evidence ledger** | **journal と evidence を分離する** (外部レビュー + purge 衝突の帰結): 配送用 journal は現行どおり purge 可 (`lineage.retention.days`)、**evidence ledger は immutable** で期間・法的根拠別に保持し、purge 境界ごとに checkpoint + 外部アンカー + inclusion proof を残す。連鎖の構築は素朴な LeaderElection 流用ではなく、**既存の fenced sequencer (`CouchLineageSequencingStore` — lease generation CAS 持ち) を土台**に: chain domain (repo 単位か全体か) / sequence と連鎖の同一 CAS 確定 / failover 時の fork 検出 / **unsequenced backlog がある間の anchor 禁止** / purge 後 genesis / 「順序 = 確定 sequence 順であって時計順ではない」の明記。但し書き: 連鎖が固定するのは記録された順序 (P1-1 が先)、アンカー以前しか凍結されない (頻度 = 書き直され得る窓) |
 | **P1-4** | **真正性レポート (evidence package)** | 文書 1 件について identity 属性・contentHash と fixity 履歴・custody チェーン (journal 抜粋)・アクセス監査・バージョン系譜・処理環境 (Barrier ダイジェスト) を 1 つの JSON + 人が読む PDF に集約する API/UI。**マーケの主砲** (§5) |

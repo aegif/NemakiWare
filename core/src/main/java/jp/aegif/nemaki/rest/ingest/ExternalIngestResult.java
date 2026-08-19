@@ -15,7 +15,36 @@ public record ExternalIngestResult(
         String skipReason,
         String lineageEventId,
         List<String> errors,
-        List<String> warnings) {
+        List<String> warnings,
+        /**
+         * Whether THIS operation created the object, as opposed to finding one already here.
+         *
+         * <p>Needed because "when did this deployment take custody" is only knowable for an
+         * object we just made. A dedupe-skipped or updated object was here before, and neither
+         * the clock nor {@code cmis:creationDate} says when we first held it — creation time
+         * survives migration and archive restore, and a later version carries its own
+         * (external review). Anything that cannot establish the answer must leave it unrecorded.
+         */
+        boolean createdObject) {
+
+    /**
+     * Legacy arity, defaulting {@code createdObject} to false.
+     *
+     * <p>False is the conservative answer: it means "do not claim custody began now" — a wrong
+     * false loses a fact, a wrong true asserts one. It exists so that error and skip results,
+     * which never create anything, stay readable.
+     *
+     * <p>It is NOT a safe default for a wrapper that rebuilds a result: dropping the flag there
+     * reported freshly created mail, note, record and chat objects as pre-existing (external
+     * review). Every rebuild must carry the inner result's value forward explicitly.
+     */
+    public ExternalIngestResult(String requestId, String objectId, String versionLabel,
+                                boolean isNewVersion, boolean dryRun, boolean skipped,
+                                String skipReason, String lineageEventId, List<String> errors,
+                                List<String> warnings) {
+        this(requestId, objectId, versionLabel, isNewVersion, dryRun, skipped, skipReason,
+                lineageEventId, errors, warnings, false);
+    }
 
     public boolean isSuccess() {
         return errors == null || errors.isEmpty();

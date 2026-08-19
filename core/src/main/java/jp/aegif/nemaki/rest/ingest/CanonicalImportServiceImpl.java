@@ -5,6 +5,7 @@ import jp.aegif.nemaki.cmis.service.ObjectService;
 import jp.aegif.nemaki.cmis.service.VersioningService;
 import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Aspect;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
@@ -365,9 +366,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
             // Preserve the skipped flag/reason: a dedupe-skipped message body that
             // fell through above must still be reported as skipped, not imported.
+            // createdObject rides along: rebuilding through the legacy arity silently reported
+            // a freshly created object as pre-existing, which is what decides whether custody
+            // time may be recorded at all (external review).
             return new ExternalIngestResult(requestId, messageObjectId, messageResult.versionLabel(),
                     messageResult.isNewVersion(), false, messageResult.skipped(), messageResult.skipReason(),
-                    messageResult.lineageEventId(), List.of(), warnings);
+                    messageResult.lineageEventId(), List.of(), warnings,
+                    messageResult.createdObject());
 
         } catch (Exception e) {
             logger.error("Mail import failed: {}", e.getMessage(), e);
@@ -395,6 +400,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         List<String> warnings = new ArrayList<>();
         String pageVersionLabel = null;
         boolean pageNewVersion = false;
+        boolean pageCreated = false;
         String pageLineageEventId = null;
         boolean pageSkipped = false;     // files_and_body: page body was dedupe-skipped
         String pageSkipReason = null;
@@ -407,6 +413,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             pageObjectId = pageResult.objectId();
             pageVersionLabel = pageResult.versionLabel();
             pageNewVersion = pageResult.isNewVersion();
+            pageCreated = pageResult.createdObject();
             pageLineageEventId = pageResult.lineageEventId();
             pageSkipped = pageResult.skipped();
             pageSkipReason = pageResult.skipReason();
@@ -421,6 +428,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         int importedAttachmentCount = 0;   // genuinely new/updated attachments
         int skippedAttachmentCount = 0;    // dedupe-skipped attachments
         String firstAttachmentObjectId = null;
+        boolean firstAttachmentCreated = false;
         if (request.getMetadata() != null && request.getMetadata().get("attachments") instanceof List<?> attList) {
             for (Object attObj : attList) {
                 if (!(attObj instanceof Map<?, ?> attMap)) continue;
@@ -475,7 +483,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         else importedAttachmentCount++;
                         String attObjectId = attResult.objectId();
                         if (attObjectId != null) {
-                            if (firstAttachmentObjectId == null) firstAttachmentObjectId = attObjectId;
+                            if (firstAttachmentObjectId == null) {
+                                firstAttachmentObjectId = attObjectId;
+                                firstAttachmentCreated = attResult.createdObject();
+                            }
                             if (importBody && pageObjectId != null) {
                                 String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
                                         pageObjectId, attObjectId, "nemaki:hasAttachment");
@@ -516,9 +527,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         boolean overallSkipped = importBody && pageSkipped && importedAttachmentCount == 0;
         String overallSkipReason = overallSkipped ? pageSkipReason : null;
 
+        // createdObject must describe the object primaryObjectId NAMES, which is the page only
+        // when the body was imported — otherwise it is the first attachment (external review).
         return new ExternalIngestResult(requestId, primaryObjectId, pageVersionLabel,
                 pageNewVersion, false, overallSkipped, overallSkipReason, pageLineageEventId,
-                List.of(), warnings);
+                List.of(), warnings, importBody ? pageCreated : firstAttachmentCreated);
     }
 
     /**
@@ -539,7 +552,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 w.add(metaError);
                 return new ExternalIngestResult(attResult.requestId(), attResult.objectId(),
                         attResult.versionLabel(), attResult.isNewVersion(), false, false, null,
-                        attResult.lineageEventId(), List.of(), w);
+                        attResult.lineageEventId(), List.of(), w, attResult.createdObject());
             }
         }
         return attResult;
@@ -581,10 +594,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
 
         // Preserve the skipped flag/reason: a dedupe-skipped record that fell
-        // through above must still be reported as skipped, not imported.
+        // through above must still be reported as skipped, not imported. Same for createdObject.
         return new ExternalIngestResult(request.getRequestId(), result.objectId(), result.versionLabel(),
                 result.isNewVersion(), false, result.skipped(), result.skipReason(),
-                result.lineageEventId(), List.of(), warnings);
+                result.lineageEventId(), List.of(), warnings, result.createdObject());
     }
 
     @Override
@@ -611,9 +624,27 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 {"nemaki:chatSelectionReason", "selectionReason"},
                 {"nemaki:chatEvidenceScope", "evidenceScope"},
         };
+
         String metaError = ingestMetadataService.applyArchetypeMetadata(request.getRepositoryId(), result.objectId(), callContext,
                 "nemaki:chatContextMetadata", request, chatFields);
         if (metaError != null) warnings.add(metaError);
+
+        // chatCapturedAt has been on the type since it was introduced but nothing ever set it,
+        // so every chat import carried a capture-time property it left empty. It is stamped from
+        // the server clock rather than read from the request — but ONLY when this operation
+        // created the object, because for anything already here the clock is not the answer.
+        //
+        // NOT yet a protected attribute, and NOT yet corroborated anywhere. The property is
+        // still READWRITE, so a client with update permission can change it afterwards, or plant
+        // it before a re-import and have the no-overwrite rule below preserve their value.
+        //
+        // An earlier version of this comment pointed at the event snapshot as the copy a client
+        // cannot edit — but the stamp happens HERE, after the import that emitted the event, so
+        // the snapshot does not carry it at all (external review). There is currently no second
+        // copy. Making this evidence needs both the updatability migration and moving the stamp
+        // ahead of emission: authenticity-roadmap.md P1-1(b)(c).
+        applyChatCapturedAt(callContext, request, result.objectId(), result.createdObject(),
+                warnings);
 
         // Apply capture window datetime properties if provided in metadata
         if (request.getMetadata() != null) {
@@ -660,10 +691,205 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
 
         // Preserve the skipped flag/reason: a dedupe-skipped chat object that fell
-        // through above must still be reported as skipped, not imported.
+        // through above must still be reported as skipped, not imported. Same for createdObject.
         return new ExternalIngestResult(request.getRequestId(), result.objectId(), result.versionLabel(),
                 result.isNewVersion(), false, result.skipped(), result.skipReason(),
-                result.lineageEventId(), List.of(), warnings);
+                result.lineageEventId(), List.of(), warnings, result.createdObject());
+    }
+
+    /**
+     * Who ran this import, as far as this code can honestly tell.
+     *
+     * <p>A delegated profile can be driven manually by an authenticated caller OR autonomously
+     * by the scheduler, and the context for the latter is synthesized from the profile creator
+     * — so it names the authority, not the actor. Rather than print a service name nobody
+     * observed, the gap is admitted with its reason (external review). Threading execution
+     * origin through is P1-1(e).
+     */
+    static String resolveExecutedBy(ImportProfileDefinition profile, CallContext callContext) {
+        if (profile != null && profile.isDelegated()) {
+            return "unknown: delegated profile " + profile.getProfileId()
+                    + " — execution origin is not recorded yet";
+        }
+        return callContext != null ? callContext.getUsername() : null;
+    }
+
+    /** The authority a delegated import ran under: the profile's creator, or none if direct. */
+    static String resolveOnBehalfOf(ImportProfileDefinition profile) {
+        return profile != null && profile.isDelegated() ? profile.getCreatedByUserId() : null;
+    }
+
+    /**
+     * Whether this import changed the content, and what digest it is entitled to record.
+     *
+     * <p>Extracted because the digest half was invisible to the tests: reverting it left every
+     * case green while restoring an unsupported claim (external review). The two answers belong
+     * together — the same comparison decides both.
+     */
+    record ContentComparison(boolean contentChanged, String hashToRecord, String versionLabel) {
+    }
+
+    static ContentComparison compareContent(String computedHash, String existingHash) {
+        if (computedHash == null) {
+            // No content stream provided — a metadata-only update, not a version-up.
+            return new ContentComparison(false, null, "metadata-only (no content provided)");
+        }
+        if (computedHash.equals(existingHash)) {
+            // The equality is with a MUTABLE aspect property, not with the stored bytes. Carrying
+            // computedHash forward would let a stale or edited nemaki:contentHash certify content
+            // this import never stored — and the incoming bytes are discarded either way, so no
+            // digest is owed here (external review).
+            return new ContentComparison(false, null, "metadata-only (content unchanged)");
+        }
+        return new ContentComparison(true, computedHash, null);
+    }
+
+    /**
+     * What the repository actually holds for this object, decided by looking rather than by
+     * inferring from which update branch ran.
+     *
+     * <p>Every branch was guessing separately and getting it wrong in a different way:
+     * metadata-only and no-change updates retain their existing attachment but reported
+     * "no content"; a version carried forward reported "no content" too until it reported
+     * "stored" even when the prior version had none. The object itself is the authority, and
+     * this runs once, after all of them (external review, P1-1(b)).
+     *
+     * <p>Three outcomes, and "we could not tell" is deliberately NOT collapsed into "none":
+     * a transient read failure followed by a successful check-in would otherwise assert that
+     * nothing is stored while bytes sit there.
+     */
+    IngestLineageEmitter.CapturedContent describeCapturedContent(
+            String repositoryId, String objectId, String computedHash) {
+        if (computedHash != null) {
+            // This import supplied and hashed the bytes it stored — the strongest case, and no
+            // read-back is needed to know it.
+            return IngestLineageEmitter.CapturedContent.hashed(computedHash);
+        }
+        try {
+            Content stored = contentService.getContent(repositoryId, objectId);
+            if (stored instanceof Document doc) {
+                String attachmentId = doc.getAttachmentNodeId();
+                if (attachmentId == null || attachmentId.isBlank()) {
+                    // The repository itself treats a blank id as no attachment.
+                    return IngestLineageEmitter.CapturedContent.none();
+                }
+                // A reference is not bytes, and NOTHING cheap here can close that gap. Three
+                // attempts were made and all three were wrong (external review):
+                //
+                //   getAttachment          — does a binary GET and returns a live stream this
+                //                            path discarded unclosed (one leaked connection and
+                //                            one round trip per no-hash import), and the DAO
+                //                            swallows a failed fetch and returns the node anyway,
+                //                            so its non-null carries no information.
+                //   getAttachmentRef       — metadata-only and leak-free, but convertRef falls
+                //                            back to the STORED length field when _attachments
+                //                            is absent, so it cannot see the binary either.
+                //   getAttachmentActualSize— names the "content" attachment, but falls through to
+                //                            stream measurement for compressed ones, which is the
+                //                            download this path must not do.
+                //
+                // So the reference is REPORTED, not converted into a claim. Whether the bytes are
+                // held and readable is a fixity question (P1-2) with its own cost budget; deciding
+                // it as a side effect of ingest is what produced each of the three wrong answers.
+                return IngestLineageEmitter.CapturedContent.unknown(
+                        "the object references content (" + attachmentId + ") from an earlier "
+                                + "import; this import neither supplied those bytes nor verified "
+                                + "them, so whether they are held is undetermined here");
+            }
+            // The DAO layer catches its own failures and returns null, so a null read is NOT
+            // evidence of emptiness — and this object was just written successfully, so a null
+            // here is a read problem rather than an absent object (external review).
+            return IngestLineageEmitter.CapturedContent.unknown(stored == null
+                    ? "the stored object could not be read back (the read returned nothing)"
+                    : "the stored object is not a document, so its content state is undetermined");
+        } catch (Exception e) {
+            logger.debug("Could not read back content state for {}: {}", objectId, e.getMessage());
+            return IngestLineageEmitter.CapturedContent.unknown(
+                    "the stored object could not be read back to determine its content state");
+        }
+    }
+
+    /**
+     * Stamp {@code nemaki:chatCapturedAt} with the moment this deployment took custody.
+     *
+     * <p>Deliberately not taken from the request: the property answers "when did WE observe
+     * this", and a source that could choose the answer would make it evidence of nothing. It is
+     * also written after the aspect exists, because writing before would have nowhere to go.
+     *
+     * <p>Only for objects THIS operation created. The method runs on every chat import including
+     * dedupe-skipped ones, and for an object that was already here nothing available says when we
+     * first held it: the clock says today, and {@code cmis:creationDate} survives migration and
+     * archive restore and names a later version's own creation. Both were tried and both were
+     * wrong (external review), so a pre-existing object is left unstamped. Recovering the answer
+     * for legacy objects means reading their provenance events — P1-1(d).
+     */
+    private void applyChatCapturedAt(CallContext callContext, ExternalIngestRequest request,
+                                     String objectId, boolean createdObject,
+                                     List<String> warnings) {
+        if (objectId == null) {
+            return;
+        }
+        if (!createdObject) {
+            // This object was already here. When we first held it is not knowable from anything
+            // available: the clock says today, and cmis:creationDate survives migration and
+            // archive restore and names a later version's own creation (external review). Two
+            // wrong answers were shipped in review before this one; the third option is to
+            // record nothing, which is what an unknown fact deserves. Recovering it for legacy
+            // objects means reading their provenance events — P1-1(d).
+            return;
+        }
+        try {
+            Content content = contentService.getContent(request.getRepositoryId(), objectId);
+            if (content == null) {
+                warnings.add("Capture time (nemaki:chatCapturedAt) was not recorded: the stored "
+                        + "object could not be read back");
+                return;
+            }
+            if (content.getAspects() == null) {
+                // A null aspect list means the chat aspect is absent just as surely as a list
+                // without it does; returning silently here left half the case unreported.
+                warnings.add("Capture time (nemaki:chatCapturedAt) was not recorded: the stored "
+                        + "object carries no aspects");
+                return;
+            }
+            Aspect chatAspect = content.getAspects().stream()
+                    .filter(a -> "nemaki:chatContextMetadata".equals(a.getName()))
+                    .findFirst().orElse(null);
+            if (chatAspect == null || chatAspect.getProperties() == null) {
+                // Either shape means the metadata step did not take effect, so the capture time
+                // has nowhere to live. Say so rather than returning silently — the caller is
+                // otherwise told the import succeeded (external review). The two are reported
+                // separately because "the aspect is missing" and "the aspect is there but empty"
+                // send an operator to different places.
+                warnings.add("Capture time (nemaki:chatCapturedAt) was not recorded: "
+                        + (chatAspect == null
+                                ? "the chat context aspect is not present on the stored object"
+                                : "the chat context aspect carries no properties"));
+                return;
+            }
+            Map<String, Property> props = new java.util.LinkedHashMap<>();
+            for (Property p : chatAspect.getProperties()) {
+                props.put(p.getKey(), p);
+            }
+            if (props.containsKey("nemaki:chatCapturedAt")) {
+                // A re-import must not restamp custody: the first observation is the one that
+                // means anything, and moving it forward would quietly erase how long we have
+                // actually held the record. Note the limitation above — while the property is
+                // READWRITE this also preserves a value a client planted, and there is no second
+                // copy to check it against yet (P1-1(b)(c)).
+                return;
+            }
+            // The clock is correct HERE and only here: this operation just created the object,
+            // so the moment it ran is the moment this deployment took custody. Applying it to an
+            // object that was already present is the bug the guard above exists for.
+            GregorianCalendar now = new GregorianCalendar();
+            now.setTimeInMillis(java.time.Instant.now().toEpochMilli());
+            props.put("nemaki:chatCapturedAt", new Property("nemaki:chatCapturedAt", now));
+            chatAspect.setProperties(new ArrayList<>(props.values()));
+            contentService.update(callContext, request.getRepositoryId(), content);
+        } catch (Exception e) {
+            warnings.add("Capture time (nemaki:chatCapturedAt) was not recorded: " + e.getMessage());
+        }
     }
 
     /**
@@ -768,7 +994,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * Computes SHA-256 hash of content bytes.
      */
     private static String computeContentHash(byte[] content) {
-        if (content == null || content.length == 0) return null;
+        // Empty content that WAS stored still has a digest, and SHA-256 of zero bytes is a
+        // perfectly valid one. Only the absence of content is absence (external review).
+        if (content == null) return null;
         try {
             java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
             return java.util.HexFormat.of().formatHex(digest.digest(content));
@@ -1228,6 +1456,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
             String objectId;
             boolean isNewVersion = false;
+            boolean createdObject = false;
             String versionLabel = "1.0";
 
             if (existingDoc != null && existingDoc.isDocument()) {
@@ -1269,6 +1498,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 if ("update_metadata_only".equals(updatePolicy)) {
                     // Update metadata only — no version change, no content update
                     versionLabel = "metadata-only";
+                    // The incoming bytes are deliberately NOT stored here, so their digest is
+                    // not the digest of anything this repository holds. Recording it would
+                    // describe content that was thrown away — and would poison the dedupe
+                    // baseline for the next import (external review, P1-1(b)).
+                    computedHash = null;
                     logger.info("Dedupe: metadata-only update for existing document {}", objectId);
                 } else if ("always_version_up".equals(updatePolicy)) {
                     // Always create a new version regardless of content changes
@@ -1286,21 +1520,15 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     versionLabel = "new version (always)";
                 } else {
                     // version_up_on_content_change (default): compare content hash before versioning
-                    boolean contentChanged;
-                    if (computedHash == null) {
-                        // No content stream provided — treat as metadata-only update, not version-up
-                        contentChanged = false;
-                        versionLabel = "metadata-only (no content provided)";
-                        logger.info("Dedupe: no content stream for {}, metadata-only update", objectId);
-                    } else {
-                        String existingHash = getAspectProperty(existingDoc, "nemaki:externalIntegration", "nemaki:contentHash");
-                        if (computedHash.equals(existingHash)) {
-                            contentChanged = false;
-                            versionLabel = "metadata-only (content unchanged)";
-                            logger.info("Dedupe: content unchanged for {} (hash={}), metadata-only", objectId, computedHash);
-                        } else {
-                            contentChanged = true;
-                        }
+                    String existingHash = computedHash == null ? null : getAspectProperty(
+                            existingDoc, "nemaki:externalIntegration", "nemaki:contentHash");
+                    ContentComparison comparison = compareContent(computedHash, existingHash);
+                    boolean contentChanged = comparison.contentChanged();
+                    computedHash = comparison.hashToRecord();
+                    if (comparison.versionLabel() != null) {
+                        versionLabel = comparison.versionLabel();
+                        logger.info("Dedupe: {} for {} (existing hash={})", versionLabel, objectId,
+                                existingHash);
                     }
                     if (contentChanged) {
                         isNewVersion = true;
@@ -1331,6 +1559,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                                 : VersioningState.MAJOR;
                 objectId = objectService.createDocument(callContext, repositoryId, properties,
                         targetFolderId, contentStream, vs, null, null, null, null);
+                createdObject = true;
             }
 
             // 6. Apply secondary types
@@ -1363,7 +1592,20 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 logger.debug("Lineage name read failed; using requested fileName: {}", e.getMessage());
             }
             String lineageEventId = ingestLineageEmitter != null
-                    ? ingestLineageEmitter.emitLineageEvent(repositoryId, objectId, targetFolderId, lineageDocumentName, lineageOperationId, connector, request)
+                    ? ingestLineageEmitter.emitLineageEvent(repositoryId, objectId, targetFolderId,
+                            lineageDocumentName, lineageOperationId, connector, request,
+                            describeCapturedContent(repositoryId, objectId, computedHash),
+                            // A delegated run's context is SYNTHESIZED from the profile creator,
+                            // so getUsername() names the authority, not the actor. Putting it in
+                            // both fields said "the creator ran it", which is what the split
+                            // exists to stop. A delegated profile can be driven manually by an
+                            // authenticated caller OR autonomously by the scheduler, and this cannot
+                            // currently tell which. Naming a service outright would assert an
+                            // actor we did not observe, so the executor is recorded as unknown
+                            // WITH the reason — an honest gap beats a plausible label
+                            // (external review). Threading execution origin through is P1-1(e).
+                            resolveExecutedBy(profile, callContext),
+                            resolveOnBehalfOf(profile))
                     : null;
             // The document is committed by now. If provenance could not be recorded, the import
             // is NOT wholly successful: content exists with no evidence of where it came from,
@@ -1399,7 +1641,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             emitAuditEvent(request.getRepositoryId(), objectId, callContext, true, null);
 
             return new ExternalIngestResult(requestId, objectId, versionLabel, isNewVersion,
-                    false, false, null, lineageEventId, List.of(), warnings);
+                    false, false, null, lineageEventId, List.of(), warnings, createdObject);
 
         } catch (Exception e) {
             logger.error("Canonical import failed: requestId={}, error={}", requestId, e.getMessage(), e);

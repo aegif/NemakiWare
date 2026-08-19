@@ -38,6 +38,30 @@ public class IngestLineageEmitter {
     public String emitLineageEvent(String repositoryId, String objectId, String targetFolderId,
                                    String documentName, String operationId,
                                    ConnectorDefinition connector, ExternalIngestRequest request) {
+        return emitLineageEvent(repositoryId, objectId, targetFolderId, documentName, operationId,
+                connector, request, null, null, null);
+    }
+
+    /**
+     * @param content what this import can say about the bytes now held — see
+     *        {@link CapturedContent}. Recording a digest is what lets a later reader tie the
+     *        provenance to a specific set of bytes rather than to an object id, which can be
+     *        updated afterwards (P1-1(b)).
+     * @param executedBy the authenticated principal that ran this import; null for webhook and
+     *        other unauthenticated ingest. A DELEGATED scheduled profile is not null — its context
+     *        is synthesized from the creator, so the caller passes an explicit "unknown:" string
+     *        rather than that person's name. Recorded either way: an absent agent is itself a
+     *        fact, and leaving the key out made it look like a delegated import with a missing
+     *        name.
+     * @param onBehalfOf the authority the import ran under when it differs from the actor — for
+     *        a delegated scheduled profile this is the profile creator. The InterPARES A.1
+     *        identity attributes ask for a responsible agent, and one field cannot answer both
+     *        "who ran it" and "on whose authority".
+     */
+    public String emitLineageEvent(String repositoryId, String objectId, String targetFolderId,
+                                   String documentName, String operationId,
+                                   ConnectorDefinition connector, ExternalIngestRequest request,
+                                   CapturedContent content, String executedBy, String onBehalfOf) {
         lastFailure.remove();
         try {
             // Two classifications on purpose. The v1 type participates in eventKey and keeps
@@ -52,17 +76,9 @@ public class IngestLineageEmitter {
             // The v1 event-level snapshot, conditionals preserved exactly (it rides the legacy
             // projection verbatim; most keys have no v2 home — the endpoint attributes carry
             // sourceSystem and the stable key, and targetFolderId is a §3 Process attribute).
-            java.util.Map<String, String> v1Snapshot = new java.util.LinkedHashMap<>();
-            v1Snapshot.put("sourceSystem", connector.getSourceSystem());
-            v1Snapshot.put("sourceArchetype",
-                    connector.getSourceArchetype() != null ? connector.getSourceArchetype().name() : "");
-            v1Snapshot.put("sourceObjectId", request.getSourceObjectId());
-            if (request.getSourceObjectType() != null) {
-                v1Snapshot.put("sourceObjectType", request.getSourceObjectType());
-            }
-            if (targetFolderId != null) {
-                v1Snapshot.put("targetFolderId", targetFolderId);
-            }
+            java.util.Map<String, String> v1Snapshot =
+                    buildV1Snapshot(connector, request, targetFolderId, content,
+                            executedBy, onBehalfOf);
 
             // emitReporting, not emitSafely: the plain form collapses "lineage is off" and
             // "we lost the evidence" into the same false, and the document is already committed
@@ -109,6 +125,129 @@ public class IngestLineageEmitter {
     }
 
     /**
+     * What this import can say about the bytes the repository now holds.
+     *
+     * <p>Three states, not two. "Stored with a digest" and "nothing stored" are the easy ones;
+     * the third exists because a check-in with no stream carries the previous version's content
+     * forward, so the object goes on REFERENCING content this import neither supplied nor read.
+     * Reporting that as "no content" would describe the repository wrongly, and reporting it as
+     * hashed would be a lie — but "stored" is not available either: the reference is logical,
+     * and nothing cheap here establishes that the bytes are physically present and readable
+     * (external review). So it is its own state, "undetermined", with the reason attached.
+     * Establishing it is fixity work, P1-2.
+     */
+    public record CapturedContent(ContentState state, String digest, String reason) {
+
+        /** Whether bytes are held — and the case where we could not find out. */
+        public enum ContentState { STORED, NONE, UNKNOWN }
+
+
+        public static CapturedContent hashed(String digest) {
+            return new CapturedContent(ContentState.STORED, digest, null);
+        }
+
+        public static CapturedContent none() {
+            return new CapturedContent(ContentState.NONE, null, null);
+        }
+
+        // storedWithoutDigest(reason) was here: "bytes ARE held, we just did not hash them".
+        // It is gone because nothing could establish it. The only caller was the carried-forward
+        // case, and every cheap way to confirm those bytes turned out not to confirm anything
+        // (see CanonicalImportServiceImpl.describeCapturedContent). Leaving the factory in place
+        // would invite the claim back without the evidence — that case is unknown(), and proving
+        // it is fixity work (P1-2).
+
+
+        /**
+         * We could not find out. Kept distinct from {@link #none()} because "nothing is stored"
+         * is a positive claim: a transient read failure followed by a successful check-in would
+         * otherwise assert emptiness over bytes that are actually there (external review).
+         */
+        public static CapturedContent unknown(String reason) {
+            return new CapturedContent(ContentState.UNKNOWN, null, reason);
+        }
+    }
+
+    /** Test hook: the retained state is otherwise unobservable, so it cannot be asserted on. */
+    void clearLastEmissionFailureForTest() {
+        lastFailure.remove();
+    }
+
+    /**
+     * The event-level snapshot, extracted so it can be asserted on directly.
+     *
+     * <p><b>v1 only, and that is a real limitation.</b> This map rides the legacy v1 projection,
+     * which {@code LineageFact} documents as having no v2 home. So the facts added here —
+     * content state, digest, actor, chat context — are carried by v1 events and would be lost
+     * at the v2 write flip. Giving them a typed v2 representation is outstanding work, recorded
+     * in authenticity-roadmap.md under P1-1(b); until then an evidence report must not be built
+     * on this schema as though it were durable (external review).
+     *
+     * <p>Testing this through {@code emitLineageEvent} needs a resolved emitter, and an unwired
+     * one fails long before the snapshot is built — which is exactly how an earlier test in this
+     * area passed while proving nothing. This is the production builder, called by production.
+     */
+    java.util.Map<String, String> buildV1Snapshot(ConnectorDefinition connector,
+                                                  ExternalIngestRequest request,
+                                                  String targetFolderId, CapturedContent content,
+                                                  String executedBy, String onBehalfOf) {
+        java.util.Map<String, String> v1Snapshot = new java.util.LinkedHashMap<>();
+        v1Snapshot.put("sourceSystem", connector.getSourceSystem());
+        v1Snapshot.put("sourceArchetype",
+                connector.getSourceArchetype() != null ? connector.getSourceArchetype().name() : "");
+        v1Snapshot.put("sourceObjectId", request.getSourceObjectId());
+        if (request.getSourceObjectType() != null) {
+            v1Snapshot.put("sourceObjectType", request.getSourceObjectType());
+        }
+        if (targetFolderId != null) {
+            v1Snapshot.put("targetFolderId", targetFolderId);
+        }
+        // What was actually captured, so the event stands on its own. An object id alone can
+        // be updated later; a digest cannot be, and an agent is required by A.1 (P1-1(b)).
+        // contentStored says whether there was content; contentHash carries ONLY a digest.
+        // Putting prose in the digest field would make a future consumer either fail validation
+        // or invent undocumented prefix parsing, and the evidence report's schema requires hex
+        // (external review, P1-1(b)).
+        CapturedContent captured = content == null
+                ? CapturedContent.unknown("the caller supplied no content state") : content;
+        v1Snapshot.put("contentStored", switch (captured.state()) {
+            case STORED -> "true";
+            case NONE -> "false";
+            case UNKNOWN -> "unknown";
+        });
+        if (captured.digest() != null && !captured.digest().isBlank()) {
+            v1Snapshot.put("contentHash", captured.digest());
+            v1Snapshot.put("contentHashAlgorithm", "SHA-256");
+        } else if (captured.reason() != null) {
+            v1Snapshot.put("contentHashUnavailable", captured.reason());
+        }
+        // Two different questions, so two fields. getUsername() on a delegated context returns
+        // the profile creator — the authority the import ran UNDER — not the actor that ran it,
+        // and unauthenticated ingest has no actor to name at all. Collapsing those into one
+        // "ingestedBy" made an absent agent and a delegated one look alike (external review,
+        // P1-1(b)).
+        v1Snapshot.put("executedBy", executedBy == null || executedBy.isBlank()
+                ? "service: no authenticated context (scheduled or webhook ingest)" : executedBy);
+        if (onBehalfOf != null && !onBehalfOf.isBlank()) {
+            v1Snapshot.put("onBehalfOf", onBehalfOf);
+        }
+        // participants was stored on the object but left out of the evidence, so the record
+        // said which channel a message came from without saying who was in it (external review).
+        // NOT here: nemaki:chatCapturedAt. It is stamped AFTER the import returns, so at this
+        // point it does not exist yet — carrying it needs the stamp to move ahead of emission,
+        // which is P1-1(b) work, not a field to add to this loop.
+        for (String key : new String[]{"workspaceId", "channelId", "channelName", "threadId",
+                "messageId", "participants", "selectionReason", "evidenceScope",
+                "captureWindowStart", "captureWindowEnd"}) {
+            String value = resolveMetadataString(request, key);
+            if (value != null && !value.isBlank()) {
+                v1Snapshot.put("chat." + key, value);
+            }
+        }
+
+        return v1Snapshot;
+    }
+    /**
      * Why the most recent {@link #emitLineageEvent} on THIS thread produced no event id, or null
      * when the last call succeeded or simply had nothing to emit.
      *
@@ -120,11 +259,6 @@ public class IngestLineageEmitter {
      * not make capture atomic. Atomicity is the outbox in P1-1(a) — content and evidence
      * committed together or not at all — and this method disappears when that lands.
      */
-    /** Test hook: the retained state is otherwise unobservable, so it cannot be asserted on. */
-    void clearLastEmissionFailureForTest() {
-        lastFailure.remove();
-    }
-
     public String lastEmissionFailure() {
         return lastFailure.get();
     }
