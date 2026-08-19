@@ -617,10 +617,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (metaError != null) warnings.add(metaError);
 
         // chatCapturedAt has been on the type since it was introduced but nothing ever set it,
-        // so every chat import carried a capture-time property it left empty. It is OUR
-        // observation — the moment this deployment took custody — not a timestamp from the
-        // source, and it is stamped here rather than read from the request so a caller cannot
-        // choose when we say we captured it (P1-1(c)).
+        // so every chat import carried a capture-time property it left empty. It is stamped here
+        // from the server clock rather than read from the request.
+        //
+        // NOT yet a protected attribute. The property is still READWRITE, so a client with
+        // update permission can change it afterwards, or plant it before a re-import and have
+        // the no-overwrite rule below preserve their value. Making it evidence needs the
+        // updatability migration described in authenticity-roadmap.md P1-1(c) — until then the
+        // event snapshot, which a client cannot edit, is the trustworthy copy (external review).
         applyChatCapturedAt(callContext, request, result.objectId(), warnings);
 
         // Apply capture window datetime properties if provided in metadata
@@ -695,7 +699,12 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     .filter(a -> "nemaki:chatContextMetadata".equals(a.getName()))
                     .findFirst().orElse(null);
             if (chatAspect == null || chatAspect.getProperties() == null) {
-                return;   // not a chat import, or the aspect could not be attached
+                // Absent aspect on a CHAT_CONTEXT import means the metadata step did not take
+                // effect, so the capture time has nowhere to live. Say so rather than returning
+                // silently — the caller is otherwise told the import succeeded (external review).
+                warnings.add("Capture time (nemaki:chatCapturedAt) was not recorded: the chat "
+                        + "context aspect is not present on the stored object");
+                return;
             }
             Map<String, Property> props = new java.util.LinkedHashMap<>();
             for (Property p : chatAspect.getProperties()) {
@@ -704,7 +713,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (props.containsKey("nemaki:chatCapturedAt")) {
                 // A re-import must not restamp custody: the first observation is the one that
                 // means anything, and moving it forward would quietly erase how long we have
-                // actually held the record.
+                // actually held the record. Note the limitation above — while the property is
+                // READWRITE this also preserves a value a client planted, which is why the
+                // event snapshot rather than this property is the copy to rely on.
                 return;
             }
             GregorianCalendar now = new GregorianCalendar();
@@ -819,7 +830,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * Computes SHA-256 hash of content bytes.
      */
     private static String computeContentHash(byte[] content) {
-        if (content == null || content.length == 0) return null;
+        // Empty content that WAS stored still has a digest, and SHA-256 of zero bytes is a
+        // perfectly valid one. Only the absence of content is absence (external review).
+        if (content == null) return null;
         try {
             java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
             return java.util.HexFormat.of().formatHex(digest.digest(content));
@@ -1320,6 +1333,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 if ("update_metadata_only".equals(updatePolicy)) {
                     // Update metadata only — no version change, no content update
                     versionLabel = "metadata-only";
+                    // The incoming bytes are deliberately NOT stored here, so their digest is
+                    // not the digest of anything this repository holds. Recording it would
+                    // describe content that was thrown away — and would poison the dedupe
+                    // baseline for the next import (external review, P1-1(b)).
+                    computedHash = null;
                     logger.info("Dedupe: metadata-only update for existing document {}", objectId);
                 } else if ("always_version_up".equals(updatePolicy)) {
                     // Always create a new version regardless of content changes
@@ -1416,7 +1434,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             String lineageEventId = ingestLineageEmitter != null
                     ? ingestLineageEmitter.emitLineageEvent(repositoryId, objectId, targetFolderId,
                             lineageDocumentName, lineageOperationId, connector, request,
-                            computedHash, callContext != null ? callContext.getUsername() : null)
+                            computedHash,
+                            callContext != null ? callContext.getUsername() : null,
+                            // Delegated scheduling synthesizes a context for the profile
+                            // creator, so the same value is also the authority; a future
+                            // scheduler-actor identity belongs in executedBy, not here.
+                            profile.isDelegated() && callContext != null
+                                    ? callContext.getUsername() : null)
                     : null;
             // The document is committed by now. If provenance could not be recorded, the import
             // is NOT wholly successful: content exists with no evidence of where it came from,

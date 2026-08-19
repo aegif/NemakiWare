@@ -39,7 +39,7 @@ public class IngestLineageEmitter {
                                    String documentName, String operationId,
                                    ConnectorDefinition connector, ExternalIngestRequest request) {
         return emitLineageEvent(repositoryId, objectId, targetFolderId, documentName, operationId,
-                connector, request, null, null);
+                connector, request, null, null, null);
     }
 
     /**
@@ -47,14 +47,19 @@ public class IngestLineageEmitter {
      *        there was no content (metadata-only imports, and empty streams). Recording it in the
      *        event is what lets a later reader tie the provenance to a specific set of bytes
      *        rather than merely to an object id, which can be updated afterwards (P1-1(b)).
-     * @param ingestedBy the principal on whose authority the import ran. Absent until now, so an
-     *        event said what came in and from where but not who caused it — the InterPARES A.1
-     *        identity attributes name a responsible agent, and "the connector" is not one.
+     * @param executedBy the authenticated principal that ran this import, or null for scheduled
+     *        and webhook ingest which carry no authenticated context. Recorded either way: an
+     *        absent agent is itself a fact, and leaving the key out made it look like a delegated
+     *        import with a missing name.
+     * @param onBehalfOf the authority the import ran under when it differs from the actor — for
+     *        a delegated scheduled profile this is the profile creator. The InterPARES A.1
+     *        identity attributes ask for a responsible agent, and one field cannot answer both
+     *        "who ran it" and "on whose authority".
      */
     public String emitLineageEvent(String repositoryId, String objectId, String targetFolderId,
                                    String documentName, String operationId,
                                    ConnectorDefinition connector, ExternalIngestRequest request,
-                                   String contentHash, String ingestedBy) {
+                                   String contentHash, String executedBy, String onBehalfOf) {
         lastFailure.remove();
         try {
             // Two classifications on purpose. The v1 type participates in eventKey and keeps
@@ -70,7 +75,8 @@ public class IngestLineageEmitter {
             // projection verbatim; most keys have no v2 home — the endpoint attributes carry
             // sourceSystem and the stable key, and targetFolderId is a §3 Process attribute).
             java.util.Map<String, String> v1Snapshot =
-                    buildV1Snapshot(connector, request, targetFolderId, contentHash, ingestedBy);
+                    buildV1Snapshot(connector, request, targetFolderId, contentHash,
+                            executedBy, onBehalfOf);
 
             // emitReporting, not emitSafely: the plain form collapses "lineage is off" and
             // "we lost the evidence" into the same false, and the document is already committed
@@ -138,7 +144,7 @@ public class IngestLineageEmitter {
     java.util.Map<String, String> buildV1Snapshot(ConnectorDefinition connector,
                                                   ExternalIngestRequest request,
                                                   String targetFolderId, String contentHash,
-                                                  String ingestedBy) {
+                                                  String executedBy, String onBehalfOf) {
         java.util.Map<String, String> v1Snapshot = new java.util.LinkedHashMap<>();
         v1Snapshot.put("sourceSystem", connector.getSourceSystem());
         v1Snapshot.put("sourceArchetype",
@@ -152,16 +158,24 @@ public class IngestLineageEmitter {
         }
         // What was actually captured, so the event stands on its own. An object id alone can
         // be updated later; a digest cannot be, and an agent is required by A.1 (P1-1(b)).
-        if (contentHash != null && !contentHash.isBlank()) {
+        // contentStored says whether there was content; contentHash carries ONLY a digest.
+        // Putting prose in the digest field would make a future consumer either fail validation
+        // or invent undocumented prefix parsing, and the evidence report's schema requires hex
+        // (external review, P1-1(b)).
+        boolean contentStored = contentHash != null && !contentHash.isBlank();
+        v1Snapshot.put("contentStored", String.valueOf(contentStored));
+        if (contentStored) {
             v1Snapshot.put("contentHash", contentHash);
             v1Snapshot.put("contentHashAlgorithm", "SHA-256");
-        } else {
-            // Said explicitly: a reader must be able to tell "no content was stored" from
-            // "content was stored but we did not record its digest".
-            v1Snapshot.put("contentHash", "none: no content was stored by this import");
         }
-        if (ingestedBy != null && !ingestedBy.isBlank()) {
-            v1Snapshot.put("ingestedBy", ingestedBy);
+        // Two different questions, so two fields. getUsername() on a delegated context returns
+        // the profile creator — the authority the import ran UNDER — not the actor that ran it,
+        // and scheduled profiles pass no context at all. Collapsing those into one "ingestedBy"
+        // made an absent agent and a delegated one look alike (external review, P1-1(b)).
+        v1Snapshot.put("executedBy", executedBy == null || executedBy.isBlank()
+                ? "service: no authenticated context (scheduled or webhook ingest)" : executedBy);
+        if (onBehalfOf != null && !onBehalfOf.isBlank()) {
+            v1Snapshot.put("onBehalfOf", onBehalfOf);
         }
         for (String key : new String[]{"workspaceId", "channelId", "channelName", "threadId",
                 "messageId", "selectionReason", "evidenceScope",
