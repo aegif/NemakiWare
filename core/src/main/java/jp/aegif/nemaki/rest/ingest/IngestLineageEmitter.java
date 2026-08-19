@@ -64,7 +64,11 @@ public class IngestLineageEmitter {
                 v1Snapshot.put("targetFolderId", targetFolderId);
             }
 
-            boolean emitted = LineageFactEmission.emitSafely(resolveEmitter(repositoryId), () -> {
+            // emitReporting, not emitSafely: the plain form collapses "lineage is off" and
+            // "we lost the evidence" into the same false, and the document is already committed
+            // by the time we get here (external review, P1-1).
+            LineageFactEmission.EmissionOutcome outcome = LineageFactEmission.emitReporting(
+                    resolveEmitter(repositoryId), () -> {
                 String occurredAt = java.time.Instant.now().toString();
                 return new LineageFact(
                         repositoryId,
@@ -84,7 +88,10 @@ public class IngestLineageEmitter {
                                 v1Snapshot,
                                 v1EventId));
             }, "repo=" + repositoryId + " op=" + operationId + " type=" + factProcessType);
-            return emitted ? v1EventId : null;
+            if (outcome.failed()) {
+                lastFailure.set(outcome.failureReason());
+            }
+            return outcome.handedOff() ? v1EventId : null;
         } catch (Exception e) {
             // Recorded, not swallowed. The document is already committed at this point, so a
             // lost event means content exists with no provenance — the exact split P1-1 exists

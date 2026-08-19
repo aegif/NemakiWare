@@ -63,20 +63,62 @@ public final class LineageFactEmission {
      */
     public static boolean emitSafely(LineageEmitter emitter, Supplier<LineageFact> factSupplier,
                                      String whatHappened) {
+        return emitReporting(emitter, factSupplier, whatHappened).handedOff();
+    }
+
+    /**
+     * Why nothing was emitted, when nothing was.
+     *
+     * <p>{@link #emitSafely} collapses six different outcomes into one {@code false}: lineage is
+     * switched off, the emitter could not be resolved, the activity check threw, the fact could
+     * not be built, there was nothing to record, or {@code emit()} threw. Three of those are
+     * failures and three are not, and a caller that only sees {@code false} cannot tell a
+     * deliberate configuration from evidence it just lost.
+     *
+     * <p>That distinction is the whole point for ingest: the document is already committed by
+     * the time this runs, so a swallowed failure leaves content stored with no provenance while
+     * the import still reports success. {@code failureReason} is non-null only for the three
+     * genuine failures — never for "lineage is off" — so a caller can warn without crying wolf
+     * on every deployment that chose not to enable lineage.
+     */
+    public record EmissionOutcome(boolean handedOff, String failureReason) {
+        public boolean failed() {
+            return failureReason != null;
+        }
+
+        static EmissionOutcome ok() {
+            return new EmissionOutcome(true, null);
+        }
+
+        /** Nothing to record, and nothing wrong: lineage off, no emitter, or a null fact. */
+        static EmissionOutcome nothingToEmit() {
+            return new EmissionOutcome(false, null);
+        }
+
+        static EmissionOutcome failure(String stage, RuntimeException e) {
+            return new EmissionOutcome(false,
+                    stage + ": " + e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+    }
+
+    /** {@link #emitSafely} with the reason preserved. Same fail-open behaviour, more truth. */
+    public static EmissionOutcome emitReporting(LineageEmitter emitter,
+                                                Supplier<LineageFact> factSupplier,
+                                                String whatHappened) {
         if (emitter == null) {
-            return false;
+            return EmissionOutcome.nothingToEmit();
         }
         try {
             // isActive() is an interface call into arbitrary emitter code, so it sits inside
             // the boundary like everything else — an activity check that throws must not be
             // able to fail the business response either.
             if (!emitter.isActive()) {
-                return false;
+                return EmissionOutcome.nothingToEmit();
             }
         } catch (RuntimeException e) {
             logger.warn("Lineage activity check failed (business operation unaffected): {} — {}",
                     whatHappened, e.getMessage());
-            return false;
+            return EmissionOutcome.failure("activity check", e);
         }
         LineageFact fact;
         try {
@@ -84,20 +126,20 @@ public final class LineageFactEmission {
         } catch (RuntimeException e) {
             logger.warn("Lineage fact could not be constructed (business operation unaffected):"
                     + " {} — {}", whatHappened, e.getMessage());
-            return false;
+            return EmissionOutcome.failure("fact construction", e);
         }
         if (fact == null) {
-            return false;
+            return EmissionOutcome.nothingToEmit();
         }
         try {
             emitter.emit(fact);
-            return true;
+            return EmissionOutcome.ok();
         } catch (RuntimeException e) {
             // emit() contracts to never throw; this catch is the boundary keeping that contract
             // even against an implementation that breaks it.
             logger.warn("Lineage emission failed (business operation unaffected): {} — {}",
                     whatHappened, e.getMessage());
-            return false;
+            return EmissionOutcome.failure("emit", e);
         }
     }
 }
