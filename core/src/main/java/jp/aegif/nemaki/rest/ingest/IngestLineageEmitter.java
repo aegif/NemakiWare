@@ -169,6 +169,13 @@ public class IngestLineageEmitter {
     /**
      * The event-level snapshot, extracted so it can be asserted on directly.
      *
+     * <p><b>v1 only, and that is a real limitation.</b> This map rides the legacy v1 projection,
+     * which {@code LineageFact} documents as having no v2 home. So the facts added here —
+     * content state, digest, actor, chat context — are carried by v1 events and would be lost
+     * at the v2 write flip. Giving them a typed v2 representation is outstanding work, recorded
+     * in authenticity-roadmap.md under P1-1(b); until then an evidence report must not be built
+     * on this schema as though it were durable (external review).
+     *
      * <p>Testing this through {@code emitLineageEvent} needs a resolved emitter, and an unwired
      * one fails long before the snapshot is built — which is exactly how an earlier test in this
      * area passed while proving nothing. This is the production builder, called by production.

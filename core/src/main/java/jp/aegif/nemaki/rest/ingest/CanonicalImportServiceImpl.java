@@ -703,13 +703,22 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         try {
             Content stored = contentService.getContent(repositoryId, objectId);
             if (stored instanceof Document doc) {
+                // A non-null attachment id proves a REFERENCE exists. Resolving the bytes is
+                // stronger evidence and belongs with the fixity work (P1-2); the wording below
+                // therefore says what was checked rather than asserting the bytes are readable.
                 return doc.getAttachmentNodeId() != null
                         ? IngestLineageEmitter.CapturedContent.storedWithoutDigest(
-                                "content is held from an earlier import; this import supplied no "
-                                        + "bytes and did not read the stored ones back")
+                                "the object references content from an earlier import; this "
+                                        + "import supplied no bytes and did not read the stored "
+                                        + "ones back")
                         : IngestLineageEmitter.CapturedContent.none();
             }
-            return IngestLineageEmitter.CapturedContent.none();
+            // The DAO layer catches its own failures and returns null, so a null read is NOT
+            // evidence of emptiness — and this object was just written successfully, so a null
+            // here is a read problem rather than an absent object (external review).
+            return IngestLineageEmitter.CapturedContent.unknown(stored == null
+                    ? "the stored object could not be read back (the read returned nothing)"
+                    : "the stored object is not a document, so its content state is undetermined");
         } catch (Exception e) {
             logger.debug("Could not read back content state for {}: {}", objectId, e.getMessage());
             return IngestLineageEmitter.CapturedContent.unknown(
@@ -1413,6 +1422,12 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         String existingHash = getAspectProperty(existingDoc, "nemaki:externalIntegration", "nemaki:contentHash");
                         if (computedHash.equals(existingHash)) {
                             contentChanged = false;
+                            // Equality here is with a MUTABLE aspect property, not with the
+                            // bytes. Keeping computedHash would let a stale or edited
+                            // nemaki:contentHash certify content this import never stored —
+                            // and the incoming bytes are discarded either way. Drop it and let
+                            // describeCapturedContent read the object (external review).
+                            computedHash = null;
                             versionLabel = "metadata-only (content unchanged)";
                             logger.info("Dedupe: content unchanged for {} (hash={}), metadata-only", objectId, computedHash);
                         } else {

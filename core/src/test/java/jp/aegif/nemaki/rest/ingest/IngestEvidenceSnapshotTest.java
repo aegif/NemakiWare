@@ -184,6 +184,14 @@ class IngestEvidenceSnapshotTest {
                 service.describeCapturedContent("bedroom", "obj-3", null).state(),
                 "a failed read must not become the positive claim that nothing is stored");
 
+        // The DAO layer catches its own failures and returns NULL rather than throwing, so this
+        // — not the exception above — is what a real read failure looks like. Mapping it to
+        // NONE would assert emptiness over an object that was just written successfully.
+        org.mockito.Mockito.when(contentService.getContent("bedroom", "obj-4")).thenReturn(null);
+        assertEquals(IngestLineageEmitter.CapturedContent.ContentState.UNKNOWN,
+                service.describeCapturedContent("bedroom", "obj-4", null).state(),
+                "a null read is the production failure shape, and it is not evidence of emptiness");
+
         assertEquals(IngestLineageEmitter.CapturedContent.ContentState.STORED,
                 service.describeCapturedContent("bedroom", "obj-3", "abc").state(),
                 "a hash this import computed needs no read-back at all");
