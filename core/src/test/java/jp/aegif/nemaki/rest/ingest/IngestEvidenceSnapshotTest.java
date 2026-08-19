@@ -530,6 +530,61 @@ class IngestEvidenceSnapshotTest {
                         + "of what custody time means");
     }
 
+    @org.junit.jupiter.params.ParameterizedTest(name = "{0}")
+    @org.junit.jupiter.params.provider.MethodSource("custodyFailureShapes")
+    @DisplayName("when custody time cannot be recorded, the caller is told")
+    void chatImportReportsWhyCustodyTimeIsMissing(
+            String shapeName, java.util.function.Supplier<jp.aegif.nemaki.model.Content> shape) {
+        // Each of these returns early. Returning SILENTLY would leave the caller with a success
+        // result and an object whose custody time nobody recorded — and nothing to act on. The
+        // import genuinely succeeded, so this cannot be an error; it has to be a warning, and a
+        // warning nobody asserts is a warning that can be deleted (external review).
+        ChatStore store = new ChatStore(null).failingRead(shape);
+        ExternalIngestResult result = runChatImport(store, true);
+
+        assertNull(store.persisted, "control: nothing could be stamped in the " + shapeName);
+        assertTrue(result.warnings().stream()
+                        .anyMatch(w -> w.contains("nemaki:chatCapturedAt")),
+                "the import reports success, so silence here means the gap is never noticed. "
+                        + "Shape: " + shapeName + ", warnings: " + result.warnings());
+    }
+
+    static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments>
+            custodyFailureShapes() {
+        java.util.function.Supplier<jp.aegif.nemaki.model.Content> unreadable = () -> null;
+        java.util.function.Supplier<jp.aegif.nemaki.model.Content> noAspects = () -> {
+            jp.aegif.nemaki.model.Document doc = new jp.aegif.nemaki.model.Document();
+            doc.setId("chat-1");
+            doc.setType("cmis:document");
+            // Explicitly null, not merely empty: the two take different branches, and the
+            // default was empty, so this shape was silently testing the other one.
+            doc.setAspects(null);
+            return doc;
+        };
+        java.util.function.Supplier<jp.aegif.nemaki.model.Content> wrongAspect = () -> {
+            Aspect other = new Aspect();
+            other.setName("nemaki:externalIntegration");
+            other.setProperties(new ArrayList<>());
+            jp.aegif.nemaki.model.Document doc = new jp.aegif.nemaki.model.Document();
+            doc.setId("chat-1");
+            doc.setType("cmis:document");
+            doc.setAspects(new ArrayList<>(List.of(other)));
+            return doc;
+        };
+        java.util.function.Supplier<jp.aegif.nemaki.model.Content> throwing = () -> {
+            throw new IllegalStateException("couchdb unreachable");
+        };
+        return java.util.stream.Stream.of(
+                org.junit.jupiter.params.provider.Arguments.of(
+                        "object could not be read back", unreadable),
+                org.junit.jupiter.params.provider.Arguments.of(
+                        "object carries no aspects at all", noAspects),
+                org.junit.jupiter.params.provider.Arguments.of(
+                        "chat aspect never took effect", wrongAspect),
+                org.junit.jupiter.params.provider.Arguments.of(
+                        "read threw", throwing));
+    }
+
     @Test
     @DisplayName("a custody time already on the object is never overwritten")
     void chatImportDoesNotOverwriteExistingCustodyTime() {
@@ -553,9 +608,15 @@ class IngestEvidenceSnapshotTest {
      */
     private static final class ChatStore {
         private Object persisted;
+        private java.util.function.Supplier<jp.aegif.nemaki.model.Content> readFailure;
 
         ChatStore(Object initialStamp) {
             this.persisted = initialStamp;
+        }
+
+        ChatStore failingRead(java.util.function.Supplier<jp.aegif.nemaki.model.Content> shape) {
+            this.readFailure = shape;
+            return this;
         }
 
         jp.aegif.nemaki.model.Document read() {
@@ -647,8 +708,13 @@ class IngestEvidenceSnapshotTest {
             org.mockito.Mockito.when(contentDaoService.getChildren("bedroom", "folder-1"))
                     .thenReturn(new ArrayList<>(List.of(existing)));
         }
-        org.mockito.Mockito.when(contentService.getContent("bedroom", "chat-1"))
-                .thenAnswer(inv -> store.read());
+        if (store.readFailure != null) {
+            org.mockito.Mockito.when(contentService.getContent("bedroom", "chat-1"))
+                    .thenAnswer(inv -> store.readFailure.get());
+        } else {
+            org.mockito.Mockito.when(contentService.getContent("bedroom", "chat-1"))
+                    .thenAnswer(inv -> store.read());
+        }
         org.mockito.Mockito.doAnswer(inv -> {
             store.write(inv.getArgument(2));
             return null;

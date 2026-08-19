@@ -1594,11 +1594,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                             // A delegated run's context is SYNTHESIZED from the profile creator,
                             // so getUsername() names the authority, not the actor. Putting it in
                             // both fields said "the creator ran it", which is what the split
-                            // exists to stop. Until an execution-origin identity is threaded
-                            // through, a delegated run records the service as the executor and
-                            // the profile's creator as the authority (external review).
-                            // A delegated profile can be driven manually by an authenticated
-                            // caller OR autonomously by the scheduler, and this code cannot
+                            // exists to stop. A delegated profile can be driven manually by an
+                            // authenticated caller OR autonomously by the scheduler, and this cannot
                             // currently tell which. Naming a service outright would assert an
                             // actor we did not observe, so the executor is recorded as unknown
                             // WITH the reason — an honest gap beats a plausible label
