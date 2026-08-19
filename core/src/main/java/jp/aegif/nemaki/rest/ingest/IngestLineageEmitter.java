@@ -132,19 +132,32 @@ public class IngestLineageEmitter {
      * hashed would be a lie — so it is its own state, with the reason attached
      * (external review, P1-1(b)).
      */
-    public record CapturedContent(boolean stored, String digest, String digestUnavailableReason) {
+    public record CapturedContent(ContentState state, String digest, String reason) {
+
+        /** Whether bytes are held — and the case where we could not find out. */
+        public enum ContentState { STORED, NONE, UNKNOWN }
+
 
         public static CapturedContent hashed(String digest) {
-            return new CapturedContent(true, digest, null);
+            return new CapturedContent(ContentState.STORED, digest, null);
         }
 
         public static CapturedContent none() {
-            return new CapturedContent(false, null, null);
+            return new CapturedContent(ContentState.NONE, null, null);
         }
 
         /** Bytes are present but this import did not produce them and did not read them back. */
         public static CapturedContent storedWithoutDigest(String reason) {
-            return new CapturedContent(true, null, reason);
+            return new CapturedContent(ContentState.STORED, null, reason);
+        }
+
+        /**
+         * We could not find out. Kept distinct from {@link #none()} because "nothing is stored"
+         * is a positive claim: a transient read failure followed by a successful check-in would
+         * otherwise assert emptiness over bytes that are actually there (external review).
+         */
+        public static CapturedContent unknown(String reason) {
+            return new CapturedContent(ContentState.UNKNOWN, null, reason);
         }
     }
 
@@ -153,18 +166,6 @@ public class IngestLineageEmitter {
         lastFailure.remove();
     }
 
-    /**
-     * Why the most recent {@link #emitLineageEvent} on THIS thread produced no event id, or null
-     * when the last call succeeded or simply had nothing to emit.
-     *
-     * <p>Thread-scoped because ingest is request-scoped: a caller asks about the emission it just
-     * performed, and must not see another request's failure. Cleared on every call so a stale
-     * failure cannot be reported against a later, successful import.
-     *
-     * <p>This is a stop-gap with a deliberate boundary: it makes evidence loss VISIBLE, it does
-     * not make capture atomic. Atomicity is the outbox in P1-1(a) — content and evidence
-     * committed together or not at all — and this method disappears when that lands.
-     */
     /**
      * The event-level snapshot, extracted so it can be asserted on directly.
      *
@@ -193,15 +194,18 @@ public class IngestLineageEmitter {
         // Putting prose in the digest field would make a future consumer either fail validation
         // or invent undocumented prefix parsing, and the evidence report's schema requires hex
         // (external review, P1-1(b)).
-        CapturedContent captured = content == null ? CapturedContent.none() : content;
-        v1Snapshot.put("contentStored", String.valueOf(captured.stored()));
+        CapturedContent captured = content == null
+                ? CapturedContent.unknown("the caller supplied no content state") : content;
+        v1Snapshot.put("contentStored", switch (captured.state()) {
+            case STORED -> "true";
+            case NONE -> "false";
+            case UNKNOWN -> "unknown";
+        });
         if (captured.digest() != null && !captured.digest().isBlank()) {
             v1Snapshot.put("contentHash", captured.digest());
             v1Snapshot.put("contentHashAlgorithm", "SHA-256");
-        } else if (captured.stored()) {
-            v1Snapshot.put("contentHashUnavailable", captured.digestUnavailableReason() == null
-                    ? "this import did not read the stored bytes"
-                    : captured.digestUnavailableReason());
+        } else if (captured.reason() != null) {
+            v1Snapshot.put("contentHashUnavailable", captured.reason());
         }
         // Two different questions, so two fields. getUsername() on a delegated context returns
         // the profile creator — the authority the import ran UNDER — not the actor that ran it,
@@ -223,6 +227,18 @@ public class IngestLineageEmitter {
 
         return v1Snapshot;
     }
+    /**
+     * Why the most recent {@link #emitLineageEvent} on THIS thread produced no event id, or null
+     * when the last call succeeded or simply had nothing to emit.
+     *
+     * <p>Thread-scoped because ingest is request-scoped: a caller asks about the emission it just
+     * performed, and must not see another request's failure. Cleared on every call so a stale
+     * failure cannot be reported against a later, successful import.
+     *
+     * <p>This is a stop-gap with a deliberate boundary: it makes evidence loss VISIBLE, it does
+     * not make capture atomic. Atomicity is the outbox in P1-1(a) — content and evidence
+     * committed together or not at all — and this method disappears when that lands.
+     */
     public String lastEmissionFailure() {
         return lastFailure.get();
     }

@@ -680,6 +680,44 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     }
 
     /**
+     * What the repository actually holds for this object, decided by looking rather than by
+     * inferring from which update branch ran.
+     *
+     * <p>Every branch was guessing separately and getting it wrong in a different way:
+     * metadata-only and no-change updates retain their existing attachment but reported
+     * "no content"; a version carried forward reported "no content" too until it reported
+     * "stored" even when the prior version had none. The object itself is the authority, and
+     * this runs once, after all of them (external review, P1-1(b)).
+     *
+     * <p>Three outcomes, and "we could not tell" is deliberately NOT collapsed into "none":
+     * a transient read failure followed by a successful check-in would otherwise assert that
+     * nothing is stored while bytes sit there.
+     */
+    IngestLineageEmitter.CapturedContent describeCapturedContent(
+            String repositoryId, String objectId, String computedHash) {
+        if (computedHash != null) {
+            // This import supplied and hashed the bytes it stored — the strongest case, and no
+            // read-back is needed to know it.
+            return IngestLineageEmitter.CapturedContent.hashed(computedHash);
+        }
+        try {
+            Content stored = contentService.getContent(repositoryId, objectId);
+            if (stored instanceof Document doc) {
+                return doc.getAttachmentNodeId() != null
+                        ? IngestLineageEmitter.CapturedContent.storedWithoutDigest(
+                                "content is held from an earlier import; this import supplied no "
+                                        + "bytes and did not read the stored ones back")
+                        : IngestLineageEmitter.CapturedContent.none();
+            }
+            return IngestLineageEmitter.CapturedContent.none();
+        } catch (Exception e) {
+            logger.debug("Could not read back content state for {}: {}", objectId, e.getMessage());
+            return IngestLineageEmitter.CapturedContent.unknown(
+                    "the stored object could not be read back to determine its content state");
+        }
+    }
+
+    /**
      * Stamp {@code nemaki:chatCapturedAt} with the moment this deployment took custody.
      *
      * <p>Deliberately not taken from the request: the property answers "when did WE observe
@@ -1195,9 +1233,6 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
             ContentStream contentStream = null;
             String computedHash = null;
-            // Set when a check-in with no stream carries the previous version's bytes forward:
-            // content then exists that this import never read and cannot hash (external review).
-            String contentCarriedOverReason = null;
             if (request.getContentStream() != null) {
                 String mimeType = request.getMimeType() != null ? request.getMimeType() : "application/octet-stream";
                 // Buffer content to compute hash for dedupe and persistence
@@ -1361,29 +1396,6 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     String pwcId = objectIdHolder.getValue();
                     boolean isMajor = !"minor".equalsIgnoreCase(profile.getVersioningPolicy());
                     Holder<String> checkinHolder = new Holder<>(pwcId);
-                    if (contentStream == null) {
-                        // "No stream" does not by itself mean bytes were carried: a prior
-                        // version with no attachment copies nothing, and claiming
-                        // contentStored=true for it would misdescribe an empty version just as
-                        // badly as the bug this replaced (external review). Ask the PWC, which
-                        // is what check-in will actually copy from.
-                        try {
-                            Content pwc = contentService.getContent(repositoryId, pwcId);
-                            boolean priorHasContent = pwc instanceof Document doc
-                                    && doc.getAttachmentNodeId() != null;
-                            contentCarriedOverReason = priorHasContent
-                                    ? "the new version carried the previous version's content "
-                                            + "forward; this import supplied no bytes and did "
-                                            + "not read the stored ones back"
-                                    : null;
-                        } catch (Exception e) {
-                            // Unknown is not "stored": say we could not tell, rather than
-                            // asserting either state.
-                            contentCarriedOverReason = null;
-                            logger.debug("Could not determine carried-over content for {}: {}",
-                                    pwcId, e.getMessage());
-                        }
-                    }
                     versioningService.checkIn(callContext, repositoryId, checkinHolder, isMajor,
                             null, contentStream, "Imported from " + connector.getSourceSystem(),
                             null, null, null, null);
@@ -1470,12 +1482,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             String lineageEventId = ingestLineageEmitter != null
                     ? ingestLineageEmitter.emitLineageEvent(repositoryId, objectId, targetFolderId,
                             lineageDocumentName, lineageOperationId, connector, request,
-                            computedHash != null
-                                    ? IngestLineageEmitter.CapturedContent.hashed(computedHash)
-                                    : contentCarriedOverReason != null
-                                            ? IngestLineageEmitter.CapturedContent
-                                                    .storedWithoutDigest(contentCarriedOverReason)
-                                            : IngestLineageEmitter.CapturedContent.none(),
+                            describeCapturedContent(repositoryId, objectId, computedHash),
                             // A delegated run's context is SYNTHESIZED from the profile creator,
                             // so getUsername() names the authority, not the actor. Putting it in
                             // both fields said "the creator ran it", which is what the split

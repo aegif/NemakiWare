@@ -151,6 +151,45 @@ class IngestEvidenceSnapshotTest {
     }
 
     @Test
+    @DisplayName("the production decision reads the object: held bytes are not reported as none")
+    void productionDecisionReadsTheStoredObject() throws Exception {
+        // The builder tests above only prove the snapshot renders what it is given. This drives
+        // the code that CHOOSES, which is where every previous version of this logic was wrong
+        // (external review): metadata-only and no-change updates retain their attachment.
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        jp.aegif.nemaki.businesslogic.ContentService contentService =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.businesslogic.ContentService.class);
+        java.lang.reflect.Field f = CanonicalImportServiceImpl.class
+                .getDeclaredField("contentService");
+        f.setAccessible(true);
+        f.set(service, contentService);
+
+        jp.aegif.nemaki.model.Document withContent = new jp.aegif.nemaki.model.Document();
+        withContent.setAttachmentNodeId("att-1");
+        org.mockito.Mockito.when(contentService.getContent("bedroom", "obj-1"))
+                .thenReturn(withContent);
+        assertEquals(IngestLineageEmitter.CapturedContent.ContentState.STORED,
+                service.describeCapturedContent("bedroom", "obj-1", null).state(),
+                "the object holds bytes from an earlier import; 'none' would misdescribe it");
+
+        jp.aegif.nemaki.model.Document withoutContent = new jp.aegif.nemaki.model.Document();
+        org.mockito.Mockito.when(contentService.getContent("bedroom", "obj-2"))
+                .thenReturn(withoutContent);
+        assertEquals(IngestLineageEmitter.CapturedContent.ContentState.NONE,
+                service.describeCapturedContent("bedroom", "obj-2", null).state());
+
+        org.mockito.Mockito.when(contentService.getContent("bedroom", "obj-3"))
+                .thenThrow(new IllegalStateException("couchdb unreachable"));
+        assertEquals(IngestLineageEmitter.CapturedContent.ContentState.UNKNOWN,
+                service.describeCapturedContent("bedroom", "obj-3", null).state(),
+                "a failed read must not become the positive claim that nothing is stored");
+
+        assertEquals(IngestLineageEmitter.CapturedContent.ContentState.STORED,
+                service.describeCapturedContent("bedroom", "obj-3", "abc").state(),
+                "a hash this import computed needs no read-back at all");
+    }
+
+    @Test
     @DisplayName("the delegated-profile actor is recorded as unknown, not as a plausible service")
     void delegatedActorIsHonestlyUnknown() {
         // The call site cannot tell a manually-driven delegated import from a scheduled one, so
