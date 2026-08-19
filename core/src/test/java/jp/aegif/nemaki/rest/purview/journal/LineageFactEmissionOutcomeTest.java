@@ -203,6 +203,40 @@ class LineageFactEmissionOutcomeTest {
     }
 
     @Test
+    @DisplayName("Direct mode with no reachable sink reports the loss")
+    void directWithNoSinkReportsLoss() {
+        // Direct keeps no journal, so an event with nowhere to go exists nowhere at all.
+        // Deleting DirectLineageEmitter.emitReportingLoss makes this fail.
+        DirectLineageEmitter emitter = new DirectLineageEmitter(
+                org.mockito.Mockito.mock(LineageConfig.class), java.util.List.of());
+
+        String loss = emitter.emitReportingLoss(realFact());
+
+        assertNotNull(loss, "nothing was handed anywhere, so no event id may be reported");
+        assertTrue(loss.contains("no lineage target sink"), loss);
+    }
+
+    @Test
+    @DisplayName("a nested emission does not blind the outer one")
+    void nestedEmissionKeepsTheOuterCollector() {
+        // A collaborator that re-enters emitReportingLoss used to remove the OUTER collector on
+        // its way out, after which the outer emission's own failure was reported as success.
+        DirectLineageEmitter inner = new DirectLineageEmitter(
+                org.mockito.Mockito.mock(LineageConfig.class), java.util.List.of());
+        DirectLineageEmitter outer = new DirectLineageEmitter(
+                org.mockito.Mockito.mock(LineageConfig.class), java.util.List.of()) {
+            @Override
+            public void emit(LineageEvent event) {
+                inner.emitReportingLoss(realFact());   // nested call, completes first
+                super.emit(event);
+            }
+        };
+
+        assertNotNull(outer.emitReportingLoss(realFact()),
+                "the outer emission also had no sink; its loss must survive the nested call");
+    }
+
+    @Test
     @DisplayName("plain emit() leaves no retained state for the next caller")
     void plainEmitRetainsNothing() {
         LineageJournalStore failingStore = org.mockito.Mockito.mock(LineageJournalStore.class);
@@ -212,6 +246,8 @@ class LineageFactEmissionOutcomeTest {
                 failingStore, org.mockito.Mockito.mock(LineageConfig.class));
 
         // A caller that never asked for a loss report must not leave one parked on the thread.
+        // Asserting only that a LATER emitReportingLoss is clean would also pass for an
+        // implementation that clears on entry, so the state itself is what matters here.
         emitter.emit(realFact());
 
         LineageJournalStore okStore = org.mockito.Mockito.mock(LineageJournalStore.class);

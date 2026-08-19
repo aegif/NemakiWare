@@ -63,25 +63,42 @@ public class DirectLineageEmitter implements LineageEmitter {
     }
 
     /**
-     * Report a SYNCHRONOUS enqueue failure. Direct mode publishes to sinks asynchronously, so a
-     * sink that fails later cannot reach this caller without changing the mode's semantics —
-     * and the receipt says as much rather than implying otherwise. But an enqueue that fails
+     * Report a SYNCHRONOUS enqueue failure. Direct mode normally publishes to sinks on a worker thread,
+     * so a sink that fails later cannot reach this caller. Note the queue's CallerRunsPolicy:
+     * under saturation publication runs on THIS thread, and such a failure is still swallowed
+     * inside publishToSink — a narrower gap than "asynchronous" suggests, and stated as such
+     * rather than hidden behind the word. But an enqueue that fails
      * here fails before the caller returns, and that one is reportable (external review, P1-1).
      */
     @Override
     public String emitReportingLoss(LineageFact fact) {
         List<String> losses = new java.util.ArrayList<>(1);
+        // Save and restore rather than set/remove: a collaborator that re-enters this method
+        // synchronously would otherwise remove the OUTER collector on its way out, and the
+        // outer emission's own failure would then be reported as success (external review).
+        List<String> previous = enqueueLoss.get();
         try {
             enqueueLoss.set(losses);
             emit(fact);
         } finally {
-            enqueueLoss.remove();
+            if (previous == null) {
+                enqueueLoss.remove();
+            } else {
+                enqueueLoss.set(previous);
+            }
         }
         return losses.isEmpty() ? null : losses.get(0);
     }
 
     /** Present only while {@link #emitReportingLoss} is on the stack. */
     private static final ThreadLocal<List<String>> enqueueLoss = new ThreadLocal<>();
+
+    private static void noteEnqueueLoss(String reason) {
+        List<String> sink = enqueueLoss.get();
+        if (sink != null && sink.isEmpty()) {
+            sink.add(reason);
+        }
+    }
 
     @Override
     public void emit(LineageEvent event) {
@@ -96,22 +113,29 @@ public class DirectLineageEmitter implements LineageEmitter {
             }
 
             // Dispatch to each available target sink asynchronously
+            int dispatched = 0;
             for (LineageTargetSink sink : sinks) {
                 if (!sink.isAvailable()) {
                     continue;
                 }
                 asyncWorker.submit(() -> publishToSink(sink, event));
+                dispatched++;
+            }
+            if (dispatched == 0) {
+                // Nothing was handed anywhere. Direct mode keeps no journal, so an event with
+                // no reachable sink exists nowhere at all — reporting success for it would hand
+                // the caller an id that points at nothing (external review, P1-1).
+                noteEnqueueLoss(sinks.isEmpty()
+                        ? "no lineage target sink is configured"
+                        : "every configured lineage target sink is unavailable");
             }
         } catch (Exception e) {
             // Fail-open: never block the business operation
             failureCount.incrementAndGet();
             logger.error("Failed to enqueue lineage event (fail-open): eventKey={}, repo={}, error={}",
                     event.eventKey(), event.repositoryId(), e.getMessage(), e);
-            List<String> sink = enqueueLoss.get();
-            if (sink != null && sink.isEmpty()) {
-                sink.add("enqueue failed, dead-lettered: "
-                        + e.getClass().getSimpleName() + ": " + e.getMessage());
-            }
+            noteEnqueueLoss("enqueue failed, dead-lettered: "
+                    + e.getClass().getSimpleName() + ": " + e.getMessage());
 
             // Persist to file-based dead-letter log so the event is not silently lost.
             LineageDeadLetterSink.record(event, e.getMessage());

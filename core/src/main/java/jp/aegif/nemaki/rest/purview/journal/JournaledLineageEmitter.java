@@ -146,11 +146,19 @@ public class JournaledLineageEmitter implements LineageEmitter {
         // ThreadLocal that plain emit() callers never cleared, leaving stale state on pooled
         // threads and making the "read once" comment untrue (external review, P1-1).
         List<String> losses = new java.util.ArrayList<>(1);
+        // Save and restore rather than set/remove: a collaborator that re-enters this method
+        // synchronously would otherwise remove the OUTER collector on its way out, and the
+        // outer emission's own failure would then be reported as success (external review).
+        List<String> previous = lossSink.get();
         try {
             lossSink.set(losses);
             emit(fact);
         } finally {
-            lossSink.remove();
+            if (previous == null) {
+                lossSink.remove();
+            } else {
+                lossSink.set(previous);
+            }
         }
         return losses.isEmpty() ? null : losses.get(0);
     }
