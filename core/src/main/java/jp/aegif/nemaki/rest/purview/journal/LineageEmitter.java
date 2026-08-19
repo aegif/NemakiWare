@@ -283,5 +283,22 @@ public interface LineageEmitter {
      * Returns {@code true} if this emitter will actually process events
      * (i.e. mode is not {@code disabled}).
      */
+    /**
+     * Emit, and say whether the fact was LOST on the way.
+     *
+     * <p>{@link #emit(LineageFact)} is fail-open by design — it must never fail the business
+     * operation — so implementations catch their own failures and return normally. That is
+     * correct for the caller's transaction and wrong for the caller's evidence: a document ends
+     * up stored with no provenance while the import reports success. This method keeps the
+     * fail-open behaviour and adds the missing half, the truth about what happened.
+     *
+     * @return null when the fact was accepted, or a short reason when it was dropped,
+     *         dead-lettered or otherwise not recorded
+     */
+    default String emitReportingLoss(LineageFact fact) {
+        emit(fact);
+        return null;
+    }
+
     boolean isActive();
 }

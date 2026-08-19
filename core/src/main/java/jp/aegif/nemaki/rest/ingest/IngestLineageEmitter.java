@@ -14,6 +14,9 @@ import org.slf4j.LoggerFactory;
  */
 public class IngestLineageEmitter {
 
+    /** See {@link #lastEmissionFailure()}. Thread-scoped: ingest is request-scoped. */
+    private static final ThreadLocal<String> lastFailure = new ThreadLocal<>();
+
     private static final Logger logger = LoggerFactory.getLogger(IngestLineageEmitter.class);
 
     /**
@@ -35,6 +38,7 @@ public class IngestLineageEmitter {
     public String emitLineageEvent(String repositoryId, String objectId, String targetFolderId,
                                    String documentName, String operationId,
                                    ConnectorDefinition connector, ExternalIngestRequest request) {
+        lastFailure.remove();
         try {
             // Two classifications on purpose. The v1 type participates in eventKey and keeps
             // its historical labels — including the CHAT_CONTEXT inversion — while the fact's
@@ -60,7 +64,16 @@ public class IngestLineageEmitter {
                 v1Snapshot.put("targetFolderId", targetFolderId);
             }
 
-            boolean emitted = LineageFactEmission.emitSafely(resolveEmitter(repositoryId), () -> {
+            // emitReporting, not emitSafely: the plain form collapses "lineage is off" and
+            // "we lost the evidence" into the same false, and the document is already committed
+            // by the time we get here (external review, P1-1).
+            EmitterResolution resolution = resolveEmitterReporting(repositoryId);
+            if (resolution.failureReason() != null) {
+                lastFailure.set(resolution.failureReason());
+                return null;
+            }
+            LineageFactEmission.EmissionOutcome outcome = LineageFactEmission.emitReporting(
+                    resolution.emitter(), () -> {
                 String occurredAt = java.time.Instant.now().toString();
                 return new LineageFact(
                         repositoryId,
@@ -80,11 +93,40 @@ public class IngestLineageEmitter {
                                 v1Snapshot,
                                 v1EventId));
             }, "repo=" + repositoryId + " op=" + operationId + " type=" + factProcessType);
-            return emitted ? v1EventId : null;
+            if (outcome.failed()) {
+                lastFailure.set(outcome.failureReason());
+            }
+            return outcome.handedOff() ? v1EventId : null;
         } catch (Exception e) {
+            // Recorded, not swallowed. The document is already committed at this point, so a
+            // lost event means content exists with no provenance — the exact split P1-1 exists
+            // to close. Until the outbox lands, the least we owe the caller is the ability to
+            // tell "nothing to emit" from "we failed to emit", because a null cannot.
             logger.warn("Failed to emit lineage event for {}: {}", objectId, e.getMessage());
+            lastFailure.set(e.getClass().getSimpleName() + ": " + e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Why the most recent {@link #emitLineageEvent} on THIS thread produced no event id, or null
+     * when the last call succeeded or simply had nothing to emit.
+     *
+     * <p>Thread-scoped because ingest is request-scoped: a caller asks about the emission it just
+     * performed, and must not see another request's failure. Cleared on every call so a stale
+     * failure cannot be reported against a later, successful import.
+     *
+     * <p>This is a stop-gap with a deliberate boundary: it makes evidence loss VISIBLE, it does
+     * not make capture atomic. Atomicity is the outbox in P1-1(a) — content and evidence
+     * committed together or not at all — and this method disappears when that lands.
+     */
+    /** Test hook: the retained state is otherwise unobservable, so it cannot be asserted on. */
+    void clearLastEmissionFailureForTest() {
+        lastFailure.remove();
+    }
+
+    public String lastEmissionFailure() {
+        return lastFailure.get();
     }
 
     private java.util.List<String> lineageTargets() {
@@ -99,21 +141,54 @@ public class IngestLineageEmitter {
     }
 
     @SuppressWarnings("unchecked")
-    private LineageEmitter resolveEmitter(String repositoryId) {
+    /**
+     * The emitter, or why there isn't one.
+     *
+     * <p>Returning a bare null conflated five different situations — lineage explicitly
+     * disabled, no Spring context, bean lookup failure, mode resolution failure, emitter
+     * construction failure — of which **only the first is benign**. A caller told "no emitter"
+     * cannot tell a deliberate configuration from a broken one, and the document is already
+     * committed by then (external review, P1-1).
+     */
+    record EmitterResolution(LineageEmitter emitter, String failureReason) {
+        boolean disabled() {
+            return emitter == null && failureReason == null;
+        }
+    }
+
+    private EmitterResolution resolveEmitterReporting(String repositoryId) {
         try {
             var ctx = SpringContext.getApplicationContext();
-            if (ctx == null) return null;
+            if (ctx == null) {
+                // NOT benign here. In the ingest path an absent application context means the
+                // emitter configuration could not be resolved — it does not establish that
+                // lineage was deliberately switched off, and the contract above says only
+                // explicit disablement is benign (external review, P1-1).
+                return new EmitterResolution(null,
+                        "no application context: lineage configuration could not be resolved");
+            }
             LineageConfig config = ctx.getBean(LineageConfig.class);
-            if (config == null) return null;
+            if (config == null) {
+                return new EmitterResolution(null, "lineage configuration bean is absent");
+            }
             LineageMode mode = config.getModeForRepository(repositoryId);
-            if (mode == LineageMode.DISABLED) return null;
+            if (mode == LineageMode.DISABLED) {
+                return new EmitterResolution(null, null);   // the one benign case
+            }
             LineageJournalStore store = ctx.getBean(LineageJournalStore.class);
             java.util.List<LineageTargetSink> sinks = (java.util.List<LineageTargetSink>)
                     (java.util.List<?>) ctx.getBeansOfType(LineageTargetSink.class).values().stream().toList();
-            return config.createEmitterForMode(mode, store, sinks);
+            LineageEmitter emitter = config.createEmitterForMode(mode, store, sinks);
+            if (emitter == null) {
+                return new EmitterResolution(null,
+                        "no emitter could be created for lineage mode " + mode);
+            }
+            return new EmitterResolution(emitter, null);
         } catch (Exception e) {
             logger.warn("Lineage emitter resolution failed (non-fatal): {}", e.getMessage());
-            return null;
+            return new EmitterResolution(null,
+                    "emitter resolution failed: " + e.getClass().getSimpleName()
+                            + ": " + e.getMessage());
         }
     }
 

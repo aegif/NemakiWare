@@ -18,7 +18,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p>{@link #emit(LineageEvent)} performs <b>no external network I/O</b>.
  * It enqueues the event for asynchronous fire-and-forget publish and
- * returns immediately. The caller's thread is never blocked by
+ * returns immediately. The caller's thread is not blocked while the queue has room (CallerRunsPolicy publishes on the caller thread once it is full) by
  * Purview/Atlas/Dataplex latency or outages.
  *
  * <h3>Delivery Guarantee: at-most-once, best-effort</h3>
@@ -35,7 +35,7 @@ import org.slf4j.LoggerFactory;
  * <h3>Failure Policy (fail-open)</h3>
  * <p>This emitter catches all exceptions, logs an error, records to
  * dead-letter, and returns normally. The parent business operation is
- * never blocked.
+ * not blocked while the queue has room (CallerRunsPolicy publishes on the caller thread once it is full).
  */
 public class DirectLineageEmitter implements LineageEmitter {
 
@@ -46,7 +46,7 @@ public class DirectLineageEmitter implements LineageEmitter {
     private final ThreadPoolExecutor asyncWorker;
     private final AtomicLong failureCount = new AtomicLong(0);
 
-    /** Backward-compatible constructor (no sinks — log-only mode). */
+    /** Backward-compatible constructor (no sinks — sinkless (backward compatibility) — retains no provenance). */
     public DirectLineageEmitter(LineageConfig config) {
         this(config, List.of());
     }
@@ -62,6 +62,44 @@ public class DirectLineageEmitter implements LineageEmitter {
                 new ThreadPoolExecutor.CallerRunsPolicy());
     }
 
+    /**
+     * Report a SYNCHRONOUS enqueue failure. Direct mode normally publishes to sinks on a worker thread,
+     * so a sink that fails later cannot reach this caller. Note the queue's CallerRunsPolicy:
+     * under saturation publication runs on THIS thread, and such a failure is still swallowed
+     * inside publishToSink — a narrower gap than "asynchronous" suggests, and stated as such
+     * rather than hidden behind the word. But an enqueue that fails
+     * here fails before the caller returns, and that one is reportable (external review, P1-1).
+     */
+    @Override
+    public String emitReportingLoss(LineageFact fact) {
+        List<String> losses = new java.util.ArrayList<>(1);
+        // Save and restore rather than set/remove: a collaborator that re-enters this method
+        // synchronously would otherwise remove the OUTER collector on its way out, and the
+        // outer emission's own failure would then be reported as success (external review).
+        List<String> previous = enqueueLoss.get();
+        try {
+            enqueueLoss.set(losses);
+            emit(fact);
+        } finally {
+            if (previous == null) {
+                enqueueLoss.remove();
+            } else {
+                enqueueLoss.set(previous);
+            }
+        }
+        return losses.isEmpty() ? null : losses.get(0);
+    }
+
+    /** Present only while {@link #emitReportingLoss} is on the stack. */
+    private static final ThreadLocal<List<String>> enqueueLoss = new ThreadLocal<>();
+
+    private static void noteEnqueueLoss(String reason) {
+        List<String> sink = enqueueLoss.get();
+        if (sink != null && sink.isEmpty()) {
+            sink.add(reason);
+        }
+    }
+
     @Override
     public void emit(LineageEvent event) {
         if (event == null) {
@@ -75,17 +113,29 @@ public class DirectLineageEmitter implements LineageEmitter {
             }
 
             // Dispatch to each available target sink asynchronously
+            int dispatched = 0;
             for (LineageTargetSink sink : sinks) {
                 if (!sink.isAvailable()) {
                     continue;
                 }
                 asyncWorker.submit(() -> publishToSink(sink, event));
+                dispatched++;
+            }
+            if (dispatched == 0) {
+                // Nothing was handed anywhere. Direct mode keeps no journal, so an event with
+                // no reachable sink exists nowhere at all — reporting success for it would hand
+                // the caller an id that points at nothing (external review, P1-1).
+                noteEnqueueLoss(sinks.isEmpty()
+                        ? "no lineage target sink is configured"
+                        : "every configured lineage target sink is unavailable");
             }
         } catch (Exception e) {
             // Fail-open: never block the business operation
             failureCount.incrementAndGet();
             logger.error("Failed to enqueue lineage event (fail-open): eventKey={}, repo={}, error={}",
                     event.eventKey(), event.repositoryId(), e.getMessage(), e);
+            noteEnqueueLoss("enqueue failed, dead-lettered: "
+                    + e.getClass().getSimpleName() + ": " + e.getMessage());
 
             // Persist to file-based dead-letter log so the event is not silently lost.
             LineageDeadLetterSink.record(event, e.getMessage());

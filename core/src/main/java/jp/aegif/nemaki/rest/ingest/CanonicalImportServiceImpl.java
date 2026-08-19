@@ -303,6 +303,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     emlReq.setMetadata(new LinkedHashMap<>(metadata));
 
                     ExternalIngestResult emlResult = execute(callContext, emlReq);
+                    // A child's warnings are the parent's problem: provenance lost on the raw
+                    // .eml would otherwise vanish before the client ever sees it (P1-1).
+                    mergeChildWarnings(warnings, "raw .eml", emlResult);
                     if (emlResult.isSuccess()) {
                         String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
                                 messageObjectId, emlResult.objectId(), "nemaki:hasAttachment");
@@ -337,6 +340,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     attReq.setMetadata(attMeta);
 
                     ExternalIngestResult attResult = execute(callContext, attReq);
+                    mergeChildWarnings(warnings, "attachment '" + att.filename() + "'", attResult);
                     if (attResult.isSuccess() || attResult.skipped()) {
                         attachmentCount++;
                         // Create/update typed relationship
@@ -462,6 +466,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     } else {
                         attResult = execute(callContext, attReq);
                     }
+                    mergeChildWarnings(warnings, "attachment", attResult);
                     if (attResult.isSuccess() || attResult.skipped()) {
                         attachmentCount++;
                         // isSuccess() is true even for a skipped result (it only
@@ -659,6 +664,24 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         return new ExternalIngestResult(request.getRequestId(), result.objectId(), result.versionLabel(),
                 result.isNewVersion(), false, result.skipped(), result.skipReason(),
                 result.lineageEventId(), List.of(), warnings);
+    }
+
+    /**
+     * Carry a child import's warnings up to the parent result.
+     *
+     * <p>A composite import (mail with its raw .eml and attachments) returns ONE result to the
+     * client. A child that stored its content but lost its provenance reports that in its own
+     * warnings — and those were being discarded, so the very failure P1-1 exists to surface
+     * disappeared before anyone could see it (external review).
+     */
+    static void mergeChildWarnings(List<String> parentWarnings, String childLabel,
+                                   ExternalIngestResult childResult) {
+        if (childResult == null || childResult.warnings() == null) {
+            return;
+        }
+        for (String w : childResult.warnings()) {
+            parentWarnings.add(childLabel + ": " + w);
+        }
     }
 
     /**
@@ -1342,6 +1365,19 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             String lineageEventId = ingestLineageEmitter != null
                     ? ingestLineageEmitter.emitLineageEvent(repositoryId, objectId, targetFolderId, lineageDocumentName, lineageOperationId, connector, request)
                     : null;
+            // The document is committed by now. If provenance could not be recorded, the import
+            // is NOT wholly successful: content exists with no evidence of where it came from,
+            // and a caller that sees only success will never come back for it. Say so in the
+            // result rather than leaving it in a log line nobody reads (P1-1).
+            if (lineageEventId == null && ingestLineageEmitter != null) {
+                String emissionFailure = ingestLineageEmitter.lastEmissionFailure();
+                if (emissionFailure != null) {
+                    warnings.add("Provenance was NOT recorded for this document ("
+                            + emissionFailure + "). The content is stored, but no lineage event "
+                            + "exists for it — re-import or record it manually before relying on "
+                            + "this object's evidence.");
+                }
+            }
 
             logger.info("Canonical import completed: requestId={}, objectId={}, profile={}, connector={}",
                     requestId, objectId, profile.getProfileId(), connector.getConnectorId());

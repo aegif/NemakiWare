@@ -1,5 +1,6 @@
 package jp.aegif.nemaki.rest.purview.journal;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.slf4j.Logger;
@@ -134,7 +135,49 @@ public class JournaledLineageEmitter implements LineageEmitter {
         }
     }
 
+    /**
+     * The loss-reporting entry point. Same fail-open behaviour as {@link #emit(LineageFact)} —
+     * nothing new can throw — but a drop or dead-letter is now returned instead of only logged,
+     * so an ingest caller can warn its own caller that provenance was not recorded.
+     */
+    @Override
+    public String emitReportingLoss(LineageFact fact) {
+        // Scoped to THIS emission. An earlier version parked the reason in a static
+        // ThreadLocal that plain emit() callers never cleared, leaving stale state on pooled
+        // threads and making the "read once" comment untrue (external review, P1-1).
+        List<String> losses = new java.util.ArrayList<>(1);
+        // Save and restore rather than set/remove: a collaborator that re-enters this method
+        // synchronously would otherwise remove the OUTER collector on its way out, and the
+        // outer emission's own failure would then be reported as success (external review).
+        List<String> previous = lossSink.get();
+        try {
+            lossSink.set(losses);
+            emit(fact);
+        } finally {
+            if (previous == null) {
+                lossSink.remove();
+            } else {
+                lossSink.set(previous);
+            }
+        }
+        return losses.isEmpty() ? null : losses.get(0);
+    }
+
+    /**
+     * Present only while {@link #emitReportingLoss} is on the stack. A plain {@code emit()} call
+     * leaves it absent, so nothing is retained for callers that never asked.
+     */
+    private static final ThreadLocal<List<String>> lossSink = new ThreadLocal<>();
+
+    private static void noteLoss(String reason) {
+        List<String> sink = lossSink.get();
+        if (sink != null && sink.isEmpty()) {
+            sink.add(reason);
+        }
+    }
+
     private void drop(LineageFact fact, String reason, String detail) {
+        noteLoss("dropped (" + reason + "): " + detail);
         failureCount.incrementAndGet();
         if (metrics != null) {
             metrics.recordEmitDropped(reason);
@@ -172,6 +215,9 @@ public class JournaledLineageEmitter implements LineageEmitter {
             // Persist to file-based dead-letter log so the event is not silently lost.
             // The dead-letter sink does not depend on CouchDB and never throws.
             LineageDeadLetterSink.record(event, e.getMessage());
+            // Dead-lettered is not stored: the journal has no row for this event, so a caller
+            // that reported an event id would be pointing at nothing.
+            noteLoss("dead-lettered: " + e.getClass().getSimpleName() + ": " + e.getMessage());
         }
     }
 
