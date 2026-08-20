@@ -207,6 +207,17 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
 ### 保存形式
 
 - **document type は専用**: `type = "lineage_capture_intent"`
+- **`_id` は試行ごとに一意**にする。**source identity から導出しない** — 同じ source を
+  2 つのリポジトリへ取り込む場合や、再試行で衝突する。**開いた時点で最終的な
+  event id を採番し、その `_id` のまま完成まで通す** (完成時に別文書へ移し替えない)
+- **`_id` の形は既存の慣行に合わせる**: `"lineage:" + eventId` (`CouchLineageEvent:27,39`)。
+  独自の接頭辞を付けると、**完成して `lineage_event` になった後に
+  `journalDocumentId(recordId)` で引けなくなる** — 完成後の行は既存の照会経路から
+  普通に見えなければならない。
+- **`eventKey` の重複判定と衝突させない。** `append` は `eventKeyExists` を先に見る
+  (`CouchLineageJournalStore:515`)。**完成は append ではなく同一文書の update** なので
+  この判定は通らないが、**実装で誤って append 経路に乗せると自分自身を重複とみなす**。
+  完成が update であることをテストで固定する
 - **フィールド名は `captureState`** (`state` は v2 の sequencing state が使用中)
 - **`publishStatusByTarget` は intent の間は持たせない。** 既存 v1 projection view は
   `type == lineage_event && publishStatusByTarget` で選ぶ (`CouchLineageJournalStore:241`) ので、
@@ -241,6 +252,86 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
   - retention view は **`captureState == "UNRESOLVED"` の行だけ**を `unresolvedAtMs` を
     key に emit する。`CAPTURE_INTENT` は**この view に出ない** (だから直接消えない)
   - purge も `_rev` CAS。衝突したら読み直して再判定
+
+## 6.5 リポジトリが増えても壊れないか
+
+`bedroom` 以外のリポジトリが足されたときに矛盾しないことを、実物で確認した。
+
+### 確認した事実
+
+| | |
+|---|---|
+| **モードはリポジトリ単位** | `lineage.mode.override.{repositoryId}` が在る (`LineageConfig:270,286`)。**repo A が `journaled`、repo B が `disabled` はあり得る** |
+| **他の設定は instance-wide** | `lineage.targets` / `lineage.retention.days` / `lineage.purge.cron` 等はリポジトリ単位の override を**持たない** (`LineageConfig:36-40`) |
+| **journal DB は 1 つを共有** | `nemaki_lineage` (`LineageStoreDocuments:36`)。**リポジトリごとの DB ではない**。行が `repositoryId` を持って区別する |
+| **purge は cross-repository** | `purgeOlderThan(Instant)` は `repositoryId` を取らず、`by_occurred_at` view は「cross-repository time ordering for findAll and purge」と自称する (`CouchLineageJournalStore:811,257`) |
+| **sequence は既にリポジトリ単位** | `lineage_seq:{repositoryId}` (`LineageJournalStore:34`) |
+| **admin は全体、一覧は任意の repositoryId フィルタ** | `isAdmin()` は CallContext に対する全体判定 (`LineageJournalController:779`)、`/events` は `repositoryId` を**任意パラメータ**として受ける (`:61`) |
+
+### 設計への帰結
+
+1. **保証はリポジトリ単位で評価する。** §3.2 の「実効モードが `journaled`」は
+   **`getModeForRepository(repositoryId)`** で判定する。**global 設定を読まない。**
+   `disabled` / `direct` のリポジトリへの取込は**今日とまったく同じ挙動**で、
+   **fail-closed にもならない**。
+2. **モードは open 時に 1 回だけ決める。** scope が開いた後に管理者がそのリポジトリを
+   `disabled` に切り替えても、**③ は完成させる**。完成時に読み直すと、
+   **設定変更が、正当に開いた intent を孤児にする**。
+3. **intent 行は `repositoryId` を持つ。view は用途ごとに分ける** — 「全 view の鍵に
+   `repositoryId` を含める」は誤り: 鍵の**先頭**を `repositoryId` にすると絞り込みは
+   効くが**リポジトリ横断の時系列**が引けず、時刻を先頭にすると逆になる。**4 本用意する**
+   (末尾の `intentId` は時刻が衝突したときの決定的な順序のため):
+
+   | 用途 | 述語 | key |
+   |---|---|---|
+   | 横断の未解決一覧 | `type == "lineage_capture_intent" && captureState == "UNRESOLVED"` | `[intentOpenedAtMs, repositoryId, intentId]` |
+   | リポジトリで絞る一覧 | 同上 | `[repositoryId, intentOpenedAtMs, intentId]` |
+   | 期限切れ intent の sweep | `type == "lineage_capture_intent" && captureState == "CAPTURE_INTENT"` | `[intentOpenedAtMs, repositoryId, intentId]` |
+   | `UNRESOLVED` の retention | `type == "lineage_capture_intent" && captureState == "UNRESOLVED"` | `[unresolvedAtMs, repositoryId, intentId]` |
+
+   **鍵が同じでも述語が違う view は別物**である (1 番目と 3 番目)。まとめて 1 本にすると、
+   sweep が未解決の行まで拾うか、一覧が未 sweep の行まで見せるかのどちらかになる。
+
+   一覧は既存の `/events` と同じ形 — **admin 判定は全体、`repositoryId` は任意フィルタ**。
+   リポジトリごとの認可は**この PR で新設しない** (既存の慣行から外れる変更になる)。
+4. **sweeper と retention は、行の側のモードを見ない。** 一度できた intent は、
+   そのリポジトリが今 `disabled` でも、**リポジトリごと消えていても**、
+   横断で処理する。**「今のモード」を見て処理を止めると、`journaled` を切った瞬間に
+   未解決の行が凍りつく**。モードを凍結するのは §6.5-2 の「完成」だけで、
+   sweep と purge は凍結の対象ではない。
+   **leader は instance-wide の役割**を使う — 既存 purge が全体の `purge` role で
+   守られている (`LineagePurgeScheduler:178`) のと同じにする。**リポジトリ単位の
+   leader role は作らない。** CAS があるので二重実行は壊れないが、
+   どちらの構成を意図しているかは決めておく。
+5. **retention は instance-wide。** `lineage.capture-intent.retention.days` は
+   `lineage.retention.days` と同じく override を持たない。**リポジトリごとに違う保持期間は
+   持たせない** — 既存の設定体系がそうなっており、ここだけ変えると一貫性が壊れる。
+6. **リポジトリを増やしても、この機能のための準備作業は要らない。**
+   新設する状態はすべて共有の `nemaki_lineage` にあり、その view は 1 回だけ用意される。
+   **これは範囲を切ったことの副次的な利点**でもある — 撤回した刻印案は
+   **content DB 側に Mango index が要り、新しいリポジトリを作るたびに用意が必要**だった。
+7. **リポジトリが消えても intent は残る。** 共有 DB にあるので、リポジトリ削除では消えない。
+   **それでよい** — 「そのリポジトリへ取り込もうとした」という記録は証拠である。
+   retention の対象にはなる。
+8. **リポジトリのライフサイクルの限定。** リポジトリは `repositories.yml` から初期化時に
+   読まれる (`RepositoryInfoMap`) だけで、**本番の実行時生成・改名の経路は見つからなかった**
+   (`createRepository` はパッチ時のみ)。よって:
+   - 「新しいリポジトリ」とは**構成に足して起動/再読込した後**のもの (AC 22 の意味)
+   - **表示名の変更は lineage の同一性に影響しない** (鍵は `id`)
+   - **`id` の変更は別のリポジトリ**である。過去の行は**古い `id` のまま残る**
+   - **実行時の動的生成は本設計の対象外** — そういう経路が別に在るなら、
+     この前提から見直すこと
+
+### 受入条件 (§8 に追加)
+
+| # | 条件 | 戻したときに落ちること |
+|---|---|---|
+| 19 | **repo A が `journaled`、repo B が `disabled` のとき**、A への取込は intent を作り、**B への取込は intent を作らず挙動も変わらない** | global 設定を読むと落ちる |
+| 20 | scope を開いた後にそのリポジトリを `disabled` にしても、**③ は完成する** | 完成時に読み直すと落ちる |
+| 21 | 2 リポジトリの intent が並存し、**一覧が `repositoryId` で正しく絞れる** | view の鍵から repositoryId を外すと落ちる |
+| 22 | **新しく構成したリポジトリ** (`repositories.yml` に足して再起動/再読込した後) への取込が、追加の準備作業なしで intent を作る | 共有でない場所に状態を置くと落ちる |
+
+---
 
 ## 7. 何を主張しないか
 
@@ -308,3 +399,15 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
 - v2 表現 (P1-1(b)) — intent の snapshot も v1 projection に乗る
 - アーカイブ・export 経路への展開 (P3-3 と一緒に)
 - 実行起源 — `executedBy` は委譲実行で admitted-unknown のまま
+
+---
+
+## 10. レビューの状態
+
+- **9 巡目**で「指定どおり実装可能」の判定 (外部レビュー)。
+- **10 巡目**でオーナー要望のマルチリポジトリ確認を追加し、4 件の指摘を受けて §6.5 を修正。
+- **11 巡目は回せていない** — 外部レビューの残高切れ。代わりに自己レビューを行い 2 件直した
+  (view ごとの述語が未記載だった / `_id` の接頭辞を既存の `"lineage:"` に合わせないと
+  完成後に `journalDocumentId` で引けなくなる)。
+  **自己レビューはこの種の誤りで外部レビューに及ばない実績がある**ので、
+  §6.5 と本節の修正は**未レビュー**として扱うこと。
