@@ -201,18 +201,22 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
 | relationship の作成・削除 | |
 | `replace` の削除 | |
 
-各操作は `MutationOutcome { SUCCEEDED, FAILED, UNKNOWN }` を tracker に**明示的に記録する**。
-**`UNKNOWN` が 1 つでもあれば `CAPTURED` にしない** — 「分からない」を成功に潰さない。
+各操作は `MutationOutcome { SUCCEEDED, FAILED, INDETERMINATE }` を tracker に**明示的に記録する**。
+**`INDETERMINATE` が 1 つでもあれば `CAPTURED` にしない** — 「分からない」を成功に潰さない。
 
 ### 5.0.1 既存の `emitLineageEvent` はどうなるか
 
 **設計がここを書いていなかった** (レビュー指摘)。放置すると実装者がどちらにも倒せる。
 
-**採る**: ③ が**既存の発行を置き換える** (`IngestLineageEvent:258-260` のコメント
-「this method disappears when that lands」が期待している側)。両方残すと、同じ
-`eventKey` の `lineage_event` が 1 操作につき 2 行でき、projection と件数が二重になる。
+> **⚠ この節は §6.10 (B4) で撤回した。** 「③ が既存の発行を置き換える」は採らない —
+> 本番の emitter は write-schema barrier に従って v1 append と spool を使い分けており、
+> ③ が v1 を直接書くと **schema 2 環境で取込イベントの v2 表現を消す**。
+> **intent 行は `lineage_capture_intent` のまま完成し、lineage イベントは従来どおり
+> emitter が書く。** 以下の 2 つの挙動変更も、したがって**起きない**。
 
-**その帰結を隠さない** — 置き換えは 2 つの挙動変更を伴う:
+~~**採る**: ③ が既存の発行を置き換える。両方残すと同じ `eventKey` の行が 2 つできる~~
+
+~~**その帰結を隠さない** — 置き換えは 2 つの挙動変更を伴う:~~ (撤回)
 
 1. **部分的に失敗した取込は、イベントを 1 つも残さなくなる。** ③ は追跡対象の変更が
    すべて成功したときにしか書かないため。**今日は**イベントを出したうえで警告も返している。
@@ -236,6 +240,26 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
 | **行が消えていた** | 取込 (③) が見つける | 遷移ではない。**復活させず、警告として呼び出し元に返す** (§6.8-6) |
 
 **書込はすべて `_rev` CAS。** 衝突したら**読み直して遷移可否を再判定**し、不可なら何もしない。
+
+### 5.2 ① が書くフィールド
+
+**当初これを書いていなかった。** ① の行はクラッシュを生き延びる唯一の証拠であり、
+未解決一覧の中身そのものである。`outputs` はまだ書けない (objectId が無い)。
+
+| 欄 | 内容 |
+|---|---|
+| `_id` | `"lineage:" + eventId` (§保存形式) |
+| `type` | `"lineage_capture_intent"` |
+| `captureState` | `CAPTURE_INTENT` |
+| `intentId` | 試行ごとに一意 |
+| `intentOpenedAtMs` | 開いた時刻 (一覧の並び順の鍵) |
+| `repositoryId` | どのリポジトリか (view の鍵、一覧の絞り込み) |
+| `connectorId` / `sourceSystem` / `sourceObjectId` / `sourceObjectType` | **何を取り込もうとしたか** |
+| `requestId` | 呼び出し元の要求と突き合わせるため |
+| `processType` | archetype 由来 |
+| `executedBy` / `onBehalfOf` | 誰が (§P1-1(b) と同じ規則) |
+
+**未解決一覧はこれを全部出す。** `intentId` と時刻だけでは、運用者は何が起きたか分からない。
 
 ### 保存形式
 
@@ -348,10 +372,10 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
    横断で処理する。**「今のモード」を見て処理を止めると、`journaled` を切った瞬間に
    未解決の行が凍りつく**。モードを凍結するのは §6.5-2 の「完成」だけで、
    sweep と purge は凍結の対象ではない。
-   **leader は instance-wide の役割**を使う — 既存 purge が全体の `purge` role で
-   守られている (`LineagePurgeScheduler:178`) のと同じにする。**リポジトリ単位の
-   leader role は作らない。** CAS があるので二重実行は壊れないが、
-   どちらの構成を意図しているかは決めておく。
+   **leader については §6.8-4 / §6.10 を見ること** — ここに書いていた
+   「既存 purge の `purge` role で守られているのと同じにする」は**撤回した**。
+   leader election は既定で無効で、そのとき `isLeader` は全レプリカに true を返すので、
+   「守られている」は事実ではない。**安全は `_rev` CAS で担保する。**
 5. **retention は instance-wide。** `lineage.capture-intent.retention.days` は
    `lineage.retention.days` と同じく override を持たない。**リポジトリごとに違う保持期間は
    持たせない** — 既存の設定体系がそうなっており、ここだけ変えると一貫性が壊れる。
@@ -626,7 +650,10 @@ leader gate は**有効な構成では本物の gate だが** (`LineagePurgeSche
 
 ## 8. 受入条件 (負のコントロールつき)
 
-**すべて本番の呼び出し経路を通すこと。** 文書の記述だけで確かめる項目
+**取込から到達できる AC は、すべて本番の呼び出し経路を通すこと。**
+**ただし store 層の AC (走査・遅延昇格・終端性・retention の各対照) は取込呼び出しから
+到達しない** — そこは store を直接駆動してよく、**そう明示する** (§6.9-13)。
+「全部を本番経路で」と書くと、守れない約束になる。 文書の記述だけで確かめる項目
 (legacy cloud fallback と orchestrator の relationship が対象外であること、
 `interpares-mapping.md` の該当行が更新されていること) は**受入条件ではなく
 文書レビューの確認項目**として別に持つ — 挙動を伴わないものを AC に混ぜない。 ヘルパ単体のテストは PR #507 で 3 回騙されたので採らない。
@@ -634,12 +661,12 @@ leader gate は**有効な構成では本物の gate だが** (`LineagePurgeSche
 
 | # | 条件 | 戻したときに落ちること |
 |---|---|---|
-| 1 | intent の書込に失敗したら取込は**エラーを返し、その scope では変更を一切行わない** (「文書を作らない」では `replace` の削除や resync の relationship 削除を見逃す)。**「取込全体で変更なし」とは書けない** — 子 scope の intent が失敗する時点で親の文書は既に在り、しかも例外は wrapper の catch で `ExternalIngestResult.error(...)` になって**蓄積した警告を全部捨てる** | fail-closed を fail-open に戻すと落ちる |
-| 2 | ③ が失敗しても行は `CAPTURE_INTENT` として残る (消えない) | 例外で行を消すと落ちる |
+| 1 | intent の書込に失敗したら取込は**例外で失敗し (§6.10-B5)、その scope では変更を一切行わない**。**正のコントロールと対にする** — 同じ要求で intent の書込を成功させたら変更が起きること。「変更が無い」だけでは、無関係な理由 (scope 生成時の NPE、モックの配線漏れ) でも通る (「文書を作らない」では `replace` の削除や resync の relationship 削除を見逃す)。**「取込全体で変更なし」とは書けない** — 子 scope の intent が失敗する時点で親の文書は既に在り、しかも例外は wrapper の catch で `ExternalIngestResult.error(...)` になって**蓄積した警告を全部捨てる** | fail-closed を fail-open に戻すと落ちる |
+| 2 | ③ が失敗しても行は `CAPTURE_INTENT` として残る (消えない) | **判別できない** — 戻すべき実装が「例外で行を消す」という誰も書かないものなので、これは*無い機能*を確かめる回帰テストである |
 | 3 | 期限切れの `CAPTURE_INTENT` が `UNRESOLVED` になる | 走査をやめると落ちる |
 | 4 | **遅れて完走した取込が `UNRESOLVED` から `CAPTURED` へ昇格できる** | 終端扱いすると落ちる |
-| 5 | 走査は `UNRESOLVED` を **`CAPTURED` にしない**し、文書を探しにも行かない | 探索を足すと落ちる |
-| 6 | `CAPTURED` は終端 — 誰も上書きしない | 上書きを許すと落ちる |
+| 5 | 走査は `UNRESOLVED` を **`CAPTURED` にしない**し、文書を探しにも行かない | **後半は判別できない** — 「探しに行かない」は構造 (sweeper が `ContentService` を持たない) でしか示せない。前半は判別できる |
+| 6 | `CAPTURED` は終端 — 誰も上書きしない | **判別できない** — sweep の view 述語が `CAPTURE_INTENT` なので `CAPTURED` 行は構造上 sweeper に見えず、ガードに到達しない。ヘルパを直接叩けば判別できるが、それは §8 が採らない形 |
 | 7 | **追跡対象の変更のいずれかが失敗したら `CAPTURED` にしない。** 次の 3 つを**個別に**含める — ⑴ ACL の適用失敗、⑵ relationship 削除の失敗、⑶ `replace` の削除失敗。**この 3 つは 2026-08-20 に警告文字列を返すようになった** (それ以前は戻り値も警告も無かった) ので、tracker は**その警告を拾えば済む**。ただし**メタデータ失敗だけを注入するテストでは 3 つとも外しても緑になる**ことは変わらないので、個別に注入する | 3 つのどれかの追跡を外すと、その 1 件が落ちる |
 | 8 | **wrapper の後処理での失敗が、root の intent を未完成のままにする** (AC 10b の root 版)。「intent が後処理まで覆う」だけでは、`execute()` 内で完成させても最終状態は `CAPTURED` のままで**緑になる** — 後処理は snapshot を変えない (`captureWindow*` は要求から読み、`chatCapturedAt` は意図的に除外) ので、状態を見るだけの表明では判別できない | 後処理の前に完成させると落ちる |
 | 9 | dedupe skip の**後に wrapper が行った変更が、同じ外側の intent を `CAPTURED` にする** (「内側が終端にしない」だけでは、機能が無くても空虚に緑になる) | 内側で終端にすると落ちる / wrapper の変更を scope の外に出すと落ちる |
@@ -649,13 +676,13 @@ leader gate は**有効な構成では本物の gate だが** (`LineagePurgeSche
 | 12 | sequence は**完成時にだけ**振られる | intent 時に振ると落ちる |
 | 13 | `UNRESOLVED` の一覧が **admin では成功し、非 admin では拒否される**。複数行で **`intentOpenedAtMs` の降順**・**`limit` / `offset`** (既存のパラメータ名は `skip` ではなく `offset`)・**正確な件数** (既存 `/events` は概算しか返さないので、**dead-letter 一覧と同じく `_count` reduce を持つ view** にする)が正しい | 認可を外すと落ちる / 並び順を変えると落ちる / pagination・件数を外すと落ちる (「一覧できる」だけでは、これらを戻しても緑) |
 | 14 | **有限の保持期間を設定したとき**、4 つを対照する: ⑴ `unresolvedAtMs` が期限切れの `UNRESOLVED` は **purge される**、⑵ **`intentOpenedAtMs` は期限切れだが `unresolvedAtMs` は新しい** `UNRESOLVED` は **残る**、⑶ 同じだけ古い `CAPTURE_INTENT` は**直接 purge されず先に sweep される**、⑷ **既定 (無期限) では**期限切れの `UNRESOLVED` も**残る** | ⑵ が無いと起点を `intentOpenedAtMs` に戻しても緑 / ⑷ が無いと既定を有限に戻しても緑 |
-| 15b | **モードを解決できないとき取込が失敗する** (`disabled` として通さない) | 通すと落ちる |
+| 15b | **`LineageJournalStore` が注入されているのに intent を書けなかったとき、取込が失敗する。** store が注入されていない構成 (単体テスト) では**素通りする** | fail-closed の条件を外すと落ちる / store 不在でも失敗させると既存テストが落ちる |
 | 15c | ③ が書いた行に **`occurredAt` があり、retention の対象になる** | 落とすと落ちる |
 | 15d | **消えていた行を完成させようとした取込が、警告を返す** (復活させない) | 黙って捨てると落ちる / 復活させると落ちる |
 | 15e | 新 view は **`_design/lineage` を書き換えない** | 同じ ddoc に足すと落ちる |
 | 15 | `lineage.mode` が `disabled` / `direct` のとき、**intent を書かず、取込の挙動も変わらない** | **これは判別テストではなく安全性の回帰テスト** — 機能ごと戻しても緑になる。そう明記して置く |
 | 16 | **追跡対象の変更をせずに正常終了する経路 (dry run / 各種 skip / 添付ゼロ) で intent が作られず、かつ同じ入口に変更を伴う要求を与えると intent が作られる** — **不在だけを見ると、機能ごと消しても緑**になるので必ず対にする | 入口で開くと前半が落ち、遅延 open をやめると後半が落ちる |
-| 17 | 追跡対象の変更が 1 つでも `FAILED` / `UNKNOWN` なら **`CAPTURED` にしない** | 述語を緩めると落ちる |
+| 17 | 追跡対象の変更が 1 つでも `FAILED` / `INDETERMINATE` なら **`CAPTURED` にしない** | 述語を緩めると落ちる |
 
 ## 9. 段階
 
@@ -670,6 +697,114 @@ leader gate は**有効な構成では本物の gate だが** (`LineagePurgeSche
 - v2 表現 (P1-1(b)) — intent の snapshot も v1 projection に乗る
 - アーカイブ・export 経路への展開 (P3-3 と一緒に)
 - 実行起源 — `executedBy` は委譲実行で admitted-unknown のまま
+
+---
+
+## 6.10 B1〜B5 への決定 (2026-08-20、オーナー判断)
+
+**オーナーは選択肢 1 を選んだ — fail-closed を維持し、その代価を引き受ける。**
+以下はその帰結として決めたこと。**§6.8 と衝突する箇所はこちらが優先する。**
+
+### B5 → ① は例外で返す。代価は DLQ 側で手当てする
+
+**値で返してはいけない。** `ExternalIngestResult.error(...)` は DLQ に載らず
+(`saveToDlq` は `catch (Exception)` からしか呼ばれない)、orchestrator は
+**バッチ末尾でチェックポイントを無条件に前進させる**ので、**その項目は二度と取得されない**
+— `FetchSupport:139-153` が自ら "permanent loss of that item's content" と書いている。
+**証拠を守るために原本を失うのは本末転倒である。**
+
+→ **① の失敗は例外にする。** DLQ に載り、再取得の対象になる。引き受ける代価は 2 つ:
+
+| 代価 | 手当て |
+|---|---|
+| **取込バイトが `nemaki_conf` に暗号化なしで残る** (`IngestJobService` が添付として保存)。ACL も保持方針も無い | **本 PR の範囲に含める** — DLQ ペイロードの保護と保持期限。設計は別紙に切る |
+| `isTransientError` に journal 障害の分類が無く `[permanent]` になって自動再試行されない | **本 PR で分類を足す** — `nemaki_lineage` 起因は transient |
+
+### B1 → fail-closed の適用条件は「journal store の協調者が在ること」
+
+「既存のテストが到達しない位置に置く」は**誤りだった** — `SpringContext` は単体テストで
+null で、変更を起こすテストが 6 クラスあり、しかも**静的なのでクラスの実行順で結果が変わる**。
+
+→ **判定するのは、`LineageJournalStore` の協調者が注入されている場合だけ。**
+注入されていなければ「lineage は配線されていない」として素通りする。
+既存の `ingestLineageEmitter != null` ガードと同じ形で、**テスト専用フラグではない**。
+単体テストは store を配線しないので素通りし、本番は配線されているので効く。
+
+**AC 15b を書き直す** — 「モードを解決できないとき失敗する」ではなく、
+**「store が在るのに intent を書けなかったとき失敗する」**。
+
+### B4 + M1 → ③ は intent 行を自分の型のまま完成させる。イベントは emitter が書く
+
+**当初「③ が行を `lineage_event` にする」としたが、2 つの理由で成立しない**:
+
+1. **write-schema barrier を破る。** 本番の emitter は `Present(2)` と `Indeterminate` では
+   **spool に逃がす** (`JournaledLineageEmitter:77-88`)。javadoc は
+   「**spool が無いことは v1 を書く許可ではない**」と明記している。③ が v1 を直接書くと、
+   schema 2 に移行済みの環境で**取込イベントの v2 表現を消す**
+2. **保持期間が逆転する。** `lineage_event` になれば既存 purge の対象 (既定 90 日、
+   `lineage.targets` 未設定なら即 purge 可) — **未解決は無期限、完成した証拠は 90 日**になる
+
+→ **intent 行は最後まで `lineage_capture_intent` のまま。**
+③ は `captureState = CAPTURED` にして証拠を書き込む。**lineage イベントは従来どおり
+emitter が barrier を通って書く** (v1 append か spool か は barrier が決める)。
+
+**帰結として良くなること**:
+
+- **`eventKey` の重複判定が生き残る** — emitter 経路が変わらないので、
+  §5 が「3 つ目の挙動変更」として価格を付けた重複配送は**起きない**
+- **§5.0.1 の「置き換える」も撤回** — 既存の発行は残る。部分失敗の取込が
+  イベントを 1 つも残さなくなる問題も起きない
+- **`occurredAt` / `schemaVersion` / `sequenceNumber` / `publishStatusByTarget` は
+  ③ の関心事ではなくなる** (§6.8-5 の欄一覧は emitter 側の話に戻る)
+- **`CAPTURED` は本当に終端になる** — `by_occurred_at` に入らないので purge されない。
+  intent 専用の retention (§6) だけが効く
+
+**代わりに残る限界**: 発行そのものは従来どおり fail-open。
+**本 PR が閉じるのは「変更の前に intent がある」までで、「イベントが必ず配送される」ではない**
+(それは既存の outbox の担当)。
+
+### B2 → scope は 4 つのヘルパの中まで渡す
+
+`applySourceMetadata` / `applyNoteMetadata` / `applyArchetypeMetadata` / `applySourceAcl` は
+**書いても書かなくても `null` を返す**ので、外から「変更したか」が分からない。
+
+→ **scope をこの 4 つに明示的に渡し、`ensureIntentOpened()` を実際の
+`contentService.update` の直前で呼ぶ。** 併せて**「何もしなかった」を「成功した」と別に返す**
+(§6.8-2 の `MutationOutcome` を戻り値にする)。これをやらないと規則 1 と AC 16 は両立しない。
+
+### B3 → tracker は警告を読まない。型付きで配線する
+
+**「tracker は警告を拾えばよい」を撤回する。** `mergeChildWarnings` が子の警告を親のリストに
+畳み込むので、警告では**帰属を表せない**。しかも AC 10b⑵ が子に帰属させたい relationship は
+**親のフレームで作られ親のリストに入る**。
+
+→ **`MutationOutcome` を明示的に配線する。** `applyAclSyncPolicy` /
+`removeExistingRelationships` / `replace` の削除は、警告文字列とは**別に** outcome を
+scope に記録する。子の処理で作る relationship は、親のフレームで呼んでいても
+**子の scope に記録する**。
+
+### M2 → 厳格なプリミティブを使う
+
+`readRawStrict` (`:1530`) / `updateStrictCas` (`:1569`) / `createIfAbsent` (`:643`) が
+**既にストアに在る**。寛容な `CloudantClientWrapper.get` / `update` を使う理由は無い。
+
+→ ① は `createIfAbsent`、③ は `updateStrictCas`、読み直しは `readRawStrict`。
+これで §5.1 の「衝突したら読み直して再判定」が実装可能になり、
+**§6.8-6 の「not-found と障害を区別できない」も解消する** — 404 だけが `null` で、
+それ以外は投げる。**警告文言も「消えていた」と「読めなかった」を分けて書ける。**
+
+### そのほか
+
+- **§6.5-4 の leader についての記述は削除する** (§6.8-4 が置き換えると宣言したまま残っていた)
+- **§5.0.1 の「2 つの挙動変更」は撤回** (B4 により置き換えそのものを止めた)
+- **`MutationOutcome` の三値目は `INDETERMINATE`** — §5.0 と AC 17 の `UNKNOWN` を直す
+- **AC 2 / 5 / 6 も判別できない**ので、11 / 15 / 22 と同じく明記する
+- **§8 の「すべて本番の呼び出し経路を通すこと」は §6.9-13 と矛盾** — store 層の AC は
+  そう明示する
+- **AC 1 に正のコントロールを付ける** (「変更が無い」は無関係な理由でも通る)
+- **① のフィールド集合と、未解決一覧の表示項目を決める** — 少なくとも
+  `intentId` / `repositoryId` / `connectorId` / `sourceSystem` / `sourceObjectId` /
+  `requestId` / `intentOpenedAtMs`。これが無いと一覧は時刻の羅列になる
 
 ---
 
