@@ -1,6 +1,9 @@
 # Capture outbox — 取込の証拠を落とさないための境界 (P1-1(a))
 
-**状態**: 設計 (2026-08-20、外部レビュー 1 巡を反映して全面改稿)。実装前。
+**状態**: 設計 (2026-08-20)。実装前。外部レビュー 11 巡 + 独立レビュー 3 体を反映。
+**行番号の注意**: 本書が引く `CanonicalImportServiceImpl` の行番号は、
+2026-08-20 の取込バグ修正 3 件で **80 行以上ずれている**。
+主要なものだけ更新した — 引用が合わないときは**識別子で探すこと**。
 **対象**: 3.4 / P1-1(a)。[`authenticity-roadmap.md`](authenticity-roadmap.md) の P1-1 行。
 
 ---
@@ -10,9 +13,9 @@
 取込は**文書をコミットしてから証拠を発行する**。発行は失敗しても取込は成功として返る。
 
 ```
-CanonicalImportServiceImpl:1560   objectService.createDocument(...)   ← ここで文書は永続化される
+CanonicalImportServiceImpl:1646   objectService.createDocument(...)   ← ここで文書は永続化される
       … (4〜6 回の CouchDB 書込。attachment / version series / content / change event / aspect)
-CanonicalImportServiceImpl:1594   ingestLineageEmitter.emitLineageEvent(...)  ← ここで初めて証拠
+CanonicalImportServiceImpl:1681   ingestLineageEmitter.emitLineageEvent(...)  ← ここで初めて証拠
 ```
 
 間に**トランザクションも中間状態も無い**。PR #506 で「失敗したこと」は呼び出し元に届くように
@@ -58,7 +61,7 @@ FAILED / DISCARDED`、leader gate、`_rev` CAS による claim、dead letter、r
     「成功した」と読んでしまう**
   - 同時取込 — 同じ source identity の複数 intent が同じ 1 件に収束する
   - `replace` — 削除後・再作成前の失敗と、再試行による再作成を区別できない
-  - 逆方向も壊れる — 新規作成 (`:1560`) と source identity の付与 (`:1567`) は**別の書込**で、
+  - 逆方向も壊れる — 新規作成 (`:1646`) と source identity の付与 (`:1653`) は**別の書込**で、
     間で落ちると**文書は在るのに source-id で引けない**
 
 → 判定には**試行に固有の刻印を、その試行が永続化する書込そのものに載せる**しかない。
@@ -92,7 +95,7 @@ FAILED / DISCARDED`、leader gate、`_rev` CAS による claim、dead letter、r
 
 **「取込経路」全部ではない。** `CloudDriveResource` は connector / profile が無い構成では
 canonical pipeline を使わず **legacy fallback で直接 `createDocument` / `checkIn` する**
-(`CloudDriveResource:892,923,993`、fallback は `:1268`)。**この経路は本 PR の保証の外**で、
+(`CloudDriveResource` の legacy 経路。canonical が使えないときの fallback)。**この経路は本 PR の保証の外**で、
 従来どおり `emitSafely` のままである。
 
 **示さないこと**: intent が在ることは、**その取込が完了した証拠ではない**。
@@ -145,7 +148,7 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
 | 2 | **受け渡すのは intent ではなく `CaptureMutationScope`** — wrapper が**未 open のまま**生成し、内部 overload で `execute` に渡す。`execute` は変更の直前で `scope.ensureIntentOpened()` を呼ぶ。**これで「wrapper は `execute` を呼ぶまで変更が起きるか分からない」問題が解ける** (入口で開けば no-op 経路に行き場の無い行ができ、`execute` に所有させれば wrapper の後処理より前に完成してしまう) |
 | 3 | **完成させるのは scope の所有者だけ** — root scope なら公開入口、child scope なら子操作 (規則 4)。内側の `execute` は open するが complete しない |
 | 4 | **子操作 (添付・生 `.eml`) は 1 件ずつ自分の scope を持ち、その所有者は子操作自身**である。`executeNoteAttachment` が例 — 内部 `execute` に自分の scope を渡し、**その後の note メタデータ更新も同じ scope で行い、最後に自分で complete する**。親の scope を渡すと複数添付が 1 つの intent を共有して規則 4 に反し、子の公開 `execute` に自己完了させると**直後のメタデータ更新が intent の外**に出る |
-| 5 | **子の処理の一部として作る relationship は、すべてその子の scope に属する** — mail の添付、生 `.eml`、**note の `files_and_body` で本文とを結ぶ relationship** (`CanonicalImportServiceImpl:475,490`。今は子の `execute()` が返った後に作られる) を含む。失敗の帰属を一意にする: 添付の relationship 作成が失敗したら、失敗するのは**その添付の intent** であって親ではない |
+| 5 | **子の処理の一部として作る relationship は、すべてその子の scope に属する** — mail の添付、生 `.eml`、**note の `files_and_body` で本文とを結ぶ relationship** (`CanonicalImportServiceImpl:493,509`。今は子の `execute()` が返った後に作られる) を含む。失敗の帰属を一意にする: 添付の relationship 作成が失敗したら、失敗するのは**その添付の intent** であって親ではない |
 | 6 | **内側の `execute` が dedupe skip を返しても終端にしない** — wrapper は skip の後も既存文書を更新する |
 | 7 | **orchestrator が入口の後に relationship を作る経路は、本 PR では intent の外に出る。** そう明記し、[`interpares-mapping.md`](interpares-mapping.md) の該当行に残す。閉じるのは刻印と同じ P1-1(e) |
 
