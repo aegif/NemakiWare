@@ -71,7 +71,8 @@ FAILED / DISCARDED`、leader gate、`_rev` CAS による claim、dead letter、r
 ① intent を nemaki_lineage に書く (captureState = CAPTURE_INTENT)。
      **`LineageEmitter` 経由では書かない** — `JournaledLineageEmitter` は契約として
      fail-open (「The parent business operation is never blocked」) で、spool に
-     逃がす経路もある。**`LineageJournalStore` を直接呼び、例外は伝播させる**
+     逃がす経路もある。**`LineageJournalStore` を直接呼び、かつ戻り値を検査する** —
+     例外は当てにならない (§6.8-1b: 書込層はあらゆる例外を握って null を返す)
      ↓ 失敗したら取込を中止する。文書はまだ 1 つも作られていない (fail-closed)
 ② 業務操作を行う (既存のコミット群。ここは変えない)
      ↓
@@ -171,9 +172,10 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
 
 現行の `warnings` / 戻り値だけでは足りない。**失敗を呼び出し元に返さない変更が実在する**:
 
-- `replace` の削除失敗は**ログだけで作成に進む** (`CanonicalImportServiceImpl:1467`)
-- relationship の削除は query / delete の失敗を**内部で飲み、戻り値も無い** (`:1161`)
-- ACL の変更失敗も**内部で飲む** (`:1032`)
+- ~~`replace` の削除失敗は**ログだけで作成に進む**~~ / ~~relationship の削除は失敗を
+  **内部で飲み、戻り値も無い**~~ / ~~ACL の変更失敗も**内部で飲む**~~
+  → **この 3 つは 2026-08-20 に修正した**。いずれも警告文字列を返し、結果に載る。
+  **tracker はその警告を拾えばよい** (新たに配線し直す必要は無い)
 - `ContentService.update` は **null を返さない** — `writeChangeEvent` が無条件に
   `content.getId()` を呼ぶので、null なら**返る前に NPE で落ちる**。
   **「戻り値の null を見る」形で tracker を実装すると永遠に発火しない** (レビュー指摘)。
