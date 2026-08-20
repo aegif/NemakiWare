@@ -1051,11 +1051,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * - none: break ACL inheritance, leaving only admin ACL
      * - copy_from_source: reserved for future adapter integration
      */
-    private void applyAclSyncPolicy(CallContext callContext, String repositoryId,
+    private String applyAclSyncPolicy(CallContext callContext, String repositoryId,
                                      String objectId, String policy,
                                      Content content) {
         if ("inherit_from_folder".equals(policy) || policy.isBlank()) {
-            return; // CMIS default — nothing to do
+            return null; // CMIS default — nothing to do
         }
         if ("none".equals(policy)) {
             // Break inheritance: set the content to not inherit parent ACL
@@ -1069,12 +1069,19 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 jp.aegif.nemaki.util.cache.AclCacheGeneration.advance(repositoryId);
                 logger.info("ACL inheritance disabled for imported document {}", objectId);
             } catch (Exception e) {
+                // Returned, not only logged: this decides who can read the imported document.
+                // A warn line here left the caller believing the policy had been applied
+                // (external review).
                 logger.warn("Failed to break ACL inheritance for {}: {}", objectId, e.getMessage());
+                return "ACL inheritance was NOT broken for " + objectId + " (aclSyncPolicy=none): "
+                        + e.getMessage() + ". The document may be readable by everyone who can "
+                        + "read its folder.";
             }
         }
         if ("copy_from_source".equals(policy)) {
-            applySourceAcl(callContext, repositoryId, objectId, content);
+            return applySourceAcl(callContext, repositoryId, objectId, content);
         }
+        return null;
     }
 
     /**
@@ -1083,7 +1090,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * Example: [{"principalId": "user1", "permissions": ["cmis:read"]}, ...]
      */
     @SuppressWarnings("unchecked")
-    private void applySourceAcl(CallContext callContext, String repositoryId,
+    private String applySourceAcl(CallContext callContext, String repositoryId,
                                  String objectId, Content content) {
         try {
             // Read sourceAcl from the persisted externalContext
@@ -1099,12 +1106,18 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     }
                 }
             }
-            if (contextJson == null) return;
+            if (contextJson == null) {
+                // Nothing recorded to copy FROM. Distinguished from a failure below: this is a
+                // no-op, not a silent loss (external review).
+                return null;
+            }
 
             Map<String, Object> context = JSON_MAPPER.readValue(contextJson,
                     new tools.jackson.core.type.TypeReference<Map<String, Object>>() {});
             Object sourceAclObj = context.get("sourceAcl");
-            if (!(sourceAclObj instanceof List<?> sourceAclList) || sourceAclList.isEmpty()) return;
+            if (!(sourceAclObj instanceof List<?> sourceAclList) || sourceAclList.isEmpty()) {
+                return null; // the source carried no ACL — a no-op, not a failure
+            }
 
             // Break inheritance first
             content.setAclInherited(false);
@@ -1146,8 +1159,15 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 logger.info("Applied {} source ACEs to imported document {}", localAces.size(), objectId);
             }
         } catch (Exception e) {
+            // Returned, not only logged. Under copy_from_source a corrupted
+            // nemaki:externalContext leaves the document on the INHERITED (wider) ACL, and the
+            // caller used to be told the import succeeded (external review).
             logger.warn("Failed to apply source ACL for {}: {}", objectId, e.getMessage());
+            return "Source ACL was NOT applied to " + objectId
+                    + " (aclSyncPolicy=copy_from_source): " + e.getMessage()
+                    + ". The document is left on the inherited ACL, which may be wider.";
         }
+        return null;
     }
 
     /**
@@ -1926,11 +1946,26 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             content.setSecondaryIds(secondaryIds);
             content.setAspects(aspects);
 
-            contentService.update(callContext, repositoryId, content);
+            // Take the RESULT. The DAO wraps the model in a CouchDocument and the new revision
+            // lands on the WRAPPER, so this object keeps the revision it came in with. Passing it
+            // on unchanged made the next update a guaranteed 409 — and that 409 was swallowed, so
+            // aclSyncPolicy=none and copy_from_source never took effect and nothing said so
+            // (external review).
+            Content updated = contentService.update(callContext, repositoryId, content);
+            if (updated == null) {
+                // The DAO returns null for an unrecognised subtype; continuing with the stale
+                // object would put the deterministic conflict straight back.
+                return "Import metadata was written but the updated object could not be read back, "
+                        + "so the ACL sync policy was not applied to " + objectId;
+            }
 
             // Apply ACL sync policy
             if (profile != null && profile.getAclSyncPolicy() != null) {
-                applyAclSyncPolicy(callContext, repositoryId, objectId, profile.getAclSyncPolicy(), content);
+                String aclError = applyAclSyncPolicy(callContext, repositoryId, objectId,
+                        profile.getAclSyncPolicy(), updated);
+                if (aclError != null) {
+                    return aclError;
+                }
             }
 
             // Invalidate cache
