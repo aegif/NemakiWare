@@ -808,6 +808,79 @@ scope に記録する。子の処理で作る relationship は、親のフレー
 
 ---
 
+## 9.6 4 巡目の判定 (2026-08-20) — **fail-closed の受け皿が存在しない**
+
+§6.10 (オーナー判断=選択肢 1) を 2 体が攻撃した結果。**今回は設計の誤りではなく、
+前提としていた仕組みが実在しないことが判明した。**
+
+### B5 — DLQ は §4 が対象と定めた場所に届かない
+
+| | |
+|---|---|
+| `executeMailImport` | `:389` で例外を**値に戻す** → catch-all に届かない → **DLQ 無し** |
+| `executeNoteImport` / `executeBusinessRecordImport` / `executeChatContextImport` | **top-level の try が無い** → orchestrator へ伝播 |
+| 受け側の orchestrator | **Slack / Chatwork / Gmail / IMAP / M365Mail / Salesforce には `saveToDlq` が 1 箇所も無い** (11 中 5 のみ、しかも download 失敗専用) |
+| cloud drive の canonical 経路 | `executionMode="manual"` なので **DLQ から除外される** — §3.2 が保証対象と名指しした経路 |
+
+→ **例外化で DLQ が得られるのは `execute()` の try の中で起きた失敗だけ。**
+§4 は「intent は wrapper の後処理まで覆う」と決めたが、**その後処理こそ受け皿が無い**。
+
+### B5 — 代価の手当ても成立しない
+
+- **`isTransientError` を直しても何も変わらない。** 消費者は**文字列の prefix 連結のみ**で、
+  `IngestDeadLetterRecord` に `retryable` フィールドは無く、
+  **自動再試行はコードベースに 1 箇所も存在しない**。
+  「auto-retry loops を避けるため permanent にする」という既存コメントは**現時点で既に虚偽**
+- **書いていなかった本当の代価**: `saveToDlq` は毎回新しい id を採番するので**再試行が
+  重複排除されない**。circuit breaker は毎サイクル half-open に戻される。
+  purge も TTL も無い。一覧は **200 件で打ち切り**、201 件目以降は見ることも消すこともできない。
+  **journal が落ちている間、5 分ごとに 1 バッチ分ずつ `nemaki_conf` に積み上がる**
+
+### B1 — ガードが本番で不活性 (恐れた向きとは逆)
+
+テスト側の主張も本番配線の主張も**どちらも真だった**。しかし
+**`CouchLineageJournalStore` は無条件の `@Service`** なので、「store が注入されている」は
+**既定の `disabled` を含む 100% のデプロイで真**。`store != null` だけを述語にすると
+**既定構成が intent を書き始め fail-closed し始める** — §7 と AC 15 に真っ向から反する。
+
+正しい述語は **`mode == JOURNALED && store != null`** で、**弁別を担うのは mode 側**。
+そしてその mode には §6.8-1 の無期限キャッシュの穴があり、**運用者に見える信号がゼロ**
+(`DISABLED` は唯一の benign ケースとして警告すら出ない)。
+
+### B4 — 3 つの帰結が未処理 + `CAPTURED` が不滅になった
+
+- **AC 9 が「イベントの無い `CAPTURED`」を要求している。** dedupe skip は発行 (`:1680`) の
+  前に return するので、wrapper の後処理だけが動いた取込は **`CAPTURED` かつ配送物ゼロ**
+- **`eventKey` の重複判定が `CAPTURED` を嘘にする。** `append` は重複時に黙って返り、
+  loss も報告しないので、**N 個の `CAPTURED` に対しイベント 1 個・警告なし**
+- **発行失敗と `CAPTURED` の関係が未定義。** §5.0 の allowlist に発行が無いので、
+  「provenance was NOT recorded」の警告と `CAPTURED` が**同居できる**
+- **`CAPTURED` がどの retention view にも入らない** → **不滅**。
+  B4 が直したはずの逆転が、今度は高頻度側で鏡像になった。**AC 15c は B4 と両立しない**
+
+### B2 / B3 / M2
+
+- **B2 の 4 つは両端が誤り** — `applySourceMetadata` は内部で決めておらず (無条件に書く)、
+  しかも**自分の結果ではなく ACL のエラーを返す**。さらに**5 箇所足りない**
+  (`applyMessageMetadata` / capture window の**ヘルパですらない直書き** / `applyChatCapturedAt` /
+  `createDirectRelationship` / `applyAclSyncPolicy`)。B2 と B3 が**別の ACL ヘルパを指している**
+- **B3 は実装可能だが §4 規則 3・4 が禁じている** — 3 つの対象箇所には
+  `executeNoteAttachment` に相当する子操作が**存在しない**ので、規則が所有者を定めていない
+- **M2 は到達不能** — `createIfAbsent` は **private**、3 つとも `LineageJournalStore` に
+  **無い** (`LineageStoreSupport` は package-private)。**M2 と B1 は現状の書き方では両立しない**
+
+### 結論
+
+**閉じていないのは設計ではなく、周囲の前提である。** fail-closed を安全にするには、
+本 PR の前に少なくとも 3 つの別作業が要る:
+
+1. **公開入口に一貫した失敗経路を作る** — mail は値に戻し、note/record/chat は catch が無く、
+   orchestrator の 6/11 に DLQ が無い
+2. **DLQ を実際の受け皿にする** — 重複排除・purge・200 件超のページング・暗号化
+3. **lineage mode を観測可能にする** — 無期限キャッシュの穴と、`disabled` が無言である問題
+
+---
+
 ## 9.5 独立レビュー 2 体の判定 (2026-08-20) — **現状では実装不可**
 
 視点を分けた 2 体 (§6.8 の事実確認 / 設計全体への攻撃) が、独立に同じ結論に達した。
