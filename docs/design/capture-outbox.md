@@ -250,16 +250,22 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
   管理画面の retry / discard がその行に `publishStatusByTarget` を書き込めてしまう** —
   §5.1 の遷移表に無い遷移である。**`type == "lineage_capture_intent"` を弾くガードを
   4 箇所に足し、AC を付ける** (本 PR の範囲)。
-- **`eventKey` の重複判定と衝突させない。** `append` は `eventKeyExists` を先に見る
-  (`CouchLineageJournalStore:515`)。**完成は append ではなく同一文書の update** なので
-  この判定は通らないが、**実装で誤って append 経路に乗せると自分自身を重複とみなす**。
-  完成が update であることをテストで固定する
+- **`eventKey` の重複判定が効かなくなる — これは 3 つ目の挙動変更である** (§5.0.1 に並べる)。
+  `append` は `eventKeyExists` を先に見て、**同じ論理取込の 2 回目を書かない**
+  (`CouchLineageJournalStore:515`)。完成は append ではなく**同一文書の update** なので
+  この判定を通らず、**試行ごとに intent id が違う以上、同じ `eventKey` の行が複数できる**。
+  再試行・dedupe 再走・冪等記録の書込失敗のたびに、Atlas / Purview へ**重複して配送される**。
+  「append 経路に誤って乗せない」だけの注意ではなく、**設計上の帰結として価格を付ける**
 - **フィールド名は `captureState`** (`state` は v2 の sequencing state が使用中)
 - **`publishStatusByTarget` は intent の間は持たせない。** 既存 v1 projection view は
   `type == lineage_event && publishStatusByTarget` で選ぶ (`CouchLineageJournalStore:241`) ので、
   intent は構造上拾われない
 - ③ の完成時に行を `lineage_event`(v1) として成立させ、`publishStatusByTarget` と
   `sequenceNumber` を付ける。**sequence は完成時にだけ振る**
+- **`publishStatusByTarget` は `lineage.targets` が未設定 (既定) なら空**になり、
+  `CouchLineageEvent` はそれを `null` として書く。結果その行は `by_target_status` に出ず、
+  **即座に purge 対象になる**。既存 `append` と同じ挙動なので回帰ではないが、
+  **書いておく** (発見されるべきではない)
 
 ---
 
@@ -376,25 +382,56 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
 
 ## 6.8 実装前に決めた 6 件 (2026-08-20)
 
-### 1. モードが判定できないときは fail-closed
+### 1. モードは「判定できない」と言えない — 保証に穴があることを書く
 
-`getModeForRepository` は `SpringContext` 経由で解決する。context や bean が無いとき、
-**`journaled でない` として通さない。取込を失敗させる。**
+**当初「判定できないときは fail-closed」と決めたが、成立しないことが分かった。**
+`getModeForRepository` は**構造上「判定できない」を返せない**:
 
-**理由**: 既存の契約がそうなっている — `IngestLineageEmitter:294-303` は
-「context が無いのは良性ではない。**明示的な無効化だけが良性**」と明記している。
-「判定できない」を「無効」に読み替えると、**保証が反証不能になる** (lineage を切った
-リポジトリと、配線を壊した環境が見分けられない)。これは本書が繰り返し避けている
-「分からないを否定に潰す」型そのものである。
+- `readDynamic` → `PropertyManager.readValue` → `ContentDaoServiceImpl.getConfiguration` は
+  **あらゆる例外を握って空の設定を返す** (`:1929-1936`、DEBUG ログのみ)。
+  `nemaki_conf` が落ちていても値が無いだけになり、起動時の既定
+  `@Value("${lineage.mode:disabled}")` に落ちて **`DISABLED`** になる
+- `LineageMode.fromString` は**解釈できない値を DISABLED に潰す** (`:20-23`、WARN のみ)。
+  `lineage.mode.override.{repo}` の打ち間違いは「無効」と同義になる
 
-**影響範囲**: 限定的。context が無い状態の Spring アプリは CMIS 自体を提供できない。
-実際に起こるのは起動途中と配線ミスで、**どちらも取込を止めるのが正しい**。
-エラー文言は原因を名指しする (「lineage の設定を解決できなかったため取込を中止した。
-これは lineage が無効であることを意味しない」)。
+つまり**「設定を読めなかった」と「無効にした」は今日すでに区別できない**。当初の判断は、
+それが起きる場所には効かず、起きない場所 (Spring context が無い) でだけ働く。
 
-**`LineageConfig.getEmitter` は使わない** — あれは **global の `getMode()`** で
-emitter をキャッシュしており、リポジトリ単位の override を無視する
-(§6.5-1 と衝突する)。scope を開くたびに `getModeForRepository` を直接引く。
+**決めたこと**:
+
+1. **区別できる範囲でだけ fail-closed にする** — Spring context や bean が無い場合。
+   これは `IngestLineageEmitter:294-303` が既に「良性ではない」と扱っている範囲と同じ
+2. **区別できない範囲は、保証の穴として書く。** `nemaki_conf` が落ちている間、
+   journaled のはずのリポジトリへの取込は**無効扱いで通り、intent は作られない**。
+   §3.2 の保証はこの間**成立しない**。設定層の握り潰しを直すのは
+   `PropertyManager` / `ContentDaoServiceImpl` の全利用者に影響するため本 PR の範囲外
+3. **テスト環境と衝突させない** — §6.9-14 が指摘するとおり、context が無いのは
+   実運用より**テストで起こる**状態である。fail-closed をここに効かせると取込テストが
+   全部落ちる。よって**判定は scope の生成時ではなく、intent を書く直前**に行い、
+   **既存のテストが到達しない位置**に置く
+
+**`LineageConfig.getEmitter` は使わない** — global の `getMode()` で emitter を
+キャッシュしており、リポジトリ単位の override を無視する。**なお本番の呼び出し元は 0 件**
+なので、これは予防的な注意であって現存のバグではない。
+
+### 1b. ① の書込は「例外」では失敗を検知できない
+
+**これが実装上いちばん重い。** 「`LineageJournalStore` を直接呼び、例外を伝播させる」と
+書いたが、**そうならない**:
+
+- `CloudantClientWrapper.create(Map)` は**あらゆる例外を握って null を返す** (`:376-379`)
+- `update(Map)` も同じ (`:761-764`)
+- そして既存の `append` は**その戻り値すら見ていない** (`CouchLineageJournalStore:533`)
+
+`nemaki_lineage` の 500・認証失敗・`max_document_size` 超過は、**例外にならない**。
+① を素直に書くと **fail-closed が黙って fail-open に戻る**。
+
+**決めたこと**: ① は**戻り値を検査する** — `null` でないこと、`isOk()` が真であることを
+確かめ、そうでなければ取込を失敗させる。**「例外が飛ばなかったから成功」とは扱わない。**
+
+**受入条件の注意**: `ensureDatabase()` は例外を投げる (`:140-143`) ので、
+「DB を落として試す」テストは**修正前でも赤になる**。文書単位の書込失敗
+(500 を返させる等) で試さないと、この判断を固定できない。
 
 ### 2. `MutationOutcome` の三値を改名する
 
@@ -411,31 +448,73 @@ emitter をキャッシュしており、リポジトリ単位の override を�
 
 ### 3. 新しい view は**別の design document** に置く
 
-`_design/lineage` に足すと **view group 全体が再構築**され、その間**既存の view はすべて
-HTTP 200 で `rows:[]` を返す** (本リポジトリで実測済み — `v3.3-release-plan.md:211`)。
-その窓の中では `eventKeyExists` が false を返して**重複イベントを書き**、projection が止まり、
-purge が黙って 0 件になる。**証拠の仕組みを入れるために証拠を壊すことになる。**
+`_design/lineage` に足すと **view group 全体が再構築**される。その間に何が起きるかは
+**測り方によって答えが違い、当初の書き方は主張のすり替えだった**:
+
+- 「HTTP 200 で `rows:[]`」は、`v3.3-release-plan.md:100-121` によれば
+  **map 関数を実行時に throw させて**再現したもので、**再構築の観測ではない**
+- 同じ文書は再構築について**逆の観測**を記録している (`~:178`)
+  —「再構築中の view クエリは**タイムアウトしうる**」
+- コードは後者を支持する。lineage の読み取りは `update` を設定しないので
+  CouchDB 既定の `update=true` が効き、**空を返すのではなくブロックする**
+
+**どちらであっても結論は同じで、根拠を偽らない書き方はこう**:
+再構築中の挙動は空応答かタイムアウトかのどちらかで、**空なら `eventKeyExists` が false を
+返して重複イベントを書き、タイムアウトなら取込が止まる**。**証拠の仕組みを入れるために
+証拠を壊すのは、どちらでも受け入れられない。**
 
 → **`_design/lineage_capture` を新設**し、4 本をそこに置く。CouchDB の再構築は design
-document 単位なので、**既存の view は一切触られない**。
+document 単位なので、**既存の view は一切触られない**。第 2 の ddoc は
+`_design/acl-epoch-indexes` (`AclEpochFinalizationService:604`) という先例があり、
+`nemaki_lineage` の ddoc を列挙している箇所は無いので、readiness gate 等への影響も無い。
+
+**ただし新 ddoc は既存の検査から外れる** — `viewSignatureViolations` は
+`DESIGN_DOC` を名前で読み `VIEWS` に載る view しか見ない (`:1707-1752`)。
+`LineageJournalViewCoverageTest` も同様。**第 2 の署名検査と分類の追加が要る**
+(§6.9-13 の「デプロイ・クエリ・`descending` の反転まで見る」の置き場になる)。
+
+**`deployViews` は view ごとに design document 全体を PUT する** (`:497-504` →
+`createOrUpdateView:2929-2969`、差分検出なし)。4 本なら**4 回の署名変更 = 4 回の構築**を
+順に起こす。1 回の PUT にまとめること。
 
 **新 ddoc 自身の初回構築中は、同じく 200 + 空**になる。その間:
 - sweeper は「期限切れの intent は無い」と判断して**何もしない** — 次の周回で拾う。害はない
-- 運用者向け一覧は**空に見える**。これは「未解決が無い」と区別できないので、
-  **一覧の応答に「索引を構築中」を出せるようにする** (design doc の `update_seq` 比較)
+- 運用者向け一覧は**空に見える**。これは「未解決が無い」と区別できない
+- **`update_seq` の比較では出せない** — この SDK (cloudant 0.10.12) の
+  `DesignDocumentViewIndex` に `update_seq` は無く、`ViewResult.getUpdateSeq()` は
+  クエリが `update=true` である以上**構造上つねに最新**なので「構築中」を示せない。
+  使えるのは `GetDesignDocumentInformationOptions` → `getViewIndex().isUpdaterRunning()` /
+  `getUpdatesPending()`。**`CloudantClientWrapper` に該当のラッパは無いので新設が要る**
+- **一覧は view の失敗を握り潰さないこと。** 既存の `queryRowsFromView` は
+  例外を捕まえて `List.of()` を返す (`:1456-1458`) ので、そのまま使うと
+  **障害が「未解決なし」に化ける** — この節の目的そのものを潰す
 
 ### 4. sweeper は既定で動かす。並行実行は CAS で守る
 
-既存 purge を真似ると**動かない**: `lineage.purge.cron` の既定は空で、
-`LeaderElection:78` は**無効時に常に true を返す**ので leader gate も効かない。
+既存 purge を真似ると**動かない**: `lineage.purge.cron` の既定は空 (`LineageConfig:129-130`)。
+leader gate は**有効な構成では本物の gate だが** (`LineagePurgeScheduler:179-183` が
+`isEnabled()` を先に見る)、`lineage.leader-election.enabled` の既定は false で、
+そのとき `LeaderElection:78` は**全レプリカに true を返す**。
 
-- **sweeper は既定で有効**。`lineage.mode` が `journaled` のリポジトリが 1 つでもあれば動く。
-  **既定で動かないと `UNRESOLVED` が現れず、一覧が常に空になる** — それは
+- **sweeper は既定で有効**。起動条件は **`journalStore.isActive()`** (journal DB が在るか)
+  であって、**モードを見ない**。
+  **`journaled` のリポジトリの有無で判断してはいけない** — 最後の 1 つを `disabled` に
+  切り替えた瞬間に sweeper が止まり、**開いたままの intent が永久に凍る**。
+  それは §6.5-4 が禁じたことそのものである。`isActive()` は既にモード非依存
+  (`CouchLineageJournalStore:1325-1333`)
+- **既定で動かないと `UNRESOLVED` が現れず、一覧が常に空になる** — それは
   「問題が無い」と見分けがつかず、無いより悪い
 - 周期は固定間隔 (既定 5 分)。staleness の閾値 (既定 15 分) とは別の設定
 - **並行実行の安全は `_rev` CAS で担保する。** leader gate は有効な構成でだけ働くので、
-  **それに依存しない**。各遷移は冪等なので、複数レプリカが同時に sweep しても正しい。
-  **「leader が守っている」とは書かない**
+  **それに依存しない**。各遷移は冪等なので、複数レプリカが同時に sweep しても**結果は正しい**。
+  **「leader が守っている」とは書かない** — §6.5-4 の「既存 purge と同じ role で守られている」
+  という記述は**この判断で置き換える** (両立しない)
+- **正しさと費用は別**。既定 (leader election 無効) では N レプリカが同じ batch を
+  5 分ごとに舐め、**N 回の GET と N−1 回の弾かれた PUT** が毎行に出る。
+  **batch に上限を置き、間隔をレプリカごとにずらす**
+- **lineage を使っていない環境でも polling は走る。** 既存 `LineagePurgeScheduler` も
+  60 秒ごとに `isActive()` を呼び、`NotFoundException` をキャッシュしないので probe が
+  永久に続く。**sweeper でそれを二重にしない** — 同じ判定結果を共有する
 
 ### 5. ③ が書く欄を全部書き出す
 
@@ -448,7 +527,8 @@ document 単位なので、**既存の view は一切触られない**。
 |---|---|
 | `type` | `"lineage_event"` に変える (intent の間は `"lineage_capture_intent"`) |
 | `captureState` | `CAPTURED` |
-| **`occurredAt`** | **完成時刻**。既存行と同じ意味に揃える (イベントは完成時に成立する) |
+| **`occurredAt`** | **完成時刻**。既存行と同じ意味に揃える (現行 emitter も emit 時刻を入れる)。**必ず明示的に入れる** — 落とした場合の壊れ方は経路で違い、生の map なら key が `null` になって**永久に purge されず**、`LineageEvent` 経由なら compact constructor が `""` に矯正して (`LineageEvent:105`) **`[""..cutoff]` に入り即座に消える**。受入条件は「在ること」ではなく**値**を見る |
+| **`schemaVersion`** | `1`。`version` (upsert のカウンタ) とは**別の欄**で、落とすと完成行だけ `schemaVersion 0` になる |
 | `intentOpenedAtMs` | そのまま残す — **試行が始まった時刻**は別の事実であり、捨てない |
 | `sequenceNumber` | 完成時に採番 |
 | `publishStatusByTarget` | 各 target を `PENDING` で初期化 |
@@ -460,11 +540,17 @@ document 単位なので、**既存の view は一切触られない**。
 遅れて完走した取込が完成しようとして CAS が 409 → 読み直すと**文書が無い**。
 
 - **復活させない。** 消えた行を書き戻すと、retention の決定を取込が覆すことになる
-- **黙って捨てない。** 取込は**警告を返す** — 「この取込の証拠行は、完了する前に
-  retention に削除された (intent id: …)。保持期間がこの取込の所要時間より短い」。
-  PR #506 で決めた「取り逃しは呼び出し元に届ける」と同じ扱い
-- **既定 (無期限) ではこの競合は起きない。** 起きるのは、運用者が
-  **最長の取込より短い保持期間を設定した場合だけ**である。警告文はそれを名指しする
+- **黙って捨てない。** 取込は**警告を返す**。ただし**原因を断定しない** —
+  読み取り層は `NotFoundException` も他のあらゆる例外も**同じ null** に潰す
+  (`CloudantClientWrapper:2843-2849`)、update も 409 と通信障害を**同じ null** にする
+  (`:761-764`) ので、「消えていた」「一時的に読めなかった」「そもそも書けていなかった」を
+  **区別できない**。文言は観測だけを書く — 「この取込の証拠行 (intent id: …) を
+  完成時に読めなかった。考えられる原因は retention による削除、`nemaki_lineage` の
+  一時的な障害、または ① の書込がそもそも成立していなかったこと」
+- **既定 (無期限) でも起こりうる。** 当初「既定では起きない」と書いたが、
+  上記のとおり一時的な障害でも同じ分岐に入る。**retention のせいだと書かない。**
+- **① が戻り値を検査していることが前提** (§6.8-1b)。検査していなければ、
+  この分岐は「消えた」ではなく「最初から無い」を見ていることになる
 
 ---
 
@@ -543,13 +629,13 @@ document 単位なので、**既存の view は一切触られない**。
 
 | # | 条件 | 戻したときに落ちること |
 |---|---|---|
-| 1 | intent の書込に失敗したら取込は**エラーを返し、変更を一切行わない** (「文書を作らない」では、`replace` の削除や resync の relationship 削除が先に走る経路を見逃す) | fail-closed を fail-open に戻すと落ちる |
+| 1 | intent の書込に失敗したら取込は**エラーを返し、その scope では変更を一切行わない** (「文書を作らない」では `replace` の削除や resync の relationship 削除を見逃す)。**「取込全体で変更なし」とは書けない** — 子 scope の intent が失敗する時点で親の文書は既に在り、しかも例外は wrapper の catch で `ExternalIngestResult.error(...)` になって**蓄積した警告を全部捨てる** | fail-closed を fail-open に戻すと落ちる |
 | 2 | ③ が失敗しても行は `CAPTURE_INTENT` として残る (消えない) | 例外で行を消すと落ちる |
 | 3 | 期限切れの `CAPTURE_INTENT` が `UNRESOLVED` になる | 走査をやめると落ちる |
 | 4 | **遅れて完走した取込が `UNRESOLVED` から `CAPTURED` へ昇格できる** | 終端扱いすると落ちる |
 | 5 | 走査は `UNRESOLVED` を **`CAPTURED` にしない**し、文書を探しにも行かない | 探索を足すと落ちる |
 | 6 | `CAPTURED` は終端 — 誰も上書きしない | 上書きを許すと落ちる |
-| 7 | **追跡対象の変更のいずれかが失敗したら `CAPTURED` にしない。** 次の 3 つを**個別に**含める — ⑴ ACL の適用失敗 (`:1049`)、⑵ relationship 削除の失敗 (`:1181`)、⑶ `replace` の削除失敗 (`:1473`)。**いずれも戻り値も警告文字列も出さない**ので、メタデータ失敗だけを注入するテストでは 3 つとも外しても緑になる | 3 つのどれかの追跡を外すと、その 1 件が落ちる |
+| 7 | **追跡対象の変更のいずれかが失敗したら `CAPTURED` にしない。** 次の 3 つを**個別に**含める — ⑴ ACL の適用失敗、⑵ relationship 削除の失敗、⑶ `replace` の削除失敗。**この 3 つは 2026-08-20 に警告文字列を返すようになった** (それ以前は戻り値も警告も無かった) ので、tracker は**その警告を拾えば済む**。ただし**メタデータ失敗だけを注入するテストでは 3 つとも外しても緑になる**ことは変わらないので、個別に注入する | 3 つのどれかの追跡を外すと、その 1 件が落ちる |
 | 8 | **wrapper の後処理での失敗が、root の intent を未完成のままにする** (AC 10b の root 版)。「intent が後処理まで覆う」だけでは、`execute()` 内で完成させても最終状態は `CAPTURED` のままで**緑になる** — 後処理は snapshot を変えない (`captureWindow*` は要求から読み、`chatCapturedAt` は意図的に除外) ので、状態を見るだけの表明では判別できない | 後処理の前に完成させると落ちる |
 | 9 | dedupe skip の**後に wrapper が行った変更が、同じ外側の intent を `CAPTURED` にする** (「内側が終端にしない」だけでは、機能が無くても空虚に緑になる) | 内側で終端にすると落ちる / wrapper の変更を scope の外に出すと落ちる |
 | 10 | 添付・生 `.eml` は**1 件ずつ独立した intent** を持つ | 親に相乗りさせると落ちる |
