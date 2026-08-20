@@ -223,6 +223,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             }
         }
 
+        // Carried so the catch can report what was already committed and what was recorded
+        // along the way; both used to be discarded (external review).
+        EntryFailureState failureState = new EntryFailureState();
         try {
             // 1. Buffer raw .eml bytes before parsing (for optional original preservation)
             byte[] rawEmlBytes;
@@ -286,9 +289,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             }
 
             String messageObjectId = messageResult.objectId();
+            failureState.committedObjectId = messageObjectId;
 
             // 4. Apply nemaki:messageMetadata secondary type
-            List<String> warnings = new ArrayList<>(messageResult.warnings());
+            List<String> warnings = failureState.warnings;
+            warnings.addAll(messageResult.warnings());
             String metaError = ingestMetadataService.applyMessageMetadata(request.getRepositoryId(), messageObjectId, callContext, parsed, request);
             if (metaError != null) warnings.add(metaError);
 
@@ -386,12 +391,29 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
         } catch (Exception e) {
             logger.error("Mail import failed: {}", e.getMessage(), e);
-            return ExternalIngestResult.error(requestId, "Mail import failed: " + e.getMessage());
+            return failedAfterEntry(request, requestId, failureState.committedObjectId,
+                    failureState.warnings, "Mail import failed: ", e);
         }
     }
 
     @Override
     public ExternalIngestResult executeNoteImport(CallContext callContext, ExternalIngestRequest request) {
+        // This entry point had NO top-level try, so any failure after execute() returned
+        // propagated to the fetch orchestrator — where six of the eleven have no DLQ at all, and
+        // the high-water mark is overtaken by a later success in the same batch. The source item
+        // was then never re-fetched (external review).
+        EntryFailureState failureState = new EntryFailureState();
+        try {
+            return executeNoteImportInternal(callContext, request, failureState);
+        } catch (Exception e) {
+            logger.error("Note import failed: {}", e.getMessage(), e);
+            return failedAfterEntry(request, request.getRequestId(),
+                    failureState.committedObjectId, failureState.warnings, "Note import failed: ", e);
+        }
+    }
+
+    private ExternalIngestResult executeNoteImportInternal(CallContext callContext,
+            ExternalIngestRequest request, EntryFailureState failureState) {
         String requestId = request.getRequestId();
 
         // Set sourceObjectType to "page" if not specified
@@ -407,7 +429,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         boolean importBody = "files_and_body".equals(request.getImportPolicy());
 
         String pageObjectId = null;
-        List<String> warnings = new ArrayList<>();
+        List<String> warnings = failureState.warnings;
         String pageVersionLabel = null;
         boolean pageNewVersion = false;
         boolean pageCreated = false;
@@ -427,6 +449,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             pageLineageEventId = pageResult.lineageEventId();
             pageSkipped = pageResult.skipped();
             pageSkipReason = pageResult.skipReason();
+            failureState.committedObjectId = pageObjectId;
             warnings.addAll(pageResult.warnings());
             // Apply nemaki:noteMetadata to the page document.
             // Not on a dry run: this is a real aspect write (external review). The note path
@@ -583,6 +606,22 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
     @Override
     public ExternalIngestResult executeBusinessRecordImport(CallContext callContext, ExternalIngestRequest request) {
+        // This entry point had NO top-level try, so any failure after execute() returned
+        // propagated to the fetch orchestrator — where six of the eleven have no DLQ at all, and
+        // the high-water mark is overtaken by a later success in the same batch. The source item
+        // was then never re-fetched (external review).
+        EntryFailureState failureState = new EntryFailureState();
+        try {
+            return executeBusinessRecordImportInternal(callContext, request, failureState);
+        } catch (Exception e) {
+            logger.error("Business record import failed: {}", e.getMessage(), e);
+            return failedAfterEntry(request, request.getRequestId(),
+                    failureState.committedObjectId, failureState.warnings, "Business record import failed: ", e);
+        }
+    }
+
+    private ExternalIngestResult executeBusinessRecordImportInternal(CallContext callContext,
+            ExternalIngestRequest request, EntryFailureState failureState) {
         if (request.getSourceObjectType() == null || request.getSourceObjectType().isBlank()) {
             request.setSourceObjectType("record");
         }
@@ -597,7 +636,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // review).
         if (result.dryRun()) return result;
 
-        List<String> warnings = new ArrayList<>(result.warnings());
+        failureState.committedObjectId = result.objectId();
+        List<String> warnings = failureState.warnings;
+        warnings.addAll(result.warnings());
         String[][] brFields = {
                 {"nemaki:recordType", "recordType"}, {"nemaki:recordId", "recordId"},
                 {"nemaki:recordUrl", "recordUrl"}, {"nemaki:recordStatus", "recordStatus"},
@@ -626,6 +667,22 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
     @Override
     public ExternalIngestResult executeChatContextImport(CallContext callContext, ExternalIngestRequest request) {
+        // This entry point had NO top-level try, so any failure after execute() returned
+        // propagated to the fetch orchestrator — where six of the eleven have no DLQ at all, and
+        // the high-water mark is overtaken by a later success in the same batch. The source item
+        // was then never re-fetched (external review).
+        EntryFailureState failureState = new EntryFailureState();
+        try {
+            return executeChatContextImportInternal(callContext, request, failureState);
+        } catch (Exception e) {
+            logger.error("Chat context import failed: {}", e.getMessage(), e);
+            return failedAfterEntry(request, request.getRequestId(),
+                    failureState.committedObjectId, failureState.warnings, "Chat context import failed: ", e);
+        }
+    }
+
+    private ExternalIngestResult executeChatContextImportInternal(CallContext callContext,
+            ExternalIngestRequest request, EntryFailureState failureState) {
         if (request.getSourceObjectType() == null || request.getSourceObjectType().isBlank()) {
             request.setSourceObjectType("message");
         }
@@ -643,7 +700,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // the relationship below are all real (external review).
         if (result.dryRun()) return result;
 
-        List<String> warnings = new ArrayList<>(result.warnings());
+        failureState.committedObjectId = result.objectId();
+        List<String> warnings = failureState.warnings;
+        warnings.addAll(result.warnings());
         String[][] chatFields = {
                 {"nemaki:chatWorkspaceId", "workspaceId"}, {"nemaki:chatChannelId", "channelId"},
                 {"nemaki:chatChannelName", "channelName"}, {"nemaki:chatThreadId", "threadId"},
@@ -1404,6 +1463,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
 
         byte[] bufferedContent = null; // retained for DLQ on failure
+        // Hoisted so the catch below can report what actually happened. Declared inside the try,
+        // they were invisible to it, so every failure said "no object, no warnings" even when a
+        // document had been committed and warnings had accumulated (external review).
+        String committedObjectId = null;
+        List<String> accumulatedWarnings = new ArrayList<>();
         try {
             String objectTypeId = profile.getDefaultObjectTypeId();
             if (objectTypeId == null || objectTypeId.isBlank()) {
@@ -1648,8 +1712,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 createdObject = true;
             }
 
+            committedObjectId = objectId;
+
             // 6. Apply secondary types
-            List<String> warnings = new ArrayList<>(dedupeWarnings);
+            List<String> warnings = accumulatedWarnings;
+            warnings.addAll(dedupeWarnings);
             String metadataError = applySourceMetadata(repositoryId, objectId, callContext, connector, request, profile, computedHash);
             if (metadataError != null) {
                 warnings.add(metadataError);
@@ -1731,7 +1798,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
         } catch (Exception e) {
             logger.error("Canonical import failed: requestId={}, error={}", requestId, e.getMessage(), e);
-            emitAuditEvent(request.getRepositoryId(), null, callContext, false, e.getMessage());
+            // The committed object id, not null. An audit line that says "failed, object unknown"
+            // cannot be matched against the document that is actually sitting in the repository.
+            emitAuditEvent(request.getRepositoryId(), committedObjectId, callContext, false,
+                    e.getMessage());
 
             boolean isTransient = isTransientError(e);
             // Save all non-manual failures to the DLQ so that no item is
@@ -1754,9 +1824,60 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     logger.warn("Failed to save to DLQ — item may be lost: {}", dlqErr.getMessage());
                 }
             }
-            return ExternalIngestResult.error(requestId,
-                    (isTransient ? "[transient] " : "[permanent] ") + e.getMessage());
+            return ExternalIngestResult.error(requestId, committedObjectId,
+                    (isTransient ? "[transient] " : "[permanent] ") + e.getMessage(),
+                    accumulatedWarnings);
         }
+    }
+
+    /**
+     * The failure path for a public entry point, after {@code execute()} has already returned.
+     *
+     * <p>Three things used to be lost here, and each of them is what an operator needs:
+     *
+     * <ul>
+     *   <li><b>The object.</b> These wrappers fail AFTER the document is committed. Reporting
+     *       {@code objectId = null} says the opposite of the truth.</li>
+     *   <li><b>The warnings.</b> Everything accumulated up to the failure — a replaced document
+     *       that could not be deleted, provenance that was not recorded — was discarded by
+     *       {@code error(requestId, message)}.</li>
+     *   <li><b>The DLQ entry.</b> {@code saveToDlq} is only reached from {@code execute()}'s own
+     *       catch. A wrapper that turns the exception into a value never gets there, and the
+     *       fetch orchestrators advance their high-water mark past it, so the source item is
+     *       never re-fetched (external review).</li>
+     * </ul>
+     *
+     * <p>The DLQ entry here is metadata-only: the content stream was consumed by the import that
+     * has already run. That is still worth recording — it names the source item and stays
+     * retryable.
+     */
+    /**
+     * What a failing public entry point must still be able to report.
+     *
+     * <p>Carried rather than held in locals because three of the four entry points are large
+     * enough that wrapping them in a try would mean re-indenting the whole body; the internal
+     * method fills this in as it goes and the thin public wrapper reads it from the catch.
+     */
+    private static final class EntryFailureState {
+        private String committedObjectId;
+        private final List<String> warnings = new ArrayList<>();
+    }
+
+    private ExternalIngestResult failedAfterEntry(ExternalIngestRequest request, String requestId,
+            String committedObjectId, List<String> warnings, String prefix, Exception e) {
+        if (ingestJobService != null && !"manual".equals(request.getExecutionMode())
+                && !request.isDryRun()) {
+            try {
+                ingestJobService.saveToDlq(request,
+                        (isTransientError(e) ? "[transient] " : "[permanent] ") + prefix
+                                + e.getMessage(),
+                        null);
+            } catch (Exception dlqErr) {
+                logger.warn("Failed to save to DLQ — item may be lost: {}", dlqErr.getMessage());
+            }
+        }
+        return ExternalIngestResult.error(requestId, committedObjectId, prefix + e.getMessage(),
+                warnings);
     }
 
     /**

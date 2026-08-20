@@ -71,9 +71,10 @@ public class ImapFetchOrchestrator implements FetchOrchestrator {
 
             for (MessageSummary msg : oldestFirst) {
                 fetchSupport.throttle(throttleMs);
+                ExternalIngestRequest req = null;
                 try {
                     InputStream eml = imap.fetchMessage(mailboxFolder, msg.uid());
-                    ExternalIngestRequest req = new ExternalIngestRequest();
+                    req = new ExternalIngestRequest();
                     req.setProfileId(profile.getProfileId());
                     req.setConnectorId(connector.getConnectorId());
                     req.setRepositoryId(profile.getRepositoryId());
@@ -112,6 +113,14 @@ public class ImapFetchOrchestrator implements FetchOrchestrator {
                     }
                 } catch (Exception e) {
                     FetchSupport.addError(errors, "Message UID " + msg.uid() + ": " + e.getMessage());
+                    // DLQ before the checkpoint can move past this item: the high-water
+                    // mark is overtaken by a LATER success in the same batch, and this
+                    // orchestrator had no DLQ at all, so the item was never re-fetched
+                    // (external review).
+                    if (req != null) {
+                        fetchSupport.saveToDlq(req,
+                                "Message UID " + msg.uid() + ": " + e.getMessage(), null);
+                    }
                 }
             }
 

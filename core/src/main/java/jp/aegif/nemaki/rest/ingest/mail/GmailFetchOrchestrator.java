@@ -54,9 +54,10 @@ public class GmailFetchOrchestrator implements FetchOrchestrator {
 
             for (var msg : messages) {
                 fetchSupport.throttle(throttleMs);
+                ExternalIngestRequest req = null;
                 try {
                     InputStream eml = gmail.fetchRawMessage(msg.id());
-                    ExternalIngestRequest req = fetchSupport.buildMailRequest(profile, connector, msg.id(), msg.subject(), eml, "inbox");
+                    req = fetchSupport.buildMailRequest(profile, connector, msg.id(), msg.subject(), eml, "inbox");
                     req.getMetadata().put("internetMessageId", msg.id());
                     req.getMetadata().put("gmailThreadId", msg.threadId());
 
@@ -73,6 +74,14 @@ public class GmailFetchOrchestrator implements FetchOrchestrator {
                     }
                 } catch (Exception e) {
                     FetchSupport.addError(errors, "Gmail " + msg.id() + ": " + e.getMessage());
+                    // DLQ before the checkpoint can move past this item: the high-water
+                    // mark is overtaken by a LATER success in the same batch, and this
+                    // orchestrator had no DLQ at all, so the item was never re-fetched
+                    // (external review). A null request means the fetch itself failed
+                    // before one could be built — there is nothing to retry from here.
+                    if (req != null) {
+                        fetchSupport.saveToDlq(req, "Gmail " + msg.id() + ": " + e.getMessage(), null);
+                    }
                 }
             }
             if (highWaterEpochMs > 0) {

@@ -47,9 +47,10 @@ public class M365MailFetchOrchestrator implements FetchOrchestrator {
 
             for (var msg : messages) {
                 fetchSupport.throttle(throttleMs);
+                ExternalIngestRequest req = null;
                 try {
                     InputStream eml = m365.fetchMimeMessage(msg.id());
-                    ExternalIngestRequest req = fetchSupport.buildMailRequest(profile, connector, msg.id(), msg.subject(), eml, folderId);
+                    req = fetchSupport.buildMailRequest(profile, connector, msg.id(), msg.subject(), eml, folderId);
                     if (msg.internetMessageId() != null) req.getMetadata().put("internetMessageId", msg.internetMessageId());
 
                     ExternalIngestResult result = canonicalImportService.executeMailImport(callContext, req);
@@ -68,6 +69,14 @@ public class M365MailFetchOrchestrator implements FetchOrchestrator {
                     }
                 } catch (Exception e) {
                     FetchSupport.addError(errors, "M365 " + msg.id() + ": " + e.getMessage());
+                    // DLQ before the checkpoint can move past this item: the high-water
+                    // mark is overtaken by a LATER success in the same batch, and this
+                    // orchestrator had no DLQ at all, so the item was never re-fetched
+                    // (external review). A null request means the fetch itself failed
+                    // before one could be built — there is nothing to retry from here.
+                    if (req != null) {
+                        fetchSupport.saveToDlq(req, "M365 " + msg.id() + ": " + e.getMessage(), null);
+                    }
                 }
             }
             if (highWaterDateTime != null && !highWaterDateTime.equals(lastDateTime)) {

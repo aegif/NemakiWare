@@ -49,12 +49,13 @@ public class SlackFetchOrchestrator implements FetchOrchestrator {
 
             for (SlackMessage msg : messages) {
                 fetchSupport.throttle(throttleMs);
+                ExternalIngestRequest msgReq = null;
                 try {
                     String messageText = msg.text() != null ? msg.text() : "";
                     String parentObjectId = null;
                     boolean messageOk = true;
                     if (importBody) {
-                        ExternalIngestRequest msgReq = new ExternalIngestRequest();
+                        msgReq = new ExternalIngestRequest();
                         msgReq.setProfileId(profile.getProfileId());
                         msgReq.setConnectorId(connector.getConnectorId());
                         msgReq.setRepositoryId(profile.getRepositoryId());
@@ -139,6 +140,14 @@ public class SlackFetchOrchestrator implements FetchOrchestrator {
                     }
                 } catch (Exception e) {
                     FetchSupport.addError(errors, "Slack msg " + msg.ts() + ": " + e.getMessage());
+                    // DLQ before the checkpoint can move past this item: the high-water
+                    // mark is overtaken by a LATER success in the same batch, and this
+                    // orchestrator had no DLQ at all, so the item was never re-fetched
+                    // (external review).
+                    if (msgReq != null) {
+                        fetchSupport.saveToDlq(msgReq,
+                                "Slack msg " + msg.ts() + ": " + e.getMessage(), null);
+                    }
                 }
             }
             if (highWaterTs != null && !highWaterTs.equals(lastTs)) {

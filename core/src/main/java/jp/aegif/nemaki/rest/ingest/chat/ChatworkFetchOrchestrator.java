@@ -83,9 +83,10 @@ public class ChatworkFetchOrchestrator implements FetchOrchestrator {
                 try { msgIdNum = Long.parseLong(msg.messageId()); } catch (NumberFormatException e) {}
                 if (lastMsgIdNum > 0 && msgIdNum <= lastMsgIdNum) { skipped++; continue; }
 
+                ExternalIngestRequest msgReq = null;
                 try {
                     String messageText = msg.body() != null ? msg.body() : "";
-                    ExternalIngestRequest msgReq = new ExternalIngestRequest();
+                    msgReq = new ExternalIngestRequest();
                     msgReq.setProfileId(profile.getProfileId());
                     msgReq.setConnectorId(connector.getConnectorId());
                     msgReq.setRepositoryId(profile.getRepositoryId());
@@ -113,6 +114,14 @@ public class ChatworkFetchOrchestrator implements FetchOrchestrator {
                     else FetchSupport.addError(errors, "Chatwork msg " + msg.messageId() + ": " + String.join(", ", msgResult.errors()));
                 } catch (Exception e) {
                     FetchSupport.addError(errors, "Chatwork msg " + msg.messageId() + ": " + e.getMessage());
+                    // DLQ before the checkpoint can move past this item: the high-water
+                    // mark is overtaken by a LATER success in the same batch, and this
+                    // orchestrator had no DLQ at all, so the item was never re-fetched
+                    // (external review).
+                    if (msgReq != null) {
+                        fetchSupport.saveToDlq(msgReq,
+                                "Chatwork msg " + msg.messageId() + ": " + e.getMessage(), null);
+                    }
                 }
             }
 

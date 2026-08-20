@@ -76,4 +76,23 @@ public record ExternalIngestResult(
         return new ExternalIngestResult(requestId, null, null, false,
                 false, false, null, null, List.of(errorMessage), List.of());
     }
+
+    /**
+     * An error that still reports what the failed attempt had already done.
+     *
+     * <p>The two-argument form reports {@code objectId = null} and drops every accumulated
+     * warning. On a path that fails AFTER committing a document, that tells the caller the
+     * opposite of the truth: the object exists, and the warnings recorded along the way
+     * (a replaced document that could not be deleted, provenance that was not recorded,
+     * an ACL that was not applied) are exactly what an operator needs to clean up.
+     *
+     * @param objectId the object that WAS committed before the failure, or null if none was
+     * @param warnings everything recorded before the failure; never discarded
+     */
+    public static ExternalIngestResult error(String requestId, String objectId,
+                                             String errorMessage, List<String> warnings) {
+        return new ExternalIngestResult(requestId, objectId, null, false,
+                false, false, null, null, List.of(errorMessage),
+                warnings == null ? List.of() : List.copyOf(warnings));
+    }
 }
