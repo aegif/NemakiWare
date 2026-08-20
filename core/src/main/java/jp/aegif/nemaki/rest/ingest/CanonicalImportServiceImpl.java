@@ -1205,10 +1205,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * Remove all existing CMIS relationships where the given object is the source.
      * Used by replace_relationships_on_resync policy.
      */
-    private void removeExistingRelationships(CallContext callContext, String repositoryId, String objectId) {
-        if (relationshipService == null) return;
+    private String removeExistingRelationships(CallContext callContext, String repositoryId, String objectId) {
+        if (relationshipService == null) return null;
         try {
             int totalRemoved = 0;
+            int totalFailed = 0;
             java.math.BigInteger batchSize = java.math.BigInteger.valueOf(100);
             java.math.BigInteger skipCount = java.math.BigInteger.ZERO;
             // Paginate to handle documents with many relationships
@@ -1219,23 +1220,43 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         null, null, false, batchSize, skipCount, null);
                 if (rels == null || rels.getObjects() == null || rels.getObjects().isEmpty()) break;
 
+                int removedThisPass = 0;
                 for (var relData : rels.getObjects()) {
                     try {
                         objectService.deleteObject(callContext, repositoryId,
                                 relData.getId(), true, null);
                         totalRemoved++;
+                        removedThisPass++;
                     } catch (Exception e) {
+                        totalFailed++;
                         logger.warn("Failed to remove relationship {}: {}", relData.getId(), e.getMessage());
                     }
                 }
-                // After deleting, re-fetch from start (indices shift after deletion)
+                // After deleting, re-fetch from start (indices shift after deletion) — which is
+                // why skipCount stays at zero. That makes progress depend entirely on deletions
+                // succeeding: with every delete failing, the same page came back for ever and
+                // hasMoreItems() stayed true, so this looped without end while holding up the
+                // import (external review). A pass that removed nothing cannot make progress.
+                if (removedThisPass == 0) {
+                    break;
+                }
                 if (!Boolean.TRUE.equals(rels.hasMoreItems())) break;
             }
             if (totalRemoved > 0) {
                 logger.info("Resync: removed {} relationships from {}", totalRemoved, objectId);
             }
+            if (totalFailed > 0) {
+                // Returned, not only logged: replace_relationships_on_resync exists to leave the
+                // object with ONLY the incoming relationships. Surviving edges mean the object
+                // is not in the state the policy promises.
+                return "Resync did not remove " + totalFailed + " existing relationship(s) from "
+                        + objectId + "; stale edges remain alongside the re-imported ones";
+            }
+            return null;
         } catch (Exception e) {
             logger.warn("Failed to query relationships for {}: {}", objectId, e.getMessage());
+            return "Existing relationships of " + objectId + " could not be listed, so the resync "
+                    + "policy could not be applied: " + e.getMessage();
         }
     }
 
@@ -1510,6 +1531,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             boolean isNewVersion = false;
             boolean createdObject = false;
             String versionLabel = "1.0";
+            // Dedupe-stage problems have to survive until the result is built, further down.
+            // Two of them used to reach only the log (external review).
+            List<String> dedupeWarnings = new ArrayList<>();
 
             if (existingDoc != null && existingDoc.isDocument()) {
                 // Existing document found — apply dedupe policy
@@ -1522,7 +1546,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         objectService.deleteObject(callContext, repositoryId, existingDoc.getId(), true, null);
                         logger.info("Dedupe replace: deleted existing document {}", existingDoc.getId());
                     } catch (Exception e) {
+                        // Returned, not only logged. The code falls through and creates the
+                        // replacement regardless, so a failed delete leaves BOTH documents —
+                        // and the caller was told the import succeeded (external review).
                         logger.warn("Dedupe replace: failed to delete {}: {}", existingDoc.getId(), e.getMessage());
+                        dedupeWarnings.add("The document being replaced (" + existingDoc.getId()
+                                + ") could not be deleted: " + e.getMessage()
+                                + ". A replacement was created, so both now exist.");
                     }
                     existingDoc = null; // Fall through to create new
                 } else if ("create_new_if_parent_context_changed".equals(dedupePolicy)) {
@@ -1533,7 +1563,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     }
                 } else if ("replace_relationships_on_resync".equals(dedupePolicy) && existingDoc != null) {
                     // Delete existing relationships before re-import
-                    removeExistingRelationships(callContext, repositoryId, existingDoc.getId());
+                    String relRemovalError = removeExistingRelationships(callContext, repositoryId,
+                            existingDoc.getId());
+                    if (relRemovalError != null) {
+                        dedupeWarnings.add(relRemovalError);
+                    }
                 }
 
                 // Other policies (including "create_new_version"): no special dedupe action — falls through
@@ -1615,7 +1649,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             }
 
             // 6. Apply secondary types
-            List<String> warnings = new ArrayList<>();
+            List<String> warnings = new ArrayList<>(dedupeWarnings);
             String metadataError = applySourceMetadata(repositoryId, objectId, callContext, connector, request, profile, computedHash);
             if (metadataError != null) {
                 warnings.add(metadataError);
