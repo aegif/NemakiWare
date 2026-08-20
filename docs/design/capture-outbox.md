@@ -68,7 +68,10 @@ FAILED / DISCARDED`、leader gate、`_rev` CAS による claim、dead letter、r
 ### 3.2 3 つのステップ
 
 ```
-① intent を nemaki_lineage に書く (captureState = CAPTURE_INTENT)
+① intent を nemaki_lineage に書く (captureState = CAPTURE_INTENT)。
+     **`LineageEmitter` 経由では書かない** — `JournaledLineageEmitter` は契約として
+     fail-open (「The parent business operation is never blocked」) で、spool に
+     逃がす経路もある。**`LineageJournalStore` を直接呼び、例外は伝播させる**
      ↓ 失敗したら取込を中止する。文書はまだ 1 つも作られていない (fail-closed)
 ② 業務操作を行う (既存のコミット群。ここは変えない)
      ↓
@@ -80,7 +83,9 @@ FAILED / DISCARDED`、leader gate、`_rev` CAS による claim、dead letter、r
 
 > **実効モードが `journaled` の構成で**、canonical な 5 つの公開入口
 > (`execute` / `executeMailImport` / `executeNoteImport` / `executeBusinessRecordImport` /
-> `executeChatContextImport`) が CMIS 文書を変更するときは、
+> `executeChatContextImport`、および**変更前に `execute` へ委譲するだけの
+> `executeWithAutoResolve`** — クラウド取込の canonical 経路はここから入る) が
+> CMIS 文書を変更するときは、
 > **必ずそれに先立つ耐久的な intent がある。**
 > (`disabled` / `direct` では働かない — この限定は保証文と同じ場所に置く)
 
@@ -135,7 +140,7 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
 
 | 規則 | |
 |---|---|
-| 1 | **intent は「最初の変更操作の直前」で開き、その scope の所有者が完成させる** (root scope は公開入口、child scope は子操作)。** 入口の直後ではない — dry run・空/擬似ファイルの skip・dedupe/idempotency skip・`files_only` で添付が無い/全部 skip、といった**何も変更せずに正常終了する経路**が実在し、そこで intent を開くと**行き先の無い行**ができる (`CAPTURED` にすると objectId が無く完成できず、放置すると 15 分後に `UNRESOLVED` になるが、実行中の主体は「何も変更しなかった」と分かっているので「判定不能」は嘘になる)。**変更しないなら intent も作らない。** dedupe skip の後に wrapper がメタデータを更新する経路では、**その wrapper の変更の直前で開く** |
+| 1 | **intent は「最初の変更操作の直前」で開き、その scope の所有者が完成させる** (root scope は公開入口、child scope は子操作)。** 入口の直後ではない — 空/擬似ファイルの skip・dedupe/idempotency skip・`files_only` で添付が無い/全部 skip、といった**何も変更せずに正常終了する経路**が実在し、そこで intent を開くと**行き先の無い行**ができる (`CAPTURED` にすると objectId が無く完成できず、放置すると 15 分後に `UNRESOLVED` になるが、実行中の主体は「何も変更しなかった」と分かっているので「判定不能」は嘘になる)。**dry run はこの一覧から外した** — `execute` では確かに何も変更しないが、**mail / note / record / chat の 4 入口では dry run でも実際に書き込む** (既存のバグ。`ExternalIngestResult.dryRun` は `isSuccess()==true` かつ `skipped==false` で、wrapper は誰も `dryRun()` を見ず、子要求にも伝播しない)。**このバグを直すまで dry run を「変更しない経路」の例に使えない** — 別タスクとして起票済み。**変更しないなら intent も作らない。** dedupe skip の後に wrapper がメタデータを更新する経路では、**その wrapper の変更の直前で開く** |
 | 2 | **受け渡すのは intent ではなく `CaptureMutationScope`** — wrapper が**未 open のまま**生成し、内部 overload で `execute` に渡す。`execute` は変更の直前で `scope.ensureIntentOpened()` を呼ぶ。**これで「wrapper は `execute` を呼ぶまで変更が起きるか分からない」問題が解ける** (入口で開けば no-op 経路に行き場の無い行ができ、`execute` に所有させれば wrapper の後処理より前に完成してしまう) |
 | 3 | **完成させるのは scope の所有者だけ** — root scope なら公開入口、child scope なら子操作 (規則 4)。内側の `execute` は open するが complete しない |
 | 4 | **子操作 (添付・生 `.eml`) は 1 件ずつ自分の scope を持ち、その所有者は子操作自身**である。`executeNoteAttachment` が例 — 内部 `execute` に自分の scope を渡し、**その後の note メタデータ更新も同じ scope で行い、最後に自分で complete する**。親の scope を渡すと複数添付が 1 つの intent を共有して規則 4 に反し、子の公開 `execute` に自己完了させると**直後のメタデータ更新が intent の外**に出る |
@@ -169,8 +174,12 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
 - `replace` の削除失敗は**ログだけで作成に進む** (`CanonicalImportServiceImpl:1467`)
 - relationship の削除は query / delete の失敗を**内部で飲み、戻り値も無い** (`:1161`)
 - ACL の変更失敗も**内部で飲む** (`:1032`)
-- `ContentService.update` は null を返しうるが、**多くの呼び出し元が確認していない**
-  (`ContentServiceImpl:2819`)
+- `ContentService.update` は **null を返さない** — `writeChangeEvent` が無条件に
+  `content.getId()` を呼ぶので、null なら**返る前に NPE で落ちる**。
+  **「戻り値の null を見る」形で tracker を実装すると永遠に発火しない** (レビュー指摘)。
+  実際の fail-open は 1 段外側 — `IngestMetadataService:52-55/89-92/123-126` と
+  `applyChatCapturedAt:890-892` が `catch (Exception)` して warning 文字列に落とす所である。
+  **tracker は例外を捕まえる側に置く**
 
 したがって本 PR は、**型付きの mutation tracker** を入れる。**刻印とは独立で、`CAPTURED` の
 遷移に必須**なので P1-1(e) には送れない。
@@ -189,6 +198,24 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
 
 各操作は `MutationOutcome { SUCCEEDED, FAILED, UNKNOWN }` を tracker に**明示的に記録する**。
 **`UNKNOWN` が 1 つでもあれば `CAPTURED` にしない** — 「分からない」を成功に潰さない。
+
+### 5.0.1 既存の `emitLineageEvent` はどうなるか
+
+**設計がここを書いていなかった** (レビュー指摘)。放置すると実装者がどちらにも倒せる。
+
+**採る**: ③ が**既存の発行を置き換える** (`IngestLineageEvent:258-260` のコメント
+「this method disappears when that lands」が期待している側)。両方残すと、同じ
+`eventKey` の `lineage_event` が 1 操作につき 2 行でき、projection と件数が二重になる。
+
+**その帰結を隠さない** — 置き換えは 2 つの挙動変更を伴う:
+
+1. **部分的に失敗した取込は、イベントを 1 つも残さなくなる。** ③ は追跡対象の変更が
+   すべて成功したときにしか書かないため。**今日は**イベントを出したうえで警告も返している。
+   **問題があった取込ほど証拠が減る**ので、`UNRESOLVED` 行と一覧 (§6) が
+   その穴を埋める設計になっていることを、実装で必ず確かめる
+2. **dedupe skip が新たにイベントを出すようになる。** 今日は `:1465` で早期 return して
+   何も出さないが、本設計では wrapper の後処理が scope を開いて完成させる (規則 6 / AC 9)。
+   **これらが Atlas / Purview へ配送され始める**
 
 ### 5.1 許される遷移
 
@@ -214,6 +241,14 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
   独自の接頭辞を付けると、**完成して `lineage_event` になった後に
   `journalDocumentId(recordId)` で引けなくなる** — 完成後の行は既存の照会経路から
   普通に見えなければならない。
+- **`_id` で引く既存の v1 経路に型ガードを足す。** view はすべて型で守られているが、
+  **`_id` で直接引く経路は `lineage_event_v2` しか弾かない**:
+  `findByRecordId` (型判定なし)、`updatePublishStatus` (`:756` で v2 のみ)、
+  `discardEvent` (`:937` で同)、`getRetryCount` (判定なし)。
+  そのため **`GET /events/{recordId}` は intent 行を普通のイベントとして表示し、
+  管理画面の retry / discard がその行に `publishStatusByTarget` を書き込めてしまう** —
+  §5.1 の遷移表に無い遷移である。**`type == "lineage_capture_intent"` を弾くガードを
+  4 箇所に足し、AC を付ける** (本 PR の範囲)。
 - **`eventKey` の重複判定と衝突させない。** `append` は `eventKeyExists` を先に見る
   (`CouchLineageJournalStore:515`)。**完成は append ではなく同一文書の update** なので
   この判定は通らないが、**実装で誤って append 経路に乗せると自分自身を重複とみなす**。
@@ -266,7 +301,7 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
 | **journal DB は 1 つを共有** | `nemaki_lineage` (`LineageStoreDocuments:36`)。**リポジトリごとの DB ではない**。行が `repositoryId` を持って区別する |
 | **purge は cross-repository** | `purgeOlderThan(Instant)` は `repositoryId` を取らず、`by_occurred_at` view は「cross-repository time ordering for findAll and purge」と自称する (`CouchLineageJournalStore:811,257`) |
 | **sequence は既にリポジトリ単位** | `lineage_seq:{repositoryId}` (`LineageJournalStore:34`) |
-| **admin は全体、一覧は任意の repositoryId フィルタ** | `isAdmin()` は CallContext に対する全体判定 (`LineageJournalController:779`)、`/events` は `repositoryId` を**任意パラメータ**として受ける (`:61`) |
+| **admin は「デフォルトリポジトリの admin」** | `isAdmin()` 自身に repositoryId は無いが、その boolean を書く `AuthenticationFilter:378` は `principalService.getAdmins(repositoryId)` で判定し、`/v1/admin/lineage-journal` は `repoScopedAdmin` に該当しないので **必ず `getDefaultRepositoryId()`** に束縛される (`:456,:468`)。**repo B だけの管理者は B の未解決行を見られない**。`/events` は `repositoryId` を任意パラメータとして受ける (`:61`) |
 
 ### 設計への帰結
 
@@ -292,8 +327,10 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
    **鍵が同じでも述語が違う view は別物**である (1 番目と 3 番目)。まとめて 1 本にすると、
    sweep が未解決の行まで拾うか、一覧が未 sweep の行まで見せるかのどちらかになる。
 
-   一覧は既存の `/events` と同じ形 — **admin 判定は全体、`repositoryId` は任意フィルタ**。
-   リポジトリごとの認可は**この PR で新設しない** (既存の慣行から外れる変更になる)。
+   一覧は既存の `/events` と同じ形 — **admin 判定は「デフォルトリポジトリの admin」**、
+   `repositoryId` は任意フィルタ。リポジトリごとの認可は**この PR で新設しない**
+   (既存の慣行から外れる変更になる)。**帰結を隠さない**: repo B だけの管理者は
+   B の未解決行を見られない。AC 13 も「どのリポジトリの admin か」を書く。
 4. **sweeper と retention は、行の側のモードを見ない。** 一度できた intent は、
    そのリポジトリが今 `disabled` でも、**リポジトリごと消えていても**、
    横断で処理する。**「今のモード」を見て処理を止めると、`journaled` を切った瞬間に
@@ -314,8 +351,11 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
    **それでよい** — 「そのリポジトリへ取り込もうとした」という記録は証拠である。
    retention の対象にはなる。
 8. **リポジトリのライフサイクルの限定。** リポジトリは `repositories.yml` から初期化時に
-   読まれる (`RepositoryInfoMap`) だけで、**本番の実行時生成・改名の経路は見つからなかった**
-   (`createRepository` はパッチ時のみ)。よって:
+   読まれる (`RepositoryInfoMap.init()` → `loadRepositoriesSetting()`) だけで、
+   **本番の実行時生成・改名の経路は見つからなかった** — `createRepository` という識別子は
+   **コードベースに存在しない** (`Patch_SystemFolderSetup` にあるのは
+   `createRepositoryConfigurationEntry` で、これは設定エントリを作るもの)。
+   `RepositoryInfoMap.add(RepositoryInfo)` は main 内に呼び出し元が無い。よって:
    - 「新しいリポジトリ」とは**構成に足して起動/再読込した後**のもの (AC 22 の意味)
    - **表示名の変更は lineage の同一性に影響しない** (鍵は `id`)
    - **`id` の変更は別のリポジトリ**である。過去の行は**古い `id` のまま残る**
@@ -329,7 +369,50 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
 | 19 | **repo A が `journaled`、repo B が `disabled` のとき**、A への取込は intent を作り、**B への取込は intent を作らず挙動も変わらない** | global 設定を読むと落ちる |
 | 20 | scope を開いた後にそのリポジトリを `disabled` にしても、**③ は完成する** | 完成時に読み直すと落ちる |
 | 21 | 2 リポジトリの intent が並存し、**一覧が `repositoryId` で正しく絞れる** | view の鍵から repositoryId を外すと落ちる |
-| 22 | **新しく構成したリポジトリ** (`repositories.yml` に足して再起動/再読込した後) への取込が、追加の準備作業なしで intent を作る | 共有でない場所に状態を置くと落ちる |
+| 22 | (**安全性の回帰テスト** — 共有 DB に置く限りどう実装しても緑。リポジトリ単位の状態を意図的に作らない限り判別できない) **新しく構成したリポジトリ** (`repositories.yml` に足して再起動/再読込した後) への取込が、追加の準備作業なしで intent を作る | 共有でない場所に状態を置くと落ちる |
+
+---
+
+## 6.9 レビューで判明した、実装前に決めるか直すことがら
+
+独立レビュー (2026-08-20) が出したもののうち、上で本文に織り込めなかったもの。
+**すべて実装着手前に片付ける。**
+
+| # | ことがら |
+|---|---|
+| 1 | **view group の再デプロイ中、既存の lineage view は HTTP 200 で `rows:[]` を返す** (本リポジトリで実測済み — `v3.3-release-plan.md:211`)。その間 `eventKeyExists` が false を返して**重複イベントを書き**、projection が止まり、purge が黙って 0 件になる。**新設 4 view の投入手順に、この窓の扱いを書く。** `putDesignDocument` は例外を握って null を返すので、409 で view が 1 本落ちても気づけない |
+| 2 | **leader election は既定で無効** (`LeaderElection:78` が `isEnabled()` false なら true を返す) で、**purge の cron も既定は空**。「既存 purge と同じにする」とだけ書くと、**無防備で動かない sweeper**になる。sweeper の既定挙動を明示する |
+| 3 | **`UNRESOLVED` は「落ちた」と「まだ走っている」を区別しない。** sweep は 15 分だが `IngestSchedulerService` の fetch timeout は 30 分で、添付の多い mail/note は 15 分を超えうる。運用者向け一覧が**実行中の作業で汚れる**。lease か heartbeat か、少なくとも「実行中かもしれない」と分かる欄が要る |
+| 4 | **③ が書く欄に `occurredAt` を含める。** v1 の retention は `by_occurred_at` を `startkey=""` で引くので、`occurredAt` の無い行は key が `null` に照合されて**永久に purge されない**。③ の全項目を書き出す |
+| 5 | **`UNRESOLVED` の削除と遅れた完成が競合する。** retention が消した後に完成側の CAS が 409 → 読み直すと**文書が無い**。「無い」は §5.1 の表に無い。復活させるのか、証拠を捨てるのかを決める |
+| 6 | **「モードが判定できない」場合の規則が無い。** `getModeForRepository` は `SpringContext` 経由で、`IngestLineageEmitter:296-303` は「context が無いのは良性ではない」と明記している。`journaled でない`として通すと配線ミスで保証が消え、fail-closed にすると取込が全部止まる。**どちらかを選ぶ** |
+| 7 | **`MutationOutcome.UNKNOWN` と `CapturedContent.ContentState.UNKNOWN` が同じ行に同居する。** 前者は `CAPTURED` を止め、後者は止めない (`contentStored: "unknown"` として記録される)。**片方を改名する** |
+| 8 | **idempotency 記録の書込失敗は握り潰される** (`:1636`)。次のポーリングで再取込され、`always_version_up` では 2 つ目の版と**2 つ目の `CAPTURED` 行**ができる。「重複防止であって証拠ではない」と外したが、**その失敗は証拠を捏造する** |
+| 9 | **`createDirectRelationship` は 6 番目の公開変更メソッド** (`CanonicalImportService:81`)。規則 7 で対象外にしているが、§3.2 が「限定は保証文と同じ場所に置く」と決めた以上、**保証文にも書く** |
+| 10 | **DLQ が取込バイトを永続化する** (`:1656-1664`)。最初の追跡対象変更より前に失敗すると、**intent 無しで取込内容の写しが残る**。CMIS 文書ではないので保証の文言上は外だが、**捕獲物が境界の外にある**ことは書く |
+| 11 | **lineage を一切出さない文書作成経路が他にもある** — `BulkCheckInResource:405`、`api/v1/resource/DocumentResource:166`、`odata/CmisEntityProcessor:221`。§7 は「他は fail-open のまま」と書いているが、**これらは fail-open ですらなく発行が無い**。`CloudDriveResource` の legacy と並べて明記する |
+| 12 | **`nemaki_lineage` の文書型は 3 つではなく 15 ある。** 「intent 行が既存 purge で消えない」のは**新しい問題ではなく、event 以外の型すべてに共通する既存の norm** である。そう書き直す |
+| 13 | **AC の一部は本番経路を通せない** — sweep・遅延昇格・sweeper が探索しないこと・終端性・retention の 4 対照は、取込呼び出しからは到達しない store 層の挙動。**「全 AC を本番経路で」は守れない**ので、store 層と明示して、view については**デプロイ・クエリ・`descending` の startkey/endkey 反転**まで見る (Rhino で map 関数だけ評価する既存の型は、鍵と述語しか示さない) |
+| 14 | **テストの土台に lineage が構造的に無い。** `CanonicalImportServiceTest` の `setUp` は `ingestLineageEmitter` を**設定しない**ので `:1594` は null チェックで素通りする。scope を差し替え可能な協調者として渡すと、**モード解決も耐久書込も偽物のまま緑になる** — `IngestLineageEmitter:186-188` にその前科が記録されている |
+
+### 別タスクに切り出した既存バグ (これらが直るまで設計の前提が立たない)
+
+1. **dry run が 4 入口で実際に書き込む** — §4 規則 1 と AC 16 の前提。
+2. **ACL 適用が古い `_rev` で決定的に失敗し、失敗が観測できない** — `aclSyncPolicy = none` /
+   `copy_from_source` は canonical 経路で**効いていないように見える**。ACL を追跡対象に
+   するには先にこれを直す必要がある。
+
+### ついでに見つかった既存バグ (この PR の範囲外)
+
+- `removeExistingRelationships:1166` の `skipCount` が**一度も加算されない** —
+  relationship が 100 件超で削除が失敗し続けると**同じページを無限に取り直す**
+- `:553-555` が note 添付の結果を `skipped=false` で組み直すため、**dedupe skip された添付が
+  「取込済み」として数えられ**、note 全体が skipped から imported に反転する
+- `lineage.mode` は admin-managed dynamic key **ではない**ので system property が先に来る。
+  Atlas 用 compose が `-Dlineage.mode=journaled` を渡しており、**設定 UI のトグルが効かない**
+  (CLAUDE.md の落とし穴の逆パターン)
+- `LineageConfig:698-705` の `getEmitter` は **global の `getMode()`** で emitter を
+  キャッシュする。① をここ経由にすると AC 19 が別の理由で落ちる
 
 ---
 
@@ -367,23 +450,23 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
 
 | # | 条件 | 戻したときに落ちること |
 |---|---|---|
-| 1 | intent の書込に失敗したら取込は**エラーを返し、文書を作らない** | fail-closed を fail-open に戻すと落ちる |
+| 1 | intent の書込に失敗したら取込は**エラーを返し、変更を一切行わない** (「文書を作らない」では、`replace` の削除や resync の relationship 削除が先に走る経路を見逃す) | fail-closed を fail-open に戻すと落ちる |
 | 2 | ③ が失敗しても行は `CAPTURE_INTENT` として残る (消えない) | 例外で行を消すと落ちる |
 | 3 | 期限切れの `CAPTURE_INTENT` が `UNRESOLVED` になる | 走査をやめると落ちる |
 | 4 | **遅れて完走した取込が `UNRESOLVED` から `CAPTURED` へ昇格できる** | 終端扱いすると落ちる |
 | 5 | 走査は `UNRESOLVED` を **`CAPTURED` にしない**し、文書を探しにも行かない | 探索を足すと落ちる |
 | 6 | `CAPTURED` は終端 — 誰も上書きしない | 上書きを許すと落ちる |
-| 7 | **変更操作のいずれかが失敗したら `CAPTURED` にしない** (warning に落ちる経路を含む) | 述語を「PUT を試みた」に戻すと落ちる |
-| 8 | 5 つの公開入口**それぞれ**で、intent が **wrapper の後処理まで**覆う | どれか 1 つでも `execute()` 内で完成させると落ちる |
+| 7 | **追跡対象の変更のいずれかが失敗したら `CAPTURED` にしない。** 次の 3 つを**個別に**含める — ⑴ ACL の適用失敗 (`:1049`)、⑵ relationship 削除の失敗 (`:1181`)、⑶ `replace` の削除失敗 (`:1473`)。**いずれも戻り値も警告文字列も出さない**ので、メタデータ失敗だけを注入するテストでは 3 つとも外しても緑になる | 3 つのどれかの追跡を外すと、その 1 件が落ちる |
+| 8 | **wrapper の後処理での失敗が、root の intent を未完成のままにする** (AC 10b の root 版)。「intent が後処理まで覆う」だけでは、`execute()` 内で完成させても最終状態は `CAPTURED` のままで**緑になる** — 後処理は snapshot を変えない (`captureWindow*` は要求から読み、`chatCapturedAt` は意図的に除外) ので、状態を見るだけの表明では判別できない | 後処理の前に完成させると落ちる |
 | 9 | dedupe skip の**後に wrapper が行った変更が、同じ外側の intent を `CAPTURED` にする** (「内側が終端にしない」だけでは、機能が無くても空虚に緑になる) | 内側で終端にすると落ちる / wrapper の変更を scope の外に出すと落ちる |
 | 10 | 添付・生 `.eml` は**1 件ずつ独立した intent** を持つ | 親に相乗りさせると落ちる |
 | 10b | **子の後処理の失敗が、その子の intent を未完成のままにする** — ⑴ note の子メタデータ失敗でその子が `CAPTURED` にならない、⑵ mail の子 relationship 失敗でその子が `CAPTURED` にならず**親は完成しうる**、⑶ note `files_and_body` の relationship 失敗が**子に帰属する** (AC 10 は「別々の intent が在る」しか示さず、子が後処理より前に完成しても、relationship を親に付け替えても緑のまま) | 子を早く完成させると落ちる / relationship を親の scope に付けると⑶が落ちる |
 | 11 | projection loop は `CAPTURE_INTENT` / `UNRESOLVED` の行を**配送しない** | **既存 view が `type === lineage_event` を要求するため、本 PR の変更を戻しても緑のまま** — これは判別テストではなく**安全性の回帰テスト**である。そう明記して置く |
 | 12 | sequence は**完成時にだけ**振られる | intent 時に振ると落ちる |
-| 13 | `UNRESOLVED` の一覧が **admin では成功し、非 admin では拒否される**。複数行で **`intentOpenedAtMs` の降順**・**`limit` / `skip`**・**件数**が正しい | 認可を外すと落ちる / 並び順を変えると落ちる / pagination・件数を外すと落ちる (「一覧できる」だけでは、これらを戻しても緑) |
+| 13 | `UNRESOLVED` の一覧が **admin では成功し、非 admin では拒否される**。複数行で **`intentOpenedAtMs` の降順**・**`limit` / `offset`** (既存のパラメータ名は `skip` ではなく `offset`)・**正確な件数** (既存 `/events` は概算しか返さないので、**dead-letter 一覧と同じく `_count` reduce を持つ view** にする)が正しい | 認可を外すと落ちる / 並び順を変えると落ちる / pagination・件数を外すと落ちる (「一覧できる」だけでは、これらを戻しても緑) |
 | 14 | **有限の保持期間を設定したとき**、4 つを対照する: ⑴ `unresolvedAtMs` が期限切れの `UNRESOLVED` は **purge される**、⑵ **`intentOpenedAtMs` は期限切れだが `unresolvedAtMs` は新しい** `UNRESOLVED` は **残る**、⑶ 同じだけ古い `CAPTURE_INTENT` は**直接 purge されず先に sweep される**、⑷ **既定 (無期限) では**期限切れの `UNRESOLVED` も**残る** | ⑵ が無いと起点を `intentOpenedAtMs` に戻しても緑 / ⑷ が無いと既定を有限に戻しても緑 |
 | 15 | `lineage.mode` が `disabled` / `direct` のとき、**intent を書かず、取込の挙動も変わらない** | **これは判別テストではなく安全性の回帰テスト** — 機能ごと戻しても緑になる。そう明記して置く |
-| 16 | **何も変更せずに正常終了する経路 (dry run / 各種 skip / 添付ゼロ) で intent が作られず、かつ同じ入口に変更を伴う要求を与えると intent が作られる** — **不在だけを見ると、機能ごと消しても緑**になるので必ず対にする | 入口で開くと前半が落ち、遅延 open をやめると後半が落ちる |
+| 16 | **追跡対象の変更をせずに正常終了する経路 (各種 skip / 添付ゼロ。**dry run は上記のバグが直るまで含めない**) で intent が作られず、かつ同じ入口に変更を伴う要求を与えると intent が作られる** — **不在だけを見ると、機能ごと消しても緑**になるので必ず対にする | 入口で開くと前半が落ち、遅延 open をやめると後半が落ちる |
 | 17 | 追跡対象の変更が 1 つでも `FAILED` / `UNKNOWN` なら **`CAPTURED` にしない** | 述語を緩めると落ちる |
 
 ## 9. 段階
@@ -406,8 +489,12 @@ Mattermost の orchestrator は **`executeChatContextImport` が返った後に*
 
 - **9 巡目**で「指定どおり実装可能」の判定 (外部レビュー)。
 - **10 巡目**でオーナー要望のマルチリポジトリ確認を追加し、4 件の指摘を受けて §6.5 を修正。
-- **11 巡目は回せていない** — 外部レビューの残高切れ。代わりに自己レビューを行い 2 件直した
-  (view ごとの述語が未記載だった / `_id` の接頭辞を既存の `"lineage:"` に合わせないと
+- **11 巡目は外部レビューの残高切れで回せず**、自己レビューで 2 件直した
+  (view ごとの述語が未記載 / `_id` の接頭辞を既存の `"lineage:"` に合わせないと
   完成後に `journalDocumentId` で引けなくなる)。
-  **自己レビューはこの種の誤りで外部レビューに及ばない実績がある**ので、
-  §6.5 と本節の修正は**未レビュー**として扱うこと。
+- **代わりに独立レビューを 2 体 (事実照合 / 保証への攻撃) 走らせた (2026-08-20)。**
+  **11 巡の外部レビューが見つけなかった CRITICAL を複数出した** — 結果は §6.9。
+  主なもの: dry run が 4 入口で実際に書き込む (前提が偽)、ACL 適用が古い `_rev` で
+  決定的に失敗し観測できない、intent 行が `_id` 経由の既存 API から読み書きできる、
+  既存 emitter をどうするか未定義、AC 8 が判別できない。
+- **現状: §6.9 の 14 件と、切り出した既存バグ 2 件が片付くまで実装に入らない。**
