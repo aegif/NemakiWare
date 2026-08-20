@@ -50,11 +50,27 @@ import static org.mockito.Mockito.when;
  * where {@code execute} returns a preview and the wrapper then decorates. A test that only drove
  * {@code execute} would have passed before the fix and proved nothing.
  *
- * <p>One guard is deliberately not independently discriminating: the raw {@code .eml} and
- * mail-attachment requests inherit the flag, but the mail wrapper returns before building them,
- * so removing that inheritance changes nothing observable. It is kept as defence in depth for the
- * day someone moves the wrapper guard — the note path, which has no single early return, does
- * exercise child inheritance, and removing it there IS caught.
+ * <h2>What these tests do NOT discriminate</h2>
+ *
+ * <p>Four changed sites are not independently pinned. Stated here rather than implied by an
+ * assertion message, because an assertion that passes for a reason other than the one it names is
+ * how this repository has been misled before:
+ *
+ * <ul>
+ *   <li>The raw {@code .eml} and mail-attachment requests inherit the flag, but the mail wrapper
+ *       returns before building them. Kept as defence in depth for the day someone moves that
+ *       guard. The note path, which has no single early return, DOES exercise child inheritance,
+ *       and removing it there is caught.</li>
+ *   <li>The mail, record and chat result rebuilds no longer hardcode {@code dryRun=false} — but
+ *       on a dry run those rebuilds are never reached, because the early return hands back the
+ *       result {@code execute} already built with the flag set. So {@code assertTrue(result
+ *       .dryRun())} in those three tests passes whether or not the rebuild was fixed. The fix is
+ *       still right: it is what makes the flag survive if the early return is ever moved below
+ *       the rebuild.</li>
+ *   <li>The {@code files_only} skip rebuild is unreached here — this test's attachment previews
+ *       successfully, so the "nothing was imported" branch is not taken. It IS reachable in
+ *       production (a {@code files_only} dry run of a page with no attachments).</li>
+ * </ul>
  */
 class IngestDryRunWritesNothingTest {
 
@@ -166,9 +182,7 @@ class IngestDryRunWritesNothingTest {
 
         ExternalIngestResult result = service.executeMailImport(ctx(), req);
 
-        assertTrue(result.dryRun(),
-                "the result must still say it was a preview — the wrapper rebuilds it and used "
-                        + "to hardcode dryRun=false, so a caller could not tell");
+        assertTrue(result.dryRun(), "the result must still say it was a preview");
         assertNothingWasWritten("mail");
     }
 
@@ -182,7 +196,7 @@ class IngestDryRunWritesNothingTest {
 
         ExternalIngestResult result = service.executeBusinessRecordImport(ctx(), req);
 
-        assertTrue(result.dryRun(), "the preview flag must survive the rebuild");
+        assertTrue(result.dryRun(), "the result must still say it was a preview");
         assertNothingWasWritten("business record");
     }
 
@@ -201,7 +215,7 @@ class IngestDryRunWritesNothingTest {
 
         ExternalIngestResult result = service.executeChatContextImport(ctx(), req);
 
-        assertTrue(result.dryRun(), "the preview flag must survive the rebuild");
+        assertTrue(result.dryRun(), "the result must still say it was a preview");
         assertNothingWasWritten("chat");
     }
 
@@ -252,8 +266,32 @@ class IngestDryRunWritesNothingTest {
 
         ExternalIngestResult result = service.executeNoteImport(ctx(), req);
 
-        assertTrue(result.dryRun(), "the preview flag must survive the rebuild");
+        assertTrue(result.dryRun(), "the result must still say it was a preview");
         assertNothingWasWritten("note files_and_body");
+    }
+
+    @Test
+    @DisplayName("a dry run that throws does not leave a DLQ entry")
+    void dryRunFailureDoesNotWriteToTheDlq() {
+        // Anything that throws before the dry-run gate lands in the exception handler, which used
+        // to persist the whole request — dryRun:true and the buffered bytes included — as a DLQ
+        // document. Retrying that entry then DELETES it without importing, because a dry-run
+        // result reports success (external review).
+        wire(SourceArchetype.FILE_SHARE);
+        IngestJobService jobService = mock(IngestJobService.class);
+        service.setIngestJobService(jobService);
+        ExternalIngestRequest req = dryRunRequest("file-9", "test.txt");
+        req.setSourceObjectType("files");
+        req.setContentStream(new java.io.InputStream() {
+            @Override
+            public int read() throws java.io.IOException {
+                throw new java.io.IOException("connection reset mid-upload");
+            }
+        });
+
+        service.execute(ctx(), req);
+
+        verify(jobService, never()).saveToDlq(any(), any(), any());
     }
 
     @Test

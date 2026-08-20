@@ -293,6 +293,35 @@ class IngestCreatedObjectPropagationTest {
     }
 
     @Test
+    @DisplayName("a metadata error on a dedupe-skipped attachment does not turn it into an import")
+    void noteAttachmentMetadataErrorKeepsTheSkipFlag() {
+        // Same rebuild, same defect shape: skipped and skipReason were hardcoded away, so a
+        // dedupe-skipped attachment whose metadata write failed was counted as IMPORTED — which
+        // also suppressed the files_only "nothing was imported" return (external review).
+        wire(SourceArchetype.COMPOUND_NOTE);
+        alreadyImported("att-existing", "page-5/att-a", "attachment");
+        when(metadataService.applyNoteMetadata(any(), any(), any(), any()))
+                .thenReturn("note metadata could not be applied");
+
+        ExternalIngestRequest req = baseRequest("page-5", "page.html");
+        req.setImportPolicy("files_only");
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("attachments", List.of(new LinkedHashMap<>(Map.of(
+                "attachmentId", "a", "filename", "first.txt", "contentBase64",
+                java.util.Base64.getEncoder().encodeToString(
+                        "bytes".getBytes(java.nio.charset.StandardCharsets.UTF_8))))));
+        req.setMetadata(metadata);
+
+        ExternalIngestResult result = service.executeNoteImport(ctx(), req);
+
+        assertTrue(result.isSuccess(), "control: " + result.errors());
+        assertTrue(result.skipped(),
+                "the attachment was already imported, so nothing new was taken in. Reporting it "
+                        + "as imported inflates run statistics and hides the skip. Got skipped="
+                        + result.skipped() + ", warnings=" + result.warnings());
+    }
+
+    @Test
     @DisplayName("files_only: a newly created first attachment is reported as created")
     void noteNewFirstAttachmentIsReported() {
         wire(SourceArchetype.COMPOUND_NOTE);

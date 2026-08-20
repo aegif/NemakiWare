@@ -566,8 +566,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (metaError != null) {
                 List<String> w = new ArrayList<>(attResult.warnings());
                 w.add(metaError);
+                // Carry dryRun, skipped and skipReason. Hardcoding them dropped the skip flag
+                // whenever a dedupe-skipped attachment's metadata write failed, so the caller
+                // counted it as IMPORTED — which also suppressed the files_only "nothing was
+                // imported" return (external review). Same defect shape as createdObject.
                 return new ExternalIngestResult(attResult.requestId(), attResult.objectId(),
-                        attResult.versionLabel(), attResult.isNewVersion(), false, false, null,
+                        attResult.versionLabel(), attResult.isNewVersion(), attResult.dryRun(),
+                        attResult.skipped(), attResult.skipReason(),
                         attResult.lineageEventId(), List.of(), w, attResult.createdObject());
             }
         }
@@ -1700,7 +1705,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // this source item.  Permanent errors are marked retryable=false
             // so the operator can inspect (and optionally retry after fixing
             // the root cause) without auto-retry loops wasting resources.
-            if (ingestJobService != null && !"manual".equals(request.getExecutionMode())) {
+            // NOT on a dry run. A preview that throws before the dry-run gate (an IOException
+            // reading the content stream, or content over the size bound) used to persist a DLQ
+            // document — with dryRun:true inside it and the buffered bytes attached — into the
+            // conf database. Retrying that entry then deletes it without importing anything,
+            // because a dry-run result reports success (external review).
+            if (ingestJobService != null && !"manual".equals(request.getExecutionMode())
+                    && !request.isDryRun()) {
                 try {
                     ingestJobService.saveToDlq(request,
                             (isTransient ? "[transient] " : "[permanent] ") + e.getMessage(),
@@ -1951,21 +1962,24 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // on unchanged made the next update a guaranteed 409 — and that 409 was swallowed, so
             // aclSyncPolicy=none and copy_from_source never took effect and nothing said so
             // (external review).
+            // ContentService.update cannot return null here — writeChangeEvent dereferences the
+            // result before returning, so a null would already have thrown, and the object is
+            // always a Document so the subtype dispatch cannot miss. A real failure surfaces as
+            // the exception caught below (external review).
             Content updated = contentService.update(callContext, repositoryId, content);
-            if (updated == null) {
-                // The DAO returns null for an unrecognised subtype; continuing with the stale
-                // object would put the deterministic conflict straight back.
-                return "Import metadata was written but the updated object could not be read back, "
-                        + "so the ACL sync policy was not applied to " + objectId;
-            }
 
-            // Apply ACL sync policy
+            // Apply ACL sync policy.
+            // The error is HELD, not returned here: the cached DAO puts the very object we are
+            // about to hand over into contentCache and returns THAT reference, so the ACL step
+            // mutates the live cache entry (aclInherited=false, and the source ACEs) BEFORE its
+            // write. If the write then fails and we returned early, this JVM would keep serving
+            // an ACL that was never persisted — and the aclCache entry was already evicted by
+            // the DAO, so the next authorization would recompute from the poisoned object
+            // (external review). Invalidating first is what makes the failure safe.
+            String aclError = null;
             if (profile != null && profile.getAclSyncPolicy() != null) {
-                String aclError = applyAclSyncPolicy(callContext, repositoryId, objectId,
+                aclError = applyAclSyncPolicy(callContext, repositoryId, objectId,
                         profile.getAclSyncPolicy(), updated);
-                if (aclError != null) {
-                    return aclError;
-                }
             }
 
             // Invalidate cache
@@ -1976,7 +1990,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     logger.debug("Cache invalidation failed for {}: {}", objectId, e.getMessage());
                 }
             }
-            return null;
+            return aclError;
         } catch (Exception e) {
             logger.warn("Failed to apply source metadata to {}: {}", objectId, e.getMessage());
             return "Source metadata application failed: " + e.getMessage();

@@ -53,6 +53,7 @@ class IngestAclSyncPolicyTest {
 
     private CanonicalImportServiceImpl service;
     private jp.aegif.nemaki.businesslogic.ContentService contentService;
+    private jp.aegif.nemaki.util.cache.CacheService cacheService;
     private final List<Content> updated = new ArrayList<>();
 
     private ExternalIngestResult runImport(String aclSyncPolicy, boolean aclUpdateFails) {
@@ -72,6 +73,11 @@ class IngestAclSyncPolicyTest {
         service.setObjectService(objectService);
         service.setContentService(contentService);
         service.setIngestMetadataService(mock(IngestMetadataService.class));
+        jp.aegif.nemaki.util.cache.NemakiCachePool cachePool =
+                mock(jp.aegif.nemaki.util.cache.NemakiCachePool.class);
+        cacheService = mock(jp.aegif.nemaki.util.cache.CacheService.class);
+        when(cachePool.get("bedroom")).thenReturn(cacheService);
+        service.setNemakiCachePool(cachePool);
 
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");
@@ -177,6 +183,10 @@ class IngestAclSyncPolicyTest {
                         + "which may be wider. Got: " + result.warnings());
     }
 
+    // The two tests below do NOT pin this fix — they pass identically against the old void
+    // methods, because "no warning present" is trivially true when nothing can return one. They
+    // guard a different and real risk: a mis-fix that reports a no-op as a failure. Said here
+    // rather than left for a reader to discover.
     @Test
     @DisplayName("having no source ACL to copy is a no-op, not a reported failure")
     void nothingToCopyIsNotAFailure() {
@@ -188,6 +198,21 @@ class IngestAclSyncPolicyTest {
         assertTrue(result.warnings().stream().noneMatch(w -> w.contains("Source ACL was NOT")),
                 "no externalContext was recorded, so there was nothing to copy. Got: "
                         + result.warnings());
+    }
+
+    @Test
+    @DisplayName("a failed ACL step still invalidates the cache")
+    void failedAclStillInvalidatesTheCache() {
+        // The cached DAO puts the object it returns INTO contentCache and hands back that same
+        // reference, so the ACL step mutates the live cache entry before attempting its write.
+        // Returning early on failure left this JVM serving an ACL that was never persisted —
+        // and the DAO had already evicted the aclCache entry, so the next authorization would
+        // recompute from the poisoned object (external review).
+        ExternalIngestResult result = runImport("copy_from_source", true, true);
+
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains("Source ACL was NOT")),
+                "control: the ACL step did fail");
+        org.mockito.Mockito.verify(cacheService).removeCmisAndContentCache("new-obj-id");
     }
 
     @Test
