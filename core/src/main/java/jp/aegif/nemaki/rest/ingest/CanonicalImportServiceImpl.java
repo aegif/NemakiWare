@@ -278,6 +278,12 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (messageResult.skipped() && messageResult.objectId() == null) {
                 return messageResult;
             }
+            // A dry run previews; it must not decorate. Everything past this point WRITES —
+            // message metadata, the raw .eml, attachments and their relationships — and none of
+            // it used to check (external review).
+            if (messageResult.dryRun()) {
+                return messageResult;
+            }
 
             String messageObjectId = messageResult.objectId();
 
@@ -301,6 +307,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     emlReq.setMimeType("message/rfc822");
                     emlReq.setContentStream(new ByteArrayInputStream(rawEmlBytes));
                     emlReq.setExecutionMode(request.getExecutionMode());
+                    // A dry run must stay a dry run all the way down. Without this the parent
+                    // previews while the child really imports (external review).
+                    emlReq.setDryRun(request.isDryRun());
                     emlReq.setMetadata(new LinkedHashMap<>(metadata));
 
                     ExternalIngestResult emlResult = execute(callContext, emlReq);
@@ -333,6 +342,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     attReq.setMimeType(att.mimeType());
                     attReq.setContentStream(new ByteArrayInputStream(att.content()));
                     attReq.setExecutionMode(request.getExecutionMode());
+                    attReq.setDryRun(request.isDryRun());
                     // Do NOT set parentObjectId here — relationship is created directly
                     // via createDirectRelationship after execute() to avoid duplicates.
                     Map<String, Object> attMeta = new LinkedHashMap<>();
@@ -370,7 +380,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // a freshly created object as pre-existing, which is what decides whether custody
             // time may be recorded at all (external review).
             return new ExternalIngestResult(requestId, messageObjectId, messageResult.versionLabel(),
-                    messageResult.isNewVersion(), false, messageResult.skipped(), messageResult.skipReason(),
+                    messageResult.isNewVersion(), messageResult.dryRun(), messageResult.skipped(), messageResult.skipReason(),
                     messageResult.lineageEventId(), List.of(), warnings,
                     messageResult.createdObject());
 
@@ -418,9 +428,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             pageSkipped = pageResult.skipped();
             pageSkipReason = pageResult.skipReason();
             warnings.addAll(pageResult.warnings());
-            // Apply nemaki:noteMetadata to the page document
-            String metaError = ingestMetadataService.applyNoteMetadata(request.getRepositoryId(), pageObjectId, callContext, request);
-            if (metaError != null) warnings.add(metaError);
+            // Apply nemaki:noteMetadata to the page document.
+            // Not on a dry run: this is a real aspect write (external review). The note path
+            // cannot key on the page result alone — files_only never runs the page import — so
+            // every write here is guarded on the REQUEST.
+            if (!request.isDryRun()) {
+                String metaError = ingestMetadataService.applyNoteMetadata(request.getRepositoryId(), pageObjectId, callContext, request);
+                if (metaError != null) warnings.add(metaError);
+            }
         }
 
         // Import attachments from metadata if provided
@@ -445,6 +460,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     Object mt = attMap.get("mimeType");
                     attReq.setMimeType(mt instanceof String s ? s : "application/octet-stream");
                     attReq.setExecutionMode(request.getExecutionMode());
+                    attReq.setDryRun(request.isDryRun());
                     // Do NOT set parentObjectId — relationship created via createDirectRelationship
                     // In files_only mode the page body is not imported, so carry the
                     // page's metadata (id/url/parent/workspace + any body text the
@@ -487,7 +503,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                                 firstAttachmentObjectId = attObjectId;
                                 firstAttachmentCreated = attResult.createdObject();
                             }
-                            if (importBody && pageObjectId != null) {
+                            if (importBody && pageObjectId != null && !request.isDryRun()) {
                                 String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
                                         pageObjectId, attObjectId, "nemaki:hasAttachment");
                                 if (relErr != null) warnings.add(relErr);
@@ -512,7 +528,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     : "files_only: page has no attachments";
             // (requestId, objectId, versionLabel, isNewVersion, dryRun,
             //  skipped, skipReason, lineageEventId, errors, warnings)
-            return new ExternalIngestResult(requestId, null, null, false, false, true,
+            return new ExternalIngestResult(requestId, null, null, false, request.isDryRun(), true,
                     skipReason, null, List.of(), warnings);
         }
 
@@ -530,7 +546,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // createdObject must describe the object primaryObjectId NAMES, which is the page only
         // when the body was imported — otherwise it is the first attachment (external review).
         return new ExternalIngestResult(requestId, primaryObjectId, pageVersionLabel,
-                pageNewVersion, false, overallSkipped, overallSkipReason, pageLineageEventId,
+                pageNewVersion, request.isDryRun(), overallSkipped, overallSkipReason, pageLineageEventId,
                 List.of(), warnings, importBody ? pageCreated : firstAttachmentCreated);
     }
 
@@ -543,7 +559,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     private ExternalIngestResult executeNoteAttachment(CallContext callContext,
             ExternalIngestRequest attReq, ExternalIngestRequest pageRequest) {
         ExternalIngestResult attResult = execute(callContext, attReq);
-        if (attResult.isSuccess() && attResult.objectId() != null) {
+        if (attResult.isSuccess() && attResult.objectId() != null && !attReq.isDryRun()) {
             // Reuse the page's metadata for the note-metadata secondary type.
             String metaError = ingestMetadataService.applyNoteMetadata(
                     attReq.getRepositoryId(), attResult.objectId(), callContext, pageRequest);
@@ -572,6 +588,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // re-apply metadata/relationship idempotently, and its skip flag is
         // preserved in the final return below so it is counted as skipped.
         if (result.skipped() && result.objectId() == null) return result;
+        // A dry run previews; the aspect write and the relationship below are real (external
+        // review).
+        if (result.dryRun()) return result;
 
         List<String> warnings = new ArrayList<>(result.warnings());
         String[][] brFields = {
@@ -596,7 +615,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // Preserve the skipped flag/reason: a dedupe-skipped record that fell
         // through above must still be reported as skipped, not imported. Same for createdObject.
         return new ExternalIngestResult(request.getRequestId(), result.objectId(), result.versionLabel(),
-                result.isNewVersion(), false, result.skipped(), result.skipReason(),
+                result.isNewVersion(), result.dryRun(), result.skipped(), result.skipReason(),
                 result.lineageEventId(), List.of(), warnings, result.createdObject());
     }
 
@@ -615,6 +634,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // is imported in a later poll). The skip flag is preserved in the final
         // return below so the orchestrator still counts it as skipped.
         if (result.skipped() && result.objectId() == null) return result;
+        // A dry run previews; the aspect write, the capture-window update, the custody stamp and
+        // the relationship below are all real (external review).
+        if (result.dryRun()) return result;
 
         List<String> warnings = new ArrayList<>(result.warnings());
         String[][] chatFields = {
@@ -693,7 +715,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // Preserve the skipped flag/reason: a dedupe-skipped chat object that fell
         // through above must still be reported as skipped, not imported. Same for createdObject.
         return new ExternalIngestResult(request.getRequestId(), result.objectId(), result.versionLabel(),
-                result.isNewVersion(), false, result.skipped(), result.skipReason(),
+                result.isNewVersion(), result.dryRun(), result.skipped(), result.skipReason(),
                 result.lineageEventId(), List.of(), warnings, result.createdObject());
     }
 
@@ -1424,7 +1446,12 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                                     if (ageMs > IDEMPOTENCY_TTL_MS) {
                                         logger.info("Idempotency key expired after {}h, allowing re-import: {}",
                                                 ageMs / 3_600_000, request.getIdempotencyKey());
-                                        integrationSettingsService.deleteSettings(java.util.Set.of(idempKey));
+                                        // NOT on a dry run. This block runs BEFORE the dry-run
+                                        // gate below, so a preview used to durably delete the
+                                        // idempotency record (external review).
+                                        if (!request.isDryRun()) {
+                                            integrationSettingsService.deleteSettings(java.util.Set.of(idempKey));
+                                        }
                                         // Fall through to normal import
                                     } else {
                                         return ExternalIngestResult.skipped(requestId, existingObjectId,
