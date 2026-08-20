@@ -73,7 +73,8 @@ public class ImapFetchOrchestrator implements FetchOrchestrator {
                 fetchSupport.throttle(throttleMs);
                 ExternalIngestRequest req = null;
                 try {
-                    InputStream eml = imap.fetchMessage(mailboxFolder, msg.uid());
+                    // Built BEFORE the fetch so a remote failure — the likeliest per-item
+                    // failure — still records an entry that names the item (external review).
                     req = new ExternalIngestRequest();
                     req.setProfileId(profile.getProfileId());
                     req.setConnectorId(connector.getConnectorId());
@@ -82,8 +83,10 @@ public class ImapFetchOrchestrator implements FetchOrchestrator {
                     req.setSourceObjectType("message");
                     req.setFileName(FetchSupport.sanitizeSubject(msg.subject()) + ".eml");
                     req.setMimeType("message/rfc822");
-                    req.setContentStream(eml);
                     req.setExecutionMode("scheduled");
+                    // The identity is set first, so a failed fetch still produces an entry that
+                    // NAMES the message rather than an anonymous one.
+                    req.setContentStream(imap.fetchMessage(mailboxFolder, msg.uid()));
 
                     Map<String, Object> metadata = new LinkedHashMap<>();
                     metadata.put("mailboxId", mailboxFolder);

@@ -88,9 +88,18 @@ public class SlackFetchOrchestrator implements FetchOrchestrator {
                     for (SlackFile file : msg.files()) {
                         if (file.urlPrivateDownload() == null) continue;
                         InputStream content = null;
+                        // Built BEFORE the download, so a download failure — the likeliest
+                        // per-file failure — still has an item-naming entry to record.
+                        ExternalIngestRequest fileReq = new ExternalIngestRequest();
+                        fileReq.setProfileId(profile.getProfileId());
+                        fileReq.setConnectorId(connector.getConnectorId());
+                        fileReq.setRepositoryId(profile.getRepositoryId());
+                        fileReq.setSourceObjectId(file.id());
+                        fileReq.setSourceObjectType("attachment");
+                        fileReq.setExecutionMode("scheduled");
                         try {
                             content = slack.downloadFile(file.urlPrivateDownload());
-                            ExternalIngestRequest req = new ExternalIngestRequest();
+                            ExternalIngestRequest req = fileReq;
                             req.setProfileId(profile.getProfileId());
                             req.setConnectorId(connector.getConnectorId());
                             req.setRepositoryId(profile.getRepositoryId());
@@ -131,6 +140,15 @@ public class SlackFetchOrchestrator implements FetchOrchestrator {
                         } catch (Exception e) {
                             attachmentFailed = true;
                             FetchSupport.addError(errors, "Slack file " + file.id() + ": " + e.getMessage());
+                            // This is the loss path, and it is the one that was missing. The
+                            // outer catch below only sees a message-level throw, and its request
+                            // is built inside `if (importBody)` — which files_only, the DEFAULT,
+                            // never enters. Teams and Mattermost already DLQ here (external
+                            // review).
+                            if (fileReq != null) {
+                                fetchSupport.saveToDlq(fileReq,
+                                        "Slack file " + file.id() + ": " + e.getMessage(), null);
+                            }
                         } finally {
                             if (content != null) try { content.close(); } catch (Exception ignored) {}
                         }

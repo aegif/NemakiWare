@@ -1595,9 +1595,12 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             boolean isNewVersion = false;
             boolean createdObject = false;
             String versionLabel = "1.0";
-            // Dedupe-stage problems have to survive until the result is built, further down.
-            // Two of them used to reach only the log (external review).
-            List<String> dedupeWarnings = new ArrayList<>();
+            // Dedupe-stage problems have to survive until the result is built, further down —
+            // AND until the catch, if one of the later steps throws. Held in the hoisted list
+            // rather than a local one: a `replace` whose delete failed adds its warning here and
+            // then falls through to createDocument, so a throw there used to discard the very
+            // example the failure javadoc gives (external review).
+            List<String> dedupeWarnings = accumulatedWarnings;
 
             if (existingDoc != null && existingDoc.isDocument()) {
                 // Existing document found — apply dedupe policy
@@ -1608,6 +1611,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     // Delete existing and create fresh
                     try {
                         objectService.deleteObject(callContext, repositoryId, existingDoc.getId(), true, null);
+                        // Recorded NOW: the delete has happened. If the replacement then fails,
+                        // the caller must be told which document was removed — reporting "no
+                        // object" for an operation that deleted one is the opposite of the truth.
+                        committedObjectId = existingDoc.getId();
                         logger.info("Dedupe replace: deleted existing document {}", existingDoc.getId());
                     } catch (Exception e) {
                         // Returned, not only logged. The code falls through and creates the
@@ -1644,6 +1651,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (existingDoc != null && existingDoc.isDocument()) {
                 String updatePolicy = profile.getUpdatePolicy() != null ? profile.getUpdatePolicy() : "version_up_on_content_change";
                 objectId = existingDoc.getId();
+                // From here on this object is what the operation is acting on. A checkOut that
+                // succeeds and a checkIn that throws leaves it CHECKED OUT and locked; without
+                // this the caller is not told which document is stuck, and every later import of
+                // the same item fails at checkOut for ever (external review).
+                committedObjectId = objectId;
 
                 if ("update_metadata_only".equals(updatePolicy)) {
                     // Update metadata only — no version change, no content update
@@ -1716,7 +1728,6 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
             // 6. Apply secondary types
             List<String> warnings = accumulatedWarnings;
-            warnings.addAll(dedupeWarnings);
             String metadataError = applySourceMetadata(repositoryId, objectId, callContext, connector, request, profile, computedHash);
             if (metadataError != null) {
                 warnings.add(metadataError);

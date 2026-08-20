@@ -49,8 +49,13 @@ public class M365MailFetchOrchestrator implements FetchOrchestrator {
                 fetchSupport.throttle(throttleMs);
                 ExternalIngestRequest req = null;
                 try {
-                    InputStream eml = m365.fetchMimeMessage(msg.id());
-                    req = fetchSupport.buildMailRequest(profile, connector, msg.id(), msg.subject(), eml, folderId);
+                    // Built BEFORE the fetch, with a null stream, so a remote failure —
+                    // the likeliest per-item failure — still records an entry that names
+                    // the item. Previously the request was built after the fetch, so that
+                    // exact case left nothing behind (external review).
+                    req = fetchSupport.buildMailRequest(
+                            profile, connector, msg.id(), msg.subject(), null, folderId);
+                    req.setContentStream(m365.fetchMimeMessage(msg.id()));
                     if (msg.internetMessageId() != null) req.getMetadata().put("internetMessageId", msg.internetMessageId());
 
                     ExternalIngestResult result = canonicalImportService.executeMailImport(callContext, req);

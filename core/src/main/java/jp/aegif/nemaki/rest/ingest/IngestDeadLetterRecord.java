@@ -30,6 +30,29 @@ public class IngestDeadLetterRecord {
     /** Whether binary content is stored as a CouchDB attachment. */
     private boolean hasContent;
 
+    /**
+     * How many times this same source item has failed.
+     *
+     * <p>Entries used to get a random id, so a persistent outage wrote a NEW document on every
+     * poll — the same item, over and over, in the configuration database, with its payload
+     * attached each time and no deduplication (external review). The id is now derived from the
+     * item's identity, which makes a repeat an update; this counts the repeats.
+     */
+    private int failureCount = 1;
+
+    /** When this item first failed. {@code failedAt} moves; this does not. */
+    private String firstFailedAt;
+
+    /**
+     * Why the payload is absent even though the item had one.
+     *
+     * <p>Null when there was no payload or when it was stored. Non-null means the bytes were
+     * deliberately NOT written — the only current reason is that no encryption key is
+     * configured, and writing them in the clear into the configuration database is not an
+     * acceptable fallback for a system whose subject is evidence.
+     */
+    private String payloadDropReason;
+
     public IngestDeadLetterRecord() {}
 
     // --- Getters / Setters ---
@@ -69,6 +92,17 @@ public class IngestDeadLetterRecord {
 
     public String getOriginalRequestJson() { return originalRequestJson; }
     public void setOriginalRequestJson(String originalRequestJson) { this.originalRequestJson = originalRequestJson; }
+
+    public int getFailureCount() { return failureCount; }
+    public void setFailureCount(int failureCount) { this.failureCount = failureCount; }
+
+    public String getFirstFailedAt() { return firstFailedAt; }
+    public void setFirstFailedAt(String firstFailedAt) { this.firstFailedAt = firstFailedAt; }
+
+    public String getPayloadDropReason() { return payloadDropReason; }
+    public void setPayloadDropReason(String payloadDropReason) {
+        this.payloadDropReason = payloadDropReason;
+    }
 
     public boolean isHasContent() { return hasContent; }
     public void setHasContent(boolean hasContent) { this.hasContent = hasContent; }

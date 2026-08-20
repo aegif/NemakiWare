@@ -56,8 +56,13 @@ public class GmailFetchOrchestrator implements FetchOrchestrator {
                 fetchSupport.throttle(throttleMs);
                 ExternalIngestRequest req = null;
                 try {
-                    InputStream eml = gmail.fetchRawMessage(msg.id());
-                    req = fetchSupport.buildMailRequest(profile, connector, msg.id(), msg.subject(), eml, "inbox");
+                    // Built BEFORE the fetch, with a null stream, so a remote failure —
+                    // the likeliest per-item failure — still records an entry that names
+                    // the item. Previously the request was built after the fetch, so that
+                    // exact case left nothing behind (external review).
+                    req = fetchSupport.buildMailRequest(
+                            profile, connector, msg.id(), msg.subject(), null, "inbox");
+                    req.setContentStream(gmail.fetchRawMessage(msg.id()));
                     req.getMetadata().put("internetMessageId", msg.id());
                     req.getMetadata().put("gmailThreadId", msg.threadId());
 

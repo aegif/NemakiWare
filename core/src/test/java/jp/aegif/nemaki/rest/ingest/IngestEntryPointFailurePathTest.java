@@ -64,6 +64,8 @@ class IngestEntryPointFailurePathTest {
     private CanonicalImportServiceImpl service;
     private IngestJobService jobService;
     private IngestMetadataService metadataService;
+    private ImportProfileDefinitionService profileServiceRef;
+    private jp.aegif.nemaki.cmis.service.ObjectService objectServiceRef;
     private final List<jp.aegif.nemaki.model.Content> children = new ArrayList<>();
 
     private void wire(SourceArchetype archetype) {
@@ -85,6 +87,8 @@ class IngestEntryPointFailurePathTest {
         service.setContentDaoService(contentDaoService);
         service.setIngestMetadataService(metadataService);
         service.setIngestJobService(jobService);
+        profileServiceRef = profileService;
+        objectServiceRef = objectService;
 
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");
@@ -199,8 +203,8 @@ class IngestEntryPointFailurePathTest {
     }
 
     @Test
-    @DisplayName("a mail failure after the commit keeps the warnings it had already recorded")
-    void mailFailureKeepsWarnings() {
+    @DisplayName("a mail failure after a dedupe skip still names the object and reaches the DLQ")
+    void mailFailureAfterSkipIsHonest() {
         // The dedupe-skip shape: execute() returns the existing object, then the wrapper's
         // metadata step throws. The warning from the skip must survive the failure.
         wire(SourceArchetype.MESSAGE_CONTEXT);
@@ -240,6 +244,47 @@ class IngestEntryPointFailurePathTest {
         assertFalse(result.isSuccess(), "control");
         org.mockito.Mockito.verify(jobService, org.mockito.Mockito.never())
                 .saveToDlq(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("a failure keeps the warnings recorded before it")
+    void failureKeepsEarlierWarnings() {
+        // The warnings half of the fix was NOT tested: the dedupe-skip shape it was written
+        // against produces an empty warnings list, so passing List.of() would have kept it green
+        // (external review). This drives the case the javadoc actually names — a `replace` whose
+        // delete failed, followed by a throw — where a real warning exists to lose.
+        wire(SourceArchetype.FILE_SHARE);
+        alreadyImported("old-obj", "file-7", "files");
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        profile.setDedupePolicy("replace");
+        when(profileServiceRef.get("p1")).thenReturn(profile);
+        org.mockito.Mockito.doThrow(new IllegalStateException("object is locked"))
+                .when(objectServiceRef).deleteObject(any(), org.mockito.ArgumentMatchers.anyString(),
+                        eq("old-obj"), any(), any());
+        IngestLineageEmitter throwing = new IngestLineageEmitter() {
+            @Override
+            public String emitLineageEvent(String repositoryId, String objectId,
+                    String targetFolderId, String documentName, String operationId,
+                    ConnectorDefinition connector, ExternalIngestRequest request,
+                    CapturedContent content, String executedBy, String onBehalfOf) {
+                throw new IllegalStateException("journal unreachable");
+            }
+        };
+        service.setIngestLineageEmitter(throwing);
+
+        ExternalIngestRequest req = request("file-7", "test.txt");
+        req.setSourceObjectType("files");
+
+        ExternalIngestResult result = service.execute(ctx(), req);
+
+        assertFalse(result.isSuccess(), "control: the import must fail");
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains("could not be deleted")),
+                "the replaced document survived next to the new one, and that is exactly what an "
+                        + "operator needs to clean up. Got: " + result.warnings());
     }
 
     @Test

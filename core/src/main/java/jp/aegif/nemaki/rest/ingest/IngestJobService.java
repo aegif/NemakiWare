@@ -159,18 +159,58 @@ public class IngestJobService {
 
     public void saveToDlq(ExternalIngestRequest request, String errorMessage, byte[] contentBytes) {
         try {
+            String dlqId = deadLetterIdFor(request);
+            IngestDeadLetterRecord existing = getDlqEntry(dlqId);
+
             IngestDeadLetterRecord dlq = new IngestDeadLetterRecord();
-            dlq.setDlqId("dlq-" + UUID.randomUUID().toString().substring(0, 8));
+            dlq.setDlqId(dlqId);
             dlq.setProfileId(request.getProfileId());
             dlq.setConnectorId(request.getConnectorId());
             dlq.setRepositoryId(request.getRepositoryId());
             dlq.setSourceObjectId(request.getSourceObjectId());
             dlq.setSourceObjectType(request.getSourceObjectType());
             dlq.setFileName(request.getFileName());
-            dlq.setFailedAt(Instant.now().toString());
+            String now = Instant.now().toString();
+            dlq.setFailedAt(now);
             dlq.setErrorMessage(errorMessage);
-            dlq.setRetryCount(0);
-            dlq.setHasContent(contentBytes != null && contentBytes.length > 0);
+            // The same source item failing again is the SAME entry, not a new one. With a random
+            // id, a persistent outage wrote one document per item per poll — every five minutes,
+            // with the payload attached each time, into the configuration database, for ever
+            // (external review).
+            if (existing != null) {
+                dlq.setFailureCount(existing.getFailureCount() + 1);
+                dlq.setFirstFailedAt(existing.getFirstFailedAt() != null
+                        ? existing.getFirstFailedAt() : existing.getFailedAt());
+                dlq.setRetryCount(existing.getRetryCount());
+                dlq.setLastRetryAt(existing.getLastRetryAt());
+            } else {
+                dlq.setFailureCount(1);
+                dlq.setFirstFailedAt(now);
+                dlq.setRetryCount(0);
+            }
+
+            // The payload is encrypted or it is not written. Storing ingested bytes in the
+            // clear in nemaki_conf — no ACL of its own, no retention — is not an acceptable
+            // fallback for a system whose subject is evidence (external review).
+            byte[] payload = null;
+            String dropReason = null;
+            if (contentBytes != null && contentBytes.length > 0) {
+                try {
+                    payload = encryptDeadLetterPayload(contentBytes);
+                } catch (Exception keyErr) {
+                    dropReason = "payload not stored: " + keyErr.getMessage();
+                    logger.warn("DLQ payload for {} was NOT stored: {}",
+                            request.getSourceObjectId(), keyErr.getMessage());
+                }
+            }
+            // A later failure for the same item often carries no bytes (the stream was consumed
+            // by the import that has already run). That must not be read as "this item has no
+            // payload" — the earlier attempt's payload is still attached and still the thing a
+            // retry needs.
+            boolean keptEarlierPayload = payload == null && existing != null
+                    && existing.isHasContent();
+            dlq.setHasContent(payload != null || keptEarlierPayload);
+            dlq.setPayloadDropReason(payload == null && !keptEarlierPayload ? dropReason : null);
             // Serialize full request for replay (contentStream is @JsonIgnore, auto-excluded)
             dlq.setOriginalRequestJson(MAPPER.writeValueAsString(request));
             @SuppressWarnings("unchecked")
@@ -178,16 +218,62 @@ public class IngestJobService {
             String docId = upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE, jsonMap);
 
             // Attach binary content to CouchDB document if available
-            if (contentBytes != null && contentBytes.length > 0 && docId != null) {
-                attachContentToDlq(docId, request.getFileName(), request.getMimeType(), contentBytes);
+            if (payload != null && docId != null) {
+                attachContentToDlq(docId, request.getFileName(), request.getMimeType(), payload);
             }
 
-            logger.info("Saved to DLQ: {} (source={}, contentSize={})",
-                    dlq.getDlqId(), request.getSourceObjectId(),
-                    contentBytes != null ? contentBytes.length : 0);
+            logger.info("Saved to DLQ: {} (source={}, failures={}, contentSize={})",
+                    dlq.getDlqId(), request.getSourceObjectId(), dlq.getFailureCount(),
+                    payload != null ? payload.length : 0);
         } catch (Exception e) {
             logger.error("Failed to save to DLQ: {}", e.getMessage(), e);
         }
+    }
+
+    /**
+     * A stable id for one source item, so a repeated failure updates its entry.
+     *
+     * <p>Derived from the identity the ingest path itself dedupes on. A blank source id falls
+     * back to a random suffix rather than colliding every anonymous failure into one row.
+     */
+    private String deadLetterIdFor(ExternalIngestRequest request) {
+        String source = request.getSourceObjectId();
+        if (source == null || source.isBlank()) {
+            return "dlq-" + UUID.randomUUID().toString().substring(0, 8);
+        }
+        String key = String.join("\u0000",
+                nullToEmpty(request.getRepositoryId()),
+                nullToEmpty(request.getProfileId()),
+                nullToEmpty(request.getSourceObjectType()),
+                source);
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(key.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder("dlq-");
+            for (int i = 0; i < 12; i++) {
+                sb.append(String.format("%02x", digest[i]));
+            }
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is required", e);
+        }
+    }
+
+    private static String nullToEmpty(String s) {
+        return s == null ? "" : s;
+    }
+
+    /**
+     * Encrypt a dead-letter payload, or refuse.
+     *
+     * @throws IllegalStateException when no encryption key is configured — the caller records
+     *         that the payload was dropped and keeps the metadata-only entry, which still names
+     *         the source item so it can be fetched again.
+     */
+    private byte[] encryptDeadLetterPayload(byte[] contentBytes) {
+        String encoded = java.util.Base64.getEncoder().encodeToString(contentBytes);
+        String wrapped = jp.aegif.nemaki.sync.util.PasswordEncryptionUtil.encrypt(encoded);
+        return wrapped.getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
 
     /** Load binary content from a DLQ CouchDB document's attachment. */
@@ -216,12 +302,53 @@ public class IngestJobService {
             var getAttOpts = new com.ibm.cloud.cloudant.v1.model.GetAttachmentOptions.Builder()
                     .db(dbName).docId(doc.getId()).attachmentName(attName).build();
             try (java.io.InputStream is = cloudant.getAttachment(getAttOpts).execute().getResult()) {
-                return is.readAllBytes();
+                return decryptDeadLetterPayload(is.readAllBytes());
             }
         } catch (Exception e) {
             logger.warn("Failed to load DLQ content for {}: {}", dlqId, e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Decrypt a dead-letter payload, tolerating entries written before encryption existed.
+     *
+     * <p>An entry stored by an older build is raw bytes with no {@code ENC(...)} wrapper. Those
+     * must stay retryable — refusing them would turn an upgrade into data loss. Anything that
+     * IS wrapped must decrypt; a wrapped payload that will not decrypt is not silently returned
+     * as ciphertext.
+     */
+    private byte[] decryptDeadLetterPayload(byte[] stored) {
+        if (stored == null || stored.length == 0) {
+            return stored;
+        }
+        String asText;
+        try {
+            asText = new String(stored, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception notText) {
+            return stored; // pre-encryption binary payload
+        }
+        if (!asText.startsWith("ENC(")) {
+            return stored; // written before payloads were encrypted
+        }
+        String decoded;
+        try {
+            decoded = jp.aegif.nemaki.sync.util.PasswordEncryptionUtil.decrypt(asText);
+        } catch (Exception e) {
+            // Wrapped so the operator gets the actionable sentence rather than an AEAD tag
+            // length. Never returned as-is: handing ciphertext back as content would feed
+            // garbage into a retry and then record it as a successful re-import.
+            throw new IllegalStateException(
+                    "the stored payload is encrypted but could not be decrypted — check that "
+                            + "NEMAKI_ENCRYPTION_KEY is the key it was written with (" 
+                            + e.getMessage() + ")", e);
+        }
+        if (decoded == null || decoded.equals(asText)) {
+            throw new IllegalStateException(
+                    "the stored payload is encrypted but could not be decrypted — check that "
+                            + "NEMAKI_ENCRYPTION_KEY is the key it was written with");
+        }
+        return java.util.Base64.getDecoder().decode(decoded);
     }
 
     /** Attach binary content to a DLQ CouchDB document. */
@@ -251,7 +378,75 @@ public class IngestJobService {
     }
 
     public List<IngestDeadLetterRecord> listDlq(int limit) {
-        return findByType(IngestDeadLetterRecord.DOC_TYPE, IngestDeadLetterRecord.class, limit);
+        return listDlq(limit, 0);
+    }
+
+    /**
+     * A page of dead-letter entries.
+     *
+     * <p>Paging matters here more than in most listings: an entry is the only record that a
+     * source item was lost, and before this the fetch was capped at a hardcoded 200 with no
+     * ordering — so past that point entries could not be seen, retried or deleted.
+     */
+    public List<IngestDeadLetterRecord> listDlq(int limit, int offset) {
+        CloudantClientWrapper client = getConfClient();
+        String dbName = client.getDatabaseName();
+        var cloudant = client.getClient();
+        List<Document> rawDocs = findRawDocs(cloudant, dbName,
+                Map.of("type", IngestDeadLetterRecord.DOC_TYPE),
+                Math.max(1, limit), Math.max(0, offset));
+        List<IngestDeadLetterRecord> results = new ArrayList<>();
+        for (Document rawDoc : rawDocs) {
+            try {
+                Map<String, Object> props = new HashMap<>(rawDoc.getProperties());
+                props.remove("_id");
+                props.remove("_rev");
+                props.remove("type");
+                results.add(MAPPER.convertValue(props, IngestDeadLetterRecord.class));
+            } catch (Exception e) {
+                logger.warn("Failed to deserialize DLQ entry: {}", e.getMessage());
+            }
+        }
+        return results;
+    }
+
+    /**
+     * Delete dead-letter entries whose LAST failure is older than the cutoff.
+     *
+     * <p>Not scheduled and not defaulted on: an unresolved entry is the only trace that a source
+     * item was lost, so deleting one on a timer would finish the loss it exists to prevent. An
+     * operator asks for this explicitly, having decided those items are not coming back.
+     *
+     * @return how many were deleted
+     */
+    public int purgeDlqOlderThan(java.time.Instant cutoff) {
+        int deleted = 0;
+        try {
+            CloudantClientWrapper client = getConfClient();
+            String dbName = client.getDatabaseName();
+            var cloudant = client.getClient();
+            List<Document> docs = findRawDocs(cloudant, dbName,
+                    Map.of("type", IngestDeadLetterRecord.DOC_TYPE), 1000, 0);
+            for (Document doc : docs) {
+                Object failedAt = doc.getProperties().get("failedAt");
+                if (!(failedAt instanceof String ts)) continue;
+                try {
+                    if (java.time.Instant.parse(ts).isBefore(cutoff)) {
+                        Object dlqId = doc.getProperties().get("dlqId");
+                        if (dlqId instanceof String id) {
+                            deleteDlqEntry(id);
+                            deleted++;
+                        }
+                    }
+                } catch (Exception parseErr) {
+                    logger.warn("DLQ entry {} has an unparseable failedAt ({}); left in place",
+                            doc.getId(), ts);
+                }
+            }
+        } catch (Exception e) {
+            logger.error("DLQ purge failed: {}", e.getMessage(), e);
+        }
+        return deleted;
     }
 
     public IngestDeadLetterRecord getDlqEntry(String dlqId) {
@@ -326,8 +521,18 @@ public class IngestJobService {
         List<Document> existing = findRawDocs(cloudant, dbName,
                 Map.of("type", docType, keyField, docKey));
         if (!existing.isEmpty()) {
-            doc.setId(existing.get(0).getId());
-            doc.setRev(existing.get(0).getRev());
+            Document prior = existing.get(0);
+            doc.setId(prior.getId());
+            doc.setRev(prior.getRev());
+            // Carry the attachments forward. This builds a FRESH Document, so anything not
+            // copied is dropped by CouchDB — and a dead-letter entry's attachment is the
+            // ingested payload, the one thing that makes the entry retryable. It mattered
+            // little while ids were random (an update was rare); it matters on every repeat now
+            // that the id identifies the source item (external review).
+            if (prior.getAttachments() != null && !prior.getAttachments().isEmpty()
+                    && doc.getAttachments() == null) {
+                doc.setAttachments(prior.getAttachments());
+            }
         }
 
         PostDocumentOptions options = new PostDocumentOptions.Builder()
@@ -377,9 +582,24 @@ public class IngestJobService {
 
     private List<Document> findRawDocs(com.ibm.cloud.cloudant.v1.Cloudant cloudant,
                                        String dbName, Map<String, Object> selector) {
-        PostFindOptions findOptions = new PostFindOptions.Builder()
-                .db(dbName).selector(selector).limit(200).build();
-        FindResult findResult = cloudant.postFind(findOptions).execute().getResult();
+        return findRawDocs(cloudant, dbName, selector, 200, 0);
+    }
+
+    /**
+     * @param limit how many documents to fetch; the caller's own limit is applied afterwards
+     * @param skip how many to pass over — without this the fetch was capped at a hardcoded 200
+     *        with no ordering, so an entry beyond the first arbitrary 200 could be neither listed
+     *        nor deleted, and which 200 you got was not stable (external review)
+     */
+    private List<Document> findRawDocs(com.ibm.cloud.cloudant.v1.Cloudant cloudant,
+                                       String dbName, Map<String, Object> selector,
+                                       int limit, int skip) {
+        PostFindOptions.Builder builder = new PostFindOptions.Builder()
+                .db(dbName).selector(selector).limit(Math.max(1, limit));
+        if (skip > 0) {
+            builder.skip((long) skip);
+        }
+        FindResult findResult = cloudant.postFind(builder.build()).execute().getResult();
         List<Document> docs = findResult.getDocs();
         return docs != null ? docs : List.of();
     }

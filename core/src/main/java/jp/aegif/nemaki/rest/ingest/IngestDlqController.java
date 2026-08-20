@@ -51,13 +51,54 @@ public class IngestDlqController {
 
     // ── Dead-Letter Queue ──────────────────────────────────────────
 
+    /**
+     * A page of dead-letter entries.
+     *
+     * <p>{@code offset} exists because the fetch underneath was capped at a hardcoded 200 with no
+     * ordering: past that point an entry could be neither listed, retried nor deleted, and each
+     * entry is the only record that a source item was lost (external review).
+     */
     @GetMapping("/dlq")
-    public ResponseEntity<?> listDlq(@RequestParam(defaultValue = "100") int limit) {
+    public ResponseEntity<?> listDlq(@RequestParam(defaultValue = "100") int limit,
+                                     @RequestParam(defaultValue = "0") int offset) {
         if (!isAdmin()) return forbidden();
-        List<IngestDeadLetterRecord> entries = ingestJobService.listDlq(limit);
+        int cappedLimit = Math.min(Math.max(limit, 1), 500);
+        int safeOffset = Math.max(offset, 0);
+        // Fetch one extra to say whether more exist without a second count query.
+        List<IngestDeadLetterRecord> page = ingestJobService.listDlq(cappedLimit + 1, safeOffset);
+        boolean hasMore = page.size() > cappedLimit;
+        List<IngestDeadLetterRecord> entries = hasMore ? page.subList(0, cappedLimit) : page;
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("count", entries.size());
+        response.put("limit", cappedLimit);
+        response.put("offset", safeOffset);
+        response.put("hasMore", hasMore);
         response.put("entries", entries);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Delete dead-letter entries whose last failure is older than {@code olderThanDays}.
+     *
+     * <p>Deliberately an explicit admin action rather than a schedule or a default: an unresolved
+     * entry is the only trace that a source item was lost, so expiring one on a timer would
+     * complete the loss it exists to prevent.
+     */
+    @PostMapping("/dlq/purge")
+    public ResponseEntity<?> purgeDlq(@RequestParam int olderThanDays) {
+        if (!isAdmin()) return forbidden();
+        if (olderThanDays < 1) {
+            return errorResponse(HttpStatus.BAD_REQUEST,
+                    "olderThanDays must be at least 1 — this deletes the only record that these "
+                            + "source items were lost");
+        }
+        java.time.Instant cutoff = java.time.Instant.now()
+                .minus(java.time.Duration.ofDays(olderThanDays));
+        int deleted = ingestJobService.purgeDlqOlderThan(cutoff);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", "success");
+        response.put("deleted", deleted);
+        response.put("cutoff", cutoff.toString());
         return ResponseEntity.ok(response);
     }
 
