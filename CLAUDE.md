@@ -192,4 +192,5 @@ reconcile re-drive は必ず epoch fence を通ります**。切替スイッチ�
 | 3.3.1 パッチ計画 | [`docs/design/v3.3.1-plan.md`](docs/design/v3.3.1-plan.md) |
 | 長期真正性ロードマップ (InterPARES / 3.4 以降) | [`docs/design/authenticity-roadmap.md`](docs/design/authenticity-roadmap.md) |
 | v3.3.0 アップグレード運用 | [`docs/operations/v3.3.0-upgrade-runbook.md`](docs/operations/v3.3.0-upgrade-runbook.md) |
+| 外部取込の capture 境界 (3.4) | [`docs/operations/capture-boundary-runbook.md`](docs/operations/capture-boundary-runbook.md) |
 | 「同じものを二度取る往復」の棚卸し | [`docs/design/redundant-round-trips.md`](docs/design/redundant-round-trips.md) |
