@@ -112,7 +112,14 @@ public class PurviewSchemaPayloadFactory {
                 attribute("contentLength", "long", true),
                 attribute("versionObjectId", "string", true),
                 attribute("changeToken", "string", true),
-                attribute("contentHash", "string", true)));
+                attribute("contentHash", "string", true),
+                // P1-1(b). contentStored is a THREE-value string — "true" / "false" / "unknown" —
+                // not a boolean: a check-in with no stream carries the previous version's content
+                // forward, which is undetermined rather than absent. Making it boolean would
+                // force that third state into one of the other two.
+                attribute("contentStored", "string", true),
+                attribute("contentHashAlgorithm", "string", true),
+                attribute("contentStateReason", "string", true)));
         attrs.addAll(customAttrDefs);
         entityDef.put("attributeDefs", attrs);
         return entityDef;
@@ -186,7 +193,16 @@ public class PurviewSchemaPayloadFactory {
                 attribute("sourceRevision", "string", true),
                 attribute("sourceModifiedAt", "long", true),
                 attribute("sourceContentHash", "string", true),
-                attribute("sourceContentLength", "long", true)));
+                attribute("sourceContentLength", "long", true),
+                // P1-1(b). What kind of thing was ingested — message, attachment, page — which
+                // the stable key's path segment implies but does not state.
+                attribute("sourceObjectType", "string", true),
+                // The chat identifiers the stable key does not carry. The channel IS in the key;
+                // the workspace is not (the key's tenant segment is the connector's tenant id)
+                // and neither is the parent message of an attachment.
+                attribute("chatWorkspaceId", "string", true),
+                attribute("chatMessageId", "string", true),
+                attribute("chatThreadId", "string", true)));
         return entityDef;
     }
 

@@ -312,10 +312,33 @@ public record LineageEndpoint(
 
     public static LineageEndpoint externalAsset(String repositoryId, String stableKey,
                                                 String sourceSystem) {
+        return externalAsset(repositoryId, stableKey, sourceSystem, Map.of());
+    }
+
+    /**
+     * An external asset with further facts about the source beside its identity.
+     *
+     * <p>{@code sourceSystem} and the stable key are always present; {@code extra} adds what the
+     * key does not already state. Facts the key DOES state do not belong here — for a chat
+     * message the key is
+     * {@code {system}://org/{workspaceId}/channels/{channelId}/messages/{messageId}}, so those
+     * three ids would be repeated rather than added (P1-1(b)).
+     */
+    public static LineageEndpoint externalAsset(String repositoryId, String stableKey,
+                                                String sourceSystem, Map<String, Object> extra) {
         String key = canonicalStableKey(stableKey);
         Map<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("sourceSystem", nonBlank(sourceSystem, "sourceSystem"));
         attributes.put(ATTR_EXTERNAL_STABLE_KEY, key);
+        if (extra != null) {
+            for (Map.Entry<String, Object> entry : extra.entrySet()) {
+                // Identity first: extra must not be able to redefine what the endpoint IS.
+                if (!"sourceSystem".equals(entry.getKey())
+                        && !ATTR_EXTERNAL_STABLE_KEY.equals(entry.getKey())) {
+                    attributes.put(entry.getKey(), entry.getValue());
+                }
+            }
+        }
         return produced(EndpointKind.EXTERNAL_ASSET,
                 externalAssetQualifiedName(repositoryId, key), repositoryId, null, null,
                 attributes);

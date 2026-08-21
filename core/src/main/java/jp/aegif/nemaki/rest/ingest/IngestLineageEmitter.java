@@ -96,10 +96,10 @@ public class IngestLineageEmitter {
                         factProcessType,
                         operationId,
                         occurredAt,
-                        java.util.List.of(LineageEndpoint.externalAsset(
-                                repositoryId, sourceUri, connector.getSourceSystem())),
-                        java.util.List.of(LineageEndpoint.document(
-                                repositoryId, objectId, documentName)),
+                        java.util.List.of(buildInputEndpoint(repositoryId, sourceUri,
+                                connector, request)),
+                        java.util.List.of(buildOutputEndpoint(repositoryId, objectId,
+                                documentName, content)),
                         lineageTargets(),
                         request.getCorrelationId(),
                         new LineageFact.LegacyV1Projection(
@@ -187,20 +187,101 @@ public class IngestLineageEmitter {
      * one fails long before the snapshot is built — which is exactly how an earlier test in this
      * area passed while proving nothing. This is the production builder, called by production.
      */
+    /**
+     * The input endpoint: what was ingested, as identified, plus the source facts its identity
+     * does not already state.
+     *
+     * <p>Extracted for the same reason {@code buildV1Snapshot} is: the correspondence between
+     * the two encodings can only be asserted if both can be built from the same inputs. Left
+     * inline in the emitter's lambda, a test would have to resolve an emitter first, and an
+     * unwired one fails long before either is built — which is how an earlier test in this area
+     * passed while proving nothing (P1-1(b)).
+     */
+    LineageEndpoint buildInputEndpoint(String repositoryId, String sourceUri,
+                                       ConnectorDefinition connector,
+                                       ExternalIngestRequest request) {
+        java.util.Map<String, Object> extra = new java.util.LinkedHashMap<>();
+        putIfPresent(extra, CaptureEvidenceField.SOURCE_OBJECT_TYPE,
+                request.getSourceObjectType());
+        putIfPresent(extra, CaptureEvidenceField.CHAT_WORKSPACE_ID,
+                resolveMetadataString(request, "workspaceId"));
+        putIfPresent(extra, CaptureEvidenceField.CHAT_MESSAGE_ID,
+                resolveMetadataString(request, "messageId"));
+        putIfPresent(extra, CaptureEvidenceField.CHAT_THREAD_ID,
+                resolveMetadataString(request, "threadId"));
+        return LineageEndpoint.externalAsset(repositoryId, sourceUri,
+                connector.getSourceSystem(), extra);
+    }
+
+    /** The output endpoint: the document, and what this ingest can say about its content. */
+    LineageEndpoint buildOutputEndpoint(String repositoryId, String objectId, String documentName,
+                                        CapturedContent content) {
+        CapturedContent captured = content == null
+                ? CapturedContent.unknown("the caller supplied no content state") : content;
+        java.util.Map<String, Object> attributes = new java.util.LinkedHashMap<>();
+        attributes.put("name", documentName == null || documentName.isBlank()
+                ? objectId : documentName);
+        putIfPresent(attributes, CaptureEvidenceField.CONTENT_STORED,
+                contentStoredValue(captured));
+        if (captured.digest() != null && !captured.digest().isBlank()) {
+            putIfPresent(attributes, CaptureEvidenceField.CONTENT_HASH, captured.digest());
+            putIfPresent(attributes, CaptureEvidenceField.CONTENT_HASH_ALGORITHM, "SHA-256");
+        } else {
+            putIfPresent(attributes, CaptureEvidenceField.CONTENT_HASH_UNAVAILABLE,
+                    captured.reason());
+        }
+        return LineageEndpoint.document(repositoryId, objectId, attributes);
+    }
+
+    /**
+     * Writes a fact under the v2 attribute name the table gives it.
+     *
+     * <p>Going through the table rather than a literal is the point: a fact added to the v1
+     * snapshot and forgotten here is what this work exists to prevent, and the table is what
+     * makes the two sides impossible to drift apart rather than merely testable.
+     */
+    private static void putIfPresent(java.util.Map<String, Object> target,
+                                     CaptureEvidenceField field, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        CaptureEvidenceField.V2Home home = field.v2Home();
+        if (home.attributeName() == null) {
+            throw new IllegalStateException(field + " has no v2 attribute name; the table says "
+                    + home.placement() + ". Writing it as an endpoint attribute would contradict "
+                    + "the table that the correspondence test reads.");
+        }
+        target.put(home.attributeName(), value);
+    }
+
+    /** The three-state, as the string both encodings use. Never inferred from the digest. */
+    static String contentStoredValue(CapturedContent captured) {
+        return switch (captured.state()) {
+            case STORED -> "true";
+            case NONE -> "false";
+            case UNKNOWN -> "unknown";
+        };
+    }
+
     java.util.Map<String, String> buildV1Snapshot(ConnectorDefinition connector,
                                                   ExternalIngestRequest request,
                                                   String targetFolderId, CapturedContent content,
                                                   String executedBy, String onBehalfOf) {
         java.util.Map<String, String> v1Snapshot = new java.util.LinkedHashMap<>();
-        v1Snapshot.put("sourceSystem", connector.getSourceSystem());
-        v1Snapshot.put("sourceArchetype",
+        // Keys come from CaptureEvidenceField, not from literals: the same table drives the v2
+        // endpoint attributes, so a fact cannot be added to one encoding and forgotten in the
+        // other (P1-1(b)). Presence conditions are unchanged — this rides the legacy projection
+        // verbatim and a key that used to be absent must stay absent.
+        v1Snapshot.put(CaptureEvidenceField.SOURCE_SYSTEM.v1Key(), connector.getSourceSystem());
+        v1Snapshot.put(CaptureEvidenceField.SOURCE_ARCHETYPE.v1Key(),
                 connector.getSourceArchetype() != null ? connector.getSourceArchetype().name() : "");
-        v1Snapshot.put("sourceObjectId", request.getSourceObjectId());
+        v1Snapshot.put(CaptureEvidenceField.SOURCE_OBJECT_ID.v1Key(), request.getSourceObjectId());
         if (request.getSourceObjectType() != null) {
-            v1Snapshot.put("sourceObjectType", request.getSourceObjectType());
+            v1Snapshot.put(CaptureEvidenceField.SOURCE_OBJECT_TYPE.v1Key(),
+                    request.getSourceObjectType());
         }
         if (targetFolderId != null) {
-            v1Snapshot.put("targetFolderId", targetFolderId);
+            v1Snapshot.put(CaptureEvidenceField.TARGET_FOLDER_ID.v1Key(), targetFolderId);
         }
         // What was actually captured, so the event stands on its own. An object id alone can
         // be updated later; a digest cannot be, and an agent is required by A.1 (P1-1(b)).
@@ -210,38 +291,45 @@ public class IngestLineageEmitter {
         // (external review, P1-1(b)).
         CapturedContent captured = content == null
                 ? CapturedContent.unknown("the caller supplied no content state") : content;
-        v1Snapshot.put("contentStored", switch (captured.state()) {
-            case STORED -> "true";
-            case NONE -> "false";
-            case UNKNOWN -> "unknown";
-        });
+        v1Snapshot.put(CaptureEvidenceField.CONTENT_STORED.v1Key(), contentStoredValue(captured));
         if (captured.digest() != null && !captured.digest().isBlank()) {
-            v1Snapshot.put("contentHash", captured.digest());
-            v1Snapshot.put("contentHashAlgorithm", "SHA-256");
+            v1Snapshot.put(CaptureEvidenceField.CONTENT_HASH.v1Key(), captured.digest());
+            v1Snapshot.put(CaptureEvidenceField.CONTENT_HASH_ALGORITHM.v1Key(), "SHA-256");
         } else if (captured.reason() != null) {
-            v1Snapshot.put("contentHashUnavailable", captured.reason());
+            v1Snapshot.put(CaptureEvidenceField.CONTENT_HASH_UNAVAILABLE.v1Key(),
+                    captured.reason());
         }
         // Two different questions, so two fields. getUsername() on a delegated context returns
         // the profile creator — the authority the import ran UNDER — not the actor that ran it,
         // and unauthenticated ingest has no actor to name at all. Collapsing those into one
         // "ingestedBy" made an absent agent and a delegated one look alike (external review,
         // P1-1(b)).
-        v1Snapshot.put("executedBy", executedBy == null || executedBy.isBlank()
-                ? "service: no authenticated context (scheduled or webhook ingest)" : executedBy);
+        v1Snapshot.put(CaptureEvidenceField.EXECUTED_BY.v1Key(),
+                executedBy == null || executedBy.isBlank()
+                        ? "service: no authenticated context (scheduled or webhook ingest)"
+                        : executedBy);
         if (onBehalfOf != null && !onBehalfOf.isBlank()) {
-            v1Snapshot.put("onBehalfOf", onBehalfOf);
+            v1Snapshot.put(CaptureEvidenceField.ON_BEHALF_OF.v1Key(), onBehalfOf);
         }
         // participants was stored on the object but left out of the evidence, so the record
         // said which channel a message came from without saying who was in it (external review).
         // NOT here: nemaki:chatCapturedAt. It is stamped AFTER the import returns, so at this
         // point it does not exist yet — carrying it needs the stamp to move ahead of emission,
         // which is P1-1(b) work, not a field to add to this loop.
-        for (String key : new String[]{"workspaceId", "channelId", "channelName", "threadId",
-                "messageId", "participants", "selectionReason", "evidenceScope",
-                "captureWindowStart", "captureWindowEnd"}) {
-            String value = resolveMetadataString(request, key);
+        for (CaptureEvidenceField field : new CaptureEvidenceField[]{
+                CaptureEvidenceField.CHAT_WORKSPACE_ID, CaptureEvidenceField.CHAT_CHANNEL_ID,
+                CaptureEvidenceField.CHAT_CHANNEL_NAME, CaptureEvidenceField.CHAT_THREAD_ID,
+                CaptureEvidenceField.CHAT_MESSAGE_ID, CaptureEvidenceField.CHAT_PARTICIPANTS,
+                CaptureEvidenceField.CHAT_SELECTION_REASON,
+                CaptureEvidenceField.CHAT_EVIDENCE_SCOPE,
+                CaptureEvidenceField.CHAT_CAPTURE_WINDOW_START,
+                CaptureEvidenceField.CHAT_CAPTURE_WINDOW_END}) {
+            // The metadata key is the v1 key without the "chat." prefix — the same string the
+            // caller supplies.
+            String metadataKey = field.v1Key().substring("chat.".length());
+            String value = resolveMetadataString(request, metadataKey);
             if (value != null && !value.isBlank()) {
-                v1Snapshot.put("chat." + key, value);
+                v1Snapshot.put(field.v1Key(), value);
             }
         }
 

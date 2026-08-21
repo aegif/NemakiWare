@@ -144,20 +144,43 @@ companion が要る」としたが、reason は利用者由来ではなく
 
 ### 3.2 input endpoint (`EXTERNAL_ASSET`) に足す — **会話の同一性だけ**
 
-| snapshot キー | v2 attribute |
-|---|---|
-| `sourceObjectType` | `sourceObjectType` |
-| `chat.workspaceId` | `chatWorkspaceId` — `text()` |
-| `chat.channelId` | `chatChannelId` — `text()` |
-| `chat.threadId` | `chatThreadId` — `text()` |
-| `chat.messageId` | `chatMessageId` — `text()` |
+**3 巡目で「4 つのうち 3 つは identity に在る」と自己訂正したが、それも検算不足だった。**
+4 巡目のレビューと、実装で書いた対応テストが**同時に**捕まえた。
+
+実測 (`IngestEvidenceCorrespondenceTest`): チャットメッセージの stable key は
+
+```
+acme-chat://channels/C1/messages/1720000000.000200
+```
+
+— **workspace 区間が無い**。`ExternalSourceUri.build` の tenant 区間は
+`connector.getTenantId()` から作られ、snapshot の `chat.workspaceId` は
+`request.getMetadata()` から来る。**出所が別**で、しかも connector に tenant が無ければ
+区間ごと落ちる。
+
+`messageId` はもっと明確で、チャット**添付**の URI は `channels/{channelId}/files/{fileId}` —
+key に入るのは**ファイルの id** で、`metadata.messageId` は**親メッセージ**である。
+**添付を親メッセージに結ぶ唯一の識別子**なので、落とすと flip でその結び付きが切れる。
+
+| snapshot キー | v2 の居場所 | 根拠 |
+|---|---|---|
+| `sourceObjectType` | `sourceObjectType` — `text()` | key の path 区間が暗示するが明言しない |
+| `chat.workspaceId` | `chatWorkspaceId` — `text()` | **key に無い** (tenant は connector 由来) |
+| `chat.messageId` | `chatMessageId` — `text()` | **添付では key に無い** (key はファイル id) |
+| `chat.threadId` | `chatThreadId` — `text()` | key に無い |
+| `chat.channelId` | **identity** | message / attachment のどちらの URI も、**同じ metadata から** `channels/{channelId}` を作る |
+| `chat.channelName` | **足さない** | 下記 |
+
+> **`identity` は最も危険な逃げ道である。** 「key が運ぶ」は理由文字列では検算できない。
+> 対応テストは **stable key を実際に見て**、値が入っているかを確かめる
+> (`V2Encoding.carries` の `IDENTITY` 分岐)。負のコントロールで、
+> `chatMessageId` を `identity(...)` と偽ると落ちることを確認している。
 
 **`chat.channelName` は入れない。** 呼び出し元の metadata から素通しで来る自由文字列で、
 DM やグループ DM では**相手の氏名そのもの**になる — §6 が participants を外した理由が
-そのまま当たる。id 系 4 つは呼び出し元由来だが**識別子**であり、氏名ではない。
+そのまま当たる。
 
-**policy は 4 つとも `text()` (PRESERVE)。** 呼び出し元が任意長を渡せるので `displayText()`
-にすべきかを検討したが、**識別子は切り詰めると別のものを指す**ので PRESERVE が正しい
+**policy は `text()` (PRESERVE)。** 識別子は切り詰めると別のものを指すので
 (`versionSeriesId` が `text()` である理由と同じ)。1024 超は
 `LineageChunkPlanner` の `UNRESOLVED(OVERSIZE)` に落ちる — **それは正しい挙動**で、
 「切り詰めた識別子を証拠として保存する」より良い。

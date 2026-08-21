@@ -250,7 +250,14 @@ public class PurviewSchemaPayloadFactoryTest {
         // folderPathOriginalSha256 and versionLabelOriginalSha256 must be declared on the type,
         // or the evidence for a shortened value is the thing Atlas drops.
         // + 5 for 増分 B (v2.3.31): content facts and version identity.
-        assertEquals(23, docAttrs.size(), docAttrs.toString());
+        // + 3 for P1-1(b): what the repository holds after an ingest — contentStored (a THREE
+        // value string, not a boolean), the digest's algorithm, and the reason a digest is
+        // absent. Declared here because EndpointKindSchemaAlignmentTest requires every allowed
+        // endpoint attribute to exist on the type, and because an attribute the type lacks is
+        // dropped on arrival rather than rejected.
+        assertEquals(26, docAttrs.size(), docAttrs.toString());
+        assertTrue(docAttrs.containsAll(
+                List.of("contentStored", "contentHashAlgorithm", "contentStateReason")));
         assertTrue(docAttrs.containsAll(
                 List.of("folderPathOriginalSha256", "versionLabelOriginalSha256")));
         assertTrue(docAttrs.containsAll(List.of("mimeType", "contentLength",

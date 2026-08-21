@@ -178,7 +178,11 @@ public class EndpointKindSchemaAlignmentTest {
                         "versionSeriesId",
                         // 増分 B (v2.3.31)
                         "mimeType", "contentLength",
-                        "versionObjectId", "changeToken", "contentHash"),
+                        "versionObjectId", "changeToken", "contentHash",
+                        // P1-1(b): what the repository holds after an ingest. contentStored is
+                        // three values as a STRING, not a boolean — a check-in with no stream
+                        // carries the previous content forward, which is undetermined.
+                        "contentStored", "contentHashAlgorithm", "contentStateReason"),
                 EndpointKind.CMIS_DOCUMENT.allowedAttributes());
         assertEquals(List.of("name"), EndpointKind.CMIS_FOLDER.allowedAttributes());
         assertEquals(List.of("archivedAt", "originalObjectId", "name", "versionLabel",
@@ -186,7 +190,12 @@ public class EndpointKindSchemaAlignmentTest {
                 "archiveState", "versionSeriesId"), EndpointKind.ARCHIVE.allowedAttributes());
         assertEquals(List.of("sourceSystem", "externalStableKey", "externalPath",
                         "tenantId", "sourceRevision", "sourceModifiedAt",
-                        "sourceContentHash", "sourceContentLength"),
+                        "sourceContentHash", "sourceContentLength",
+                        // P1-1(b): the source facts the stable key does not already state.
+                        // The CHANNEL is in the key and so is absent here; the workspace is not
+                        // (the key's tenant segment is the connector's tenant id, and is dropped
+                        // when it has none) and neither is an attachment's parent message.
+                        "sourceObjectType", "chatWorkspaceId", "chatMessageId", "chatThreadId"),
                 EndpointKind.EXTERNAL_ASSET.allowedAttributes());
         // no externalPath: the natural value is the drive URL, whose query string is where
         // sharing tokens live — unrepresentable until B defines a provider-canonical URL

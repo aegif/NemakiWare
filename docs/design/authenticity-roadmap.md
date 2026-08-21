@@ -78,9 +78,13 @@ BagIt / OAIS 型パッケージ (`bagit|oais` で 0 件)、定期 fixity 再検�
    `contentHash` / 会話文脈 (`chat.workspaceId` / `channelId` / `channelName` / `threadId` /
    `messageId` / `participants` / `selectionReason` / `evidenceScope` / `captureWindowStart` /
    `captureWindowEnd`) / `executedBy`+`onBehalfOf` を運ぶ (PR #507)。**残る制約**は 2 つ:
-   snapshot は **v1 projection 限定**で `LineageFact` の設計上 v2 に home が無いこと、および
+   snapshot は **v1 projection 限定**で `LineageFact` の設計上 v2 に home が無いこと
+   (**下表 P1-1(b)**、設計は [`p1-1b-v2-evidence-home.md`](p1-1b-v2-evidence-home.md))、および
    `nemaki:chatCapturedAt` は**オブジェクトに刻まれるが snapshot には入らない** — 刻印が emit の
-   **後**に走るため、載せるには順序を変える必要がある (どちらも下表 P1-1(b))。刻印は
+   **後**に走るため、載せるには順序を変える必要がある。**後者は (b) から (d) へ移した**:
+   刻印先の `nemaki:chatContextMetadata` aspect を作るのは `execute()` が**返った後**の
+   wrapper なので、emit の直前に前倒しすると **aspect がまだ無く空振りする**。aspect 付与の
+   位置は「どの事実がどの時点で確定するか」の帰結であり、それを決めるのは (d) である。刻印は
    **この取込が作ったオブジェクトに限る**: dedupe skip を含む毎回の chat 取込で走るため、
    既に在るオブジェクトに「今」を刻むと、何年も前から保管しているものが今日から保管開始に
    見えてしまう。かといって `cmis:creationDate` も答えではない (移行・アーカイブ復元で
@@ -229,7 +233,7 @@ vocabulary に**クロスウォークで固定**する — `capture` / `fixity c
 
 | ID | 何を | 具体 |
 |---|---|---|
-| **P1-1** | **Capture Provenance の原子化** — 「必ず刻む」を設計として実装する。**現在地 (2026-08-20)**: (a) の**可視化**は PR #506 で完了 (5 巡のレビューで NO BLOCKERS)。(b) snapshot は content 状態 (機械可読キーは `contentStored` = `"true"` / `"false"` / `"unknown"` — 「判定できない」を「保存していない」に潰さない) / contentHash / chat* / `executedBy`+`onBehalfOf` を運ぶ (PR #507)。(c) `chatCapturedAt` の取込時スタンプは実装済み。**未了**: (a) の本体である **outbox** (content commit と evidence commit のトランザクション境界)、(b) の **v2 表現**と `chatCapturedAt` の emit 前倒し — 現状は v1 projection 限定で `LineageFact` の設計上 v2 に home が無く、**v2 write flip で失われる**ため、真正性レポートをこのスキーマの上に建てる前に型付き表現が要る、(c) の **更新制約** — `Patch_ChatContextMetadataSecondaryType` は既存型にプロパティ id を足すだけで updatability を書き換えない (`:50`) ので、コードを変えても新規デプロイにしか効かず構成が割れる。既存プロパティ定義を書き換える移行パッチと、我々自身の aspect 直接更新が阻まれないかの確認が要る、(d) 空コンテンツ・version ごとの hash・メタデータ hash の evidence data model、(e) 失敗時の隔離 + 再構築可能性 (実行起源の記録もここ — 委譲実行の executedBy は現在 admitted-unknown) |
+| **P1-1** | **Capture Provenance の原子化** — 「必ず刻む」を設計として実装する。**現在地 (2026-08-20)**: (a) の**可視化**は PR #506 で完了 (5 巡のレビューで NO BLOCKERS)。(b) snapshot は content 状態 (機械可読キーは `contentStored` = `"true"` / `"false"` / `"unknown"` — 「判定できない」を「保存していない」に潰さない) / contentHash / chat* / `executedBy`+`onBehalfOf` を運ぶ (PR #507)。(c) `chatCapturedAt` の取込時スタンプは実装済み。**未了**: (b) の残り (下記)、(c) の **更新制約** — `Patch_ChatContextMetadataSecondaryType` は既存型にプロパティ id を足すだけで updatability を書き換えない (`:50`) ので、コードを変えても新規デプロイにしか効かず構成が割れる。既存プロパティ定義を書き換える移行パッチと、我々自身の aspect 直接更新が阻まれないかの確認が要る、(d) 空コンテンツ・version ごとの hash・メタデータ hash の evidence data model。**(b) から移したもの**: `chatCapturedAt` の刻印位置 (aspect 付与を `execute()` に引き込む必要がある)、会話の**範囲** (`captureWindowStart/End` / `evidenceScope` / `selectionReason` — 取込元の性質ではなく取込の判断なので、再取込で上書きされる endpoint attribute には置けない)、`chat.participants` と `chat.channelName` (個人名。カタログには journal のような保持期限が無い)、**Process 属性の v2 供給** (`folderId` / `importMode` / `sourceDescription` / `externalStableKey` — v2 record では `legacyEventAttributes` が空になるため、**必須属性が既定値で埋まる**)、(e) 失敗時の隔離 + 再構築可能性 (実行起源の記録もここ — 委譲実行の executedBy は現在 admitted-unknown) |
 | **P1-2** | **Fixity service** | leader-gated の定期ジョブ (既存スケジューラパターン) が保存コンテンツの SHA-256 を再計算し `nemaki:contentHash` と照合。結果を journal に記録、乖離は隔離 + アラート。運用 API は再索引の verdict 型を踏襲 (`COMPLETE` の意味論の教訓をそのまま適用: 「検証した範囲」を常に言う)。**対象は cold 層 (S3) を含む** — 詳細は Phase 3 前提モデルの原則 3 |
 | **P1-3** | **Tamper-evident evidence ledger** | **journal と evidence を分離する** (外部レビュー + purge 衝突の帰結): 配送用 journal は現行どおり purge 可 (`lineage.retention.days`)、**evidence ledger はアプリケーション層で追記専用**として扱い (物理的な不変性ではない — DB 管理者は到達できる)、期間・法的根拠別に保持し、purge 境界ごとに checkpoint + 外部アンカー + inclusion proof を残す。連鎖の構築は素朴な LeaderElection 流用ではなく、**既存の fenced sequencer (`CouchLineageSequencingStore` — lease generation CAS 持ち) を土台**に: chain domain (repo 単位か全体か) / sequence と連鎖の同一 CAS 確定 / failover 時の fork 検出 / **unsequenced backlog がある間の anchor 禁止** / purge 後 genesis / 「順序 = 確定 sequence 順であって時計順ではない」の明記。但し書き: 連鎖が固定するのは記録された順序 (P1-1 が先)、アンカー以前しか不整合を検出可能にできない (頻度 = 書き直され得る窓) |
 | **P1-4** | **真正性レポート (evidence package)** | 文書 1 件について identity 属性・contentHash と fixity 履歴・custody チェーン (journal 抜粋)・アクセス監査・バージョン系譜・処理環境 (Barrier ダイジェスト) を 1 つの JSON + 人が読む PDF に集約する API/UI。**マーケの主砲** (§5) |

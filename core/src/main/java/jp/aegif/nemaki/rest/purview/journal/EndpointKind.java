@@ -65,7 +65,13 @@ public enum EndpointKind {
             // and counts, so all PRESERVE — a shortened contentHash names no content, and a
             // shortened changeToken names no version.
             text("mimeType"), count("contentLength"),
-            text("versionObjectId"), text("changeToken"), text("contentHash")),
+            text("versionObjectId"), text("changeToken"), text("contentHash"),
+            // P1-1(b). contentStored is THREE values as a string — "true" / "false" / "unknown" —
+            // not a boolean: a check-in with no stream carries the previous version's content
+            // forward, and that is undetermined rather than absent. contentStateReason explains
+            // an "unknown"; it is product-authored prose of bounded length (four constants with
+            // one node id interpolated), so PRESERVE rather than a truncated display value.
+            text("contentStored"), text("contentHashAlgorithm"), text("contentStateReason")),
 
     /**
      * A CMIS folder, referenced through its DataSet proxy.
@@ -110,7 +116,16 @@ public enum EndpointKind {
             // its stable key, and cold storage has no tenant.
             text("tenantId"),
             text("sourceRevision"), count("sourceModifiedAt"),
-            text("sourceContentHash"), count("sourceContentLength")),
+            text("sourceContentHash"), count("sourceContentLength"),
+            // P1-1(b). Both are identifiers, so PRESERVE: a shortened one names something else.
+            // sourceObjectType says what kind of thing was ingested — a message, an attachment,
+            // a page — which the stable key's path segment implies but does not state.
+            text("sourceObjectType"),
+            // The chat identifiers the stable key does NOT carry. Only the channel is genuinely
+            // in the key: the tenant segment is the CONNECTOR's tenant id (omitted when it has
+            // none), not the request's workspace, and an attachment's key names the file rather
+            // than the message it came from.
+            text("chatWorkspaceId"), text("chatMessageId"), text("chatThreadId")),
 
     /**
      * An object in a cloud drive; {@code sourceSystem} carries the provider.
