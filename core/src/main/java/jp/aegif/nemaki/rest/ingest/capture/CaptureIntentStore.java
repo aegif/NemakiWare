@@ -70,7 +70,33 @@ public interface CaptureIntentStore {
      * completion: switching a repository to {@code disabled} half way through an ingest must
      * not strand an intent that is already open (AC 20).
      */
-    boolean appliesTo(String repositoryId);
+    Applicability appliesTo(String repositoryId);
+
+    /**
+     * Whether the boundary covers a repository — including "we could not find out".
+     *
+     * <p>The third value is the point. {@code getModeForRepository} cannot express a failed
+     * read: the configuration layer swallows every error and returns an empty configuration,
+     * which falls through to the {@code disabled} startup default. Collapsing that into
+     * {@code NOT_APPLICABLE} means that while {@code nemaki_conf} is unreachable, a repository
+     * the operator configured as {@code journaled} is ingested into with no intent row at all —
+     * silently, and by the very mechanism that exists to prevent unrecorded changes.
+     *
+     * <p>The sibling emitter path already makes this distinction
+     * ({@code IngestLineageEmitter.resolveEmitterReporting}), so without it the stronger
+     * guarantee would be the weaker judge (external review).
+     */
+    enum Applicability {
+
+        /** The repository runs the boundary. */
+        APPLIES,
+
+        /** The repository genuinely does not — mode read successfully as disabled or direct. */
+        NOT_APPLICABLE,
+
+        /** The mode could not be read. Neither answer is established. */
+        UNDETERMINED
+    }
 
     /** What happened when completing. Three outcomes, none of which may be inferred. */
     enum CaptureCompletion {
@@ -95,6 +121,16 @@ public interface CaptureIntentStore {
          * <p>{@code CAPTURED} is terminal, and only the ingest may complete an
          * {@code UNRESOLVED} row. A sweeper racing the ingest lands here; it is not an error.
          */
-        NOT_COMPLETABLE
+        NOT_COMPLETABLE,
+
+        /**
+         * The row stayed completable but the write kept losing.
+         *
+         * <p>Deliberately not {@link #NOT_COMPLETABLE}: that says the row was in a state this
+         * transition may not leave, which was not observed. Collapsing the two would report a
+         * write contention as a state problem and send an operator looking for the wrong thing
+         * (design §6.8-6, external review).
+         */
+        CONTENDED
     }
 }

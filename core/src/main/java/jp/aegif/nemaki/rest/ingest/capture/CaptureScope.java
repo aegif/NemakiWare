@@ -81,6 +81,8 @@ public final class CaptureScope {
     private boolean notApplicable;
     /** Latched when an intent write was refused, so a swallowed exception still shows up. */
     private boolean openRefused;
+    /** Set when the boundary could not be told to apply or not. Reported, not fatal. */
+    private String undeterminedReason;
     private final List<Recorded> mutations = new ArrayList<>();
 
     /** One tracked mutation and what we know about it. */
@@ -157,10 +159,28 @@ public final class CaptureScope {
         // the design promised none. It also made a provisioning failure silently disable the
         // whole boundary: an inert scope opens nothing, records nothing and warns about nothing,
         // so the document was created and the ingest reported success (external review).
-        if (!store.appliesTo(intent.repositoryId())) {
+        CaptureIntentStore.Applicability applicability = store.appliesTo(intent.repositoryId());
+        if (applicability == CaptureIntentStore.Applicability.NOT_APPLICABLE) {
             // Latched, so the answer cannot change mid-operation and is not asked again per
             // mutation.
             notApplicable = true;
+            return;
+        }
+        if (applicability == CaptureIntentStore.Applicability.UNDETERMINED) {
+            // NOT a refusal. Design §6.8-1 decision 2 already chose to record this as a hole in
+            // the guarantee rather than close it, and the sibling emitter path reports it as a
+            // warning — making capture refuse where the emitter warns would fail every ingest in
+            // every deployment that has never enabled lineage, the moment nemaki_conf blinks.
+            // Guarantee 3 says disabled and direct behave exactly as today, and "we could not
+            // tell whether it is disabled" is inside that.
+            //
+            // What changes is that it is no longer SILENT: the caller is told the answer is not
+            // evidence of a deliberate configuration (external review).
+            notApplicable = true;
+            undeterminedReason = "Whether the capture boundary covers repository "
+                    + intent.repositoryId() + " could not be determined, because the "
+                    + "configuration could not be read. No capture intent was recorded for this "
+                    + "ingest. This does NOT establish that lineage is switched off.";
             return;
         }
         if (!store.isActive()) {
@@ -274,6 +294,12 @@ public final class CaptureScope {
      * truthful answer, and it is what puts the attempt in front of an operator.
      */
     public CaptureResult complete(Map<String, Object> evidence) {
+        if (undeterminedReason != null) {
+            // Nothing was recorded, and the caller is told why. Silence here is what let a
+            // journaled repository be ingested into with no evidence while the configuration was
+            // unreadable.
+            return CaptureResult.notEstablished(undeterminedReason);
+        }
         if (!isActive() || !opened) {
             return CaptureResult.notOpened();
         }
@@ -318,6 +344,11 @@ public final class CaptureScope {
             case NOT_COMPLETABLE -> CaptureResult.notEstablished(
                     "The evidence row for this ingest (intent id: " + intent.intentId() + ") "
                             + "was not in a state that could be completed.");
+            case CONTENDED -> CaptureResult.notEstablished(
+                    "The evidence row for this ingest (intent id: " + intent.intentId() + ") "
+                            + "could not be written because another writer kept winning. The row "
+                            + "remained completable each time it was read, so this is contention "
+                            + "rather than a state problem.");
         };
     }
 

@@ -72,8 +72,8 @@ class IngestCaptureWrapperScopeTest {
             return true;
         }
 
-        @Override public boolean appliesTo(String repositoryId) {
-            return applies;
+        @Override public Applicability appliesTo(String repositoryId) {
+            return applies ? Applicability.APPLIES : Applicability.NOT_APPLICABLE;
         }
 
         /** The intents opened for a given source object id. */

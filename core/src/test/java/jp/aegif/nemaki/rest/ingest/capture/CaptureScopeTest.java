@@ -71,12 +71,12 @@ class CaptureScopeTest {
         }
 
         @Override
-        public boolean appliesTo(String repositoryId) {
+        public Applicability appliesTo(String repositoryId) {
             appliesToCalls.add(repositoryId);
-            return applies;
+            return applicability;
         }
 
-        boolean applies = true;
+        Applicability applicability = Applicability.APPLIES;
         final List<String> appliesToCalls = new ArrayList<>();
     }
 
@@ -313,7 +313,7 @@ class CaptureScopeTest {
         // isActive() provisions the lineage database. Asking it first created that database, and
         // deployed its design documents, on deployments where every repository is disabled.
         FakeStore store = new FakeStore();
-        store.applies = false;
+        store.applicability = CaptureIntentStore.Applicability.NOT_APPLICABLE;
         store.active = false;
 
         scope(store).ensureIntentOpened();   // must not throw and must not ask about the store
@@ -370,7 +370,7 @@ class CaptureScopeTest {
     void notApplicableIsNotARefusal() {
         // Otherwise every ingest into a disabled repository would be reported as failed.
         FakeStore store = new FakeStore();
-        store.applies = false;
+        store.applicability = CaptureIntentStore.Applicability.NOT_APPLICABLE;
         CaptureScope scope = scope(store);
 
         scope.ensureIntentOpened();
@@ -386,7 +386,7 @@ class CaptureScopeTest {
         // Lineage mode is per repository. Refusing an ingest into a repository whose mode is
         // disabled or direct would stop deployments that never asked for the boundary.
         FakeStore store = new FakeStore();
-        store.applies = false;
+        store.applicability = CaptureIntentStore.Applicability.NOT_APPLICABLE;
         store.openSucceeds = false;   // would fail closed if the gate were not consulted
         CaptureScope scope = scope(store);
 
@@ -405,7 +405,7 @@ class CaptureScopeTest {
         // Asking per mutation would mean a mid-operation configuration change could half-apply,
         // and would put a configuration read on every write.
         FakeStore store = new FakeStore();
-        store.applies = false;
+        store.applicability = CaptureIntentStore.Applicability.NOT_APPLICABLE;
         CaptureScope scope = scope(store);
 
         scope.ensureIntentOpened();
@@ -418,12 +418,50 @@ class CaptureScopeTest {
     }
 
     @Test
+    @DisplayName("an undetermined repository is not refused, but is reported")
+    void undeterminedIsReportedNotRefused() {
+        // Two opposite mistakes are possible here and both have been made. Refusing fails every
+        // ingest in every deployment that never enabled lineage, the moment nemaki_conf blinks
+        // (guarantee 3). Staying silent is how a journaled repository gets ingested into with no
+        // evidence at all. The answer is: change nothing, say so (external review).
+        FakeStore store = new FakeStore();
+        store.applicability = CaptureIntentStore.Applicability.UNDETERMINED;
+        store.openSucceeds = false;   // would fail closed if this were treated as APPLIES
+        CaptureScope scope = scope(store);
+
+        scope.ensureIntentOpened();   // must not throw
+        scope.record("createDocument", MutationOutcome.SUCCEEDED);
+
+        assertTrue(store.opened.isEmpty(), "nothing may be written when we cannot tell");
+        assertFalse(scope.wasOpenRefused(), "and it is not a refusal");
+        CaptureResult result = scope.complete(Map.of());
+        assertFalse(result.captured());
+        assertNotNull(result.warning(), "but it must not be silent");
+        assertTrue(result.warning().contains("could not be determined"), result.warning());
+        assertTrue(result.warning().contains("does NOT establish"), result.warning());
+    }
+
+    @Test
+    @DisplayName("a determinate not-applicable stays silent — the control")
+    void determinateNotApplicableIsSilent() {
+        // Without this, reporting a warning for every skipped repository would put a line in
+        // front of an operator on every ingest of a deployment that runs without lineage.
+        FakeStore store = new FakeStore();
+        store.applicability = CaptureIntentStore.Applicability.NOT_APPLICABLE;
+        CaptureScope scope = scope(store);
+
+        scope.ensureIntentOpened();
+
+        assertNull(scope.complete(Map.of()).warning());
+    }
+
+    @Test
     @DisplayName("an applicable repository still fails closed — the control")
     void applicableRepositoryStillFailsClosed() {
         // Without this, hard-coding appliesTo to false would pass the two tests above while
         // disabling the whole feature.
         FakeStore store = new FakeStore();
-        store.applies = true;
+        store.applicability = CaptureIntentStore.Applicability.APPLIES;
         store.openSucceeds = false;
 
         assertThrows(CaptureIntentFailedException.class, () -> scope(store).ensureIntentOpened());
@@ -438,7 +476,7 @@ class CaptureScopeTest {
         CaptureScope scope = scope(store);
         scope.ensureIntentOpened();
         scope.record("createDocument", MutationOutcome.SUCCEEDED);
-        store.applies = false;                 // the operator switches it off mid-ingest
+        store.applicability = CaptureIntentStore.Applicability.NOT_APPLICABLE;                 // the operator switches it off mid-ingest
 
         assertTrue(scope.complete(Map.of()).captured());
         assertEquals(1, store.completedWith.size());

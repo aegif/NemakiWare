@@ -95,7 +95,24 @@ interface LineageStoreSupport {
     java.util.List<Map<String, Object>> queryRawView(String designDocName, String viewName,
             Map<String, Object> params);
 
-    /** Deletes a document by id and revision. {@code false} when it was not deleted. */
+    /**
+     * How many rows a view answers with, up to {@code limit}, WITHOUT fetching the documents.
+     *
+     * <p>{@link #queryRawView} always asks for {@code include_docs}, which is right when the
+     * caller needs the rows and wrong when it only needs a number: counting three states at the
+     * documented scan limit would pull 300,000 documents into heap to produce three integers
+     * (external review).
+     */
+    int countRawView(String designDocName, String viewName, int limit);
+
+    /**
+     * Deletes a document ONLY if it is still at the revision in the given map.
+     *
+     * <p>{@code false} when it was not deleted — including when the revision has moved on, which
+     * is an ordinary lost race rather than an error. Conditional on purpose: a retention sweep
+     * decides what may be deleted from what it read, so deleting whatever is there NOW would let
+     * it destroy a row that became undeletable in between.
+     */
     boolean deleteRaw(Map<String, Object> raw);
 
     /** Metrics, when a bean is wired; {@code null} otherwise. */

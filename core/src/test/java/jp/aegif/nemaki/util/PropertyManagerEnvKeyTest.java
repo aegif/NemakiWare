@@ -36,9 +36,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class PropertyManagerEnvKeyTest {
 
-    /** The derivation under test, kept in step with {@code PropertyManager.readValue}. */
+    /**
+     * The PRODUCT's derivation. An earlier version of this class restated the rule here instead,
+     * so reverting the fix in {@code PropertyManager} left all four tests green — the same
+     * assert-against-a-copy defect two earlier review rounds had already found twice (external
+     * review).
+     */
     private static String envKeyFor(String key) {
-        return key.toUpperCase().replace('.', '_').replace('-', '_');
+        return PropertyManager.environmentVariableNameFor(key);
     }
 
     /** POSIX: a name is letters, digits and underscores, and does not begin with a digit. */
@@ -82,6 +87,8 @@ class PropertyManagerEnvKeyTest {
     @DisplayName("the hyphenated form would NOT have been exportable before")
     void theOldDerivationWasUnusable() {
         // States what was broken, so the fix cannot be reverted as a tidy-up.
+        // Written out deliberately: this is the OLD rule, which must not be what the product
+        // does. Calling the product here would make the test tautological in the other direction.
         String old = "lineage.capture-boundary.stale.minutes".toUpperCase().replace('.', '_');
 
         assertEquals("LINEAGE_CAPTURE-BOUNDARY_STALE_MINUTES", old);

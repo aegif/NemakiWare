@@ -1117,6 +1117,51 @@ scope に記録する。子の処理で作る relationship は、親のフレー
 - **O3 (jitter が実質固定)** — `System.identityHashCode` は同一バイナリでは同じ値を返しうる。
   0〜59 秒は 300 秒周期の 20% でしかないので、効果自体が小さい
 
+## 9.10 実装後レビュー 3・4 巡目 (2026-08-21)
+
+### 3 巡目 — HIGH 3 / MEDIUM 5
+
+| | 指摘 | 対応 |
+|---|---|---|
+| **H1 (データ損失)** | retention の削除が `_rev` 条件付きでない。`CloudantClientWrapper.delete` は**渡した rev を捨てて最新を取り直す**ので、走査が読んでから削除するまでに行が `CAPTURED` に変わると**完成した証拠を消す**。`UNRESOLVED` だけを対象と決めた設定が、成功した取込の証拠を消し、しかもどこにも記録されない | `deleteIfRevisionMatches` を足し、`deleteRaw` をそれに切り替え。409 は「取り損ねた」で false、404 は既に無いので true |
+| **H2** | `appliesTo` が「無効」と「設定が読めなかった」を区別していない。区別する `configurationReadFailed()` は**前作業 3 で既に在り、兄弟の emitter 経路が使っている**。強い保証を名乗る側が古い fail-open な側より弱い判定をしていた | 三値 `Applicability { APPLIES, NOT_APPLICABLE, UNDETERMINED }` に (4 巡目で扱いを再訂正、下記) |
+| **H3** | `PropertyManagerEnvKeyTest` が**製品ではなく自前のコピー**を検証していた。`PropertyManager` を戻しても 4 件とも緑。§9.8 で反省した直後の commit で同じ失敗形が再発 | 導出を `PropertyManager.environmentVariableNameFor` に切り出し、テストが製品を呼ぶように |
+| M1 | `/counts` が数えるためだけに `include_docs=true` で最大 30 万文書を実体化 | `countRawView` を足し、文書を取らずに数える |
+| M3 | CAS 再試行を使い切ったとき「状態が悪い」と**観測していない原因を断定**していた | `CONTENDED` を足し、競合と状態問題を分けた |
+| M4 | wrapper のテストが note だけ。**`checkOut` の前に intent が開くことを誰も確かめていない** | **未対応** (下記) |
+| M5 | 実行中の取込が `UNRESOLVED` に見える件が §9.9 の未対応にも載っていなかった | **未対応** (下記) |
+
+### 4 巡目 — P0 1 / P1 1 / P2 1
+
+| | 指摘 | 対応 |
+|---|---|---|
+| **P0 (起動不能)** | capture の store を**具象型と 2 つのインタフェース型で 3 つ bean 登録**していた。`CouchCaptureIntentStore` は両インタフェースを実装するので、各インタフェース型に**候補が 2 つ**できる。`@Autowired(required = false)` は**不在は許すが曖昧さは許さない**ので、フィールド名が bean 名と一致しない注入点 (`CaptureIntentSweeper.maintenanceStore` / `CaptureIntentController.maintenanceStore`) が `NoUniqueBeanDefinitionException` で落ちる。`serviceContext.xml` はルート context を再 refresh して読むので、**機能の劣化ではなく WAR が起動しない** | bean を **1 本**に。両インタフェースは同じ instance を見る (それが元々の要件) |
+| **P1** | H2 の直しが規則 3 を破っていた。`appliesTo` は **DISABLED がどこから来たかを問わず** `configurationReadFailed()` を見るので、`-D` や env で `disabled` を固定していても設定 DB が読めなければ拒否になる。**lineage を一度も有効にしていないデプロイの全取込入口がエラーを返す** | **UNDETERMINED を拒否にしない**。§6.8-1 決定 2 が既に「穴として書く」と決めており、兄弟の emitter 経路も warning に留めている。変更は行わず**警告を返す** — 黙らないことが元の改善 |
+| **P2** | `UNDETERMINED` を観測するテストが「どの enum を返すか」だけ。分岐を丸ごと消しても緑 | scope と取込入口の両方で、**拒否せず・何も書かず・警告が出る**ことを固定 |
+
+### この 2 巡で得た教訓
+
+**単体テストは Spring の配線を証明しない。** 5286 件 pass は「bean が解決できる」ことの証拠に
+なっていなかった。全テストが setter で collaborator を挿しており、context を一度も組み立てて
+いなかったためである。`CaptureWiringResolvesTest` を足し、壊れた形に戻すと
+`NoUniqueBeanDefinitionException` で落ちることを確認した。
+
+**「区別できないときは止める」は、止める範囲を間違えると保証 3 を壊す。** H2 の直しは
+正しい問題を指していたが、**判定が失敗した読みに依存していない場合まで巻き込んだ**。
+設計が既に「穴として書く」と決めていた範囲を、レビューの勢いで越えていた。
+
+### 未対応 (この時点で残るもの)
+
+- **AC 13 の exact count** — 一覧の `count` はページ内件数。`/counts` は走査上限つきの概数
+- **O1 掃引速度** — 1 回 200 行 × 5 分。レプリカを増やしても並列にならない
+- **O3 jitter** — `identityHashCode` は同一バイナリで同じ値を返しうる
+- **M4 wrapper テストの範囲** — note のみ。mail / chat / business record と、とくに
+  **`checkOut` の前に intent が開くこと** (設計 §5.0 が名指しした唯一の箇所) が未固定
+- **M5 実行中の取込が `UNRESOLVED` に見える** — 既定 15 分に対し fetch timeout は 30 分。
+  §6.9-3 が lease か heartbeat を求めていたが実装していない
+
+---
+
 ## 10. レビューの状態
 
 - **9 巡目**で「指定どおり実装可能」の判定 (外部レビュー)。

@@ -715,13 +715,44 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
     }
 
     @Override
+    public int countRawView(String designDocName, String viewName, int limit) {
+        if (!ensureClientForRead()) {
+            throw new LineageViewUnreadableException(
+                    "the lineage database is not available, so view " + designDocName + "/"
+                            + viewName + " could not be counted", null);
+        }
+        try {
+            Map<String, Object> p = new HashMap<>();
+            p.put("limit", limit);
+            // No include_docs: the rows carry only the key, which is all a count needs.
+            ViewResult result = lineageClient.queryView(designDocName, viewName, p);
+            if (result == null) {
+                throw new LineageViewUnreadableException(
+                        "view " + designDocName + "/" + viewName + " did not answer; it may not "
+                                + "be deployed, or the database could not be read", null);
+            }
+            return result.getRows() == null ? 0 : result.getRows().size();
+        } catch (LineageViewUnreadableException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new LineageViewUnreadableException(
+                    "view " + designDocName + "/" + viewName + " could not be counted: "
+                            + e.getMessage(), e);
+        }
+    }
+
+    @Override
     public boolean deleteRaw(Map<String, Object> raw) {
         if (raw == null || raw.get("_id") == null || raw.get("_rev") == null) {
             return false;
         }
         try {
-            getLineageClient().delete(raw);
-            return true;
+            // Conditional on the revision we read. The unconditional delete refetches the latest
+            // revision and deletes THAT, so a row that changed between the retention scan's read
+            // and its delete would be destroyed in its new state — a completed capture deleted by
+            // an unresolved-row retention setting (external review).
+            return getLineageClient().deleteIfRevisionMatches(
+                    String.valueOf(raw.get("_id")), String.valueOf(raw.get("_rev")));
         } catch (Exception e) {
             logger.warn("Could not delete {}: {}", raw.get("_id"), e.getMessage());
             return false;

@@ -276,9 +276,12 @@ public class LineageConfig {
      */
     public boolean configurationReadFailed() {
         if (propertyManager == null) {
-            // No property manager wired means nothing dynamic is readable at all — which is the
-            // same class of "could not find out", not a deliberate configuration.
-            return true;
+            // NOT a failed read. With no property manager the mode comes from the @Value startup
+            // default, which is the operator's deploy-time configuration — a determinate answer,
+            // not an absence of one. Calling it "could not find out" was wrong, and once that
+            // answer became a refusal it would have failed every ingest in a deployment with no
+            // dynamic configuration at all (external review).
+            return false;
         }
         try {
             jp.aegif.nemaki.model.Configuration conf = propertyManager.getConfiguration(

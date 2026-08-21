@@ -312,11 +312,20 @@ public class LineageObligationWiringConfig {
     }
 
     /**
-     * The capture boundary's store, exposed under both of its interfaces.
+     * The capture boundary's store. ONE bean, satisfying both of its interfaces.
      *
-     * <p>Two beans over ONE instance, deliberately: the ingest-facing seam and the maintenance
-     * seam have different callers and different risks, but they must agree about what a row is.
-     * Two instances could not disagree today, but nothing would stop them later.
+     * <p>An earlier version registered three beans over one instance — the concrete type plus one
+     * per interface — reasoning that the two seams have different callers. That does not work in
+     * Spring: {@code CouchCaptureIntentStore} implements both interfaces, so each interface type
+     * then had TWO candidates, and {@code @Autowired(required = false)} tolerates <em>absence</em>
+     * but not <em>ambiguity</em>. Injection points whose field name does not happen to match a
+     * bean name — {@code CaptureIntentSweeper.maintenanceStore},
+     * {@code CaptureIntentController.maintenanceStore} — would fail with
+     * {@code NoUniqueBeanDefinitionException}, and because {@code serviceContext.xml} is loaded by
+     * re-refreshing the root context that is not a degraded feature but a WAR that does not start
+     * (external review).
+     *
+     * <p>One bean gives both seams the same instance, which was the actual requirement.
      */
     @Bean
     public CouchCaptureIntentStore couchCaptureIntentStore(
@@ -325,20 +334,6 @@ public class LineageObligationWiringConfig {
         LineageJournalStore store = journalStore.getIfAvailable();
         return store instanceof LineageStoreSupport support
                 ? new CouchCaptureIntentStore(support, lineageConfig.getIfAvailable()) : null;
-    }
-
-    /** The write seam the ingest path fails closed on. */
-    @Bean
-    public jp.aegif.nemaki.rest.ingest.capture.CaptureIntentStore captureIntentStore(
-            ObjectProvider<CouchCaptureIntentStore> store) {
-        return store.getIfAvailable();
-    }
-
-    /** The sweeper's and the admin listing's seam. */
-    @Bean
-    public jp.aegif.nemaki.rest.ingest.capture.CaptureMaintenanceStore captureMaintenanceStore(
-            ObjectProvider<CouchCaptureIntentStore> store) {
-        return store.getIfAvailable();
     }
 
     /** Durable storage for compensation requests. Same database, same strict-IO rules. */

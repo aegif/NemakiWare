@@ -126,13 +126,16 @@ class IngestLineageDisabledIsNotSilentTest {
     }
 
     @Test
-    @DisplayName("no property manager at all counts as unreadable, not as disabled")
-    void absentPropertyManagerIsUnreadable() throws Exception {
-        // Nothing dynamic is readable in this state, so 'disabled' is again the startup default
-        // rather than an answer.
+    @DisplayName("no property manager is a determinate answer, not an unreadable one")
+    void absentPropertyManagerIsAnAnswer() throws Exception {
+        // Corrected. With no property manager the mode comes from the @Value startup default,
+        // which IS the operator's deploy-time configuration — so reporting it as "we could not
+        // find out" was wrong. It mattered once that verdict became a refusal: it would have
+        // failed every ingest in a deployment with no dynamic configuration at all (external
+        // review).
         Object resolution = resolve(disabledConfig(null));
 
-        assertNotNull(reasonOf(resolution));
+        assertNull(reasonOf(resolution));
     }
 
     @Test

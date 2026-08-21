@@ -103,20 +103,32 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
     }
 
     @Override
-    public boolean appliesTo(String repositoryId) {
+    public Applicability appliesTo(String repositoryId) {
         if (lineageConfig == null) {
-            // No configuration to consult. Not applying is the conservative answer: it leaves
-            // every repository behaving exactly as it does today rather than making an ingest
-            // fail closed on a boundary nobody configured.
-            return false;
+            // No configuration bean at all. Every repository behaves exactly as it does today
+            // rather than failing closed on a boundary nobody configured — and unlike an
+            // unreadable configuration, this IS a determinate answer about this deployment.
+            return Applicability.NOT_APPLICABLE;
         }
         try {
             LineageMode mode = lineageConfig.getModeForRepository(repositoryId);
-            return mode != LineageMode.DISABLED && mode != LineageMode.DIRECT;
+            if (mode != LineageMode.DISABLED && mode != LineageMode.DIRECT) {
+                return Applicability.APPLIES;
+            }
+            if (mode == LineageMode.DIRECT) {
+                // DIRECT is never what an unreadable configuration falls back to — the startup
+                // default is disabled — so reaching it means someone set it. A determinate answer.
+                return Applicability.NOT_APPLICABLE;
+            }
+            // DISABLED is only an answer when the configuration could be read. The read collapses
+            // every failure into an empty configuration, which falls through to the disabled
+            // startup default — so an unreachable nemaki_conf and a deliberate switch-off look
+            // identical here (external review).
+            return lineageConfig.configurationReadFailed()
+                    ? Applicability.UNDETERMINED : Applicability.NOT_APPLICABLE;
         } catch (Exception e) {
-            logger.warn("Could not resolve the lineage mode for {}: {} — the capture boundary "
-                    + "will not apply", repositoryId, e.toString());
-            return false;
+            logger.warn("Could not resolve the lineage mode for {}: {}", repositoryId, e.toString());
+            return Applicability.UNDETERMINED;
         }
     }
 
@@ -206,7 +218,10 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
                     return CaptureCompletion.COMPLETED;
                 }
             }
-            return CaptureCompletion.NOT_COMPLETABLE;
+            // Distinct from NOT_COMPLETABLE. What was observed is "the row was still completable
+            // every time we looked, and we lost the write every time" — reporting that as a state
+            // problem would send an operator looking for the wrong thing (design §6.8-6).
+            return CaptureCompletion.CONTENDED;
         } catch (Exception e) {
             logger.warn("Capture intent {} could not be completed: {}", intent.documentId(),
                     e.toString());
@@ -334,9 +349,9 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
     }
 
     private long countView(String view, int limit) {
-        Map<String, Object> params = new HashMap<>();
-        params.put("limit", limit);
-        return support.queryRawView(DESIGN_DOC, view, params).size();
+        // countRawView, not queryRawView: the latter always asks for include_docs, so counting
+        // would pull the documents into heap to produce a number (external review).
+        return support.countRawView(DESIGN_DOC, view, limit);
     }
 
     static final int DEFAULT_COUNT_LIMIT = 10_000;

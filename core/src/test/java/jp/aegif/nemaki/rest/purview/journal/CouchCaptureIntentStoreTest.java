@@ -18,6 +18,7 @@ package jp.aegif.nemaki.rest.purview.journal;
 
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import jp.aegif.nemaki.rest.ingest.capture.CaptureIntent;
+import jp.aegif.nemaki.rest.ingest.capture.CaptureIntentStore;
 import jp.aegif.nemaki.rest.ingest.capture.CaptureIntentStore.CaptureCompletion;
 import jp.aegif.nemaki.rest.ingest.capture.CaptureState;
 
@@ -33,7 +34,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * The CouchDB side of the capture boundary: strict IO, CAS, and views that cannot cross.
@@ -122,9 +125,28 @@ class CouchCaptureIntentStoreTest {
             return out;
         }
 
+        @Override public int countRawView(String designDocName, String viewName, int limit) {
+            lastCountLimit = limit;
+            if (viewThrows != null) {
+                throw viewThrows;
+            }
+            return Math.min(viewRows.size(), limit);
+        }
+
+        int lastCountLimit;
+
         @Override public boolean deleteRaw(Map<String, Object> raw) {
-            deleted.add((String) raw.get("_id"));
-            docs.remove(raw.get("_id"));
+            // Conditional, as CouchDB is. The earlier fake deleted unconditionally and had no
+            // notion of a revision at all, so it could not have caught a delete that ignored one
+            // (external review).
+            String id = (String) raw.get("_id");
+            Map<String, Object> current = docs.get(id);
+            if (current != null && !String.valueOf(current.get("_rev"))
+                    .equals(String.valueOf(raw.get("_rev")))) {
+                return false;
+            }
+            deleted.add(id);
+            docs.remove(id);
             return true;
         }
 
@@ -325,14 +347,17 @@ class CouchCaptureIntentStoreTest {
     }
 
     @Test
-    @DisplayName("losing the CAS to something else is reported as not completable")
+    @DisplayName("losing the CAS repeatedly is reported as contention, not as a state problem")
     void lostCasToSomethingElse() {
+        // NOT_COMPLETABLE would say the row was in a state this transition may not leave, which
+        // is not what was observed: it stayed completable every time it was read. Reporting
+        // contention as a state problem sends an operator looking for the wrong thing.
         FakeSupport support = new FakeSupport();
         CouchCaptureIntentStore store = new CouchCaptureIntentStore(support);
         store.openIntent(intent());
         support.casSucceeds = false;
 
-        assertEquals(CaptureCompletion.NOT_COMPLETABLE, store.completeIntent(intent(), Map.of()));
+        assertEquals(CaptureCompletion.CONTENDED, store.completeIntent(intent(), Map.of()));
     }
 
     // ── Activity ─────────────────────────────────────────────────────────────────────────
@@ -423,8 +448,7 @@ class CouchCaptureIntentStoreTest {
 
         new CouchCaptureIntentStore(support).countByState(Integer.MAX_VALUE);
 
-        assertEquals(CouchCaptureIntentStore.MAX_COUNT_LIMIT,
-                support.lastViewParams.get("limit"));
+        assertEquals(CouchCaptureIntentStore.MAX_COUNT_LIMIT, support.lastCountLimit);
     }
 
     // ── The capture design document is checked too ───────────────────────────────────────
@@ -443,17 +467,58 @@ class CouchCaptureIntentStoreTest {
     @DisplayName("the boundary applies to a journaled repository and not to a disabled one")
     void appliesToFollowsTheRepositoryMode() throws Exception {
         // Reading the global setting would get this wrong the moment two repositories differ.
-        assertTrue(new CouchCaptureIntentStore(new FakeSupport(),
-                configWith("bedroom", "journaled")).appliesTo("bedroom"));
-        assertFalse(new CouchCaptureIntentStore(new FakeSupport(),
-                configWith("bedroom", "disabled")).appliesTo("bedroom"));
+        assertEquals(CaptureIntentStore.Applicability.APPLIES, new CouchCaptureIntentStore(
+                new FakeSupport(), configWith("bedroom", "journaled")).appliesTo("bedroom"));
+        assertEquals(CaptureIntentStore.Applicability.NOT_APPLICABLE, new CouchCaptureIntentStore(
+                new FakeSupport(), configWith("bedroom", "disabled")).appliesTo("bedroom"));
     }
 
     @Test
     @DisplayName("direct mode is not the boundary either")
     void directModeDoesNotApply() throws Exception {
-        assertFalse(new CouchCaptureIntentStore(new FakeSupport(),
-                configWith("bedroom", "direct")).appliesTo("bedroom"));
+        assertEquals(CaptureIntentStore.Applicability.NOT_APPLICABLE, new CouchCaptureIntentStore(
+                new FakeSupport(), configWith("bedroom", "direct")).appliesTo("bedroom"));
+    }
+
+    @Test
+    @DisplayName("a configuration that could not be read is UNDETERMINED, not 'does not apply'")
+    void unreadableConfigurationIsUndetermined() throws Exception {
+        // The read collapses every failure into an empty configuration, which falls through to
+        // the disabled startup default. Calling that "does not apply" means a journaled
+        // repository is ingested into with no evidence while nemaki_conf is down — silently, by
+        // the mechanism meant to prevent unrecorded changes (external review).
+        LineageConfig config = configWith("bedroom", "disabled");
+        jp.aegif.nemaki.util.PropertyManager pm =
+                mock(jp.aegif.nemaki.util.PropertyManager.class);
+        jp.aegif.nemaki.model.Configuration failed = new jp.aegif.nemaki.model.Configuration();
+        failed.setLoadFailed(true);
+        when(pm.getConfiguration(anyString())).thenReturn(failed);
+        when(pm.readValue(anyString())).thenReturn(null);
+        java.lang.reflect.Field f = LineageConfig.class.getDeclaredField("propertyManager");
+        f.setAccessible(true);
+        f.set(config, pm);
+
+        assertEquals(CaptureIntentStore.Applicability.UNDETERMINED,
+                new CouchCaptureIntentStore(new FakeSupport(), config).appliesTo("bedroom"));
+    }
+
+    @Test
+    @DisplayName("a readable configuration saying disabled IS an answer — the control")
+    void readableDisabledIsAnAnswer() throws Exception {
+        // Without this, returning UNDETERMINED whenever the mode is disabled would fail every
+        // ingest on the default configuration.
+        LineageConfig config = configWith("bedroom", "disabled");
+        jp.aegif.nemaki.util.PropertyManager pm =
+                mock(jp.aegif.nemaki.util.PropertyManager.class);
+        when(pm.getConfiguration(anyString()))
+                .thenReturn(new jp.aegif.nemaki.model.Configuration());
+        when(pm.readValue(anyString())).thenReturn(null);
+        java.lang.reflect.Field f = LineageConfig.class.getDeclaredField("propertyManager");
+        f.setAccessible(true);
+        f.set(config, pm);
+
+        assertEquals(CaptureIntentStore.Applicability.NOT_APPLICABLE,
+                new CouchCaptureIntentStore(new FakeSupport(), config).appliesTo("bedroom"));
     }
 
     @Test
@@ -461,7 +526,8 @@ class CouchCaptureIntentStoreTest {
     void noConfigurationMeansNotApplicable() {
         // The conservative direction: leave every repository behaving exactly as it does today
         // rather than fail an ingest closed on a boundary nobody configured.
-        assertFalse(new CouchCaptureIntentStore(new FakeSupport()).appliesTo("bedroom"));
+        assertEquals(CaptureIntentStore.Applicability.NOT_APPLICABLE,
+                new CouchCaptureIntentStore(new FakeSupport()).appliesTo("bedroom"));
     }
 
     // ── Views ────────────────────────────────────────────────────────────────────────────
@@ -639,6 +705,47 @@ class CouchCaptureIntentStoreTest {
         assertEquals(0, new CouchCaptureIntentStore(support)
                 .purgeUnresolvedOlderThan(9_999L, 100),
                 "a captured row must not be deleted by the unresolved retention setting");
+    }
+
+    @Test
+    @DisplayName("a row that changed after the scan read it is NOT deleted")
+    void retentionDoesNotDeleteARowThatMovedOn() {
+        // The data-loss case. The scan reads an expired UNRESOLVED row; before the delete lands,
+        // a long-running ingest completes it to CAPTURED. An unconditional delete refetches the
+        // latest revision and destroys the completed evidence — deleted by a retention setting
+        // that only ever covered unresolved rows, with nothing recording that it happened
+        // (external review).
+        FakeSupport support = new FakeSupport();
+        Map<String, Object> scanned = row("lineage_capture:i-1", CaptureState.UNRESOLVED, "bedroom");
+        support.viewRows.add(scanned);
+        // What the database actually holds by the time the delete is attempted.
+        Map<String, Object> moved = new LinkedHashMap<>(scanned);
+        moved.put("_rev", "3-b");
+        moved.put("captureState", CaptureState.CAPTURED.name());
+        support.docs.put("lineage_capture:i-1", moved);
+
+        int deleted = new CouchCaptureIntentStore(support).purgeUnresolvedOlderThan(9_999L, 100);
+
+        assertEquals(0, deleted);
+        assertTrue(support.deleted.isEmpty(), support.deleted.toString());
+        assertEquals(CaptureState.CAPTURED.name(),
+                support.docs.get("lineage_capture:i-1").get("captureState"),
+                "the completed evidence must survive");
+    }
+
+    @Test
+    @DisplayName("a row still at the scanned revision IS deleted — the control")
+    void retentionDeletesAnUnchangedRow() {
+        // Without this, refusing every delete would pass the test above while making retention
+        // do nothing at all.
+        FakeSupport support = new FakeSupport();
+        Map<String, Object> scanned = row("lineage_capture:i-1", CaptureState.UNRESOLVED, "bedroom");
+        support.viewRows.add(scanned);
+        support.docs.put("lineage_capture:i-1", new LinkedHashMap<>(scanned));
+
+        assertEquals(1, new CouchCaptureIntentStore(support)
+                .purgeUnresolvedOlderThan(9_999L, 100));
+        assertEquals(List.of("lineage_capture:i-1"), support.deleted);
     }
 
     // ── Listing ──────────────────────────────────────────────────────────────────────────

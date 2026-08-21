@@ -78,11 +78,11 @@ class IngestCaptureBoundaryTest {
             return active;
         }
 
-        @Override public boolean appliesTo(String repositoryId) {
-            return applies;
+        @Override public Applicability appliesTo(String repositoryId) {
+            return applicability;
         }
 
-        boolean applies = true;
+        Applicability applicability = Applicability.APPLIES;
     }
 
     private CanonicalImportServiceImpl service;
@@ -283,13 +283,31 @@ class IngestCaptureBoundaryTest {
     }
 
     @Test
+    @DisplayName("an undetermined repository still ingests, and the caller is told why not")
+    void undeterminedRepositoryStillIngests() {
+        // Through the real entry point, not just the scope: the enum value existing proves
+        // nothing about what the ingest does with it (external review).
+        wire();
+        store.applicability = CaptureIntentStore.Applicability.UNDETERMINED;
+
+        ExternalIngestResult result = service.execute(ctx(), request("src-1"));
+
+        assertTrue(result.isSuccess(), "errors=" + result.errors());
+        assertTrue(store.events.contains("createDocument"));
+        assertTrue(store.events.stream().noneMatch(e -> e.startsWith("openIntent")),
+                store.events.toString());
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains("could not be determined")),
+                "the caller must be told no evidence was recorded: " + result.warnings());
+    }
+
+    @Test
     @DisplayName("an unreachable store on a repository the boundary skips changes nothing")
     void unreachableStoreIsIrrelevantWhenNotApplicable() {
         // The mode is asked BEFORE the store is touched, so a disabled repository never reaches
         // the availability question — and never provisions the lineage database either.
         wire();
         store.active = false;
-        store.applies = false;
+        store.applicability = CaptureIntentStore.Applicability.NOT_APPLICABLE;
 
         assertTrue(service.execute(ctx(), request("src-1")).isSuccess());
         assertTrue(store.events.stream().noneMatch(e -> e.startsWith("openIntent")));

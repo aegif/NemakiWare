@@ -2936,6 +2936,42 @@ public class CloudantClientWrapper {
 	 *
 	 * @return true if a write happened
 	 */
+	/**
+	 * Deletes a document ONLY if it is still at the given revision.
+	 *
+	 * <p>{@link #delete(Object)} deliberately refetches the latest revision and deletes that —
+	 * good for "make this go away", fatal for a retention sweep. A sweep reads a batch, checks
+	 * each row is in a deletable state, and then deletes; if the row changed in between, the
+	 * refetch deletes the NEW version, which is a row the sweep was never allowed to touch. For
+	 * capture rows that means a completed ingest's evidence being destroyed by an unresolved-row
+	 * retention setting, with nothing recording that it happened (external review).
+	 *
+	 * @return false when the revision no longer matches — an ordinary lost race, not an error
+	 */
+	public boolean deleteIfRevisionMatches(String documentId, String rev) {
+		if (documentId == null || rev == null) {
+			return false;
+		}
+		try {
+			DeleteDocumentOptions options = new DeleteDocumentOptions.Builder()
+					.db(databaseName)
+					.docId(documentId)
+					.rev(rev)
+					.build();
+			DocumentResult result = client.deleteDocument(options).execute().getResult();
+			return result != null && Boolean.TRUE.equals(result.isOk());
+		} catch (com.ibm.cloud.sdk.core.service.exception.ConflictException conflict) {
+			// Someone else changed the document. Not ours to delete any more.
+			return false;
+		} catch (NotFoundException notFound) {
+			// Already gone. The outcome the caller wanted, reached by someone else.
+			return true;
+		} catch (Exception e) {
+			log.warn("Conditional delete of " + documentId + " failed: " + e.getMessage());
+			return false;
+		}
+	}
+
 	public boolean putDesignDocumentIfChanged(String designDocId, Map<String, String> mapFunctions) {
 		try {
 			DesignDocument existingDoc = getDesignDocument(designDocId);

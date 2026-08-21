@@ -115,6 +115,47 @@ class LineageViewReadFailureTest {
         }
     }
 
+    // ── Deleting ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("a retention delete is conditional on the revision it read")
+    void deleteIsConditional() {
+        // The capture store's own tests mock LineageStoreSupport, so they cannot see which client
+        // call this makes. The unconditional delete refetches the latest revision and deletes
+        // THAT — so a row that changed between a retention scan's read and its delete would be
+        // destroyed in its new state (external review).
+        CouchLineageJournalStore store = new CouchLineageJournalStore();
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper client =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        when(client.deleteIfRevisionMatches("lineage_capture:i-1", "2-a")).thenReturn(true);
+        setField(store, "lineageClient", client);
+
+        java.util.Map<String, Object> raw = new java.util.LinkedHashMap<>();
+        raw.put("_id", "lineage_capture:i-1");
+        raw.put("_rev", "2-a");
+
+        org.junit.jupiter.api.Assertions.assertTrue(store.deleteRaw(raw));
+        org.mockito.Mockito.verify(client).deleteIfRevisionMatches("lineage_capture:i-1", "2-a");
+        org.mockito.Mockito.verify(client, org.mockito.Mockito.never())
+                .delete(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("a revision that has moved on is reported as not deleted")
+    void staleRevisionIsNotDeleted() {
+        CouchLineageJournalStore store = new CouchLineageJournalStore();
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper client =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        when(client.deleteIfRevisionMatches(anyString(), anyString())).thenReturn(false);
+        setField(store, "lineageClient", client);
+
+        java.util.Map<String, Object> raw = new java.util.LinkedHashMap<>();
+        raw.put("_id", "lineage_capture:i-1");
+        raw.put("_rev", "2-a");
+
+        org.junit.jupiter.api.Assertions.assertFalse(store.deleteRaw(raw));
+    }
+
     @Test
     @DisplayName("the failure names the view, so an operator knows which index to look at")
     void failureNamesTheView() {

@@ -1584,6 +1584,18 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         this.captureIntentStore = captureIntentStore;
     }
 
+    private final java.util.concurrent.atomic.AtomicBoolean captureUnwiredWarned =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    private void warnCaptureBoundaryUnwiredOnce() {
+        if (captureUnwiredWarned.compareAndSet(false, true)) {
+            logger.warn("The ingest capture boundary is NOT wired (no CaptureIntentStore bean), "
+                    + "so no capture intent rows will be written and the unresolved-capture "
+                    + "listing will stay empty for reasons that have nothing to do with ingests "
+                    + "succeeding. This is expected only where lineage is not deployed at all.");
+        }
+    }
+
     /**
      * Records a wrapper post-processing update against the scope.
      *
@@ -1631,6 +1643,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      */
     CaptureScope newCaptureScope(CallContext callContext, ExternalIngestRequest request) {
         if (captureIntentStore == null || request == null) {
+            if (captureIntentStore == null) {
+                // Said once, loudly. The store is field-injected into a bean this context defines
+                // in XML, so if annotation processing ever stops covering it the boundary turns
+                // off with no other symptom — every ingest keeps working and no evidence is
+                // written. "Off because nothing is wired" must be visible, not inferred from an
+                // empty listing.
+                warnCaptureBoundaryUnwiredOnce();
+            }
             return CaptureScope.inactive();
         }
         String intentId = java.util.UUID.randomUUID().toString();

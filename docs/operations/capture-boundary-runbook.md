@@ -42,6 +42,23 @@ curl -s -u admin:password "http://localhost:5984/nemaki_conf/_find" \
 有効化の判定は **intent を開く瞬間に 1 度だけ**行われ、その試行の中では固定されます。
 取込の途中でリポジトリを `disabled` に切り替えても、**開いている intent は完成します**。
 
+### 設定が読めなかったとき
+
+`lineage.mode` の実効値は `-D` → 環境変数 → `nemaki_conf` → properties の順で決まります。
+**`nemaki_conf` が読めず、しかも `-D` や環境変数で固定していない**場合、`disabled` という
+答えが「切ってある」のか「読めなかった」のか**区別できません**。
+
+このとき境界は **intent を作らず、取込も止めません**が、結果に警告を付けます:
+
+> Whether the capture boundary covers repository ... could not be determined ...
+> This does NOT establish that lineage is switched off.
+
+**この間は §0 の保証が成立していません。** `journaled` のはずのリポジトリへの取込が、
+証拠の行なしで通ります。止めない理由は、止めると**lineage を一度も有効にしていない
+デプロイの全取込が、設定 DB の一瞬の不調で失敗する**ためです (保証 3)。
+
+確実に避けるには `-D lineage.mode=...` か環境変数で固定してください。
+
 ---
 
 ## 2. 未解決の一覧を見る
@@ -178,4 +195,5 @@ curl -s -u admin:password http://localhost:5984/nemaki_lineage | \
 | 一覧が常に空 | 掃引が動いているか (ログ `Capture intent sweeper started`)。`lineage.mode` が `journaled` か |
 | 一覧が 503 | 境界の bean が配線されていない。`nemaki_lineage` の有無を確認 |
 | 一覧が 500 | view の索引再構築中か DB 障害。**空と区別するために意図的に 500 にしています** |
+| 取込は成功するが警告に「境界が適用されるか判定できなかった」と出る | `nemaki_conf` が読めていません。その間、保証は成立していません (§1) |
 | 取込は成功するが警告に「証拠の行を読めなかった」と出る | 文書は作られています。行が retention で消えたか、一時的な障害か、① の書込が成立していなかったか — **この 3 つは区別できません** |

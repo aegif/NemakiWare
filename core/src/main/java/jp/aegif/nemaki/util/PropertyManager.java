@@ -64,7 +64,7 @@ public class PropertyManager{
 		//
 		// No existing key is affected: before this change a hyphenated name could never match an
 		// exportable variable, so nothing can have been relying on the old derivation.
-		String envKey = key.toUpperCase().replace('.', '_').replace('-', '_');
+		String envKey = environmentVariableNameFor(key);
 		String envValue = System.getenv(envKey);
 		if(envValue != null){
 			return envValue;
@@ -216,6 +216,17 @@ public class PropertyManager{
 	public boolean readBoolean(String repositoryId, String key){
 		String val = readValue(repositoryId, key);
 		return Boolean.valueOf(val);
+	}
+
+	/**
+	 * The environment-variable name a configuration key is read from.
+	 *
+	 * <p>Package-private and separate so a test can drive THIS rather than a copy of it. The
+	 * derivation was previously inline, and the test written for it restated the rule instead of
+	 * calling it — so reverting the fix left the test green (external review).
+	 */
+	static String environmentVariableNameFor(String key) {
+		return key.toUpperCase().replace('.', '_').replace('-', '_');
 	}
 
 	public Configuration getConfiguration(String repositoryId) {
