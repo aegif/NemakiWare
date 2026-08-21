@@ -170,6 +170,61 @@ class CaptureIntentControllerTest {
         assertEquals(0, response.getBody().get("count"));
     }
 
+    // ── Counts ───────────────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("counts are reported per state")
+    void countsAreReported() {
+        CaptureMaintenanceStore store = mock(CaptureMaintenanceStore.class);
+        when(store.countByState(10000)).thenReturn(
+                new CaptureMaintenanceStore.CaptureCounts(3, 7, 120_000, false));
+
+        ResponseEntity<Map<String, Object>> response = controller(store, true).counts(10000);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(3L, response.getBody().get("captureIntent"));
+        assertEquals(7L, response.getBody().get("unresolved"));
+        assertEquals(120_000L, response.getBody().get("captured"));
+        assertEquals(Boolean.FALSE, response.getBody().get("truncated"));
+    }
+
+    @Test
+    @DisplayName("a truncated count is not presented as a total")
+    void truncatedCountSaysSo() {
+        // A lower bound reported as a total would tell an operator the growth had stopped.
+        CaptureMaintenanceStore store = mock(CaptureMaintenanceStore.class);
+        when(store.countByState(10000)).thenReturn(
+                new CaptureMaintenanceStore.CaptureCounts(0, 0, 10_000, true));
+
+        ResponseEntity<Map<String, Object>> response = controller(store, true).counts(10000);
+
+        assertEquals(Boolean.TRUE, response.getBody().get("truncated"));
+        assertTrue(response.getBody().get("message").toString().contains("lower bounds"),
+                String.valueOf(response.getBody().get("message")));
+    }
+
+    @Test
+    @DisplayName("counts are admin-only")
+    void countsAreAdminOnly() {
+        CaptureMaintenanceStore store = mock(CaptureMaintenanceStore.class);
+
+        assertEquals(HttpStatus.FORBIDDEN,
+                controller(store, false).counts(10000).getStatusCode());
+    }
+
+    @Test
+    @DisplayName("counts that cannot be read are an error, not zeroes")
+    void unreadableCountsAreNotZero() {
+        // Zeroes would read as "nothing is accumulating", which is the reassuring failure again.
+        CaptureMaintenanceStore store = mock(CaptureMaintenanceStore.class);
+        when(store.countByState(10000)).thenThrow(new RuntimeException("view unreadable"));
+
+        ResponseEntity<Map<String, Object>> response = controller(store, true).counts(10000);
+
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+        assertNotEquals("success", response.getBody().get("status"));
+    }
+
     @Test
     @DisplayName("the repository filter and paging reach the store")
     void filterAndPagingArePassedThrough() {

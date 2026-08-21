@@ -131,6 +131,20 @@ staleness・batch・保持期間の 3 つは毎回読み直すので、再起動
 署名が変わると全 document に対して map を流し直します — 何も emit しない capture 行も
 含めてです。`nemaki_lineage` の doc_count が倍になれば、その所要時間もおおむね倍になります。
 
+**何が増えているかは専用の口で見てください。** `nemaki_lineage` の `doc_count` は lineage
+イベント・dead letter・v2 行を混ぜて数えるので、**capture 行がどれだけ在るかは答えられません**。
+
+```bash
+curl -u admin:admin -H "X-Requested-With: XMLHttpRequest" \
+  "http://localhost:8080/core/api/v1/admin/capture-intents/counts"
+```
+
+`captured` が無期限に増える対象です。`captureIntent` が**下がらない**場合は掃引が止まって
+います。`truncated: true` は走査上限に達したという意味で、**数字は下限であって合計では
+ありません** (`?scanLimit=` で広げられます。上限 10 万)。
+
+DB 全体のサイズは併せて:
+
 ```bash
 curl -s -u admin:password http://localhost:5984/nemaki_lineage | \
   python3 -c "import sys,json;d=json.load(sys.stdin);print(d['doc_count'],d['sizes']['file'])"

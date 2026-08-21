@@ -323,6 +323,25 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
         return new UnresolvedPage(List.copyOf(rows), safeLimit, safeOffset, hasMore);
     }
 
+    @Override
+    public CaptureCounts countByState(int scanLimit) {
+        int limit = scanLimit <= 0 ? DEFAULT_COUNT_LIMIT : Math.min(scanLimit, MAX_COUNT_LIMIT);
+        long open = countView(VIEW_OPEN_BY_OPENED_AT, limit);
+        long unresolved = countView(VIEW_UNRESOLVED, limit);
+        long captured = countView(VIEW_CAPTURED_BY_CAPTURED_AT, limit);
+        boolean truncated = open >= limit || unresolved >= limit || captured >= limit;
+        return new CaptureCounts(open, unresolved, captured, truncated);
+    }
+
+    private long countView(String view, int limit) {
+        Map<String, Object> params = new HashMap<>();
+        params.put("limit", limit);
+        return support.queryRawView(DESIGN_DOC, view, params).size();
+    }
+
+    static final int DEFAULT_COUNT_LIMIT = 10_000;
+    static final int MAX_COUNT_LIMIT = 100_000;
+
     /** One bounded page of a view, from the beginning of the key range up to {@code endKey}. */
     private List<Map<String, Object>> page(String view, Long startKey, long endKey, int batchLimit) {
         Map<String, Object> params = new HashMap<>();

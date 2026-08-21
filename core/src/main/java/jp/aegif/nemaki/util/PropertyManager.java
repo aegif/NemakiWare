@@ -52,8 +52,19 @@ public class PropertyManager{
 		}
 
 		// Check environment variables (Docker support)
-		// Convert property key format (lowercase.with.dots) to env var format (UPPERCASE_WITH_UNDERSCORES)
-		String envKey = key.toUpperCase().replace('.', '_');
+		// Convert property key format (lowercase.with.dots) to env var format
+		// (UPPERCASE_WITH_UNDERSCORES).
+		//
+		// Hyphens fold too. Only dots were folded, so a key such as
+		// lineage.capture-boundary.stale.minutes derived LINEAGE_CAPTURE-BOUNDARY_STALE_MINUTES —
+		// a name no POSIX shell can export and no Compose env_file can carry, which silently
+		// removed one of the two per-replica override mechanisms MULTI-REPLICA-DEPLOYMENT.md
+		// names (external review). Spring's own relaxed binding folds hyphens the same way, so
+		// this makes PropertyManager agree with the @Value path rather than inventing a rule.
+		//
+		// No existing key is affected: before this change a hyphenated name could never match an
+		// exportable variable, so nothing can have been relying on the old derivation.
+		String envKey = key.toUpperCase().replace('.', '_').replace('-', '_');
 		String envValue = System.getenv(envKey);
 		if(envValue != null){
 			return envValue;

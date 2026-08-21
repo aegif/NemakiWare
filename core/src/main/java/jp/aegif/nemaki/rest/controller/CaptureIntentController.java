@@ -120,6 +120,54 @@ public class CaptureIntentController {
         }
     }
 
+    /**
+     * How many capture rows exist in each state.
+     *
+     * <p>Retention is unlimited by default, so {@code captured} grows with ingest volume for
+     * ever. The lineage database's own {@code doc_count} cannot answer this — it mixes journal
+     * events, dead letters and v2 rows — so without this an operator running the documented
+     * default has no way to see what is accumulating (external review).
+     *
+     * <p>{@code truncated} means a count reached the scan limit and is a lower bound, not the
+     * total. It is never reported as an exact figure when it is not one.
+     */
+    @GetMapping("/counts")
+    public ResponseEntity<Map<String, Object>> counts(
+            @RequestParam(defaultValue = "10000") int scanLimit) {
+
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) {
+            return forbidden;
+        }
+        if (maintenanceStore == null) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("status", "unavailable");
+            body.put("message", "The capture boundary is not wired in this deployment");
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+        }
+        try {
+            CaptureMaintenanceStore.CaptureCounts counts =
+                    maintenanceStore.countByState(scanLimit);
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("status", "success");
+            body.put("captureIntent", counts.captureIntent());
+            body.put("unresolved", counts.unresolved());
+            body.put("captured", counts.captured());
+            body.put("truncated", counts.truncated());
+            if (counts.truncated()) {
+                body.put("message", "at least one count reached the scan limit of " + scanLimit
+                        + ", so the figures are lower bounds rather than totals");
+            }
+            return ResponseEntity.ok(body);
+        } catch (Exception e) {
+            logger.error("Could not count capture rows: {}", e.toString(), e);
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("status", "error");
+            body.put("message", "Could not count the capture rows: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+        }
+    }
+
     private ResponseEntity<Map<String, Object>> requireAdminOrForbidden() {
         if (!isAdmin()) {
             Map<String, Object> response = new LinkedHashMap<>();

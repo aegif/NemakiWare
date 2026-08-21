@@ -69,6 +69,28 @@ public interface CaptureMaintenanceStore {
     UnresolvedPage listUnresolved(String repositoryId, int limit, int offset);
 
     /**
+     * How many rows exist in each state.
+     *
+     * <p>Retention is unlimited by default, which means the lineage database grows with ingest
+     * volume for ever — and until this existed there was no way to see that happening. The
+     * database's own {@code doc_count} mixes journal events, dead letters and v2 rows, so it
+     * cannot say what is growing (external review).
+     *
+     * <p>Counting walks the views, so it is an admin diagnostic rather than something to poll.
+     *
+     * @param scanLimit the most rows to count per state; the answer says whether it stopped there
+     */
+    CaptureCounts countByState(int scanLimit);
+
+    /**
+     * @param captureIntent open intents; a number that does not fall is a stuck sweeper
+     * @param unresolved    swept and awaiting an operator
+     * @param captured      completed evidence; this is the one that grows without bound
+     * @param truncated     whether any count hit {@code scanLimit} and is therefore a lower bound
+     */
+    record CaptureCounts(long captureIntent, long unresolved, long captured, boolean truncated) {}
+
+    /**
      * @param entries the rows on this page
      * @param limit   the page size asked for
      * @param offset  where this page started

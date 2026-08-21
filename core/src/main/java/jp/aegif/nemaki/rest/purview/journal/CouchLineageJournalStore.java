@@ -1798,6 +1798,47 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         return null;
     }
 
+    /**
+     * The same check for the capture boundary's own design document.
+     *
+     * <p>A second design document is outside the check above, and nothing else would ever notice
+     * it missing: a missing view answers as an empty listing unless it is caught here, and an
+     * empty unresolved listing reads as "every ingest completed". Readiness reporting green
+     * while the boundary is invisible is the failure this closes (design §6.8-3, external
+     * review).
+     */
+    List<String> captureViewViolations() {
+        Map<String, Object> designDoc;
+        try {
+            designDoc = readRawStrict("_design/" + CouchCaptureIntentStore.DESIGN_DOC);
+        } catch (RuntimeException e) {
+            return List.of("capture design document unreadable: " + e.getMessage());
+        }
+        if (designDoc == null) {
+            return List.of("design document '_design/" + CouchCaptureIntentStore.DESIGN_DOC
+                    + "' not deployed yet — the unresolved-capture listing would report nothing"
+                    + " rather than reporting that it cannot answer");
+        }
+        Object viewsValue = designDoc.get("views");
+        if (!(viewsValue instanceof Map<?, ?> deployed)) {
+            return List.of("capture design document has no views map");
+        }
+        List<String> violations = new ArrayList<>();
+        for (var expected : CouchCaptureIntentStore.views().entrySet()) {
+            Map<String, Object> view = viewAsMap(deployed.get(expected.getKey()));
+            if (view == null) {
+                violations.add("capture view '" + expected.getKey() + "' missing from deployed"
+                        + " design document");
+                continue;
+            }
+            if (!expected.getValue().equals(view.get("map"))) {
+                violations.add("capture view '" + expected.getKey() + "' map source differs from"
+                        + " this binary's definition");
+            }
+        }
+        return violations;
+    }
+
     public List<String> viewSignatureViolations() {
         if (!isActive() || !dbProvisioned.get()) {
             return List.of("lineage store not active / database not provisioned yet");
@@ -1842,6 +1883,7 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                         + " binary's definition");
             }
         }
+        violations.addAll(captureViewViolations());
         return violations;
     }
 

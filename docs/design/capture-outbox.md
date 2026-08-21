@@ -1094,11 +1094,28 @@ scope に記録する。子の処理で作る relationship は、親のフレー
 - null の `ViewResult`: `assertThrows(RuntimeException)` は**NPE でも通る**。元の形に戻す control を取り直した
 - `queryRawView`: capture 側のテストは `FakeSupport` が投げていて**製品コードを通っていなかった** (1 巡目で発見・修正済み)
 
-### 実装せずに残したもの
+### 残していた 3 件も同じ巡で対応した
 
-- **O16 (ハイフンと環境変数)**: キー名の 3 度目の変更になるので、次のレビュー巡で他の未対応分とまとめて判断する
-- **O6 (成長の観測手段)**: `CAPTURED` の件数を返す口が無い。運用上は要るが、AC 13 の exact count とも絡むので別作業
-- **O10 (新 ddoc の署名検査)**: 既存の `viewSignatureViolations` は `_design/lineage` しか見ない
+- **O16 (ハイフンと環境変数)**: キー名を 3 度目に変えるのではなく、**`PropertyManager` 側で
+  `-` を `_` に畳む**ことにした。Spring の relaxed binding が既にそうしているので、
+  `@Value` 経路と規則が揃う。**既存キーへの影響は無い** — 変更前はハイフンを含む名前が
+  export 可能な変数に一致することが原理的に無かったため、依存しようが無い
+- **O6 (成長の観測手段)**: `GET /v1/admin/capture-intents/counts` を足した。
+  `nemaki_lineage` の `doc_count` は lineage イベント・dead letter・v2 行を混ぜて数えるので
+  **capture 行の量には答えられない**。走査上限に達したら `truncated: true` を返し、
+  **下限を合計として提示しない**
+- **O10 (新 ddoc の署名検査)**: `captureViewViolations()` を足し、
+  `viewSignatureViolations()` から呼ぶようにした。未配備・view 欠落・map の差異を報告する
+
+### なお未対応
+
+- **AC 13 の exact count** — 一覧は `count` にページ内件数を返す。`_count` reduce view による
+  正確な総数ではない (`UnresolvedPage` の javadoc に明記)。`/counts` は状態別の概数を返すが、
+  こちらも走査上限つき
+- **O1 (掃引速度の上限)** — 1 回 200 行 × 5 分、レプリカを増やしても並列にならない。
+  runbook に所要時間の見積もりを書いた
+- **O3 (jitter が実質固定)** — `System.identityHashCode` は同一バイナリでは同じ値を返しうる。
+  0〜59 秒は 300 秒周期の 20% でしかないので、効果自体が小さい
 
 ## 10. レビューの状態
 

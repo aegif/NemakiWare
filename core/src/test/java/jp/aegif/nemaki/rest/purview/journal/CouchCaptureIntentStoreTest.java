@@ -384,6 +384,51 @@ class CouchCaptureIntentStoreTest {
                 () -> new CouchCaptureIntentStore(support).purgeCapturedOlderThan(9_999L, 100));
     }
 
+    // ── Counting ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("counts are reported per state")
+    void countsArePerState() {
+        // Retention is unlimited by default, so something has to be able to say what is growing.
+        // The database's own doc_count cannot: it mixes journal events, dead letters and v2 rows.
+        FakeSupport support = new FakeSupport();
+        support.viewRows.add(row("lineage_capture:i-1", CaptureState.UNRESOLVED, "bedroom"));
+        support.viewRows.add(row("lineage_capture:i-2", CaptureState.UNRESOLVED, "bedroom"));
+
+        var counts = new CouchCaptureIntentStore(support).countByState(100);
+
+        assertEquals(2, counts.captureIntent());
+        assertEquals(2, counts.unresolved());
+        assertEquals(2, counts.captured());
+        assertFalse(counts.truncated());
+    }
+
+    @Test
+    @DisplayName("a count that hit the scan limit says so instead of presenting a total")
+    void truncatedCountIsDeclared() {
+        // A lower bound reported as a total is worse than no number: an operator would conclude
+        // the growth had stopped.
+        FakeSupport support = new FakeSupport();
+        for (int i = 0; i < 5; i++) {
+            support.viewRows.add(row("lineage_capture:i-" + i, CaptureState.CAPTURED, "bedroom"));
+        }
+
+        assertTrue(new CouchCaptureIntentStore(support).countByState(5).truncated());
+    }
+
+    @Test
+    @DisplayName("the scan limit is bounded whatever the caller asks for")
+    void countScanLimitIsBounded() {
+        FakeSupport support = new FakeSupport();
+
+        new CouchCaptureIntentStore(support).countByState(Integer.MAX_VALUE);
+
+        assertEquals(CouchCaptureIntentStore.MAX_COUNT_LIMIT,
+                support.lastViewParams.get("limit"));
+    }
+
+    // ── The capture design document is checked too ───────────────────────────────────────
+
     // ── Per-repository mode ──────────────────────────────────────────────────────────────
 
     private static LineageConfig configWith(String repositoryId, String mode) throws Exception {
