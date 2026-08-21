@@ -920,20 +920,55 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 		}
 
+		// A recent failure is remembered for a few seconds. Not in configCache — that one never
+		// expires, which was the original defect — but not re-read on every call either: this
+		// method is reached by PropertyManager.readValue for every key that is not a -D or an
+		// env var, which puts it on per-request and per-object paths (AuthenticationFilter,
+		// CompileServiceImpl, TypeManagerImpl reads ~100 keys in one method). Without a bound,
+		// an unreachable CouchDB turns one failed read into one Mango _find PER PROPERTY READ,
+		// with no backoff and no client-side timeout — a brief outage amplified into a worse
+		// one (external review).
+		long now = System.currentTimeMillis();
+		// ConcurrentHashMap rejects a null key, and this method is reachable with one.
+		String failureKey = repositoryId == null ? "" : repositoryId;
+		FailedConfigurationRead recent = recentConfigurationFailures.get(failureKey);
+		if (recent != null) {
+			if (now < recent.expiresAtMs()) {
+				return recent.configuration();
+			}
+			recentConfigurationFailures.remove(failureKey, recent);
+		}
+
 		Configuration configuration = nonCachedContentDaoService.getConfiguration(repositoryId);
 
 		if (configuration == null) {
 			return null;
 		}
 		if (configuration.isLoadFailed()) {
-			// NOT cached. configCache has no expiry (ehcache gives it noExpiration()), so
-			// caching a failed read would make one unreachable moment permanent for this JVM
-			// (external review).
+			recentConfigurationFailures.put(failureKey, new FailedConfigurationRead(
+					configuration, now + FAILED_CONFIGURATION_READ_COOLDOWN_MS));
 			return configuration;
 		}
+		recentConfigurationFailures.remove(failureKey);
 		configCache.put("configuration", configuration);
 		return configuration;
 	}
+
+	/**
+	 * How long a failed configuration read is remembered before CouchDB is asked again.
+	 *
+	 * <p>Deliberately short, and deliberately not configurable: reading the setting would mean
+	 * reading the configuration, which is the thing that just failed. Five seconds bounds the
+	 * retry rate to 0.2/s per repository while being far too short to outlive an outage the way
+	 * the eternal cache did.
+	 */
+	static final long FAILED_CONFIGURATION_READ_COOLDOWN_MS = 5000L;
+
+	/** A failed read and the moment it stops being reused. Keyed per repository. */
+	private record FailedConfigurationRead(Configuration configuration, long expiresAtMs) {}
+
+	private final java.util.concurrent.ConcurrentMap<String, FailedConfigurationRead>
+			recentConfigurationFailures = new java.util.concurrent.ConcurrentHashMap<>();
 
 	@Override
 	public java.util.List<jp.aegif.nemaki.model.ApiKey> getApiKeys(String repositoryId) {

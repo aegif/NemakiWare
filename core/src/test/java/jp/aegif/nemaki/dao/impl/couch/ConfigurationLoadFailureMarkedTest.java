@@ -16,25 +16,41 @@
  */
 package jp.aegif.nemaki.dao.impl.couch;
 
-import jp.aegif.nemaki.model.Configuration;
+import com.ibm.cloud.cloudant.v1.Cloudant;
+import com.ibm.cloud.cloudant.v1.model.Document;
+import com.ibm.cloud.cloudant.v1.model.FindResult;
+import com.ibm.cloud.cloudant.v1.model.PostFindOptions;
+import com.ibm.cloud.sdk.core.http.Response;
+import com.ibm.cloud.sdk.core.http.ServiceCall;
+
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
+import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
+import jp.aegif.nemaki.model.Configuration;
+import jp.aegif.nemaki.util.constant.SystemConst;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * The side that PRODUCES the failed-read marker.
+ * The side that PRODUCES the failed-read marker — and, just as importantly, the side that does
+ * NOT set it.
  *
- * <p>{@code ConfigurationReadFailureTest} and {@code IngestLineageDisabledIsNotSilentTest} both
- * mock the read, so neither would notice if the marker stopped being set here — and then the whole
- * chain would go quiet again while still passing. This covers the two branches that manufacture an
- * empty {@link Configuration} out of a failure.
+ * <p>The consumer-side tests all mock the read, so none of them would notice if the marker
+ * stopped being set here, and none would notice if it started being set unconditionally. The
+ * second is the dangerous direction: an always-marked read is never cached, and this method sits
+ * under {@code PropertyManager.readValue}, which is on per-request and per-object paths. A
+ * healthy deployment would issue a Mango {@code _find} for every property read (external review).
  */
 class ConfigurationLoadFailureMarkedTest {
 
@@ -44,16 +60,34 @@ class ConfigurationLoadFailureMarkedTest {
         return dao;
     }
 
-    @Test
-    @DisplayName("an unavailable configuration database is marked, not returned as empty")
-    void unavailableClientIsMarked() {
-        // The startup case: nemaki_conf is not up yet. Returning a plain empty configuration here
-        // is what let one unreachable moment be cached for the life of the JVM.
+    /** A pool whose client answers one {@code _find} page with the given documents. */
+    @SuppressWarnings("unchecked")
+    private static CloudantClientPool poolReturning(List<Document> docs) {
         CloudantClientPool pool = mock(CloudantClientPool.class);
-        when(pool.getClient(anyString())).thenReturn(null);
+        CloudantClientWrapper wrapper = mock(CloudantClientWrapper.class);
+        Cloudant client = mock(Cloudant.class);
+        ServiceCall<FindResult> call = mock(ServiceCall.class);
+        Response<FindResult> response = mock(Response.class);
+        FindResult result = mock(FindResult.class);
 
-        assertTrue(daoWith(pool).getConfiguration("bedroom").isLoadFailed());
+        when(pool.getClient(anyString())).thenReturn(wrapper);
+        when(wrapper.getDatabaseName()).thenReturn(SystemConst.NEMAKI_CONF_DB);
+        when(wrapper.getClient()).thenReturn(client);
+        when(client.postFind(any(PostFindOptions.class))).thenReturn(call);
+        when(call.execute()).thenReturn(response);
+        when(response.getResult()).thenReturn(result);
+        when(result.getDocs()).thenReturn(docs);
+        when(result.getBookmark()).thenReturn(null);
+        return pool;
     }
+
+    private static Document configDoc(String key, Object value) {
+        Document doc = new Document();
+        doc.setProperties(Map.of("type", "configuration", "key", key, "value", value));
+        return doc;
+    }
+
+    // ── The marker IS set ──────────────────────────────────────────────────────────────────
 
     @Test
     @DisplayName("a read that throws is marked")
@@ -65,10 +99,61 @@ class ConfigurationLoadFailureMarkedTest {
     }
 
     @Test
+    @DisplayName("a query that throws mid-read is marked")
+    void throwingQueryIsMarked() {
+        // The realistic outage: the client exists, the request fails. CloudantClientPool.getClient
+        // never actually returns null in production — it returns or throws — so this is the branch
+        // that fires, not the null-client one.
+        CloudantClientPool pool = poolReturning(List.of());
+        when(pool.getClient(anyString()).getClient().postFind(any(PostFindOptions.class)))
+                .thenThrow(new RuntimeException("socket timeout"));
+
+        assertTrue(daoWith(pool).getConfiguration("bedroom").isLoadFailed());
+    }
+
+    @Test
+    @DisplayName("an unavailable configuration database is marked")
+    void unavailableClientIsMarked() {
+        CloudantClientPool pool = mock(CloudantClientPool.class);
+        when(pool.getClient(anyString())).thenReturn(null);
+
+        assertTrue(daoWith(pool).getConfiguration("bedroom").isLoadFailed());
+    }
+
+    // ── The marker is NOT set ──────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("a successful read leaves the marker clear, so it can still be cached")
+    void successfulReadIsNotMarked() {
+        // Without this, moving setLoadFailed(true) to the top of the method unconditionally would
+        // pass every other test in this file and every consumer test — while making the product
+        // re-read the configuration from CouchDB on every single property lookup.
+        Configuration config = daoWith(poolReturning(List.of(
+                configDoc("lineage.mode", "journaled")))).getConfiguration(SystemConst.NEMAKI_CONF_DB);
+
+        assertFalse(config.isLoadFailed(),
+                "a read that succeeded must be cacheable; marking it would defeat the cache");
+        assertEquals("journaled", config.getConfiguration().get("lineage.mode"),
+                "control: the read really did reach the documents, so the clear marker above is "
+                        + "the success path and not an early return");
+    }
+
+    @Test
+    @DisplayName("a successful read that finds nothing is still not marked")
+    void successfulEmptyReadIsNotMarked() {
+        // "Nothing is configured" is a real answer and must be distinguishable from "could not
+        // read" — that distinction is the entire point of the marker.
+        Configuration config = daoWith(poolReturning(List.of()))
+                .getConfiguration(SystemConst.NEMAKI_CONF_DB);
+
+        assertFalse(config.isLoadFailed());
+        assertTrue(config.getConfiguration().isEmpty());
+    }
+
+    @Test
     @DisplayName("a fresh Configuration is not marked")
     void unmarkedByDefault() {
-        // The control: if the field defaulted to true, every one of these tests would pass while
-        // meaning nothing, and every successful read would be treated as a failure.
+        // If the field defaulted to true, every assertion above would hold while meaning nothing.
         assertFalse(new Configuration().isLoadFailed());
     }
 }

@@ -29,8 +29,14 @@ public class Configuration extends NodeBase{
 	 * dynamic setting read as absent for the rest of the JVM's life, including
 	 * {@code lineage.mode}, which falls back to {@code disabled} silently (external review).
 	 *
-	 * <p>Transient on purpose: it describes THIS read, not the stored document, and must never
-	 * be persisted.
+	 * <p>It describes THIS read, not the stored document, and must never be persisted. What
+	 * actually keeps it out of CouchDB today is that neither write path serialises this class:
+	 * both {@code create} and {@code update} convert to {@code CouchConfiguration} first, which
+	 * has no such field. {@code @JsonIgnore} is the guard for any path that serialises the model
+	 * directly — and it is the one that matters, not {@code transient}: the couchdb mapper sets
+	 * field visibility to ANY and {@code PROPAGATE_TRANSIENT_MARKER} is off by default, so a
+	 * {@code transient} field with the annotation removed WOULD be written (external review).
+	 * {@code transient} is kept for the Java-serialization and Gson paths, which do honour it.
 	 */
 	@com.fasterxml.jackson.annotation.JsonIgnore
 	private transient boolean loadFailed;
