@@ -90,6 +90,7 @@ class IngestCaptureBoundaryTest {
     private jp.aegif.nemaki.businesslogic.ContentService contentService;
     private RecordingStore store;
     private ImportProfileDefinitionService profileService;
+    private jp.aegif.nemaki.cmis.service.VersioningService versioningService;
     private final List<jp.aegif.nemaki.model.Content> children = new ArrayList<>();
 
     private void wire() {
@@ -106,7 +107,8 @@ class IngestCaptureBoundaryTest {
         service.setImportProfileDefinitionService(profileService);
         service.setObjectService(objectService);
         service.setContentService(contentService);
-        service.setVersioningService(mock(jp.aegif.nemaki.cmis.service.VersioningService.class));
+        versioningService = mock(jp.aegif.nemaki.cmis.service.VersioningService.class);
+        service.setVersioningService(versioningService);
         service.setIngestMetadataService(mock(IngestMetadataService.class));
         service.setContentDaoService(contentDaoService);
         service.setCaptureIntentStore(store);
@@ -362,6 +364,61 @@ class IngestCaptureBoundaryTest {
         assertTrue(result.isSuccess(), "the document WAS created; the import did not fail");
         assertTrue(result.warnings().stream().anyMatch(w -> w.contains("could not be read")),
                 "the caller has to be told the evidence is missing: " + result.warnings());
+    }
+
+    @Test
+    @DisplayName("the intent precedes checkOut, which is the FIRST change on a version-up")
+    void intentPrecedesCheckOut() {
+        // Design §5.0 names this as the one place where not tracking breaks the guarantee: on a
+        // version-up path checkOut creates a PWC and alters the version series before anything
+        // else happens, so an intent opened after it would be an intent that did not precede the
+        // first change. Nothing covered it until now (external review).
+        wire();
+        alreadyImported("obj-1", "src-1");
+        ImportProfileDefinition versionUp = new ImportProfileDefinition();
+        versionUp.setProfileId("p1");
+        versionUp.setEnabled(true);
+        versionUp.setTargetFolderId("folder-1");
+        versionUp.setRepositoryId("bedroom");
+        versionUp.setDedupePolicy("update_existing");
+        versionUp.setUpdatePolicy("always_version_up");
+        when(profileService.get("p1")).thenReturn(versionUp);
+
+        org.mockito.Mockito.doAnswer(inv -> {
+            store.events.add("checkOut");
+            return null;
+        }).when(versioningService).checkOut(any(), any(), any(), any(), any());
+
+        service.execute(ctx(), request("src-1"));
+
+        int intent = store.events.indexOf("openIntent");
+        int checkOut = store.events.indexOf("checkOut");
+        assertTrue(intent >= 0 && checkOut >= 0 && intent < checkOut,
+                "the intent must precede checkOut: " + store.events);
+    }
+
+    @Test
+    @DisplayName("an unwritable intent stops a version-up before it checks the document out")
+    void unwritableIntentStopsCheckOut() {
+        // The sharper half: a checkOut that succeeds and a checkIn that never runs leaves the
+        // document CHECKED OUT and locked, and every later import of the same item fails there
+        // for ever. So this is the change that most needs to not happen.
+        wire();
+        alreadyImported("obj-1", "src-1");
+        ImportProfileDefinition versionUp = new ImportProfileDefinition();
+        versionUp.setProfileId("p1");
+        versionUp.setEnabled(true);
+        versionUp.setTargetFolderId("folder-1");
+        versionUp.setRepositoryId("bedroom");
+        versionUp.setDedupePolicy("update_existing");
+        versionUp.setUpdatePolicy("always_version_up");
+        when(profileService.get("p1")).thenReturn(versionUp);
+        store.openSucceeds = false;
+
+        ExternalIngestResult result = service.execute(ctx(), request("src-1"));
+
+        assertFalse(result.isSuccess(), "warnings=" + result.warnings());
+        verify(versioningService, never()).checkOut(any(), any(), any(), any(), any());
     }
 
     // ── The fail-closed exception must not be swallowed ──────────────────────────────────

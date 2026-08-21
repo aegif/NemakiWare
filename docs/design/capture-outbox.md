@@ -1155,8 +1155,11 @@ scope に記録する。子の処理で作る relationship は、親のフレー
 - **AC 13 の exact count** — 一覧の `count` はページ内件数。`/counts` は走査上限つきの概数
 - **O1 掃引速度** — 1 回 200 行 × 5 分。レプリカを増やしても並列にならない
 - **O3 jitter** — `identityHashCode` は同一バイナリで同じ値を返しうる
-- **M4 wrapper テストの範囲** — note のみ。mail / chat / business record と、とくに
-  **`checkOut` の前に intent が開くこと** (設計 §5.0 が名指しした唯一の箇所) が未固定
+- **M4 wrapper テストの範囲** — mail / chat / business record の入口は未固定のまま。
+  ただし設計 §5.0 が名指しした **`checkOut`** は固定した (`intentPrecedesCheckOut` /
+  `unwritableIntentStopsCheckOut`)。version-up 経路では checkOut が最初の変更であり、
+  さらに **checkOut が成功して checkIn が走らないと文書が CHECKED OUT で固まり、
+  同じ項目の以後の取込が永久にそこで落ちる**ため、優先して閉じた
 - **M5 実行中の取込が `UNRESOLVED` に見える** — 既定 15 分に対し fetch timeout は 30 分。
   §6.9-3 が lease か heartbeat を求めていたが実装していない
 
