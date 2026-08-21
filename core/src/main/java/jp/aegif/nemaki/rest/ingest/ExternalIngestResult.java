@@ -38,6 +38,19 @@ public record ExternalIngestResult(
      * reported freshly created mail, note, record and chat objects as pre-existing (external
      * review). Every rebuild must carry the inner result's value forward explicitly.
      */
+    /**
+     * The same result with a different warning list.
+     *
+     * <p>Used where a warning becomes known only after the result is built — the capture
+     * boundary can only report that the evidence was not recorded once the operation has
+     * finished, by which point the content is already committed.
+     */
+    public ExternalIngestResult withWarnings(List<String> warnings) {
+        return new ExternalIngestResult(requestId, objectId, versionLabel, isNewVersion, dryRun,
+                skipped, skipReason, lineageEventId, errors,
+                warnings == null ? List.of() : List.copyOf(warnings), createdObject);
+    }
+
     public ExternalIngestResult(String requestId, String objectId, String versionLabel,
                                 boolean isNewVersion, boolean dryRun, boolean skipped,
                                 String skipReason, String lineageEventId, List<String> errors,

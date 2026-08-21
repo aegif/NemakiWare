@@ -1030,6 +1030,27 @@ scope に記録する。子の処理で作る relationship は、親のフレー
 
 ---
 
+## 9.8 実装後レビュー 1 巡目 (2026-08-21) — P0 1 件 / P1 4 件 / P2 1 件、すべて対応
+
+配線を入れた直後に独立レビューを掛け、**6 件すべて実在した**。1 件は自分の memory に
+書いてある罠 (`fail-open-boundary-trap`) をそのまま踏んでいる。
+
+| | 指摘 | 何が起きていたか | 対応 |
+|---|---|---|---|
+| **P0** | fail-closed の例外を `catch (Exception)` が飲み、そのあと変更する | `ensureIntentOpened()` は投げるが、`replace` の削除・`applySourceMetadata`・`createDirectRelationship`・`removeExistingRelationships` は**内側に catch がある**。`replace` は警告にして**置換の作成に落ちていた** | 各 catch の**内側**に `catch (CaptureIntentFailedException) { throw; }` を 6 箇所。加えて **refused を scope に latch** し、`withCaptureOutcome` が結果をエラーにする (guard の取りこぼしに対する二重化) |
+| **P1** | wrapper 後処理が intent も記録も持たない | `applyMessageMetadata` / `applyNoteMetadata` / `applyArchetypeMetadata` / `applyChatCapturedAt` は失敗が warning になるだけで、**メタデータが失敗しても `CAPTURED`** になっていた。dedupe skip 経路では intent が一切開かない | 各所で `ensureIntentOpened()` → `recordWrapperUpdate(...)`。失敗は `INDETERMINATE` (どこで落ちたか判定できないため) |
+| **P1** | 子操作が公開 `execute()` で自己完了し、relationship が親に載る | 生 `.eml`・mail 添付・note 添付が**relationship の前に `CAPTURED`** になり、失敗の帰属が親に行っていた (規則 4・5 違反) | 子ごとに未 open の scope を作り、**relationship まで同じ scope**、所有者が完成させる |
+| **P1** | `disabled` / `direct` でも intent を書き fail-closed する | `newCaptureScope` はストアの有無しか見ておらず、既定 `lineage.mode=disabled` でも取込のたびに `nemaki_lineage` を触っていた | `CaptureIntentStore.appliesTo(repositoryId)` を追加。`getModeForRepository` を **open 時に一度だけ**見て latch (AC 19)。完成時は**見ない** (AC 20) |
+| **P1** | 未解決一覧の view 障害が「一件も無い」に見える | `queryRawView` が全例外を空リストに潰していた。**境界の可視性そのものが、障害時に「問題なし」になる** | `LineageViewUnreadableException` を投げる。一覧は 500、掃引と retention はその回を中止 |
+| **P2** | リポジトリ絞り込みが `limit`/`skip` の**後** | 別リポジトリの新しい行がページを押し出し、「無い」と表示される | `[repositoryId, intentOpenedAtMs]` の複合キー view を足し、**CouchDB 側で**絞る |
+
+### 判別しなかったテストを 1 件見つけた
+
+`queryRawView` の変更に対する negative control が**通ってしまった**。capture 側のテストは
+`FakeSupport` が自分で例外を投げるので、**製品の `queryRawView` を一度も通っていなかった** —
+また代用品を検証していた。`LineageViewReadFailureTest` を実物に対して書き直し、
+戻すと落ちることを確認した。
+
 ## 10. レビューの状態
 
 - **9 巡目**で「指定どおり実装可能」の判定 (外部レビュー)。

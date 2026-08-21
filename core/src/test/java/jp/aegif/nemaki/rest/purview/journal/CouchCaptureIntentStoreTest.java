@@ -105,9 +105,16 @@ class CouchCaptureIntentStoreTest {
         final java.util.List<String> deleted = new java.util.ArrayList<>();
         Map<String, Object> lastViewParams;
 
+        RuntimeException viewThrows;
+        String lastViewName;
+
         @Override public java.util.List<Map<String, Object>> queryRawView(String designDocName,
                 String viewName, Map<String, Object> params) {
             lastViewParams = params;
+            lastViewName = viewName;
+            if (viewThrows != null) {
+                throw viewThrows;
+            }
             java.util.List<Map<String, Object>> out = new java.util.ArrayList<>();
             for (Map<String, Object> r : viewRows) {
                 out.add(new LinkedHashMap<>(r));
@@ -343,6 +350,75 @@ class CouchCaptureIntentStoreTest {
         assertFalse(new CouchCaptureIntentStore(support).isActive());
     }
 
+    @Test
+    @DisplayName("a view that cannot be read is not reported as an empty listing")
+    void unreadableViewIsNotEmpty() {
+        // The listing is the boundary's entire visible surface. An empty answer here reads as
+        // "every ingest completed", which is the opposite of what a read failure means.
+        FakeSupport support = new FakeSupport();
+        support.viewThrows = new RuntimeException("view group rebuilding");
+
+        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                () -> new CouchCaptureIntentStore(support).listUnresolved(null, 10, 0));
+    }
+
+    @Test
+    @DisplayName("a view that cannot be read stops the sweep rather than sweeping nothing")
+    void unreadableViewStopsTheSweep() {
+        FakeSupport support = new FakeSupport();
+        support.viewThrows = new RuntimeException("view group rebuilding");
+
+        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                () -> new CouchCaptureIntentStore(support).sweepExpiredIntents(9_999L, 100));
+    }
+
+    @Test
+    @DisplayName("a view that cannot be read stops retention rather than deleting nothing quietly")
+    void unreadableViewStopsRetention() {
+        // Quietly deleting nothing is the benign direction here, but reporting zero deletions as
+        // a successful pass would hide an index that never comes back.
+        FakeSupport support = new FakeSupport();
+        support.viewThrows = new RuntimeException("view group rebuilding");
+
+        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                () -> new CouchCaptureIntentStore(support).purgeCapturedOlderThan(9_999L, 100));
+    }
+
+    // ── Per-repository mode ──────────────────────────────────────────────────────────────
+
+    private static LineageConfig configWith(String repositoryId, String mode) throws Exception {
+        LineageConfig config = new LineageConfig();
+        java.lang.reflect.Field f = LineageConfig.class.getDeclaredField("mode");
+        f.setAccessible(true);
+        f.set(config, mode);
+        return config;
+    }
+
+    @Test
+    @DisplayName("the boundary applies to a journaled repository and not to a disabled one")
+    void appliesToFollowsTheRepositoryMode() throws Exception {
+        // Reading the global setting would get this wrong the moment two repositories differ.
+        assertTrue(new CouchCaptureIntentStore(new FakeSupport(),
+                configWith("bedroom", "journaled")).appliesTo("bedroom"));
+        assertFalse(new CouchCaptureIntentStore(new FakeSupport(),
+                configWith("bedroom", "disabled")).appliesTo("bedroom"));
+    }
+
+    @Test
+    @DisplayName("direct mode is not the boundary either")
+    void directModeDoesNotApply() throws Exception {
+        assertFalse(new CouchCaptureIntentStore(new FakeSupport(),
+                configWith("bedroom", "direct")).appliesTo("bedroom"));
+    }
+
+    @Test
+    @DisplayName("with no configuration the boundary does not apply")
+    void noConfigurationMeansNotApplicable() {
+        // The conservative direction: leave every repository behaving exactly as it does today
+        // rather than fail an ingest closed on a boundary nobody configured.
+        assertFalse(new CouchCaptureIntentStore(new FakeSupport()).appliesTo("bedroom"));
+    }
+
     // ── Views ────────────────────────────────────────────────────────────────────────────
 
     @Test
@@ -358,7 +434,7 @@ class CouchCaptureIntentStoreTest {
     void viewsCannotCross() {
         Map<String, String> views = CouchCaptureIntentStore.views();
 
-        assertEquals(4, views.size());
+        assertEquals(5, views.size());
         for (Map.Entry<String, String> v : views.entrySet()) {
             assertTrue(v.getValue().contains("doc.type === 'lineage_capture_intent'"),
                     v.getKey() + " must not be able to see a journal row: " + v.getValue());
@@ -537,16 +613,43 @@ class CouchCaptureIntentStoreTest {
     }
 
     @Test
-    @DisplayName("the listing filters by repository")
-    void listingFiltersByRepository() {
+    @DisplayName("the repository filter is a view key, not a filter applied after paging")
+    void listingFiltersInsideCouchDb() {
+        // Filtering in Java after the page was cut is wrong, not merely slow: limit and skip are
+        // applied by CouchDB first, so a busy repository's rows push another repository's out of
+        // the page and the caller is told there is nothing there (external review).
+        FakeSupport support = new FakeSupport();
+        support.viewRows.add(row("lineage_capture:i-1", CaptureState.UNRESOLVED, "canopy"));
+
+        new CouchCaptureIntentStore(support).listUnresolved("canopy", 10, 0);
+
+        assertEquals(CouchCaptureIntentStore.VIEW_UNRESOLVED_BY_REPO, support.lastViewName,
+                "a repository-scoped listing must use the composite-key view");
+        assertEquals(List.of("canopy", Long.MAX_VALUE), support.lastViewParams.get("startkey"));
+        assertEquals(List.of("canopy", 0), support.lastViewParams.get("endkey"));
+    }
+
+    @Test
+    @DisplayName("an unscoped listing uses the plain view and asks for no key range")
+    void unscopedListingUsesThePlainView() {
         FakeSupport support = new FakeSupport();
         support.viewRows.add(row("lineage_capture:i-1", CaptureState.UNRESOLVED, "bedroom"));
-        support.viewRows.add(row("lineage_capture:i-2", CaptureState.UNRESOLVED, "canopy"));
 
         assertEquals(1, UnresolvedPageAssert.of(new CouchCaptureIntentStore(support)
-                .listUnresolved("canopy", 10, 0)).size());
-        assertEquals(2, UnresolvedPageAssert.of(new CouchCaptureIntentStore(support)
                 .listUnresolved(null, 10, 0)).size());
+        assertEquals(CouchCaptureIntentStore.VIEW_UNRESOLVED, support.lastViewName);
+        org.junit.jupiter.api.Assertions.assertNull(support.lastViewParams.get("startkey"));
+    }
+
+    @Test
+    @DisplayName("a blank repository is treated as no filter, not as an empty repository id")
+    void blankRepositoryIsNoFilter() {
+        FakeSupport support = new FakeSupport();
+        support.viewRows.add(row("lineage_capture:i-1", CaptureState.UNRESOLVED, "bedroom"));
+
+        assertEquals(1, UnresolvedPageAssert.of(new CouchCaptureIntentStore(support)
+                .listUnresolved("  ", 10, 0)).size());
+        assertEquals(CouchCaptureIntentStore.VIEW_UNRESOLVED, support.lastViewName);
     }
 
     @Test

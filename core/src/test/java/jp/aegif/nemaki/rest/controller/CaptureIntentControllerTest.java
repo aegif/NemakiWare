@@ -137,6 +137,24 @@ class CaptureIntentControllerTest {
     }
 
     @Test
+    @DisplayName("an unreadable view surfaces as an error, never as an empty listing")
+    void unreadableViewIsNotEmptyListing() {
+        // The store now throws rather than answering with an empty list, so this is the path an
+        // index rebuild or a database outage actually takes.
+        CaptureMaintenanceStore store = mock(CaptureMaintenanceStore.class);
+        when(store.listUnresolved(null, 50, 0)).thenThrow(new RuntimeException(
+                "view lineage_capture/unresolved_by_opened_at could not be read"));
+
+        ResponseEntity<Map<String, Object>> response =
+                controller(store, true).listUnresolved(null, 50, 0);
+
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+        assertNotEquals("success", response.getBody().get("status"));
+        assertEquals(0, ((Number) response.getBody().getOrDefault("count", 0)).intValue(),
+                "and certainly not a count of zero presented as an answer");
+    }
+
+    @Test
     @DisplayName("a genuinely empty listing is a success — the control")
     void genuinelyEmptyIsSuccess() {
         // Without this, returning SERVICE_UNAVAILABLE unconditionally would pass the two tests

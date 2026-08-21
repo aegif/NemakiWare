@@ -71,6 +71,16 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
     /** Unresolved rows for the operator listing, keyed so the newest sort first. */
     static final String VIEW_UNRESOLVED = "unresolved_by_opened_at";
 
+    /**
+     * Unresolved rows keyed by {@code [repositoryId, intentOpenedAtMs]}.
+     *
+     * <p>Filtering in Java after the page was cut is wrong, not merely slow: {@code limit} and
+     * {@code skip} are applied by CouchDB before the filter can run, so a busy repository's rows
+     * push another repository's out of the page and the caller is told there is nothing there
+     * (external review). A composite key does the selection where the paging happens.
+     */
+    static final String VIEW_UNRESOLVED_BY_REPO = "unresolved_by_repo_and_opened_at";
+
     /** Open intents past their deadline, for the sweeper. */
     static final String VIEW_OPEN_BY_OPENED_AT = "open_by_opened_at";
 
@@ -81,9 +91,33 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
     static final String VIEW_CAPTURED_BY_CAPTURED_AT = "captured_by_captured_at";
 
     private final LineageStoreSupport support;
+    private final LineageConfig lineageConfig;
 
     public CouchCaptureIntentStore(LineageStoreSupport support) {
+        this(support, null);
+    }
+
+    public CouchCaptureIntentStore(LineageStoreSupport support, LineageConfig lineageConfig) {
         this.support = support;
+        this.lineageConfig = lineageConfig;
+    }
+
+    @Override
+    public boolean appliesTo(String repositoryId) {
+        if (lineageConfig == null) {
+            // No configuration to consult. Not applying is the conservative answer: it leaves
+            // every repository behaving exactly as it does today rather than making an ingest
+            // fail closed on a boundary nobody configured.
+            return false;
+        }
+        try {
+            LineageMode mode = lineageConfig.getModeForRepository(repositoryId);
+            return mode != LineageMode.DISABLED && mode != LineageMode.DIRECT;
+        } catch (Exception e) {
+            logger.warn("Could not resolve the lineage mode for {}: {} — the capture boundary "
+                    + "will not apply", repositoryId, e.toString());
+            return false;
+        }
     }
 
     @Override
@@ -240,19 +274,21 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
     public UnresolvedPage listUnresolved(String repositoryId, int limit, int offset) {
         int safeLimit = limit <= 0 ? 50 : Math.min(limit, 500);
         int safeOffset = Math.max(offset, 0);
+        boolean scoped = repositoryId != null && !repositoryId.isBlank();
         Map<String, Object> params = new HashMap<>();
         params.put("descending", true);      // newest first
         params.put("limit", safeLimit + 1);  // one extra, purely to answer hasMore
         params.put("skip", safeOffset);
-
-        List<Map<String, Object>> rows = new ArrayList<>();
-        for (Map<String, Object> raw : support.queryRawView(DESIGN_DOC, VIEW_UNRESOLVED, params)) {
-            if (repositoryId != null && !repositoryId.isBlank()
-                    && !repositoryId.equals(raw.get("repositoryId"))) {
-                continue;
-            }
-            rows.add(raw);
+        if (scoped) {
+            // Descending, so the range runs from the repository's highest key down to its
+            // lowest. The selection has to happen in CouchDB: limit and skip are applied before
+            // any Java-side filter could run.
+            params.put("startkey", List.of(repositoryId, MAX_KEY));
+            params.put("endkey", List.of(repositoryId, 0));
         }
+
+        List<Map<String, Object>> rows = new ArrayList<>(support.queryRawView(DESIGN_DOC,
+                scoped ? VIEW_UNRESOLVED_BY_REPO : VIEW_UNRESOLVED, params));
         boolean hasMore = rows.size() > safeLimit;
         if (hasMore) {
             rows = rows.subList(0, safeLimit);
@@ -274,6 +310,9 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
     /** Bounded because with leader election off, every replica walks the same batch. */
     static final int DEFAULT_BATCH_LIMIT = 200;
 
+    /** Above any millisecond timestamp this product will produce; the top of a descending range. */
+    private static final long MAX_KEY = Long.MAX_VALUE;
+
     /**
      * The views, keyed by name. Every one is guarded by the intent type, so no journal row can
      * ever appear in them and no intent row can appear in a journal view.
@@ -284,6 +323,10 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
                 "function(doc) { if (doc.type === 'lineage_capture_intent'"
                         + " && doc.captureState === 'UNRESOLVED') {"
                         + " emit(doc.intentOpenedAtMs, null); } }");
+        views.put(VIEW_UNRESOLVED_BY_REPO,
+                "function(doc) { if (doc.type === 'lineage_capture_intent'"
+                        + " && doc.captureState === 'UNRESOLVED' && doc.repositoryId) {"
+                        + " emit([doc.repositoryId, doc.intentOpenedAtMs], null); } }");
         views.put(VIEW_OPEN_BY_OPENED_AT,
                 "function(doc) { if (doc.type === 'lineage_capture_intent'"
                         + " && doc.captureState === 'CAPTURE_INTENT') {"

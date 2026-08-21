@@ -1,5 +1,9 @@
 package jp.aegif.nemaki.rest.ingest;
 
+import jp.aegif.nemaki.rest.ingest.capture.CaptureIntent;
+import jp.aegif.nemaki.rest.ingest.capture.CaptureIntentStore;
+import jp.aegif.nemaki.rest.ingest.capture.CaptureScope;
+import jp.aegif.nemaki.rest.ingest.capture.MutationOutcome;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.service.ObjectService;
 import jp.aegif.nemaki.cmis.service.VersioningService;
@@ -190,6 +194,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
     @Override
     public ExternalIngestResult executeMailImport(CallContext callContext, ExternalIngestRequest request) {
+        // Rule 3: the wrapper owns the root scope. This entry point keeps writing after the
+        // internal execute returns — message metadata, the raw .eml, attachments and their
+        // relationships — so completing any earlier would describe a state that is not final.
+        CaptureScope captureScope = newCaptureScope(callContext, request);
+        return withCaptureOutcome(
+                executeMailImportInternal(callContext, request, captureScope), captureScope);
+    }
+
+    private ExternalIngestResult executeMailImportInternal(CallContext callContext,
+            ExternalIngestRequest request, CaptureScope captureScope) {
         String requestId = request.getRequestId();
 
         if (request.getContentStream() == null) {
@@ -268,7 +282,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 request.setSourceObjectType("message");
             }
 
-            ExternalIngestResult messageResult = execute(callContext, request);
+            ExternalIngestResult messageResult = execute(callContext, request, captureScope);
             if (!messageResult.isSuccess()) {
                 return messageResult;
             }
@@ -294,7 +308,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // 4. Apply nemaki:messageMetadata secondary type
             List<String> warnings = failureState.warnings;
             warnings.addAll(messageResult.warnings());
+            captureScope.ensureIntentOpened();
             String metaError = ingestMetadataService.applyMessageMetadata(request.getRepositoryId(), messageObjectId, callContext, parsed, request);
+            recordWrapperUpdate(captureScope, "applyMessageMetadata", metaError);
             if (metaError != null) warnings.add(metaError);
 
             // 4b. Preserve raw .eml as a separate document if profile requests it
@@ -317,17 +333,29 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     emlReq.setDryRun(request.isDryRun());
                     emlReq.setMetadata(new LinkedHashMap<>(metadata));
 
-                    ExternalIngestResult emlResult = execute(callContext, emlReq);
-                    // A child's warnings are the parent's problem: provenance lost on the raw
-                    // .eml would otherwise vanish before the client ever sees it (P1-1).
-                    mergeChildWarnings(warnings, "raw .eml", emlResult);
+                    // Rule 4: this is a child operation, so it gets its own un-opened scope and
+                    // is completed here — after its relationship, which rule 5 says belongs to
+                    // the child. Attributing that relationship to the parent would make the raw
+                    // .eml look captured while the message was the one reported unresolved.
+                    CaptureScope emlScope = newCaptureScope(callContext, emlReq);
+                    ExternalIngestResult emlResult = execute(callContext, emlReq, emlScope);
                     if (emlResult.isSuccess()) {
                         String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
-                                messageObjectId, emlResult.objectId(), "nemaki:hasAttachment");
+                                messageObjectId, emlResult.objectId(), "nemaki:hasAttachment",
+                                emlScope);
                         if (relErr != null) warnings.add(relErr);
                     } else if (!emlResult.skipped()) {
                         warnings.add("Raw .eml preservation failed: " + String.join(", ", emlResult.errors()));
                     }
+                    // Rule 3: the child's owner completes it, here, after its relationship.
+                    // The merge happens on the COMPLETED result so that a capture that could not
+                    // be recorded reaches the caller too — a child's warnings are the parent's
+                    // problem, and provenance lost on the raw .eml would otherwise vanish before
+                    // the client ever sees it (P1-1).
+                    mergeChildWarnings(warnings, "raw .eml",
+                            withCaptureOutcome(emlResult, emlScope));
+                } catch (CaptureScope.CaptureIntentFailedException failClosed) {
+                    throw failClosed;
                 } catch (Exception e) {
                     warnings.add("Raw .eml preservation failed: " + e.getMessage());
                 }
@@ -355,22 +383,30 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     attMeta.put("messageStableId", request.getSourceObjectId());
                     attReq.setMetadata(attMeta);
 
-                    ExternalIngestResult attResult = execute(callContext, attReq);
-                    mergeChildWarnings(warnings, "attachment '" + att.filename() + "'", attResult);
+                    // Rule 4: one scope per attachment. The parent's would be shared by all of
+                    // them, so one failed link would mark every attachment unresolved.
+                    CaptureScope attScope = newCaptureScope(callContext, attReq);
+                    ExternalIngestResult attResult = execute(callContext, attReq, attScope);
                     if (attResult.isSuccess() || attResult.skipped()) {
                         attachmentCount++;
                         // Create/update typed relationship
                         String existingId = attResult.isSuccess() ? attResult.objectId()
                                 : (attResult.skipped() ? attResult.objectId() : null);
                         if (existingId != null) {
+                            // Rule 5: the link is part of THIS attachment's work.
                             String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
-                                    messageObjectId, existingId, "nemaki:hasAttachment");
+                                    messageObjectId, existingId, "nemaki:hasAttachment",
+                                    attScope);
                             if (relErr != null) warnings.add(relErr);
                         }
                     } else {
                         warnings.add("Attachment '" + att.filename() + "' import failed: "
                                 + String.join(", ", attResult.errors()));
                     }
+                    mergeChildWarnings(warnings, "attachment '" + att.filename() + "'",
+                            withCaptureOutcome(attResult, attScope));
+                } catch (CaptureScope.CaptureIntentFailedException failClosed) {
+                    throw failClosed;
                 } catch (Exception e) {
                     warnings.add("Attachment '" + att.filename() + "' failed: " + e.getMessage());
                 }
@@ -391,6 +427,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
         } catch (Exception e) {
             logger.error("Mail import failed: {}", e.getMessage(), e);
+            captureScope.operationFailed(e.getMessage());
             return failedAfterEntry(request, requestId, failureState.committedObjectId,
                     failureState.warnings, "Mail import failed: ", e);
         }
@@ -403,17 +440,26 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // the high-water mark is overtaken by a later success in the same batch. The source item
         // was then never re-fetched (external review).
         EntryFailureState failureState = new EntryFailureState();
+        // Rule 3: the wrapper owns the root scope, because it keeps updating the same document
+        // after the internal execute returns. Completing inside execute would snapshot a state
+        // that is not the final one.
+        CaptureScope captureScope = newCaptureScope(callContext, request);
         try {
-            return executeNoteImportInternal(callContext, request, failureState);
+            return withCaptureOutcome(
+                    executeNoteImportInternal(callContext, request, failureState, captureScope),
+                    captureScope);
         } catch (Exception e) {
             logger.error("Note import failed: {}", e.getMessage(), e);
-            return failedAfterEntry(request, request.getRequestId(),
-                    failureState.committedObjectId, failureState.warnings, "Note import failed: ", e);
+            captureScope.operationFailed(e.getMessage());
+            return withCaptureOutcome(failedAfterEntry(request, request.getRequestId(),
+                    failureState.committedObjectId, failureState.warnings, "Note import failed: ", e),
+                    captureScope);
         }
     }
 
     private ExternalIngestResult executeNoteImportInternal(CallContext callContext,
-            ExternalIngestRequest request, EntryFailureState failureState) {
+            ExternalIngestRequest request, EntryFailureState failureState,
+            CaptureScope captureScope) {
         String requestId = request.getRequestId();
 
         // Set sourceObjectType to "page" if not specified
@@ -438,7 +484,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         String pageSkipReason = null;
 
         if (importBody) {
-            ExternalIngestResult pageResult = execute(callContext, request);
+            ExternalIngestResult pageResult = execute(callContext, request, captureScope);
             if (!pageResult.isSuccess()) {
                 return pageResult;
             }
@@ -456,7 +502,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // cannot key on the page result alone — files_only never runs the page import — so
             // every write here is guarded on the REQUEST.
             if (!request.isDryRun()) {
+                captureScope.ensureIntentOpened();
                 String metaError = ingestMetadataService.applyNoteMetadata(request.getRepositoryId(), pageObjectId, callContext, request);
+                recordWrapperUpdate(captureScope, "applyNoteMetadata", metaError);
                 if (metaError != null) warnings.add(metaError);
             }
         }
@@ -528,7 +576,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                             }
                             if (importBody && pageObjectId != null && !request.isDryRun()) {
                                 String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
-                                        pageObjectId, attObjectId, "nemaki:hasAttachment");
+                                        pageObjectId, attObjectId, "nemaki:hasAttachment",
+                                        captureScope);
                                 if (relErr != null) warnings.add(relErr);
                             }
                         }
@@ -581,11 +630,18 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      */
     private ExternalIngestResult executeNoteAttachment(CallContext callContext,
             ExternalIngestRequest attReq, ExternalIngestRequest pageRequest) {
-        ExternalIngestResult attResult = execute(callContext, attReq);
+        // Rule 4: a child operation owns its own scope. Sharing the parent's would make several
+        // attachments share one intent row, and completing through the public execute would
+        // close the row BEFORE the metadata update below — putting that change outside the
+        // boundary and attributing its failure to the page rather than to this attachment.
+        CaptureScope childScope = newCaptureScope(callContext, attReq);
+        ExternalIngestResult attResult = execute(callContext, attReq, childScope);
         if (attResult.isSuccess() && attResult.objectId() != null && !attReq.isDryRun()) {
             // Reuse the page's metadata for the note-metadata secondary type.
+            childScope.ensureIntentOpened();
             String metaError = ingestMetadataService.applyNoteMetadata(
                     attReq.getRepositoryId(), attResult.objectId(), callContext, pageRequest);
+            recordWrapperUpdate(childScope, "applyNoteMetadata", metaError);
             if (metaError != null) {
                 List<String> w = new ArrayList<>(attResult.warnings());
                 w.add(metaError);
@@ -593,13 +649,15 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 // whenever a dedupe-skipped attachment's metadata write failed, so the caller
                 // counted it as IMPORTED — which also suppressed the files_only "nothing was
                 // imported" return (external review). Same defect shape as createdObject.
-                return new ExternalIngestResult(attResult.requestId(), attResult.objectId(),
+                return withCaptureOutcome(new ExternalIngestResult(attResult.requestId(),
+                        attResult.objectId(),
                         attResult.versionLabel(), attResult.isNewVersion(), attResult.dryRun(),
                         attResult.skipped(), attResult.skipReason(),
-                        attResult.lineageEventId(), List.of(), w, attResult.createdObject());
+                        attResult.lineageEventId(), List.of(), w, attResult.createdObject()),
+                        childScope);
             }
         }
-        return attResult;
+        return withCaptureOutcome(attResult, childScope);
     }
 
     // applyNoteMetadata → delegated to IngestMetadataService
@@ -611,21 +669,30 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // the high-water mark is overtaken by a later success in the same batch. The source item
         // was then never re-fetched (external review).
         EntryFailureState failureState = new EntryFailureState();
+        // Rule 3: the wrapper owns the root scope, because it keeps updating the same document
+        // after the internal execute returns. Completing inside execute would snapshot a state
+        // that is not the final one.
+        CaptureScope captureScope = newCaptureScope(callContext, request);
         try {
-            return executeBusinessRecordImportInternal(callContext, request, failureState);
+            return withCaptureOutcome(
+                    executeBusinessRecordImportInternal(callContext, request, failureState, captureScope),
+                    captureScope);
         } catch (Exception e) {
             logger.error("Business record import failed: {}", e.getMessage(), e);
-            return failedAfterEntry(request, request.getRequestId(),
-                    failureState.committedObjectId, failureState.warnings, "Business record import failed: ", e);
+            captureScope.operationFailed(e.getMessage());
+            return withCaptureOutcome(failedAfterEntry(request, request.getRequestId(),
+                    failureState.committedObjectId, failureState.warnings, "Business record import failed: ", e),
+                    captureScope);
         }
     }
 
     private ExternalIngestResult executeBusinessRecordImportInternal(CallContext callContext,
-            ExternalIngestRequest request, EntryFailureState failureState) {
+            ExternalIngestRequest request, EntryFailureState failureState,
+            CaptureScope captureScope) {
         if (request.getSourceObjectType() == null || request.getSourceObjectType().isBlank()) {
             request.setSourceObjectType("record");
         }
-        ExternalIngestResult result = execute(callContext, request);
+        ExternalIngestResult result = execute(callContext, request, captureScope);
         if (!result.isSuccess()) return result;
         // An empty/pseudo-file skip (objectId == null) has no object to decorate;
         // return it verbatim. A dedupe skip (objectId != null) falls through to
@@ -644,16 +711,19 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 {"nemaki:recordUrl", "recordUrl"}, {"nemaki:recordStatus", "recordStatus"},
                 {"nemaki:recordOwner", "recordOwner"}, {"nemaki:processInstanceId", "processInstanceId"},
         };
+        captureScope.ensureIntentOpened();
         String metaError = ingestMetadataService.applyArchetypeMetadata(request.getRepositoryId(), result.objectId(), callContext,
                 "nemaki:businessRecordMetadata", request, brFields);
         if (metaError != null) warnings.add(metaError);
+        recordWrapperUpdate(captureScope, "applyArchetypeMetadata", metaError);
 
         // Create attachedToRecord relationship if parentRecordId is provided
         if (request.getMetadata() != null) {
             String parentRecordId = resolveMetadataString(request, "parentRecordId");
             if (parentRecordId != null) {
                 String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
-                        parentRecordId, result.objectId(), "nemaki:attachedToRecord");
+                        parentRecordId, result.objectId(), "nemaki:attachedToRecord",
+                        captureScope);
                 if (relErr != null) warnings.add(relErr);
             }
         }
@@ -672,21 +742,30 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // the high-water mark is overtaken by a later success in the same batch. The source item
         // was then never re-fetched (external review).
         EntryFailureState failureState = new EntryFailureState();
+        // Rule 3: the wrapper owns the root scope, because it keeps updating the same document
+        // after the internal execute returns. Completing inside execute would snapshot a state
+        // that is not the final one.
+        CaptureScope captureScope = newCaptureScope(callContext, request);
         try {
-            return executeChatContextImportInternal(callContext, request, failureState);
+            return withCaptureOutcome(
+                    executeChatContextImportInternal(callContext, request, failureState, captureScope),
+                    captureScope);
         } catch (Exception e) {
             logger.error("Chat context import failed: {}", e.getMessage(), e);
-            return failedAfterEntry(request, request.getRequestId(),
-                    failureState.committedObjectId, failureState.warnings, "Chat context import failed: ", e);
+            captureScope.operationFailed(e.getMessage());
+            return withCaptureOutcome(failedAfterEntry(request, request.getRequestId(),
+                    failureState.committedObjectId, failureState.warnings, "Chat context import failed: ", e),
+                    captureScope);
         }
     }
 
     private ExternalIngestResult executeChatContextImportInternal(CallContext callContext,
-            ExternalIngestRequest request, EntryFailureState failureState) {
+            ExternalIngestRequest request, EntryFailureState failureState,
+            CaptureScope captureScope) {
         if (request.getSourceObjectType() == null || request.getSourceObjectType().isBlank()) {
             request.setSourceObjectType("message");
         }
-        ExternalIngestResult result = execute(callContext, request);
+        ExternalIngestResult result = execute(callContext, request, captureScope);
         if (!result.isSuccess()) return result;
         // An empty/pseudo-file skip (objectId == null) produced no object to
         // decorate — applying chat metadata or getContent() on a null id would
@@ -711,9 +790,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 {"nemaki:chatEvidenceScope", "evidenceScope"},
         };
 
+        captureScope.ensureIntentOpened();
         String metaError = ingestMetadataService.applyArchetypeMetadata(request.getRepositoryId(), result.objectId(), callContext,
                 "nemaki:chatContextMetadata", request, chatFields);
         if (metaError != null) warnings.add(metaError);
+        recordWrapperUpdate(captureScope, "applyArchetypeMetadata", metaError);
 
         // chatCapturedAt has been on the type since it was introduced but nothing ever set it,
         // so every chat import carried a capture-time property it left empty. It is stamped from
@@ -729,7 +810,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // the snapshot does not carry it at all (external review). There is currently no second
         // copy. Making this evidence needs both the updatability migration and moving the stamp
         // ahead of emission: authenticity-roadmap.md P1-1(b)(c).
-        applyChatCapturedAt(callContext, request, result.objectId(), result.createdObject(),
+        applyChatCapturedAt(captureScope, callContext, request, result.objectId(), result.createdObject(),
                 warnings);
 
         // Apply capture window datetime properties if provided in metadata
@@ -771,7 +852,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             String parentContextId = resolveMetadataString(request, "parentContextId");
             if (parentContextId != null) {
                 String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
-                        parentContextId, result.objectId(), "nemaki:derivedFromContext");
+                        parentContextId, result.objectId(), "nemaki:derivedFromContext",
+                        captureScope);
                 if (relErr != null) warnings.add(relErr);
             }
         }
@@ -909,7 +991,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * wrong (external review), so a pre-existing object is left unstamped. Recovering the answer
      * for legacy objects means reading their provenance events — P1-1(d).
      */
-    private void applyChatCapturedAt(CallContext callContext, ExternalIngestRequest request,
+    private void applyChatCapturedAt(CaptureScope captureScope,
+            CallContext callContext, ExternalIngestRequest request,
                                      String objectId, boolean createdObject,
                                      List<String> warnings) {
         if (objectId == null) {
@@ -972,8 +1055,15 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             now.setTimeInMillis(java.time.Instant.now().toEpochMilli());
             props.put("nemaki:chatCapturedAt", new Property("nemaki:chatCapturedAt", now));
             chatAspect.setProperties(new ArrayList<>(props.values()));
+            captureScope.ensureIntentOpened();
             contentService.update(callContext, request.getRepositoryId(), content);
+            captureScope.record("applyChatCapturedAt", MutationOutcome.SUCCEEDED);
+        } catch (CaptureScope.CaptureIntentFailedException failClosed) {
+            // Never swallowed: the intent could not be written, so nothing may be changed.
+            throw failClosed;
         } catch (Exception e) {
+            captureScope.record("applyChatCapturedAt", MutationOutcome.INDETERMINATE,
+                    e.getMessage());
             warnings.add("Capture time (nemaki:chatCapturedAt) was not recorded: " + e.getMessage());
         }
     }
@@ -1006,11 +1096,32 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * Creates a CMIS relationship unconditionally (not dependent on profile policy).
      * Used by specialized import flows (mail, note) where parent-child relationships
      * are inherent to the archetype.
+     *
+     * <p><b>Outside the capture boundary, deliberately.</b> Its one remaining caller is
+     * {@code FetchSupport}, which links objects <em>after</em> the entry point has returned and
+     * its scope has been completed — design §4 rule 7 puts that case out of scope for this
+     * change and closes it alongside the stamp in P1-1(e). Inside an ingest, use the overload
+     * that takes a scope; a relationship created through this one is a change no intent covers.
      */
     @Override
     public String createDirectRelationship(CallContext callContext, String repositoryId,
                                            String sourceId, String targetId) {
-        return createDirectRelationship(callContext, repositoryId, sourceId, targetId, "cmis:relationship");
+        return createDirectRelationship(callContext, repositoryId, sourceId, targetId,
+                "cmis:relationship", CaptureScope.inactive());
+    }
+
+    /**
+     * Typed relationship with no capture scope.
+     *
+     * <p>Kept so a caller that has no scope in hand still compiles, but it is NOT the right
+     * overload inside an ingest: a relationship created here is a change that no intent covers.
+     * The call sites that legitimately use it are the ones design §4 rule 7 puts outside this
+     * PR's boundary — the orchestrators that link objects after the entry point returns.
+     */
+    String createDirectRelationship(CallContext callContext, String repositoryId,
+                                    String sourceId, String targetId, String relationshipTypeId) {
+        return createDirectRelationship(callContext, repositoryId, sourceId, targetId,
+                relationshipTypeId, CaptureScope.inactive());
     }
 
     /**
@@ -1018,7 +1129,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * Falls back to generic cmis:relationship if the custom type is not available.
      */
     String createDirectRelationship(CallContext callContext, String repositoryId,
-                                            String sourceId, String targetId, String relationshipTypeId) {
+                                            String sourceId, String targetId,
+                                            String relationshipTypeId, CaptureScope captureScope) {
         try {
             // Idempotent: if this source→target link already exists, do not
             // create a duplicate. Relationship creation is otherwise re-run on
@@ -1032,15 +1144,30 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             relProps.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, relationshipTypeId));
             relProps.addProperty(new PropertyIdImpl(PropertyIds.SOURCE_ID, sourceId));
             relProps.addProperty(new PropertyIdImpl(PropertyIds.TARGET_ID, targetId));
+            // Opened here, after the idempotent early return above: a link that already exists
+            // changes nothing, and an intent for it could never be completed.
+            captureScope.ensureIntentOpened();
             objectService.createRelationship(callContext, repositoryId, relProps, null, null, null, null);
+            captureScope.record("createRelationship", MutationOutcome.SUCCEEDED);
             return null;
+        } catch (CaptureScope.CaptureIntentFailedException failClosed) {
+            // Never swallowed. This is the fail-closed point: it means the intent could 
+            // not be written, so nothing may be changed. Caught by the surrounding catch
+            //  it became a warning, and on the replace path the code then fell through a
+            // nd created the replacement anyway (external review).
+            throw failClosed;
         } catch (Exception e) {
             // Fallback to generic cmis:relationship if custom type fails
             if (!"cmis:relationship".equals(relationshipTypeId)) {
                 logger.debug("Custom relationship type {} failed, falling back to cmis:relationship", relationshipTypeId);
-                return createDirectRelationship(callContext, repositoryId, sourceId, targetId, "cmis:relationship");
+                return createDirectRelationship(callContext, repositoryId, sourceId, targetId,
+                        "cmis:relationship", captureScope);
             }
             logger.warn("Relationship {} → {} failed: {}", sourceId, targetId, e.getMessage());
+            // INDETERMINATE: the throw may have come from before createRelationship or from the
+            // call itself, and the wrapper below it returns null for every kind of failure.
+            captureScope.record("createRelationship", MutationOutcome.INDETERMINATE,
+                    e.getMessage());
             return "Relationship failed: " + e.getMessage();
         }
     }
@@ -1116,6 +1243,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * - copy_from_source: reserved for future adapter integration
      */
     private String applyAclSyncPolicy(CallContext callContext, String repositoryId,
+                                     CaptureScope captureScope,
                                      String objectId, String policy,
                                      Content content) {
         if ("inherit_from_folder".equals(policy) || policy.isBlank()) {
@@ -1131,8 +1259,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 // pre-import permissions until their entries expired. Bumping here rather than
                 // in the DAO keeps ordinary content updates from clearing every replica.
                 jp.aegif.nemaki.util.cache.AclCacheGeneration.advance(repositoryId);
+                captureScope.record("breakAclInheritance", MutationOutcome.SUCCEEDED);
                 logger.info("ACL inheritance disabled for imported document {}", objectId);
             } catch (Exception e) {
+                captureScope.record("breakAclInheritance", MutationOutcome.FAILED, e.getMessage());
                 // Returned, not only logged: this decides who can read the imported document.
                 // A warn line here left the caller believing the policy had been applied
                 // (external review).
@@ -1143,7 +1273,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             }
         }
         if ("copy_from_source".equals(policy)) {
-            return applySourceAcl(callContext, repositoryId, objectId, content);
+            return applySourceAcl(callContext, repositoryId, objectId, content, captureScope);
         }
         return null;
     }
@@ -1155,7 +1285,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      */
     @SuppressWarnings("unchecked")
     private String applySourceAcl(CallContext callContext, String repositoryId,
-                                 String objectId, Content content) {
+                                 String objectId, Content content, CaptureScope captureScope) {
         try {
             // Read sourceAcl from the persisted externalContext
             String contextJson = null;
@@ -1214,7 +1344,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         : new jp.aegif.nemaki.model.Acl();
                 acl.setLocalAces(localAces);
                 content.setAcl(acl);
+                // Opened here rather than at the top: every branch above returns without writing,
+                // and an intent opened for those could never be completed.
+                captureScope.ensureIntentOpened();
                 contentService.update(callContext, repositoryId, content);
+                captureScope.record("applySourceAcl", MutationOutcome.SUCCEEDED);
                 // This path writes an ACL without going through AclService, so nothing else
                 // advances the cache generation — and other replicas would keep serving the
                 // pre-import permissions until their entries expired. Bumping here rather than
@@ -1222,11 +1356,18 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 jp.aegif.nemaki.util.cache.AclCacheGeneration.advance(repositoryId);
                 logger.info("Applied {} source ACEs to imported document {}", localAces.size(), objectId);
             }
+        } catch (CaptureScope.CaptureIntentFailedException failClosed) {
+            // Never swallowed. This is the fail-closed point: it means the intent could 
+            // not be written, so nothing may be changed. Caught by the surrounding catch
+            //  it became a warning, and on the replace path the code then fell through a
+            // nd created the replacement anyway (external review).
+            throw failClosed;
         } catch (Exception e) {
             // Returned, not only logged. Under copy_from_source a corrupted
             // nemaki:externalContext leaves the document on the INHERITED (wider) ACL, and the
             // caller used to be told the import succeeded (external review).
             logger.warn("Failed to apply source ACL for {}: {}", objectId, e.getMessage());
+            captureScope.record("applySourceAcl", MutationOutcome.INDETERMINATE, e.getMessage());
             return "Source ACL was NOT applied to " + objectId
                     + " (aclSyncPolicy=copy_from_source): " + e.getMessage()
                     + ". The document is left on the inherited ACL, which may be wider.";
@@ -1264,7 +1405,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * Remove all existing CMIS relationships where the given object is the source.
      * Used by replace_relationships_on_resync policy.
      */
-    private String removeExistingRelationships(CallContext callContext, String repositoryId, String objectId) {
+    private String removeExistingRelationships(CaptureScope captureScope,
+            CallContext callContext, String repositoryId, String objectId) {
         if (relationshipService == null) return null;
         try {
             int totalRemoved = 0;
@@ -1282,12 +1424,22 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 int removedThisPass = 0;
                 for (var relData : rels.getObjects()) {
                     try {
+                        captureScope.ensureIntentOpened();
                         objectService.deleteObject(callContext, repositoryId,
                                 relData.getId(), true, null);
+                        captureScope.record("removeRelationship", MutationOutcome.SUCCEEDED);
                         totalRemoved++;
                         removedThisPass++;
+                    } catch (CaptureScope.CaptureIntentFailedException failClosed) {
+                        // Never swallowed. This is the fail-closed point: it means the intent could 
+                        // not be written, so nothing may be changed. Caught by the surrounding catch
+                        //  it became a warning, and on the replace path the code then fell through a
+                        // nd created the replacement anyway (external review).
+                        throw failClosed;
                     } catch (Exception e) {
                         totalFailed++;
+                        captureScope.record("removeRelationship", MutationOutcome.FAILED,
+                                e.getMessage());
                         logger.warn("Failed to remove relationship {}: {}", relData.getId(), e.getMessage());
                     }
                 }
@@ -1373,8 +1525,121 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         return jp.aegif.nemaki.util.io.BoundedIO.readBounded(in, maxBytes, what);
     }
 
+    /**
+     * The capture boundary's write seam.
+     *
+     * <p>Optional on purpose. Its presence is the condition the fail-closed behaviour hangs on:
+     * with no store there is no lineage database to write an intent to, and refusing to ingest
+     * because of that would break every deployment that does not run lineage at all. It is the
+     * same shape as the existing {@code ingestLineageEmitter != null} guard, not a test flag.
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private CaptureIntentStore captureIntentStore;
+
+    public void setCaptureIntentStore(CaptureIntentStore captureIntentStore) {
+        this.captureIntentStore = captureIntentStore;
+    }
+
+    /**
+     * Records a wrapper post-processing update against the scope.
+     *
+     * <p>These run AFTER the internal execute returns, and their failures become warning strings
+     * rather than exceptions — which is exactly why the tracker has to sit here: {@code CAPTURED}
+     * means "every tracked change succeeded", and without this a metadata failure would still
+     * complete the capture (design §5.0, external review).
+     *
+     * <p>{@code ensureIntentOpened} is called first because on a dedupe-skip path this update is
+     * the FIRST change of the whole operation — the internal execute returned without touching
+     * anything (rule 1).
+     *
+     * @param error the helper's own return value: {@code null} means it succeeded
+     */
+    private void recordWrapperUpdate(CaptureScope captureScope, String operation, String error) {
+        captureScope.record(operation,
+                error == null ? MutationOutcome.SUCCEEDED : MutationOutcome.INDETERMINATE, error);
+    }
+
+    /**
+     * Builds an un-opened scope for this attempt.
+     *
+     * <p>Un-opened is the whole point (rule 2): at this moment nobody knows whether anything
+     * will be changed. Dry runs, dedupe skips, idempotency skips and imports whose attachments
+     * are all skipped finish normally having changed nothing, and a row opened for them could
+     * never be completed.
+     */
+    CaptureScope newCaptureScope(CallContext callContext, ExternalIngestRequest request) {
+        if (captureIntentStore == null || request == null) {
+            return CaptureScope.inactive();
+        }
+        String intentId = java.util.UUID.randomUUID().toString();
+        return new CaptureScope(captureIntentStore, new CaptureIntent(
+                CaptureIntent.documentIdFor(intentId),
+                intentId,
+                System.currentTimeMillis(),
+                request.getRepositoryId(),
+                request.getConnectorId(),
+                // The source system and the process type come from the connector and the profile,
+                // which are resolved inside execute. They are filled in by describe() before the
+                // row is written; nothing is lost, because nothing is written until then.
+                null,
+                request.getSourceObjectType(),
+                request.getSourceObjectId(),
+                request.getRequestId(),
+                null,
+                callContext == null ? null : callContext.getUsername(),
+                resolveMetadataString(request, "onBehalfOf")));
+    }
+
+    /**
+     * Completes the scope and folds anything the caller must be told into the result.
+     *
+     * <p>A capture that could not be recorded is a warning, not an error: the content is already
+     * committed by this point, and turning that into a failure would tell the caller nothing was
+     * imported when something was. The unresolved listing is what surfaces it.
+     */
+    ExternalIngestResult withCaptureOutcome(ExternalIngestResult result, CaptureScope scope) {
+        Map<String, Object> evidence = new java.util.LinkedHashMap<>();
+        if (result != null && result.objectId() != null) {
+            evidence.put("objectId", result.objectId());
+        }
+        if (scope.wasOpenRefused()) {
+            // Belt and braces with the rethrow guards on the individual catches. If one of them
+            // is ever missed, the ingest still cannot report success: a change with no preceding
+            // intent is the state the whole boundary exists to prevent.
+            return ExternalIngestResult.error(
+                    result == null ? null : result.requestId(),
+                    result == null ? null : result.objectId(),
+                    "The capture intent could not be written, so this ingest is reported as "
+                            + "failed rather than leaving changes no evidence records.",
+                    result == null ? List.of() : result.warnings());
+        }
+        if (result != null && result.errors() != null && !result.errors().isEmpty()) {
+            // One rule covering both the thrown and the returned failure: an ingest that reports
+            // errors did not run to the end, however many of its individual changes succeeded.
+            scope.operationFailed("the ingest returned: " + String.join("; ", result.errors()));
+        }
+        CaptureScope.CaptureResult outcome = scope.complete(evidence);
+        if (outcome.warning() == null || result == null) {
+            return result;
+        }
+        List<String> warnings = new ArrayList<>(
+                result.warnings() == null ? List.of() : result.warnings());
+        warnings.add(outcome.warning());
+        return result.withWarnings(warnings);
+    }
+
     @Override
     public ExternalIngestResult execute(CallContext callContext, ExternalIngestRequest request) {
+        // The public entry owns its own root scope (rule 3). A wrapper that has post-processing
+        // of its own passes its scope to the overload below and completes it after that work,
+        // so the evidence describes the final state rather than an intermediate one.
+        CaptureScope scope = newCaptureScope(callContext, request);
+        ExternalIngestResult result = execute(callContext, request, scope);
+        return withCaptureOutcome(result, scope);
+    }
+
+    ExternalIngestResult execute(CallContext callContext, ExternalIngestRequest request,
+            CaptureScope captureScope) {
         String requestId = request.getRequestId();
         // §3: the lineage operation id is issued when the business operation starts, not when
         // the lineage event is emitted afterwards — retries of the emission reuse this id.
@@ -1461,6 +1726,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             return ExternalIngestResult.error(requestId,
                     "Profile has no resolvable target folder (neither targetFolderId nor targetFolderPath)");
         }
+
+        // Everything the row must carry is known by now, and nothing has been written yet.
+        captureScope.describe(connector == null ? null : connector.getSourceSystem(),
+                connector == null || connector.getSourceArchetype() == null
+                        ? null : connector.getSourceArchetype().name());
 
         byte[] bufferedContent = null; // retained for DLQ on failure
         // Hoisted so the catch below can report what actually happened. Declared inside the try,
@@ -1610,17 +1880,28 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 } else if ("replace".equals(dedupePolicy)) {
                     // Delete existing and create fresh
                     try {
+                        // The first change in this path, so the intent opens here — not at the
+                        // entry, where a skip or a dry run would leave a row with nowhere to go.
+                        captureScope.ensureIntentOpened();
                         objectService.deleteObject(callContext, repositoryId, existingDoc.getId(), true, null);
+                        captureScope.record("replaceDelete", MutationOutcome.SUCCEEDED);
                         // Recorded NOW: the delete has happened. If the replacement then fails,
                         // the caller must be told which document was removed — reporting "no
                         // object" for an operation that deleted one is the opposite of the truth.
                         committedObjectId = existingDoc.getId();
                         logger.info("Dedupe replace: deleted existing document {}", existingDoc.getId());
+                    } catch (CaptureScope.CaptureIntentFailedException failClosed) {
+                        // Never swallowed. This is the fail-closed point: it means the intent could 
+                        // not be written, so nothing may be changed. Caught by the surrounding catch
+                        //  it became a warning, and on the replace path the code then fell through a
+                        // nd created the replacement anyway (external review).
+                        throw failClosed;
                     } catch (Exception e) {
                         // Returned, not only logged. The code falls through and creates the
                         // replacement regardless, so a failed delete leaves BOTH documents —
                         // and the caller was told the import succeeded (external review).
                         logger.warn("Dedupe replace: failed to delete {}: {}", existingDoc.getId(), e.getMessage());
+                        captureScope.record("replaceDelete", MutationOutcome.FAILED, e.getMessage());
                         dedupeWarnings.add("The document being replaced (" + existingDoc.getId()
                                 + ") could not be deleted: " + e.getMessage()
                                 + ". A replacement was created, so both now exist.");
@@ -1634,7 +1915,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     }
                 } else if ("replace_relationships_on_resync".equals(dedupePolicy) && existingDoc != null) {
                     // Delete existing relationships before re-import
-                    String relRemovalError = removeExistingRelationships(callContext, repositoryId,
+                    String relRemovalError = removeExistingRelationships(captureScope, callContext, repositoryId,
                             existingDoc.getId());
                     if (relRemovalError != null) {
                         dedupeWarnings.add(relRemovalError);
@@ -1671,13 +1952,19 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     isNewVersion = true;
                     Holder<String> objectIdHolder = new Holder<>(objectId);
                     Holder<Boolean> contentCopied = new Holder<>(Boolean.FALSE);
+                    // checkOut is itself a CMIS change — it creates a PWC and alters the version
+                    // series — and on this path it is the FIRST one, so the intent must precede
+                    // it or the guarantee is broken before the document is even touched.
+                    captureScope.ensureIntentOpened();
                     versioningService.checkOut(callContext, repositoryId, objectIdHolder, contentCopied, null);
+                    captureScope.record("checkOut", MutationOutcome.SUCCEEDED);
                     String pwcId = objectIdHolder.getValue();
                     boolean isMajor = !"minor".equalsIgnoreCase(profile.getVersioningPolicy());
                     Holder<String> checkinHolder = new Holder<>(pwcId);
                     versioningService.checkIn(callContext, repositoryId, checkinHolder, isMajor,
                             null, contentStream, "Imported from " + connector.getSourceSystem(),
                             null, null, null, null);
+                    captureScope.record("checkIn", MutationOutcome.SUCCEEDED);
                     objectId = checkinHolder.getValue();
                     versionLabel = "new version (always)";
                 } else {
@@ -1696,7 +1983,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         isNewVersion = true;
                         Holder<String> objectIdHolder = new Holder<>(objectId);
                         Holder<Boolean> contentCopied = new Holder<>(Boolean.FALSE);
+                        captureScope.ensureIntentOpened();
                         versioningService.checkOut(callContext, repositoryId, objectIdHolder, contentCopied, null);
+                        captureScope.record("checkOut", MutationOutcome.SUCCEEDED);
                         String pwcId = objectIdHolder.getValue();
 
                         boolean isMajor = !"minor".equalsIgnoreCase(profile.getVersioningPolicy());
@@ -1704,6 +1993,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         versioningService.checkIn(callContext, repositoryId, checkinHolder, isMajor,
                                 null, contentStream, "Imported from " + connector.getSourceSystem(),
                                 null, null, null, null);
+                        captureScope.record("checkIn", MutationOutcome.SUCCEEDED);
                         objectId = checkinHolder.getValue();
                         versionLabel = "new version";
                         logger.info("Dedupe: updated existing document {} with new version", objectId);
@@ -1719,8 +2009,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         : "none".equalsIgnoreCase(profile.getVersioningPolicy())
                                 ? VersioningState.NONE
                                 : VersioningState.MAJOR;
+                captureScope.ensureIntentOpened();
                 objectId = objectService.createDocument(callContext, repositoryId, properties,
                         targetFolderId, contentStream, vs, null, null, null, null);
+                captureScope.record("createDocument", MutationOutcome.SUCCEEDED);
                 createdObject = true;
             }
 
@@ -1728,7 +2020,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
             // 6. Apply secondary types
             List<String> warnings = accumulatedWarnings;
-            String metadataError = applySourceMetadata(repositoryId, objectId, callContext, connector, request, profile, computedHash);
+            String metadataError = applySourceMetadata(captureScope, repositoryId, objectId, callContext, connector, request, profile, computedHash);
             if (metadataError != null) {
                 warnings.add(metadataError);
             }
@@ -1736,7 +2028,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // 6b. Create relationship if parentObjectId is provided and policy allows.
             // Relationship failures are warnings, not errors — the document was already
             // created/versioned, so the import is a partial success, not a hard failure.
-            String relError = applyRelationship(callContext, repositoryId, objectId, profile, request);
+            String relError = applyRelationship(captureScope, callContext, repositoryId, objectId, profile, request);
             if (relError != null) {
                 warnings.add(relError);
             }
@@ -1954,7 +2246,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         return false;
     }
 
-    private String applySourceMetadata(String repositoryId, String objectId, CallContext callContext,
+    private String applySourceMetadata(CaptureScope captureScope,
+            String repositoryId, String objectId, CallContext callContext,
                                        ConnectorDefinition connector, ExternalIngestRequest request,
                                        ImportProfileDefinition profile, String contentHash) {
         try {
@@ -2132,7 +2425,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // result before returning, so a null would already have thrown, and the object is
             // always a Document so the subtype dispatch cannot miss. A real failure surfaces as
             // the exception caught below (external review).
+            // Unconditional: this method always writes. The intent opens immediately before it,
+            // which on a metadata-only update is the first change of the whole operation.
+            captureScope.ensureIntentOpened();
             Content updated = contentService.update(callContext, repositoryId, content);
+            captureScope.record("applySourceMetadata", MutationOutcome.SUCCEEDED);
 
             // Apply ACL sync policy.
             // The error is HELD, not returned here: the cached DAO puts the very object we are
@@ -2144,7 +2441,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // (external review). Invalidating first is what makes the failure safe.
             String aclError = null;
             if (profile != null && profile.getAclSyncPolicy() != null) {
-                aclError = applyAclSyncPolicy(callContext, repositoryId, objectId,
+                aclError = applyAclSyncPolicy(callContext, repositoryId, captureScope, objectId,
                         profile.getAclSyncPolicy(), updated);
             }
 
@@ -2152,13 +2449,30 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (nemakiCachePool != null) {
                 try {
                     nemakiCachePool.get(repositoryId).removeCmisAndContentCache(objectId);
+                } catch (CaptureScope.CaptureIntentFailedException failClosed) {
+                    // Never swallowed. This is the fail-closed point: it means the intent could 
+                    // not be written, so nothing may be changed. Caught by the surrounding catch
+                    //  it became a warning, and on the replace path the code then fell through a
+                    // nd created the replacement anyway (external review).
+                    throw failClosed;
                 } catch (Exception e) {
                     logger.debug("Cache invalidation failed for {}: {}", objectId, e.getMessage());
                 }
             }
             return aclError;
+        } catch (CaptureScope.CaptureIntentFailedException failClosed) {
+            // Never swallowed. On a metadata-only update this method holds the FIRST change of
+            // the whole operation, and this catch turns anything thrown into a warning while the
+            // ingest returns success — so the fail-closed refusal became a note in the margin
+            // (external review).
+            throw failClosed;
         } catch (Exception e) {
             logger.warn("Failed to apply source metadata to {}: {}", objectId, e.getMessage());
+            // INDETERMINATE, not FAILED: the throw may have come from before the write, from the
+            // write itself, or from the ACL step after it. Which one cannot be told from here,
+            // and calling it a clean failure would claim knowledge we do not have.
+            captureScope.record("applySourceMetadata", MutationOutcome.INDETERMINATE,
+                    e.getMessage());
             return "Source metadata application failed: " + e.getMessage();
         }
     }
@@ -2171,7 +2485,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      *
      * @return error message if failed, null on success or no-op
      */
-    private String applyRelationship(CallContext callContext, String repositoryId, String objectId,
+    private String applyRelationship(CaptureScope captureScope,
+            CallContext callContext, String repositoryId, String objectId,
                                      ImportProfileDefinition profile, ExternalIngestRequest request) {
         String relPolicy = profile.getRelationshipPolicy();
         if (relPolicy == null || "none".equalsIgnoreCase(relPolicy)) {
@@ -2184,7 +2499,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // Route through the idempotent helper so a re-run (e.g. a webhook-
         // triggered incremental fetch of an already-imported object) does not
         // create a duplicate parent→child edge.
-        return createDirectRelationship(callContext, repositoryId, parentObjectId, objectId);
+        return createDirectRelationship(callContext, repositoryId, parentObjectId, objectId,
+                "cmis:relationship", captureScope);
     }
 
     /**

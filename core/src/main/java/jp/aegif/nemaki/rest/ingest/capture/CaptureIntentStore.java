@@ -57,6 +57,21 @@ public interface CaptureIntentStore {
     /** Whether the collaborator this store needs is actually wired. See {@link CaptureScope}. */
     boolean isActive();
 
+    /**
+     * Whether the boundary applies to this repository at all.
+     *
+     * <p>Lineage mode is per repository. A repository whose mode is {@code disabled} or
+     * {@code direct} must behave exactly as it does today — no intent row, and above all no
+     * fail-closed refusal, because refusing there would stop ingests in deployments that never
+     * asked for the boundary. Reading the global setting instead of the per-repository one
+     * would get this wrong the moment two repositories differ (design §6.5-1, AC 19).
+     *
+     * <p>Consulted ONCE, when the intent is opened. It is deliberately not re-checked at
+     * completion: switching a repository to {@code disabled} half way through an ingest must
+     * not strand an intent that is already open (AC 20).
+     */
+    boolean appliesTo(String repositoryId);
+
     /** What happened when completing. Three outcomes, none of which may be inferred. */
     enum CaptureCompletion {
 

@@ -69,6 +69,15 @@ class CaptureScopeTest {
         public boolean isActive() {
             return active;
         }
+
+        @Override
+        public boolean appliesTo(String repositoryId) {
+            appliesToCalls.add(repositoryId);
+            return applies;
+        }
+
+        boolean applies = true;
+        final List<String> appliesToCalls = new ArrayList<>();
     }
 
     private static CaptureIntent intent() {
@@ -306,6 +315,116 @@ class CaptureScopeTest {
         store.openSucceeds = false;
 
         assertThrows(CaptureIntentFailedException.class, () -> scope(store).ensureIntentOpened());
+    }
+
+    @Test
+    @DisplayName("a refused open is latched, so a swallowed exception still shows")
+    void refusalIsLatched() {
+        // The ingest path is full of catch (Exception) blocks that turn anything into a warning
+        // string. Guards were added at each one, but a missed guard must not be able to turn
+        // fail-closed into a note in the margin — so the owner reads this when building the
+        // result rather than relying on the throw having survived.
+        FakeStore store = new FakeStore();
+        store.openSucceeds = false;
+        CaptureScope scope = scope(store);
+
+        try {
+            scope.ensureIntentOpened();
+        } catch (CaptureIntentFailedException swallowed) {
+            // exactly what a stray catch (Exception) would do
+        }
+
+        assertTrue(scope.wasOpenRefused());
+    }
+
+    @Test
+    @DisplayName("a scope that was never refused does not claim it was — the control")
+    void noRefusalWhenOpenSucceeds() {
+        FakeStore store = new FakeStore();
+        CaptureScope scope = scope(store);
+
+        scope.ensureIntentOpened();
+
+        assertFalse(scope.wasOpenRefused());
+    }
+
+    @Test
+    @DisplayName("a repository the boundary skips is not a refusal")
+    void notApplicableIsNotARefusal() {
+        // Otherwise every ingest into a disabled repository would be reported as failed.
+        FakeStore store = new FakeStore();
+        store.applies = false;
+        CaptureScope scope = scope(store);
+
+        scope.ensureIntentOpened();
+
+        assertFalse(scope.wasOpenRefused());
+    }
+
+    // ── Per-repository mode ──────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("a repository the boundary does not apply to is left exactly as it is today")
+    void notApplicableRepositoryIsUntouched() {
+        // Lineage mode is per repository. Refusing an ingest into a repository whose mode is
+        // disabled or direct would stop deployments that never asked for the boundary.
+        FakeStore store = new FakeStore();
+        store.applies = false;
+        store.openSucceeds = false;   // would fail closed if the gate were not consulted
+        CaptureScope scope = scope(store);
+
+        scope.ensureIntentOpened();   // must not throw
+        scope.record("createDocument", MutationOutcome.SUCCEEDED);
+
+        assertTrue(store.opened.isEmpty());
+        assertFalse(scope.isOpened());
+        assertFalse(scope.complete(Map.of()).captured());
+        assertNull(scope.complete(Map.of()).warning(), "not applicable is not a problem");
+    }
+
+    @Test
+    @DisplayName("the mode is asked once, not per mutation")
+    void modeIsLatched() {
+        // Asking per mutation would mean a mid-operation configuration change could half-apply,
+        // and would put a configuration read on every write.
+        FakeStore store = new FakeStore();
+        store.applies = false;
+        CaptureScope scope = scope(store);
+
+        scope.ensureIntentOpened();
+        scope.ensureIntentOpened();
+        scope.ensureIntentOpened();
+
+        assertEquals(1, store.appliesToCalls.size());
+        assertEquals("bedroom", store.appliesToCalls.get(0),
+                "the repository being ingested into, not a global setting");
+    }
+
+    @Test
+    @DisplayName("an applicable repository still fails closed — the control")
+    void applicableRepositoryStillFailsClosed() {
+        // Without this, hard-coding appliesTo to false would pass the two tests above while
+        // disabling the whole feature.
+        FakeStore store = new FakeStore();
+        store.applies = true;
+        store.openSucceeds = false;
+
+        assertThrows(CaptureIntentFailedException.class, () -> scope(store).ensureIntentOpened());
+    }
+
+    @Test
+    @DisplayName("once open, completion does not re-check the mode")
+    void completionDoesNotRecheckTheMode() {
+        // Switching a repository to disabled half way through an ingest must not strand an
+        // intent that is already open.
+        FakeStore store = new FakeStore();
+        CaptureScope scope = scope(store);
+        scope.ensureIntentOpened();
+        scope.record("createDocument", MutationOutcome.SUCCEEDED);
+        store.applies = false;                 // the operator switches it off mid-ingest
+
+        assertTrue(scope.complete(Map.of()).captured());
+        assertEquals(1, store.completedWith.size());
     }
 
     // ── Completing twice ─────────────────────────────────────────────────────────────────

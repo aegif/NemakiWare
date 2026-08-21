@@ -675,8 +675,22 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
             }
             return rows;
         } catch (Exception e) {
+            // NOT an empty list. The capture boundary's whole visible surface is a listing of
+            // unresolved rows, and an empty listing reads as "every ingest completed". A failure
+            // that renders as reassurance is worse than no listing at all (external review).
             logger.error("Error querying view {}/{}: {}", designDocName, viewName, e.getMessage());
-            return List.of();
+            throw new LineageViewUnreadableException(
+                    "view " + designDocName + "/" + viewName + " could not be read: "
+                            + e.getMessage(), e);
+        }
+    }
+
+    /** Raised when a view could not be read, so an empty answer is not mistaken for no rows. */
+    public static class LineageViewUnreadableException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        public LineageViewUnreadableException(String message, Throwable cause) {
+            super(message, cause);
         }
     }
 

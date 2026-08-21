@@ -320,10 +320,11 @@ public class LineageObligationWiringConfig {
      */
     @Bean
     public CouchCaptureIntentStore couchCaptureIntentStore(
-            ObjectProvider<LineageJournalStore> journalStore) {
+            ObjectProvider<LineageJournalStore> journalStore,
+            ObjectProvider<LineageConfig> lineageConfig) {
         LineageJournalStore store = journalStore.getIfAvailable();
         return store instanceof LineageStoreSupport support
-                ? new CouchCaptureIntentStore(support) : null;
+                ? new CouchCaptureIntentStore(support, lineageConfig.getIfAvailable()) : null;
     }
 
     /** The write seam the ingest path fails closed on. */

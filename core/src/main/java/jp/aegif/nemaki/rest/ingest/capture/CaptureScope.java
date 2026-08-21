@@ -72,10 +72,15 @@ public final class CaptureScope {
     private static final Logger logger = LoggerFactory.getLogger(CaptureScope.class);
 
     private final CaptureIntentStore store;
-    private final CaptureIntent intent;
+    private CaptureIntent intent;
 
     private boolean opened;
     private boolean completed;
+    private String operationFailure;
+    /** Latched once the repository is found not to run the boundary. */
+    private boolean notApplicable;
+    /** Latched when an intent write was refused, so a swallowed exception still shows up. */
+    private boolean openRefused;
     private final List<Recorded> mutations = new ArrayList<>();
 
     /** One tracked mutation and what we know about it. */
@@ -108,6 +113,17 @@ public final class CaptureScope {
         return opened;
     }
 
+    /**
+     * Whether an intent write was refused during this operation.
+     *
+     * <p>Independent of whether the exception reached the caller. A swallowed
+     * {@link CaptureIntentFailedException} must still make the operation fail, or fail-closed
+     * quietly becomes a warning.
+     */
+    public boolean wasOpenRefused() {
+        return openRefused;
+    }
+
     public List<Recorded> recorded() {
         return List.copyOf(mutations);
     }
@@ -125,10 +141,22 @@ public final class CaptureScope {
      *         because the underlying client swallows failures and returns null.
      */
     public void ensureIntentOpened() {
-        if (opened || !isActive()) {
+        if (opened || !isActive() || notApplicable) {
+            return;
+        }
+        if (!store.appliesTo(intent.repositoryId())) {
+            // This repository does not run the boundary. Latched, so the answer cannot change
+            // mid-operation, and so this is not asked again for every later mutation.
+            notApplicable = true;
             return;
         }
         if (!store.openIntent(intent)) {
+            // Latched as well as thrown. The ingest path is full of catch (Exception) blocks
+            // that turn anything into a warning string, and one that is missed would put the
+            // refusal in the margin of a successful-looking import. The owner reads this when
+            // it builds the result, so the report is safe even if the throw is swallowed
+            // somewhere (external review).
+            openRefused = true;
             throw new CaptureIntentFailedException(
                     "The capture intent could not be written, so the ingest must not change "
                             + "anything: a change with no preceding intent leaves a document "
@@ -136,6 +164,33 @@ public final class CaptureScope {
                             + ", repositoryId=" + intent.repositoryId());
         }
         opened = true;
+    }
+
+    /**
+     * Fills in what was not knowable when the scope was created.
+     *
+     * <p>The connector and the archetype are resolved inside {@code execute}, after the wrapper
+     * has already built this object. Because nothing is written until the first mutation, they
+     * can still reach the stored row — but only until then, so this refuses once the row exists
+     * rather than pretending to change it.
+     *
+     * @throws IllegalStateException if the intent has already been written
+     */
+    public void describe(String sourceSystem, String processType) {
+        if (intent == null) {
+            return;
+        }
+        if (opened) {
+            throw new IllegalStateException(
+                    "The capture intent has already been written; describing it now would change "
+                            + "this object without changing the stored row");
+        }
+        intent = new CaptureIntent(intent.documentId(), intent.intentId(),
+                intent.intentOpenedAtMs(), intent.repositoryId(), intent.connectorId(),
+                sourceSystem == null ? intent.sourceSystem() : sourceSystem,
+                intent.sourceObjectType(), intent.sourceObjectId(), intent.requestId(),
+                processType == null ? intent.processType() : processType,
+                intent.executedBy(), intent.onBehalfOf());
     }
 
     /**
@@ -163,6 +218,21 @@ public final class CaptureScope {
         mutations.add(new Recorded(operation, outcome, detail));
     }
 
+    /**
+     * Records that the business operation did not run to the end.
+     *
+     * <p>Distinct from any individual mutation failing. Every tracked change can have succeeded
+     * and the operation still have failed afterwards — a later step throws, or the entry point
+     * returns errors. {@code CAPTURED} means the operation finished, so this has to be able to
+     * stop it on its own.
+     */
+    public void operationFailed(String reason) {
+        if (!isActive()) {
+            return;
+        }
+        operationFailure = reason == null ? "the ingest did not complete" : reason;
+    }
+
     /** Whether every tracked mutation is known to have succeeded. */
     public boolean allMutationsSucceeded() {
         return mutations.stream().map(Recorded::outcome).allMatch(MutationOutcome::permitsCapture);
@@ -182,6 +252,12 @@ public final class CaptureScope {
         }
         if (completed) {
             return CaptureResult.alreadyCompleted();
+        }
+        if (operationFailure != null) {
+            return CaptureResult.notEstablished(
+                    "The capture was not recorded as complete because the ingest did not run to "
+                            + "the end: " + operationFailure
+                            + ". The attempt remains open and will be listed as unresolved.");
         }
         if (!allMutationsSucceeded()) {
             List<String> unmet = mutations.stream()
