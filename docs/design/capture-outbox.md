@@ -320,7 +320,15 @@ B4 のもとでは intent 行は配送対象の event にならないので、�
 - ~~`publishStatusByTarget` が空だと即 purge 対象になる~~
 - ~~`_id` に独自接頭辞を付けると完成後に `journalDocumentId` で引けなくなる~~
 
-#### 帰結 2 — B4 が**新しい穴**を開けた (上の #1 より)
+#### 帰結 2 — B4 が開けた穴は §6.10 が半分だけ気づいていた (上の #1 より)
+
+§6.10 の B4 は「**`CAPTURED` は本当に終端になる** — `by_occurred_at` に入らないので
+purge されない」と正しく書いている。だが続きが「intent 専用の retention (§6) だけが効く」
+であり、その §6 の retention は **`UNRESOLVED` の行しか対象にしていない**
+(retention view の述語が `captureState == "UNRESOLVED"`)。
+**つまり `CAPTURED` にはどの retention も掛からない。** §6.10 は purge されないことを
+利点として書いたが、それが無期限の増加を意味することは書いていなかった。
+
 
 完成した `CAPTURED` 行は `type = "lineage_capture_intent"` のままなので、
 **既存のどの purge 経路にも当たらない**。取込 1 件につき 1 行が**無期限に積み上がる**。
@@ -344,7 +352,9 @@ emitter が書く lineage イベントとの対応は `_id` ではなく**フィ
 
 #### 決定 — `CAPTURED` 行の保持期間は設定可能・既定は無期限 (オーナー判断、2026-08-21)
 
-**`lineage.capture.retention.days` を足し、未設定なら削除しない。** 運用者が明示的に
+**`lineage.capture.retention.captured.days` を足し、未設定なら削除しない。**
+(§6 の `lineage.capture.retention.unresolved.days` と対称にする。似た名前が 2 つ並ぶので、
+状態を名前に入れて取り違えを防ぐ。) 運用者が明示的に
 有限を選んだときだけ purge が働く。前作業 2 で入れた `POST /dlq/purge?olderThanDays=N` と
 同じ形で、**既定では証拠を消さない**。
 
@@ -377,7 +387,9 @@ CouchDB の compaction・バックアップ方針・ディスク障害はこの�
   - **`CAPTURE_INTENT` を直接 purge しない。** 必ず先に sweeper が `UNRESOLVED` にする
     (直接消すと「開いたまま落ちた」証拠が消える)
   - **`UNRESOLVED` は既定で purge しない (無期限保持)。** 設定
-    `lineage.capture-intent.retention.days` の既定は `0` = 無期限。**journal の 90 日とは
+    `lineage.capture.retention.unresolved.days` の既定は `0` = 無期限
+    (当初 `lineage.capture-intent.retention.days` としていたが、§5.3 で `CAPTURED` 側の
+    設定が増えたので、状態を名前に持つ対称な形に揃えた)。**journal の 90 日とは
     別の値**にする — 未解決の証拠を配送ログと同じ期限で消さない
   - **保持期間の起点は `unresolvedAtMs`** (sweeper が `UNRESOLVED` にした時刻) であって
     `intentOpenedAtMs` ではない。起点を開始時刻にすると、**長時間走った取込が

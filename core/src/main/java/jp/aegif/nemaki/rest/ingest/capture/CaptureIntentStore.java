@@ -1,0 +1,85 @@
+/**
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ */
+package jp.aegif.nemaki.rest.ingest.capture;
+
+import java.util.Map;
+
+/**
+ * The two writes the capture boundary needs, with results that cannot be mistaken for success.
+ *
+ * <p>This interface exists because the ordinary journal write path cannot express failure. Both
+ * {@code CloudantClientWrapper.create} and {@code .update} catch everything and return
+ * {@code null}, and {@code CouchLineageJournalStore.append} does not even look at that — so a
+ * 500, an authentication failure and an oversized document all arrive as silence. An
+ * implementation of this interface must report those, or the whole boundary quietly reverts to
+ * fail-open (design §6.8-1b).
+ *
+ * <p><b>An absent exception is not evidence of a write.</b> Implementations return a verdict;
+ * callers must read it.
+ */
+public interface CaptureIntentStore {
+
+    /**
+     * Writes the intent row, before any mutation has happened.
+     *
+     * @return {@code true} only when the write was CONFIRMED. Anything else — a swallowed
+     *         failure, an unreadable answer, a conflict on an id that should be unique — is
+     *         {@code false}. Implementations must not return {@code true} merely because
+     *         nothing was thrown.
+     */
+    boolean openIntent(CaptureIntent intent);
+
+    /**
+     * Moves the row to {@link CaptureState#CAPTURED}, attaching what was established.
+     *
+     * <p>Idempotent from the caller's point of view: completing an already-completed row is not
+     * an error. The row keeps {@code type = lineage_capture_intent} — it is never turned into a
+     * journal event, because the production emitter routes v1 and v2 through a write-schema
+     * barrier and a direct v1 write would erase the v2 representation of ingest events in a
+     * migrated deployment (design §6.10-B4).
+     */
+    CaptureCompletion completeIntent(CaptureIntent intent, Map<String, Object> evidence);
+
+    /** Whether the collaborator this store needs is actually wired. See {@link CaptureScope}. */
+    boolean isActive();
+
+    /** What happened when completing. Three outcomes, none of which may be inferred. */
+    enum CaptureCompletion {
+
+        /** The row is now {@code CAPTURED}. */
+        COMPLETED,
+
+        /**
+         * The row could not be read back. <b>The cause cannot be determined.</b>
+         *
+         * <p>The read layer collapses {@code NotFoundException} and every other failure into the
+         * same {@code null}, and update collapses a 409 and a network failure the same way. So
+         * "retention deleted it", "the database was briefly unreachable" and "the intent write
+         * never actually landed" are indistinguishable here. Callers must report the
+         * observation and must not name a cause (design §6.8-6).
+         */
+        ROW_UNREADABLE,
+
+        /**
+         * The row was read and is not in a state this transition may leave.
+         *
+         * <p>{@code CAPTURED} is terminal, and only the ingest may complete an
+         * {@code UNRESOLVED} row. A sweeper racing the ingest lands here; it is not an error.
+         */
+        NOT_COMPLETABLE
+    }
+}
