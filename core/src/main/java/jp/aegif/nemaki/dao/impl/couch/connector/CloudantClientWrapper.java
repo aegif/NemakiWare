@@ -2926,6 +2926,53 @@ public class CloudantClientWrapper {
 	/**
 	 * Create or update a view in design document (utility method)
 	 */
+	/**
+	 * Puts a whole set of map-only views in ONE design-document write, and only if they differ.
+	 *
+	 * <p>{@link #createOrUpdateView} does a get-modify-put per view, so deploying N views changes
+	 * the design document's signature N times and CouchDB discards the index it has just built
+	 * each time — N full passes over the database instead of one. Doing nothing when the stored
+	 * views already match avoids rebuilding on every restart.
+	 *
+	 * @return true if a write happened
+	 */
+	public boolean putDesignDocumentIfChanged(String designDocId, Map<String, String> mapFunctions) {
+		try {
+			DesignDocument existingDoc = getDesignDocument(designDocId);
+			Map<String, DesignDocumentViewsMapReduce> views = new HashMap<>();
+			if (existingDoc != null && existingDoc.getViews() != null) {
+				views.putAll(existingDoc.getViews());
+			}
+
+			boolean changed = false;
+			for (Map.Entry<String, String> entry : mapFunctions.entrySet()) {
+				DesignDocumentViewsMapReduce current = views.get(entry.getKey());
+				if (current != null && entry.getValue().equals(current.map())) {
+					continue;
+				}
+				views.put(entry.getKey(),
+						new DesignDocumentViewsMapReduce.Builder().map(entry.getValue()).build());
+				changed = true;
+			}
+			if (!changed) {
+				return false;
+			}
+
+			DesignDocument.Builder builder = new DesignDocument.Builder();
+			if (existingDoc != null) {
+				if (existingDoc.getId() != null) builder.id(existingDoc.getId());
+				if (existingDoc.getRev() != null) builder.rev(existingDoc.getRev());
+			}
+			builder.views(views);
+			putDesignDocument(designDocId, builder.build());
+			log.info("Deployed " + mapFunctions.size() + " view(s) to design document: " + designDocId);
+			return true;
+		} catch (Exception e) {
+			log.error("Error deploying views to design document '" + designDocId + "'", e);
+			throw new RuntimeException("Failed to deploy views to " + designDocId, e);
+		}
+	}
+
 	public void createOrUpdateView(String designDocId, String viewName, String mapFunction, String reduceFunction) {
 		try {
 			// Get existing design document or create new one using proper design document API

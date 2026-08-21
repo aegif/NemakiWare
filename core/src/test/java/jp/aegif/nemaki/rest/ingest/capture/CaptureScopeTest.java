@@ -293,15 +293,32 @@ class CaptureScopeTest {
     }
 
     @Test
-    @DisplayName("a store that reports itself inactive is treated as absent")
-    void inactiveStoreIsTreatedAsAbsent() {
+    @DisplayName("an unreachable store on an applicable repository is a refusal, not silence")
+    void unreachableStoreIsARefusal() {
+        // An inert scope here meant a provisioning failure silently disabled the whole boundary:
+        // nothing opened, nothing recorded, nothing warned, and the ingest reported success
+        // (external review).
         FakeStore store = new FakeStore();
         store.active = false;
-        store.openSucceeds = false;
+
         CaptureScope scope = scope(store);
+        assertThrows(CaptureIntentFailedException.class, scope::ensureIntentOpened);
+        assertTrue(store.opened.isEmpty());
+        assertTrue(scope.wasOpenRefused());
+    }
 
-        scope.ensureIntentOpened();   // must not throw: there is no lineage database to write to
+    @Test
+    @DisplayName("the mode is asked before the store is ever touched")
+    void modeIsAskedBeforeAvailability() {
+        // isActive() provisions the lineage database. Asking it first created that database, and
+        // deployed its design documents, on deployments where every repository is disabled.
+        FakeStore store = new FakeStore();
+        store.applies = false;
+        store.active = false;
 
+        scope(store).ensureIntentOpened();   // must not throw and must not ask about the store
+
+        assertEquals(1, store.appliesToCalls.size());
         assertTrue(store.opened.isEmpty());
     }
 

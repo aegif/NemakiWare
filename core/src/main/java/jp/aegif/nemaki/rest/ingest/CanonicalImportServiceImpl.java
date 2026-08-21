@@ -308,6 +308,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // 4. Apply nemaki:messageMetadata secondary type
             List<String> warnings = failureState.warnings;
             warnings.addAll(messageResult.warnings());
+            // applyMessageMetadata always writes (it builds properties from the parsed message,
+            // not from optional request metadata), so there is nothing to predicate here.
             captureScope.ensureIntentOpened();
             String metaError = ingestMetadataService.applyMessageMetadata(request.getRepositoryId(), messageObjectId, callContext, parsed, request);
             recordWrapperUpdate(captureScope, "applyMessageMetadata", metaError);
@@ -502,9 +504,12 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // cannot key on the page result alone — files_only never runs the page import — so
             // every write here is guarded on the REQUEST.
             if (!request.isDryRun()) {
-                captureScope.ensureIntentOpened();
+                boolean tracked = openIfWriting(captureScope,
+                        ingestMetadataService.willWriteNoteMetadata(request));
                 String metaError = ingestMetadataService.applyNoteMetadata(request.getRepositoryId(), pageObjectId, callContext, request);
-                recordWrapperUpdate(captureScope, "applyNoteMetadata", metaError);
+                if (tracked) {
+                    recordWrapperUpdate(captureScope, "applyNoteMetadata", metaError);
+                }
                 if (metaError != null) warnings.add(metaError);
             }
         }
@@ -555,13 +560,19 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         continue;
                     }
                     ExternalIngestResult attResult;
+                    // Rule 4: one scope per attachment either way. The files_and_body branch used
+                    // the PUBLIC execute, which completed the attachment's row BEFORE the
+                    // relationship below existed — and then recorded that relationship against
+                    // the PARENT. A failed link therefore marked the attachment captured and the
+                    // page unresolved: both directions of misattribution rules 4 and 5 exist to
+                    // prevent (external review).
+                    CaptureScope attScope = importBody ? newCaptureScope(callContext, attReq) : null;
                     if (!importBody) {
                         // attachment carries note metadata since there is no page doc
                         attResult = executeNoteAttachment(callContext, attReq, request);
                     } else {
-                        attResult = execute(callContext, attReq);
+                        attResult = execute(callContext, attReq, attScope);
                     }
-                    mergeChildWarnings(warnings, "attachment", attResult);
                     if (attResult.isSuccess() || attResult.skipped()) {
                         attachmentCount++;
                         // isSuccess() is true even for a skipped result (it only
@@ -575,15 +586,25 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                                 firstAttachmentCreated = attResult.createdObject();
                             }
                             if (importBody && pageObjectId != null && !request.isDryRun()) {
+                                // Rule 5: the link is part of THIS attachment's work.
                                 String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
                                         pageObjectId, attObjectId, "nemaki:hasAttachment",
-                                        captureScope);
+                                        attScope);
                                 if (relErr != null) warnings.add(relErr);
                             }
                         }
                     } else {
                         warnings.add("Attachment import failed: " + String.join(", ", attResult.errors()));
                     }
+                    // Merged once, and for a scope owned here that happens AFTER completion so
+                    // an unrecorded capture reaches the caller too.
+                    mergeChildWarnings(warnings, "attachment",
+                            attScope == null ? attResult : withCaptureOutcome(attResult, attScope));
+                } catch (CaptureScope.CaptureIntentFailedException failClosed) {
+                    // The mail loops guard this; this one did not, so a fail-closed refusal was
+                    // downgraded to a warning and the orchestrator advanced its checkpoint
+                    // (external review).
+                    throw failClosed;
                 } catch (Exception e) {
                     warnings.add("Attachment failed: " + e.getMessage());
                 }
@@ -638,10 +659,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         ExternalIngestResult attResult = execute(callContext, attReq, childScope);
         if (attResult.isSuccess() && attResult.objectId() != null && !attReq.isDryRun()) {
             // Reuse the page's metadata for the note-metadata secondary type.
-            childScope.ensureIntentOpened();
+            boolean tracked = openIfWriting(childScope,
+                    ingestMetadataService.willWriteNoteMetadata(pageRequest));
             String metaError = ingestMetadataService.applyNoteMetadata(
                     attReq.getRepositoryId(), attResult.objectId(), callContext, pageRequest);
-            recordWrapperUpdate(childScope, "applyNoteMetadata", metaError);
+            if (tracked) {
+                recordWrapperUpdate(childScope, "applyNoteMetadata", metaError);
+            }
             if (metaError != null) {
                 List<String> w = new ArrayList<>(attResult.warnings());
                 w.add(metaError);
@@ -711,11 +735,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 {"nemaki:recordUrl", "recordUrl"}, {"nemaki:recordStatus", "recordStatus"},
                 {"nemaki:recordOwner", "recordOwner"}, {"nemaki:processInstanceId", "processInstanceId"},
         };
-        captureScope.ensureIntentOpened();
+        boolean brFieldsTracked = openIfWriting(captureScope,
+                ingestMetadataService.willWriteArchetypeMetadata(request, brFields));
         String metaError = ingestMetadataService.applyArchetypeMetadata(request.getRepositoryId(), result.objectId(), callContext,
                 "nemaki:businessRecordMetadata", request, brFields);
         if (metaError != null) warnings.add(metaError);
-        recordWrapperUpdate(captureScope, "applyArchetypeMetadata", metaError);
+        if (brFieldsTracked) {
+            recordWrapperUpdate(captureScope, "applyArchetypeMetadata", metaError);
+        }
 
         // Create attachedToRecord relationship if parentRecordId is provided
         if (request.getMetadata() != null) {
@@ -790,11 +817,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 {"nemaki:chatEvidenceScope", "evidenceScope"},
         };
 
-        captureScope.ensureIntentOpened();
+        boolean chatFieldsTracked = openIfWriting(captureScope,
+                ingestMetadataService.willWriteArchetypeMetadata(request, chatFields));
         String metaError = ingestMetadataService.applyArchetypeMetadata(request.getRepositoryId(), result.objectId(), callContext,
                 "nemaki:chatContextMetadata", request, chatFields);
         if (metaError != null) warnings.add(metaError);
-        recordWrapperUpdate(captureScope, "applyArchetypeMetadata", metaError);
+        if (chatFieldsTracked) {
+            recordWrapperUpdate(captureScope, "applyArchetypeMetadata", metaError);
+        }
 
         // chatCapturedAt has been on the type since it was introduced but nothing ever set it,
         // so every chat import carried a capture-time property it left empty. It is stamped from
@@ -838,10 +868,20 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                                 propMap.put("nemaki:chatCaptureWindowEnd", new Property("nemaki:chatCaptureWindowEnd", gc));
                             }
                             chatAspect.setProperties(new ArrayList<>(propMap.values()));
+                            // An aspect update written directly rather than through a helper —
+                            // which is exactly why it was missed. It is on the tracked allowlist
+                            // (design §5.0) and without this a failed capture window still
+                            // completed the row as CAPTURED (external review).
+                            captureScope.ensureIntentOpened();
                             contentService.update(callContext, request.getRepositoryId(), chatContent);
+                            captureScope.record("applyCaptureWindow", MutationOutcome.SUCCEEDED);
                         }
                     }
+                } catch (CaptureScope.CaptureIntentFailedException failClosed) {
+                    throw failClosed;
                 } catch (Exception e) {
+                    captureScope.record("applyCaptureWindow", MutationOutcome.INDETERMINATE,
+                            e.getMessage());
                     warnings.add("Capture window metadata failed: " + e.getMessage());
                 }
             }
@@ -1464,6 +1504,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         + objectId + "; stale edges remain alongside the re-imported ones";
             }
             return null;
+        } catch (CaptureScope.CaptureIntentFailedException failClosed) {
+            // The per-item guard rethrows into THIS catch, which turned it straight back into a
+            // warning — so the guard was inoperative (external review).
+            throw failClosed;
         } catch (Exception e) {
             logger.warn("Failed to query relationships for {}: {}", objectId, e.getMessage());
             return "Existing relationships of " + objectId + " could not be listed, so the resync "
@@ -1557,6 +1601,24 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     private void recordWrapperUpdate(CaptureScope captureScope, String operation, String error) {
         captureScope.record(operation,
                 error == null ? MutationOutcome.SUCCEEDED : MutationOutcome.INDETERMINATE, error);
+    }
+
+    /**
+     * Opens the intent only if the helper about to run will actually write.
+     *
+     * <p>These helpers return {@code null} both when they wrote and when there was nothing to
+     * write. Opening unconditionally produced an intent row for an operation that changed
+     * nothing — a row that can never be completed — and recording it as SUCCEEDED put a
+     * mutation in the evidence that never happened (design §6.10-B2, external review).
+     *
+     * @return whether the caller should record a mutation for it
+     */
+    private boolean openIfWriting(CaptureScope captureScope, boolean willWrite) {
+        if (!willWrite) {
+            return false;
+        }
+        captureScope.ensureIntentOpened();
+        return true;
     }
 
     /**
@@ -2254,6 +2316,12 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             Content content = contentService.getContent(repositoryId, objectId);
             if (content == null) {
                 logger.warn("Content not found after creation: {}", objectId);
+                // INDETERMINATE, and recorded. The DAO returns null for a failed read as well as
+                // for a genuinely absent object, so this skips the source identity, the content
+                // hash, the external context AND the ACL policy — and the row still completed as
+                // CAPTURED (external review).
+                captureScope.record("applySourceMetadata", MutationOutcome.INDETERMINATE,
+                        "the object could not be read back after creation");
                 return "Content not found after creation: " + objectId;
             }
 

@@ -506,10 +506,12 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         // above would rebuild that whole view group, and while a group rebuilds its views answer
         // from an incomplete index rather than failing — indistinguishable from "nothing to
         // report" at exactly the moment an operator is looking (design §6.8-3).
-        for (Map.Entry<String, String> view : CouchCaptureIntentStore.views().entrySet()) {
-            client.createOrUpdateView(CouchCaptureIntentStore.DESIGN_DOC, view.getKey(),
-                    view.getValue(), null);
-        }
+        // ONE put for all of them. createOrUpdateView does a get-modify-put per view, so a loop
+        // produces one design-document signature per view and CouchDB discards the index it just
+        // built each time — five successive full passes over nemaki_lineage on first start, and
+        // the listing answers 200 + empty throughout (design §6.8-3, external review).
+        client.putDesignDocumentIfChanged(CouchCaptureIntentStore.DESIGN_DOC,
+                CouchCaptureIntentStore.views());
         logger.info("Capture intent views deployed to design document '{}'",
                 CouchCaptureIntentStore.DESIGN_DOC);
     }
@@ -655,10 +657,28 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
     public java.util.List<Map<String, Object>> queryRawView(String designDocName, String viewName,
             Map<String, Object> params) {
         try {
+            if (!ensureClientForRead()) {
+                // Read-only: a listing must not CREATE the lineage database. Going through
+                // getLineageClient() provisioned it — and deployed both design documents — on
+                // the first admin GET of a deployment that had never used lineage (external
+                // review).
+                throw new LineageViewUnreadableException(
+                        "the lineage database is not available, so view " + designDocName + "/"
+                                + viewName + " could not be read", null);
+            }
             Map<String, Object> p = new HashMap<>(params == null ? Map.of() : params);
             p.put("include_docs", true);
-            ViewResult result = getLineageClient().queryView(designDocName, viewName, p);
-            if (result == null || result.getRows() == null) {
+            ViewResult result = lineageClient.queryView(designDocName, viewName, p);
+            if (result == null) {
+                // The wrapper collapses NotFoundException — what CouchDB returns for a MISSING
+                // DESIGN DOCUMENT or a missing view — into null. Returning an empty list here
+                // rendered "the views were never deployed" as "nothing is unresolved", which is
+                // the reassuring-failure the whole boundary exists to avoid (external review).
+                throw new LineageViewUnreadableException(
+                        "view " + designDocName + "/" + viewName + " did not answer; it may not "
+                                + "be deployed, or the database could not be read", null);
+            }
+            if (result.getRows() == null) {
                 return List.of();
             }
             List<Map<String, Object>> rows = new ArrayList<>();

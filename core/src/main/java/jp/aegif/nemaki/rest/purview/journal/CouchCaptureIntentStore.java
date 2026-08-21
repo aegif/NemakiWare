@@ -178,35 +178,62 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
                 return CaptureCompletion.NOT_COMPLETABLE;
             }
 
-            raw.put("captureState", CaptureState.CAPTURED.name());
-            raw.put("capturedAtMs", System.currentTimeMillis());
-            if (evidence != null) {
-                for (Map.Entry<String, Object> e : evidence.entrySet()) {
-                    // Never let evidence overwrite the row's identity or its state.
-                    if (isReservedField(e.getKey())) {
-                        continue;
-                    }
-                    raw.put(e.getKey(), e.getValue());
-                }
+            applyCompletion(raw, evidence);
+            if (support.updateStrictCas(raw)) {
+                return CaptureCompletion.COMPLETED;
             }
-            // Deliberately absent: sequenceNumber, publishStatusByTarget, schemaVersion. Those
-            // belong to a journal event, and this row never becomes one.
-            if (!support.updateStrictCas(raw)) {
-                // A lost CAS. Re-read to find out what it lost to, rather than assuming.
+            // A lost CAS. Re-read to find out what it lost to, rather than assuming — and if the
+            // row is still completable, try once more. The sweeper is the likely winner: a long
+            // ingest passes the staleness threshold and is marked UNRESOLVED between this read
+            // and this write, which §5.1 says the ingest may still complete. Giving up there
+            // reported a finished ingest as "not in a state that could be completed" and left it
+            // in the operator's listing for ever (external review).
+            for (int attempt = 0; attempt < CAS_RETRIES; attempt++) {
                 Map<String, Object> now = support.readRawStrict(intent.documentId());
                 if (now == null) {
                     return CaptureCompletion.ROW_UNREADABLE;
                 }
-                if (CaptureState.CAPTURED.name().equals(now.get("captureState"))) {
+                Object nowState = now.get("captureState");
+                if (CaptureState.CAPTURED.name().equals(nowState)) {
                     return CaptureCompletion.COMPLETED;
                 }
-                return CaptureCompletion.NOT_COMPLETABLE;
+                if (!CaptureState.CAPTURE_INTENT.name().equals(nowState)
+                        && !CaptureState.UNRESOLVED.name().equals(nowState)) {
+                    return CaptureCompletion.NOT_COMPLETABLE;
+                }
+                applyCompletion(now, evidence);
+                if (support.updateStrictCas(now)) {
+                    return CaptureCompletion.COMPLETED;
+                }
             }
-            return CaptureCompletion.COMPLETED;
+            return CaptureCompletion.NOT_COMPLETABLE;
         } catch (Exception e) {
             logger.warn("Capture intent {} could not be completed: {}", intent.documentId(),
                     e.toString());
             return CaptureCompletion.ROW_UNREADABLE;
+        }
+    }
+
+    /** Bounded: a row that keeps losing is reported, not retried for ever. */
+    private static final int CAS_RETRIES = 3;
+
+    /**
+     * Stamps a row as completed and folds the evidence in.
+     *
+     * <p>Deliberately absent: {@code sequenceNumber}, {@code publishStatusByTarget},
+     * {@code schemaVersion}. Those belong to a journal event, and this row never becomes one.
+     */
+    private static void applyCompletion(Map<String, Object> raw, Map<String, Object> evidence) {
+        raw.put("captureState", CaptureState.CAPTURED.name());
+        raw.put("capturedAtMs", System.currentTimeMillis());
+        if (evidence != null) {
+            for (Map.Entry<String, Object> e : evidence.entrySet()) {
+                // Never let evidence overwrite the row's identity or its state.
+                if (isReservedField(e.getKey())) {
+                    continue;
+                }
+                raw.put(e.getKey(), e.getValue());
+            }
         }
     }
 
@@ -303,12 +330,18 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
             params.put("startkey", startKey);
         }
         params.put("endkey", endKey);
-        params.put("limit", batchLimit <= 0 ? DEFAULT_BATCH_LIMIT : batchLimit);
+        // Clamped, like the listing's page size. Unbounded, a configured batch materialises the
+        // whole view into a List<Map> against a 1 GB heap (external review).
+        params.put("limit", batchLimit <= 0 ? DEFAULT_BATCH_LIMIT
+                : Math.min(batchLimit, MAX_BATCH_LIMIT));
         return support.queryRawView(DESIGN_DOC, view, params);
     }
 
     /** Bounded because with leader election off, every replica walks the same batch. */
     static final int DEFAULT_BATCH_LIMIT = 200;
+
+    /** The most rows one pass may materialise, whatever the configuration asks for. */
+    static final int MAX_BATCH_LIMIT = 2000;
 
     /** Above any millisecond timestamp this product will produce; the top of a descending range. */
     private static final long MAX_KEY = Long.MAX_VALUE;

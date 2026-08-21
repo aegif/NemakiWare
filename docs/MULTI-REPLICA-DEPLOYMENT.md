@@ -39,6 +39,15 @@ the one that created the entry will not see it.
 | **RAG block write locks** | `ragBlockLocks` — `Striped.lock(64)`, per JVM. See §1.1 | `rag/indexing/RAGIndexingServiceImpl.java:73` |
 | **Cron schedulers** (Cloud Directory Sync / Ingest / Retention / Lineage) | Each replica has its own scheduler — `LeaderElection` gates execution | `rest/purview/journal/LeaderElection.java`, the three scheduler classes |
 
+> **`CaptureIntentSweeper` (3.4 の capture 境界) はこの一覧に含まれません。**
+> **意図的に `LeaderElection` を見ていません** — 既定で無効、かつ無効時は全レプリカが
+> leader になるため「leader が守っている」が既定構成で偽になるからです。安全は `_rev` CAS
+> で担保しており、複数レプリカが同時に掃引しても結果は正しくなります。
+> したがって **R2 の「各 scheduler が `leaderElection=enabled` を出す」確認は、この掃引には
+> 適用されません**。起動ログは `Capture intent sweeper started (...)` です。
+> 費用の抑え方は
+> [`docs/operations/capture-boundary-runbook.md`](operations/capture-boundary-runbook.md) §3。
+
 ### 1.1 RAG block writes are serialised WITHIN a JVM only
 
 `RAGIndexingServiceImpl` writes a RAG document as a Solr **block join** — a parent plus one child

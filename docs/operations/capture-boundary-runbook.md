@@ -26,10 +26,17 @@
 **リポジトリごとの実効 `lineage.mode` が `journaled` のときだけ効きます。**
 `disabled` (既定) と `direct` は従来どおりで、挙動も費用も変わりません。
 
+**実効モードを直接返すエンドポイントはありません。**
+`/api/v1/admin/lineage-journal/stats` は**グローバルの** `lineage.mode` と
+「override が在るか」の真偽しか返さないので、`lineage.mode=disabled` +
+`lineage.mode.override.bedroom=journaled` の環境では `"mode": "disabled"` と読めて
+しまいます。設定値そのものを見てください。
+
 ```bash
-# 実効モードの確認 (リポジトリ単位の override が優先)
-curl -u admin:admin -H "X-Requested-With: XMLHttpRequest" \
-  "http://localhost:8080/core/api/v1/admin/lineage-journal/stats"
+# グローバル
+curl -s -u admin:password "http://localhost:5984/nemaki_conf/_find" \
+  -H 'Content-Type: application/json' \
+  -d '{"selector":{"type":"configuration","key":{"$regex":"^lineage.mode"}}}'
 ```
 
 有効化の判定は **intent を開く瞬間に 1 度だけ**行われ、その試行の中では固定されます。
@@ -46,9 +53,14 @@ curl -u admin:admin -H "X-Requested-With: XMLHttpRequest" \
 
 | 応答 | 意味 |
 |---|---|
-| `200` + `entries: []` | **未解決は無い。** 掃引が動いていて、期限切れの取込が無い |
+| `200` + `entries: []` | **未解決は無い。** ただし後述の「初回起動直後」を除く |
 | `503` | **境界が配線されていない。** 「無い」ではなく「答えられない」 |
 | `500` | **view が読めなかった。** 索引の再構築中か DB 障害。**空の一覧として返さない**のは、それが「異常なし」と見分けられないため |
+
+> **初回起動直後だけは例外です。** `_design/lineage_capture` の索引を CouchDB が構築して
+> いる間、view は失敗せず**不完全な索引から答えます**。これは CouchDB の仕様で、製品側から
+> 「構築中」と「空」を区別する手段はありません。**アップグレード直後の 1 回目の照会は、
+> 空でも結論にしないでください。**索引が未配備の場合は 500 になります (これは区別できます)。
 
 各行には `repositoryId` / `sourceSystem` / `sourceObjectId` / `sourceObjectType` /
 `requestId` / `connectorId` / `intentOpenedAtMs` / `executedBy` が入っています。
@@ -79,7 +91,22 @@ curl -u admin:admin -H "X-Requested-With: XMLHttpRequest" \
 **ただし正しさと費用は別です。** 既定構成では N レプリカが同じ batch を 5 分ごとに舐め、
 1 行あたり N 回の読みと N−1 回の弾かれた書込が出ます。batch に上限があり、初回実行は
 JVM ごとにずらしていますが、**消えてはいません**。レプリカが多い環境では
-`sweep.interval.minutes` を延ばすか、leader election を有効にしてください。
+`lineage.capture-boundary.sweep.interval.minutes` を延ばしてください。
+
+> **`lineage.leader-election.enabled` はこの掃引には効きません。** 既存の
+> `LineagePurgeScheduler` は leader gate を見ますが、この掃引は**意図的に見ていません**
+> (既定で無効、かつ無効時は全レプリカが leader になるため「leader が守っている」が
+> 偽になる)。有効にしても掃引の本数は減りません。
+
+**また、掃引の間隔だけは起動時に一度読まれます。** 変更には再起動が要ります。
+staleness・batch・保持期間の 3 つは毎回読み直すので、再起動なしで効きます。
+
+**掃引の速度には上限があります。** 1 回あたり `sweep.batch` 行 (既定 200) で、
+レプリカを増やしても**並列にはなりません** (全レプリカが同じ最古の一群を舐めるため)。
+大量取込中に落ちて数万件の intent が開いたままになると、一覧に出そろうまで
+`(件数 ÷ batch) × interval` かかります (5 万件・既定値なら約 21 時間)。
+急ぐときは `sweep.batch` を上げ、`sweep.interval.minutes` を下げてください
+(batch は 2000 で頭打ちです)。
 
 ---
 
@@ -93,8 +120,16 @@ JVM ごとにずらしていますが、**消えてはいません**。レプリ
 **既定で削除しないのは判断であって手抜きではありません。** これらの行は「いつ何を取り込んだか」
 「何が失敗したか」の証拠で、運用者が明示的に求めない限り製品側で消すべきものではありません。
 
-**代価**: `nemaki_lineage` が取込量に比例して単調増加します。**取込 1 件につき 1 行**が
-永久に残るので、規模の大きい環境では DB サイズを監視対象にしてください。
+**代価**: `nemaki_lineage` が取込量に比例して単調増加します。
+
+**「取込 1 件につき 1 行」ではありません。** 子操作 (mail の添付・生 `.eml`・note の添付) は
+規則 4 によりそれぞれ自分の行を持ちます。添付 5 件のメールは**生 `.eml` を含めて 7 行**です。
+1 行はおよそ 600〜1,000 バイト (完成時に 2 リビジョン) なので、150 万行で概ね 1〜1.5 GB
+(compaction 前) です。
+
+サイズ以上に効くのは**将来の view 再構築**です。`_design/lineage` は 30 個の view を持ち、
+署名が変わると全 document に対して map を流し直します — 何も emit しない capture 行も
+含めてです。`nemaki_lineage` の doc_count が倍になれば、その所要時間もおおむね倍になります。
 
 ```bash
 curl -s -u admin:password http://localhost:5984/nemaki_lineage | \
@@ -116,7 +151,8 @@ curl -s -u admin:password http://localhost:5984/nemaki_lineage | \
   境界はこの版以降の取込にだけ効きます
 - **view は初回アクセス時に自動配備されます** (`_design/lineage_capture`)。既存の
   `_design/lineage` には足していないので、**既存の view group は再構築されません**
-- **`nemaki_lineage` が無い環境では何も起きません。** 掃引は `isActive()` で止まります
+- **`nemaki_lineage` が無い環境では何も起きません。** 掃引は `isActive()` で止まり、
+  未解決一覧は 500 を返します (**読み取りが DB を作ってしまわない**ようにしてあります)
 
 ---
 

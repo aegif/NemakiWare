@@ -67,6 +67,55 @@ class LineageViewReadFailureTest {
     }
 
     @Test
+    @DisplayName("a view that answers nothing at all is not read as an empty result")
+    void nullAnswerIsNotEmpty() {
+        // This is the case that matters most and the one a pool-throws test cannot reach. The
+        // client wrapper collapses NotFoundException — what CouchDB returns for a MISSING DESIGN
+        // DOCUMENT — into a null ViewResult. Reading that as an empty list rendered "the views
+        // were never deployed" as "nothing is unresolved" (external review).
+        CouchLineageJournalStore store = new CouchLineageJournalStore();
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper client =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        when(client.queryView(anyString(), anyString(), org.mockito.ArgumentMatchers.anyMap()))
+                .thenReturn(null);
+        setField(store, "lineageClient", client);
+
+        assertThrows(RuntimeException.class,
+                () -> store.queryRawView("lineage_capture", "unresolved_by_opened_at", Map.of()));
+    }
+
+    @Test
+    @DisplayName("a view that answers with no rows IS an empty result — the control")
+    void emptyRowsIsEmpty() {
+        // Without this, throwing unconditionally would pass the test above while making an
+        // ordinary empty listing impossible.
+        CouchLineageJournalStore store = new CouchLineageJournalStore();
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper client =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        com.ibm.cloud.cloudant.v1.model.ViewResult result =
+                mock(com.ibm.cloud.cloudant.v1.model.ViewResult.class);
+        when(result.getRows()).thenReturn(java.util.List.of());
+        when(client.queryView(anyString(), anyString(), org.mockito.ArgumentMatchers.anyMap()))
+                .thenReturn(result);
+        setField(store, "lineageClient", client);
+
+        org.junit.jupiter.api.Assertions.assertTrue(
+                store.queryRawView("lineage_capture", "unresolved_by_opened_at", Map.of())
+                        .isEmpty());
+    }
+
+    private static void setField(Object target, String name, Object value) {
+        try {
+            java.lang.reflect.Field f =
+                    CouchLineageJournalStore.class.getDeclaredField(name);
+            f.setAccessible(true);
+            f.set(target, value);
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    @Test
     @DisplayName("the failure names the view, so an operator knows which index to look at")
     void failureNamesTheView() {
         CloudantClientPool pool = mock(CloudantClientPool.class);

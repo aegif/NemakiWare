@@ -390,7 +390,7 @@ CouchDB の compaction・バックアップ方針・ディスク障害はこの�
     (直接消すと「開いたまま落ちた」証拠が消える)
   - **`UNRESOLVED` は既定で purge しない (無期限保持)。** 設定
     `lineage.capture-boundary.retention.unresolved.days` の既定は `0` = 無期限
-    (当初 `lineage.capture-intent.retention.days` としていたが、§5.3 で `CAPTURED` 側の
+    (当初 `lineage.capture-boundary.retention.unresolved.days` としていたが、§5.3 で `CAPTURED` 側の
     設定が増えたので、状態を名前に持つ対称な形に揃えた)。**journal の 90 日とは
     別の値**にする — 未解決の証拠を配送ログと同じ期限で消さない
   - **保持期間の起点は `unresolvedAtMs`** (sweeper が `UNRESOLVED` にした時刻) であって
@@ -452,7 +452,7 @@ CouchDB の compaction・バックアップ方針・ディスク障害はこの�
    「既存 purge の `purge` role で守られているのと同じにする」は**撤回した**。
    leader election は既定で無効で、そのとき `isLeader` は全レプリカに true を返すので、
    「守られている」は事実ではない。**安全は `_rev` CAS で担保する。**
-5. **retention は instance-wide。** `lineage.capture-intent.retention.days` は
+5. **retention は instance-wide。** `lineage.capture-boundary.retention.unresolved.days` は
    `lineage.retention.days` と同じく override を持たない。**リポジトリごとに違う保持期間は
    持たせない** — 既存の設定体系がそうなっており、ここだけ変えると一貫性が壊れる。
 6. **リポジトリを増やしても、この機能のための準備作業は要らない。**
@@ -1052,6 +1052,53 @@ scope に記録する。子の処理で作る relationship は、親のフレー
 `FakeSupport` が自分で例外を投げるので、**製品の `queryRawView` を一度も通っていなかった** —
 また代用品を検証していた。`LineageViewReadFailureTest` を実物に対して書き直し、
 戻すと落ちることを確認した。
+
+## 9.9 実装後レビュー 2 巡目 (2026-08-21) — 視点を分けた 2 体
+
+正しさ担当と運用担当に分けた。**両方とも実在する欠陥を出した**。
+
+### 正しさ側 — CRITICAL 1 / HIGH 2 / MEDIUM 6
+
+| | 指摘 | 対応 |
+|---|---|---|
+| **F1 (CRITICAL)** | `ensureIntentOpened` が `isActive()` を `appliesTo` **より先**に呼んでいた。`isActive()` は `nemaki_lineage` を provision するので、(a) **全リポジトリが `disabled` の環境でも取込のたびに DB を作り**、(b) provision が失敗すると scope が丸ごと inert になって**文書を作り成功を返し**、(c) 途中で false→true に転じると**intent より前に作られた文書に対して `CAPTURED`** が立った | **順序を逆に**した。モードを先に見て latch し、適用されるのに store が届かないなら**拒否**する (沈黙しない) |
+| **F8 (HIGH)** | note の `files_and_body` 添付だけ**公開 `execute()` のまま**で、relationship の前に `CAPTURED` になり、しかもその relationship を**親に**記録していた (規則 4・5 違反)。1 巡目で 3 箇所直して 4 箇所目を落としていた | 子 scope を持たせ、relationship まで同じ scope で、所有者が完成させる |
+| **T1 (HIGH)** | **wrapper と子 scope の層にテストが 1 つも無かった。** `IngestCaptureBoundaryTest` は素の `execute` しか叩いていない。F3・F4・F5・F7・F8 が全部この穴の中にあった | `IngestCaptureWrapperScopeTest` を新設 (8 件) |
+| F3 | chat の capture window の**直書き**が追跡対象から漏れていた (§9.6-B2 が名指ししていた 5 箇所の 1 つ) | open + record |
+| F4 | 「作成後に読み戻せない」早期 return が**何も記録せず**、`CAPTURED` になっていた | `INDETERMINATE` を記録 |
+| F5 | `applyNoteMetadata` / `applyArchetypeMetadata` は**書いても書かなくても null** を返すので、「何もしない」が `SUCCEEDED` として記録され、しかも**行き先の無い intent** が開いていた | `willWrite...()` 述語を helper 側に一元化し、**書くときだけ** open して record する |
+| F6 | `removeExistingRelationships` の**外側の catch** が、内側の再送出をもう一度飲んでいた | 外側にも再送出を足した |
+| F7 | note 添付ループに guard が無かった (mail 側には在った) | 足した |
+| F9 | CAS を失うと**再試行せず** `NOT_COMPLETABLE`。掃引に負けただけの完走取込が永久に未解決一覧に残る | 状態を読み直して、まだ完成可能なら**最大 3 回**再試行 |
+
+### 運用側 — HIGH 2 / MEDIUM 12
+
+| | 指摘 | 対応 |
+|---|---|---|
+| **O7 (HIGH)** | design document が**未配備**だと `queryView` が `NotFoundException` を null に潰し、`200 + entries: []` になる。**「view が無い」が「未解決は無い」に見える** — この機能が防ぐはずのもの、そのもの | null は「読めなかった」として投げる |
+| **O15 (HIGH)** | runbook が「leader election を有効にすれば掃引の費用が下がる」と書いていたが、**この掃引は leader gate を見ていない** | runbook を訂正し、`MULTI-REPLICA-DEPLOYMENT.md` の R2 にも注記 |
+| O8 | 設計が「1 回の PUT にまとめること」と明記していたのに **view ごとに PUT** していた (5 回 = 5 世代の索引破棄) | `putDesignDocumentIfChanged` で 1 回に。**内容が同じなら書かない** |
+| O13 | 未解決一覧の**読み取りが `nemaki_lineage` を作っていた** | 読み取り専用経路に変更 |
+| O2 | 掃引の batch に上限が無く、設定 1 つで OOM に届いた (一覧側には上限が在った) | 2000 で頭打ちに |
+| O5 | 「取込 1 件 = 1 行」は**過小**。子操作はそれぞれ行を持つ (添付 5 件のメールで 7 行) | 3 箇所の記述を訂正 |
+| O11 / O12 | runbook の「200 + 空 = 未解決なし」が初回索引構築中は偽。実効モードの確認手順が**グローバル設定しか返さない**エンドポイントを指していた | 両方訂正 |
+| O14 | `MULTI-REPLICA-DEPLOYMENT.md` にこの掃引が載っておらず、R2 の確認が**偽の安心**を与えていた | 注記を追加 |
+| O16 | キー名のハイフンが `PropertyManager` の環境変数経路を壊していた (`LINEAGE_CAPTURE-BOUNDARY_...` は export できない) | **未対応** — 下記 |
+| O1 / O3 / O4 / O6 / O17 / O18 / O19 | 掃引速度の上限、jitter が実質固定、余分な probe、成長を観測する手段が無い、interval は再起動が要る、properties の分岐、設計書の旧キー名 | 速度上限・interval・成長は runbook に明記。設計書の旧キー名は修正。**残りは未対応** |
+
+### 判別しなかった negative control 3 件
+
+いずれも**私のテストが弱かった**もので、製品の欠陥ではない。
+
+- 添付の scope: 「行が別に在るか」を見ていたが、**公開 `execute()` でも行は別に在る**。差が出るのは*完成の順序*と*relationship の帰属*なので、**link を失敗させて「子が未完成・親は完成」を見る**形に書き直した
+- null の `ViewResult`: `assertThrows(RuntimeException)` は**NPE でも通る**。元の形に戻す control を取り直した
+- `queryRawView`: capture 側のテストは `FakeSupport` が投げていて**製品コードを通っていなかった** (1 巡目で発見・修正済み)
+
+### 実装せずに残したもの
+
+- **O16 (ハイフンと環境変数)**: キー名の 3 度目の変更になるので、次のレビュー巡で他の未対応分とまとめて判断する
+- **O6 (成長の観測手段)**: `CAPTURED` の件数を返す口が無い。運用上は要るが、AC 13 の exact count とも絡むので別作業
+- **O10 (新 ddoc の署名検査)**: 既存の `viewSignatureViolations` は `_design/lineage` しか見ない
 
 ## 10. レビューの状態
 

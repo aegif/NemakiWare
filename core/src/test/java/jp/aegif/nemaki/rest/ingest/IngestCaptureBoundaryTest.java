@@ -132,6 +132,17 @@ class IngestCaptureBoundaryTest {
                     store.events.add("createDocument");
                     return "obj-1";
                 });
+        // The created object must be readable back. Leaving getContent unstubbed made
+        // applySourceMetadata report "could not read it back" — correctly recorded as
+        // INDETERMINATE — so no capture could ever complete, and the harness would have been
+        // testing a permanently broken repository.
+        jp.aegif.nemaki.model.Document created = new jp.aegif.nemaki.model.Document();
+        created.setId("obj-1");
+        created.setType("cmis:document");
+        created.setName("doc.txt");
+        created.setAspects(new ArrayList<>());
+        when(contentService.getContent("bedroom", "obj-1")).thenReturn(created);
+        when(contentService.update(any(), any(), any())).thenReturn(created);
     }
 
     private ExternalIngestRequest request(String sourceObjectId) {
@@ -255,13 +266,33 @@ class IngestCaptureBoundaryTest {
     }
 
     @Test
-    @DisplayName("a store that reports itself inactive does not block the ingest")
-    void inactiveStoreDoesNotBlock() {
+    @DisplayName("an unreachable store on an applicable repository refuses the ingest")
+    void unreachableStoreRefusesWhenApplicable() {
+        // Changed deliberately. An inert scope here used to let the ingest create the document
+        // and report success with no evidence and no warning — a provisioning failure silently
+        // turning the whole boundary off (external review). Under a mode the operator chose,
+        // "we cannot record this" is a refusal.
         wire();
         store.active = false;
-        store.openSucceeds = false;
+
+        ExternalIngestResult result = service.execute(ctx(), request("src-1"));
+
+        assertFalse(result.isSuccess());
+        verify(objectService, never()).createDocument(any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("an unreachable store on a repository the boundary skips changes nothing")
+    void unreachableStoreIsIrrelevantWhenNotApplicable() {
+        // The mode is asked BEFORE the store is touched, so a disabled repository never reaches
+        // the availability question — and never provisions the lineage database either.
+        wire();
+        store.active = false;
+        store.applies = false;
 
         assertTrue(service.execute(ctx(), request("src-1")).isSuccess());
+        assertTrue(store.events.stream().noneMatch(e -> e.startsWith("openIntent")));
     }
 
     // ── Completion ───────────────────────────────────────────────────────────────────────

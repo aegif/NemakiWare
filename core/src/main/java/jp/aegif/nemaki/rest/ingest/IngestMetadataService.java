@@ -58,6 +58,54 @@ public class IngestMetadataService {
     /**
      * Apply nemaki:noteMetadata secondary type to a note/page document.
      */
+    /**
+     * Whether {@link #applyNoteMetadata} would write anything for this request.
+     *
+     * <p>Exists because that method returns {@code null} both when it wrote and when there was
+     * nothing to write, so its caller cannot tell a success from a no-op. The capture boundary
+     * needs the difference: opening an intent for an operation that changes nothing produces a
+     * row that can never be completed, and recording a mutation that never happened puts a
+     * fabricated entry in the evidence (design §6.10-B2, external review).
+     *
+     * <p>Shares the predicate with the method itself rather than restating it, so the two
+     * cannot drift apart.
+     */
+    public boolean willWriteNoteMetadata(ExternalIngestRequest request) {
+        return !collectNoteProps(request).isEmpty();
+    }
+
+    private List<Property> collectNoteProps(ExternalIngestRequest request) {
+        List<Property> noteProps = new ArrayList<>();
+        Map<String, Object> meta = request == null ? null : request.getMetadata();
+        if (meta != null) {
+            addStringProp(noteProps, "nemaki:notePageId", meta.get("pageId"));
+            addStringProp(noteProps, "nemaki:notePageUrl", meta.get("pageUrl"));
+            addStringProp(noteProps, "nemaki:noteParentPageId", meta.get("parentPageId"));
+            addStringProp(noteProps, "nemaki:noteWorkspaceId", meta.get("workspaceId"));
+            addStringProp(noteProps, "nemaki:noteAuthor", meta.get("author"));
+            addStringProp(noteProps, "nemaki:noteLastEditedBy", meta.get("lastEditedBy"));
+        }
+        return noteProps;
+    }
+
+    /** Whether {@link #applyArchetypeMetadata} would write anything. Same reason as above. */
+    public boolean willWriteArchetypeMetadata(ExternalIngestRequest request,
+            String[][] fieldMappings) {
+        return !collectArchetypeProps(request, fieldMappings).isEmpty();
+    }
+
+    private List<Property> collectArchetypeProps(ExternalIngestRequest request,
+            String[][] fieldMappings) {
+        List<Property> props = new ArrayList<>();
+        Map<String, Object> meta = request == null ? null : request.getMetadata();
+        if (meta != null && fieldMappings != null) {
+            for (String[] mapping : fieldMappings) {
+                addStringProp(props, mapping[0], meta.get(mapping[1]));
+            }
+        }
+        return props;
+    }
+
     public String applyNoteMetadata(String repositoryId, String objectId, CallContext callContext,
                                     ExternalIngestRequest request) {
         try {
@@ -67,16 +115,7 @@ public class IngestMetadataService {
             List<Aspect> aspects = content.getAspects();
             if (aspects == null) aspects = new ArrayList<>();
 
-            List<Property> noteProps = new ArrayList<>();
-            Map<String, Object> meta = request.getMetadata();
-            if (meta != null) {
-                addStringProp(noteProps, "nemaki:notePageId", meta.get("pageId"));
-                addStringProp(noteProps, "nemaki:notePageUrl", meta.get("pageUrl"));
-                addStringProp(noteProps, "nemaki:noteParentPageId", meta.get("parentPageId"));
-                addStringProp(noteProps, "nemaki:noteWorkspaceId", meta.get("workspaceId"));
-                addStringProp(noteProps, "nemaki:noteAuthor", meta.get("author"));
-                addStringProp(noteProps, "nemaki:noteLastEditedBy", meta.get("lastEditedBy"));
-            }
+            List<Property> noteProps = collectNoteProps(request);
 
             if (!noteProps.isEmpty()) {
                 mergeAspect(aspects, "nemaki:noteMetadata", noteProps);
@@ -105,13 +144,7 @@ public class IngestMetadataService {
             List<Aspect> aspects = content.getAspects();
             if (aspects == null) aspects = new ArrayList<>();
 
-            List<Property> props = new ArrayList<>();
-            Map<String, Object> meta = request.getMetadata();
-            if (meta != null) {
-                for (String[] mapping : fieldMappings) {
-                    addStringProp(props, mapping[0], meta.get(mapping[1]));
-                }
-            }
+            List<Property> props = collectArchetypeProps(request, fieldMappings);
             if (!props.isEmpty()) {
                 mergeAspect(aspects, secondaryTypeId, props);
                 ensureSecondaryType(content, secondaryTypeId);

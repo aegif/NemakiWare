@@ -100,9 +100,16 @@ public final class CaptureScope {
         return new CaptureScope(null, null);
     }
 
-    /** Whether this scope will actually record anything. */
+    /**
+     * Whether this scope has anything to record against.
+     *
+     * <p>Deliberately does NOT ask the store whether it is reachable: that question provisions
+     * the lineage database, and asking it on every {@code record} would provision it for
+     * repositories the boundary does not even cover. Reachability is decided once, in
+     * {@link #ensureIntentOpened}, where a negative answer is a refusal rather than silence.
+     */
     public boolean isActive() {
-        return store != null && store.isActive() && intent != null;
+        return store != null && intent != null;
     }
 
     public CaptureIntent intent() {
@@ -141,14 +148,30 @@ public final class CaptureScope {
      *         because the underlying client swallows failures and returns null.
      */
     public void ensureIntentOpened() {
-        if (opened || !isActive() || notApplicable) {
+        if (opened || notApplicable || store == null || intent == null) {
             return;
         }
+        // The MODE is asked first, before anything touches the database. Asking isActive() first
+        // provisioned nemaki_lineage — creating the database and deploying its design documents —
+        // on deployments whose every repository is disabled, which is a behaviour change where
+        // the design promised none. It also made a provisioning failure silently disable the
+        // whole boundary: an inert scope opens nothing, records nothing and warns about nothing,
+        // so the document was created and the ingest reported success (external review).
         if (!store.appliesTo(intent.repositoryId())) {
-            // This repository does not run the boundary. Latched, so the answer cannot change
-            // mid-operation, and so this is not asked again for every later mutation.
+            // Latched, so the answer cannot change mid-operation and is not asked again per
+            // mutation.
             notApplicable = true;
             return;
+        }
+        if (!store.isActive()) {
+            // The boundary DOES apply here and the store cannot be reached. That is a refusal,
+            // not a reason to carry on quietly: an inert answer here is exactly how a change
+            // ends up with no evidence.
+            openRefused = true;
+            throw new CaptureIntentFailedException(
+                    "The capture boundary applies to repository " + intent.repositoryId()
+                            + " but the lineage store is not available, so the ingest must not "
+                            + "change anything.");
         }
         if (!store.openIntent(intent)) {
             // Latched as well as thrown. The ingest path is full of catch (Exception) blocks
@@ -204,7 +227,11 @@ public final class CaptureScope {
     }
 
     public void record(String operation, MutationOutcome outcome, String detail) {
-        if (!isActive()) {
+        if (!isActive() || notApplicable) {
+            // Not applicable is not a broken guarantee. Without this, every ingest into a
+            // repository the boundary does not cover logged a warning per mutation saying the
+            // intent no longer precedes every change — false, and on the default configuration
+            // it is every ingest (external review).
             return;
         }
         if (!opened) {
