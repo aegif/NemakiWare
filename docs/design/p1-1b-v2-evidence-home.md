@@ -7,21 +7,25 @@
 2. `nemaki:chatCapturedAt` は**オブジェクトに刻まれるが snapshot には入らない** — 刻印が
    emit の**後**に走るため
 
+> **この文書は 1 巡目のレビューで 2 つの案を撤回して書き直したもの。** どちらも「置き場所が
+> 在るか」を確かめずに割り当てており、しかも**コード側に「そうしなかった理由」が javadoc で
+> 明記されていた**。撤回の記録は §8。
+
 ---
 
 ## 0. 何を主張し、何を主張しないか
 
-**主張する**: 取込が記録する証拠が、v1 と v2 の**どちらのスキーマでも同じ事実を運ぶ**。
-v2 write flip が来ても、`contentStored` / `contentHash` / 会話文脈 / 取込主体 / 刻印時刻が
-消えない。
+**主張する**: 取込が記録する証拠のうち **endpoint に属する事実**が、v2 でも運ばれる。
+v2 write flip が来ても `contentStored` / `contentHash` / 会話の同一性が消えない。
 
 **主張しない**:
 
-- **これは真正性の証明ではない。** 事実が運ばれることと、その事実が正しいことは別である
-- **既存の v1 行は移行しない。** flip 以前に書かれた行は v1 のまま残り、v2 の形にはならない。
-  読み側が両方を読む必要がある (Slice 1b が既にそうしている)
-- **配送先 (Purview / Atlas) に届くことは保証しない。** 発行は従来どおり fail-open で、
-  ここで増えるのは journal に残る事実であって、外部カタログの内容ではない
+- **これは真正性の証明ではない。** 事実が運ばれることと、その事実が正しいことは別
+- **既存の v1 行は移行しない。** flip 以前の行は v1 のまま。読み側が両方読む
+- **v2 で全部が救われるとは言わない。** §3 のとおり、v2 に home を作れないものが残る。
+  **残るものは残ると書く**
+- **flip がいつ来るかは、この作業では決まらない。** §7 のとおり、取込から v2 イベントが
+  出る経路は**まだ存在しない** (Slice 4 未着)
 
 ---
 
@@ -29,165 +33,204 @@ v2 write flip が来ても、`contentStored` / `contentHash` / 会話文脈 / �
 
 | | |
 |---|---|
-| v1 の event-level `snapshotAttributes` | `LineageFact.LegacyV1Projection` が運ぶ。取込は `buildV1Snapshot` で 20 前後のキーを詰めている |
-| v2 の `LineageEventV2` | **`snapshotAttributes` を持たない**。javadoc が明示的に「§2 の endpoint-local attributes が置き換える」と書いている |
-| v2 で属性を運べるもの | **`LineageEndpoint.attributes` だけ**。`EndpointKind` の allowlist で型ごとに宣言され、宣言外は**到着時に落ちる** |
-| 取込が作る endpoint | input = `externalAsset(repositoryId, sourceUri, sourceSystem)`、output = `document(repositoryId, objectId, documentName)` |
-| `CMIS_DOCUMENT` の allowlist | `name` / `versionLabel` / `folderPath` / `versionSeriesId` / `mimeType` / `contentLength` / `versionObjectId` / `changeToken` / **`contentHash`** |
-| `EXTERNAL_ASSET` の allowlist | `sourceSystem` / `externalStableKey` / `externalPath` / `tenantId` / `sourceRevision` / `sourceModifiedAt` / **`sourceContentHash`** / `sourceContentLength` |
+| v1 の event-level `snapshotAttributes` | `LineageFact.LegacyV1Projection` が運ぶ。取込は `buildV1Snapshot` で約 20 キーを詰める |
+| v2 の `LineageEventV2` | **`snapshotAttributes` を持たない**。javadoc が「§2 の endpoint-local attributes が置き換える」と明記 |
+| v2 で属性を運べるもの | **`LineageEndpoint.attributes` だけ** |
+| allowlist 外の attribute | **`IllegalArgumentException`** (`EndpointKind.validateAttributes`)。`LineageEndpoint` の正準コンストラクタが呼ぶので、**fact 構築が例外になる**。「到着時に落ちる」のは配送先 (Atlas) の型に無い場合の話で、**別の現象** |
+| 取込が作る endpoint | input = `externalAsset` 1 つ、output = `document` 1 つ。**それ以外は shape が禁じる** (§3.0) |
+| `CMIS_DOCUMENT` allowlist | `name` / `versionLabel` / `folderPath` / **`versionLabelOriginalSha256`** / **`folderPathOriginalSha256`** / `versionSeriesId` / `mimeType` / `contentLength` / `versionObjectId` / `changeToken` / **`contentHash`** |
+| `EXTERNAL_ASSET` allowlist | `sourceSystem` / `externalStableKey` / `externalPath` / `tenantId` / `sourceRevision` / `sourceModifiedAt` / `sourceContentHash` / `sourceContentLength` |
+| allowlist と配送先の結合 | **`EndpointKindSchemaAlignmentTest` が機械的に突き合わせる**。allowlist に足して Atlas 型に足さないと**赤**。`eachKindDeclaresExactlyTheseAttributes` が kind ごとの正確なリストも固定 |
+| `TRUNCATE_WITH_EVIDENCE` の attribute | **companion (`…OriginalSha256`) が無いと enum のクラス初期化で `IllegalStateException`** = lineage 全体が起動しない |
 
-**`contentHash` は既に v2 の home を持っている。** 足りないのはそれ以外である。
+**`contentHash` は既に v2 の home を持っている。** 足りないのはそれ以外。
 
 ---
 
-## 2. 事実を 3 つに分ける
+## 2. digest と identity の被覆 (これが割り当てを決める)
 
-`buildV1Snapshot` の中身は、v2 のどこに属するかで 3 群に割れる。
+| | attributes を含むか |
+|---|---|
+| `LineageIdentity.processKey` / `deliveryId` | **含まない** — endpoint の修飾名だけ |
+| `LineageEventDigest.creationPayloadDigest` | **含む** (`endpointRecord` が `attributes` を入れる) |
 
-### 群 1 — output endpoint (`CMIS_DOCUMENT`) に属する
+したがって:
 
-**リポジトリが今どうなっているか**の事実。
+- endpoint attribute を足しても **`processKey` は動かない** → 同一性は壊れず、golden vector も動かない
+- endpoint attribute は **digest に覆われる** → 証拠として意味がある
+- **`LineageEventV2` にフィールドを足しても digest は覆わない** → **改竄が検出できない**。
+  「digest の外にある home は home ではない」
 
-| snapshot キー | v2 の attribute | allowlist |
+---
+
+## 3. 事実の割り当て
+
+### 3.0 前提: 取込の endpoint は 1:1 で固定されている
+
+`LineageProcessShape` が全 external-ingest process type を
+`shape(one(EXTERNAL_ASSET), one(CMIS_DOCUMENT))` に束縛しており、種別と個数の両方で弾く。
+`LineageFact` のコンストラクタが `validate` を呼ぶので、**endpoint を増やすと fact 構築が
+例外になり、その取込 1 件の証拠が丸ごと消える** (`lastFailure` が立って null が返る)。
+
+**したがって endpoint を増やす案は取れない。** 属性を足すことだけができる。
+
+### 3.1 output endpoint (`CMIS_DOCUMENT`) に足す
+
+| snapshot キー | v2 attribute | 備考 |
 |---|---|---|
-| `contentHash` | `contentHash` | **既に在る** |
-| `contentHashAlgorithm` | `contentHashAlgorithm` | 足す |
-| `contentStored` | `contentStored` | 足す |
-| `contentHashUnavailable` | `contentStateReason` | 足す |
+| `contentHash` | `contentHash` | **既存** |
+| `contentHashAlgorithm` | `contentHashAlgorithm` | 追加 |
+| `contentStored` | `contentStored` | 追加。**三値を落とさない** |
+| `contentHashUnavailable` | `contentStateReason` | 追加。散文なので `displayText` + companion が要る (§1 最終行) |
 
-**`contentStored` を落とさない。** 三値 (`true` / `false` / `unknown`) は
-「判定できない」を「保存していない」に潰さないために在る。`contentHash` の有無から
-推測させると、**digest が無い = 保存していない**と読まれ、その推測は `UNKNOWN` の場合に偽になる。
+**`contentStored` を推測させない。** `contentHash` の有無からは `UNKNOWN` が復元できず、
+「digest が無い = 保存していない」と読まれる。
 
-### 群 2 — input endpoint (`EXTERNAL_ASSET`) に属する
+### 3.2 input endpoint (`EXTERNAL_ASSET`) に足す — **会話の同一性だけ**
 
-**外部側で何を指していたか**の事実。
+| snapshot キー | v2 attribute |
+|---|---|
+| `sourceObjectType` | `sourceObjectType` |
+| `chat.workspaceId` / `channelId` / `channelName` / `threadId` / `messageId` | `chatWorkspaceId` ほか |
 
-| snapshot キー | v2 の attribute | allowlist |
+**`captureWindowStart/End` / `evidenceScope` / `selectionReason` は入れない。** 理由が 2 つ:
+
+1. これらは**取込元の性質ではなくこの取込の判断**である。`externalAsset` の identity は
+   source URI なので、同じメッセージを再取込すると**同じ qualified name** になり、
+   配送先は upsert する — **2 回目の判断が 1 回目を黙って上書きする**
+2. `LineageEndpoint` の javadoc が attributes を
+   「captured at emission and never updated afterwards」と定義している。上書きされる値を
+   そこに置くのは**型の契約に反する**
+
+### 3.3 v2 に home を作らないもの — **残ると書く**
+
+| 事実 | なぜ v2 に置かないか | どこに残るか |
 |---|---|---|
-| `sourceSystem` | `sourceSystem` | **既に在る (必須)** |
-| `sourceObjectId` | `externalStableKey` に含まれる | **既に在る** |
-| `sourceObjectType` | `sourceObjectType` | 足す |
+| `executedBy` / `onBehalfOf` | §5 の判断による (下記) | v1 projection |
+| `chat.captureWindowStart/End` / `evidenceScope` / `selectionReason` | §3.2 の 2 理由 | v1 projection |
+| `targetFolderId` | endpoint を増やせない (§3.0)。`nemaki_import_process.folderId` は型定義には在るが、**`AtlasLineageSink` は素の `Process` を送るので配送されない** — 関係でも属性でも今は置き場所が無い | v1 projection |
+| `chat.participants` | §6 の判断による | v1 projection |
 
-### 群 3 — endpoint に属さない (**設計上の穴**)
-
-**操作そのもの**の事実で、v2 には運ぶ場所が無い。
-
-- `executedBy` / `onBehalfOf` — 誰が実行したか
-- `chat.*` (10 キー) — どの会話のどの範囲を根拠にしたか
-- `targetFolderId` — どこへ入れたか
-- `nemaki:chatCapturedAt` — いつ保管を開始したか (現状は snapshot にすら無い)
+**flip が来たときにこれらが失われることは、この作業では解消しない。** 解消するには
+`LineageEventV2` の被覆範囲そのものを広げる必要があり、それは digest の式 (§5) と
+配送先スキーマ (§4) の両方に触る。**P1-1(d) の evidence data model の仕事**として残す。
 
 ---
 
-## 3. 群 3 をどうするか — 3 案と選択
+## 4. 配送先スキーマは同一コミットで足す (別作業ではない)
 
-### 案 A: `LineageEventV2` に属性 map を足す
+`EndpointKindSchemaAlignmentTest.everyDeclaredAttributeExistsInTheAtlasType` が、allowlist の
+全 attribute が `PurviewSchemaPayloadFactory` の Atlas 型に在ることを assert する。
+`nemaki_document` に `contentStored` / `contentStateReason` / `contentHashAlgorithm` は無く、
+`nemaki_external_asset` に `sourceObjectType` も chat 系も無い。
 
-**採らない。** v2 の javadoc は event-level の属性袋を**意図的に外した**と書いている
-(「§2 の endpoint-local attributes が置き換える」)。戻すと、v2 が v1 の緩さを引き継ぐ。
-allowlist による型検査も効かなくなる。
+**したがって allowlist の追加と型定義の追加は同一コミットでなければ赤になる。**
+1 巡目の設計はこれを「別作業」と切り離しており、誤りだった。
 
-### 案 B: 操作を表す endpoint kind を新設する
-
-`IMPORT_ARTIFACT` は既に `Identity.OPERATION_ID` を持ち、操作ごとに 1 つの entity になる。
-同じ形で **`INGEST_CAPTURE`** を作り、input endpoint として並べる。
-
-**採らない (単独では)。** endpoint は「lineage が流れる先」であって、**実行主体は endpoint
-ではない**。actor を endpoint にすると、カタログ上「取込元」として現れる。
-
-### 案 C: 事実の性質で割る — **採用**
-
-| 事実 | 置き場所 | 理由 |
-|---|---|---|
-| `chat.*` / `sourceObjectType` | **input endpoint の attribute** | 「どの会話のどの範囲か」は**取込元の性質**であり、endpoint の記述として自然。`EXTERNAL_ASSET` の allowlist に会話文脈を足す |
-| `targetFolderId` | **既存の output/`CMIS_FOLDER` endpoint** で表す | フォルダは既に endpoint kind を持つ。属性ではなく**関係**で表すのが v2 の grain |
-| `executedBy` / `onBehalfOf` | **`LineageEventV2` の型付きフィールド** | actor は endpoint ではない。属性袋ではなく**名前の付いた 2 フィールド**なら、v2 が v1 の緩さを引き継ぐことにはならない |
-| `chatCapturedAt` | **output endpoint の attribute** (刻印を emit の前に移す) | 刻印は**この取込が作ったオブジェクト**に打つので、object の性質である |
-
-**actor だけ型付きフィールドにするのは、属性袋を戻すことではない。** 袋は「何でも入る」から
-検査できないのであって、`executedBy` / `onBehalfOf` は**全イベントに共通する 2 つの問い**である。
-A.1 が要求する「誰が」に、スキーマ上の home を与えることになる。
+そして `PurviewLineageSink.typedAssetEntity` は `attrs.putAll(endpoint.attributes())` で
+**実際に payload に載せる**。「allowlist に足しただけでは sink には届かない」も誤りだった。
 
 ---
 
-## 4. 刻印を emit の前に移す
+## 5. `executedBy` / `onBehalfOf` は (b) では動かさない
 
-現状: `execute()` が emit → wrapper が返った後に `applyChatCapturedAt`。
-
-**変更**: 刻印を `execute()` の中、emit の**直前**に移す。
-
-守らなければならない制約 (roadmap §1-3 が明記):
-
-- **この取込が作ったオブジェクトに限る。** dedupe skip を含む毎回の取込で走るので、既に在る
-  オブジェクトに「今」を刻むと、**何年も前から保管しているものが今日から保管開始に見える**
-- **`cmis:creationDate` は答えではない。** 移行・アーカイブ復元で保存され、後の版は自分の
-  作成時刻を持つ
-- **既に値がある場合は上書きしない**
-- **分からないものは記録しない。** 既存オブジェクトの保管開始を復元するには来歴イベントを
-  読む必要があり、それは P1-1(d)
-
-`createdObject` は `execute()` の中で既知なので、この制約は移動後も守れる。
-
-**capture 境界との関係**: 刻印は追跡対象の変更なので、`CaptureScope` に
-`applyChatCapturedAt` として記録する (現在 wrapper 側で記録しているものが移動する)。
-**規則 1 は破らない** — 刻印は文書作成の後なので、intent は既に開いている。
-
----
-
-## 5. 受入条件 (負のコントロールつき)
-
-| # | 条件 | 負のコントロール |
-|---|---|---|
-| 1 | `contentStored` が `unknown` の取込で、v2 endpoint の `contentStored` が `"unknown"` である | `contentHash` の有無から推測する実装に戻すと落ちる |
-| 2 | v1 snapshot と v2 endpoint attributes が**同じ事実**を運ぶ (キー名は違ってよい) | 片方にだけ足すと落ちる |
-| 3 | allowlist に無い attribute を渡すと**拒否される** (落ちるのではなく) | allowlist を素通しにすると落ちる |
-| 4 | `executedBy` が v2 event の型付きフィールドとして読める | v1 projection からしか読めない実装だと落ちる |
-| 5 | 認証コンテキストの無い取込で `executedBy` が「実行主体なし」と**明示**される (空でも null でもなく) | 空文字にすると落ちる |
-| 6 | **この取込が作ったオブジェクト**にだけ `chatCapturedAt` が刻まれる | `createdObject` を見ない実装に戻すと落ちる |
-| 7 | 既に `chatCapturedAt` がある object を再取込しても**上書きされない** | 無条件に刻むと落ちる |
-| 8 | 刻印が emit の**前**に走り、snapshot と v2 endpoint の両方に載る | 順序を戻すと落ちる |
-| 9 | 刻印が失敗したら `CaptureScope` に記録され、`CAPTURED` にならない | 記録を外すと落ちる |
-
----
-
-## 7. 実装前にコードで確かめた 2 つの事実 (設計を左右する)
-
-### 7.1 endpoint の attribute は **digest に入るが identity には入らない**
-
-- `LineageEventDigest.endpointRecord` は `attributes` を **`creationPayloadDigest` に含める**
-  (`:109`)。javadoc も「inputs と outputs を attributes 込みで」と書いている
-- `LineageIdentity.processKey` は **attributes を見ない** — endpoint の qualified name だけ
-
-**この分割は本件にとって都合がよい。** attribute を足しても
-
-- `processKey` / `deliveryId` は**変わらない** → 同一性が壊れず、golden vector も動かない
-- `creationPayloadDigest` は**変わる** → 証拠が digest に**覆われる**
-
-### 7.2 したがって §3 案 C の actor の置き場所は**再考が要る**
-
-`LineageEventV2` に型付きフィールドを足しても、**`creationPayloadDigest` はそれを含まない**
-(digest は endpoint と chunk 座標からしか作られない)。つまり
-
-> actor を event のフィールドにすると、**digest に覆われない証拠**になる。
-
-証拠として弱い。取り得る形は 3 つ:
+3 つの形を検討した。
 
 | | |
 |---|---|
-| (i) digest の式に actor を足す | golden vector が動く。既存イベントの digest 検証が壊れる |
-| (ii) actor を **output endpoint の attribute** にする | digest に覆われる。`CMIS_DOCUMENT` に `capturedBy` / `capturedOnBehalfOf` を足す。「この文書を誰が取り込んだか」は文書の性質と読める |
-| (iii) 覆われないことを承知で event フィールドにする | 「digest はこれを保証しない」と明記が要る |
+| (i) `LineageEventV2` の型付きフィールド | **digest が覆わない** (§2)。journal 上で actor を書き換えても compact constructor は残りから再計算して一致する。**改竄が検出できない** |
+| (ii) digest の式に足す | `CREATION_DOMAIN` の入力構成が変わる。独立実装の `core/src/test/resources/lineage/reference_hash.py` も同時に追随が要る |
+| (iii) output endpoint の attribute | digest に覆われる。ただし「この文書を誰が取り込んだか」を **CMIS_DOCUMENT の属性**にすると、同じ文書への 2 回目の取込が上書きする — §3.2 と同じ問題 |
 
-**現時点の傾向は (ii)**。ただし「actor は endpoint ではない」という §3 案 B の理由と
-衝突するので、レビューの結論を待って決める。**この矛盾を残したまま実装しない。**
+**(b) では動かさない。** 理由:
+
+- **roadmap:232 は実行起源の記録を P1-1(e) に置いている。** (b) に引き込む理由が要るが、
+  上の 3 案はいずれも (e) が扱う問題 (委譲実行の `executedBy` が admitted-unknown) と
+  同じ根に触れる。**(e) でまとめて決める方が、2 度式を動かすより安い**
+- (ii) は digest の式を動かす唯一の案で、**動かすなら 1 度にしたい**
+
+**したがって (b) の時点では actor は v1 projection のみ。** flip までに (e) が来ることを
+前提とし、来なければ actor は失われる — **この依存関係を明示する**。
 
 ---
 
-## 6. やらないこと
+## 6. `chat.participants` を配送先に常駐させない
 
-- **既存 v1 行の移行**。flip 以前の行は v1 のまま。読み側が両方読む
-- **配送先スキーマの変更**。Atlas / Purview の type 定義に新しい attribute を足すかは別作業
-  (allowlist の javadoc が「型に無い attribute は到着時に落ちる」と書いており、
-  **allowlist に足しただけでは sink には届かない**)
-- **`chatCapturedAt` を既存オブジェクトに遡って刻むこと**。P1-1(d)
+現状 `chat.*` は v1 `snapshotAttributes` に在り、`AtlasLineageSink.buildAtlasPayload` は
+qualifiedName / name / description / inputs / outputs しか送らないので**配送されていない**。
+
+endpoint attribute にした瞬間に `PurviewLineageSink` が payload に載せる。journal 側は
+`lineage.retention.days` (既定 90) で purge されるが、**カタログ側にその規則は無い**。
+
+> **チャット参加者の個人名が、保持期限を抜けて外部カタログに常駐する。**
+
+`EndpointKindSchemaAlignmentTest` の `FORBIDDEN_ON_ARTIFACTS` は artifact kind にしか
+掛からないので、自動では止まらない。
+
+**したがって `chat.participants` は endpoint attribute にしない。** §0 の「配送先に届くことは
+保証しない」は**届かないこと**の免責であって、**届いてしまうこと**を検討しない理由にならない。
+
+---
+
+## 7. 刻印の前倒しは (b) では行わない
+
+1 巡目は「`applyChatCapturedAt` を emit 直前に移す」としたが、**刻む先が無い**。
+
+- `nemaki:chatCapturedAt` は独立プロパティではなく **`nemaki:chatContextMetadata` aspect の中**
+- その aspect の唯一の production writer は `applyArchetypeMetadata(..., "nemaki:chatContextMetadata", ...)`
+  で、**`execute()` が返った後の wrapper に在る**
+- emit は `execute()` の中。刻印を emit 直前に移すと **aspect 生成より前**になり、
+  `chatAspect == null` 分岐に入る。**create-new のチャット取込 100% で空振り**する
+- 既存 javadoc が「It is also written after the aspect exists, because writing before would
+  have nowhere to go.」と明記している
+
+**順序を変えるには aspect 付与そのものを `execute()` に引き込む必要がある。** さらに
+`execute()` は archetype 非依存の共通本体 (mail / note / record / plain も通る) なので、
+チャット固有の刻印を置くには**今存在しないゲート**が要る。
+
+**(b) の範囲を超える。** roadmap §1-3 の 2 点目は **P1-1(d) に送る** — evidence data model が
+「どの事実がどの時点で確定するか」を決める作業であり、aspect 付与の位置はその帰結だから。
+
+---
+
+## 8. 撤回した 2 案 (再提案しないため)
+
+| 案 | なぜ成立しないか |
+|---|---|
+| `targetFolderId` を `CMIS_FOLDER` endpoint で表す | shape が 1:1 に束縛しており fact 構築が例外になる。**しかも差し戻し済みの案** — `LineageProcessShape` の javadoc が「The first version of this table had imports produce a folder … the containing folder travels as a Process attribute, not as an endpoint」と経緯ごと記録している |
+| 刻印を emit 直前に移す | 刻む先の aspect がまだ無い (§7)。既存 javadoc が同じことを書いている |
+
+**どちらも「置き場所が在るか」を確かめずに割り当てていた。** コードに反論が書いてあるときは、
+まずそれに反論する形で書く。
+
+---
+
+## 9. 受入条件 (負のコントロールつき)
+
+1 巡目の 9 件のうち 4 件が判別しなかったので書き直した。
+
+| # | 条件 | 負のコントロール |
+|---|---|---|
+| 1 | `contentStored` が `unknown` の取込で、output endpoint の `contentStored` が `"unknown"` | `contentHash` の有無から推測する実装にすると落ちる |
+| 2 | **`buildV1Snapshot` のキー集合と endpoint attributes の間の対応表**を固定し、対応表に無いキーが**どちらか片方に現れたら落ちる** | v1 に足して v2 に足し忘れる / その逆、どちらでも落ちる |
+| 3 | §3.3 の 4 群が **v1 のみ**に在り、対応表で「v2 に home 無し」と明示されている | v2 にこっそり足すと対応表と食い違って落ちる |
+| 4 | allowlist の全 attribute が Atlas 型に在る | 型定義を足さずに allowlist だけ足すと `EndpointKindSchemaAlignmentTest` が落ちる |
+| 5 | `chat.participants` が **endpoint attribute に無い** | 足すと落ちる (個人名の常駐を止める) |
+| 6 | `captureWindowStart/End` / `evidenceScope` / `selectionReason` が **endpoint attribute に無い** | 足すと落ちる (再取込の上書きを止める) |
+| 7 | endpoint を 3 つ以上にすると **fact 構築が例外**になる | shape の検証を外すと落ちる |
+| 8 | 散文 attribute (`contentStateReason`) に **companion (`…OriginalSha256`) が在る** | companion を外すと enum のクラス初期化で落ちる |
+
+**条件 2 が本体。** 「両方に何か入っている」では通ってしまうので、**全単射の対応表**を
+テスト側に置き、両方向の欠落を捕まえる。
+
+---
+
+## 10. やらないこと
+
+- **既存 v1 行の移行**
+- **`executedBy` / `onBehalfOf` の v2 化** — P1-1(e) (§5)
+- **刻印の前倒し** — P1-1(d) (§7)
+- **`targetFolderId` / 会話範囲 / participants の v2 化** — P1-1(d) (§3.3)
+- **v2 write 経路の実装** — Slice 4。したがって本作業の end-to-end 検証は
+  **手組みの `LineageEventV2` に対する単体テスト**にとどまる。この限界を条件 2 の
+  対応表で補う (対応表は v2 write 経路の有無に依らず成立する)
