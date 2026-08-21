@@ -163,6 +163,28 @@ class CaptureIntentSweeperTest {
         verify(store, never()).purgeCapturedOlderThan(anyLong(), anyInt());
     }
 
+    @Test
+    @DisplayName("the configuration keys are the documented ones, by literal")
+    void keysArePinnedByLiteral() {
+        // Every other test here stubs the PropertyManager through the KEY_ constants, and javac
+        // inlines a static final String — so a renamed key can leave stale test bytecode passing
+        // against the old value. Pinning the literals makes a rename a visible change, and keeps
+        // these in step with nemakiware.properties.
+        //
+        // The prefix is capture-boundary, not capture: lineage.capture.version-events already
+        // exists and means something else entirely.
+        assertEquals("lineage.capture-boundary.stale.minutes",
+                CaptureIntentSweeper.KEY_STALE_MINUTES);
+        assertEquals("lineage.capture-boundary.sweep.interval.minutes",
+                CaptureIntentSweeper.KEY_INTERVAL_MINUTES);
+        assertEquals("lineage.capture-boundary.sweep.batch",
+                CaptureIntentSweeper.KEY_BATCH_LIMIT);
+        assertEquals("lineage.capture-boundary.retention.unresolved.days",
+                CaptureIntentSweeper.KEY_RETENTION_UNRESOLVED);
+        assertEquals("lineage.capture-boundary.retention.captured.days",
+                CaptureIntentSweeper.KEY_RETENTION_CAPTURED);
+    }
+
     // ── Robustness ───────────────────────────────────────────────────────────────────────
 
     @Test

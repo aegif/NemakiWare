@@ -62,19 +62,24 @@ public class CaptureIntentSweeper {
 
     private static final Logger logger = LoggerFactory.getLogger(CaptureIntentSweeper.class);
 
+    // The prefix is "capture-boundary", not "capture": lineage.capture.version-events and
+    // lineage.capture.generic-relationships already exist and mean "capture these events into
+    // lineage", which is a different sense of the word. Sharing a prefix with them would put two
+    // unrelated features one keystroke apart in an operator's configuration file.
+
     /** How long an intent may stay open before it is called unresolved. */
-    static final String KEY_STALE_MINUTES = "lineage.capture.stale.minutes";
+    static final String KEY_STALE_MINUTES = "lineage.capture-boundary.stale.minutes";
     static final int DEFAULT_STALE_MINUTES = 15;
 
     /** How often to sweep. A different question from the staleness threshold, so a different key. */
-    static final String KEY_INTERVAL_MINUTES = "lineage.capture.sweep.interval.minutes";
+    static final String KEY_INTERVAL_MINUTES = "lineage.capture-boundary.sweep.interval.minutes";
     static final int DEFAULT_INTERVAL_MINUTES = 5;
 
-    static final String KEY_BATCH_LIMIT = "lineage.capture.sweep.batch";
+    static final String KEY_BATCH_LIMIT = "lineage.capture-boundary.sweep.batch";
     static final int DEFAULT_BATCH_LIMIT = 200;
 
     /** Retention for rows the sweeper gave up on. {@code 0} = keep forever, and that is default. */
-    static final String KEY_RETENTION_UNRESOLVED = "lineage.capture.retention.unresolved.days";
+    static final String KEY_RETENTION_UNRESOLVED = "lineage.capture-boundary.retention.unresolved.days";
 
     /**
      * Retention for completed rows. {@code 0} = keep forever, and that is the default.
@@ -84,7 +89,7 @@ public class CaptureIntentSweeper {
      * it to. The cost of the default is that the lineage database grows with ingest volume —
      * one row per item, permanently — so database size becomes something to watch.
      */
-    static final String KEY_RETENTION_CAPTURED = "lineage.capture.retention.captured.days";
+    static final String KEY_RETENTION_CAPTURED = "lineage.capture-boundary.retention.captured.days";
 
     @Autowired(required = false)
     private PropertyManager propertyManager;

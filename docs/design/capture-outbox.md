@@ -352,9 +352,11 @@ emitter が書く lineage イベントとの対応は `_id` ではなく**フィ
 
 #### 決定 — `CAPTURED` 行の保持期間は設定可能・既定は無期限 (オーナー判断、2026-08-21)
 
-**`lineage.capture.retention.captured.days` を足し、未設定なら削除しない。**
-(§6 の `lineage.capture.retention.unresolved.days` と対称にする。似た名前が 2 つ並ぶので、
-状態を名前に入れて取り違えを防ぐ。) 運用者が明示的に
+**`lineage.capture-boundary.retention.captured.days` を足し、未設定なら削除しない。**
+(§6 の `lineage.capture-boundary.retention.unresolved.days` と対称にする。似た名前が 2 つ
+並ぶので、状態を名前に入れて取り違えを防ぐ。接頭辞が `capture` ではなく
+`capture-boundary` なのは、**`lineage.capture.version-events` が既に在り、別の意味の
+「capture」だから** — 同じ接頭辞に置くと無関係な 2 機能が設定ファイル上で隣り合う。) 運用者が明示的に
 有限を選んだときだけ purge が働く。前作業 2 で入れた `POST /dlq/purge?olderThanDays=N` と
 同じ形で、**既定では証拠を消さない**。
 
@@ -387,7 +389,7 @@ CouchDB の compaction・バックアップ方針・ディスク障害はこの�
   - **`CAPTURE_INTENT` を直接 purge しない。** 必ず先に sweeper が `UNRESOLVED` にする
     (直接消すと「開いたまま落ちた」証拠が消える)
   - **`UNRESOLVED` は既定で purge しない (無期限保持)。** 設定
-    `lineage.capture.retention.unresolved.days` の既定は `0` = 無期限
+    `lineage.capture-boundary.retention.unresolved.days` の既定は `0` = 無期限
     (当初 `lineage.capture-intent.retention.days` としていたが、§5.3 で `CAPTURED` 側の
     設定が増えたので、状態を名前に持つ対称な形に揃えた)。**journal の 90 日とは
     別の値**にする — 未解決の証拠を配送ログと同じ期限で消さない
