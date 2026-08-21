@@ -21,6 +21,11 @@ DB を跨ぐトランザクションは無く、原子性は単一文書の PUT 
 
 - **期限切れの行は `UNRESOLVED` になり、`GET /core/api/v1/admin/capture-intents/unresolved`
   (admin 限定) で一覧できます。** 行には何をどこから取り込もうとしたかが入っています
+- **一覧に行が出ても、失敗したとは限りません。** 期限の既定は 15 分ですが、取込 1 件の
+  timeout は既定 30 分なので、**添付の多いメールやページは走っている最中に一覧へ出ます**。
+  時間を置いて引き直し、消えていれば完走です。恒久的に避けるには
+  `lineage.capture-boundary.stale.minutes` を `ingest.scheduler.fetchTimeoutMinutes` より
+  大きくしてください
 - **`journaled` のリポジトリにだけ効きます。** `disabled` / `direct` は従来どおりで、
   挙動も費用も変わりません
 - **保持期間は既定で無期限**です (`lineage.capture-boundary.retention.captured.days` /

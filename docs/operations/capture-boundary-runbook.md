@@ -85,6 +85,26 @@ curl -u admin:admin -H "X-Requested-With: XMLHttpRequest" \
 
 ### 行が出たときにすること
 
+**0. まず「まだ走っているのではないか」を疑ってください。**
+
+掃引の既定は **15 分**ですが、取込 1 件の fetch timeout は
+`ingest.scheduler.fetchTimeoutMinutes` の既定で **30 分**です。**添付の多いメールや
+ページは、正常に走っていても 15 分を超えます。** その間その行は `UNRESOLVED` として
+一覧に出ます — **失敗したという意味ではありません。**
+
+この機能には lease も heartbeat もありません。したがって行だけを見て
+「実行中」と「落ちた」を区別する手段はありません。次で判断してください。
+
+- `intentOpenedAtMs` が **30 分以内**なら、まだ走っている可能性があります。時間を置いて
+  もう一度一覧を引き、**行が消えていれば完走**しています (完成した行は `UNRESOLVED` から
+  外れます)
+- 同じ `requestId` の取込ジョブがまだ動いていないか、ジョブ側で確認してください
+- **30 分を超えても残っている**なら、走っている取込はもう居ません。以下に進みます
+
+誤検知を減らしたいだけなら `lineage.capture-boundary.stale.minutes` を
+`ingest.scheduler.fetchTimeoutMinutes` より**大きく**してください (例: 35)。
+その分、本当に落ちた取込が一覧に出るまでの時間も延びます。
+
 1. `sourceObjectId` と `sourceSystem` で、外部側にその項目がまだ在るか確かめる
 2. リポジトリ側に対応する文書が在るか確かめる (**自動判定はしません** — §0)
 3. 無ければ再取込。在れば重複しないか確認したうえで、行は証拠として残す
@@ -98,7 +118,7 @@ curl -u admin:admin -H "X-Requested-With: XMLHttpRequest" \
 
 | 設定 | 既定 | 意味 |
 |---|---|---|
-| `lineage.capture-boundary.stale.minutes` | 15 | これを超えて開いたままなら `UNRESOLVED` |
+| `lineage.capture-boundary.stale.minutes` | 15 | これを超えて開いたままなら `UNRESOLVED`。**取込 1 件の timeout (既定 30 分) より短いので、実行中の取込が一覧に出ます** — §2 を見てください |
 | `lineage.capture-boundary.sweep.interval.minutes` | 5 | 掃引の間隔 |
 | `lineage.capture-boundary.sweep.batch` | 200 | 1 回で触る行数の上限 |
 
@@ -191,6 +211,7 @@ curl -s -u admin:password http://localhost:5984/nemaki_lineage | \
 
 | 症状 | 見るところ |
 |---|---|
+| 一覧に行が出るが、取込は失敗していない | **正常です。** 掃引の既定 15 分に対し取込の timeout は既定 30 分なので、**添付の多い取込は走っている最中に `UNRESOLVED` になります**。時間を置いて引き直し、消えていれば完走です。恒久的に避けるなら `stale.minutes` を timeout より大きく (§2) |
 | 取込が「証拠を書けなかった」と失敗する | `nemaki_lineage` への書込。これは fail-closed の設計どおりで、**変更を残さないための拒否**です |
 | 一覧が常に空 | 掃引が動いているか (ログ `Capture intent sweeper started`)。`lineage.mode` が `journaled` か |
 | 一覧が 503 | 境界の bean が配線されていない。`nemaki_lineage` の有無を確認 |
