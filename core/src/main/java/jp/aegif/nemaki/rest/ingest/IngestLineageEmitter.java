@@ -307,6 +307,18 @@ public class IngestLineageEmitter {
             }
             LineageMode mode = config.getModeForRepository(repositoryId);
             if (mode == LineageMode.DISABLED) {
+                // DISABLED is benign ONLY when we could actually read the configuration. The read
+                // swallows every failure and returns an empty configuration, which falls through
+                // to the startup default — so a CouchDB outage produces the same answer as a
+                // deliberate switch-off, and this is the one branch that says nothing at all.
+                // Worse, the cached layer used to keep that empty configuration for the life of
+                // the JVM (external review).
+                if (config.configurationReadFailed()) {
+                    return new EmitterResolution(null,
+                            "lineage is reported as disabled, but the configuration could not be "
+                                    + "read — this does NOT establish that lineage was switched "
+                                    + "off");
+                }
                 return new EmitterResolution(null, null);   // the one benign case
             }
             LineageJournalStore store = ctx.getBean(LineageJournalStore.class);

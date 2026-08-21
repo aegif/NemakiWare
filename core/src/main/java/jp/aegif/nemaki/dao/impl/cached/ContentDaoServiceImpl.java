@@ -924,10 +924,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 		if (configuration == null) {
 			return null;
-		} else {
-			configCache.put("configuration", configuration);
+		}
+		if (configuration.isLoadFailed()) {
+			// NOT cached. configCache has no expiry (ehcache gives it noExpiration()), so
+			// caching a failed read would make one unreachable moment permanent for this JVM
+			// (external review).
 			return configuration;
 		}
+		configCache.put("configuration", configuration);
+		return configuration;
 	}
 
 	@Override

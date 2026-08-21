@@ -263,6 +263,35 @@ public class LineageConfig {
     }
 
     /**
+     * Whether the dynamic configuration could actually be read.
+     *
+     * <p>{@link #getModeForRepository} cannot express "could not tell": the read swallows every
+     * failure and returns an empty configuration, which falls through to the startup default —
+     * {@code disabled}. So a CouchDB outage and a deliberate switch-off are the same answer, and
+     * {@code disabled} is the one case the ingest path treats as benign and silent. This lets a
+     * caller that cares tell them apart (external review).
+     *
+     * @return true when the last configuration read failed, so a {@code DISABLED} answer means
+     *         "we could not find out" rather than "it is off"
+     */
+    public boolean configurationReadFailed() {
+        if (propertyManager == null) {
+            // No property manager wired means nothing dynamic is readable at all — which is the
+            // same class of "could not find out", not a deliberate configuration.
+            return true;
+        }
+        try {
+            jp.aegif.nemaki.model.Configuration conf = propertyManager.getConfiguration(
+                    jp.aegif.nemaki.util.constant.SystemConst.NEMAKI_CONF_DB);
+            return conf == null || conf.isLoadFailed();
+        } catch (Exception e) {
+            logger.warn("Could not determine whether the lineage configuration is readable: {}",
+                    e.getMessage());
+            return true;
+        }
+    }
+
+    /**
      * Returns the effective lineage mode for a specific repository.
      *
      * <p>Resolution (highest priority wins):

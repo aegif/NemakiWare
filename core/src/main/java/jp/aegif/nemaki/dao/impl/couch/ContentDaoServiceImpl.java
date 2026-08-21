@@ -1862,6 +1862,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				if (log.isDebugEnabled()) {
 					log.debug("nemaki_conf client not available for getConfiguration(" + repositoryId + ")");
 				}
+				// Marked so the caching layer does not make this permanent, and so a caller that
+				// cares (lineage mode) can tell "could not read" from "nothing configured".
+				config.setLoadFailed(true);
 				return config;
 			}
 
@@ -1927,7 +1930,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 
 		} catch (Exception e) {
-			// During startup, nemaki_conf may not be available yet — return empty config
+			// During startup, nemaki_conf may not be available yet — return empty config.
+			// Marked, though: an empty config that came from a FAILURE must not be cached
+			// (configCache never expires) and must not read as "nothing is configured" to a
+			// caller whose default is off (external review).
+			config.setLoadFailed(true);
 			if (log.isDebugEnabled()) {
 				log.debug("getConfiguration(" + repositoryId + ") failed (normal during startup): " + e.getMessage());
 			}
