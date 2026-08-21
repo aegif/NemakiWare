@@ -501,6 +501,17 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                     view.getValue().map(), view.getValue().reduce());
         }
         logger.info("Lineage journal views deployed to design document '{}'", DESIGN_DOC);
+
+        // The capture-boundary views live in their OWN design document. Adding them to the one
+        // above would rebuild that whole view group, and while a group rebuilds its views answer
+        // from an incomplete index rather than failing — indistinguishable from "nothing to
+        // report" at exactly the moment an operator is looking (design §6.8-3).
+        for (Map.Entry<String, String> view : CouchCaptureIntentStore.views().entrySet()) {
+            client.createOrUpdateView(CouchCaptureIntentStore.DESIGN_DOC, view.getKey(),
+                    view.getValue(), null);
+        }
+        logger.info("Capture intent views deployed to design document '{}'",
+                CouchCaptureIntentStore.DESIGN_DOC);
     }
 
     // ---------------------------------------------------------------
@@ -640,6 +651,55 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
      *
      * @return {@code true} if this call created the document; {@code false} on conflict
      */
+    @Override
+    public java.util.List<Map<String, Object>> queryRawView(String designDocName, String viewName,
+            Map<String, Object> params) {
+        try {
+            Map<String, Object> p = new HashMap<>(params == null ? Map.of() : params);
+            p.put("include_docs", true);
+            ViewResult result = getLineageClient().queryView(designDocName, viewName, p);
+            if (result == null || result.getRows() == null) {
+                return List.of();
+            }
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (ViewResultRow row : result.getRows()) {
+                com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+                if (doc == null) {
+                    continue;
+                }
+                Map<String, Object> props = new HashMap<>();
+                if (doc.getId() != null) props.put("_id", doc.getId());
+                if (doc.getRev() != null) props.put("_rev", doc.getRev());
+                if (doc.getProperties() != null) props.putAll(doc.getProperties());
+                rows.add(props);
+            }
+            return rows;
+        } catch (Exception e) {
+            logger.error("Error querying view {}/{}: {}", designDocName, viewName, e.getMessage());
+            return List.of();
+        }
+    }
+
+    @Override
+    public boolean deleteRaw(Map<String, Object> raw) {
+        if (raw == null || raw.get("_id") == null || raw.get("_rev") == null) {
+            return false;
+        }
+        try {
+            getLineageClient().delete(raw);
+            return true;
+        } catch (Exception e) {
+            logger.warn("Could not delete {}: {}", raw.get("_id"), e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean createIfAbsentStrict(String documentId, Map<String, Object> properties) {
+        ensureDatabase();
+        return createIfAbsent(documentId, properties);
+    }
+
     private boolean createIfAbsent(String documentId, Map<String, Object> properties) {
         com.ibm.cloud.cloudant.v1.model.Document doc =
                 new com.ibm.cloud.cloudant.v1.model.Document();

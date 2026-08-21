@@ -311,6 +311,35 @@ public class LineageObligationWiringConfig {
                 ? new CouchLineageHistoricalPublishIntentStore(support) : null;
     }
 
+    /**
+     * The capture boundary's store, exposed under both of its interfaces.
+     *
+     * <p>Two beans over ONE instance, deliberately: the ingest-facing seam and the maintenance
+     * seam have different callers and different risks, but they must agree about what a row is.
+     * Two instances could not disagree today, but nothing would stop them later.
+     */
+    @Bean
+    public CouchCaptureIntentStore couchCaptureIntentStore(
+            ObjectProvider<LineageJournalStore> journalStore) {
+        LineageJournalStore store = journalStore.getIfAvailable();
+        return store instanceof LineageStoreSupport support
+                ? new CouchCaptureIntentStore(support) : null;
+    }
+
+    /** The write seam the ingest path fails closed on. */
+    @Bean
+    public jp.aegif.nemaki.rest.ingest.capture.CaptureIntentStore captureIntentStore(
+            ObjectProvider<CouchCaptureIntentStore> store) {
+        return store.getIfAvailable();
+    }
+
+    /** The sweeper's and the admin listing's seam. */
+    @Bean
+    public jp.aegif.nemaki.rest.ingest.capture.CaptureMaintenanceStore captureMaintenanceStore(
+            ObjectProvider<CouchCaptureIntentStore> store) {
+        return store.getIfAvailable();
+    }
+
     /** Durable storage for compensation requests. Same database, same strict-IO rules. */
     @Bean
     public LineageHistoricalCompensationStore lineageHistoricalCompensationStore(

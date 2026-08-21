@@ -70,6 +70,34 @@ interface LineageStoreSupport {
     /** Decodes a v2 row, refusing a shape that cannot mean anything. */
     LineageJournalRowV2 decodeV2Strict(Map<String, Object> raw);
 
+    /**
+     * Strict create: {@code true} committed, {@code false} = the id already exists.
+     *
+     * <p>Not {@link CloudantClientWrapper#create}: both wrapper create methods swallow every
+     * exception and return {@code null}, which makes a conflict indistinguishable from an
+     * outage. Anything that is not a conflict propagates, so a caller can tell "already there"
+     * from "could not write" — the distinction the capture boundary is built on.
+     */
+    boolean createIfAbsentStrict(String documentId, Map<String, Object> properties);
+
+    /**
+     * Raw view query against ANY design document in this database.
+     *
+     * <p>Returns the stored documents as maps rather than decoded journal rows: the capture
+     * boundary's rows are not journal events and decoding them as such would either fail or,
+     * worse, half-succeed.
+     *
+     * @return the rows' documents, or an empty list when the view answers nothing. An empty list
+     *         is NOT a promise that the view is empty — a view group being rebuilt answers with
+     *         an incomplete index rather than failing, which is why these rows have their own
+     *         design document.
+     */
+    java.util.List<Map<String, Object>> queryRawView(String designDocName, String viewName,
+            Map<String, Object> params);
+
+    /** Deletes a document by id and revision. {@code false} when it was not deleted. */
+    boolean deleteRaw(Map<String, Object> raw);
+
     /** Metrics, when a bean is wired; {@code null} otherwise. */
     LineageMetrics metrics();
 }
