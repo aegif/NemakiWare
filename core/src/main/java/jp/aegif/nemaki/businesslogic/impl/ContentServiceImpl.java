@@ -2609,7 +2609,7 @@ public class ContentServiceImpl implements ContentService {
 						// CRITICAL FIX (2025-12-18): Preserve existing aspect properties that aren't being updated
 						// This fixes the bug where aspect properties (like nemaki:comment) were lost during document update
 						Aspect existingAspect = existingAspectsMap.get(secondaryTypeId);
-						List<Property> mergedProps = mergeAspectProperties(existingAspect, newProps, properties, secondaryTypeId);
+						List<Property> mergedProps = mergeAspectProperties(repositoryId, existingAspect, newProps, properties, secondaryTypeId);
 
 						aspect.setProperties(mergedProps);
 						aspects.add(aspect);
@@ -2651,7 +2651,8 @@ public class ContentServiceImpl implements ContentService {
 	 * @param secondaryTypeId The secondary type ID for logging
 	 * @return Merged list of properties (existing + new, with new overwriting existing on conflict)
 	 */
-	private List<Property> mergeAspectProperties(Aspect existingAspect, List<Property> newProps,
+	private List<Property> mergeAspectProperties(String repositoryId, Aspect existingAspect,
+			List<Property> newProps,
 			Properties updateProperties, String secondaryTypeId) {
 		// If no existing aspect, just return new properties
 		if (existingAspect == null || existingAspect.getProperties() == null || existingAspect.getProperties().isEmpty()) {
@@ -2693,8 +2694,16 @@ public class ContentServiceImpl implements ContentService {
 		for (Property existingProp : existingAspect.getProperties()) {
 			String key = existingProp.getKey();
 			if (key != null && !mergedMap.containsKey(key)) {
-				// Only preserve if the property isn't explicitly being updated (even to null)
-				if (!updateRequestKeys.contains(key)) {
+				// Only preserve if the property isn't explicitly being updated (even to null) —
+				// EXCEPT when the type declares it READONLY.
+				//
+				// A read-only property is dropped from newProps by injectPropertyValue, but its
+				// id is still in updateRequestKeys, so without this it would be treated as
+				// "explicitly cleared" and vanish. That gave a client a DELETE where the
+				// declaration was meant to deny a WRITE — cheaper than the edit it was supposed
+				// to prevent, and silent (external review, P1-1(c)).
+				if (!updateRequestKeys.contains(key)
+						|| isReadOnlyProperty(repositoryId, secondaryTypeId, key)) {
 					mergedMap.put(key, existingProp);
 					preservedCount++;
 					if (log.isDebugEnabled()) {
@@ -2711,6 +2720,34 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		return new ArrayList<>(mergedMap.values());
+	}
+
+	/**
+	 * Whether the type declares this secondary-type property as server-owned.
+	 *
+	 * <p>Consulted when deciding what an update may remove. A property the client is not allowed
+	 * to write is also one it is not allowed to clear; treating "named in the request" as intent
+	 * to delete would turn the declaration into a deletion permit.
+	 *
+	 * <p>Fails towards preserving: if the definition cannot be read, the existing value stays.
+	 * Losing evidence because a type lookup failed is the worse of the two errors.
+	 */
+	private boolean isReadOnlyProperty(String repositoryId, String secondaryTypeId, String key) {
+		try {
+			TypeDefinition type = getTypeManager().getTypeDefinition(repositoryId, secondaryTypeId);
+			if (type == null || type.getPropertyDefinitions() == null) {
+				return true;
+			}
+			PropertyDefinition<?> pd = type.getPropertyDefinitions().get(key);
+			if (pd == null) {
+				return false;
+			}
+			return Updatability.READONLY.equals(pd.getUpdatability());
+		} catch (Exception e) {
+			log.warn("Could not read the updatability of " + key + " on " + secondaryTypeId
+					+ "; preserving the stored value", e);
+			return true;
+		}
 	}
 
 	private List<String> getSecondaryTypeIds(Content content) {

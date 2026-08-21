@@ -223,6 +223,15 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Chat context evidence: make the captured properties read-only through CMIS.
+				     MUST come after Patch_ChatContextMetadataSecondaryType, which creates them —
+				     this one only rewrites what is already there, so running it first would
+				     protect nothing and report success. The list is applied in order. -->
+				<bean class="jp.aegif.nemaki.patch.Patch_ChatContextEvidenceReadOnly">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 				<!-- Note metadata secondary type for compound note page properties -->
 				<bean class="jp.aegif.nemaki.patch.Patch_NoteMetadataSecondaryType">
 					<property name="patchUtil">
