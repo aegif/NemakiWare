@@ -648,6 +648,15 @@ public class PurviewStateStoreImpl implements PurviewStateStore {
 
     private Configuration getOrCreateSystemConfiguration() {
         Configuration configuration = contentDaoService.getConfiguration(SystemConst.NEMAKI_CONF_DB);
+        if (configuration != null && configuration.isLoadFailed()) {
+            // Both callers replace the whole map. Building that map from a read that failed
+            // would persist an aggregate document holding only what this call adds, discarding
+            // settings that are still there but were not returned (external review). "Create"
+            // in this method's name covers an absent configuration, not an unreadable one.
+            throw new IllegalStateException(
+                    "Configuration could not be read, so it must not be rewritten: the update"
+                            + " would drop every setting the failed read did not return");
+        }
         if (configuration == null) {
             configuration = new Configuration();
         }

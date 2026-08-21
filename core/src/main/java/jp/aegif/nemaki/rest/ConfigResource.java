@@ -130,6 +130,14 @@ public class ConfigResource extends ResourceBase{
 		lock.lock();
 		try{
 			Configuration conf = getContentDaoService().getConfiguration(repositoryId);
+			if (conf == null || conf.isLoadFailed()) {
+				// Read-modify-write on a read that FAILED. The failure yields an empty map, so
+				// the write would persist a document containing only this one key — every other
+				// setting in the aggregate document silently dropped (external review).
+				throw new IllegalStateException(
+						"Configuration could not be read, so it must not be rewritten: the update"
+								+ " would drop every setting the failed read did not return");
+			}
 			Map<String, Object> map = conf.getConfiguration();
 			map.put(key, value);
 			conf.setConfiguration(map);

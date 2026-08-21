@@ -1920,7 +1920,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				}
 
 				bookmark = result.getBookmark();
-				hasMore = (docs.size() == 200 && bookmark != null);
+				if (docs.size() == 200 && bookmark == null) {
+					// A full page with nothing to continue from: there may be more settings we
+					// cannot reach. Stopping here silently returns a PARTIAL configuration that
+					// is indistinguishable from a complete one — and it would then be cached
+					// (external review). Partial is a failure to read, not a small answer.
+					log.warn("getConfiguration(" + repositoryId + ") stopped at a full page with no"
+							+ " bookmark; the result may be incomplete");
+					config.setLoadFailed(true);
+					break;
+				}
+				hasMore = (docs.size() == 200);
 			}
 
 			config.setConfiguration(configMap);

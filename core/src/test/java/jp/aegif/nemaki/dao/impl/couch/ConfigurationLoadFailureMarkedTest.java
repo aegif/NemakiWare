@@ -60,9 +60,20 @@ class ConfigurationLoadFailureMarkedTest {
         return dao;
     }
 
-    /** A pool whose client answers one {@code _find} page with the given documents. */
-    @SuppressWarnings("unchecked")
+    /** A pool whose client answers one {@code _find} page, with no bookmark to continue from. */
     private static CloudantClientPool poolReturning(List<Document> docs) {
+        return poolReturning(docs, null, null);
+    }
+
+    /**
+     * A pool answering {@code firstPage} then {@code secondPage}, reporting {@code bookmark}.
+     *
+     * <p>A null {@code bookmark} is the shape that matters here: CouchDB gave us a page and no way
+     * to ask for the next one.
+     */
+    @SuppressWarnings("unchecked")
+    private static CloudantClientPool poolReturning(List<Document> docs, List<Document> secondPage,
+            String bookmark) {
         CloudantClientPool pool = mock(CloudantClientPool.class);
         CloudantClientWrapper wrapper = mock(CloudantClientWrapper.class);
         Cloudant client = mock(Cloudant.class);
@@ -76,8 +87,12 @@ class ConfigurationLoadFailureMarkedTest {
         when(client.postFind(any(PostFindOptions.class))).thenReturn(call);
         when(call.execute()).thenReturn(response);
         when(response.getResult()).thenReturn(result);
-        when(result.getDocs()).thenReturn(docs);
-        when(result.getBookmark()).thenReturn(null);
+        if (secondPage == null) {
+            when(result.getDocs()).thenReturn(docs);
+        } else {
+            when(result.getDocs()).thenReturn(docs, secondPage);
+        }
+        when(result.getBookmark()).thenReturn(bookmark);
         return pool;
     }
 
@@ -148,6 +163,43 @@ class ConfigurationLoadFailureMarkedTest {
 
         assertFalse(config.isLoadFailed());
         assertTrue(config.getConfiguration().isEmpty());
+    }
+
+    @Test
+    @DisplayName("a page that fills up with nothing to continue from is marked")
+    void truncatedPageIsMarked() {
+        // A full page and no bookmark: there may be settings we cannot reach. Stopping silently
+        // returned a PARTIAL configuration indistinguishable from a complete one — which was then
+        // cached (external review). Partial is a failure to read, not a small answer.
+        List<Document> fullPage = new java.util.ArrayList<>();
+        for (int i = 0; i < 200; i++) {
+            fullPage.add(configDoc("key." + i, "v" + i));
+        }
+        CloudantClientPool pool = poolReturning(fullPage);   // poolReturning gives a null bookmark
+
+        Configuration config = daoWith(pool).getConfiguration(SystemConst.NEMAKI_CONF_DB);
+
+        assertTrue(config.isLoadFailed(),
+                "200 documents and no way to ask for more is an incomplete read");
+    }
+
+    @Test
+    @DisplayName("a page that fills up WITH a bookmark keeps paging and is not marked")
+    void fullPageWithBookmarkIsNotMarked() {
+        // The control: a full page is normal when there IS a bookmark to continue from. Marking
+        // that would fail every installation with more than 200 settings.
+        List<Document> fullPage = new java.util.ArrayList<>();
+        for (int i = 0; i < 200; i++) {
+            fullPage.add(configDoc("key." + i, "v" + i));
+        }
+        // Page 1: full, with a bookmark. Page 2: empty, ending the loop.
+        CloudantClientPool pool = poolReturning(fullPage, List.of(), "bm-1");
+
+        Configuration config = daoWith(pool).getConfiguration(SystemConst.NEMAKI_CONF_DB);
+
+        assertFalse(config.isLoadFailed(),
+                "paging is not a failure; only a full page with nowhere to continue is");
+        assertEquals(200, config.getConfiguration().size());
     }
 
     @Test
