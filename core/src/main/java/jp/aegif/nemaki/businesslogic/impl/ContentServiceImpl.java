@@ -2740,7 +2740,15 @@ public class ContentServiceImpl implements ContentService {
 			}
 			PropertyDefinition<?> pd = type.getPropertyDefinitions().get(key);
 			if (pd == null) {
-				return false;
+				// The type loaded but does not declare this key. Preserve it anyway.
+				//
+				// Two situations produce this and only one is benign: a genuine orphan left by
+				// an old type, and a type that loaded WITHOUT its evidence properties because
+				// the definition views were not answering. They are indistinguishable from
+				// here, and the second one would let a client delete exactly the values this
+				// change exists to protect (external review). An orphan is invisible to clients
+				// anyway — it is not on the type — so keeping it costs nothing.
+				return true;
 			}
 			return Updatability.READONLY.equals(pd.getUpdatability());
 		} catch (Exception e) {

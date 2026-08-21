@@ -244,6 +244,36 @@ class EvidenceIsWritableOnlyByCaptureTest {
         assertEquals("kept", merged.get(0).getValue());
     }
 
+    @Test
+    @DisplayName("a property the type does not declare is preserved, not treated as an orphan")
+    void undeclaredPropertyIsPreserved() {
+        // Two situations produce "the type loaded but does not declare this key", and only one is
+        // benign: a genuine orphan from an old type, and a type that loaded WITHOUT its evidence
+        // properties because the definition views were not answering. They are indistinguishable
+        // from here, and the second would let a client delete exactly what this change protects.
+        // The patch throws in that situation; the merge must not quietly delete (external review).
+        ContentServiceImpl service = new ContentServiceImpl();
+        org.apache.chemistry.opencmis.commons.definitions.TypeDefinition type =
+                mock(org.apache.chemistry.opencmis.commons.definitions.TypeDefinition.class);
+        when(type.getPropertyDefinitions()).thenReturn(Map.of());   // loaded, but declares nothing
+        jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager =
+                mock(jp.aegif.nemaki.cmis.aspect.type.TypeManager.class);
+        when(typeManager.getTypeDefinition("bedroom", "nemaki:chatContextMetadata"))
+                .thenReturn(type);
+        service.setTypeManager(typeManager);
+
+        List<Property> merged;
+        try {
+            merged = mergeThrough(service, aspectHolding(EVIDENCE_PROPERTY, "captured"),
+                    List.of(), requestSetting(EVIDENCE_PROPERTY, "overwritten"));
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
+
+        assertEquals(1, merged.size(), "the value was deleted: " + merged);
+        assertEquals("captured", merged.get(0).getValue());
+    }
+
     /** The protected names, mirrored so this test does not depend on the patch package. */
     private static final class Patch_ChatContextEvidenceReadOnlyNames {
         static final List<String> NAMES =

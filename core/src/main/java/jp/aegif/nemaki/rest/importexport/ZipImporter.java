@@ -1102,15 +1102,21 @@ public class ZipImporter {
                         core.setQueryName(propId);
 
                         NemakiPropertyDefinitionDetail detail = new NemakiPropertyDefinitionDetail();
+                        // An absent or unreadable updatability becomes READONLY, not READWRITE.
+                        // An export taken before a protection migration carries no value, and
+                        // defaulting to readwrite let importing such an archive unprotect
+                        // evidence properties — a downgrade nobody asked for, from a file
+                        // (external review, P1-1(c)). Read-only is the direction that cannot
+                        // lose protection; an operator who wants it writable says so.
                         String updStr = (String) propJson.get("updatability");
                         if (updStr != null) {
                             try {
                                 detail.setUpdatability(Updatability.fromValue(updStr));
                             } catch (Exception e) {
-                                detail.setUpdatability(Updatability.READWRITE);
+                                detail.setUpdatability(Updatability.READONLY);
                             }
                         } else {
-                            detail.setUpdatability(Updatability.READWRITE);
+                            detail.setUpdatability(Updatability.READONLY);
                         }
 
                         Object reqObj = propJson.get("required");

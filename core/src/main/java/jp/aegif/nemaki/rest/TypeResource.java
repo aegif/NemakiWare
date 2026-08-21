@@ -1584,14 +1584,23 @@ public class TypeResource extends ResourceBase {
 			// Detail properties
 			detail.setType(NodeType.PROPERTY_DEFINITION_DETAIL.value());
 			
-			// Updatability
+			// Updatability.
+			//
+			// An ABSENT value leaves the stored one alone. It used to fall through to READWRITE,
+			// which meant any type update that simply did not mention updatability silently
+			// unprotected every property on the type — including evidence properties a migration
+			// had deliberately made read-only, with no database access required (external
+			// review, P1-1(c)). Omission is not a request to widen.
 			String updatability = (String) propertyJson.get("updatability");
 			if ("readonly".equals(updatability)) {
 				detail.setUpdatability(Updatability.READONLY);
 			} else if ("oncreate".equals(updatability)) {
 				detail.setUpdatability(Updatability.ONCREATE);
-			} else {
+			} else if ("readwrite".equals(updatability)) {
 				detail.setUpdatability(Updatability.READWRITE);
+			} else if (updatability != null) {
+				throw new IllegalArgumentException("unknown updatability '" + updatability
+						+ "'. Silently widening to readwrite would unprotect the property.");
 			}
 			
 			// Required
