@@ -310,6 +310,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             warnings.addAll(messageResult.warnings());
             // applyMessageMetadata always writes (it builds properties from the parsed message,
             // not from optional request metadata), so there is nothing to predicate here.
+        // The no-overwrite rule of P1-1(d) D6 is NOT applied here, on purpose. It covers the
+        // eleven chat properties that Patch_ChatContextEvidenceReadOnly made READONLY, and
+        // nothing on this type is protected, so re-decorating is not yet a broken guarantee.
+        // The ordering defect is the same one, though: a dedupe skip returns before the lineage
+        // emit and this still writes. See docs/design/p1-1d-evidence-data-model.md §R5.
             captureScope.ensureIntentOpened();
             String metaError = ingestMetadataService.applyMessageMetadata(request.getRepositoryId(), messageObjectId, callContext, parsed, request);
             recordWrapperUpdate(captureScope, "applyMessageMetadata", metaError);
@@ -506,6 +511,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (!request.isDryRun()) {
                 boolean tracked = openIfWriting(captureScope,
                         ingestMetadataService.willWriteNoteMetadata(request));
+                // Same deliberate exclusion as the mail path above: the no-overwrite rule of
+                // P1-1(d) D6 covers only the eleven READONLY chat properties, and nothing on
+                // this type is protected. The ordering defect is the same.
                 String metaError = ingestMetadataService.applyNoteMetadata(request.getRepositoryId(), pageObjectId, callContext, request);
                 if (tracked) {
                     recordWrapperUpdate(captureScope, "applyNoteMetadata", metaError);
@@ -737,6 +745,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         };
         boolean brFieldsTracked = openIfWriting(captureScope,
                 ingestMetadataService.willWriteArchetypeMetadata(request, brFields));
+        // Same deliberate exclusion as the mail and note paths: the no-overwrite rule of
+        // P1-1(d) D6 covers only the eleven READONLY chat properties.
         String metaError = ingestMetadataService.applyArchetypeMetadata(request.getRepositoryId(), result.objectId(), callContext,
                 "nemaki:businessRecordMetadata", request, brFields);
         if (metaError != null) warnings.add(metaError);
@@ -834,10 +844,22 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     ingestMetadataService.fillMissingArchetypeMetadata(request.getRepositoryId(),
                             result.objectId(), callContext, "nemaki:chatContextMetadata",
                             request, chatFields);
+            if (fill == null) {
+                // Unreachable with the real service — every path there returns a record. A null
+                // means the collaborator is not the real one, and the safe reading is "this pass
+                // wrote nothing and refused nothing": it cannot have overwritten anything either,
+                // because the write lives inside the method that did not run.
+                fill = new IngestMetadataService.FillOutcome(null, List.of(), List.of());
+            }
             metaError = fill.error();
             refusedByThisPass.addAll(fill.refused());
             filledByThisPass.addAll(fill.filled());
-            if (fillTracked) {
+            // wroteAnything(), not just fillTracked: willFill and fillMissing each do their own
+            // getContent, so a concurrent write between the two reads — or willFill's catch-all
+            // "assume yes" on a transient read failure — would otherwise open an intent and
+            // record a SUCCEEDED mutation for a pass that wrote nothing. That fabricated entry is
+            // what openIfWriting exists to prevent (design §6.10-B2, external review).
+            if (fillTracked && (fill.wroteAnything() || metaError != null)) {
                 recordWrapperUpdate(captureScope, "fillMissingArchetypeMetadata", metaError);
             }
             if (!fill.refused().isEmpty()) {
@@ -893,19 +915,20 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                             // emitted, so a value already captured is not replaced — only a gap
                             // is filled (P1-1(d) D6).
                             int before = countWindowValues(propMap);
+                            List<String> pendingWindowFill = new ArrayList<>();
                             if (windowStart != null) {
                                 GregorianCalendar gc = new GregorianCalendar();
                                 gc.setTimeInMillis(java.time.Instant.parse(windowStart).toEpochMilli());
                                 putCapturedWindowValue(propMap, "nemaki:chatCaptureWindowStart", gc,
                                         noEventForThisPass, warnings, refusedByThisPass,
-                                        filledByThisPass);
+                                        pendingWindowFill);
                             }
                             if (windowEnd != null) {
                                 GregorianCalendar gc = new GregorianCalendar();
                                 gc.setTimeInMillis(java.time.Instant.parse(windowEnd).toEpochMilli());
                                 putCapturedWindowValue(propMap, "nemaki:chatCaptureWindowEnd", gc,
                                         noEventForThisPass, warnings, refusedByThisPass,
-                                        filledByThisPass);
+                                        pendingWindowFill);
                             }
                             // Nothing to fill means nothing to write; a bare revision bump would
                             // record a mutation that did not happen.
@@ -918,6 +941,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                                 captureScope.ensureIntentOpened();
                                 contentService.update(callContext, request.getRepositoryId(), chatContent);
                                 captureScope.record("applyCaptureWindow", MutationOutcome.SUCCEEDED);
+                                // Only now. Before the update returns, these are intentions.
+                                filledByThisPass.addAll(pendingWindowFill);
                             }
                         }
                     }
@@ -1007,7 +1032,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     : importProfileDefinitionService.get(request.getProfileId());
             if (connector == null) return;
             String repositoryId = request.getRepositoryId();
-            String folderId = profile == null ? null : profile.getTargetFolderId();
+            // The same resolution execute() uses, not profile.getTargetFolderId(): a profile
+            // defined with targetFolderPath only has a null id, and the original capture event
+            // for this very document carries the resolved one. Two events disagreeing about the
+            // folder is worse than no re-import event at all (external review).
+            String folderId = request.getTargetFolderOverride() != null
+                    ? request.getTargetFolderOverride()
+                    : (profile == null ? null
+                            : resolveTargetFolderId(profile, repositoryId, callContext));
             String documentName = null;
             try {
                 Content c = contentService.getContent(repositoryId, result.objectId());
@@ -1049,14 +1081,23 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
     }
 
-    /** Why this pass stored nothing, in the words the result already used. */
+    /**
+     * Why this pass stored nothing.
+     *
+     * <p>Classified rather than quoted. The first version scanned {@code result.warnings()} for
+     * "already exists", and that list is always empty on this path — every skip here comes from
+     * {@code ExternalIngestResult.skipped(...)}, whose warnings are {@code List.of()} — so it
+     * always returned the dedupe wording and attributed idempotency skips to dedupe (external
+     * review). The reason string itself is deliberately not echoed: the idempotency one embeds
+     * the caller's request id, and the ledger should not gain caller-supplied text by accident.
+     */
     private static String describeSkip(ExternalIngestResult result) {
-        if (result.warnings() != null) {
-            for (String w : result.warnings()) {
-                if (w != null && w.toLowerCase().contains("already exists")) return w;
-            }
+        if (!result.skipped()) return "no content was stored";
+        String reason = result.skipReason();
+        if (reason != null && reason.startsWith("Idempotent")) {
+            return "this request had already been processed";
         }
-        return result.skipped() ? "the document already existed" : "no content was stored";
+        return "the document already existed";
     }
 
     private static final String[] CAPTURE_WINDOW_KEYS = {
@@ -1083,12 +1124,12 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     private static void putCapturedWindowValue(Map<String, Property> propMap, String key,
                                                GregorianCalendar value, boolean noEventForThisPass,
                                                List<String> warnings, List<String> refused,
-                                               List<String> filled) {
+                                               List<String> pendingFill) {
         Property existing = propMap.get(key);
         if (noEventForThisPass && existing != null && existing.getValue() != null) {
             // Same value said twice is neither a change nor a refusal — the ordinary poll — so it
-            // is silent. Only a DIFFERENT value is a refusal worth telling anyone about.
-            if (!sameInstant(existing.getValue(), value)) {
+            // is silent. Only a value that can be SHOWN to differ is a refusal worth reporting.
+            if (differsFromStoredInstant(existing.getValue(), value)) {
                 refused.add(key);
                 warnings.add(key + " was already captured, so this re-import left it as it was "
                         + "rather than replacing it with a different value. Re-import into a new "
@@ -1097,15 +1138,59 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             return;
         }
         if (noEventForThisPass) {
-            filled.add(key);
+            // PENDING, not filled. The write is several lines below and can fail; promoting this
+            // to the event before it lands would make the record claim an applied value that is
+            // not on the object — D1's defect, in new code (external review).
+            pendingFill.add(key);
         }
         propMap.put(key, new Property(key, value));
     }
 
-    /** Calendars compare by instant here; equals() also weighs timezone and calendar fields. */
-    private static boolean sameInstant(Object stored, GregorianCalendar incoming) {
-        return stored instanceof java.util.Calendar c
-                && c.getTimeInMillis() == incoming.getTimeInMillis();
+    /**
+     * Whether a stored capture-window value can be shown to differ from an incoming one.
+     *
+     * <h2>Why this is not {@code instanceof Calendar}</h2>
+     *
+     * <p>It was, and that could never be true. Aspect property values are carried untyped through
+     * {@code CouchContent}'s Map constructor and are NOT normalised —
+     * {@code ContentDaoServiceImpl.normalizeJsonNumber} says in as many words that it does not
+     * recurse into {@code aspects} — so a datetime written as epoch millis comes back as a
+     * {@code Long} or a {@code Double}, never a {@code Calendar}. The product's own read path
+     * knows this: {@code CompileServiceImpl} coerces DATETIME aspect values from
+     * {@code GregorianCalendar}, {@code String} AND {@code Long}.
+     *
+     * <p>With the old test, every unchanged re-poll looked like a changed value: a refusal was
+     * recorded, a warning raised and a lineage event emitted — 288 a day for one message, which
+     * is the exact flood the rule exists to prevent (external review).
+     *
+     * <p><b>Only a positive difference is reported.</b> A stored value this cannot read is not
+     * evidence that the caller believes something different, and treating "cannot tell" as
+     * "differs" would restore the flood by another route. The protection is unaffected either
+     * way — a present value is never replaced on this path; this decides only whether anything
+     * is said about it.
+     */
+    private static boolean differsFromStoredInstant(Object stored, GregorianCalendar incoming) {
+        Long storedMillis = toEpochMillis(stored);
+        return storedMillis != null && storedMillis != incoming.getTimeInMillis();
+    }
+
+    /** Epoch millis for the shapes a stored datetime can have, or null when unreadable. */
+    private static Long toEpochMillis(Object stored) {
+        if (stored instanceof java.util.Calendar c) return c.getTimeInMillis();
+        if (stored instanceof java.util.Date d) return d.getTime();
+        if (stored instanceof Number n) return n.longValue();
+        if (stored instanceof String str && !str.isBlank()) {
+            try {
+                return java.time.Instant.parse(str).toEpochMilli();
+            } catch (Exception notIso) {
+                try {
+                    return Long.parseLong(str.trim());
+                } catch (Exception notMillis) {
+                    return null;
+                }
+            }
+        }
+        return null;
     }
 
     /**

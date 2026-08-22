@@ -164,6 +164,14 @@ class IngestEvidenceCorrespondenceTest {
                 CapturedContent.hashed("a".repeat(64)), "admin", "alice").keySet());
         produced.addAll(emitter().buildV1Snapshot(connector(), fullRequest(), "folder-1",
                 CapturedContent.unknown("content state undetermined"), "admin", "alice").keySet());
+        // A third input: the re-import facts describe what a PASS decided, so no request can
+        // supply them. Unioned rather than excluded, so they stay inside the correspondence —
+        // an excluded key is one nothing checks (P1-1(d) D6).
+        produced.addAll(emitter().buildV1Snapshot(connector(), fullRequest(), "folder-1",
+                CapturedContent.none(), "admin", "alice",
+                java.util.Map.of(CaptureEvidenceField.REIMPORT_OUTCOME, "stored nothing",
+                        CaptureEvidenceField.REIMPORT_FILLED, "nemaki:chatChannelName",
+                        CaptureEvidenceField.REIMPORT_REFUSED, "nemaki:chatChannelId")).keySet());
 
         java.util.Set<String> tableKeys = new java.util.TreeSet<>();
         for (CaptureEvidenceField field : CaptureEvidenceField.values()) {

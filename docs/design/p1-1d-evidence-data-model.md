@@ -308,6 +308,23 @@ metadata-only 再取込は読み戻し経路に落ちて `none()` を出しう�
 > | 同じ値を再送された | **出さない**。変化でも拒否でもない |
 >
 > 同じ理由で**警告も出さない** — 出すと毎回のポーリングが警告まみれになる。
+>
+> **実装 1 巡目はこの規則を書きながら、比較が効いていなかった** (外部レビュー)。
+> aspect のプロパティ値は `CouchContent` を untyped で通り、
+> `ContentDaoServiceImpl.normalizeJsonNumber` は**aspects の中へ再帰しない**ので、
+> epoch millis で書いた datetime は `Long` / `Double` で戻る。`instanceof Calendar` は
+> **決して真にならず**、毎回のポーリングが「違う値」に見えて 288 件/日が出ていた。
+> 製品自身の読み側 (`CompileServiceImpl`) が DATETIME を `GregorianCalendar` /
+> `String` / `Long` から coerce しているのが傍証である。
+>
+> **したがってテストの fixture は、DAO が返す形 (数値) で持たせる。** 生きた
+> `GregorianCalendar` を置いた fixture は、production で決して真にならない比較を
+> 「正しく見せる」。`instanceof Calendar` に戻すと `anIdenticalPassIsNotRecorded` が
+> `No interactions wanted` で落ちることを実測した。
+>
+> **報告するのは「違うと積極的に示せたとき」だけ**にした。読めない値は「呼び出し側が
+> 別のことを信じている証拠」ではないし、「読めない=違う」に倒すと別経路で洪水が戻る。
+> 保護そのものはどちらでも変わらない — 在る値はこの経路では決して置き換えられない。
 
 **(A) を先に入れ、そのあと (B) を足す。2026-08-22 に両方実装済み。** (A) だけだと「2 度目に何が起きたか」が
 依然どこにも無く、(B) だけだと保護されたはずの値が書き換わり続ける。

@@ -116,8 +116,15 @@ class IngestReimportDoesNotRewriteEvidenceTest {
                 new Property("nemaki:sourceSystem", "acme"),
                 new Property("nemaki:sourceObjectType", "message"))));
 
-        GregorianCalendar capturedWindow = new GregorianCalendar();
-        capturedWindow.setTimeInMillis(java.time.Instant.parse("2026-07-14T02:00:00Z").toEpochMilli());
+        // A DOUBLE, not a GregorianCalendar. That is what a stored datetime aspect value really
+        // looks like coming back: CouchContent carries aspect values untyped and
+        // ContentDaoServiceImpl.normalizeJsonNumber does not recurse into aspects, so epoch
+        // millis return as a JSON number. A fixture holding a live Calendar made the first
+        // version of the equality check look correct while it could never be true in production
+        // (external review). CompileServiceImpl coerces DATETIME aspect values from Long for the
+        // same reason.
+        Object capturedWindow =
+                (double) java.time.Instant.parse("2026-07-14T02:00:00Z").toEpochMilli();
         Aspect chat = new Aspect();
         chat.setName(CHAT_ASPECT);
         chat.setProperties(new ArrayList<>(List.of(
@@ -158,9 +165,13 @@ class IngestReimportDoesNotRewriteEvidenceTest {
             for (Property p : a.getProperties()) {
                 if (key.equals(p.getKey())) {
                     Object v = p.getValue();
-                    return v instanceof GregorianCalendar gc
-                            ? java.time.Instant.ofEpochMilli(gc.getTimeInMillis()).toString()
-                            : String.valueOf(v);
+                    if (v instanceof GregorianCalendar gc) {
+                        return java.time.Instant.ofEpochMilli(gc.getTimeInMillis()).toString();
+                    }
+                    if (v instanceof Number n) {
+                        return java.time.Instant.ofEpochMilli(n.longValue()).toString();
+                    }
+                    return String.valueOf(v);
                 }
             }
         }

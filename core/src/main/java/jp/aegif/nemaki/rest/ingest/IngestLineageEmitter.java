@@ -93,15 +93,7 @@ public class IngestLineageEmitter {
             // sourceSystem and the stable key, and targetFolderId is a §3 Process attribute).
             java.util.Map<String, String> v1Snapshot =
                     buildV1Snapshot(connector, request, targetFolderId, content,
-                            executedBy, onBehalfOf);
-            // Added after buildV1Snapshot rather than inside it: the chat loop in there reads
-            // request metadata, and these do not come from the request at all — they are what
-            // this pass decided.
-            passOutcome.forEach((field, value) -> {
-                if (value != null && !value.isBlank()) {
-                    v1Snapshot.put(field.v1Key(), value);
-                }
-            });
+                            executedBy, onBehalfOf, passOutcome);
 
             // emitReporting, not emitSafely: the plain form collapses "lineage is off" and
             // "we lost the evidence" into the same false, and the document is already committed
@@ -290,6 +282,21 @@ public class IngestLineageEmitter {
                                                   ExternalIngestRequest request,
                                                   String targetFolderId, CapturedContent content,
                                                   String executedBy, String onBehalfOf) {
+        return buildV1Snapshot(connector, request, targetFolderId, content, executedBy, onBehalfOf,
+                java.util.Map.of());
+    }
+
+    /**
+     * @param passOutcome facts about THIS pass rather than about the request — what a re-import
+     *        filled or refused. Built here rather than merged by the caller so that every key the
+     *        evidence table declares is produced by this one method, which is what
+     *        {@code IngestEvidenceCorrespondenceTest} quantifies over.
+     */
+    java.util.Map<String, String> buildV1Snapshot(ConnectorDefinition connector,
+                                                  ExternalIngestRequest request,
+                                                  String targetFolderId, CapturedContent content,
+                                                  String executedBy, String onBehalfOf,
+                                                  java.util.Map<CaptureEvidenceField, String> passOutcome) {
         java.util.Map<String, String> v1Snapshot = new java.util.LinkedHashMap<>();
         // Keys come from CaptureEvidenceField, not from literals: the same table drives the v2
         // endpoint attributes, so a fact cannot be added to one encoding and forgotten in the
@@ -355,6 +362,14 @@ public class IngestLineageEmitter {
                 v1Snapshot.put(field.v1Key(), value);
             }
         }
+
+        // Last, and from the argument rather than from the request: these describe what the pass
+        // decided, not what the caller asked for.
+        passOutcome.forEach((field, value) -> {
+            if (value != null && !value.isBlank()) {
+                v1Snapshot.put(field.v1Key(), value);
+            }
+        });
 
         return v1Snapshot;
     }
