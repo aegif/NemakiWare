@@ -234,6 +234,23 @@ public class IngestLineageEmitter {
         return (subject == null ? CapturedContent.DigestSubject.INPUT : subject).wireValue();
     }
 
+    /**
+     * The v1 keys present in this snapshot whose values nothing verified.
+     *
+     * <p>In the table's own declaration order rather than the snapshot's, so two events listing
+     * the same facts produce the same string and a reader diffing them sees only real changes.
+     */
+    static String assertedKeysIn(java.util.Map<String, String> v1Snapshot) {
+        StringBuilder sb = new StringBuilder();
+        for (CaptureEvidenceField field : CaptureEvidenceField.values()) {
+            if (field.assurance() != CaptureEvidenceField.Assurance.ASSERTED) continue;
+            if (!v1Snapshot.containsKey(field.v1Key())) continue;
+            if (sb.length() > 0) sb.append(',');
+            sb.append(field.v1Key());
+        }
+        return sb.toString();
+    }
+
     /** Test hook: the retained state is otherwise unobservable, so it cannot be asserted on. */
     void clearLastEmissionFailureForTest() {
         lastFailure.remove();
@@ -432,6 +449,14 @@ public class IngestLineageEmitter {
                 v1Snapshot.put(field.v1Key(), value);
             }
         });
+
+        // Finally, the event says which of its own facts nothing verified (P1-1(d) R2). Derived
+        // from what is actually in this snapshot, not from the table's full list: a key that is
+        // absent was not claimed, and naming it would assert a claim nobody made.
+        String asserted = assertedKeysIn(v1Snapshot);
+        if (!asserted.isEmpty()) {
+            v1Snapshot.put(CaptureEvidenceField.ASSURANCE_ASSERTED.v1Key(), asserted);
+        }
 
         return v1Snapshot;
     }
