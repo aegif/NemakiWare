@@ -885,15 +885,18 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // the server clock rather than read from the request — but ONLY when this operation
         // created the object, because for anything already here the clock is not the answer.
         //
-        // NOT yet a protected attribute, and NOT yet corroborated anywhere. The property is
-        // still READWRITE, so a client with update permission can change it afterwards, or plant
-        // it before a re-import and have the no-overwrite rule below preserve their value.
+        // Protected against CMIS edits since P1-1(c): Patch_ChatContextEvidenceReadOnly makes
+        // this and the other ten READONLY, so injectPropertyValue drops a client's value. The
+        // ingest writes through the model directly and is unaffected, which is the asymmetry
+        // that lets a capture stamp its own evidence.
         //
-        // An earlier version of this comment pointed at the event snapshot as the copy a client
-        // cannot edit — but the stamp happens HERE, after the import that emitted the event, so
-        // the snapshot does not carry it at all (external review). There is currently no second
-        // copy. Making this evidence needs both the updatability migration and moving the stamp
-        // ahead of emission: authenticity-roadmap.md P1-1(b)(c).
+        // Still NOT corroborated anywhere. The stamp happens HERE, after the import that emitted
+        // the event, so the snapshot does not carry it — of the eleven, capturedAt is the one
+        // the event cannot repeat (P1-1(d) D1). There is no second copy.
+        //
+        // NOT solved by moving the stamp ahead of emission — that was retracted in
+        // p1-1b-v2-evidence-home.md §8, because the aspect it stamps into is created by this
+        // wrapper, after execute() returns, so moving it earlier hits nothing.
         applyChatCapturedAt(captureScope, callContext, request, result.objectId(), result.createdObject(),
                 warnings);
 
@@ -1349,9 +1352,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (props.containsKey("nemaki:chatCapturedAt")) {
                 // A re-import must not restamp custody: the first observation is the one that
                 // means anything, and moving it forward would quietly erase how long we have
-                // actually held the record. Note the limitation above — while the property is
-                // READWRITE this also preserves a value a client planted, and there is no second
-                // copy to check it against yet (P1-1(b)(c)).
+                // actually held the record. Since P1-1(c) the property is READONLY through CMIS,
+                // so this no longer preserves a value planted by a client — only one this ingest
+                // wrote. There is still no second copy to check it against (P1-1(d) D1).
                 return;
             }
             // The clock is correct HERE and only here: this operation just created the object,
