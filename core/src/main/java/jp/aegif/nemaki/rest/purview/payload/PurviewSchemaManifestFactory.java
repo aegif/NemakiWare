@@ -19,7 +19,19 @@ public class PurviewSchemaManifestFactory {
     // that its catalog is missing a type rather than merely out of date. It only ever increases,
     // and every step is additive: applying 15 over a catalog at 13 creates what 14 and 15 add
     // and touches nothing that exists, so the upgrade is safe to re-run.
-    private static final String SCHEMA_VERSION = "15";
+    /**
+     * Bumped to 16 for P1-1(d) R3's {@code contentHashSubject} on {@code nemaki_document}.
+     *
+     * <p><b>Bumping is not optional when an attribute is added.</b> The manifest hash below is
+     * computed over the version, the type NAMES, the relationship names, the business-metadata
+     * names and the property-mapping fingerprint — <b>not over the attribute lists</b>. So a
+     * deployment that already applied the schema sees an unchanged hash, the planner reports
+     * "up to date", and the new attribute is never created on the catalogue type. The sink then
+     * sends it and the destination drops it on arrival, silently. Adding three attributes under
+     * an unchanged version has happened before in this file's history; this note is here so the
+     * next attribute does not repeat it (external review).
+     */
+    private static final String SCHEMA_VERSION = "16";
     private static final List<String> CUSTOM_TYPE_NAMES = List.of(
             "nemaki_repository",
             "nemaki_folder",

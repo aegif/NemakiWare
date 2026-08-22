@@ -30,6 +30,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -381,24 +382,47 @@ class IngestEvidenceSnapshotTest {
     }
 
     @Test
-    @DisplayName("a re-import that stores no bytes emits no digest, on either update policy")
-    void reimportWithoutStoringBytesEmitsNoDigest() {
-        // compareContent is pinned in isolation elsewhere, but that proved nothing about the
-        // import: dropping the assignment that feeds its answer back into computedHash — or the
-        // matching clear on the metadata-only policy — left every test green while the record
-        // went back to certifying a digest for bytes this import threw away (external review).
-        // So this drives the two real branches.
+    @DisplayName("a re-import that stores no bytes never claims the content is stored")
+    void reimportWithoutStoringBytesClaimsNothingAboutStorage() {
+        // This used to assert that NO digest was recorded, on the reasoning that a digest would
+        // certify content the import never stored. That reasoning was sound while a digest was
+        // anonymous. P1-1(d) R3 gave it a subject, which answers the objection directly: the
+        // record now says the digest is of the bytes THIS PASS FETCHED and that they matched what
+        // was already recorded — never that they are the bytes the repository holds. Withholding
+        // it discarded the only fixity-adjacent fact this path ever produces (P1-1(d) D2).
+        //
+        // What must still never happen is a claim about STORAGE, so that is what is pinned here.
         for (String updatePolicy : new String[]{"version_up_on_content_change",
                 "update_metadata_only"}) {
             RecordingEmitter emitter = runReimport(updatePolicy);
             assertNotNull(emitter.captured,
                     "control: the re-import must reach the emitter (" + updatePolicy + ")");
-            assertNull(emitter.captured.digest(),
-                    "no bytes were stored under " + updatePolicy + ": the incoming ones were "
-                            + "discarded, and the hash they matched sits in a MUTABLE aspect "
-                            + "property. Recording the digest would certify content this import "
-                            + "never stored. Got: " + emitter.captured.digest());
+            assertNotEquals(
+                    IngestLineageEmitter.CapturedContent.ContentState.STORED,
+                    emitter.captured.state(),
+                    updatePolicy + ": this pass stored no bytes, so the record must not say the "
+                            + "content is stored");
+            if (emitter.captured.digest() != null) {
+                assertEquals("input-matched-recorded",
+                        IngestLineageEmitter.digestSubjectValue(emitter.captured),
+                        updatePolicy + ": a digest went out on a pass that stored nothing, "
+                                + "without saying it is only the input that matched the recorded "
+                                + "one — which is the anonymous digest R3 forbids");
+            }
         }
+    }
+
+    @Test
+    @DisplayName("the matched-digest branch records the match rather than discarding it")
+    void theMatchedDigestIsRecorded() {
+        // The counterweight to the test above: without this, withholding the digest again would
+        // pass, and the fact that this pass fetched, hashed and compared would be lost silently.
+        RecordingEmitter emitter = runReimport("version_up_on_content_change");
+        assertNotNull(emitter.captured.digest(),
+                "the digest this pass computed and matched against the recorded one was thrown "
+                        + "away; the pass then reads as having done nothing");
+        assertEquals("input-matched-recorded",
+                IngestLineageEmitter.digestSubjectValue(emitter.captured));
     }
 
     /** Drives a real re-import of an already-imported document whose recorded hash matches. */

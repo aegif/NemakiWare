@@ -1204,13 +1204,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * together — the same comparison decides both.
      */
     record ContentComparison(boolean contentChanged, String hashToRecord, String versionLabel,
-                             boolean matchedRecordedHash) {
+                             boolean matchedRecordedHash, String comparedDigest) {
     }
 
     static ContentComparison compareContent(String computedHash, String existingHash) {
         if (computedHash == null) {
             // No content stream provided — a metadata-only update, not a version-up.
-            return new ContentComparison(false, null, "metadata-only (no content provided)", false);
+            return new ContentComparison(false, null, "metadata-only (no content provided)",
+                    false, null);
         }
         if (computedHash.equals(existingHash)) {
             // The equality is with a MUTABLE aspect property, not with the stored bytes. Carrying
@@ -1223,9 +1224,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // pass that had fetched them, hashed them and found the digest equal. Weaker than
             // fixity, stronger than nothing, and it is the only fixity-adjacent evidence this
             // path ever produces (external review, P1-1(d) D2).
-            return new ContentComparison(false, null, "metadata-only (content unchanged)", true);
+            return new ContentComparison(false, null, "metadata-only (content unchanged)",
+                    true, computedHash);
         }
-        return new ContentComparison(true, computedHash, null, false);
+        return new ContentComparison(true, computedHash, null, false, computedHash);
     }
 
     /**
@@ -1255,15 +1257,26 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     IngestLineageEmitter.CapturedContent describeCapturedContent(
             String repositoryId, String objectId, String computedHash,
             ContentComparison comparison) {
-        if (computedHash == null && comparison != null && comparison.matchedRecordedHash()) {
-            // The unchanged-content branch: no digest is recorded (the stored one is mutable and
-            // may be stale), but saying nothing at all understated what this pass did.
-            return IngestLineageEmitter.CapturedContent.unknown(
-                    "this import fetched the content and its digest equalled the one already "
+        IngestLineageEmitter.CapturedContent observed =
+                describeStoredState(repositoryId, objectId, computedHash);
+        if (comparison != null && comparison.matchedRecordedHash()
+                && observed.digest() == null) {
+            // Augment, do NOT short-circuit. An earlier version returned early here and turned an
+            // observed "no content" into an inferred "undetermined" — trading evidence for a
+            // claim, which is the opposite of the point (external review). The state stays
+            // whatever the read-back found; only the digest and its subject are added.
+            return observed.withMatchedInputDigest(comparison.comparedDigest(),
+                    "This import fetched the content and its digest equalled the one already "
                             + "recorded for this object, so nothing was re-stored. That is a "
                             + "comparison against a recorded digest, not against the stored "
-                            + "bytes, so whether those bytes are still held is undetermined");
+                            + "bytes.");
         }
+        return observed;
+    }
+
+    /** The read-back half, unchanged: what the repository can be seen to hold. */
+    private IngestLineageEmitter.CapturedContent describeStoredState(
+            String repositoryId, String objectId, String computedHash) {
         if (computedHash != null) {
             // This import supplied and hashed the bytes it stored — the strongest case, and no
             // read-back is needed to know it.

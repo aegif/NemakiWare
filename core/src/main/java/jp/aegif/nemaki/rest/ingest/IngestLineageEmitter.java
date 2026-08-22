@@ -195,9 +195,22 @@ public class IngestLineageEmitter {
             return new CapturedContent(ContentState.STORED, digest, null, DigestSubject.INPUT);
         }
 
-        /** As {@link #hashed}, plus: this digest equalled the one already recorded. */
-        public static CapturedContent hashedMatchingRecorded(String digest) {
-            return new CapturedContent(ContentState.STORED, digest, null,
+        /**
+         * Adds "and its digest equalled the one already recorded" to whatever was observed.
+         *
+         * <p>Deliberately NOT a {@code hashed(...)} sibling. On the branch that reaches this,
+         * nothing was stored by this pass, so claiming {@code STORED} would be an inference; the
+         * observed state — read back, possibly {@code NONE}, possibly {@code UNKNOWN} — is kept
+         * exactly as it was and only the digest and its subject are added. An earlier attempt
+         * short-circuited the read-back entirely and turned an observed "no content" into an
+         * inferred "undetermined", which traded evidence for a claim (external review).
+         */
+        public CapturedContent withMatchedInputDigest(String digest, String note) {
+            if (digest == null || digest.isBlank()) {
+                return this;
+            }
+            String combined = reason == null ? note : reason + " " + note;
+            return new CapturedContent(state, digest, combined,
                     DigestSubject.INPUT_MATCHED_RECORDED);
         }
 
@@ -237,18 +250,22 @@ public class IngestLineageEmitter {
     /**
      * The v1 keys present in this snapshot whose values nothing verified.
      *
-     * <p>In the table's own declaration order rather than the snapshot's, so two events listing
-     * the same facts produce the same string and a reader diffing them sees only real changes.
+     * <p>Sorted, not in declaration order. The point of putting this on the event is that it
+     * stays legible when the enum has changed; ordering by the enum would make a future
+     * reordering silently rewrite the string on every event and show diffs that are not changes
+     * (external review).
      */
     static String assertedKeysIn(java.util.Map<String, String> v1Snapshot) {
-        StringBuilder sb = new StringBuilder();
+        java.util.SortedSet<String> keys = new java.util.TreeSet<>();
         for (CaptureEvidenceField field : CaptureEvidenceField.values()) {
             if (field.assurance() != CaptureEvidenceField.Assurance.ASSERTED) continue;
-            if (!v1Snapshot.containsKey(field.v1Key())) continue;
-            if (sb.length() > 0) sb.append(',');
-            sb.append(field.v1Key());
+            String value = v1Snapshot.get(field.v1Key());
+            // Blank counts as absent, as it does everywhere else that reads this map. Naming a
+            // key whose value is empty would report a claim the caller never made.
+            if (value == null || value.isBlank()) continue;
+            keys.add(field.v1Key());
         }
-        return sb.toString();
+        return String.join(",", keys);
     }
 
     /** Test hook: the retained state is otherwise unobservable, so it cannot be asserted on. */
@@ -313,10 +330,11 @@ public class IngestLineageEmitter {
             // as a digest of the stored bytes, which nothing here checked (P1-1(d) R3).
             putIfPresent(attributes, CaptureEvidenceField.CONTENT_HASH_SUBJECT,
                     digestSubjectValue(captured));
-        } else {
-            putIfPresent(attributes, CaptureEvidenceField.CONTENT_HASH_UNAVAILABLE,
-                    captured.reason());
         }
+        // Outside the else, not inside it. A digest and an undetermined content state can now
+        // occur together — the matched-digest case has both — and putting the reason in the else
+        // dropped it exactly there (external review).
+        putIfPresent(attributes, CaptureEvidenceField.CONTENT_HASH_UNAVAILABLE, captured.reason());
         return LineageEndpoint.document(repositoryId, objectId, attributes);
     }
 
@@ -399,7 +417,8 @@ public class IngestLineageEmitter {
             v1Snapshot.put(CaptureEvidenceField.CONTENT_HASH_ALGORITHM.v1Key(), "SHA-256");
             v1Snapshot.put(CaptureEvidenceField.CONTENT_HASH_SUBJECT.v1Key(),
                     digestSubjectValue(captured));
-        } else if (captured.reason() != null) {
+        }
+        if (captured.reason() != null) {
             v1Snapshot.put(CaptureEvidenceField.CONTENT_HASH_UNAVAILABLE.v1Key(),
                     captured.reason());
         }

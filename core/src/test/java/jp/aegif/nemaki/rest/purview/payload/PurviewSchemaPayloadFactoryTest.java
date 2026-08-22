@@ -255,9 +255,13 @@ public class PurviewSchemaPayloadFactoryTest {
         // absent. Declared here because EndpointKindSchemaAlignmentTest requires every allowed
         // endpoint attribute to exist on the type, and because an attribute the type lacks is
         // dropped on arrival rather than rejected.
-        assertEquals(26, docAttrs.size(), docAttrs.toString());
+        // + 1 for P1-1(d) R3: contentHashSubject, WHAT the digest is of. A digest beside
+        // contentStored=true reads as a claim about the stored bytes, and nothing reads those
+        // back — the subject is what keeps the two apart.
+        assertEquals(27, docAttrs.size(), docAttrs.toString());
         assertTrue(docAttrs.containsAll(
-                List.of("contentStored", "contentHashAlgorithm", "contentStateReason")));
+                List.of("contentStored", "contentHashAlgorithm", "contentStateReason",
+                        "contentHashSubject")));
         assertTrue(docAttrs.containsAll(
                 List.of("folderPathOriginalSha256", "versionLabelOriginalSha256")));
         assertTrue(docAttrs.containsAll(List.of("mimeType", "contentLength",

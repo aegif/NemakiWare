@@ -64,11 +64,18 @@ public enum CaptureEvidenceField {
 
     SOURCE_OBJECT_TYPE("sourceObjectType", V2Home.inputAttribute("sourceObjectType"), Assurance.ASSERTED),
 
+    /**
+     * ASSERTED, not APPLIED, because three paths disagree and the weakest wins: a request may
+     * supply {@code targetFolderOverride} (a caller's claim), a profile may supply an id or a
+     * path (configuration), and only on a fresh create is this the folder the document was
+     * actually put in. On every update path nothing writes a folder at all — the document stays
+     * wherever it already was (external review).
+     */
     TARGET_FOLDER_ID("targetFolderId", V2Home.none(
             "delivered today as nemaki_import_process.folderId, a REQUIRED Process attribute fed "
                     + "from the v1 snapshot. LineageProcessShape binds ingest to exactly one "
                     + "external asset and one document, so it cannot become an endpoint — see "
-                    + "p1-1b-v2-evidence-home.md section 3.4"), Assurance.APPLIED),
+                    + "p1-1b-v2-evidence-home.md section 3.4"), Assurance.ASSERTED),
 
     // ── What the repository now holds ────────────────────────────────────────────────────
 
@@ -77,7 +84,13 @@ public enum CaptureEvidenceField {
      * check-in with no stream carries the previous version's content forward, and that is
      * {@code unknown}, not {@code false}.
      */
-    CONTENT_STORED("contentStored", V2Home.outputAttribute("contentStored"), Assurance.OBSERVED),
+    /**
+     * APPLIED, not OBSERVED. On the ordinary capture path this is inferred from
+     * {@code createDocument}/{@code checkIn} returning, with no read-back — the javadoc on
+     * {@code describeStoredState} says so in as many words. Only the branches that could not
+     * take that shortcut actually look (external review).
+     */
+    CONTENT_STORED("contentStored", V2Home.outputAttribute("contentStored"), Assurance.APPLIED),
 
     CONTENT_HASH("contentHash", V2Home.outputAttribute("contentHash"), Assurance.OBSERVED),
 
@@ -98,6 +111,11 @@ public enum CaptureEvidenceField {
 
     // ── Who ──────────────────────────────────────────────────────────────────────────────
 
+    /**
+     * OBSERVED covers the absence too. For a delegated or unauthenticated run the value is an
+     * explicit "unknown:" / "service:" string — what we observed is that there was no
+     * authenticated principal, and saying so is an observation, not a claim about who ran it.
+     */
     EXECUTED_BY("executedBy", V2Home.none(
             "a field on LineageEventV2 would not be covered by creationPayloadDigest, so the "
                     + "actor could be edited without detection. Moving it into the digest changes "
@@ -124,7 +142,7 @@ public enum CaptureEvidenceField {
                     + "document are named by the original capture event too, so an endpoint "
                     + "attribute would attach a per-run outcome to a thing that outlives the run. "
                     + "Its v2 home is a Process attribute, and Process attribute supply is the "
-                    + "open prerequisite of the v2 write flip (p1-1b-v2-evidence-home.md §3.4)"), Assurance.APPLIED),
+                    + "open prerequisite of the v2 write flip (p1-1b-v2-evidence-home.md §3.4)"), Assurance.OBSERVED),
 
     /** Evidence keys this pass wrote because the object did not have them. */
     REIMPORT_FILLED("reimportFilled", V2Home.none(
@@ -136,7 +154,7 @@ public enum CaptureEvidenceField {
     REIMPORT_REFUSED("reimportRefused", V2Home.none(
             "a per-pass list, as reimportFilled. Recorded because a refusal is the more "
                     + "interesting half: it means the caller believes something different about "
-                    + "this record than what was captured (p1-1b-v2-evidence-home.md §3.4)"), Assurance.APPLIED),
+                    + "this record than what was captured (p1-1b-v2-evidence-home.md §3.4)"), Assurance.OBSERVED),
 
     /**
      * Which of THIS event's facts are unverified claims (P1-1(d) R2).
@@ -161,7 +179,7 @@ public enum CaptureEvidenceField {
                     + "endpoint, so an endpoint attribute would attach it to the asset or the "
                     + "document instead of to the record. Its v2 home is a Process attribute, "
                     + "which waits on Process attribute supply (p1-1b-v2-evidence-home.md §3.4)"),
-            Assurance.APPLIED),
+            Assurance.OBSERVED),
 
     // ── The conversation ─────────────────────────────────────────────────────────────────
 
@@ -238,6 +256,18 @@ public enum CaptureEvidenceField {
      * <p>Declared here, beside the v1 key and the v2 home, because this is the one place a
      * maintainer adding a fact has to look. A convention on names would be broken by the next
      * person to add one.
+     *
+     * <h2>One label, several paths: take the weakest</h2>
+     *
+     * <p>Some facts are justified differently depending on which branch ran —
+     * {@code contentStored} is read back on one path and inferred from a successful write on
+     * another; {@code targetFolderId} comes from the request on one path, from the profile on a
+     * second, and is the folder a document was actually created in on a third. A single static
+     * label cannot be true for all of them, so <b>the label is the weakest justification any
+     * path uses</b>, ordered
+     * {@code ASSERTED &lt; CONFIGURED &lt; APPLIED &lt; OBSERVED}, and the field's own javadoc
+     * names the paths that differ. Claiming less than is true is the safe direction; the
+     * opposite is what this whole increment exists to stop (external review).
      */
     public enum Assurance {
         /**

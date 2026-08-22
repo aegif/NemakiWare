@@ -83,12 +83,16 @@ class EventStatesItsUnverifiedClaimsTest {
         // The counterweight. Marking everything ASSERTED would pass the test above and make the
         // list useless, so pin the other side too.
         assertEquals(Assurance.OBSERVED, CaptureEvidenceField.CONTENT_HASH.assurance());
-        assertEquals(Assurance.OBSERVED, CaptureEvidenceField.CONTENT_STORED.assurance());
         assertEquals(Assurance.OBSERVED, CaptureEvidenceField.CONTENT_HASH_SUBJECT.assurance());
-        assertEquals(Assurance.APPLIED, CaptureEvidenceField.TARGET_FOLDER_ID.assurance());
+        assertEquals(Assurance.APPLIED, CaptureEvidenceField.REIMPORT_FILLED.assurance());
         // The connector's own configuration is a claim too, but by a different party at a
         // different time, so it is kept apart rather than folded into ASSERTED.
         assertEquals(Assurance.CONFIGURED, CaptureEvidenceField.SOURCE_SYSTEM.assurance());
+        // And the two the review corrected: contentStored is INFERRED from a successful write on
+        // the ordinary path rather than read back, and targetFolderId can come straight from the
+        // request. Both take the weakest justification any of their paths uses.
+        assertEquals(Assurance.APPLIED, CaptureEvidenceField.CONTENT_STORED.assurance());
+        assertEquals(Assurance.ASSERTED, CaptureEvidenceField.TARGET_FOLDER_ID.assurance());
     }
 
     @Test
@@ -112,7 +116,7 @@ class EventStatesItsUnverifiedClaimsTest {
     }
 
     @Test
-    @DisplayName("the order is the table's, so two events are diffable")
+    @DisplayName("the order does not depend on the build, so two events are diffable")
     void theOrderIsStable() {
         Map<String, String> a = new LinkedHashMap<>();
         a.put("chat.channelId", "C1");
@@ -125,15 +129,78 @@ class EventStatesItsUnverifiedClaimsTest {
                 IngestLineageEmitter.assertedKeysIn(b),
                 "the same facts produced different strings depending on insertion order, so "
                         + "diffing two events shows changes that did not happen");
+        assertEquals("chat.channelId,chat.workspaceId", IngestLineageEmitter.assertedKeysIn(a),
+                "the order follows the enum's declaration, so reordering the table would rewrite "
+                        + "the string on every future event");
     }
 
     @Test
-    @DisplayName("an event with no unverified claims carries no list")
-    void nothingAssertedMeansNoKey() {
-        // An empty string would read as "we checked, and the answer is nothing", which is true,
-        // but it would also put the key on every content-only event for no benefit.
+    @DisplayName("a snapshot with no unverified claims yields an empty list")
+    void nothingAssertedYieldsEmpty() {
+        // A helper-level contract, and said so deliberately: a REAL ingest event always names at
+        // least sourceObjectId, so production never takes this branch today. It is pinned
+        // because the emitter's "omit the key when empty" guard depends on it, and because an
+        // absent key must not later come to mean "this build had no assurance data".
         Map<String, String> snapshot = new LinkedHashMap<>();
         snapshot.put("contentHash", "a".repeat(64));
         assertEquals("", IngestLineageEmitter.assertedKeysIn(snapshot));
+    }
+
+    @Test
+    @DisplayName("a blank value is not named as a claim")
+    void blankIsNotAClaim() {
+        // The rest of the snapshot machinery treats blank as absent; naming a blank key here
+        // would report a claim the caller never made (external review).
+        Map<String, String> snapshot = new LinkedHashMap<>();
+        snapshot.put("chat.channelId", "  ");
+        snapshot.put("chat.workspaceId", "W1");
+        assertEquals("chat.workspaceId", IngestLineageEmitter.assertedKeysIn(snapshot));
+    }
+
+    @Test
+    @DisplayName("a REAL snapshot carries the list, and names the facts the caller supplied")
+    void aRealSnapshotCarriesIt() {
+        // The tests above exercise the helper. This one drives buildV1Snapshot, because a helper
+        // that is correct and never called is the failure mode this repository has hit before
+        // (external review).
+        Map<String, String> snapshot = realSnapshot();
+
+        String asserted = snapshot.get("assuranceAsserted");
+        assertTrue(asserted != null, "a real event carried no assurance list at all: " + snapshot);
+        assertTrue(asserted.contains("chat.channelId"), asserted);
+        assertTrue(asserted.contains("sourceObjectId"), asserted);
+        assertFalse(asserted.contains("contentHash"), asserted);
+        assertFalse(asserted.contains("sourceSystem"), asserted);
+    }
+
+    @Test
+    @DisplayName("a REAL snapshot's digest says it is of the input")
+    void aRealSnapshotNamesTheDigestSubject() {
+        Map<String, String> snapshot = realSnapshot();
+
+        assertEquals("a".repeat(64), snapshot.get("contentHash"));
+        assertEquals("input", snapshot.get("contentHashSubject"),
+                "the digest went out without saying what it is of: " + snapshot);
+    }
+
+    /** A snapshot from the real builder, with a request that supplies chat facts and a digest. */
+    private static Map<String, String> realSnapshot() {
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setSourceSystem("acme");
+        connector.setSourceArchetype(SourceArchetype.CHAT_CONTEXT);
+
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setRepositoryId("bedroom");
+        request.setConnectorId("c1");
+        request.setSourceObjectId("1720000000.000200");
+        request.setSourceObjectType("message");
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("channelId", "C123");
+        metadata.put("participants", "otsuka,ishii");
+        request.setMetadata(metadata);
+
+        return new IngestLineageEmitter().buildV1Snapshot(connector, request, "folder-1",
+                IngestLineageEmitter.CapturedContent.hashed("a".repeat(64)), "admin", null);
     }
 }

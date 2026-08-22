@@ -75,7 +75,7 @@ class DigestNamesItsSubjectTest {
         assertEquals("input",
                 IngestLineageEmitter.digestSubjectValue(CapturedContent.hashed("a".repeat(64))));
         assertEquals("input-matched-recorded", IngestLineageEmitter.digestSubjectValue(
-                CapturedContent.hashedMatchingRecorded("a".repeat(64))));
+                CapturedContent.none().withMatchedInputDigest("a".repeat(64), "matched")));
         assertEquals("input", IngestLineageEmitter.digestSubjectValue(
                 new CapturedContent(CapturedContent.ContentState.STORED, "a".repeat(64), null, null)),
                 "a CapturedContent built without a subject emitted no subject at all");
@@ -111,12 +111,17 @@ class DigestNamesItsSubjectTest {
         CapturedContent described = service.describeCapturedContent("bedroom", "obj-1", null,
                 CanonicalImportServiceImpl.compareContent("a".repeat(64), "a".repeat(64)));
 
+        // The read-back still happens and still decides the state — the matched digest is added
+        // to whatever it found, not substituted for it. With no ContentService wired the read
+        // fails, so UNKNOWN is what the read-back legitimately reports here.
         assertEquals(CapturedContent.ContentState.UNKNOWN, described.state(),
                 "the content state is genuinely undetermined here — nothing read the bytes back");
+        assertEquals("a".repeat(64), described.digest(),
+                "the digest this pass computed and matched was thrown away again");
+        assertEquals("input-matched-recorded",
+                IngestLineageEmitter.digestSubjectValue(described));
         assertTrue(described.reason().contains("digest equalled the one already recorded"),
-                "the reason still describes a pass that did nothing: " + described.reason());
-        assertFalse(described.reason().contains("neither supplied those bytes nor verified"),
-                "the old wording survived, and it is false on this branch: " + described.reason());
+                "the reason does not say what this pass actually did: " + described.reason());
     }
 
     @Test
