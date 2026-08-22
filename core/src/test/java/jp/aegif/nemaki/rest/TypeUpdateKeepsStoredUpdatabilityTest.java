@@ -42,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -145,6 +146,10 @@ class TypeUpdateKeepsStoredUpdatabilityTest {
         Response response = resource.update(REPO, TYPE_ID, payload(null), adminRequest());
 
         assertEquals(200, response.getStatus(), "the update itself should still succeed");
+        // Without this the test is vacuously green: if a future change made the parser see the
+        // property as existing, the loop body would never run and `stored` would be untouched
+        // for the wrong reason (external review).
+        verify(typeService).updatePropertyDefinitionDetail(REPO, stored);
         assertNotNull(stored.getUpdatability(),
                 "the stored updatability was erased by an update that never mentioned it");
         assertEquals(Updatability.READONLY, stored.getUpdatability(),

@@ -1,9 +1,11 @@
 # P1-1(d) — 事実が確定する時点 (モデル本体)
 
-> **この文書の範囲は棚卸し §7 の 1 番目だけ。** 空コンテンツ / version ごとの hash /
-> メタデータ hash / 「どの型が証拠か」 / PII / 会話の範囲 / aspect 付与の位置 は、
-> **ここが決まってからでないと決められない**ので、この文書には書かない。
+> **この文書の範囲は棚卸し §7 の 1 番目と 2 番目。** 「どの型が証拠か」 / PII / 会話の範囲 /
+> aspect 付与の位置 は、**ここが決まってからでないと決められない**ので書かない。
 > 分類は [`p1-1d-scope-inventory.md`](p1-1d-scope-inventory.md)。
+>
+> **初稿は空コンテンツと version ごとの hash を「閉じた」と書いたが、どちらも早かった**
+> (§3 D3・D5、外部レビュー)。棚卸しへ差し戻してある。
 
 ---
 
@@ -27,20 +29,48 @@
 | # | 起こること | 位置 |
 |---|---|---|
 | 1 | 外部からバイト列を取得し `computeContentHash(contentBytes)` | `:1877` |
-| 2 | `createDocument` / `checkOut`+`checkIn` | `:2095` / `:2041` |
+| 2 | `createDocument` / `checkOut`+`checkIn` | `:2095` / `:2069`・`:2075` (既定は `version_up_on_content_change`。`:2041` は `always_version_up` 分岐) |
 | 3 | `applySourceMetadata` — `nemaki:contentHash` ほかを aspect に書く | `:2105` |
 | 4 | `applyRelationship` | `:2113` |
 | 5 | 名前を読み戻し **`emitLineageEvent`** | `:2132` |
 
 そのあと **`execute()` が返ってから**、wrapper (`executeChatContextImportInternal`) が:
 
-| # | 起こること | 位置 |
-|---|---|---|
-| 6 | `applyArchetypeMetadata` — `nemaki:chatWorkspaceId` 〜 `nemaki:chatEvidenceScope` の 8 個 | `:822` |
-| 7 | `applyChatCapturedAt` | `:843` |
-| 8 | `applyCaptureWindow` — `chatCaptureWindowStart/End` | `:846` |
+| # | 起こること | 個数 | 位置 |
+|---|---|---|---|
+| 6 | `applyArchetypeMetadata` — `chatWorkspaceId` / `chatChannelId` / `chatChannelName` / `chatThreadId` / `chatMessageId` / `chatParticipants` / `chatSelectionReason` / `chatEvidenceScope` | **8** | `:812-822` |
+| 7 | `applyChatCapturedAt` — `chatCapturedAt` (刻印は `:1094-1096`) | **1** | `:843` |
+| 8 | `applyCaptureWindow` — `chatCaptureWindowStart` / `chatCaptureWindowEnd` | **2** | `:846` |
 
-**来歴イベントは 5 で出る。証拠プロパティ 11 個のうち 10 個は 6〜8 で書かれる。**
+8 + 1 + 2 = **11**。`Patch_ChatContextEvidenceReadOnly.EVIDENCE_PROPERTIES` と同じ 11 で、
+**証拠プロパティは 11 個とも 6〜8 で書かれる**。
+
+> 初稿は「11 個のうち 10 個」と書いていた。**検算していない数** — `chatFields` 配列は 8 で、
+> そこへ `capturedAt` と window 2 個が足されるだけである。(c) の受入条件に流れた「10」と
+> 同じ種類の誤りなので、数は**製品の配列から取る** (外部レビュー)。
+>
+> `nemaki:contentHash` は `nemaki:externalIntegration` 側の別 aspect で、この 11 の
+> 内数ではない。書かれるのは 3 (emit の前) である。
+
+### 1.1 装飾のある入口とない入口
+
+**この非対称は chat 固有ではない。** 公開の入口は 5 つあり、うち 4 つが
+`execute()` の後も書き続ける:
+
+| 入口 | `execute()` の後に書くか | 後から書かれるもの |
+|---|---|---|
+| `executeChatContextImport` `:766` | **書く** | `nemaki:chatContextMetadata` (11。**(c) で READONLY**) |
+| `executeMailImport` `:196` | **書く** | `applyMessageMetadata` `:314`、生 .eml、添付とその関係 |
+| `executeNoteImport` `:439` | **書く** | `applyNoteMetadata` `:509`、添付 `:664` |
+| `executeBusinessRecordImport` `:690` | **書く** | `applyArchetypeMetadata` `:740` |
+| `execute(callContext, request)` `:1714` | **書かない** | — (装飾なし。emit は既に最後) |
+
+4 つとも `withCaptureOutcome(...Internal(...), captureScope)` の形で、
+「wrapper が root scope を持つ」ことがコメントに明記されている
+([`:197-201`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java#L197))。
+
+**したがって順序問題は chat だけの話ではない。** ただし (c) が READONLY にしたのは chat の 11 だけ
+なので、**「証拠として保護されている値が emit の後に書かれる」のは今は chat** である。
 
 ---
 
@@ -51,78 +81,167 @@
 
 | 種別 | 何か | 確定するのは | 例 |
 |---|---|---|---|
-| **観測** | 外の世界を見て得た | **見た瞬間**。あとから確かめ直せない | 取得したバイト列とその digest、`sourceObjectId`、`chatChannelId`、`participants` |
-| **決定** | この取込が選んだ | **決めた瞬間**。実行前から決まっている場合もある | `targetFolderId`、`importMode`、`captureWindowStart/End`、`selectionReason`、`evidenceScope` |
+| **観測** | 外の世界を見て得た | **見た瞬間**。あとから確かめ直せない | 取得したバイト列とその digest、`sourceObjectId` |
+| **決定** | この取込が選んだ | **決めた瞬間**。実行前から決まっている場合もある | `targetFolderId`、`importMode`、`selectionReason`、`evidenceScope`、**各種 skip** |
 | **結果** | 書いた結果そうなった | **書き込みが成功した瞬間**。読み戻さないと分からない | `objectId`、version、保管されたコンテンツの有無 |
 
 **この 3 つは失敗の仕方が違う。** 観測は「もう確かめられない」、決定は「後から書き換えられる」、
 結果は「本当にそうなったか読まないと分からない」。同じ `attributes` map に混ぜている限り、
 読む側はどれがどれか分からない。
 
+> **3 分類に収まらないものが 2 つある** (外部レビュー)。どちらも「主張」であって観測ではない:
+>
+> - **呼び出し側が申告した値** — `chatChannelId` / `participants` / `captureWindowStart/End` は
+>   `request.getMetadata()` から来る。**製品はこれを検証しない**。window は未来でもよいし、
+>   対象メッセージを含まなくてもよい (`Instant.parse` するだけ `:862`/`:867`)。
+>   我々が観測したのは「呼び出し側がこう言った」であって、会話の事実ではない
+> - **各種 skip** — 0 バイト `:1860` / 擬似ファイル `:1874` / dedupe `:1959` /
+>   idempotency `:1919` / `files_only` `:624`。「観測に基づいて保管しないと決めた」という
+>   **決定**だが、**イベントが出ない** (§3 D6)
+
 ---
 
 ## 3. ずれの棚卸し
 
-### D1 — 証拠の大半は、それを証するイベントより **後** に書かれる
+### D1 — イベントは「要求された値」を主張し、object は「実際に載った値」を持つ
 
-§1 の 5 と 6〜8。イベントは object を名指すが、`chatChannelId` も `capturedAt` も
-`captureWindowStart/End` も**その時点では存在しない**。
+**初稿は「emit 時点で証拠は存在しない」と書いた。誤りだった** (外部レビュー)。
+`IngestLineageEmitter.buildV1Snapshot` は 11 個のうち **10 個** を emit 時点で v1 snapshot に
+書いている ([`:319-334`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestLineageEmitter.java#L319))。
+読み元は `request.getMetadata()` で、**wrapper が読むのと同じ map・同じキー**である。
+emit 時点で本当に存在しないのは `chatCapturedAt` **1 個だけ**。
 
-現状の記述はこれを認めている ([`:838-841`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java#L838))
-が、続けて「**刻印を emit より前に動かす**」を対処として挙げている。
-**これは (b) §8 で撤回済み** — 刻印先の aspect を作るのは `execute()` が返った後の
-wrapper なので、前倒しは空振りする。**このコメントは現在の設計と矛盾しているので直す。**
+**実際のずれはこれである**:
 
-(a) の outbox は「途中で落ちた」を `UNRESOLVED` として拾う。**拾わないのは、
-6〜8 が全部成功したがイベントの中身が 5 時点のものである、という通常経路**である。
+| | イベントが言っていること | object が持っていること |
+|---|---|---|
+| 出所 | `request.getMetadata()` — **要求された値** | `mergeAspect` が書けた値 — **実際に載った値** |
+| ずれる契機 | — | `applyArchetypeMetadata` の失敗は**自分で catch して文字列を返す** ([`IngestMetadataService:156-159`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestMetadataService.java#L156))。wrapper は `:824` でそれを warning に足して**成功を返す** |
+
+**CouchDB の一過性障害 1 回で、「イベントは `chat.channelId` を主張、document に aspect は無い」
+が成立する。** 更に、archetype が null の connector を DLQ から再実行すると素の `execute()` に
+落ちる ([`IngestDlqController:214`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java#L214))
+ので、chat aspect は**一度も付かない**のにイベントは chat の事実を全部載せる。
+
+> **これは順序の問題ではなく、主張の強さの問題である。** イベントは「こう要求された」しか
+> 知らないのに、読む側には「こう記録された」と読める。§4 R2・R6 がここに効く。
+
+### D6 — 再取込が証拠を上書きし、**イベントは 1 件も出ない** (最大の穴)
+
+「事実がいつ確定するか」の答えは、現在この 10 個について「**最後に誰かが再取込した時**」
+であり、**その時刻はどこにも無い**。
+
+1. `skip_if_same_version` は emit (`:2132`) より前の [`:1959`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java#L1959) で return する。
+   idempotency skip (`:1919`/`:1924`/`:1929`) も同じ。**したがって来歴イベントは出ない**
+2. ところが chat wrapper は「dedupe skip かつ objectId 有り」のとき**意図的に落ちてくる**
+   ([`:797-804`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java#L797))
+3. `applyArchetypeMetadata` (`:822`) と capture-window 書込 (`:850-877`) が走り、
+   `mergeAspect` は既存値を**上書きする** ([`IngestMetadataService:147-153`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestMetadataService.java#L147))
+
+**同じ `sourceObjectId` で 2 度目を投げるだけで、chat 証拠 8 個と window 2 個が黙って
+書き換わる。** (c) は CMIS 経由を READONLY で塞いだが、**取込は `injectPropertyValue` を
+意図的に迂回する**ので効かない。
+
+`applyChatCapturedAt` だけは `createdObject` ガード (`:1041`) と `containsKey` ガード (`:1083`)
+で守られている。**11 個のうち 1 個だけが守られている**、という状態である。
+
+> 落ちてくる設計自体は理由がある — 前回失敗した添付の再試行がここに乗っている。
+> **止めるべきは「書き換え」であって「再試行」ではない。**
 
 ### D2 — `contentHash` は「取得したバイト列」の digest であって「保管された記録」の digest ではない
 
-`computeContentHash` は fetch 直後のバイト列に対して走る ([`:1877`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java#L1877))。
+`computeContentHash` は fetch 直後のバイト列に対して走り ([`:1877`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java#L1877))、
+**その同じ配列**が `:1878-1879` で `ContentStreamImpl` に渡る。
 `describeCapturedContent` は `computedHash != null` なら**読み戻さずに** `hashed(...)` を返す
-([`:971-975`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java#L971))
-— javadoc は「この取込が供給しハッシュしたバイト列を保管した」と書いている。
+([`:969-975`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java#L969))
+— 行内コメントは「この取込が供給しハッシュしたバイト列を保管した」と書いている。
 
 `createDocument` が成功を返したことは、**リポジトリがストリームを受理した**ことは示すが、
-**保管されたバイト列が取得したバイト列と一致する**ことは示さない。現状の文言はその差を
-またいでいる。`CapturedContent` は既に STORED / NONE / UNKNOWN を honest に分けている
-([`:960-1018`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java#L960))
-ので、**足りないのは digest が「何のバイト列の digest か」を名乗ること**だけである。
+**保管されたバイト列が取得したバイト列と一致する**ことは示さない。
 
-> 読み戻して digest を取り直すのは **fixity (P1-2)** の仕事で、そのコスト予算は別にある。
-> (d) が決めるのは**名乗り**であって、検証を足すことではない。
+`CapturedContent` は既に STORED / NONE / UNKNOWN を honest に分けており、
+`CaptureEvidenceField` に主語を名乗るフィールドは**無い** (あるのは
+`CONTENT_HASH_ALGORITHM` = アルゴリズム名と `CONTENT_STORED` = 三値だけ)。
+**足りないのは digest が「何のバイト列の digest か」を名乗ること**である。
 
-### D3 — version ごとの hash は既に成立している (要点は「消さない」側だった)
+> **1 箇所だけ、名乗りを下げすぎている経路がある** (外部レビュー)。
+> `compareContent` は「今取ってきたバイト列の digest が記録済み digest と一致した」を
+> 確認した上で `hashToRecord = null` を返す ([`:945-950`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java#L945))。
+> すると `describeCapturedContent` は読み戻し経路に落ち、
+> 「supplied もしていないし verify もしていない」と言う。**この分岐に限ってその文は偽で、
+> 実際には供給もハッシュも一致確認もしている。** 唯一持っている fixity の事実を捨てている。
 
-確かめた: version-up 経路は `objectId = checkinHolder.getValue()`
-([`:2079`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java#L2079))
-で**新しい version の id** を掴み、`applySourceMetadata` はその version に書く。
-aspect は document ごとなので、**古い version は自分の hash を保持する**。
+### D3 — version ごとの hash — **結論は今のところ真だが、理由が偽だった。閉じない**
 
-`compareContent` は「内容が変わっていない」とき `hashToRecord = null` を返し
-([`:940-953`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java#L940))、
-書き込み側は null/空を**書かない** ([`:2387`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java#L2387))
-ので既存値が残る。**ここは正しい。**
+初稿は「aspect は document ごとなので古い version は自分の hash を保持する」と書いた。
+**aspect は document ごとではない。参照で共有されている** (外部レビュー):
 
-残るのは「hash を持たない version が在る」場合で、それは `CapturedContent.unknown(...)` に
-理由つきで出る。**モデルとして足すものは無い。棚卸し §3 の「version ごとの hash」は
-ここで閉じる。**
+`buildCopyDocument` は [`ContentServiceImpl:1970`](../../core/src/main/java/jp/aegif/nemaki/businesslogic/impl/ContentServiceImpl.java#L1970)
+で `copy.setAspects(original.getAspects())` — **同じ List、同じ `Aspect` オブジェクト**を渡す。
+これを通るのは `checkOut` (`:1620`)、`checkIn` (`:1786`)、`copy` (`:1271`/`:1370`)、
+そして **`updateWithoutCheckInOut` (`:1876`)** である。
 
-### D4 — `chatCapturedAt` は「取込が走った時刻」であって「会話が起きた時刻」ではない
+既定の取込経路で結論が救われているのは、`checkIn` 内部の `cancelCheckOut` が
+`getAllVersions` (非キャッシュ) で全 version を読み直して両方のキャッシュ実体を差し替える
+**副作用**による。`applySourceMetadata` の aspect 書込 (`:2410`) はその後に走るので、いまは当たらない。
 
-サーバクロックから押される ([`:829`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java#L829))。
-名前は「captured at」なので**取込の時刻で正しい**が、`captureWindowStart/End` が
-会話側の時間軸を指すので、**同じ aspect の中に 2 つの時間軸が名前で区別されずに並んでいる**。
+**その保険が無い経路が実在する**: `updateWithoutCheckInOut` は `cancelCheckOut` を通らず、
+呼び元は `rest/BulkCheckInResource.java:420`。
 
-これは §2 の「観測」と「決定」が混ざっている実例である。
+**したがって「モデルとして足すものは無い」は成立しない。** 必要なのは invariant である —
+**証拠 aspect は version 間で参照共有してはならない**。棚卸しへ差し戻す。
 
-### D5 — 空コンテンツは digest としては閉じている
+### D4 — 時間軸は 2 本ではなく 4 本
 
-`computeContentHash` は 0 バイトにも正当な digest を返す
-([`:1249-1256`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java#L1249))。
-`CapturedContent.none()` は「attachment が無い」に対してだけ使われる。
-**「空を保管した」と「何も保管していない」は既に別物として出る。**
-棚卸し §3 の「空コンテンツ」も**ここで閉じる**。
+| 時刻 | 出所 | 種別 |
+|---|---|---|
+| `occurredAt` | emit 時の `Instant.now()` ([`IngestLineageEmitter:93`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestLineageEmitter.java#L93)) | 記載 |
+| `intentOpenedAtMs` | request 入口の `System.currentTimeMillis()` (`:1660`) | 記載 |
+| `nemaki:chatCapturedAt` | サーバクロック (`:1094-1096`) | 観測 (取込の時刻) |
+| `nemaki:externalContextUpdatedAt` | `new GregorianCalendar()` (`:2376`) | 記載 |
+| `chatCaptureWindowStart/End` | **呼び出し側の文字列**。`Instant.parse` するだけ (`:862`/`:867`) | **申告** (§2 の但し書き) |
+
+初稿は「2 つの時間軸が名前で区別されずに並んでいる」と書いたが、**4 本ある**。
+そして window は**別の軸ではなく未検証の主張**である。
+
+### D5 — 空コンテンツ — **主要経路を見ていなかった。閉じない**
+
+確かめた部分は正しい: `computeContentHash` ([`:1249-1259`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java#L1249))
+は 0 バイトに正当な digest を返し、null 配列のときだけ null。
+`CapturedContent.none()` の呼出は `:982` の 1 箇所で、`getAttachmentNodeId()` が null/blank のときだけ。
+
+**しかし** `:1856-1862` が、`sourceObjectType == "attachment"` の 0 バイトを
+`computeContentHash` (`:1877`) より**前に** `skipped` で返す (外部レビュー)。
+document も aspect もイベントも作られない。
+
+| 入力 | 結果 |
+|---|---|
+| null stream | hash 無し → 読み戻し → `none()` / `unknown()` |
+| 0 バイト・**attachment** | **そもそも保管されない** (skip)。イベントも出ない |
+| 0 バイト・非 attachment | `hashed(SHA256(""))` + `contentStored=true` |
+
+**製品には「取り込まなかった」という第 3 の答えがあり、モデルはそれを名前で持っていない。**
+また、0 バイト本体を保管した直後のイベントは `contentStored=true` を言い、後日の
+metadata-only 再取込は読み戻し経路に落ちて `none()` を出しうる — **同じ object について
+2 つのイベントが矛盾する**。棚卸しへ差し戻す。
+
+### D7 — 同じ操作の実行主体が、イベントと outbox で食い違う
+
+イベント側は正直に作ってある: `resolveExecutedBy` (`:917-923`) は合成コンテキストの名前を
+出さず `"unknown: delegated profile …"` を返し、`resolveOnBehalfOf` (`:926-928`) が
+`profile.getCreatedByUserId()` を返す。
+
+ところが同じ取込の outbox 行は `newCaptureScope` (`:1657-1672`) で:
+
+- `executedBy` = `callContext.getUsername()` = **合成された profile 作成者** —
+  イベントが避けている「権限を実行者に見せる」混同そのもの
+- `onBehalfOf` = **呼び出し側が request metadata に書いた文字列** (イベント側は profile の記録値)
+
+`CaptureIntent` の javadoc は両者を同じ意味だと定義している。**1 つの操作について 2 つの記録が、
+同じ名前のフィールドに、別の出所から、矛盾する値を書いている。**
+
+> 実行起源そのものは **(e)** の担当だが、**「同じ名前で違う意味」はモデルの問題**なので
+> ここで名指す。(e) が直すときの前提になる。
 
 ---
 
@@ -131,74 +250,118 @@ aspect は document ごとなので、**古い version は自分の hash を保�
 ### R1 — 記載時刻と成立時刻を混ぜない
 
 来歴イベントは「**いつ書かれたか**」と「**いつ真になったか**」を別に持つ。一致を既定にしない。
-一致しているときに同じ値が入るのは構わないが、**一致していることを読む側に仮定させない**。
 
-### R2 — digest は主語を名乗る
+### R2 — 主張の強さを名乗る (**D1 の本体**)
 
-`contentDigest` を単独で置かない。**何のバイト列の digest かを持つ**。
-現状で名乗れるのは `input` (取得したバイト列) だけで、`stored` は fixity (P1-2) が
-入るまで**発行しない**。`hashed(...)` の javadoc も input に直す。
+イベントの各事実は、それが**どこまで確かめられたか**を持つ:
 
-### R3 — 3 種別を型で分ける
-
-`observed` / `decided` / `resulted` を、読む側が判別できる形で持つ。**名前の規約ではなく型**
-— 名前の規約は次に足す人が破る。
-
-### R4 — 「まだ真になっていない事実」をイベントに載せない
-
-5 の時点で存在しない 6〜8 の値を、5 のイベントが持つことはできない。**したがって
-選択肢は 2 つしかない**:
-
-| | 内容 | 代償 |
+| | 意味 | 例 |
 |---|---|---|
-| **(i) 事実の側を前に出す** | 6〜8 を `execute()` の中、emit の前に移す | wrapper が aspect を作る前提を崩す。**(b) §8 で撤回済み**。再提案しない |
-| **(ii) イベントの側を後に出す** | emit を wrapper の後に移す | emit までの窓が伸びる。窓は (a) の outbox が既に覆う |
+| `asserted` | 呼び出し側がそう言った。**我々は確かめていない** | `chatChannelId`、`captureWindowStart/End` |
+| `observed` | 我々が見た | 取得したバイト列の digest |
+| `applied` | 我々が書き、成功を確認した | `objectId`、書けた aspect |
 
-**(ii) を採る。** ただし **(d) では決めるだけで動かさない** — 動かすと
-`lineageOperationId` の採番位置、`ExternalIngestResult` の組み立て、
-outbox の `CAPTURED` 完了位置が同時に動く。**実装は (e) の隔離と同じ変更で行う**
-(失敗時の隔離を入れる時点で、どこまでが 1 つの取込かを結局引き直すため)。
+**現在 v1 snapshot に載っている chat 10 個は全部 `asserted` である。** それを `applied` と
+読ませているのが D1 のずれで、**emit を動かさなくても直る**。
 
-> **(a) の outbox は (ii) の前提条件であって代替ではない。** outbox は「落ちた」を拾う。
-> (ii) が直すのは「落ちていないのに中身が古い」である。
+### R3 — digest は主語を名乗る
 
-### R5 — 時間軸は名前で区別する
+`contentDigest` を単独で置かない。名乗れるのは `input` (取得したバイト列) だけで、
+`stored` は fixity (P1-2) が入るまで**発行しない**。
+ただし `compareContent` の一致確認は `input-matched-recorded` として**名乗れる** (D2 の但し書き)。
 
-`capturedAt` (取込の時刻 = 観測) と `captureWindowStart/End` (会話の時刻 = 決定) を
-別種別に置く。**プロパティ名は変えない** — 既に READONLY で保護済みで、改名は移行を伴う。
-分けるのはモデル側の種別であって、CMIS 上の名前ではない。
+> **既存の `ContentState.STORED` とは別物である。** あちらは「保管されているか」の三値で、
+> 既に `contentStored` として出荷済み。R3 が禁じるのは「**保管されたバイト列の digest**」を
+> 名乗ることであって、`contentStored` ではない。
+
+### R4 — 3 種別 + 申告を型で分ける
+
+`asserted` / `observed` / `applied` を、読む側が判別できる形で持つ。**名前の規約ではなく型**。
+
+### R5 — 確定した事実は、記録なしに上書きされない (**D6 の本体**)
+
+再取込が既存の証拠を書き換えるなら、**それは新しい取込であって、イベントが要る**。
+選択肢は 2 つ:
+
+| | 内容 |
+|---|---|
+| **(A) 書き換えない** | dedupe skip 経路では証拠 aspect を**上書きしない** (欠けているものだけ埋める)。添付の再試行は続けられる |
+| **(B) 書き換えるならイベントを出す** | skip 経路でも emit する。「skip した」も決定なので記録に値する (§2 の但し書き) |
+
+**(A) を既定とし、(B) を skip 全般に対して行う。** (A) だけだと「2 度目に何が起きたか」が
+依然どこにも無く、(B) だけだと保護されたはずの値が書き換わり続ける。
+
+### R6 — emit の位置は動かさない
+
+初稿は「(i) 事実を前に出す / (ii) emit を後ろに出す」の二択を立て (ii) を採ったが、
+**前提の D1 が偽だったので二択ではない** (外部レビュー)。R2 が主張の強さを名乗れば、
+**emit を動かさずに D1 は解ける**。
+
+繰り延べ理由として挙げた 3 つも検算した:
+
+| 初稿の理由 | 判定 |
+|---|---|
+| `lineageOperationId` の採番位置が動く | **偽に近い**。`:1728` で採番して外へ渡すだけで足りる |
+| `ExternalIngestResult` の組み立てが動く | **真**。各 wrapper が `:425`/`:641`/`:760`/`:903` で再構築する |
+| outbox の `CAPTURED` 完了位置が動く | **偽**。`withCaptureOutcome` (`:1682`) は既に wrapper 入口 `:201`/`:450`/`:701`/`:777` から呼ばれており、**6〜8 の後**にある |
+
+**加えて、動かすと mail / note で意味が定まらない**: これらは `execute()` を複数回呼ぶ
+(message `:285`、生 .eml `:343`、添付ごとに `:391`)。「wrapper の後に 1 回」にすると
+message の emit が添付ループ `:366-415` を丸ごと跨ぐ。
+
+> **「刻印を emit の前に移す」も従来どおり再提案しない** ((b) §8 で撤回済み)。
 
 ---
 
 ## 5. この文書で **決めないこと**
 
-- 6〜8 を実際に動かすこと (R4 のとおり **(e)** と同じ変更で行う)
 - `stored` digest の発行 (**P1-2** fixity)
-- どの型が証拠か / PII / 会話の範囲 / aspect 付与の位置
-  (棚卸し §7 の 3〜6。**このモデルが通ってから**)
+- 実行起源そのものの是正 (**(e)**。D7 は名指すだけ)
+- どの型が証拠か / PII / 会話の範囲 / aspect 付与の位置 (棚卸し §7 の 3〜6)
+- **メタデータ hash** — 棚卸し §7 の 2 番目だが、D1・D6 が決まってからでないと
+  「何を hash するのか」(要求された値か、載った値か) が決まらない。**この文書の次**
 - InterPARES 逐条 (棚卸し §7 の 7)
 
 ---
 
 ## 6. 受入条件 (負のコントロールつき)
 
+初稿の AC 1・3・6 は**判別力が無かった** — 1 は通常経路で両者が一致するので「片方で埋める」
+実装と区別できず、3 は規則の言い換え、6 はコメントに対する試験だった (外部レビュー)。
+**振る舞いで書き直す。**
+
 | # | 条件 | 負のコントロール |
 |---|---|---|
-| 1 | イベントは記載時刻と成立時刻を**別々に**持ち、成立時刻を欠く事実は**欠くと分かる** | 片方を他方で埋めると落ちる |
-| 2 | digest は主語 (`input`) を持ち、**`stored` を名乗る経路が存在しない** | `stored` を発行できるようにすると落ちる |
-| 3 | `observed` / `decided` / `resulted` が**型で**分かれる | 3 つを同じ map に入れると落ちる |
-| 4 | version ごとの hash が**保たれる** — 内容不変の再取込で既存 hash が消えない | 書込側の null ガードを外すと落ちる |
-| 5 | 0 バイトの保管が `none()` に**ならない** | 空を「コンテンツ無し」に倒すと落ちる |
-| 6 | `:838-841` のコメントが**撤回済みの対処を指していない** | 文言を戻すと (b) §8 と矛盾する |
-
-条件 4・5 は既に成立している (§3 D3・D5)。**AC に残すのは、モデルを入れる変更が
-それを壊さないことの control としてである。**
+| 1 | `applyArchetypeMetadata` が失敗した取込のイベントが、その事実を **`applied` と主張しない** (D1) | 主張の強さを外すと落ちる。**失敗を注入して確かめる** — 一致する通常経路では判別できない |
+| 2 | **同じ `sourceObjectId` の 2 度目**が、既存の証拠 11 個を**書き換えない** (D6 A) | dedupe skip 経路の上書きガードを外すと落ちる |
+| 3 | **同じ `sourceObjectId` の 2 度目**が、**イベントを 1 件出す** (D6 B) | skip の early return を戻すと落ちる |
+| 4 | 添付の再試行は 2 度目でも**動く** — 条件 2 の control | 「skip なら何もしない」にすると落ちる |
+| 5 | digest は主語を持ち、**`stored` を名乗る経路が存在しない**。`contentStored` は従来どおり出る | `stored` を発行できるようにすると落ちる / `contentStored` を消すと落ちる |
+| 6 | 内容一致で version を上げなかった取込が、**「確かめていない」と言わない** (D2 但し書き) | `hashToRecord = null` を無条件に「未確認」へ倒すと落ちる |
+| 7 | 証拠 aspect が **version 間で参照共有されない** (D3) | `buildCopyDocument` の防御コピーを外すと落ちる。**`updateWithoutCheckInOut` 経路で試験する** — `checkIn` 経路は `cancelCheckOut` の副作用で偶然通る |
+| 8 | 0 バイト attachment の**skip がイベントに残る** (D5) | skip の early return を戻すと落ちる |
+| 9 | outbox の `executedBy` / `onBehalfOf` が、**同じ取込のイベントと一致する** (D7) | どちらかの出所を戻すと落ちる |
 
 ---
 
-## 7. 次
+## 7. 陳腐化したコメント (この増分で直す)
 
-1. この文書のレビュー
-2. R1〜R3 を型として入れる (イベント側。CMIS プロパティは触らない)
-3. `:838-841` のコメント修正
-4. 通ってから棚卸し §7 の 3〜6
+(c) が 11 個を READONLY にした時点で偽になったものが、初稿が挙げた 1 箇所以外にもある
+(外部レビュー):
+
+| 位置 | 何が偽か |
+|---|---|
+| `CanonicalImportServiceImpl:834-836` | 「The property is still READWRITE, so a client with update permission can change it afterwards」 |
+| `:838-842` | 「moving the stamp ahead of emission」— (b) §8 で撤回済みの対処を指す |
+| `:1086-1088` | 「while the property is READWRITE this also preserves a value a client planted」 |
+| `IngestLineageEmitter:316-318` | 「carrying it needs the stamp to move ahead of emission, which is P1-1(b) work」— 同上 |
+
+---
+
+## 8. 次
+
+1. この改訂のレビュー
+2. **D6 (R5)** — 最大の穴。証拠が記録なしに書き換わる唯一の実在経路
+3. R2・R3・R4 を型として入れる (イベント側。CMIS プロパティは触らない)
+4. §7 のコメント修正
+5. 通ってから棚卸し §7 の 2〜6

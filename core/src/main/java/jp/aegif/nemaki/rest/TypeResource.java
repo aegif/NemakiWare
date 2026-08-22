@@ -1312,8 +1312,8 @@ public class TypeResource extends ResourceBase {
 				
 					if (!existingDetails.isEmpty()) {
 						NemakiPropertyDefinitionDetail existingDetail = existingDetails.get(0);
-						// THIS is the only place a type update rewrites a STORED updatability, and
-						// an absent one must not rewrite it. The parsers skip properties that
+						// The only place THIS endpoint rewrites a STORED updatability, and an
+						// absent one must not rewrite it. The parsers skip properties that
 						// already exist, so this branch is reached only when the parse-time lookup
 						// said "absent" and this one says "present" — i.e. when the property-core
 						// view was silent a moment ago. Copying unconditionally there takes a
@@ -1321,6 +1321,12 @@ public class TypeResource extends ResourceBase {
 						// request happened to carry, including null, with no database access
 						// required. Guarding the parsers instead does nothing: they never see an
 						// existing property at all (external review, P1-1(c)).
+						//
+						// NOT the only writer in the product: the CMIS updateType operation
+						// reaches RepositoryServiceImpl, which builds a detail from the
+						// client's TypeDefinition and persists it. That one is inert today
+						// only because the detail it builds carries no id and the DAO NPEs on
+						// the revision lookup — see p1-1c-evidence-updatability.md §5.5.
 						if (newDetail.getUpdatability() != null) {
 							existingDetail.setUpdatability(newDetail.getUpdatability());
 						}

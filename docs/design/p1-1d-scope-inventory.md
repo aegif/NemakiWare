@@ -26,8 +26,8 @@
 | 経路 | 実際の仕事 | 区分 |
 |---|---|---|
 | `cmis:secondaryObjectTypeIds` から型ごと外す | **「どの型が証拠か」**。モデルが「証拠の型」を決めてからでないと、拒否する対象が無い | **引き受ける** |
-| 管理 API の型更新 / 古い export の取り込み | 保存値を書き換えるのは `updateTypeDefinition` の**無条件コピー 1 行**、import 側は**新規作成時の既定値**だけ (パーサも既存型も経路ではなかった) | **引き受けない** — (c) の続き。**2026-08-22 に対応** (§4)。初稿の「欠落時に READWRITE」という診断自体が誤りだった |
-| ローリング再起動の時間差 | パッチが走った JVM 以外の**型キャッシュ**。`isApplied` が 1 台だけ走る既知の形 | **引き受けない** — **運用正典の 1 節**。[`docs/MULTI-REPLICA-DEPLOYMENT.md`](../MULTI-REPLICA-DEPLOYMENT.md) に「型パッチを含む版へ上げるときは全レプリカを入れ替えるまで型更新を受け付けない」を書く。**(e) と同時に着手** |
+| 管理 API の型更新 / 古い export の取り込み | この endpoint が保存値を書き換えるのは `updateTypeDefinition` の**無条件コピー 1 行**、import 側は**新規作成時の既定値**だけ (パーサも既存型も経路ではなかった)。CMIS `updateType` という 3 つ目の書き手が別に在る ((c) §5.5) | **引き受けない** — (c) の続き。**2026-08-22 に対応** (§4)。初稿の「欠落時に READWRITE」という診断自体が誤りだった |
+| ローリング再起動の時間差 | パッチが走った JVM 以外の**型キャッシュ**。`isApplied` が 1 台だけ走る既知の形 | **引き受けない** — **運用正典の 1 節**。[`docs/MULTI-REPLICA-DEPLOYMENT.md`](../MULTI-REPLICA-DEPLOYMENT.md) に「型パッチを含む版へ上げるときは全レプリカを入れ替えるまで型更新を受け付けない」を書く。**2026-08-22 時点で当該の節はまだ無く、これは約束である。** (e) と同時に着手 |
 
 ---
 
@@ -35,7 +35,7 @@
 
 | 事実 | 実際の仕事 | 区分 |
 |---|---|---|
-| Process 属性 (`folderId` / `importMode` / `sourceDescription` / `externalStableKey`) | v2 record では `legacyEventAttributes` が空になるため**必須属性が既定値で埋まる**。endpoint attribute では解けない。**供給経路の話**であってモデルの話ではない | **引き受けない** — **今やる別チケット**。`docs/design/p1-1b-v2-evidence-home.md` §Slice 4 の前提条件として、**flip の実装と同じ変更で閉じる**。(d)・(e) のどちらにも入れない |
+| Process 属性 (`folderId` / `importMode` / `sourceDescription` / `externalStableKey`) | v2 record では `legacyEventAttributes` が空になるため**必須属性が既定値で埋まる**。endpoint attribute では解けない。**供給経路の話**であってモデルの話ではない | **引き受けない** — **今やる別チケット**。[`p1-1b-v2-evidence-home.md`](p1-1b-v2-evidence-home.md) **§3.4** の前提条件として、**flip の実装と同じ変更で閉じる**。(d)・(e) のどちらにも入れない |
 | `chat.participants` / `chat.channelName` | 個人名がカタログに常駐する。**保持期間の話**で、「証拠に PII をどう載せるか」はモデルが決める | **引き受ける** |
 | 会話の範囲 (`captureWindowStart/End` / `evidenceScope` / `selectionReason`) | 「取込元の性質」ではなく**この取込の判断**。判断をどこに置くかはモデルの問い | **引き受ける** |
 | `executedBy` / `onBehalfOf` | digest が覆わない。式を動かす | **引き受けない** — **(e)**。roadmap が実行起源を (e) に置いている |
@@ -46,9 +46,9 @@
 
 | | 区分 |
 |---|---|
-| 空コンテンツ | **引き受ける** |
-| version ごとの hash | **引き受ける** |
-| メタデータ hash | **引き受ける** |
+| 空コンテンツ | **引き受ける** — 一度「閉じた」と書いたが**早かった**。0 バイト attachment は hash 以前に skip され、document も aspect もイベントも作られない。製品には「取り込まなかった」という第 3 の答えがあり、モデルに名前が無い ([`p1-1d-evidence-data-model.md`](p1-1d-evidence-data-model.md) §3 D5) |
+| version ごとの hash | **引き受ける** — 同じく**早かった**。結論は今のところ真だが理由が偽で、aspect は `buildCopyDocument` を通じて version 間で**参照共有される**。救っているのは `cancelCheckOut` の副作用で、`updateWithoutCheckInOut` にその保険は無い (同 §3 D3)。要る invariant は「証拠 aspect は version 間で参照共有しない」 |
+| メタデータ hash | **引き受ける** — ただし D1・D6 の後。「要求された値を hash するのか、載った値を hash するのか」が先に決まらない |
 | **事実が確定する時点** | **引き受ける** — これが本体。他の多くがここから決まる |
 | `chatCapturedAt` と emit の順序 | **引き受ける** — ただし下記の注意 |
 
@@ -63,7 +63,7 @@
 
 | | いつ |
 |---|---|
-| 型更新・型取込が保護を巻き戻す 2 経路 | **2026-08-22**。管理 API は `updateTypeDefinition` の**コピーを null ガード** (保存値を書き換える唯一の箇所)、`ZipImporter` は**欠落・不正を作成前に拒否**。2026-08-21 に入れたパーサ側の変更は**経路ではなかった**ので効いていない — 詳細と負のコントロールは [`p1-1c-evidence-updatability.md`](p1-1c-evidence-updatability.md) §5.3・§6 の 11〜13 |
+| 型更新・型取込が保護を巻き戻す 2 経路 | **2026-08-22**。管理 API は `updateTypeDefinition` の**コピーを null ガード** (この endpoint が保存値を書き換える唯一の箇所)、`ZipImporter` は**欠落・不正を作成前に拒否**。2026-08-21 に入れたパーサ側の変更は**経路ではなかった**ので効いていない — 詳細と負のコントロールは [`p1-1c-evidence-updatability.md`](p1-1c-evidence-updatability.md) §5.3・§6 の 11〜13 |
 | READONLY プロパティが CMIS の update で消える | 2026-08-21。`mergeAspectProperties` が引き継ぐ ((c) §5.1) |
 | 取込 snapshot の v2 表現 | 2026-08-21 ((b)) |
 | 証拠プロパティの CMIS からの書き換え | 2026-08-21 ((c)) |
@@ -94,8 +94,9 @@
 
 ## 7. したがって (d) の設計が対象にするもの
 
-1. **事実が確定する時点** (本体)
-2. 空コンテンツ / version ごとの hash / メタデータ hash
+1. **事実が確定する時点** (本体) — [`p1-1d-evidence-data-model.md`](p1-1d-evidence-data-model.md)
+2. 空コンテンツ / version ごとの hash / メタデータ hash — **どれも閉じていない**。
+   一度「閉じた」と書いたが 2 件とも早計だった (§3)
 3. 「どの型が証拠か」 — (c) の 1 番目がこれを待っている
 4. 証拠に PII をどう載せるか — participants / channelName
 5. この取込の判断 (会話の範囲) をどこに置くか

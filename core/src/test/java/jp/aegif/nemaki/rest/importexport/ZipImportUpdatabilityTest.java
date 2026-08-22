@@ -115,6 +115,15 @@ class ZipImportUpdatabilityTest {
         }
     }
 
+    /**
+     * Two properties, and the offending one is SECOND on purpose.
+     *
+     * <p>With a single property the orphan assertion cannot fail: deleting the pre-pass would
+     * still throw at `Updatability.fromValue(null)` before the one and only
+     * `createPropertyDefinition`, so nothing is created either way and the test would be
+     * measuring nothing (external review). With a good property first, the pre-pass is the only
+     * thing standing between the archive and a half-created type.
+     */
     private static String typeJson(String updatabilityLine) {
         return "{"
                 + "\"id\": \"nemaki:legacyType\","
@@ -123,6 +132,11 @@ class ZipImportUpdatabilityTest {
                 + "\"baseId\": \"cmis:document\","
                 + "\"parentId\": \"cmis:document\","
                 + "\"propertyDefinitions\": [{"
+                + "  \"id\": \"nemaki:goodField\","
+                + "  \"propertyType\": \"string\","
+                + "  \"cardinality\": \"single\","
+                + "  \"updatability\": \"readwrite\""
+                + "}, {"
                 + "  \"id\": \"nemaki:someField\","
                 + "  \"propertyType\": \"string\","
                 + "  \"cardinality\": \"single\""
@@ -159,7 +173,8 @@ class ZipImportUpdatabilityTest {
         assertEquals(List.of(), createdTypes.stream().map(NemakiTypeDefinition::getTypeId).toList(),
                 "a type was created from an archive that never said whether its property is editable");
         assertEquals(0, createdProperties.size(),
-                "property definitions were created for a type that was then refused, leaving orphans");
+                "the good property was created before the bad one was rejected, so a refused type "
+                        + "left orphan property definitions behind: " + createdProperties.size());
         assertTrue(result.warnings.stream().anyMatch(w -> w.contains("nemaki:someField")),
                 "the refusal did not name the property at fault: " + result.warnings);
     }
@@ -182,8 +197,8 @@ class ZipImportUpdatabilityTest {
 
         assertEquals(1, createdTypes.size(),
                 "a valid archive was refused, so type import is broken");
-        assertEquals(1, createdProperties.size());
-        assertEquals(Updatability.READWRITE, createdProperties.get(0).getUpdatability());
+        assertEquals(2, createdProperties.size());
+        assertEquals(Updatability.READWRITE, createdProperties.get(1).getUpdatability());
     }
 
     @Test
@@ -192,6 +207,6 @@ class ZipImportUpdatabilityTest {
         runImport(typeJson(", \"updatability\": \"whencheckedout\""));
 
         assertEquals(1, createdTypes.size());
-        assertEquals(Updatability.WHENCHECKEDOUT, createdProperties.get(0).getUpdatability());
+        assertEquals(Updatability.WHENCHECKEDOUT, createdProperties.get(1).getUpdatability());
     }
 }

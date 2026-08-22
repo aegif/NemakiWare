@@ -174,13 +174,14 @@ chat 以外の READONLY プロパティを**名前付きで消していた**ク�
 
 | | 初稿の記述 | 実際 |
 |---|---|---|
-| `PUT /rest/repo/{repo}/type/update/{typeId}` | JSON に `updatability` が無ければ READWRITE に落ちる | **両パーサは既存プロパティを `continue` で飛ばす** (`existProperty` が真)。証拠 11 個は既に存在するので、通常の PUT では**パーサにも旧 `else READWRITE` にも届かない**。保存値を書き換える箇所は `updateTypeDefinition` の**無条件コピー 1 行だけ**で、そこへ到達するのは**パース時の lookup が null を返し、ループ内の lookup が core を返したとき** — つまり property-core の view が一瞬沈黙したとき |
+| `PUT /rest/repo/{repo}/type/update/{typeId}` | JSON に `updatability` が無ければ READWRITE に落ちる | **両パーサは既存プロパティを `continue` で飛ばす** (`existProperty` が真)。証拠 11 個は既に存在するので、通常の PUT では**パーサにも旧 `else READWRITE` にも届かない**。この endpoint が保存値を書き換える箇所は `updateTypeDefinition` の**無条件コピー 1 行だけ**で、そこへ到達するのは**パース時の lookup が null を返し、ループ内の lookup が core を返したとき** — つまり property-core の view が一瞬沈黙したとき |
 | export / import | 適用前のエクスポートを流し込むと保護が解ける | **`ZipImporter` は既存の型を丸ごと skip する** (`existing != null` → `continue`)。動いているリポジトリの保護は**元から解けない**。残るのは**型がまだ無いリポジトリに新規作成する**ときの既定値の話 |
 
 **直した内容** (2026-08-22):
 
 - `updateTypeDefinition` のコピーを `newDetail.getUpdatability() != null` で守る。
-  **保存値を書き換える唯一の箇所がここなので、ここだけが効く。**
+  **この endpoint が保存値を書き換える唯一の箇所がここなので、ここだけが効く**
+  (製品全体で唯一ではない — §5.5)。
 - 両パーサを `parseUpdatability` に統一。欠落は `null` (=「指定なし」)、不明値は拒否。
   作成時のみ `applyCreateDefaults` が READWRITE を補う — **新規プロパティには失う保護が無い**。
 - `Updatability.fromValue` を使う。手書きの if/else は CMIS 4 値のうち
@@ -191,6 +192,34 @@ chat 以外の READONLY プロパティを**名前付きで消していた**ク�
   `"read-write"` のような打ち間違いを黙って最も厳しい側に倒していた。
 
 どちらも admin が要るが、**CouchDB への直接アクセスは不要**である。
+
+### 5.5 CMIS `updateType` — **3 つ目の書き手。いまは NPE で死んでいるだけ**
+
+§5.3 は「保存値を書き換える箇所は `updateTypeDefinition` の 1 行だけ」と書いた。
+**これも誤りだった** (外部レビュー)。監査が Jersey の管理 API で止まり、CMIS
+サービス層を見ていない。
+
+`RepositoryServiceImpl.updateType` は、既存プロパティに対して
+**クライアントが送った `TypeDefinition` から detail を作り直して保存する**
+([`:600-612`](../../core/src/main/java/jp/aegif/nemaki/cmis/service/impl/RepositoryServiceImpl.java#L600))。
+`NemakiPropertyDefinitionDetail(p, coreNodeId)` は `updatability` をそのまま写す
+([`:93`](../../core/src/main/java/jp/aegif/nemaki/model/NemakiPropertyDefinitionDetail.java#L93))。
+これは AtomPub / Browser / WS から admin が叩ける**標準の CMIS 操作**で、
+`ExceptionServiceImpl.constraintUpdatePropertyDefinition` は inherited / required /
+openChoice / propertyType / cardinality を見るが **`updatability` は見ない**。
+
+**いま保護が保たれているのは偶然である。** その ctor は `setId` を呼ばないので
+`update.getId()` は null、DAO は `client.get(..., null)` で null を受け取り
+`cpd.getRevision()` で **NPE → 500** になる
+([`TypeDefinitionDaoDelegate:694-698`](../../core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/TypeDefinitionDaoDelegate.java#L694))。
+**`setId` の欠落を誰かが直した瞬間に、同じリクエストが静かに保護を外す。**
+`createType` 側は既に `updatedDetail.setId(created.getId())` をしているので、
+「揃えておこう」で直される形をしている。
+
+**この作業では挙動を変えない** — バグに依存した保護を「正しい保護」に格上げする
+書き換えは (c) の範囲を超える。代わりに**現状を固定するテスト**を置く:
+CMIS `updateType` で保存済みの READONLY が変わらないこと。いまは NPE のおかげで
+通るが、`setId` が直れば**落ちる**ので、直す人が気づく。
 
 ### 5.4 multi-replica でいつから効くか
 
@@ -217,6 +246,7 @@ chat 以外の READONLY プロパティを**名前付きで消していた**ク�
 | 11 | 型更新で `updatability` を**書かなければ保存値が残る** / **書けば変わる** | `updateTypeDefinition` のガードを外すと落ちる (実測: `expected: not <null>`)。array パーサを旧 `else READWRITE` に戻しても落ちる (実測: `expected: <READONLY> but was: <READWRITE>`) |
 | 12 | `updatability` の無い archive は**型を作らずに拒否**し、property definition の残骸も残さない | 事前検査を外すと落ちる (実測: `expected: <[]> but was: <[nemaki:legacyType]>`) |
 | 13 | `whencheckedout` は**通る** — 条件 11・12 が正当な値を巻き込んでいないことの control | 手書き if/else に戻すと落ちる |
+| 14 | CMIS `updateType` で保存済みの READONLY が**変わらない** (§5.5) | `NemakiPropertyDefinitionDetail` に `setId` を足すと落ちる。**いまは NPE で通っているので、これは保護の証明ではなく現状の固定である** |
 
 **条件 3 と 4 は対になっていなかった。** 取込は `injectPropertyValue` を通らないので、
 条件 4 は **READONLY にしようがしまいが常に通る** — 負のコントロールとして機能していない。
