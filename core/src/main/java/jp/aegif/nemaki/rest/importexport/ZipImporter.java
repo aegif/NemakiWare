@@ -1070,6 +1070,10 @@ public class ZipImporter {
                 Object propDefsObj = typeJson.get("propertyDefinitions");
                 if (propDefsObj instanceof JSONArray) {
                     JSONArray propDefs = (JSONArray) propDefsObj;
+                    // Before creating anything: every property must state its updatability.
+                    // Done as a pre-pass so a rejected type leaves no half-created property
+                    // definitions behind.
+                    validateUpdatability(typeId, propDefs);
                     for (Object propObj : propDefs) {
                         JSONObject propJson = (JSONObject) propObj;
                         String propId = (String) propJson.get("id");
@@ -1102,22 +1106,9 @@ public class ZipImporter {
                         core.setQueryName(propId);
 
                         NemakiPropertyDefinitionDetail detail = new NemakiPropertyDefinitionDetail();
-                        // An absent or unreadable updatability becomes READONLY, not READWRITE.
-                        // An export taken before a protection migration carries no value, and
-                        // defaulting to readwrite let importing such an archive unprotect
-                        // evidence properties — a downgrade nobody asked for, from a file
-                        // (external review, P1-1(c)). Read-only is the direction that cannot
-                        // lose protection; an operator who wants it writable says so.
-                        String updStr = (String) propJson.get("updatability");
-                        if (updStr != null) {
-                            try {
-                                detail.setUpdatability(Updatability.fromValue(updStr));
-                            } catch (Exception e) {
-                                detail.setUpdatability(Updatability.READONLY);
-                            }
-                        } else {
-                            detail.setUpdatability(Updatability.READONLY);
-                        }
+                        // Guaranteed present and valid by validateUpdatability() above.
+                        detail.setUpdatability(
+                                Updatability.fromValue((String) propJson.get("updatability")));
 
                         Object reqObj = propJson.get("required");
                         detail.setRequired(reqObj instanceof Boolean ? (Boolean) reqObj : false);
@@ -1167,6 +1158,51 @@ public class ZipImporter {
                     (typesSkipped > 0 ? ", skipped " + typesSkipped + " existing" : ""));
         } else if (typesSkipped > 0) {
             result.warnings.add("All " + typesSkipped + " type definition(s) already exist, skipped");
+        }
+    }
+
+    /**
+     * Refuses a type whose archive does not say how updatable a property is.
+     *
+     * <p>Neither default is honest here. Read-write was the old one, and it makes an archive that
+     * simply predates the field decide that a property is editable. Read-only — the shape this
+     * had briefly — is no better: it locks every ordinary custom property in an old export, and
+     * it swallows a typo such as {@code "read-write"} into the most restrictive setting, silently.
+     * CMIS requires a property definition to state an updatability, so an entry without one is
+     * malformed input, and the import says so instead of guessing.
+     *
+     * <p>Note what this is <b>not</b> protecting against: an import cannot unprotect a type that
+     * already exists, because such types are skipped whole, above. This is only about what gets
+     * created on a repository that does not have the type yet (external review).
+     *
+     * @throws IllegalArgumentException naming the first offending property, before anything is
+     *         created, so a rejected type leaves no orphan property definitions behind
+     */
+    private static void validateUpdatability(String typeId, JSONArray propDefs) {
+        for (Object propObj : propDefs) {
+            if (!(propObj instanceof JSONObject)) {
+                continue;
+            }
+            JSONObject propJson = (JSONObject) propObj;
+            String propId = (String) propJson.get("id");
+            if (propId == null) {
+                // The creation loop skips these; rejecting them here would refuse types the
+                // import would otherwise have created minus that entry.
+                continue;
+            }
+            Object updatability = propJson.get("updatability");
+            if (updatability == null) {
+                throw new IllegalArgumentException("property '" + propId + "' of type '" + typeId
+                        + "' does not state an updatability. Importing it would mean guessing"
+                        + " whether it may be edited; add the field to the archive, or create the"
+                        + " type through the type API where the default is explicit.");
+            }
+            try {
+                Updatability.fromValue(String.valueOf(updatability));
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("property '" + propId + "' of type '" + typeId
+                        + "' has an unknown updatability '" + updatability + "'.");
+            }
         }
     }
 

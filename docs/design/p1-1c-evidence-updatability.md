@@ -167,14 +167,30 @@ chat 以外の READONLY プロパティを**名前付きで消していた**ク�
 **この作業では塞がない。** secondary type の付け外しは CMIS の正当な操作で、証拠を持つ型
 だけ拒否するには「どの型が証拠か」を型システムに持ち込む必要がある。**P1-1(d)** に送る。
 
-### 5.3 保護を巻き戻せる 2 経路 — **残る穴**
+### 5.3 保護を巻き戻せる 2 経路 — **2026-08-22 に対応。ただし初稿の記述は誤りだった**
 
-| | |
-|---|---|
-| `PUT /rest/repo/{repo}/type/update/{typeId}` | admin 権限で detail を上書きでき、JSON に `updatability` が無ければ **READWRITE に落ちる**。パッチは applied 済みなので戻らない |
-| export / import | `ZipImporter` は `updatability` 欠落時に **READWRITE** で detail を作る。適用前のエクスポートを流し込むと保護が解ける |
+初稿はこの 2 つを「`updatability` 欠落なら READWRITE に落ちる」と書き、その通りに
+パーサを直した。**パーサは無関係だった。**
 
-どちらも admin が要るが、**CouchDB への直接アクセスは不要**である。**P1-1(d)** に送る。
+| | 初稿の記述 | 実際 |
+|---|---|---|
+| `PUT /rest/repo/{repo}/type/update/{typeId}` | JSON に `updatability` が無ければ READWRITE に落ちる | **両パーサは既存プロパティを `continue` で飛ばす** (`existProperty` が真)。証拠 11 個は既に存在するので、通常の PUT では**パーサにも旧 `else READWRITE` にも届かない**。保存値を書き換える箇所は `updateTypeDefinition` の**無条件コピー 1 行だけ**で、そこへ到達するのは**パース時の lookup が null を返し、ループ内の lookup が core を返したとき** — つまり property-core の view が一瞬沈黙したとき |
+| export / import | 適用前のエクスポートを流し込むと保護が解ける | **`ZipImporter` は既存の型を丸ごと skip する** (`existing != null` → `continue`)。動いているリポジトリの保護は**元から解けない**。残るのは**型がまだ無いリポジトリに新規作成する**ときの既定値の話 |
+
+**直した内容** (2026-08-22):
+
+- `updateTypeDefinition` のコピーを `newDetail.getUpdatability() != null` で守る。
+  **保存値を書き換える唯一の箇所がここなので、ここだけが効く。**
+- 両パーサを `parseUpdatability` に統一。欠落は `null` (=「指定なし」)、不明値は拒否。
+  作成時のみ `applyCreateDefaults` が READWRITE を補う — **新規プロパティには失う保護が無い**。
+- `Updatability.fromValue` を使う。手書きの if/else は CMIS 4 値のうち
+  **`whencheckedout` を知らなかった**ので、初稿の「不明値は拒否」がこれを 500 にしていた。
+- `ZipImporter` は**欠落・不正を拒否**する (作成前の事前検査なので、拒否された型は
+  property definition の残骸を残さない)。一時期の「欠落は READONLY」は**取り下げ** —
+  古いエクスポートの**証拠と無関係なカスタムプロパティまで編集不能**にし、
+  `"read-write"` のような打ち間違いを黙って最も厳しい側に倒していた。
+
+どちらも admin が要るが、**CouchDB への直接アクセスは不要**である。
 
 ### 5.4 multi-replica でいつから効くか
 
@@ -198,6 +214,9 @@ chat 以外の READONLY プロパティを**名前付きで消していた**ク�
 | 8 | **1 つも見つからなければ例外**を投げる (applied にしない) | 静かに return すると落ちる |
 | 9 | **READONLY のプロパティは、リクエストに載っていても消えない** | 引き継ぎ条件を戻すと落ちる |
 | 10 | **READWRITE のプロパティはリクエストに載れば消える** — 条件 9 の control | 全部引き継ぐと落ちる |
+| 11 | 型更新で `updatability` を**書かなければ保存値が残る** / **書けば変わる** | `updateTypeDefinition` のガードを外すと落ちる (実測: `expected: not <null>`)。array パーサを旧 `else READWRITE` に戻しても落ちる (実測: `expected: <READONLY> but was: <READWRITE>`) |
+| 12 | `updatability` の無い archive は**型を作らずに拒否**し、property definition の残骸も残さない | 事前検査を外すと落ちる (実測: `expected: <[]> but was: <[nemaki:legacyType]>`) |
+| 13 | `whencheckedout` は**通る** — 条件 11・12 が正当な値を巻き込んでいないことの control | 手書き if/else に戻すと落ちる |
 
 **条件 3 と 4 は対になっていなかった。** 取込は `injectPropertyValue` を通らないので、
 条件 4 は **READONLY にしようがしまいが常に通る** — 負のコントロールとして機能していない。
@@ -213,7 +232,8 @@ chat 以外の READONLY プロパティを**名前付きで消していた**ク�
 - **誤った証拠を直す経路は取込のやり直し**であって、管理画面からの編集ではない
 - **これ以前に書き換えられた値は元に戻らない**
 - **`cmis:secondaryObjectTypeIds` から型ごと外せば aspect ごと消える** (§5.2)。未対応
-- **管理 API での型更新と、古いエクスポートの取り込みは保護を解く** (§5.3)。未対応
+- **古いエクスポートの取り込みは、`updatability` の無い型を拒否する** (§5.3)。
+  移行するには archive に `updatability` を足すか、型 API 側で作る
 - **ローリング再起動中は、未再起動のレプリカが保護前の型定義で動く** (§5.4)
 
 ---

@@ -1312,7 +1312,18 @@ public class TypeResource extends ResourceBase {
 				
 					if (!existingDetails.isEmpty()) {
 						NemakiPropertyDefinitionDetail existingDetail = existingDetails.get(0);
-						existingDetail.setUpdatability(newDetail.getUpdatability());
+						// THIS is the only place a type update rewrites a STORED updatability, and
+						// an absent one must not rewrite it. The parsers skip properties that
+						// already exist, so this branch is reached only when the parse-time lookup
+						// said "absent" and this one says "present" — i.e. when the property-core
+						// view was silent a moment ago. Copying unconditionally there takes a
+						// property that a protection migration made READONLY and sets whatever the
+						// request happened to carry, including null, with no database access
+						// required. Guarding the parsers instead does nothing: they never see an
+						// existing property at all (external review, P1-1(c)).
+						if (newDetail.getUpdatability() != null) {
+							existingDetail.setUpdatability(newDetail.getUpdatability());
+						}
 						existingDetail.setRequired(newDetail.isRequired());
 						existingDetail.setQueryable(newDetail.isQueryable());
 						existingDetail.setOpenChoice(newDetail.isOpenChoice());
@@ -1325,6 +1336,7 @@ public class TypeResource extends ResourceBase {
 				} else {
 				// Property doesn't exist - create it
 				log.debug("Creating new property: " + propertyId);
+				applyCreateDefaults(newDetail);
 				NemakiPropertyDefinition npd = new NemakiPropertyDefinition(newCore, newDetail);
 				NemakiPropertyDefinitionDetail createdDetail = typeService.createPropertyDefinition(repositoryId, npd);
 				if (createdDetail != null) {
@@ -1527,6 +1539,45 @@ public class TypeResource extends ResourceBase {
 	/**
 	 * Parse JSON property definitions
 	 */
+	/**
+	 * Reads a property definition's {@code updatability}, or null when the request does not say.
+	 *
+	 * <p>Null means "not specified", and the two callers want opposite things from it. On an
+	 * <b>update</b> of a property that already exists, not specifying it must leave the stored
+	 * value alone — see the guard in {@code updateTypeDefinition}, which is the only place a
+	 * stored value is rewritten. On <b>creation</b> there is no stored value to preserve, so
+	 * {@link #applyCreateDefaults} fills in READWRITE, as before.
+	 *
+	 * <p>Parsing goes through {@link Updatability#fromValue}: it covers all four CMIS values —
+	 * the hand-written chain here used to omit {@code whencheckedout} — and it rejects anything
+	 * else rather than widening a typo to readwrite.
+	 */
+	private static Updatability parseUpdatability(JSONObject propertyJson) {
+		Object raw = propertyJson.get("updatability");
+		if (raw == null) {
+			return null;
+		}
+		try {
+			return Updatability.fromValue(String.valueOf(raw));
+		} catch (IllegalArgumentException e) {
+			throw new IllegalArgumentException("unknown updatability '" + raw
+					+ "'. Silently widening it to readwrite would unprotect the property.");
+		}
+	}
+
+	/**
+	 * Fills in what a brand-new property definition needs but the request did not supply.
+	 *
+	 * <p>Only for creation. A property that does not exist yet carries no protection that a
+	 * default could take away, and CMIS requires every property definition to state an
+	 * updatability, so leaving it null would store an incomplete definition.
+	 */
+	private static void applyCreateDefaults(NemakiPropertyDefinitionDetail detail) {
+		if (detail != null && detail.getUpdatability() == null) {
+			detail.setUpdatability(Updatability.READWRITE);
+		}
+	}
+
 	private List<String> parseJsonPropertyDefinitions(String repositoryId, String typeId, JSONObject propertyDefinitions) {
 		List<String> propertyIds = new ArrayList<String>();
 		
@@ -1584,25 +1635,8 @@ public class TypeResource extends ResourceBase {
 			// Detail properties
 			detail.setType(NodeType.PROPERTY_DEFINITION_DETAIL.value());
 			
-			// Updatability.
-			//
-			// An ABSENT value leaves the stored one alone. It used to fall through to READWRITE,
-			// which meant any type update that simply did not mention updatability silently
-			// unprotected every property on the type — including evidence properties a migration
-			// had deliberately made read-only, with no database access required (external
-			// review, P1-1(c)). Omission is not a request to widen.
-			String updatability = (String) propertyJson.get("updatability");
-			if ("readonly".equals(updatability)) {
-				detail.setUpdatability(Updatability.READONLY);
-			} else if ("oncreate".equals(updatability)) {
-				detail.setUpdatability(Updatability.ONCREATE);
-			} else if ("readwrite".equals(updatability)) {
-				detail.setUpdatability(Updatability.READWRITE);
-			} else if (updatability != null) {
-				throw new IllegalArgumentException("unknown updatability '" + updatability
-						+ "'. Silently widening to readwrite would unprotect the property.");
-			}
-			
+			detail.setUpdatability(parseUpdatability(propertyJson));
+
 			// Required
 			Boolean required = (Boolean) propertyJson.get("required");
 			detail.setRequired(required != null ? required : false);
@@ -1699,16 +1733,8 @@ public class TypeResource extends ResourceBase {
 			// Detail properties
 			detail.setType(NodeType.PROPERTY_DEFINITION_DETAIL.value());
 			
-			// Updatability
-			String updatability = (String) propertyJson.get("updatability");
-			if ("readonly".equals(updatability)) {
-				detail.setUpdatability(Updatability.READONLY);
-			} else if ("oncreate".equals(updatability)) {
-				detail.setUpdatability(Updatability.ONCREATE);
-			} else {
-				detail.setUpdatability(Updatability.READWRITE);
-			}
-			
+			detail.setUpdatability(parseUpdatability(propertyJson));
+
 			// Required
 			Boolean required = (Boolean) propertyJson.get("required");
 			detail.setRequired(required != null ? required : false);
@@ -2033,6 +2059,7 @@ public class TypeResource extends ResourceBase {
 		} else {
 			for (Entry<String, NemakiPropertyDefinitionCore> coreEntry : coreMaps.entrySet()) {
 			String originalPropertyId = coreEntry.getKey();
+			applyCreateDefaults(detailMaps.get(coreEntry.getKey()));
 			NemakiPropertyDefinition p = new NemakiPropertyDefinition(coreEntry.getValue(),
 					detailMaps.get(coreEntry.getKey()));
 			

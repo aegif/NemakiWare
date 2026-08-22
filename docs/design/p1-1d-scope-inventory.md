@@ -26,8 +26,8 @@
 | 経路 | 実際の仕事 | 区分 |
 |---|---|---|
 | `cmis:secondaryObjectTypeIds` から型ごと外す | **「どの型が証拠か」**。モデルが「証拠の型」を決めてからでないと、拒否する対象が無い | **引き受ける** |
-| 管理 API の型更新 / 古い export の取り込み | `updatability` **欠落時に READWRITE へ落ちる**。欠落を拒否するか、欠落時は触らないか | **引き受けない** — (c) の続き。**2026-08-21 に対応済み** (§4) |
-| ローリング再起動の時間差 | パッチが走った JVM 以外の**型キャッシュ**。`isApplied` が 1 台だけ走る既知の形 | **引き受けない** — 再起動手順か型キャッシュの世代を進める話 |
+| 管理 API の型更新 / 古い export の取り込み | 保存値を書き換えるのは `updateTypeDefinition` の**無条件コピー 1 行**、import 側は**新規作成時の既定値**だけ (パーサも既存型も経路ではなかった) | **引き受けない** — (c) の続き。**2026-08-22 に対応** (§4)。初稿の「欠落時に READWRITE」という診断自体が誤りだった |
+| ローリング再起動の時間差 | パッチが走った JVM 以外の**型キャッシュ**。`isApplied` が 1 台だけ走る既知の形 | **引き受けない** — **運用正典の 1 節**。[`docs/MULTI-REPLICA-DEPLOYMENT.md`](../MULTI-REPLICA-DEPLOYMENT.md) に「型パッチを含む版へ上げるときは全レプリカを入れ替えるまで型更新を受け付けない」を書く。**(e) と同時に着手** |
 
 ---
 
@@ -35,7 +35,7 @@
 
 | 事実 | 実際の仕事 | 区分 |
 |---|---|---|
-| Process 属性 (`folderId` / `importMode` / `sourceDescription` / `externalStableKey`) | v2 record では `legacyEventAttributes` が空になるため**必須属性が既定値で埋まる**。endpoint attribute では解けない。**供給経路の話**であってモデルの話ではない | **引き受けない** — v2 write flip (Slice 4) の前提条件。**flip より前に閉じる必要がある** |
+| Process 属性 (`folderId` / `importMode` / `sourceDescription` / `externalStableKey`) | v2 record では `legacyEventAttributes` が空になるため**必須属性が既定値で埋まる**。endpoint attribute では解けない。**供給経路の話**であってモデルの話ではない | **引き受けない** — **今やる別チケット**。`docs/design/p1-1b-v2-evidence-home.md` §Slice 4 の前提条件として、**flip の実装と同じ変更で閉じる**。(d)・(e) のどちらにも入れない |
 | `chat.participants` / `chat.channelName` | 個人名がカタログに常駐する。**保持期間の話**で、「証拠に PII をどう載せるか」はモデルが決める | **引き受ける** |
 | 会話の範囲 (`captureWindowStart/End` / `evidenceScope` / `selectionReason`) | 「取込元の性質」ではなく**この取込の判断**。判断をどこに置くかはモデルの問い | **引き受ける** |
 | `executedBy` / `onBehalfOf` | digest が覆わない。式を動かす | **引き受けない** — **(e)**。roadmap が実行起源を (e) に置いている |
@@ -63,7 +63,7 @@
 
 | | いつ |
 |---|---|
-| `updatability` 欠落時に READWRITE へ落ちる 2 経路 | **2026-08-21**。管理 API は**欠落なら触らない・不明値は拒否**、`ZipImporter` は**欠落・不正なら READONLY** (保護を失わない向き) |
+| 型更新・型取込が保護を巻き戻す 2 経路 | **2026-08-22**。管理 API は `updateTypeDefinition` の**コピーを null ガード** (保存値を書き換える唯一の箇所)、`ZipImporter` は**欠落・不正を作成前に拒否**。2026-08-21 に入れたパーサ側の変更は**経路ではなかった**ので効いていない — 詳細と負のコントロールは [`p1-1c-evidence-updatability.md`](p1-1c-evidence-updatability.md) §5.3・§6 の 11〜13 |
 | READONLY プロパティが CMIS の update で消える | 2026-08-21。`mergeAspectProperties` が引き継ぐ ((c) §5.1) |
 | 取込 snapshot の v2 表現 | 2026-08-21 ((b)) |
 | 証拠プロパティの CMIS からの書き換え | 2026-08-21 ((c)) |
