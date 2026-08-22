@@ -208,18 +208,29 @@ chat 以外の READONLY プロパティを**名前付きで消していた**ク�
 `ExceptionServiceImpl.constraintUpdatePropertyDefinition` は inherited / required /
 openChoice / propertyType / cardinality を見るが **`updatability` は見ない**。
 
-**いま保護が保たれているのは偶然である。** その ctor は `setId` を呼ばないので
-`update.getId()` は null、DAO は `client.get(..., null)` で null を受け取り
-`cpd.getRevision()` で **NPE → 500** になる
-([`TypeDefinitionDaoDelegate:694-698`](../../core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/TypeDefinitionDaoDelegate.java#L694))。
-**`setId` の欠落を誰かが直した瞬間に、同じリクエストが静かに保護を外す。**
-`createType` 側は既に `updatedDetail.setId(created.getId())` をしているので、
-「揃えておこう」で直される形をしている。
+**いま保護が保たれているのは偶然で、しかも偶然が 3 つ重なっている。** 追いかけて分かった:
+
+1. メソッド本体の 1 行目が `typeManager.getTypeDefinition(...)` の戻り (`TypeDefinition`) を
+   `NemakiTypeDefinition` にキャストする。**後者は `NodeBase` を継承していて
+   `TypeDefinition` を実装していない** ので、既存の型に対しては **ClassCastException**
+2. `setNemakiTypeDefinitionAttributes` は `createType` と共用で、
+   **型 id が既に在れば `CmisConstraintException`** を投げる — 更新では必ず在る
+3. `NemakiPropertyDefinitionDetail(p, coreNodeId)` は `setId` を呼ばないので
+   `update.getId()` は null、DAO は `client.get(..., null)` で null を受け取り
+   `cpd.getRevision()` で **NPE**
+   ([`TypeDefinitionDaoDelegate:694-698`](../../core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/TypeDefinitionDaoDelegate.java#L694)、
+   `CloudantClientWrapper.get` は `catch (Exception) { return null; }`)
+
+つまり **`updateType` は既存型に対して機能していない**。3 つとも「揃えておこう」で直りうる
+形で、`createType` 側は既に `updatedDetail.setId(created.getId())` をしている。
+**全部直った瞬間に、同じリクエストが静かに保護を外す。**
 
 **この作業では挙動を変えない** — バグに依存した保護を「正しい保護」に格上げする
-書き換えは (c) の範囲を超える。代わりに**現状を固定するテスト**を置く:
-CMIS `updateType` で保存済みの READONLY が変わらないこと。いまは NPE のおかげで
-通るが、`setId` が直れば**落ちる**ので、直す人が気づく。
+書き換えは (c) の範囲を超える。代わりに**現状を固定するテスト**を置いた:
+`CmisUpdateTypeCannotUnprotectEvidenceTest` (2026-08-22)。実際に
+`RepositoryServiceImpl.updateType` を呼び、**`TypeService` に何が届いたか**を見る
+— 3 つの偶然のどれが先に効くかに依存しない位置である。加えて
+「detail に id が無い」ことを**直接**固定してあるので、そこを直す変更は必ず落ちる。
 
 ### 5.4 multi-replica でいつから効くか
 

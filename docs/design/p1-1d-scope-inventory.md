@@ -63,7 +63,7 @@
 
 | | いつ |
 |---|---|
-| 型更新・型取込が保護を巻き戻す 2 経路 | **2026-08-22**。管理 API は `updateTypeDefinition` の**コピーを null ガード** (この endpoint が保存値を書き換える唯一の箇所)、`ZipImporter` は**欠落・不正を作成前に拒否**。2026-08-21 に入れたパーサ側の変更は**経路ではなかった**ので効いていない — 詳細と負のコントロールは [`p1-1c-evidence-updatability.md`](p1-1c-evidence-updatability.md) §5.3・§6 の 11〜13 |
+| 型更新・型取込が保護を巻き戻す 2 経路 | **2026-08-22**。管理 API は `updateTypeDefinition` の**コピーを null ガード** (この endpoint が保存値を書き換える唯一の箇所)。CMIS `updateType` という 3 つ目の書き手には**tripwire だけ**を置いた ((c) §5.5) — 偶然 3 つで死んでいるので挙動は変えていない、`ZipImporter` は**欠落・不正を作成前に拒否**。2026-08-21 に入れたパーサ側の変更は**経路ではなかった**ので効いていない — 詳細と負のコントロールは [`p1-1c-evidence-updatability.md`](p1-1c-evidence-updatability.md) §5.3・§6 の 11〜13 |
 | READONLY プロパティが CMIS の update で消える | 2026-08-21。`mergeAspectProperties` が引き継ぐ ((c) §5.1) |
 | 取込 snapshot の v2 表現 | 2026-08-21 ((b)) |
 | 証拠プロパティの CMIS からの書き換え | 2026-08-21 ((c)) |
