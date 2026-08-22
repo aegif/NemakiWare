@@ -99,6 +99,35 @@ public enum CaptureEvidenceField {
                     + "roadmap places execution origin in P1-1(e), where the delegated-execution "
                     + "case is decided as well")),
 
+    // ── What a re-import pass did ────────────────────────────────────────────────────────
+
+    /**
+     * Why an event exists for a pass that stored nothing.
+     *
+     * <p>The dedupe and idempotency branches return from {@code execute} before the emit, so a
+     * second poll of the same source object used to leave no trace at all while still rewriting
+     * evidence through the wrapper. The rewrite is now refused; this says a pass happened and
+     * what it decided (P1-1(d) D6/R5).
+     */
+    REIMPORT_OUTCOME("reimportOutcome", V2Home.none(
+            "this describes the PASS, not either endpoint: the same external asset and the same "
+                    + "document are named by the original capture event too, so an endpoint "
+                    + "attribute would attach a per-run outcome to a thing that outlives the run. "
+                    + "Its v2 home is a Process attribute, and Process attribute supply is the "
+                    + "open prerequisite of the v2 write flip (p1-1b-v2-evidence-home.md §3.4)")),
+
+    /** Evidence keys this pass wrote because the object did not have them. */
+    REIMPORT_FILLED("reimportFilled", V2Home.none(
+            "a per-pass list, with the same problem as reimportOutcome: it belongs to the run "
+                    + "rather than to the asset or the document, so it waits for Process "
+                    + "attributes (p1-1b-v2-evidence-home.md §3.4)")),
+
+    /** Evidence keys this pass was asked to change and did not. */
+    REIMPORT_REFUSED("reimportRefused", V2Home.none(
+            "a per-pass list, as reimportFilled. Recorded because a refusal is the more "
+                    + "interesting half: it means the caller believes something different about "
+                    + "this record than what was captured (p1-1b-v2-evidence-home.md §3.4)")),
+
     // ── The conversation ─────────────────────────────────────────────────────────────────
 
     /**

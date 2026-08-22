@@ -159,6 +159,122 @@ public class IngestMetadataService {
         }
     }
 
+    /**
+     * What a fill-only pass did, so the caller can say so rather than guess.
+     *
+     * <p>A key the request repeats with the SAME value appears in neither list. That is the
+     * ordinary case — a poller re-sending what it sent last time — and it is neither a change nor
+     * a refusal, so there is nothing to report and nothing to record. Counting it as "kept" would
+     * put a warning on every poll and, worse, would make the re-import event of P1-1(d) R5(B)
+     * fire once per poll per object.
+     *
+     * @param error    the same string {@code applyArchetypeMetadata} would have returned, or null
+     * @param filled   keys that were absent and have now been written
+     * @param refused  keys where the request carried a DIFFERENT value that was not applied
+     */
+    public record FillOutcome(String error, List<String> filled, List<String> refused) {
+        public boolean wroteAnything() {
+            return error == null && !filled.isEmpty();
+        }
+
+        /** Whether anything happened that a record should exist for. */
+        public boolean isWorthRecording() {
+            return !filled.isEmpty() || !refused.isEmpty();
+        }
+    }
+
+    /**
+     * Writes only the archetype properties the object does not already have.
+     *
+     * <h2>Why a separate operation</h2>
+     *
+     * <p>{@code applyArchetypeMetadata} overwrites: {@code mergeAspect} puts the request's value
+     * over whatever is stored. That is right for a capture, which emits a lineage event saying so.
+     * It is wrong on the dedupe/idempotency skip path, because those return <b>before</b> the
+     * emit, so the same call rewrites eleven properties that P1-1(c) made read-only through CMIS
+     * and leaves no record that it happened — polling the same source object a second time is
+     * enough (external review, P1-1(d) D6).
+     *
+     * <p>The rule this encodes: <b>evidence is not changed without a record.</b> Filling a gap is
+     * not a change — it is the retry the fall-through exists for, and it is what lets a field that
+     * failed to write the first time land on the second attempt.
+     *
+     * <p>A stored value that is null or blank counts as absent. A write that half-succeeded should
+     * still be repairable; only a real value is protected.
+     */
+    public FillOutcome fillMissingArchetypeMetadata(String repositoryId, String objectId,
+                                                    CallContext callContext, String secondaryTypeId,
+                                                    ExternalIngestRequest request,
+                                                    String[][] fieldMappings) {
+        try {
+            Content content = contentService.getContent(repositoryId, objectId);
+            if (content == null) {
+                return new FillOutcome("Content not found: " + objectId, List.of(), List.of());
+            }
+            List<Aspect> aspects = content.getAspects();
+            if (aspects == null) aspects = new ArrayList<>();
+
+            Map<String, Object> present = presentValues(aspects, secondaryTypeId);
+            List<Property> requested = collectArchetypeProps(request, fieldMappings);
+            List<Property> missing = new ArrayList<>();
+            List<String> refused = new ArrayList<>();
+            for (Property p : requested) {
+                if (!present.containsKey(p.getKey())) {
+                    missing.add(p);
+                } else if (!Objects.equals(present.get(p.getKey()), p.getValue())) {
+                    refused.add(p.getKey());
+                }
+                // else: same value, said twice. Nothing happened.
+            }
+            if (missing.isEmpty()) {
+                return new FillOutcome(null, List.of(), refused);
+            }
+            mergeAspect(aspects, secondaryTypeId, missing);
+            ensureSecondaryType(content, secondaryTypeId);
+            content.setAspects(aspects);
+            contentService.update(callContext, repositoryId, content);
+            invalidateCache(repositoryId, objectId);
+            return new FillOutcome(null, missing.stream().map(Property::getKey).toList(), refused);
+        } catch (Exception e) {
+            logger.warn("Failed to fill {} on {}: {}", secondaryTypeId, objectId, e.getMessage());
+            return new FillOutcome(secondaryTypeId + " metadata failed: " + e.getMessage(),
+                    List.of(), List.of());
+        }
+    }
+
+    /** Whether a fill-only pass would write anything, without writing it. */
+    public boolean willFillArchetypeMetadata(String repositoryId, String objectId,
+                                             String secondaryTypeId, ExternalIngestRequest request,
+                                             String[][] fieldMappings) {
+        try {
+            Content content = contentService.getContent(repositoryId, objectId);
+            if (content == null) return false;
+            List<Aspect> aspects = content.getAspects() == null ? List.of() : content.getAspects();
+            Map<String, Object> present = presentValues(aspects, secondaryTypeId);
+            return collectArchetypeProps(request, fieldMappings).stream()
+                    .anyMatch(p -> !present.containsKey(p.getKey()));
+        } catch (Exception e) {
+            // Cannot tell. Say yes: opening a capture intent that turns out to write nothing is
+            // harmless, whereas not opening one before a write that does happen is not.
+            return true;
+        }
+    }
+
+    /** The real (non-blank) values the aspect already holds, by key. */
+    private static Map<String, Object> presentValues(List<Aspect> aspects, String aspectName) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        for (Aspect a : aspects) {
+            if (!aspectName.equals(a.getName()) || a.getProperties() == null) continue;
+            for (Property p : a.getProperties()) {
+                Object value = p.getValue();
+                if (value == null) continue;
+                if (value instanceof String s && s.isBlank()) continue;
+                values.put(p.getKey(), value);
+            }
+        }
+        return values;
+    }
+
     // ── Private helpers ──
 
     /**

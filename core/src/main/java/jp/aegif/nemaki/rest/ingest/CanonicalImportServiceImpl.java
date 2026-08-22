@@ -817,14 +817,46 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 {"nemaki:chatEvidenceScope", "evidenceScope"},
         };
 
-        boolean chatFieldsTracked = openIfWriting(captureScope,
-                ingestMetadataService.willWriteArchetypeMetadata(request, chatFields));
-        String metaError = ingestMetadataService.applyArchetypeMetadata(request.getRepositoryId(), result.objectId(), callContext,
-                "nemaki:chatContextMetadata", request, chatFields);
-        if (metaError != null) warnings.add(metaError);
-        if (chatFieldsTracked) {
-            recordWrapperUpdate(captureScope, "applyArchetypeMetadata", metaError);
+        // A skip means execute() returned BEFORE emitting a lineage event (dedupe at :1959,
+        // idempotency at :1919). Overwriting the evidence here would therefore change eleven
+        // properties that P1-1(c) made read-only through CMIS and leave no record that it
+        // happened — polling the same source object twice is enough (P1-1(d) D6). Filling a gap
+        // is still allowed: that is the retry this fall-through exists for.
+        boolean noEventForThisPass = result.skipped();
+        String metaError;
+        List<String> refusedByThisPass = new ArrayList<>();
+        List<String> filledByThisPass = new ArrayList<>();
+        if (noEventForThisPass) {
+            boolean fillTracked = openIfWriting(captureScope,
+                    ingestMetadataService.willFillArchetypeMetadata(request.getRepositoryId(),
+                            result.objectId(), "nemaki:chatContextMetadata", request, chatFields));
+            IngestMetadataService.FillOutcome fill =
+                    ingestMetadataService.fillMissingArchetypeMetadata(request.getRepositoryId(),
+                            result.objectId(), callContext, "nemaki:chatContextMetadata",
+                            request, chatFields);
+            metaError = fill.error();
+            refusedByThisPass.addAll(fill.refused());
+            filledByThisPass.addAll(fill.filled());
+            if (fillTracked) {
+                recordWrapperUpdate(captureScope, "fillMissingArchetypeMetadata", metaError);
+            }
+            if (!fill.refused().isEmpty()) {
+                warnings.add("This object already carried chat evidence, so " + fill.refused().size()
+                        + " propert" + (fill.refused().size() == 1 ? "y was" : "ies were")
+                        + " left as captured rather than replaced with the different values in this "
+                        + "request " + fill.refused() + ". Re-import into a new object to capture "
+                        + "them afresh.");
+            }
+        } else {
+            boolean chatFieldsTracked = openIfWriting(captureScope,
+                    ingestMetadataService.willWriteArchetypeMetadata(request, chatFields));
+            metaError = ingestMetadataService.applyArchetypeMetadata(request.getRepositoryId(), result.objectId(), callContext,
+                    "nemaki:chatContextMetadata", request, chatFields);
+            if (chatFieldsTracked) {
+                recordWrapperUpdate(captureScope, "applyArchetypeMetadata", metaError);
+            }
         }
+        if (metaError != null) warnings.add(metaError);
 
         // chatCapturedAt has been on the type since it was introduced but nothing ever set it,
         // so every chat import carried a capture-time property it left empty. It is stamped from
@@ -857,24 +889,36 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         if (chatAspect != null && chatAspect.getProperties() != null) {
                             Map<String, Property> propMap = new java.util.LinkedHashMap<>();
                             for (Property p : chatAspect.getProperties()) propMap.put(p.getKey(), p);
+                            // Same rule as the eight fields above: on a skip no lineage event is
+                            // emitted, so a value already captured is not replaced — only a gap
+                            // is filled (P1-1(d) D6).
+                            int before = countWindowValues(propMap);
                             if (windowStart != null) {
                                 GregorianCalendar gc = new GregorianCalendar();
                                 gc.setTimeInMillis(java.time.Instant.parse(windowStart).toEpochMilli());
-                                propMap.put("nemaki:chatCaptureWindowStart", new Property("nemaki:chatCaptureWindowStart", gc));
+                                putCapturedWindowValue(propMap, "nemaki:chatCaptureWindowStart", gc,
+                                        noEventForThisPass, warnings, refusedByThisPass,
+                                        filledByThisPass);
                             }
                             if (windowEnd != null) {
                                 GregorianCalendar gc = new GregorianCalendar();
                                 gc.setTimeInMillis(java.time.Instant.parse(windowEnd).toEpochMilli());
-                                propMap.put("nemaki:chatCaptureWindowEnd", new Property("nemaki:chatCaptureWindowEnd", gc));
+                                putCapturedWindowValue(propMap, "nemaki:chatCaptureWindowEnd", gc,
+                                        noEventForThisPass, warnings, refusedByThisPass,
+                                        filledByThisPass);
                             }
-                            chatAspect.setProperties(new ArrayList<>(propMap.values()));
-                            // An aspect update written directly rather than through a helper —
-                            // which is exactly why it was missed. It is on the tracked allowlist
-                            // (design §5.0) and without this a failed capture window still
-                            // completed the row as CAPTURED (external review).
-                            captureScope.ensureIntentOpened();
-                            contentService.update(callContext, request.getRepositoryId(), chatContent);
-                            captureScope.record("applyCaptureWindow", MutationOutcome.SUCCEEDED);
+                            // Nothing to fill means nothing to write; a bare revision bump would
+                            // record a mutation that did not happen.
+                            if (countWindowValues(propMap) > before || !noEventForThisPass) {
+                                chatAspect.setProperties(new ArrayList<>(propMap.values()));
+                                // An aspect update written directly rather than through a helper —
+                                // which is exactly why it was missed. It is on the tracked allowlist
+                                // (design §5.0) and without this a failed capture window still
+                                // completed the row as CAPTURED (external review).
+                                captureScope.ensureIntentOpened();
+                                contentService.update(callContext, request.getRepositoryId(), chatContent);
+                                captureScope.record("applyCaptureWindow", MutationOutcome.SUCCEEDED);
+                            }
                         }
                     }
                 } catch (CaptureScope.CaptureIntentFailedException failClosed) {
@@ -896,6 +940,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         captureScope);
                 if (relErr != null) warnings.add(relErr);
             }
+        }
+
+        // Here, not in execute()'s early return: both fill decisions above are complete, so the
+        // event describes what this pass actually did rather than what it was about to try
+        // (P1-1(d) D6/R5, external review).
+        if (noEventForThisPass) {
+            emitReimportEvent(callContext, request, result, filledByThisPass, refusedByThisPass,
+                    warnings);
         }
 
         // Preserve the skipped flag/reason: a dedupe-skipped chat object that fell
@@ -925,6 +977,135 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     /** The authority a delegated import ran under: the profile's creator, or none if direct. */
     static String resolveOnBehalfOf(ImportProfileDefinition profile) {
         return profile != null && profile.isDelegated() ? profile.getCreatedByUserId() : null;
+    }
+
+    /**
+     * Records a pass that stored nothing but changed or refused something.
+     *
+     * <p>The dedupe and idempotency branches return from {@code execute} at {@code :1959} and
+     * {@code :1919}, which are before the emit — so the second poll of a source object left no
+     * trace whatever, while the wrapper went on writing to the object (P1-1(d) D6). Refusing the
+     * rewrite closes half of that; this closes the other half by saying a pass happened.
+     *
+     * <p><b>Not emitted for a pass that did nothing.</b> A poller re-sending the same metadata
+     * every five minutes is the ordinary case, and an event per poll per object would bury the
+     * ones that matter — 288 a day for a single unchanged message. What is worth a record is a
+     * gap filled or a change refused; a no-op is neither.
+     *
+     * <p>Emitted from the wrapper, after the fill decision, deliberately. Putting it on
+     * {@code execute}'s early return would place it BEFORE the wrapper's writes and reproduce
+     * exactly the ordering this increment is about (external review).
+     */
+    private void emitReimportEvent(CallContext callContext, ExternalIngestRequest request,
+                                   ExternalIngestResult result, List<String> filled,
+                                   List<String> refused, List<String> warnings) {
+        if (ingestLineageEmitter == null || result.objectId() == null) return;
+        if (filled.isEmpty() && refused.isEmpty()) return;
+        try {
+            ConnectorDefinition connector = connectorDefinitionService.get(request.getConnectorId());
+            ImportProfileDefinition profile = request.getProfileId() == null ? null
+                    : importProfileDefinitionService.get(request.getProfileId());
+            if (connector == null) return;
+            String repositoryId = request.getRepositoryId();
+            String folderId = profile == null ? null : profile.getTargetFolderId();
+            String documentName = null;
+            try {
+                Content c = contentService.getContent(repositoryId, result.objectId());
+                if (c != null) documentName = c.getName();
+            } catch (Exception ignored) {
+                // A name is a convenience here; its absence must not cost the record.
+            }
+            Map<CaptureEvidenceField, String> passOutcome = new java.util.LinkedHashMap<>();
+            passOutcome.put(CaptureEvidenceField.REIMPORT_OUTCOME,
+                    "this pass stored no content (" + describeSkip(result)
+                            + ") and did not replace evidence already captured");
+            if (!filled.isEmpty()) {
+                passOutcome.put(CaptureEvidenceField.REIMPORT_FILLED, String.join(",", filled));
+            }
+            if (!refused.isEmpty()) {
+                passOutcome.put(CaptureEvidenceField.REIMPORT_REFUSED, String.join(",", refused));
+            }
+            String eventId = ingestLineageEmitter.emitLineageEvent(repositoryId, result.objectId(),
+                    folderId, documentName, java.util.UUID.randomUUID().toString(),
+                    connector, request,
+                    // No bytes were supplied by this pass, so the content state is read back
+                    // rather than asserted — the same three-state answer as any other emit.
+                    describeCapturedContent(repositoryId, result.objectId(), null),
+                    resolveExecutedBy(profile, callContext), resolveOnBehalfOf(profile),
+                    passOutcome);
+            if (eventId == null) {
+                String reason = ingestLineageEmitter.lastEmissionFailure();
+                if (reason != null) {
+                    warnings.add("This re-import changed evidence on an existing object but the "
+                            + "record of it was NOT written (" + reason + "). "
+                            + "filled=" + filled + " refused=" + refused);
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Could not record the re-import pass for {}: {}", result.objectId(),
+                    e.getMessage());
+            warnings.add("This re-import changed evidence on an existing object but the record of "
+                    + "it was NOT written (" + e.getMessage() + ").");
+        }
+    }
+
+    /** Why this pass stored nothing, in the words the result already used. */
+    private static String describeSkip(ExternalIngestResult result) {
+        if (result.warnings() != null) {
+            for (String w : result.warnings()) {
+                if (w != null && w.toLowerCase().contains("already exists")) return w;
+            }
+        }
+        return result.skipped() ? "the document already existed" : "no content was stored";
+    }
+
+    private static final String[] CAPTURE_WINDOW_KEYS = {
+            "nemaki:chatCaptureWindowStart", "nemaki:chatCaptureWindowEnd"};
+
+    /** How many of the two capture-window properties currently hold a value. */
+    private static int countWindowValues(Map<String, Property> propMap) {
+        int count = 0;
+        for (String key : CAPTURE_WINDOW_KEYS) {
+            Property p = propMap.get(key);
+            if (p != null && p.getValue() != null) count++;
+        }
+        return count;
+    }
+
+    /**
+     * Writes a capture-window value, or keeps the captured one and says so.
+     *
+     * <p>When no lineage event will be emitted for this pass — a dedupe or idempotency skip — a
+     * value that is already there is evidence from an earlier capture, and replacing it would be
+     * an unrecorded change to a property P1-1(c) protected against CMIS edits (P1-1(d) D6).
+     * A gap is still filled: that is a retry, not a change.
+     */
+    private static void putCapturedWindowValue(Map<String, Property> propMap, String key,
+                                               GregorianCalendar value, boolean noEventForThisPass,
+                                               List<String> warnings, List<String> refused,
+                                               List<String> filled) {
+        Property existing = propMap.get(key);
+        if (noEventForThisPass && existing != null && existing.getValue() != null) {
+            // Same value said twice is neither a change nor a refusal — the ordinary poll — so it
+            // is silent. Only a DIFFERENT value is a refusal worth telling anyone about.
+            if (!sameInstant(existing.getValue(), value)) {
+                refused.add(key);
+                warnings.add(key + " was already captured, so this re-import left it as it was "
+                        + "rather than replacing it with a different value. Re-import into a new "
+                        + "object to capture it afresh.");
+            }
+            return;
+        }
+        if (noEventForThisPass) {
+            filled.add(key);
+        }
+        propMap.put(key, new Property(key, value));
+    }
+
+    /** Calendars compare by instant here; equals() also weighs timezone and calendar fields. */
+    private static boolean sameInstant(Object stored, GregorianCalendar incoming) {
+        return stored instanceof java.util.Calendar c
+                && c.getTimeInMillis() == incoming.getTimeInMillis();
     }
 
     /**

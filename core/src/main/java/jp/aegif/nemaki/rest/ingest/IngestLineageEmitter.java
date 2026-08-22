@@ -62,6 +62,21 @@ public class IngestLineageEmitter {
                                    String documentName, String operationId,
                                    ConnectorDefinition connector, ExternalIngestRequest request,
                                    CapturedContent content, String executedBy, String onBehalfOf) {
+        return emitLineageEvent(repositoryId, objectId, targetFolderId, documentName, operationId,
+                connector, request, content, executedBy, onBehalfOf, java.util.Map.of());
+    }
+
+    /**
+     * @param passOutcome extra v1 snapshot entries describing what THIS pass did, for a pass that
+     *        stored nothing. Empty for an ordinary capture, where the event's own existence and
+     *        its endpoints already say what happened. See {@code CaptureEvidenceField
+     *        .REIMPORT_OUTCOME} for why these are not endpoint attributes.
+     */
+    public String emitLineageEvent(String repositoryId, String objectId, String targetFolderId,
+                                   String documentName, String operationId,
+                                   ConnectorDefinition connector, ExternalIngestRequest request,
+                                   CapturedContent content, String executedBy, String onBehalfOf,
+                                   java.util.Map<CaptureEvidenceField, String> passOutcome) {
         lastFailure.remove();
         try {
             // Two classifications on purpose. The v1 type participates in eventKey and keeps
@@ -79,6 +94,14 @@ public class IngestLineageEmitter {
             java.util.Map<String, String> v1Snapshot =
                     buildV1Snapshot(connector, request, targetFolderId, content,
                             executedBy, onBehalfOf);
+            // Added after buildV1Snapshot rather than inside it: the chat loop in there reads
+            // request metadata, and these do not come from the request at all — they are what
+            // this pass decided.
+            passOutcome.forEach((field, value) -> {
+                if (value != null && !value.isBlank()) {
+                    v1Snapshot.put(field.v1Key(), value);
+                }
+            });
 
             // emitReporting, not emitSafely: the plain form collapses "lineage is off" and
             // "we lost the evidence" into the same false, and the document is already committed
