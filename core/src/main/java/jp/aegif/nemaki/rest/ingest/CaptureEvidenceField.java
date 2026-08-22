@@ -86,6 +86,16 @@ public enum CaptureEvidenceField {
     /** The v1 key and the v2 attribute differ deliberately: the v1 name predates the three-state. */
     CONTENT_HASH_UNAVAILABLE("contentHashUnavailable", V2Home.outputAttribute("contentStateReason")),
 
+    /**
+     * What {@link #CONTENT_HASH} is a digest OF (P1-1(d) R3).
+     *
+     * <p>{@code input} — the bytes this import fetched — or {@code input-matched-recorded} when
+     * their digest also equalled the one already on the object. Never a value meaning "the bytes
+     * the repository holds": nothing reads them back. Recording the digest without its subject
+     * is what let "we hashed what we fetched" be read as "we verified what is stored".
+     */
+    CONTENT_HASH_SUBJECT("contentHashSubject", V2Home.outputAttribute("contentHashSubject")),
+
     // ── Who ──────────────────────────────────────────────────────────────────────────────
 
     EXECUTED_BY("executedBy", V2Home.none(

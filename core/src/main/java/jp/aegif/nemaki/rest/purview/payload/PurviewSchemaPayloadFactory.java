@@ -119,7 +119,10 @@ public class PurviewSchemaPayloadFactory {
                 // force that third state into one of the other two.
                 attribute("contentStored", "string", true),
                 attribute("contentHashAlgorithm", "string", true),
-                attribute("contentStateReason", "string", true)));
+                attribute("contentStateReason", "string", true),
+                // P1-1(d) R3: what the digest above is a digest OF. Never "stored" — see
+                // EndpointKind.CMIS_DOCUMENT.
+                attribute("contentHashSubject", "string", true)));
         attrs.addAll(customAttrDefs);
         entityDef.put("attributeDefs", attrs);
         return entityDef;

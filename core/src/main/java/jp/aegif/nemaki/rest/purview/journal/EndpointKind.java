@@ -71,7 +71,13 @@ public enum EndpointKind {
             // forward, and that is undetermined rather than absent. contentStateReason explains
             // an "unknown"; it is product-authored prose of bounded length (four constants with
             // one node id interpolated), so PRESERVE rather than a truncated display value.
-            text("contentStored"), text("contentHashAlgorithm"), text("contentStateReason")),
+            text("contentStored"), text("contentHashAlgorithm"), text("contentStateReason"),
+            // P1-1(d) R3. WHAT the digest is of. "input" = the bytes this import fetched and
+            // handed to the repository; "input-matched-recorded" = those bytes, and their digest
+            // equalled the one already recorded for this object. There is deliberately no value
+            // meaning "the bytes the repository holds": nothing reads them back, and a digest
+            // that does not say its subject invites exactly that reading (fixity is P1-2).
+            text("contentHashSubject")),
 
     /**
      * A CMIS folder, referenced through its DataSet proxy.

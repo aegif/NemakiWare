@@ -1203,22 +1203,29 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * case green while restoring an unsupported claim (external review). The two answers belong
      * together — the same comparison decides both.
      */
-    record ContentComparison(boolean contentChanged, String hashToRecord, String versionLabel) {
+    record ContentComparison(boolean contentChanged, String hashToRecord, String versionLabel,
+                             boolean matchedRecordedHash) {
     }
 
     static ContentComparison compareContent(String computedHash, String existingHash) {
         if (computedHash == null) {
             // No content stream provided — a metadata-only update, not a version-up.
-            return new ContentComparison(false, null, "metadata-only (no content provided)");
+            return new ContentComparison(false, null, "metadata-only (no content provided)", false);
         }
         if (computedHash.equals(existingHash)) {
             // The equality is with a MUTABLE aspect property, not with the stored bytes. Carrying
             // computedHash forward would let a stale or edited nemaki:contentHash certify content
             // this import never stored — and the incoming bytes are discarded either way, so no
             // digest is owed here (external review).
-            return new ContentComparison(false, null, "metadata-only (content unchanged)");
+            //
+            // But the COMPARISON is a fact, and it used to be thrown away with the digest: the
+            // event then said this pass had neither supplied the bytes nor verified them, about a
+            // pass that had fetched them, hashed them and found the digest equal. Weaker than
+            // fixity, stronger than nothing, and it is the only fixity-adjacent evidence this
+            // path ever produces (external review, P1-1(d) D2).
+            return new ContentComparison(false, null, "metadata-only (content unchanged)", true);
         }
-        return new ContentComparison(true, computedHash, null);
+        return new ContentComparison(true, computedHash, null, false);
     }
 
     /**
@@ -1237,6 +1244,26 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      */
     IngestLineageEmitter.CapturedContent describeCapturedContent(
             String repositoryId, String objectId, String computedHash) {
+        return describeCapturedContent(repositoryId, objectId, computedHash, null);
+    }
+
+    /**
+     * @param comparison the dedupe comparison this import ran, when it ran one. Carries the one
+     *        fact the digest cannot: that the bytes this pass fetched hashed to what was already
+     *        recorded. Null when no comparison happened.
+     */
+    IngestLineageEmitter.CapturedContent describeCapturedContent(
+            String repositoryId, String objectId, String computedHash,
+            ContentComparison comparison) {
+        if (computedHash == null && comparison != null && comparison.matchedRecordedHash()) {
+            // The unchanged-content branch: no digest is recorded (the stored one is mutable and
+            // may be stale), but saying nothing at all understated what this pass did.
+            return IngestLineageEmitter.CapturedContent.unknown(
+                    "this import fetched the content and its digest equalled the one already "
+                            + "recorded for this object, so nothing was re-stored. That is a "
+                            + "comparison against a recorded digest, not against the stored "
+                            + "bytes, so whether those bytes are still held is undetermined");
+        }
         if (computedHash != null) {
             // This import supplied and hashed the bytes it stored — the strongest case, and no
             // read-back is needed to know it.
@@ -2102,6 +2129,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
             ContentStream contentStream = null;
             String computedHash = null;
+            // Held so the emit can see it: the unchanged-content branch nulls computedHash, and
+            // the fact that the digests MATCHED goes with it unless it is kept (P1-1(d) D2).
+            ContentComparison dedupeComparison = null;
             if (request.getContentStream() != null) {
                 String mimeType = request.getMimeType() != null ? request.getMimeType() : "application/octet-stream";
                 // Buffer content to compute hash for dedupe and persistence
@@ -2323,6 +2353,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     String existingHash = computedHash == null ? null : getAspectProperty(
                             existingDoc, "nemaki:externalIntegration", "nemaki:contentHash");
                     ContentComparison comparison = compareContent(computedHash, existingHash);
+                    dedupeComparison = comparison;
                     boolean contentChanged = comparison.contentChanged();
                     computedHash = comparison.hashToRecord();
                     if (comparison.versionLabel() != null) {
@@ -2401,7 +2432,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             String lineageEventId = ingestLineageEmitter != null
                     ? ingestLineageEmitter.emitLineageEvent(repositoryId, objectId, targetFolderId,
                             lineageDocumentName, lineageOperationId, connector, request,
-                            describeCapturedContent(repositoryId, objectId, computedHash),
+                            describeCapturedContent(repositoryId, objectId, computedHash,
+                                    dedupeComparison),
                             // A delegated run's context is SYNTHESIZED from the profile creator,
                             // so getUsername() names the authority, not the actor. Putting it in
                             // both fields said "the creator ran it", which is what the split

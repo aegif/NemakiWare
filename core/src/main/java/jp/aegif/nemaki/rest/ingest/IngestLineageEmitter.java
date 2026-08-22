@@ -151,18 +151,58 @@ public class IngestLineageEmitter {
      * (external review). So it is its own state, "undetermined", with the reason attached.
      * Establishing it is fixity work, P1-2.
      */
-    public record CapturedContent(ContentState state, String digest, String reason) {
+    public record CapturedContent(ContentState state, String digest, String reason,
+                                  DigestSubject digestSubject) {
 
         /** Whether bytes are held — and the case where we could not find out. */
         public enum ContentState { STORED, NONE, UNKNOWN }
 
+        /**
+         * What a recorded digest is a digest OF (P1-1(d) R3).
+         *
+         * <p>There is no {@code STORED} member, and that is the point. The digest is computed
+         * from the bytes the connector fetched, immediately before they are handed to
+         * {@code createDocument} — nothing reads back what the repository ended up holding. A
+         * bare {@code contentHash} beside a {@code contentStored=true} reads as though it did,
+         * which is the substitution this whole work item exists to avoid. Adding a member here
+         * requires a path that actually re-reads and re-hashes: fixity, P1-2.
+         */
+        public enum DigestSubject {
+            /** The bytes this import fetched and supplied. */
+            INPUT("input"),
+            /**
+             * Those bytes, AND their digest equalled the one already recorded for this object.
+             *
+             * <p>Weaker than fixity — the comparison is against a mutable aspect property, not
+             * against the stored bytes — but strictly more than {@link #INPUT}, and it used to be
+             * thrown away: the unchanged-content branch reported "neither supplied nor verified"
+             * about a pass that had done both (external review, P1-1(d) D2).
+             */
+            INPUT_MATCHED_RECORDED("input-matched-recorded");
+
+            private final String wireValue;
+
+            DigestSubject(String wireValue) {
+                this.wireValue = wireValue;
+            }
+
+            public String wireValue() {
+                return wireValue;
+            }
+        }
 
         public static CapturedContent hashed(String digest) {
-            return new CapturedContent(ContentState.STORED, digest, null);
+            return new CapturedContent(ContentState.STORED, digest, null, DigestSubject.INPUT);
+        }
+
+        /** As {@link #hashed}, plus: this digest equalled the one already recorded. */
+        public static CapturedContent hashedMatchingRecorded(String digest) {
+            return new CapturedContent(ContentState.STORED, digest, null,
+                    DigestSubject.INPUT_MATCHED_RECORDED);
         }
 
         public static CapturedContent none() {
-            return new CapturedContent(ContentState.NONE, null, null);
+            return new CapturedContent(ContentState.NONE, null, null, null);
         }
 
         // storedWithoutDigest(reason) was here: "bytes ARE held, we just did not hash them".
@@ -179,8 +219,19 @@ public class IngestLineageEmitter {
          * otherwise assert emptiness over bytes that are actually there (external review).
          */
         public static CapturedContent unknown(String reason) {
-            return new CapturedContent(ContentState.UNKNOWN, null, reason);
+            return new CapturedContent(ContentState.UNKNOWN, null, reason, null);
         }
+    }
+
+    /**
+     * The wire value for a digest's subject, defaulting to the weakest true one.
+     *
+     * <p>A digest with no subject recorded would be exactly the bare digest R3 forbids, so the
+     * absence of an explicit subject means {@code input} — never nothing, and never "stored".
+     */
+    static String digestSubjectValue(CapturedContent captured) {
+        CapturedContent.DigestSubject subject = captured.digestSubject();
+        return (subject == null ? CapturedContent.DigestSubject.INPUT : subject).wireValue();
     }
 
     /** Test hook: the retained state is otherwise unobservable, so it cannot be asserted on. */
@@ -241,6 +292,10 @@ public class IngestLineageEmitter {
         if (captured.digest() != null && !captured.digest().isBlank()) {
             putIfPresent(attributes, CaptureEvidenceField.CONTENT_HASH, captured.digest());
             putIfPresent(attributes, CaptureEvidenceField.CONTENT_HASH_ALGORITHM, "SHA-256");
+            // Never emitted without its subject: a digest that does not say what it is of reads
+            // as a digest of the stored bytes, which nothing here checked (P1-1(d) R3).
+            putIfPresent(attributes, CaptureEvidenceField.CONTENT_HASH_SUBJECT,
+                    digestSubjectValue(captured));
         } else {
             putIfPresent(attributes, CaptureEvidenceField.CONTENT_HASH_UNAVAILABLE,
                     captured.reason());
@@ -325,6 +380,8 @@ public class IngestLineageEmitter {
         if (captured.digest() != null && !captured.digest().isBlank()) {
             v1Snapshot.put(CaptureEvidenceField.CONTENT_HASH.v1Key(), captured.digest());
             v1Snapshot.put(CaptureEvidenceField.CONTENT_HASH_ALGORITHM.v1Key(), "SHA-256");
+            v1Snapshot.put(CaptureEvidenceField.CONTENT_HASH_SUBJECT.v1Key(),
+                    digestSubjectValue(captured));
         } else if (captured.reason() != null) {
             v1Snapshot.put(CaptureEvidenceField.CONTENT_HASH_UNAVAILABLE.v1Key(),
                     captured.reason());

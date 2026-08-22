@@ -264,7 +264,7 @@ metadata-only 再取込は読み戻し経路に落ちて `none()` を出しう�
 **現在 v1 snapshot に載っている chat 10 個は全部 `asserted` である。** それを `applied` と
 読ませているのが D1 のずれで、**emit を動かさなくても直る**。
 
-### R3 — digest は主語を名乗る
+### R3 — digest は主語を名乗る — **2026-08-22 実装済み**
 
 `contentDigest` を単独で置かない。名乗れるのは `input` (取得したバイト列) だけで、
 `stored` は fixity (P1-2) が入るまで**発行しない**。
@@ -273,6 +273,20 @@ metadata-only 再取込は読み戻し経路に落ちて `none()` を出しう�
 > **既存の `ContentState.STORED` とは別物である。** あちらは「保管されているか」の三値で、
 > 既に `contentStored` として出荷済み。R3 が禁じるのは「**保管されたバイト列の digest**」を
 > 名乗ることであって、`contentStored` ではない。
+
+**入ったもの** (2026-08-22):
+
+- `CapturedContent.DigestSubject` — 値は `input` と `input-matched-recorded` の **2 つだけ**。
+  「保管されたバイト列」を意味する値は**存在しない**。足すには読み戻して取り直す経路が
+  要る (P1-2)。テストが enum の中身を直接見て、`stored` 相当が足されたら落ちる
+- `contentHashSubject` を v1 snapshot と v2 output attribute の**両方**に出す。
+  Atlas 型定義・`EndpointKind`・整合テストの 3 箇所を揃えた
+- **主語なしで digest が出る経路を無くした** — `digestSubjectValue` は null なら `input` を
+  返す。負のコントロール: null を返すようにすると `expected: <input> but was: <null>`
+- D2 の但し書きを実装。`compareContent` は一致したことを `matchedRecordedHash` として
+  覚え、`describeCapturedContent` が「取得もハッシュも一致確認もした。ただし記録済み
+  digest との比較であって保管バイト列との比較ではない」と言う。
+  負のコントロール: 捨てるように戻すと 2 件落ちる
 
 ### R4 — 3 種別 + 申告を型で分ける
 
@@ -380,8 +394,8 @@ message の emit が添付ループ `:366-415` を丸ごと跨ぐ。
 | 3 | **値を埋めた/拒んだ** 2 度目が、**イベントを 1 件出す** (D6 B) | **実測**: emit の呼出を外すと `Wanted but not invoked` |
 | 3b | **同じ値を再送しただけ**の 2 度目は、**イベントを出さない** — 条件 3 の control | 「skip なら必ず出す」にすると落ちる。5 分ポーリングで 1 日 288 件になる |
 | 4 | 欠けていた値の穴埋めは 2 度目でも**動く** — 条件 2 の control | 「skip なら何もしない」にすると落ちる |
-| 5 | digest は主語を持ち、**`stored` を名乗る経路が存在しない**。`contentStored` は従来どおり出る | `stored` を発行できるようにすると落ちる / `contentStored` を消すと落ちる |
-| 6 | 内容一致で version を上げなかった取込が、**「確かめていない」と言わない** (D2 但し書き) | `hashToRecord = null` を無条件に「未確認」へ倒すと落ちる |
+| 5 | digest は主語を持ち、**`stored` を名乗る経路が存在しない**。`contentStored` は従来どおり出る | **実測**: 主語を出さなくすると `expected: <input> but was: <null>`。`stored` 相当を enum に足すと `thereIsNoStoredSubject` が落ちる |
+| 6 | 内容一致で version を上げなかった取込が、**「確かめていない」と言わない** (D2 但し書き) | **実測**: `matchedRecordedHash` を捨てると 2 件落ちる |
 | 7 | 証拠 aspect が **version 間で参照共有されない** (D3) | `buildCopyDocument` の防御コピーを外すと落ちる。**`updateWithoutCheckInOut` 経路で試験する** — `checkIn` 経路は `cancelCheckOut` の副作用で偶然通る |
 | 8 | 0 バイト attachment の**skip がイベントに残る** (D5) | skip の early return を戻すと落ちる |
 | 9 | outbox の `executedBy` / `onBehalfOf` が、**同じ取込のイベントと一致する** (D7) | どちらかの出所を戻すと落ちる |
@@ -406,6 +420,6 @@ message の emit が添付ループ `:366-415` を丸ごと跨ぐ。
 
 1. この改訂のレビュー
 2. ~~**D6 (R5)**~~ — **2026-08-22 実装済み** (A・B とも)。負のコントロールは 3 つとも実際に落として確認
-3. R2・R3・R4 を型として入れる (イベント側。CMIS プロパティは触らない)
+3. R3 は**済**。R2 (主張の強さ) と R4 (型で分ける) が残り
 4. ~~§7 のコメント修正~~ — **済**
 5. 通ってから棚卸し §7 の 2〜6

@@ -182,7 +182,10 @@ public class EndpointKindSchemaAlignmentTest {
                         // P1-1(b): what the repository holds after an ingest. contentStored is
                         // three values as a STRING, not a boolean — a check-in with no stream
                         // carries the previous content forward, which is undetermined.
-                        "contentStored", "contentHashAlgorithm", "contentStateReason"),
+                        "contentStored", "contentHashAlgorithm", "contentStateReason",
+                        // P1-1(d) R3: the digest's subject, so "we hashed what we fetched" is
+                        // not readable as "we verified what is stored".
+                        "contentHashSubject"),
                 EndpointKind.CMIS_DOCUMENT.allowedAttributes());
         assertEquals(List.of("name"), EndpointKind.CMIS_FOLDER.allowedAttributes());
         assertEquals(List.of("archivedAt", "originalObjectId", "name", "versionLabel",
