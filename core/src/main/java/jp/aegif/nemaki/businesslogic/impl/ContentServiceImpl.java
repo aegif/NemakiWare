@@ -2635,7 +2635,62 @@ public class ContentServiceImpl implements ContentService {
 				}
 			}
 		}
-		return aspects;
+		return keepEvidenceAspects(aspects, existingAspectsMap);
+	}
+
+	/**
+	 * Puts back any evidence aspect this rebuild would have dropped.
+	 *
+	 * <h2>The two ways it gets dropped</h2>
+	 *
+	 * <p><b>Named removal.</b> {@code cmis:secondaryObjectTypeIds} is READWRITE and the list the
+	 * caller sends is treated as the whole truth, so one update omitting
+	 * {@code nemaki:chatContextMetadata} takes the aspect and every evidence property in it. The
+	 * per-property READONLY of P1-1(c) cannot help: the loop above never visits a type that is
+	 * not in the list. Removal is deliberate — {@code modifyProperties} sets even an empty list,
+	 * with a comment saying the {@code isEmpty()} check "prevented secondary type deletion" — so
+	 * this is an exception carved into it, not a bug being fixed.
+	 *
+	 * <p><b>Unresolvable type.</b> The loop only rebuilds an aspect when the type definition
+	 * resolves to a secondary type; anything else is swallowed. And when the request carries no
+	 * id list at all, {@code ids} is the object's own aspect names — so a rename-only update
+	 * during a transient type-cache miss silently drops the evidence. That is the same failure
+	 * P1-1(c) §5.1 already decided for properties ("a type we cannot read is not a reason to lose
+	 * evidence"), one level up (external review).
+	 *
+	 * <h2>Why preserve rather than reject</h2>
+	 *
+	 * <p>P1-1(c) chose silent preservation for READONLY properties. Throwing here would make the
+	 * same protection succeed on one route and fail the whole request on another, and it would
+	 * break clients that send the list without meaning anything by the evidence type's absence.
+	 *
+	 * <p>Not silent to an operator, though: it logs. And the caller is not misled about the
+	 * object — a subsequent read shows the type still attached.
+	 *
+	 * @param rebuilt the aspects this call constructed, which is what would be stored
+	 * @param existing the aspects the object already had, by name
+	 */
+	private List<Aspect> keepEvidenceAspects(List<Aspect> rebuilt, Map<String, Aspect> existing) {
+		if (existing == null || existing.isEmpty()) {
+			return rebuilt;
+		}
+		java.util.Set<String> present = new java.util.HashSet<>();
+		for (Aspect aspect : rebuilt) {
+			if (aspect.getName() != null) {
+				present.add(aspect.getName());
+			}
+		}
+		for (Map.Entry<String, Aspect> entry : existing.entrySet()) {
+			if (present.contains(entry.getKey())
+					|| !jp.aegif.nemaki.businesslogic.EvidenceTypes.isProtected(entry.getKey())) {
+				continue;
+			}
+			log.warn("Keeping evidence secondary type {} that this update would have detached. "
+					+ "Evidence types cannot be removed through CMIS; delete the object (and its "
+					+ "archive) if it was imported in error.", entry.getKey());
+			rebuilt.add(entry.getValue());
+		}
+		return rebuilt;
 	}
 
 	/**

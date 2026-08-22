@@ -178,7 +178,7 @@ aspect から値を引くので、**id が在って aspect が無い**と「証�
 |---|---|---|
 | 1 | 証拠型を**含まない** `cmis:secondaryObjectTypeIds` を送っても、aspect が**残る** | 保護を外すと落ちる |
 | 2 | **型定義が解決できなくても**証拠 aspect が残る (§1.1 の第 3 の経路) | 解決失敗時の引き継ぎを外すと落ちる。`getTypeDefinition` に null を返させて確かめる |
-| 3 | `secondaryIds` と aspect が**食い違わない** — id だけ在って中身が空、を作らない (§3) | `setBaseProperties` 側の整合を外すと落ちる |
+| 3 | `secondaryIds` と aspect が**食い違わない** (更新経路) | `modifyProperties` は aspect リストから id を導出するので**構造的に真**。**弱い条件だと明記する**。作成経路 (`setBaseProperties`) は生のリクエスト値を id に書くので食い違いを作れるが、**作成時には守るべき既存の証拠が無い**ので、この増分では触らない |
 | 4 | **証拠でない** secondary type は**従来どおり外せる** — 条件 1 の control | 全 aspect を保つ実装にすると落ちる |
 | 5 | `nemaki:externalIntegration` も**外せない** (§2.1) | chat だけ守る実装だと落ちる。**`contentHash` が消えると次のポーリングが再取込する** |
 | 6 | 証拠型の**プロパティ**は従来どおり保たれる ((c) §5.1) | 既存の条件 9・10 |
@@ -199,6 +199,18 @@ aspect から値を引くので、**id が在って aspect が無い**と「証�
 - **これ以前に外された aspect は戻らない**
 - **複製した文書は、そのオブジェクトについては起きていない capture の証拠を持つ。**
   この変更後は剥がせない (§0)
+
+---
+
+## 6.1 実装 (2026-08-22)
+
+- `EvidenceTypes.PROTECTED` に 2 型
+- `buildSecondaryTypes` の末尾で `keepEvidenceAspects` — **2 経路とも**同じ場所で塞がる
+  (リストから外れた場合も、型が解決できなかった場合も、「組み直した結果に居ない」で捕まる)
+- `secondaryIds` は `modifyProperties` が aspect リストから導出するので**自動的に戻る**
+
+負のコントロール: `keepEvidenceAspects` の呼び出しを外すと **6 件中 4 件**が落ちる
+(named removal 2 件、型解決失敗 1 件、プロパティ保持 1 件)。
 
 ---
 
