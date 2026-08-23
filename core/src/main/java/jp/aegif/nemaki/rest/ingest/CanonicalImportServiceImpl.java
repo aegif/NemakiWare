@@ -905,7 +905,42 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (request.getSourceObjectType() == null || request.getSourceObjectType().isBlank()) {
             request.setSourceObjectType("message");
         }
-        ExternalIngestResult result = execute(callContext, request, captureScope);
+        String[][] chatFields = {
+                {"nemaki:chatWorkspaceId", "workspaceId"}, {"nemaki:chatChannelId", "channelId"},
+                {"nemaki:chatChannelName", "channelName"}, {"nemaki:chatThreadId", "threadId"},
+                {"nemaki:chatMessageId", "messageId"}, {"nemaki:chatParticipants", "participants"},
+                {"nemaki:chatSelectionReason", "selectionReason"},
+                {"nemaki:chatEvidenceScope", "evidenceScope"},
+        };
+        // P1-1(e) §3: the create-path aspect phase runs INSIDE execute(), after the document
+        // exists and before the emit — so the event can carry the applied state (capturedAt's
+        // second copy, the mh1 facts). The hook's warnings land in these locals and are merged
+        // after execute returns; its exceptions are NOT caught here (H5 — each write records
+        // its own outcome on the scope, and execute()'s failure path takes the rest).
+        List<String> hookWarnings = new ArrayList<>();
+        String[] hookMetaError = {null};
+        BeforeEmitHook chatAspectApplication = (objectId, createdObject) -> {
+            boolean chatFieldsTracked = openIfWriting(captureScope,
+                    ingestMetadataService.willWriteArchetypeMetadata(request, chatFields));
+            String err = ingestMetadataService.applyArchetypeMetadata(request.getRepositoryId(),
+                    objectId, callContext, "nemaki:chatContextMetadata", request, chatFields);
+            if (chatFieldsTracked) {
+                recordWrapperUpdate(captureScope, "applyArchetypeMetadata", err);
+            }
+            hookMetaError[0] = err;
+            applyCaptureWindow(captureScope, callContext, request, objectId, false,
+                    hookWarnings, new ArrayList<>(), new ArrayList<>());
+            java.util.Map<CaptureEvidenceField, String> facts = new java.util.LinkedHashMap<>();
+            String stampedAt = applyChatCapturedAt(captureScope, callContext, request, objectId,
+                    createdObject, hookWarnings);
+            if (stampedAt != null) {
+                facts.put(CaptureEvidenceField.CHAT_CAPTURED_AT, stampedAt);
+            }
+            return facts;
+        };
+
+        ExternalIngestResult result = execute(callContext, request, captureScope,
+                chatAspectApplication);
         if (!result.isSuccess()) return result;
         // An empty/pseudo-file skip (objectId == null) produced no object to
         // decorate — applying chat metadata or getContent() on a null id would
@@ -922,13 +957,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         failureState.committedObjectId = result.objectId();
         List<String> warnings = failureState.warnings;
         warnings.addAll(result.warnings());
-        String[][] chatFields = {
-                {"nemaki:chatWorkspaceId", "workspaceId"}, {"nemaki:chatChannelId", "channelId"},
-                {"nemaki:chatChannelName", "channelName"}, {"nemaki:chatThreadId", "threadId"},
-                {"nemaki:chatMessageId", "messageId"}, {"nemaki:chatParticipants", "participants"},
-                {"nemaki:chatSelectionReason", "selectionReason"},
-                {"nemaki:chatEvidenceScope", "evidenceScope"},
-        };
+        warnings.addAll(hookWarnings);
 
         // A skip means execute() returned BEFORE emitting a lineage event (dedupe at :1959,
         // idempotency at :1919). Overwriting the evidence here would therefore change eleven
@@ -975,93 +1004,19 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         + "them afresh.");
             }
         } else {
-            boolean chatFieldsTracked = openIfWriting(captureScope,
-                    ingestMetadataService.willWriteArchetypeMetadata(request, chatFields));
-            metaError = ingestMetadataService.applyArchetypeMetadata(request.getRepositoryId(), result.objectId(), callContext,
-                    "nemaki:chatContextMetadata", request, chatFields);
-            if (chatFieldsTracked) {
-                recordWrapperUpdate(captureScope, "applyArchetypeMetadata", metaError);
-            }
+            // The create/version path's aspect phase already ran inside execute() (the hook).
+            metaError = hookMetaError[0];
         }
         if (metaError != null) warnings.add(metaError);
 
-        // chatCapturedAt has been on the type since it was introduced but nothing ever set it,
-        // so every chat import carried a capture-time property it left empty. It is stamped from
-        // the server clock rather than read from the request — but ONLY when this operation
-        // created the object, because for anything already here the clock is not the answer.
-        //
-        // Protected against CMIS edits since P1-1(c): Patch_ChatContextEvidenceReadOnly makes
-        // this and the other ten READONLY, so injectPropertyValue drops a client's value. The
-        // ingest writes through the model directly and is unaffected, which is the asymmetry
-        // that lets a capture stamp its own evidence.
-        //
-        // Still NOT corroborated anywhere. The stamp happens HERE, after the import that emitted
-        // the event, so the snapshot does not carry it — of the eleven, capturedAt is the one
-        // the event cannot repeat (P1-1(d) D1). There is no second copy.
-        //
-        // NOT solved by moving the stamp ahead of emission — that was retracted in
-        // p1-1b-v2-evidence-home.md §8, because the aspect it stamps into is created by this
-        // wrapper, after execute() returns, so moving it earlier hits nothing.
-        applyChatCapturedAt(captureScope, callContext, request, result.objectId(), result.createdObject(),
-                warnings);
+        // The custody stamp moved INTO execute() (the beforeEmit hook) at P1-1(e): (b) §8's
+        // retraction said "moving the stamp ahead of emission hits nothing because the aspect
+        // does not exist yet" — the hook is the gate that makes the aspect exist first, so the
+        // event now carries the stamp as its second copy (D1 resolved for new captures).
 
-        // Apply capture window datetime properties if provided in metadata
-        if (request.getMetadata() != null) {
-            String windowStart = resolveMetadataString(request, "captureWindowStart");
-            String windowEnd = resolveMetadataString(request, "captureWindowEnd");
-            if (windowStart != null || windowEnd != null) {
-                try {
-                    Content chatContent = contentService.getContent(request.getRepositoryId(), result.objectId());
-                    if (chatContent != null) {
-                        List<Aspect> chatAspects = chatContent.getAspects() != null ? chatContent.getAspects() : new ArrayList<>();
-                        Aspect chatAspect = chatAspects.stream()
-                                .filter(a -> "nemaki:chatContextMetadata".equals(a.getName())).findFirst().orElse(null);
-                        if (chatAspect != null && chatAspect.getProperties() != null) {
-                            Map<String, Property> propMap = new java.util.LinkedHashMap<>();
-                            for (Property p : chatAspect.getProperties()) propMap.put(p.getKey(), p);
-                            // Same rule as the eight fields above: on a skip no lineage event is
-                            // emitted, so a value already captured is not replaced — only a gap
-                            // is filled (P1-1(d) D6).
-                            int before = countWindowValues(propMap);
-                            List<String> pendingWindowFill = new ArrayList<>();
-                            if (windowStart != null) {
-                                GregorianCalendar gc = new GregorianCalendar();
-                                gc.setTimeInMillis(java.time.Instant.parse(windowStart).toEpochMilli());
-                                putCapturedWindowValue(propMap, "nemaki:chatCaptureWindowStart", gc,
-                                        noEventForThisPass, warnings, refusedByThisPass,
-                                        pendingWindowFill);
-                            }
-                            if (windowEnd != null) {
-                                GregorianCalendar gc = new GregorianCalendar();
-                                gc.setTimeInMillis(java.time.Instant.parse(windowEnd).toEpochMilli());
-                                putCapturedWindowValue(propMap, "nemaki:chatCaptureWindowEnd", gc,
-                                        noEventForThisPass, warnings, refusedByThisPass,
-                                        pendingWindowFill);
-                            }
-                            // Nothing to fill means nothing to write; a bare revision bump would
-                            // record a mutation that did not happen.
-                            if (countWindowValues(propMap) > before || !noEventForThisPass) {
-                                chatAspect.setProperties(new ArrayList<>(propMap.values()));
-                                // An aspect update written directly rather than through a helper —
-                                // which is exactly why it was missed. It is on the tracked allowlist
-                                // (design §5.0) and without this a failed capture window still
-                                // completed the row as CAPTURED (external review).
-                                captureScope.ensureIntentOpened();
-                                contentService.update(callContext, request.getRepositoryId(), chatContent);
-                                captureScope.record("applyCaptureWindow", MutationOutcome.SUCCEEDED);
-                                // Only now. Before the update returns, these are intentions.
-                                filledByThisPass.addAll(pendingWindowFill);
-                            }
-                        }
-                    }
-                } catch (CaptureScope.CaptureIntentFailedException failClosed) {
-                    throw failClosed;
-                } catch (Exception e) {
-                    captureScope.record("applyCaptureWindow", MutationOutcome.INDETERMINATE,
-                            e.getMessage());
-                    warnings.add("Capture window metadata failed: " + e.getMessage());
-                }
-            }
+        if (noEventForThisPass) {
+            applyCaptureWindow(captureScope, callContext, request, result.objectId(),
+                    true, warnings, refusedByThisPass, filledByThisPass);
         }
 
         // Create derivedFromContext relationship if parentContextId is provided
@@ -1088,6 +1043,46 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         return new ExternalIngestResult(request.getRequestId(), result.objectId(), result.versionLabel(),
                 result.isNewVersion(), result.dryRun(), result.skipped(), result.skipReason(),
                 result.lineageEventId(), List.of(), warnings, result.createdObject());
+    }
+
+    /**
+     * The applied-metadata hashes at EMISSION time, as event facts (P1-1(e) §3, Codex M2).
+     *
+     * <p>One read-back, one computation — the exact instant the event describes. The completion
+     * evidence recomputes at scope close; on a create path nothing touches the hashed aspects
+     * between emit and completion, and a test pins the two copies equal (Codex M3) — a
+     * divergence would mean a write slipped between them, which is worth failing loudly.
+     */
+    private void appendAppliedHashFacts(String repositoryId, String objectId,
+            java.util.Map<CaptureEvidenceField, String> facts) {
+        if (objectId == null || contentService == null) {
+            return;
+        }
+        try {
+            Content stored = contentService.getContent(repositoryId, objectId);
+            if (stored == null) {
+                return;
+            }
+            EvidenceMetadataHash.AppliedHashes hashes =
+                    EvidenceMetadataHash.compute(stored.getAspects());
+            if (hashes.isEmpty()) {
+                return;
+            }
+            if (hashes.chatEvidenceHash() != null) {
+                facts.put(CaptureEvidenceField.APPLIED_CHAT_EVIDENCE_HASH,
+                        hashes.chatEvidenceHash());
+            }
+            if (hashes.sourceIdentityHash() != null) {
+                facts.put(CaptureEvidenceField.APPLIED_SOURCE_IDENTITY_HASH,
+                        hashes.sourceIdentityHash());
+            }
+            facts.put(CaptureEvidenceField.METADATA_HASH_SUBJECT, EvidenceMetadataHash.SUBJECT);
+            facts.put(CaptureEvidenceField.METADATA_HASH_FORMULA, EvidenceMetadataHash.FORMULA);
+        } catch (Exception e) {
+            // The event simply carries no hash facts — honest absence; the completion evidence
+            // still records its own copy.
+            logger.debug("Applied-hash read-back failed for {}: {}", objectId, e.getMessage());
+        }
     }
 
     /**
@@ -1461,12 +1456,83 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * wrong (external review), so a pre-existing object is left unstamped. Recovering the answer
      * for legacy objects means reading their provenance events — P1-1(d).
      */
-    private void applyChatCapturedAt(CaptureScope captureScope,
+    /**
+     * The capture-window writes, shared by the two phases that need them: the beforeEmit hook
+     * (create/version path — ahead of the emit since P1-1(e) §3) and the wrapper's dedupe-skip
+     * fall-through (fill semantics, D6).
+     */
+    private void applyCaptureWindow(CaptureScope captureScope, CallContext callContext,
+            ExternalIngestRequest request, String objectId, boolean noEventForThisPass,
+            List<String> warnings, List<String> refusedByThisPass,
+            List<String> filledByThisPass) {
+        // Apply capture window datetime properties if provided in metadata
+        if (request.getMetadata() != null) {
+            String windowStart = resolveMetadataString(request, "captureWindowStart");
+            String windowEnd = resolveMetadataString(request, "captureWindowEnd");
+            if (windowStart != null || windowEnd != null) {
+                try {
+                    Content chatContent = contentService.getContent(request.getRepositoryId(), objectId);
+                    if (chatContent != null) {
+                        List<Aspect> chatAspects = chatContent.getAspects() != null ? chatContent.getAspects() : new ArrayList<>();
+                        Aspect chatAspect = chatAspects.stream()
+                                .filter(a -> "nemaki:chatContextMetadata".equals(a.getName())).findFirst().orElse(null);
+                        if (chatAspect != null && chatAspect.getProperties() != null) {
+                            Map<String, Property> propMap = new java.util.LinkedHashMap<>();
+                            for (Property p : chatAspect.getProperties()) propMap.put(p.getKey(), p);
+                            // Same rule as the eight fields above: on a skip no lineage event is
+                            // emitted, so a value already captured is not replaced — only a gap
+                            // is filled (P1-1(d) D6).
+                            int before = countWindowValues(propMap);
+                            List<String> pendingWindowFill = new ArrayList<>();
+                            if (windowStart != null) {
+                                GregorianCalendar gc = new GregorianCalendar();
+                                gc.setTimeInMillis(java.time.Instant.parse(windowStart).toEpochMilli());
+                                putCapturedWindowValue(propMap, "nemaki:chatCaptureWindowStart", gc,
+                                        noEventForThisPass, warnings, refusedByThisPass,
+                                        pendingWindowFill);
+                            }
+                            if (windowEnd != null) {
+                                GregorianCalendar gc = new GregorianCalendar();
+                                gc.setTimeInMillis(java.time.Instant.parse(windowEnd).toEpochMilli());
+                                putCapturedWindowValue(propMap, "nemaki:chatCaptureWindowEnd", gc,
+                                        noEventForThisPass, warnings, refusedByThisPass,
+                                        pendingWindowFill);
+                            }
+                            // Nothing to fill means nothing to write; a bare revision bump would
+                            // record a mutation that did not happen.
+                            if (countWindowValues(propMap) > before || !noEventForThisPass) {
+                                chatAspect.setProperties(new ArrayList<>(propMap.values()));
+                                // An aspect update written directly rather than through a helper —
+                                // which is exactly why it was missed. It is on the tracked allowlist
+                                // (design §5.0) and without this a failed capture window still
+                                // completed the row as CAPTURED (external review).
+                                captureScope.ensureIntentOpened();
+                                contentService.update(callContext, request.getRepositoryId(), chatContent);
+                                captureScope.record("applyCaptureWindow", MutationOutcome.SUCCEEDED);
+                                // Only now. Before the update returns, these are intentions.
+                                filledByThisPass.addAll(pendingWindowFill);
+                            }
+                        }
+                    }
+                } catch (CaptureScope.CaptureIntentFailedException failClosed) {
+                    throw failClosed;
+                } catch (Exception e) {
+                    captureScope.record("applyCaptureWindow", MutationOutcome.INDETERMINATE,
+                            e.getMessage());
+                    warnings.add("Capture window metadata failed: " + e.getMessage());
+                }
+            }
+        }
+
+    }
+
+    /** @return the stamped instant (ISO-8601) when THIS call stamped it; null otherwise. */
+    private String applyChatCapturedAt(CaptureScope captureScope,
             CallContext callContext, ExternalIngestRequest request,
                                      String objectId, boolean createdObject,
                                      List<String> warnings) {
         if (objectId == null) {
-            return;
+            return null;
         }
         if (!createdObject) {
             // This object was already here. When we first held it is not knowable from anything
@@ -1475,21 +1541,21 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // wrong answers were shipped in review before this one; the third option is to
             // record nothing, which is what an unknown fact deserves. Recovering it for legacy
             // objects means reading their provenance events — P1-1(d).
-            return;
+            return null;
         }
         try {
             Content content = contentService.getContent(request.getRepositoryId(), objectId);
             if (content == null) {
                 warnings.add("Capture time (nemaki:chatCapturedAt) was not recorded: the stored "
                         + "object could not be read back");
-                return;
+                return null;
             }
             if (content.getAspects() == null) {
                 // A null aspect list means the chat aspect is absent just as surely as a list
                 // without it does; returning silently here left half the case unreported.
                 warnings.add("Capture time (nemaki:chatCapturedAt) was not recorded: the stored "
                         + "object carries no aspects");
-                return;
+                return null;
             }
             Aspect chatAspect = content.getAspects().stream()
                     .filter(a -> "nemaki:chatContextMetadata".equals(a.getName()))
@@ -1504,7 +1570,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         + (chatAspect == null
                                 ? "the chat context aspect is not present on the stored object"
                                 : "the chat context aspect carries no properties"));
-                return;
+                return null;
             }
             Map<String, Property> props = new java.util.LinkedHashMap<>();
             for (Property p : chatAspect.getProperties()) {
@@ -1515,19 +1581,22 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 // means anything, and moving it forward would quietly erase how long we have
                 // actually held the record. Since P1-1(c) the property is READONLY through CMIS,
                 // so this no longer preserves a value planted by a client — only one this ingest
-                // wrote. There is still no second copy to check it against (P1-1(d) D1).
-                return;
+                // wrote. A second copy now exists on the EVENT for stamps made since P1-1(e)
+                // — this early return covers a value stamped by an earlier pass.
+                return null;
             }
             // The clock is correct HERE and only here: this operation just created the object,
             // so the moment it ran is the moment this deployment took custody. Applying it to an
             // object that was already present is the bug the guard above exists for.
+            java.time.Instant stampedAt = java.time.Instant.now();
             GregorianCalendar now = new GregorianCalendar();
-            now.setTimeInMillis(java.time.Instant.now().toEpochMilli());
+            now.setTimeInMillis(stampedAt.toEpochMilli());
             props.put("nemaki:chatCapturedAt", new Property("nemaki:chatCapturedAt", now));
             chatAspect.setProperties(new ArrayList<>(props.values()));
             captureScope.ensureIntentOpened();
             contentService.update(callContext, request.getRepositoryId(), content);
             captureScope.record("applyChatCapturedAt", MutationOutcome.SUCCEEDED);
+            return stampedAt.toString();
         } catch (CaptureScope.CaptureIntentFailedException failClosed) {
             // Never swallowed: the intent could not be written, so nothing may be changed.
             throw failClosed;
@@ -1536,6 +1605,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     e.getMessage());
             warnings.add("Capture time (nemaki:chatCapturedAt) was not recorded: " + e.getMessage());
         }
+        return null;
     }
 
     /**
@@ -2256,8 +2326,30 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         return withCaptureOutcome(result, scope);
     }
 
+    /**
+     * The archetype-agnostic seam P1-1(e) §3 adds: runs AFTER the document exists (create or
+     * new version) and BEFORE the lineage emit, so an archetype's aspect writes can precede the
+     * event — the ordering (b) §7 said had no gate. The wrapper supplies it; execute() knows
+     * nothing about chat.
+     *
+     * <p>Failure contract (Codex H5): implementations do not swallow. A
+     * {@code CaptureIntentFailedException} propagates fail-closed; any other exception must be
+     * recorded on the scope by the write that failed (as the wrapper phase always did) and then
+     * propagate — execute()'s own failure path, DLQ included, takes it from there. Returning
+     * extra pass facts is optional; null reads as none.
+     */
+    interface BeforeEmitHook {
+        java.util.Map<CaptureEvidenceField, String> beforeEmit(String objectId,
+                boolean createdObject) throws Exception;
+    }
+
     ExternalIngestResult execute(CallContext callContext, ExternalIngestRequest request,
             CaptureScope captureScope) {
+        return execute(callContext, request, captureScope, null);
+    }
+
+    ExternalIngestResult execute(CallContext callContext, ExternalIngestRequest request,
+            CaptureScope captureScope, BeforeEmitHook beforeEmitHook) {
         String requestId = request.getRequestId();
         // §3: the lineage operation id is issued when the business operation starts, not when
         // the lineage event is emitted afterwards — retries of the emission reuse this id.
@@ -2674,6 +2766,18 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             } catch (Exception e) {
                 logger.debug("Lineage name read failed; using requested fileName: {}", e.getMessage());
             }
+            // P1-1(e) §3: the wrapper's aspect writes run HERE — after the document exists,
+            // before the emit — so the event can carry what was applied. No catch: the hook's
+            // failure contract (H5) routes exceptions into this method's own failure path.
+            java.util.Map<CaptureEvidenceField, String> emitFacts = new java.util.LinkedHashMap<>();
+            if (beforeEmitHook != null && objectId != null && !request.isDryRun()) {
+                java.util.Map<CaptureEvidenceField, String> hookFacts =
+                        beforeEmitHook.beforeEmit(objectId, createdObject);
+                if (hookFacts != null) {
+                    emitFacts.putAll(hookFacts);
+                }
+            }
+            appendAppliedHashFacts(repositoryId, objectId, emitFacts);
             String lineageEventId = ingestLineageEmitter != null
                     ? ingestLineageEmitter.emitLineageEvent(repositoryId, objectId, targetFolderId,
                             lineageDocumentName, lineageOperationId, connector, request,
@@ -2682,7 +2786,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                             // The SAME resolution the capture intent received at describe() —
                             // one resolver, one call, two records (D7, AC9).
                             attribution.executedBy(),
-                            attribution.onBehalfOf())
+                            attribution.onBehalfOf(),
+                            emitFacts)
                     : null;
             // The document is committed by now. If provenance could not be recorded, the import
             // is NOT wholly successful: content exists with no evidence of where it came from,

@@ -171,7 +171,14 @@ class IngestEvidenceCorrespondenceTest {
                 CapturedContent.none(), "admin", "alice",
                 java.util.Map.of(CaptureEvidenceField.REIMPORT_OUTCOME, "stored nothing",
                         CaptureEvidenceField.REIMPORT_FILLED, "nemaki:chatChannelName",
-                        CaptureEvidenceField.REIMPORT_REFUSED, "nemaki:chatChannelId")).keySet());
+                        CaptureEvidenceField.REIMPORT_REFUSED, "nemaki:chatChannelId",
+                        // The P1-1(e) pass facts: the beforeEmit hook and the emission-time
+                        // hash read-back supply these — no request can.
+                        CaptureEvidenceField.CHAT_CAPTURED_AT, "2026-08-24T00:00:00Z",
+                        CaptureEvidenceField.APPLIED_CHAT_EVIDENCE_HASH, "mh1:aa",
+                        CaptureEvidenceField.APPLIED_SOURCE_IDENTITY_HASH, "mh1:bb",
+                        CaptureEvidenceField.METADATA_HASH_SUBJECT, "applied",
+                        CaptureEvidenceField.METADATA_HASH_FORMULA, "mh1")).keySet());
 
         java.util.Set<String> tableKeys = new java.util.TreeSet<>();
         for (CaptureEvidenceField field : CaptureEvidenceField.values()) {

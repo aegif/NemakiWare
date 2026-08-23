@@ -545,14 +545,18 @@ class IngestEvidenceSnapshotTest {
         private String executedBy;
         private String onBehalfOf;
 
+        private java.util.Map<CaptureEvidenceField, String> passOutcome;
+
         @Override
         public String emitLineageEvent(String repositoryId, String objectId, String targetFolderId,
                 String documentName, String operationId, ConnectorDefinition connector,
                 ExternalIngestRequest request, IngestLineageEmitter.CapturedContent content,
-                String executedBy, String onBehalfOf) {
+                String executedBy, String onBehalfOf,
+                java.util.Map<CaptureEvidenceField, String> passOutcome) {
             this.captured = content;
             this.executedBy = executedBy;
             this.onBehalfOf = onBehalfOf;
+            this.passOutcome = passOutcome;
             return "evt-1";
         }
     }
@@ -564,6 +568,7 @@ class IngestEvidenceSnapshotTest {
         // stored (external review), so ChatStore hands back only what an update() persisted.
         ChatStore store = new ChatStore(null);
         ExternalIngestResult result = runChatImport(store, true);
+        assertTrue(result.isSuccess(), "control: the chat import must succeed");
 
         // The wrapper rebuilds the result, and rebuilding through the legacy arity dropped this
         // flag — so a freshly created object was reported to its caller as pre-existing, which is
@@ -586,6 +591,7 @@ class IngestEvidenceSnapshotTest {
         // were wrong (external review). An unknown fact gets recorded as nothing.
         ChatStore store = new ChatStore(null);
         ExternalIngestResult result = runChatImport(store, false);
+        assertTrue(result.isSuccess(), "control: the chat import must succeed");
 
         assertFalse(result.createdObject(),
                 "nothing was created here, and saying otherwise would license the stamp");
@@ -606,6 +612,7 @@ class IngestEvidenceSnapshotTest {
         // warning nobody asserts is a warning that can be deleted (external review).
         ChatStore store = new ChatStore(null).failingRead(shape);
         ExternalIngestResult result = runChatImport(store, true);
+        assertTrue(result.isSuccess(), "control: the chat import must succeed");
 
         assertNull(store.persisted, "control: nothing could be stamped in the " + shapeName);
         assertTrue(result.warnings().stream()
@@ -675,13 +682,70 @@ class IngestEvidenceSnapshotTest {
                 java.time.Instant.parse("2023-01-15T00:00:00Z").toEpochMilli());
 
         ChatStore store = new ChatStore(alreadyRecorded);
-        runChatImport(store, true);
+        assertTrue(runChatImport(store, true).isSuccess(), "control");
 
         assertEquals(alreadyRecorded, store.persisted,
                 "the first observation is the one that means anything; moving it would quietly "
                         + "erase how long the record has actually been held. This also preserves "
                         + "a value a client planted while the property is still READWRITE, which "
                         + "is why it is not evidence on its own (P1-1(c)).");
+    }
+
+    @Test
+    @DisplayName("the event carries the custody stamp and the applied hash — the second copy")
+    void theEventCarriesTheCustodyStampAndItsHash() {
+        // P1-1(e) D-5: the beforeEmit hook stamps the aspect BEFORE emission, so the event can
+        // repeat the one value of the eleven it never could (P1-1(d) D1). The emission-time
+        // read-back also hashes the applied state; nothing writes the hashed aspects after the
+        // emit on this path, so recomputing NOW must equal the event's copy — a divergence is
+        // exactly the write-between-emit-and-completion the equality exists to catch (M3).
+        ChatStore store = new ChatStore(null);
+        RecordingEmitter emitter = new RecordingEmitter();
+
+        assertTrue(runChatImport(store, true, emitter,
+                org.mockito.Mockito.mock(IngestMetadataService.class)).isSuccess(), "control");
+
+        assertTrue(store.persisted != null, "control: the stamp must have been persisted");
+        String stampOnEvent = emitter.passOutcome == null ? null
+                : emitter.passOutcome.get(CaptureEvidenceField.CHAT_CAPTURED_AT);
+        assertNotNull(stampOnEvent,
+                "the event does not carry chat.capturedAt — D-5's second copy is still missing");
+        assertEquals(java.time.Instant.parse(stampOnEvent).toEpochMilli(),
+                ((java.util.GregorianCalendar) store.persisted).getTimeInMillis(),
+                "the event's copy and the aspect's stamp are different instants");
+
+        String hashOnEvent = emitter.passOutcome.get(
+                CaptureEvidenceField.APPLIED_CHAT_EVIDENCE_HASH);
+        assertNotNull(hashOnEvent, "the event must carry the applied chat evidence hash (mh1)");
+        assertEquals(EvidenceMetadataHash.compute(store.read().getAspects()).chatEvidenceHash(),
+                hashOnEvent,
+                "recomputing from the stored state diverges from the event's copy — a write "
+                        + "slipped in after the emit");
+        assertEquals("mh1", emitter.passOutcome.get(CaptureEvidenceField.METADATA_HASH_FORMULA));
+    }
+
+    @Test
+    @DisplayName("a hook failure fails the import — not a warning on a success")
+    void hookFailurePropagates() {
+        // Codex H5: catching the hook's exception and emitting anyway would let a pass whose
+        // aspect write is in an unknown state read as a clean success (and complete its intent
+        // as CAPTURED). The hook does not catch; execute()'s own failure path takes over.
+        IngestMetadataService exploding = org.mockito.Mockito.mock(IngestMetadataService.class);
+        org.mockito.Mockito.when(exploding.applyArchetypeMetadata(
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new IllegalStateException("aspect write state unknown"));
+        RecordingEmitter emitter = new RecordingEmitter();
+
+        ExternalIngestResult result = runChatImport(new ChatStore(null), true, emitter, exploding);
+
+        assertFalse(result.isSuccess(),
+                "the hook threw mid-write and the import still claimed success — the intent "
+                        + "would complete as CAPTURED over an unknown write state");
+        assertTrue(emitter.passOutcome == null,
+                "the event was emitted after the aspect phase failed — it describes a state "
+                        + "that never settled");
     }
 
     /**
@@ -729,6 +793,12 @@ class IngestEvidenceSnapshotTest {
     }
 
     private static ExternalIngestResult runChatImport(ChatStore store, boolean objectIsNew) {
+        return runChatImport(store, objectIsNew, new RecordingEmitter(),
+                org.mockito.Mockito.mock(IngestMetadataService.class));
+    }
+
+    private static ExternalIngestResult runChatImport(ChatStore store, boolean objectIsNew,
+            RecordingEmitter emitter, IngestMetadataService metadataService) {
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService connectorService =
                 org.mockito.Mockito.mock(
@@ -744,8 +814,8 @@ class IngestEvidenceSnapshotTest {
         service.setImportProfileDefinitionService(profileService);
         service.setContentService(contentService);
         service.setObjectService(objectService);
-        service.setIngestMetadataService(org.mockito.Mockito.mock(IngestMetadataService.class));
-        service.setIngestLineageEmitter(new RecordingEmitter());
+        service.setIngestMetadataService(metadataService);
+        service.setIngestLineageEmitter(emitter);
 
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");
@@ -803,11 +873,9 @@ class IngestEvidenceSnapshotTest {
         }).when(contentService).update(org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.eq("bedroom"), org.mockito.ArgumentMatchers.any());
 
-        ExternalIngestResult result = service.executeChatContextImport(
+        return service.executeChatContextImport(
                 testContext(),
                 chatRequest());
-        assertTrue(result.isSuccess(), "control: the chat import must succeed");
-        return result;
     }
 
     private static ExternalIngestRequest chatRequest() {

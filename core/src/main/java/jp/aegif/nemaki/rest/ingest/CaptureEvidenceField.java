@@ -181,6 +181,46 @@ public enum CaptureEvidenceField {
                     + "which waits on Process attribute supply (p1-1b-v2-evidence-home.md §3.4)"),
             Assurance.OBSERVED, Disclosure.EXTERNAL_OK),
 
+    /**
+     * The custody stamp, carried by the event since P1-1(e)'s beforeEmit hook moved the chat
+     * aspect application AHEAD of emission — the second copy D1 said the event could not repeat.
+     */
+    CHAT_CAPTURED_AT("chat.capturedAt", V2Home.none(
+            "supplied by the beforeEmit hook, not the request: the wrapper stamps the aspect "
+                    + "before emission since P1-1(e) and hands the instant to the event as a "
+                    + "pass fact. Its v2 home is the journal-facts compartment of the extended "
+                    + "record (p1-1e-boundary-and-origin.md §2.1), which lands with the digest "
+                    + "extension"), Assurance.OBSERVED, Disclosure.EXTERNAL_OK,
+            "nemaki:chatCapturedAt"),
+
+    /**
+     * The applied-metadata hash (mh1) of the chat evidence at emission — read back from the
+     * stored object, never from the request (P1-1(d) D-1's event-side copy, landed in (e)).
+     */
+    APPLIED_CHAT_EVIDENCE_HASH("appliedChatEvidenceHash", V2Home.none(
+            "computed at emission from the stored aspects; journal verification internals, so "
+                    + "it must not travel to the catalogue — its v2 home is the journal-facts "
+                    + "compartment (p1-1e-boundary-and-origin.md §2.1)"),
+            Assurance.OBSERVED, Disclosure.INTERNAL_ONLY),
+
+    /** As above, for the source-identity nine. */
+    APPLIED_SOURCE_IDENTITY_HASH("appliedSourceIdentityHash", V2Home.none(
+            "computed at emission from the stored aspects; journal verification internals — "
+                    + "journal-facts compartment (p1-1e-boundary-and-origin.md §2.1)"),
+            Assurance.OBSERVED, Disclosure.INTERNAL_ONLY),
+
+    /** What the hashes are OF ("applied") — carried so rows outlive the formula's subject. */
+    METADATA_HASH_SUBJECT("metadataHashSubject", V2Home.none(
+            "names the hashes' subject; meaningless without them, so it lives and travels with "
+                    + "them — journal-facts compartment (p1-1e-boundary-and-origin.md §2.1)"),
+            Assurance.OBSERVED, Disclosure.INTERNAL_ONLY),
+
+    /** The formula version ("mh1"), for the same reason. */
+    METADATA_HASH_FORMULA("metadataHashFormula", V2Home.none(
+            "names the hashes' formula; travels with them — journal-facts compartment "
+                    + "(p1-1e-boundary-and-origin.md §2.1)"),
+            Assurance.OBSERVED, Disclosure.INTERNAL_ONLY),
+
     // ── The conversation ─────────────────────────────────────────────────────────────────
 
     /**

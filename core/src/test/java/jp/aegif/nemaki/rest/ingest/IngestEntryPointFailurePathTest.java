@@ -282,7 +282,8 @@ class IngestEntryPointFailurePathTest {
             public String emitLineageEvent(String repositoryId, String objectId,
                     String targetFolderId, String documentName, String operationId,
                     ConnectorDefinition connector, ExternalIngestRequest request,
-                    CapturedContent content, String executedBy, String onBehalfOf) {
+                    CapturedContent content, String executedBy, String onBehalfOf,
+                    java.util.Map<CaptureEvidenceField, String> passOutcome) {
                 throw new IllegalStateException("journal unreachable");
             }
         };
@@ -316,7 +317,8 @@ class IngestEntryPointFailurePathTest {
             public String emitLineageEvent(String repositoryId, String objectId,
                     String targetFolderId, String documentName, String operationId,
                     ConnectorDefinition connector, ExternalIngestRequest request,
-                    CapturedContent content, String executedBy, String onBehalfOf) {
+                    CapturedContent content, String executedBy, String onBehalfOf,
+                    java.util.Map<CaptureEvidenceField, String> passOutcome) {
                 throw new IllegalStateException("journal unreachable");
             }
         };
