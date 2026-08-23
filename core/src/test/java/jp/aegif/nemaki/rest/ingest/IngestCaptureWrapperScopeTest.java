@@ -180,6 +180,43 @@ class IngestCaptureWrapperScopeTest {
         return req;
     }
 
+    // ── D5: what a pass decided NOT to take is on its completion row ─────────────────────
+
+    @Test
+    @DisplayName("a pseudo-file attachment lands in the page pass's completion evidence")
+    void aSkippedAttachmentIsRecordedOnTheParentRow(){
+        // A .DS_Store attachment produces no document, no aspect, no event and no row of its
+        // own — until this, "we saw it and took nothing" had no durable record anywhere
+        // (p1-1d-evidence-data-model.md D5). The parent page's completed row is where it lives.
+        wire(SourceArchetype.COMPOUND_NOTE, "files_and_body");
+
+        service.executeNoteImport(ctx(), noteRequest("page-1", ".DS_Store"));
+
+        Map<String, Object> evidence = store.completed.get("page-1");
+        org.junit.jupiter.api.Assertions.assertNotNull(evidence, "the page pass must complete");
+        Object recorded = evidence.get("attachmentsNotIngested");
+        org.junit.jupiter.api.Assertions.assertNotNull(recorded,
+                "the skipped attachment left no durable record: " + evidence.keySet());
+        String flat = String.valueOf(recorded);
+        assertTrue(flat.contains(".DS_Store"), flat);
+        assertTrue(flat.toLowerCase().contains("pseudo"),
+                "the record does not say WHY it was not ingested: " + flat);
+    }
+
+    @Test
+    @DisplayName("an imported attachment is NOT in the not-ingested record — the control")
+    void anImportedAttachmentIsNotRecordedAsSkipped(){
+        wire(SourceArchetype.COMPOUND_NOTE, "files_and_body");
+
+        service.executeNoteImport(ctx(), noteRequest("page-1", "spec.pdf"));
+
+        Map<String, Object> evidence = store.completed.get("page-1");
+        org.junit.jupiter.api.Assertions.assertNotNull(evidence);
+        org.junit.jupiter.api.Assertions.assertNull(evidence.get("attachmentsNotIngested"),
+                "an attachment that WAS imported appeared in the not-ingested record — the "
+                        + "record would cry wolf on every pass");
+    }
+
     // ── Rules 4 and 5: children own their scope, and their links belong to them ───────────
 
     @Test

@@ -206,6 +206,13 @@ emit 時点で本当に存在しないのは `chatCapturedAt` **1 個だけ**。
 
 ### D5 — 空コンテンツ — **主要経路を見ていなかった。閉じない**
 
+> **2026-08-23 追記: 「取り込まなかった」の記録は実装した。** 0 バイト / 擬似ファイルで
+> skip された添付は、**親 pass の outbox 完了 evidence** に `attachmentsNotIngested`
+> (fileName + reason) として残る (mail / note 両 wrapper)。document も event も無い skip の
+> 唯一の恒久記録である。親が row を開かない再 poll では再記録しない (D6 と同じ洪水防止 —
+> 事実は capture 時の row に在る)。**「第 3 の答えに名前が無い」問題のモデル側 (
+> `CapturedContent` に NOT_INGESTED を足すか) は未決のまま残る。**
+
 確かめた部分は正しい: `computeContentHash` ([`:1249-1259`](../../core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java#L1249))
 は 0 バイトに正当な digest を返し、null 配列のときだけ null。
 `CapturedContent.none()` の呼出は `:982` の 1 箇所で、`getAttachmentNodeId()` が null/blank のときだけ。

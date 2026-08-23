@@ -370,6 +370,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
             // 5. Import attachments as separate documents with relationship
             int attachmentCount = 0;
+            List<Map<String, String>> mailNotIngested = new ArrayList<>();
             for (ParsedAttachment att : parsed.attachments()) {
                 try {
                     ExternalIngestRequest attReq = new ExternalIngestRequest();
@@ -394,6 +395,15 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     // them, so one failed link would mark every attachment unresolved.
                     CaptureScope attScope = newCaptureScope(callContext, attReq);
                     ExternalIngestResult attResult = execute(callContext, attReq, attScope);
+                    if (attResult.skipped() && attResult.objectId() == null) {
+                        // Same rule as the note wrapper: a skip that produced no object goes
+                        // into the parent pass's completion evidence — the only durable place
+                        // "we saw it and took nothing" can live (D5).
+                        mailNotIngested.add(Map.of(
+                                "fileName", attReq.getFileName() == null ? "" : attReq.getFileName(),
+                                "reason", attResult.skipReason() == null
+                                        ? "skipped" : attResult.skipReason()));
+                    }
                     if (attResult.isSuccess() || attResult.skipped()) {
                         attachmentCount++;
                         // Create/update typed relationship
@@ -427,6 +437,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // createdObject rides along: rebuilding through the legacy arity silently reported
             // a freshly created object as pre-existing, which is what decides whether custody
             // time may be recorded at all (external review).
+            if (!mailNotIngested.isEmpty()) {
+                captureScope.notePassFact("attachmentsNotIngested", mailNotIngested);
+            }
             return new ExternalIngestResult(requestId, messageObjectId, messageResult.versionLabel(),
                     messageResult.isNewVersion(), messageResult.dryRun(), messageResult.skipped(), messageResult.skipReason(),
                     messageResult.lineageEventId(), List.of(), warnings,
@@ -526,6 +539,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         int attachmentCount = 0;
         int importedAttachmentCount = 0;   // genuinely new/updated attachments
         int skippedAttachmentCount = 0;    // dedupe-skipped attachments
+        List<Map<String, String>> notIngested = new ArrayList<>();  // 0-byte / pseudo-file skips
         String firstAttachmentObjectId = null;
         boolean firstAttachmentCreated = false;
         if (request.getMetadata() != null && request.getMetadata().get("attachments") instanceof List<?> attList) {
@@ -587,6 +601,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         // means "no errors"), so test skipped() first.
                         if (attResult.skipped()) skippedAttachmentCount++;
                         else importedAttachmentCount++;
+                        // A skip that produced NO object is "we saw it and took nothing" — a
+                        // decision with no document, no aspect and no event to remember it, so
+                        // it goes into this pass's completion evidence (D5). A dedupe skip has
+                        // an objectId and is not this.
+                        if (attResult.skipped() && attResult.objectId() == null) {
+                            notIngested.add(Map.of(
+                                    "fileName", attReq.getFileName() == null ? "" : attReq.getFileName(),
+                                    "reason", attResult.skipReason() == null
+                                            ? "skipped" : attResult.skipReason()));
+                        }
                         String attObjectId = attResult.objectId();
                         if (attObjectId != null) {
                             if (firstAttachmentObjectId == null) {
@@ -617,6 +641,15 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     warnings.add("Attachment failed: " + e.getMessage());
                 }
             }
+        }
+
+        if (!notIngested.isEmpty()) {
+            // Into the PARENT pass's completion evidence: the skipped attachment has no
+            // document, aspect, event or row of its own, and the parent's row is the one
+            // durable record that "we saw it and took nothing, and why" (D5). On a re-poll
+            // whose parent never opens a row, nothing is re-recorded — anti-flood, and the
+            // fact is already on the capture-time row.
+            captureScope.notePassFact("attachmentsNotIngested", notIngested);
         }
 
         // In files_only mode, if nothing new was imported for this page (no

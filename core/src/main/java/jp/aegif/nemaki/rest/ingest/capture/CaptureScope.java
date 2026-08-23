@@ -75,6 +75,7 @@ public final class CaptureScope {
     private CaptureIntent intent;
 
     private boolean opened;
+    private final Map<String, Object> passFacts = new LinkedHashMap<>();
     private boolean completed;
     private String operationFailure;
     /** Latched once the repository is found not to run the boundary. */
@@ -116,6 +117,14 @@ public final class CaptureScope {
 
     public CaptureIntent intent() {
         return intent;
+    }
+
+    /**
+     * Notes a fact about this pass for the completion evidence. Overwrites the key: callers
+     * accumulate locally and set once, so partial lists cannot be read as complete ones.
+     */
+    public void notePassFact(String key, Object value) {
+        passFacts.put(key, value);
     }
 
     public boolean isOpened() {
@@ -325,6 +334,13 @@ public final class CaptureScope {
         }
 
         Map<String, Object> body = new LinkedHashMap<>(evidence == null ? Map.of() : evidence);
+        // Facts the wrapper noted about THIS pass — what it decided NOT to take, chiefly. A
+        // 0-byte or pseudo-file attachment produces no document, no aspect and no event, so the
+        // completed row is the only durable place "we saw it and did not ingest it, and why"
+        // can live (design p1-1d-evidence-data-model.md D5). Recorded only on passes that open
+        // a row at all: a re-poll whose parent dedupe-skips records nothing, which is the same
+        // anti-flood rule as the re-import event — the fact was recorded at capture time.
+        body.putAll(passFacts);
         body.put("mutations", mutations.stream()
                 .map(r -> Map.of("operation", r.operation(), "outcome", r.outcome().name()))
                 .toList());
