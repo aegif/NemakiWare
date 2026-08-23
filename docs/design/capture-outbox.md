@@ -689,8 +689,10 @@ leader gate は**有効な構成では本物の gate だが** (`LineagePurgeSche
 
 ### ついでに見つかった既存バグ (この PR の範囲外)
 
-- `removeExistingRelationships:1166` の `skipCount` が**一度も加算されない** —
-  relationship が 100 件超で削除が失敗し続けると**同じページを無限に取り直す**
+- ✅ ~~`removeExistingRelationships` の `skipCount` が一度も加算されない — 無限に取り直す~~
+  **これは誤り。取り消す** (外部レビュー、2026-08-22)。`skipCount` が 0 のままなのは
+  **削除で index がずれるため意図的**で、`removedThisPass == 0` の回に break する。
+  無限ループにはならない
 - ✅ `executeNoteAttachment` の rebuild が `skipped` を落としていた件は**修正済み**
 - `lineage.mode` は admin-managed dynamic key **ではない**ので system property が先に来る。
   Atlas 用 compose が `-Dlineage.mode=journaled` を渡しており、**設定 UI のトグルが効かない**
