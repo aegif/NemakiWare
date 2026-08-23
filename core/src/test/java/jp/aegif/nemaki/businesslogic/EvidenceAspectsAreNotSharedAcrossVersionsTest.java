@@ -164,6 +164,33 @@ class EvidenceAspectsAreNotSharedAcrossVersionsTest {
     }
 
     @Test
+    @DisplayName("a Calendar INSIDE a list is copied too — not just the list shell")
+    void listElementsAreNotAliased() throws Exception {
+        // A shallow new ArrayList(list) makes fresh list objects whose ELEMENTS still alias;
+        // for a List<Calendar>, setTimeInMillis through the copy would edit the original's
+        // datetime evidence (final review P3).
+        java.util.Calendar captured = java.util.Calendar.getInstance();
+        captured.setTimeInMillis(1_000_000L);
+        Document v1 = original();
+        v1.getAspects().stream().filter(a -> CHAT.equals(a.getName())).findFirst().orElseThrow()
+                .getProperties().add(new Property("nemaki:chatCaptureWindowStart",
+                        new ArrayList<>(List.of(captured))));
+
+        Document v2 = copyOf(v1);
+        Object v2Value = v2.getAspects().stream()
+                .filter(a -> CHAT.equals(a.getName())).findFirst().orElseThrow()
+                .getProperties().stream()
+                .filter(p -> "nemaki:chatCaptureWindowStart".equals(p.getKey()))
+                .findFirst().orElseThrow().getValue();
+        ((java.util.Calendar) ((java.util.List<?>) v2Value).get(0))
+                .setTimeInMillis(2_000_000L);
+
+        assertEquals(1_000_000L, captured.getTimeInMillis(),
+                "mutating a Calendar through the copy's list rewrote the ORIGINAL version's "
+                        + "datetime evidence");
+    }
+
+    @Test
     @DisplayName("ordinary aspects stay shared — the deliberate scope limit")
     void ordinaryAspectsStayShared() throws Exception {
         // Copying everything would be a broader behaviour change than D3 needs; the protected

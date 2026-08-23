@@ -241,39 +241,19 @@ public class CaptureIntentController {
                     EvidenceMetadataHash.compute(content.getAspects());
 
             // Activity on the same source item that could postdate the recorded hash — what
-            // downgrades a mismatch. The first shape asked the view for rows OPENED after the
-            // baseline COMPLETED, but the view is keyed by intentOpenedAtMs: a pass that opened
-            // before the baseline completed, wrote afterward and never resolved sits BELOW that
-            // cutoff and was missed — an honest concurrent write read as tampering (external
-            // review). So read every row for the source and judge here. A row that COMPLETED
-            // before the baseline did needs no downgrade: the hash reads the applied state at
-            // completion, so that row's writes are inside it.
+            // downgrades a mismatch. The view is keyed by intentOpenedAtMs, so a since-cutoff
+            // query missed passes that opened before the baseline completed (external review);
+            // and a single capped page hid rows, so a source with a long history could never
+            // show MISMATCH again (final review P2). Hence: keyset-paginate through EVERY row
+            // and judge each by state.
             long baselineAtMs = baseline.get("capturedAtMs") instanceof Number n
                     ? n.longValue() : 0L;
             Object sourceObjectId = baseline.get("sourceObjectId");
             Object baselineIntentId = baseline.get("intentId");
-            java.util.List<Map<String, Object>> sourceRows = sourceObjectId == null
-                    ? java.util.List.of()
-                    : maintenanceStore.listRowsForSourceSince(repositoryId,
-                            String.valueOf(sourceObjectId), -1L, 100);
-            boolean overlapping = false;
-            for (Map<String, Object> row : sourceRows) {
-                if (baselineIntentId != null && baselineIntentId.equals(row.get("intentId"))) {
-                    continue;
-                }
-                Long rowCapturedAt = row.get("capturedAtMs") instanceof Number rc
-                        ? rc.longValue() : null;
-                boolean rowHasHash = row.get("appliedChatEvidenceHash") != null
-                        || row.get("appliedSourceIdentityHash") != null;
-                if (rowCapturedAt == null || (rowCapturedAt >= baselineAtMs && !rowHasHash)) {
-                    overlapping = true;
-                    break;
-                }
-            }
-            // A full page might have hidden the overlapping row beyond the cap; that must read
-            // as "cannot rule out", never as a clean MISMATCH.
-            boolean laterActivity = rowsWithoutHash > 0 || overlapping
-                    || sourceRows.size() >= 100;
+            boolean overlapping = sourceObjectId != null
+                    && overlappingPassExists(repositoryId, String.valueOf(sourceObjectId),
+                            baselineIntentId, baselineAtMs);
+            boolean laterActivity = rowsWithoutHash > 0 || overlapping;
 
             body.put("chatEvidence", verdict(
                     (String) baseline.get("appliedChatEvidenceHash"),
@@ -295,6 +275,63 @@ public class CaptureIntentController {
             body.put("status", "error");
             body.put("message", e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+        }
+    }
+
+    /**
+     * Whether any OTHER pass for this source could have written after the baseline hash.
+     *
+     * <p>Judged per state. Completed: overlaps only when it completed at/after the baseline
+     * without recording a hash (completed-before is INSIDE the baseline hash — the hash reads
+     * the applied state at completion). Swept ({@code unresolvedAtMs} set): the sweeper's own
+     * operating assumption is that a past-deadline pass is dead, so its writes precede its
+     * sweep — only a sweep at/after the baseline can overlap. Before this rule, ONE abandoned
+     * intent suppressed MISMATCH for the source for ever (final review P2). Still open (no
+     * timestamps): possibly live, possibly mid-write — cannot be ruled out, bounded in time by
+     * the sweeper's next pass.
+     *
+     * <p>Pages by the last row's {@code intentOpenedAtMs} until a short page, so the store's
+     * 100-row page cap bounds one round trip, not the judgment. The cursor re-includes ties on
+     * the boundary millisecond (duplicates are re-judged, harmlessly); a page that cannot
+     * advance — 100 rows sharing one millisecond — is treated as overlapping rather than
+     * guessed at.
+     */
+    private boolean overlappingPassExists(String repositoryId, String sourceObjectId,
+            Object baselineIntentId, long baselineAtMs) {
+        long before = Long.MAX_VALUE;
+        while (true) {
+            java.util.List<Map<String, Object>> page =
+                    maintenanceStore.listRowsForSourceBefore(repositoryId, sourceObjectId,
+                            before, 100);
+            for (Map<String, Object> row : page) {
+                if (baselineIntentId != null && baselineIntentId.equals(row.get("intentId"))) {
+                    continue;
+                }
+                Long rowCapturedAt = row.get("capturedAtMs") instanceof Number rc
+                        ? rc.longValue() : null;
+                if (rowCapturedAt != null) {
+                    boolean rowHasHash = row.get("appliedChatEvidenceHash") != null
+                            || row.get("appliedSourceIdentityHash") != null;
+                    if (rowCapturedAt >= baselineAtMs && !rowHasHash) {
+                        return true;
+                    }
+                    continue;
+                }
+                Long rowUnresolvedAt = row.get("unresolvedAtMs") instanceof Number ru
+                        ? ru.longValue() : null;
+                if (rowUnresolvedAt == null || rowUnresolvedAt >= baselineAtMs) {
+                    return true;
+                }
+            }
+            if (page.size() < 100) {
+                return false;
+            }
+            Long lastOpened = page.get(page.size() - 1)
+                    .get("intentOpenedAtMs") instanceof Number lo ? lo.longValue() : null;
+            if (lastOpened == null || lastOpened + 1 >= before) {
+                return true;
+            }
+            before = lastOpened + 1;
         }
     }
 

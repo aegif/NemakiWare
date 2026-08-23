@@ -229,11 +229,14 @@ class ZipImporterEvidenceStripTest {
         m.setAccessible(true);
         org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl props =
                 new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl();
-        m.invoke(new ZipImporter(), crafted, props);
+        @SuppressWarnings("unchecked")
+        List<String> dropped = (List<String>) m.invoke(new ZipImporter(), crafted, props);
 
         assertFalse(props.getProperties().containsKey(PropertyIds.SECONDARY_OBJECT_TYPE_IDS),
                 "the crafted ACP attached the protected type — the empty shell again");
         assertTrue(props.getProperties().containsKey("my:ordinary"));
+        assertTrue(dropped.contains("nemaki:chatContextMetadata"),
+                "a silent skip tells the importer nothing about what was dropped: " + dropped);
 
         // The control: an ORDINARY secondary type id still passes through the ACP door.
         org.dom4j.Element plain = org.dom4j.DocumentHelper.createElement("content");
@@ -245,6 +248,47 @@ class ZipImporterEvidenceStripTest {
         m.invoke(new ZipImporter(), plain, plainProps);
         assertTrue(plainProps.getProperties().containsKey(PropertyIds.SECONDARY_OBJECT_TYPE_IDS),
                 "the guard must be scoped to the protected types, not all secondary types");
+    }
+
+    @Test
+    @DisplayName("an ACP import WARNS about dropped evidence — not a silent skip")
+    void acpImportWarnsAboutDroppedEvidence(@TempDir Path tempDir) throws Exception {
+        // The unit test above pins the keys' absence; this pins the operator-facing half the
+        // first ACP filter lacked (final review P2): the importer of a crafted ACP must be told
+        // what was dropped, as the custom format has done from the start.
+        String packageXml = "<view:view xmlns:view=\"http://www.alfresco.org/view/repository/1.0\">"
+                + "<content view:childName=\"doc1\">"
+                + "<property name=\"nemaki:sourceSystem\">slack</property>"
+                + "<property name=\"my:ordinary\">kept</property>"
+                + "</content></view:view>";
+        File zip = tempDir.resolve("crafted.acp").toFile();
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zip))) {
+            zos.putNextEntry(new ZipEntry("package.xml"));
+            zos.write(packageXml.getBytes(StandardCharsets.UTF_8));
+            zos.closeEntry();
+        }
+
+        ContentService cs = mock(ContentService.class);
+        ApplicationContext ctx = mock(ApplicationContext.class);
+        when(ctx.getBean("ContentService", ContentService.class)).thenReturn(cs);
+        new SpringContext().setApplicationContext(ctx);
+        Folder target = new Folder();
+        target.setId("target");
+        when(cs.getFolder(eq("bedroom"), anyString())).thenReturn(target);
+        Document created = new Document();
+        created.setId("new-1");
+        when(cs.createDocument(any(), eq("bedroom"), any(Properties.class), any(), any(), any(),
+                any(), any(), any())).thenReturn(created);
+
+        ImportResult result = new ZipImporter().importAcpFormat("bedroom", "target", zip,
+                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class));
+
+        assertEquals(1, result.documentsCreated, String.valueOf(result.errors));
+        assertTrue(result.warnings.stream().anyMatch(w ->
+                        w.contains("Evidence metadata not imported for ACP node 'doc1'")
+                                && w.contains("nemaki:sourceSystem")),
+                "the ACP route dropped evidence without telling the operator: "
+                        + result.warnings);
     }
 
     @Test

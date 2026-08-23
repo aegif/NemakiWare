@@ -97,6 +97,18 @@ copyAspect の可変値 (List/Calendar) 共有。
 **対応不要と判断**: F-10 (型 import の再定義は skip-if-exists + patch 再適用で自己修復、
 検証済み)。テスト強化: コンストラクタ明示参照 (F-5)・cast 撤去 (F-4)。
 
+**第 2 ラウンド** (レビュー回答へのレビュー、P2 3 + P3 4 — 全対応・revert→fail 実測):
+ACP は「黙って skip」だった → `addAcpProperties` が dropped を返し call site が名指し警告
+(end-to-end pin つき) / **verify の 100 行キャップは長履歴 source の MISMATCH を恒久に殺す**
+→ `listRowsForSourceBefore` (keyset cursor) で全行をページ判定、キャップ起因の降格を廃止。
+**放棄 INTENT の恒久抑止**も解消: sweep 済み (`unresolvedAtMs` 刻印) は「baseline hash 記録
+より前に死亡判定済みなら降格させない」 — sweeper 自身の動作仮定 (期限超過 = 死亡) を継承。
+open な intent は従来どおり降格 (生きている pass は排除できない。上限は sweep 周期) /
+evidence-types §2.1 の「(c) は READONLY にしていない」「保護は無いが証拠」を D-7 後の状態に
+追記 (明示リスト採用の根拠は当時の状態、導出規則に戻さない理由は §冒頭 (iii) のまま有効) /
+P3: List 内 Calendar の要素共有 (再帰コピー化)・bulk 検証の throw 伝播 pin・ACP カンマ連結の
+挙動注記 (1 つの解決不能 id として落ち殻にならない)・store javadoc を cursor 意味論に更新。
+
 ## 8. やり直さない (閉じたもの)
 
 D6 (fill/refuse/reimport イベント + 洪水防止 + intent-before-write pin) / 証拠型の 2 経路保護 /

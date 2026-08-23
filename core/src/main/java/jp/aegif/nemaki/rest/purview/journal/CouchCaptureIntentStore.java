@@ -327,16 +327,19 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
     }
 
     @Override
-    public List<Map<String, Object>> listRowsForSourceSince(String repositoryId,
-            String sourceObjectId, long sinceMs, int limit) {
+    public List<Map<String, Object>> listRowsForSourceBefore(String repositoryId,
+            String sourceObjectId, long beforeOpenedAtMsExclusive, int limit) {
         int safeLimit = limit <= 0 ? 10 : Math.min(limit, 100);
         Map<String, Object> params = new HashMap<>();
         params.put("descending", true);
         params.put("limit", safeLimit);
-        params.put("startkey", List.of(repositoryId, sourceObjectId, MAX_KEY));
-        // sinceMs is exclusive of the compared row itself: the caller passes that row's
-        // capturedAtMs and wants strictly-later activity, so the range floor sits just above it.
-        params.put("endkey", List.of(repositoryId, sourceObjectId, sinceMs + 1));
+        // Descending, so startkey is the HIGH end. The exclusive upper bound is the caller's
+        // keyset cursor (the previous page's last intentOpenedAtMs); MAX_VALUE means "from the
+        // top" and uses the sentinel that sorts above every number.
+        params.put("startkey", beforeOpenedAtMsExclusive == Long.MAX_VALUE
+                ? List.of(repositoryId, sourceObjectId, MAX_KEY)
+                : List.of(repositoryId, sourceObjectId, beforeOpenedAtMsExclusive - 1));
+        params.put("endkey", List.of(repositoryId, sourceObjectId, 0));
         return new ArrayList<>(support.queryRawView(DESIGN_DOC, VIEW_BY_SOURCE_OBJECT, params));
     }
 

@@ -2733,7 +2733,14 @@ public class ContentServiceImpl implements ContentService {
 	 */
 	private static Object copyPropertyValue(Object value) {
 		if (value instanceof List<?> list) {
-			return new ArrayList<>(list);
+			// Element-wise, not a shallow ArrayList copy: a List<Calendar> would otherwise
+			// still share its elements across versions (final review P3). Strings and boxed
+			// numbers pass through the recursion unchanged.
+			List<Object> copy = new ArrayList<>(list.size());
+			for (Object element : list) {
+				copy.add(copyPropertyValue(element));
+			}
+			return copy;
 		}
 		if (value instanceof java.util.Calendar calendar) {
 			return calendar.clone();

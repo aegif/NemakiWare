@@ -68,14 +68,19 @@ public interface CaptureMaintenanceStore {
             String repositoryId, String objectId, int limit);
 
     /**
-     * Every row for one source item newer than {@code sinceMs}, any state, newest first.
+     * One page of rows for one source item, any state, newest first, opened strictly before
+     * {@code beforeOpenedAtMsExclusive} ({@code Long.MAX_VALUE} = from the top).
      *
-     * <p>What downgrades a would-be MISMATCH to UNVERIFIABLE: a partial failure left an
-     * unresolved row, or another wrapper completed a row without a hash — either way a record
-     * of a later pass exists and "an unrecorded change" must not be claimed.
+     * <p>What the verifier walks to decide whether a would-be MISMATCH must downgrade to
+     * UNVERIFIABLE: a pass that may have written after the recorded hash exists — open, swept
+     * after the baseline, or completed after it without a hash. The exclusive upper bound is a
+     * keyset cursor: the store caps a page at 100, and a single capped page silently hid rows —
+     * a source with a long history could never show MISMATCH again (final review P2). Callers
+     * page with the last row's {@code intentOpenedAtMs} until a short page.
      */
-    java.util.List<java.util.Map<String, Object>> listRowsForSourceSince(
-            String repositoryId, String sourceObjectId, long sinceMs, int limit);
+    java.util.List<java.util.Map<String, Object>> listRowsForSourceBefore(
+            String repositoryId, String sourceObjectId, long beforeOpenedAtMsExclusive,
+            int limit);
 
     /** Deletes completed rows captured before the cutoff. Keyed on when they completed. */
     int purgeCapturedOlderThan(long cutoffMs, int batchLimit);

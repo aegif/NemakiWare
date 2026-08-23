@@ -80,8 +80,12 @@
 `nemaki:contentHash` は — 内容の完全性の証拠であり、かつ dedupe のキーでもある —
 chat の aspect ではなく **`nemaki:externalIntegration`** に入る。同じ aspect に
 `nemaki:sourceObjectId` / `sourceSystem` / `ingestionRunId` / `sourceUrl` も入る。
-(c) はこれらを READONLY にしていない (「同じ問題が在る。この作業では chat だけ」と明記)。
-規則が「READONLY 化したもの」を起点にする以上、**この型は永久にリストに入らない**。
+執筆時点の (c) はこれらを READONLY にしていなかった (「同じ問題が在る。この作業では
+chat だけ」と明記)。規則が「READONLY 化したもの」を起点にする以上、この型は入らなかった —
+**明示リストを選んだ根拠はこの時点の状態**。その後 D-7 (2026-08-23、
+`Patch_ExternalIntegrationEvidenceReadOnly`) が source identity 8 個を READONLY 化し
+`contentHash` を READONLY で宣言したため、状態としては解消済み。ただし導出規則に戻さない:
+「READONLY = 証拠」の同一視が誤りである点 (§冒頭の (iii)) は変わらない。
 
 **具体的な壊れ方**: `cmis:secondaryObjectTypeIds = ["nemaki:chatContextMetadata"]` を送る。
 新しいガードは通り、`nemaki:externalIntegration` が丸ごと落ちる。`contentHash` が消え、
@@ -92,7 +96,7 @@ chat の aspect ではなく **`nemaki:externalIntegration`** に入る。同じ
 | 型 | なぜ |
 |---|---|
 | `nemaki:chatContextMetadata` | (c) が READONLY 化した 11 個の家 |
-| `nemaki:externalIntegration` | `contentHash` と source identity の家。**保護は無いが証拠である** |
+| `nemaki:externalIntegration` | `contentHash` と source identity の家。執筆時は**保護は無いが証拠である**だった — D-7 (2026-08-23) で READONLY 化済み (externalContext ペアは意図的 READWRITE のまま) |
 
 ### 2.2 足し忘れを機械的に止められるか — **できない。そう書く**
 

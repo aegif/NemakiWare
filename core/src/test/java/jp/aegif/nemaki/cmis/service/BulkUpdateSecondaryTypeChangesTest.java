@@ -231,6 +231,32 @@ class BulkUpdateSecondaryTypeChangesTest {
     }
 
     @Test
+    @DisplayName("a validator refusal PROPAGATES out of bulkUpdateProperties — not per-object")
+    void validatorRefusalPropagates() {
+        // "Called twice" alone would still pass if the call were moved inside the per-object
+        // task, where the catch swallows it into a skipped object (review P3). The refusal must
+        // escape the entrance synchronously, like the properties-variant's does.
+        ObjectServiceImpl service = new ObjectServiceImpl();
+        jp.aegif.nemaki.cmis.aspect.ExceptionService exceptions =
+                mock(jp.aegif.nemaki.cmis.aspect.ExceptionService.class);
+        org.mockito.Mockito.doThrow(new org.apache.chemistry.opencmis.commons.exceptions
+                        .CmisInvalidArgumentException("Invalid cmis:SecondaryObjectTypeIds"))
+                .when(exceptions).invalidArgumentSecondaryTypeIds(
+                        org.mockito.ArgumentMatchers.eq("bedroom"),
+                        org.mockito.ArgumentMatchers.argThat(p -> p != null
+                                && p.getProperties().containsKey(
+                                        PropertyIds.SECONDARY_OBJECT_TYPE_IDS)));
+        service.setExceptionService(exceptions);
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException.class,
+                () -> service.bulkUpdateProperties(
+                        mock(org.apache.chemistry.opencmis.commons.server.CallContext.class),
+                        "bedroom", new ArrayList<>(), null, List.of("nemaki:ghost"), null, null),
+                "a typo'd add id must fail the request, not read as numUpdated=N success");
+    }
+
+    @Test
     @DisplayName("no add, no remove: the properties object is returned untouched — the control")
     void noChangesMeansIdentity() throws Exception {
         PropertiesImpl original = new PropertiesImpl();

@@ -437,7 +437,15 @@ public class ZipImporter {
                     props.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, "cmis:document"));
                     props.addProperty(new PropertyStringImpl(PropertyIds.NAME, name));
 
-                    addAcpProperties(child, props);
+                    List<String> droppedEvidence = addAcpProperties(child, props);
+                    if (!droppedEvidence.isEmpty()) {
+                        String message = "Evidence metadata not imported for ACP node '" + name
+                                + "': " + String.join(", ", droppedEvidence)
+                                + " — this repository did not capture it, so the import will"
+                                + " not assert that it did. The content itself is imported.";
+                        result.warnings.add(message);
+                        log.info(message);
+                    }
 
                     ContentStream contentStream = null;
                     if (contentRef != null) {
@@ -845,25 +853,41 @@ public class ZipImporter {
         return null;
     }
 
+    /**
+     * Returns the evidence assertions it refused, so the caller can warn — a silent skip told
+     * the importer of a crafted ACP nothing about what was dropped (final review P2; the custom
+     * format has named its drops from the start).
+     */
     @SuppressWarnings("unchecked")
-    private void addAcpProperties(Element element, PropertiesImpl props) {
+    private List<String> addAcpProperties(Element element, PropertiesImpl props) {
+        List<String> dropped = new ArrayList<>();
         for (Iterator<Element> it = element.elementIterator("property"); it.hasNext();) {
             Element propEl = it.next();
             String propName = propEl.attributeValue("name");
             String propValue = propEl.getTextTrim();
-            // Evidence ids never occur in a genuine Alfresco ACP; one here is crafted. Same rule
-            // as the custom format: capture evidence does not enter through an upload. The
-            // second condition closes the type-id route the first filter missed (review F-2):
-            // a crafted <property name="cmis:secondaryObjectTypeIds">nemaki:chatContextMetadata
-            // </property> is not "cm:"-prefixed and not an evidence PROPERTY id, yet
-            // createDocument would attach the protected type from it — the empty shell again.
-            if (propName != null && propValue != null && !propName.startsWith("cm:")
-                    && !EVIDENCE_PROPERTY_IDS.contains(propName)
-                    && !(PropertyIds.SECONDARY_OBJECT_TYPE_IDS.equals(propName)
-                            && jp.aegif.nemaki.businesslogic.EvidenceTypes.isProtected(propValue))) {
-                props.addProperty(new PropertyStringImpl(propName, propValue));
+            if (propName == null || propValue == null || propName.startsWith("cm:")) {
+                continue;
             }
+            // Evidence ids never occur in a genuine Alfresco ACP; one here is crafted. Same rule
+            // as the custom format: capture evidence does not enter through an upload.
+            if (EVIDENCE_PROPERTY_IDS.contains(propName)) {
+                dropped.add(propName);
+                continue;
+            }
+            // The type-id route the first filter missed (review F-2): a crafted
+            // <property name="cmis:secondaryObjectTypeIds">nemaki:chatContextMetadata</property>
+            // is not "cm:"-prefixed and not an evidence PROPERTY id, yet createDocument would
+            // attach the protected type from it — the empty shell again. Only an exact protected
+            // id matches; a comma-joined list is not split, but then it is one unresolvable id
+            // and buildSecondaryTypes attaches nothing.
+            if (PropertyIds.SECONDARY_OBJECT_TYPE_IDS.equals(propName)
+                    && jp.aegif.nemaki.businesslogic.EvidenceTypes.isProtected(propValue)) {
+                dropped.add(propValue);
+                continue;
+            }
+            props.addProperty(new PropertyStringImpl(propName, propValue));
         }
+        return dropped;
     }
 
     private void processAcpAcl(String repositoryId, Element element, String objectId,

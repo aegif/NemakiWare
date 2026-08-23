@@ -98,7 +98,7 @@ class CaptureMetadataVerificationTest {
         when(contentService.getContent(REPO, OBJECT)).thenReturn(stored);
 
         storedChatHash = EvidenceMetadataHash.compute(stored.getAspects()).chatEvidenceHash();
-        when(store.listRowsForSourceSince(anyString(), anyString(), anyLong(), anyInt()))
+        when(store.listRowsForSourceBefore(anyString(), anyString(), anyLong(), anyInt()))
                 .thenReturn(List.of());
     }
 
@@ -155,7 +155,7 @@ class CaptureMetadataVerificationTest {
         laterNoHash.put("intentId", "lineage_capture:y");
         laterNoHash.put("captureState", "CAPTURED");
         laterNoHash.put("capturedAtMs", 2000L);
-        when(store.listRowsForSourceSince(eq(REPO), eq("1720000000.000200"), eq(-1L), anyInt()))
+        when(store.listRowsForSourceBefore(eq(REPO), eq("1720000000.000200"), eq(Long.MAX_VALUE), anyInt()))
                 .thenReturn(List.of(laterNoHash));
 
         Map<String, Object> body = verify();
@@ -176,11 +176,100 @@ class CaptureMetadataVerificationTest {
         Map<String, Object> unresolved = new LinkedHashMap<>();
         unresolved.put("intentId", "lineage_capture:z");
         unresolved.put("captureState", "INTENT");
-        when(store.listRowsForSourceSince(eq(REPO), eq("1720000000.000200"), eq(-1L), anyInt()))
+        when(store.listRowsForSourceBefore(eq(REPO), eq("1720000000.000200"), eq(Long.MAX_VALUE), anyInt()))
                 .thenReturn(List.of(unresolved));
 
         assertEquals("UNVERIFIABLE", verify().get("chatEvidence"),
                 "an unresolved overlapping pass exists — claiming tampering is an overstatement");
+    }
+
+    @Test
+    @DisplayName("an intent swept BEFORE the baseline hashed does not suppress MISMATCH")
+    void sweptBeforeTheBaselineDoesNotDowngrade() {
+        when(store.listCapturedForObject(REPO, OBJECT, 20))
+                .thenReturn(List.of(completedRow(storedChatHash, 1000L)));
+        stored.getAspects().get(0).getProperties().get(0).setValue("C-REWRITTEN");
+        // Swept (judged dead by the sweeper) at 800, before the baseline hashed at 1000: under
+        // the sweeper's own operating assumption its writes precede its sweep, so they are
+        // inside the baseline hash. Before this rule, ONE abandoned intent muted the tamper
+        // signal for the source for ever (final review P2).
+        Map<String, Object> sweptEarly = new LinkedHashMap<>();
+        sweptEarly.put("intentId", "lineage_capture:dead");
+        sweptEarly.put("captureState", "UNRESOLVED");
+        sweptEarly.put("unresolvedAtMs", 800L);
+        when(store.listRowsForSourceBefore(eq(REPO), eq("1720000000.000200"),
+                eq(Long.MAX_VALUE), anyInt())).thenReturn(List.of(sweptEarly));
+
+        assertEquals("MISMATCH", verify().get("chatEvidence"),
+                "an intent already judged dead before the hash was recorded muted the signal");
+    }
+
+    @Test
+    @DisplayName("an intent swept AFTER the baseline hashed still downgrades — the control")
+    void sweptAfterTheBaselineDowngrades() {
+        when(store.listCapturedForObject(REPO, OBJECT, 20))
+                .thenReturn(List.of(completedRow(storedChatHash, 1000L)));
+        stored.getAspects().get(0).getProperties().get(0).setValue("C-REWRITTEN");
+        // Swept at 1500: it may have written between the baseline hashing (1000) and its death.
+        Map<String, Object> sweptLate = new LinkedHashMap<>();
+        sweptLate.put("intentId", "lineage_capture:dead");
+        sweptLate.put("captureState", "UNRESOLVED");
+        sweptLate.put("unresolvedAtMs", 1500L);
+        when(store.listRowsForSourceBefore(eq(REPO), eq("1720000000.000200"),
+                eq(Long.MAX_VALUE), anyInt())).thenReturn(List.of(sweptLate));
+
+        assertEquals("UNVERIFIABLE", verify().get("chatEvidence"),
+                "a pass that may have written after the recorded hash cannot be ruled out");
+    }
+
+    private List<Map<String, Object>> fullPageOfHarmlessRows() {
+        List<Map<String, Object>> page = new ArrayList<>();
+        for (int i = 0; i < 100; i++) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("intentId", "lineage_capture:old-" + i);
+            row.put("captureState", "CAPTURED");
+            row.put("capturedAtMs", 500L);            // completed before the baseline: harmless
+            row.put("intentOpenedAtMs", 1000L - i);   // the keyset cursor, descending
+            page.add(row);
+        }
+        return page;
+    }
+
+    @Test
+    @DisplayName("the 100-row page cap does not hide an overlapping row on a later page")
+    void thePageCapDoesNotHideRows() {
+        when(store.listCapturedForObject(REPO, OBJECT, 20))
+                .thenReturn(List.of(completedRow(storedChatHash, 1000L)));
+        stored.getAspects().get(0).getProperties().get(0).setValue("C-REWRITTEN");
+        Map<String, Object> openBeyondTheCap = new LinkedHashMap<>();
+        openBeyondTheCap.put("intentId", "lineage_capture:hidden");
+        openBeyondTheCap.put("captureState", "INTENT");
+        // Page 1 is full (last openedAt 901 → cursor 902); the open pass sits on page 2.
+        when(store.listRowsForSourceBefore(eq(REPO), eq("1720000000.000200"),
+                eq(Long.MAX_VALUE), anyInt())).thenReturn(fullPageOfHarmlessRows());
+        when(store.listRowsForSourceBefore(eq(REPO), eq("1720000000.000200"),
+                eq(902L), anyInt())).thenReturn(List.of(openBeyondTheCap));
+
+        assertEquals("UNVERIFIABLE", verify().get("chatEvidence"),
+                "the judgment stopped at one page and missed the still-open pass beyond it");
+    }
+
+    @Test
+    @DisplayName("a 100+ row history with NO overlap still shows MISMATCH — the cap control")
+    void aFullHistoryWithNoOverlapStillShowsMismatch() {
+        when(store.listCapturedForObject(REPO, OBJECT, 20))
+                .thenReturn(List.of(completedRow(storedChatHash, 1000L)));
+        stored.getAspects().get(0).getProperties().get(0).setValue("C-REWRITTEN");
+        // The first shape treated a full page as "cannot rule out": a source with 100+ rows of
+        // history could NEVER show MISMATCH again — the operational rule (two consecutive
+        // MISMATCHes = tamper signal) became unreachable (final review P2).
+        when(store.listRowsForSourceBefore(eq(REPO), eq("1720000000.000200"),
+                eq(Long.MAX_VALUE), anyInt())).thenReturn(fullPageOfHarmlessRows());
+        when(store.listRowsForSourceBefore(eq(REPO), eq("1720000000.000200"),
+                eq(902L), anyInt())).thenReturn(List.of());
+
+        assertEquals("MISMATCH", verify().get("chatEvidence"),
+                "a long history alone must not permanently mute the tamper signal");
     }
 
     @Test
@@ -196,7 +285,7 @@ class CaptureMetadataVerificationTest {
         earlier.put("intentId", "lineage_capture:w");
         earlier.put("captureState", "CAPTURED");
         earlier.put("capturedAtMs", 500L);
-        when(store.listRowsForSourceSince(eq(REPO), eq("1720000000.000200"), eq(-1L), anyInt()))
+        when(store.listRowsForSourceBefore(eq(REPO), eq("1720000000.000200"), eq(Long.MAX_VALUE), anyInt()))
                 .thenReturn(List.of(earlier));
 
         assertEquals("MISMATCH", verify().get("chatEvidence"),
