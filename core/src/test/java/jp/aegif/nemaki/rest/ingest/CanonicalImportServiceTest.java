@@ -56,7 +56,7 @@ class CanonicalImportServiceTest {
         req.setRepositoryId("bedroom");
         req.setSourceObjectId("obj1");
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertFalse(result.isSuccess());
         assertTrue(result.errors().get(0).contains("not found"));
     }
@@ -74,7 +74,7 @@ class CanonicalImportServiceTest {
         req.setRepositoryId("bedroom");
         req.setSourceObjectId("obj1");
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertFalse(result.isSuccess());
         assertTrue(result.errors().get(0).contains("disabled"));
     }
@@ -93,7 +93,7 @@ class CanonicalImportServiceTest {
         req.setRepositoryId("bedroom");
         req.setSourceObjectId("obj1");
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertFalse(result.isSuccess());
         assertTrue(result.errors().get(0).contains("not found"));
     }
@@ -119,7 +119,7 @@ class CanonicalImportServiceTest {
         req.setRepositoryId("bedroom");
         req.setSourceObjectId("obj1");
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertFalse(result.isSuccess());
         assertTrue(result.errors().get(0).contains("not allowed"));
     }
@@ -145,7 +145,7 @@ class CanonicalImportServiceTest {
         req.setRepositoryId("bedroom");
         req.setSourceObjectId("obj1");
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertFalse(result.isSuccess());
         assertTrue(result.errors().get(0).contains("not allowed"));
     }
@@ -164,7 +164,7 @@ class CanonicalImportServiceTest {
         req.setRepositoryId("bedroom");
         req.setSourceObjectId("obj1");
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertFalse(result.isSuccess());
         assertTrue(result.errors().get(0).contains("scoped to repository"));
     }
@@ -191,7 +191,7 @@ class CanonicalImportServiceTest {
         req.setSourceObjectId("obj1");
         req.setDryRun(true);
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertTrue(result.dryRun());
         // Verify NO repository side effects
         verify(objectService, never()).createDocument(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
@@ -221,7 +221,7 @@ class CanonicalImportServiceTest {
         req.setRepositoryId("bedroom");
         req.setSourceObjectId("obj1");
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertFalse(result.isSuccess());
         assertTrue(result.errors().get(0).contains("targetFolderId"));
     }
@@ -249,7 +249,7 @@ class CanonicalImportServiceTest {
         req.setSourceObjectId("msg-1");
         // No metadata.channelId
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertFalse(result.isSuccess());
         assertTrue(result.errors().get(0).contains("channelId"));
     }
@@ -277,7 +277,7 @@ class CanonicalImportServiceTest {
         req.setSourceObjectId("msg-1");
         // No metadata.mailboxId
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertFalse(result.isSuccess());
         assertTrue(result.errors().get(0).contains("mailboxId"));
     }
@@ -309,7 +309,7 @@ class CanonicalImportServiceTest {
         req.setSourceObjectId("attach-1");
         req.setSourceObjectType("attachment");
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertTrue(result.isSuccess());
     }
 
@@ -341,7 +341,7 @@ class CanonicalImportServiceTest {
         req.setSourceObjectType("attachment");
         req.setMetadata(java.util.Map.of("mailboxId", "INBOX", "messageStableId", "msg-1"));
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertTrue(result.isSuccess());
         assertEquals("att-obj-id", result.objectId());
     }
@@ -355,7 +355,7 @@ class CanonicalImportServiceTest {
         req.setSourceObjectId("msg-1");
         // No content stream
 
-        ExternalIngestResult result = service.executeMailImport(mock(CallContext.class), req);
+        ExternalIngestResult result = service.executeMailImport(testContext(), req);
         assertFalse(result.isSuccess());
         assertTrue(result.errors().get(0).contains("Content stream"));
     }
@@ -388,7 +388,7 @@ class CanonicalImportServiceTest {
         req.setSourceObjectType("files");
         req.setFileName("test.txt");
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertTrue(result.isSuccess());
         assertEquals("new-obj-id", result.objectId());
     }
@@ -441,7 +441,7 @@ class CanonicalImportServiceTest {
                 "cloudFileUrl", "https://docs.google.com/document/d/abc123/edit"
         ));
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertTrue(result.isSuccess());
         assertEquals("cloud-doc-id", result.objectId());
 
@@ -502,7 +502,7 @@ class CanonicalImportServiceTest {
         req.setFileName("data.xlsx");
         // No cloudProvider in metadata — just a plain Box import
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertTrue(result.isSuccess());
 
         // Verify cloudDriveMetadata is NOT applied
@@ -555,7 +555,7 @@ class CanonicalImportServiceTest {
         // No profileId or connectorId — auto-resolve should find them
 
         ExternalIngestResult result = service.executeWithAutoResolve(
-                mock(CallContext.class), req, "google", SourceArchetype.FILE_SHARE);
+                testContext(), req, "google", SourceArchetype.FILE_SHARE);
         assertTrue(result.isSuccess(), "Auto-resolve should succeed: " + result.errors());
         assertEquals("auto-resolved-doc-id", result.objectId());
     }
@@ -598,7 +598,7 @@ class CanonicalImportServiceTest {
         req.setMetadata(Map.of("cloudProvider", "google", "cloudFileId", "file-1"));
 
         ExternalIngestResult result = service.executeWithAutoResolve(
-                mock(CallContext.class), req, "google", SourceArchetype.FILE_SHARE);
+                testContext(), req, "google", SourceArchetype.FILE_SHARE);
         assertTrue(result.isSuccess(), () -> String.valueOf(result.errors()));
         verify(connectorService).findBySystemAndArchetype("google_drive", SourceArchetype.FILE_SHARE);
     }
@@ -641,7 +641,7 @@ class CanonicalImportServiceTest {
         req.setMetadata(Map.of("cloudProvider", "microsoft", "cloudFileId", "item-1"));
 
         ExternalIngestResult result = service.executeWithAutoResolve(
-                mock(CallContext.class), req, "microsoft", SourceArchetype.FILE_SHARE);
+                testContext(), req, "microsoft", SourceArchetype.FILE_SHARE);
         assertTrue(result.isSuccess(), () -> String.valueOf(result.errors()));
         verify(connectorService).findBySystemAndArchetype("onedrive", SourceArchetype.FILE_SHARE);
     }
@@ -822,7 +822,7 @@ class CanonicalImportServiceTest {
         Content mockContent = createMockContent("existing-doc-1");
         when(contentService.getContent("bedroom", "existing-doc-1")).thenReturn(mockContent);
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertTrue(result.isSuccess(), () -> "Should succeed: " + result.errors()
                 + " objectId=" + result.objectId() + " versionLabel=" + result.versionLabel()
                 + " isNewVersion=" + result.isNewVersion() + " skipped=" + result.skipped()
@@ -882,7 +882,7 @@ class CanonicalImportServiceTest {
         Content mockContent = createMockContent("existing-doc-2");
         when(contentService.getContent("bedroom", "existing-doc-2")).thenReturn(mockContent);
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertTrue(result.isSuccess(), () -> "Should succeed: " + result.errors());
         assertTrue(result.isNewVersion(), "Filename match should trigger version-up");
     }
@@ -929,7 +929,7 @@ class CanonicalImportServiceTest {
         req.setSourceObjectId("box-file-999");
         req.setFileName("report.pdf"); // no match
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertTrue(result.isSuccess());
         assertFalse(result.isNewVersion(), "No filename match → new document, not version-up");
     }
@@ -991,7 +991,7 @@ class CanonicalImportServiceTest {
         Content mockContent = createMockContent("existing-doc-4");
         when(contentService.getContent("bedroom", "existing-doc-4")).thenReturn(mockContent);
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertTrue(result.isSuccess(), () -> "Should succeed: " + result.errors());
         assertTrue(result.isNewVersion(), "source_id miss → filename match → should version-up");
     }
@@ -1057,7 +1057,7 @@ class CanonicalImportServiceTest {
         req.setSourceObjectType("file");
         req.setFileName("file.txt");
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertTrue(result.isSuccess());
         // Verify the old doc was deleted
         verify(objectService).deleteObject(any(), eq("bedroom"), eq("to-be-replaced"), eq(true), isNull());
@@ -1151,7 +1151,7 @@ class CanonicalImportServiceTest {
                 .thenReturn("att-obj-id");
 
         ExternalIngestResult result = service.executeNoteImport(
-                mock(CallContext.class), notePageReq("files_only", true));
+                testContext(), notePageReq("files_only", true));
 
         assertTrue(result.isSuccess(), "errors: " + result.errors());
         assertEquals("att-obj-id", result.objectId(), "primary object should be the attachment");
@@ -1167,7 +1167,7 @@ class CanonicalImportServiceTest {
         noteProfile("files_only");
 
         ExternalIngestResult result = service.executeNoteImport(
-                mock(CallContext.class), notePageReq("files_only", false));
+                testContext(), notePageReq("files_only", false));
 
         assertTrue(result.skipped(), "page with no attachments must be skipped");
         verify(objectService, never()).createDocument(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
@@ -1182,7 +1182,7 @@ class CanonicalImportServiceTest {
                 .thenReturn("page-obj-id", "att-obj-id");
 
         ExternalIngestResult result = service.executeNoteImport(
-                mock(CallContext.class), notePageReq("files_and_body", true));
+                testContext(), notePageReq("files_and_body", true));
 
         assertTrue(result.isSuccess(), "errors: " + result.errors());
         assertEquals("page-obj-id", result.objectId(), "primary object should be the page in files_and_body");
@@ -1215,7 +1215,7 @@ class CanonicalImportServiceTest {
         when(contentDaoService.getChildren("bedroom", "folder-1")).thenReturn(List.of(existing));
 
         ExternalIngestResult result = service.executeNoteImport(
-                mock(CallContext.class), notePageReq("files_and_body", false));
+                testContext(), notePageReq("files_and_body", false));
 
         assertTrue(result.skipped(), "dedupe-skipped page body with no new attachment must report skipped");
         assertEquals("page-obj-id", result.objectId());
@@ -1266,7 +1266,7 @@ class CanonicalImportServiceTest {
         req.setFileName("record.txt");
         req.setContentStream(new java.io.ByteArrayInputStream("data".getBytes()));
 
-        ExternalIngestResult result = service.executeBusinessRecordImport(mock(CallContext.class), req);
+        ExternalIngestResult result = service.executeBusinessRecordImport(testContext(), req);
 
         assertTrue(result.skipped(), "dedupe-skipped record must report skipped=true");
         assertEquals("rec-obj-1", result.objectId(), "skipped result must carry the existing object id");
@@ -1323,7 +1323,7 @@ class CanonicalImportServiceTest {
         meta.put("channelId", "C123");
         req.setMetadata(meta);
 
-        ExternalIngestResult result = service.executeChatContextImport(mock(CallContext.class), req);
+        ExternalIngestResult result = service.executeChatContextImport(testContext(), req);
 
         assertTrue(result.skipped(), "dedupe-skipped chat message must report skipped=true");
         assertEquals("chat-obj-1", result.objectId(), "skipped result must carry the existing object id");
@@ -1344,7 +1344,7 @@ class CanonicalImportServiceTest {
                 .thenReturn(List.of(existing));
 
         ExternalIngestResult result = service.executeNoteImport(
-                mock(CallContext.class), notePageReq("files_and_body", true));
+                testContext(), notePageReq("files_and_body", true));
 
         assertTrue(result.isSuccess(), "errors: " + result.errors());
         verify(objectService, never()).createRelationship(any(), any(), any(), any(), any(), any(), any());
@@ -1387,7 +1387,7 @@ class CanonicalImportServiceTest {
         req.setSourceObjectId("file-1");
         req.setMetadata(java.util.Map.of("parentObjectId", "parent-1"));
 
-        ExternalIngestResult result = service.execute(mock(CallContext.class), req);
+        ExternalIngestResult result = service.execute(testContext(), req);
         assertTrue(result.isSuccess(), "errors: " + result.errors());
         verify(objectService, never()).createRelationship(any(), any(), any(), any(), any(), any(), any());
     }
@@ -1404,9 +1404,15 @@ class CanonicalImportServiceTest {
                 .thenThrow(new RuntimeException("view unavailable"));
 
         ExternalIngestResult result = service.executeNoteImport(
-                mock(CallContext.class), notePageReq("files_and_body", true));
+                testContext(), notePageReq("files_and_body", true));
 
         assertTrue(result.isSuccess(), "errors: " + result.errors());
         verify(objectService, times(1)).createRelationship(any(), any(), any(), any(), any(), any(), any());
     }
+    private static CallContext testContext() {
+        CallContext ctx = mock(CallContext.class);
+        org.mockito.Mockito.when(ctx.getUsername()).thenReturn("test-user");
+        return ctx;
+    }
+
 }

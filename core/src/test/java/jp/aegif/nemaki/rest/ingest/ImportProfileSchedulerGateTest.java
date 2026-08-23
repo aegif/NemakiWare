@@ -200,6 +200,75 @@ class ImportProfileSchedulerGateTest {
                 resp.getBody().get("denialReason"));
     }
 
+    // ── P1-1(e) §1.3 / AC15: scheduleConfiguredBy* is SERVER-owned ────
+
+    @Test
+    void update_stampsTheOperator_onScheduleRelevantDiff_andDiscardsClientStamp() {
+        // AC15 had no test at all (adversarial review, finding 4): deleting the whole
+        // scheduleChanged block left the suite green. The discriminating shape is a forged
+        // client stamp riding a schedule-relevant PUT — the server must overwrite BOTH fields
+        // with its own answer.
+        CallContext admin = mock(CallContext.class);
+        when(admin.getUsername()).thenReturn("admin");
+        lenient().when(admin.getRepositoryId()).thenReturn(REPO);
+        lenient().when(admin.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(httpRequest.getAttribute("CallContext")).thenReturn(admin);
+        when(authService.isAdmin(admin)).thenReturn(true);
+
+        ImportProfileDefinition existing = scheduledDelegatedDraft();
+        existing.setProfileId("p-stamp");
+        existing.setEnabled(false);
+        existing.setScheduleConfiguredByUserId("previous-operator");
+        existing.setScheduleConfiguredAtMs(1L);
+        when(profileService.get("p-stamp")).thenReturn(existing);
+
+        ImportProfileDefinition update = scheduledDelegatedDraft();
+        update.setProfileId("p-stamp");
+        update.setEnabled(true);                             // schedule-relevant diff
+        update.setScheduleConfiguredByUserId("mallory");     // forged client stamp
+        update.setScheduleConfiguredAtMs(999L);
+
+        controller.update("p-stamp", update);
+
+        org.junit.jupiter.api.Assertions.assertEquals("admin",
+                update.getScheduleConfiguredByUserId(),
+                "a schedule-relevant PUT must stamp the AUTHENTICATED operator — the "
+                        + "client-supplied name survived");
+        org.junit.jupiter.api.Assertions.assertNotEquals(Long.valueOf(999L),
+                update.getScheduleConfiguredAtMs(),
+                "the client-supplied timestamp survived");
+        verify(profileService).update(update);
+    }
+
+    @Test
+    void update_preservesThePriorStamp_whenNothingScheduleRelevantChanged() {
+        CallContext admin = mock(CallContext.class);
+        when(admin.getUsername()).thenReturn("admin");
+        lenient().when(admin.getRepositoryId()).thenReturn(REPO);
+        lenient().when(admin.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(httpRequest.getAttribute("CallContext")).thenReturn(admin);
+        when(authService.isAdmin(admin)).thenReturn(true);
+
+        ImportProfileDefinition existing = scheduledDelegatedDraft();
+        existing.setProfileId("p-keep");
+        existing.setScheduleConfiguredByUserId("previous-operator");
+        existing.setScheduleConfiguredAtMs(1L);
+        when(profileService.get("p-keep")).thenReturn(existing);
+
+        ImportProfileDefinition update = scheduledDelegatedDraft();
+        update.setProfileId("p-keep");
+        update.setDefaultObjectTypeId("nemaki:custom");     // NOT schedule-relevant
+        update.setScheduleConfiguredByUserId(null);          // omitted by the client
+
+        controller.update("p-keep", update);
+
+        org.junit.jupiter.api.Assertions.assertEquals("previous-operator",
+                update.getScheduleConfiguredByUserId(),
+                "an unrelated edit erased the schedule-configuration record");
+        org.junit.jupiter.api.Assertions.assertEquals(Long.valueOf(1L),
+                update.getScheduleConfiguredAtMs());
+    }
+
     // ── V1 (RC5 ext): auto-disable marker handshake ───────────────────
 
     @Test

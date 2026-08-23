@@ -26,7 +26,10 @@ public class IngestSchedulerService {
     private static final Logger logger = LoggerFactory.getLogger(IngestSchedulerService.class);
     private static final long DEFAULT_POLL_INTERVAL_SECONDS = 300; // 5 minutes
     private static final int DEFAULT_CIRCUIT_BREAKER_THRESHOLD = 5;
-    private static final int DEFAULT_FETCH_TIMEOUT_MINUTES = 30;
+    /** Shared with {@code CaptureIntentSweeper}'s stale floor — one key, one default, so the
+     * floor cannot silently drop below the timeout when either changes (adversarial review). */
+    public static final String FETCH_TIMEOUT_KEY = "ingest.scheduler.fetchTimeoutMinutes";
+    public static final int DEFAULT_FETCH_TIMEOUT_MINUTES = 30;
 
     /** Resolved at startPolling() from PropertyManager. */
     private long pollIntervalSeconds = DEFAULT_POLL_INTERVAL_SECONDS;
@@ -103,7 +106,7 @@ public class IngestSchedulerService {
         if (propertyManager != null) {
             pollIntervalSeconds = readLong("ingest.scheduler.pollIntervalSeconds", DEFAULT_POLL_INTERVAL_SECONDS);
             circuitBreakerThreshold = (int) readLong("ingest.scheduler.circuitBreakerThreshold", DEFAULT_CIRCUIT_BREAKER_THRESHOLD);
-            fetchTimeoutMinutes = (int) readLong("ingest.scheduler.fetchTimeoutMinutes", DEFAULT_FETCH_TIMEOUT_MINUTES);
+            fetchTimeoutMinutes = (int) readLong(FETCH_TIMEOUT_KEY, DEFAULT_FETCH_TIMEOUT_MINUTES);
         }
         scheduler = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "IngestScheduler");

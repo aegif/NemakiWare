@@ -122,8 +122,10 @@ class IngestDedupeFailuresReachCallerTest {
         req.setSourceObjectId("file-1");
         req.setSourceObjectType("files");
         req.setFileName("test.txt");
-        return service.execute(mock(
-                org.apache.chemistry.opencmis.commons.server.CallContext.class), req);
+        org.apache.chemistry.opencmis.commons.server.CallContext ctx = mock(
+                org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        org.mockito.Mockito.when(ctx.getUsername()).thenReturn("test-user");
+        return service.execute(ctx, req);
     }
 
     @Test

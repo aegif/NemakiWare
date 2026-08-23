@@ -87,7 +87,8 @@ a 系は archetype 依存の部分充足、対象も「every record」でなく�
 **名乗れる限定文** (禁じ手の「準拠」「認証」を使わない):
 「**取込が捕獲した記録について**、捕獲属性 (chat 11 + source identity 9) は CMIS 経路に
 対して読み取り専用で、適用値の hash (mh1) が outbox と lineage event の 2 箇所に記録され、
-export に同梱され、複製には持ち出せない」。残余として併記するもの: ローリング再起動の
+export に同梱され (**最新版のみ** — 版履歴 export の per-version メタには載らない。
+敵対レビュー finding 6)、複製には持ち出せない」。残余として併記するもの: ローリング再起動の
 手続き依存 / digest は敵対的改竄証明ではない (p1-1e §0) / zombie fetch の掃引残余 (同 §4)。
 
 ## 7. 最終レビュー (2026-08-23) と対応
@@ -123,6 +124,13 @@ evidence-types §2.1 の「(c) は READONLY にしていない」「保護は無
 追記 (明示リスト採用の根拠は当時の状態、導出規則に戻さない理由は §冒頭 (iii) のまま有効) /
 P3: List 内 Calendar の要素共有 (再帰コピー化)・bulk 検証の throw 伝播 pin・ACP カンマ連結の
 挙動注記 (1 つの解決不能 id として落ち殻にならない)・store javadoc を cursor 意味論に更新。
+
+**「それらすべて」バッチのレビュー (2026-08-24)**: 実装後に Codex (M1×2 / H2·L2 / H3·H4 /
+N1 / N2 / N3 — 全修正・判別テスト付き) + サブエージェント敵対レビュー (P1 1 / P2 4 / P3 8)。
+最重要は **CatalogSecretBoundary の leaf 分割穴** (ドット入りトップレベル名が免除を獲得 —
+修正) と **Atlas の seal 順序** (参照を seal 後に付加 — 修正)、**SCHEMA_VERSION 17 のまま
+contentHash 3 属性** (manifest javadoc が警告していた再演 — 18 へ bump + 属性集合 pin)。
+経緯と全対応は [`p1-1e-boundary-and-origin.md`](p1-1e-boundary-and-origin.md) §8。
 
 ## 8. やり直さない (閉じたもの)
 

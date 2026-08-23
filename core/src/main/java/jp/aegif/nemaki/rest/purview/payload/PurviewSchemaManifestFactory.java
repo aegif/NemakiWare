@@ -20,7 +20,12 @@ public class PurviewSchemaManifestFactory {
     // and every step is additive: applying 15 over a catalog at 13 creates what 14 and 15 add
     // and touches nothing that exists, so the upgrade is safe to re-run.
     /**
-     * Bumped to 16 for P1-1(d) R3's {@code contentHashSubject} on {@code nemaki_document}.
+     * Bumped to 18 for P1-1(e)'s {@code contentHash} / {@code contentHashSubject} /
+     * {@code contentHashAlgorithm} on {@code nemaki_import_process} — added one commit AFTER
+     * the 17 bump, under an unchanged version, which is precisely the failure the paragraph
+     * below describes; an adversarial review caught it before release. 17 was P1-1(e) Step 2's
+     * reimport/assurance attributes; 16 was P1-1(d) R3's {@code contentHashSubject} on
+     * {@code nemaki_document}.
      *
      * <p><b>Bumping is not optional when an attribute is added.</b> The manifest hash below is
      * computed over the version, the type NAMES, the relationship names, the business-metadata
@@ -31,7 +36,7 @@ public class PurviewSchemaManifestFactory {
      * an unchanged version has happened before in this file's history; this note is here so the
      * next attribute does not repeat it (external review).
      */
-    private static final String SCHEMA_VERSION = "17";
+    private static final String SCHEMA_VERSION = "18";
     private static final List<String> CUSTOM_TYPE_NAMES = List.of(
             "nemaki_repository",
             "nemaki_folder",

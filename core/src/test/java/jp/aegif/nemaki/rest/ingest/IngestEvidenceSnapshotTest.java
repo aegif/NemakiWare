@@ -346,8 +346,9 @@ class IngestEvidenceSnapshotTest {
         service.setObjectService(objectService);
         service.setContentService(contentService);
 
-        // Delegated, so the two candidate actors DIFFER: resolveExecutedBy admits it does not
-        // know, while the synthesized context names the profile's creator.
+        // Delegated, so the two candidate actors DIFFER: resolveExecutionAttribution names the
+        // schedule ("scheduler: delegated profile …"), while the synthesized context's raw
+        // username is the profile's creator.
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");
         profile.setEnabled(true);

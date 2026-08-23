@@ -19,6 +19,7 @@ package jp.aegif.nemaki.rest.purview.journal;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -302,6 +303,33 @@ public class LineageSinkRecordContractTest {
                 ((List<Map<String, Object>>) processAttrs.get("outputs")).get(0);
         assertEquals("nemaki_document", input.get("typeName"));
         assertEquals("nemaki_archive", output.get("typeName"));
+    }
+
+    /**
+     * The Atlas payload's ONE caller-bearing value is the reference qualifiedName. Atlas sealed
+     * its attributes BEFORE adding the references, so the gate covered three constants and
+     * skipped the only value worth checking (adversarial review, finding 2). The fixture is a
+     * v1 LEGACY reference on purpose: a v2 external asset is already refused at construction
+     * ({@code ExternalAssetIdentity.requireNoUriBorneSecrets}), but a stored v1 row predates
+     * that gate, so for it the seal is the only check there is. Deleting the {@code sealed()}
+     * call in {@code buildAtlasPayload} fails this.
+     */
+    @Test
+    public void atlasSealsTheReferencesItActuallySends() {
+        LineageRecord poisoned = LineageRecord.fromV1(new LineageEventBuilder()
+                .repositoryId(REPO)
+                .processType(LineageProcessType.ARCHIVE_LOCAL)
+                .addInput("sharepoint://host/share/doc?token=SECRET")
+                .addOutput("nemaki://" + REPO + "/archives/doc-1")
+                .targets(List.of("atlas"))
+                .build());
+
+        assertThrows(
+                jp.aegif.nemaki.rest.purview.payload.CatalogSecretBoundary
+                        .SecretAtBoundaryException.class,
+                () -> atlas.buildAtlasPayload(poisoned),
+                "a query-bearing stable key rode an input reference into the Atlas payload — "
+                        + "the seal ran before the references existed");
     }
 
     /** The Process name comes from processIdentity, which differs per version by design (§3). */

@@ -176,6 +176,86 @@ class LineageEventV2ExtensionTest {
     }
 
     @Test
+    @DisplayName("the classified copy keeps the extras — M1's first half")
+    void classifiedCopyKeepsTheExtras() {
+        // The copy used the 20-arg pre-(e) constructor: a version-2 event lost its attribution
+        // and compartments and then failed its own digest recomputation — classified V2
+        // materialization was broken outright (post-implementation Codex review, M1).
+        LineageEventV2 event = base()
+                .digestV2(attribution(), processFacts(), journalFacts()).build();
+
+        LineageEventV2 copied = LineageSpoolMaterializer.withClassifiedStatuses(event,
+                Map.of("purview", new LineageMaterializationDecision.CreationClassification(
+                        LineagePublishStatus.UNRESOLVED,
+                        new LineageTargetLifecycle.TerminalReason("OVERSIZE", "test", 1L))));
+
+        assertEquals(LineageEventV2.DIGEST_VERSION_V2, copied.creationDigestVersion());
+        assertEquals(event.processFacts(), copied.processFacts(),
+                "the classified copy dropped the Process supply");
+        assertEquals(event.attribution(), copied.attribution());
+        assertEquals(event.journalFacts(), copied.journalFacts());
+    }
+
+    @Test
+    @DisplayName("a replay compensation repeats the ORIGINAL's evidence — M1's second half")
+    void replayCompensationKeepsTheExtras() {
+        // Rebuilding through the version-1 default stripped the Process supply from exactly
+        // the path that exists to re-deliver it (Codex M1).
+        LineageEventV2 original = base().sequenceNumber(5L)
+                .digestV2(attribution(), processFacts(), journalFacts()).build();
+        LineageJournalRowV2 row = new LineageJournalRowV2(original, "1-abc",
+                LineageJournalRowV2.SequencingState.SEQUENCED, 1L, "lease-1");
+
+        LineageEventV2 compensation = LineageReplayService.compensationOf(row, "purview", 1L);
+
+        assertEquals(LineageEventV2.DIGEST_VERSION_V2, compensation.creationDigestVersion(),
+                "the compensation fell back to a version-1 digest — its facts are uncovered");
+        assertEquals(original.processFacts(), compensation.processFacts(),
+                "the replay lost the Process supply the catalog needs");
+        assertEquals(original.attribution(), compensation.attribution());
+    }
+
+    @Test
+    @DisplayName("extras without an attribution are a construction error — N2")
+    void extrasRequireAttribution() {
+        // A fact carrying compartments but no attribution used to reach the spool encoder and
+        // NPE inside digest computation — an unspoolable fact AFTER the content write, i.e. a
+        // silent evidence drop. The invariant moves the failure to construction (Codex N2).
+        assertThrows(IllegalArgumentException.class,
+                () -> new LineageFact("bedroom", LineageProcessType.IMPORT_UPLOADED,
+                        "op-1", "2026-08-24T00:00:00Z",
+                        List.of(LineageEndpoint.importArtifact("bedroom", "op-1",
+                                "zip-upload", Map.of())),
+                        List.of(LineageEndpoint.document("bedroom", "out-1", "n")),
+                        List.of("purview"), null,
+                        new LineageFact.LegacyV1Projection(LineageProcessType.IMPORT_UPLOADED,
+                                List.of("upload://x"),
+                                List.of("nemaki://bedroom/objects/out-1"), Map.of()),
+                        null, processFacts(), journalFacts()),
+                "a fact with compartments but no attribution was constructible — it fails "
+                        + "later, inside the spool write, after the object exists");
+
+        LineageSpoolPayloadV1 v2 = LineageSpoolPayloadV1.of(new LineageFact("bedroom",
+                LineageProcessType.IMPORT_UPLOADED, "op-1", "2026-08-24T00:00:00Z",
+                List.of(LineageEndpoint.importArtifact("bedroom", "op-1", "zip-upload",
+                        Map.of())),
+                List.of(LineageEndpoint.document("bedroom", "out-1", "n")),
+                List.of("purview"), null,
+                new LineageFact.LegacyV1Projection(LineageProcessType.IMPORT_UPLOADED,
+                        List.of("upload://x"), List.of("nemaki://bedroom/objects/out-1"),
+                        Map.of()),
+                attribution(), processFacts(), journalFacts()));
+        assertThrows(IllegalArgumentException.class,
+                () -> new LineageSpoolPayloadV1(v2.spoolSchemaVersion(), v2.spoolRecordId(),
+                        v2.repositoryId(), v2.processType(), v2.operationId(), v2.occurredAt(),
+                        v2.inputs(), v2.outputs(), v2.canonicalTargetSet(), v2.chunkIndex(),
+                        v2.chunkCount(), v2.correlationId(), v2.legacyV1Projection(),
+                        v2.payloadDigest(), null, v2.processFacts(), v2.journalFacts()),
+                "a version-2 spool row without an attribution decoded/constructed cleanly — "
+                        + "the digest recompute NPEs at read time instead");
+    }
+
+    @Test
     @DisplayName("a bare fact spools byte-identically to the pre-(e) format — the control")
     void bareFactsStayVersionOne() {
         LineageFact bare = new LineageFact("bedroom", LineageProcessType.IMPORT_UPLOADED,

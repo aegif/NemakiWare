@@ -157,6 +157,11 @@ public record LineageFact(
                         + "' — the compartments are closed sets (P1-1(e) §2.2)");
             }
         }
+        if (attribution == null && (!processFacts.isEmpty() || !journalFacts.isEmpty())) {
+            throw new IllegalArgumentException("fact compartments require the execution"
+                    + " attribution — facts without a resolved actor are not a producible"
+                    + " shape (Codex, new defect 2)");
+        }
 
         // v2-valid from day one: A-1's scope rules and the shape table. A fact that only became
         // checkable at the flip would put the discovery of every mis-shaped producer inside the

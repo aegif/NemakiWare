@@ -114,12 +114,12 @@ public enum CaptureEvidenceField {
     // ── Who ──────────────────────────────────────────────────────────────────────────────
 
     /**
-     * OBSERVED covers the absence too. For a delegated or unauthenticated run the value is an
-     * explicit "unknown:" / "service:" string — what we observed is that there was no
-     * authenticated principal, and saying so is an observation, not a claim about who ran it.
-     */
-    /**
-     * INTERNAL_ONLY since P1-1(e) — a deliberate privacy CHANGE, not parity (Codex M6): v1 was
+     * OBSERVED covers the resolved autonomous form too ("scheduler: delegated profile …") —
+     * what we observed is which principal, or which recorded schedule configuration, this run
+     * executed under. (The old "unknown:" / "service:" vocabularies are retired; a blank
+     * username now refuses the run instead of naming it.)
+     *
+     * <p>INTERNAL_ONLY since P1-1(e) — a deliberate privacy CHANGE, not parity (Codex M6): v1 was
      * sending the actor's username over the network to the catalog, which silently dropped it
      * for lack of a declared attribute. Now neither version sends it; the journal (and the v2
      * typed attribution, digest-covered) is its home.

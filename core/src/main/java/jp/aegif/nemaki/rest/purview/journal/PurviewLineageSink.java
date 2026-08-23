@@ -98,9 +98,6 @@ public class PurviewLineageSink implements LineageTargetSink {
         // The same last gate every entity payload passes (disclosure §4 named this sink as the
         // one place that did not call it). qualifiedName is identity-exempted at the boundary
         // since 2026-08-24 — see IDENTITY_ATTRIBUTES there for the recorded decision.
-        // The same last gate every entity payload passes (disclosure §4 named this sink as the
-        // one place that did not call it). qualifiedName is identity-exempted at the boundary
-        // since 2026-08-24 — see IDENTITY_ATTRIBUTES there for the recorded decision.
         processEntity.put("attributes",
                 jp.aegif.nemaki.rest.purview.payload.CatalogSecretBoundary.sealed(processAttrs));
 

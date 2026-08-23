@@ -236,6 +236,14 @@ public class LineageReplayService {
                 .sequenceNumber(0L);
         original.inputs().forEach(builder::addInput);
         original.outputs().forEach(builder::addOutput);
+        if (original.creationDigestVersion() == LineageEventV2.DIGEST_VERSION_V2) {
+            // A compensation must repeat the ORIGINAL's evidence: rebuilding a version-2 event
+            // through the version-1 default would strip the Process supply and the journal
+            // facts from the replay — the required catalog attributes would be empty again on
+            // exactly the path that exists to re-deliver them (Codex M1).
+            builder.digestV2(original.attribution(), original.processFacts(),
+                    original.journalFacts());
+        }
         return builder.build();
     }
 

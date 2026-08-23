@@ -813,13 +813,18 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
             Map<String, LineageMaterializationDecision.CreationClassification> classification) {
         Map<String, LineagePublishStatus> statuses = new LinkedHashMap<>();
         classification.forEach((target, c) -> statuses.put(target, c.status()));
+        // The full constructor, not the pre-(e) compat one: a version-2 event copied through
+        // the 20-arg shape would drop attribution and both fact compartments and then fail its
+        // own digest recomputation — classified V2 materialization was broken outright
+        // (post-implementation Codex review, M1).
         return new LineageEventV2(event.schemaVersion(), event.idempotencyKeyVersion(),
                 event.eventId(), event.processKey(), event.delivery(), event.deliveryId(),
                 event.repositoryId(), event.processType(), event.operationId(),
                 event.occurredAt(), event.inputs(), event.outputs(), event.chunkIndex(),
                 event.chunkCount(), event.sequenceNumber(), event.correlationId(),
                 event.spoolRecordId(), event.legacyEventKey(), statuses,
-                event.creationPayloadDigest());
+                event.creationPayloadDigest(), event.creationDigestVersion(),
+                event.attribution(), event.processFacts(), event.journalFacts());
     }
 
     /** The parking marker's deterministic body (v2.3.22 C3). */

@@ -157,24 +157,25 @@ public final class CatalogSecretBoundary {
             return null;
         }
         for (Map.Entry<String, Object> entry : attributes.entrySet()) {
-            check(entry.getKey(), entry.getValue());
+            check(entry.getKey(), entry.getKey(), entry.getValue());
         }
         return attributes;
     }
 
-    private static void check(String name, Object value) {
+    private static void check(String name, String leafName, Object value) {
         if (value == null) {
             return;
         }
         if (value instanceof List<?> list) {
             for (Object element : list) {
-                check(name, element);
+                check(name, leafName, element);
             }
             return;
         }
         if (value instanceof Map<?, ?> map) {
             for (Map.Entry<?, ?> entry : map.entrySet()) {
-                check(name + "." + entry.getKey(), entry.getValue());
+                check(name + "." + entry.getKey(), String.valueOf(entry.getKey()),
+                        entry.getValue());
             }
             return;
         }
@@ -189,9 +190,11 @@ public final class CatalogSecretBoundary {
         }
         // Nested maps arrive with dotted names (inputs.uniqueAttributes.qualifiedName); the
         // user-text and identity exemptions go by the LEAF attribute name, because the class of
-        // the value is the leaf's, wherever the map nests it. The secret-name check above stays
-        // on the FULL dotted name — broader is stricter there.
-        String leafName = name.substring(name.lastIndexOf('.') + 1);
+        // the value is the leaf's, wherever the map nests it. The leaf is the KEY the traversal
+        // actually took — never recomputed by splitting the dotted string, because a top-level
+        // attribute is free to be NAMED "x.name" (custom property mappings accept any name) and
+        // splitting would hand it the exemption. The secret-name check above stays on the FULL
+        // dotted name — broader is stricter there.
         if (USER_TEXT_ATTRIBUTES.contains(leafName)) {
             return;
         }

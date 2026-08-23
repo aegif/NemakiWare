@@ -244,6 +244,32 @@ public class CatalogSecretBoundaryTest {
             refusalFor("originalFileName", "https://host/a");
             refusalFor("qualifiedName", "https://host/a");
         }
+
+        /**
+         * A TOP-LEVEL attribute whose name merely CONTAINS a dot buys nothing. Custom property
+         * mappings accept nearly any attribute name, so "x.name" is an operator-reachable
+         * name; recomputing the leaf by splitting the string handed it the full user-text
+         * exemption — every check skipped (adversarial review, finding 1). The leaf must be
+         * the key the traversal actually took.
+         */
+        @Test
+        @DisplayName("a dotted TOP-LEVEL name is not a nested leaf")
+        void dottedTopLevelNameIsNotALeaf() {
+            refusalFor("x.name", "https://host/share/guestaccess.aspx?token=SECRET");
+            refusalFor("x.description", "file:///share/readme.txt");
+            refusalFor("x.qualifiedName", "smb://host/share/doc.txt");
+            refusalFor("x.externalStableKey", "C:\\Users\\ishii\\doc.txt");
+        }
+
+        /** The same trick one level down: a nested KEY containing a dot is that key, whole. */
+        @Test
+        @DisplayName("a dotted nested key is not split either")
+        void dottedNestedKeyIsNotSplit() {
+            Map<String, Object> ref = new java.util.LinkedHashMap<>();
+            ref.put("y.name", "https://host/share/guestaccess.aspx?token=SECRET");
+            assertThrows(SecretAtBoundaryException.class,
+                    () -> CatalogSecretBoundary.sealed(attributes("inputs", ref)));
+        }
     }
 
     @Test

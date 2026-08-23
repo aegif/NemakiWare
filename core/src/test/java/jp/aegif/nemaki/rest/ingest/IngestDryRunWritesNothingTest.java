@@ -144,7 +144,10 @@ class IngestDryRunWritesNothingTest {
     }
 
     private static org.apache.chemistry.opencmis.commons.server.CallContext ctx() {
-        return mock(org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        org.apache.chemistry.opencmis.commons.server.CallContext ctx =
+                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        org.mockito.Mockito.when(ctx.getUsername()).thenReturn("test-user");
+        return ctx;
     }
 
     /** No document was created, no content updated, no version cut, no metadata applied. */

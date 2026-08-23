@@ -391,6 +391,11 @@ public class ImportProfileDefinitionController {
         try {
             if ("admin".equals(mode)) {
                 existing.setDelegated(false);
+                // An ownership transfer IS a schedule-relevant change; skipping the stamp here
+                // left the previous operator on record for a schedule someone else just
+                // reshaped (Codex H3/H4 residual).
+                existing.setScheduleConfiguredByUserId(ctx.getUsername());
+                existing.setScheduleConfiguredAtMs(System.currentTimeMillis());
                 importProfileDefinitionService.update(existing);
                 auditOwnershipTransfer(ctx, existing, "admin", null);
                 return successResponse(existing);
@@ -474,6 +479,9 @@ public class ImportProfileDefinitionController {
             existing.setDefaultProfile(false);
             existing.setTargetFolderId(folderId);
             existing.setTargetFolderPath(null);
+            // Schedule-relevant: stamp the operator performing the transfer (Codex H3/H4).
+            existing.setScheduleConfiguredByUserId(ctx.getUsername());
+            existing.setScheduleConfiguredAtMs(System.currentTimeMillis());
             importProfileDefinitionService.update(existing);
             auditOwnershipTransfer(ctx, existing, "delegated", newOwner);
             return successResponse(existing);

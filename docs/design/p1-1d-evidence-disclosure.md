@@ -127,7 +127,7 @@ Disclosure { INTERNAL_ONLY, EXTERNAL_OK }
 | `chat.channelName` | **INTERNAL_ONLY** | `dm-ishii-otsuka` のような値を普通に取る。**証拠としての重みは `chat.channelId` が担っており**、表示名を外部に出す必要が無い |
 | `chat.selectionReason` | **INTERNAL_ONLY** | **呼び出し側の自由記述**。何が入るか我々は決められない |
 | `chat.evidenceScope` | **INTERNAL_ONLY** | 同上 |
-| `executedBy` / `onBehalfOf` | **EXTERNAL_OK** (現状維持) | **NemakiWare の principal id** であって、取り込まれた人物の名前ではない (委譲実行では `"unknown: …"`、webhook では `"service: …"`)。ただし「運用者」とは限らない — 取込を POST できる認証済み主体なら誰でもここに載り、LDAP / OIDC では email であることが多い。**(e) が最終判断を持つ** ((b) §5) ので先回りしない |
+| `executedBy` / `onBehalfOf` | **INTERNAL_ONLY** ((e) が最終判断を下した — 2026-08-24, Codex M6) | 初稿は EXTERNAL_OK (現状維持) としつつ (e) に最終判断を委ねていた。(e) の判断: LDAP / OIDC では email であることが多い principal id をカタログへ送る必要は無く、v1 は送っても宣言欠落で黙って落とされていた (「送っているのに届かない」状態)。今はどちらの版も送らない — 帰属の家は journal と v2 typed attribution (digest 被覆)。なお旧 `"unknown: …"` / `"service: …"` 語彙は (e) で廃止 (blank username は構造化拒否) |
 | それ以外 | **EXTERNAL_OK** | 識別子・digest・機械状態 |
 
 | `chat.captureWindowStart` / `End` | **INTERNAL_ONLY** | snapshot へ入る経路では**検証されない呼び出し側の文字列**である (aspect へ書く経路だけが `Instant.parse` する)。§3 の規則を自分で破らないために入れる |
@@ -217,8 +217,11 @@ asset の `qualifiedName`・`externalStableKey`・`externalPath`、および Pro
   `snapshotAttributes` を保存し、purge の view は `lineage_event` しか見ない。
   カタログが落ちていた間の取込ほど残る
 - **これ以前に送信された値は、この変更では取り消せない。** カタログ側の削除が別途要る
-- **オブジェクト側の `nemaki:chatParticipants` はこの作業の対象外。** Solr にも索引され、
-  RAG 索引も読む。**文書の生存期間に従う**のであって journal の保持期限には従わない
+- **オブジェクト側の `nemaki:chatParticipants` はこの作業の対象外。**
+  **文書の生存期間に従う**のであって journal の保持期限には従わない。
+  → 2026-08-24 半分だけ閉鎖: Solr の**索引時**除外は §6.1 の実装で入った (既定で
+  INTERNAL_ONLY 6 件は索引に入らない。RAG は evidence が aspect に住む構造上もともと
+  読まない)。**読み出しは今も対象外** — オブジェクトを読める者は値を見る
 
 ---
 

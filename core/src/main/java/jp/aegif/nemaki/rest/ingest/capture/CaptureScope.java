@@ -239,7 +239,10 @@ public final class CaptureScope {
      * provisional actor (the raw context username). The resolver's verdict — one resolution,
      * shared verbatim with the lineage event — lands here, before anything is written, which is
      * what makes "outbox actor == event actor" structural rather than coincidental (P1-1(e) D7,
-     * AC9). Null attribution values keep the provisional ones (the 2-arg overload's behavior).
+     * AC9). The confirmation OVERWRITES both actor fields: a resolved {@code onBehalfOf} of
+     * null means "no separate authority", and keeping a provisional value under it would let
+     * the two records diverge — the exact defect (Codex H2/L2 residual). The 2-arg overload
+     * (no attribution yet) keeps the provisional values, keyed on {@code executedBy == null}.
      */
     public void describe(String sourceSystem, String processType,
             String executedBy, String onBehalfOf) {
@@ -251,13 +254,14 @@ public final class CaptureScope {
                     "The capture intent has already been written; describing it now would change "
                             + "this object without changing the stored row");
         }
+        boolean confirming = executedBy != null;
         intent = new CaptureIntent(intent.documentId(), intent.intentId(),
                 intent.intentOpenedAtMs(), intent.repositoryId(), intent.connectorId(),
                 sourceSystem == null ? intent.sourceSystem() : sourceSystem,
                 intent.sourceObjectType(), intent.sourceObjectId(), intent.requestId(),
                 processType == null ? intent.processType() : processType,
-                executedBy == null ? intent.executedBy() : executedBy,
-                onBehalfOf == null ? intent.onBehalfOf() : onBehalfOf);
+                confirming ? executedBy : intent.executedBy(),
+                confirming ? onBehalfOf : intent.onBehalfOf());
     }
 
     /**

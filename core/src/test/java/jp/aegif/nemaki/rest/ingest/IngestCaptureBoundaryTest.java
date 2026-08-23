@@ -242,6 +242,62 @@ class IngestCaptureBoundaryTest {
     }
 
     @Test
+    @DisplayName("request-metadata 'onBehalfOf' is forgeable and reaches NOTHING (H2/L2)")
+    void forgedOnBehalfOfMetadataReachesNothing() {
+        // The provisional intent actor used to copy request.metadata["onBehalfOf"] — a value
+        // any connector payload can write. On a manual run the confirm step then kept it (a
+        // null onBehalfOf "preserved the provisional"), so the forged name ended up in the
+        // durable intent row while the event said null (Codex H2/L2). Now the provisional is
+        // null and confirm overwrites: the row and the event must BOTH ignore the metadata.
+        wire();
+        String[] emitted = new String[2];
+        service.setIngestLineageEmitter(new IngestLineageEmitter() {
+            @Override
+            public String emitLineageEvent(String repositoryId, String objectId,
+                    String targetFolderId, String documentName, String operationId,
+                    ConnectorDefinition connector, ExternalIngestRequest request,
+                    CapturedContent content, String executedBy, String onBehalfOf,
+                    java.util.Map<CaptureEvidenceField, String> passOutcome) {
+                emitted[0] = executedBy;
+                emitted[1] = onBehalfOf;
+                return "ev-1";
+            }
+        });
+        ExternalIngestRequest req = request("f-forged");
+        req.setMetadata(new java.util.HashMap<>(Map.of("onBehalfOf", "mallory")));
+
+        assertTrue(service.execute(ctx(), req).isSuccess(), "control");
+
+        assertTrue(store.lastOpened != null, "the intent row must have been written");
+        assertEquals("admin", emitted[0], "control: a manual run's actor is the caller");
+        assertEquals(null, emitted[1],
+                "the event took 'on whose authority' from the request body — forgeable");
+        assertEquals(null, store.lastOpened.onBehalfOf(),
+                "the durable intent row kept the forged onBehalfOf the event refused — the "
+                        + "two custody records disagree and the worse one wins on disk");
+    }
+
+    @Test
+    @DisplayName("a blank-username context is refused WITH structure, before any write")
+    void blankUsernameIsAStructuredRefusal() {
+        // Fail-closed is right (placeholder actors are retired), but the throw used to escape
+        // doIngest on the JSON/multipart dispatch as an opaque 500 while the wrappers returned
+        // a structured failure (adversarial review, finding 12). One vocabulary: a structured
+        // error result on every entry path, and nothing written.
+        wire();
+        CallContext broken = mock(CallContext.class);
+        when(broken.getUsername()).thenReturn("  ");
+
+        ExternalIngestResult result = service.execute(broken, request("src-1"));
+
+        assertTrue(!result.isSuccess(), "an unattributable run must refuse");
+        assertTrue(String.join(" ", result.errors()).contains("attributable"),
+                "the refusal must say WHY: " + result.errors());
+        assertTrue(store.events.isEmpty(),
+                "the refusal must precede every write: " + store.events);
+    }
+
+    @Test
     @DisplayName("a dry run opens no intent at all")
     void dryRunOpensNothing() {
         // Rule 1: no change, no row. An intent opened here could never be completed — there is

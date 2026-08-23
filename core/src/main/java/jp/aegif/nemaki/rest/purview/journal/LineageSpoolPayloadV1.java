@@ -92,6 +92,14 @@ public record LineageSpoolPayloadV1(
             throw new IllegalArgumentException("a version-1 spool payload cannot carry the"
                     + " P1-1(e) extras — its digest does not cover them");
         }
+        if (spoolSchemaVersion == SCHEMA_VERSION_V2 && attribution == null) {
+            // The encoder writes the attribution object unconditionally for version 2; a
+            // maps-only payload would NPE at spool time and be recorded as a lineage drop
+            // (Codex, new defect 2). Facts without a resolved actor are not a shape the
+            // producers make — refusing it here keeps that a construction error.
+            throw new IllegalArgumentException("a version-2 spool payload requires the"
+                    + " execution attribution");
+        }
     }
 
     /**

@@ -374,8 +374,10 @@ CouchDB の compaction・バックアップ方針・ディスク障害はこの�
 
 ## 6. 期限切れの走査と可視化
 
-- `CAPTURE_INTENT` のまま既定 15 分を超えた行を **`UNRESOLVED`** にする。**それだけ**。
-  文書を探しに行かない (探しても判定できないため — §3.1)
+- `CAPTURE_INTENT` のまま stale 閾値を超えた行を **`UNRESOLVED`** にする。**それだけ**。
+  文書を探しに行かない (探しても判定できないため — §3.1)。閾値の実効値は
+  **max(設定値 (既定 15 分), fetch timeout + 5 分)** — P1-1(e) Step 4 で下限を接ぎ、
+  実行中の取込が UNRESOLVED に見える誤報 (M5) を塞いだ
 - **`UNRESOLVED` を運用者が見る手段を用意する。** 既存のイベント一覧は
   `type == lineage_event` しか出さないので、**専用の一覧が要る**:
   - **専用 view の述語**: `type == "lineage_capture_intent" && captureState == "UNRESOLVED"`
@@ -609,7 +611,7 @@ leader gate は**有効な構成では本物の gate だが** (`LineagePurgeSche
   (`CouchLineageJournalStore:1325-1333`)
 - **既定で動かないと `UNRESOLVED` が現れず、一覧が常に空になる** — それは
   「問題が無い」と見分けがつかず、無いより悪い
-- 周期は固定間隔 (既定 5 分)。staleness の閾値 (既定 15 分) とは別の設定
+- 周期は固定間隔 (既定 5 分)。staleness の閾値 (既定 15 分、実効下限は fetch timeout + 5 分 — §6 冒頭) とは別の設定
 - **並行実行の安全は `_rev` CAS で担保する。** leader gate は有効な構成でだけ働くので、
   **それに依存しない**。各遷移は冪等なので、複数レプリカが同時に sweep しても**結果は正しい**。
   **「leader が守っている」とは書かない** — §6.5-4 の「既存 purge と同じ role で守られている」
@@ -1131,7 +1133,7 @@ scope に記録する。子の処理で作る relationship は、親のフレー
 | M1 | `/counts` が数えるためだけに `include_docs=true` で最大 30 万文書を実体化 | `countRawView` を足し、文書を取らずに数える |
 | M3 | CAS 再試行を使い切ったとき「状態が悪い」と**観測していない原因を断定**していた | `CONTENDED` を足し、競合と状態問題を分けた |
 | M4 | wrapper のテストが note だけ。**`checkOut` の前に intent が開くことを誰も確かめていない** | **未対応** (下記) |
-| M5 | 実行中の取込が `UNRESOLVED` に見える件が §9.9 の未対応にも載っていなかった | **未対応** (下記) |
+| M5 | 実行中の取込が `UNRESOLVED` に見える件が §9.9 の未対応にも載っていなかった | **緩和済み 2026-08-24** (下記 — 実効閾値の下限接ぎ。lease/heartbeat は未対応のまま) |
 
 ### 4 巡目 — P0 1 / P1 1 / P2 1
 
@@ -1162,8 +1164,11 @@ scope に記録する。子の処理で作る relationship は、親のフレー
   `unwritableIntentStopsCheckOut`)。version-up 経路では checkOut が最初の変更であり、
   さらに **checkOut が成功して checkIn が走らないと文書が CHECKED OUT で固まり、
   同じ項目の以後の取込が永久にそこで落ちる**ため、優先して閉じた
-- **M5 実行中の取込が `UNRESOLVED` に見える** — 既定 15 分に対し fetch timeout は 30 分。
-  §6.9-3 が lease か heartbeat を求めていたが実装していない
+- **M5 実行中の取込が `UNRESOLVED` に見える** — **2026-08-24 緩和済み** (P1-1(e) Step 4):
+  sweeper の実効 stale 閾値を max(設定値, fetch timeout + 5 分) に接いだ
+  (`CaptureIntentSweeper`、キーと既定値は `IngestSchedulerService` と共有)。これは
+  **既定値の矛盾の解消**であって liveness 保証ではない — §6.9-3 の lease / heartbeat は
+  依然実装していない (fetch timeout を人為的に短く設定すれば誤報は再現しうる)
 
 ---
 

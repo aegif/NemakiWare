@@ -139,8 +139,10 @@ class IngestAclSyncPolicyTest {
                     "principalId", "otsuka", "permissions", List.of("cmis:read")))));
             req.setMetadata(metadata);
         }
-        return service.execute(mock(
-                org.apache.chemistry.opencmis.commons.server.CallContext.class), req);
+        org.apache.chemistry.opencmis.commons.server.CallContext ctx = mock(
+                org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        org.mockito.Mockito.when(ctx.getUsername()).thenReturn("test-user");
+        return service.execute(ctx, req);
     }
 
     @Test

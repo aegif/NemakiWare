@@ -200,7 +200,7 @@ timeout wrapper なしで import を呼ぶ。生きた pass の intent が swept
 | 10 | chat 取込: emit 前に aspect が在り、event の journalFacts の mh1 = 完了 evidence の mh1 | hook を post-execute に戻す / 二重計算を別状態にすると落ちる |
 | 11 | hook の一般例外で intent が CAPTURED にならない (INDETERMINATE 記録) / CaptureIntentFailedException は伝播 | 握って warning 化すると落ちる |
 | 12 | sweeper 実効閾値 ≥ fetchTimeout+5 | 連動を外すと落ちる |
-| 13 | SCHEMA_VERSION 17 + 新属性宣言が同一コミット | 属性だけ足すと落ちる |
+| 13 | SCHEMA_VERSION 18 + 新属性宣言が同一コミット (17 は contentHash 3 属性を version 据置で足しており AC13 違反だった — 敵対レビュー finding 3 で 18 へ) | 属性だけ足すと `importProcessAttributeSetIsPinned` が落ち、pin 更新が version 議論を強制する |
 | 14 | codec round-trip / classified copy / replay compensation が version・attribution・2 map を保持 | どれかを落とすと落ちる |
 | 15 | profile PUT: client 供給の scheduleConfiguredBy は常に破棄され、schedule 差分の時だけ server が stamp | handshake を外すと落ちる |
 
@@ -217,3 +217,50 @@ profile PUT の偽装面 (H3/H4)、hook の握り潰し穴 (H5)、閾値連動�
 digest の敵対的主張の過大 (H7)、codec/replay parity (M1)、mh1 供給経路欠落 (M2/M3)、
 externalStableKey 二重保持 (M4)、sourceDescription の表駆動不成立 (M5)、actor parity 誤認
 (M6)、DLQ ゲート (L1)、resolver 分離 (L2)。全て本版に反映。
+
+## 8. 実装後レビューの記録 (2 巡目, 2026-08-24)
+
+**Codex 実装レビュー**: M1 (classified copy / replay compensation が compat ctor で extras を
+落とす — 全引数 ctor + digestV2 で修正、判別テスト `classifiedCopyKeepsTheExtras` /
+`replayCompensationKeepsTheExtras`)、H2/L2 (provisional onBehalfOf が request metadata 由来で
+null-confirm を生き残る — provisional=null + confirm 上書きで修正、判別テスト
+`forgedOnBehalfOfMetadataReachesNothing`)、H3/H4 (ownership transfer 2 経路が stamp を素通し
+— 両経路 stamp)、N1 (barrier の許容 schema version が {1} のまま — {1,2})、N2 (extras 有り
+attribution 無しが構築可能で codec 内 NPE — fact と payload の compact ctor に不変条件、
+判別テスト `extrasRequireAttribution`)、N3 (manifest literal が未 pin — reflection pin)。
+
+**サブエージェント敵対レビュー** (287029cb4..HEAD、P1 1 / P2 4 / P3 8):
+
+- **P1-1 leaf-name 分割の穴**: `check()` が leaf を文字列分割で再計算するため、ドットを含む
+  **トップレベル属性名** (`x.name` — custom property mapping で運用者が付けられる) が
+  user-text / identity 免除を丸ごと獲得していた。**traversal が実際に取った key を leaf として
+  引数で渡す**形に修正 (トップレベルは leaf=フル名)。判別テスト
+  `dottedTopLevelNameIsNotALeaf` / `dottedNestedKeyIsNotSplit`。
+- **P2-2 Atlas の seal 順序**: `buildAtlasPayload` が inputs/outputs を**seal の後**に足して
+  いた — ゲートは定数 3 個だけを見て、唯一の caller 由来値 (参照の qualifiedName) を素通し。
+  seal を最後へ移動。判別テスト `atlasSealsTheReferencesItActuallySends` (v1 LegacyName 経由
+  — v2 は `ExternalAssetIdentity` が構築時に拒否するため、保存済み v1 行こそ seal が唯一の層)。
+- **P2-3 SCHEMA_VERSION 据置**: 上記 AC13 行の通り 18 へ。属性集合 pin
+  (`importProcessAttributeSetIsPinned`) を追加 — 宣言 7 件のどれを消しても落ちる。
+- **P2-4 transferOwnership の stamp** は Codex H3/H4 修正で解消済みだった (レビューは修正前の
+  読み)。残っていた **AC15 テスト欠落**を閉じた: PUT handshake
+  (`update_stampsTheOperator_onScheduleRelevantDiff_andDiscardsClientStamp` /
+  `update_preservesThePriorStamp_whenNothingScheduleRelevantChanged`) + transfer 2 経路の
+  stamp assertion。
+- **P2-5 正典 4 箇所の未更新**: data-model §D7 (現在形の欠陥記述 → 解消済み記録 + AC9 行 ✅)、
+  disclosure §3 (executedBy/onBehalfOf の EXTERNAL_OK 行 → INTERNAL_ONLY 決定を反映) と §6 残余
+  (Solr 索引時除外を追記)、capture-outbox M5 (未対応 → 緩和済み。lease/heartbeat は未対応の
+  まま)、capture-boundary-runbook §2 (手動 35 分運用 → 自動下限)。
+- **P3**: finding 6 (sidecar は最新版のみ — plan §6 / interpares-mapping の限定文に明記)、
+  finding 7 (sidecar 呼び出し箇所 pin `metadataBuilderCallsTheSidecar`)、finding 8 (Solr の
+  relationship / subTypeProperties ループにも実駆動テスト)、finding 9 (= Codex N2、修正済みの
+  読み残し)、finding 10 (sweeper の key/default を `IngestSchedulerService` の public 定数に
+  共有)、finding 11 (стale コメント 3 箇所)、finding 12 (blank username の拒否を
+  `ExternalIngestResult.error` に構造化 — fail-closed 維持、判別テスト
+  `blankUsernameIsAStructuredRefusal`)、finding 13 (copy への明示 secondaryIds 指定で空シェル
+  が付く件 — **受容**: 値は READONLY 注入が落とし plain create と同機構。
+  `stripEvidenceForNewObject` javadoc に残余として記録)。
+
+レビューが「攻めて何も出なかった」と確認した面: Solr の別ドア (再駆動経路・ACL writer・RAG)、
+describe() 順序 (ensureIntentOpened 全呼出箇所が describe 後)、version-up の等価性、compartment
+整合 (両方向 pin)、削除語彙の残骸、AC1–12/14 の判別性。

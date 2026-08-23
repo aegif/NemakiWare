@@ -224,6 +224,11 @@ class ImportProfileOwnershipTransferTest {
         // targetFolderPath nulled so the picker / cache always agree on ID
         assertNull(saved.getTargetFolderPath());
         assertEquals(FOLDER, saved.getTargetFolderId());
+        // A transfer IS a schedule-relevant change (it flips delegated and clears the
+        // scheduler): the operator performing it goes on record (AC15; Codex H3/H4).
+        assertEquals("admin", saved.getScheduleConfiguredByUserId(),
+                "the transfer left someone else on record for a schedule it reshaped");
+        org.junit.jupiter.api.Assertions.assertNotNull(saved.getScheduleConfiguredAtMs());
     }
 
     @Test
@@ -433,6 +438,9 @@ class ImportProfileOwnershipTransferTest {
         // direction
         verify(ingestAuthorizationService, never())
                 .canManageProfileForFolderAsUser(any(), any(), any());
+        // The reverse direction is schedule-relevant too — it flips delegated (AC15).
+        assertEquals("admin", saved.getScheduleConfiguredByUserId());
+        org.junit.jupiter.api.Assertions.assertNotNull(saved.getScheduleConfiguredAtMs());
     }
 
     // ────────────────────────────────────────────────────────────────────

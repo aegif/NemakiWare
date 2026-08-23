@@ -2269,7 +2269,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 request.getRequestId(),
                 null,
                 callContext == null ? null : callContext.getUsername(),
-                resolveMetadataString(request, "onBehalfOf")));
+                // Provisional only — the resolver's verdict overwrites BOTH actor fields at
+                // describe(). The old source, request metadata "onBehalfOf", was
+                // caller-supplied JSON no production code writes: the forgeable leftover the
+                // post-implementation review flagged (Codex H2/L2 residual).
+                null));
     }
 
     /**
@@ -2440,8 +2444,18 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // Everything the row must carry is known by now, and nothing has been written yet.
         // Resolved ONCE; the same instance reaches the intent row here and the lineage emit
         // below — outbox actor == event actor by construction (D7, AC9).
-        jp.aegif.nemaki.rest.purview.journal.LineageExecutionAttribution attribution =
-                resolveExecutionAttribution(profile, callContext);
+        jp.aegif.nemaki.rest.purview.journal.LineageExecutionAttribution attribution;
+        try {
+            attribution = resolveExecutionAttribution(profile, callContext);
+        } catch (IllegalArgumentException e) {
+            // A blank username reaches here only when the auth filter passed a request through
+            // without an authenticated principal (a wiring failure). Refusing is right —
+            // "unknown:"-style placeholder actors are retired — but the refusal must be a
+            // structured result, not an escaped exception: the wrappers convert those, the
+            // FILE_SHARE/default dispatch turned it into an opaque 500 (adversarial review).
+            return ExternalIngestResult.error(requestId,
+                    "Refusing to ingest without an attributable principal: " + e.getMessage());
+        }
         captureScope.describe(connector == null ? null : connector.getSourceSystem(),
                 connector == null || connector.getSourceArchetype() == null
                         ? null : connector.getSourceArchetype().name(),

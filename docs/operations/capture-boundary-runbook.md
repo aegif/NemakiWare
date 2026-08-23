@@ -95,15 +95,17 @@ curl -u admin:admin -H "X-Requested-With: XMLHttpRequest" \
 この機能には lease も heartbeat もありません。したがって行だけを見て
 「実行中」と「落ちた」を区別する手段はありません。次で判断してください。
 
-- `intentOpenedAtMs` が **30 分以内**なら、まだ走っている可能性があります。時間を置いて
-  もう一度一覧を引き、**行が消えていれば完走**しています (完成した行は `UNRESOLVED` から
-  外れます)
+- 2026-08-24 (P1-1(e) Step 4) から、sweeper の実効 stale 閾値は
+  **max(`lineage.capture-boundary.stale.minutes`, `ingest.scheduler.fetchTimeoutMinutes` + 5 分)**
+  です。既定構成では **fetch timeout (30 分) + 5 分 = 35 分より前に行が `UNRESOLVED` に
+  なることはありません** — つまり一覧に出た行は、既定ならもう fetch timeout を超えています
 - 同じ `requestId` の取込ジョブがまだ動いていないか、ジョブ側で確認してください
-- **30 分を超えても残っている**なら、走っている取込はもう居ません。以下に進みます
+- fetch timeout を**大きく設定し直した直後**だけは、変更前に UNRESOLVED になった行が
+  残っていることがあります。`intentOpenedAtMs` と現在の timeout を突き合わせてください
 
-誤検知を減らしたいだけなら `lineage.capture-boundary.stale.minutes` を
-`ingest.scheduler.fetchTimeoutMinutes` より**大きく**してください (例: 35)。
-その分、本当に落ちた取込が一覧に出るまでの時間も延びます。
+`stale.minutes` を timeout より大きく手で設定する運用 (旧 §2 の「例: 35」) は
+**不要になりました** — 下限は自動で接がれます。手で大きくするのは「もっと待ってから
+報せてほしい」ときだけです。
 
 1. `sourceObjectId` と `sourceSystem` で、外部側にその項目がまだ在るか確かめる
 2. リポジトリ側に対応する文書が在るか確かめる (**自動判定はしません** — §0)

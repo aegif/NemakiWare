@@ -238,23 +238,23 @@ document も aspect もイベントも作られない。
 metadata-only 再取込は読み戻し経路に落ちて `none()` を出しうる — **同じ object について
 2 つのイベントが矛盾する**。棚卸しへ差し戻す。
 
-### D7 — 同じ操作の実行主体が、イベントと outbox で食い違う
+### D7 — 同じ操作の実行主体が、イベントと outbox で食い違う【解消済み — P1-1(e), 2026-08-24】
 
-イベント側は正直に作ってある: `resolveExecutedBy` (`:917-923`) は合成コンテキストの名前を
-出さず `"unknown: delegated profile …"` を返し、`resolveOnBehalfOf` (`:926-928`) が
-`profile.getCreatedByUserId()` を返す。
+**発見当時の姿** (歴史記録): イベント側は `resolveExecutedBy` が
+`"unknown: delegated profile …"`、`resolveOnBehalfOf` が `profile.getCreatedByUserId()` を
+返す一方、同じ取込の outbox 行は `newCaptureScope` で `executedBy` =
+合成コンテキストの username (= profile 作成者)、`onBehalfOf` = **呼び出し側が request
+metadata に書いた文字列**を書いていた。1 つの操作について 2 つの記録が、同じ名前の
+フィールドに、別の出所から、矛盾する値を書いていた。
 
-ところが同じ取込の outbox 行は `newCaptureScope` (`:1657-1672`) で:
-
-- `executedBy` = `callContext.getUsername()` = **合成された profile 作成者** —
-  イベントが避けている「権限を実行者に見せる」混同そのもの
-- `onBehalfOf` = **呼び出し側が request metadata に書いた文字列** (イベント側は profile の記録値)
-
-`CaptureIntent` の javadoc は両者を同じ意味だと定義している。**1 つの操作について 2 つの記録が、
-同じ名前のフィールドに、別の出所から、矛盾する値を書いている。**
-
-> 実行起源そのものは **(e)** の担当だが、**「同じ名前で違う意味」はモデルの問題**なので
-> ここで名指す。(e) が直すときの前提になる。
+**解消の形** ((e) §1): `resolveExecutionAttribution` が
+`LineageExecutionAttribution(executedBy, onBehalfOf)` を **1 回だけ**解決し、同じ
+インスタンスが intent 行 (`CaptureScope.describe` の confirm 上書き) とイベントの両方に
+届く — 一致は突合ではなく構成で成立する。`resolveExecutedBy` / `resolveOnBehalfOf` と
+"unknown:" / "service:" 語彙は廃止 (blank username は構造化拒否)。provisional の
+`onBehalfOf` は request metadata から拾わず null (偽装経路の遮断、Codex H2/L2)。
+判別テスト: `IngestCaptureBoundaryTest.intentAndEventShareTheAttribution` (自律 delegated
+形 — 候補 2 値が異なる) / `forgedOnBehalfOfMetadataReachesNothing`。
 
 ---
 
@@ -440,7 +440,7 @@ message の emit が添付ループ `:366-415` を丸ごと跨ぐ。
 | 6 | 内容一致で version を上げなかった取込が、**「確かめていない」と言わない** (D2 但し書き) | **実測**: `matchedRecordedHash` を捨てると 2 件落ちる |
 | 7 | 証拠 aspect が **version 間で参照共有されない** (D3) | `buildCopyDocument` の防御コピーを外すと落ちる。**`updateWithoutCheckInOut` 経路で試験する** — `checkIn` 経路は `cancelCheckOut` の副作用で偶然通る |
 | 8 | 0 バイト attachment の**skip がイベントに残る** (D5) | skip の early return を戻すと落ちる |
-| 9 | outbox の `executedBy` / `onBehalfOf` が、**同じ取込のイベントと一致する** (D7) | どちらかの出所を戻すと落ちる |
+| 9 | outbox の `executedBy` / `onBehalfOf` が、**同じ取込のイベントと一致する** (D7) | ✅ (e) で解消 — `IngestCaptureBoundaryTest.intentAndEventShareTheAttribution` が判別 (自律 delegated 形。どちらかの出所を戻すと落ちる) |
 
 ---
 

@@ -179,8 +179,6 @@ public class AtlasLineageSink implements LineageTargetSink {
         processAttrs.put("qualifiedName", processQualifiedName(record));
         processAttrs.put("name", record.processType() != null ? record.processType().name() : "UNKNOWN");
         processAttrs.put("description", "NemakiWare lineage event: " + record.processIdentity());
-        processEntity.put("attributes",
-                jp.aegif.nemaki.rest.purview.payload.CatalogSecretBoundary.sealed(processAttrs));
 
         // Input and output entities.
         //
@@ -192,6 +190,12 @@ public class AtlasLineageSink implements LineageTargetSink {
         // is a qualifiedName.
         processAttrs.put("inputs", entityReferences(record.inputs()));
         processAttrs.put("outputs", entityReferences(record.outputs()));
+
+        // Sealed LAST: the references carry an external asset's qualifiedName, which is exactly
+        // where a stored sharing link would ride. Sealing before the puts covered only the three
+        // constants above and let the one caller-bearing value through unchecked.
+        processEntity.put("attributes",
+                jp.aegif.nemaki.rest.purview.payload.CatalogSecretBoundary.sealed(processAttrs));
 
         entities.add(processEntity);
 

@@ -65,7 +65,8 @@ class SolrInternalOnlyEvidenceIndexingTest {
     @DisplayName("at indexing, participants stay OUT of the document; channel id stays in")
     void indexingFiltersTheDeclaredFields() throws Exception {
         // Drives the REAL createSolrDocument: the helper tests above cannot see a regression at
-        // the loop (a removed `continue` leaves them green).
+        // a loop (a removed `continue` leaves them green). Each of the three loops gets its own
+        // drive — this one covers the aspect loop only (adversarial review, finding 8).
         SolrUtil util = new SolrUtil();
         jp.aegif.nemaki.model.Aspect chat = new jp.aegif.nemaki.model.Aspect();
         chat.setName("nemaki:chatContextMetadata");
@@ -91,6 +92,61 @@ class SolrInternalOnlyEvidenceIndexingTest {
         assertTrue(doc.getField("dynamic.property.nemaki:chatChannelId") != null,
                 "an EXTERNAL_OK evidence field must still be indexed — over-stripping kills "
                         + "legitimate search");
+    }
+
+    @Test
+    @DisplayName("the subTypeProperties loop filters too — same document, other door")
+    void subTypePropertiesLoopFilters() throws Exception {
+        // The aspect-loop test above cannot see this loop: deleting ITS `continue` left the
+        // suite green while claiming the opposite (adversarial review, finding 8). Same real
+        // createSolrDocument, value arriving via subTypeProperties instead of an aspect.
+        SolrUtil util = new SolrUtil();
+        jp.aegif.nemaki.model.Document content = new jp.aegif.nemaki.model.Document();
+        content.setId("obj-2");
+        content.setName("doc");
+        content.setType("cmis:document");
+        content.setObjectType("cmis:document");
+        content.setSubTypeProperties(new java.util.ArrayList<>(java.util.List.of(
+                new jp.aegif.nemaki.model.Property("nemaki:chatParticipants", "otsuka,ishii"),
+                new jp.aegif.nemaki.model.Property("nemaki:customField", "ordinary"))));
+
+        org.apache.solr.common.SolrInputDocument doc = createSolrDocument(util, content);
+
+        assertTrue(doc.getField("dynamic.property.nemaki:chatParticipants") == null,
+                "an INTERNAL_ONLY value arriving as a subtype property reached the index");
+        assertTrue(doc.getField("dynamic.property.nemaki:customField") != null,
+                "an ordinary subtype property must keep being indexed");
+    }
+
+    @Test
+    @DisplayName("the relationship loop filters too — the third door's third loop")
+    void relationshipLoopFilters() throws Exception {
+        SolrUtil util = new SolrUtil();
+        jp.aegif.nemaki.model.Relationship rel = new jp.aegif.nemaki.model.Relationship();
+        rel.setId("rel-1");
+        rel.setName("r");
+        rel.setType("cmis:relationship");
+        rel.setObjectType("cmis:relationship");
+        rel.setSourceId("obj-1");
+        rel.setSubTypeProperties(new java.util.ArrayList<>(java.util.List.of(
+                new jp.aegif.nemaki.model.Property("nemaki:chatParticipants", "otsuka,ishii"),
+                new jp.aegif.nemaki.model.Property("nemaki:customField", "ordinary"))));
+
+        org.apache.solr.common.SolrInputDocument doc = createSolrDocument(util, rel);
+
+        assertTrue(doc.getField("dynamic.property.nemaki:chatParticipants") == null,
+                "an INTERNAL_ONLY value on a relationship reached the index");
+        assertTrue(doc.getField("dynamic.property.nemaki:customField") != null,
+                "an ordinary relationship property must keep being indexed");
+    }
+
+    private static org.apache.solr.common.SolrInputDocument createSolrDocument(
+            SolrUtil util, jp.aegif.nemaki.model.Content content) throws Exception {
+        Method m = SolrUtil.class.getDeclaredMethod("createSolrDocument",
+                String.class, jp.aegif.nemaki.model.Content.class, boolean.class);
+        m.setAccessible(true);
+        return (org.apache.solr.common.SolrInputDocument) m.invoke(util, "bedroom", content,
+                false);
     }
 
     @Test

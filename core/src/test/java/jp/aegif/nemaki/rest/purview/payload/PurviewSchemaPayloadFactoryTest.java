@@ -31,6 +31,44 @@ public class PurviewSchemaPayloadFactoryTest {
      * cannot catch either — they only check the types someone remembered to list here.
      */
     @Test
+    @org.junit.jupiter.api.DisplayName("the manifest schema version is pinned — 18 since P1-1(e)")
+    void manifestVersionIsPinned() throws Exception {
+        // The manifest hash EXCLUDES attribute lists, so the version literal is the only thing
+        // that makes deployed catalogs notice new attributes; an accidental rollback would
+        // silently suppress the P1-1(e) Process attributes (Codex, new defect 3). 18 covers the
+        // contentHash triple, which first shipped under an unchanged 17 — the exact silent-drop
+        // the manifest javadoc warns about (adversarial review, finding 3). When an attribute
+        // is ADDED, this pin must move WITH the bump, in the same commit; it resists rollback,
+        // not legitimate change.
+        java.lang.reflect.Field f = jp.aegif.nemaki.rest.purview.payload
+                .PurviewSchemaManifestFactory.class.getDeclaredField("SCHEMA_VERSION");
+        f.setAccessible(true);
+        org.junit.jupiter.api.Assertions.assertEquals("18", f.get(null));
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("nemaki_import_process declares exactly the v1+v2 attribute set")
+    @SuppressWarnings("unchecked")
+    public void importProcessAttributeSetIsPinned() {
+        // Deleting any of the seven P1-1(e) declarations left every test green (adversarial
+        // review, finding 3's AC13 note) — the destination would silently drop what the sink
+        // sends. The FULL set, both directions, so an addition also fails here and forces the
+        // author to the manifest javadoc (bump the version in the same commit).
+        PurviewSchemaManifest manifest = new PurviewSchemaManifestFactory().buildManifest();
+        Map<String, Object> payload =
+                new PurviewSchemaPayloadFactory().buildTypeDefinitionsPayload(manifest);
+        assertEquals(new java.util.TreeSet<>(java.util.List.of(
+                        "repositoryId", "folderId", "importMode", "externalStableKey",
+                        "sourceDescription", "objectCount",
+                        "reimportOutcome", "reimportFilled", "reimportRefused",
+                        "assuranceAsserted",
+                        "contentHash", "contentHashSubject", "contentHashAlgorithm")),
+                new java.util.TreeSet<>(attributeNames(
+                        (List<Map<String, Object>>) payload.get("entityDefs"),
+                        "nemaki_import_process")));
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     public void manifestTypeNamesMatchTheTypesThePayloadCreates() {
         PurviewSchemaManifest manifest = new PurviewSchemaManifestFactory().buildManifest();

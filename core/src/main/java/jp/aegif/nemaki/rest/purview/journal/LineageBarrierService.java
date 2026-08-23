@@ -53,8 +53,12 @@ public class LineageBarrierService {
 
     private static final int MAX_CAS_ATTEMPTS = 5;
 
-    /** The spool RECORD versions this build reads and writes (the codec admits only 1). */
-    private static final Set<Integer> SPOOL_RECORD_SCHEMA_VERSIONS = Set.of(1);
+    /**
+     * The spool RECORD versions this build reads and writes. 2 since P1-1(e): the codec
+     * decodes both, and facts carrying the digest-covered extras spool as version 2 —
+     * advertising only 1 made the ACK's compatibility evidence false (Codex, new defect 1).
+     */
+    private static final Set<Integer> SPOOL_RECORD_SCHEMA_VERSIONS = Set.of(1, 2);
 
     /** The EVENT versions this build can materialize a spooled fact into. */
     private static final Set<Integer> MATERIALIZE_EVENT_SCHEMA_VERSIONS = Set.of(1, 2);

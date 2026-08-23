@@ -64,6 +64,26 @@ class ExportCarriesEvidenceSidecarTest {
     }
 
     @Test
+    @DisplayName("buildDocumentMetadata actually CALLS the sidecar — the call-site pin")
+    void metadataBuilderCallsTheSidecar() {
+        // The three tests below drive appendEvidenceSidecar directly, so deleting its one call
+        // site — removing the feature — left them all green (adversarial review, finding 7).
+        // This drives the real per-document builder end to end. No Spring context: the ACL
+        // branch checks null and skips, which is fine — evidence, not ACL, is under test.
+        org.json.simple.JSONObject metadata = new ZipExporter()
+                .buildDocumentMetadata("bedroom", docWithEvidence(), null);
+
+        org.junit.jupiter.api.Assertions.assertNotNull(metadata.get("evidence"),
+                "the exported per-document metadata has no evidence sidecar — the writer "
+                        + "stopped calling appendEvidenceSidecar");
+        org.json.simple.JSONObject properties =
+                (org.json.simple.JSONObject) metadata.get("properties");
+        org.junit.jupiter.api.Assertions.assertFalse(
+                properties.containsKey("nemaki:chatChannelId"),
+                "evidence leaked into 'properties', where the importer APPLIES it");
+    }
+
+    @Test
     @DisplayName("evidence values travel in the sidecar; the assertion stays out of properties")
     @SuppressWarnings("unchecked")
     void evidenceTravelsOutsideProperties() {

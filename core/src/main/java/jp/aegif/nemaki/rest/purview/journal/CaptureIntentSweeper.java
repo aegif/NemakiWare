@@ -189,7 +189,10 @@ public class CaptureIntentSweeper {
      */
     int staleMinutes() {
         int configured = positiveInt(KEY_STALE_MINUTES, DEFAULT_STALE_MINUTES);
-        int fetchTimeoutFloor = positiveInt("ingest.scheduler.fetchTimeoutMinutes", 30) + 5;
+        int fetchTimeoutFloor = positiveInt(
+                jp.aegif.nemaki.rest.ingest.IngestSchedulerService.FETCH_TIMEOUT_KEY,
+                jp.aegif.nemaki.rest.ingest.IngestSchedulerService.DEFAULT_FETCH_TIMEOUT_MINUTES)
+                + 5;
         return Math.max(configured, fetchTimeoutFloor);
     }
 

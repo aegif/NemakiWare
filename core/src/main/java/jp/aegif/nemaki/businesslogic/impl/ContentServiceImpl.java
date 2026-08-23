@@ -2726,6 +2726,14 @@ public class ContentServiceImpl implements ContentService {
 	 * NEW object. The aspect list is the fresh one {@code buildCopyDocument} made and may be
 	 * mutated; {@code secondaryIds} is SHARED with the original ({@code buildCopyDocument}
 	 * passes the reference through), so a filtered new list is set instead of mutating.
+	 *
+	 * <p>Known residual (accepted): a copy REQUEST that explicitly names an evidence type in
+	 * {@code cmis:secondaryObjectTypeIds} re-attaches an EMPTY shell after this strip — the
+	 * READONLY injection drops every value ({@code SecondaryIdsMatchAspectsAtCreateTest}
+	 * pins that at create; copy's updateProperties is the same injection), so no evidence
+	 * VALUE can arrive, and the same explicit request produces the same shell on a plain
+	 * {@code createDocument}. This strip is about what the copy carries IMPLICITLY; an
+	 * explicit request is the caller's own assertion, judged by the same rules as create.
 	 */
 	private static void stripEvidenceForNewObject(Document copy) {
 		if (copy.getAspects() != null) {
