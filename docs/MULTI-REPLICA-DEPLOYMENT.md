@@ -302,3 +302,32 @@ then, follow the recipe above.
 | Loud startup WARN about "multi-replica WITHOUT sticky session" | R3 not configured. Set both as env vars or `-D` system properties after enabling LB sticky — these two keys are NOT honoured from `nemakiware.properties` |
 | Startup INFO line still says `single-replica (default)` even though you set `nemakiware.deployment.singleReplica=false` in `nemakiware.properties` | R3 mis-applied. The two `nemakiware.deployment.*` keys are env / system-property only (see §3.2 b); rewrite as `-D` flags or env vars |
 | Sticky session is enabled at the LB but users still occasionally have to re-login mid-session | Either S4 (sticky cookie TTL < `auth.token.expiration`) or LB target removed. Note that S3 (`X-Requested-With`) does NOT prevent this — it only satisfies the CSRF policy |
+
+---
+
+## 型パッチを含む版へ上げるとき
+
+**入替が終わるまで、まだ再起動していないレプリカは古い型定義のキャッシュで動きます。**
+
+`Patch_ChatContextEvidenceReadOnly` のような**型定義を書き換えるパッチ**は、
+`AbstractNemakiPatch` が `isApplied` を CouchDB に記録するので**最初に起動した 1 台でしか
+走りません**。そのとき `invalidateTypeCache` / `refreshTypes()` が効くのも**その JVM だけ**で、
+`TypeManagerImpl` の型キャッシュは static です。
+
+したがってローリング入替の途中では:
+
+- **再起動済みのレプリカ** — 証拠プロパティは READONLY。CMIS からの書き込みは無視される
+- **未再起動のレプリカ** — キャッシュに READWRITE が残っており、`injectPropertyValue` は
+  証拠の書き込みを**通してしまう**。`isReadOnlyProperty` も READWRITE と答えるので、
+  リクエストに載った証拠プロパティは**消去もできる**
+
+**単一レプリカの既定配備では起こりません。** N>1 の入替中だけです。
+
+**手順**: 型パッチを含む版へ上げるあいだは、**全レプリカの入替が終わるまで
+`updateProperties` を受け付けない**か、入替を短く保ってください。
+どのレプリカがパッチを走らせたかは `nemaki_conf` の適用履歴で分かります。
+
+> 同じ理由で、`cmis:secondaryObjectTypeIds` からの証拠型の保護
+> (`EvidenceTypes` / `keepEvidenceAspects`) は**キャッシュに依存しません** —
+> 型定義が解決できない場合も保つように書いてあるので、未再起動のレプリカでも効きます。
+> 効かないのは**プロパティ単位の updatability** の方です。

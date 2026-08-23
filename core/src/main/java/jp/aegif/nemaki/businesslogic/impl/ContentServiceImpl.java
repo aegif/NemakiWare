@@ -2686,8 +2686,11 @@ public class ContentServiceImpl implements ContentService {
 				continue;
 			}
 			log.warn("Keeping evidence secondary type {} that this update would have detached. "
-					+ "Evidence types cannot be removed through CMIS; delete the object (and its "
-					+ "archive) if it was imported in error.", entry.getKey());
+					+ "Evidence types cannot be removed through CMIS. An object imported in error "
+					+ "needs deleting AND destroying its archive: a normal delete copies the "
+					+ "aspects and secondaryIds into the archive verbatim and a restore brings "
+					+ "them back. The lineage events live in a separate database and survive "
+					+ "either way.", entry.getKey());
 			rebuilt.add(entry.getValue());
 		}
 		return rebuilt;

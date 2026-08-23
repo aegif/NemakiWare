@@ -93,6 +93,55 @@ public class LineageSinkRecordContractTest {
                 .build());
     }
 
+    /** A chat ingest's snapshot, carrying both the personal facts and the identifying ones. */
+    private static LineageRecord chatRecord() {
+        return LineageRecord.fromV1(new LineageEventBuilder()
+                .repositoryId(REPO)
+                .processType(LineageProcessType.ARCHIVE_LOCAL)
+                .addInputObject(REPO, "doc-1")
+                .addOutput("nemaki://" + REPO + "/archives/doc-1")
+                .snapshotAttribute("chat.channelId", "C123")
+                .snapshotAttribute("chat.participants", "otsuka,ishii")
+                .snapshotAttribute("chat.channelName", "dm-otsuka-ishii")
+                .snapshotAttribute("chat.selectionReason", "quarterly review")
+                .snapshotAttribute("contentHash", "a".repeat(64))
+                .targets(List.of("atlas"))
+                .build());
+    }
+
+    /**
+     * Personal data must not reach the catalogue payload (P1-1(d)).
+     *
+     * <p>Until this, the only thing keeping chat participants out of Purview was the destination
+     * type not declaring the attribute — a protection living outside this product, one schema
+     * change away from not protecting anything. The sink now consults the evidence table.
+     */
+    @Test
+    public void purviewWithholdsPersonalDataFromTheProcessAttributes() throws Exception {
+        Map<String, Object> processAttrs = attributes(entities(purviewPayload(chatRecord())).get(0));
+
+        assertFalse(processAttrs.containsKey("chat.participants"),
+                "the participants of a captured conversation went to the catalogue: "
+                        + processAttrs.keySet());
+        assertFalse(processAttrs.containsKey("chat.channelName"), processAttrs.keySet().toString());
+        assertFalse(processAttrs.containsKey("chat.selectionReason"),
+                processAttrs.keySet().toString());
+    }
+
+    /**
+     * The counterweight. Withholding everything would satisfy the test above and empty the
+     * catalogue of the lineage it exists to show.
+     */
+    @Test
+    public void purviewStillSendsTheIdentifyingFacts() throws Exception {
+        Map<String, Object> processAttrs = attributes(entities(purviewPayload(chatRecord())).get(0));
+
+        assertEquals("C123", processAttrs.get("chat.channelId"),
+                "the channel id is the conversation's identity and is inside the qualified name "
+                        + "anyway; withholding the attribute would hide the key and ship the value");
+        assertEquals("a".repeat(64), processAttrs.get("contentHash"));
+    }
+
     private static LineageRecord v2Record() {
         return LineageRecord.fromV2(new LineageEventV2Builder()
                 .eventId("11111111-2222-3333-4444-555555555555")

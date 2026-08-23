@@ -48,21 +48,21 @@ public enum CaptureEvidenceField {
 
     // ── The source, as identified ────────────────────────────────────────────────────────
 
-    SOURCE_SYSTEM("sourceSystem", V2Home.inputAttribute("sourceSystem"), Assurance.CONFIGURED),
+    SOURCE_SYSTEM("sourceSystem", V2Home.inputAttribute("sourceSystem"), Assurance.CONFIGURED, Disclosure.EXTERNAL_OK),
 
     /**
      * Already inside {@code externalStableKey} — the source URI is built from it — so the v2
      * home is the endpoint's identity rather than an attribute beside it.
      */
     SOURCE_OBJECT_ID("sourceObjectId", V2Home.identity(
-            "carried by externalStableKey: the source URI is built from this id"), Assurance.ASSERTED),
+            "carried by externalStableKey: the source URI is built from this id"), Assurance.ASSERTED, Disclosure.EXTERNAL_OK),
 
     SOURCE_ARCHETYPE("sourceArchetype", V2Home.none(
             "delivered today as nemaki_import_process.importMode, a Process attribute fed from "
                     + "the v1 snapshot. Restoring that supply for v2 records is a separate piece "
-                    + "of work — see p1-1b-v2-evidence-home.md section 3.4"), Assurance.CONFIGURED),
+                    + "of work — see p1-1b-v2-evidence-home.md section 3.4"), Assurance.CONFIGURED, Disclosure.EXTERNAL_OK),
 
-    SOURCE_OBJECT_TYPE("sourceObjectType", V2Home.inputAttribute("sourceObjectType"), Assurance.ASSERTED),
+    SOURCE_OBJECT_TYPE("sourceObjectType", V2Home.inputAttribute("sourceObjectType"), Assurance.ASSERTED, Disclosure.EXTERNAL_OK),
 
     /**
      * ASSERTED, not APPLIED, because three paths disagree and the weakest wins: a request may
@@ -75,7 +75,7 @@ public enum CaptureEvidenceField {
             "delivered today as nemaki_import_process.folderId, a REQUIRED Process attribute fed "
                     + "from the v1 snapshot. LineageProcessShape binds ingest to exactly one "
                     + "external asset and one document, so it cannot become an endpoint — see "
-                    + "p1-1b-v2-evidence-home.md section 3.4"), Assurance.ASSERTED),
+                    + "p1-1b-v2-evidence-home.md section 3.4"), Assurance.ASSERTED, Disclosure.EXTERNAL_OK),
 
     // ── What the repository now holds ────────────────────────────────────────────────────
 
@@ -90,14 +90,14 @@ public enum CaptureEvidenceField {
      * {@code describeStoredState} says so in as many words. Only the branches that could not
      * take that shortcut actually look (external review).
      */
-    CONTENT_STORED("contentStored", V2Home.outputAttribute("contentStored"), Assurance.APPLIED),
+    CONTENT_STORED("contentStored", V2Home.outputAttribute("contentStored"), Assurance.APPLIED, Disclosure.EXTERNAL_OK),
 
-    CONTENT_HASH("contentHash", V2Home.outputAttribute("contentHash"), Assurance.OBSERVED),
+    CONTENT_HASH("contentHash", V2Home.outputAttribute("contentHash"), Assurance.OBSERVED, Disclosure.EXTERNAL_OK),
 
-    CONTENT_HASH_ALGORITHM("contentHashAlgorithm", V2Home.outputAttribute("contentHashAlgorithm"), Assurance.OBSERVED),
+    CONTENT_HASH_ALGORITHM("contentHashAlgorithm", V2Home.outputAttribute("contentHashAlgorithm"), Assurance.OBSERVED, Disclosure.EXTERNAL_OK),
 
     /** The v1 key and the v2 attribute differ deliberately: the v1 name predates the three-state. */
-    CONTENT_HASH_UNAVAILABLE("contentHashUnavailable", V2Home.outputAttribute("contentStateReason"), Assurance.OBSERVED),
+    CONTENT_HASH_UNAVAILABLE("contentHashUnavailable", V2Home.outputAttribute("contentStateReason"), Assurance.OBSERVED, Disclosure.EXTERNAL_OK),
 
     /**
      * What {@link #CONTENT_HASH} is a digest OF (P1-1(d) R3).
@@ -107,7 +107,7 @@ public enum CaptureEvidenceField {
      * the repository holds": nothing reads them back. Recording the digest without its subject
      * is what let "we hashed what we fetched" be read as "we verified what is stored".
      */
-    CONTENT_HASH_SUBJECT("contentHashSubject", V2Home.outputAttribute("contentHashSubject"), Assurance.OBSERVED),
+    CONTENT_HASH_SUBJECT("contentHashSubject", V2Home.outputAttribute("contentHashSubject"), Assurance.OBSERVED, Disclosure.EXTERNAL_OK),
 
     // ── Who ──────────────────────────────────────────────────────────────────────────────
 
@@ -120,12 +120,12 @@ public enum CaptureEvidenceField {
             "a field on LineageEventV2 would not be covered by creationPayloadDigest, so the "
                     + "actor could be edited without detection. Moving it into the digest changes "
                     + "the formula, and the roadmap puts execution origin in P1-1(e) — the "
-                    + "formula should move once, there"), Assurance.OBSERVED),
+                    + "formula should move once, there"), Assurance.OBSERVED, Disclosure.EXTERNAL_OK),
 
     ON_BEHALF_OF("onBehalfOf", V2Home.none(
             "the same digest-coverage problem as executedBy, and the same destination: the "
                     + "roadmap places execution origin in P1-1(e), where the delegated-execution "
-                    + "case is decided as well"), Assurance.CONFIGURED),
+                    + "case is decided as well"), Assurance.CONFIGURED, Disclosure.EXTERNAL_OK),
 
     // ── What a re-import pass did ────────────────────────────────────────────────────────
 
@@ -142,19 +142,19 @@ public enum CaptureEvidenceField {
                     + "document are named by the original capture event too, so an endpoint "
                     + "attribute would attach a per-run outcome to a thing that outlives the run. "
                     + "Its v2 home is a Process attribute, and Process attribute supply is the "
-                    + "open prerequisite of the v2 write flip (p1-1b-v2-evidence-home.md §3.4)"), Assurance.OBSERVED),
+                    + "open prerequisite of the v2 write flip (p1-1b-v2-evidence-home.md §3.4)"), Assurance.OBSERVED, Disclosure.EXTERNAL_OK),
 
     /** Evidence keys this pass wrote because the object did not have them. */
     REIMPORT_FILLED("reimportFilled", V2Home.none(
             "a per-pass list, with the same problem as reimportOutcome: it belongs to the run "
                     + "rather than to the asset or the document, so it waits for Process "
-                    + "attributes (p1-1b-v2-evidence-home.md §3.4)"), Assurance.APPLIED),
+                    + "attributes (p1-1b-v2-evidence-home.md §3.4)"), Assurance.APPLIED, Disclosure.EXTERNAL_OK),
 
     /** Evidence keys this pass was asked to change and did not. */
     REIMPORT_REFUSED("reimportRefused", V2Home.none(
             "a per-pass list, as reimportFilled. Recorded because a refusal is the more "
                     + "interesting half: it means the caller believes something different about "
-                    + "this record than what was captured (p1-1b-v2-evidence-home.md §3.4)"), Assurance.OBSERVED),
+                    + "this record than what was captured (p1-1b-v2-evidence-home.md §3.4)"), Assurance.OBSERVED, Disclosure.EXTERNAL_OK),
 
     /**
      * Which of THIS event's facts are unverified claims (P1-1(d) R2).
@@ -179,7 +179,7 @@ public enum CaptureEvidenceField {
                     + "endpoint, so an endpoint attribute would attach it to the asset or the "
                     + "document instead of to the record. Its v2 home is a Process attribute, "
                     + "which waits on Process attribute supply (p1-1b-v2-evidence-home.md §3.4)"),
-            Assurance.OBSERVED),
+            Assurance.OBSERVED, Disclosure.EXTERNAL_OK),
 
     // ── The conversation ─────────────────────────────────────────────────────────────────
 
@@ -192,7 +192,7 @@ public enum CaptureEvidenceField {
      * key as {@code acme-chat://channels/C1/messages/…} with no workspace in it at all
      * (external review).
      */
-    CHAT_WORKSPACE_ID("chat.workspaceId", V2Home.inputAttribute("chatWorkspaceId"), Assurance.ASSERTED),
+    CHAT_WORKSPACE_ID("chat.workspaceId", V2Home.inputAttribute("chatWorkspaceId"), Assurance.ASSERTED, Disclosure.EXTERNAL_OK),
 
     /**
      * Genuinely inside the stable key: both the message and the attachment URI build a
@@ -200,7 +200,7 @@ public enum CaptureEvidenceField {
      */
     CHAT_CHANNEL_ID("chat.channelId", V2Home.identity(
             "carried by externalStableKey: both the message and attachment URIs build a "
-                    + "channels/{channelId} segment from this same metadata value"), Assurance.ASSERTED),
+                    + "channels/{channelId} segment from this same metadata value"), Assurance.ASSERTED, Disclosure.EXTERNAL_OK),
 
     /**
      * NOT inside the stable key for attachments, which is the case that matters.
@@ -210,36 +210,36 @@ public enum CaptureEvidenceField {
      * attachment back to the message it came from, so losing it at the write flip would break
      * that link (external review).
      */
-    CHAT_MESSAGE_ID("chat.messageId", V2Home.inputAttribute("chatMessageId"), Assurance.ASSERTED),
+    CHAT_MESSAGE_ID("chat.messageId", V2Home.inputAttribute("chatMessageId"), Assurance.ASSERTED, Disclosure.EXTERNAL_OK),
 
-    CHAT_THREAD_ID("chat.threadId", V2Home.inputAttribute("chatThreadId"), Assurance.ASSERTED),
+    CHAT_THREAD_ID("chat.threadId", V2Home.inputAttribute("chatThreadId"), Assurance.ASSERTED, Disclosure.EXTERNAL_OK),
 
     CHAT_CHANNEL_NAME("chat.channelName", V2Home.none(
             "free text from the caller; in a direct message it is the other person's name. An "
                     + "endpoint attribute is declared on the delivery type and therefore stored "
                     + "in the catalogue, which has no retention rule of its own — see "
-                    + "p1-1b-v2-evidence-home.md section 6"), Assurance.ASSERTED),
+                    + "p1-1b-v2-evidence-home.md section 6"), Assurance.ASSERTED, Disclosure.INTERNAL_ONLY, "nemaki:chatChannelName"),
 
     CHAT_PARTICIPANTS("chat.participants", V2Home.none(
-            "personal names, same reason as chat.channelName"), Assurance.ASSERTED),
+            "personal names, same reason as chat.channelName"), Assurance.ASSERTED, Disclosure.INTERNAL_ONLY, "nemaki:chatParticipants"),
 
     CHAT_SELECTION_REASON("chat.selectionReason", V2Home.none(
             "this ingest's judgement, not a property of the source. The endpoint's qualified name "
                     + "repeats on re-ingest and the delivery target upserts, so a second ingest "
                     + "would silently overwrite the first one's judgement — and LineageEndpoint "
-                    + "defines attributes as captured at emission and never updated"), Assurance.ASSERTED),
+                    + "defines attributes as captured at emission and never updated"), Assurance.ASSERTED, Disclosure.INTERNAL_ONLY, "nemaki:chatSelectionReason"),
 
     CHAT_EVIDENCE_SCOPE("chat.evidenceScope", V2Home.none(
             "this ingest's judgement about what the evidence covers, not a property of the "
-                    + "source; a re-ingest would upsert the endpoint and overwrite it"), Assurance.ASSERTED),
+                    + "source; a re-ingest would upsert the endpoint and overwrite it"), Assurance.ASSERTED, Disclosure.INTERNAL_ONLY, "nemaki:chatEvidenceScope"),
 
     CHAT_CAPTURE_WINDOW_START("chat.captureWindowStart", V2Home.none(
             "the window this ingest chose to capture, not a property of the source; a re-ingest "
-                    + "would upsert the endpoint and overwrite it"), Assurance.ASSERTED),
+                    + "would upsert the endpoint and overwrite it"), Assurance.ASSERTED, Disclosure.INTERNAL_ONLY, "nemaki:chatCaptureWindowStart"),
 
     CHAT_CAPTURE_WINDOW_END("chat.captureWindowEnd", V2Home.none(
             "the window this ingest chose to capture, not a property of the source; a re-ingest "
-                    + "would upsert the endpoint and overwrite it"), Assurance.ASSERTED);
+                    + "would upsert the endpoint and overwrite it"), Assurance.ASSERTED, Disclosure.INTERNAL_ONLY, "nemaki:chatCaptureWindowEnd");
 
     /**
      * How strongly the recorded value is known (P1-1(d) R2/R4).
@@ -302,14 +302,126 @@ public enum CaptureEvidenceField {
         }
     }
 
+    /**
+     * Whether a fact may leave for an external catalog (P1-1(d), evidence disclosure).
+     *
+     * <h2>Why the table decides this and not the sink</h2>
+     *
+     * <p>Today nothing decides it: {@code PurviewLineageSink} copies the whole v1 snapshot into
+     * the outbound payload, and {@code chat.participants} is discarded only because the
+     * destination type does not declare the attribute. The thing protecting personal names is
+     * therefore someone else's schema — a setting away from not protecting them.
+     *
+     * <p>There is a second door, which is why this belongs on the table rather than in one sink:
+     * an administrator can map any {@code subTypeProperties} value onto the document entity
+     * through {@code catalog.sync.propertyMappings}, and the ingest writes
+     * {@code nemaki:chatParticipants} onto the object as well as into the snapshot.
+     * {@code CatalogPropertyMappingResolver} already refuses one property for exactly this
+     * reason; driving that refusal from here is what keeps "one place to look" true.
+     *
+     * <h2>INTERNAL_ONLY is not deletion</h2>
+     *
+     * <p>The journal keeps the value either way. What is withheld is the copy that leaves for a
+     * catalog with no retention rule of its own.
+     */
+    public enum Disclosure {
+        /** Identifiers, digests, machine state. */
+        EXTERNAL_OK,
+        /**
+         * Personal data, or caller-controlled free text that may contain any of it.
+         *
+         * <p>Not claimed to be exhaustive: a free-text field can hold anything, so what can be
+         * declared is structure — "this field's value IS a person" or "this field is text we do
+         * not constrain" — never "this field is clean".
+         */
+        INTERNAL_ONLY
+    }
+
     private final String v1Key;
     private final V2Home v2Home;
     private final Assurance assurance;
+    private final Disclosure disclosure;
+    private final String cmisPropertyId;
 
-    CaptureEvidenceField(String v1Key, V2Home v2Home, Assurance assurance) {
+    // NO three-argument constructor. An EXTERNAL_OK default would let the next fact be added
+    // without anyone deciding whether it may leave the building, which is the same silence this
+    // table exists to break (external review).
+    CaptureEvidenceField(String v1Key, V2Home v2Home, Assurance assurance,
+                         Disclosure disclosure) {
+        this(v1Key, v2Home, assurance, disclosure, null);
+    }
+
+    /**
+     * @param cmisPropertyId the property this fact is ALSO written to on the object, when there
+     *        is one. The snapshot is not the only way out: an administrator can map any
+     *        {@code subTypeProperties} value onto the catalogue entity, so a fact withheld from
+     *        the sink and left mappable is not withheld at all.
+     */
+    CaptureEvidenceField(String v1Key, V2Home v2Home, Assurance assurance,
+                         Disclosure disclosure, String cmisPropertyId) {
+        this.cmisPropertyId = cmisPropertyId;
         this.v1Key = v1Key;
         this.v2Home = v2Home;
         this.assurance = assurance;
+        this.disclosure = disclosure;
+        if (disclosure == Disclosure.INTERNAL_ONLY
+                && v2Home != null && v2Home.placement() == V2Home.Placement.IDENTITY) {
+            // A fact inside the endpoint's identity travels in the qualifiedName whatever the
+            // attribute map says, so withholding the attribute would hide the key and ship the
+            // value — the exact fail-open this rule exists to close (external review).
+            throw new IllegalStateException(v1Key + " is carried by the endpoint identity, so "
+                    + "INTERNAL_ONLY cannot withhold it: the value travels in the qualified name. "
+                    + "Withholding such a fact needs a change to the identity, not to disclosure.");
+        }
+    }
+
+    /** Whether this fact may leave for an external catalog. */
+    public Disclosure disclosure() {
+        return disclosure;
+    }
+
+    /** Whether this fact must be withheld from anything leaving for an external catalog. */
+    public boolean isInternalOnly() {
+        return disclosure == Disclosure.INTERNAL_ONLY;
+    }
+
+    /** The CMIS property this fact is also written to on the object, or null. */
+    public String cmisPropertyId() {
+        return cmisPropertyId;
+    }
+
+    /**
+     * The v1 snapshot keys that must not leave for an external catalog.
+     *
+     * <p>Derived, so a fact declared {@code INTERNAL_ONLY} is withheld without anyone having to
+     * remember a second list.
+     */
+    public static java.util.Set<String> internalOnlyV1Keys() {
+        java.util.Set<String> keys = new java.util.LinkedHashSet<>();
+        for (CaptureEvidenceField field : values()) {
+            if (field.isInternalOnly()) {
+                keys.add(field.v1Key());
+            }
+        }
+        return keys;
+    }
+
+    /**
+     * The CMIS properties a custom catalogue mapping must not be allowed to read.
+     *
+     * <p>The second door: {@code PurviewEntityPayloadFactory} projects mapped
+     * {@code subTypeProperties} onto the document entity, and the ingest writes these facts onto
+     * the object as well as into the snapshot. Filtering the sink alone leaves a setting between
+     * the personal data and the catalogue.
+     */
+    public static java.util.Set<String> internalOnlyCmisPropertyIds() {
+        java.util.Set<String> ids = new java.util.LinkedHashSet<>();
+        for (CaptureEvidenceField field : values()) {
+            if (field.isInternalOnly() && field.cmisPropertyId != null) {
+                ids.add(field.cmisPropertyId);
+            }
+        }
+        return ids;
     }
 
     /** How strongly this fact's recorded value is known. */

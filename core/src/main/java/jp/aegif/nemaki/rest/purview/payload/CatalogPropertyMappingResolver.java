@@ -53,7 +53,21 @@ public class CatalogPropertyMappingResolver {
      * on older documents. The URL is the value increment A-1g removed from the catalog entirely;
      * a custom mapping must not be a second door to it.
      */
-    static final Set<String> FORBIDDEN_SOURCE_PROPERTY_IDS = Set.of("nemaki:cloudFileUrl");
+    static final Set<String> FORBIDDEN_SOURCE_PROPERTY_IDS = forbiddenSources();
+
+    /**
+     * The cloud URL, plus every ingest fact the evidence table declares {@code INTERNAL_ONLY}.
+     *
+     * <p>Derived rather than listed, so the two doors close together. The lineage sink withholds
+     * these facts from its payload; if a custom mapping could still read the copy the ingest
+     * wrote onto the object, the sink-side filter would be decoration (P1-1(d)).
+     */
+    private static Set<String> forbiddenSources() {
+        Set<String> ids = new java.util.LinkedHashSet<>();
+        ids.add("nemaki:cloudFileUrl");
+        ids.addAll(jp.aegif.nemaki.rest.ingest.CaptureEvidenceField.internalOnlyCmisPropertyIds());
+        return java.util.Collections.unmodifiableSet(ids);
+    }
 
     /**
      * The <em>output</em> half of {@link #rejectionFor}: core entity attribute names used by

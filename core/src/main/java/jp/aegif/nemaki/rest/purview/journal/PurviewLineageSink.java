@@ -64,7 +64,16 @@ public class PurviewLineageSink implements LineageTargetSink {
         // defect §2 fixed was copying them onto every *asset* as well, which is handled below.
         // A v2 record has none: its attributes travel on the endpoints.
         if (!record.legacyEventAttributes().isEmpty()) {
+            // Filtered, not copied wholesale. Chat participants and the caller's free-text fields
+            // are personal data with a retention rule in the journal and none in a catalogue;
+            // until now the only thing keeping them out was the destination type not declaring
+            // the attribute, which is a protection that lives outside this product (P1-1(d)).
+            java.util.Set<String> withheld =
+                    jp.aegif.nemaki.rest.ingest.CaptureEvidenceField.internalOnlyV1Keys();
             for (Map.Entry<String, String> entry : record.legacyEventAttributes().entrySet()) {
+                if (withheld.contains(entry.getKey())) {
+                    continue;
+                }
                 processAttrs.put(entry.getKey(), entry.getValue());
             }
         }

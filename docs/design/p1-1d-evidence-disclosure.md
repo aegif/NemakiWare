@@ -215,6 +215,36 @@ asset の `qualifiedName`・`externalStableKey`・`externalPath`、および Pro
 
 ---
 
+## 6.1 実装 (2026-08-22)
+
+- `CaptureEvidenceField.Disclosure`。**3 引数コンストラクタは無い** — 既定 EXTERNAL_OK に
+  すると、次に事実を足す人が「出してよいか」を決めずに通ってしまう
+- `internalOnlyV1Keys()` を `PurviewLineageSink` の Process 属性写しが引く
+- `internalOnlyCmisPropertyIds()` を `CatalogPropertyMappingResolver` の
+  `FORBIDDEN_SOURCE_PROPERTY_IDS` が引く (**既存の `nemaki:cloudFileUrl` と合わせて 1 つの集合**)
+- `Placement.IDENTITY` に `INTERNAL_ONLY` を宣言するとコンストラクタが投げる
+
+負のコントロール: sink の濾過を外すと sink payload テストが
+`[… chat.participants …] ==> expected: <false> but was: <true>`、
+表からの派生をやめると mapping の拒否テストが
+`expected: <FORBIDDEN_SOURCE_PROPERTY> but was: <null>`。
+
+> **1 巡目は sink 側を外しても何も落ちなかった。** payload を実際に組み立てるテストが
+> 無かったためで、`LineageSinkRecordContractTest` に足した。
+
+---
+
+## 6.2 これは「個人名が製品から消えた」ではない
+
+`nemaki:chatContextMetadata` は `fulltextIndexed=true`、各プロパティは `queryable=true`。
+`SolrUtil` は aspect の値を全部 `dynamic.property.{key}` に載せる。
+**既定配備でも `nemaki:chatParticipants` は検索に出る。**
+
+この作業が閉じたのは**外部カタログへの 2 経路だけ**である。オブジェクト側と検索索引は
+対象外で、そちらは**文書の生存期間**に従う (journal の保持期限ではない)。
+
+---
+
 ## 7. やらないこと
 
 - `executedBy` / `onBehalfOf` の判断 — **(e)** ((b) §5)
