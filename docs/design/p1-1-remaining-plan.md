@@ -59,7 +59,7 @@ HEAD `246a0e03f` + 自己レビュー修正パスに対する、Codex + サブ�
 
 | 項目 | 根拠 | 一言 |
 |---|---|---|
-| **CMIS `updateType` の実保護** — 今は偶然 3 つ + tripwire だけ | (c) §5.5、`ExceptionServiceImpl:1012-1059` は updatability を見ない | `constraintUpdatePropertyDefinition` に updatability 検査を足すのが本筋。tripwire は修正後も残す |
+| ✅ 2026-08-23 **CMIS `updateType` の実保護** — `constraintUpdatePropertyDefinition` が READONLY の拡張を拒否 (絞り込みは許可)。tripwire は残置 | (c) §5.5 | 済 |
 | **Solr/PII の方針判断** — `chatParticipants` が既定で全文検索に出る | `SolrUtil:1481-1512` が全 aspect 値を無濾過で索引。disclosure §6.2 で認知済み・担当未割当 | **方針判断が先** (検索できるべきか)。機構は Disclosure の第 3 の口として同じ表から導ける |
 | **bulkUpdateProperties の add/remove 無視** (既存不具合) | `ObjectServiceImpl:1216-1244` | 直すなら必ず `modifyProperties` 経由 (= `keepEvidenceAspects` を通す) |
 | **CatalogSecretBoundary 統合** — `PurviewLineageSink` だけ `sealed()` を呼ばない | disclosure §4 | sink の qualifiedName (非 `nemaki://`) の許可を先に決める |

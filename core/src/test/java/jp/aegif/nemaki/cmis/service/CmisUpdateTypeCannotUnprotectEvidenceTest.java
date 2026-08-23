@@ -261,6 +261,50 @@ class CmisUpdateTypeCannotUnprotectEvidenceTest {
     }
 
     @Test
+    @DisplayName("the REAL constraint now refuses widening — protection, not accident")
+    void theConstraintRefusesWideningAReadonlyProperty() {
+        // Until this check existed, updateType's protection was three unrelated accidents and
+        // this class was a tripwire around them. constraintUpdatePropertyDefinition now refuses
+        // the widening itself, so even with every accident repaired the request dies where it
+        // should: at the constraint layer, with a message naming the rule.
+        jp.aegif.nemaki.cmis.aspect.impl.ExceptionServiceImpl exceptionService =
+                new jp.aegif.nemaki.cmis.aspect.impl.ExceptionServiceImpl();
+        jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager =
+                mock(jp.aegif.nemaki.cmis.aspect.type.TypeManager.class);
+        when(typeManager.getSystemPropertyIds()).thenReturn(new ArrayList<>());
+        exceptionService.setTypeManager(typeManager);
+
+        PropertyStringDefinitionImpl stored = constraintFixture(Updatability.READONLY);
+        PropertyStringDefinitionImpl widened = constraintFixture(Updatability.READWRITE);
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException.class,
+                () -> exceptionService.constraintUpdatePropertyDefinition(widened, stored),
+                "a READONLY evidence property was widened through the standard CMIS updateType "
+                        + "with no constraint objecting — the protection is accidents again");
+
+        // Narrowing TO readonly stays allowed: it is what the protection migrations do.
+        PropertyStringDefinitionImpl narrowed = constraintFixture(Updatability.READONLY);
+        PropertyStringDefinitionImpl wasWritable = constraintFixture(Updatability.READWRITE);
+        exceptionService.constraintUpdatePropertyDefinition(narrowed, wasWritable);
+        // And an unchanged READONLY passes.
+        exceptionService.constraintUpdatePropertyDefinition(
+                constraintFixture(Updatability.READONLY), constraintFixture(Updatability.READONLY));
+    }
+
+    private static PropertyStringDefinitionImpl constraintFixture(Updatability updatability) {
+        PropertyStringDefinitionImpl def = new PropertyStringDefinitionImpl();
+        def.setId(PROPERTY_ID);
+        def.setPropertyType(PropertyType.STRING);
+        def.setCardinality(Cardinality.SINGLE);
+        def.setUpdatability(updatability);
+        def.setIsInherited(false);
+        def.setIsRequired(false);
+        def.setIsOpenChoice(true);
+        return def;
+    }
+
+    @Test
     @DisplayName("the property this guards is one of the eleven the migration protects")
     void theGuardedPropertyIsPartOfTheEvidenceSet() {
         // Derived from the patch rather than restated, so a rename cannot leave this test

@@ -1055,6 +1055,22 @@ public class ExceptionServiceImpl implements ExceptionService,
 			msg += "'cardinality' cannot be modified";
 			constraint(msg);
 		}
+
+		// A stored READONLY may not be widened. READONLY marks server-owned values — the
+		// evidence properties a capture wrote — and until this check the standard CMIS
+		// updateType could hand a READWRITE redefinition straight to TypeService: the request
+		// only failed because of three unrelated accidents (a bad cast, a duplicate-id check,
+		// a missing detail id), and repairing any of them would have reopened the route with
+		// no test failing but a tripwire ((c) §5.5, external review). Narrowing TO readonly
+		// stays allowed — that is what the protection migrations do.
+		if (org.apache.chemistry.opencmis.commons.enums.Updatability.READONLY
+					.equals(old.getUpdatability())
+				&& !org.apache.chemistry.opencmis.commons.enums.Updatability.READONLY
+					.equals(update.getUpdatability())) {
+			msg += "'updatability' cannot be widened from readonly: the server owns this "
+					+ "property's value";
+			constraint(msg);
+		}
 		return update;
 	}
 

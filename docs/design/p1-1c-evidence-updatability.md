@@ -234,8 +234,13 @@ openChoice / propertyType / cardinality を見るが **`updatability` は見な�
 形で、`createType` 側は既に `updatedDetail.setId(created.getId())` をしている。
 **全部直った瞬間に、同じリクエストが静かに保護を外す。**
 
-**この作業では挙動を変えない** — バグに依存した保護を「正しい保護」に格上げする
-書き換えは (c) の範囲を超える。代わりに**現状を固定するテスト**を置いた:
+~~この作業では挙動を変えない~~ — **2026-08-23 に実保護を入れた**:
+`constraintUpdatePropertyDefinition` が **READONLY の拡張を拒否する** (READONLY への
+絞り込みは通す — 保護 migration 自身の操作)。3 つの偶然が全部直っても、リクエストは
+constraint 層で規則を名指して死ぬ。控え実測: 検査を外すと「nothing was thrown」。
+tripwire は**そのまま残す** — constraint が誤って外された日にもう 1 枚の網になる。
+
+当初はテストだけを置いていた:
 `CmisUpdateTypeCannotUnprotectEvidenceTest` (2026-08-22)。実際に
 `RepositoryServiceImpl.updateType` を呼び、**`TypeService` に何が届いたか**を見る
 — 3 つの偶然のどれが先に効くかに依存しない位置である。加えて
