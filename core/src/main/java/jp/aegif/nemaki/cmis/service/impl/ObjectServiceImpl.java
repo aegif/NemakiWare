@@ -1230,6 +1230,55 @@ public class ObjectServiceImpl implements ObjectService {
 			this.extension = extension;
 		}
 
+		/**
+		 * Folds the task's add/remove lists into {@code cmis:secondaryObjectTypeIds}.
+		 *
+		 * <p>Base = the ids the request supplies, else the object's current ones; plus adds,
+		 * minus removes, order preserved, duplicates dropped. Returns the properties untouched
+		 * when there is nothing to fold, so ordinary bulk updates keep their exact old shape.
+		 */
+		private Properties withSecondaryTypeChanges(Properties original, Content content) {
+			boolean hasAdds = addSecondaryTypeIds != null && !addSecondaryTypeIds.isEmpty();
+			boolean hasRemoves = removeSecondaryTypeIds != null && !removeSecondaryTypeIds.isEmpty();
+			if (!hasAdds && !hasRemoves) {
+				return original;
+			}
+			java.util.List<String> base;
+			org.apache.chemistry.opencmis.commons.data.PropertyData<?> requested =
+					original.getProperties().get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
+			if (requested != null) {
+				base = new java.util.ArrayList<>();
+				for (Object value : requested.getValues()) {
+					base.add(String.valueOf(value));
+				}
+			} else {
+				base = content.getSecondaryIds() == null
+						? new java.util.ArrayList<>()
+						: new java.util.ArrayList<>(content.getSecondaryIds());
+			}
+			java.util.LinkedHashSet<String> merged = new java.util.LinkedHashSet<>(base);
+			if (hasAdds) {
+				merged.addAll(addSecondaryTypeIds);
+			}
+			if (hasRemoves) {
+				removeSecondaryTypeIds.forEach(merged::remove);
+			}
+			org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl rebuilt =
+					new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl();
+			for (org.apache.chemistry.opencmis.commons.data.PropertyData<?> property
+					: original.getPropertyList()) {
+				if (!PropertyIds.SECONDARY_OBJECT_TYPE_IDS.equals(property.getId())) {
+					rebuilt.addProperty(
+							(org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyData<?>) property);
+				}
+			}
+			rebuilt.addProperty(
+					new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl(
+							PropertyIds.SECONDARY_OBJECT_TYPE_IDS,
+							new java.util.ArrayList<>(merged)));
+			return rebuilt;
+		}
+
 		@Override
 		public BulkUpdateObjectIdAndChangeToken call() throws Exception {
 			exceptionService.invalidArgumentRequiredString("objectId", objectIdAndChangeToken.getId());
@@ -1241,7 +1290,15 @@ public class ObjectServiceImpl implements ObjectService {
 				Content content = checkExceptionBeforeUpdateProperties(callContext, repositoryId,
 						new Holder<String>(objectIdAndChangeToken.getId()), properties,
 						new Holder<String>(objectIdAndChangeToken.getChangeToken()));
-				contentService.updateProperties(callContext, repositoryId, properties, content);
+				// addSecondaryTypeIds / removeSecondaryTypeIds were accepted, stored on this
+				// task — and never read: bulk updates silently could not touch secondary types
+				// at all (audit #16). They are folded into cmis:secondaryObjectTypeIds HERE so
+				// the change flows through updateProperties → modifyProperties →
+				// buildSecondaryTypes — the one path where keepEvidenceAspects guards the
+				// evidence types. Handing them to a separate attach/detach call would bypass
+				// that guard, which is why this is the only correct wiring for them.
+				contentService.updateProperties(callContext, repositoryId,
+						withSecondaryTypeChanges(properties, content), content);
 				nemakiCachePool.get(repositoryId).removeCmisCache(content.getId());
 
 				BulkUpdateObjectIdAndChangeToken result = new BulkUpdateObjectIdAndChangeTokenImpl(
